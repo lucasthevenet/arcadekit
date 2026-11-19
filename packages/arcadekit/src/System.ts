@@ -323,6 +323,9 @@ export const before: {
     })
 );
 
+/** What a condition reads, when its creator declared it: see `reading`. */
+const conditionReads = new WeakMap<object, readonly Touched[]>();
+
 /**
  * Runs a system only on ticks when a condition holds:
  *
@@ -372,9 +375,6 @@ export const runIf: {
     });
   }
 );
-
-/** What a condition reads, when its creator declared it: see `reading`. */
-const conditionReads = new WeakMap<object, readonly Touched[]>();
 
 /**
  * Says what a condition made for `System.runIf` reads, so that a system

@@ -275,13 +275,16 @@ describe("a view", () => {
     // A listener that stops itself, or another, while being told.
     const order: string[] = [];
 
+    // The listener after it, which it stops, subscribes after it.
+    const later: { stop?: () => void } = {};
+
     const stopOnce = ui.subscribe(Hud, () => {
       order.push("once");
       stopOnce();
-      stopLater();
+      later.stop?.();
     });
 
-    const stopLater = ui.subscribe(Hud, () => {
+    later.stop = ui.subscribe(Hud, () => {
       order.push("later");
     });
 

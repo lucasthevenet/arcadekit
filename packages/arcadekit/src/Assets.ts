@@ -288,6 +288,26 @@ const ABSENT: Status<never> = { _tag: "Absent" };
 const LOADING: Status<never> = { _tag: "Loading" };
 
 /**
+ * The bundles an app has loaded. `Assets.plugin` provides it, `Assets.during`
+ * drives it, and `yield*` on a bundle reads it. Your own frame-stage or
+ * input-stage system can hold a bundle too: it stays loaded while anyone holds
+ * it.
+ *
+ *   const store = yield* Assets.Store
+ *   store.hold(Forest, "game/Map")    // starts loading, if nobody held it
+ *   store.drop(Forest, "game/Map")    // released, if nobody else holds it
+ *
+ * A load receives the services provided to the app from outside, but none of
+ * the app's own, so nothing it does affects the game: the random numbers a
+ * loader draws, to back off before retrying, don't come from the world.
+ *
+ * @category Services
+ */
+export class Store extends Context.Service<Store, StoreShape>()(
+  "arcadekit/Assets.Store"
+) {}
+
+/**
  * Assets that are loaded and released together, such as a level's or a menu's.
  * It is an Effect, so in a frame-stage or input-stage system `yield*` returns
  * its current status in the app.
@@ -405,26 +425,6 @@ export interface StoreShape {
    */
   readonly drop: (bundle: Bundle<Entries>, holder: string) => void;
 }
-
-/**
- * The bundles an app has loaded. `Assets.plugin` provides it, `Assets.during`
- * drives it, and `yield*` on a bundle reads it. Your own frame-stage or
- * input-stage system can hold a bundle too: it stays loaded while anyone holds
- * it.
- *
- *   const store = yield* Assets.Store
- *   store.hold(Forest, "game/Map")    // starts loading, if nobody held it
- *   store.drop(Forest, "game/Map")    // released, if nobody else holds it
- *
- * A load receives the services provided to the app from outside, but none of
- * the app's own, so nothing it does affects the game: the random numbers a
- * loader draws, to back off before retrying, don't come from the world.
- *
- * @category Services
- */
-export class Store extends Context.Service<Store, StoreShape>()(
-  "arcadekit/Assets.Store"
-) {}
 
 interface Held {
   readonly bundle: Bundle<Entries>;

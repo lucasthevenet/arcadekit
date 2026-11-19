@@ -147,6 +147,40 @@ const sectionOf = (pages: SitePages, slug: string): Section | undefined => {
 };
 
 /**
+ * The packages' group as a group for each package, named after it: its page, which lists its
+ * modules, then a page for each of them, in a group for each of its groups when it has some
+ * (moduleGroups).
+ */
+const packageGroups = (
+  pages: SitePages,
+  group: Group & { readonly topic: TopicId }
+): (Group & { readonly topic: TopicId })[] =>
+  group.items.flatMap((item) => {
+    const page = pages.packages.find((p) => p.slug === item);
+
+    if (page === undefined) {
+      return [];
+    }
+
+    return [
+      {
+        topic: group.topic,
+        label: page.title,
+        items: [
+          { label: "Overview", link: page.link },
+          ...moduleGroups(page).flatMap(
+            ({ label, modules }): (string | Group)[] => {
+              const slugs = modules.map((name) => `${page.slug}/${name}`);
+
+              return label === undefined ? slugs : [{ label, items: slugs }];
+            }
+          ),
+        ],
+      },
+    ];
+  });
+
+/**
  * The groups of every topic: the outline's own order, then each page it doesn't name at the end
  * of its section's group, by path. A page of a folder no group has goes in Get started. A group
  * left with no page is left out.
@@ -195,40 +229,6 @@ export const outlinedGroups = (
     )
     .filter((group) => group.items.length > 0);
 };
-
-/**
- * The packages' group as a group for each package, named after it: its page, which lists its
- * modules, then a page for each of them, in a group for each of its groups when it has some
- * (moduleGroups).
- */
-const packageGroups = (
-  pages: SitePages,
-  group: Group & { readonly topic: TopicId }
-): (Group & { readonly topic: TopicId })[] =>
-  group.items.flatMap((item) => {
-    const page = pages.packages.find((p) => p.slug === item);
-
-    if (page === undefined) {
-      return [];
-    }
-
-    return [
-      {
-        topic: group.topic,
-        label: page.title,
-        items: [
-          { label: "Overview", link: page.link },
-          ...moduleGroups(page).flatMap(
-            ({ label, modules }): (string | Group)[] => {
-              const slugs = modules.map((name) => `${page.slug}/${name}`);
-
-              return label === undefined ? slugs : [{ label, items: slugs }];
-            }
-          ),
-        ],
-      },
-    ];
-  });
 
 const toItem = (item: string | Link | Group): SidebarItem => {
   if (typeof item === "string") {

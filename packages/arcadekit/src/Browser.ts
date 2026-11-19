@@ -329,107 +329,6 @@ const listen = (
   };
 };
 
-/**
- * Returns a layer that provides a page's display and input devices to a whole
- * program.
- *
- * - The frame loop follows `requestAnimationFrame`, and pauses while the
- *   document is hidden.
- * - A key's code is its `KeyboardEvent.code`. A held key counts as pressed
- *   once, and every key and pointer button is released when the page loses
- *   focus.
- * - The pointer is a mouse, a pen or a finger. `PointerX` and `PointerY` are
- *   CSS pixels from the top-left of `target`. Presses are detected on `target`,
- *   and moves and releases anywhere on the page.
- * - Mouse buttons held together are tracked individually, even though the page
- *   reports every press but the first, and every release but the last, as
- *   moves.
- * - Gamepads are read when the app samples, once per tick. Unplugging one
- *   releases all its inputs.
- * - It listens from when it is built until its scope closes, so provide it to
- *   the whole program, not to `App.make` alone; `Browser.runMain` does.
- *   Provided to `App.make` alone, it is released as soon as the app is created,
- *   and the first device read throws and says so.
- *
- * @category Layers
- */
-export const layer = (options: Options = {}): Layer.Layer<never> => {
-  const page = Layer.merge(
-    Layer.succeed(Driver.Display, display),
-    Layer.effect(
-      Input.Source,
-      Effect.map(
-        Effect.acquireRelease(
-          Effect.sync(() => listen(options)),
-          (listening) => Effect.sync(listening.stop)
-        ),
-        (listening) => listening.source
-      )
-    )
-  ) as Layer.Layer<never>;
-
-  return options.sounds === false
-    ? page
-    : Layer.merge(
-        page,
-        // Its sound sleeps while the page's own document is hidden.
-        Layer.provide(
-          layerSound(options.sounds ?? {}, options),
-          Layer.succeed(Driver.Display, display)
-        )
-      );
-};
-
-// --- sound -----------------------------------------------------------------------
-
-/**
- * The parts of a page's audio that are used; the browser's `AudioContext`
- * satisfies it.
- *
- * @category Models
- */
-export interface AudioLike {
-  readonly destination: unknown;
-  readonly state?: string;
-  /** Its own clock, in seconds, which times fades. */
-  readonly currentTime: number;
-  createBufferSource(): {
-    buffer: unknown;
-    loop: boolean;
-    readonly playbackRate: { value: number };
-    connect(to: unknown): unknown;
-    start(): void;
-    stop(when?: number): void;
-  };
-  createGain(): {
-    readonly gain: {
-      value: number;
-      setValueAtTime(value: number, time: number): unknown;
-      linearRampToValueAtTime(value: number, time: number): unknown;
-      cancelScheduledValues(time: number): unknown;
-    };
-    connect(to: unknown): unknown;
-  };
-  /** Routes a streamed track's player into the audio graph, so it fades like any track. */
-  createMediaElementSource?(media: any): { connect(to: unknown): unknown };
-  /** Stops its clock, and with it every sound, until resumed. */
-  suspend?(): Promise<unknown>;
-  resume?(): Promise<unknown>;
-  close(): Promise<unknown>;
-}
-
-/**
- * The parts of a streamed track's player that are used; an `<audio>` element
- * satisfies it.
- *
- * @category Models
- */
-export interface MediaLike {
-  loop: boolean;
-  play: () => Promise<unknown>;
-  pause: () => void;
-}
-
 /** What a streamed clip holds: only its URL. */
 class Streamed {
   readonly url: string;
@@ -438,36 +337,6 @@ class Streamed {
     this.url = url;
   }
 }
-
-/**
- * Makes a streamed track: a `Sound.Clip` that holds only its file's URL. Played
- * on a channel, the page fetches and decodes it progressively, while a file
- * given by URL, and `Browser.sound`, are fetched whole and kept decoded: a long
- * piece of music takes tens of megabytes that way, and a few hundred kilobytes
- * streamed.
- *
- *   // By name, for the page's whole lifetime:
- *   Browser.runMain(game, { sounds: { theme: Browser.stream("/theme.ogg") } })
- *
- *   // Or directly, where a level's music is chosen:
- *   const ForestTheme = Browser.stream("/forest.ogg")
- *   const Score = Sound.music("game/Score", function*() {
- *     return (yield* Level).value === "forest" ? ForestTheme : undefined
- *   })
- *
- * - It isn't an asset and belongs to no bundle: nothing is fetched until it
- *   plays, so there is nothing to load or release, and it doesn't go through
- *   `Assets.Loader`. A test plays `Sound.clip(name)` instead.
- * - It is for a channel's track. Played as a cue, it is logged once through
- *   Effect's logger and not played, since a cue must sound immediately.
- * - It starts, fades and stops like any track, and with `once` plays to its
- *   end. A looping stream may have an audible seam where it loops, so decode a
- *   short piece that must loop seamlessly.
- *
- * @category Constructors
- */
-export const stream = (url: string): Sound.Clip =>
-  Sound.clip(url, new Streamed(url));
 
 const audioElement = (url: string): MediaLike => {
   const element = new Audio();
@@ -484,30 +353,6 @@ const audioElement = (url: string): MediaLike => {
 // decodes a file as soon as it is there.
 const decodeOffline = (data: ArrayBuffer): Promise<unknown> =>
   new OfflineAudioContext(1, 1, 44_100).decodeAudioData(data);
-
-/** One music channel: what it should play, and what it is playing. */
-interface Channel {
-  wanted:
-    | {
-        readonly track: Sound.Playable;
-        readonly volume: number;
-        /** Whether it plays to its end and stops. */
-        readonly once: boolean;
-      }
-    | undefined;
-  /** The duration, in seconds, of the most recently requested change. */
-  fade: number;
-  playing:
-    | {
-        readonly track: Sound.Playable;
-        readonly gain: ReturnType<AudioLike["createGain"]>;
-        /** Sets whether it loops, or plays to its end and stops. */
-        readonly loop: (on: boolean) => void;
-        /** Stops it `fade` seconds after `now`, when it falls silent. */
-        readonly end: (now: number, fade: number) => void;
-      }
-    | undefined;
-}
 
 /**
  * Returns a layer that plays a page's sound with Web Audio: the page's named
@@ -931,6 +776,161 @@ export const layerSound = (
       };
     })
   ) as Layer.Layer<never>;
+
+/**
+ * Returns a layer that provides a page's display and input devices to a whole
+ * program.
+ *
+ * - The frame loop follows `requestAnimationFrame`, and pauses while the
+ *   document is hidden.
+ * - A key's code is its `KeyboardEvent.code`. A held key counts as pressed
+ *   once, and every key and pointer button is released when the page loses
+ *   focus.
+ * - The pointer is a mouse, a pen or a finger. `PointerX` and `PointerY` are
+ *   CSS pixels from the top-left of `target`. Presses are detected on `target`,
+ *   and moves and releases anywhere on the page.
+ * - Mouse buttons held together are tracked individually, even though the page
+ *   reports every press but the first, and every release but the last, as
+ *   moves.
+ * - Gamepads are read when the app samples, once per tick. Unplugging one
+ *   releases all its inputs.
+ * - It listens from when it is built until its scope closes, so provide it to
+ *   the whole program, not to `App.make` alone; `Browser.runMain` does.
+ *   Provided to `App.make` alone, it is released as soon as the app is created,
+ *   and the first device read throws and says so.
+ *
+ * @category Layers
+ */
+export const layer = (options: Options = {}): Layer.Layer<never> => {
+  const page = Layer.merge(
+    Layer.succeed(Driver.Display, display),
+    Layer.effect(
+      Input.Source,
+      Effect.map(
+        Effect.acquireRelease(
+          Effect.sync(() => listen(options)),
+          (listening) => Effect.sync(listening.stop)
+        ),
+        (listening) => listening.source
+      )
+    )
+  ) as Layer.Layer<never>;
+
+  return options.sounds === false
+    ? page
+    : Layer.merge(
+        page,
+        // Its sound sleeps while the page's own document is hidden.
+        Layer.provide(
+          layerSound(options.sounds ?? {}, options),
+          Layer.succeed(Driver.Display, display)
+        )
+      );
+};
+
+// --- sound -----------------------------------------------------------------------
+
+/**
+ * The parts of a page's audio that are used; the browser's `AudioContext`
+ * satisfies it.
+ *
+ * @category Models
+ */
+export interface AudioLike {
+  readonly destination: unknown;
+  readonly state?: string;
+  /** Its own clock, in seconds, which times fades. */
+  readonly currentTime: number;
+  createBufferSource(): {
+    buffer: unknown;
+    loop: boolean;
+    readonly playbackRate: { value: number };
+    connect(to: unknown): unknown;
+    start(): void;
+    stop(when?: number): void;
+  };
+  createGain(): {
+    readonly gain: {
+      value: number;
+      setValueAtTime(value: number, time: number): unknown;
+      linearRampToValueAtTime(value: number, time: number): unknown;
+      cancelScheduledValues(time: number): unknown;
+    };
+    connect(to: unknown): unknown;
+  };
+  /** Routes a streamed track's player into the audio graph, so it fades like any track. */
+  createMediaElementSource?(media: any): { connect(to: unknown): unknown };
+  /** Stops its clock, and with it every sound, until resumed. */
+  suspend?(): Promise<unknown>;
+  resume?(): Promise<unknown>;
+  close(): Promise<unknown>;
+}
+
+/**
+ * The parts of a streamed track's player that are used; an `<audio>` element
+ * satisfies it.
+ *
+ * @category Models
+ */
+export interface MediaLike {
+  loop: boolean;
+  play: () => Promise<unknown>;
+  pause: () => void;
+}
+
+/**
+ * Makes a streamed track: a `Sound.Clip` that holds only its file's URL. Played
+ * on a channel, the page fetches and decodes it progressively, while a file
+ * given by URL, and `Browser.sound`, are fetched whole and kept decoded: a long
+ * piece of music takes tens of megabytes that way, and a few hundred kilobytes
+ * streamed.
+ *
+ *   // By name, for the page's whole lifetime:
+ *   Browser.runMain(game, { sounds: { theme: Browser.stream("/theme.ogg") } })
+ *
+ *   // Or directly, where a level's music is chosen:
+ *   const ForestTheme = Browser.stream("/forest.ogg")
+ *   const Score = Sound.music("game/Score", function*() {
+ *     return (yield* Level).value === "forest" ? ForestTheme : undefined
+ *   })
+ *
+ * - It isn't an asset and belongs to no bundle: nothing is fetched until it
+ *   plays, so there is nothing to load or release, and it doesn't go through
+ *   `Assets.Loader`. A test plays `Sound.clip(name)` instead.
+ * - It is for a channel's track. Played as a cue, it is logged once through
+ *   Effect's logger and not played, since a cue must sound immediately.
+ * - It starts, fades and stops like any track, and with `once` plays to its
+ *   end. A looping stream may have an audible seam where it loops, so decode a
+ *   short piece that must loop seamlessly.
+ *
+ * @category Constructors
+ */
+export const stream = (url: string): Sound.Clip =>
+  Sound.clip(url, new Streamed(url));
+
+/** One music channel: what it should play, and what it is playing. */
+interface Channel {
+  wanted:
+    | {
+        readonly track: Sound.Playable;
+        readonly volume: number;
+        /** Whether it plays to its end and stops. */
+        readonly once: boolean;
+      }
+    | undefined;
+  /** The duration, in seconds, of the most recently requested change. */
+  fade: number;
+  playing:
+    | {
+        readonly track: Sound.Playable;
+        readonly gain: ReturnType<AudioLike["createGain"]>;
+        /** Sets whether it loops, or plays to its end and stops. */
+        readonly loop: (on: boolean) => void;
+        /** Stops it `fade` seconds after `now`, when it falls silent. */
+        readonly end: (now: number, fade: number) => void;
+      }
+    | undefined;
+}
 
 /**
  * Makes a sound asset, decoded and ready to play: a `Sound.Clip`, in a bundle

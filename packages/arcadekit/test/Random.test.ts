@@ -314,6 +314,24 @@ const Gambler = Effect.gen(function* () {
   }
 });
 
+const snapshot = (app: App.Any) => {
+  const sparks: [number, number, number][] = [];
+  app.world.view(Query.all(Spark)).each((spark, entity) => {
+    sparks.push([entity, spark.x, spark.y]);
+  });
+  const dice: [number, number][] = [];
+  app.world.view(Query.all(Die)).each((die) => {
+    dice.push([die.face, die.rolls]);
+  });
+
+  return {
+    sparks,
+    dice,
+    log: app.actionLog,
+    generator: [...app.world.random.state],
+  };
+};
+
 const play = (seed: number | undefined, ticks: number) =>
   withApp(
     App.make({
@@ -336,24 +354,6 @@ const play = (seed: number | undefined, ticks: number) =>
       return snapshot(app);
     }
   );
-
-const snapshot = (app: App.Any) => {
-  const sparks: [number, number, number][] = [];
-  app.world.view(Query.all(Spark)).each((spark, entity) => {
-    sparks.push([entity, spark.x, spark.y]);
-  });
-  const dice: [number, number][] = [];
-  app.world.view(Query.all(Die)).each((die) => {
-    dice.push([die.face, die.rolls]);
-  });
-
-  return {
-    sparks,
-    dice,
-    log: app.actionLog,
-    generator: [...app.world.random.state],
-  };
-};
 
 // The script's rolls are in the log as actions, so the replay runs the
 // systems and the handler but not the script, and must still draw the

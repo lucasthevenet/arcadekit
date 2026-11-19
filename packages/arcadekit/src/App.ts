@@ -570,167 +570,23 @@ export interface Options<
   readonly verifyFrames?: boolean;
 }
 
-/**
- * Starts a fresh game: every plugin's `setup` runs, then its scripts start.
- *
- * @category Constructors
- */
-export const make = <
-  S extends Systems = readonly [],
-  H extends Handlers = readonly [],
-  P extends Plugins = readonly [],
->(
-  options: Options<S, H, P>
-): Effect.Effect<
-  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-  Plugin.ErrorOf<P[number]>,
-  Scope.Scope | External<S, H, P>
-> =>
-  build(options, undefined) as Effect.Effect<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    Plugin.ErrorOf<P[number]>,
-    Scope.Scope | External<S, H, P>
-  >;
+const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
+  Exit.fail(new Save.SaveRefused({ message }));
 
-/**
- * Restores a game from a save: its world, its time, the actions queued for the
- * next tick and the events waiting to be read. Pass the plugins and options the
- * game was created with.
- *
- * No plugin's `setup` runs, since the save holds what setup spawned. Every
- * plugin's scripts restart from the beginning, since a save can't hold a script
- * mid-flight.
- *
- * The app's action log starts empty. Replay what the game logged after the save
- * (`log.slice(save.logLength)`) with `App.replay`, which verifies it against
- * the log's checkpoints as it goes.
- *
- * Fails with `LoadRefused` when the save's world can't be loaded: it contains a
- * component no plugin lists, or one whose fields have changed, or its bytes are
- * damaged. It also fails when the save is from another version of the game and
- * `migrations` don't bring it up to this one: see `Save.migrate`.
- *
- * **Gotchas**
- *
- * - A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't
- *   restarted: whoever loads the game starts it.
- * - State held by your game's own services isn't in the save, and a `transient`
- *   field is undefined afterwards.
- *
- * @category Constructors
- */
-export const load = <
-  S extends Systems = readonly [],
-  H extends Handlers = readonly [],
-  P extends Plugins = readonly [],
->(
-  save: Save.Save,
-  options: Options<S, H, P>
-): Effect.Effect<
-  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
-  Scope.Scope | External<S, H, P>
-> => build(options, save);
+const noFrame = (): never => {
+  throw new Error(
+    "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
+  );
+};
 
-/**
- * Options for how `App.run` drives the app it creates.
- *
- * @category Options
- */
-export interface RunOptions<
-  A,
-  E2 = never,
-  R2 = never,
-  SV extends Save.Save | undefined = undefined,
-> {
-  /** The ticks per second the game runs at, whatever the frame rate. */
-  readonly hz: number;
-  /** The maximum ticks one frame runs after a stall. Defaults to 5. */
-  readonly maxStepsPerCall?: number;
-  /**
-   * `"whenNeeded"` for a game that moves only when its player does: it is drawn
-   * every frame, but only ticks while something is waiting for a tick, as
-   * `Driver.frames` describes. Defaults to `"always"`, for a real-time game.
-   */
-  readonly ticks?: "always" | "whenNeeded";
-  /**
-   * A save to continue from, instead of a fresh start: the app is created with
-   * `App.load`, and `run` can fail with `Save.LoadRefused`.
-   */
-  readonly save?: SV;
-  /**
-   * Runs once with the app, after it is created and before its first frame: to
-   * connect things outside the game to it (a button that dispatches, a menu
-   * that saves), or to keep a reference to it. Whatever it acquires is released
-   * with the app, and its requirements and errors become `run`'s.
-   */
-  readonly ready?: (app: A) => Effect.Effect<void, E2, R2>;
-}
+const notInFrame = (what: string) => (): never => {
+  throw new Error(
+    `${what} was used in the frame stage or the input stage. A script runs in the tick and is part of the simulation; those stages run between ticks and finish at once.`
+  );
+};
 
-/**
- * Creates the app and runs it until interrupted. This is the usual entry point.
- *
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })
- *
- * It is `App.make` and `Driver.frames` in a scope of their own: the app is
- * created, `ready` runs if given, and the frame loop follows the display,
- * running the ticks that are due at `hz`, then the frame stage, once per
- * repaint. It never ends on its own.
- *
- * Interrupting it stops the loop and closes that scope, so nothing is left
- * running: no pending frame, no script, and everything the plugins' layers and
- * `ready` acquired is released. The platform's `runMain` interrupts it when the
- * page closes or the process is told to stop.
- *
- * Provide what the game needs from outside as you would to `App.make`; it stays
- * provided for as long as the game runs, which is what a listening layer such
- * as `Browser.layer` needs. It fails with what `App.make` and `ready` can fail
- * with, and dies with whatever a tick throws.
- *
- * It runs wherever there is a display, which outside a page is a timer:
- * `NodeRuntime.runMain(App.run(...))` runs the same game under Node.
- *
- * @category Running
- */
-export const run = <
-  S extends Systems = readonly [],
-  H extends Handlers = readonly [],
-  P extends Plugins = readonly [],
-  E2 = never,
-  R2 = never,
-  SV extends Save.Save | undefined = undefined,
->(
-  options: Options<S, H, P>,
-  drive: RunOptions<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    E2,
-    R2,
-    SV
-  >
-): Effect.Effect<
-  never,
-  | Plugin.ErrorOf<P[number]>
-  | E2
-  | (SV extends Save.Save ? Save.LoadRefused : never),
-  External<S, H, P> | Exclude<R2, Scope.Scope>
-> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const app = yield* build(options, drive.save);
-
-      if (drive.ready !== undefined) {
-        yield* drive.ready(app);
-      }
-
-      return yield* Driver.frames(app, drive);
-    })
-  ) as Effect.Effect<
-    never,
-    | Plugin.ErrorOf<P[number]>
-    | E2
-    | (SV extends Save.Save ? Save.LoadRefused : never),
-    External<S, H, P> | Exclude<R2, Scope.Scope>
-  >;
+const hookKey = (trigger: System.Trigger): string =>
+  `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
 
 const notInTick = (): never => {
   throw new Error(
@@ -743,24 +599,6 @@ const notInInput = (): never => {
     'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").'
   );
 };
-
-const hookKey = (trigger: System.Trigger): string =>
-  `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
-
-const notInFrame = (what: string) => (): never => {
-  throw new Error(
-    `${what} was used in the frame stage or the input stage. A script runs in the tick and is part of the simulation; those stages run between ticks and finish at once.`
-  );
-};
-
-const noFrame = (): never => {
-  throw new Error(
-    "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
-  );
-};
-
-const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
-  Exit.fail(new Save.SaveRefused({ message }));
 
 const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   options: Options<S, H, P>,
@@ -1157,6 +995,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const frame: FrameState = { alpha: 0, delta: 0, count: 0 };
+    // Whether the game asked for its next tick: `Ticks.more`. An app that
+    // has not ticked yet has not been asked, and is taken to want one.
+    let wanted = true;
 
     const builtIns = Context.empty().pipe(
       Context.add(World, world),
@@ -1672,9 +1513,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     let between: "frame" | "input" | undefined;
     // Whether the input stage has run since the last tick.
     let heard = false;
-    // Whether the game asked for its next tick: `Ticks.more`. An app that
-    // has not ticked yet has not been asked, and is taken to want one.
-    let wanted = true;
 
     const busy = (): string =>
       ticking
@@ -1928,19 +1766,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       return runBetween("input");
     };
 
-    const tickExit = (
-      delta: number,
-      options?: TickOptions
-    ): Exit.Exit<void, TickError<S, P>> => {
-      if (diverted !== undefined) {
-        throw new Error(
-          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
-        );
-      }
-
-      return runTick(delta, options);
-    };
-
     const runTick = (
       delta: number,
       options?: TickOptions
@@ -2064,6 +1889,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       } finally {
         ticking = false;
       }
+    };
+
+    const tickExit = (
+      delta: number,
+      options?: TickOptions
+    ): Exit.Exit<void, TickError<S, P>> => {
+      if (diverted !== undefined) {
+        throw new Error(
+          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
+        );
+      }
+
+      return runTick(delta, options);
     };
 
     const app: App<
@@ -2403,6 +2241,168 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
     Plugin.ErrorOf<P[number]> | Save.LoadRefused,
     Scope.Scope | External<S, H, P>
+  >;
+
+/**
+ * Starts a fresh game: every plugin's `setup` runs, then its scripts start.
+ *
+ * @category Constructors
+ */
+export const make = <
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+>(
+  options: Options<S, H, P>
+): Effect.Effect<
+  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]>,
+  Scope.Scope | External<S, H, P>
+> =>
+  build(options, undefined) as Effect.Effect<
+    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    Plugin.ErrorOf<P[number]>,
+    Scope.Scope | External<S, H, P>
+  >;
+
+/**
+ * Restores a game from a save: its world, its time, the actions queued for the
+ * next tick and the events waiting to be read. Pass the plugins and options the
+ * game was created with.
+ *
+ * No plugin's `setup` runs, since the save holds what setup spawned. Every
+ * plugin's scripts restart from the beginning, since a save can't hold a script
+ * mid-flight.
+ *
+ * The app's action log starts empty. Replay what the game logged after the save
+ * (`log.slice(save.logLength)`) with `App.replay`, which verifies it against
+ * the log's checkpoints as it goes.
+ *
+ * Fails with `LoadRefused` when the save's world can't be loaded: it contains a
+ * component no plugin lists, or one whose fields have changed, or its bytes are
+ * damaged. It also fails when the save is from another version of the game and
+ * `migrations` don't bring it up to this one: see `Save.migrate`.
+ *
+ * **Gotchas**
+ *
+ * - A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't
+ *   restarted: whoever loads the game starts it.
+ * - State held by your game's own services isn't in the save, and a `transient`
+ *   field is undefined afterwards.
+ *
+ * @category Constructors
+ */
+export const load = <
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+>(
+  save: Save.Save,
+  options: Options<S, H, P>
+): Effect.Effect<
+  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+  Scope.Scope | External<S, H, P>
+> => build(options, save);
+
+/**
+ * Options for how `App.run` drives the app it creates.
+ *
+ * @category Options
+ */
+export interface RunOptions<
+  A,
+  E2 = never,
+  R2 = never,
+  SV extends Save.Save | undefined = undefined,
+> {
+  /** The ticks per second the game runs at, whatever the frame rate. */
+  readonly hz: number;
+  /** The maximum ticks one frame runs after a stall. Defaults to 5. */
+  readonly maxStepsPerCall?: number;
+  /**
+   * `"whenNeeded"` for a game that moves only when its player does: it is drawn
+   * every frame, but only ticks while something is waiting for a tick, as
+   * `Driver.frames` describes. Defaults to `"always"`, for a real-time game.
+   */
+  readonly ticks?: "always" | "whenNeeded";
+  /**
+   * A save to continue from, instead of a fresh start: the app is created with
+   * `App.load`, and `run` can fail with `Save.LoadRefused`.
+   */
+  readonly save?: SV;
+  /**
+   * Runs once with the app, after it is created and before its first frame: to
+   * connect things outside the game to it (a button that dispatches, a menu
+   * that saves), or to keep a reference to it. Whatever it acquires is released
+   * with the app, and its requirements and errors become `run`'s.
+   */
+  readonly ready?: (app: A) => Effect.Effect<void, E2, R2>;
+}
+
+/**
+ * Creates the app and runs it until interrupted. This is the usual entry point.
+ *
+ *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })
+ *
+ * It is `App.make` and `Driver.frames` in a scope of their own: the app is
+ * created, `ready` runs if given, and the frame loop follows the display,
+ * running the ticks that are due at `hz`, then the frame stage, once per
+ * repaint. It never ends on its own.
+ *
+ * Interrupting it stops the loop and closes that scope, so nothing is left
+ * running: no pending frame, no script, and everything the plugins' layers and
+ * `ready` acquired is released. The platform's `runMain` interrupts it when the
+ * page closes or the process is told to stop.
+ *
+ * Provide what the game needs from outside as you would to `App.make`; it stays
+ * provided for as long as the game runs, which is what a listening layer such
+ * as `Browser.layer` needs. It fails with what `App.make` and `ready` can fail
+ * with, and dies with whatever a tick throws.
+ *
+ * It runs wherever there is a display, which outside a page is a timer:
+ * `NodeRuntime.runMain(App.run(...))` runs the same game under Node.
+ *
+ * @category Running
+ */
+export const run = <
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+  E2 = never,
+  R2 = never,
+  SV extends Save.Save | undefined = undefined,
+>(
+  options: Options<S, H, P>,
+  drive: RunOptions<
+    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    E2,
+    R2,
+    SV
+  >
+): Effect.Effect<
+  never,
+  | Plugin.ErrorOf<P[number]>
+  | E2
+  | (SV extends Save.Save ? Save.LoadRefused : never),
+  External<S, H, P> | Exclude<R2, Scope.Scope>
+> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const app = yield* build(options, drive.save);
+
+      if (drive.ready !== undefined) {
+        yield* drive.ready(app);
+      }
+
+      return yield* Driver.frames(app, drive);
+    })
+  ) as Effect.Effect<
+    never,
+    | Plugin.ErrorOf<P[number]>
+    | E2
+    | (SV extends Save.Save ? Save.LoadRefused : never),
+    External<S, H, P> | Exclude<R2, Scope.Scope>
   >;
 
 /**

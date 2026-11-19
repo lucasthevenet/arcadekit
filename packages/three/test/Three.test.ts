@@ -134,6 +134,22 @@ const drawn = (mesh: InstancedMesh): string[] => {
   return out.toSorted();
 };
 
+/**
+ * The turn a `Rotation` stands for, as Three.js wants it, of length 1:
+ * the game's may be of any length, and all zeros is not turned at all.
+ */
+const turnOf = (
+  rotation: { x: number; y: number; z: number; w: number } | undefined
+): Quaternion =>
+  rotation === undefined
+    ? new Quaternion()
+    : new Quaternion(
+        rotation.x,
+        rotation.y,
+        rotation.z,
+        rotation.w
+      ).normalize();
+
 /** What Three.js itself makes of an entity's place: the matrix it should be drawn with. */
 const matrixOf = (app: App.Any, entity: Entity): string => {
   const position = app.world.get(entity, Position)!;
@@ -150,22 +166,6 @@ const matrixOf = (app: App.Any, entity: Entity): string => {
 
   return [...new Float32Array(matrix.elements)].join(" ");
 };
-
-/**
- * The turn a `Rotation` stands for, as Three.js wants it, of length 1:
- * the game's may be of any length, and all zeros is not turned at all.
- */
-const turnOf = (
-  rotation: { x: number; y: number; z: number; w: number } | undefined
-): Quaternion =>
-  rotation === undefined
-    ? new Quaternion()
-    : new Quaternion(
-        rotation.x,
-        rotation.y,
-        rotation.z,
-        rotation.w
-      ).normalize();
 
 /** The same turn, as a quaternion so many times as long. */
 const stretched = (

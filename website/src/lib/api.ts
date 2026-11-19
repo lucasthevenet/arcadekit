@@ -153,6 +153,26 @@ export const sourceLines = (mappings: string): SourcePosition[] => {
 
 const cache = new Map<string, DeclarationFile>();
 
+/** The names a declaration declares: one, or a `const`'s each. */
+const namesOf = (node: Node): string[] =>
+  node.type === "VariableDeclaration"
+    ? (node.declarations as Node[]).flatMap((d) => nameOf(d.id) ?? [])
+    : [nameOf(node.id) ?? []].flat();
+
+/** A namespace the build writes to list a module's exports, which declares nothing. */
+const isExportList = (node: Node) => {
+  const body = node.body as Node | null;
+  const statements = (body?.body as Node[] | undefined) ?? [];
+
+  return (
+    statements.length > 0 &&
+    statements.every(
+      (statement) =>
+        statement.type === "ExportNamedDeclaration" && !statement.declaration
+    )
+  );
+};
+
 const readDeclarations = (file: string): DeclarationFile => {
   const cached = cache.get(file);
 
@@ -255,26 +275,6 @@ const readDeclarations = (file: string): DeclarationFile => {
   cache.set(file, parsed);
 
   return parsed;
-};
-
-/** The names a declaration declares: one, or a `const`'s each. */
-const namesOf = (node: Node): string[] =>
-  node.type === "VariableDeclaration"
-    ? (node.declarations as Node[]).flatMap((d) => nameOf(d.id) ?? [])
-    : [nameOf(node.id) ?? []].flat();
-
-/** A namespace the build writes to list a module's exports, which declares nothing. */
-const isExportList = (node: Node) => {
-  const body = node.body as Node | null;
-  const statements = (body?.body as Node[] | undefined) ?? [];
-
-  return (
-    statements.length > 0 &&
-    statements.every(
-      (statement) =>
-        statement.type === "ExportNamedDeclaration" && !statement.declaration
-    )
-  );
 };
 
 const kindOf = (node: Node): Kind => {
@@ -431,36 +431,38 @@ const signatureOf = (parsed: DeclarationFile, node: Node) =>
 const lineOf = (source: string, offset: number) =>
   source.slice(0, offset).split("\n").length - 1;
 
-/** Follows an exported name to the file and the local name that declare it. */
+/**
+ * Follows an exported name to the file and the local name that declare it, through at most ten
+ * re-exports.
+ */
 const resolve = (
   file: string,
-  exported: string,
-  seen = 0
+  exported: string
 ): { parsed: DeclarationFile; local: string } | undefined => {
-  const parsed = readDeclarations(file);
-  const local = parsed.exports.get(exported);
+  let target = { file, name: exported };
 
-  if (local === undefined || seen > 10) {
-    return undefined;
+  for (let seen = 0; seen <= 10; seen += 1) {
+    const parsed = readDeclarations(target.file);
+    const local = parsed.exports.get(target.name);
+
+    if (local === undefined) {
+      return undefined;
+    }
+
+    if (parsed.declarations.has(local)) {
+      return { parsed, local };
+    }
+
+    const imported = parsed.imports.get(local);
+
+    if (imported === undefined) {
+      return undefined;
+    }
+
+    target = imported;
   }
 
-  return follow(parsed, local, seen);
-};
-
-const follow = (
-  parsed: DeclarationFile,
-  local: string,
-  seen: number
-): { parsed: DeclarationFile; local: string } | undefined => {
-  if (parsed.declarations.has(local)) {
-    return { parsed, local };
-  }
-
-  const imported = parsed.imports.get(local);
-
-  return imported === undefined
-    ? undefined
-    : resolve(imported.file, imported.name, seen + 1);
+  return undefined;
 };
 
 /**

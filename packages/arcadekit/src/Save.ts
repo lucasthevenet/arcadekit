@@ -172,6 +172,12 @@ export interface Migration {
   readonly migrate: (contents: Contents) => void;
 }
 
+const refuse = (
+  problem: LoadRefused["problem"],
+  message: string
+): Exit.Exit<never, LoadRefused> =>
+  Exit.fail(new LoadRefused({ problem, message }));
+
 /**
  * Migrates a save to a version of the game, one migration at a time. A save
  * already at that version is returned unchanged.
@@ -319,12 +325,6 @@ export const encode = (save: Save): Uint8Array => {
 
   return bytes;
 };
-
-const refuse = (
-  problem: LoadRefused["problem"],
-  message: string
-): Exit.Exit<never, LoadRefused> =>
-  Exit.fail(new LoadRefused({ problem, message }));
 
 /**
  * Decodes a save from bytes. It checks the save's own structure; the world

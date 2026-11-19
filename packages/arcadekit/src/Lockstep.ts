@@ -266,70 +266,6 @@ const UNANSWERED = 600;
 const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * Makes a lockstep session for an app. The app must be created like every other
- * peer's: the same plugins, the same seed, and the same starting state.
- *
- * From then on the session steps the app: the app's own `tick` and `dispatch`
- * throw, since either would advance this peer's game alone. The session begins
- * at whatever tick the app is at, so a game can continue from a save every peer
- * loaded.
- *
- * **Gotchas**
- *
- * - It throws when the options can't describe a game: a peer not among `peers`,
- *   two peers with the same name, a `delay` that isn't a whole number of ticks,
- *   or a `delta` that isn't greater than 0.
- * - An action that must reach the other peers needs a schema. Enqueuing one
- *   defined with only a type throws.
- * - A payload its schema rejects has no JSON form to send: it is refused on the
- *   issuing peer only, and the others never see it.
- * - Each peer is configured with its own plugins, seed, `delta` and names, and
- *   none of these is compared directly, only the worlds they produce. A
- *   different `delta` or list of names is detected once it has changed a world,
- *   and a list that leaves a peer out is never detected.
- *
- * @category Constructors
- */
-export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
-  // A lockstep session predicts nothing, so it captures nothing, and a
-  // capture is all that fails with `SaveRefused`.
-  build(app, {
-    ...options,
-    delay: options.delay ?? 2,
-    ahead: 0,
-  }) as Session<E>;
-
-/**
- * What a session needs from its app. Every app provides it.
- *
- * @category Type-level
- */
-export type SessionApp<E> = Pick<
-  App.App<E>,
-  | "actionLog"
-  | "capture"
-  | "checkpoint"
-  | "divert"
-  | "frame"
-  | "inputExit"
-  | "rewind"
-  | "time"
->;
-
-/**
- * What a predicting session adds, as `Rollback.Session` documents.
- *
- * @category Models
- */
-export interface Predicting {
-  readonly ahead: number;
-  readonly confirmed: number;
-  readonly rewinds: number;
-  readonly resimulated: number;
-  readonly kept: number;
-}
-
-/**
  * The one session there is. Lockstep is the session that predicts no tick:
  * `ahead` is 0. `Rollback.make` lets it run ahead, and it then runs up to
  * that many ticks past what it knows and goes back when it was
@@ -407,6 +343,8 @@ export const build = <E>(
     return least;
   };
 
+  let unsent: Action.Checkpoint[] = [];
+
   /** Creates this peer's messages up to the tick `delay` ahead of `now`. */
   const say = (now: number): void => {
     for (let tick = have.get(peer)!; tick <= now + delay; tick += 1) {
@@ -458,8 +396,6 @@ export const build = <E>(
     early.set(name, new Map());
     next.set(name, start);
   }
-
-  let unsent: Action.Checkpoint[] = [];
   let drifted: Drifted | undefined;
   let agreedAt: number | undefined;
   let begun = false;
@@ -820,3 +756,67 @@ export const build = <E>(
     frame: app.frame,
   };
 };
+
+/**
+ * Makes a lockstep session for an app. The app must be created like every other
+ * peer's: the same plugins, the same seed, and the same starting state.
+ *
+ * From then on the session steps the app: the app's own `tick` and `dispatch`
+ * throw, since either would advance this peer's game alone. The session begins
+ * at whatever tick the app is at, so a game can continue from a save every peer
+ * loaded.
+ *
+ * **Gotchas**
+ *
+ * - It throws when the options can't describe a game: a peer not among `peers`,
+ *   two peers with the same name, a `delay` that isn't a whole number of ticks,
+ *   or a `delta` that isn't greater than 0.
+ * - An action that must reach the other peers needs a schema. Enqueuing one
+ *   defined with only a type throws.
+ * - A payload its schema rejects has no JSON form to send: it is refused on the
+ *   issuing peer only, and the others never see it.
+ * - Each peer is configured with its own plugins, seed, `delta` and names, and
+ *   none of these is compared directly, only the worlds they produce. A
+ *   different `delta` or list of names is detected once it has changed a world,
+ *   and a list that leaves a peer out is never detected.
+ *
+ * @category Constructors
+ */
+export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
+  // A lockstep session predicts nothing, so it captures nothing, and a
+  // capture is all that fails with `SaveRefused`.
+  build(app, {
+    ...options,
+    delay: options.delay ?? 2,
+    ahead: 0,
+  }) as Session<E>;
+
+/**
+ * What a session needs from its app. Every app provides it.
+ *
+ * @category Type-level
+ */
+export type SessionApp<E> = Pick<
+  App.App<E>,
+  | "actionLog"
+  | "capture"
+  | "checkpoint"
+  | "divert"
+  | "frame"
+  | "inputExit"
+  | "rewind"
+  | "time"
+>;
+
+/**
+ * What a predicting session adds, as `Rollback.Session` documents.
+ *
+ * @category Models
+ */
+export interface Predicting {
+  readonly ahead: number;
+  readonly confirmed: number;
+  readonly rewinds: number;
+  readonly resimulated: number;
+  readonly kept: number;
+}

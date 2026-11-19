@@ -323,6 +323,8 @@ describe("checkpoints", () => {
 
     let inside: unknown;
 
+    let asking: App.Any | undefined;
+
     const Asks = System.make("Asks", function* () {
       try {
         asking!.checkpoint();
@@ -330,8 +332,6 @@ describe("checkpoints", () => {
         inside = error;
       }
     });
-
-    let asking: App.Any | undefined;
     withApp(App.make({ systems: [Asks] }), (app) => {
       asking = app;
       app.tick(1);

@@ -203,6 +203,93 @@ const hashWith = (defs: Map<string, ComponentDef<any>>): number => {
   return world.hash();
 };
 
+/**
+ * A world's hash after each of `steps` operations chosen by a seed. Every
+ * operation changes something a simulation can see.
+ */
+const history = (seed: number, steps: number): number[] => {
+  const world = new EcsWorld({ seed });
+  // Its own generator decides what happens, so the world's is only drawn
+  // from when the history says so.
+  const dice = new EcsWorld({ seed: seed + 1 }).random;
+  const commands = new CommandBuffer(world);
+  const alive: Entity[] = [];
+  const hashes: number[] = [];
+  let serial = 0;
+  const optional = [Body, Sheet, Marked, Aura, Chilled] as ComponentDef<any>[];
+
+  const valueFor = (def: ComponentDef<any>) => {
+    if (def === Body) {
+      serial += 1;
+
+      return Body.of({ x: serial, y: dice.next() });
+    }
+
+    if (def === Sheet) {
+      serial += 1;
+
+      return Sheet.of(sheet(serial));
+    }
+
+    if (def === Aura) {
+      serial += 1;
+
+      return Aura.of(sheet(serial));
+    }
+
+    return def;
+  };
+
+  for (let step = 0; step < steps; step += 1) {
+    const choice = alive.length === 0 ? 0 : dice.int(0, 7);
+    const entity = alive.length === 0 ? undefined : dice.pick(alive);
+
+    if (choice <= 1 || entity === undefined) {
+      const inputs = optional
+        .filter(() => dice.int(0, 1) === 1)
+        .map((def) => valueFor(def));
+
+      alive.push(
+        choice === 0 ? world.spawn(...inputs) : commands.spawn(...inputs)
+      );
+      commands.apply();
+    } else if (choice === 2) {
+      world.despawn(entity);
+      alive.splice(alive.indexOf(entity), 1);
+    } else if (choice === 3 || choice === 4) {
+      const def = dice.pick(optional);
+
+      if (world.has(entity, def)) {
+        world.remove(entity, def);
+      } else {
+        world.add(entity, valueFor(def));
+      }
+    } else if (choice === 5) {
+      world.random.next();
+    } else {
+      const def = dice.pick([Body, Sheet, Aura] as ComponentDef<any>[]);
+
+      if (world.has(entity, def)) {
+        const f = dice.int(0, def.fields.length - 1);
+        const field = def.fields[f]!;
+        world.set(entity, def, {
+          [field]: nudged(def.kinds[f]!, world.get(entity, def)![field]),
+        });
+      } else {
+        world.add(entity, valueFor(def));
+      }
+    }
+
+    hashes.push(world.hash());
+  }
+
+  return hashes;
+};
+
+// It was 1,013,956,505 while an entity's id was 32 bits and hashed as one
+// word: an id is hashed as the 64 bits it is kept in now.
+const KNOWN_HASH = 2_316_040_553;
+
 describe("the hash of a world", () => {
   it("is a whole number from 0 to 2^32 - 1, and does not change the world it reads", () => {
     const world = new EcsWorld({ seed: 4 });
@@ -681,93 +768,6 @@ describe("the hash of a world", () => {
     expect(new Set(all).size).toBe(9);
   });
 });
-
-/**
- * A world's hash after each of `steps` operations chosen by a seed. Every
- * operation changes something a simulation can see.
- */
-const history = (seed: number, steps: number): number[] => {
-  const world = new EcsWorld({ seed });
-  // Its own generator decides what happens, so the world's is only drawn
-  // from when the history says so.
-  const dice = new EcsWorld({ seed: seed + 1 }).random;
-  const commands = new CommandBuffer(world);
-  const alive: Entity[] = [];
-  const hashes: number[] = [];
-  let serial = 0;
-  const optional = [Body, Sheet, Marked, Aura, Chilled] as ComponentDef<any>[];
-
-  const valueFor = (def: ComponentDef<any>) => {
-    if (def === Body) {
-      serial += 1;
-
-      return Body.of({ x: serial, y: dice.next() });
-    }
-
-    if (def === Sheet) {
-      serial += 1;
-
-      return Sheet.of(sheet(serial));
-    }
-
-    if (def === Aura) {
-      serial += 1;
-
-      return Aura.of(sheet(serial));
-    }
-
-    return def;
-  };
-
-  for (let step = 0; step < steps; step += 1) {
-    const choice = alive.length === 0 ? 0 : dice.int(0, 7);
-    const entity = alive.length === 0 ? undefined : dice.pick(alive);
-
-    if (choice <= 1 || entity === undefined) {
-      const inputs = optional
-        .filter(() => dice.int(0, 1) === 1)
-        .map((def) => valueFor(def));
-
-      alive.push(
-        choice === 0 ? world.spawn(...inputs) : commands.spawn(...inputs)
-      );
-      commands.apply();
-    } else if (choice === 2) {
-      world.despawn(entity);
-      alive.splice(alive.indexOf(entity), 1);
-    } else if (choice === 3 || choice === 4) {
-      const def = dice.pick(optional);
-
-      if (world.has(entity, def)) {
-        world.remove(entity, def);
-      } else {
-        world.add(entity, valueFor(def));
-      }
-    } else if (choice === 5) {
-      world.random.next();
-    } else {
-      const def = dice.pick([Body, Sheet, Aura] as ComponentDef<any>[]);
-
-      if (world.has(entity, def)) {
-        const f = dice.int(0, def.fields.length - 1);
-        const field = def.fields[f]!;
-        world.set(entity, def, {
-          [field]: nudged(def.kinds[f]!, world.get(entity, def)![field]),
-        });
-      } else {
-        world.add(entity, valueFor(def));
-      }
-    }
-
-    hashes.push(world.hash());
-  }
-
-  return hashes;
-};
-
-// It was 1,013,956,505 while an entity's id was 32 bits and hashed as one
-// word: an id is hashed as the 64 bits it is kept in now.
-const KNOWN_HASH = 2_316_040_553;
 
 // --- through an app --------------------------------------------------------------
 

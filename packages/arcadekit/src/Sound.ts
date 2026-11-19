@@ -373,6 +373,9 @@ const playerLayer = Layer.effect(
 
     const describe = (track: Playable, volume: number, once: boolean) =>
       `"${nameOf(track)}"${volume === 1 ? "" : ` at ${volume}`}${once ? ", once" : ""}`;
+    // What a frame's systems have asked to hear, by the cue: one sound for
+    // each, however many asked and whichever system they were.
+    const asked = new Map<Playable, { volume: number; rate: number }>();
 
     // An app that goes leaves nothing playing in an output that stays.
     yield* Effect.addFinalizer(() =>
@@ -387,9 +390,6 @@ const playerLayer = Layer.effect(
         asked.clear();
       })
     );
-    // What a frame's systems have asked to hear, by the cue: one sound for
-    // each, however many asked and whichever system they were.
-    const asked = new Map<Playable, { volume: number; rate: number }>();
 
     return {
       audible: output !== silent,

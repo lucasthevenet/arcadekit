@@ -63,6 +63,77 @@ export interface StateHandle<V extends string> {
   readonly set: (value: V) => void;
 }
 
+// A world's states: the ones a handle was asked for, in order of name. An
+// app goes through them at the start of every tick.
+const known = new WeakMap<EcsWorld, Registry>();
+
+/**
+ * The states of a world that anyone has asked for.
+ *
+ * @internal
+ */
+export const registryOf = (world: EcsWorld): Registry => {
+  let registry = known.get(world);
+
+  if (registry === undefined) {
+    registry = { states: [], handles: new Map() };
+    known.set(world, registry);
+  }
+
+  return registry;
+};
+
+/**
+ * A world's handle to a state.
+ *
+ * @internal
+ */
+export const handleOf = <V extends string>(
+  world: EcsWorld,
+  state: State<V>
+): StateHandle<V> => {
+  const registry = registryOf(world);
+  const found = registry.handles.get(state);
+
+  if (found !== undefined) {
+    return found as StateHandle<V>;
+  }
+
+  const held = world.singleton(state);
+
+  const handle: StateHandle<V> = {
+    get value() {
+      return held.value as V;
+    },
+    get next() {
+      return (held.next ?? undefined) as V | undefined;
+    },
+    is: (...values) => values.includes(held.value as V),
+    set: (value) => {
+      if (!state.values.includes(value)) {
+        throw new Error(
+          `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`
+        );
+      }
+
+      // Only a write when something changes: a write is what puts a
+      // singleton in the world's hash.
+      const next = value === held.value ? null : value;
+
+      if (held.next !== next) {
+        held.next = next;
+      }
+    },
+  };
+
+  registry.handles.set(state, handle);
+  registry.states = [...registry.states, state].toSorted((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+  );
+
+  return handle;
+};
+
 /**
  * A state's definition. It is an Effect, so `yield*` returns a handle to the
  * world's value. It is also the singleton that holds that value, so you list it
@@ -138,83 +209,12 @@ export const define = <const V extends string>(
   return new State(name, values, first);
 };
 
-// A world's states: the ones a handle was asked for, in order of name. An
-// app goes through them at the start of every tick.
-const known = new WeakMap<EcsWorld, Registry>();
-
 /** @internal */
 export interface Registry {
   /** Sorted by name, so transitions happen in the same order everywhere. */
   states: State<any>[];
   readonly handles: Map<State<any>, StateHandle<any>>;
 }
-
-/**
- * The states of a world that anyone has asked for.
- *
- * @internal
- */
-export const registryOf = (world: EcsWorld): Registry => {
-  let registry = known.get(world);
-
-  if (registry === undefined) {
-    registry = { states: [], handles: new Map() };
-    known.set(world, registry);
-  }
-
-  return registry;
-};
-
-/**
- * A world's handle to a state.
- *
- * @internal
- */
-export const handleOf = <V extends string>(
-  world: EcsWorld,
-  state: State<V>
-): StateHandle<V> => {
-  const registry = registryOf(world);
-  const found = registry.handles.get(state);
-
-  if (found !== undefined) {
-    return found as StateHandle<V>;
-  }
-
-  const held = world.singleton(state);
-
-  const handle: StateHandle<V> = {
-    get value() {
-      return held.value as V;
-    },
-    get next() {
-      return (held.next ?? undefined) as V | undefined;
-    },
-    is: (...values) => values.includes(held.value as V),
-    set: (value) => {
-      if (!state.values.includes(value)) {
-        throw new Error(
-          `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`
-        );
-      }
-
-      // Only a write when something changes: a write is what puts a
-      // singleton in the world's hash.
-      const next = value === held.value ? null : value;
-
-      if (held.next !== next) {
-        held.next = next;
-      }
-    },
-  };
-
-  registry.handles.set(state, handle);
-  registry.states = [...registry.states, state].toSorted((a, b) =>
-    a.name < b.name ? -1 : a.name > b.name ? 1 : 0
-  );
-
-  return handle;
-};
 
 /**
  * A state's transition from one value to another, or from nothing on a game's
