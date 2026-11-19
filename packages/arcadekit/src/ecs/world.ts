@@ -165,7 +165,8 @@ const writeRow = (
 const readRow = (def: ComponentDef<any>, cols: Columns, row: number): any => {
   const out: any = {};
 
-  for (const name of def.fields) {
+  for (let f = 0; f < def.fields.length; f += 1) {
+    const name = def.fields[f];
     out[name!] = cols[name!]![row];
   }
 
@@ -1390,14 +1391,14 @@ export class QueryView<D extends Terms = Terms> {
   private pass(entity: number): boolean {
     const index = entity & INDEX_MASK;
 
-    for (const set of this.sparseWith) {
-      if (!set.has(index)) {
+    for (let s = 0; s < this.sparseWith.length; s += 1) {
+      if (!this.sparseWith[s]!.has(index)) {
         return false;
       }
     }
 
-    for (const set of this.sparseWithout) {
-      if (set.has(index)) {
+    for (let s = 0; s < this.sparseWithout.length; s += 1) {
+      if (this.sparseWithout[s]!.has(index)) {
         return false;
       }
     }
@@ -1502,7 +1503,8 @@ export class QueryView<D extends Terms = Terms> {
     let fresh = false;
     let count = 0;
 
-    for (const { cursor, log } of watches) {
+    for (let w = 0; w < watches.length; w += 1) {
+      const { cursor, log } = watches[w]!;
       fresh ||= cursor.fresh;
       count += log.waiting(cursor.at);
     }
@@ -1510,8 +1512,8 @@ export class QueryView<D extends Terms = Terms> {
     if (fresh) {
       count = 0;
 
-      for (const table of this.tables) {
-        count += table.count;
+      for (let t = 0; t < this.tables.length; t += 1) {
+        count += this.tables[t]!.count;
       }
     }
 
@@ -1525,14 +1527,17 @@ export class QueryView<D extends Terms = Terms> {
     let at = 0;
 
     if (fresh) {
-      for (const { count: rows, entities } of this.tables) {
+      for (let t = 0; t < this.tables.length; t += 1) {
+        const { count: rows, entities } = this.tables[t]!;
+
         for (let row = 0; row < rows; row += 1) {
           dense[at] = entities[row]! & INDEX_MASK;
           at += 1;
         }
       }
     } else {
-      for (const { cursor, log } of watches) {
+      for (let w = 0; w < watches.length; w += 1) {
+        const { cursor, log } = watches[w]!;
         log.copy(cursor.at, dense, at);
         at += log.waiting(cursor.at);
       }
@@ -1541,7 +1546,9 @@ export class QueryView<D extends Terms = Terms> {
     members.count = count;
 
     if (visit) {
-      for (const { cursor, log } of watches) {
+      for (let w = 0; w < watches.length; w += 1) {
+        const { cursor, log } = watches[w]!;
+
         if (cursor.fresh || cursor.at !== log.end) {
           world._reading(cursor);
           cursor.fresh = false;
@@ -1563,7 +1570,9 @@ export class QueryView<D extends Terms = Terms> {
     if (!this.filtered) {
       this._lastPath = "dense";
 
-      for (const table of this.tables) {
+      for (let t = 0; t < this.tables.length; t += 1) {
+        const table = this.tables[t]!;
+
         if (table.count > 0) {
           onRun(table, 0, table.count);
         }
@@ -1582,7 +1591,9 @@ export class QueryView<D extends Terms = Terms> {
 
       smallest = frame.members;
     } else {
-      for (const set of this.sparseWith) {
+      for (let s = 0; s < this.sparseWith.length; s += 1) {
+        const set = this.sparseWith[s]!;
+
         if (smallest === undefined || set.count < smallest.count) {
           smallest = set;
         }
@@ -1613,8 +1624,8 @@ export class QueryView<D extends Terms = Terms> {
     try {
       let rows = 0;
 
-      for (const table of this.tables) {
-        rows += table.count;
+      for (let t = 0; t < this.tables.length; t += 1) {
+        rows += this.tables[t]!.count;
       }
 
       // Long uniform stretches are skipped with a native scan (indexOf), which
@@ -1687,8 +1698,8 @@ export class QueryView<D extends Terms = Terms> {
 
     let rows = 0;
 
-    for (const table of this.tables) {
-      rows += table.count;
+    for (let t = 0; t < this.tables.length; t += 1) {
+      rows += this.tables[t]!.count;
     }
 
     return smallest.count * SORT_ROWS_PER_MEMBER <= rows;
@@ -1722,7 +1733,8 @@ export class QueryView<D extends Terms = Terms> {
 
     if (smallest === undefined) {
       // Only exclusions: nothing is skipped except members of an excluded set.
-      for (const set of this.sparseWithout) {
+      for (let s = 0; s < this.sparseWithout.length; s += 1) {
+        const set = this.sparseWithout[s]!;
         const { dense } = set;
 
         for (let k = 0; k < set.count; k += 1) {
@@ -1781,7 +1793,8 @@ export class QueryView<D extends Terms = Terms> {
     const recRow = this.world._recRow;
     const sets = smallest === undefined ? this.sparseWithout : [smallest];
 
-    for (const set of sets) {
+    for (let s = 0; s < sets.length; s += 1) {
+      const set = sets[s]!;
       const { dense } = set;
 
       for (let k = 0; k < set.count; k += 1) {
@@ -2054,7 +2067,8 @@ export class QueryView<D extends Terms = Terms> {
       const entity = ents[i]!;
       row.i = i;
 
-      for (const k of sparseTerms) {
+      for (let s = 0; s < sparseTerms.length; s += 1) {
+        const k = sparseTerms[s]!;
         rows[k]!.i = termSet[k]!.sparse[entity & INDEX_MASK]!;
       }
 
@@ -3359,7 +3373,8 @@ export class World {
   ): void {
     const { writes } = this.guard!;
 
-    for (const input of inputs) {
+    for (let i = 0; i < inputs.length; i += 1) {
+      const input = inputs[i]!;
       const def = isComponentDef(input) ? input : input.def;
 
       if (writes[def.id] !== true) {
@@ -3385,8 +3400,8 @@ export class World {
       return;
     }
 
-    for (const def of writeDefs) {
-      if (this.has(entity, def)) {
+    for (let i = 0; i < writeDefs.length; i += 1) {
+      if (this.has(entity, writeDefs[i]!)) {
         return;
       }
     }
@@ -3437,8 +3452,8 @@ export class World {
     // What is noted from here on is forgotten again by a rollback.
     const { writeLogs } = this;
 
-    for (const log of writeLogs) {
-      log.txEnd = log.end;
+    for (let i = 0; i < writeLogs.length; i += 1) {
+      writeLogs[i]!.txEnd = writeLogs[i]!.end;
     }
 
     this._recording = true;
@@ -3493,8 +3508,9 @@ export class World {
       cursor.fresh = fresh;
     }
 
-    // A log started inside the transaction has noted nothing before it.
-    for (const log of writeLogs) {
+    for (let i = 0; i < writeLogs.length; i += 1) {
+      // A log started inside the transaction has noted nothing before it.
+      const log = writeLogs[i]!;
       log.txEnd = Math.min(log.txEnd, log.end);
       log.rollback();
     }
@@ -3576,8 +3592,8 @@ export class World {
 
     const copies: unknown[] = [];
 
-    for (const name of def.fields) {
-      copies.push(cols[name]![row]);
+    for (let f = 0; f < def.fields.length; f += 1) {
+      copies.push(cols[def.fields[f]!]![row]);
     }
 
     this.saved.push({ cols, copies, count: 1, def, row });
@@ -3613,7 +3629,8 @@ export class World {
    * @internal
    */
   _registerAll(inputs: readonly ComponentInput[]): void {
-    for (const input of inputs) {
+    for (let i = 0; i < inputs.length; i += 1) {
+      const input = inputs[i]!;
       const def = isComponentDef(input) ? input : input.def;
 
       if (def.single) {
@@ -4524,7 +4541,8 @@ export class World {
     const { freeList, gens } = this;
     h = add(h, freeList.length);
 
-    for (const index of freeList) {
+    for (let i = 0; i < freeList.length; i += 1) {
+      const index = freeList[i]!;
       h = add(add(h, index), gens[index]!);
     }
 
@@ -4533,13 +4551,15 @@ export class World {
     const { tables } = this;
     h = add(h, tables.length);
 
-    for (const table of tables) {
+    for (let t = 0; t < tables.length; t += 1) {
+      const table = tables[t]!;
       const { count, defsByName } = table;
       h = add(add(h, defsByName.length), count);
       // An entity's id carries its generation.
       h = addColumn(h, "entity", table.entities, count);
 
-      for (const def of defsByName) {
+      for (let d = 0; d < defsByName.length; d += 1) {
+        const def = defsByName[d]!;
         h = add(h, shapes[def.id]!);
         const columns = table.columns[def.id]!;
 
@@ -4560,7 +4580,8 @@ export class World {
     // the results are added up. A set nobody is in is as good as absent.
     const sets = this.sparseSetsByName();
 
-    for (const set of sets) {
+    for (let s = 0; s < sets.length; s += 1) {
+      const set = sets[s]!;
       const { count, def } = set;
 
       if (count === 0) {
@@ -4697,7 +4718,8 @@ export class World {
 
       const dst = to.columns[def.id]!;
 
-      for (const name of def.fields) {
+      for (let f = 0; f < def.fields.length; f += 1) {
+        const name = def.fields[f];
         dst[name!]![newRow] = src[name!]![oldRow];
       }
     }
@@ -4867,7 +4889,9 @@ export class CommandBuffer {
     this.ops = [];
     const { world } = this;
 
-    for (const cmd of ops) {
+    for (let i = 0; i < ops.length; i += 1) {
+      const cmd = ops[i]!;
+
       switch (cmd.op) {
         case "spawn": {
           if (world.isAlive(cmd.entity)) {

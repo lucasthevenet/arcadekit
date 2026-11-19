@@ -104,6 +104,12 @@ export default defineConfig({
       },
     },
     {
+      // The storage core's loops index their arrays: for-of over them
+      // measured up to a third slower in bench:compare (changedAll, hashSparse).
+      files: ["packages/arcadekit/src/ecs/**"],
+      rules: { "typescript/prefer-for-of": "off" },
+    },
+    {
       files: ["packages/*/src/**"],
       rules: {
         "arcadekit/entry-imports": "error",
