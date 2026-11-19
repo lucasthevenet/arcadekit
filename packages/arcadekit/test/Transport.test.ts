@@ -208,13 +208,14 @@ describe("a session joined to a transport", () => {
 
             const frame = (acting: boolean): void => {
               hub.step();
-              seats.forEach((seat, index) => {
+
+              for (const [index, seat] of seats.entries()) {
                 if (acting) {
                   act(asPeer(seat));
                 }
 
                 steps[index]!(DELTA);
-              });
+              }
             };
 
             for (let i = 0; i < 200; i += 1) {

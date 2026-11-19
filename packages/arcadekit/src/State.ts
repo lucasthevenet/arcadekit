@@ -110,15 +110,15 @@ export const handleOf = <V extends string>(
   // What the world holds is one of the state's values unless a save from
   // another version of the game put it there.
   const valueOf = (holding: string): V => {
-    const found = state.values.find((value) => value === holding);
+    const known = state.values.find((value) => value === holding);
 
-    if (found === undefined) {
+    if (known === undefined) {
       throw new Error(
         `The state "${state.name}" holds "${holding}", which is not one of its values: ${state.values.join(", ")}. A save from a version of the game that had it is migrated with Migrate.mapField(world, "${state.name}", "value", "json", ...).`
       );
     }
 
-    return found;
+    return known;
   };
 
   const handle: StateHandle<V> = {

@@ -1150,7 +1150,8 @@ describe("changes and a snapshot", () => {
     const before = world.hash();
     const saved = world.saveChanges();
     // Plain data, in order of name.
-    expect(JSON.parse(JSON.stringify(saved))).toStrictEqual(saved);
+    const text = JSON.stringify(saved);
+    expect(JSON.parse(text)).toStrictEqual(saved);
     expect(saved.map((each) => `${each.component} ${each.kind}`)).toStrictEqual(
       ["ch/Health removed", "ch/Position changed"]
     );

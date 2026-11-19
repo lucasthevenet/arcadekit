@@ -750,7 +750,7 @@ describe("a plugin's scripts", () => {
   it("are watched like any other: a failure is logged, and the scope's end interrupts them", () => {
     const logged: string[] = [];
 
-    const logger = Logger.make<unknown, void>((entry) => {
+    const logger = Logger.make((entry: Logger.Options<unknown>) => {
       logged.push(
         `${String(entry.message)}: ${String(Cause.squash(entry.cause))}`
       );

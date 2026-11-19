@@ -197,14 +197,18 @@ const makePage = () => {
     hide(): void {
       document.visibilityState = "hidden";
 
-      for (const listener of [...visibility]) {
+      const listening = [...visibility];
+
+      for (const listener of listening) {
         listener();
       }
     },
     show(): void {
       document.visibilityState = "visible";
 
-      for (const listener of [...visibility]) {
+      const listening = [...visibility];
+
+      for (const listener of listening) {
         listener();
       }
     },

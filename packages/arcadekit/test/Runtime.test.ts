@@ -282,7 +282,7 @@ describe("systems", () => {
         App.make({ systems: [Beep] }),
         (app) => app.tick(1)
       )
-    ).toThrow();
+    ).toThrow("Service not found: rt/Audio");
   });
 
   it("surface typed failures through tickExit, and tick() throws them", () => {
@@ -568,7 +568,7 @@ const capturedLogs = () => {
     readonly cause: Cause.Cause<unknown>;
   }[] = [];
 
-  const logger = Logger.make<unknown, void>((options) => {
+  const logger = Logger.make((options: Logger.Options<unknown>) => {
     entries.push({
       level: options.logLevel,
       message: String(options.message),

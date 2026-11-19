@@ -272,7 +272,10 @@ export const makeManualDisplay = (): ManualDisplay => {
 
     hidden = value;
 
-    for (const listener of [...listeners]) {
+    // Copied first: a listener may stop itself.
+    const listening = [...listeners];
+
+    for (const listener of listening) {
       listener();
     }
   };

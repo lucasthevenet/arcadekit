@@ -69,7 +69,8 @@ describe("under a policy that forbids making code from text", () => {
     // The policy was in force there, and is not here.
     expect(there.generates).toBe(false);
     expect(generates()).toBe(true);
-    expect(there.game).toStrictEqual(JSON.parse(JSON.stringify(here)));
+    const sent = JSON.stringify(here);
+    expect(there.game).toStrictEqual(JSON.parse(sent));
   }, 30_000);
 
   it("is a policy the test would notice the lack of", () => {

@@ -243,7 +243,10 @@ export const makeManualSource = (): ManualSource => {
       }
     },
     releaseAll(only) {
-      for (const code of [...down]) {
+      // Copied first: releasing a button takes it out of `down`.
+      const held = [...down];
+
+      for (const code of held) {
         if (only === undefined || only(code)) {
           release(code);
         }

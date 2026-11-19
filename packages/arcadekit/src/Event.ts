@@ -665,7 +665,9 @@ export class EventBus {
 
     for (const channel of this.order) {
       // Copied first: a resumed script may start or cancel other waits.
-      for (const waiter of [...channel.waiters]) {
+      const waiting = [...channel.waiters];
+
+      for (const waiter of waiting) {
         if (channel.waiters.has(waiter) && waiter()) {
           channel.waiters.delete(waiter);
           resumed = true;

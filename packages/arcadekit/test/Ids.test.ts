@@ -244,7 +244,8 @@ describe("an entity's id", () => {
     const decode = Schema.decodeUnknownExit(EntityId);
     const wide = (1500 * SLOTS + 1) as Entity;
     expect(decode(wide)).toStrictEqual(Exit.succeed(wide));
-    expect(JSON.parse(JSON.stringify({ wide }))).toStrictEqual({ wide });
+    const text = JSON.stringify({ wide });
+    expect(JSON.parse(text)).toStrictEqual({ wide });
     const world = new World();
     world.spawn(Body.of({ x: 1 }));
     const contents = readSnapshot(world.snapshot());

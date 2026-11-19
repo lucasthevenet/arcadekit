@@ -141,7 +141,7 @@ describe("plugins", () => {
       ]);
       // Physics' setup spawned the ball.
       expect(app.world.entityCount).toBe(1);
-      const ball = app.world.view(Query.all(Position)).entities()[0];
+      const [ball] = app.world.view(Query.all(Position)).entities();
       app.world.add(ball!, Health.of({ hp: 3 }));
 
       app.tick(1); // 9 -> 11, bounces off the wall at 10, loses 1 hp
@@ -341,7 +341,7 @@ describe("plugins", () => {
         App.make({ plugins: [Sfx] }),
         (app) => app.tick(1)
       )
-    ).toThrow();
+    ).toThrow("Service not found: pl/Audio");
   });
 
   it("require a layer's dependencies to be declared", () => {
@@ -383,7 +383,7 @@ describe("plugins", () => {
         App.make({ plugins: [Undeclared, Physics] }),
         (app) => app.tick(1)
       )
-    ).toThrow();
+    ).toThrow("Service not found: pl/Bounds");
     withApp(
       App.make({ plugins: [Undeclared] }).pipe(
         Effect.provide(

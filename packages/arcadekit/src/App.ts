@@ -636,9 +636,7 @@ const registerAll = (world: EcsWorld, components: readonly Listed[]): void => {
   }
 };
 
-const versionOf = (given: number | undefined): number => {
-  const version = given ?? 0;
-
+const versionOf = (version = 0): number => {
   if (!Number.isSafeInteger(version) || version < 0) {
     throw new Error(
       `A game's version must be a whole number from 0 up, and this one is ${version}.`
@@ -648,9 +646,7 @@ const versionOf = (given: number | undefined): number => {
   return version;
 };
 
-const checkpointEveryOf = (given: number | undefined): number => {
-  const every = given ?? 60;
-
+const checkpointEveryOf = (every = 60): number => {
   if (!Number.isSafeInteger(every) || every < 0) {
     throw new Error(
       `checkpointEvery must be a whole number of ticks, 0 for none, and this one is ${every}.`
@@ -870,7 +866,7 @@ const build = <
     // Fibers waiting for the next tick, in the order they started waiting.
     const waiters = new Set<() => void>();
 
-    const nextTick: Effect.Effect<void> = Effect.callback<void>((resume) => {
+    const nextTick: Effect.Effect<void> = Effect.callback((resume) => {
       const waiter = () => resume(Effect.void);
       waiters.add(waiter);
 
@@ -1607,7 +1603,9 @@ const build = <
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         // Copied first: interrupting a fiber removes it from the set.
-        for (const fiber of [...scripts]) {
+        const fibers = [...scripts];
+
+        for (const fiber of fibers) {
           fiber.interruptUnsafe();
         }
 
@@ -1689,7 +1687,7 @@ const build = <
         }
 
         if (encoded) {
-          value = converted.value;
+          ({ value } = converted);
         } else {
           logged = converted.value;
         }
@@ -2200,7 +2198,10 @@ const build = <
         }
 
         // The scripts first: none of them is part of what was captured.
-        for (const fiber of [...scripts]) {
+        // Copied first: interrupting a fiber removes it from the set.
+        const fibers = [...scripts];
+
+        for (const fiber of fibers) {
           fiber.interruptUnsafe();
         }
 
@@ -2226,8 +2227,7 @@ const build = <
         }
 
         actionLog.length = was.logLength;
-        started = was.started;
-        wanted = was.wanted;
+        ({ started, wanted } = was);
         heard = false;
         stopped = undefined;
 

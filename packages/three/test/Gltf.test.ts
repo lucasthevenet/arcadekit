@@ -302,29 +302,37 @@ describe("a model", () => {
       "/odd.gltf": JSON.stringify({ buffers: 3 }),
     };
 
-    expect((await load("/m/tri.gltf", files)).failure).toStrictEqual(
+    const failed = async (url: string): Promise<Assets.AssetFailed> => {
+      const { failure } = await load(url, files);
+
+      if (!(failure instanceof Assets.AssetFailed)) {
+        throw new TypeError(`${url} did not fail as an asset`);
+      }
+
+      return failure;
+    };
+
+    await expect(failed("/m/tri.gltf")).resolves.toStrictEqual(
       new Assets.AssetFailed({
         url: "/m/gone.bin",
         message: "There is no such file.",
       })
     );
 
-    const garbage = (await load("/garbage.glb", files))
-      .failure as Assets.AssetFailed;
+    const garbage = await failed("/garbage.glb");
 
     expect(garbage).toBeInstanceOf(Assets.AssetFailed);
     expect(garbage.url).toBe("/garbage.glb");
     expect(garbage.message).toMatch(/^It is not a glTF model: /u);
 
-    const hollow = (await load("/hollow.glb", files))
-      .failure as Assets.AssetFailed;
+    const hollow = await failed("/hollow.glb");
 
     expect([hollow.url, hollow.message]).toStrictEqual([
       "/hollow.glb",
       "It is not a glTF model: It is a binary glTF with no JSON in it.",
     ]);
 
-    const odd = (await load("/odd.gltf", files)).failure as Assets.AssetFailed;
+    const odd = await failed("/odd.gltf");
 
     expect([odd.url, odd.message]).toStrictEqual([
       "/odd.gltf",
@@ -332,18 +340,17 @@ describe("a model", () => {
     ]);
 
     // JSON, and no model: Three.js says what it makes of it.
-    const empty = (await load("/empty.gltf", files))
-      .failure as Assets.AssetFailed;
+    const empty = await failed("/empty.gltf");
 
     expect(empty).toBeInstanceOf(Assets.AssetFailed);
     expect(empty.url).toBe("/empty.gltf");
     expect(empty.message).toMatch(/^It could not be made a model: .+/u);
-    const bad = (await load("/bad.gltf", files)).failure as Assets.AssetFailed;
+    const bad = await failed("/bad.gltf");
     expect(bad.url).toBe("/bad.gltf");
     expect(bad.message).toMatch(
       /^A file written into it could not be read: .+/u
     );
-    expect((await load("/plain.gltf", files)).failure).toStrictEqual(
+    await expect(failed("/plain.gltf")).resolves.toStrictEqual(
       new Assets.AssetFailed({
         url: "/plain.gltf",
         message:

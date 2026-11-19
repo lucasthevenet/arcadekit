@@ -894,7 +894,7 @@ describe("a state in a save", () => {
         expect(loaded.world.hash()).toBe(app.world.hash());
         let x = 0;
         loaded.world.view(Balls).each((ball) => {
-          x = ball.x;
+          ({ x } = ball);
         });
         expect(x).toBe(3);
 

@@ -235,8 +235,7 @@ const currentTurn = Effect.gen(function* () {
   let player = 0;
   let number = 0;
   turns.each((turn) => {
-    player = turn.player;
-    number = turn.number;
+    ({ player, number } = turn);
   });
 
   return { player, number };

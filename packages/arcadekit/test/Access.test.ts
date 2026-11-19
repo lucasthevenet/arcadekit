@@ -317,7 +317,7 @@ describe("a system that says what it reads and writes", () => {
     ticking({ reads: [Health] }, function* () {
       const world = yield* World;
       expect(world.has(first, Health)).toBe(true);
-      hp = world.get(first, Health)!.hp;
+      ({ hp } = world.get(first, Health)!);
     });
     expect(hp).toBe(10);
 

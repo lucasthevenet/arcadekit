@@ -680,14 +680,15 @@ describe("the frame stage", () => {
         App.replay(headless, app.actionLog, { delta: 1, ticks: 5 });
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.
-        let own: App.Any | undefined;
+        // The app the system is in, once it is made.
+        const own: { app?: App.Any } = {};
 
         const Hasty = System.make("Hasty", function* () {
-          own?.dispatchByName("fr/Kick", { by: 1 });
+          own.app?.dispatchByName("fr/Kick", { by: 1 });
         }).pipe(System.inStage("frame"));
 
         const hasty = yield* make([Hasty]);
-        own = hasty;
+        own.app = hasty;
         expect(() => hasty.frame(0)).toThrow(
           /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/u
         );

@@ -31,7 +31,7 @@ const draws = (rng: Rng, count: number): number[] =>
 const reference = (state: readonly number[]) => {
   const mask = 0xff_ff_ff_ffn;
   const rotl = (x: bigint, k: bigint) => ((x << k) | (x >> (32n - k))) & mask;
-  const s = state.map((word) => BigInt(word));
+  const s = state.map(BigInt);
 
   return (): number => {
     const result = (rotl((s[1]! * 5n) & mask, 7n) * 9n) & mask;
@@ -278,7 +278,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
   dice.each((die) => {
     die.face = random.int(1, sides);
     die.rolls += 1;
-    face = die.face;
+    ({ face } = die);
   });
 
   return face;
@@ -460,10 +460,10 @@ describe("the Random service", () => {
               yield* EffectRandom.next,
               yield* EffectRandom.nextInt,
               yield* EffectRandom.nextIntBetween(1, 6),
-              ...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5]))
+              ...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5])),
+              // The two are one generator: this continues the same sequence.
+              (yield* Random).bits()
             );
-            // The two are one generator: this continues the same sequence.
-            out.push((yield* Random).bits());
           })
         );
         // It drew from the world's generator, not from one of its own.

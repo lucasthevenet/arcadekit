@@ -313,7 +313,8 @@ describe("an asset", () => {
     expect(notALayout).toBeInstanceOf(Assets.AssetFailed);
     expect(notALayout.url).toBe("/layout.json");
     expect(notALayout.message).not.toMatch(/^It is not JSON/u);
-    expect((await failure('{"walls":2}')).url).toBe("/layout.json");
+    const noName = await failure('{"walls":2}');
+    expect(noName.url).toBe("/layout.json");
 
     // Text has to be text.
     const exit = await Effect.runPromise(

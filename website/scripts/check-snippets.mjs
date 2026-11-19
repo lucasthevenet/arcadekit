@@ -65,7 +65,8 @@ for (const page of pages) {
   const lines = readFileSync(path.join(root, DOCS, page), "utf-8").split("\n");
   let block;
   let untitled = 0;
-  lines.forEach((line, index) => {
+
+  for (const [index, line] of lines.entries()) {
     if (block === undefined) {
       const open = /^```ts(?<meta>\s.*)?$/u.exec(line);
 
@@ -76,7 +77,7 @@ for (const page of pages) {
         block = { start: index + 2, title, lines: [] };
       }
 
-      return;
+      continue;
     }
 
     if (/^```\s*$/u.test(line)) {
@@ -86,11 +87,11 @@ for (const page of pages) {
       write(`${folder}/${name}`, page, block.start, block.lines);
       block = undefined;
 
-      return;
+      continue;
     }
 
     block.lines.push(line);
-  });
+  }
 }
 
 if (blocks === 0) {

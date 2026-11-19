@@ -409,9 +409,9 @@ export const docMarkdown = (
 
 /** The doc comment right above a node, with nothing but white space between. */
 const docAbove = (parsed: DeclarationFile, node: Node): string => {
-  const comment = parsed.comments
-    .filter((c) => c.type === "Block" && c.end <= node.start)
-    .at(-1);
+  const comment = parsed.comments.findLast(
+    (c) => c.type === "Block" && c.end <= node.start
+  );
 
   if (
     comment === undefined ||

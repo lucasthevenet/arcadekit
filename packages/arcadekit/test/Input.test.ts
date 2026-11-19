@@ -399,19 +399,18 @@ describe("the input stage", () => {
     // Nor can it be reached around: the app says where it is.
     run(
       Effect.gen(function* () {
-        let app: App.App<never, never, typeof bump> | undefined;
         let reach: () => unknown = () => {};
 
         const Reach = System.make("Reach", function* () {
           reach();
         }).pipe(System.inStage("input"));
 
-        app = yield* App.make({
+        const made = yield* App.make({
           components: [Score],
           handlers: [bump],
           systems: [Reach],
         });
-        const made = app;
+
         reach = () => made.dispatch(Bump, {});
         expect(() => made.input()).toThrow(
           /dispatch\("in\/Bump"\) was called during the input stage/u
@@ -435,14 +434,16 @@ describe("the input stage", () => {
         made.input();
         expect(made.world.singleton(Score).points).toBe(0);
         // And the input stage is not run from inside a tick.
-        let nested: App.Any | undefined;
+        // The app the system is in, once it is made.
+        const outer: { app?: App.Any } = {};
 
         const Nested = System.make("Nested", function* () {
-          nested?.input();
+          outer.app?.input();
         });
 
-        nested = yield* App.make({ systems: [Nested, Reach] });
-        expect(() => nested!.tick(1)).toThrow(
+        const nested = yield* App.make({ systems: [Nested, Reach] });
+        outer.app = nested;
+        expect(() => nested.tick(1)).toThrow(
           /App\.input was called from inside a tick/u
         );
       })

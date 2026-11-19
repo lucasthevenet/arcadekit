@@ -781,7 +781,7 @@ const variants: Record<string, Variant> = {
   },
 };
 
-const only = process.argv[2];
+const [, , only] = process.argv;
 
 /** A variant's time as this benchmark prints it. */
 const timeText = (name: string, variant: Variant, ms: number): string => {

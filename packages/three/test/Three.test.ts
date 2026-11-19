@@ -192,9 +192,7 @@ const expectTurned = (
  */
 const placeOf = (app: App.Any, entity: Entity): number[] => {
   if (app.world.has(entity, Position)) {
-    return matrixOf(app, entity)
-      .split(" ")
-      .map((text) => Number(text));
+    return matrixOf(app, entity).split(" ").map(Number);
   }
 
   const position = app.world.get(entity, Transform2d.Position)!;

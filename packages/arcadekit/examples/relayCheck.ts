@@ -23,7 +23,7 @@ import {
   Transport,
 } from "../src/index";
 
-const base = process.argv[2];
+const [, , base] = process.argv;
 
 if (base === undefined) {
   console.error("usage: relay:check <the relay's address, ws:// or wss://>");

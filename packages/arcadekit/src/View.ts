@@ -233,7 +233,9 @@ export const makeBridge = (): Bridge => {
         let failure: { readonly error: unknown } | undefined;
 
         // Copied first: a listener may stop itself, or start another.
-        for (const listener of [...slot.listeners]) {
+        const listening = [...slot.listeners];
+
+        for (const listener of listening) {
           if (slot.listeners.has(listener)) {
             try {
               listener(value);

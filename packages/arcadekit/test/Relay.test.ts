@@ -448,7 +448,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
 
   it("carries a message to the other peers of the room, and what was sent before it opened", async () => {
     const served = await serve();
-    stop = served.stop;
+    ({ stop } = served);
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -490,7 +490,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
 
   it("keeps two peers the same game, and tells each handler who the relay let in", async () => {
     const served = await serve();
-    stop = served.stop;
+    ({ stop } = served);
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -580,7 +580,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
 
   it("has the relay close a peer that speaks for another, and pass nothing on", async () => {
     const served = await serve();
-    stop = served.stop;
+    ({ stop } = served);
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -620,7 +620,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
 
   it("says why when the relay would not let it in", async () => {
     const served = await serve();
-    stop = served.stop;
+    ({ stop } = served);
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -656,7 +656,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
 
   it("is told why in the few words a close frame has room for, however long the names", async () => {
     const served = await serve();
-    stop = served.stop;
+    ({ stop } = served);
 
     // Every reason fits: a close frame carries 123 bytes at most, and a
     // server that is handed more throws.
@@ -751,7 +751,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
 
   it("says so when it is used after its scope has closed", async () => {
     const served = await serve();
-    stop = served.stop;
+    ({ stop } = served);
     const url = Relay.address(served.url, ada);
 
     const kept = await Effect.runPromise(
