@@ -7,13 +7,13 @@
 //
 //   every entry of @arcadekit/three imports arcadekit, Effect and Three.js, and nothing else
 //
-// Two checks hold it. In the sources, file by file, the Oxlint rule `arcadekit/entry-imports`
-// (plugin.ts): each file keeps to the rule of the entry it is behind, and imports only files whose
-// rule is no looser than its own, so an entry reaches nothing its rule refuses. In the build,
-// built-entries.ts: the bundler may put what entries share in one chunk, and an entry reaches
-// what that chunk imports.
+// The Oxlint rule `arcadekit/entry-imports` (plugin.ts) holds it in the sources, file by file:
+// each file keeps to the rule of the entry it is behind, and imports only files whose rule is no
+// looser than its own, so an entry reaches nothing its rule refuses. That holds the build too,
+// since the build writes each source file to a file of its own (`unbundle` in tsdown.config.ts),
+// whose imports are that source's.
 
-export const isEffect = (name: string): boolean =>
+const isEffect = (name: string): boolean =>
   name === "effect" || name.startsWith("effect/");
 const isArcadekit = (name: string): boolean =>
   name === "arcadekit" || name.startsWith("arcadekit/");
@@ -70,8 +70,6 @@ export const mayReach = (from: EntryRule, to: EntryRule): boolean =>
 export interface PackageRules {
   /** Its folder under packages/. */
   readonly dir: string;
-  /** The rule of an entry, by its subpath in the package's `exports`. */
-  readonly ofEntry: (subpath: string) => EntryRule;
   /** The rule of a source file, by its path in the package, such as "src/ecs/world.ts". */
   readonly ofFile: (file: string) => EntryRule;
 }
@@ -79,12 +77,6 @@ export interface PackageRules {
 export const packages: readonly PackageRules[] = [
   {
     dir: "arcadekit",
-    ofEntry: (subpath) => {
-      if (subpath === "./ecs") {
-        return ecs;
-      }
-      return subpath === "./Browser" ? browser : rest;
-    },
     ofFile: (file) => {
       if (/^src\/ecs(?:\/|$)/u.test(file)) {
         return ecs;
@@ -92,5 +84,5 @@ export const packages: readonly PackageRules[] = [
       return /^src\/Browser(?:\.ts)?$/u.test(file) ? browser : rest;
     },
   },
-  { dir: "three", ofEntry: () => three, ofFile: () => three },
+  { dir: "three", ofFile: () => three },
 ];

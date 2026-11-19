@@ -4,7 +4,7 @@ A rule that matters is held by something that runs. Prose is for what no check h
 
 The repository already works this way, and a new rule joins these:
 
-- `tooling/lint/entries.ts` says what each entry may import, and two checks hold it: the Oxlint rule `arcadekit/entry-imports` in the sources, file by file, and `tooling/lint/built-entries.ts` in the build;
+- `tooling/lint/entries.ts` says what each entry may import, and the Oxlint rule `arcadekit/entry-imports` holds it in the sources, file by file, and so in the build, which writes each source file to its own file;
 - the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, and `arcadekit/no-code-from-text`;
 - `test/policy.test.ts` plays a game where making code from text is forbidden;
 - the lists of writers in `test/transaction.test.ts`, `test/changes.test.ts`, `test/access.test.ts` and `test/frame.test.ts`, which every new way to write joins;

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Runs publint and @arethetypeswrong/cli on each published package, and checks what each of
-# its built entries imports (built-entries.ts).
+# Runs publint and @arethetypeswrong/cli on each published package.
 # Packs each package with pnpm first, so both tools see exactly what npm would get
 # (only `files` included). Build first:
 #   pnpm build:packages && pnpm lint:packages
@@ -22,12 +21,8 @@ for name in arcadekit three; do
   fi
 done
 
-if ! node "$root/tooling/lint/built-entries.ts"; then
-  failed+=("entries")
-fi
-
 if ((${#failed[@]} > 0)); then
   echo "Failed: ${failed[*]}" >&2
   exit 1
 fi
-echo "arcadekit and @arcadekit/three pass publint and attw, and their entries import what they may."
+echo "arcadekit and @arcadekit/three pass publint and attw."
