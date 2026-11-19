@@ -484,7 +484,7 @@ describe("the hash of a world", () => {
     // Both worlds hold the same two entities with the same data, the same
     // tables and the same ids to come. One entity made a round trip through
     // another table, which put it last in its own: which one differs.
-    const build = (traveller: 0 | 1) => {
+    const buildTraveller = (traveller: 0 | 1) => {
       const world = new EcsWorld();
 
       const pair = [
@@ -498,16 +498,16 @@ describe("the hash of a world", () => {
       return { world, order: world.view(Query.all(Body)).entities(), pair };
     };
 
-    const first = build(0);
-    const second = build(1);
+    const first = buildTraveller(0);
+    const second = buildTraveller(1);
     expect(first.order).toStrictEqual([first.pair[1], first.pair[0]]);
     expect(second.order).toStrictEqual([second.pair[0], second.pair[1]]);
     expect(first.world.hash()).not.toBe(second.world.hash());
-    expect(build(0).world.hash()).toBe(first.world.hash());
+    expect(buildTraveller(0).world.hash()).toBe(first.world.hash());
   });
 
   it("covers a table that has emptied, because its place decides where later entities are visited", () => {
-    const build = (visitMarkedFirst: boolean) => {
+    const buildVisits = (visitMarkedFirst: boolean) => {
       const world = new EcsWorld();
 
       if (visitMarkedFirst) {
@@ -523,8 +523,8 @@ describe("the hash of a world", () => {
       return world;
     };
 
-    const first = build(true);
-    const second = build(false);
+    const first = buildVisits(true);
+    const second = buildVisits(false);
     // The same one entity with the same data in both...
     expect(first.view(Query.all(Body)).entities()).toStrictEqual(
       second.view(Query.all(Body)).entities()
@@ -578,10 +578,10 @@ describe("the hash of a world", () => {
 
     // A live entity's generation counts too: the same slot, the same data,
     // nothing freed, but one of the two is the slot's second tenant.
-    const tenant = (reused: boolean) => {
+    const tenant = (again: boolean) => {
       const world = new EcsWorld();
 
-      if (reused) {
+      if (again) {
         const gone = world.spawn(Body);
         world.despawn(gone);
       }
@@ -629,7 +629,7 @@ describe("the hash of a world", () => {
   });
 
   it("does not depend on what a simulation cannot tell apart", () => {
-    const build = (noise: boolean): EcsWorld => {
+    const buildNoisy = (noise: boolean): EcsWorld => {
       const world = new EcsWorld({ seed: 3 });
       const entities: Entity[] = [];
 
@@ -686,13 +686,13 @@ describe("the hash of a world", () => {
       return world;
     };
 
-    expect(build(true).hash()).toBe(build(false).hash());
+    expect(buildNoisy(true).hash()).toBe(buildNoisy(false).hash());
   });
 
   it("ignores what is left in a column past its last row", () => {
     // The last-spawned entity is despawned in both; its data stays behind in
     // the column's spare room, and differs between the two worlds.
-    const build = (ghost: number): EcsWorld => {
+    const buildGhost = (ghost: number): EcsWorld => {
       const world = new EcsWorld();
       world.spawn(Body.of({ x: 1, y: 1 }), Sheet.of(sheet(1)));
 
@@ -707,11 +707,11 @@ describe("the hash of a world", () => {
       return world;
     };
 
-    expect(build(7).hash()).toBe(build(8).hash());
+    expect(buildGhost(7).hash()).toBe(buildGhost(8).hash());
   });
 
   it("counts an array or an object in a json field by what is in it", () => {
-    const hashOf = (note: unknown): number => {
+    const hashNote = (note: unknown): number => {
       const world = new EcsWorld();
       world.spawn(Sheet.of({ ...sheet(1), note }));
       world.add(world.spawn(), Aura.of({ ...sheet(2), note }));
@@ -738,21 +738,21 @@ describe("the hash of a world", () => {
       { a: { b: [1, { c: false }] } },
     ];
 
-    expect(new Set(values.map((value) => hashOf(value))).size).toBe(
+    expect(new Set(values.map((value) => hashNote(value))).size).toBe(
       values.length
     );
     // The same content is the same hash, whichever object holds it.
-    expect(hashOf({ hp: 1, items: ["a", "b"] })).toBe(
-      hashOf(structuredClone({ hp: 1, items: ["a", "b"] }))
+    expect(hashNote({ hp: 1, items: ["a", "b"] })).toBe(
+      hashNote(structuredClone({ hp: 1, items: ["a", "b"] }))
     );
     // A value JSON cannot write is refused in so many words.
-    expect(() => hashOf({ big: 1n })).toThrow(
+    expect(() => hashNote({ big: 1n })).toThrow(
       /A json field holds a value that JSON cannot write/u
     );
   });
 
   it("counts tags, which have no data, by who has them", () => {
-    const build = (marked: number, chilled: number): number => {
+    const buildMarked = (marked: number, chilled: number): number => {
       const world = new EcsWorld();
       const entities = [0, 1, 2].map(() => world.spawn(Body));
       world.add(entities[marked]!, Marked);
@@ -762,7 +762,7 @@ describe("the hash of a world", () => {
     };
 
     const all = [0, 1, 2].flatMap((marked) =>
-      [0, 1, 2].map((chilled) => build(marked, chilled))
+      [0, 1, 2].map((chilled) => buildMarked(marked, chilled))
     );
 
     expect(new Set(all).size).toBe(9);

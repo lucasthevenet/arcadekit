@@ -870,7 +870,7 @@ describe("an action that is refused", () => {
       const target = entities[0]!;
       const y = (): number => app.world.get(target, Body)!.y;
 
-      const act = (steps: Steps, refuse: boolean): void => {
+      const perform = (steps: Steps, refuse: boolean): void => {
         app.dispatch(Act, { target, steps, refuse });
       };
 
@@ -878,22 +878,22 @@ describe("an action that is refused", () => {
       app.tick(1);
       const before = y();
       // Reads, rings and reads again, and is refused: both reads are undone.
-      act(["read", "ring", "read"], true);
+      perform(["read", "ring", "read"], true);
       expect(y()).toBe(before);
-      act(["read"], false);
+      perform(["read"], false);
       expect(y() - before).toBe(101);
       // What an accepted action read stays read through a later refusal.
-      act(["set"], true);
-      act(["read"], true);
-      act(["read"], false);
+      perform(["set"], true);
+      perform(["read"], true);
+      perform(["read"], false);
       expect(y() - before).toBe(101);
       // And a system's reads are no action's to take back: it hears each
       // ring once, with refusals and acceptances between its ticks.
       app.tick(1);
-      act(["read"], true);
+      perform(["read"], true);
       app.tick(1);
-      act(["read"], false);
-      act(["emit"], true);
+      perform(["read"], false);
+      perform(["emit"], true);
       app.tick(1);
       app.enqueue(Act, { target, steps: ["read"], refuse: true });
       app.tick(1);

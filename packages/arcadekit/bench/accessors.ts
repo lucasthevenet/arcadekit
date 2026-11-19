@@ -784,6 +784,31 @@ const variants: Record<string, Variant> = {
 
 const only = process.argv[2];
 
+/** A variant's time as this benchmark prints it. */
+const timeText = (name: string, variant: Variant, ms: number): string => {
+  if (name.startsWith("idle")) {
+    return `${(ms * 1000).toFixed(2).padStart(8)} µs per tick`;
+  }
+
+  switch (variant.unit) {
+    case "matches": {
+      return `${(ms * 1000).toFixed(2).padStart(8)} µs per pass`;
+    }
+
+    case "dispatch": {
+      return `${(ms * 1000).toFixed(2).padStart(8)} µs per dispatch`;
+    }
+
+    case "visit": {
+      return `${(ms * 1e6).toFixed(1).padStart(8)} ns per visit`;
+    }
+
+    default: {
+      return `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
+    }
+  }
+};
+
 if (only === undefined) {
   const self = import.meta.filename;
   const results: Record<string, number> = {};
@@ -805,17 +830,7 @@ if (only === undefined) {
 
     results[name] = ms;
 
-    const text = name.startsWith("idle")
-      ? `${(ms * 1000).toFixed(2).padStart(8)} µs per tick`
-      : variant.unit === "matches"
-        ? `${(ms * 1000).toFixed(2).padStart(8)} µs per pass`
-        : variant.unit === "dispatch"
-          ? `${(ms * 1000).toFixed(2).padStart(8)} µs per dispatch`
-          : variant.unit === "visit"
-            ? `${(ms * 1e6).toFixed(1).padStart(8)} ns per visit`
-            : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
-
-    console.log(`${variant.label.padEnd(54)} ${text}`);
+    console.log(`${variant.label.padEnd(54)} ${timeText(name, variant, ms)}`);
   }
 
   const ratio = (a: string, b: string) =>

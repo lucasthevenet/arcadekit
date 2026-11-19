@@ -14,6 +14,7 @@ import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
 import type { ComponentDef, SingletonSpec } from "./ecs/component";
+import { compareText } from "./ecs/order";
 import type { QuerySpec } from "./ecs/world";
 import type { EventDef } from "./Event";
 
@@ -661,17 +662,17 @@ export const order = <Sy extends System<unknown, unknown>>(
   const stageOf = new Map(systems.map((s) => [s.name, s.stage]));
 
   for (const stage of everyStage) {
-    const inStage = systems.filter((s) => s.stage === stage);
-    const stageNames = new Set(inStage.map((s) => s.name));
+    const ofStage = systems.filter((s) => s.stage === stage);
+    const stageNames = new Set(ofStage.map((s) => s.name));
     // "A before B" is the same constraint as "B after A", so fold both into
     // one map of what must already have run.
     const mustFollow = new Map<string, string[]>();
 
-    for (const system of inStage) {
+    for (const system of ofStage) {
       mustFollow.set(system.name, []);
     }
 
-    for (const system of inStage) {
+    for (const system of ofStage) {
       for (const dep of system.after) {
         if (!stageNames.has(dep)) {
           const other = stageOf.get(dep);
@@ -721,7 +722,7 @@ export const order = <Sy extends System<unknown, unknown>>(
 
     // Each system keeps its registered position unless something has to run
     // first, in which case those systems are pulled forward to just before it.
-    const byName = new Map(inStage.map((system) => [system.name, system]));
+    const byName = new Map(ofStage.map((system) => [system.name, system]));
     const done = new Set<string>();
     const visiting: string[] = [];
 
@@ -748,7 +749,7 @@ export const order = <Sy extends System<unknown, unknown>>(
       out.push(system);
     };
 
-    for (const system of inStage) {
+    for (const system of ofStage) {
       place(system);
     }
   }
@@ -836,7 +837,7 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
   return over.toSorted(
     (a, b) =>
       kinds.indexOf(a.kind) - kinds.indexOf(b.kind) ||
-      (a.what < b.what ? -1 : a.what > b.what ? 1 : 0)
+      compareText(a.what, b.what)
   );
 };
 

@@ -377,14 +377,14 @@ export const load: <B extends Entries>(
   bundle: Bundle<B>
 ) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope> = Effect.fn(
   "Assets.load"
-)(function* (bundle: Bundle<Entries>) {
+)(function* (which: Bundle<Entries>) {
   const loader = yield* Loader;
-  const names = Object.keys(bundle.assets);
+  const names = Object.keys(which.assets);
 
   const values = yield* Effect.forEach(
     names,
     (name) => {
-      const asset = bundle.assets[name]!;
+      const asset = which.assets[name]!;
 
       return Effect.flatMap(loader.bytes(asset.url), (data) =>
         asset.decode(data)
@@ -465,26 +465,26 @@ const storeLayer = Layer.effect(
     // may know about assets are told from the tick.
     const world = yield* World;
 
-    const betweenTicks = (bundle: Bundle<Entries>, what: string): void => {
+    const betweenTicks = (which: Bundle<Entries>, what: string): void => {
       if (!world.frozen) {
         throw new Error(
-          `The assets "${bundle.name}" were ${what} in the tick. Whether an asset has been loaded depends on real time, which a simulation must not: a replay loads nothing. Do it from a system of the frame stage, System.inStage("frame"), which draws with them, or of the input stage, which can issue an action once they are there.`
+          `The assets "${which.name}" were ${what} in the tick. Whether an asset has been loaded depends on real time, which a simulation must not: a replay loads nothing. Do it from a system of the frame stage, System.inStage("frame"), which draws with them, or of the input stage, which can issue an action once they are there.`
         );
       }
     };
 
-    const entryOf = (bundle: Bundle<Entries>): Held => {
-      let entry = held.get(bundle);
+    const entryOf = (which: Bundle<Entries>): Held => {
+      let entry = held.get(which);
 
       if (entry === undefined) {
         entry = {
-          bundle,
+          bundle: which,
           holders: new Set(),
           status: ABSENT,
           scope: undefined,
           fiber: undefined,
         };
-        held.set(bundle, entry);
+        held.set(which, entry);
       }
 
       return entry;
@@ -565,14 +565,14 @@ const storeLayer = Layer.effect(
     );
 
     return {
-      status<B extends Entries>(bundle: Bundle<B>) {
-        betweenTicks(bundle, "asked for");
+      status<B extends Entries>(which: Bundle<B>) {
+        betweenTicks(which, "asked for");
 
-        return (held.get(bundle)?.status ?? ABSENT) as Status<Loaded<B>>;
+        return (held.get(which)?.status ?? ABSENT) as Status<Loaded<B>>;
       },
-      hold(bundle, holder) {
-        betweenTicks(bundle, "held");
-        const entry = entryOf(bundle);
+      hold(which, holder) {
+        betweenTicks(which, "held");
+        const entry = entryOf(which);
 
         if (entry.holders.has(holder)) {
           return;
@@ -584,9 +584,9 @@ const storeLayer = Layer.effect(
           start(entry);
         }
       },
-      drop(bundle, holder) {
-        betweenTicks(bundle, "let go of");
-        const entry = held.get(bundle);
+      drop(which, holder) {
+        betweenTicks(which, "let go of");
+        const entry = held.get(which);
 
         if (entry === undefined || !entry.holders.delete(holder)) {
           return;
@@ -632,17 +632,17 @@ export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
  */
 export const during = <E, R, B extends Entries>(
   condition: Effect.Effect<boolean, E, R>,
-  bundle: Bundle<B>
+  which: Bundle<B>
 ): System.System<E, R | Store> => {
-  const name = `Assets.during(${bundle.name})`;
+  const name = `Assets.during(${which.name})`;
 
   return System.make(name, function* () {
     const store = yield* Store;
 
     if (yield* condition) {
-      store.hold(bundle, name);
+      store.hold(which, name);
     } else {
-      store.drop(bundle, name);
+      store.drop(which, name);
     }
   }).pipe(System.inStage("preFrame"));
 };

@@ -713,20 +713,18 @@ describe("a system that says what it reads and writes", () => {
       System.access({ writes: [Score], reads: [Hit], actions: true })
     );
 
-    const said = System.accessOf(system)!;
+    const declared = System.accessOf(system)!;
     expect(
-      Array.from(said.components, ([name, { touch }]) => [name, touch])
+      Array.from(declared.components, ([name, { touch }]) => [name, touch])
     ).toStrictEqual([
       ["ac/Position", "writes"],
       ["ac/Velocity", "reads"],
       ["ac/Score", "writes"],
     ]);
-    expect([...said.events]).toStrictEqual([["ac/Hit", "reads"]]);
-    expect([said.random, said.actions, said.scripts]).toStrictEqual([
-      true,
-      true,
-      false,
-    ]);
+    expect([...declared.events]).toStrictEqual([["ac/Hit", "reads"]]);
+    expect([declared.random, declared.actions, declared.scripts]).toStrictEqual(
+      [true, true, false]
+    );
     expect(
       System.accessOf(System.make("Silent", function* () {}))
     ).toBeUndefined();
@@ -864,7 +862,7 @@ describe("a world with a guard", () => {
     guard.queries.add(named);
     expect(world.view(named).count()).toBe(0);
 
-    for (const [refused, what] of [
+    for (const [refusedQuery, what] of [
       [spec([Position, Health]), 'a query that writes "ac/Health"'],
       [
         spec([Bullet], { readDefs: [Bullet] }),
@@ -879,10 +877,10 @@ describe("a world with a guard", () => {
         'a query that reads "ac/Velocity"',
       ],
     ] as const) {
-      expect(() => world.view(refused)).toThrow(
+      expect(() => world.view(refusedQuery)).toThrow(
         `The test asked for ${what}, and did not say it would`
       );
-      expect(guard.queries.has(refused)).toBe(false);
+      expect(guard.queries.has(refusedQuery)).toBe(false);
     }
 
     expect(() => world.removed(Bullet)).toThrow(

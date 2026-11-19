@@ -420,7 +420,7 @@ export const layerSound = (
       const buffers = new Map<string, unknown>();
       const missing = new Set<string>();
       const channels = new Map<string, Channel>();
-      const display = yield* Driver.Display;
+      const shown = yield* Driver.Display;
       let audio: AudioLike | undefined;
       let unwatch: (() => void) | undefined;
       let closed = false;
@@ -640,10 +640,10 @@ export const layerSound = (
             // Hidden, nobody plays the game and its frame loop rests: what
             // is heard rests with it. Watched from now on, since before
             // there is audio there is nothing to put to sleep.
-            unwatch = display.onVisibilityChange(() => {
+            unwatch = shown.onVisibilityChange(() => {
               // What is streamed keeps its own time, and is stopped and
               // started with the audio it plays into.
-              if (display.hidden()) {
+              if (shown.hidden()) {
                 void audio?.suspend?.();
 
                 for (const element of streaming) {

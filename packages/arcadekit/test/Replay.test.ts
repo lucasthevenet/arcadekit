@@ -947,7 +947,7 @@ describe("a game whose simulation issues actions itself", () => {
       })
     );
 
-    const play = (first: "enqueue" | "dispatch") =>
+    const playFirst = (first: "enqueue" | "dispatch") =>
       withApp(make, ({ app, tally }) => {
         if (first === "enqueue") {
           app.enqueue(Double, {});
@@ -972,8 +972,8 @@ describe("a game whose simulation issues actions itself", () => {
         return app.world.get(tally, Tally)!.value;
       });
 
-    const doubledFirst = play("enqueue");
-    const addedFirst = play("dispatch");
+    const doubledFirst = playFirst("enqueue");
+    const addedFirst = playFirst("dispatch");
     expect(doubledFirst.value).toBe(1 * 2 + 10);
     expect(addedFirst.value).toBe((1 + 10) * 2);
     expect(moves(doubledFirst.log).map((entry) => entry.name)).toStrictEqual([

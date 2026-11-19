@@ -44,6 +44,7 @@ import {
 } from "./component";
 import type {
   Accessor,
+  AccessorMode,
   Column,
   ColumnsOf,
   ComponentDef,
@@ -58,6 +59,7 @@ import type {
   ValueOf,
 } from "./component";
 import { add, addColumn, addColumnPerRow, finish, identityOf } from "./hash";
+import { byName } from "./order";
 import { Rng } from "./random";
 import {
   END,
@@ -86,8 +88,13 @@ const WHOLE = -1;
 /** What `hash` folds in before each singleton, to distinguish it from a sparse set. */
 const SINGLETON = 0x53_49_4e_47;
 
-const storageOf = (def: ComponentDef): 0 | 1 | 2 =>
-  def.single ? 2 : def.storage === "sparse" ? 1 : 0;
+const storageOf = (def: ComponentDef): 0 | 1 | 2 => {
+  if (def.single) {
+    return 2;
+  }
+
+  return def.storage === "sparse" ? 1 : 0;
+};
 
 /** The single instance of a singleton that a world holds. */
 interface Single {
@@ -212,19 +219,19 @@ const targetless = (def: ComponentDef): Error =>
   );
 
 /** Summarizes a value in a few words, for a message. */
-const describeValue = (value: unknown): string =>
-  typeof value === "function"
-    ? "a function"
-    : typeof value === "symbol"
-      ? "a symbol"
-      : Array.isArray(value)
-        ? "an array"
-        : "an object";
+const describeValue = (value: unknown): string => {
+  if (typeof value === "function") {
+    return "a function";
+  }
+
+  if (typeof value === "symbol") {
+    return "a symbol";
+  }
+
+  return Array.isArray(value) ? "an array" : "an object";
+};
 
 /** Orders by name, by UTF-16 code unit: the same in every engine and locale. */
-const byName = (a: { readonly name: string }, b: { readonly name: string }) =>
-  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-
 // ---------------------------------------------------------------------------
 // Table (one archetype)
 // ---------------------------------------------------------------------------
@@ -1479,6 +1486,19 @@ export class QueryView<D extends Terms = Terms> {
   }
 
   /** Creates the accessors for a level of iteration, the first time `each` needs them. */
+  /** How the accessor of term `k` treats an assignment. */
+  private modeOf(k: number, frozen: boolean): AccessorMode {
+    if (frozen) {
+      return "frozen";
+    }
+
+    if (this.termRead[k]) {
+      return "reads";
+    }
+
+    return this.termLog[k] === undefined ? "writes" : "notes";
+  }
+
   private makeLoop(frozen: boolean): Loop {
     // The terms that are in the table share the row the loop is at. A
     // sparse term has its rows elsewhere, and a row of its own.
@@ -1489,17 +1509,7 @@ export class QueryView<D extends Terms = Terms> {
     );
 
     const accessors = this.spec.terms.map((def, k) =>
-      makeAccessor(
-        def,
-        frozen
-          ? "frozen"
-          : this.termRead[k]
-            ? "reads"
-            : this.termLog[k] === undefined
-              ? "writes"
-              : "notes",
-        rows[k]!
-      )
+      makeAccessor(def, this.modeOf(k, frozen), rows[k]!)
     );
 
     return {
@@ -3832,13 +3842,17 @@ export class World {
    *
    * @internal
    */
+  /** The change logs of one kind, by component id. */
+  private logsOf(kind: ChangeKind): (ChangeLog | undefined)[] {
+    if (kind === "changed") {
+      return this._changed;
+    }
+
+    return kind === "added" ? this.addedLogs : this.removedLogs;
+  }
+
   _log(def: ComponentDef, kind: ChangeKind): ChangeLog {
-    const byId =
-      kind === "changed"
-        ? this._changed
-        : kind === "added"
-          ? this.addedLogs
-          : this.removedLogs;
+    const byId = this.logsOf(kind);
 
     let log = byId[def.id];
 

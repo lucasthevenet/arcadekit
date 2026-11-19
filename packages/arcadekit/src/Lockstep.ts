@@ -47,6 +47,7 @@ import { Cause, Data, Exit, Schema } from "effect";
 import * as Action from "./Action";
 import type * as App from "./App";
 import type { Tickable } from "./Driver";
+import { compareText } from "./ecs/order";
 import type * as Save from "./Save";
 
 /**
@@ -260,7 +261,6 @@ export interface Session<E = never> extends Tickable {
 const UNANSWERED = 600;
 
 /** Orders names by code unit, which is the same on every machine. */
-const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * The one session there is. Lockstep is the session that predicts no tick:
@@ -293,7 +293,7 @@ export const build = <E>(
     );
   }
 
-  const peers = options.peers.toSorted(byName);
+  const peers = options.peers.toSorted(compareText);
 
   if (new Set(peers).size !== peers.length) {
     throw new Error(
@@ -478,8 +478,8 @@ export const build = <E>(
   const run = (tick: number): Exit.Exit<void, E | Save.SaveRefused> => {
     let whole = true;
 
-    for (const next of have.values()) {
-      whole &&= next > tick;
+    for (const upcoming of have.values()) {
+      whole &&= upcoming > tick;
     }
 
     if (whole) {

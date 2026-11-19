@@ -129,7 +129,7 @@ export interface FieldDef<T, C> {
   readonly _C?: C;
 }
 
-const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
+const fieldOfKind = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
 
 /**
  * The field types a component is made of. Numbers go in typed arrays; any other
@@ -138,13 +138,13 @@ const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
  * @category Fields
  */
 export const Field = {
-  f32: field<number, Float32Array>("f32"),
-  f64: field<number, Float64Array>("f64"),
-  i32: field<number, Int32Array>("i32"),
-  u32: field<number, Uint32Array>("u32"),
-  u16: field<number, Uint16Array>("u16"),
-  u8: field<number, Uint8Array>("u8"),
-  entity: field<Entity, Float64Array>("entity"),
+  f32: fieldOfKind<number, Float32Array>("f32"),
+  f64: fieldOfKind<number, Float64Array>("f64"),
+  i32: fieldOfKind<number, Int32Array>("i32"),
+  u32: fieldOfKind<number, Uint32Array>("u32"),
+  u16: fieldOfKind<number, Uint16Array>("u16"),
+  u8: fieldOfKind<number, Uint8Array>("u8"),
+  entity: fieldOfKind<Entity, Float64Array>("entity"),
   /**
    * Plain data: a string, number, boolean, bigint, null or undefined, or an
    * array or object of strings, numbers, booleans and null. It is saved in
@@ -152,7 +152,7 @@ export const Field = {
    * hashed as its `JSON.stringify` text, so it is loaded as whatever
    * `JSON.parse` makes of that text.
    */
-  json: <T>(): FieldDef<T, T[]> => field<T, T[]>("json"),
+  json: <T>(): FieldDef<T, T[]> => fieldOfKind<T, T[]>("json"),
   /**
    * Any value, with a codec that converts it to plain data and back: a Date, a
    * Map, a class instance. Snapshots and the hash use its encoded form, so it
@@ -165,7 +165,7 @@ export const Field = {
    * is undefined in a world loaded from a snapshot.
    */
   transient: <T>(): FieldDef<T | undefined, (T | undefined)[]> =>
-    field<T | undefined, (T | undefined)[]>("transient"),
+    fieldOfKind<T | undefined, (T | undefined)[]>("transient"),
 };
 
 export type Column =
@@ -518,28 +518,29 @@ const refuse = (message: string) => (): never => {
 
 const defineF32: DefineField = (target, name, row, noting, refusal) => {
   let column = undefined as unknown as Float32Array;
+
+  const write =
+    noting === undefined
+      ? (value: number) => {
+          column[row.i] = value;
+        }
+      : (value: number) => {
+          column[row.i] = value;
+          // The log keeps one entry per entity until a reader has been.
+          // The check `note` starts with is written out here, so that a
+          // row which is noted already costs a few reads and a
+          // comparison, and no call. `noted` is read through the log
+          // each time: the log replaces it when it grows.
+          const index = noting.entities[row.i]! & INDEX_MASK;
+
+          if (noting.log.noted[index] !== 1) {
+            noting.log.note(index);
+          }
+        };
+
   Object.defineProperty(target, name, {
     get: () => column[row.i],
-    set:
-      refusal === undefined
-        ? noting === undefined
-          ? (value: number) => {
-              column[row.i] = value;
-            }
-          : (value: number) => {
-              column[row.i] = value;
-              // The log keeps one entry per entity until a reader has been.
-              // The check `note` starts with is written out here, so that a
-              // row which is noted already costs a few reads and a
-              // comparison, and no call. `noted` is read through the log
-              // each time: the log replaces it when it grows.
-              const index = noting.entities[row.i]! & INDEX_MASK;
-
-              if (noting.log.noted[index] !== 1) {
-                noting.log.note(index);
-              }
-            }
-        : refuse(refusal),
+    set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
@@ -549,23 +550,24 @@ const defineF32: DefineField = (target, name, row, noting, refusal) => {
 
 const defineF64: DefineField = (target, name, row, noting, refusal) => {
   let column = undefined as unknown as Float64Array;
+
+  const write =
+    noting === undefined
+      ? (value: number) => {
+          column[row.i] = value;
+        }
+      : (value: number) => {
+          column[row.i] = value;
+          const index = noting.entities[row.i]! & INDEX_MASK;
+
+          if (noting.log.noted[index] !== 1) {
+            noting.log.note(index);
+          }
+        };
+
   Object.defineProperty(target, name, {
     get: () => column[row.i],
-    set:
-      refusal === undefined
-        ? noting === undefined
-          ? (value: number) => {
-              column[row.i] = value;
-            }
-          : (value: number) => {
-              column[row.i] = value;
-              const index = noting.entities[row.i]! & INDEX_MASK;
-
-              if (noting.log.noted[index] !== 1) {
-                noting.log.note(index);
-              }
-            }
-        : refuse(refusal),
+    set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
@@ -575,23 +577,24 @@ const defineF64: DefineField = (target, name, row, noting, refusal) => {
 
 const defineI32: DefineField = (target, name, row, noting, refusal) => {
   let column = undefined as unknown as Int32Array;
+
+  const write =
+    noting === undefined
+      ? (value: number) => {
+          column[row.i] = value;
+        }
+      : (value: number) => {
+          column[row.i] = value;
+          const index = noting.entities[row.i]! & INDEX_MASK;
+
+          if (noting.log.noted[index] !== 1) {
+            noting.log.note(index);
+          }
+        };
+
   Object.defineProperty(target, name, {
     get: () => column[row.i],
-    set:
-      refusal === undefined
-        ? noting === undefined
-          ? (value: number) => {
-              column[row.i] = value;
-            }
-          : (value: number) => {
-              column[row.i] = value;
-              const index = noting.entities[row.i]! & INDEX_MASK;
-
-              if (noting.log.noted[index] !== 1) {
-                noting.log.note(index);
-              }
-            }
-        : refuse(refusal),
+    set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
@@ -601,23 +604,24 @@ const defineI32: DefineField = (target, name, row, noting, refusal) => {
 
 const defineU32: DefineField = (target, name, row, noting, refusal) => {
   let column = undefined as unknown as Uint32Array;
+
+  const write =
+    noting === undefined
+      ? (value: number) => {
+          column[row.i] = value;
+        }
+      : (value: number) => {
+          column[row.i] = value;
+          const index = noting.entities[row.i]! & INDEX_MASK;
+
+          if (noting.log.noted[index] !== 1) {
+            noting.log.note(index);
+          }
+        };
+
   Object.defineProperty(target, name, {
     get: () => column[row.i],
-    set:
-      refusal === undefined
-        ? noting === undefined
-          ? (value: number) => {
-              column[row.i] = value;
-            }
-          : (value: number) => {
-              column[row.i] = value;
-              const index = noting.entities[row.i]! & INDEX_MASK;
-
-              if (noting.log.noted[index] !== 1) {
-                noting.log.note(index);
-              }
-            }
-        : refuse(refusal),
+    set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
@@ -627,23 +631,24 @@ const defineU32: DefineField = (target, name, row, noting, refusal) => {
 
 const defineU16: DefineField = (target, name, row, noting, refusal) => {
   let column = undefined as unknown as Uint16Array;
+
+  const write =
+    noting === undefined
+      ? (value: number) => {
+          column[row.i] = value;
+        }
+      : (value: number) => {
+          column[row.i] = value;
+          const index = noting.entities[row.i]! & INDEX_MASK;
+
+          if (noting.log.noted[index] !== 1) {
+            noting.log.note(index);
+          }
+        };
+
   Object.defineProperty(target, name, {
     get: () => column[row.i],
-    set:
-      refusal === undefined
-        ? noting === undefined
-          ? (value: number) => {
-              column[row.i] = value;
-            }
-          : (value: number) => {
-              column[row.i] = value;
-              const index = noting.entities[row.i]! & INDEX_MASK;
-
-              if (noting.log.noted[index] !== 1) {
-                noting.log.note(index);
-              }
-            }
-        : refuse(refusal),
+    set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
@@ -653,23 +658,24 @@ const defineU16: DefineField = (target, name, row, noting, refusal) => {
 
 const defineU8: DefineField = (target, name, row, noting, refusal) => {
   let column = undefined as unknown as Uint8Array;
+
+  const write =
+    noting === undefined
+      ? (value: number) => {
+          column[row.i] = value;
+        }
+      : (value: number) => {
+          column[row.i] = value;
+          const index = noting.entities[row.i]! & INDEX_MASK;
+
+          if (noting.log.noted[index] !== 1) {
+            noting.log.note(index);
+          }
+        };
+
   Object.defineProperty(target, name, {
     get: () => column[row.i],
-    set:
-      refusal === undefined
-        ? noting === undefined
-          ? (value: number) => {
-              column[row.i] = value;
-            }
-          : (value: number) => {
-              column[row.i] = value;
-              const index = noting.entities[row.i]! & INDEX_MASK;
-
-              if (noting.log.noted[index] !== 1) {
-                noting.log.note(index);
-              }
-            }
-        : refuse(refusal),
+    set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
@@ -680,23 +686,24 @@ const defineU8: DefineField = (target, name, row, noting, refusal) => {
 /** Defines a `json`, `ref` or `transient` field: a plain array, one value per row. */
 const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
   let column = undefined as unknown as unknown[];
+
+  const write =
+    noting === undefined
+      ? (value: unknown) => {
+          column[row.i] = value;
+        }
+      : (value: unknown) => {
+          column[row.i] = value;
+          const index = noting.entities[row.i]! & INDEX_MASK;
+
+          if (noting.log.noted[index] !== 1) {
+            noting.log.note(index);
+          }
+        };
+
   Object.defineProperty(target, name, {
     get: () => column[row.i],
-    set:
-      refusal === undefined
-        ? noting === undefined
-          ? (value: unknown) => {
-              column[row.i] = value;
-            }
-          : (value: unknown) => {
-              column[row.i] = value;
-              const index = noting.entities[row.i]! & INDEX_MASK;
-
-              if (noting.log.noted[index] !== 1) {
-                noting.log.note(index);
-              }
-            }
-        : refuse(refusal),
+    set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
@@ -716,6 +723,28 @@ const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
   json: defineBoxed,
   ref: defineBoxed,
   transient: defineBoxed,
+};
+
+/** What an assignment to a field of an accessor throws, if it is refused. */
+const refusalOf = (
+  def: ComponentDef,
+  field: string,
+  mode: AccessorMode
+): string | undefined => {
+  const { name } = def;
+
+  if (mode === "reads") {
+    return `"${name}.${field}" was assigned to through a query that only reads "${name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`;
+  }
+
+  if (mode === "frozen") {
+    return frozenWrite(`An assignment to "${name}.${field}"`);
+  }
+
+  // A relation's target is the world's to change.
+  return def.relation !== undefined && field === "target"
+    ? retarget(name)
+    : undefined;
 };
 
 /**
@@ -746,14 +775,7 @@ export const makeAccessor = (
       field,
       row,
       noting,
-      mode === "reads"
-        ? `"${name}.${field}" was assigned to through a query that only reads "${name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`
-        : mode === "frozen"
-          ? frozenWrite(`An assignment to "${name}.${field}"`)
-          : // A relation's target is the world's to change.
-            def.relation !== undefined && field === "target"
-            ? retarget(name)
-            : undefined
+      refusalOf(def, field, mode)
     )
   );
 

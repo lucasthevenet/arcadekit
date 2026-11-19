@@ -872,31 +872,31 @@ describe("Three.instances", () => {
 
 describe("a flat game's Transform2d", () => {
   const Flat = Transform2d;
-  const at = (x: number, y: number) => Flat.Position.of({ x, y });
+  const atFlat = (x: number, y: number) => Flat.Position.of({ x, y });
 
   it("is drawn by Three.instances in the plane of x and y, turned about the axis that comes out of it", () => {
     const renderer = makeRenderer();
     const { app } = start(App.make({ plugins: [Look] }), renderer);
 
     const rocks = [
-      app.world.spawn(Rock, at(3, 4)),
-      app.world.spawn(Rock, at(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
+      app.world.spawn(Rock, atFlat(3, 4)),
+      app.world.spawn(Rock, atFlat(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
       app.world.spawn(
         Rock,
-        at(6, -7),
+        atFlat(6, -7),
         Flat.Rotation.of({ angle: Math.PI / 2 })
       ),
       app.world.spawn(
         Rock,
-        at(0.5, 9),
+        atFlat(0.5, 9),
         Flat.Rotation.of({ angle: 0.7 }),
         Flat.Scale.of({ x: 3, y: 0.5 })
       ),
     ];
 
     // Not rocks, and one that is nowhere.
-    app.world.spawn(Ship, at(8, 8));
-    app.world.spawn(Ship, at(8, 8), Flat.Rotation, Flat.Scale);
+    app.world.spawn(Ship, atFlat(8, 8));
+    app.world.spawn(Ship, atFlat(8, 8), Flat.Rotation, Flat.Scale);
     app.world.spawn(Rock, Flat.Rotation.of({ angle: 1 }));
     app.frame(0);
     const mesh = meshOf(renderer.scene, "th/Rocks");
@@ -925,7 +925,10 @@ describe("a flat game's Transform2d", () => {
     const { app } = start(App.make({ plugins: [Look] }), renderer);
     const { world } = app;
     const alive: Entity[] = [];
-    const place = () => at(random.next() * 100 - 50, random.next() * 100 - 50);
+
+    const place = () =>
+      atFlat(random.next() * 100 - 50, random.next() * 100 - 50);
+
     const turn = () => Flat.Rotation.of({ angle: random.next() * 7 - 3.5 });
 
     const size = () =>
@@ -1035,24 +1038,24 @@ describe("a flat game's Transform2d", () => {
 
     // One of each kind of table, shown and hidden.
     const shown = [
-      world.spawn(Rock, Heavy, at(1, 0)),
-      world.spawn(Rock, Heavy, at(2, 0), size),
-      world.spawn(Rock, Heavy, at(3, 0), turn),
-      world.spawn(Rock, Heavy, at(4, 0), turn, size),
+      world.spawn(Rock, Heavy, atFlat(1, 0)),
+      world.spawn(Rock, Heavy, atFlat(2, 0), size),
+      world.spawn(Rock, Heavy, atFlat(3, 0), turn),
+      world.spawn(Rock, Heavy, atFlat(4, 0), turn, size),
     ];
 
     const hidden = [
-      world.spawn(Rock, Heavy, Hidden, at(5, 0)),
-      world.spawn(Rock, Heavy, Hidden, at(6, 0), size),
-      world.spawn(Rock, Heavy, Hidden, at(7, 0), turn),
-      world.spawn(Rock, Heavy, Hidden, at(8, 0), turn, size),
+      world.spawn(Rock, Heavy, Hidden, atFlat(5, 0)),
+      world.spawn(Rock, Heavy, Hidden, atFlat(6, 0), size),
+      world.spawn(Rock, Heavy, Hidden, atFlat(7, 0), turn),
+      world.spawn(Rock, Heavy, Hidden, atFlat(8, 0), turn, size),
     ];
 
     for (const only of [Rock, Heavy]) {
-      world.spawn(only, at(9, 0));
-      world.spawn(only, at(9, 0), size);
-      world.spawn(only, at(9, 0), turn);
-      world.spawn(only, at(9, 0), turn, size);
+      world.spawn(only, atFlat(9, 0));
+      world.spawn(only, atFlat(9, 0), size);
+      world.spawn(only, atFlat(9, 0), turn);
+      world.spawn(only, atFlat(9, 0), turn, size);
     }
 
     app.frame(0);
@@ -1105,18 +1108,18 @@ describe("a flat game's Transform2d", () => {
     const objectOf = (entity: Entity): Object3D =>
       made.findLast((one) => one.entity === entity)!.object;
 
-    const plain = world.spawn(Ship, at(1, 2));
+    const plain = world.spawn(Ship, atFlat(1, 2));
 
     const whole = world.spawn(
       Ship,
-      at(-3, -4),
+      atFlat(-3, -4),
       Flat.Rotation.of({ angle: 0.5 }),
       Flat.Scale.of({ x: 2, y: 3 })
     );
 
     // Turned and sized, and nowhere; and hidden.
     world.spawn(Ship, Flat.Rotation, Flat.Scale);
-    world.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
+    world.spawn(Ship, Hidden, atFlat(9, 9), Flat.Rotation, Flat.Scale);
     app.frame(0);
     expect(made.map((one) => one.entity).toSorted()).toStrictEqual([
       plain,
@@ -1188,7 +1191,7 @@ describe("a flat game's Transform2d", () => {
 
     const first = app.world.spawn(
       Ship,
-      at(1, 1),
+      atFlat(1, 1),
       Flat.Rotation.of({ angle: 2 })
     );
 
@@ -1199,7 +1202,7 @@ describe("a flat game's Transform2d", () => {
     app.world.remove(first, Flat.Rotation);
 
     for (let i = 0; i < 200; i += 1) {
-      app.world.spawn(Ship, at(i, 2));
+      app.world.spawn(Ship, atFlat(i, 2));
     }
 
     app.frame(0);
@@ -1220,7 +1223,7 @@ describe("a flat game's Transform2d", () => {
 
     const rock = first.app.world.spawn(
       Rock,
-      at(4, 5),
+      atFlat(4, 5),
       Flat.Rotation.of({ angle: 1 }),
       Flat.Scale.of({ x: 2, y: 2 })
     );
@@ -2080,15 +2083,15 @@ describe("a colour per instance", () => {
     const size = Scale.of({ x: 2, y: 2, z: 2 });
     const flatTurn = Flat.Rotation.of({ angle: 1 });
     const flatSize = Flat.Scale.of({ x: 2, y: 2 });
-    const at = (y: number) => Position.of({ x: 0, y, z: 0 });
+    const atHeight = (y: number) => Position.of({ x: 0, y, z: 0 });
     const flat = (y: number) => Flat.Position.of({ x: 0, y });
 
     // One of each of the eight, each of a colour of its own.
     const rocks = [
-      world.spawn(Rock, at(1), paint(0.125, 0, 0)),
-      world.spawn(Rock, at(2), size, paint(0.25, 0, 0)),
-      world.spawn(Rock, at(3), turn, paint(0.375, 0, 0)),
-      world.spawn(Rock, at(4), turn, size, paint(0.5, 0, 0)),
+      world.spawn(Rock, atHeight(1), paint(0.125, 0, 0)),
+      world.spawn(Rock, atHeight(2), size, paint(0.25, 0, 0)),
+      world.spawn(Rock, atHeight(3), turn, paint(0.375, 0, 0)),
+      world.spawn(Rock, atHeight(4), turn, size, paint(0.5, 0, 0)),
       world.spawn(Rock, flat(5), paint(0, 0.125, 0.75)),
       world.spawn(Rock, flat(6), flatSize, paint(0, 0.25, 0.75)),
       world.spawn(Rock, flat(7), flatTurn, paint(0, 0.375, 0.75)),
@@ -2096,13 +2099,13 @@ describe("a colour per instance", () => {
     ];
 
     // Not painted, of every kind: a kind with a colour draws what has one.
-    world.spawn(Rock, at(9));
-    world.spawn(Rock, at(9), turn, size);
+    world.spawn(Rock, atHeight(9));
+    world.spawn(Rock, atHeight(9), turn, size);
     world.spawn(Rock, flat(9));
     world.spawn(Rock, flat(9), flatTurn, flatSize);
     // Painted and not a rock; and hidden.
-    world.spawn(Ship, at(9), paint(1, 1, 1));
-    world.spawn(Rock, Hidden, at(9), paint(1, 1, 1));
+    world.spawn(Ship, atHeight(9), paint(1, 1, 1));
+    world.spawn(Rock, Hidden, atHeight(9), paint(1, 1, 1));
     app.frame(0);
     expectDrawn(mesh(), app, rocks);
 
@@ -2823,10 +2826,10 @@ describe("Three.objects", () => {
 
   it("takes the object out and frees it when its entity is gone, or is no longer one of these", () => {
     const { app, renderer } = fresh();
-    const at = (x: number) => Position.of({ x, y: 0, z: 0 });
+    const atX = (x: number) => Position.of({ x, y: 0, z: 0 });
 
     const [gone, unmarked, hidden, nowhere, stays] = [1, 2, 3, 4, 5].map((x) =>
-      app.world.spawn(Ship, at(x))
+      app.world.spawn(Ship, atX(x))
     ) as [Entity, Entity, Entity, Entity, Entity];
 
     app.frame(0);

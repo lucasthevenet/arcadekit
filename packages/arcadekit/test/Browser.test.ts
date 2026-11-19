@@ -792,7 +792,7 @@ describe("Browser.runMain", () => {
     const page = makePage();
     const log: string[] = [];
 
-    const Sound = Plugin.make("Sound", {
+    const SoundPlugin = Plugin.make("Sound", {
       plugins: [Flying],
       layer: Layer.effectDiscard(
         Effect.acquireRelease(
@@ -806,7 +806,7 @@ describe("Browser.runMain", () => {
     let ended: Exit.Exit<unknown, unknown> | undefined;
     Browser.runMain(
       App.run(
-        { plugins: [Sound] },
+        { plugins: [SoundPlugin] },
         {
           hz: 60,
           ready: (app) =>
@@ -1138,7 +1138,7 @@ describe("a page's sound", () => {
   };
 
   const build = async (
-    files: Readonly<Record<string, string | Sound.Clip>>,
+    served: Readonly<Record<string, string | Sound.Clip>>,
     options: {
       readonly volume?: number;
       readonly loader?: Assets.Loader;
@@ -1168,7 +1168,7 @@ describe("a page's sound", () => {
 
     const context = await Effect.runPromise(
       Layer.build(
-        Browser.layerSound(files, {
+        Browser.layerSound(served, {
           window: page,
           audio: () => {
             made += 1;

@@ -125,14 +125,25 @@ export interface Variant {
 export const inUnit = (
   variant: Variant,
   ms: number
-): { readonly value: number; readonly unit: string } =>
-  variant.unit === "matches"
-    ? { value: ms * 1000, unit: "µs per pass" }
-    : variant.unit === "dispatch"
-      ? { value: ms * 1000, unit: "µs per dispatch" }
-      : variant.unit === "visit"
-        ? { value: ms * 1e6, unit: "ns per visit" }
-        : { value: (ms * 1e6) / N, unit: "ns/entity" };
+): { readonly value: number; readonly unit: string } => {
+  switch (variant.unit) {
+    case "matches": {
+      return { value: ms * 1000, unit: "µs per pass" };
+    }
+
+    case "dispatch": {
+      return { value: ms * 1000, unit: "µs per dispatch" };
+    }
+
+    case "visit": {
+      return { value: ms * 1e6, unit: "ns per visit" };
+    }
+
+    default: {
+      return { value: (ms * 1e6) / N, unit: "ns/entity" };
+    }
+  }
+};
 
 export const variants: Record<string, Variant> = {
   raw: {

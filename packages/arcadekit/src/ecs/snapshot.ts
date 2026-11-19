@@ -13,6 +13,7 @@
  */
 import { isBoxed } from "./component";
 import type { Column, FieldKind, RefCodec } from "./component";
+import { byName } from "./order";
 
 /**
  * Why a snapshot couldn't be taken or loaded.
@@ -846,15 +847,6 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     sparse,
     singletons,
   };
-};
-
-/** Orders by name, a code unit at a time: the same on every machine. */
-const byName = (a: { name: string }, b: { name: string }): number => {
-  if (a.name < b.name) {
-    return -1;
-  }
-
-  return a.name > b.name ? 1 : 0;
 };
 
 /**

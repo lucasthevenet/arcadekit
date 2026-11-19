@@ -53,6 +53,19 @@ export type Outcome =
   /** The base could not run it: there is nothing to compare with. */
   | "new";
 
+/** What a comparison says, from whether its difference is plain and how large it is. */
+const outcomeOf = (
+  plain: boolean,
+  ratio: number,
+  onPurpose: boolean
+): Outcome => {
+  if (plain && ratio > 1 + FLOOR) {
+    return onPurpose ? "slower on purpose" : "slower";
+  }
+
+  return plain && ratio < 1 / (1 + FLOOR) ? "faster" : "the same";
+};
+
 export interface Verdict {
   readonly outcome: Outcome;
   /** The head's fastest run over the base's: 1.1 is a tenth slower. */
@@ -146,14 +159,7 @@ export const judge = (
   const plain = share <= CHANCE;
 
   return {
-    outcome:
-      plain && ratio > 1 + FLOOR
-        ? onPurpose
-          ? "slower on purpose"
-          : "slower"
-        : plain && ratio < 1 / (1 + FLOOR)
-          ? "faster"
-          : "the same",
+    outcome: outcomeOf(plain, ratio, onPurpose),
     ratio,
     base: was,
     head: best,

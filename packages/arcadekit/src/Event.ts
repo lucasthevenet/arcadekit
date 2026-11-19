@@ -30,6 +30,7 @@
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
+import { byName } from "./ecs/order";
 import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
@@ -302,20 +303,23 @@ class Handle<P> implements EventHandle<P> {
     this.channel = channel;
     this.cursor = cursor;
     this.forFrame = forFrame;
+
     // Decided once, so that emitting stays one call with no check in it.
-    this.emit = forFrame
-      ? () => {
-          throw new Error(
-            `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
-          );
-        }
-      : refusal === undefined
-        ? (payload) => {
-            channel.buffer.push(payload);
-          }
-        : () => {
-            throw new Error(refusal);
-          };
+    if (forFrame) {
+      this.emit = () => {
+        throw new Error(
+          `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
+        );
+      };
+    } else if (refusal === undefined) {
+      this.emit = (payload) => {
+        channel.buffer.push(payload);
+      };
+    } else {
+      this.emit = () => {
+        throw new Error(refusal);
+      };
+    }
   }
 
   readonly read = (): readonly P[] => {
@@ -563,9 +567,7 @@ export class EventBus {
     }
 
     // In order of name, so that the same game always saves the same bytes.
-    return Exit.succeed(
-      out.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    );
+    return Exit.succeed(out.toSorted(byName));
   }
 
   /**

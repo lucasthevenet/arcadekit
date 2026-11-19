@@ -887,7 +887,10 @@ describe("a texture", () => {
 
   it("is left as its file has it when it is told so where it is made, and refuses to be told in prepare", async () => {
     const { asked, bitmaps } = stubBitmaps();
-    const files = Assets.layerMemory({ "/skin.png": new Uint8Array([1, 2]) });
+
+    const skinFiles = Assets.layerMemory({
+      "/skin.png": new Uint8Array([1, 2]),
+    });
 
     const load = (asset: Assets.Asset<Texture>) =>
       Effect.runPromise(
@@ -898,7 +901,7 @@ describe("a texture", () => {
               ({ skin }) => ({ flipY: skin.flipY, image: skin.image })
             )
           )
-        ).pipe(Effect.provide(files))
+        ).pipe(Effect.provide(skinFiles))
       );
 
     // A model's own picture, say: as the file has it.

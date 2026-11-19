@@ -366,8 +366,10 @@ describe("Sound.Player", () => {
       )
     );
 
-    const frame = (...asked: (Sound.Options | undefined)[]): Sound.Played[] => {
-      clicks = asked;
+    const frame = (
+      ...requested: (Sound.Options | undefined)[]
+    ): Sound.Played[] => {
+      clicks = requested;
       sound.played.length = 0;
       app.frame(0);
 

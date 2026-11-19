@@ -1346,8 +1346,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return Effect.map(
           system.condition === undefined
             ? system.run
-            : Effect.flatMap(system.condition, (holds) =>
-                holds ? system.run : (system.idle ?? Effect.void)
+            : Effect.flatMap(system.condition, (met) =>
+                met ? system.run : (system.idle ?? Effect.void)
               ),
           release
         );
@@ -1585,12 +1585,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Whether the input stage has run since the last tick.
     let heard = false;
 
-    const busy = (): string =>
-      ticking
-        ? "tick"
-        : between === "input"
-          ? "run of the input stage"
-          : "frame";
+    const busy = (): string => {
+      if (ticking) {
+        return "tick";
+      }
+
+      return between === "input" ? "run of the input stage" : "frame";
+    };
 
     // The action whose handler is running, if one is.
     let applying: string | undefined;
@@ -1865,7 +1866,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     const runTick = (
       delta: number,
-      options?: TickOptions
+      tickOptions?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
       if (ticking || between !== undefined) {
         throw new Error(`App.tick was called from inside a ${busy()}`);
@@ -1877,7 +1878,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
       // A tick hears the devices first. Whoever steps the app may have
       // seen to it, as a driver does; if not, it is seen to here.
-      if (!heard && inputSystems.length > 0 && options?.input !== false) {
+      if (!heard && inputSystems.length > 0 && tickOptions?.input !== false) {
         const exit = inputExit();
 
         if (Exit.isFailure(exit)) {
@@ -1969,7 +1970,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     const tickExit = (
       delta: number,
-      options?: TickOptions
+      tickOptions?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
       if (diverted !== undefined) {
         throw new Error(
@@ -1977,7 +1978,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         );
       }
 
-      return runTick(delta, options);
+      return runTick(delta, tickOptions);
     };
 
     const app: App<
@@ -2099,9 +2100,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
 
-        const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
-          Exit.fail(new Save.SaveRefused({ message }));
-
         if (commands.size > 0) {
           return refused(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
@@ -2212,8 +2210,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return checkpoint();
       },
       tickExit,
-      tick(delta, options) {
-        const exit = tickExit(delta, options);
+      tick(delta, tickOptions) {
+        const exit = tickExit(delta, tickOptions);
 
         if (Exit.isFailure(exit)) {
           throw Cause.squash(exit.cause);

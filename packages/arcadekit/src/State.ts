@@ -31,6 +31,7 @@ import type {
   Schema,
   SingletonSpec,
 } from "./ecs/component";
+import { byName } from "./ecs/order";
 import type { World as EcsWorld } from "./ecs/world";
 import { World } from "./Services";
 import * as System from "./System";
@@ -132,9 +133,7 @@ export const handleOf = <V extends string>(
   };
 
   registry.handles.set(state, handle);
-  registry.states = [...registry.states, state].toSorted((a, b) =>
-    a.name < b.name ? -1 : a.name > b.name ? 1 : 0
-  );
+  registry.states = [...registry.states, state].toSorted(byName);
 
   return handle;
 };

@@ -237,8 +237,8 @@ describe("the random number generator", () => {
     const orders = new Map<string, number>();
 
     for (let i = 0; i < 24_000; i += 1) {
-      const order = rng.shuffle(["a", "b", "c", "d"]).join("");
-      orders.set(order, (orders.get(order) ?? 0) + 1);
+      const shuffled = rng.shuffle(["a", "b", "c", "d"]).join("");
+      orders.set(shuffled, (orders.get(shuffled) ?? 0) + 1);
     }
 
     expect(orders.size).toBe(24);
