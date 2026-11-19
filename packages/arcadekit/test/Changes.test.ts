@@ -667,8 +667,9 @@ describe("changes against a simple model", () => {
     },
   ];
 
-  for (const seed of [1, 2, 3, 4]) {
-    it(`agrees with it through thousands of random operations (seed ${seed})`, () => {
+  it.each([1, 2, 3, 4])(
+    "agrees with it through thousands of random operations (seed %i)",
+    (seed) => {
       const dice = new EcsWorld({ seed }).random;
       const world = new EcsWorld();
       const alive: Entity[] = [];
@@ -844,18 +845,23 @@ describe("changes against a simple model", () => {
         return seen;
       };
 
-      const visit = (reader: (typeof readers)[number]): void => {
-        reader.view._path = dice.pick(["auto", "sorted", "mask"]);
+      /** What a reader is to visit next. */
+      const expectedOf = (reader: (typeof readers)[number]): Entity[] => {
         const matching = world.view(reader.spec.plain).entities();
 
-        const expected = reader.fresh
+        return reader.fresh
           ? matching
           : matching.filter((entity) => reader.pending.has(entity));
+      };
 
-        if (dice.next() < 0.3) {
-          expect(reader.view.count()).toBe(expected.length);
-        }
+      /** Counts what a reader is to visit, before it visits. */
+      const count = (reader: (typeof readers)[number]): void => {
+        expect(reader.view.count()).toBe(expectedOf(reader).length);
+      };
 
+      const visit = (reader: (typeof readers)[number]): void => {
+        reader.view._path = dice.pick(["auto", "sorted", "mask"]);
+        const expected = expectedOf(reader);
         const seen: Entity[] = [];
         // Before the visit: what the visit itself fires is for later.
         reader.pending.clear();
@@ -872,16 +878,24 @@ describe("changes against a simple model", () => {
         reader.fresh = false;
       };
 
+      const readLost = (): void => {
+        expect(lost.reader.read()).toStrictEqual(lost.expected);
+        lost.expected = [];
+      };
+
       const check = (): void => {
         for (const reader of readers) {
           if (dice.next() < (reader.lazy ? 0.05 : 0.5)) {
+            if (dice.next() < 0.3) {
+              count(reader);
+            }
+
             visit(reader);
           }
         }
 
         if (dice.next() < 0.3) {
-          expect(lost.reader.read()).toStrictEqual(lost.expected);
-          lost.expected = [];
+          readLost();
         }
       };
 
@@ -909,8 +923,8 @@ describe("changes against a simple model", () => {
           check();
         }
       }
-    });
-  }
+    }
+  );
 });
 
 describe("a change log", () => {
@@ -924,6 +938,8 @@ describe("a change log", () => {
     sometimes.entities();
     const expected = new Set<Entity>();
     const lately = new Set<Entity>();
+    /** What the reader that comes now and then saw, and what it was to see. */
+    const visits: [Entity[], Entity[]][] = [];
     let longest = 0;
 
     // Ten entities are written once, long before the readers that stay
@@ -946,16 +962,22 @@ describe("a change log", () => {
       busy.entities();
 
       if (round % 331 === 5 || round % 331 === 6) {
-        // A reader part of the way along sees what is new to it, no more.
-        expect(sometimes.entities()).toStrictEqual(
-          entities.filter((entity) => lately.has(entity))
-        );
+        visits.push([
+          sometimes.entities(),
+          entities.filter((entity) => lately.has(entity)),
+        ]);
         lately.clear();
       }
 
       longest = Math.max(longest, world.saveChanges()[0]!.entries.length);
     }
 
+    // A reader part of the way along saw what was new to it, no more,
+    // twice in every 331 rounds.
+    expect(visits).toHaveLength(20);
+    expect(visits.map(([seen]) => seen)).toStrictEqual(
+      visits.map(([, wanted]) => wanted)
+    );
     // Some 17,000 writes were logged, of 50 entities.
     expect(longest).toBeLessThan(2100);
     expect(expected.size).toBe(50);

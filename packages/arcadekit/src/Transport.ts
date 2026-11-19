@@ -218,14 +218,16 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
           const over = text({
             send: (message) => channel.postMessage(message),
             listen(onText) {
-              channel.onmessage = (event: MessageEvent<unknown>) => {
+              const heard = (event: MessageEvent<unknown>) => {
                 // Whatever else is posted under the name is not text, and
                 // is dropped as what is not a message.
                 onText(String(event.data));
               };
 
+              channel.addEventListener("message", heard);
+
               return () => {
-                channel.onmessage = null;
+                channel.removeEventListener("message", heard);
               };
             },
           });
@@ -280,6 +282,16 @@ export class Closed extends Data.TaggedError("TransportClosed")<{
   }
 }
 
+/** What `layerWebSocket` holds for its scope. */
+interface HeldSocket {
+  readonly socket: WebSocket;
+  over: TextTransport | undefined;
+  open: boolean;
+  closed: Closed | undefined;
+  /** Aborted when the scope closes, to stop listening for a close or an error. */
+  readonly listening: AbortController;
+}
+
 /**
  * The transport between machines: a WebSocket to a relay, which forwards each
  * message to the other peers of the room. `url` is the relay's address for this
@@ -310,25 +322,26 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
         Effect.sync(() => {
           const socket = new WebSocket(url);
 
-          const held: {
-            readonly socket: WebSocket;
-            over: TextTransport | undefined;
-            open: boolean;
-            closed: Closed | undefined;
-          } = { socket, over: undefined, open: true, closed: undefined };
+          const held: HeldSocket = {
+            socket,
+            over: undefined,
+            open: true,
+            closed: undefined,
+            listening: new AbortController(),
+          };
 
           // What was sent before the socket opened.
           let waiting: string[] | undefined = [];
-          socket.onopen = () => {
+          socket.addEventListener("open", () => {
             const kept = waiting ?? [];
             waiting = undefined;
 
             for (const sent of kept) {
               socket.send(sent);
             }
-          };
+          });
 
-          socket.onclose = (event: CloseEvent) => {
+          const onClose = (event: CloseEvent) => {
             held.closed ??= new Closed({
               url,
               code: event.code,
@@ -338,9 +351,13 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
 
           // A connection that could not be made, or was cut, may say so
           // here alone: not every platform follows it with a close.
-          socket.onerror = () => {
+          const onError = () => {
             held.closed ??= new Closed({ url, code: 1006, reason: "" });
           };
+
+          const { signal } = held.listening;
+          socket.addEventListener("close", onClose, { signal });
+          socket.addEventListener("error", onError, { signal });
 
           held.over = text({
             send(sent) {
@@ -351,13 +368,15 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
               }
             },
             listen(onText) {
-              socket.onmessage = (event: MessageEvent<unknown>) => {
+              const heard = (event: MessageEvent<unknown>) => {
                 // A frame that is not text is dropped as what is not a message.
                 onText(String(event.data));
               };
 
+              socket.addEventListener("message", heard);
+
               return () => {
-                socket.onmessage = null;
+                socket.removeEventListener("message", heard);
               };
             },
           });
@@ -368,8 +387,7 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
           Effect.sync(() => {
             held.open = false;
             held.over?.close();
-            held.socket.onclose = null;
-            held.socket.onerror = null;
+            held.listening.abort();
             held.socket.close(1000);
           })
       ),

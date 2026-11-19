@@ -61,10 +61,10 @@ const imported = (text: string): string[] => {
   const found: string[] = [];
 
   const pattern =
-    /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["']([^"']+)["']/gmu;
+    /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["'](?<specifier>[^"']+)["']/gmu;
 
   for (const match of text.matchAll(pattern)) {
-    found.push(match[1]!);
+    found.push(match.groups!.specifier!);
   }
 
   return found;
@@ -150,10 +150,10 @@ describe("the package's entries", () => {
     entry("./ecs", "../src/ecs/index.ts");
 
     for (const file of Object.keys(sources)) {
-      const module = /^\.\.\/src\/([A-Z]\w*)\.ts$/u.exec(file);
+      const module = /^\.\.\/src\/(?<name>[A-Z]\w*)\.ts$/u.exec(file);
 
       if (module !== null) {
-        entry(`./${module[1]}`, file);
+        entry(`./${module.groups!.name!}`, file);
       }
     }
 

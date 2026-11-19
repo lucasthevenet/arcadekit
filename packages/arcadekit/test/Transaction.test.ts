@@ -192,8 +192,9 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
 };
 
 describe("a transaction of a world", () => {
-  for (const [name, write] of Object.entries(writers)) {
-    it(`takes back ${name} on rollback, and keeps it on commit`, () => {
+  it.each(Object.entries(writers))(
+    "takes back %s on rollback, and keeps it on commit",
+    (name, write) => {
       const { entities, world } = populated();
       const before = world.hash();
 
@@ -228,8 +229,8 @@ describe("a transaction of a world", () => {
       const again = populated();
       write(again.world, again.entities);
       expect(again.world.hash()).toBe(written);
-    });
-  }
+    }
+  );
 
   it("takes back every writer at once, in any order", () => {
     const names = Object.keys(writers);
@@ -279,13 +280,16 @@ describe("a transaction of a world", () => {
         write(world, entities);
       }
 
-      if (round % 4 === 3) {
+      // Every fourth round is kept, and the rest taken back.
+      const kept = round % 4 === 3;
+
+      if (kept) {
         world.commit();
-        expect(world.hash()).not.toBe(before);
       } else {
         world.rollback();
-        expect(world.hash()).toBe(before);
       }
+
+      expect(world.hash() === before, `round ${round}`).toBe(!kept);
     }
   });
 
@@ -695,9 +699,10 @@ const everyStep: Steps = [
   "read",
 ];
 
-const next = (dirty: boolean) =>
+/** The ids the next three spawns get, after a refused action or none. */
+const idsAfter = (refused: boolean) =>
   withApp(game(), ({ app, entities }) => {
-    if (dirty) {
+    if (refused) {
       app.dispatch(Act, {
         target: entities[0]!,
         steps: ["spawn", "spawn", "spawn", "despawn"],
@@ -709,50 +714,48 @@ const next = (dirty: boolean) =>
   });
 
 describe("an action that is refused", () => {
-  for (const step of everyStep) {
-    it(`leaves nothing behind after "${step}"`, () => {
-      withApp(game(), ({ app, entities }) => {
-        echoes.length = 0;
-        notes.length = 0;
-        app.tick(1);
-        const before = app.world.hash();
-        const log = app.actionLog.length;
+  it.each(everyStep)(`leaves nothing behind after "%s"`, (step) => {
+    withApp(game(), ({ app, entities }) => {
+      echoes.length = 0;
+      notes.length = 0;
+      app.tick(1);
+      const before = app.world.hash();
+      const log = app.actionLog.length;
 
-        const exit = app.dispatch(Act, {
-          target: entities[0]!,
-          steps: [step],
-          refuse: true,
-        });
-
-        expect(exit).toStrictEqual(Exit.fail(new Refused()));
-        expect(app.world.hash()).toBe(before);
-        expect(app.commands.size).toBe(0);
-        expect(app.events.pending(Noted)).toBe(0);
-        expect(app.actionLog).toHaveLength(log);
-        // Nor does it show up later: no queued action, no event, no entity.
-        app.tick(1);
-        expect(echoes).toStrictEqual([]);
-        expect(notes).toStrictEqual([]);
-        expect(app.world.hash()).toBe(before);
-
-        // The same steps in an action that is accepted do change the game.
-        const accepted = app.dispatch(Act, {
-          target: entities[0]!,
-          steps: [step],
-          refuse: false,
-        });
-
-        expect(accepted).toStrictEqual(Exit.succeed(1));
-        app.tick(1);
-        app.tick(1);
-
-        const changed =
-          app.world.hash() !== before || notes.length > 0 || echoes.length > 0;
-
-        expect(changed).toBe(true);
+      const exit = app.dispatch(Act, {
+        target: entities[0]!,
+        steps: [step],
+        refuse: true,
       });
+
+      expect(exit).toStrictEqual(Exit.fail(new Refused()));
+      expect(app.world.hash()).toBe(before);
+      expect(app.commands.size).toBe(0);
+      expect(app.events.pending(Noted)).toBe(0);
+      expect(app.actionLog).toHaveLength(log);
+      // Nor does it show up later: no queued action, no event, no entity.
+      app.tick(1);
+      expect(echoes).toStrictEqual([]);
+      expect(notes).toStrictEqual([]);
+      expect(app.world.hash()).toBe(before);
+
+      // The same steps in an action that is accepted do change the game.
+      const accepted = app.dispatch(Act, {
+        target: entities[0]!,
+        steps: [step],
+        refuse: false,
+      });
+
+      expect(accepted).toStrictEqual(Exit.succeed(1));
+      app.tick(1);
+      app.tick(1);
+
+      const changed =
+        app.world.hash() !== before || notes.length > 0 || echoes.length > 0;
+
+      expect(changed).toBe(true);
     });
-  }
+  });
 
   it("leaves nothing behind when its handler dies of a bug half-way", () => {
     withApp(game(), ({ app, entities }) => {
@@ -820,14 +823,13 @@ describe("an action that is refused", () => {
         const y = (): number => app.world.get(target, Body)!.y;
         const before = y();
         app.tick(1);
+        const dispatched: unknown[] = [];
 
         for (const attempt of attempts) {
           const payload = { target, steps: ["read" as const], refuse: true };
 
           if (attempt === "refused") {
-            expect(app.dispatch(Act, payload)).toStrictEqual(
-              Exit.fail(new Refused())
-            );
+            dispatched.push(app.dispatch(Act, payload));
           } else {
             // Refused when its turn comes, at the start of the next tick.
             app.enqueue(Act, payload);
@@ -837,6 +839,9 @@ describe("an action that is refused", () => {
           expect(y()).toBe(before);
         }
 
+        expect(dispatched).toStrictEqual(
+          dispatched.map(() => Exit.fail(new Refused()))
+        );
         app.dispatch(Act, { target, steps: ["read"], refuse: false });
         const heard = y() - before;
         // And what was read by an action that was accepted stays read.
@@ -926,7 +931,7 @@ describe("an action that is refused", () => {
   });
 
   it("gives the same ids afterwards as if it had never been dispatched", () => {
-    expect(next(true)).toStrictEqual(next(false));
+    expect(idsAfter(true)).toStrictEqual(idsAfter(false));
   });
 });
 

@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from "node:timers/promises";
+
 import {
   Cause,
   Context,
@@ -518,12 +520,12 @@ describe("App.run", () => {
       )
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await sleep(120);
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(made!.time.tick).toBeGreaterThan(3);
     expect(log).toContain("sound closed");
     const ticks = made!.time.tick;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await sleep(50);
     expect(made!.time.tick).toBe(ticks);
   });
 });

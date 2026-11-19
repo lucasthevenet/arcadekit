@@ -1,4 +1,15 @@
-import { Cause, Context, Data, Effect, Exit, Layer, Logger } from "effect";
+import { setTimeout as sleep } from "node:timers/promises";
+
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+} from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -394,9 +405,7 @@ describe("the tick scheduler", () => {
     // Not done synchronously: it yielded and will resume from a timer.
     expect(fiber.pollUnsafe()).toBeUndefined();
 
-    const exit = await new Promise<Exit.Exit<number>>((resolve) =>
-      fiber.addObserver(resolve)
-    );
+    const exit = await Effect.runPromise(Fiber.await(fiber));
 
     expect(exit).toStrictEqual(Exit.succeed(10_000));
   });
@@ -435,9 +444,7 @@ describe("the tick scheduler", () => {
           expect(log).toStrictEqual(["start"]);
           expect(app.dispatcher.pending).toBe(1);
           // Give timers and microtasks every chance to run it behind our back.
-          yield* Effect.promise(
-            () => new Promise((resolve) => setTimeout(resolve, 20))
-          );
+          yield* Effect.promise(() => sleep(20));
           expect(log).toStrictEqual(["start"]);
           app.tick(1);
           expect(log).toStrictEqual(["start", "after yieldNow"]);

@@ -202,13 +202,13 @@ export const onPurpose = (log: string): Set<string> => {
   const lines = log.split("\n");
 
   for (let at = 0; at < lines.length; at += 1) {
-    const match = /^\s*Bench-slower:(.*)$/iu.exec(lines[at]!);
+    const match = /^\s*Bench-slower:(?<names>.*)$/iu.exec(lines[at]!);
 
     if (match === null) {
       continue;
     }
 
-    let names = match[1]!;
+    let names = match.groups!.names!;
 
     // As a trailer is continued: by lines that begin with a space.
     while (at + 1 < lines.length && /^\s+\S/u.test(lines[at + 1]!)) {

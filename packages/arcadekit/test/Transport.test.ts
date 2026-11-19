@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from "node:timers/promises";
+
 import { Context, Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -250,9 +252,8 @@ describe("a session joined to a transport", () => {
             expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
             expect(ada.session.drifted).toBeUndefined();
 
-            if (ahead !== undefined) {
-              expect(ada.session.rewinds).toBeGreaterThan(0);
-            }
+            // In lockstep, nothing is rewound.
+            expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
 
             withApp(game(), (alone) => {
               App.replay(alone, ada.app.actionLog, {
@@ -405,10 +406,7 @@ describe("a transport over text", () => {
 });
 
 /** A turn of the event loop or two: a channel delivers in its own time. */
-const later = (ms = 5): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+const later = (ms = 5): Promise<void> => sleep(ms);
 
 const nextRoom = (): string => `arcadekit-test/${crypto.randomUUID()}`;
 
@@ -417,9 +415,9 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     const name = nextRoom();
     const stranger = new BroadcastChannel(name);
     const heard: unknown[] = [];
-    stranger.onmessage = (event: MessageEvent<unknown>) => {
+    stranger.addEventListener("message", (event: MessageEvent<unknown>) => {
       heard.push(event.data);
-    };
+    });
 
     await Effect.runPromise(
       Effect.scoped(
@@ -456,7 +454,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     const made: {
       name: string;
       closed: boolean;
-      onmessage: unknown;
+      listeners: Set<unknown>;
       posted: unknown[];
     }[] = [];
 
@@ -468,13 +466,18 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           this.record = {
             name,
             closed: false,
-            onmessage: null as unknown,
+            listeners: new Set<unknown>(),
             posted: [] as unknown[],
           };
           made.push(this.record);
         }
-        set onmessage(listener: unknown) {
-          this.record.onmessage = listener;
+        addEventListener(type: string, listener: unknown): void {
+          expect(type).toBe("message");
+          this.record.listeners.add(listener);
+        }
+        removeEventListener(type: string, listener: unknown): void {
+          expect(type).toBe("message");
+          this.record.listeners.delete(listener);
         }
         postMessage(data: unknown): void {
           this.record.posted.push(data);
@@ -496,7 +499,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             const transport = Context.get(context, Transport.Transport);
             expect(made).toHaveLength(1);
             expect(made[0]!.name).toBe("game/room");
-            expect(made[0]!.onmessage).toBeTypeOf("function");
+            expect(made[0]!.listeners.size).toBe(1);
             expect(made[0]!.closed).toBe(false);
             transport.send(message("ada", 0));
             expect(made[0]!.posted).toStrictEqual([
@@ -506,7 +509,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         )
       );
       expect(made[0]!.closed).toBe(true);
-      expect(made[0]!.onmessage).toBeNull();
+      expect(made[0]!.listeners.size).toBe(0);
     } finally {
       vi.unstubAllGlobals();
     }

@@ -23,7 +23,7 @@ import {
   Transport,
 } from "../src/index";
 
-const [, , base] = process.argv;
+const [base] = process.argv.slice(2);
 
 if (base === undefined) {
   console.error("usage: relay:check <the relay's address, ws:// or wss://>");
@@ -49,8 +49,7 @@ const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   (yield* Purse)[from] += amount;
 });
 
-const wait = (ms: number) =>
-  Effect.promise(() => new Promise((r) => setTimeout(r, ms)));
+const wait = (ms: number) => Effect.sleep(ms);
 
 /** A peer's own transport, for as long as the scope it is opened in. */
 const open = (peer: string, inRoom = room) =>

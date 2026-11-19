@@ -5,15 +5,15 @@ import type { PackageRules } from "./entries.ts";
 export const sourceOf = (
   filename: string
 ): { readonly rules: PackageRules; readonly file: string } | undefined => {
-  const match = /(?:^|\/)packages\/([^/]+)\/(src\/.+)$/u.exec(
+  const match = /(?:^|\/)packages\/(?<dir>[^/]+)\/(?<file>src\/.+)$/u.exec(
     filename.replaceAll("\\", "/")
   );
 
-  const rules = packages.find((one) => one.dir === match?.[1]);
+  const rules = packages.find((one) => one.dir === match?.groups?.dir);
 
   return match === null || rules === undefined
     ? undefined
-    : { rules, file: match[2]! };
+    : { rules, file: match.groups!.file! };
 };
 
 /** Where a relative specifier leads, from a file: "src/ecs/world.ts" and "../App" give "src/App". */

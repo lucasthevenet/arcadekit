@@ -306,8 +306,8 @@ export const makeManualDisplay = (): ManualDisplay => {
       const due = requests;
       requests = [];
 
-      for (const callback of due) {
-        callback(now);
+      for (const request of due) {
+        request(now);
       }
 
       return due.length;

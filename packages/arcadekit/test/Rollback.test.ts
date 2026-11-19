@@ -127,11 +127,13 @@ describe("a rollback session", () => {
   });
 
   it("ends hash-equal with the other peers, and with a game of one that was given the same actions", () => {
-    for (const [seed, lag, ahead, delay] of [
-      [1, { min: 0, max: 3 }, 8, 0],
-      [2, { min: 2, max: 7 }, 12, 0],
-      [3, { min: 1, max: 5 }, 8, 1],
-      [4, { min: 0, max: 0 }, 4, 0],
+    // The last is how many times each peer rewinds at least: with no lag,
+    // that may be none.
+    for (const [seed, lag, ahead, delay, rewinds] of [
+      [1, { min: 0, max: 3 }, 8, 0, 6],
+      [2, { min: 2, max: 7 }, 12, 0, 6],
+      [3, { min: 1, max: 5 }, 8, 1, 6],
+      [4, { min: 0, max: 0 }, 4, 0, 0],
     ] as const) {
       const where = `seed ${seed}`;
       withPeers(["ada", "grace"], { ahead, delay }, (peers) => {
@@ -166,13 +168,11 @@ describe("a rollback session", () => {
         expect(purse.tallied, where).toBeGreaterThan(0);
         expect(purse.born, where).toBeGreaterThan(40);
 
-        if (lag.max > 0) {
-          expect(ada.session.rewinds, where).toBeGreaterThan(5);
-          expect(grace.session.rewinds, where).toBeGreaterThan(5);
-          expect(ada.session.resimulated, where).toBeGreaterThanOrEqual(
-            ada.session.rewinds
-          );
-        }
+        expect(ada.session.rewinds, where).toBeGreaterThanOrEqual(rewinds);
+        expect(grace.session.rewinds, where).toBeGreaterThanOrEqual(rewinds);
+        expect(ada.session.resimulated, where).toBeGreaterThanOrEqual(
+          ada.session.rewinds
+        );
 
         // What it keeps to go back to is what it is not sure of, however
         // long the game has gone on; at rest, with everything said, that

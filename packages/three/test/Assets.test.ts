@@ -1,4 +1,6 @@
 /// <reference types="node" />
+import { setTimeout as sleep } from "node:timers/promises";
+
 import {
   Action,
   App,
@@ -48,8 +50,7 @@ const go = Action.handler(Go, function* ({ to }) {
 });
 
 /** Lets what is waiting on a promise or a timer run. */
-const settle = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+const settle = (): Promise<void> => sleep(0);
 
 /** What a level's bark is, to a test: which loading it is of, and whether it was let go. */
 interface Bark {
@@ -936,20 +937,27 @@ describe("a texture", () => {
 
     // Three.js does not read flipY of a bitmap, so setting it in prepare
     // would do nothing, either way: the load fails and says where to.
-    for (const [made, set] of [
+    const cases = [
       [undefined, false],
       [true, false],
       [false, true],
-    ] as const) {
-      const exit = await load(
-        Three.texture("/skin.png", {
-          ...(made === undefined ? {} : { flipY: made }),
-          prepare: (texture) => {
-            texture.flipY = set;
-          },
-        })
-      );
+    ] as const;
 
+    const exits = await Promise.all(
+      cases.map(([made, set]) =>
+        load(
+          Three.texture("/skin.png", {
+            ...(made === undefined ? {} : { flipY: made }),
+            prepare: (texture) => {
+              texture.flipY = set;
+            },
+          })
+        )
+      )
+    );
+
+    for (const [index, [, set]] of cases.entries()) {
+      const exit = exits[index]!;
       expect(Exit.isFailure(exit)).toBe(true);
       expect(
         Cause.squash((exit as Exit.Failure<never, unknown>).cause)

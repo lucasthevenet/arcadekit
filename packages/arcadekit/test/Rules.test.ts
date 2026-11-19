@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit, Layer } from "effect";
+import { Context, Data, Effect, Exit, Layer, Option } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -430,9 +430,8 @@ describe("actions", () => {
       expect(app.events.pending(Died)).toBe(1);
 
       // The id the refused summon had reserved was released and is reused.
-      if (Exit.isSuccess(accepted)) {
-        expect(app.world.get(accepted.value, Health)).toStrictEqual({ hp: 5 });
-      }
+      const summoned = Option.getOrThrow(Exit.getSuccess(accepted));
+      expect(app.world.get(summoned, Health)).toStrictEqual({ hp: 5 });
     });
   });
 

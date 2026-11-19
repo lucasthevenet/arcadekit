@@ -421,6 +421,31 @@ export interface EventGuard {
   readonly emits: ReadonlySet<string>;
 }
 
+/** Puts the events of a save into their channel, as they were waiting. */
+const adopt = <P>(channel: Channel<P>, saved: SavedEvents): void => {
+  for (const data of saved.payloads) {
+    const payload = decode(channel.def, data);
+
+    if (Exit.isFailure(payload)) {
+      const reason = Cause.squash(payload.cause);
+
+      throw new Error(
+        `The save holds an event "${saved.name}" that no longer reads: ${reason instanceof Error ? reason.message : String(reason)}`
+      );
+    }
+
+    channel.buffer.push(payload.value);
+  }
+
+  // Whoever had read some of them goes on from where it was.
+  for (const [reader, count] of Object.entries(saved.read)) {
+    channel.readers.set(
+      reader,
+      new Handle(channel, channel.offset + Math.min(count, channel.size))
+    );
+  }
+};
+
 /**
  * Where an app's events wait to be read, with each reader's position. The app
  * holds one; a game reads and emits through an `EventHandle`.
@@ -495,35 +520,10 @@ export class EventBus {
 
     if (saved !== undefined) {
       this.parked.delete(def.name);
-      this.adopt(channel, saved);
+      adopt(channel, saved);
     }
 
     return channel;
-  }
-
-  /** Puts the events of a save into their channel, as they were waiting. */
-  private adopt<P>(channel: Channel<P>, saved: SavedEvents): void {
-    for (const data of saved.payloads) {
-      const payload = decode(channel.def, data);
-
-      if (Exit.isFailure(payload)) {
-        const reason = Cause.squash(payload.cause);
-
-        throw new Error(
-          `The save holds an event "${saved.name}" that no longer reads: ${reason instanceof Error ? reason.message : String(reason)}`
-        );
-      }
-
-      channel.buffer.push(payload.value);
-    }
-
-    // Whoever had read some of them goes on from where it was.
-    for (const [reader, count] of Object.entries(saved.read)) {
-      channel.readers.set(
-        reader,
-        new Handle(channel, channel.offset + Math.min(count, channel.size))
-      );
-    }
   }
 
   /**
@@ -585,7 +585,7 @@ export class EventBus {
       if (def === undefined) {
         this.parked.set(events.name, events);
       } else {
-        this.adopt(this.channel(def), events);
+        adopt(this.channel(def), events);
       }
     }
   }

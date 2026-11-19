@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { setTimeout as sleep } from "node:timers/promises";
+
 import { Effect, Exit, Layer, Scope } from "effect";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,8 +25,7 @@ declare global {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 /** Lets what is waiting on a promise or a timer run. */
-const settle = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+const settle = (): Promise<void> => sleep(0);
 
 const files = {
   "/level.json": JSON.stringify({
@@ -43,13 +44,8 @@ const canvas = new Proxy(
   { get: () => () => {}, set: () => true }
 ) as CanvasRenderingContext2D;
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  document.body.replaceChildren();
-});
-
 const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
-  vi.stubGlobal("createImageBitmap", async () => ({ close() {} }));
+  vi.stubGlobal("createImageBitmap", () => Promise.resolve({ close() {} }));
   // The level's sound is decoded as a page decodes it.
   vi.stubGlobal(
     "OfflineAudioContext",
@@ -77,7 +73,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   let unmount = (): void => {};
 
   // The UI is there before the game is.
-  await act(async () => {
+  await act(() => {
     unmount = mount(root, handed);
   });
 
@@ -145,13 +141,13 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
         throw new Error(`There is no button "${label}"`);
       }
 
-      await act(async () => {
+      await act(() => {
         button.click();
       });
     },
     /** What a driver does each frame a tick is due: the devices, a tick, a frame. */
     step: async (times = 1) => {
-      await act(async () => {
+      await act(() => {
         for (let i = 0; i < times; i += 1) {
           app.input();
           app.tick(1 / 60);
@@ -160,7 +156,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
       });
     },
     unmount: async () => {
-      await act(async () => {
+      await act(() => {
         unmount();
       });
     },
@@ -216,11 +212,11 @@ describe.each([
       await page.step();
       const changed = await page.changed();
 
-      if (page.told() === told) {
+      const wasTold = page.told() !== told;
+      expect(changed > 0, `frame ${i}`).toBe(wasTold);
+
+      if (!wasTold) {
         quiet += 1;
-        expect(changed).toBe(0);
-      } else {
-        expect(changed).toBeGreaterThan(0);
       }
     }
 
@@ -292,6 +288,11 @@ describe.each([
 });
 
 describe("the page's UI", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.replaceChildren();
+  });
+
   const sources = import.meta.glob("../examples/page/*.ts", {
     query: "?raw",
     import: "default",
@@ -303,12 +304,12 @@ describe("the page's UI", () => {
     const found: string[] = [];
 
     const pattern =
-      /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["']([^"']+)["']/gmu;
+      /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["'](?<specifier>[^"']+)["']/gmu;
 
     for (const match of sources[`../examples/page/${file}`]!.matchAll(
       pattern
     )) {
-      found.push(match[1]!);
+      found.push(match.groups!.specifier!);
     }
 
     return found.toSorted();

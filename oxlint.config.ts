@@ -99,6 +99,12 @@ export default defineConfig({
         "vitest/prefer-to-be-truthy": "off",
         "vitest/prefer-to-be-falsy": "off",
         "vitest/max-expects": "off",
+        // A test asserts through expect, expectTypeOf, or a helper of its
+        // own that calls expect.
+        "vitest/expect-expect": [
+          "error",
+          { assertFunctionNames: ["expect", "expectTypeOf", "expectDrawn"] },
+        ],
       },
     },
     // Files are named as Effect names its own. A module, which an entry is,

@@ -89,6 +89,9 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const seen: string[] = [];
+        // What the state says while a system asks for another value.
+        const asked: unknown[] = [];
+        let refusal: unknown;
 
         const Watch = System.make("Watch", function* () {
           const phase = yield* Phase;
@@ -97,23 +100,21 @@ describe("a state", () => {
 
           if (tick === 2) {
             phase.set("playing");
-            // Asked for, and not entered yet.
-            expect([phase.value, phase.next]).toStrictEqual([
-              "menu",
-              "playing",
-            ]);
+            asked.push([phase.value, phase.next]);
           }
 
           if (tick === 4) {
-            // @ts-expect-error not one of the state's values
-            expect(() => phase.set("flying")).toThrow(
-              /"st\/Phase" has no value "flying"/u
-            );
-            // Asking for where the game is takes an earlier ask back.
+            try {
+              // @ts-expect-error not one of the state's values
+              phase.set("flying");
+            } catch (error) {
+              refusal = error;
+            }
+
             phase.set("paused");
-            expect(phase.next).toBe("paused");
+            asked.push(phase.next);
             phase.set("playing");
-            expect(phase.next).toBeUndefined();
+            asked.push(phase.next);
           }
         });
 
@@ -130,6 +131,10 @@ describe("a state", () => {
           "playing",
           "playing",
         ]);
+        // Asked for, and not entered yet. Then asking for where the game is
+        // takes an earlier ask back.
+        expect(asked).toStrictEqual([["menu", "playing"], "paused", undefined]);
+        expect(String(refusal)).toMatch(/"st\/Phase" has no value "flying"/u);
         // From outside, an action asks; the next tick enters.
         expect(app.dispatch(Go, { to: "paused", refuse: false })).toStrictEqual(
           Exit.succeed("playing")

@@ -322,6 +322,11 @@ export const addColumnPerRow = (
   codec?: RefCodec<unknown>
 ): void => {
   switch (kind) {
+    case "transient": {
+      // Not part of the game's state: not saved, so not hashed.
+      return;
+    }
+
     case "f32": {
       const { buffer, byteOffset } = columnOfKind(kind, column);
       const words = new Uint32Array(buffer, byteOffset, count);
@@ -362,10 +367,6 @@ export const addColumnPerRow = (
         states[i] = addData(states[i]!, codec!.encode(values[i]));
       }
 
-      return;
-    }
-
-    case "transient": {
       return;
     }
 

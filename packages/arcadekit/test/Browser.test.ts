@@ -1,8 +1,11 @@
+import { setTimeout as sleep } from "node:timers/promises";
+
 import {
   Cause,
   Context,
   Data,
   Effect,
+  Deferred,
   Exit,
   Fiber,
   Layer,
@@ -37,8 +40,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, ScopeType.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
 /** Lets what is waiting on a promise or a timer run. */
-const settle = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+const settle = (): Promise<void> => sleep(0);
 
 /** What a sample says, in a form that compares. */
 const told = (devices: Input.Sample) => ({
@@ -189,8 +191,8 @@ const makePage = () => {
       const due = [...requested.values()];
       requested.clear();
 
-      for (const callback of due) {
-        callback(now);
+      for (const request of due) {
+        request(now);
       }
     },
     /** The tab goes out of sight, and whoever watches is told. */
@@ -259,8 +261,8 @@ describe("a page's display", () => {
       const due = [...requested.values()];
       requested.clear();
 
-      for (const callback of due) {
-        callback(now);
+      for (const request of due) {
+        request(now);
       }
     };
 
@@ -1440,21 +1442,16 @@ describe("a page's sound", () => {
 
     // A file that is still being decoded when the layer is let go is not
     // kept when it is done.
-    let done = (_sound: unknown): void => {};
+    const decoded = Effect.runSync(Deferred.make<unknown>());
 
     const late = await build(
       { coin: "/coin.wav" },
-      {
-        decode: () =>
-          new Promise((resolve) => {
-            done = resolve;
-          }),
-      }
+      { decode: () => Effect.runPromise(Deferred.await(decoded)) }
     );
 
     late.page.send("pointerdown");
     await late.close();
-    done({ samples: 3 });
+    Effect.runSync(Deferred.succeed(decoded, { samples: 3 }));
     await settle();
     late.output.play("coin", 1, 1);
     expect(late.audio.started).toStrictEqual([]);
@@ -1650,7 +1647,7 @@ describe("a page's sound", () => {
     expect(audio.loops[0]!.stopped).toBe(20);
     output.music("score", undefined, 0, 0.02);
     expect(streamed[1]!.playing).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    await sleep(60);
     expect(streamed[1]).toMatchObject({ playing: false, pauses: 1 });
     expect(streamed[0]!.pauses).toBe(1);
   });
@@ -1743,7 +1740,7 @@ describe("a page's sound", () => {
     // Nothing is left waiting to stop one, and nothing is started after.
     output.music("score", "other", 1, 0);
     display.show();
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await sleep(40);
     expect(streamed).toHaveLength(2);
     expect(streamed.map((media) => media.plays)).toStrictEqual([2, 2]);
     expect(streamed.map((media) => media.pauses)).toStrictEqual(

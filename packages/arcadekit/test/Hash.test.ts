@@ -510,15 +510,17 @@ describe("the hash of a world", () => {
     const buildVisits = (visitMarkedFirst: boolean) => {
       const world = new EcsWorld();
 
-      if (visitMarkedFirst) {
-        // Creates the table of marked bodies before the table of bodies.
-        const early = world.spawn(Body, Marked);
-        world.remove(early, Marked);
-      } else {
-        const early = world.spawn(Body);
+      // Spawned marked, it creates the table of marked bodies before the
+      // table of bodies.
+      const early = visitMarkedFirst
+        ? world.spawn(Body, Marked)
+        : world.spawn(Body);
+
+      if (!visitMarkedFirst) {
         world.add(early, Marked);
-        world.remove(early, Marked);
       }
+
+      world.remove(early, Marked);
 
       return world;
     };
@@ -629,6 +631,35 @@ describe("the hash of a world", () => {
   });
 
   it("does not depend on what a simulation cannot tell apart", () => {
+    /** What a world goes through that leaves it as it was. */
+    const stir = (world: EcsWorld, entities: Entity[]): void => {
+      // Queries: they cache tables, keep masks and create empty sparse sets.
+      const Unused = Component.tag("hash/Unused", { storage: "sparse" });
+
+      const view = world.view(
+        Query.all(Body).pipe(Query.with(Aura), Query.without(Chilled, Unused))
+      );
+
+      const read: number[] = [];
+
+      view.each((body) => {
+        read.push(body.x);
+      });
+      view.eachChunk(() => {});
+      view.count();
+      world.view(Query.all(Aura).pipe(Query.with(Unused))).entities();
+      // Reads, writes that put the same value back, and a registration.
+      world.get(entities[0]!, Sheet);
+      world.has(entities[1]!, Marked);
+      world.set(entities[2]!, Body, { x: 99 });
+      world.set(entities[2]!, Body, { x: 2 });
+      world.register(Component.define("hash/Idle", { v: Field.f32 }));
+      expect(new CommandBuffer(world).size).toBe(0);
+      // A sparse component that came and went.
+      world.add(entities[5]!, Unused);
+      world.remove(entities[5]!, Unused);
+    };
+
     const buildNoisy = (noise: boolean): EcsWorld => {
       const world = new EcsWorld({ seed: 3 });
       const entities: Entity[] = [];
@@ -656,31 +687,7 @@ describe("the hash of a world", () => {
       }
 
       if (noise) {
-        // Queries: they cache tables, keep masks and create empty sparse sets.
-        const Unused = Component.tag("hash/Unused", { storage: "sparse" });
-
-        const view = world.view(
-          Query.all(Body).pipe(Query.with(Aura), Query.without(Chilled, Unused))
-        );
-
-        const read: number[] = [];
-
-        view.each((body) => {
-          read.push(body.x);
-        });
-        view.eachChunk(() => {});
-        view.count();
-        world.view(Query.all(Aura).pipe(Query.with(Unused))).entities();
-        // Reads, writes that put the same value back, and a registration.
-        world.get(entities[0]!, Sheet);
-        world.has(entities[1]!, Marked);
-        world.set(entities[2]!, Body, { x: 99 });
-        world.set(entities[2]!, Body, { x: 2 });
-        world.register(Component.define("hash/Idle", { v: Field.f32 }));
-        expect(new CommandBuffer(world).size).toBe(0);
-        // A sparse component that came and went.
-        world.add(entities[5]!, Unused);
-        world.remove(entities[5]!, Unused);
+        stir(world, entities);
       }
 
       return world;

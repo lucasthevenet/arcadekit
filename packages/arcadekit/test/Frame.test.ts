@@ -1186,9 +1186,8 @@ describe("a frame stage that is checked", () => {
           const before = app.world.hash();
           expect(() => app.frame(0)).toThrow(App.FrameChangedWorld);
 
-          if (how === "random") {
-            expect(app.world.hash()).toBe(before);
-          }
+          // A raw column is written where the world reads it, and stays.
+          expect(app.world.hash() === before, how).toBe(how === "random");
         })
       );
     }

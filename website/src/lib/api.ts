@@ -430,7 +430,7 @@ const signatureOf = (parsed: DeclarationFile, node: Node) =>
   parsed.source
     .slice(node.start, node.end)
     .replace(/^declare /u, "")
-    .replaceAll(/\b([A-Za-z_]\w*)\$\d+\b/gu, "$1");
+    .replaceAll(/\b(?<name>[A-Za-z_]\w*)\$\d+\b/gu, "$<name>");
 
 const lineOf = (source: string, offset: number) =>
   source.slice(0, offset).split("\n").length - 1;

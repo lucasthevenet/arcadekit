@@ -15,6 +15,9 @@ const pageNames = new Set([
   "addEventListener",
 ]);
 
+/** What names the global object, whose `addEventListener` is the page's. */
+const globalNames = new Set(["globalThis", "self"]);
+
 export const noPageRule = defineRule({
   meta: {
     type: "problem",
@@ -35,6 +38,21 @@ export const noPageRule = defineRule({
     const found = new Set<number>();
 
     return {
+      // Every EventTarget has `addEventListener`, in Node too: a socket's or
+      // a channel's is not the page's, which is the global one.
+      MemberExpression: (node) => {
+        if (
+          !node.computed &&
+          node.property.type === "Identifier" &&
+          node.property.name === "addEventListener" &&
+          !(
+            node.object.type === "Identifier" &&
+            globalNames.has(node.object.name)
+          )
+        ) {
+          found.add(node.property.start);
+        }
+      },
       // Every name in the file: a variable, a property, a key, a type.
       Identifier: (node) => {
         if (pageNames.has(node.name) && !found.has(node.start)) {

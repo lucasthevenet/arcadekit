@@ -305,7 +305,8 @@ const pack = (
       length += aligned(bytes.byteLength);
     }
 
-    const views = (document.bufferViews ??= []);
+    document.bufferViews ??= [];
+    const views = document.bufferViews;
 
     for (const view of views) {
       view.byteOffset = (view.byteOffset ?? 0) + (offsets[view.buffer] ?? 0);
@@ -458,12 +459,12 @@ export const model = (
 
       return yield* Effect.acquireRelease(
         Effect.tryPromise({
-          try: () =>
-            new Promise<Model>((resolve, reject) => {
-              const loader = new GLTFLoader();
-              options.prepare?.(loader);
-              loader.parse(packed, "", resolve, reject);
-            }),
+          try: () => {
+            const loader = new GLTFLoader();
+            options.prepare?.(loader);
+
+            return loader.parseAsync(packed, "");
+          },
           catch: (error) =>
             new Assets.AssetFailed({
               url: at,

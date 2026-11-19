@@ -791,8 +791,8 @@ describe("what each hands its callback", () => {
 
   const names = Object.keys(fields) as (keyof typeof fields)[];
 
-  for (const def of [Every, EverySparse]) {
-    it(`reads and writes a field of every kind, each in its own column and at its own row (${def.storage})`, () => {
+  describe.each([Every, EverySparse])("a $storage component", (def) => {
+    it(`reads and writes a field of every kind, each in its own column and at its own row`, () => {
       const world = new World();
       const entities: Entity[] = [];
 
@@ -856,7 +856,7 @@ describe("what each hands its callback", () => {
       }
     });
 
-    it(`reads the same through a query that only reads, in a frozen world, and where writes are noticed (${def.storage})`, () => {
+    it(`reads the same through a query that only reads, in a frozen world, and where writes are noticed`, () => {
       const world = new World();
 
       // Others first, so that no entity's row is its index.
@@ -926,7 +926,7 @@ describe("what each hands its callback", () => {
         ])
       );
     });
-  }
+  });
 
   it("reads and writes where the data is after a table or a sparse set has grown between two loops", () => {
     const world = new World();
@@ -950,6 +950,7 @@ describe("what each hands its callback", () => {
 
       for (const each of [view, plain]) {
         const seen: number[] = [];
+        const burnt: number[] = [];
         each.each((...args: unknown[]) => {
           const [health, burning] = args as [
             { hp: number },
@@ -959,13 +960,17 @@ describe("what each hands its callback", () => {
           seen.push(health.hp);
 
           if (typeof burning === "object") {
-            expect(burning.seconds).toBe(health.hp / 2);
+            burnt.push(burning.seconds);
             burning.seconds += 0;
           }
 
           health.hp += 1000;
         });
         expect(seen).toStrictEqual(Array.from({ length: count }, (_, n) => n));
+        // Only the loop over both has the second, at the same rows.
+        expect(burnt).toStrictEqual(
+          each === view ? seen.map((hp) => hp / 2) : []
+        );
         // The write went where the world reads from.
         each.each((health) => {
           health.hp -= 1000;
@@ -1200,179 +1205,182 @@ describe("randomized comparison against a simple model", () => {
     return {};
   };
 
-  for (const seed of [1, 2, 3, 4, 5]) {
-    it(`seed ${seed}`, () => {
-      const rnd = random(seed);
-      const world = new World();
-      const model = new Map<Entity, Map<number, ValueOf<Schema>>>();
-      const dead: Entity[] = [];
+  it.each([1, 2, 3, 4, 5])("seed %i", (seed) => {
+    const rnd = random(seed);
+    const world = new World();
+    const model = new Map<Entity, Map<number, ValueOf<Schema>>>();
+    const dead: Entity[] = [];
 
-      for (let step = 0; step < 4000; step += 1) {
-        const roll = rnd();
-        const live = [...model.keys()];
+    const despawn = (entity: Entity): void => {
+      expect(world.despawn(entity)).toBe(true);
+      model.delete(entity);
+      dead.push(entity);
+    };
 
-        const pick =
-          live.length > 0 ? live[Math.floor(rnd() * live.length)] : undefined;
+    const remove = (entity: Entity, def: ComponentDef): void => {
+      expect(world.remove(entity, def)).toBe(model.get(entity)!.delete(def.id));
+    };
 
-        const def = defs[Math.floor(rnd() * defs.length)]!;
+    for (let step = 0; step < 4000; step += 1) {
+      const roll = rnd();
+      const live = [...model.keys()];
 
-        if (roll < 0.3 || pick === undefined) {
-          const chosen = defs.filter(() => rnd() < 0.4);
-          const values = new Map<number, ValueOf<Schema>>();
+      const pick =
+        live.length > 0 ? live[Math.floor(rnd() * live.length)] : undefined;
 
-          const inputs = chosen.map((d) => {
-            const value = sample(d, rnd);
-            values.set(d.id, value);
+      const def = defs[Math.floor(rnd() * defs.length)]!;
 
-            return d.of(value);
-          });
+      if (roll < 0.3 || pick === undefined) {
+        const chosen = defs.filter(() => rnd() < 0.4);
+        const values = new Map<number, ValueOf<Schema>>();
 
-          model.set(world.spawn(...inputs), values);
-        } else if (roll < 0.45) {
-          expect(world.despawn(pick)).toBe(true);
-          model.delete(pick);
-          dead.push(pick);
-        } else if (roll < 0.75) {
-          const value = sample(def, rnd);
-          world.add(pick, def.of(value));
-          model.get(pick)!.set(def.id, value);
-        } else {
-          expect(world.remove(pick, def)).toBe(model.get(pick)!.delete(def.id));
-        }
+        const inputs = chosen.map((d) => {
+          const value = sample(d, rnd);
+          values.set(d.id, value);
+
+          return d.of(value);
+        });
+
+        model.set(world.spawn(...inputs), values);
+      } else if (roll < 0.45) {
+        despawn(pick);
+      } else if (roll < 0.75) {
+        const value = sample(def, rnd);
+        world.add(pick, def.of(value));
+        model.get(pick)!.set(def.id, value);
+      } else {
+        remove(pick, def);
+      }
+    }
+
+    expect(world.entityCount).toBe(model.size);
+
+    for (const entity of dead) {
+      expect(world.isAlive(entity)).toBe(false);
+    }
+
+    for (const [entity, values] of model) {
+      expect(world.isAlive(entity)).toBe(true);
+
+      for (const def of defs) {
+        expect(world.has(entity, def)).toBe(values.has(def.id));
+        expect(world.get(entity, def)).toStrictEqual(values.get(def.id));
+      }
+    }
+
+    // Every query must agree with a brute-force filter of the model.
+    for (const required of defs) {
+      if (required.storage !== "table") {
+        continue;
       }
 
-      expect(world.entityCount).toBe(model.size);
-
-      for (const entity of dead) {
-        expect(world.isAlive(entity)).toBe(false);
-      }
-
-      for (const [entity, values] of model) {
-        expect(world.isAlive(entity)).toBe(true);
-
-        for (const def of defs) {
-          expect(world.has(entity, def)).toBe(values.has(def.id));
-          expect(world.get(entity, def)).toStrictEqual(values.get(def.id));
-        }
-      }
-
-      // Every query must agree with a brute-force filter of the model.
-      for (const required of defs) {
-        if (required.storage !== "table") {
+      for (const excluded of defs) {
+        if (excluded === required) {
           continue;
-        }
-
-        for (const excluded of defs) {
-          if (excluded === required) {
-            continue;
-          }
-
-          const expected = [...model]
-            .filter(
-              ([, values]) =>
-                values.has(required.id) && !values.has(excluded.id)
-            )
-            .map(([entity]) => entity)
-            .toSorted();
-
-          const view = world.view(query([required], [], [excluded]));
-          expect(view.entities().toSorted()).toStrictEqual(expected);
-          expect(view.count()).toBe(expected.length);
-          const visited: Entity[] = [];
-          view.each((_, entity) => {
-            visited.push(entity);
-          });
-          expect(visited.toSorted()).toStrictEqual(expected);
-        }
-      }
-
-      // Sparse conditions and sparse data, under both iteration strategies
-      // and through both the accessor and the raw-column API.
-      for (const path of ["mask", "sorted"] as const) {
-        for (const sparse of [Stunned, Burning]) {
-          const expected = [...model]
-            .filter(
-              ([, values]) =>
-                values.has(Position.id) &&
-                values.has(sparse.id) &&
-                !values.has(Enemy.id)
-            )
-            .map(([entity]) => entity)
-            .toSorted();
-
-          const view = world.view(query([Position], [sparse], [Enemy]));
-          view._path = path;
-          const visited: Entity[] = [];
-          view.each((pos, entity) => {
-            expect(pos.x).toBe(model.get(entity)!.get(Position.id)?.x);
-            visited.push(entity);
-          });
-          expect(visited.toSorted()).toStrictEqual(expected);
-          const chunked: Entity[] = [];
-          view.eachChunk((start, end, pos, entities) => {
-            expect(end).toBeGreaterThan(start);
-
-            for (let i = start; i < end; i += 1) {
-              const entity = entities[i] as Entity;
-              expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id)?.y);
-              chunked.push(entity);
-            }
-          });
-          expect(chunked.toSorted()).toStrictEqual(expected);
         }
 
         const expected = [...model]
           .filter(
-            ([, values]) =>
-              values.has(Health.id) &&
-              values.has(Burning.id) &&
-              !values.has(Stunned.id)
+            ([, values]) => values.has(required.id) && !values.has(excluded.id)
           )
           .map(([entity]) => entity)
           .toSorted();
 
-        const view = world.view(query([Health, Burning], [], [Stunned]));
+        const view = world.view(query([required], [], [excluded]));
+        expect(view.entities().toSorted()).toStrictEqual(expected);
+        expect(view.count()).toBe(expected.length);
+        const visited: Entity[] = [];
+        view.each((_, entity) => {
+          visited.push(entity);
+        });
+        expect(visited.toSorted()).toStrictEqual(expected);
+      }
+    }
+
+    // Sparse conditions and sparse data, under both iteration strategies
+    // and through both the accessor and the raw-column API.
+    for (const path of ["mask", "sorted"] as const) {
+      for (const sparse of [Stunned, Burning]) {
+        const expected = [...model]
+          .filter(
+            ([, values]) =>
+              values.has(Position.id) &&
+              values.has(sparse.id) &&
+              !values.has(Enemy.id)
+          )
+          .map(([entity]) => entity)
+          .toSorted();
+
+        const view = world.view(query([Position], [sparse], [Enemy]));
         view._path = path;
         const visited: Entity[] = [];
-        view.each((health, burn, entity) => {
-          expect(health.hp).toBe(model.get(entity)!.get(Health.id)?.hp);
-          expect(burn.seconds).toBe(
-            model.get(entity)!.get(Burning.id)?.seconds
-          );
+        view.each((pos, entity) => {
+          expect(pos.x).toBe(model.get(entity)!.get(Position.id)?.x);
           visited.push(entity);
         });
         expect(visited.toSorted()).toStrictEqual(expected);
         const chunked: Entity[] = [];
-        view.eachChunk((start, end, health, burning, entities) => {
+        view.eachChunk((start, end, pos, entities) => {
+          expect(end).toBeGreaterThan(start);
+
           for (let i = start; i < end; i += 1) {
             const entity = entities[i] as Entity;
-            expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id)?.hp);
-            expect(burning.columns.seconds[burning.indexOf(entity)]).toBe(
-              model.get(entity)!.get(Burning.id)?.seconds
-            );
+            expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id)?.y);
             chunked.push(entity);
           }
         });
         expect(chunked.toSorted()).toStrictEqual(expected);
       }
 
-      // A sparse `without` must split raw chunks without losing or adding rows.
-      const awake = [...model]
+      const expected = [...model]
         .filter(
-          ([, values]) => values.has(Position.id) && !values.has(Stunned.id)
+          ([, values]) =>
+            values.has(Health.id) &&
+            values.has(Burning.id) &&
+            !values.has(Stunned.id)
         )
         .map(([entity]) => entity)
         .toSorted();
 
+      const view = world.view(query([Health, Burning], [], [Stunned]));
+      view._path = path;
+      const visited: Entity[] = [];
+      view.each((health, burn, entity) => {
+        expect(health.hp).toBe(model.get(entity)!.get(Health.id)?.hp);
+        expect(burn.seconds).toBe(model.get(entity)!.get(Burning.id)?.seconds);
+        visited.push(entity);
+      });
+      expect(visited.toSorted()).toStrictEqual(expected);
       const chunked: Entity[] = [];
-      world
-        .view(query([Position], [], [Stunned]))
-        .eachChunk((start, end, _pos, entities) => {
-          for (let i = start; i < end; i += 1) {
-            chunked.push(entities[i] as Entity);
-          }
-        });
-      expect(chunked.toSorted()).toStrictEqual(awake);
-    });
-  }
+      view.eachChunk((start, end, health, burning, entities) => {
+        for (let i = start; i < end; i += 1) {
+          const entity = entities[i] as Entity;
+          expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id)?.hp);
+          expect(burning.columns.seconds[burning.indexOf(entity)]).toBe(
+            model.get(entity)!.get(Burning.id)?.seconds
+          );
+          chunked.push(entity);
+        }
+      });
+      expect(chunked.toSorted()).toStrictEqual(expected);
+    }
+
+    // A sparse `without` must split raw chunks without losing or adding rows.
+    const awake = [...model]
+      .filter(
+        ([, values]) => values.has(Position.id) && !values.has(Stunned.id)
+      )
+      .map(([entity]) => entity)
+      .toSorted();
+
+    const chunked: Entity[] = [];
+    world
+      .view(query([Position], [], [Stunned]))
+      .eachChunk((start, end, _pos, entities) => {
+        for (let i = start; i < end; i += 1) {
+          chunked.push(entities[i] as Entity);
+        }
+      });
+    expect(chunked.toSorted()).toStrictEqual(awake);
+  });
 });

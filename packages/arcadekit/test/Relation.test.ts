@@ -492,8 +492,9 @@ describe("relations and a snapshot", () => {
 });
 
 describe("relations against a simple model", () => {
-  for (const seed of [1, 2, 3]) {
-    it(`agree with it through thousands of random operations (seed ${seed})`, () => {
+  it.each([1, 2, 3])(
+    "agree with it through thousands of random operations (seed %i)",
+    (seed) => {
       const dice = new EcsWorld({ seed }).random;
       const world = new EcsWorld();
       const relations = [ChildOf, Targets, Owes, HeldBy] as const;
@@ -547,7 +548,8 @@ describe("relations against a simple model", () => {
           ? dice.pick(graveyard)
           : dice.pick([...alive]);
 
-      for (let step = 0; step < 4000; step += 1) {
+      /** One random operation, on the world and on the model. */
+      const operate = (): void => {
         const roll = dice.int(0, 9);
 
         if (roll < 3 || alive.size < 3) {
@@ -591,27 +593,42 @@ describe("relations against a simple model", () => {
           kill(entity);
           graveyard.push(entity);
         }
+      };
 
-        if (step % 50 === 0 || step > 3990) {
-          expect(world.entityCount).toBe(alive.size);
+      /** The world agrees with the model. */
+      const compare = (): void => {
+        expect(world.entityCount).toBe(alive.size);
 
-          for (const entity of alive) {
-            expect(world.isAlive(entity)).toBe(true);
-          }
-
-          for (const [r, relation] of all.entries()) {
-            const held = new Map<Entity, Entity>();
-            world.view(Query.all(relation)).each((row, entity) => {
-              held.set(entity, row.target);
-            });
-            expect(held).toStrictEqual(model[r]);
-          }
-
-          expectNoDangling(world);
+        for (const entity of alive) {
+          expect(world.isAlive(entity)).toBe(true);
         }
+
+        for (const [r, relation] of all.entries()) {
+          const held = new Map<Entity, Entity>();
+          world.view(Query.all(relation)).each((row, entity) => {
+            held.set(entity, row.target);
+          });
+          expect(held).toStrictEqual(model[r]);
+        }
+
+        expectNoDangling(world);
+      };
+
+      // Compared after every fiftieth operation, and after each of the last ten.
+      for (let round = 0; round < 80; round += 1) {
+        for (let step = 0; step < 50; step += 1) {
+          operate();
+        }
+
+        compare();
       }
-    });
-  }
+
+      for (let step = 0; step < 10; step += 1) {
+        operate();
+        compare();
+      }
+    }
+  );
 });
 
 // --- in an app --------------------------------------------------------------------

@@ -552,7 +552,8 @@ describe("a snapshot that cannot be loaded", () => {
     // exception, and no allocation the bytes could not back.
     const bytes = sample();
     const dice = new EcsWorld({ seed: 31 }).random;
-    let refusedCount = 0;
+    /** What was thrown at each damaged snapshot that did not load. */
+    const refusals: unknown[] = [];
     let loadedCount = 0;
 
     for (let round = 0; round < 1500; round += 1) {
@@ -571,12 +572,14 @@ describe("a snapshot that cannot be loaded", () => {
         world.spawn(C.Body);
         loadedCount += 1;
       } catch (error) {
-        expect(error).toBeInstanceOf(SnapshotError);
-        refusedCount += 1;
+        refusals.push(error);
       }
     }
 
-    expect(refusedCount).toBeGreaterThan(50);
+    expect(
+      refusals.filter((error) => !(error instanceof SnapshotError))
+    ).toStrictEqual([]);
+    expect(refusals.length).toBeGreaterThan(50);
     expect(loadedCount).toBeGreaterThan(50);
   });
 

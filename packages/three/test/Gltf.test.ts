@@ -1,4 +1,6 @@
 /// <reference types="node" />
+import { setTimeout as sleep } from "node:timers/promises";
+
 import { App, Assets, Component, State, Transform3d } from "arcadekit";
 import { Cause, Effect, Exit, Fiber, Layer, Logger, Scope } from "effect";
 import { InstancedMesh, Texture } from "three";
@@ -174,11 +176,11 @@ const TRIANGLE = {
   positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
 };
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe("a model", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("is a binary glTF, loaded as it is and disposed of with the scope it was loaded in", async () => {
     const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
 
@@ -399,7 +401,7 @@ describe("a model", () => {
       ).pipe(Effect.provide(slow))
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await sleep(0);
     // Both at once, and neither is here.
     expect(waiting.toSorted()).toStrictEqual(["/m/a.bin", "/m/b.bin"]);
     await Effect.runPromise(Fiber.interrupt(fiber));
@@ -662,7 +664,7 @@ describe("a level's models", () => {
       app.tick(1);
       app.frame(0);
       // A model is read in its own time.
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await sleep(0);
       app.frame(0);
     };
 

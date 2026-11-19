@@ -611,22 +611,26 @@ export const layerSound = (
             (entry): entry is [string, string] => typeof entry[1] === "string"
           ),
           ([cue, url]) =>
-            Effect.match(loader.bytes(url), {
-              onSuccess: (bytes) => {
-                // A copy: decoding keeps the buffer it is given.
-                decode(new Uint8Array(bytes).buffer).then(
-                  (buffer) => {
-                    if (!closed) {
-                      buffers.set(cue, buffer);
-                      // A channel may have been waiting for it.
-                      settleAll();
-                    }
-                  },
-                  (error: unknown) => failed(cue, error)
-                );
-              },
-              onFailure: (error) => failed(cue, error.message),
-            }),
+            loader.bytes(url).pipe(
+              Effect.mapError((error): unknown => error.message),
+              Effect.flatMap((bytes) =>
+                Effect.tryPromise({
+                  // A copy: decoding keeps the buffer it is given.
+                  try: () => decode(new Uint8Array(bytes).buffer),
+                  catch: (error) => error,
+                })
+              ),
+              Effect.match({
+                onSuccess: (buffer) => {
+                  if (!closed) {
+                    buffers.set(cue, buffer);
+                    // A channel may have been waiting for it.
+                    settleAll();
+                  }
+                },
+                onFailure: (error) => failed(cue, error),
+              })
+            ),
           { concurrency: "unbounded", discard: true }
         )
       );

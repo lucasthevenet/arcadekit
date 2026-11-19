@@ -62,10 +62,10 @@ const imported = (text: string): string[] => {
   const found: string[] = [];
 
   const pattern =
-    /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["']([^"']+)["']/gmu;
+    /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["'](?<specifier>[^"']+)["']/gmu;
 
   for (const match of text.matchAll(pattern)) {
-    found.push(match[1]!);
+    found.push(match.groups!.specifier!);
   }
 
   return found;
@@ -123,13 +123,14 @@ describe("the entries of @arcadekit/three", () => {
     };
 
     for (const file of Object.keys(sources)) {
-      const module = /^\.\.\/src\/([A-Z]\w*)\.ts$/u.exec(file);
+      const module = /^\.\.\/src\/(?<name>[A-Z]\w*)\.ts$/u.exec(file);
 
       if (module !== null) {
-        expected[`./${module[1]}`] = {
-          source: `./src/${module[1]}.ts`,
-          types: `./dist/${module[1]}.d.ts`,
-          default: `./dist/${module[1]}.js`,
+        const name = module.groups!.name!;
+        expected[`./${name}`] = {
+          source: `./src/${name}.ts`,
+          types: `./dist/${name}.d.ts`,
+          default: `./dist/${name}.js`,
         };
       }
     }

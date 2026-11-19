@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from "node:timers/promises";
+
 import { Cause, Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -521,7 +523,7 @@ describe("the display when none is provided", () => {
       )
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await sleep(120);
     await Effect.runPromise(Fiber.interrupt(fiber));
     const ticks = app!.time.tick;
     // About 24 ticks in 120 ms at 200 Hz; a busy machine runs fewer, or
@@ -531,7 +533,7 @@ describe("the display when none is provided", () => {
     // other was.
     expect(asked.length).toBeGreaterThan(3);
     expect(asked.filter((id) => cleared.has(id))).toStrictEqual([asked.at(-1)]);
-    await new Promise((resolve) => set(resolve, 60));
+    await sleep(60);
     expect(app!.time.tick).toBe(ticks);
   });
 });

@@ -1,3 +1,6 @@
+import { once } from "node:events";
+import { setTimeout as sleep } from "node:timers/promises";
+
 import {
   Cause,
   Context,
@@ -44,8 +47,14 @@ const Layout = Schema.Struct({
 const quiet = Logger.layer([]);
 
 /** Lets what is waiting on a promise or a timer run. */
-const settle = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+const settle = (): Promise<void> => sleep(0);
+
+/** A request that is answered only by being given up. */
+const aborted = async (signal: AbortSignal): Promise<never> => {
+  await once(signal, "abort");
+
+  throw new Error("aborted");
+};
 
 /** An asset that says when it is made and when it is let go. */
 const tracked = (url: string, log: string[]) =>
@@ -357,11 +366,7 @@ describe("an asset", () => {
       const answer = answers.get(url);
 
       return answer === undefined
-        ? new Promise<Response>((_resolve, reject) => {
-            init.signal.addEventListener("abort", () =>
-              reject(new Error("aborted"))
-            );
-          })
+        ? aborted(init.signal)
         : Promise.resolve(answer());
     });
 

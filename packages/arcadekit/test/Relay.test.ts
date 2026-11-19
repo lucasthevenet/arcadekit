@@ -1,5 +1,8 @@
-import { Cause, Context, Effect, Exit, Layer } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { once } from "node:events";
+import { setTimeout as sleep } from "node:timers/promises";
+
+import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 
 import { Lockstep, Relay, Rollback, Transport } from "../src/index";
@@ -333,11 +336,9 @@ describe("a relay that keeps its rooms itself", () => {
     const two = relay.connect("/blue?peer=grace", () => {});
     expect(relay.rooms).toBe(1);
 
-    if (Exit.isSuccess(one) && Exit.isSuccess(two)) {
-      one.value.close();
-      expect(relay.rooms).toBe(1);
-      two.value.close();
-    }
+    Option.getOrThrow(Exit.getSuccess(one)).close();
+    expect(relay.rooms).toBe(1);
+    Option.getOrThrow(Exit.getSuccess(two)).close();
 
     expect(relay.rooms).toBe(0);
     expect(relay.members("blue")).toStrictEqual([]);
@@ -350,9 +351,7 @@ describe("a relay that keeps its rooms itself", () => {
 const serve = async (options?: Relay.Options) => {
   const relay = Relay.make(options);
   const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
-  await new Promise<void>((resolve) => {
-    server.on("listening", () => resolve());
-  });
+  await once(server, "listening");
   const closes: { peer: string; code: number }[] = [];
   server.on("connection", (socket, request) => {
     const connection = relay.connect(request.url ?? "", (sent) =>
@@ -397,23 +396,18 @@ const serve = async (options?: Relay.Options) => {
   };
 };
 
-const later = (ms = 5): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+const later = (ms = 5): Promise<void> => sleep(ms);
 
 /** Waits, a few milliseconds at a time, until something holds. */
-const until = async (holds: () => boolean, what: string): Promise<void> => {
-  for (let i = 0; i < 400; i += 1) {
-    if (holds()) {
-      return;
-    }
-
-    await later(5);
-  }
-
-  throw new Error(`timed out waiting until ${what}`);
-};
+const until = (holds: () => boolean, what: string): Promise<void> =>
+  vi.waitFor(
+    () => {
+      if (!holds()) {
+        throw new Error(`timed out waiting until ${what}`);
+      }
+    },
+    { timeout: 2000, interval: 5 }
+  );
 
 /** A peer's transport, in a scope the test closes. */
 const open = (url: string) =>

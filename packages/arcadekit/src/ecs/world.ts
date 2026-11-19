@@ -1031,7 +1031,7 @@ export class RemovedReader {
     log.copy(cursor.at, ids, 0);
     this.world._reading(cursor);
     cursor.at = log.end;
-    this.world._read(log);
+    log.visited();
 
     // SAFETY: a change log notes the ids of the entities that changed.
     return [...ids] as Entity[];
@@ -1240,6 +1240,13 @@ const NATIVE_RUN = 2;
  *
  * @category Models
  */
+const makeFrame = (frozen: boolean): Frame => ({
+  loop: undefined,
+  frozen,
+  keys: new Float64Array(64),
+  members: { dense: new Uint32Array(64), count: 0 },
+});
+
 export class QueryView<D extends Terms = Terms> {
   /** The world's restore count when this view was created. */
   private readonly restored: number;
@@ -1493,17 +1500,8 @@ export class QueryView<D extends Terms = Terms> {
     this.depth += 1;
 
     return world._frozen
-      ? (this.frozenFrames[depth] ??= this.makeFrame(true))
-      : (this.frames[depth] ??= this.makeFrame(false));
-  }
-
-  private makeFrame(frozen: boolean): Frame {
-    return {
-      loop: undefined,
-      frozen,
-      keys: new Float64Array(64),
-      members: { dense: new Uint32Array(64), count: 0 },
-    };
+      ? (this.frozenFrames[depth] ??= makeFrame(true))
+      : (this.frames[depth] ??= makeFrame(false));
   }
 
   /** Creates the accessors for a level of iteration, the first time `each` needs them. */
@@ -1614,7 +1612,7 @@ export class QueryView<D extends Terms = Terms> {
           world._reading(cursor);
           cursor.fresh = false;
           cursor.at = log.end;
-          world._read(log);
+          log.visited();
         }
       }
     }
@@ -2033,7 +2031,8 @@ export class QueryView<D extends Terms = Terms> {
     const frame = this.enter();
 
     try {
-      const loop = (frame.loop ??= this.makeLoop(frame.frozen));
+      frame.loop ??= this.makeLoop(frame.frozen);
+      const { loop } = frame;
       const acc = loop.accessors;
       // Sparse columns are replaced when a set grows, and its members'
       // array with them: an accessor is pointed at them again only then.
@@ -2140,7 +2139,7 @@ export class QueryView<D extends Terms = Terms> {
       for (let i = start; i < end; i += 1) {
         row.i = i;
         args[n] = ents[i];
-        f.apply(undefined, args);
+        f(...args);
       }
     }
   }
@@ -2309,7 +2308,8 @@ export class QueryView<D extends Terms = Terms> {
     this.refresh();
 
     if (this.watching) {
-      const peek = (this.peek ??= this.makeFrame(false));
+      this.peek ??= makeFrame(false);
+      const { peek } = this;
 
       if (this.gather(peek.members, false) === 0) {
         return 0;
@@ -2384,6 +2384,48 @@ export class QueryView<D extends Terms = Terms> {
 // ---------------------------------------------------------------------------
 // World
 // ---------------------------------------------------------------------------
+
+/** Reads one field's column, naming the field if its codec rejects a value. */
+const readField = (
+  reader: Reader,
+  def: ComponentDef,
+  f: number,
+  columns: Columns,
+  count: number,
+  narrow: boolean
+): void => {
+  const field = def.fields[f]!;
+
+  try {
+    readColumn(
+      reader,
+      def.kinds[f]!,
+      columns[field]!,
+      count,
+      def.codecs[f],
+      narrow
+    );
+  } catch (error) {
+    if (error instanceof SnapshotError) {
+      throw error;
+    }
+
+    throw new SnapshotError(
+      "component changed",
+      `"${def.name}.${field}" has a codec that refuses a value the snapshot holds: ${error instanceof Error ? error.message : String(error)}`,
+      def.name
+    );
+  }
+};
+
+/** Refuses a singleton's fields where an entity component is expected. */
+const refuseSingle = (def: ComponentDef): void => {
+  if (def.single) {
+    throw new Error(
+      `"${def.name}" is a singleton: the world holds one, and no entity has it. Read and write it with World.singleton().`
+    );
+  }
+};
 
 /**
  * The storage core: entities, the tables of their components, sparse sets,
@@ -3747,7 +3789,7 @@ export class World {
       const def = isComponentDef(input) ? input : input.def;
 
       if (def.single) {
-        this.refuseSingle(def);
+        refuseSingle(def);
       }
 
       if (def.relation !== undefined && isComponentDef(input)) {
@@ -3923,15 +3965,6 @@ export class World {
     if (this._recording) {
       this.movedReaders.push({ cursor, at: cursor.at, fresh: cursor.fresh });
     }
-  }
-
-  /**
-   * A reader has visited a log up to its end.
-   *
-   * @internal
-   */
-  _read(log: ChangeLog): void {
-    log.visited();
   }
 
   /**
@@ -4504,7 +4537,7 @@ export class World {
     // The same order the fields were written in: components by name.
     for (const def of defs) {
       for (let f = 0; f < def.fields.length; f += 1) {
-        this.readField(reader, def, f, table.columns[def.id]!, count, narrow);
+        readField(reader, def, f, table.columns[def.id]!, count, narrow);
       }
     }
   }
@@ -4571,7 +4604,7 @@ export class World {
     }
 
     for (let f = 0; f < def.fields.length; f += 1) {
-      this.readField(reader, def, f, set.columns, count, narrow);
+      readField(reader, def, f, set.columns, count, narrow);
     }
   }
 
@@ -4596,43 +4629,10 @@ export class World {
       loaded.add(single);
 
       for (let f = 0; f < def.fields.length; f += 1) {
-        this.readField(reader, def, f, single.columns, 1, narrow);
+        readField(reader, def, f, single.columns, 1, narrow);
       }
 
       single.written = true;
-    }
-  }
-
-  /** Reads one field's column, naming the field if its codec rejects a value. */
-  private readField(
-    reader: Reader,
-    def: ComponentDef,
-    f: number,
-    columns: Columns,
-    count: number,
-    narrow: boolean
-  ): void {
-    const field = def.fields[f]!;
-
-    try {
-      readColumn(
-        reader,
-        def.kinds[f]!,
-        columns[field]!,
-        count,
-        def.codecs[f],
-        narrow
-      );
-    } catch (error) {
-      if (error instanceof SnapshotError) {
-        throw error;
-      }
-
-      throw new SnapshotError(
-        "component changed",
-        `"${def.name}.${field}" has a codec that refuses a value the snapshot holds: ${error instanceof Error ? error.message : String(error)}`,
-        def.name
-      );
     }
   }
 
@@ -4794,7 +4794,7 @@ export class World {
     let set = this.sparseById.get(def.id);
 
     if (set === undefined) {
-      this.refuseSingle(def);
+      refuseSingle(def);
       this.register(def);
       set = new SparseSet(def);
       this.sparseById.set(def.id, set);
@@ -4811,7 +4811,7 @@ export class World {
 
     if (table === undefined) {
       for (const def of sortedDefs) {
-        this.refuseSingle(def);
+        refuseSingle(def);
         this.register(def);
       }
 
@@ -4821,15 +4821,6 @@ export class World {
     }
 
     return table;
-  }
-
-  /** Refuses a singleton's fields where an entity component is expected. */
-  private refuseSingle(def: ComponentDef): void {
-    if (def.single) {
-      throw new Error(
-        `"${def.name}" is a singleton: the world holds one, and no entity has it. Read and write it with World.singleton().`
-      );
-    }
   }
 
   private placedTable(index: number): Table {

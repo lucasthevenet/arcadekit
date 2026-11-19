@@ -10,7 +10,7 @@
  */
 import { Effect } from "effect";
 import { dual } from "effect/Function";
-import { pipeArguments } from "effect/Pipeable";
+import { Prototype } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
 import type { ComponentDef, SingletonSpec } from "./ecs/component";
@@ -193,9 +193,7 @@ export interface System<out E = never, out R = never> extends Pipeable {
 
 const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
   ...parts,
-  pipe() {
-    return pipeArguments(this, arguments);
-  },
+  pipe: Prototype.pipe,
 });
 
 /**

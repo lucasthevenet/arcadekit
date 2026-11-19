@@ -21,6 +21,7 @@
  * workers, to see what shared memory costs a loop on one thread.
  */
 import { execFileSync } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
 import { Worker } from "node:worker_threads";
 
 import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./kernels";
@@ -68,9 +69,7 @@ const run = async (
   );
 
   // Until they are up and waiting.
-  await new Promise((resolve) => {
-    setTimeout(resolve, 400);
-  });
+  await sleep(400);
   const loop = kernels[kernel]!;
 
   const pass =
