@@ -5,5 +5,7 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["."]
+  "include": ["."],
+  // Vendored, and compiled as upstream compiles it: oxlint/anti-slop/tsconfig.json.
+  "exclude": ["oxlint/anti-slop"]
 }

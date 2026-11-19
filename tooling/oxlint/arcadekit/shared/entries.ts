@@ -7,7 +7,7 @@
 //
 //   every entry of @arcadekit/three imports arcadekit, Effect and Three.js, and nothing else
 //
-// The Oxlint rule `arcadekit/entry-imports` (plugin.ts) holds it in the sources, file by file:
+// The Oxlint rule `arcadekit/entry-imports` (rules/entry-imports.ts) holds it in the sources, file by file:
 // each file keeps to the rule of the entry it is behind, and imports only files whose rule is no
 // looser than its own, so an entry reaches nothing its rule refuses. That holds the build too,
 // since the build writes each source file to a file of its own (`unbundle` in tsdown.config.ts),

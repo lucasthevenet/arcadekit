@@ -25,14 +25,14 @@ What arcadekit does is documented in two places and no other: the site's pages, 
 - `packages/arcadekit/`: `src/<Module>.ts` is the entry `arcadekit/<Module>`, `src/ecs/` the storage core, plain TypeScript with no Effect, and `src/Browser.ts` everything only a page can use. Its `test/`, `examples/` and `bench/` are beside `src/`.
 - `packages/three/`: `@arcadekit/three`, laid out the same way.
 - `website/`: the docs site. Its pages are in `website/src/content/docs/`, and its reference is made from the packages' doc comments.
-- `tooling/`: the workspace's own code. `tooling/lint/` holds the checks: the Oxlint plugin `arcadekit` (`plugin.ts`), which `oxlint.config.ts` turns on, and the checks of the packed packages, `pnpm lint:packages`. `tooling/build/` holds what the build and the tests run. `.changeset/`: pending release notes.
+- `tooling/`: the workspace's own code. `tooling/oxlint/` holds the Oxlint plugins that `oxlint.config.ts` loads, one folder each, laid out as `index.ts`, `rules/` and `shared/`: `arcadekit`, the repository's own rules, and `anti-slop`, vendored from upstream with its Effect rules in `anti-slop/effect`. `tooling/build/` holds what the build and the tests run, and the checks of the packed packages, `pnpm lint:packages`. `.changeset/`: pending release notes.
 - `ROADMAP.md` and `roadmap/`: what to build next, what it waits on, and what to revisit.
 
 ## What every change keeps to
 
 Whatever is in this repository is what the next change copies, whether a person or an agent writes it. Add only what is fit to be copied, and expect to spend most of a change on showing that it works.
 
-- **A check before a sentence.** A rule that matters is held by something that runs: a type, a test, a lint rule in `oxlint.config.ts`, Oxlint's own or one of `tooling/lint/plugin.ts`, or a refusal at run time whose message says what to do instead. Prose, here, in a skill or on a page, is for what no check holds yet. The wording of the docs is the exception: it is never checked by a test or a lint rule.
+- **A check before a sentence.** A rule that matters is held by something that runs: a type, a test, a lint rule in `oxlint.config.ts`, Oxlint's own or one of `tooling/oxlint/arcadekit`, or a refusal at run time whose message says what to do instead. Prose, here, in a skill or on a page, is for what no check holds yet. The wording of the docs is the exception: it is never checked by a test or a lint rule.
 - **When you are corrected, ask first whether the correction can be a check**, and propose that check, in the same PR when it is small. Apply a single correction to the case it was about. It becomes a line of this file or of a skill only when no check can hold it, and then it says what would.
 - **Fix the cause.** A workaround is not a fix, and code that is already here is not precedent for one.
 - **Never disable, weaken or skip a check to get a change through**: no `oxlint-disable`, `@ts-ignore`, `it.skip`, a `describe.runIf` that is false in CI, an assertion loosened until it passes, a writer left out of a test's list, or `Bench-slower:` for a slowdown nobody chose. If a check seems wrong, stop and say so in the reply or the PR. A type test's `// @ts-expect-error` is not this.

@@ -161,7 +161,7 @@ describe("the package's entries", () => {
   });
 
   // What a source may import or name, by the entry it is behind, is held by
-  // the Oxlint rules of tooling/lint/plugin.ts, file by file: arcadekit/ecs
+  // the Oxlint rules of tooling/oxlint/arcadekit, file by file: arcadekit/ecs
   // imports no package and nothing outside src/ecs, no entry but
   // arcadekit/Browser imports anything but Effect, reaches src/Browser.ts or
   // names what only a page has, and no source makes code from text.
