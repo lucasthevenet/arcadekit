@@ -42,6 +42,7 @@ import {
   Exit,
   Fiber,
   Layer,
+  Predicate,
   Schema,
   Scope,
 } from "effect";
@@ -250,7 +251,7 @@ export const layerMemory = (
         }
 
         return Effect.succeed(
-          typeof file === "string" ? new TextEncoder().encode(file) : file
+          Predicate.isString(file) ? new TextEncoder().encode(file) : file
         );
       }),
   });
@@ -406,13 +407,7 @@ export const load: <B extends Entries>(
       { concurrency: "unbounded" }
     );
 
-    const loaded: Record<string, unknown> = {};
-
-    for (let i = 0; i < names.length; i += 1) {
-      loaded[names[i]!] = values[i];
-    }
-
-    return loaded;
+    return Object.fromEntries(names.map((name, i) => [name, values[i]]));
   }) as <B extends Entries>(
     bundle: Bundle<B>
   ) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope>;

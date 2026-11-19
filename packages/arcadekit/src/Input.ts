@@ -42,7 +42,7 @@
  * Nothing provides a source to a replay or a server, and no devices are read
  * there.
  */
-import { Context, Effect, Effectable, Schema } from "effect";
+import { Context, Effect, Effectable, Predicate, Schema } from "effect";
 
 import * as Action from "./Action";
 import type { World as EcsWorld } from "./ecs/world";
@@ -800,7 +800,7 @@ const binding =
     action: Action.ActionDef<N, P, unknown>,
     ...payload: PayloadArgument<P>
   ): Binding => {
-    const watched = typeof codes === "string" ? [codes] : codes;
+    const watched = Predicate.isString(codes) ? [codes] : codes;
     // SAFETY: by PayloadArgument, the payload is given, or left out where P
     // takes undefined, which left out is.
     const given = payload[0] as PayloadOf<P>;
@@ -817,7 +817,7 @@ const binding =
           // is what makes the payload from the devices.
           enqueue(
             action,
-            typeof given === "function"
+            Predicate.isFunction(given)
               ? (given as (devices: Sample) => P)(devices)
               : given
           );

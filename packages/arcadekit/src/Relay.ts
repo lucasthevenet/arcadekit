@@ -33,7 +33,7 @@
  * A room belongs to nobody: the first peer to connect opens it, and it closes
  * when the last one leaves. The relay doesn't announce who joins or leaves.
  */
-import { Data, Exit, Schema } from "effect";
+import { Data, Exit, Predicate, Schema } from "effect";
 
 import * as Lockstep from "./Lockstep";
 
@@ -242,7 +242,7 @@ export const forward = (
   present: readonly Member[],
   options: Options = {}
 ): Exit.Exit<readonly Delivery[], Refused> => {
-  const text = typeof data === "string" ? data : decoder.decode(data);
+  const text = Predicate.isString(data) ? data : decoder.decode(data);
   const longest = options.maxLength ?? 65_536;
 
   if (text.length > longest) {

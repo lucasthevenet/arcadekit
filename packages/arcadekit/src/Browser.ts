@@ -19,7 +19,7 @@
  * released.
  */
 import * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Predicate } from "effect";
 import type { Runtime } from "effect";
 import { constVoid } from "effect/Function";
 
@@ -152,7 +152,7 @@ const listen = (options: Options): Listening => {
     options.gamepads ??
     ((): Iterable<GamepadLike | null> =>
       typeof navigator !== "undefined" &&
-      typeof navigator.getGamepads === "function"
+      Predicate.isFunction(navigator.getGamepads)
         ? navigator.getGamepads()
         : []);
 
@@ -242,7 +242,7 @@ const listen = (options: Options): Listening => {
   on(page, "pointermove", (event: PointerEvent) => {
     place(event);
 
-    if (!held || typeof event.buttons !== "number") {
+    if (!held || !Predicate.isNumber(event.buttons)) {
       return;
     }
 
@@ -443,7 +443,7 @@ export const layerSound = (
 
       /** Returns what is played for a name or a clip, if it is available. */
       const bufferOf = (sound: Sound.Playable): unknown => {
-        if (typeof sound !== "string") {
+        if (!Predicate.isString(sound)) {
           return sound.data;
         }
 
@@ -463,7 +463,7 @@ export const layerSound = (
         // A name is a file that was decoded, or a clip under that name.
         const file = files[sound]!;
 
-        return typeof file === "string" ? buffers.get(sound) : file.data;
+        return Predicate.isString(file) ? buffers.get(sound) : file.data;
       };
 
       /** Starts a streamed track, silent, with its own volume. */
@@ -612,8 +612,8 @@ export const layerSound = (
       yield* Effect.forkScoped(
         Effect.forEach(
           // A name that is a clip's has no file to fetch.
-          Object.entries(files).filter(
-            (entry): entry is [string, string] => typeof entry[1] === "string"
+          Object.entries(files).filter((entry): entry is [string, string] =>
+            Predicate.isString(entry[1])
           ),
           ([cue, url]) =>
             loader.bytes(url).pipe(
@@ -730,7 +730,7 @@ export const layerSound = (
               early = true;
               report(
                 Effect.logInfo(
-                  `The cue "${typeof cue === "string" ? cue : cue.name}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`
+                  `The cue "${Predicate.isString(cue) ? cue : cue.name}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`
                 )
               );
             }

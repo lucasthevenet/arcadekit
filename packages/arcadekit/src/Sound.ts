@@ -98,7 +98,7 @@ export const clip = (name: string, data?: unknown): Clip =>
 export type Playable = string | Clip;
 
 const nameOf = (sound: Playable): string =>
-  typeof sound === "string" ? sound : sound.name;
+  Predicate.isString(sound) ? sound : sound.name;
 
 // --- where sound goes ------------------------------------------------------------
 
@@ -226,7 +226,7 @@ export const makeRecorder = (): Recorder => {
     playing,
     play(cue, volume, rate) {
       played.push(
-        typeof cue === "string"
+        Predicate.isString(cue)
           ? { cue, volume, rate }
           : { cue: cue.name, volume, rate, clip: cue }
       );
@@ -596,14 +596,14 @@ export interface Line {
 export const on = <P>(event: Event.EventDef<P>, cue: CueOf<P>): Line => ({
   event,
   read: Effect.map(event.asEffect(), (handle) => handle.read()),
-  pick: typeof cue === "function" ? cue : () => cue,
+  pick: Predicate.isFunction(cue) ? cue : () => cue,
 });
 
 /** The assets of a bundle, whatever their types. */
 type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 const isCue = (picked: Playable | Cue): picked is Cue =>
-  typeof picked !== "string" && !(picked instanceof Clip);
+  !Predicate.isString(picked) && !(picked instanceof Clip);
 
 /** Entries grouped by event, so a system reads each event once for all of them. */
 type Heard = readonly (readonly [Line["read"], readonly Line["pick"][]])[];
@@ -768,7 +768,7 @@ export interface Track extends MusicOptions {
 export type TrackOf = Playable | Track | undefined;
 
 const isTrack = (picked: Playable | Track): picked is Track =>
-  typeof picked !== "string" && !(picked instanceof Clip);
+  !Predicate.isString(picked) && !(picked instanceof Clip);
 
 /**
  * Makes a frame-stage system that keeps a channel playing the music that

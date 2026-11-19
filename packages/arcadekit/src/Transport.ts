@@ -25,7 +25,7 @@
  * else that carries text; and `Transport.makeHub` is an in-memory network for
  * tests, which delays and reorders messages as configured.
  */
-import { Context, Data, Effect, Exit, Layer } from "effect";
+import { Context, Data, Effect, Exit, Layer, Predicate } from "effect";
 
 import type { Tickable } from "./Driver";
 import { Rng } from "./ecs/random";
@@ -466,8 +466,8 @@ export interface Hub {
 export const makeHub = (options: HubOptions = {}): Hub => {
   const dice = new Rng(options.seed ?? 0);
   const delay = options.delay ?? 0;
-  const min = typeof delay === "number" ? delay : delay.min;
-  const max = typeof delay === "number" ? delay : delay.max;
+  const min = Predicate.isNumber(delay) ? delay : delay.min;
+  const max = Predicate.isNumber(delay) ? delay : delay.max;
 
   if (
     !Number.isSafeInteger(min) ||

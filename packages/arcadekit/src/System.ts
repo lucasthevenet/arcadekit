@@ -8,7 +8,7 @@
  *     moving.each((pos, vel) => { pos.x += vel.x * delta })
  *   })
  */
-import { Effect } from "effect";
+import { Effect, Predicate } from "effect";
 import { dual } from "effect/Function";
 import { Prototype } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
@@ -296,7 +296,7 @@ export const after: {
   ): System<E, R> =>
     build({
       ...self,
-      after: [...self.after, typeof other === "string" ? other : other.name],
+      after: [...self.after, Predicate.isString(other) ? other : other.name],
     })
 );
 
@@ -332,7 +332,7 @@ export const before: {
   ): System<E, R> =>
     build({
       ...self,
-      before: [...self.before, typeof other === "string" ? other : other.name],
+      before: [...self.before, Predicate.isString(other) ? other : other.name],
     })
 );
 
