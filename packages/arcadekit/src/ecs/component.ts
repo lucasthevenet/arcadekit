@@ -306,7 +306,11 @@ export type RelationSchema<S extends Schema> = {
   readonly target: FieldDef<Entity, ReadonlyColumn<Entity>>;
 } & S;
 
-/** @internal What an accessor that notices writes tells: `ChangeLog` in world.ts. */
+/**
+ * What an accessor that notices writes tells: `ChangeLog` in world.ts.
+ *
+ * @internal
+ */
 export interface WriteLog {
   /** For each entity index, 1 when the entity is already recorded. */
   noted: Uint8Array;
@@ -314,18 +318,22 @@ export interface WriteLog {
 }
 
 /**
- * @internal The row a loop is at. The accessors a loop hands out read and
- * write that row of their columns, so moving the loop on is one assignment
- * here, however many components it visits.
+ * The row a loop is at. The accessors a loop hands out read and write that row
+ * of their columns, so moving the loop on is one assignment here, however many
+ * components it visits.
+ *
+ * @internal
  */
 export interface Row {
   i: number;
 }
 
 /**
- * @internal What a query's loop is handed for one of its terms: an object
- * with a property per field, which reads and writes the row its loop is
- * at, and what points it at a table's columns.
+ * What a query's loop is handed for one of its terms: an object with a property
+ * per field, which reads and writes the row its loop is at, and what points it
+ * at a table's columns.
+ *
+ * @internal
  */
 export interface Accessor {
   /** What `each` passes to its callback. It holds the fields and nothing else. */
@@ -343,10 +351,11 @@ export interface Accessor {
 }
 
 /**
- * @internal What an accessor does with an assignment: writes it; writes it
- * and notes whose row it was, for the queries that watch the component;
- * or refuses it, in a query that only reads the component or in a world
- * that is frozen.
+ * What an accessor does with an assignment: writes it; writes it and notes
+ * whose row it was, for the queries that watch the component; or refuses it, in
+ * a query that only reads the component or in a world that is frozen.
+ *
+ * @internal
  */
 export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
 

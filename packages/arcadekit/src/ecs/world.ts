@@ -1210,9 +1210,17 @@ export class QueryView<D extends Terms = Terms> {
   /** The value of `world._watched` that `termLog` was computed for. */
   private notesAt = -1;
 
-  /** @internal Test hook: force one strategy for queries that require a sparse component. */
+  /**
+   * Test hook: force one strategy for queries that require a sparse component.
+   *
+   * @internal
+   */
   _path: "auto" | "sorted" | "mask" = "auto";
-  /** @internal The strategy the last iteration used. */
+  /**
+   * The strategy the last iteration used.
+   *
+   * @internal
+   */
   _lastPath: "dense" | "sorted" | "mask" = "dense";
 
   /** @internal */
@@ -2252,11 +2260,19 @@ export class QueryView<D extends Terms = Terms> {
 export class World {
   private recTable = new Int32Array(1024).fill(FREE);
   private recRow = new Int32Array(1024);
-  /** @internal Table index per entity index (negative when not in a table). */
+  /**
+   * Table index per entity index (negative when not in a table).
+   *
+   * @internal
+   */
   get _recTable(): Int32Array {
     return this.recTable;
   }
-  /** @internal Row per entity index. */
+  /**
+   * Row per entity index.
+   *
+   * @internal
+   */
   get _recRow(): Int32Array {
     return this.recRow;
   }
@@ -2282,11 +2298,17 @@ export class World {
   /** Scratch space for `hash`: one state per member of a sparse set. */
   private memberStates = new Int32Array(64);
 
-  /** @internal Depth of query iteration in progress. */
+  /**
+   * Depth of query iteration in progress.
+   *
+   * @internal
+   */
   _iterating = 0;
   /**
-   * @internal How many times `restore` has put a snapshot back. A view
-   * made before the last of them holds tables that are gone.
+   * How many times `restore` has put a snapshot back. A view made before the
+   * last of them holds tables that are gone.
+   *
+   * @internal
    */
   _restored = 0;
 
@@ -2301,7 +2323,11 @@ export class World {
    * anything: the world refuses the rest. See `Guard`.
    */
   guard: Guard | undefined;
-  /** @internal Indexed by component id: the log of writes, when a query watches them. */
+  /**
+   * Indexed by component id: the log of writes, when a query watches them.
+   *
+   * @internal
+   */
   readonly _changed: (ChangeLog | undefined)[] = [];
   private readonly addedLogs: (ChangeLog | undefined)[] = [];
   private readonly removedLogs: (ChangeLog | undefined)[] = [];
@@ -2309,7 +2335,11 @@ export class World {
   private readonly logs: ChangeLog[] = [];
   /** The `changed` logs, which are the ones a transaction can add to. */
   private readonly writeLogs: ChangeLog[] = [];
-  /** @internal How many `changed` logs there are: a view's accessors depend on it. */
+  /**
+   * How many `changed` logs there are: a view's accessors depend on it.
+   *
+   * @internal
+   */
   _watched = 0;
   /** Logs started while a query was iterating, whose accessors record nothing. */
   private lateLogs: ChangeLog[] = [];
@@ -2348,9 +2378,17 @@ export class World {
    */
   readonly random: Rng;
 
-  /** @internal True between `begin` and `commit` or `rollback`. */
+  /**
+   * True between `begin` and `commit` or `rollback`.
+   *
+   * @internal
+   */
   _recording = false;
-  /** @internal True between `freeze` and `thaw`. */
+  /**
+   * True between `freeze` and `thaw`.
+   *
+   * @internal
+   */
   _frozen = false;
   /** What a rollback restores, in the order it was saved. */
   private readonly saved: Saved[] = [];
@@ -2377,7 +2415,11 @@ export class World {
     return this.alive;
   }
 
-  /** @internal How many entity slots have ever been used: every index is below it. */
+  /**
+   * How many entity slots have ever been used: every index is below it.
+   *
+   * @internal
+   */
   get _slots(): number {
     return this.nextIndex;
   }
@@ -2435,7 +2477,11 @@ export class World {
     return makeEntity(index, this.gens[index]!);
   }
 
-  /** @internal Whether the last `_reserve` took an index never used before. */
+  /**
+   * Whether the last `_reserve` took an index never used before.
+   *
+   * @internal
+   */
   _reservedFresh = false;
 
   /**
@@ -3536,7 +3582,11 @@ export class World {
     this.registered[def.id] = true;
   }
 
-  /** @internal Registers the component of every input. */
+  /**
+   * Registers the component of every input.
+   *
+   * @internal
+   */
   _registerAll(inputs: readonly ComponentInput[]): void {
     for (let i = 0; i < inputs.length; i++) {
       const input = inputs[i]!;
@@ -3673,7 +3723,11 @@ export class World {
     return found;
   }
 
-  /** @internal The log of one kind of change to a component, started if need be. */
+  /**
+   * The log of one kind of change to a component, started if need be.
+   *
+   * @internal
+   */
   _log(def: ComponentDef<any>, kind: ChangeKind): ChangeLog {
     const byId =
       kind === "changed"
@@ -3702,19 +3756,31 @@ export class World {
     return log;
   }
 
-  /** @internal A reader is about to move. A rollback puts it back. */
+  /**
+   * A reader is about to move. A rollback puts it back.
+   *
+   * @internal
+   */
   _reading(cursor: ChangeCursor): void {
     if (this._recording) {
       this.movedReaders.push({ cursor, at: cursor.at, fresh: cursor.fresh });
     }
   }
 
-  /** @internal A reader has visited a log up to its end. */
+  /**
+   * A reader has visited a log up to its end.
+   *
+   * @internal
+   */
   _read(log: ChangeLog): void {
     log.visited();
   }
 
-  /** @internal A query's iteration has ended. */
+  /**
+   * A query's iteration has ended.
+   *
+   * @internal
+   */
   _left(): void {
     if (--this._iterating === 0 && this.lateLogs.length > 0) {
       // A log that was started while a loop was running missed what that

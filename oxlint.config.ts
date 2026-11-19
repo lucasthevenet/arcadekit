@@ -63,6 +63,8 @@ export default defineConfig({
     "promise/prefer-await-to-callbacks": "off",
     "eslint/default-case": "off",
     "eslint/no-redeclare": "off",
+    // TypeDoc's tag, which sorts the reference into sections.
+    "jsdoc/check-tag-names": ["error", { definedTags: ["category"] }],
     // A system or a handler is a generator even when it needs no service,
     // so it may have no `yield`.
     "eslint/require-yield": "off",

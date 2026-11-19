@@ -148,7 +148,11 @@ export interface Registry {
   readonly handles: Map<State<any>, StateHandle<any>>;
 }
 
-/** @internal The states of a world that anyone has asked for. */
+/**
+ * The states of a world that anyone has asked for.
+ *
+ * @internal
+ */
 export const registryOf = (world: EcsWorld): Registry => {
   let registry = known.get(world);
 
@@ -160,7 +164,11 @@ export const registryOf = (world: EcsWorld): Registry => {
   return registry;
 };
 
-/** @internal A world's handle to a state. */
+/**
+ * A world's handle to a state.
+ *
+ * @internal
+ */
 export const handleOf = <V extends string>(
   world: EcsWorld,
   state: State<V>
