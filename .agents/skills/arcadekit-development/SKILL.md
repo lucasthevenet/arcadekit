@@ -25,7 +25,7 @@ When this guide and Effect's own guidance disagree, this guide wins inside the s
    - a new rule, or a correction that could be a check: [checks.md](checks.md);
    - a complex feature that an engine has solved before: [design.md](design.md);
    - an Effect API remembered from Effect 3: [effect-3.md](effect-3.md).
-4. Read what the code will not stop in the area the change is in, and no other area: the section of [to-revisit.md](../../../roadmap/to-revisit.md) on the order systems run in, on ticks, frames and real time, on several peers, on what a save and the hash do not hold, or on who lets go of what.
+4. Read what the code will not stop in the area the change is in, and no other area: the open issues labelled `silent-failure` that the roadmap, issue [#173](https://github.com/lucasthevenet/arcadekit/issues/173), lists under the order systems run in, ticks, frames and real time, several peers, what a save and the hash do not hold, values that are not checked, or who lets go of what.
 5. Look up each Effect API the change uses, where [effects.md](effects.md) says to, and read nearby source and tests for what this guide does not say.
 6. Keep the documentation true. A change that makes a page or a doc comment untrue, or that adds what a game's author has to know, changes them in the same change: a page with the `website-docs` skill, a doc comment with the `jsdocs` skill. Nothing is said a second time in a skill or in a README.
 7. Test the change and show that it works, with the `test-development` skill.
@@ -54,10 +54,10 @@ The folders are a contract, and most of it is checked.
 
 - Every export has a doc comment, which is its reference: the `jsdocs` skill says how one is written.
 - Inside the code, write no comment by default. Write one only for a why the code cannot say: an invariant, an order that matters, a number that was measured, the engine a design came from. Keep it to a line or two.
-- No comment, doc sentence or rule explains a workaround or why the right thing was not done. Say that in the reply or the PR. If the debt stays, it is a line of [to-revisit.md](../../../roadmap/to-revisit.md) or of "Where the code does not follow this yet", below, with what would close it.
+- No comment, doc sentence or rule explains a workaround or why the right thing was not done. Say that in the reply or the PR. If the debt stays, it is an issue, with what would close it, as `AGENTS.md` says.
 
 ## Where the code does not follow this yet
 
-Nothing at the moment. When code has to depart from this guide for a while, list it here with what is missing, and remove the entry with the fix.
+When code has to depart from this guide for a while, that is an issue that says what is missing, closed by the fix, and never a line here.
 
 The references to Effect's repository and documentation were checked on 2026-11-15, against Effect 4.1. The repository installs 4.1.4, which Alchemy, a dev dependency of the relay's example, asks for; the packages still take any 4.1 from 4.1.2.

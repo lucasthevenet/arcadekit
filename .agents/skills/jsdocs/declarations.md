@@ -31,7 +31,7 @@ Write practical English about the public concept, not its implementation. Start 
 
 Optional non-empty sections appear once in this order: `**When to use**`, `**Details**`, `**Gotchas**`. Separate descriptions, sections, examples, and tags with exactly one blank line. Use prose for one fact and bullets for parallel facts. Do not add other headings.
 
-`**When to use**` states a positive use case distinct from the description and begins with `Use to`, `Use when`, `Use as`, or `Use with`. It is also where a close alternative is named, in code formatting, with which of the two to use when. Reserve `**Gotchas**` for concrete preconditions, edge cases, surprising behavior, and important failure modes. A gotcha that nothing stops, in the types or at run time, is also a line of [to-revisit.md](../../../roadmap/to-revisit.md).
+`**When to use**` states a positive use case distinct from the description and begins with `Use to`, `Use when`, `Use as`, or `Use with`. It is also where a close alternative is named, in code formatting, with which of the two to use when. Reserve `**Gotchas**` for concrete preconditions, edge cases, surprising behavior, and important failure modes. A gotcha that nothing stops, in the types or at run time, is also an issue labelled `silent-failure`, as `AGENTS.md` says.
 
 No doc comment explains a workaround or why the right thing was not done.
 
