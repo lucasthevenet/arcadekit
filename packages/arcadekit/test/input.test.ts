@@ -675,7 +675,7 @@ describe("the input stage", () => {
   });
 
   it("hears what a tick's actions emitted, and that an action it issued was refused", () => {
-    class TooMuch extends Data.TaggedError("TooMuch")<{}> {}
+    class TooMuch extends Data.TaggedError("TooMuch") {}
 
     const Done = Event.define("in/Done", Schema.Struct({ by: Schema.Int }));
     const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }));
@@ -914,7 +914,7 @@ describe("the input stage", () => {
   });
 
   it("stops the tick that ran it when it fails: the tick does not run, and the next hears first again", () => {
-    class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
+    class NoKeyboard extends Data.TaggedError("NoKeyboard") {}
 
     run(
       Effect.gen(function* () {
@@ -991,7 +991,7 @@ describe("the input stage", () => {
   });
 
   it("gives a system's failure back typed, and a stopped app runs none of it", () => {
-    class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
+    class NoKeyboard extends Data.TaggedError("NoKeyboard") {}
 
     run(
       Effect.gen(function* () {
@@ -1841,7 +1841,7 @@ describe("the picture of the devices in the world", () => {
   });
 
   it("is read by a handler and by what draws the game, as by a system", () => {
-    class NotHeld extends Data.TaggedError("NotHeld")<{}> {}
+    class NotHeld extends Data.TaggedError("NotHeld") {}
 
     const Shoot = Action.define("in/Shoot", Schema.Struct({}));
 

@@ -218,9 +218,9 @@ describe("App.run", () => {
   });
 
   it("fails with what ready fails with, and with what making the app fails with, holding on to nothing", async () => {
-    class NoCanvas extends Data.TaggedError("NoCanvas")<{}> {}
+    class NoCanvas extends Data.TaggedError("NoCanvas") {}
 
-    class NoSound extends Data.TaggedError("NoSound")<{}> {}
+    class NoSound extends Data.TaggedError("NoSound") {}
 
     const { Game, log } = makeGame();
     const display = Driver.makeManualDisplay();
@@ -343,7 +343,7 @@ describe("App.run", () => {
   });
 
   it("dies with what a tick throws, and lets go of everything", async () => {
-    class Jammed extends Data.TaggedError("Jammed")<{}> {}
+    class Jammed extends Data.TaggedError("Jammed") {}
 
     const { Game, log } = makeGame();
 

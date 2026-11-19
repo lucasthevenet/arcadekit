@@ -361,7 +361,7 @@ describe("a query that says what it only reads", () => {
 
 // --- in an app --------------------------------------------------------------------
 
-class TooFast extends Data.TaggedError("TooFast")<{}> {}
+class TooFast extends Data.TaggedError("TooFast") {}
 
 const Survey = Action.define("rd/Survey", Schema.Struct({ limit: Schema.Int }));
 

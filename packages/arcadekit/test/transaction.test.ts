@@ -464,7 +464,7 @@ describe("commands that are rolled back", () => {
 
 // --- through an app: an action that is refused leaves nothing behind ------------
 
-class Refused extends Data.TaggedError("Refused")<{}> {}
+class Refused extends Data.TaggedError("Refused") {}
 
 const Noted = Event.define<{ readonly step: string }>("tx/Noted");
 

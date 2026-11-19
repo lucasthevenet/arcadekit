@@ -521,7 +521,7 @@ class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
   readonly waitingFor: number;
 }> {}
 
-class Caught extends Data.TaggedError("Caught")<{}> {}
+class Caught extends Data.TaggedError("Caught") {}
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turn = yield* Turn;

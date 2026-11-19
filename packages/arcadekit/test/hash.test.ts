@@ -579,7 +579,11 @@ describe("the hash of a world", () => {
           Query.all(Body).pipe(Query.with(Aura), Query.without(Chilled, Unused))
         );
 
-        view.each((body) => void body.x);
+        const read: number[] = [];
+
+        view.each((body) => {
+          read.push(body.x);
+        });
         view.eachChunk(() => {});
         view.count();
         world.view(Query.all(Aura).pipe(Query.with(Unused))).entities();
@@ -589,7 +593,7 @@ describe("the hash of a world", () => {
         world.set(entities[2]!, Body, { x: 99 });
         world.set(entities[2]!, Body, { x: 2 });
         world.register(Component.define("hash/Idle", { v: Field.f32 }));
-        void new CommandBuffer(world).size;
+        expect(new CommandBuffer(world).size).toBe(0);
         // A sparse component that came and went.
         world.add(entities[5]!, Unused);
         world.remove(entities[5]!, Unused);

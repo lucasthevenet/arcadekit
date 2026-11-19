@@ -57,7 +57,7 @@ if (N !== sizes.entities || DT !== sizes.step) {
 
 const Moving = Query.all(Position, Velocity);
 
-class Refused extends Data.TaggedError("Refused")<{}> {}
+class Refused extends Data.TaggedError("Refused") {}
 
 const Nudge = Action.define(
   "bench/Nudge",

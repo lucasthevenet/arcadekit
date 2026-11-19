@@ -861,7 +861,7 @@ describe("Browser.runMain", () => {
   });
 
   it("ends with what the game fails with, and takes only a game that needs nothing more", async () => {
-    class NoCanvas extends Data.TaggedError("NoCanvas")<{}> {}
+    class NoCanvas extends Data.TaggedError("NoCanvas") {}
 
     const page = makePage();
     // What Effect's logger writes, wherever it writes it.

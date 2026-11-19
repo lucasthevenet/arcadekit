@@ -272,7 +272,7 @@ describe("a game that is put back to a moment", () => {
   });
 
   it("lets an app that had stopped on a failed script run again", () => {
-    class Tripped extends Data.TaggedError("Tripped")<{}> {}
+    class Tripped extends Data.TaggedError("Tripped") {}
 
     const Trip = Effect.gen(function* () {
       const script = yield* Script;

@@ -45,7 +45,7 @@ const Dropped = Event.define("sd/Dropped", Schema.Struct({}));
 const Drop = Action.define("sd/Drop", Schema.Struct({ height: Schema.Finite }));
 const Mute = Action.define("sd/Mute", Schema.Struct({ on: Schema.Boolean }));
 
-class TooHigh extends Data.TaggedError("TooHigh")<{}> {}
+class TooHigh extends Data.TaggedError("TooHigh") {}
 
 const Fall = System.make("sd/Fall", function* () {
   const { delta } = yield* Time;

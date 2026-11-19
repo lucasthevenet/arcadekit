@@ -765,7 +765,7 @@ describe("the frame stage", () => {
   });
 
   it("stops with the app when a script has failed and the app was told to stop", () => {
-    class Boom extends Data.TaggedError("Boom")<{}> {}
+    class Boom extends Data.TaggedError("Boom") {}
 
     run(
       Effect.gen(function* () {

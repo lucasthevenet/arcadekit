@@ -169,7 +169,7 @@ const Draw = System.make("policy/Draw", function* () {
   });
 }).pipe(System.inStage("frame"));
 
-class TooPoor extends Data.TaggedError("policy/TooPoor")<{}> {}
+class TooPoor extends Data.TaggedError("policy/TooPoor") {}
 
 const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }));
 

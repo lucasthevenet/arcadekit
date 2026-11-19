@@ -1218,7 +1218,7 @@ const Push = Action.define(
 const Spawn = Action.define("ch/Spawn", Schema.Struct({}));
 const Cull = Action.define("ch/Cull", Schema.Struct({ slot: Schema.Int }));
 
-class Refused extends Data.TaggedError("Refused")<{}> {}
+class Refused extends Data.TaggedError("Refused") {}
 
 const push = Action.handler(Push, function* ({ refuse, slot }) {
   let n = 0;

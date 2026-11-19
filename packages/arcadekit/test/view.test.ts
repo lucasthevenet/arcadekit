@@ -35,7 +35,7 @@ const Start = Action.define("vw/Start", Schema.Struct({}));
 const Buy = Action.define("vw/Buy", Schema.Struct({ price: Schema.Int }));
 const Ping = Action.define<void>()("vw/Ping");
 
-class TooPoor extends Data.TaggedError("TooPoor")<{}> {}
+class TooPoor extends Data.TaggedError("TooPoor") {}
 
 /** How often each view was worked out. */
 const worked = { hud: 0, menu: 0 };

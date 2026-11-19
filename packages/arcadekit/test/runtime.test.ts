@@ -261,7 +261,11 @@ describe("systems", () => {
     // Written inline on purpose: this is how layers are usually provided.
     const make = App.make({ systems: [Beep] }).pipe(
       Effect.provide(
-        Layer.succeed(Audio, { play: (sound) => void played.push(sound) })
+        Layer.succeed(Audio, {
+          play: (sound) => {
+            played.push(sound);
+          },
+        })
       )
     );
 
@@ -541,7 +545,9 @@ describe("scripts", () => {
         Effect.gen(function* () {
           const { nextTick } = yield* Script;
           yield* Effect.addFinalizer(() =>
-            Effect.sync(() => void (cleanedUp = true))
+            Effect.sync(() => {
+              cleanedUp = true;
+            })
           );
           yield* Effect.forever(nextTick);
         }).pipe(Effect.scoped)
@@ -709,7 +715,9 @@ describe("a script that fails", () => {
       yield* script.spawn(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(() =>
-            Effect.sync(() => void (cleanedUp = true))
+            Effect.sync(() => {
+              cleanedUp = true;
+            })
           );
           yield* Effect.forever(script.nextTick);
         }).pipe(Effect.scoped)
@@ -869,7 +877,7 @@ describe("a script that fails", () => {
   });
 
   it("does not hide a system's failure in the tick they both fail in", () => {
-    class Jammed extends Data.TaggedError("Jammed")<{}> {}
+    class Jammed extends Data.TaggedError("Jammed") {}
 
     const Jam = System.make("Jam", function* () {
       if ((yield* Time).tick === 2) {
@@ -898,8 +906,12 @@ describe("a script that fails", () => {
     const seen: unknown[][] = [];
     const original = console.error;
     const originalLog = console.log;
-    console.error = (...args: unknown[]) => void seen.push(args);
-    console.log = (...args: unknown[]) => void seen.push(args);
+    console.error = (...args: unknown[]) => {
+      seen.push(args);
+    };
+    console.log = (...args: unknown[]) => {
+      seen.push(args);
+    };
 
     try {
       withApp(App.make({ systems: [] }), (app) => {

@@ -47,7 +47,7 @@ const Scatter = Action.define(
 
 const Pulse = Action.define("sv/Pulse", Schema.Struct({}));
 
-class TooBig extends Data.TaggedError("TooBig")<{}> {}
+class TooBig extends Data.TaggedError("TooBig") {}
 
 const add = Action.handler(Add, function* ({ by }) {
   (yield* Tallies).each((tally) => {
@@ -768,7 +768,9 @@ describe("a plugin's scripts", () => {
 
     const Forever = Effect.gen(function* () {
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => void (cleanedUp = true))
+        Effect.sync(() => {
+          cleanedUp = true;
+        })
       );
       yield* Effect.forever((yield* Script).nextTick);
     }).pipe(Effect.scoped);

@@ -675,7 +675,7 @@ const Double = Action.define("rp/Double", Schema.Struct({}));
 const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));
 const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));
 
-class TooBig extends Data.TaggedError("TooBig")<{}> {}
+class TooBig extends Data.TaggedError("TooBig") {}
 
 // Doubling and adding do not commute, so the tally gives away any change in
 // the order actions were applied in.

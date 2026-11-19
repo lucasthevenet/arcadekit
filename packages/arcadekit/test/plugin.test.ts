@@ -86,7 +86,7 @@ class Fragile extends Data.TaggedError("Fragile")<{
   readonly entity: Entity;
 }> {}
 
-class NothingToHeal extends Data.TaggedError("NothingToHeal")<{}> {}
+class NothingToHeal extends Data.TaggedError("NothingToHeal") {}
 
 const Heal = Action.define<{ readonly amount: number }>()("Heal");
 
@@ -162,7 +162,7 @@ describe("plugins", () => {
   });
 
   it("can be combined with systems and handlers the app defines itself", () => {
-    const Ping = Action.define<{}>()("Ping");
+    const Ping = Action.define<Record<never, never>>()("Ping");
 
     const ping = Action.handler(Ping, function* () {
       return "pong";
@@ -215,7 +215,9 @@ describe("plugins", () => {
             })
         )
       ),
-      setup: Effect.sync(() => void order.push("setup:Core")),
+      setup: Effect.sync(() => {
+        order.push("setup:Core");
+      }),
     });
 
     type NeedsClock = Plugin.Plugin<never, never, Clock, never, never, Clock>;
@@ -231,7 +233,9 @@ describe("plugins", () => {
             order.push(`tick:${name}:${(yield* Clock).id}`);
           }),
         ],
-        setup: Effect.sync(() => void order.push(`setup:${name}`)),
+        setup: Effect.sync(() => {
+          order.push(`setup:${name}`);
+        }),
       });
 
     const Left = plugin("Left", [Core]);
@@ -320,7 +324,11 @@ describe("plugins", () => {
 
     const provided = App.make({ plugins: [Sfx] }).pipe(
       Effect.provide(
-        Layer.succeed(Audio, { play: (sound) => void played.push(sound) })
+        Layer.succeed(Audio, {
+          play: (sound) => {
+            played.push(sound);
+          },
+        })
       )
     );
 
@@ -392,7 +400,7 @@ describe("plugins", () => {
       readonly path: string;
     }> {}
 
-    class BadConfig extends Data.TaggedError("BadConfig")<{}> {}
+    class BadConfig extends Data.TaggedError("BadConfig") {}
 
     const Loader = Plugin.make("Loader", {
       setup: Effect.fail(new NoSaveFile({ path: "slot1" })),

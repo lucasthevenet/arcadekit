@@ -211,7 +211,7 @@ class NotEnoughEnergy extends Data.TaggedError("NotEnoughEnergy")<{
   readonly need: number;
 }> {}
 
-class NoSuchTarget extends Data.TaggedError("NoSuchTarget")<{}> {}
+class NoSuchTarget extends Data.TaggedError("NoSuchTarget") {}
 
 const Attack = Action.define<{
   readonly attacker: Entity;
@@ -225,7 +225,7 @@ const Summon = Action.define<{
   readonly hp: number;
 }>()("Summon");
 
-const Unhandled = Action.define<{}>()("Unhandled");
+const Unhandled = Action.define<Record<never, never>>()("Unhandled");
 
 const TurnQuery = Query.all(Turn);
 
@@ -365,9 +365,9 @@ const snapshot = (app: App.Any): string[] => {
     const energy = app.world.get(entity, Energy);
     out.push(`${entity}: hp=${health.hp} energy=${energy?.points}`);
   });
-  app.world
-    .view(TurnQuery)
-    .each((turn) => void out.push(`turn ${turn.number} player ${turn.player}`));
+  app.world.view(TurnQuery).each((turn) => {
+    out.push(`turn ${turn.number} player ${turn.player}`);
+  });
 
   return out;
 };
@@ -389,7 +389,7 @@ describe("actions", () => {
         NotYourTurn | NotEnoughEnergy | NoSuchTarget
       > = exit;
 
-      void typed;
+      expect(typed).toBe(exit);
 
       const ended: Exit.Exit<void, NotYourTurn> = app.dispatch(EndTurn, {
         player: 1,
@@ -561,7 +561,7 @@ describe("actions", () => {
       // @ts-expect-error no handler was registered for this action
       expect(() => app.dispatch(Unhandled, {})).toThrow(/No handler/u);
       // @ts-expect-error the payload does not match the action
-      void app.dispatch(Attack, { attacker: one });
+      app.dispatch(Attack, { attacker: one });
       expect(
         Exit.isFailure(
           app.dispatchByName("Attack", { attacker: two, target: one })

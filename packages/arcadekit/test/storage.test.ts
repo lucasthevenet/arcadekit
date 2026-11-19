@@ -443,7 +443,9 @@ describe("queries", () => {
     world.add(all[0]!, Stunned);
     world.add(all[9]!, Stunned);
     chunks.length = 0;
-    awake.eachChunk((start, end) => void chunks.push([start, end]));
+    awake.eachChunk((start, end) => {
+      chunks.push([start, end]);
+    });
     expect(chunks).toStrictEqual([
       [1, 3],
       [4, 7],
@@ -455,7 +457,9 @@ describe("queries", () => {
     }
 
     chunks.length = 0;
-    awake.eachChunk((start, end) => void chunks.push([start, end]));
+    awake.eachChunk((start, end) => {
+      chunks.push([start, end]);
+    });
     expect(chunks).toStrictEqual([]);
   });
 
@@ -548,7 +552,9 @@ describe("queries", () => {
     const order = (path: "auto" | "mask" | "sorted") => {
       view._path = path;
       const out: number[] = [];
-      view.each((pos) => void out.push(pos.x));
+      view.each((pos) => {
+        out.push(pos.x);
+      });
 
       return out;
     };
@@ -587,7 +593,9 @@ describe("queries", () => {
 
     const chunks = () => {
       const out: [number, number][] = [];
-      awake.eachChunk((start, end) => void out.push([start, end]));
+      awake.eachChunk((start, end) => {
+        out.push([start, end]);
+      });
 
       return out;
     };
@@ -603,7 +611,9 @@ describe("queries", () => {
       [1002, 2999],
     ]);
     const seen: number[] = [];
-    awake.each((pos) => void seen.push(pos.x));
+    awake.each((pos) => {
+      seen.push(pos.x);
+    });
     expect(seen).toHaveLength(2996);
     expect(seen).not.toContain(1000);
     expect(seen[999]).toBe(1002);
@@ -656,7 +666,9 @@ describe("queries", () => {
       world.view(query([Position], [], [Stunned])),
     ]) {
       const xs: number[] = [];
-      view.each((pos) => void xs.push(pos.x));
+      view.each((pos) => {
+        xs.push(pos.x);
+      });
       // Every ordered pair: the outer accessor must survive the inner loop.
       const pairs: string[] = [];
       view.each((a) => {
@@ -698,7 +710,9 @@ describe("queries", () => {
     const snapshot = () =>
       [awake, stunned].map((view) => {
         const out: number[] = [];
-        view.each((pos) => void out.push(pos.x));
+        view.each((pos) => {
+          out.push(pos.x);
+        });
 
         return out;
       });

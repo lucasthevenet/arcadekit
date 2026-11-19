@@ -447,7 +447,7 @@ describe("a lockstep session", () => {
   });
 
   it("does not run a tick whose input stage failed", () => {
-    class Jammed extends Data.TaggedError("Jammed")<{}> {}
+    class Jammed extends Data.TaggedError("Jammed") {}
 
     let jam = true;
 

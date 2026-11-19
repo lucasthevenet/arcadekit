@@ -40,7 +40,7 @@ const Go = Action.define(
   })
 );
 
-class Refused extends Data.TaggedError("Refused")<{}> {}
+class Refused extends Data.TaggedError("Refused") {}
 
 const go = Action.handler(Go, function* ({ refuse, to }) {
   const phase = yield* Phase;
@@ -221,7 +221,7 @@ describe("a run condition", () => {
       { on: boolean; asked: number }
     >()("st/Switch") {}
 
-    class Broken extends Data.TaggedError("Broken")<{}> {}
+    class Broken extends Data.TaggedError("Broken") {}
 
     const evenTick = Effect.map(Time, (time) => time.tick % 2 === 0);
 
@@ -397,7 +397,7 @@ describe("a run condition", () => {
     // And what it needs and can fail with are the system's.
     class Lamp extends Context.Service<Lamp, { lit: boolean }>()("st/Lamp") {}
 
-    class Burnt extends Data.TaggedError("Burnt")<{}> {}
+    class Burnt extends Data.TaggedError("Burnt") {}
 
     const Lit = System.make("Lit", function* () {}).pipe(
       System.runIf(Effect.succeed(false)),

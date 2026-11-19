@@ -1263,7 +1263,9 @@ describe("an entity drawn between two ticks", () => {
     smooth: true,
   });
 
-  const play = (...systems: Parameters<typeof App.make>[0]["systems"] & {}) => {
+  const play = (
+    ...systems: NonNullable<Parameters<typeof App.make>[0]["systems"]>
+  ) => {
     const renderer = makeRenderer();
 
     const { app } = start(

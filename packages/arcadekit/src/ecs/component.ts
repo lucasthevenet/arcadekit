@@ -871,7 +871,7 @@ export const Component = {
    */
   relation: <
     const N extends string,
-    S extends Schema = {},
+    S extends Schema = Record<never, never>,
     St extends Storage = "table",
   >(
     name: N,
@@ -895,5 +895,5 @@ export const Component = {
   tag: <const N extends string, St extends Storage = "table">(
     name: N,
     options?: { readonly storage?: St }
-  ): ComponentDef<{}, St, N> => define(name, {}, options),
+  ): ComponentDef<Record<never, never>, St, N> => define(name, {}, options),
 };

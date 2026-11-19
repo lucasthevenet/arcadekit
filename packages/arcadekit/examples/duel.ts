@@ -80,7 +80,7 @@ class TooTired extends Data.TaggedError("TooTired")<{
   readonly cost: number;
 }> {}
 
-class NoSuchFighter extends Data.TaggedError("NoSuchFighter")<{}> {}
+class NoSuchFighter extends Data.TaggedError("NoSuchFighter") {}
 
 const STRIKE_COST = 2;
 const STRIKE_DAMAGE = 4;
