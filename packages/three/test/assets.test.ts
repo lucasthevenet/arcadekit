@@ -107,7 +107,7 @@ const makeRenderer = () => {
       renderer.drew = scene.children.map((child) => child.name);
 
       for (const child of scene.children) {
-        const bark = (child.userData as { bark?: Bark }).bark;
+        const { bark } = child.userData as { bark?: Bark };
 
         if (bark !== undefined && !bark.open) {
           renderer.stale += 1;

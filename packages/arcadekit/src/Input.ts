@@ -679,8 +679,11 @@ const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
 class View<A> extends Effectable.Class<A, never, World | Time> {
   private effect: Effect.Effect<A, never, World | Time> | undefined;
 
-  constructor(private readonly pick: (all: Views) => A) {
+  private readonly pick: (all: Views) => A;
+
+  constructor(pick: (all: Views) => A) {
     super();
+    this.pick = pick;
   }
 
   asEffect(): Effect.Effect<A, never, World | Time> {

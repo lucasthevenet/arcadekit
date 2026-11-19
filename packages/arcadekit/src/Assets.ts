@@ -301,11 +301,13 @@ export class Bundle<B extends Entries> extends Effectable.Class<
 > {
   private effect: Effect.Effect<Status<Loaded<B>>, never, Store> | undefined;
 
-  constructor(
-    readonly name: string,
-    readonly assets: B
-  ) {
+  readonly name: string;
+  readonly assets: B;
+
+  constructor(name: string, assets: B) {
     super();
+    this.name = name;
+    this.assets = assets;
   }
 
   asEffect(): Effect.Effect<Status<Loaded<B>>, never, Store> {

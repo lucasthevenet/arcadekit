@@ -166,7 +166,7 @@ describe("the sidebar", () => {
   });
 
   it("has a page for each module a package exports, but the package's own entry", () => {
-    const modules = discoverPages().modules;
+    const { modules } = discoverPages();
     expect(modules.map((page) => page.link)).toContain(
       "/reference/arcadekit/Sound"
     );

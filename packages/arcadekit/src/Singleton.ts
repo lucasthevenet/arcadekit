@@ -36,11 +36,13 @@ export class Singleton<S extends Schema>
 {
   private effect: Effect.Effect<ValueOf<S>, never, World> | undefined;
 
-  constructor(
-    readonly component: ComponentDef<S>,
-    readonly initial: ValueOf<S>
-  ) {
+  readonly component: ComponentDef<S>;
+  readonly initial: ValueOf<S>;
+
+  constructor(component: ComponentDef<S>, initial: ValueOf<S>) {
     super();
+    this.component = component;
+    this.initial = initial;
   }
 
   /** The singleton's name, which is one of the world's component names. */

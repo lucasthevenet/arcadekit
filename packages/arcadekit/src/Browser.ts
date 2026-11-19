@@ -434,7 +434,11 @@ export interface MediaLike {
 
 /** What a streamed clip holds: only its URL. */
 class Streamed {
-  constructor(readonly url: string) {}
+  readonly url: string;
+
+  constructor(url: string) {
+    this.url = url;
+  }
 }
 
 /**

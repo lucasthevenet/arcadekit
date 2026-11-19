@@ -217,11 +217,17 @@ export class Table {
    */
   readonly defsByName: readonly ComponentDef<any>[];
 
+  readonly index: number;
+  readonly defs: readonly ComponentDef<any>[];
+
   constructor(
-    readonly index: number,
-    readonly defs: readonly ComponentDef<any>[],
+    index: number,
+    defs: readonly ComponentDef<any>[],
     capacity = 16
   ) {
+    this.index = index;
+    this.defs = defs;
+
     this.capacity = capacity;
     this.entities = new Float64Array(capacity);
     this.defsByName = defs.toSorted(byName);
@@ -298,10 +304,11 @@ export class SparseSet {
   count = 0;
   readonly columns: Columns;
 
-  constructor(
-    readonly def: ComponentDef<any>,
-    capacity = 16
-  ) {
+  readonly def: ComponentDef<any>;
+
+  constructor(def: ComponentDef<any>, capacity = 16) {
+    this.def = def;
+
     this.dense = new Uint32Array(capacity);
     this.sparse = new Int32Array(64).fill(-1);
     this.columns = makeColumns(def, capacity);
@@ -408,10 +415,11 @@ export class RelationIndex {
   /** For each source index, the target it points at, or -1. */
   private target: Int32Array;
 
-  constructor(
-    readonly def: ComponentDef<any>,
-    size: number
-  ) {
+  readonly def: ComponentDef<any>;
+
+  constructor(def: ComponentDef<any>, size: number) {
+    this.def = def;
+
     this.head = new Int32Array(size).fill(-1);
     this.next = new Int32Array(size).fill(-1);
     this.prev = new Int32Array(size).fill(-1);
@@ -560,11 +568,15 @@ export class ChangeLog {
   /** Where the log ended when the current transaction began. */
   txEnd = 0;
 
-  constructor(
-    readonly def: ComponentDef<any>,
-    readonly kind: ChangeKind,
-    private readonly world: World
-  ) {
+  readonly def: ComponentDef<any>;
+  readonly kind: ChangeKind;
+  private readonly world: World;
+
+  constructor(def: ComponentDef<any>, kind: ChangeKind, world: World) {
+    this.def = def;
+    this.kind = kind;
+    this.world = world;
+
     // As long as the world's own records, and grown with them, so that a
     // read is never past its end: a read past the end of a typed array
     // makes every later read at that place in the code slower.
@@ -931,11 +943,15 @@ export class RemovedReader {
   private readonly restored: number;
 
   /** @internal */
-  constructor(
-    private readonly world: World,
-    private readonly log: ChangeLog,
-    private readonly cursor: ChangeCursor
-  ) {
+  private readonly world: World;
+  private readonly log: ChangeLog;
+  private readonly cursor: ChangeCursor;
+
+  constructor(world: World, log: ChangeLog, cursor: ChangeCursor) {
+    this.world = world;
+    this.log = log;
+    this.cursor = cursor;
+
     this.restored = world._restored;
   }
 
@@ -1236,12 +1252,18 @@ export class QueryView<D extends Terms = Terms> {
   _lastPath: "dense" | "sorted" | "mask" = "dense";
 
   /** @internal */
+  private readonly world: World;
+  readonly spec: QuerySpec<D>;
+
   constructor(
-    private readonly world: World,
-    readonly spec: QuerySpec<D>,
+    world: World,
+    spec: QuerySpec<D>,
     /** For a change query, how a save identifies this reader. */
     key = ""
   ) {
+    this.world = world;
+    this.spec = spec;
+
     this.restored = world._restored;
 
     const requireSparse = (def: ComponentDef<any>): SparseSet => {
@@ -1711,7 +1733,7 @@ export class QueryView<D extends Terms = Terms> {
       // Only exclusions: nothing is skipped except members of an excluded set.
       for (let s = 0; s < this.sparseWithout.length; s += 1) {
         const set = this.sparseWithout[s]!;
-        const dense = set.dense;
+        const { dense } = set;
 
         for (let k = 0; k < set.count; k += 1) {
           const index = dense[k]!;
@@ -1734,7 +1756,7 @@ export class QueryView<D extends Terms = Terms> {
     } else {
       // A sparse component is required: everything is skipped except the
       // members of the smallest required set that pass every other condition.
-      const dense = smallest.dense;
+      const { dense } = smallest;
 
       for (let k = 0; k < smallest.count; k += 1) {
         const index = dense[k]!;
@@ -4764,7 +4786,11 @@ type Command =
 export class CommandBuffer {
   private ops: Command[] = [];
 
-  constructor(readonly world: World) {}
+  readonly world: World;
+
+  constructor(world: World) {
+    this.world = world;
+  }
 
   get size(): number {
     return this.ops.length;

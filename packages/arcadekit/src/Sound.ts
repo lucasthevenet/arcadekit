@@ -66,10 +66,13 @@ import * as System from "./System";
  * @category Models
  */
 export class Clip {
-  constructor(
-    readonly name: string,
-    readonly data: unknown
-  ) {}
+  readonly name: string;
+  readonly data: unknown;
+
+  constructor(name: string, data: unknown) {
+    this.name = name;
+    this.data = data;
+  }
 }
 
 /**

@@ -814,11 +814,19 @@ class FromAssets<T extends Kept> implements Kept {
   private assets: unknown;
   private made: T | undefined;
 
+  private readonly store: Assets.StoreShape;
+  private readonly bundle: Assets.Bundle<Entries>;
+  private readonly make: (assets: any) => T;
+
   constructor(
-    private readonly store: Assets.StoreShape,
-    private readonly bundle: Assets.Bundle<Entries>,
-    private readonly make: (assets: any) => T
-  ) {}
+    store: Assets.StoreShape,
+    bundle: Assets.Bundle<Entries>,
+    make: (assets: any) => T
+  ) {
+    this.store = store;
+    this.bundle = bundle;
+    this.make = make;
+  }
 
   /** Returns the assets the app currently holds, if any. */
   private held(): unknown {

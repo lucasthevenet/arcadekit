@@ -78,12 +78,13 @@ export class State<V extends string>
   readonly initial: { value: string; next: string | null; entered: number };
   private effect: Effect.Effect<StateHandle<V>, never, World> | undefined;
 
-  constructor(
-    readonly name: string,
-    readonly values: readonly V[],
-    first: V
-  ) {
+  readonly name: string;
+  readonly values: readonly V[];
+
+  constructor(name: string, values: readonly V[], first: V) {
     super();
+    this.name = name;
+    this.values = values;
 
     const spec = Component.singleton(
       name,

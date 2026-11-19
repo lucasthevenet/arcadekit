@@ -182,7 +182,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
   },
   "writing a singleton for the first time": (world) => {
     const mood = world.singleton(Mood);
-    mood.level = mood.level + 1;
+    mood.level += 1;
     mood.word = "stormy";
   },
   "drawing random numbers": (world) => {

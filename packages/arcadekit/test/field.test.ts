@@ -199,7 +199,7 @@ describe("a field that is not a number", () => {
 
   it("keeps a transient field through a transaction, like any other", () => {
     const { entities, world } = populated(3);
-    const handle = world.get(entities[0]!, Card)!.handle;
+    const { handle } = world.get(entities[0]!, Card)!;
     world.begin();
     world.set(entities[0]!, Card, { handle: { id: 7 } });
     world.view(Query.all(Card)).each((row) => {

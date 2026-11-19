@@ -38,15 +38,28 @@ export class Query<D extends Terms>
 {
   private effect: Effect.Effect<QueryView<D>, never, World> | undefined;
 
+  readonly terms: D;
+  readonly withDefs: readonly ComponentDef<any>[];
+  readonly withoutDefs: readonly ComponentDef<any>[];
+  readonly changedDefs: readonly ComponentDef<any>[];
+  readonly addedDefs: readonly ComponentDef<any>[];
+  readonly readDefs: readonly ComponentDef<any>[];
+
   constructor(
-    readonly terms: D,
-    readonly withDefs: readonly ComponentDef<any>[],
-    readonly withoutDefs: readonly ComponentDef<any>[],
-    readonly changedDefs: readonly ComponentDef<any>[] = [],
-    readonly addedDefs: readonly ComponentDef<any>[] = [],
-    readonly readDefs: readonly ComponentDef<any>[] = []
+    terms: D,
+    withDefs: readonly ComponentDef<any>[],
+    withoutDefs: readonly ComponentDef<any>[],
+    changedDefs: readonly ComponentDef<any>[] = [],
+    addedDefs: readonly ComponentDef<any>[] = [],
+    readDefs: readonly ComponentDef<any>[] = []
   ) {
     super();
+    this.terms = terms;
+    this.withDefs = withDefs;
+    this.withoutDefs = withoutDefs;
+    this.changedDefs = changedDefs;
+    this.addedDefs = addedDefs;
+    this.readDefs = readDefs;
   }
 
   asEffect(): Effect.Effect<QueryView<D>, never, World> {
@@ -318,8 +331,11 @@ export const reads: {
 export class Removed extends Effectable.Class<RemovedReader, never, World> {
   private effect: Effect.Effect<RemovedReader, never, World> | undefined;
 
-  constructor(readonly component: ComponentDef<any>) {
+  readonly component: ComponentDef<any>;
+
+  constructor(component: ComponentDef<any>) {
     super();
+    this.component = component;
   }
 
   asEffect(): Effect.Effect<RemovedReader, never, World> {

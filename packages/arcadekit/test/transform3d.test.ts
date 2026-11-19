@@ -117,7 +117,7 @@ describe("Transform3d", () => {
       w: 1,
     });
     // It is what a Rotation is given.
-    const world = run(App.make({ plugins: [Transform3d.plugin] })).world;
+    const { world } = run(App.make({ plugins: [Transform3d.plugin] }));
     const turned = world.spawn(Rotation.of(quarter));
     expect(world.get(turned, Rotation)!.w).toBe(Math.fround(quarter.w));
   });

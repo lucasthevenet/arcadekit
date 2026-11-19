@@ -22,42 +22,42 @@ import type { FieldDef } from "./ecs/component";
  *
  * @category Fields
  */
-export const f32 = Field.f32;
+export const { f32 } = Field;
 
 /**
  * A 64-bit float, in a `Float64Array`, for a number that needs full precision.
  *
  * @category Fields
  */
-export const f64 = Field.f64;
+export const { f64 } = Field;
 
 /**
  * A signed 32-bit integer, in an `Int32Array`.
  *
  * @category Fields
  */
-export const i32 = Field.i32;
+export const { i32 } = Field;
 
 /**
  * An unsigned 32-bit integer, in a `Uint32Array`.
  *
  * @category Fields
  */
-export const u32 = Field.u32;
+export const { u32 } = Field;
 
 /**
  * An unsigned 16-bit integer, in a `Uint16Array`.
  *
  * @category Fields
  */
-export const u16 = Field.u16;
+export const { u16 } = Field;
 
 /**
  * An unsigned 8-bit integer, in a `Uint8Array`: a flag or a small count.
  *
  * @category Fields
  */
-export const u8 = Field.u8;
+export const { u8 } = Field;
 
 /**
  * A reference to another entity, such as a target or a parent. The id is stored
@@ -77,7 +77,7 @@ export const u8 = Field.u8;
  *
  * @category Fields
  */
-export const entity = Field.entity;
+export const { entity } = Field;
 
 /**
  * Plain data, saved and hashed as is: a string, number, boolean, bigint, null
@@ -95,7 +95,7 @@ export const entity = Field.entity;
  *
  * @category Fields
  */
-export const json = Field.json;
+export const { json } = Field;
 
 /**
  * A value of any type, saved and hashed through the given codec: an `encode` to
@@ -111,7 +111,7 @@ export const json = Field.json;
  *
  * @category Fields
  */
-export const ref = Field.ref;
+export const { ref } = Field;
 
 /**
  * A value that is neither saved nor hashed, such as a sprite or a handle to
@@ -119,7 +119,7 @@ export const ref = Field.ref;
  *
  * @category Fields
  */
-export const transient = Field.transient;
+export const { transient } = Field;
 
 /**
  * A field that holds any value a schema describes. Snapshots and the hash use
