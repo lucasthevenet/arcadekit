@@ -734,6 +734,65 @@ describe("Browser.layer", () => {
     expect(page.visibility.size).toBe(0);
     expect(page.window.total).toBe(0);
   });
+
+  it("reads an asset's path against the document's base, as fetch does, and keeps a loader of the game's own", async () => {
+    makePage();
+    // The page is at /play/, and its <base href> says its files are at /v2/.
+    vi.stubGlobal("location", new URL("https://game.test/play/"));
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      addEventListener() {},
+      removeEventListener() {},
+      baseURI: "https://game.test/v2/",
+    });
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: URL) => {
+      asked.push(url.href);
+      return Promise.resolve(new Response("fetched"));
+    });
+    const notes = Effect.scoped(
+      Assets.load(
+        Assets.bundle("br/Notes", {
+          level: Assets.text("levels/one.txt"),
+          rooted: Assets.text("/rooted.txt"),
+          far: Assets.text("https://cdn.test/far.txt"),
+        })
+      )
+    );
+    const loaded = await Effect.runPromise(
+      notes.pipe(
+        Effect.provide(Browser.layer({ gamepads: () => [], sounds: false }))
+      )
+    );
+    expect(loaded).toEqual({
+      level: "fetched",
+      rooted: "fetched",
+      far: "fetched",
+    });
+    expect(asked.toSorted()).toEqual([
+      "https://cdn.test/far.txt",
+      "https://game.test/rooted.txt",
+      "https://game.test/v2/levels/one.txt",
+    ]);
+    // Files of a test's own, around the page's layer, are what is read.
+    asked.length = 0;
+    const own = await Effect.runPromise(
+      notes.pipe(
+        Effect.provide(
+          Layer.provide(
+            Browser.layer({ gamepads: () => [], sounds: false }),
+            Assets.layerMemory({
+              "levels/one.txt": "mine",
+              "/rooted.txt": "mine",
+              "https://cdn.test/far.txt": "mine",
+            })
+          )
+        )
+      )
+    );
+    expect(own).toEqual({ level: "mine", rooted: "mine", far: "mine" });
+    expect(asked).toEqual([]);
+  });
 });
 
 describe("Browser.runMain", () => {

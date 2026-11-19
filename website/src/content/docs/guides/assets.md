@@ -104,7 +104,7 @@ A frame or input-stage system of your own can keep a bundle loaded with `(yield*
 
 ## Where files come from
 
-Files are fetched through `Assets.Loader`, which uses `fetch` by default and cancels the request when the load is interrupted. A test serves its files from memory with `Assets.layerMemory({ "/forest.json": "..." })`.
+Files are fetched through `Assets.Loader`, which uses `fetch` by default and cancels the request when the load is interrupted. In a page, `Browser.runMain` and `Browser.layer` read a path against the document's base, as `fetch` does, so a page with a `<base href>` loads from there. A test serves its files from memory with `Assets.layerMemory({ "/forest.json": "..." })`.
 
 ## Read more
 

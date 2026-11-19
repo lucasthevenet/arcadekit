@@ -315,6 +315,9 @@ const listen = (
  *   moves.
  * - Gamepads are read when the app samples, once per tick. Unplugging one
  *   releases all its inputs.
+ * - An asset's path is read against the document's base, its `<base href>`,
+ *   as `fetch` reads it, unless a loader of the game's own, such as
+ *   `Assets.layerMemory`, is provided around this layer.
  * - It listens from when it is built until its scope closes, so provide it to
  *   the whole program, not to `App.make` alone; `Browser.runMain` does.
  *   Provided to `App.make` alone, it is released as soon as the app is created,
@@ -323,7 +326,19 @@ const listen = (
  * @category Layers
  */
 export const layer = (options: Options = {}): Layer.Layer<never> => {
-  const page = Layer.merge(
+  // A path is read against the document's base, as `fetch` reads it, where
+  // HttpClient reads it against the page's address. A loader of the game's
+  // own, provided around this layer, is kept.
+  const loader = Layer.effect(
+    Assets.Loader,
+    Effect.map(Assets.Loader, (given) =>
+      given === Assets.fetching
+        ? Assets.fetchingFrom((url) => new URL(url, document.baseURI).href)
+        : given
+    )
+  );
+  const page = Layer.mergeAll(
+    loader,
     Layer.succeed(Driver.Display, display),
     Layer.effect(
       Input.Source,
@@ -343,7 +358,7 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
         // Its sound sleeps while the page's own document is hidden.
         Layer.provide(
           layerSound(options.sounds ?? {}, options),
-          Layer.succeed(Driver.Display, display)
+          Layer.merge(Layer.succeed(Driver.Display, display), loader)
         )
       );
 };
