@@ -73,8 +73,8 @@ export class AssetFailed extends Data.TaggedError("AssetFailed")<{
   readonly message: string;
 }> {}
 
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
+const describe = (cause: unknown): string =>
+  cause instanceof Error ? cause.message || cause.name : String(cause);
 
 // --- one asset ---------------------------------------------------------------
 

@@ -14,6 +14,7 @@ import {
   Scope,
 } from "effect";
 import type { Scope as ScopeType } from "effect";
+import { constVoid } from "effect/Function";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as Browser from "../src/Browser";
@@ -974,7 +975,7 @@ describe("a page's sound", () => {
   /** What a source that plays over and over was asked, as the stand-in notes it. */
   interface Looped {
     readonly buffer: unknown;
-    readonly into: unknown;
+    readonly into: Browser.AudioNodeLike | undefined;
     /** What its volume was told, in order: set to, ramp to, or cancel, and when. */
     readonly levels: (readonly [string, ...number[]])[];
     /** When it was told to stop, if it was. */
@@ -985,7 +986,7 @@ describe("a page's sound", () => {
 
   /** A stand-in for the page's audio, which notes what it is asked. */
   const makeAudio = () => {
-    const destination = { name: "speakers" };
+    const destination = { name: "speakers", connect: constVoid };
 
     interface Gain {
       readonly gain: {
@@ -995,8 +996,8 @@ describe("a page's sound", () => {
         cancelScheduledValues: (time: number) => void;
       };
       readonly levels: (readonly [string, ...number[]])[];
-      into: unknown;
-      connect: (to: unknown) => unknown;
+      into: Browser.AudioNodeLike | undefined;
+      connect: (to: Browser.AudioNodeLike) => void;
     }
 
     const audio = {
@@ -1008,7 +1009,7 @@ describe("a page's sound", () => {
         readonly buffer: unknown;
         readonly rate: number;
         readonly volume: number;
-        readonly into: unknown;
+        readonly into: Browser.AudioNodeLike | undefined;
       }[],
       /** Every source that was started as a channel's track. */
       loops: [] as Looped[],
@@ -1016,10 +1017,13 @@ describe("a page's sound", () => {
       suspended: 0,
       closed: 0,
       /** What was streamed into it, each with the volume it plays at. */
-      streams: [] as { readonly media: unknown; readonly gain: Gain }[],
-      createMediaElementSource(media: unknown) {
+      streams: [] as {
+        readonly media: Browser.MediaLike;
+        readonly gain: Gain;
+      }[],
+      createMediaElementSource(media: Browser.MediaLike) {
         return {
-          connect(to: unknown) {
+          connect(to: Browser.AudioNodeLike) {
             audio.streams.push({ media, gain: to as Gain });
 
             return to;
@@ -1048,7 +1052,7 @@ describe("a page's sound", () => {
             }
           },
           playbackRate: { value: 1 },
-          connect(to: unknown) {
+          connect(to: Browser.AudioNodeLike) {
             gain = to as Gain;
 
             return to;
@@ -1109,7 +1113,7 @@ describe("a page's sound", () => {
           },
           levels,
           into: undefined,
-          connect(to: unknown) {
+          connect(to: Browser.AudioNodeLike) {
             gain.into = to;
 
             return to;

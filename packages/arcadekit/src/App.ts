@@ -470,9 +470,18 @@ interface Hold {
 const ADVICE =
   " A system that says what it reads and writes says all of it: add this to its System.access, or leave the system without one.";
 
+/**
+ * An action in the log that was queued to be applied at the next tick, and
+ * what refused it, if something did.
+ */
+interface QueuedEntry extends Action.Logged {
+  readonly queued: true;
+  refused?: string;
+}
+
 /** Summarizes an error in a few words, for a log entry or a message. */
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
+const describe = (cause: unknown): string =>
+  cause instanceof Error ? cause.message || cause.name : String(cause);
 
 /**
  * A script failed in an app configured to stop on script failure. Every later
@@ -1050,20 +1059,10 @@ const build = <
     ) => {
       start();
 
-      const entry: {
-        readonly tick: number;
-        readonly name: string;
-        readonly payload: unknown;
-        readonly from?: string;
-        readonly queued: true;
-        refused?: string;
-      } = {
-        tick: time.tick,
-        name,
-        payload,
-        ...(from === undefined ? {} : { from }),
-        queued: true,
-      };
+      const entry: QueuedEntry =
+        from === undefined
+          ? { tick: time.tick, name, payload, queued: true }
+          : { tick: time.tick, name, payload, from, queued: true };
 
       actionLog.push(entry);
 
@@ -1746,12 +1745,11 @@ const build = <
         commands.apply();
 
         if (dispatched) {
-          actionLog.push({
-            tick: time.tick,
-            name,
-            payload: logged,
-            ...(from === undefined ? {} : { from }),
-          });
+          actionLog.push(
+            from === undefined
+              ? { tick: time.tick, name, payload: logged }
+              : { tick: time.tick, name, payload: logged, from }
+          );
         }
       }
 

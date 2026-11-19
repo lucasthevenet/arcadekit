@@ -28,8 +28,8 @@ import * as Driver from "./Driver";
 import * as Input from "./Input";
 import * as Sound from "./Sound";
 
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
+const describe = (cause: unknown): string =>
+  cause instanceof Error ? cause.message || cause.name : String(cause);
 
 // --- the display ---------------------------------------------------------------
 
@@ -429,10 +429,10 @@ export const layerSound = (
       // Whether it was said that a cue came before the first touch.
       let early = false;
 
-      const failed = (cue: string, error: unknown): void => {
+      const failed = (cue: string, cause: unknown): void => {
         report(
           Effect.logWarning(
-            `The sound "${cue}" (${String(files[cue])}) will not be played: ${describe(error)}`
+            `The sound "${cue}" (${String(files[cue])}) will not be played: ${describe(cause)}`
           )
         );
       };
@@ -613,7 +613,7 @@ export const layerSound = (
           ),
           ([cue, url]) =>
             loader.bytes(url).pipe(
-              Effect.mapError((error): unknown => error.message),
+              Effect.mapError((error) => error.message),
               Effect.flatMap((bytes) =>
                 Effect.tryPromise({
                   // A copy: decoding keeps the buffer it is given.
@@ -837,41 +837,47 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
 // --- sound -----------------------------------------------------------------------
 
 /**
+ * A node of a page's audio graph, which a sound is routed through; the
+ * browser's `AudioNode` satisfies it.
+ *
+ * @category Models
+ */
+export interface AudioNodeLike {
+  connect(to: AudioNodeLike): void;
+}
+
+/**
  * The parts of a page's audio that are used; the browser's `AudioContext`
  * satisfies it.
  *
  * @category Models
  */
 export interface AudioLike {
-  readonly destination: unknown;
+  readonly destination: AudioNodeLike;
   readonly state?: string;
   /** Its own clock, in seconds, which times fades. */
   readonly currentTime: number;
-  createBufferSource(): {
+  createBufferSource(): AudioNodeLike & {
     buffer: unknown;
     loop: boolean;
     readonly playbackRate: { value: number };
-    connect(to: unknown): unknown;
     start(): void;
     stop(when?: number): void;
   };
-  createGain(): {
+  createGain(): AudioNodeLike & {
     readonly gain: {
       value: number;
-      setValueAtTime(value: number, time: number): unknown;
-      linearRampToValueAtTime(value: number, time: number): unknown;
-      cancelScheduledValues(time: number): unknown;
+      setValueAtTime(value: number, time: number): void;
+      linearRampToValueAtTime(value: number, time: number): void;
+      cancelScheduledValues(time: number): void;
     };
-    connect(to: unknown): unknown;
   };
   /** Routes a streamed track's player into the audio graph, so it fades like any track. */
-  createMediaElementSource?(media: MediaLike): {
-    connect(to: unknown): unknown;
-  };
+  createMediaElementSource?(media: MediaLike): AudioNodeLike;
   /** Stops its clock, and with it every sound, until resumed. */
-  suspend?(): Promise<unknown>;
-  resume?(): Promise<unknown>;
-  close(): Promise<unknown>;
+  suspend?(): Promise<void>;
+  resume?(): Promise<void>;
+  close(): Promise<void>;
 }
 
 /**
@@ -882,7 +888,7 @@ export interface AudioLike {
  */
 export interface MediaLike {
   loop: boolean;
-  play: () => Promise<unknown>;
+  play: () => Promise<void>;
   pause: () => void;
 }
 

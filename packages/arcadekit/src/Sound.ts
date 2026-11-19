@@ -240,14 +240,9 @@ export const makeRecorder = (): Recorder => {
       }
 
       playing.set(channel, nameOf(track));
-      scored.push({
-        channel,
-        track: nameOf(track),
-        volume,
-        fade,
-        ...(typeof track === "string" ? {} : { clip: track }),
-        ...(once === true ? { once } : {}),
-      });
+      const named = { channel, track: nameOf(track), volume, fade };
+      const kept = track instanceof Clip ? { ...named, clip: track } : named;
+      scored.push(once === true ? { ...kept, once } : kept);
     },
   };
 };
