@@ -155,6 +155,20 @@ export const registryOf = (world: EcsWorld): Registry => {
   return registry;
 };
 
+/**
+ * One of the state's values, as the world holds it: a value that isn't one, as
+ * a save from an older game could hold, throws and says which.
+ */
+const valueOf = <V extends string>(state: State<V>, held: string): V => {
+  const value = state.values.find((one) => one === held);
+  if (value === undefined) {
+    throw new Error(
+      `The state "${state.name}" holds "${held}", which is not one of its values: ${state.values.join(", ")}. A migration renames a state's values in a save.`
+    );
+  }
+  return value;
+};
+
 /** @internal A world's handle to a state. */
 export const handleOf = <V extends string>(
   world: EcsWorld,
@@ -168,12 +182,12 @@ export const handleOf = <V extends string>(
   const held = world.singleton(state);
   const handle: StateHandle<V> = {
     get value() {
-      return held.value as V;
+      return valueOf(state, held.value);
     },
     get next() {
-      return (held.next ?? undefined) as V | undefined;
+      return held.next === null ? undefined : valueOf(state, held.next);
     },
-    is: (...values) => values.includes(held.value as V),
+    is: (...values) => values.some((value) => value === held.value),
     set: (value) => {
       if (!state.values.includes(value)) {
         throw new Error(

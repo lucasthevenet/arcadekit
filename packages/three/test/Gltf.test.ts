@@ -270,6 +270,8 @@ describe("a model", () => {
       ),
       // A binary glTF that says it has a document, and has none.
       "/hollow.glb": glb({}).subarray(0, 12),
+      // JSON whose buffers are not a list of buffers.
+      "/shapeless.gltf": text({ asset: { version: "2.0" }, buffers: "none" }),
     };
     expect((await load("/m/tri.gltf", files)).failure).toEqual(
       new Assets.AssetFailed({
@@ -288,6 +290,13 @@ describe("a model", () => {
       "/hollow.glb",
       "It is not a glTF model: It is a binary glTF with no JSON in it.",
     ]);
+    expect((await load("/shapeless.gltf", files)).failure).toEqual(
+      new Assets.AssetFailed({
+        url: "/shapeless.gltf",
+        message:
+          "It is not a glTF model: Its JSON is not a glTF document: its buffers, buffer views or images are not as glTF has them.",
+      })
+    );
     // JSON, and no model: Three.js says what it makes of it.
     const empty = (await load("/empty.gltf", files))
       .failure as Assets.AssetFailed;
