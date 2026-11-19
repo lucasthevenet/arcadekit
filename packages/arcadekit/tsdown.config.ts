@@ -1,6 +1,6 @@
 // The kit's tsdown build.
 //
-// The entries come from the package's `exports`, read by scripts/tsdown-entries.ts: every
+// The entries come from the package's `exports`, read by tooling/build/tsdown-entries.ts: every
 // subpath has a `source` condition naming its file in src/, and `types` and `default` naming
 // what this build writes to dist/.
 //
@@ -9,7 +9,7 @@
 import { defineConfig } from "tsdown";
 import type { UserConfig } from "tsdown";
 
-import { entries } from "../../scripts/tsdown-entries.ts";
+import { entries } from "../../tooling/build/tsdown-entries.ts";
 
 const config: UserConfig = defineConfig({
   cwd: import.meta.dirname,

@@ -5,7 +5,7 @@
 import { defineConfig } from "tsdown";
 import type { UserConfig } from "tsdown";
 
-import { entries } from "../../scripts/tsdown-entries.ts";
+import { entries } from "../../tooling/build/tsdown-entries.ts";
 
 const config: UserConfig = defineConfig({
   cwd: import.meta.dirname,

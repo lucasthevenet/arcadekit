@@ -4,7 +4,8 @@ A rule that matters is held by something that runs. Prose is for what no check h
 
 The repository already works this way, and a new rule joins these:
 
-- `test/entries.test.ts`, `packages/three/test/entries.test.ts` and `scripts/lint-entries.mjs` hold each entry to what it may import;
+- `tooling/lint/entries.ts` says what each entry may import, and two checks hold it: the Oxlint rule `arcadekit/entry-imports` in the sources, file by file, and `tooling/lint/built-entries.ts` in the build;
+- the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, and `arcadekit/no-code-from-text`;
 - `test/policy.test.ts` plays a game where making code from text is forbidden;
 - the lists of writers in `test/transaction.test.ts`, `test/changes.test.ts`, `test/access.test.ts` and `test/frame.test.ts`, which every new way to write joins;
 - the world's guard, which refuses what a system did not say with `System.access`;
@@ -19,7 +20,8 @@ Which kind of check a rule gets:
 | --- | --- |
 | What a caller may write | A type, with a type test: `// @ts-expect-error` above the line that must not compile |
 | What code may do as it runs | A refusal there, thrown or `Effect.die`, whose message says who, what, and what to do instead |
-| What a file may import or contain | A test that reads the sources, as `test/entries.test.ts` does |
+| What a file may import or contain | A rule of the Oxlint plugin in `tooling/lint/plugin.ts`, turned on in `oxlint.config.ts` |
+| What the sources hold together (every file behind an entry, the exports a module gives) | A test that reads the sources, as `test/entries.test.ts` does |
 | What every member of a kind must do (every writer, every way into the world) | A test with a list of them that a new one is added to |
 | What must stay fast | A variant of the benchmark, which `bench:compare` holds |
 | What two runs must agree on | A comparison of `world.hash()`, tick by tick |

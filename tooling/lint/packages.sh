@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Runs publint and @arethetypeswrong/cli on each published package, and checks what each of
-# its built entries imports (scripts/lint-entries.mjs).
+# its built entries imports (built-entries.ts).
 # Packs each package with pnpm first, so both tools see exactly what npm would get
 # (only `files` included). Build first:
 #   pnpm build:packages && pnpm lint:packages
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
@@ -22,7 +22,7 @@ for name in arcadekit three; do
   fi
 done
 
-if ! node "$root/scripts/lint-entries.mjs"; then
+if ! node "$root/tooling/lint/built-entries.ts"; then
   failed+=("entries")
 fi
 
