@@ -48,7 +48,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
+    "typecheck": "tsc -p . && tsc -p examples && tsc -p bench",
     "page": "vite examples/page",
     "bench": "tsx --conditions=source bench/instances.ts"
   },

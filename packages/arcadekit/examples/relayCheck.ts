@@ -38,7 +38,7 @@ const Purse = Singleton.define(
 );
 const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }));
 class NotSeated extends Data.TaggedError("NotSeated")<{
-  readonly from: string;
+  readonly from: string | undefined;
 }> {}
 const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
