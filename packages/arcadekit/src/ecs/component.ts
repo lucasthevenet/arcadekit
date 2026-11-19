@@ -392,7 +392,7 @@ export interface ComponentDef<
    */
   readonly relation: OnTargetDespawn | undefined;
   /** Pairs this component with a value, for `spawn` and `add`. */
-  readonly of: (value: ValueOf<S>) => ComponentValue<S>;
+  of(value: ValueOf<S>): ComponentValue<S>;
 }
 
 /**
@@ -412,9 +412,9 @@ export interface ComponentValue<S extends Schema = Schema> {
  *
  * @category Type-level
  */
-export type ComponentInput = ComponentValue<any> | ComponentDef<any>;
+export type ComponentInput = ComponentValue | ComponentDef;
 
-export const isComponentDef = (u: ComponentInput): u is ComponentDef<any> =>
+export const isComponentDef = (u: ComponentInput): u is ComponentDef =>
   "id" in u;
 
 /**
@@ -435,9 +435,9 @@ export interface SingletonSpec<S extends Schema = Schema> {
 }
 
 /** What an app is told about, so a save that contains it can be loaded. */
-export type Listed = ComponentDef<any> | SingletonSpec<any>;
+export type Listed = ComponentDef | SingletonSpec;
 
-export const isSingletonSpec = (u: Listed): u is SingletonSpec<any> =>
+export const isSingletonSpec = (u: Listed): u is SingletonSpec =>
   "initial" in u;
 
 // A component's name is its identity in a save, on the network and in a tool.
@@ -724,7 +724,7 @@ const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
  * @internal
  */
 export const makeAccessor = (
-  def: ComponentDef<any>,
+  def: ComponentDef,
   mode: AccessorMode,
   row: Row
 ): Accessor => {

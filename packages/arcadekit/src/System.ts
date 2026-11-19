@@ -80,7 +80,7 @@ export interface Trigger {
  *
  * @category Models
  */
-export type Touched = ComponentDef<any> | SingletonSpec<any> | EventDef<any>;
+export type Touched = ComponentDef | SingletonSpec | EventDef<any>;
 
 /**
  * What a system declares it reads and writes, as `System.access` takes it. It
@@ -98,8 +98,8 @@ export interface Access {
    * for changes counts as read.
    */
   readonly queries?: readonly (
-    | QuerySpec<any>
-    | { readonly component: ComponentDef<any> }
+    | QuerySpec
+    | { readonly component: ComponentDef }
   )[];
   /**
    * What it reads without changing: a component it reads through `World`, a
@@ -138,12 +138,12 @@ export interface Resolved {
   /** Components, singletons and states. */
   readonly components: ReadonlyMap<
     string,
-    { readonly def: ComponentDef<any>; readonly touch: Touch }
+    { readonly def: ComponentDef; readonly touch: Touch }
   >;
   /** Events: read, or emitted, which counts as `"writes"`. */
   readonly events: ReadonlyMap<string, Touch>;
   /** The queries it declared, which it may request exactly as declared. */
-  readonly queries: readonly QuerySpec<any>[];
+  readonly queries: readonly QuerySpec[];
   readonly random: boolean;
   readonly actions: boolean;
   readonly scripts: boolean;
@@ -211,7 +211,7 @@ const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
  *
  * @category Constructors
  */
-export const make = <Eff extends Effect.Effect<any, any, any>>(
+export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, void, never>
 ): System<Effect.Error<Eff>, Effect.Services<Eff>> =>
@@ -281,12 +281,18 @@ export const inStage: {
  */
 export const after: {
   (
-    other: System<any, any> | string
+    other: System<unknown, unknown> | string
   ): <E, R>(self: System<E, R>) => System<E, R>;
-  <E, R>(self: System<E, R>, other: System<any, any> | string): System<E, R>;
+  <E, R>(
+    self: System<E, R>,
+    other: System<unknown, unknown> | string
+  ): System<E, R>;
 } = dual(
   2,
-  <E, R>(self: System<E, R>, other: System<any, any> | string): System<E, R> =>
+  <E, R>(
+    self: System<E, R>,
+    other: System<unknown, unknown> | string
+  ): System<E, R> =>
     build({
       ...self,
       after: [...self.after, typeof other === "string" ? other : other.name],
@@ -311,12 +317,18 @@ export const after: {
  */
 export const before: {
   (
-    other: System<any, any> | string
+    other: System<unknown, unknown> | string
   ): <E, R>(self: System<E, R>) => System<E, R>;
-  <E, R>(self: System<E, R>, other: System<any, any> | string): System<E, R>;
+  <E, R>(
+    self: System<E, R>,
+    other: System<unknown, unknown> | string
+  ): System<E, R>;
 } = dual(
   2,
-  <E, R>(self: System<E, R>, other: System<any, any> | string): System<E, R> =>
+  <E, R>(
+    self: System<E, R>,
+    other: System<unknown, unknown> | string
+  ): System<E, R> =>
     build({
       ...self,
       before: [...self.before, typeof other === "string" ? other : other.name],
@@ -520,7 +532,9 @@ const STRENGTH: Readonly<Record<Touch, number>> = {
  *
  * @category Utilities
  */
-export const accessOf = (system: System<any, any>): Resolved | undefined => {
+export const accessOf = (
+  system: System<unknown, unknown>
+): Resolved | undefined => {
   const said = system.access;
 
   if (said === undefined) {
@@ -529,12 +543,12 @@ export const accessOf = (system: System<any, any>): Resolved | undefined => {
 
   const components = new Map<
     string,
-    { readonly def: ComponentDef<any>; readonly touch: Touch }
+    { readonly def: ComponentDef; readonly touch: Touch }
   >();
 
   const events = new Map<string, Touch>();
 
-  const component = (def: ComponentDef<any>, touch: Touch): void => {
+  const component = (def: ComponentDef, touch: Touch): void => {
     const known = components.get(def.name);
 
     if (known === undefined || STRENGTH[touch] > STRENGTH[known.touch]) {
@@ -557,7 +571,7 @@ export const accessOf = (system: System<any, any>): Resolved | undefined => {
     }
   };
 
-  const queries: QuerySpec<any>[] = [];
+  const queries: QuerySpec[] = [];
 
   for (const query of said.queries ?? []) {
     if (!("terms" in query)) {
@@ -568,7 +582,7 @@ export const accessOf = (system: System<any, any>): Resolved | undefined => {
 
     queries.push(query);
 
-    for (const def of query.terms as readonly ComponentDef<any>[]) {
+    for (const def of query.terms as readonly ComponentDef[]) {
       component(
         def,
         query.readDefs?.includes(def) === true ? "reads" : "writes"
@@ -622,7 +636,7 @@ export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
  * systems cannot share one.
  * @internal
  */
-export const unique = (systems: readonly System<any, any>[]): void => {
+export const unique = (systems: readonly System<unknown, unknown>[]): void => {
   const names = new Set<string>();
 
   for (const system of systems) {
@@ -639,11 +653,11 @@ export const unique = (systems: readonly System<any, any>[]): void => {
  * constraints, keeping registration order where nothing else decides.
  * @internal
  */
-export const order = (
-  systems: readonly System<any, any>[]
-): System<any, any>[] => {
+export const order = <Sy extends System<unknown, unknown>>(
+  systems: readonly Sy[]
+): Sy[] => {
   unique(systems);
-  const out: System<any, any>[] = [];
+  const out: Sy[] = [];
   const stageOf = new Map(systems.map((s) => [s.name, s.stage]));
 
   for (const stage of everyStage) {
@@ -711,7 +725,7 @@ export const order = (
     const done = new Set<string>();
     const visiting: string[] = [];
 
-    const place = (system: System<any, any>): void => {
+    const place = (system: Sy): void => {
       if (done.has(system.name)) {
         return;
       }
@@ -864,11 +878,13 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
  *
  * @category Utilities
  */
-export const conflicts = (systems: readonly System<any, any>[]): Report => {
+export const conflicts = (
+  systems: readonly System<unknown, unknown>[]
+): Report => {
   const found: Conflict[] = [];
   const undeclared: string[] = [];
 
-  const check = (group: readonly System<any, any>[]): void => {
+  const check = (group: readonly System<unknown, unknown>[]): void => {
     const ordered = order(group);
 
     const stageOf = new Map(
@@ -952,7 +968,7 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
 
   // Hooks run when their state is entered or left, each moment's among
   // themselves; the rest of the tick's systems, stage by stage.
-  const hooks = new Map<string, System<any, any>[]>();
+  const hooks = new Map<string, System<unknown, unknown>[]>();
 
   for (const system of systems) {
     if (system.trigger !== undefined) {

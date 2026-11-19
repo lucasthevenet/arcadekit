@@ -86,12 +86,12 @@ const WHOLE = -1;
 /** What `hash` folds in before each singleton, to distinguish it from a sparse set. */
 const SINGLETON = 0x53_49_4e_47;
 
-const storageOf = (def: ComponentDef<any>): 0 | 1 | 2 =>
+const storageOf = (def: ComponentDef): 0 | 1 | 2 =>
   def.single ? 2 : def.storage === "sparse" ? 1 : 0;
 
 /** The single instance of a singleton that a world holds. */
 interface Single {
-  readonly def: ComponentDef<any>;
+  readonly def: ComponentDef;
   /** One row. */
   readonly columns: Columns;
   /**
@@ -113,7 +113,7 @@ type Columns = Record<string, Column>;
 /** What a transaction saved before a write: one row, or whole columns. */
 interface Saved {
   readonly cols: Columns;
-  readonly def: ComponentDef<any>;
+  readonly def: ComponentDef;
   /** `WHOLE`, or the one row that was saved. */
   readonly row: number;
   /** How many rows `copies` holds when it holds whole columns. */
@@ -125,7 +125,7 @@ interface Saved {
   readonly copies: unknown[];
 }
 
-const makeColumns = (def: ComponentDef<any>, capacity: number): Columns => {
+const makeColumns = (def: ComponentDef, capacity: number): Columns => {
   const cols: Columns = {};
 
   for (let f = 0; f < def.fields.length; f += 1) {
@@ -136,7 +136,7 @@ const makeColumns = (def: ComponentDef<any>, capacity: number): Columns => {
 };
 
 const growColumns = (
-  def: ComponentDef<any>,
+  def: ComponentDef,
   cols: Columns,
   capacity: number
 ): void => {
@@ -147,7 +147,7 @@ const growColumns = (
 };
 
 const writeRow = (
-  def: ComponentDef<any>,
+  def: ComponentDef,
   cols: Columns,
   row: number,
   value: any | undefined
@@ -163,7 +163,7 @@ const writeRow = (
   }
 };
 
-const readRow = (def: ComponentDef<any>, cols: Columns, row: number): any => {
+const readRow = (def: ComponentDef, cols: Columns, row: number): any => {
   const out: any = {};
 
   for (let f = 0; f < def.fields.length; f += 1) {
@@ -183,13 +183,13 @@ interface Loading {
   /** Whether ids and generations are of the narrower formats before 3. */
   readonly narrow: boolean;
   /** The components the snapshot lists, in its order. */
-  readonly named: readonly ComponentDef<any>[];
+  readonly named: readonly ComponentDef[];
   /** 1 for each slot the snapshot says is free. */
   readonly isFree: Uint8Array;
 }
 
 /** Reads a reference to one of the components the snapshot lists. */
-const componentAt = ({ named, reader }: Loading): ComponentDef<any> => {
+const componentAt = ({ named, reader }: Loading): ComponentDef => {
   const def = named[reader.u32()];
 
   if (def === undefined) {
@@ -200,7 +200,7 @@ const componentAt = ({ named, reader }: Loading): ComponentDef<any> => {
 };
 
 /** Explains that a relation was given without a value, and so has no target. */
-const targetless = (def: ComponentDef<any>): Error =>
+const targetless = (def: ComponentDef): Error =>
   new Error(
     `"${def.name}" is a relation, and a relation needs a target: give it as ${def.name.split("/").pop()}.of({ target }).`
   );
@@ -238,16 +238,12 @@ export class Table {
    * The table's components in order of name. `defs` is in order of id, which
    * depends on the order the program happened to define its components in.
    */
-  readonly defsByName: readonly ComponentDef<any>[];
+  readonly defsByName: readonly ComponentDef[];
 
   readonly index: number;
-  readonly defs: readonly ComponentDef<any>[];
+  readonly defs: readonly ComponentDef[];
 
-  constructor(
-    index: number,
-    defs: readonly ComponentDef<any>[],
-    capacity = 16
-  ) {
+  constructor(index: number, defs: readonly ComponentDef[], capacity = 16) {
     this.index = index;
     this.defs = defs;
 
@@ -327,9 +323,9 @@ export class SparseSet {
   count = 0;
   readonly columns: Columns;
 
-  readonly def: ComponentDef<any>;
+  readonly def: ComponentDef;
 
-  constructor(def: ComponentDef<any>, capacity = 16) {
+  constructor(def: ComponentDef, capacity = 16) {
     this.def = def;
 
     this.dense = new Uint32Array(capacity);
@@ -438,9 +434,9 @@ export class RelationIndex {
   /** For each source index, the target it points at, or -1. */
   private target: Int32Array;
 
-  readonly def: ComponentDef<any>;
+  readonly def: ComponentDef;
 
-  constructor(def: ComponentDef<any>, size: number) {
+  constructor(def: ComponentDef, size: number) {
     this.def = def;
 
     this.head = new Int32Array(size).fill(-1);
@@ -593,11 +589,11 @@ export class ChangeLog {
   /** Where the log ended when the current transaction began. */
   txEnd = 0;
 
-  readonly def: ComponentDef<any>;
+  readonly def: ComponentDef;
   readonly kind: ChangeKind;
   private readonly world: World;
 
-  constructor(def: ComponentDef<any>, kind: ChangeKind, world: World) {
+  constructor(def: ComponentDef, kind: ChangeKind, world: World) {
     this.def = def;
     this.kind = kind;
     this.world = world;
@@ -1034,22 +1030,22 @@ export interface Guard {
   /** Indexed by a component's id: true for one that may be written. */
   readonly writes: readonly (true | undefined)[];
   /** The components that may be written: what a despawn is checked against. */
-  readonly writeDefs: readonly ComponentDef<any>[];
+  readonly writeDefs: readonly ComponentDef[];
   /**
    * The queries that may be requested as is. A requested query found to be
    * within `reads` and `writes` is added.
    */
-  readonly queries: Set<QuerySpec<any>>;
+  readonly queries: Set<QuerySpec>;
 }
 
 /** Describes a query as text: how a save identifies a change query. */
-const describeSpec = (spec: QuerySpec<any>): string => {
-  const names = (defs: readonly ComponentDef<any>[] | undefined): string =>
+const describeSpec = (spec: QuerySpec): string => {
+  const names = (defs: readonly ComponentDef[] | undefined): string =>
     (defs ?? []).map((def) => def.name).join(",");
 
   // What it only reads, in the order of its terms, however it was said.
   const reads = spec.terms.filter(
-    (def: ComponentDef<any>) => spec.readDefs?.includes(def) === true
+    (def: ComponentDef) => spec.readDefs?.includes(def) === true
   );
 
   return `all(${names(spec.terms)}) with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)}) reads(${names(reads)})`;
@@ -1064,7 +1060,7 @@ const describeSpec = (spec: QuerySpec<any>): string => {
  *
  * @category Models
  */
-export type Terms = readonly ComponentDef<any>[];
+export type Terms = readonly ComponentDef[];
 
 /**
  * A description of a query, independent of any world. Any object with this
@@ -1076,24 +1072,24 @@ export interface QuerySpec<D extends Terms = Terms> {
   /** Components whose data the query reads or writes (table or sparse). */
   readonly terms: D;
   /** Extra components an entity must have (table or sparse). */
-  readonly withDefs: readonly ComponentDef<any>[];
+  readonly withDefs: readonly ComponentDef[];
   /** Components an entity must not have (table or sparse). */
-  readonly withoutDefs: readonly ComponentDef<any>[];
+  readonly withoutDefs: readonly ComponentDef[];
   /**
    * Components to watch for writes. With any of these or of `addedDefs`, the
    * query visits only the entities for which one of them changed since it last
    * visited: see `World.view`.
    */
-  readonly changedDefs?: readonly ComponentDef<any>[];
+  readonly changedDefs?: readonly ComponentDef[];
   /** Components to watch for being added. */
-  readonly addedDefs?: readonly ComponentDef<any>[];
+  readonly addedDefs?: readonly ComponentDef[];
   /**
    * The terms the query only reads. `each` hands out accessors for them whose
    * setters throw. `eachChunk` doesn't count their rows as written for the
    * change queries that watch them, and a transaction doesn't save their
    * columns, since there is nothing to restore.
    */
-  readonly readDefs?: readonly ComponentDef<any>[];
+  readonly readDefs?: readonly ComponentDef[];
 }
 
 export type AccessorsOf<D extends Terms> = {
@@ -1296,7 +1292,7 @@ export class QueryView<D extends Terms = Terms> {
 
     this.restored = world._restored;
 
-    const requireSparse = (def: ComponentDef<any>): SparseSet => {
+    const requireSparse = (def: ComponentDef): SparseSet => {
       const set = world._sparse(def);
 
       if (!this.sparseWith.includes(set)) {
@@ -1347,7 +1343,7 @@ export class QueryView<D extends Terms = Terms> {
 
     // Watching a component implies requiring it.
     const watch = (
-      defs: readonly ComponentDef<any>[] | undefined,
+      defs: readonly ComponentDef[] | undefined,
       kind: ChangeKind
     ): void => {
       for (const def of defs ?? []) {
@@ -2385,8 +2381,8 @@ export class World {
   private readonly tableByKey = new Map<string, Table>();
   private readonly sparseById = new Map<number, SparseSet>();
   private readonly sparseList: SparseSet[] = [];
-  private readonly views = new Map<QuerySpec<any>, QueryView<any>>();
-  private readonly componentsByName = new Map<string, ComponentDef<any>>();
+  private readonly views = new Map<QuerySpec, QueryView<any>>();
+  private readonly componentsByName = new Map<string, ComponentDef>();
   /** Indexed by component id: true once registered, so the common check is a single read. */
   private readonly registered: (true | undefined)[] = [];
   /** Indexed by component id: what `hash` folds in for the component itself. */
@@ -2442,7 +2438,7 @@ export class World {
   /** Logs started while a query was iterating, whose accessors record nothing. */
   private lateLogs: ChangeLog[] = [];
   private readonly watchViews = new Map<
-    QuerySpec<any>,
+    QuerySpec,
     Map<string, QueryView<any>>
   >();
   private readonly watchViewsByKey = new Map<string, QueryView<any>>();
@@ -2652,7 +2648,7 @@ export class World {
       byId.set((isComponentDef(input) ? input : input.def).id, input);
     }
 
-    const tableDefs: ComponentDef<any>[] = [];
+    const tableDefs: ComponentDef[] = [];
 
     for (const input of byId.values()) {
       const def = isComponentDef(input) ? input : input.def;
@@ -2665,7 +2661,7 @@ export class World {
     tableDefs.sort((a, b) => a.id - b.id);
     const table = this.tableFor(tableDefs);
     const row = table.push(entity);
-    let related: ComponentValue<any>[] | undefined;
+    let related: ComponentValue[] | undefined;
 
     for (const input of byId.values()) {
       const def = isComponentDef(input) ? input : input.def;
@@ -2683,7 +2679,7 @@ export class World {
       }
 
       if (def.relation !== undefined) {
-        (related ??= []).push(input as ComponentValue<any>);
+        (related ??= []).push(input as ComponentValue);
       }
     }
 
@@ -2696,10 +2692,10 @@ export class World {
   }
 
   /** Records the relations an entity was spawned with. */
-  private placeRelations(entity: Entity, related: ComponentValue<any>[]): void {
+  private placeRelations(entity: Entity, related: ComponentValue[]): void {
     const index = entityIndex(entity);
     let gone = false;
-    const dangling: ComponentDef<any>[] = [];
+    const dangling: ComponentDef[] = [];
 
     for (const { def, value } of related) {
       const target = value.target as Entity;
@@ -2914,7 +2910,7 @@ export class World {
   private addOne(
     index: number,
     entity: Entity,
-    def: ComponentDef<any>,
+    def: ComponentDef,
     value: any | undefined
   ): boolean {
     if (def.storage === "sparse") {
@@ -2961,7 +2957,7 @@ export class World {
   }
 
   /** Removes a component from an entity. Returns false when it didn't have it. */
-  remove(entity: Entity, def: ComponentDef<any>): boolean {
+  remove(entity: Entity, def: ComponentDef): boolean {
     this.assertNotIterating("remove");
 
     if (this.guard !== undefined) {
@@ -2976,7 +2972,7 @@ export class World {
   }
 
   /** Removes a component from a live entity. */
-  private removeOne(entity: Entity, def: ComponentDef<any>): boolean {
+  private removeOne(entity: Entity, def: ComponentDef): boolean {
     const index = entityIndex(entity);
 
     if (def.relation !== undefined) {
@@ -3013,7 +3009,7 @@ export class World {
   }
 
   /** Returns whether an entity is alive and has a component. */
-  has(entity: Entity, def: ComponentDef<any>): boolean {
+  has(entity: Entity, def: ComponentDef): boolean {
     if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
       this.refuse(`read "${def.name}" through the world`, "read");
     }
@@ -3124,7 +3120,7 @@ export class World {
    * index: a parent's children, or whatever is aiming at something. Finding
    * them doesn't examine any other entity.
    */
-  sources(target: Entity, def: ComponentDef<any>): Entity[] {
+  sources(target: Entity, def: ComponentDef): Entity[] {
     if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
       this.refuse(`read "${def.name}" through the world`, "read");
     }
@@ -3141,7 +3137,7 @@ export class World {
   }
 
   /** Returns a relation's index of which entities point at which, creating it if needed. */
-  private relationOf(def: ComponentDef<any>): RelationIndex {
+  private relationOf(def: ComponentDef): RelationIndex {
     let relation = this.relations[def.id];
 
     if (relation === undefined) {
@@ -3257,7 +3253,7 @@ export class World {
   }
 
   /** Returns a singleton's instance, creating it if needed with every field zero. */
-  private single(def: ComponentDef<any>): Single {
+  private single(def: ComponentDef): Single {
     let single = this.singles[def.id];
 
     if (single === undefined) {
@@ -3393,8 +3389,8 @@ export class World {
    * read-only ones, and what it requires, excludes or watches counts as read. A
    * query that passes is remembered and not checked again.
    */
-  private guardQuery(guard: Guard, spec: QuerySpec<any>): void {
-    for (const def of spec.terms as readonly ComponentDef<any>[]) {
+  private guardQuery(guard: Guard, spec: QuerySpec): void {
+    for (const def of spec.terms as readonly ComponentDef[]) {
       if (spec.readDefs?.includes(def) === true) {
         if (guard.reads[def.id] !== true) {
           this.refuse(`asked for a query that reads "${def.name}"`, "read");
@@ -3608,7 +3604,7 @@ export class World {
    * transaction already has.
    * @internal
    */
-  _saveColumns(def: ComponentDef<any>, cols: Columns, count: number): void {
+  _saveColumns(def: ComponentDef, cols: Columns, count: number): void {
     if (def.isTag || this.savedWhole.has(cols)) {
       return;
     }
@@ -3647,7 +3643,7 @@ export class World {
   }
 
   /** Saves one row of a component's columns. */
-  private saveRow(def: ComponentDef<any>, cols: Columns, row: number): void {
+  private saveRow(def: ComponentDef, cols: Columns, row: number): void {
     if (this.savedWhole.has(cols)) {
       return;
     }
@@ -3667,7 +3663,7 @@ export class World {
    * only needed to look one up by name before then. Its name is its identity in
    * this world: a second component with the same name is refused.
    */
-  register(def: ComponentDef<any>): void {
+  register(def: ComponentDef): void {
     if (this.registered[def.id] === true) {
       return;
     }
@@ -3708,7 +3704,7 @@ export class World {
   }
 
   /** Returns the registered component with this name, for saves, the network and tools. */
-  component(name: string): ComponentDef<any> | undefined {
+  component(name: string): ComponentDef | undefined {
     return this.componentsByName.get(name);
   }
 
@@ -3807,7 +3803,7 @@ export class World {
    * time anyone requests them. There is one reader per name and component:
    * `reader`, or `world.reader`, or an anonymous one.
    */
-  removed(def: ComponentDef<any>, reader?: string): RemovedReader {
+  removed(def: ComponentDef, reader?: string): RemovedReader {
     if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
       this.refuse(`asked which entities lost "${def.name}"`, "read");
     }
@@ -3831,7 +3827,7 @@ export class World {
    *
    * @internal
    */
-  _log(def: ComponentDef<any>, kind: ChangeKind): ChangeLog {
+  _log(def: ComponentDef, kind: ChangeKind): ChangeLog {
     const byId =
       kind === "changed"
         ? this._changed
@@ -3998,7 +3994,7 @@ export class World {
     const singles = this.writtenSingles();
 
     // The components that hold anything, or have a table, in order of name.
-    const used = new Map<ComponentDef<any>, number>();
+    const used = new Map<ComponentDef, number>();
 
     for (const table of tables) {
       for (const def of table.defs) {
@@ -4053,7 +4049,7 @@ export class World {
     }
 
     const writeFields = (
-      def: ComponentDef<any>,
+      def: ComponentDef,
       columns: Columns,
       count: number
     ): void => {
@@ -4222,7 +4218,7 @@ export class World {
    * for them. A world whose load failed partway is unusable: load into a new
    * one.
    */
-  load(bytes: Uint8Array, components: readonly ComponentDef<any>[] = []): void {
+  load(bytes: Uint8Array, components: readonly ComponentDef[] = []): void {
     if (
       this.nextIndex !== 0 ||
       this.tables.length > 0 ||
@@ -4352,8 +4348,8 @@ export class World {
   }
 
   /** Reads the components, checked against the ones this program defines. */
-  private loadComponents(reader: Reader): ComponentDef<any>[] {
-    const named: ComponentDef<any>[] = [];
+  private loadComponents(reader: Reader): ComponentDef[] {
+    const named: ComponentDef[] = [];
     const componentCount = reader.count(9);
 
     for (let c = 0; c < componentCount; c += 1) {
@@ -4401,7 +4397,7 @@ export class World {
   /** Reads one table: its components, its entities and their fields. */
   private loadTable(loading: Loading): void {
     const { narrow, reader } = loading;
-    const defs: ComponentDef<any>[] = [];
+    const defs: ComponentDef[] = [];
     const defCount = reader.count(4);
 
     for (let d = 0; d < defCount; d += 1) {
@@ -4551,7 +4547,7 @@ export class World {
   /** Reads one field's column, naming the field if its codec rejects a value. */
   private readField(
     reader: Reader,
-    def: ComponentDef<any>,
+    def: ComponentDef,
     f: number,
     columns: Columns,
     count: number,
@@ -4735,7 +4731,7 @@ export class World {
   // --- internals -----------------------------------------------------------
 
   /** @internal */
-  _sparse(def: ComponentDef<any>): SparseSet {
+  _sparse(def: ComponentDef): SparseSet {
     let set = this.sparseById.get(def.id);
 
     if (set === undefined) {
@@ -4750,7 +4746,7 @@ export class World {
     return set;
   }
 
-  private tableFor(sortedDefs: readonly ComponentDef<any>[]): Table {
+  private tableFor(sortedDefs: readonly ComponentDef[]): Table {
     const key = sortedDefs.map((d) => d.id).join(",");
     let table = this.tableByKey.get(key);
 
@@ -4769,7 +4765,7 @@ export class World {
   }
 
   /** Refuses a singleton's fields where an entity component is expected. */
-  private refuseSingle(def: ComponentDef<any>): void {
+  private refuseSingle(def: ComponentDef): void {
     if (def.single) {
       throw new Error(
         `"${def.name}" is a singleton: the world holds one, and no entity has it. Read and write it with World.singleton().`
@@ -4862,7 +4858,7 @@ type Command =
   | {
       readonly op: "remove";
       readonly entity: Entity;
-      readonly def: ComponentDef<any>;
+      readonly def: ComponentDef;
     };
 
 /**
@@ -4925,7 +4921,7 @@ export class CommandBuffer {
     this.ops.push({ op: "add", entity, input });
   }
 
-  remove(entity: Entity, def: ComponentDef<any>): void {
+  remove(entity: Entity, def: ComponentDef): void {
     this.refuseFrozen("remove");
 
     if (this.world.guard !== undefined) {

@@ -863,7 +863,7 @@ describe("what each hands its callback", () => {
         world.spawn(Health.of({ hp: n }), def.of(valueOf(n)));
       }
 
-      const read = (spec: QuerySpec<any>): unknown[] => {
+      const read = (spec: QuerySpec): unknown[] => {
         const rows: unknown[] = [];
         world.view(spec).each((...args: unknown[]) => {
           const [health, every] = args as [
@@ -1041,7 +1041,7 @@ describe("what each hands its callback", () => {
     }
 
     // Components of one shape and several names: told apart nowhere here.
-    const lists: ComponentDef<any>[][] = [
+    const lists: ComponentDef[][] = [
       // In the table alone: one loop for each number of terms up to three,
       // and one for any number past that.
       [B],
@@ -1069,7 +1069,7 @@ describe("what each hands its callback", () => {
         }
       });
 
-      const scale = new Map<ComponentDef<any>, number>([
+      const scale = new Map<ComponentDef, number>([
         [A, 1],
         [B, 10],
         [C, 100],

@@ -31,7 +31,7 @@ const define = (prefix: string) => ({
 });
 
 const C = define("snap");
-const all = Object.values(C) as ComponentDef<any>[];
+const all = Object.values(C) as ComponentDef[];
 
 const notes: unknown[] = [
   "plain",
@@ -78,10 +78,10 @@ const play = (
 ): void => {
   const dice = new EcsWorld({ seed }).random;
   const commands = new CommandBuffer(world);
-  const optional = Object.values(kit) as ComponentDef<any>[];
+  const optional = Object.values(kit) as ComponentDef[];
   let serial = seed * 1000;
 
-  const valueFor = (def: ComponentDef<any>) => {
+  const valueFor = (def: ComponentDef) => {
     if (def === kit.Body) {
       serial += 1;
 
@@ -471,7 +471,7 @@ describe("a snapshot that cannot be loaded", () => {
   });
 
   it("names a component whose fields are not what they were, and says how", () => {
-    const changed = (body: ComponentDef<any>) =>
+    const changed = (body: ComponentDef) =>
       problemOf(() =>
         loaded(sample(), [...all.filter((def) => def !== C.Body), body])
       );

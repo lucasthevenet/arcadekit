@@ -429,7 +429,10 @@ export const plugin = Plugin.make("arcadekit/View", {
  *
  * @category Systems
  */
-export const publish = <A, Eff extends Effect.Effect<any, any, any>>(
+export const publish = <
+  A,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
   view: View<A>,
   body: () => Generator<Eff, A, never>
 ): System.System<Effect.Error<Eff>, Effect.Services<Eff> | Port> => {

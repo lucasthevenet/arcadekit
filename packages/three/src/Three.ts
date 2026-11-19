@@ -393,9 +393,9 @@ export interface Which {
    * which it must have. It is drawn while it has them and a
    * `Transform3d.Position` or a `Transform2d.Position`.
    */
-  readonly of: ComponentDef<any> | readonly ComponentDef<any>[];
+  readonly of: ComponentDef | readonly ComponentDef[];
   /** Components that prevent an entity from being drawn: one that hides it, for example. */
-  readonly without?: readonly ComponentDef<any>[];
+  readonly without?: readonly ComponentDef[];
   /**
    * Interpolates each entity between its last two positions, instead of drawing
    * it where the last tick left it: at `Frame.alpha` of the way from where it
@@ -413,7 +413,7 @@ export interface Which {
   readonly snap?: number;
 }
 
-const required = (which: Which): readonly ComponentDef<any>[] =>
+const required = (which: Which): readonly ComponentDef[] =>
   "id" in which.of ? [which.of] : which.of;
 
 // --- between two ticks -------------------------------------------------------------
@@ -1915,8 +1915,8 @@ export const instances: {
   // `any`: the terms of a query are a tuple in its type, and a kind with a
   // colour has one more than one without, after the ones its loop reads.
   const kind = (
-    own: readonly ComponentDef<any>[],
-    absent: readonly ComponentDef<any>[]
+    own: readonly ComponentDef[],
+    absent: readonly ComponentDef[]
   ): Query.Query<any> =>
     Query.all(...own, ...(color === undefined ? [] : [color])).pipe(
       Query.with(...marked),

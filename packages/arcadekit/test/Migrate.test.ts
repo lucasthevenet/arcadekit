@@ -669,7 +669,7 @@ describe("a save from another version of the game", () => {
     Migrate.addField(contents, "mg/Thing", "e", "u16", 500);
     Migrate.addField(contents, "mg/Thing", "f", "f32", 0.5);
 
-    const Thing2: ComponentDef<any> = Component.define("mg/Thing", {
+    const Thing2: ComponentDef = Component.define("mg/Thing", {
       d: Field.json<string>(),
       a: Field.json<{ was: number }>(),
       b: Field.f64,

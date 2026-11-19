@@ -510,7 +510,10 @@ describe("a run condition", () => {
   });
 });
 
-const game = (ran: string[], extra: Plugin.AnySystem[] = []) =>
+const game = <X extends Plugin.AnySystem = never>(
+  ran: string[],
+  extra: readonly X[] = []
+) =>
   App.make({
     components: [Phase, Weather, Ball],
     systems: [

@@ -1213,12 +1213,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Plugin layers are chained in dependency order, so each one can use the
     // built-in services and whatever the plugins before it provide. Effect
     // builds a layer that appears more than once only once.
-    let layer: Layer.Layer<any, any, any> = Layer.succeedContext(builtIns);
+    let layer: Layer.Layer<never, unknown, unknown> =
+      Layer.succeedContext(builtIns);
 
     for (const plugin of plugins) {
       if (plugin.layer !== undefined) {
         layer = Layer.provideMerge(
-          plugin.layer as Layer.Layer<any, any, any>,
+          plugin.layer as Layer.Layer<never, unknown, unknown>,
           layer
         );
       }
@@ -2225,8 +2226,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw Cause.squash(exit.cause);
         }
       },
-      spawnScript(effect) {
-        return watch(runFork(effect as Effect.Effect<any, any, any>));
+      spawnScript<A, E2>(
+        effect: Effect.Effect<A, E2, Provided<P> | External<S, H, P> | BuiltIn>
+      ) {
+        return watch(runFork(effect as Effect.Effect<A, E2, never>));
       },
       dispatch(action, payload) {
         assertBetweenTicks(action.name);

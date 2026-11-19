@@ -807,7 +807,7 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *
  * @category Systems
  */
-export const music = <Eff extends Effect.Effect<any, any, any>>(
+export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, TrackOf, never>,
   options: { readonly fade?: number; readonly channel?: string } = {}
