@@ -1,9 +1,18 @@
 import { Context, Effect, Layer, Result } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import { App, Driver, Lockstep, Rollback, Transport } from "../src/index";
-import { DELTA, Drop, game, moves, players, setGlitch, withApp } from "./peers";
-import type { Game, Peer } from "./peers";
+import {
+  DELTA,
+  Drop,
+  driftOf,
+  game,
+  moves,
+  players,
+  setGlitch,
+  withApp,
+} from "./peers";
+import type { Game } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
   from,
@@ -32,7 +41,7 @@ const seated = (
       const options = { peer: name, peers: names, delta: DELTA };
       const session =
         ahead === undefined
-          ? (Lockstep.make(app, options) as Rollback.Session)
+          ? Lockstep.make(app, options)
           : Rollback.make(app, { ...options, ahead });
       // Each peer is a program of its own, with a transport that lasts as
       // long as it does: here they share a scope, so each one's layer is
@@ -46,15 +55,12 @@ const seated = (
     return seats;
   });
 
-/** As the players of `peers.ts` see a peer. */
-const asPeer = (seat: Seat): Peer => seat as unknown as Peer;
-
 describe("a hub, the network in memory", () => {
   it("carries what one port sends to every other, and not back", () => {
     const hub = Transport.makeHub();
-    const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
-      hub.port(name)
-    ) as [Transport.Shape, Transport.Shape, Transport.Shape];
+    const ada = hub.port("ada");
+    const grace = hub.port("grace");
+    const edsger = hub.port("edsger");
     ada.send(message("ada", 0, 3));
     ada.send(message("ada", 1));
     expect(hub.inFlight).toBe(4);
@@ -182,7 +188,7 @@ describe("a session joined to a transport", () => {
               hub.step();
               seats.forEach((seat, index) => {
                 if (acting) {
-                  act(asPeer(seat));
+                  act(seat);
                 }
                 steps[index]!(DELTA);
               });
@@ -194,7 +200,8 @@ describe("a session joined to a transport", () => {
             for (let i = 0; i < 30; i++) {
               frame(false);
             }
-            const [ada, grace] = seats as [Seat, Seat];
+            const [ada, grace] = seats;
+            assert(ada !== undefined && grace !== undefined);
             for (
               let i = 0;
               i < 50 && ada.app.time.tick !== grace.app.time.tick;
@@ -257,10 +264,8 @@ describe("a session joined to a transport", () => {
               }
             }
             // Both, and with the same report.
-            expect(stopped.get("ada")).toBeInstanceOf(Lockstep.Drifted);
-            expect(stopped.get("grace")).toBeInstanceOf(Lockstep.Drifted);
-            expect((stopped.get("ada") as Lockstep.Drifted).hashes).toEqual(
-              (stopped.get("grace") as Lockstep.Drifted).hashes
+            expect(driftOf(stopped, "ada").hashes).toEqual(
+              driftOf(stopped, "grace").hashes
             );
             setGlitch(undefined);
           })
@@ -321,14 +326,14 @@ describe("a session joined to a transport", () => {
 describe("a transport over text", () => {
   it("sends a message as text, and reads the texts that are messages", () => {
     const sent: string[] = [];
-    let deliver: (text: string) => void = () => {};
+    let deliver: (arrived: unknown) => void = () => {};
     let listening = 0;
     const transport = Transport.text({
       send: (text) => {
         sent.push(text);
       },
-      listen(onText) {
-        deliver = onText;
+      listen(onArrival) {
+        deliver = onArrival;
         listening++;
         return () => {
           listening--;
@@ -340,13 +345,14 @@ describe("a transport over text", () => {
     deliver(Lockstep.encode(message("grace", 0)));
     deliver("not a message");
     deliver(JSON.stringify({ from: "grace", tick: -1, actions: [] }));
+    deliver(new ArrayBuffer(8));
     deliver(Lockstep.encode(message("grace", 1, 5)));
     // What is not a message is dropped, and counted.
     expect(transport.receive()).toEqual([
       message("grace", 0),
       message("grace", 1, 5),
     ]);
-    expect(transport.dropped).toBe(2);
+    expect(transport.dropped).toBe(3);
     expect(transport.receive()).toEqual([]);
     expect(listening).toBe(1);
     transport.close();
@@ -410,14 +416,9 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     vi.stubGlobal(
       "BroadcastChannel",
       class {
-        readonly record;
+        readonly record: (typeof made)[number];
         constructor(name: string) {
-          this.record = {
-            name,
-            closed: false,
-            onmessage: null as unknown,
-            posted: [] as unknown[],
-          };
+          this.record = { name, closed: false, onmessage: null, posted: [] };
           made.push(this.record);
         }
         set onmessage(listener: unknown) {
@@ -489,11 +490,12 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             8
           );
           const act = players(21);
-          const [ada, grace] = seats as [Seat, Seat];
+          const [ada, grace] = seats;
+          assert(ada !== undefined && grace !== undefined);
           for (let i = 0; i < 60; i++) {
             for (const seat of seats) {
               if (i < 40) {
-                act(asPeer(seat));
+                act(seat);
               }
               seat.connected.tick();
               // The other end hears in its own time, not in this loop's.

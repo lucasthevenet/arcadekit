@@ -8,7 +8,7 @@ import {
   Schema,
 } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -1066,9 +1066,9 @@ describe("a frame stage that is checked", () => {
           const error = Exit.isFailure(exit)
             ? Cause.squash(exit.cause)
             : undefined;
-          expect(error).toBeInstanceOf(App.FrameChangedWorld);
+          assert(error instanceof App.FrameChangedWorld);
           expect(error).toMatchObject({ system: "Sneak", frame: 1 });
-          expect((error as Error).message).toMatch(
+          expect(error.message).toMatch(
             /after system "Sneak" ran in frame 1.*raw columns of eachChunk.*world\.random/
           );
           // It is a defect: nothing in the error channel to handle.

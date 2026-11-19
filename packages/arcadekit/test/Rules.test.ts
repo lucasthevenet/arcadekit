@@ -1,6 +1,6 @@
-import { Context, Data, Effect, Exit } from "effect";
+import { Context, Data, Effect, Exit, Predicate } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -137,7 +137,7 @@ describe("events", () => {
           log.push(
             `first got ${batch.join(",")} at tick ${(yield* Time).tick}`
           );
-          died.emit({ entity: 99 as Entity });
+          died.emit({ entity: entity(99) });
         })
       );
       // A second script woken by the first one's event, still in the same tick.
@@ -261,6 +261,7 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
 
 // The World service, imported under another name so `world` reads naturally above.
 import { World as App_World } from "../src/index";
+import { entity } from "./entities";
 
 const Death = System.make("Death", function* () {
   const damaged = yield* Damaged;
@@ -407,9 +408,11 @@ describe("actions", () => {
     const rejected: string[] = [];
     const Watch = System.make("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
-        rejected.push(
-          `${event.action}: ${(event.error as { _tag: string })._tag}`
+        const { error } = event;
+        assert(
+          Predicate.hasProperty(error, "_tag") && typeof error._tag === "string"
         );
+        rejected.push(`${event.action}: ${error._tag}`);
       }
     });
     const make = Effect.map(
@@ -525,9 +528,7 @@ describe("actions", () => {
       (app) => app.dispatch(Unhandled, {})
     );
     // Forced past the compiler, it surfaces as a defect rather than a crash.
-    expect(Exit.isFailure(unprovided as Exit.Exit<unknown, unknown>)).toBe(
-      true
-    );
+    expect(Exit.isExit(unprovided) && Exit.isFailure(unprovided)).toBe(true);
     withApp(
       App.make({ systems: [], handlers: [roll] }).pipe(
         Effect.provideService(Rng, { next: () => 4 })

@@ -47,6 +47,7 @@
  * It travels with the commit, so nothing is left to take out afterwards.
  * The list may go on over the lines that follow, indented.
  */
+import assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -128,8 +129,8 @@ process.on("exit", () => {
 });
 
 /** One run of a variant by a build: the median milliseconds of a pass. */
-const run = (build: string, name: string): number =>
-  JSON.parse(
+const run = (build: string, name: string): number => {
+  const ms: unknown = JSON.parse(
     execFileSync(
       process.execPath,
       ["--import", "tsx", `bench/${build === base ? ASKED : "core.ts"}`, name],
@@ -138,7 +139,10 @@ const run = (build: string, name: string): number =>
       .trim()
       .split("\n")
       .pop()!
-  ) as number;
+  );
+  assert(typeof ms === "number", `${name} printed no number of milliseconds.`);
+  return ms;
+};
 
 const git = (...command: string[]): string =>
   execFileSync("git", command, { cwd: head, encoding: "utf8" });
@@ -151,7 +155,10 @@ const meant = onPurpose(
 );
 
 const samples = new Map(
-  names.map((name) => [name, { base: [] as number[], head: [] as number[] }])
+  names.map((name) => [
+    name,
+    { base: Array.of<number>(), head: Array.of<number>() },
+  ])
 );
 /** The variants the base cannot run, and the ones that need no more runs. */
 const fresh = new Set<string>();

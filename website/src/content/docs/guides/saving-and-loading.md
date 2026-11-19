@@ -71,7 +71,7 @@ A game has a `version`: an integer you increment whenever you change its compone
 
 ```ts
 import { App, Migrate, Plugin, Save } from "arcadekit";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 const migrations: Save.Migration[] = [
   {
@@ -84,7 +84,8 @@ const migrations: Save.Migration[] = [
         "game/Health",
         "points",
         "f32",
-        (hp: number) => hp / 2
+        Schema.Number,
+        (hp) => hp / 2
       );
     },
   },
@@ -96,7 +97,7 @@ const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
 
 A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. Its `queued` and `events` are the pending actions and events, in JSON form.
 
-`Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
+`Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. `mapField` is given the schema of the old value, which a save doesn't record, and fails on a value that doesn't match it. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
 
 - `Save.Contents` also holds what change queries haven't visited, under each component's name. For a component a migration renames, the queries watching it start over after the load: every entity counts as changed.
 - When a migration accompanies a schema change, it must also update the payloads in `queued` and `events`. Loading doesn't validate them: a queued action whose payload doesn't match is refused when its turn comes, and an event's payload throws when a system first reads the event.

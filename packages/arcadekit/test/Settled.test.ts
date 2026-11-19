@@ -251,7 +251,7 @@ describe("a game that ticks when its player moves", () => {
     return {
       x,
       moves: (yield* Score).moves,
-      phase: (yield* Phase).value as string,
+      phase: (yield* Phase).value,
     };
   });
   const Keys = Input.bind(

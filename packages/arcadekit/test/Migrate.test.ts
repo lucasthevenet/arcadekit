@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -17,6 +17,7 @@ import {
   writeSnapshot,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
+import { entity } from "./entities";
 
 const withApp = <T, E, A>(
   make: Effect.Effect<T, E, Scope.Scope>,
@@ -127,7 +128,8 @@ const migrations: Save.Migration[] = [
         "mg/Health",
         "points",
         "f32",
-        (hp: number) => hp / 4
+        Schema.Number,
+        (hp) => hp / 4
       );
       Migrate.removeField(world, "mg/Pos", "y");
       Migrate.removeComponent(world, "mg/Old");
@@ -136,16 +138,17 @@ const migrations: Save.Migration[] = [
         "mg/Buff",
         "power",
         "u16",
-        (power: number) => power * 100
+        Schema.Number,
+        (power) => power * 100
       );
       Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
       // The action that was waiting has another name and payload now.
       for (const action of contents.queued) {
         if (action.name === "mg/Heal") {
           action.name = "mg/Mend";
-          action.payload = {
-            by: (action.payload as { amount: number }).amount,
-          };
+          const { payload } = action;
+          assert(Schema.is(Schema.Struct({ amount: Schema.Number }))(payload));
+          action.payload = { by: payload.amount };
         }
       }
     },
@@ -219,7 +222,10 @@ describe("a snapshot read without the program's components", () => {
       data: Field.json<unknown>(),
       when: Field.ref<Date>({
         encode: (date) => date.getTime(),
-        decode: (data) => new Date(data as number),
+        decode: (data) => {
+          assert(typeof data === "number");
+          return new Date(data);
+        },
       }),
       handle: Field.transient<object>(),
     };
@@ -233,7 +239,7 @@ describe("a snapshot read without the program's components", () => {
       unsigned: 4_000_000_000 - n,
       short: 65_000 - n,
       byte: n % 256,
-      other: n as Entity,
+      other: entity(n),
       data: [n, { n }, `text ${n}`, null, undefined, 5n][n % 6],
       when: new Date(n * 1000),
       handle: { n },
@@ -454,7 +460,15 @@ describe("a save from another version of the game", () => {
         /no field named "z"/,
       ],
       [
-        (world) => Migrate.mapField(world, "mg/Pos", "z", "f64", (v) => v),
+        (world) =>
+          Migrate.mapField(
+            world,
+            "mg/Pos",
+            "z",
+            "f64",
+            Schema.Number,
+            (v) => v
+          ),
         /no field named "z"/,
       ],
       [
@@ -602,13 +616,16 @@ describe("a save from another version of the game", () => {
       world.spawn(Thing.of({ a: n, b: `b${n}` }))
     );
     const contents = readSnapshot(world.snapshot());
-    Migrate.mapField(contents, "mg/Thing", "a", "json", (a) => ({ was: a }));
+    Migrate.mapField(contents, "mg/Thing", "a", "json", Schema.Number, (a) => ({
+      was: a,
+    }));
     Migrate.mapField(
       contents,
       "mg/Thing",
       "b",
       "f64",
-      (b: string) => Number(b.slice(1)) / 2
+      Schema.String,
+      (b) => Number(b.slice(1)) / 2
     );
     Migrate.addField(contents, "mg/Thing", "c", "entity", entities[0]);
     Migrate.addField(contents, "mg/Thing", "d", "json", "new", "a");

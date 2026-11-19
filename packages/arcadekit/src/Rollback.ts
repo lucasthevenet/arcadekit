@@ -113,4 +113,5 @@ export const make = <E>(
     ...options,
     delay: options.delay ?? 0,
     ahead: options.ahead ?? 8,
+    capture: () => app.capture(),
   });

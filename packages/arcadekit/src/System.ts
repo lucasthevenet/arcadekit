@@ -16,6 +16,7 @@ import type { Pipeable } from "effect/Pipeable";
 import type { ComponentDef, SingletonSpec } from "./ecs/component";
 import type { QuerySpec } from "./ecs/world";
 import type { EventDef } from "./Event";
+import type { State } from "./State";
 
 /**
  * The stages of a tick, in the order they run.
@@ -54,7 +55,7 @@ export type Stage =
 export const isFrameStage = (
   stage: Stage
 ): stage is (typeof frameStages)[number] =>
-  (frameStages as readonly string[]).includes(stage);
+  frameStages.some((frame) => frame === stage);
 
 /** Every stage, in the order they run when several run together. */
 const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
@@ -67,7 +68,7 @@ const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
  */
 export interface Trigger {
   /** The state, as `State.define` returned it. */
-  readonly state: { readonly name: string };
+  readonly state: State<string>;
   readonly on: "enter" | "exit";
   readonly value: string;
 }
@@ -234,13 +235,23 @@ export type GenServices<Eff> = [Eff] extends [never]
 export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, void, never>
-): System<GenError<Eff>, GenServices<Eff>> =>
+): System<GenError<Eff>, GenServices<Eff>> => ofEffect(name, Effect.gen(body));
+
+/**
+ * Defines a system from the Effect it runs each tick, for a system whose body
+ * is made of other effects than its own generator's.
+ * @internal
+ */
+export const ofEffect = <E, R>(
+  name: string,
+  run: Effect.Effect<void, E, R>
+): System<E, R> =>
   build({
     name,
     stage: "update",
     after: [],
     before: [],
-    run: Effect.gen(body),
+    run,
     condition: undefined,
     idle: undefined,
     trigger: undefined,
@@ -584,7 +595,7 @@ export const accessOf = (
       continue;
     }
     queries.push(query);
-    for (const def of query.terms as readonly ComponentDef[]) {
+    for (const def of query.terms) {
       component(
         def,
         query.readDefs?.includes(def) === true ? "reads" : "writes"
@@ -625,7 +636,7 @@ export const accessOf = (
 export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
   build({
     ...self,
-    run: Effect.withSpan(self.run, self.name) as Effect.Effect<void, E, R>,
+    run: Effect.withSpan(self.run, self.name),
   });
 
 /**
@@ -935,7 +946,7 @@ export const conflicts = (
     systems.filter(
       (system) =>
         system.trigger === undefined &&
-        (stages as readonly string[]).includes(system.stage)
+        stages.some((stage) => stage === system.stage)
     )
   );
   return { conflicts: found, undeclared };

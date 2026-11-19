@@ -528,10 +528,9 @@ describe("a game that cannot be saved as it stands", () => {
 });
 
 describe("a save that cannot be loaded", () => {
-  const load = (save: Save.Save, given: object = options) =>
-    Effect.runSync(
-      Effect.scoped(Effect.exit(App.load(save, given as typeof options)))
-    );
+  const exitOf = <A, E>(loading: Effect.Effect<A, E, Scope.Scope>) =>
+    Effect.runSync(Effect.scoped(Effect.exit(loading)));
+  const load = (save: Save.Save) => App.load(save, options).pipe(exitOf);
 
   it("names a component that no plugin lists, and says where to list it", () => {
     const { save } = record(10, 5);
@@ -540,7 +539,7 @@ describe("a save that cannot be loaded", () => {
       systems: [Listen, Drift, Bot, Sound],
       handlers: [add, double, scatter, pulse],
     });
-    const error = refusal(load(save, { plugins: [Partial] }));
+    const error = refusal(App.load(save, { plugins: [Partial] }).pipe(exitOf));
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("unknown component");
     expect(error.message).toMatch(
@@ -548,7 +547,9 @@ describe("a save that cannot be loaded", () => {
     );
     // The app's own list will do as well as a plugin's.
     expect(
-      Exit.isSuccess(load(save, { plugins: [Partial], components: [Mote] }))
+      Exit.isSuccess(
+        App.load(save, { plugins: [Partial], components: [Mote] }).pipe(exitOf)
+      )
     ).toBe(true);
   });
 
@@ -563,7 +564,7 @@ describe("a save that cannot be loaded", () => {
         }),
       ],
     });
-    const error = refusal(load(save, { plugins: [Changed] }));
+    const error = refusal(App.load(save, { plugins: [Changed] }).pipe(exitOf));
     expect(error.problem).toBe("component changed");
     expect(error.message).toContain("x: f32");
     expect(error.message).toContain("x: f64");

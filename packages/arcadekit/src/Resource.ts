@@ -37,4 +37,4 @@ export const make = <A>(
 export const layer = <A>(
   resource: Context.Reference<A>,
   value: A
-): Layer.Layer<never> => Layer.succeed(resource, value) as Layer.Layer<never>;
+): Layer.Layer<never> => Layer.succeed(resource, value);

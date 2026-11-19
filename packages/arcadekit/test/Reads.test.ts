@@ -208,9 +208,11 @@ describe("a query that says what it only reads", () => {
     world.begin();
     world.view(Looking).eachChunk((start, end, pos, _, heat) => {
       for (let i = start; i < end; i++) {
-        (pos.y as unknown as Float32Array)[i] = 77;
+        // @ts-expect-error: the loop said it only reads Position
+        pos.y[i] = 77;
       }
-      (heat.columns.degrees as unknown as Float32Array)[0] = 77;
+      // @ts-expect-error: and Heat
+      heat.columns.degrees[0] = 77;
     });
     world.rollback();
     expect(world.get(entities[0]!, Position)!.y).toBe(77);

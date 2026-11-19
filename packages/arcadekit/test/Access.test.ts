@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import type { ComponentDef, Guard, QuerySpec } from "../src/ecs/index";
 import {
@@ -22,6 +22,8 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import type { BuiltIn } from "../src/Services";
+import { entity } from "./entities";
 
 const Position = Component.define("ac/Position", {
   x: Field.f32,
@@ -55,10 +57,10 @@ const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
 const Wounded = Query.all(Health);
 
 /** An app of these systems, with something in its world to visit. */
-const playing = (systems: readonly System.System<unknown, unknown>[]) =>
+const playing = (systems: readonly System.System<unknown, BuiltIn>[]) =>
   Effect.gen(function* () {
     const app = yield* App.make({
-      systems: systems as readonly System.System<never, never>[],
+      systems,
       handlers: [boost],
       components: [Position, Velocity, Health, Bullet, Burning, Score, Phase],
       seed: 3,
@@ -77,7 +79,7 @@ const playing = (systems: readonly System.System<unknown, unknown>[]) =>
 /** Runs `body` as the one system of an app, with this access, for one tick. */
 const ticking = (
   access: System.Access | undefined,
-  body: () => Generator<Effect.Effect<unknown, unknown, unknown>, void, never>
+  body: () => Generator<Effect.Effect<unknown, unknown, BuiltIn>, void, never>
 ): void =>
   Effect.runSync(
     Effect.scoped(
@@ -128,7 +130,7 @@ describe("a system that says what it reads and writes", () => {
 
   it("is the same game as one whose systems said nothing", () => {
     const hashes = (
-      systems: readonly System.System<unknown, unknown>[]
+      systems: readonly System.System<unknown, BuiltIn>[]
     ): number[] =>
       Effect.runSync(
         Effect.scoped(
@@ -256,7 +258,7 @@ describe("a system that says what it reads and writes", () => {
   });
 
   it("is held to it through the world: get, has, sources and set", () => {
-    const first = 0 as Entity;
+    const first = entity(0);
     let hp = 0;
     ticking({ reads: [Health] }, function* () {
       const world = yield* World;
@@ -303,7 +305,7 @@ describe("a system that says what it reads and writes", () => {
   });
 
   it("is held to it through commands, where they are queued", () => {
-    const first = 0 as Entity;
+    const first = entity(0);
     const refused = (
       access: System.Access,
       use: (commands: Commands["Service"]) => void
@@ -314,7 +316,8 @@ describe("a system that says what it reads and writes", () => {
         try {
           use(commands);
         } catch (error) {
-          ({ message } = error as Error);
+          assert(error instanceof Error);
+          ({ message } = error);
         }
       });
       return message;
@@ -355,7 +358,7 @@ describe("a system that says what it reads and writes", () => {
       (commands: Commands["Service"]) => commands.remove(first, Bullet),
       (commands: Commands["Service"]) => commands.add(first, Bullet),
       // One that is gone already, or not there yet: nothing is taken.
-      (commands: Commands["Service"]) => commands.despawn(99 as Entity),
+      (commands: Commands["Service"]) => commands.despawn(entity(99)),
       (commands: Commands["Service"]) =>
         commands.despawn(commands.spawn(Bullet)),
     ]) {
@@ -479,7 +482,7 @@ describe("a system that says what it reads and writes", () => {
   });
 
   it("is held to it in the frame stage too, and in what it does in place of running", () => {
-    const frame = (system: System.System<unknown, unknown>): void =>
+    const frame = (system: System.System<unknown, BuiltIn>): void =>
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
@@ -730,20 +733,22 @@ describe("a world with a guard", () => {
       Health.of({ hp: 3 }),
       Bullet
     );
+    const readable: true[] = [];
+    for (const def of [...reads, ...writes]) {
+      readable[def.id] = true;
+    }
+    const writable: true[] = [];
+    for (const def of writes) {
+      writable[def.id] = true;
+    }
     const guard: Guard = {
       who: "The test",
       advice: " Say so.",
-      reads: [],
-      writes: [],
+      reads: readable,
+      writes: writable,
       writeDefs: writes,
       queries: new Set(),
     };
-    for (const def of [...reads, ...writes]) {
-      (guard.reads as true[])[def.id] = true;
-    }
-    for (const def of writes) {
-      (guard.writes as true[])[def.id] = true;
-    }
     world.guard = guard;
     return { world, guard, first };
   };

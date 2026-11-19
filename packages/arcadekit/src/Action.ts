@@ -211,15 +211,29 @@ export const handler = <
 >(
   action: ActionDef<N, P, VE>,
   body: (payload: P, origin: Origin) => Generator<Eff, A, never>
-): Handler<N, P, A, Effect.Error<Eff> | VE, Effect.Services<Eff>> => ({
+): Handler<N, P, A, YieldedError<Eff> | VE, YieldedServices<Eff>> => ({
   action,
   // Built once: `fnUntraced` runs the generator itself on each call, with no
   // closure around the payload and no stack trace captured.
-  handle: Effect.fnUntraced(body) as (
-    payload: P,
-    origin: Origin
-  ) => Effect.Effect<A, Effect.Error<Eff> | VE, Effect.Services<Eff>>,
+  handle: Effect.fnUntraced(body),
 });
+
+/**
+ * What the effects a handler's body yields can fail with, as `fnUntraced` reads
+ * them.
+ */
+type YieldedError<Eff> = [Eff] extends [never]
+  ? never
+  : [Eff] extends [Effect.Effect<infer _A, infer E, infer _R>]
+    ? E
+    : never;
+
+/** What the effects a handler's body yields need, as `fnUntraced` reads them. */
+type YieldedServices<Eff> = [Eff] extends [never]
+  ? never
+  : [Eff] extends [Effect.Effect<infer _A, infer _E, infer R>]
+    ? R
+    : never;
 
 /**
  * One action from outside the simulation, as recorded in `app.actionLog`: a

@@ -19,6 +19,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import { failureAs } from "./exits";
 
 const Position = Component.define("rt/Position", {
   x: Field.f32,
@@ -721,11 +722,7 @@ describe("a script that fails", () => {
         expect(app.tickExit(1)).toEqual(Exit.void);
 
         const exit = app.tickExit(1);
-        const failure = Exit.isFailure(exit)
-          ? Cause.squash(exit.cause)
-          : undefined;
-        expect(failure).toBeInstanceOf(App.ScriptFailed);
-        const stopped = failure as App.ScriptFailed;
+        const stopped = failureAs(exit, App.ScriptFailed);
         expect(stopped.tick).toBe(2);
         expect(Cause.squash(stopped.cause)).toEqual(
           new Tripped({ on: "tick two" })
@@ -773,10 +770,7 @@ describe("a script that fails", () => {
         app.spawnScript(trips(0, "first"));
         app.spawnScript(trips(0, "second"));
         const exit = app.tickExit(1);
-        const stopped = (
-          Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
-        ) as App.ScriptFailed;
-        expect(stopped).toBeInstanceOf(App.ScriptFailed);
+        const stopped = failureAs(exit, App.ScriptFailed);
         expect(stopped.tick).toBe(1);
         expect(Cause.squash(stopped.cause)).toEqual(
           new Tripped({ on: "first" })

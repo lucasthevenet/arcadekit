@@ -14,6 +14,7 @@ import {
   System,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
+import { entity } from "./entities";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -32,6 +33,8 @@ const Marked = Component.tag("hash/Marked");
 const Aura = Component.define("hash/Aura", kinds, { storage: "sparse" });
 const Chilled = Component.tag("hash/Chilled", { storage: "sparse" });
 
+const withFields: readonly ComponentDef[] = [Body, Sheet, Aura];
+
 type SheetValue = Parameters<typeof Sheet.of>[0];
 
 const sheet = (n: number): SheetValue => ({
@@ -41,7 +44,7 @@ const sheet = (n: number): SheetValue => ({
   unsigned: 3_000_000_000 + n,
   short: 60_000 + n,
   byte: 200 + (n % 50),
-  other: n as Entity,
+  other: entity(n),
   note: `note ${n}`,
 });
 
@@ -50,35 +53,35 @@ const scratch32Bits = new Uint32Array(scratch32.buffer);
 const scratch64 = new Float64Array(1);
 const scratch64Bits = new BigUint64Array(scratch64.buffer);
 
-/** The value a field would hold after the smallest change it can take. */
-const nudged = (kind: string, value: unknown): unknown => {
+/** The number a numeric field would hold after the smallest change it can take. */
+const nudgedNumber = (kind: string, value: number): number => {
   switch (kind) {
     case "f32": {
-      scratch32[0] = value as number;
+      scratch32[0] = value;
       scratch32Bits[0]! += 1;
       return scratch32[0];
     }
     case "f64": {
-      scratch64[0] = value as number;
+      scratch64[0] = value;
       scratch64Bits[0]! += 1n;
       return scratch64[0];
     }
     case "i32": {
-      return (value as number) + 1;
-    }
-    case "u32":
-    case "entity": {
-      return (value as number) - 1;
-    }
-    case "u16":
-    case "u8": {
-      return (value as number) - 1;
+      return value + 1;
     }
     default: {
-      return `${String(value)}!`;
+      return value - 1;
     }
   }
 };
+
+const NUMBER_KINDS = ["f32", "f64", "i32", "u32", "entity", "u16", "u8"];
+
+/** The value a field would hold after the smallest change it can take. */
+const nudged = (kind: string, value: unknown): unknown =>
+  NUMBER_KINDS.includes(kind)
+    ? nudgedNumber(kind, Number(value))
+    : `${String(value)}!`;
 
 describe("the hash of a world", () => {
   it("is a whole number from 0 to 2^32 - 1, and does not change the world it reads", () => {
@@ -153,7 +156,7 @@ describe("the hash of a world", () => {
       const seen = new Set([base]);
       let changes = 0;
       for (const entity of entities) {
-        for (const def of [Body, Sheet, Aura] as ComponentDef[]) {
+        for (const def of withFields) {
           const original = world.get(entity, def)!;
           for (let f = 0; f < def.fields.length; f++) {
             const field = def.fields[f]!;
@@ -163,8 +166,8 @@ describe("the hash of a world", () => {
               // The smallest change is in a float's lowest bit; the sign is
               // its highest, in the other half of a 64-bit one.
               values.push(
-                -(original[field] as number),
-                (original[field] as number) * 2 + 1024
+                -Number(original[field]),
+                Number(original[field]) * 2 + 1024
               );
             }
             for (const value of values) {
@@ -606,7 +609,7 @@ const history = (seed: number, steps: number): number[] => {
   const alive: Entity[] = [];
   const hashes: number[] = [];
   let serial = 0;
-  const optional = [Body, Sheet, Marked, Aura, Chilled] as ComponentDef[];
+  const optional: ComponentDef[] = [Body, Sheet, Marked, Aura, Chilled];
   const valueFor = (def: ComponentDef) =>
     def === Body
       ? Body.of({ x: ++serial, y: dice.next() })
@@ -639,7 +642,7 @@ const history = (seed: number, steps: number): number[] => {
     } else if (choice === 5) {
       world.random.next();
     } else {
-      const def = dice.pick([Body, Sheet, Aura] as ComponentDef[]);
+      const def = dice.pick(withFields);
       if (world.has(entity, def)) {
         const f = dice.int(0, def.fields.length - 1);
         const field = def.fields[f]!;
@@ -706,7 +709,7 @@ describe("the hash of an app's world", () => {
         let first = true;
         (yield* Query.all(Body)).each((body) => {
           if (first) {
-            body.y = nudged("f32", body.y) as number;
+            body.y = nudgedNumber("f32", body.y);
             first = false;
           }
         });

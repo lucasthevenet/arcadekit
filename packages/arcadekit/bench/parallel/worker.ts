@@ -3,15 +3,24 @@
  * it is told over the rows it is told, on columns it shares with the main
  * thread, and says when it is done.
  */
+import assert from "node:assert";
 import { workerData } from "node:worker_threads";
+
+import { Schema } from "effect";
 
 import { DONE, INTEGERS, JOB, KERNEL, RANGES, SPIN, kernels } from "./kernels";
 
-const { columns, control, id } = workerData as {
-  readonly columns: readonly SharedArrayBuffer[];
-  readonly control: SharedArrayBuffer;
-  readonly id: number;
-};
+const given: unknown = workerData;
+assert(
+  Schema.is(
+    Schema.Struct({
+      columns: Schema.Array(Schema.instanceOf(SharedArrayBuffer)),
+      control: Schema.instanceOf(SharedArrayBuffer),
+      id: Schema.Number,
+    })
+  )(given)
+);
+const { columns, control, id } = given;
 const signals = new Int32Array(control, 0, INTEGERS);
 const numbers = new Float64Array(control, INTEGERS * 4, 8);
 const [px, py, vx, vy] = columns.map((buffer) => new Float32Array(buffer));

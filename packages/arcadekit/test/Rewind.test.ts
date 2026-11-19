@@ -17,7 +17,7 @@ import {
   Ticks,
   Time,
 } from "../src/index";
-import type { Entity } from "../src/index";
+import { entity } from "./entities";
 import {
   Coin,
   DELTA,
@@ -174,7 +174,7 @@ describe("a game that is put back to a moment", () => {
     withApp(game(), (app) => {
       app.tick(DELTA);
       // No such coin: the tick that applies it will refuse it.
-      app.enqueue(Take, { by: "ada", coin: 77 as Entity });
+      app.enqueue(Take, { by: "ada", coin: entity(77) });
       const moment = captured(app);
       const entry = () => moves(app.actionLog).at(-1)!;
       expect(entry().refused).toBeUndefined();
@@ -284,7 +284,7 @@ describe("a game that is put back to a moment", () => {
   it("has what draws start over, and the simulation go on from where it was", () => {
     const Dot = Component.define("rw/Dot", { x: Field.f32 });
     const NewDots = Query.all(Dot).pipe(Query.added(Dot));
-    const seen = { tick: [] as number[], frame: [] as number[] };
+    const seen = { tick: Array.of<number>(), frame: Array.of<number>() };
     const Count = System.make("rw/Count", function* () {
       seen.tick.push((yield* NewDots).entities().length);
     });

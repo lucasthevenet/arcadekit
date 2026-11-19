@@ -270,7 +270,10 @@ const Orbit = System.make("Orbit", function* () {
   camera.lookAt(0, 0, 0);
 }).pipe(System.inStage("frame"));
 
-const hud = document.querySelector("#hud") as HTMLElement;
+const hud = document.querySelector("#hud");
+if (!(hud instanceof HTMLElement)) {
+  throw new Error('The page has no element with the id "hud".');
+}
 let shown = 0;
 let frames = 0;
 const Hud = System.make("Hud", function* () {
@@ -300,7 +303,10 @@ const Look = Plugin.make("page/Look", {
 });
 
 // --- the entry point -------------------------------------------------------------
-const canvas = document.querySelector("#game") as HTMLCanvasElement;
+const canvas = document.querySelector("#game");
+if (!(canvas instanceof HTMLCanvasElement)) {
+  throw new Error('The page has no <canvas id="game">.');
+}
 Browser.runMain(
   App.run({ plugins: [Look], seed: 7 }, { hz: 60 }).pipe(
     Effect.provide(Three.layerWebGL({ canvas, antialias: true }))

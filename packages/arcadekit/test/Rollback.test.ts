@@ -1,11 +1,10 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   App,
   Component,
   Field,
-  Lockstep,
   Query,
   Rollback,
   Save,
@@ -20,9 +19,11 @@ import {
   Take,
   catchUp,
   coinsOf,
+  driftOf,
   game,
   moves,
   network,
+  payloadOf,
   players,
   round,
   setGlitch,
@@ -52,7 +53,7 @@ describe("a rollback session", () => {
   it("has a player's own move in the very next tick, whatever the network takes", () => {
     withPeers(["ada", "grace"], { ahead: 10 }, (peers) => {
       const net = network(3, { min: 4, max: 6 });
-      const [ada, grace] = peers as [Peer, Peer];
+      const [ada, grace] = peers;
       for (let i = 0; i < 5; i++) {
         round(peers, net);
       }
@@ -102,7 +103,7 @@ describe("a rollback session", () => {
           }
           round(peers, net);
         }
-        const [ada, grace] = peers as [Peer, Peer];
+        const [ada, grace] = peers;
         const ticks = settle(peers, net, lag.max);
         expect(ada.app.time.tick, where).toBe(ticks);
         expect(grace.app.time.tick, where).toBe(ticks);
@@ -162,7 +163,7 @@ describe("a rollback session", () => {
         round(peers, net);
       }
       const ticks = settle(peers, net, 6);
-      const [first, ...others] = peers as [Peer, Peer, Peer];
+      const [first, ...others] = peers;
       for (const other of others) {
         expect(other.app.world.hash()).toBe(first.app.world.hash());
         expect(other.app.actionLog).toEqual(first.app.actionLog);
@@ -198,7 +199,7 @@ describe("a rollback session", () => {
   it("goes back only for a message that had something to say", () => {
     withPeers(["ada", "grace"], { ahead: 10 }, (peers) => {
       const net = network(7, { min: 2, max: 5 });
-      const [ada, grace] = peers as [Peer, Peer];
+      const [ada, grace] = peers;
       for (let i = 0; i < 60; i++) {
         round(peers, net);
       }
@@ -220,7 +221,7 @@ describe("a rollback session", () => {
 
   it("counts as final only the ticks it has run with everything that was said", () => {
     withPeers(["ada", "grace"], { ahead: 10 }, (peers) => {
-      const [ada] = peers as [Peer];
+      const [ada] = peers;
       for (let i = 0; i < 5; i++) {
         ada.session.tick();
       }
@@ -302,7 +303,7 @@ describe("a rollback session", () => {
 
   it("waits once it is as far ahead of the peers as it may be", () => {
     withPeers(["ada", "grace"], { ahead: 3 }, (peers) => {
-      const [ada, grace] = peers as [Peer, Peer];
+      const [ada, grace] = peers;
       expect(ada.session.ahead).toBe(3);
       expect(ada.session.delay).toBe(0);
       for (let i = 0; i < 3; i++) {
@@ -365,7 +366,7 @@ describe("a rollback session", () => {
         round(peers, net);
       }
       catchUp(peers, net);
-      const [ada, grace] = peers as [Peer, Peer];
+      const [ada, grace] = peers;
       expect(ada.session.rewinds).toBe(0);
       expect(ada.session.confirmed).toBe(ada.app.time.tick);
       expect(ada.app.time.tick).toBeGreaterThan(20);
@@ -377,7 +378,7 @@ describe("a rollback session", () => {
   it("puts a peer's two moves for one tick, and two peers' for one tick, in the order every peer has them", () => {
     withPeers(["ada", "grace"], { ahead: 10 }, (peers) => {
       const net = network(4, { min: 3, max: 5 });
-      const [ada, grace] = peers as [Peer, Peer];
+      const [ada, grace] = peers;
       round(peers, net);
       // All for the tick that runs next, on each peer before it hears the other.
       grace.app.enqueue(Drop, { by: "grace", value: 1 });
@@ -386,7 +387,8 @@ describe("a rollback session", () => {
       settle(peers, net, 5);
       const order = (peer: Peer) =>
         moves(peer.app.actionLog).map(
-          (entry) => (entry.payload as { value: number }).value
+          (entry) =>
+            payloadOf(Schema.Struct({ value: Schema.Number }), entry).value
         );
       expect(order(ada)).toEqual([3, 1, 2]);
       expect(order(grace)).toEqual([3, 1, 2]);
@@ -397,7 +399,7 @@ describe("a rollback session", () => {
   it("refuses the same move on every peer, though one of them had first seen it accepted", () => {
     withPeers(["ada", "grace"], { ahead: 10 }, (peers) => {
       const net = network(4, { min: 3, max: 5 });
-      const [ada, grace] = peers as [Peer, Peer];
+      const [ada, grace] = peers;
       ada.app.enqueue(Drop, { by: "ada", value: 5 });
       settle(peers, net, 5);
       const coin = coinsOf(grace)[0]!;
@@ -450,8 +452,7 @@ describe("a rollback session", () => {
           const stopped = untilStopped(peers, net, 800);
           const checkpoint = Math.ceil(at / every) * every;
           for (const peer of peers) {
-            const drifted = stopped.get(peer.name) as Lockstep.Drifted;
-            expect(drifted, where).toBeInstanceOf(Lockstep.Drifted);
+            const drifted = driftOf(stopped, peer.name);
             expect(drifted.tick, where).toBe(checkpoint);
             expect(drifted.agreedAt, where).toBe(checkpoint - every);
             expect(drifted.hashes.ada, where).not.toBe(drifted.hashes.grace);

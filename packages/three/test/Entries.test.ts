@@ -1,5 +1,6 @@
 import * as Arcadekit from "arcadekit";
-import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
+import { assert, describe, expect, it } from "vitest";
 
 import * as Main from "../src/index";
 
@@ -31,12 +32,21 @@ const sources = import.meta.glob("../src/**/*.ts", {
   eager: true,
 });
 const modules = import.meta.glob("../src/*.ts", { eager: true });
-interface Target {
-  readonly source: string;
-  readonly types: string;
-  readonly default: string;
-}
-const manifest = JSON.parse(
+const Target = Schema.Struct({
+  source: Schema.String,
+  types: Schema.String,
+  default: Schema.String,
+});
+const Manifest = Schema.Struct({
+  exports: Schema.Record(Schema.String, Target),
+  dependencies: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  peerDependencies: Schema.Record(Schema.String, Schema.String),
+  peerDependenciesMeta: Schema.Record(
+    Schema.String,
+    Schema.Struct({ optional: Schema.optionalKey(Schema.Boolean) })
+  ),
+});
+const manifest: unknown = JSON.parse(
   Object.values(
     import.meta.glob("../package.json", {
       query: "?raw",
@@ -44,15 +54,8 @@ const manifest = JSON.parse(
       eager: true,
     })
   )[0]!
-) as {
-  readonly exports: Record<string, Target>;
-  readonly dependencies?: Record<string, string>;
-  readonly peerDependencies: Record<string, string>;
-  readonly peerDependenciesMeta: Record<
-    string,
-    { readonly optional?: boolean }
-  >;
-};
+);
+assert(Schema.is(Manifest)(manifest));
 
 /** What a file imports from, type-only imports among them. */
 const imported = (text: string): string[] => {
@@ -102,7 +105,7 @@ const packageOf = (specifier: string): string =>
 
 describe("the entries of @arcadekit/three", () => {
   it("are the package itself and every module", () => {
-    const expected: Record<string, Target> = {
+    const expected: Record<string, typeof Target.Type> = {
       ".": {
         source: "./src/index.ts",
         types: "./dist/index.d.ts",
@@ -164,10 +167,9 @@ describe("the entries of @arcadekit/three", () => {
   });
 
   it("the package's own entry gives each module as its entry does: the same module, not a copy", () => {
-    const main = Main as Record<string, unknown>;
-    expect(Object.keys(main).toSorted()).toEqual(["Gltf", "Three"]);
-    expect(main.Three).toBe(modules["../src/Three.ts"]);
-    expect(main.Gltf).toBe(modules["../src/Gltf.ts"]);
+    expect(Object.keys(Main).toSorted()).toEqual(["Gltf", "Three"]);
+    expect(Main.Three).toBe(modules["../src/Three.ts"]);
+    expect(Main.Gltf).toBe(modules["../src/Gltf.ts"]);
     // The loader of models comes with the module of models, and with no
     // other: a game that has none need not carry it.
     expect(reach(sourceOf("./Gltf")).packages).toContain(

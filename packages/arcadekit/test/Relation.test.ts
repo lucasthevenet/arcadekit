@@ -1,7 +1,8 @@
 import { Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
+import { EntityArray } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -20,6 +21,7 @@ import {
   writeSnapshot,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
+import { entity } from "./entities";
 
 const Body = Component.define("rl/Body", { x: Field.f32 });
 /** A child goes with its parent. */
@@ -50,14 +52,9 @@ const childOf = (world: EcsWorld, parent: Entity): Entity =>
   world.spawn(Body.of({ x: 0 }), ChildOf.of({ target: parent }));
 
 // Any of them: what a loop over the four of them reads is `target`.
-const all = [
-  ChildOf,
-  Targets,
-  Owes,
-  HeldBy,
-] as unknown as readonly ComponentDef<{
-  target: typeof Field.entity;
-}>[];
+const all: readonly ComponentDef<{
+  readonly target: (typeof ChildOf)["schema"]["target"];
+}>[] = [ChildOf, Targets, Owes, HeldBy];
 
 /** Every relation of a world points at a live entity, and `sources` agrees. */
 const expectNoDangling = (world: EcsWorld): void => {
@@ -441,16 +438,18 @@ describe("relations and a snapshot", () => {
     const table = contents.tables.find((each) =>
       each.components.includes("rl/ChildOf")
     )!;
-    (table.columns["rl/ChildOf"]!.target as Uint32Array)[0] = 4000;
+    const targets = table.columns["rl/ChildOf"]!.target;
+    assert(targets instanceof EntityArray);
+    targets[0] = entity(4000);
     let error: unknown;
     try {
       new EcsWorld().load(writeSnapshot(contents), listed);
     } catch (thrown) {
       error = thrown;
     }
-    expect(error).toBeInstanceOf(SnapshotError);
-    expect((error as SnapshotError).problem).toBe("corrupt");
-    expect((error as SnapshotError).message).toMatch(
+    assert(error instanceof SnapshotError);
+    expect(error.problem).toBe("corrupt");
+    expect(error.message).toMatch(
       /"rl\/ChildOf" points at an entity that does not exist/
     );
   });
@@ -488,6 +487,15 @@ describe("relations against a simple model", () => {
           }
         }
       };
+      /** Relation `r`, pointing at `target`, and owing `amount` if it owes. */
+      const pointing = (r: number, target: Entity, amount: number) =>
+        r === 0
+          ? ChildOf.of({ target })
+          : r === 1
+            ? Targets.of({ target })
+            : r === 2
+              ? Owes.of({ target, amount })
+              : HeldBy.of({ target });
       const relate = (r: number, source: Entity, target: Entity): void => {
         if (alive.has(target)) {
           model[r]!.set(source, target);
@@ -510,12 +518,7 @@ describe("relations against a simple model", () => {
           const target = alive.size > 0 ? anyone() : undefined;
           const related = target !== undefined && dice.next() < 0.7;
           const entity = related
-            ? world.spawn(
-                Body,
-                r === 2
-                  ? Owes.of({ target, amount: 1 })
-                  : relations[r]!.of({ target } as never)
-              )
+            ? world.spawn(Body, pointing(r, target, 1))
             : world.spawn(Body);
           alive.add(entity);
           if (related) {
@@ -525,12 +528,7 @@ describe("relations against a simple model", () => {
           const r = dice.int(0, relations.length - 1);
           const source = dice.pick(Array.from(alive));
           const target = anyone();
-          world.add(
-            source,
-            r === 2
-              ? Owes.of({ target, amount: 2 })
-              : relations[r]!.of({ target } as never)
-          );
+          world.add(source, pointing(r, target, 2));
           relate(r, source, target);
         } else if (roll < 7) {
           const r = dice.int(0, relations.length - 1);

@@ -22,7 +22,7 @@ import {
   Texture,
 } from "three";
 import type { Scene } from "three";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import { Three } from "../src/index";
 
@@ -49,10 +49,12 @@ const settle = (): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, 0));
 
 /** What a level's bark is, to a test: which loading it is of, and whether it was let go. */
-interface Bark {
-  readonly load: number;
-  readonly size: number;
-  open: boolean;
+class Bark {
+  open = true;
+  constructor(
+    readonly load: number,
+    readonly size: number
+  ) {}
 }
 
 /** A level's assets, which say when they are made and when they are let go. */
@@ -61,8 +63,8 @@ const makeForest = (log: string[]) => {
   return Assets.bundle("ta/Forest", {
     bark: Assets.make("/bark.png", (bytes) =>
       Effect.acquireRelease(
-        Effect.sync((): Bark => {
-          const bark = { load: ++loads, size: bytes.length, open: true };
+        Effect.sync(() => {
+          const bark = new Bark(++loads, bytes.length);
           log.push(`open ${bark.load}`);
           return bark;
         }),
@@ -85,27 +87,26 @@ const files = Assets.layerMemory({ "/bark.png": new Uint8Array([1, 2, 3]) });
  * let go.
  */
 const makeRenderer = () => {
-  const renderer = {
-    scene: undefined as Scene | undefined,
+  const seen: {
+    scene: Scene | undefined;
     /** The names of what was in the scene at the last draw. */
-    drew: [] as string[],
+    drew: string[];
     /** How many things, over all draws, were drawn with what had been let go. */
-    stale: 0,
-    layer: undefined as unknown as Layer.Layer<Three.Renderer>,
-  };
-  renderer.layer = Layer.succeed(Three.Renderer, {
+    stale: number;
+  } = { scene: undefined, drew: [], stale: 0 };
+  const layer = Layer.succeed(Three.Renderer, {
     render(scene) {
-      renderer.scene = scene;
-      renderer.drew = scene.children.map((child) => child.name);
+      seen.scene = scene;
+      seen.drew = scene.children.map((child) => child.name);
       for (const child of scene.children) {
-        const bark = (child.userData as { bark?: Bark }).bark;
-        if (bark !== undefined && !bark.open) {
-          renderer.stale++;
+        const bark: unknown = child.userData["bark"];
+        if (bark instanceof Bark && !bark.open) {
+          seen.stale++;
         }
       }
     },
   });
-  return renderer;
+  return Object.assign(seen, { layer });
 };
 
 /** What the systems that draw the game need, which the game provides. */
@@ -432,12 +433,12 @@ describe("instances whose look is made of assets", () => {
     const waiting: ((
       exit: Exit.Exit<Uint8Array, Assets.AssetFailed>
     ) => void)[] = [];
-    const slow = Layer.succeed(Assets.Loader, {
+    const slow: Layer.Layer<never> = Layer.succeed(Assets.Loader, {
       bytes: () =>
         Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
           waiting.push((exit) => resume(exit));
         }),
-    }) as Layer.Layer<never>;
+    });
     const { app, enter, renderer } = play([during(Forest), Trees], slow);
     app.world.spawn(Tree, at(1));
     enter("forest");
@@ -610,9 +611,9 @@ describe("objects made of assets", () => {
         return object;
       },
       free: (object, entity) => {
-        log.push(
-          `free ${entity} of ${(object.userData as { bark: Bark }).bark.load}`
-        );
+        const bark: unknown = object.userData["bark"];
+        assert(bark instanceof Bark);
+        log.push(`free ${entity} of ${bark.load}`);
       },
     });
 
@@ -870,10 +871,8 @@ describe("a texture", () => {
           },
         })
       );
-      expect(Exit.isFailure(exit)).toBe(true);
-      expect(
-        Cause.squash((exit as Exit.Failure<never, unknown>).cause)
-      ).toEqual(
+      assert(Exit.isFailure(exit));
+      expect(Cause.squash(exit.cause)).toEqual(
         new Assets.AssetFailed({
           url: "/skin.png",
           message: `It could not be made a texture: flipY was set to ${set} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("/skin.png", { flipY: ${set} }).`,
@@ -900,8 +899,8 @@ describe("a texture", () => {
         Effect.provide(Assets.layerMemory({ "/bark.png": new Uint8Array([0]) }))
       )
     );
-    expect(Exit.isFailure(exit)).toBe(true);
-    const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
+    assert(Exit.isFailure(exit));
+    const error = Cause.squash(exit.cause);
     expect(error).toBeInstanceOf(Assets.AssetFailed);
     expect(error).toEqual(
       new Assets.AssetFailed({
@@ -937,7 +936,8 @@ describe("a texture", () => {
     await settle();
     app.frame(0);
     expect(renderer.drew).toEqual(["ta/Trees"]);
-    const material = mesh()!.material as MeshBasicMaterial;
+    const { material } = mesh()!;
+    assert(material instanceof MeshBasicMaterial);
     expect(material.map).toBeInstanceOf(Texture);
     expect(material.map!.image).toBe(bitmaps[0]);
     const events: string[] = [];

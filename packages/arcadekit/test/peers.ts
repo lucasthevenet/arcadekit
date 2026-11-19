@@ -52,6 +52,16 @@ export const Taken = Event.define(
 const Fresh = Query.all(Coin).pipe(Query.added(Coin));
 
 export const Player = Schema.Literals(["ada", "grace", "edsger"]);
+
+const isPlayer = Schema.is(Player);
+
+/** The player a peer plays: its name, one of `Player`'s. */
+export const playerOf = (peer: Pick<Peer, "name">): typeof Player.Type => {
+  if (!isPlayer(peer.name)) {
+    throw new Error(`No player is named "${peer.name}".`);
+  }
+  return peer.name;
+};
 export const Drop = Action.define(
   "ls/Drop",
   Schema.Struct({ by: Player, value: Schema.Int })
@@ -225,12 +235,18 @@ export interface Setup {
   readonly shuffled?: boolean;
 }
 
-export const withPeers = <A>(
+/** Runs `use` with a peer for each name, in the same order. */
+export function withPeers<const N extends readonly string[], A>(
+  names: N,
+  setup: Setup,
+  use: (peers: { -readonly [K in keyof N]: Peer }) => A
+): A;
+export function withPeers<A>(
   names: readonly string[],
   setup: Setup,
   use: (peers: Peer[]) => A
-): A =>
-  Effect.runSync(
+): A {
+  return Effect.runSync(
     Effect.scoped(
       Effect.gen(function* () {
         const peers: Peer[] = [];
@@ -251,7 +267,7 @@ export const withPeers = <A>(
           };
           const session =
             setup.ahead === undefined
-              ? (Lockstep.make(app, options) as Rollback.Session)
+              ? Lockstep.make(app, options)
               : Rollback.make(app, { ...options, ahead: setup.ahead });
           peers.push({ name, app, session, hashes: [], source });
         }
@@ -259,6 +275,7 @@ export const withPeers = <A>(
       })
     )
   );
+}
 
 export const withApp = <T, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
@@ -342,14 +359,14 @@ export const catchUp = (peers: readonly Peer[], net: Network): number => {
   throw new Error("the peers never caught up with each other");
 };
 
-export const coinsOf = (peer: Peer): Entity[] =>
+export const coinsOf = (peer: Pick<Peer, "app">): Entity[] =>
   peer.app.world.view(Coins).entities();
 
 /** Each peer's player does something at random, from what its own world holds. */
 export const players = (seed: number) => {
   const dice = new EcsWorld({ seed }).random;
-  return (peer: Peer): void => {
-    const by = peer.name as "ada" | "grace";
+  return (peer: Pick<Peer, "app" | "name">): void => {
+    const by = playerOf(peer);
     const roll = dice.int(1, 6);
     if (roll <= 2) {
       peer.app.enqueue(Drop, { by, value: dice.int(1, 9) });
@@ -368,6 +385,32 @@ export const players = (seed: number) => {
 
 export const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
   log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+
+/** A logged action's payload, which a test expects to be of `schema`. */
+export const payloadOf = <S extends Schema.Constraint>(
+  schema: S,
+  entry: Action.Logged
+): S["Type"] => {
+  const { payload } = entry;
+  if (!Schema.is(schema)(payload)) {
+    throw new Error(
+      `The log has "${entry.name}" with ${JSON.stringify(payload)}, not the payload expected.`
+    );
+  }
+  return payload;
+};
+
+/** Why a peer stopped, which a test expects to be a drift. */
+export const driftOf = (
+  stopped: ReadonlyMap<string, unknown>,
+  name: string
+): Lockstep.Drifted => {
+  const reason = stopped.get(name);
+  if (!(reason instanceof Lockstep.Drifted)) {
+    throw new Error(`${name} stopped with ${String(reason)}, not a drift.`);
+  }
+  return reason;
+};
 
 /**
  * Rounds of a game that is expected to stop: every peer is handed what

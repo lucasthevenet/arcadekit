@@ -7,7 +7,7 @@
  * a Durable Object or a function behind a gateway, the host keeps who is
  * connected and calls `Relay.join` and `Relay.forward` itself.
  */
-import { Cause, Exit } from "effect";
+import { Cause, Exit, Result } from "effect";
 import { WebSocketServer } from "ws";
 
 import { Relay } from "../src/index";
@@ -21,7 +21,7 @@ server.on("connection", (socket, request) => {
     socket.send(text)
   );
   if (Exit.isFailure(connection)) {
-    const refused = Cause.squash(connection.cause) as Relay.Refused;
+    const refused = Result.getOrThrow(Cause.findError(connection.cause));
     console.log(`refused: ${refused.message}`);
     socket.close(refused.code, refused.reason);
     return;
@@ -37,7 +37,7 @@ server.on("connection", (socket, request) => {
       isBinary ? bytes : new TextDecoder().decode(bytes)
     );
     if (Exit.isFailure(received)) {
-      const refused = Cause.squash(received.cause) as Relay.Refused;
+      const refused = Result.getOrThrow(Cause.findError(received.cause));
       console.log(`closed ${member.peer}: ${refused.message}`);
       socket.close(refused.code, refused.reason);
     }

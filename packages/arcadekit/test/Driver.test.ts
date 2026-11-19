@@ -14,6 +14,7 @@ import {
   System,
   Time,
 } from "../src/index";
+import { causeOf, failureAs, failureOf } from "./exits";
 
 const Ball = Component.define("dr/Ball", { x: Field.f32, vx: Field.f32 });
 const Balls = Query.all(Ball);
@@ -340,10 +341,8 @@ describe("the frame loop", () => {
 
     // The loop is over, with no frame asked for and the tab not watched.
     const exit = fiber.pollUnsafe();
-    expect(exit !== undefined && Exit.isFailure(exit)).toBe(true);
-    expect(
-      Cause.hasInterruptsOnly((exit as Exit.Failure<never, never>).cause)
-    ).toBe(true);
+    assert(exit !== undefined);
+    expect(Cause.hasInterruptsOnly(causeOf(exit))).toBe(true);
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
     // The script was stopped and what the plugin held was let go.
@@ -379,9 +378,7 @@ describe("the frame loop", () => {
     turn(display, 1, 3000 / 60);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toEqual(
-      new Jammed({ at: 3 })
-    );
+    expect(failureOf(exit)).toEqual(new Jammed({ at: 3 }));
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
   });
@@ -404,10 +401,7 @@ describe("the frame loop", () => {
     turn(display, 2, 0);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(
-      (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
-        .message
-    ).toBe("the canvas is gone");
+    expect(failureAs(exit, Error).message).toBe("the canvas is gone");
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
   });
@@ -450,9 +444,9 @@ describe("the display when none is provided", () => {
       }
       return id;
     });
-    vi.stubGlobal("clearTimeout", (id: unknown) => {
+    vi.stubGlobal("clearTimeout", (id: ReturnType<typeof set>) => {
       cleared.add(id);
-      clear(id as ReturnType<typeof set>);
+      clear(id);
     });
     let app: App.Any | undefined;
     const fiber = Effect.runFork(
@@ -536,7 +530,7 @@ describe("ticking when needed", () => {
   const makeStepped = () => {
     const stepped = {
       settled: true,
-      calls: [] as string[],
+      calls: Array.of<string>(),
       ticks: 0,
       /** Run by the input stage: where a move comes in. */
       onInput: (): void => {},

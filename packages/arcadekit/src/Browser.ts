@@ -130,6 +130,35 @@ export interface Options {
 }
 
 const isPad = (code: string): boolean => code.startsWith("Pad");
+
+/** What a listener reads of a key's event, or undefined for one with no code. */
+const keyOf = (
+  event: Event
+): { readonly code: string; readonly repeat: boolean } | undefined =>
+  "code" in event && typeof event.code === "string"
+    ? { code: event.code, repeat: "repeat" in event && event.repeat === true }
+    : undefined;
+
+/** What a listener reads of a pointer's event. */
+interface Pointer {
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly button: number;
+  /** Undefined where the page doesn't say which buttons are down. */
+  readonly buttons: number | undefined;
+}
+
+const numberIn = (event: Event, name: string): number | undefined => {
+  const value: unknown = Reflect.get(event, name);
+  return typeof value === "number" ? value : undefined;
+};
+
+const pointerOf = (event: Event): Pointer => ({
+  clientX: numberIn(event, "clientX") ?? 0,
+  clientY: numberIn(event, "clientY") ?? 0,
+  button: numberIn(event, "button") ?? 0,
+  buttons: numberIn(event, "buttons"),
+});
 const isPointer = (code: string): boolean => code.startsWith("Pointer");
 
 const listen = (
@@ -148,34 +177,40 @@ const listen = (
         ? navigator.getGamepads()
         : []);
   const stops: (() => void)[] = [];
-  const on = <E extends Event>(
+  const on = (
     where: EventTarget,
     type: string,
-    listener: (event: E) => void
+    listener: (event: Event) => void
   ): void => {
-    where.addEventListener(type, listener as EventListener);
-    stops.push(() =>
-      where.removeEventListener(type, listener as EventListener)
-    );
+    where.addEventListener(type, listener);
+    stops.push(() => where.removeEventListener(type, listener));
   };
-  on(page, "keydown", (event: KeyboardEvent) => {
-    if (prevented.has(event.code)) {
+  on(page, "keydown", (event) => {
+    const key = keyOf(event);
+    if (key === undefined) {
+      return;
+    }
+    if (prevented.has(key.code)) {
       event.preventDefault();
     }
     // A key held down repeats; it went down once.
-    if (!event.repeat) {
-      state.press(event.code);
+    if (!key.repeat) {
+      state.press(key.code);
     }
   });
-  on(page, "keyup", (event: KeyboardEvent) => {
-    if (prevented.has(event.code)) {
+  on(page, "keyup", (event) => {
+    const key = keyOf(event);
+    if (key === undefined) {
+      return;
+    }
+    if (prevented.has(key.code)) {
       event.preventDefault();
     }
-    state.release(event.code);
+    state.release(key.code);
   });
   // A page that loses the keyboard is not told when a key goes up.
   on(page, "blur", () => state.releaseAll((code) => !isPad(code)));
-  const place = (event: PointerEvent): void => {
+  const place = (event: Pointer): void => {
     const box = target.getBoundingClientRect?.();
     state.move(Input.pointerX, event.clientX - (box?.left ?? 0));
     state.move(Input.pointerY, event.clientY - (box?.top ?? 0));
@@ -208,18 +243,20 @@ const listen = (
       }
     }
   };
-  on(target, "pointerdown", (event: PointerEvent) => {
+  on(target, "pointerdown", (from) => {
+    const event = pointerOf(from);
     place(event);
     held = true;
     state.press(Input.pointerButton(event.button));
-    if (event.buttons > 0) {
+    if (event.buttons !== undefined && event.buttons > 0) {
       follow(event.buttons);
     }
   });
   // On the page, so that a button let go outside the target is let go.
-  on(page, "pointermove", (event: PointerEvent) => {
+  on(page, "pointermove", (from) => {
+    const event = pointerOf(from);
     place(event);
-    if (!held || typeof event.buttons !== "number") {
+    if (!held || event.buttons === undefined) {
       return;
     }
     if (event.buttons === 0) {
@@ -229,12 +266,13 @@ const listen = (
       follow(event.buttons);
     }
   });
-  on(page, "pointerup", (event: PointerEvent) => {
+  on(page, "pointerup", (from) => {
+    const event = pointerOf(from);
     place(event);
     state.release(Input.pointerButton(event.button));
     if (event.buttons === 0) {
       letGo();
-    } else if (event.buttons > 0) {
+    } else if (event.buttons !== undefined && event.buttons > 0) {
       follow(event.buttons);
     }
   });
@@ -323,7 +361,7 @@ const listen = (
  * @category Layers
  */
 export const layer = (options: Options = {}): Layer.Layer<never> => {
-  const page = Layer.merge(
+  const page: Layer.Layer<never> = Layer.merge(
     Layer.succeed(Driver.Display, display),
     Layer.effect(
       Input.Source,
@@ -335,7 +373,7 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
         (listening) => listening.source
       )
     )
-  ) as Layer.Layer<never>;
+  );
   return options.sounds === false
     ? page
     : Layer.merge(
@@ -842,7 +880,7 @@ export const layerSound = (
         },
       };
     })
-  ) as Layer.Layer<never>;
+  );
 
 /**
  * Makes a sound asset, decoded and ready to play: a `Sound.Clip`, in a bundle

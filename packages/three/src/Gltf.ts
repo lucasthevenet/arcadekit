@@ -32,7 +32,7 @@
  * which a game without models doesn't need.
  */
 import * as Assets from "arcadekit/Assets";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { BufferGeometry, Material, Mesh, Object3D, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
@@ -65,12 +65,54 @@ const MAGIC = 0x46_54_6c_67;
 const JSON_CHUNK = 0x4e_4f_53_4a;
 const BIN_CHUNK = 0x00_4e_49_42;
 
-/** The parts of a glTF document this module reads and rewrites. */
-interface Document {
-  buffers?: { uri?: string; byteLength: number }[];
-  bufferViews?: { buffer: number; byteOffset?: number; byteLength: number }[];
-  images?: { uri?: string; mimeType?: string; bufferView?: number }[];
-}
+/**
+ * The parts of a glTF document this module reads and rewrites. A document has
+ * more, which it keeps as they are.
+ */
+// Each key may be rewritten, as a document is packed into one file.
+const optional = <S extends Schema.Top>(schema: S) =>
+  Schema.optionalKey(Schema.mutableKey(schema));
+const required = <S extends Schema.Top>(schema: S) => Schema.mutableKey(schema);
+const list = <S extends Schema.Top>(item: S) =>
+  optional(Schema.mutable(Schema.Array(item)));
+
+const DocumentSchema = Schema.Struct({
+  buffers: list(
+    Schema.Struct({
+      uri: optional(Schema.String),
+      byteLength: required(Schema.Number),
+    })
+  ),
+  bufferViews: list(
+    Schema.Struct({
+      buffer: required(Schema.Number),
+      byteOffset: optional(Schema.Number),
+      byteLength: required(Schema.Number),
+    })
+  ),
+  images: list(
+    Schema.Struct({
+      uri: optional(Schema.String),
+      mimeType: optional(Schema.String),
+      bufferView: optional(Schema.Number),
+    })
+  ),
+});
+
+type Document = typeof DocumentSchema.Type;
+
+const isDocument = Schema.is(DocumentSchema);
+
+/** Reads a model's JSON, which must be a document of the parts this module uses. */
+const documentOf = (bytes: Uint8Array): Document => {
+  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  if (!isDocument(parsed)) {
+    throw new Error(
+      "Its JSON is not a glTF document: its buffers, buffer views or images are not as glTF has them."
+    );
+  }
+  return parsed;
+};
 
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
@@ -82,7 +124,7 @@ const read = (
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   if (data.byteLength < 12 || view.getUint32(0, true) !== MAGIC) {
     return {
-      document: JSON.parse(new TextDecoder().decode(data)) as Document,
+      document: documentOf(data),
       binary: undefined,
     };
   }
@@ -93,7 +135,7 @@ const read = (
     const type = view.getUint32(at + 4, true);
     const chunk = data.subarray(at + 8, at + 8 + length);
     if (type === JSON_CHUNK) {
-      document = JSON.parse(new TextDecoder().decode(chunk)) as Document;
+      document = documentOf(chunk);
     } else if (type === BIN_CHUNK) {
       binary = chunk;
     }
@@ -284,10 +326,35 @@ const pack = (
 
 // --- letting a model go --------------------------------------------------------------
 
-const isTexture = (value: unknown): value is Texture =>
+// Three marks what each of its objects is with a flag, which holds where
+// `instanceof` doesn't: across two copies of three.
+const flagged = (value: unknown, flag: string): boolean =>
   typeof value === "object" &&
   value !== null &&
-  (value as { isTexture?: boolean }).isTexture === true;
+  Reflect.get(value, flag) === true;
+
+const isTexture = (value: unknown): value is Texture =>
+  flagged(value, "isTexture");
+
+const isGeometry = (value: unknown): value is BufferGeometry =>
+  flagged(value, "isBufferGeometry");
+
+const isMaterial = (value: unknown): value is Material =>
+  flagged(value, "isMaterial");
+
+const isMesh = (object: Object3D): object is Mesh => flagged(object, "isMesh");
+
+/** Closes what a texture was made of, where that is a picture to close. */
+const closeImage = (image: unknown): void => {
+  if (
+    typeof image === "object" &&
+    image !== null &&
+    "close" in image &&
+    typeof image.close === "function"
+  ) {
+    image.close();
+  }
+};
 
 /** Disposes of every geometry, material and texture a model's scenes hold, each once. */
 const dispose = (model: Model): void => {
@@ -296,12 +363,13 @@ const dispose = (model: Model): void => {
   const textures = new Set<Texture>();
   for (const scene of model.scenes) {
     scene.traverse((object: Object3D) => {
-      const { geometry, material } = object as Partial<Mesh>;
-      if (geometry !== undefined) {
+      const geometry: unknown = Reflect.get(object, "geometry");
+      if (isGeometry(geometry)) {
         geometries.add(geometry);
       }
+      const material: unknown = Reflect.get(object, "material");
       for (const one of Array.isArray(material) ? material : [material]) {
-        if (one !== undefined) {
+        if (isMaterial(one)) {
           materials.add(one);
         }
       }
@@ -320,8 +388,7 @@ const dispose = (model: Model): void => {
   }
   for (const texture of textures) {
     texture.dispose();
-    // The picture it was made of, where that is one to close.
-    (texture.image as { close?: () => void } | null)?.close?.();
+    closeImage(texture.image);
   }
 };
 
@@ -398,8 +465,8 @@ export const mesh = (of: Model, name?: string): Mesh => {
   const found: Mesh[] = [];
   for (const scene of of.scenes) {
     scene.traverse((object: Object3D) => {
-      if ((object as Partial<Mesh>).isMesh === true) {
-        found.push(object as Mesh);
+      if (isMesh(object)) {
+        found.push(object);
       }
     });
   }

@@ -147,7 +147,7 @@ export const Output: Context.Reference<OutputShape> =
  * @category Layers
  */
 export const layer = (output: OutputShape): Layer.Layer<never> =>
-  Layer.succeed(Output, output) as Layer.Layer<never>;
+  Layer.succeed(Output, output);
 
 /**
  * A played cue, as a recorder records it.
@@ -636,12 +636,27 @@ export function cues(
 // assets, which the second signature says.
 export function cues(
   name: string,
-  ...rest: readonly unknown[]
+  ...rest:
+    | readonly Line[]
+    | readonly [
+        Assets.Bundle<Entries>,
+        (assets: Assets.Loaded<Entries>) => readonly Line[],
+      ]
 ): System.System<never, Player | Events | Assets.Store> {
-  const from = rest[0] instanceof Assets.Bundle ? rest[0] : undefined;
+  const [first, second] = rest;
+  const bundled =
+    first instanceof Assets.Bundle && typeof second === "function"
+      ? { from: first, make: second }
+      : undefined;
   const fixed =
-    from === undefined ? byEvent(rest as readonly Line[]) : undefined;
-  const make = rest[1] as (assets: unknown) => readonly Line[];
+    bundled === undefined
+      ? byEvent(
+          rest.filter(
+            (entry): entry is Line =>
+              !(entry instanceof Assets.Bundle) && typeof entry !== "function"
+          )
+        )
+      : undefined;
   // The lines of a bundle, and the assets they were made of: per app, by
   // the app's player, since a system is made once and may be in several.
   const made = new WeakMap<
@@ -654,8 +669,8 @@ export function cues(
       return;
     }
     let lines = fixed;
-    if (from !== undefined) {
-      const status = yield* from;
+    if (bundled !== undefined) {
+      const status = yield* bundled.from;
       if (status._tag !== "Ready") {
         // The lines hold the bundle's clips: let go, so that they can be.
         made.delete(player);
@@ -663,7 +678,10 @@ export function cues(
       }
       let now = made.get(player);
       if (now === undefined || now.assets !== status.assets) {
-        now = { assets: status.assets, lines: byEvent(make(status.assets)) };
+        now = {
+          assets: status.assets,
+          lines: byEvent(bundled.make(status.assets)),
+        };
         made.set(player, now);
       }
       ({ lines } = now);
@@ -763,24 +781,26 @@ export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
 ): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player> => {
   const pick = Effect.gen(body);
   const channel = options.channel ?? MUSIC;
-  return System.make(name, function* () {
-    const player = yield* Player;
-    if (!player.audible) {
-      return;
-    }
-    const picked = yield* pick;
-    if (picked === undefined) {
-      player.music(channel, undefined, options);
-    } else if (isTrack(picked)) {
-      player.music(channel, picked.track, {
-        volume: picked.volume ?? 1,
-        fade: picked.fade ?? options.fade ?? 0.5,
-        once: picked.once === true,
-      });
-    } else {
-      player.music(channel, picked, options);
-    }
-  }).pipe(
+  return System.ofEffect(
+    name,
+    Effect.flatMap(Player, (player) =>
+      player.audible
+        ? Effect.map(pick, (picked) => {
+            if (picked === undefined) {
+              player.music(channel, undefined, options);
+            } else if (isTrack(picked)) {
+              player.music(channel, picked.track, {
+                volume: picked.volume ?? 1,
+                fade: picked.fade ?? options.fade ?? 0.5,
+                once: picked.once === true,
+              });
+            } else {
+              player.music(channel, picked, options);
+            }
+          })
+        : Effect.void
+    )
+  ).pipe(
     System.inStage("frame"),
     // Not run, it is not asked, and there is nothing it says should play.
     System.otherwise(
@@ -788,5 +808,5 @@ export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
         player.music(channel, undefined, options);
       })
     )
-  ) as System.System<System.GenError<Eff>, System.GenServices<Eff> | Player>;
+  );
 };

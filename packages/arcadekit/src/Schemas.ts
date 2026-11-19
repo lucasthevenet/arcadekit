@@ -8,7 +8,7 @@
  */
 import { Schema } from "effect";
 
-import type { Entity } from "./ecs/component";
+import { type Entity, isEntity } from "./ecs/component";
 
 /**
  * An entity id: an integer from 0 up to, but not including, 2^53.
@@ -18,6 +18,8 @@ import type { Entity } from "./ecs/component";
  *
  * @category Schemas
  */
-export const EntityId: Schema.Codec<Entity, number> = Schema.Int.check(
-  Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })
-) as unknown as Schema.Codec<Entity, number>;
+export const EntityId: Schema.Codec<Entity, number> = Schema.Number.pipe(
+  Schema.refine((value): value is Entity => isEntity(value), {
+    expected: "an integer from 0 up to, but not including, 2^53",
+  })
+);

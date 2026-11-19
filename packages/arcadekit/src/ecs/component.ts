@@ -62,8 +62,35 @@ export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
  */
 export const entityGeneration = (entity: Entity): number =>
   Math.floor(entity / INDEX_RANGE);
-export const makeEntity = (index: number, generation: number): Entity =>
-  (generation * INDEX_RANGE + index) as Entity;
+/**
+ * Returns whether a number can be an entity's id: a whole number from 0 to
+ * 2^53 - 1. Whether such an entity is alive is the world's to say.
+ */
+export const isEntity = (id: number): id is Entity =>
+  Number.isSafeInteger(id) && id >= 0;
+
+export const makeEntity = (index: number, generation: number): Entity => {
+  const id = generation * INDEX_RANGE + index;
+  if (!isEntity(id)) {
+    throw new RangeError(
+      `An entity's index ${index} and generation ${generation} make no id.`
+    );
+  }
+  return id;
+};
+
+/**
+ * A column of entity ids. Its elements are `Entity`, so what reads one gets
+ * an id, and only an id can be written to it.
+ *
+ * @category Models
+ */
+export class EntityArray extends Float64Array {
+  [index: number]: Entity;
+  constructor(length: number) {
+    super(length);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Fields
@@ -96,8 +123,14 @@ export type FieldKind =
  * - `ref`: any value, saved and hashed through a codec.
  * - `transient`: neither saved nor hashed.
  */
-export const isBoxed = (kind: FieldKind): boolean =>
+export const isBoxed = (kind: FieldKind): kind is BoxedKind =>
   kind === "json" || kind === "ref" || kind === "transient";
+
+/** A field type whose values are kept in a plain array. */
+export type BoxedKind = "json" | "ref" | "transient";
+
+/** A field type whose values are numbers, kept in a typed array. */
+export type NumberKind = Exclude<FieldKind, BoxedKind>;
 
 /**
  * Converts the values of a `ref` field to plain data and back. `encode` returns
@@ -141,7 +174,7 @@ export const Field = {
   u32: field<number, Uint32Array>("u32"),
   u16: field<number, Uint16Array>("u16"),
   u8: field<number, Uint8Array>("u8"),
-  entity: field<Entity, Float64Array>("entity"),
+  entity: field<Entity, EntityArray>("entity"),
   /**
    * Plain data: a string, number, boolean, bigint, null or undefined, or an
    * array or object of strings, numbers, booleans and null. It is saved in
@@ -168,11 +201,57 @@ export const Field = {
 export type Column =
   | Float32Array
   | Float64Array
+  | EntityArray
   | Int32Array
   | Uint32Array
   | Uint16Array
   | Uint8Array
   | unknown[];
+
+/** A column of numbers: every column but a plain array's. */
+export type NumberColumn = Exclude<Column, unknown[]>;
+
+/**
+ * Returns `column` as the kind of array `Type` makes, and throws if it is
+ * another: a column that is not of its field's kind is a fault of the world's.
+ */
+export const typedColumn = <A extends NumberColumn>(
+  column: Column,
+  Type: new (length: number) => A
+): A => {
+  if (column instanceof Type) {
+    return column;
+  }
+  throw new TypeError(
+    `A column was expected to be a ${Type.name}, and is ${Array.isArray(column) ? "an array" : `a ${column.constructor.name}`}.`
+  );
+};
+
+/**
+ * Returns `column` as the typed array of a field of numbers, and throws if it
+ * is a plain array.
+ */
+export const numberColumn = (column: Column): NumberColumn => {
+  if (!Array.isArray(column)) {
+    return column;
+  }
+  throw new TypeError(
+    "A column was expected to be a typed array, and is an array."
+  );
+};
+
+/**
+ * Returns `column` as the plain array of a `json`, `ref` or `transient` field,
+ * and throws if it is a typed array.
+ */
+export const boxedColumn = (column: Column): unknown[] => {
+  if (Array.isArray(column)) {
+    return column;
+  }
+  throw new TypeError(
+    `A column was expected to be an array, and is a ${column.constructor.name}.`
+  );
+};
 
 export const makeColumn = (kind: FieldKind, capacity: number): Column => {
   switch (kind) {
@@ -190,7 +269,7 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
     }
     case "entity": {
       // An id is a whole number below 2^53, which a 64-bit float holds.
-      return new Float64Array(capacity);
+      return new EntityArray(capacity);
     }
     case "u16": {
       return new Uint16Array(capacity);
@@ -206,20 +285,42 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
   }
 };
 
+/**
+ * Copies the first `count` rows of `from` into `into`, two columns of one
+ * field: plain arrays both, or typed arrays both.
+ */
+export const copyRows = (into: Column, from: Column, count: number): void => {
+  if (Array.isArray(into)) {
+    const values = boxedColumn(from);
+    for (let r = 0; r < count; r++) {
+      into[r] = values[r];
+    }
+  } else if (Array.isArray(from)) {
+    throw new TypeError(
+      "A column of numbers was to be copied from an array of values."
+    );
+  } else {
+    into.set(from.subarray(0, count));
+  }
+};
+
 export const growColumn = (
   kind: FieldKind,
   old: Column,
   capacity: number
 ): Column => {
   const next = makeColumn(kind, capacity);
-  if (isBoxed(kind)) {
-    const from = old as unknown[];
-    const to = next as unknown[];
+  if (Array.isArray(next)) {
+    const from = boxedColumn(old);
     for (let i = 0; i < from.length; i++) {
-      to[i] = from[i];
+      next[i] = from[i];
     }
+  } else if (Array.isArray(old)) {
+    throw new TypeError(
+      `A column of "${kind}" was expected to be a typed array, and is an array.`
+    );
   } else {
-    (next as Float32Array).set(old as Float32Array);
+    next.set(old);
   }
   return next;
 };
@@ -450,7 +551,7 @@ export const retarget = (name: string): string =>
 // closure made of it, and specialises a read of `column[row]` for the kinds
 // of array it has seen there. So:
 //
-// - Every kind of column has its functions written out, below, seven times
+// - Every kind of column has its functions written out, below, eight times
 //   over. One getter for every kind would meet every kind of array at one
 //   place in the source, and past four an engine stops specialising: such
 //   a getter measured 112 ns an entity in a program with seven kinds of
@@ -494,11 +595,11 @@ const refuse = (message: string) => (): never => {
   throw new Error(message);
 };
 
-// The seven that follow differ in the type of `column` and in nothing
+// The eight that follow differ in the type of `column` and in nothing
 // else. They are not one function given the type: see above.
 
 const defineF32: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Float32Array;
+  let column = new Float32Array(0);
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
@@ -522,12 +623,12 @@ const defineF32: DefineField = (target, name, row, noting, refusal) => {
             },
   });
   return (to) => {
-    column = to as Float32Array;
+    column = typedColumn(to, Float32Array);
   };
 };
 
 const defineF64: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Float64Array;
+  let column = new Float64Array(0);
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
@@ -546,12 +647,38 @@ const defineF64: DefineField = (target, name, row, noting, refusal) => {
             },
   });
   return (to) => {
-    column = to as Float64Array;
+    column = typedColumn(to, Float64Array);
+  };
+};
+
+// An entity field: the same as an `f64`, in its own kind of array, so that
+// each of the two meets one kind of array.
+const defineEntity: DefineField = (target, name, row, noting, refusal) => {
+  let column = new EntityArray(0);
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: Entity) => {
+              column[row.i] = value;
+            }
+          : (value: Entity) => {
+              column[row.i] = value;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = typedColumn(to, EntityArray);
   };
 };
 
 const defineI32: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Int32Array;
+  let column = new Int32Array(0);
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
@@ -570,12 +697,12 @@ const defineI32: DefineField = (target, name, row, noting, refusal) => {
             },
   });
   return (to) => {
-    column = to as Int32Array;
+    column = typedColumn(to, Int32Array);
   };
 };
 
 const defineU32: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Uint32Array;
+  let column = new Uint32Array(0);
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
@@ -594,12 +721,12 @@ const defineU32: DefineField = (target, name, row, noting, refusal) => {
             },
   });
   return (to) => {
-    column = to as Uint32Array;
+    column = typedColumn(to, Uint32Array);
   };
 };
 
 const defineU16: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Uint16Array;
+  let column = new Uint16Array(0);
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
@@ -618,12 +745,12 @@ const defineU16: DefineField = (target, name, row, noting, refusal) => {
             },
   });
   return (to) => {
-    column = to as Uint16Array;
+    column = typedColumn(to, Uint16Array);
   };
 };
 
 const defineU8: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Uint8Array;
+  let column = new Uint8Array(0);
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
@@ -642,13 +769,13 @@ const defineU8: DefineField = (target, name, row, noting, refusal) => {
             },
   });
   return (to) => {
-    column = to as Uint8Array;
+    column = typedColumn(to, Uint8Array);
   };
 };
 
 /** Defines a `json`, `ref` or `transient` field: a plain array, one value per row. */
 const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as unknown[];
+  let column: unknown[] = [];
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
@@ -667,7 +794,7 @@ const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
             },
   });
   return (to) => {
-    column = to as unknown[];
+    column = boxedColumn(to);
   };
 };
 
@@ -676,13 +803,20 @@ const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
   f64: defineF64,
   i32: defineI32,
   u32: defineU32,
-  // An entity id is kept in the same kind of array as an `f64`.
-  entity: defineF64,
+  entity: defineEntity,
   u16: defineU16,
   u8: defineU8,
   json: defineBoxed,
   ref: defineBoxed,
   transient: defineBoxed,
+};
+
+/** The log of an accessor that records writes, before it is bound. */
+const unbound: WriteLog = {
+  noted: new Uint8Array(0),
+  note: () => {
+    throw new Error("An accessor recorded a write before it was bound.");
+  },
 };
 
 /**
@@ -698,10 +832,8 @@ export const makeAccessor = (
   const { fields, kinds, name } = def;
   const noting: Noting | undefined =
     mode === "notes"
-      ? {
-          entities: undefined as unknown as Float64Array,
-          log: undefined as unknown as WriteLog,
-        }
+      ? // What `bind` replaces before the first row is visited.
+        { entities: new Float64Array(0), log: unbound }
       : undefined;
   const target = {};
   const binders = fields.map((field, f) =>
@@ -721,7 +853,7 @@ export const makeAccessor = (
     )
   );
   return {
-    fields: Object.create(target) as object,
+    fields: Object.create(target),
     bind(columns, entities, log) {
       for (let f = 0; f < binders.length; f++) {
         binders[f]!(columns[fields[f]!]!);
@@ -734,15 +866,11 @@ export const makeAccessor = (
   };
 };
 
-const define = <
-  S extends Schema,
-  St extends Storage = "table",
-  N extends string = string,
->(
+const define = <S extends Schema, St extends Storage, N extends string>(
   name: N,
   schema: S,
+  storage: St,
   options?: {
-    readonly storage?: St;
     readonly single?: boolean;
     readonly relation?: OnTargetDespawn;
   }
@@ -755,7 +883,7 @@ const define = <
     fields,
     kinds: Object.values(schema).map((fieldDef) => fieldDef.kind),
     codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
-    storage: (options?.storage ?? "table") as St,
+    storage,
     isTag: fields.length === 0,
     single: options?.single === true,
     relation: options?.relation,
@@ -763,6 +891,100 @@ const define = <
   };
   return def;
 };
+
+// A component is stored in tables unless it is given another storage, and its
+// type says which: one signature for each.
+
+function defineData<const N extends string, S extends Schema>(
+  name: N,
+  schema: S,
+  options?: { readonly storage?: undefined }
+): ComponentDef<S, "table", N>;
+function defineData<
+  const N extends string,
+  S extends Schema,
+  St extends Storage,
+>(
+  name: N,
+  schema: S,
+  options: { readonly storage: St }
+): ComponentDef<S, St, N>;
+function defineData<
+  const N extends string,
+  S extends Schema,
+  St extends Storage,
+>(
+  name: N,
+  schema: S,
+  options?: { readonly storage?: St | undefined }
+): ComponentDef<S, St | "table", N> {
+  return define(name, schema, options?.storage ?? "table");
+}
+
+// A relation's target: an entity, in a column its holder can't write.
+const relationTarget = field<Entity, ReadonlyColumn<Entity>>("entity");
+
+function defineRelation<const N extends string, S extends Schema = {}>(
+  name: N,
+  options: {
+    readonly onTargetDespawn: OnTargetDespawn;
+    readonly storage?: undefined;
+    readonly fields?: S;
+  }
+): ComponentDef<RelationSchema<S>, "table", N>;
+function defineRelation<
+  const N extends string,
+  St extends Storage,
+  S extends Schema = {},
+>(
+  name: N,
+  options: {
+    readonly onTargetDespawn: OnTargetDespawn;
+    readonly storage: St;
+    readonly fields?: S;
+  }
+): ComponentDef<RelationSchema<S>, St, N>;
+function defineRelation<
+  const N extends string,
+  St extends Storage,
+  S extends Schema,
+>(
+  name: N,
+  options: {
+    readonly onTargetDespawn: OnTargetDespawn;
+    readonly storage?: St | undefined;
+    readonly fields?: S;
+  }
+):
+  | ComponentDef<RelationSchema<S>, St | "table", N>
+  | ComponentDef<RelationSchema<{}>, St | "table", N> {
+  const storage = options.storage ?? "table";
+  const relation = { relation: options.onTargetDespawn };
+  // The target last, so that no field of the relation's own replaces it.
+  return options.fields === undefined
+    ? define(name, { target: relationTarget }, storage, relation)
+    : define(
+        name,
+        { ...options.fields, target: relationTarget },
+        storage,
+        relation
+      );
+}
+
+function defineTag<const N extends string>(
+  name: N,
+  options?: { readonly storage?: undefined }
+): ComponentDef<{}, "table", N>;
+function defineTag<const N extends string, St extends Storage>(
+  name: N,
+  options: { readonly storage: St }
+): ComponentDef<{}, St, N>;
+function defineTag<const N extends string, St extends Storage>(
+  name: N,
+  options?: { readonly storage?: St | undefined }
+): ComponentDef<{}, St | "table", N> {
+  return define(name, {}, options?.storage ?? "table");
+}
 
 /**
  * Defines components: data, a tag, or a relation to another entity.
@@ -779,15 +1001,7 @@ export const Component = {
    * it is stored in a set of its own, for a component that is added and removed
    * often or that few entities have.
    */
-  define: <
-    const N extends string,
-    S extends Schema,
-    St extends Storage = "table",
-  >(
-    name: N,
-    schema: S,
-    options?: { readonly storage?: St }
-  ): ComponentDef<S, St, N> => define(name, schema, options),
+  define: defineData,
   /**
    * Defines a singleton: data the world holds once, with its value until it is
    * written. Its name is one of the world's component names. No entity has it:
@@ -798,7 +1012,7 @@ export const Component = {
     schema: S,
     initial: ValueOf<S>
   ): SingletonSpec<S> => ({
-    component: define(name, schema, { single: true }),
+    component: define(name, schema, "table", { single: true }),
     initial,
   }),
   /**
@@ -826,31 +1040,7 @@ export const Component = {
    * - An entity has one target per relation. For another kind of link, define
    *   another relation.
    */
-  relation: <
-    const N extends string,
-    S extends Schema = {},
-    St extends Storage = "table",
-  >(
-    name: N,
-    options: {
-      readonly onTargetDespawn: OnTargetDespawn;
-      readonly storage?: St;
-      readonly fields?: S;
-    }
-  ): ComponentDef<RelationSchema<S>, St, N> =>
-    define<RelationSchema<S>, St, N>(
-      name,
-      {
-        target: Field.entity,
-        ...options.fields,
-      } as unknown as RelationSchema<S>,
-      options.storage === undefined
-        ? { relation: options.onTargetDespawn }
-        : { storage: options.storage, relation: options.onTargetDespawn }
-    ),
+  relation: defineRelation,
   /** Defines a component with no data, used only for filtering. */
-  tag: <const N extends string, St extends Storage = "table">(
-    name: N,
-    options?: { readonly storage?: St }
-  ): ComponentDef<{}, St, N> => define(name, {}, options),
+  tag: defineTag,
 };

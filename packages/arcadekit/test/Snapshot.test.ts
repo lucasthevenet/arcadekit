@@ -8,7 +8,8 @@ import {
   Query,
   SnapshotError,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { ComponentDef } from "../src/index";
+import { entity } from "./entities";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -29,7 +30,7 @@ const define = (prefix: string) => ({
   Chilled: Component.tag(`${prefix}/Chilled`, { storage: "sparse" }),
 });
 const C = define("snap");
-const all = Object.values(C) as ComponentDef[];
+const all: ComponentDef[] = Object.values(C);
 
 const notes: unknown[] = [
   "plain",
@@ -55,7 +56,7 @@ const sheet = (n: number) => ({
   unsigned: 3_000_000_000 + n,
   short: 60_000 + n,
   byte: 200 + (n % 50),
-  other: n as Entity,
+  other: entity(n),
   note: notes[n % notes.length],
 });
 
@@ -75,7 +76,7 @@ const play = (
 ): void => {
   const dice = new EcsWorld({ seed }).random;
   const commands = new CommandBuffer(world);
-  const optional = Object.values(kit) as ComponentDef[];
+  const optional: ComponentDef[] = Object.values(kit);
   let serial = seed * 1000;
   const valueFor = (def: ComponentDef) =>
     def === kit.Body
@@ -189,10 +190,7 @@ describe("a snapshot of a world", () => {
       for (const field of C.Sheet.fields) {
         // Object.is tells 0 from -0, and takes NaN for NaN.
         expect(
-          Object.is(
-            now[field as keyof typeof now],
-            then[field as keyof typeof then]
-          ),
+          Object.is(Reflect.get(now, field), Reflect.get(then, field)),
           `Sheet.${field} of ${entity}`
         ).toBe(true);
       }

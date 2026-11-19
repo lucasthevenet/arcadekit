@@ -47,7 +47,6 @@ import { Cause, Data, Exit, Schema } from "effect";
 import * as Action from "./Action";
 import type * as App from "./App";
 import type { Tickable } from "./Driver";
-import type * as Save from "./Save";
 
 /**
  * An action as a peer issued it: its name, and its payload in JSON form.
@@ -285,14 +284,23 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  *
  * @category Constructors
  */
-export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
-  // A lockstep session predicts nothing, so it captures nothing, and a
-  // capture is all that fails with `SaveRefused`.
+export const make = <E>(
+  app: SessionApp<E>,
+  options: Options
+): Session<E> & Predicting =>
   build(app, {
     ...options,
     delay: options.delay ?? 2,
     ahead: 0,
-  }) as Session<E>;
+    // A lockstep session predicts nothing: it runs a tick once every peer
+    // has said what happens in it, so there is never one to go back to.
+    capture: () =>
+      Exit.die(
+        new Error(
+          "A lockstep session captured the game, which it never needs to: it only runs a tick every peer has sent."
+        )
+      ),
+  });
 
 /**
  * What a session needs from its app. Every app provides it.
@@ -312,7 +320,9 @@ export type SessionApp<E> = Pick<
 >;
 
 /**
- * What a predicting session adds, as `Rollback.Session` documents.
+ * How far a session runs ahead, and what that has cost: `Rollback.Session`
+ * documents each. A lockstep session runs nothing ahead, so it rewinds and
+ * keeps nothing.
  *
  * @category Models
  */
@@ -331,11 +341,16 @@ export interface Predicting {
  * wrong.
  * @internal
  */
-export const build = <E>(
+export const build = <E, F>(
   app: SessionApp<E>,
-  options: Options & { readonly delay: number; readonly ahead: number }
-): Session<E | Save.SaveRefused> & Predicting => {
-  const { delay, delta, peer, ahead } = options;
+  options: Options & {
+    readonly delay: number;
+    readonly ahead: number;
+    /** Captures the game before a tick some peer hasn't sent yet. */
+    readonly capture: () => Exit.Exit<App.Moment, F>;
+  }
+): Session<E | F> & Predicting => {
+  const { delay, delta, peer, ahead, capture } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
       `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`
@@ -506,7 +521,7 @@ export const build = <E>(
   };
 
   /** Runs one tick with the actions known for it. */
-  const run = (tick: number): Exit.Exit<void, E | Save.SaveRefused> => {
+  const run = (tick: number): Exit.Exit<void, E | F> => {
     let whole = true;
     for (const next of have.values()) {
       whole &&= next > tick;
@@ -516,7 +531,7 @@ export const build = <E>(
     } else {
       // A peer has not said: the tick is run as if it had nothing to say,
       // and the game is kept as it was, to go back to if it had.
-      const moment = app.capture();
+      const moment = capture();
       if (Exit.isFailure(moment)) {
         return Exit.failCause(moment.cause);
       }
@@ -566,9 +581,7 @@ export const build = <E>(
     return Exit.fail(reason);
   };
 
-  const tickExit = (
-    given?: number
-  ): Exit.Exit<boolean, E | Drifted | Save.SaveRefused> => {
+  const tickExit = (given?: number): Exit.Exit<boolean, E | Drifted | F> => {
     if (given !== undefined && Math.abs(given - delta) > 1e-9) {
       throw new Error(
         `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`
@@ -587,7 +600,7 @@ export const build = <E>(
           : app.checkpoint()
       );
     }
-    let failed: Exit.Exit<never, E | Save.SaveRefused> | undefined;
+    let failed: Exit.Exit<never, E | F> | undefined;
     if (wrong !== undefined) {
       // A message came for a tick that had run without it. Back to before
       // that tick, and forward again with what is known now.

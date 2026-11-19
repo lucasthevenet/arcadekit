@@ -1,10 +1,10 @@
 /// <reference types="node" />
 import { App, Assets, Component, State, Transform3d } from "arcadekit";
 import { Cause, Effect, Exit, Fiber, Layer, Logger, Scope } from "effect";
-import { InstancedMesh, Mesh, Texture } from "three";
-import type { BufferGeometry, MeshStandardMaterial, Scene } from "three";
+import { InstancedMesh, Mesh, MeshStandardMaterial, Texture } from "three";
+import type { Object3D, Scene } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import { Gltf, Three } from "../src/index";
 
@@ -25,7 +25,7 @@ interface Doc {
 const triangle = (
   buffers: readonly Doc[],
   views: readonly Doc[],
-  more: Doc = {}
+  more: { readonly primitive?: Doc; readonly document?: Doc } = {}
 ): Doc => ({
   asset: { version: "2.0" },
   scene: 0,
@@ -35,7 +35,7 @@ const triangle = (
     {
       name: "TriMesh",
       primitives: [
-        { attributes: { POSITION: 1 }, indices: 0, ...(more.primitive as Doc) },
+        { attributes: { POSITION: 1 }, indices: 0, ...more.primitive },
       ],
     },
   ],
@@ -52,7 +52,7 @@ const triangle = (
       max: [1, 1, 0],
     },
   ],
-  ...(more.document as Doc),
+  ...more.document,
 });
 /** Its two views, in one buffer. */
 const oneBuffer = [
@@ -95,7 +95,7 @@ const glb = (document: Doc, binary?: Uint8Array): Uint8Array => {
 /** A loader of files in memory that notes what it was asked for. */
 const makeLoader = (files: Readonly<Record<string, Uint8Array | string>>) => {
   const asked: string[] = [];
-  const layer = Layer.succeed(Assets.Loader, {
+  const layer: Layer.Layer<never> = Layer.succeed(Assets.Loader, {
     bytes: (url) =>
       Effect.suspend(() => {
         asked.push(url);
@@ -108,7 +108,7 @@ const makeLoader = (files: Readonly<Record<string, Uint8Array | string>>) => {
               typeof file === "string" ? new TextEncoder().encode(file) : file
             );
       }),
-  }) as Layer.Layer<never>;
+  });
   return { asked, layer };
 };
 
@@ -136,9 +136,30 @@ const load = async (
   };
 };
 
+/** What a test expects to be a mesh. */
+const meshOf = (object: Object3D | undefined): Mesh => {
+  assert(object instanceof Mesh);
+  return object;
+};
+/** What a test expects to be the material of a model's: a standard one. */
+const standard = (mesh: Mesh): MeshStandardMaterial => {
+  const { material } = mesh;
+  assert(material instanceof MeshStandardMaterial);
+  return material;
+};
+/** What loading a model that a test expects to fail failed with. */
+const failed = async (
+  url: string,
+  files: Readonly<Record<string, Uint8Array | string>>
+): Promise<Assets.AssetFailed> => {
+  const { failure } = await load(url, files);
+  assert(failure instanceof Assets.AssetFailed);
+  return failure;
+};
+
 /** The one mesh of the triangle, and what it is made of. */
 const shape = (model: Gltf.Model | undefined) => {
-  const mesh = model!.scene.children[0] as Mesh<BufferGeometry>;
+  const mesh = meshOf(model!.scene.children[0]);
   return {
     mesh,
     name: mesh.name,
@@ -170,9 +191,7 @@ describe("a model", () => {
     const { mesh } = shape(model);
     const gone: string[] = [];
     mesh.geometry.addEventListener("dispose", () => gone.push("geometry"));
-    (mesh.material as MeshStandardMaterial).addEventListener("dispose", () =>
-      gone.push("material")
-    );
+    standard(mesh).addEventListener("dispose", () => gone.push("material"));
     await close();
     expect(gone.toSorted()).toEqual(["geometry", "material"]);
   });
@@ -270,6 +289,8 @@ describe("a model", () => {
       ),
       // A binary glTF that says it has a document, and has none.
       "/hollow.glb": glb({}).subarray(0, 12),
+      // JSON whose buffers are not a list of buffers.
+      "/shapeless.gltf": text({ asset: { version: "2.0" }, buffers: "none" }),
     };
     expect((await load("/m/tri.gltf", files)).failure).toEqual(
       new Assets.AssetFailed({
@@ -277,24 +298,23 @@ describe("a model", () => {
         message: "There is no such file.",
       })
     );
-    const garbage = (await load("/garbage.glb", files))
-      .failure as Assets.AssetFailed;
-    expect(garbage).toBeInstanceOf(Assets.AssetFailed);
+    const garbage = await failed("/garbage.glb", files);
     expect(garbage.url).toBe("/garbage.glb");
     expect(garbage.message).toMatch(/^It is not a glTF model: /u);
-    const hollow = (await load("/hollow.glb", files))
-      .failure as Assets.AssetFailed;
+    const hollow = await failed("/hollow.glb", files);
     expect([hollow.url, hollow.message]).toEqual([
       "/hollow.glb",
       "It is not a glTF model: It is a binary glTF with no JSON in it.",
     ]);
+    const shapeless = await failed("/shapeless.gltf", files);
+    expect(shapeless.message).toBe(
+      "It is not a glTF model: Its JSON is not a glTF document: its buffers, buffer views or images are not as glTF has them."
+    );
     // JSON, and no model: Three.js says what it makes of it.
-    const empty = (await load("/empty.gltf", files))
-      .failure as Assets.AssetFailed;
-    expect(empty).toBeInstanceOf(Assets.AssetFailed);
+    const empty = await failed("/empty.gltf", files);
     expect(empty.url).toBe("/empty.gltf");
     expect(empty.message).toMatch(/^It could not be made a model: .+/u);
-    const bad = (await load("/bad.gltf", files)).failure as Assets.AssetFailed;
+    const bad = await failed("/bad.gltf", files);
     expect(bad.url).toBe("/bad.gltf");
     expect(bad.message).toMatch(
       /^A file written into it could not be read: .+/u
@@ -311,7 +331,7 @@ describe("a model", () => {
   it("gives up the files it was still fetching when its loading is given up", async () => {
     const waiting: string[] = [];
     const givenUp: string[] = [];
-    const slow = Layer.succeed(Assets.Loader, {
+    const slow: Layer.Layer<never> = Layer.succeed(Assets.Loader, {
       bytes: (url) =>
         url.endsWith(".gltf")
           ? Effect.succeed(
@@ -336,7 +356,7 @@ describe("a model", () => {
                 givenUp.push(url);
               });
             }),
-    }) as Layer.Layer<never>;
+    });
     const fiber = Effect.runFork(
       Effect.scoped(
         Assets.load(
@@ -421,7 +441,7 @@ describe("a model", () => {
     ]);
     // The geometry is where it was, with the picture after it.
     expect(shape(model)).toMatchObject(TRIANGLE);
-    const { map } = shape(model).mesh.material as MeshStandardMaterial;
+    const { map } = standard(shape(model).mesh);
     expect(map).toBeInstanceOf(Texture);
     // The picture's own bytes, and the kind they say they are.
     expect(decoded).toEqual([{ bytes: Array.from(jpeg), type: "image/jpeg" }]);
@@ -447,7 +467,7 @@ describe("a model", () => {
       { bytes: [1, 2, 3], type: "image/png" },
       { bytes: [1, 2, 3], type: "image/webp" },
     ]);
-    const material = shape(kinds.model).mesh.material as MeshStandardMaterial;
+    const material = standard(shape(kinds.model).mesh);
     expect(material.emissiveMap).toBeInstanceOf(Texture);
     await kinds.close();
     expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1, 1]);
@@ -494,7 +514,8 @@ describe("Gltf.mesh", () => {
       both
     );
     const { model } = await load("/two.glb", { "/two.glb": file });
-    const [first, second, pair, nameless] = model!.scene.children as Mesh[];
+    const [first, second, pair, nameless] = model!.scene.children;
+    assert(first instanceof Mesh);
     expect(Gltf.mesh(model!)).toBe(first);
     expect(Gltf.mesh(model!, "Other")).toBe(second);
     expect(Gltf.mesh(model!, "Tri")).toBe(first);
@@ -598,8 +619,8 @@ describe("a level's models", () => {
     // Two ships, each a copy of the model's scene, where its entity is.
     expect([one!.position.x, two!.position.x]).toEqual([1, 2]);
     expect(one).not.toBe(two);
-    const hull = (one!.children[0] as Mesh).geometry;
-    expect((two!.children[0] as Mesh).geometry).toBe(hull);
+    const hull = meshOf(one!.children[0]).geometry;
+    expect(meshOf(two!.children[0]).geometry).toBe(hull);
     // And the rocks are instances of the same mesh.
     expect(rocks.geometry).toBe(hull);
     expect(rocks.count).toBe(1);

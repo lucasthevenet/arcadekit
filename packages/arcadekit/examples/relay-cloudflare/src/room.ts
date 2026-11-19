@@ -9,7 +9,7 @@
  * `Relay.join` and `Relay.forward` ask to be told.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare";
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Result } from "effect";
 import { HttpServerRequest } from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
@@ -54,7 +54,7 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
             // an accepted socket instead can tell it why, but a socket
             // closed in the same breath as it is accepted was left
             // half-closed by workerd when this was tried.
-            const refused = Cause.squash(joined.cause) as Relay.Refused;
+            const refused = Result.getOrThrow(Cause.findError(joined.cause));
             return HttpServerResponse.text(refused.message, {
               status: refused.status,
             });
@@ -81,7 +81,9 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
             everyone.map(({ member }) => member)
           );
           if (Exit.isFailure(deliveries)) {
-            const refused = Cause.squash(deliveries.cause) as Relay.Refused;
+            const refused = Result.getOrThrow(
+              Cause.findError(deliveries.cause)
+            );
             yield* socket.close(refused.code, refused.reason);
             return;
           }

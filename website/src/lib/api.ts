@@ -11,6 +11,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { Schema } from "effect";
 import { parseSync } from "rolldown/utils";
 
 /** The categories of the exports on a page, in the order the page lists them. */
@@ -57,19 +58,10 @@ export interface Module {
   readonly exports: readonly Export[];
 }
 
-interface Node {
-  readonly type: string;
-  readonly start: number;
-  readonly end: number;
-  readonly [field: string]: unknown;
-}
-
-interface Comment {
-  readonly type: "Line" | "Block";
-  readonly value: string;
-  readonly start: number;
-  readonly end: number;
-}
+type Parsed = ReturnType<typeof parseSync>;
+/** A statement of a declaration file, as the parser gives it. */
+type Node = Parsed["program"]["body"][number];
+type Comment = Parsed["comments"][number];
 
 /** A declaration file, parsed, with what it imports, exports and declares. */
 interface DeclarationFile {
@@ -88,13 +80,21 @@ interface DeclarationFile {
   readonly mapSources: readonly string[];
 }
 
+/** An identifier's name, or a string literal's value. */
 const nameOf = (node: unknown): string | undefined => {
-  const named = node as { name?: unknown; value?: unknown } | null | undefined;
-  if (typeof named?.name === "string") {
-    return named.name;
+  if (typeof node !== "object" || node === null) {
+    return undefined;
   }
-  return typeof named?.value === "string" ? named.value : undefined;
+  if ("name" in node && typeof node.name === "string") {
+    return node.name;
+  }
+  return "value" in node && typeof node.value === "string"
+    ? node.value
+    : undefined;
 };
+
+/** What a declaration declares, if it has a name of its own. */
+const idOf = (node: Node): unknown => ("id" in node ? node.id : undefined);
 
 const BASE64 =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -140,6 +140,12 @@ export const sourceLines = (mappings: string): SourcePosition[] => {
   return lines;
 };
 
+/** What this reads of a source map. */
+const SourceMap = Schema.Struct({
+  sources: Schema.Array(Schema.String),
+  mappings: Schema.String,
+});
+
 const cache = new Map<string, DeclarationFile>();
 
 const readDeclarations = (file: string): DeclarationFile => {
@@ -152,7 +158,7 @@ const readDeclarations = (file: string): DeclarationFile => {
   if (result.errors.length > 0) {
     throw new Error(`${file} doesn't parse: ${result.errors[0]?.message}`);
   }
-  const body = result.program.body as unknown as readonly Node[];
+  const { body } = result.program;
   const imports = new Map<string, { file: string; name: string }>();
   const exports = new Map<string, string>();
   const declarations = new Map<string, Node[]>();
@@ -163,37 +169,40 @@ const readDeclarations = (file: string): DeclarationFile => {
   };
   const declareNode = (node: Node) => {
     if (node.type === "VariableDeclaration") {
-      for (const declarator of node.declarations as Node[]) {
+      for (const declarator of node.declarations) {
         declare(nameOf(declarator.id), node);
       }
     } else if (node.type !== "TSModuleDeclaration" || !isExportList(node)) {
-      declare(nameOf(node.id), node);
+      declare(nameOf(idOf(node)), node);
     }
   };
   for (const node of body) {
     if (node.type === "ImportDeclaration") {
       const from = path.resolve(
         path.dirname(file),
-        String((node.source as Node).value).replace(/\.js$/u, ".d.ts")
+        node.source.value.replace(/\.js$/u, ".d.ts")
       );
-      for (const specifier of (node.specifiers as Node[]) ?? []) {
+      for (const specifier of node.specifiers) {
         const local = nameOf(specifier.local);
         if (local !== undefined && from.endsWith(".d.ts")) {
           imports.set(local, {
             file: from,
-            name: nameOf(specifier.imported) ?? "default",
+            name:
+              specifier.type === "ImportSpecifier"
+                ? (nameOf(specifier.imported) ?? "default")
+                : "default",
           });
         }
       }
     } else if (node.type === "ExportNamedDeclaration") {
-      if (node.declaration) {
-        const declaration = node.declaration as Node;
+      const { declaration } = node;
+      if (declaration !== null) {
         declareNode(declaration);
         for (const name of namesOf(declaration)) {
           exports.set(name, name);
         }
       }
-      for (const specifier of (node.specifiers as Node[]) ?? []) {
+      for (const specifier of node.specifiers) {
         const local = nameOf(specifier.local);
         const exported = nameOf(specifier.exported);
         if (local !== undefined && exported !== undefined) {
@@ -207,17 +216,17 @@ const readDeclarations = (file: string): DeclarationFile => {
   let lines: SourcePosition[] = [];
   let mapSources: string[] = [];
   if (existsSync(`${file}.map`)) {
-    const map = JSON.parse(readFileSync(`${file}.map`, "utf-8")) as {
-      sources: string[];
-      mappings: string;
-    };
+    const map: unknown = JSON.parse(readFileSync(`${file}.map`, "utf-8"));
+    if (!Schema.is(SourceMap)(map)) {
+      throw new Error(`${file}.map is not a source map.`);
+    }
     lines = sourceLines(map.mappings);
-    mapSources = map.sources;
+    mapSources = [...map.sources];
   }
   const parsed: DeclarationFile = {
     file,
     source,
-    comments: result.comments as unknown as readonly Comment[],
+    comments: result.comments,
     imports,
     exports,
     declarations,
@@ -231,13 +240,12 @@ const readDeclarations = (file: string): DeclarationFile => {
 /** The names a declaration declares: one, or a `const`'s each. */
 const namesOf = (node: Node): string[] =>
   node.type === "VariableDeclaration"
-    ? (node.declarations as Node[]).flatMap((d) => nameOf(d.id) ?? [])
-    : [nameOf(node.id) ?? []].flat();
+    ? node.declarations.flatMap((d) => nameOf(d.id) ?? [])
+    : [nameOf(idOf(node)) ?? []].flat();
 
 /** A namespace the build writes to list a module's exports, which declares nothing. */
-const isExportList = (node: Node) => {
-  const body = node.body as Node | null;
-  const statements = (body?.body as Node[] | undefined) ?? [];
+const isExportList = (node: Extract<Node, { type: "TSModuleDeclaration" }>) => {
+  const statements = node.body?.body ?? [];
   return (
     statements.length > 0 &&
     statements.every(
@@ -529,9 +537,9 @@ export const CATEGORIES = [
  * kinds an export with no `@category` falls under.
  */
 const rank = (category: string) => {
-  const known = (CATEGORIES as readonly string[]).indexOf(category);
+  const known = CATEGORIES.findIndex((one) => one === category);
   if (known !== -1) return known;
-  const kind = (KINDS as readonly string[]).indexOf(category);
+  const kind = KINDS.findIndex((one) => one === category);
   return kind === -1 ? CATEGORIES.length : CATEGORIES.length + 1 + kind;
 };
 

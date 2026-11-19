@@ -10,6 +10,7 @@
  *
  * No Effect dependency.
  */
+import { boxedColumn, numberColumn, typedColumn } from "./component";
 import type { Column, FieldKind, RefCodec } from "./component";
 
 /** Folds one 32-bit word into a hash state. */
@@ -184,26 +185,26 @@ export const addColumn = (
   let h = state;
   switch (kind) {
     case "f32": {
-      const { buffer, byteOffset } = column as Float32Array;
+      const { buffer, byteOffset } = typedColumn(column, Float32Array);
       return addFloat32s(h, new Uint32Array(buffer, byteOffset, count), count);
     }
     case "i32": {
       // The same bits, read as unsigned so that one loop serves both.
-      const { buffer, byteOffset } = column as Int32Array;
+      const { buffer, byteOffset } = typedColumn(column, Int32Array);
       return addWords(h, new Uint32Array(buffer, byteOffset, count), count);
     }
     case "u32": {
-      return addWords(h, column as Uint32Array, count);
+      return addWords(h, typedColumn(column, Uint32Array), count);
     }
     case "u16": {
-      const values = column as Uint16Array;
+      const values = typedColumn(column, Uint16Array);
       for (let i = 0; i < count; i++) {
         h = add(h, values[i]!);
       }
       return h;
     }
     case "u8": {
-      const values = column as Uint8Array;
+      const values = typedColumn(column, Uint8Array);
       for (let i = 0; i < count; i++) {
         h = add(h, values[i]!);
       }
@@ -215,7 +216,7 @@ export const addColumn = (
       // takes words four at a time. Going through the loop for floats,
       // which looks at each for NaN, made hashing a world of four float
       // fields half as slow again.
-      const { buffer, byteOffset } = column as Float64Array;
+      const { buffer, byteOffset } = typedColumn(column, Float64Array);
       const words = new Uint32Array(buffer, byteOffset, count * 2);
       if (LOW_FIRST) {
         return addWords(h, words, count * 2);
@@ -230,7 +231,7 @@ export const addColumn = (
       return addWords(h, ordered, count * 2);
     }
     case "f64": {
-      const { buffer, byteOffset } = column as Float64Array;
+      const { buffer, byteOffset } = typedColumn(column, Float64Array);
       const words = new Uint32Array(buffer, byteOffset, count * 2);
       for (let i = 0; i < count; i++) {
         const low = words[2 * i + LOW]!;
@@ -242,14 +243,14 @@ export const addColumn = (
       return h;
     }
     case "json": {
-      const values = column as unknown[];
+      const values = boxedColumn(column);
       for (let i = 0; i < count; i++) {
         h = addData(h, values[i]);
       }
       return h;
     }
     case "ref": {
-      const values = column as unknown[];
+      const values = boxedColumn(column);
       for (let i = 0; i < count; i++) {
         h = addData(h, codec!.encode(values[i]));
       }
@@ -275,7 +276,7 @@ export const addColumnPerRow = (
 ): void => {
   switch (kind) {
     case "f32": {
-      const { buffer, byteOffset } = column as Float32Array;
+      const { buffer, byteOffset } = typedColumn(column, Float32Array);
       const words = new Uint32Array(buffer, byteOffset, count);
       for (let i = 0; i < count; i++) {
         const bits = words[i]!;
@@ -285,21 +286,21 @@ export const addColumnPerRow = (
     }
     case "entity":
     case "f64": {
-      const values = column as Float64Array;
+      const values = typedColumn(column, Float64Array);
       for (let i = 0; i < count; i++) {
         states[i] = addFloat64(states[i]!, values[i]!);
       }
       return;
     }
     case "json": {
-      const values = column as unknown[];
+      const values = boxedColumn(column);
       for (let i = 0; i < count; i++) {
         states[i] = addData(states[i]!, values[i]);
       }
       return;
     }
     case "ref": {
-      const values = column as unknown[];
+      const values = boxedColumn(column);
       for (let i = 0; i < count; i++) {
         states[i] = addData(states[i]!, codec!.encode(values[i]));
       }
@@ -309,7 +310,7 @@ export const addColumnPerRow = (
       return;
     }
     default: {
-      const values = column as Uint32Array;
+      const values = numberColumn(column);
       for (let i = 0; i < count; i++) {
         states[i] = add(states[i]!, values[i]!);
       }

@@ -197,16 +197,31 @@ const Begin = System.make("Begin", function* () {
 
 // --- drawing: the frame stage ----------------------------------------------------
 // What a frame system keeps from one frame to the next is in a service of
-// its own, not in the world: here, the canvas it draws on.
+// its own, not in the world: here, the canvas it draws on, and of it only what
+// `Draw` uses.
+export type Drawing = Pick<
+  CanvasRenderingContext2D,
+  | "clearRect"
+  | "drawImage"
+  | "fillRect"
+  | "fillStyle"
+  | "fillText"
+  | "font"
+  | "textAlign"
+>;
 export class Screen extends Context.Service<
   Screen,
-  { readonly canvas: CanvasRenderingContext2D }
+  { readonly canvas: Drawing }
 >()("page/Screen") {
-  static readonly layer = Layer.sync(Screen, () => ({
-    canvas: (document.querySelector("#game") as HTMLCanvasElement).getContext(
-      "2d"
-    )!,
-  }));
+  static readonly layer = Layer.sync(Screen, () => {
+    const element = document.querySelector("#game");
+    const canvas =
+      element instanceof HTMLCanvasElement ? element.getContext("2d") : null;
+    if (canvas === null) {
+      throw new Error('The page has no <canvas id="game"> to draw on.');
+    }
+    return { canvas };
+  });
 }
 
 const Draw = System.make("Draw", function* () {

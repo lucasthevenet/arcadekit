@@ -1,4 +1,4 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { Action, App, Save, System, Time } from "../src/index";
@@ -12,12 +12,12 @@ import {
   gameOptions,
   moves,
   network,
+  payloadOf,
   purseOf,
   round,
   withApp,
   withPeers,
 } from "./peers";
-import type { Peer } from "./peers";
 
 describe("who issued an action", () => {
   it("is told to its handler when the action came with a name", () => {
@@ -192,7 +192,7 @@ describe("who issued an action, in a session", () => {
         ahead === undefined ? {} : { ahead },
         (peers) => {
           const net = network(6, { min: 0, max: 4 });
-          const [ada, grace] = peers as [Peer, Peer];
+          const [ada, grace] = peers;
           ada.app.enqueue(Tip, { amount: 2 });
           grace.app.enqueue(Tip, { amount: 5 });
           grace.app.enqueue(Tip, { amount: 1 });
@@ -205,7 +205,8 @@ describe("who issued an action, in a session", () => {
             expect(
               moves(peer.app.actionLog).map((entry) => [
                 entry.from,
-                (entry.payload as { amount: number }).amount,
+                payloadOf(Schema.Struct({ amount: Schema.Number }), entry)
+                  .amount,
               ])
             ).toEqual([
               ["ada", 2],
@@ -222,7 +223,7 @@ describe("who issued an action, in a session", () => {
   it("is the peer whose key it was", () => {
     withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
       const net = network(1, { min: 0, max: 0 });
-      const [ada, grace] = peers as [Peer, Peer];
+      const [ada, grace] = peers;
       grace.source.tap("Space");
       for (let i = 0; i < 6; i++) {
         round(peers, net);
@@ -243,7 +244,7 @@ describe("who issued an action, in a session", () => {
 
   it("is not for a peer to say of what it issues itself", () => {
     withPeers(["ada", "grace"], {}, (peers) => {
-      const [ada] = peers as [Peer];
+      const [ada] = peers;
       expect(() =>
         ada.app.enqueueByName("ls/Tip", { amount: 1 }, "grace")
       ).toThrow(
@@ -260,7 +261,7 @@ describe("who issued an action, in a session", () => {
 
   it("goes by the name a message says it is from", () => {
     withPeers(["ada", "grace"], { delay: 0 }, (peers) => {
-      const [ada] = peers as [Peer];
+      const [ada] = peers;
       // Who a message is from is the transport's to vouch for: the session
       // takes its word.
       ada.session.receive({

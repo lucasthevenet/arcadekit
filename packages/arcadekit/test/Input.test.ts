@@ -23,6 +23,7 @@ import {
   World,
 } from "../src/index";
 import type { BuiltIn } from "../src/Services";
+import { failureAs, failureOf } from "./exits";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship);
@@ -419,9 +420,7 @@ describe("the input stage", () => {
         app.world.spawn(Ship.of({ x: 1, shots: 0 }));
         const exit = app.inputExit();
         expect(Exit.isFailure(exit)).toBe(true);
-        const error = Cause.squash(
-          (exit as Exit.Failure<void, never>).cause
-        ) as App.FrameChangedWorld;
+        const error = failureAs(exit, App.FrameChangedWorld);
         expect(error).toBeInstanceOf(App.FrameChangedWorld);
         expect(error.stage).toBe("input");
         expect(error.system).toBe("Scribble");
@@ -440,9 +439,7 @@ describe("the input stage", () => {
           verifyFrames: true,
         });
         drawn.world.spawn(Ship.of({ x: 1, shots: 0 }));
-        const smudged = Cause.squash(
-          (drawn.frameExit(0) as Exit.Failure<void, never>).cause
-        ) as App.FrameChangedWorld;
+        const smudged = failureAs(drawn.frameExit(0), App.FrameChangedWorld);
         expect(smudged.stage).toBe("frame");
         expect(smudged.message).toMatch(
           /^The frame stage changed the world: its hash was not the same after system "Smudge" ran in frame 1 as before/
@@ -614,7 +611,9 @@ describe("the input stage", () => {
           done.push(event.by);
         }
         for (const event of (yield* Action.Rejected).read()) {
-          refused.push(`${event.action} ${(event.error as TooMuch)._tag}`);
+          refused.push(
+            `${event.action} ${event.error instanceof TooMuch ? event.error._tag : String(event.error)}`
+          );
         }
       }).pipe(System.inStage(stage));
     run(
@@ -881,9 +880,7 @@ describe("the input stage", () => {
         const app = yield* App.make({ systems: [Fail] });
         const exit = app.inputExit();
         expect(Exit.isFailure(exit)).toBe(true);
-        expect(
-          Cause.squash((exit as Exit.Failure<void, NoKeyboard>).cause)
-        ).toEqual(new NoKeyboard());
+        expect(failureOf(exit)).toEqual(new NoKeyboard());
         expect(() => app.input()).toThrow(NoKeyboard);
         expect(app.world.frozen).toBe(false);
         // An app that has stopped on a failed script reads no devices.
@@ -909,9 +906,7 @@ describe("the input stage", () => {
         stopping.spawnScript(Effect.fail("broken"));
         const stopped = stopping.inputExit();
         expect(Exit.isFailure(stopped)).toBe(true);
-        expect(
-          Cause.squash((stopped as Exit.Failure<void, never>).cause)
-        ).toBeInstanceOf(App.ScriptFailed);
+        expect(failureOf(stopped)).toBeInstanceOf(App.ScriptFailed);
         expect(samples).toBe(1);
         // A system that waits has not finished within the stage.
         const Wait = System.make("Wait", function* () {
@@ -937,10 +932,9 @@ describe("the input stage", () => {
           App.make({ components: [Phase], systems: [Hook] })
         );
         expect(Exit.isFailure(exit)).toBe(true);
-        expect(
-          (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
-            .message
-        ).toMatch(/System "Hook" is a hook and is in the input stage/);
+        expect(failureAs(exit, Error).message).toMatch(
+          /System "Hook" is a hook and is in the input stage/
+        );
       })
     );
   });
@@ -1410,7 +1404,12 @@ describe("the picture of the devices in the world", () => {
           step(0.1);
           seen.push(app.world.hash());
         }
-        return { hashes: seen, log: app.actionLog as Action.Logged[] };
+        const log = app.actionLog.filter(
+          (entry): entry is Action.Logged => !Action.isCheckpoint(entry)
+        );
+        // It records no checkpoints: every entry is a move.
+        expect(log).toHaveLength(app.actionLog.length);
+        return { hashes: seen, log };
       }).pipe(withSource(source))
     );
     // The same game with no devices, given those reports as they came,
@@ -1491,9 +1490,7 @@ describe("the picture of the devices in the world", () => {
         ]) {
           const exit = app.dispatchByName("arcadekit/Input.Report", payload);
           expect(Exit.isFailure(exit), JSON.stringify(payload)).toBe(true);
-          expect(
-            Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)
-          ).toBeInstanceOf(Action.InvalidPayload);
+          expect(failureOf(exit)).toBeInstanceOf(Action.InvalidPayload);
         }
         const exit = app.dispatch(Input.Report, {
           axes: { PointerX: Number.POSITIVE_INFINITY },

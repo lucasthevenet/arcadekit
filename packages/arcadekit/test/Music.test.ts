@@ -109,7 +109,7 @@ const play = (
     close,
     /** The game does something, a tick applies it, and a frame is heard. */
     step: (action: Action.AnyActionDef, payload: unknown): void => {
-      app.dispatch(action as never, payload as never);
+      expect(app.dispatchByName(action.name, payload)).toEqual(Exit.void);
       app.tick(0.1);
       app.frame(0);
     },
@@ -821,7 +821,7 @@ describe("a level's cues", () => {
       sound
     );
     const step = (action: Action.AnyActionDef, payload: unknown): void => {
-      app.dispatch(action as never, payload as never);
+      expect(app.dispatchByName(action.name, payload)).toEqual(Exit.void);
       app.tick(0.1);
       app.frame(0);
     };

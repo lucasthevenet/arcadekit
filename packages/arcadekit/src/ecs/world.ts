@@ -30,17 +30,21 @@
  * No Effect dependency.
  */
 import {
+  EntityArray,
   GENERATIONS,
   INDEX_MASK,
+  copyRows,
   entityIndex,
   frozenWrite,
   growColumn,
   isBoxed,
   isComponentDef,
+  isEntity,
   makeAccessor,
   makeColumn,
   makeEntity,
   retarget,
+  typedColumn,
 } from "./component";
 import type {
   Accessor,
@@ -78,8 +82,6 @@ const NOT_PLACED = -1;
 const FREE = -2;
 /** The number of slots: what an id's generation is multiplied by. */
 const SLOTS = INDEX_MASK + 1;
-/** In a `Saved`, the row value that means "every row". */
-const WHOLE = -1;
 /** What `hash` folds in before each singleton, to distinguish it from a sparse set. */
 const SINGLETON = 0x53_49_4e_47;
 const storageOf = (def: ComponentDef): 0 | 1 | 2 =>
@@ -107,19 +109,28 @@ interface Single {
 type Columns = Record<string, Column>;
 
 /** What a transaction saved before a write: one row, or whole columns. */
-interface Saved {
-  readonly cols: Columns;
-  readonly def: ComponentDef;
-  /** `WHOLE`, or the one row that was saved. */
-  readonly row: number;
-  /** How many rows `copies` holds when it holds whole columns. */
-  readonly count: number;
-  /**
-   * For each field, a copy of the column's first `count` rows (the array may be
-   * longer, since it is reused), or the single row's value.
-   */
-  readonly copies: unknown[];
-}
+type Saved =
+  | {
+      readonly kind: "row";
+      readonly cols: Columns;
+      readonly def: ComponentDef;
+      /** The row that was saved. */
+      readonly row: number;
+      /** For each field, the row's value. */
+      readonly values: unknown[];
+    }
+  | {
+      readonly kind: "whole";
+      readonly cols: Columns;
+      readonly def: ComponentDef;
+      /** How many rows `copies` holds. */
+      readonly count: number;
+      /**
+       * For each field, a copy of the column's first `count` rows. The array
+       * may be longer, since it is reused.
+       */
+      readonly copies: Column[];
+    };
 
 const makeColumns = (def: ComponentDef, capacity: number): Columns => {
   const cols: Columns = {};
@@ -179,6 +190,18 @@ const targetless = (def: ComponentDef): Error =>
     `"${def.name}" is a relation, and a relation needs a target: give it as ${def.name.split("/").pop()}.of({ target }).`
   );
 
+/** Returns a relation's target, and throws for a value that holds no id. */
+const targetOf = (
+  def: ComponentDef,
+  value: Readonly<Record<string, unknown>>
+): Entity => {
+  const target = value.target;
+  if (typeof target !== "number" || !isEntity(target)) {
+    throw targetless(def);
+  }
+  return target;
+};
+
 /** Summarizes a value in a few words, for a message. */
 const describeValue = (value: unknown): string =>
   typeof value === "function"
@@ -200,7 +223,7 @@ const byName = (a: { readonly name: string }, b: { readonly name: string }) =>
 /** @internal */
 export class Table {
   /** The id of the entity in each row. */
-  entities: Float64Array;
+  entities: EntityArray;
   count = 0;
   capacity: number;
   /** Indexed by component id. The record identity is stable; its arrays are replaced on growth. */
@@ -220,7 +243,7 @@ export class Table {
     capacity = 16
   ) {
     this.capacity = capacity;
-    this.entities = new Float64Array(capacity);
+    this.entities = new EntityArray(capacity);
     this.defsByName = defs.toSorted(byName);
     for (const def of defs) {
       this.ids.add(def.id);
@@ -232,7 +255,7 @@ export class Table {
   push(entity: Entity): number {
     if (this.count === this.capacity) {
       const capacity = this.capacity * 2;
-      const entities = new Float64Array(capacity);
+      const entities = new EntityArray(capacity);
       entities.set(this.entities);
       this.entities = entities;
       for (const def of this.defs) {
@@ -249,7 +272,7 @@ export class Table {
     const last = this.count - 1;
     let moved: Entity | undefined;
     if (row !== last) {
-      moved = this.entities[last] as Entity;
+      moved = this.entities[last]!;
       this.entities[row] = moved;
     }
     for (const def of this.defs) {
@@ -862,12 +885,13 @@ export class RemovedReader {
     if (count === 0) {
       return [];
     }
-    const ids = new Float64Array(count);
+    // A log of removals holds the ids of the entities.
+    const ids = new EntityArray(count);
     log.copy(cursor.at, ids, 0);
     this.world._reading(cursor);
     cursor.at = log.end;
     this.world._read(log);
-    return Array.from(ids) as Entity[];
+    return Array.from({ length: count }, (_, i) => ids[i]!);
   }
 }
 
@@ -982,7 +1006,7 @@ export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
  *
  * @category Models
  */
-export type EntityColumn = Float64Array & Readonly<Record<number, Entity>>;
+export type EntityColumn = Readonly<EntityArray>;
 
 export type ColumnSetsOf<D extends Terms> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, infer St>
@@ -1055,7 +1079,10 @@ interface Members {
   count: number;
 }
 
-type Callback = (...args: unknown[]) => void;
+// A method's parameters are compared both ways, so that a callback of any
+// terms is a `Callback`: the loops call it with the accessors or columns of
+// the terms it was typed with.
+type Callback = { call(...args: unknown[]): void }["call"];
 type OnRun = (table: Table, start: number, end: number) => void;
 
 /**
@@ -1689,7 +1716,7 @@ export class QueryView<D extends Terms = Terms> {
   each(fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void): void {
     const frame = this.enter();
     try {
-      const f = fn as Callback;
+      const f: Callback = fn;
       const loop = (frame.loop ??= this.makeLoop(frame.frozen));
       const acc = loop.accessors;
       // Sparse columns are replaced when a set grows, and its members'
@@ -1852,7 +1879,7 @@ export class QueryView<D extends Terms = Terms> {
   ): void {
     const frame = this.enter();
     try {
-      const f = fn as Callback;
+      const f: Callback = fn;
       const { n } = this;
       const cols: unknown[] = Array.from({ length: n });
       for (let k = 0; k < n; k++) {
@@ -1968,7 +1995,7 @@ export class QueryView<D extends Terms = Terms> {
       try {
         this.runs(frame, (table, start, end) => {
           for (let i = start; i < end; i++) {
-            out.push(table.entities[i] as Entity);
+            out.push(table.entities[i]!);
           }
         });
       } finally {
@@ -1980,7 +2007,7 @@ export class QueryView<D extends Terms = Terms> {
     for (const table of this.tables) {
       for (let i = 0; i < table.count; i++) {
         if (!this.filtered || this.pass(table.entities[i]!)) {
-          out.push(table.entities[i] as Entity);
+          out.push(table.entities[i]!);
         }
       }
     }
@@ -2109,7 +2136,7 @@ export class World {
    * handler that loops over a table every time it runs would otherwise allocate
    * that table's size on every action.
    */
-  private readonly spare = new WeakMap<Columns, unknown[]>();
+  private readonly spare = new WeakMap<Columns, Column[]>();
   private readonly savedRandom = new Uint32Array(4);
   /** The random generator's state when the world was frozen. */
   private readonly frozenRandom = new Uint32Array(4);
@@ -2261,7 +2288,10 @@ export class World {
         this._changed[def.id]?.note(index);
       }
       if (def.relation !== undefined) {
-        (related ??= []).push(input as ComponentValue);
+        if (isComponentDef(input)) {
+          throw targetless(def);
+        }
+        (related ??= []).push(input);
       }
     }
     this.recTable[index] = table.index;
@@ -2277,7 +2307,7 @@ export class World {
     let gone = false;
     const dangling: ComponentDef[] = [];
     for (const { def, value } of related) {
-      const target = value.target as Entity;
+      const target = targetOf(def, value);
       if (this.isAlive(target)) {
         this.relationOf(def).link(index, entityIndex(target));
       } else if (def.relation === "despawn") {
@@ -2438,7 +2468,7 @@ export class World {
     if (value === undefined) {
       throw targetless(def);
     }
-    const target = value.target as Entity;
+    const target = targetOf(def, value);
     if (!this.isAlive(target)) {
       // A target that is gone already: what its despawn would have done.
       if (def.relation === "despawn") {
@@ -2662,11 +2692,12 @@ export class World {
       }
       const link = (
         entities: Uint32Array | Float64Array,
-        targets: Float64Array,
+        targets: Column,
         count: number
       ): void => {
+        const ids = typedColumn(targets, EntityArray);
         for (let row = 0; row < count; row++) {
-          const target = targets[row] as Entity;
+          const target = ids[row]!;
           if (!this.isAlive(target)) {
             throw corrupt(
               `"${def.name}" points at an entity that does not exist`
@@ -2681,14 +2712,14 @@ export class World {
       if (def.storage === "sparse") {
         const set = this.sparseById.get(def.id);
         if (set !== undefined) {
-          link(set.dense, set.columns.target as Float64Array, set.count);
+          link(set.dense, set.columns.target!, set.count);
         }
         continue;
       }
       for (const table of this.tables) {
         const columns = table.columns[def.id];
         if (columns !== undefined) {
-          link(table.entities, columns.target as Float64Array, table.count);
+          link(table.entities, columns.target!, table.count);
         }
       }
     }
@@ -2864,7 +2895,7 @@ export class World {
    * query that passes is remembered and not checked again.
    */
   private guardQuery(guard: Guard, spec: QuerySpec): void {
-    for (const def of spec.terms as readonly ComponentDef[]) {
+    for (const def of spec.terms) {
       if (spec.readDefs?.includes(def) === true) {
         if (guard.reads[def.id] !== true) {
           this.refuse(`asked for a query that reads "${def.name}"`, "read");
@@ -2987,20 +3018,14 @@ export class World {
     // Newest first, so that where a row was saved before its whole column,
     // the oldest value is the one left standing.
     for (let i = saved.length - 1; i >= 0; i--) {
-      const { cols, copies, count, def, row } = saved[i]!;
+      const one = saved[i]!;
+      const { cols, def } = one;
       for (let f = 0; f < def.fields.length; f++) {
         const column = cols[def.fields[f]!]!;
-        if (row !== WHOLE) {
-          column[row] = copies[f];
-        } else if (isBoxed(def.kinds[f]!)) {
-          const from = copies[f] as unknown[];
-          for (let r = 0; r < count; r++) {
-            column[r] = from[r];
-          }
+        if (one.kind === "row") {
+          column[one.row] = one.values[f];
         } else {
-          (column as Float32Array).set(
-            (copies[f] as Float32Array).subarray(0, count)
-          );
+          copyRows(column, one.copies[f]!, one.count);
         }
       }
     }
@@ -3064,20 +3089,15 @@ export class World {
     }
     for (let f = 0; f < def.fields.length; f++) {
       const column = cols[def.fields[f]!]!;
-      const kept = copies[f] as Column | undefined;
+      const kept = copies[f];
       if (kept === undefined || kept.length < count) {
         // Room for the column as it is now; a column only grows by doubling.
         copies[f] = column.slice(0, column.length);
-      } else if (isBoxed(def.kinds[f]!)) {
-        const to = kept as unknown[];
-        for (let r = 0; r < count; r++) {
-          to[r] = column[r];
-        }
       } else {
-        (kept as Float32Array).set((column as Float32Array).subarray(0, count));
+        copyRows(kept, column, count);
       }
     }
-    this.saved.push({ cols, copies, count, def, row: WHOLE });
+    this.saved.push({ kind: "whole", cols, copies, count, def });
   }
 
   /** Saves one row of a component's columns. */
@@ -3085,11 +3105,11 @@ export class World {
     if (this.savedWhole.has(cols)) {
       return;
     }
-    const copies: unknown[] = [];
+    const values: unknown[] = [];
     for (let f = 0; f < def.fields.length; f++) {
-      copies.push(cols[def.fields[f]!]![row]);
+      values.push(cols[def.fields[f]!]![row]);
     }
-    this.saved.push({ cols, copies, count: 1, def, row });
+    this.saved.push({ kind: "row", cols, values, def, row });
   }
 
   /**
@@ -3192,9 +3212,9 @@ export class World {
       }
     }
     if (byReader === undefined) {
-      view = new QueryView(this, spec);
-      this.views.set(spec, view);
-      return view as QueryView<D>;
+      const made = new QueryView(this, spec);
+      this.views.set(spec, made);
+      return made;
     }
     const key = `${who}\n${describeSpec(spec)}`;
     view = this.watchViewsByKey.get(key);
@@ -3355,7 +3375,7 @@ export class World {
       estimate += 64 + table.count * 8;
       for (const def of table.defs) {
         for (const kind of def.kinds) {
-          estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind as "f32"]);
+          estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind]);
         }
       }
     }
@@ -3725,7 +3745,7 @@ export class World {
       }
       table.count = count;
       for (let row = 0; row < count; row++) {
-        const entity = table.entities[row] as Entity;
+        const entity = table.entities[row]!;
         const index = entityIndex(entity);
         // Eight bytes can hold what is no id at all: a number that is not
         // whole, below nothing, or past the last id. None of those is its

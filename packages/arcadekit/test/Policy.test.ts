@@ -1,19 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import { generates, play } from "./policyGame";
 
 // Node's own, declared here, since the tests are compiled with no types
 // but their own.
 declare const process: { readonly execPath: string };
-const { execFileSync } = (await import(
-  /* @vite-ignore */ "node:child_process" as string
-)) as {
-  readonly execFileSync: (
-    file: string,
-    args: readonly string[],
-    options: { readonly cwd: string; readonly encoding: "utf8" }
-  ) => string;
-};
+type ExecFileSync = (
+  file: string,
+  args: readonly string[],
+  options: { readonly cwd: string; readonly encoding: "utf8" }
+) => string;
+const isExecFileSync = (value: unknown): value is ExecFileSync =>
+  typeof value === "function" && value.name === "execFileSync";
+// A specifier TypeScript does not look up, as it has no types for it.
+const childProcess: string = "node:child_process";
+const execFileSync: unknown = Reflect.get(
+  await import(/* @vite-ignore */ childProcess),
+  "execFileSync"
+);
+assert(isExecFileSync(execFileSync));
 
 /**
  * Plays the game of `policyGame.ts` in a process of its own and gives

@@ -1,10 +1,11 @@
-import { Cause, Context, Effect, Exit, Layer, Result } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { Context, Effect, Exit, Layer, Result } from "effect";
+import { afterEach, assert, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
 import { Lockstep, Relay, Rollback, Transport } from "../src/index";
+import { failureAs } from "./exits";
 import { DELTA, game, moves, players, purseOf } from "./peers";
-import type { Game, Peer } from "./peers";
+import type { Game } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
   from,
@@ -14,12 +15,8 @@ const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
 const text = (from: string, tick: number, value = 0): string =>
   Lockstep.encode(message(from, tick, value));
 
-const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
-  if (Exit.isSuccess(exit)) {
-    throw new Error("it was let through");
-  }
-  return Cause.squash(exit.cause) as Relay.Refused;
-};
+const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused =>
+  failureAs(exit, Relay.Refused);
 
 const ada = { room: "blue", peer: "ada" };
 const grace = { room: "blue", peer: "grace" };
@@ -326,7 +323,7 @@ const serve = async (options?: Relay.Options) => {
       socket.send(sent)
     );
     if (Exit.isFailure(connection)) {
-      const refused = Cause.squash(connection.cause) as Relay.Refused;
+      const refused = failureAs(connection, Relay.Refused);
       socket.close(refused.code, refused.reason);
       return;
     }
@@ -340,14 +337,16 @@ const serve = async (options?: Relay.Options) => {
         isBinary ? bytes : new TextDecoder().decode(bytes)
       );
       if (Exit.isFailure(received)) {
-        const refused = Cause.squash(received.cause) as Relay.Refused;
+        const refused = failureAs(received, Relay.Refused);
         closes.push({ peer: member.peer, code: refused.code });
         socket.close(refused.code, refused.reason);
       }
     });
     socket.on("close", () => connection.value.close());
   });
-  const { port } = server.address() as { port: number };
+  const address = server.address();
+  assert(typeof address === "object" && address !== null);
+  const { port } = address;
   return {
     relay,
     closes,
@@ -460,11 +459,12 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             seats.push({ name, app, session, connected });
           }
           const act = players(31);
-          const [one, two] = seats as [(typeof seats)[0], (typeof seats)[0]];
+          const [one, two] = seats;
+          assert(one !== undefined && two !== undefined);
           for (let i = 0; i < 60; i++) {
             for (const seat of seats) {
               if (i < 40) {
-                act(seat as unknown as Peer);
+                act(seat);
               }
               seat.connected.tick();
               yield* Effect.promise(() => later(1));
@@ -570,8 +570,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               }
             }, "the second was turned away")
           );
-          expect(thrown).toBeInstanceOf(Transport.Closed);
-          expect((thrown as Transport.Closed).message).toBe(
+          assert(thrown instanceof Transport.Closed);
+          expect(thrown.message).toBe(
             `The transport's socket to ${Relay.address(served.url, ada)} is closed (code 1008: name taken). Every message has to arrive, so the game cannot go on over it.`
           );
           // The first is none the worse.
@@ -623,7 +623,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
                   return true;
                 }
               }, "it was closed");
-              return thrown as Transport.Closed;
+              assert(thrown instanceof Transport.Closed);
+              return thrown;
             });
           expect((yield* closedWith(taken)).reason).toBe("name taken");
           expect((yield* closedWith(nowhere)).reason).toBe("not an address");
@@ -677,7 +678,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               }
             }, "it gave up")
           );
-          expect((thrown as Transport.Closed).code).toBe(1006);
+          assert(thrown instanceof Transport.Closed);
+          expect(thrown.code).toBe(1006);
         })
       )
     );

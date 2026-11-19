@@ -4,6 +4,7 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Game, Screen } from "../examples/page/game";
+import type { Drawing } from "../examples/page/game";
 import { Hud, Menu, Start } from "../examples/page/protocol";
 import { mount as mountDom } from "../examples/page/uiDom";
 import { mount as mountReact } from "../examples/page/uiReact";
@@ -37,10 +38,15 @@ const files = {
 };
 
 /** A canvas that draws nothing: the game's own drawing is not what is tested here. */
-const canvas = new Proxy(
-  {},
-  { get: () => () => {}, set: () => true }
-) as CanvasRenderingContext2D;
+const canvas: Drawing = {
+  clearRect: () => {},
+  drawImage: () => {},
+  fillRect: () => {},
+  fillStyle: "",
+  fillText: () => {},
+  font: "",
+  textAlign: "start",
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();

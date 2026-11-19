@@ -13,6 +13,13 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { entity } from "./entities";
+
+/** A field of a value a test was handed, by name, or undefined. */
+const fieldOf = (value: unknown, field: string): unknown =>
+  typeof value === "object" && value !== null
+    ? Reflect.get(value, field)
+    : undefined;
 
 const Health = Component.define("sc/Health", { hp: Field.i32 });
 
@@ -168,7 +175,7 @@ describe("actions with a schema", () => {
       );
 
       // A well-formed payload can still be refused by the rules.
-      const dead = 4000 as Entity;
+      const dead = entity(4000);
       expect(
         failure(
           app.dispatchByName("Damage", { target: dead, amount: 3, seed: "1" })
@@ -186,7 +193,7 @@ describe("actions with a schema", () => {
     const Watch = System.make("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
         rejected.push(
-          `${event.action}: ${(event.error as { _tag: string })._tag}`
+          `${event.action}: ${String(fieldOf(event.error, "_tag"))}`
         );
       }
     });
@@ -215,7 +222,7 @@ describe("actions with a schema", () => {
       expect(
         moves(app.actionLog).map((entry) => [
           entry.name,
-          (entry.payload as { amount?: number }).amount,
+          fieldOf(entry.payload, "amount"),
           entry.queued,
           entry.refused === undefined ? "applied" : "refused",
         ])
@@ -230,9 +237,9 @@ describe("actions with a schema", () => {
       const invalid = Exit.findErrorOption(
         app.dispatchByName("Damage", { target, amount: 500, seed: "9" })
       );
-      expect(moves(app.actionLog)[1]!.refused).toBe(
-        Option.getOrThrow(invalid as Option.Option<Error>).message
-      );
+      const error = Option.getOrThrow(invalid);
+      assert(error instanceof Error);
+      expect(moves(app.actionLog)[1]!.refused).toBe(error.message);
       expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/);
       expect(moves(app.actionLog)[2]!.refused).toBe("UnknownAction");
       expect(moves(app.actionLog)[3]!.payload).toEqual({
@@ -290,9 +297,9 @@ describe("events with a schema", () => {
     const Emit = System.make("Emit", function* () {
       const hit = yield* Hit;
       // The payload is typed by the schema: a string here would not compile.
-      hit.emit({ target: 1 as Entity, amount: 3, at: new Date(5), seed: 9n });
+      hit.emit({ target: entity(1), amount: 3, at: new Date(5), seed: 9n });
       hit.emit({
-        target: 1 as Entity,
+        target: entity(1),
         // @ts-expect-error the schema says a whole number
         amount: "three",
         at: new Date(5),
@@ -300,7 +307,7 @@ describe("events with a schema", () => {
       });
       // Out of the schema's range, which only the schema knows: emitting
       // checks nothing, so that it stays a plain call inside a loop.
-      hit.emit({ target: 1 as Entity, amount: 500, at: new Date(5), seed: 9n });
+      hit.emit({ target: entity(1), amount: 500, at: new Date(5), seed: 9n });
     });
     const Read = System.make("Read", function* () {
       for (const hit of (yield* Hit).read()) {
@@ -319,7 +326,7 @@ describe("events with a schema", () => {
 
   it("are written as JSON and read back, checked against the schema", () => {
     const payload = {
-      target: 7 as Entity,
+      target: entity(7),
       amount: 3,
       at: new Date("2026-11-15T12:00:00.000Z"),
       seed: 12_345_678_901_234_567_890n,
@@ -374,7 +381,7 @@ describe("events with a schema", () => {
     const Twin = Event.define<number>("sc/Hit");
     const Both = System.make("Both", function* () {
       (yield* Hit).emit({
-        target: 1 as Entity,
+        target: entity(1),
         amount: 1,
         at: new Date(1),
         seed: 1n,
@@ -396,7 +403,7 @@ describe("events with a schema", () => {
     });
     withApp(App.make({}), (app) => {
       app.events.emit(Hit, {
-        target: 1 as Entity,
+        target: entity(1),
         amount: 1,
         at: new Date(1),
         seed: 1n,
@@ -425,20 +432,29 @@ describe("saving and replaying", () => {
       };
     });
 
-  /** A log entry as its JSON has it, which a player can edit into anything. */
-  interface Written {
-    tick: number;
-    name?: string;
-    payload?: Record<string, unknown>;
-    hash?: number;
-  }
+  /** A log as its JSON has it, which a player can edit into anything. */
+  const Written = Schema.mutable(
+    Schema.Array(
+      Schema.Struct({
+        tick: Schema.mutableKey(Schema.Number),
+        name: Schema.optionalKey(Schema.mutableKey(Schema.String)),
+        payload: Schema.optionalKey(
+          Schema.mutableKey(Schema.Record(Schema.String, Schema.Unknown))
+        ),
+        hash: Schema.optionalKey(Schema.mutableKey(Schema.Number)),
+      })
+    )
+  );
+  const isWritten = Schema.is(Written);
   const replayInto = (
-    log: readonly (Action.LogEntry | Written)[],
+    log: readonly Action.LogEntry[] | typeof Written.Type,
     ticks: number
   ) =>
     withApp(game, ({ app, target }) => {
-      // Whatever the file says: the replay is what checks it.
-      App.replay(app, log as readonly Action.LogEntry[], { delta: 1, ticks });
+      // Read as a file is, whatever it says: the replay is what checks it.
+      const read = Action.decodeLog(JSON.stringify(log));
+      assert(Exit.isSuccess(read));
+      App.replay(app, read.value, { delta: 1, ticks });
       return app.world.get(target, Health)!.hp;
     });
 
@@ -477,7 +493,8 @@ describe("saving and replaying", () => {
     const saved = record();
     // Entry 0 is the checkpoint of the state the game started from; the four
     // actions follow it.
-    const log = JSON.parse(saved.text) as Written[];
+    const log: unknown = JSON.parse(saved.text);
+    assert(isWritten(log));
     expect(log.map((entry) => entry.name)).toEqual([
       undefined,
       "Damage",
@@ -488,20 +505,20 @@ describe("saving and replaying", () => {
 
     // An edited save file: a hit far above what the schema allows.
     const edited = structuredClone(log);
-    edited[2]!.payload!.amount = 9999;
+    edited[2]!.payload = { ...edited[2]!.payload, amount: 9999 };
     let caught: unknown;
     try {
       replayInto(edited, saved.ticks);
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(App.ReplayDiverged);
-    expect((caught as App.ReplayDiverged).index).toBe(2);
-    expect((caught as App.ReplayDiverged).tick).toBe(1);
+    assert(caught instanceof App.ReplayDiverged);
+    expect(caught.index).toBe(2);
+    expect(caught.tick).toBe(1);
     // It was enqueued, so the replay enqueues it too, and stops after the
     // tick in which its own rules refused what the game had accepted.
-    expect((caught as App.ReplayDiverged).reason).toMatch(/amount/);
-    expect((caught as Error).message).toMatch(
+    expect(caught.reason).toMatch(/amount/);
+    expect(caught.message).toMatch(
       /Log entry 2 \("Damage" at tick 1\) was refused on replay/
     );
 
@@ -514,7 +531,7 @@ describe("saving and replaying", () => {
 
     // Valid entries the rules refuse: the target is not in this game.
     const retargeted = structuredClone(log);
-    retargeted[3]!.payload!.target = 4000;
+    retargeted[3]!.payload = { ...retargeted[3]!.payload, target: 4000 };
     expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 3/);
 
     // Entries that could never be reached.

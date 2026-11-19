@@ -11,8 +11,15 @@
  *
  * No Effect dependency.
  */
-import { isBoxed } from "./component";
-import type { Column, FieldKind, RefCodec } from "./component";
+import {
+  EntityArray,
+  boxedColumn,
+  isBoxed,
+  makeColumn,
+  numberColumn,
+  typedColumn,
+} from "./component";
+import type { Column, FieldKind, NumberKind, RefCodec } from "./component";
 
 /**
  * Why a snapshot couldn't be taken or loaded.
@@ -64,10 +71,7 @@ export const END = 0x21444e45;
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
 /** Bytes per element of a numeric column. */
-export const WIDTH: Record<
-  Exclude<FieldKind, "json" | "ref" | "transient">,
-  number
-> = {
+export const WIDTH: Record<NumberKind, number> = {
   f32: 4,
   f64: 8,
   i32: 4,
@@ -383,13 +387,13 @@ export const writeColumn = (
   codec?: RefCodec<unknown>
 ): number => {
   if (!isBoxed(kind)) {
-    writer.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+    writer.numbers(numberColumn(column), count, WIDTH[kind]);
     return -1;
   }
   if (kind === "transient") {
     return -1;
   }
-  const values = column as unknown[];
+  const values = boxedColumn(column);
   for (let row = 0; row < count; row++) {
     let value = values[row];
     if (kind === "ref") {
@@ -422,17 +426,17 @@ export const readColumn = (
   if (kind === "entity" && narrow) {
     const ids = new Uint32Array(count);
     reader.numbers(ids, count, 4);
-    (column as Float64Array).set(ids);
+    typedColumn(column, EntityArray).set(ids);
     return;
   }
   if (!isBoxed(kind)) {
-    reader.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+    reader.numbers(numberColumn(column), count, WIDTH[kind]);
     return;
   }
   if (kind === "transient") {
     return;
   }
-  const values = column as unknown[];
+  const values = boxedColumn(column);
   for (let row = 0; row < count; row++) {
     const value = reader.value();
     values[row] = kind === "ref" ? codec!.decode(value) : value;
@@ -519,35 +523,6 @@ export interface SnapshotContents {
   singletons: SnapshotSingleton[];
 }
 
-const columnOf = (kind: FieldKind, count: number): Column => {
-  switch (kind) {
-    case "f32": {
-      return new Float32Array(count);
-    }
-    case "f64": {
-      return new Float64Array(count);
-    }
-    case "i32": {
-      return new Int32Array(count);
-    }
-    case "u32": {
-      return new Uint32Array(count);
-    }
-    case "entity": {
-      return new Float64Array(count);
-    }
-    case "u16": {
-      return new Uint16Array(count);
-    }
-    case "u8": {
-      return new Uint8Array(count);
-    }
-    default: {
-      return Array.from({ length: count }, () => undefined);
-    }
-  }
-};
-
 const damaged = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
 
@@ -624,7 +599,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
       if (kind === "transient") {
         continue;
       }
-      const column = columnOf(kind, count);
+      const column = makeColumn(kind, count);
       // A ref field stays in its encoded form: there is no codec here.
       readColumn(
         reader,

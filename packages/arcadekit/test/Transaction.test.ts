@@ -19,6 +19,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { entity } from "./entities";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -37,16 +38,19 @@ const Aura = Component.define("tx/Aura", kinds, { storage: "sparse" });
 const Marked = Component.tag("tx/Marked");
 const Chilled = Component.tag("tx/Chilled", { storage: "sparse" });
 
-const sheet = (n: number) => ({
-  single: n + 0.5,
-  double: n + 0.25,
-  signed: -n,
-  unsigned: 3_000_000_000 + n,
-  short: 60_000 + n,
-  byte: 200 + (n % 50),
-  other: n as Entity,
-  note: `note ${n}` as unknown,
-});
+const sheet = (n: number) => {
+  const note: unknown = `note ${n}`;
+  return {
+    single: n + 0.5,
+    double: n + 0.25,
+    signed: -n,
+    unsigned: 3_000_000_000 + n,
+    short: 60_000 + n,
+    byte: 200 + (n % 50),
+    other: entity(n),
+    note,
+  };
+};
 
 // Two singletons: one the populated world has written, one it has not.
 const Clock = Component.singleton("tx/Clock", kinds, sheet(500));
@@ -112,7 +116,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
       row.unsigned = 1;
       row.short = 1;
       row.byte = 1;
-      row.other = 0 as Entity;
+      row.other = entity(0);
       row.note = "rewritten";
     });
   },
@@ -168,7 +172,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
     const clock = world.singleton(Clock);
     clock.single += 1;
     clock.note = { replaced: true };
-    clock.other = 9 as Entity;
+    clock.other = entity(9);
   },
   "writing a singleton for the first time": (world) => {
     const mood = world.singleton(Mood);
@@ -345,7 +349,9 @@ describe("a transaction of a world", () => {
     expect(world.get(entity, Sheet)!.note).toBe(held);
 
     world.begin();
-    (world.get(entity, Sheet)!.note as { hp: number }).hp = 50;
+    // What the field holds is changed in place, not through the world.
+    expect(world.get(entity, Sheet)!.note).toBe(held);
+    held.hp = 50;
     world.rollback();
     // The field holds the same object as before, and the object was changed.
     expect(world.get(entity, Sheet)!.note).toBe(held);

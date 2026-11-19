@@ -1,5 +1,4 @@
 import {
-  Cause,
   Context,
   Effect,
   Random as EffectRandom,
@@ -33,6 +32,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import { failureAs, failureOf } from "./exits";
 
 const Layout = Schema.Struct({
   walls: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -223,7 +223,7 @@ describe("an asset", () => {
       )
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
+    const error = failureOf(exit);
     expectFailed(error, "/nowhere.png", "There is no such file.");
     // Nothing that was made is left.
     expect(log.filter((line) => line.startsWith("open")).length).toBe(
@@ -240,11 +240,7 @@ describe("an asset", () => {
         )
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
-    expectFailed(
-      Cause.squash((inherited as Exit.Failure<never, unknown>).cause),
-      "toString",
-      "There is no such file."
-    );
+    expectFailed(failureOf(inherited), "toString", "There is no such file.");
   });
 
   it("is checked against its schema, since it comes from outside", async () => {
@@ -263,9 +259,7 @@ describe("an asset", () => {
     const failure = async (file: string | Uint8Array) => {
       const exit = await tryLoad(file);
       expect(Exit.isFailure(exit)).toBe(true);
-      return Cause.squash(
-        (exit as Exit.Failure<never, unknown>).cause
-      ) as Assets.AssetFailed;
+      return failureAs(exit, Assets.AssetFailed);
     };
     expect(await tryLoad('{"walls":2,"name":"Ok"}')).toEqual(
       Exit.succeed({ layout: { walls: 2, name: "Ok" } })
@@ -294,13 +288,9 @@ describe("an asset", () => {
       )
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(
-      (
-        Cause.squash(
-          (exit as Exit.Failure<never, unknown>).cause
-        ) as Assets.AssetFailed
-      ).message
-    ).toMatch(/^It is not text/);
+    expect(failureAs(exit, Assets.AssetFailed).message).toMatch(
+      /^It is not text/
+    );
   });
 
   it("comes by fetch unless told otherwise, and an interrupted load gives the request up", async () => {
@@ -334,11 +324,7 @@ describe("an asset", () => {
       file: "fetched",
     });
     const gone = await Effect.runPromiseExit(one("/gone.txt"));
-    expectFailed(
-      Cause.squash((gone as Exit.Failure<never, unknown>).cause),
-      "/gone.txt",
-      "The server answered 404"
-    );
+    expectFailed(failureOf(gone), "/gone.txt", "The server answered 404");
     // A request that never answers, and a load that is interrupted.
     const fiber = Effect.runFork(one("/slow.txt"));
     await settle();
@@ -642,7 +628,7 @@ describe("a level's assets", () => {
     const drawnGame = makeGame();
     const bare = makeGame();
     const reached: string[] = [];
-    const services = {
+    const services: Readonly<Record<string, Context.Key<unknown, unknown>>> = {
       World,
       Time,
       Frame,
@@ -660,9 +646,7 @@ describe("a level's assets", () => {
         Effect.gen(function* () {
           yield* EffectRandom.next;
           for (const [name, key] of Object.entries(services)) {
-            const found = yield* Effect.serviceOption(
-              key as Context.Key<unknown, unknown>
-            );
+            const found = yield* Effect.serviceOption(key);
             if (Option.isSome(found)) {
               reached.push(name);
             }
@@ -900,10 +884,9 @@ describe("a level's assets", () => {
             })
           );
           expect(Exit.isFailure(twice)).toBe(true);
-          expect(
-            (Cause.squash((twice as Exit.Failure<never, never>).cause) as Error)
-              .message
-          ).toMatch(/Duplicate system name "Assets\.during\(as\/Forest\)"/);
+          expect(failureAs(twice, Error).message).toMatch(
+            /Duplicate system name "Assets\.during\(as\/Forest\)"/
+          );
           // Kept for two states by one condition that holds in both.
           const log: string[] = [];
           const Shared = Assets.bundle("as/Shared", {
@@ -996,8 +979,8 @@ describe("a level's assets", () => {
             systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
           });
           app.frame(0);
-          expect(status?._tag).toBe("Failed");
-          expectFailed((status as { error: unknown }).error, "", "boom");
+          assert(status?._tag === "Failed");
+          expectFailed(status.error, "", "boom");
         })
       ).pipe(Effect.provide(Layer.mergeAll(Assets.layerMemory(files), quiet)))
     );

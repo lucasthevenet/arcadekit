@@ -20,6 +20,7 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/index";
+import { entity } from "./entities";
 
 const Turn = Singleton.define(
   "sg/Turn",
@@ -53,7 +54,7 @@ const Everything = Singleton.define(
     unsigned: 4_000_000_000,
     short: 60_000,
     byte: 200,
-    other: 7 as never,
+    other: entity(7),
     note: { nested: [1, "two"] },
     when: new Date("2026-01-02T03:04:05Z"),
     handle: undefined,
@@ -422,7 +423,8 @@ describe("a singleton in a snapshot", () => {
       "sg/Clock",
       "lap",
       "f64",
-      (lap: number) => lap / 8
+      Schema.Number,
+      (lap) => lap / 8
     );
     Migrate.removeField(contents, "sg/Clock", "player");
     Migrate.removeComponent(contents, "sg/Everything");

@@ -98,7 +98,10 @@ const check = Effect.gen(function* () {
     );
     seats.push({ peer, app, session, connected });
   }
-  const [ada, grace] = seats as [(typeof seats)[0], (typeof seats)[0]];
+  const [ada, grace] = seats;
+  if (ada === undefined || grace === undefined) {
+    throw new Error("Both seats should have joined.");
+  }
   for (let round = 0; round < 60; round++) {
     for (const seat of seats) {
       if (round < 40 && round % 5 === (seat.peer === "ada" ? 0 : 2)) {

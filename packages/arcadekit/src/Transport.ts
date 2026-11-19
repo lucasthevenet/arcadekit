@@ -126,10 +126,11 @@ export interface Wire {
   /** Sends a text to every other peer. */
   readonly send: (text: string) => void;
   /**
-   * Calls `onText` with each text that arrives from another peer. Returns a
-   * function that stops listening.
+   * Calls `onArrival` with whatever arrives from another peer: a text, or
+   * anything else the wire carries, which the transport drops and counts.
+   * Returns a function that stops listening.
    */
-  readonly listen: (onText: (text: string) => void) => () => void;
+  readonly listen: (onArrival: (arrived: unknown) => void) => () => void;
 }
 
 /**
@@ -164,6 +165,10 @@ export const text = (wire: Wire): TextTransport => {
   let inbox: Lockstep.Message[] = [];
   let dropped = 0;
   const close = wire.listen((arrived) => {
+    if (typeof arrived !== "string") {
+      dropped++;
+      return;
+    }
     const message = Lockstep.decode(arrived);
     if (Exit.isSuccess(message)) {
       inbox.push(message.value);
@@ -211,11 +216,11 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
           const channel = new BroadcastChannel(name);
           const over = text({
             send: (message) => channel.postMessage(message),
-            listen(onText) {
+            listen(onArrival) {
+              // Whatever else is posted under the name is not text, and is
+              // dropped as what is not a message.
               channel.onmessage = (event: MessageEvent<unknown>) => {
-                // Whatever else is posted under the name is not text, and
-                // is dropped as what is not a message.
-                onText(event.data as string);
+                onArrival(event.data);
               };
               return () => {
                 channel.onmessage = null;
@@ -334,10 +339,10 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
                 waiting.push(sent);
               }
             },
-            listen(onText) {
+            listen(onArrival) {
+              // A frame that is not text is dropped as what is not a message.
               socket.onmessage = (event: MessageEvent<unknown>) => {
-                // A frame that is not text is dropped as what is not a message.
-                onText(event.data as string);
+                onArrival(event.data);
               };
               return () => {
                 socket.onmessage = null;

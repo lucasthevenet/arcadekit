@@ -17,7 +17,13 @@
  * `World` service, and leaves out `entityIndex` and `entityGeneration`, which
  * are only available here.
  */
-export { Component, entityGeneration, entityIndex, Field } from "./component";
+export {
+  Component,
+  EntityArray,
+  entityGeneration,
+  entityIndex,
+  Field,
+} from "./component";
 export type {
   ComponentDef,
   ComponentInput,

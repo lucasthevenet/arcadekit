@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -107,26 +108,30 @@ const scanReads = Action.handler(Scan, function* () {
   return sum;
 });
 
-/** Median milliseconds of one dispatch, in an app whose world holds N entities. */
-const dispatching = <P>(
-  action: Action.ActionDef<string, P, unknown>,
-  payload: (target: Entity) => P,
+// No checkpoints: this measures the action, not the hash.
+const dispatchApp = () =>
+  App.make({ handlers: [nudge, sweep], checkpointEvery: 0 });
+
+/**
+ * Median milliseconds of one dispatch, in an app whose world holds N entities.
+ * `call` is given the app and an entity in the middle of its world, and
+ * returns the dispatch that is measured.
+ */
+const dispatching = (
+  call: (
+    app: Effect.Success<ReturnType<typeof dispatchApp>>,
+    target: Entity
+  ) => () => unknown,
   runs = 20_000,
   warmup = 5000
 ): number =>
   Effect.runSync(
     Effect.scoped(
       Effect.gen(function* () {
-        // No checkpoints: this measures the action, not the hash.
-        const app = yield* App.make({
-          handlers: [nudge, sweep],
-          checkpointEvery: 0,
-        });
+        const app = yield* dispatchApp();
         populate(app.world);
         const target = app.world.view(Moving).entities()[N >> 1]!;
-        const given = payload(target);
-        const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
-        return measure(() => dispatch(action, given), runs, warmup);
+        return measure(call(app, target), runs, warmup);
       })
     )
   );
@@ -185,8 +190,6 @@ const listening = (changing: boolean): number =>
                 }
                 app.input();
                 app.tick(DT);
-                // The log is the game's to keep; here it would only grow.
-                (app.actionLog as unknown[]).length = 0;
               },
               20_000,
               5000
@@ -329,7 +332,7 @@ const atRest = (): number =>
         const Phase = State.define("bench/RestPhase", ["title", "playing"]);
         const Shown = View.define("bench/Shown", { phase: "title" });
         const Show = View.publish(Shown, function* () {
-          return { phase: (yield* Phase).value as string };
+          return { phase: (yield* Phase).value };
         });
         const source = Input.makeManualSource();
         const app = yield* App.make({
@@ -683,22 +686,46 @@ const variants: Record<string, Variant> = {
   dispatchSet: {
     unit: "dispatch",
     label: "dispatch: handler reads and sets one entity, accepted",
-    run: () => dispatching(Nudge, (target) => ({ target, refuse: false })),
+    run: () =>
+      dispatching((app, target) => {
+        const given = { target, refuse: false };
+        return () => app.dispatch(Nudge, given);
+      }),
   },
   dispatchSetRefused: {
     unit: "dispatch",
     label: "dispatch: the same, refused after its write",
-    run: () => dispatching(Nudge, (target) => ({ target, refuse: true })),
+    run: () =>
+      dispatching((app, target) => {
+        const given = { target, refuse: true };
+        return () => app.dispatch(Nudge, given);
+      }),
   },
   dispatchLoop: {
     unit: "dispatch",
     label: "dispatch: handler loops over all 100,000, accepted",
-    run: () => dispatching(Sweep, () => ({ refuse: false }), 300, 80),
+    run: () =>
+      dispatching(
+        (app) => {
+          const given = { refuse: false };
+          return () => app.dispatch(Sweep, given);
+        },
+        300,
+        80
+      ),
   },
   dispatchLoopRefused: {
     unit: "dispatch",
     label: "dispatch: the same, refused after its loop",
-    run: () => dispatching(Sweep, () => ({ refuse: true }), 300, 80),
+    run: () =>
+      dispatching(
+        (app) => {
+          const given = { refuse: true };
+          return () => app.dispatch(Sweep, given);
+        },
+        300,
+        80
+      ),
   },
   dispatchScan: {
     unit: "dispatch",
@@ -726,7 +753,12 @@ if (only === undefined) {
         ["--import", "tsx", self, name],
         { encoding: "utf8" }
       );
-      ms = Math.min(ms, JSON.parse(out.trim().split("\n").pop()!) as number);
+      const best: unknown = JSON.parse(out.trim().split("\n").pop()!);
+      assert(
+        typeof best === "number",
+        `${name} printed no number of milliseconds.`
+      );
+      ms = Math.min(ms, best);
     }
     results[name] = ms;
     const text = name.startsWith("idle")

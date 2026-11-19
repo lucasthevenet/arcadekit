@@ -18,6 +18,14 @@
  * that doesn't match its save says so. Singletons are migrated the same way, by
  * name, and are present in the save only if the game wrote them.
  */
+import { Schema } from "effect";
+
+import {
+  boxedColumn,
+  isBoxed,
+  makeColumn,
+  numberColumn,
+} from "./ecs/component";
 import type { Column, FieldKind } from "./ecs/component";
 import type {
   SnapshotComponent,
@@ -68,33 +76,21 @@ const fieldOf = (component: SnapshotComponent, field: string) => {
   return found;
 };
 
+// A field of numbers is given a number, and any other field any value.
 const column = (kind: FieldKind, count: number, value: unknown): Column => {
-  switch (kind) {
-    case "f32": {
-      return new Float32Array(count).fill(value as number);
-    }
-    case "f64": {
-      return new Float64Array(count).fill(value as number);
-    }
-    case "i32": {
-      return new Int32Array(count).fill(value as number);
-    }
-    case "u32": {
-      return new Uint32Array(count).fill(value as number);
-    }
-    case "entity": {
-      return new Float64Array(count).fill(value as number);
-    }
-    case "u16": {
-      return new Uint16Array(count).fill(value as number);
-    }
-    case "u8": {
-      return new Uint8Array(count).fill(value as number);
-    }
-    default: {
-      return Array.from({ length: count }, () => value);
-    }
+  if (isBoxed(kind)) {
+    return Array.from({ length: count }, () => value);
   }
+  return numberColumn(makeColumn(kind, count)).fill(numberFor(kind, value));
+};
+
+const numberFor = (kind: FieldKind, value: unknown): number => {
+  if (typeof value !== "number") {
+    throw new TypeError(
+      `A field of "${kind}" holds numbers, and was given ${typeof value === "string" ? `the string "${value}"` : typeof value}.`
+    );
+  }
+  return value;
 };
 
 /**
@@ -206,34 +202,42 @@ export const removeField = (
 
 /**
  * Changes a field's type, and computes each new value from the old one:
- * `mapField(world, "game/Hp", "points", "f32", (hp: number) => hp / 2)`. The
- * save doesn't know the old value's type, so `map` names it. For a `ref` field,
- * the old value is its encoded form.
+ * `mapField(world, "game/Hp", "points", "f32", Schema.Number, (hp) => hp / 2)`.
+ * The save doesn't know the old value's type, so `old` says it, and a value
+ * that is not of it throws. For a `ref` field, the old value is its encoded
+ * form; for a `transient` one, it is undefined.
  *
  * @category Migrations
  */
-export const mapField = <T>(
+export const mapField = <S extends Schema.Constraint>(
   world: SnapshotContents,
   component: string,
   field: string,
   kind: FieldKind,
-  map: (value: T) => unknown
+  old: S,
+  map: (value: S["Type"]) => unknown
 ): void => {
   const definition = componentOf(world, component);
   const found = fieldOf(definition, field);
   const was = found.kind;
   found.kind = kind;
+  const isOld = Schema.is(old);
   for (const { columns, count } of columnsOf(world, component)) {
-    const old = columns[field];
+    const values = columns[field];
     if (kind === "transient") {
       delete columns[field];
       continue;
     }
-    const next = column(kind, count, 0);
+    const next = column(kind, count, isBoxed(kind) ? undefined : 0);
     for (let row = 0; row < count; row++) {
-      next[row] = map(
-        (was === "transient" ? undefined : old?.[row]) as T
-      ) as never;
+      const value = was === "transient" ? undefined : values?.[row];
+      if (!isOld(value)) {
+        throw new TypeError(
+          `"${component}.${field}" holds a value that is not of the schema mapField was given, in row ${row}.`
+        );
+      }
+      const mapped = map(value);
+      next[row] = Array.isArray(next) ? mapped : numberFor(kind, mapped);
     }
     columns[field] = next;
   }
@@ -284,13 +288,16 @@ export const removeComponent = (
           continue;
         }
         if (Array.isArray(values)) {
-          columns[field] = [...values, ...(more as unknown[])];
+          columns[field] = [...values, ...boxedColumn(more)];
         } else {
-          const joined = new (values.constructor as Float32ArrayConstructor)(
-            entities.length
+          const joined = numberColumn(
+            makeColumn(
+              fieldOf(componentOf(world, of), field).kind,
+              entities.length
+            )
           );
-          joined.set(values as Float32Array);
-          joined.set(more as Float32Array, count);
+          joined.set(values);
+          joined.set(numberColumn(more), count);
           columns[field] = joined;
         }
       }

@@ -1,5 +1,5 @@
 import { Exit, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Component,
@@ -13,6 +13,7 @@ import {
 } from "../src/ecs/index";
 import type { Entity, QuerySpec, Terms } from "../src/ecs/index";
 import { EntityId, Migrate } from "../src/index";
+import { entity } from "./entities";
 
 const Body = Component.define("id/Body", { x: Field.f32 });
 const Owned = Component.define("id/Owned", { by: Field.entity, n: Field.u16 });
@@ -27,7 +28,7 @@ const Mark = Component.define(
 const Count = Component.singleton(
   "id/Count",
   { n: Field.i32, last: Field.entity },
-  { n: 0, last: 0 as Entity }
+  { n: 0, last: entity(0) }
 );
 const all = [Body, Owned, ChildOf, Mark, Count.component];
 
@@ -83,8 +84,10 @@ describe("an entity's id", () => {
     // Nor does a number that is no id at all, though its low bits are a
     // slot that is taken.
     for (const never of [last + 0.5, -1, Number.NaN, 2 ** 53 + last, 0.25]) {
-      expect(world.isAlive(never as Entity), String(never)).toBe(false);
-      expect(world.get(never as Entity, Body)).toBeUndefined();
+      // @ts-expect-error: a number that is no id
+      expect(world.isAlive(never), String(never)).toBe(false);
+      // @ts-expect-error: a number that is no id
+      expect(world.get(never, Body)).toBeUndefined();
     }
   });
 
@@ -183,11 +186,11 @@ describe("an entity's id", () => {
     expect(writeSnapshot(contents)).toEqual(bytes);
     // A different id in a field is a different world, though they differ
     // only above their 32nd bit: in a table, and in a sparse set.
-    copy.set(owned, Owned, { by: (wide + 2 ** 32) as Entity });
+    copy.set(owned, Owned, { by: entity(wide + 2 ** 32) });
     expect(copy.hash()).not.toBe(hash);
     copy.set(owned, Owned, { by: wide });
     expect(copy.hash()).toBe(hash);
-    copy.set(wide, Mark, { to: (wide + 2 ** 32) as Entity });
+    copy.set(wide, Mark, { to: entity(wide + 2 ** 32) });
     expect(copy.hash()).not.toBe(hash);
     copy.set(wide, Mark, { to: wide });
     expect(copy.hash()).toBe(hash);
@@ -220,7 +223,7 @@ describe("an entity's id", () => {
 
   it("is one a schema takes, and a migration can put in a field", () => {
     const decode = Schema.decodeUnknownExit(EntityId);
-    const wide = (1500 * SLOTS + 1) as Entity;
+    const wide = entity(1500 * SLOTS + 1);
     expect(decode(wide)).toEqual(Exit.succeed(wide));
     expect(JSON.parse(JSON.stringify({ wide }))).toEqual({ wide });
     const world = new World();
@@ -233,7 +236,7 @@ describe("an entity's id", () => {
     });
     const moved = new World();
     moved.load(writeSnapshot(contents), [Bodied]);
-    expect(moved.get(0 as Entity, Bodied)).toEqual({ x: 1, by: wide });
+    expect(moved.get(entity(0), Bodied)).toEqual({ x: 1, by: wide });
   });
 });
 
@@ -243,9 +246,9 @@ describe("a slot whose generations are used up", () => {
     const first = new World({ seed: 3 });
     first.spawn(Body.of({ x: 1 }));
     first.spawn(Body.of({ x: 2 }));
-    first.despawn(1 as Entity);
+    first.despawn(entity(1));
     const contents = readSnapshot(first.snapshot());
-    const last = ((GENERATIONS - 1) * SLOTS) as Entity;
+    const last = entity((GENERATIONS - 1) * SLOTS);
     contents.generations[0] = GENERATIONS - 1;
     contents.tables[0]!.entities[0] = last;
     const world = new World();
@@ -275,7 +278,7 @@ describe("a slot whose generations are used up", () => {
       after.map((entity) => entityIndex(entity)).toSorted((a, b) => a - b)
     ).toEqual([1, 2, 3, 4, 5]);
     expect(world.isAlive(last)).toBe(false);
-    expect(world.isAlive(0 as Entity)).toBe(false);
+    expect(world.isAlive(entity(0))).toBe(false);
   });
 
   it("is kept so by a snapshot, and counted in the hash by the slots it leaves", () => {
@@ -306,8 +309,8 @@ describe("a slot whose generations are used up", () => {
     } catch (error) {
       problem = error;
     }
-    expect(problem).toBeInstanceOf(SnapshotError);
-    expect((problem as SnapshotError).message).toMatch(/one that is used up/);
+    assert(problem instanceof SnapshotError);
+    expect(problem.message).toMatch(/one that is used up/);
   });
 });
 
@@ -333,43 +336,29 @@ describe("a snapshot from before ids were widened", () => {
   // What that build said of the world it wrote, and of the three entities
   // it spawned next.
   const facts = {
-    two: 25165826,
-    four: 8388612,
-    owned: 4194309,
-    child: 6,
+    two: entity(25165826),
+    four: entity(8388612),
+    owned: entity(4194309),
+    child: entity(6),
     alive: 6,
     bodies: [
-      [0, 0],
-      [25165826, 25],
-      [8388612, 41],
-      [3, 3],
-      [4194309, 100],
+      [entity(0), 0],
+      [entity(25165826), 25],
+      [entity(8388612), 41],
+      [entity(3), 3],
+      [entity(4194309), 100],
     ],
-    ownedBy: { by: 25165826, n: 7 },
-    childOf: { target: 8388612 },
-    sources: [6],
+    ownedBy: { by: entity(25165826), n: 7 },
+    childOf: { target: entity(8388612) },
+    sources: [entity(6)],
     marks: [
-      [0, 25165826],
-      [8388612, 4194309],
+      [entity(0), entity(25165826)],
+      [entity(8388612), entity(4194309)],
     ],
-    count: { n: 3, last: 8388612 },
+    count: { n: 3, last: entity(8388612) },
     random: [3387534915, 427231553, 1090094954, 2995374812],
-    after: [4194305, 7, 8],
-  } as unknown as {
-    readonly two: Entity;
-    readonly four: Entity;
-    readonly owned: Entity;
-    readonly child: Entity;
-    readonly alive: number;
-    readonly bodies: readonly (readonly [Entity, number])[];
-    readonly ownedBy: { readonly by: Entity; readonly n: number };
-    readonly childOf: { readonly target: Entity };
-    readonly sources: readonly Entity[];
-    readonly marks: readonly (readonly [Entity, Entity])[];
-    readonly count: { readonly n: number; readonly last: Entity };
-    readonly random: readonly number[];
-    readonly after: readonly Entity[];
-  };
+    after: [entity(4194305), entity(7), entity(8)],
+  } as const;
 
   it("is read as the world it was: every id the number it was, in a wider place", () => {
     expect(new DataView(old.buffer).getUint32(4, true)).toBe(2);

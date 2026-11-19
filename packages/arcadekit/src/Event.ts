@@ -71,6 +71,8 @@ export class EventDef<P> extends Effectable.Class<
    * undefined for an event defined with only a type.
    */
   readonly codec: Schema.Codec<P, unknown> | undefined;
+  /** @internal This event's channel in each bus that has one. */
+  readonly channels = new WeakMap<EventBus, Channel<P>>();
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
 
   constructor(name: string, codec?: Schema.Codec<P, unknown>) {
@@ -179,6 +181,12 @@ export const decode = <P>(
   convert(def, (codec) => Schema.decodeUnknownExit(codec)(data));
 
 const EMPTY: readonly never[] = Object.freeze([]);
+
+/** What a decode that failed says. */
+const describeFailure = (cause: Cause.Cause<InvalidEvent>): string => {
+  const why = Cause.squash(cause);
+  return why instanceof Error ? why.message : String(why);
+};
 
 /**
  * The prefix of a reader's name when it is a frame-stage or input-stage system.
@@ -431,10 +439,6 @@ export class EventBus {
    */
   guard: EventGuard | undefined;
 
-  // Keyed by event definition. The value is the `Channel<P>` of that
-  // definition's own `P`, which a Map's type cannot say, so `channel` below
-  // is the one place that restores it.
-  private readonly channels: Map<object, ChannelState> = new Map();
   private readonly order: Channel<unknown>[] = [];
   /** Events read from a save, waiting for their channel to be asked for. */
   private readonly parked: Map<string, SavedEvents> = new Map();
@@ -459,9 +463,9 @@ export class EventBus {
   }
 
   private channel<P>(def: EventDef<P>): Channel<P> {
-    const existing = this.channels.get(def);
+    const existing = def.channels.get(this);
     if (existing !== undefined) {
-      return existing as Channel<P>;
+      return existing;
     }
     // The name is how a save, a tool and another machine know the event.
     const known = this.names.get(def.name);
@@ -472,7 +476,7 @@ export class EventBus {
     }
     this.names.set(def.name, def);
     const channel = new Channel<P>(def, this.reads);
-    this.channels.set(def, channel);
+    def.channels.set(this, channel);
     this.order.push(channel);
     const saved = this.parked.get(def.name);
     if (saved !== undefined) {
@@ -488,7 +492,7 @@ export class EventBus {
       const payload = decode(channel.def, data);
       if (Exit.isFailure(payload)) {
         throw new Error(
-          `The save holds an event "${saved.name}" that no longer reads: ${(Cause.squash(payload.cause) as Error).message}`
+          `The save holds an event "${saved.name}" that no longer reads: ${describeFailure(payload.cause)}`
         );
       }
       channel.buffer.push(payload.value);
@@ -522,7 +526,7 @@ export class EventBus {
       )) {
         const data = encode(channel.def, payload);
         if (Exit.isFailure(data)) {
-          return Exit.fail(Cause.squash(data.cause) as InvalidEvent);
+          return Exit.failCause(data.cause);
         }
         payloads.push(data.value);
       }

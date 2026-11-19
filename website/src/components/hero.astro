@@ -6,7 +6,9 @@
 import { LinkButton } from "@astrojs/starlight/components";
 
 const { data } = Astro.locals.starlightRoute.entry;
-const { eyebrow } = data as { readonly eyebrow?: string };
+// Starlight types `data` by its own schema, which has no `eyebrow`.
+const eyebrow =
+  "eyebrow" in data && typeof data.eyebrow === "string" ? data.eyebrow : undefined;
 const { title = data.title, tagline, actions = [] } = data.hero ?? {};
 ---
 

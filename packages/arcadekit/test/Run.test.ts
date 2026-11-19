@@ -1,13 +1,4 @@
-import {
-  Cause,
-  Context,
-  Data,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Schema,
-} from "effect";
+import { Context, Data, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import * as Browser from "../src/Browser";
@@ -28,6 +19,7 @@ import {
   System,
   Time,
 } from "../src/index";
+import { failureOf } from "./exits";
 
 const Ball = Component.define("run/Ball", { x: Field.f32, vx: Field.f32 });
 const Balls = Query.all(Ball);
@@ -207,9 +199,7 @@ describe("App.run", () => {
       ).pipe(Effect.provideService(Driver.Display, display))
     );
     expect(Exit.isFailure(failed)).toBe(true);
-    expect(
-      Cause.squash((failed as Exit.Failure<never, NoCanvas>).cause)
-    ).toEqual(new NoCanvas());
+    expect(failureOf(failed)).toEqual(new NoCanvas());
     expect(log.slice(0, 2)).toEqual(["sound opened", "setup"]);
     expect(log.slice(2).toSorted()).toEqual(["script stopped", "sound closed"]);
     expect(display.pending).toBe(0);
@@ -235,9 +225,7 @@ describe("App.run", () => {
     );
     // Typed: what the plugins and ready can fail with, and nothing else.
     const typed: Exit.Exit<never, NoSound> = exit;
-    expect(Cause.squash((typed as Exit.Failure<never, NoSound>).cause)).toEqual(
-      new NoSound()
-    );
+    expect(failureOf(typed)).toEqual(new NoSound());
     expect(ready).toBe(false);
     expect(display.pending).toBe(0);
   });
@@ -288,9 +276,7 @@ describe("App.run", () => {
     );
     const typed: Exit.Exit<never, Save.LoadRefused> = exit;
     expect(Exit.isFailure(typed)).toBe(true);
-    expect(
-      Cause.squash((typed as Exit.Failure<never, Save.LoadRefused>).cause)
-    ).toBeInstanceOf(Save.LoadRefused);
+    expect(failureOf(typed)).toBeInstanceOf(Save.LoadRefused);
     expect(display.pending).toBe(0);
     // Without a save, loading is not among what can go wrong.
     const fresh: Effect.Effect<never, never> = App.run(
@@ -317,9 +303,7 @@ describe("App.run", () => {
     turn(display, 3);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toEqual(
-      new Jammed()
-    );
+    expect(failureOf(exit)).toEqual(new Jammed());
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
     expect(log.includes("sound closed")).toBe(true);

@@ -47,7 +47,7 @@
  * - `Three.Render` then draws the scene, through `Three.Renderer`.
  */
 import * as Assets from "arcadekit/Assets";
-import { entityIndex } from "arcadekit/ecs";
+import { EntityArray, entityIndex } from "arcadekit/ecs";
 import type {
   ComponentDef,
   Entity,
@@ -107,11 +107,12 @@ export interface SceneShape {
    */
   camera: Camera;
   /**
-   * The meshes and objects the systems of this module keep, by the name of
-   * the system that keeps them.
+   * The meshes and objects the systems of this module keep, to settle before
+   * each draw and to let go of with the app. Each system finds its own in a
+   * map of its own.
    * @internal
    */
-  readonly _kept: Map<string, Kept>;
+  readonly _kept: Set<Kept>;
 }
 
 /**
@@ -142,7 +143,7 @@ const sceneLayer = Layer.effect(
     Effect.sync((): SceneShape => {
       const camera = new PerspectiveCamera(50, 1, 0.1, 2000);
       camera.position.set(0, 0, 10);
-      return { scene: new ThreeScene(), camera, _kept: new Map() };
+      return { scene: new ThreeScene(), camera, _kept: new Set() };
     }),
     // What the systems made goes with the app. Geometries and materials
     // are whoever made them's to dispose of.
@@ -222,8 +223,28 @@ export interface FitOptions {
   readonly pixelRatio?: number;
 }
 
+// Three marks a perspective camera with a flag, which holds where `instanceof`
+// doesn't: across two copies of three.
 const isPerspective = (camera: Camera): camera is PerspectiveCamera =>
-  (camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera === true;
+  Reflect.get(camera, "isPerspectiveCamera") === true;
+
+/** Closes what a texture was made of, where that is a picture to close. */
+const closeImage = (image: unknown): void => {
+  if (
+    typeof image === "object" &&
+    image !== null &&
+    "close" in image &&
+    typeof image.close === "function"
+  ) {
+    image.close();
+  }
+};
+
+/** The page's pixels per CSS pixel, or 1 where there is no page. */
+const pixelRatioOf = (where: object): number => {
+  const ratio: unknown = Reflect.get(where, "devicePixelRatio");
+  return typeof ratio === "number" ? ratio : 1;
+};
 
 /**
  * Returns a layer for a renderer you create, which is disposed of when the
@@ -259,12 +280,7 @@ export const layerRenderer = (
             // A canvas that is not laid out has no size to fit.
             if (fit && w > 0 && h > 0) {
               const r =
-                options.pixelRatio ??
-                Math.min(
-                  (globalThis as { devicePixelRatio?: number })
-                    .devicePixelRatio ?? 1,
-                  2
-                );
+                options.pixelRatio ?? Math.min(pixelRatioOf(globalThis), 2);
               if (w !== width || h !== height || r !== ratio) {
                 width = w;
                 height = h;
@@ -771,19 +787,18 @@ type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
  * What a system builds from a bundle's assets: available while the app has the
  * bundle loaded, released when it doesn't, and rebuilt from the next load.
  */
-class FromAssets<T extends Kept> implements Kept {
-  private assets: unknown;
+class FromAssets<B extends Entries, T extends Kept> implements Kept {
+  private assets: Assets.Loaded<B> | undefined;
   private made: T | undefined;
 
   constructor(
     private readonly store: Assets.StoreShape,
-    private readonly bundle: Assets.Bundle<Entries>,
-    // Handed the assets of `bundle`, and of no other.
-    private readonly make: (assets: never) => T
+    private readonly bundle: Assets.Bundle<B>,
+    private readonly make: (assets: Assets.Loaded<B>) => T
   ) {}
 
   /** Returns the assets the app currently holds, if any. */
-  private held(): unknown {
+  private held(): Assets.Loaded<B> | undefined {
     const status = this.store.status(this.bundle);
     return status._tag === "Ready" ? status.assets : undefined;
   }
@@ -796,7 +811,7 @@ class FromAssets<T extends Kept> implements Kept {
       this.dispose();
       this.assets = assets;
       if (assets !== undefined) {
-        this.made = this.make(assets as never);
+        this.made = this.make(assets);
       }
     }
     return this.made;
@@ -906,7 +921,7 @@ export const texture = (
       (made) =>
         Effect.sync(() => {
           made.dispose();
-          (made.image as { close?: () => void } | null)?.close?.();
+          closeImage(made.image);
         })
     )
   );
@@ -1788,11 +1803,13 @@ export function instances(
   name: string,
   options: InstancesOptions | InstancesFromOptions<Entries>
 ): System.System<never, Needs | Assets.Store> {
-  const from = "from" in options ? options : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
   const { color } = options;
+  // What the system keeps in each app's scene.
+  const drawnIn = new WeakMap<SceneShape, Instances>();
+  const sourcedIn = new WeakMap<SceneShape, FromAssets<Entries, Sourced>>();
   if (
     color !== undefined &&
     (color.storage !== "table" ||
@@ -1879,14 +1896,16 @@ export function instances(
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
     let drawn: Instances | undefined;
-    if (from === undefined) {
-      drawn = kept._kept.get(name) as Instances | undefined;
+    if (!("from" in options)) {
+      drawn = drawnIn.get(kept);
       if (drawn === undefined) {
-        drawn = new Instances(kept.scene, name, options as InstancesOptions);
-        kept._kept.set(name, drawn);
+        drawn = new Instances(kept.scene, name, options);
+        drawnIn.set(kept, drawn);
+        kept._kept.add(drawn);
       }
     } else {
-      let sourced = kept._kept.get(name) as FromAssets<Sourced> | undefined;
+      const from = options;
+      let sourced = sourcedIn.get(kept);
       if (sourced === undefined) {
         // The room the instances came to need is kept from one loading of
         // the bundle to the next.
@@ -1913,7 +1932,8 @@ export function instances(
             };
           }
         );
-        kept._kept.set(name, sourced);
+        sourcedIn.set(kept, sourced);
+        kept._kept.add(sourced);
       }
       drawn = sourced.now()?.instances;
       // Its assets are not there: nothing of it is in the scene.
@@ -1988,21 +2008,23 @@ export interface ObjectsFromOptions<
   readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
 }
 
-/** Either set of options, as the class that keeps the objects sees them. */
-interface ObjectsOf<O extends Object3D> extends ObjectsShared<O> {
-  // Handed the assets of its bundle, or none for a kind without one.
-  readonly make: (entity: Entity, assets: never) => O;
+/**
+ * Either set of options, as the class that keeps the objects sees them: `A` is
+ * the assets of its bundle, or undefined for a kind without one.
+ */
+interface ObjectsOf<O extends Object3D, A> extends ObjectsShared<O> {
+  readonly make: (entity: Entity, assets: A) => O;
 }
 
 /** One object per entity, by entity index, and the loops that position them. */
-class Objects<O extends Object3D> implements Kept {
+class Objects<O extends Object3D, A> implements Kept {
   private readonly scene: ThreeScene;
-  private readonly options: ObjectsOf<O>;
+  private readonly options: ObjectsOf<O, A>;
   /** What the objects are built from, for a kind built from assets. */
-  private readonly assets: unknown;
+  private readonly assets: A;
   private readonly objects: (O | undefined)[] = [];
   /** For each entity index, the id of the entity its object was created for. */
-  private owner = new Float64Array(0);
+  private owner = new EntityArray(0);
   /** For each entity index, the frame its entity was last found in, rotated, and scaled. */
   private seen = new Uint32Array(0);
   private turnedAt = new Uint32Array(0);
@@ -2015,7 +2037,7 @@ class Objects<O extends Object3D> implements Kept {
   /** What interpolates the objects between two ticks, when the system was asked to. */
   private readonly smooth: Smooth | undefined;
 
-  constructor(scene: ThreeScene, options: ObjectsOf<O>, assets: unknown) {
+  constructor(scene: ThreeScene, options: ObjectsOf<O, A>, assets: A) {
     this.scene = scene;
     this.options = options;
     this.assets = assets;
@@ -2028,7 +2050,7 @@ class Objects<O extends Object3D> implements Kept {
       length *= 2;
     }
     // An id is wider than a frame's number: an array of 64-bit floats.
-    const owner = new Float64Array(length);
+    const owner = new EntityArray(length);
     owner.set(this.owner);
     this.owner = owner;
     for (const name of ["seen", "turnedAt", "sizedAt"] as const) {
@@ -2045,7 +2067,7 @@ class Objects<O extends Object3D> implements Kept {
     const object = this.objects[index]!;
     this.objects[index] = undefined;
     this.scene.remove(object);
-    this.options.free?.(object, this.owner[index] as Entity);
+    this.options.free?.(object, this.owner[index]!);
   }
 
   /** Creates the object of an entity that has none, or whose slot held another entity's. */
@@ -2055,7 +2077,7 @@ class Objects<O extends Object3D> implements Kept {
     } else {
       this.release(index);
     }
-    const object = this.options.make(entity, this.assets as never);
+    const object = this.options.make(entity, this.assets);
     this.objects[index] = object;
     this.owner[index] = entity;
     this.turnedAt[index] = 0;
@@ -2322,10 +2344,15 @@ export function objects<O extends Object3D>(
   name: string,
   options: ObjectsOptions<O> | ObjectsFromOptions<Entries, O>
 ): System.System<never, Needs | Assets.Store> {
-  const from = "from" in options ? options.from : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
+  // What the system keeps in each app's scene.
+  const heldIn = new WeakMap<SceneShape, Objects<O, undefined>>();
+  const sourcedIn = new WeakMap<
+    SceneShape,
+    FromAssets<Entries, Objects<O, Assets.Loaded<Entries>>>
+  >();
   const Placed = Query.all(Transform3d.Position).pipe(
     Query.with(...marked),
     Query.without(...excluded),
@@ -2368,23 +2395,28 @@ export function objects<O extends Object3D>(
     const sizedFlat = yield* SizedFlat;
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
-    let held: Objects<O> | undefined;
-    if (from === undefined) {
-      held = kept._kept.get(name) as Objects<O> | undefined;
+    let held:
+      | Objects<O, undefined>
+      | Objects<O, Assets.Loaded<Entries>>
+      | undefined;
+    if (!("from" in options)) {
+      held = heldIn.get(kept);
       if (held === undefined) {
         held = new Objects(kept.scene, options, undefined);
-        kept._kept.set(name, held);
+        heldIn.set(kept, held);
+        kept._kept.add(held);
       }
     } else {
-      let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
+      let sourced = sourcedIn.get(kept);
       if (sourced === undefined) {
         const { scene } = kept;
         sourced = new FromAssets(
           yield* Assets.Store,
-          from,
+          options.from,
           (assets) => new Objects(scene, options, assets)
         );
-        kept._kept.set(name, sourced);
+        sourcedIn.set(kept, sourced);
+        kept._kept.add(sourced);
       }
       held = sourced.now();
       // Its assets are not there: there is nothing to make an object of.

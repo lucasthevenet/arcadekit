@@ -596,12 +596,7 @@ export const make = <
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]>,
   Scope.Scope | External<S, H, P>
-> =>
-  build(options, undefined) as Effect.Effect<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    Plugin.ErrorOf<P[number]>,
-    Scope.Scope | External<S, H, P>
-  >;
+> => build(options, fresh);
 
 /**
  * Restores a game from a save: its world, its time, the actions queued for the
@@ -641,7 +636,7 @@ export const load = <
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | Save.LoadRefused,
   Scope.Scope | External<S, H, P>
-> => build(options, save);
+> => build(options, fromSave(save));
 
 /**
  * Options for how `App.run` drives the app it creates.
@@ -703,50 +698,132 @@ export interface RunOptions<
  *
  * @category Running
  */
-export const run = <
+export function run<
   S extends Systems = readonly [],
   H extends Handlers = readonly [],
   P extends Plugins = readonly [],
   E2 = never,
   R2 = never,
-  SV extends Save.Save | undefined = undefined,
+>(
+  options: Options<S, H, P>,
+  drive: RunOptions<
+    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    E2,
+    R2
+  >
+): Effect.Effect<
+  never,
+  Plugin.ErrorOf<P[number]> | E2,
+  External<S, H, P> | Exclude<R2, Scope.Scope>
+>;
+export function run<
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+  E2 = never,
+  R2 = never,
 >(
   options: Options<S, H, P>,
   drive: RunOptions<
     App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
     E2,
     R2,
-    SV
+    Save.Save | undefined
   >
 ): Effect.Effect<
   never,
-  | Plugin.ErrorOf<P[number]>
-  | E2
-  | (SV extends Save.Save ? Save.LoadRefused : never),
+  Plugin.ErrorOf<P[number]> | E2 | Save.LoadRefused,
   External<S, H, P> | Exclude<R2, Scope.Scope>
-> =>
-  Effect.scoped(
+>;
+export function run<
+  S extends Systems,
+  H extends Handlers,
+  P extends Plugins,
+  E2,
+  R2,
+>(
+  options: Options<S, H, P>,
+  drive: RunOptions<
+    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    E2,
+    R2,
+    Save.Save | undefined
+  >
+): Effect.Effect<
+  never,
+  Plugin.ErrorOf<P[number]> | E2 | Save.LoadRefused,
+  External<S, H, P> | Exclude<R2, Scope.Scope>
+> {
+  return Effect.scoped(
     Effect.gen(function* () {
-      const app = yield* build(options, drive.save);
+      const app = yield* build(
+        options,
+        drive.save === undefined ? fresh : fromSave(drive.save)
+      );
       if (drive.ready !== undefined) {
         yield* drive.ready(app);
       }
       return yield* Driver.frames(app, drive);
     })
-  ) as Effect.Effect<
-    never,
-    | Plugin.ErrorOf<P[number]>
-    | E2
-    | (SV extends Save.Save ? Save.LoadRefused : never),
-    External<S, H, P> | Exclude<R2, Scope.Scope>
-  >;
+  );
+}
 
-const build = <S extends Systems, H extends Handlers, P extends Plugins>(
+/**
+ * What a new app is filled with before anything else runs: nothing, for a
+ * fresh game, or a save, which it returns brought up to this version.
+ */
+type Restore<L> = (into: {
+  readonly world: EcsWorld;
+  readonly time: TimeState;
+  readonly events: EventBus;
+  readonly version: number;
+  readonly migrations: readonly Save.Migration[];
+}) => Effect.Effect<Save.Save | undefined, L>;
+
+const fresh: Restore<never> = () => Effect.succeed(undefined);
+
+const fromSave =
+  (given: Save.Save): Restore<Save.LoadRefused> =>
+  ({ world, time, events, version, migrations }) =>
+    Effect.gen(function* () {
+      // An older save is brought up to this version of the game first.
+      const current = Save.migrate(given, version, migrations);
+      if (Exit.isFailure(current)) {
+        return yield* current;
+      }
+      const save = current.value;
+      const { world: stored, changes } = save;
+      // Before anything else can touch the world: a load fills an empty one.
+      const loaded = Result.try(() => {
+        world.load(stored);
+        world.restoreChanges(changes);
+      });
+      if (Result.isFailure(loaded)) {
+        const error = loaded.failure;
+        if (!(error instanceof SnapshotError)) {
+          return yield* Effect.die(error);
+        }
+        return yield* new Save.LoadRefused({
+          problem: error.problem,
+          message:
+            error.problem === "unknown component"
+              ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
+              : error.message,
+        });
+      }
+      time.tick = save.tick;
+      time.elapsed = save.elapsed;
+      time.delta = save.delta;
+      events.restore(save.events);
+      return save;
+    });
+
+const build = <S extends Systems, H extends Handlers, P extends Plugins, L>(
   options: Options<S, H, P>,
-  given: Save.Save | undefined
+  restore: Restore<L>
 ): Effect.Effect<
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+  Plugin.ErrorOf<P[number]> | L,
   Scope.Scope | External<S, H, P>
 > =>
   Effect.gen(function* () {
@@ -842,40 +919,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         `A game's version must be a whole number from 0 up, and this one is ${version}.`
       );
     }
-    let save: Save.Save | undefined;
-    if (given !== undefined) {
-      // An older save is brought up to this version of the game first.
-      const current = Save.migrate(given, version, options.migrations ?? []);
-      if (Exit.isFailure(current)) {
-        return yield* current;
-      }
-      save = current.value;
-    }
-    if (save !== undefined) {
-      const { world: stored, changes } = save;
-      // Before anything else can touch the world: a load fills an empty one.
-      const loaded = Result.try(() => {
-        world.load(stored);
-        world.restoreChanges(changes);
-      });
-      if (Result.isFailure(loaded)) {
-        const error = loaded.failure;
-        if (!(error instanceof SnapshotError)) {
-          return yield* Effect.die(error);
-        }
-        return yield* new Save.LoadRefused({
-          problem: error.problem,
-          message:
-            error.problem === "unknown component"
-              ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
-              : error.message,
-        });
-      }
-      time.tick = save.tick;
-      time.elapsed = save.elapsed;
-      time.delta = save.delta;
-      events.restore(save.events);
-    }
+    const save = yield* restore({
+      world,
+      time,
+      events,
+      version,
+      migrations: options.migrations ?? [],
+    });
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
       ...(options.systems ?? []),
@@ -912,7 +962,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     }
     const actionLog: Action.LogEntry[] = [];
     // The moments this app has captured: `rewind` takes no other.
-    const moments = new WeakSet<Moment>();
+    const moments = new WeakMap<Moment, Captured>();
     /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
       readonly elapsed: number;
@@ -1199,7 +1249,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (system.trigger === undefined) {
         continue;
       }
-      const state = system.trigger.state as State.State<string>;
+      const { state } = system.trigger;
       if (System.isFrameStage(system.stage)) {
         throw new Error(
           `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
@@ -1432,10 +1482,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Action.Actions, {
-        enqueue: ((action, payload) => {
+        enqueue: (action, payload) => {
           refuseAction(action.name);
           enqueue(action, payload);
-        }) as typeof enqueue,
+        },
         handles,
       }),
       Context.add(Script, {
@@ -2012,7 +2062,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           started,
           wanted,
         };
-        moments.add(moment);
+        moments.set(moment, moment);
         return Exit.succeed(moment);
       },
       rewind(moment) {
@@ -2026,12 +2076,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `rewind() was called from the handler of "${applying}". A game is put back between ticks.`
           );
         }
-        if (!moments.has(moment)) {
+        const was = moments.get(moment);
+        if (was === undefined) {
           throw new Error(
             "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
           );
         }
-        const was = moment as Captured;
         // The scripts first: none of them is part of what was captured.
         for (const fiber of Array.from(scripts)) {
           fiber.interruptUnsafe();
@@ -2164,7 +2214,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     return app;
   }) as Effect.Effect<
     App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+    Plugin.ErrorOf<P[number]> | L,
     Scope.Scope | External<S, H, P>
   >;
 
@@ -2303,11 +2353,13 @@ export const replay = (
         // Enqueued again at the point it arrived, so that it takes its turn
         // among the actions the replay's own simulation issues.
         app.enqueueByName(entry.name, entry.payload, entry.from);
-        waiting.push({
-          index: next,
-          entry,
-          mine: app.actionLog.at(-1) as Action.Logged,
-        });
+        const mine = app.actionLog.at(-1);
+        if (mine === undefined || Action.isCheckpoint(mine)) {
+          throw new Error(
+            `The replay enqueued "${entry.name}", and the app logged no action for it.`
+          );
+        }
+        waiting.push({ index: next, entry, mine });
       } else {
         const exit = app.dispatchByName(entry.name, entry.payload, entry.from);
         if (Exit.isFailure(exit)) {

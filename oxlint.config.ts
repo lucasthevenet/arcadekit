@@ -35,8 +35,12 @@ export default defineConfig({
       "error",
       { ignoreDeclarationSort: true, ignoreCase: false },
     ],
-    // Foldkit's, everywhere: no `any`.
+    // Foldkit's, everywhere: no `any`, and no type assertion.
     "typescript/no-explicit-any": "error",
+    "typescript/consistent-type-assertions": [
+      "error",
+      { assertionStyle: "never" },
+    ],
 
     // Alchemy's, as it has them.
     "effecttsgo/abort-controller-in-effect": "error",
@@ -234,24 +238,44 @@ export default defineConfig({
       },
     },
     {
-      // Where the app runs plugins, systems, handlers and scripts of any
-      // type: their types can't follow them into one app, and a few casts
-      // claim them back. Off until a second wave, with
-      // typescript/consistent-type-assertions.
+      // The storage core is plain TypeScript, with no Effect: its errors are
+      // thrown, and App turns them into tagged ones.
+      files: ["packages/arcadekit/src/ecs/**"],
+      rules: { "effecttsgo/extends-native-error": "off" },
+    },
+    // Where a type is known to the code and not to TypeScript, until each is
+    // redesigned so that it is. Each file's assertions are only these.
+    {
+      // An app runs its plugins, systems and handlers as one list whose
+      // errors and services are unknown, while its type computes their union:
+      // https://github.com/lucasthevenet/arcadekit/issues/165
       files: [
         "packages/arcadekit/src/App.ts",
         "packages/arcadekit/src/Plugin.ts",
       ],
       rules: {
-        "effecttsgo/any-unknown-in-error-context": "off",
+        "typescript/consistent-type-assertions": "off",
         "effecttsgo/unsafe-effect-type-assertion": "off",
+        "effecttsgo/any-unknown-in-error-context": "off",
       },
     },
     {
-      // The storage core is plain TypeScript, with no Effect: its errors are
-      // thrown, and App turns them into tagged ones.
-      files: ["packages/arcadekit/src/ecs/**"],
-      rules: { "effecttsgo/extends-native-error": "off" },
+      // Each is an issue of its own, at
+      // https://github.com/lucasthevenet/arcadekit/issues/<number>:
+      // - `world.get`, a singleton and `Assets.load` build an object of a
+      //   component's or a bundle's fields from a list of names (#166);
+      // - the world caches one query view per spec (#167);
+      // - `Query.reads` marks terms read-only in the type alone (#168);
+      // - an input binding's payload could itself be a function (#169);
+      // - `Sound.cues` keeps the lines of different events in one list (#170).
+      files: [
+        "packages/arcadekit/src/ecs/world.ts",
+        "packages/arcadekit/src/Assets.ts",
+        "packages/arcadekit/src/Query.ts",
+        "packages/arcadekit/src/Input.ts",
+        "packages/arcadekit/src/Sound.ts",
+      ],
+      rules: { "typescript/consistent-type-assertions": "off" },
     },
     {
       // A schema field's codec is called by the storage core, in a snapshot

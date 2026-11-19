@@ -15,13 +15,15 @@ export type PhaseName = "title" | "playing" | "paused";
 // Each with the value it has before the game has said anything.
 
 /** What the menu is drawn from. It changes when the game starts, pauses or ends. */
-export const Menu = View.define("page/Menu", { phase: "title" as PhaseName });
+export const Menu = View.define<{ phase: PhaseName }>("page/Menu", {
+  phase: "title",
+});
 
 /** What the heads-up display is drawn from. It changes when a star is caught. */
-export const Hud = View.define("page/Hud", {
-  caught: 0,
-  level: "Absent" as "Absent" | "Loading" | "Ready" | "Failed",
-});
+export const Hud = View.define<{
+  caught: number;
+  level: "Absent" | "Loading" | "Ready" | "Failed";
+}>("page/Hud", { caught: 0, level: "Absent" });
 
 // --- what the UI may ask for -------------------------------------------------------
 // The same actions the keys are bound to: a button is one more way to send one.

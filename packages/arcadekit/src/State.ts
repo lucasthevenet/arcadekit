@@ -78,6 +78,8 @@ export class State<V extends string>
 {
   readonly component: ComponentDef<Fields>;
   readonly initial: { value: string; next: string | null; entered: number };
+  /** @internal Each world's handle to this state. */
+  readonly handles = new WeakMap<EcsWorld, StateHandle<V>>();
   private effect: Effect.Effect<StateHandle<V>, never, World> | undefined;
 
   constructor(
@@ -142,17 +144,30 @@ const known = new WeakMap<EcsWorld, Registry>();
 export interface Registry {
   /** Sorted by name, so transitions happen in the same order everywhere. */
   states: State<string>[];
-  readonly handles: Map<State<string>, StateHandle<string>>;
 }
 
 /** @internal The states of a world that anyone has asked for. */
 export const registryOf = (world: EcsWorld): Registry => {
   let registry = known.get(world);
   if (registry === undefined) {
-    registry = { states: [], handles: new Map() };
+    registry = { states: [] };
     known.set(world, registry);
   }
   return registry;
+};
+
+/**
+ * One of the state's values, as the world holds it: a value that isn't one, as
+ * a save from an older game could hold, throws and says which.
+ */
+const valueOf = <V extends string>(state: State<V>, held: string): V => {
+  const value = state.values.find((one) => one === held);
+  if (value === undefined) {
+    throw new Error(
+      `The state "${state.name}" holds "${held}", which is not one of its values: ${state.values.join(", ")}. A migration renames a state's values in a save.`
+    );
+  }
+  return value;
 };
 
 /** @internal A world's handle to a state. */
@@ -160,20 +175,20 @@ export const handleOf = <V extends string>(
   world: EcsWorld,
   state: State<V>
 ): StateHandle<V> => {
-  const registry = registryOf(world);
-  const found = registry.handles.get(state);
+  const found = state.handles.get(world);
   if (found !== undefined) {
-    return found as StateHandle<V>;
+    return found;
   }
+  const registry = registryOf(world);
   const held = world.singleton(state);
   const handle: StateHandle<V> = {
     get value() {
-      return held.value as V;
+      return valueOf(state, held.value);
     },
     get next() {
-      return (held.next ?? undefined) as V | undefined;
+      return held.next === null ? undefined : valueOf(state, held.next);
     },
-    is: (...values) => values.includes(held.value as V),
+    is: (...values) => values.some((value) => value === held.value),
     set: (value) => {
       if (!state.values.includes(value)) {
         throw new Error(
@@ -188,7 +203,7 @@ export const handleOf = <V extends string>(
       }
     },
   };
-  registry.handles.set(state, handle);
+  state.handles.set(world, handle);
   registry.states = [...registry.states, state].toSorted((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   );

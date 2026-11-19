@@ -11,6 +11,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import type { ReferencePackage } from "./reference.ts";
 import { REPO_ROOT, WEBSITE_DIR } from "./site.ts";
 
@@ -114,23 +116,43 @@ const sitePages = (): DocPage[] =>
     return { file: `${SITE_DOCS}/${file}`, slug, link: `/${slug}`, section };
   });
 
-interface Manifest {
-  readonly name: string;
-  readonly description?: string;
-  readonly exports?: Record<string, { readonly source?: string }>;
-}
+/** What the site reads of a package's manifest. An export is its targets, or one path. */
+const Manifest = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optionalKey(Schema.String),
+  exports: Schema.optionalKey(
+    Schema.Record(
+      Schema.String,
+      Schema.Union([
+        Schema.String,
+        Schema.Struct({ source: Schema.optionalKey(Schema.String) }),
+      ])
+    )
+  ),
+});
+type Manifest = typeof Manifest.Type;
 
-const manifestOf = (folder: string): Manifest =>
-  JSON.parse(read(`${PACKAGES}/${folder}/package.json`)) as Manifest;
+const manifestOf = (folder: string): Manifest => {
+  const file = `${PACKAGES}/${folder}/package.json`;
+  const manifest: unknown = JSON.parse(read(file));
+  if (!Schema.is(Manifest)(manifest)) {
+    throw new Error(`${file} is not a package manifest with a name.`);
+  }
+  return manifest;
+};
 
 /** Its entries but its own, each a module: `./Sound` with its source. */
 const entriesOf = (manifest: Manifest) =>
-  Object.entries(manifest.exports ?? {})
-    .filter(([key, entry]) => key !== "." && entry.source !== undefined)
-    .map(([key, entry]) => ({
-      name: key.replace(/^\.\//u, ""),
-      source: String(entry.source).replace(/^\.\//u, ""),
-    }));
+  Object.entries(manifest.exports ?? {}).flatMap(([key, entry]) =>
+    key === "." || typeof entry === "string" || entry.source === undefined
+      ? []
+      : [
+          {
+            name: key.replace(/^\.\//u, ""),
+            source: entry.source.replace(/^\.\//u, ""),
+          },
+        ]
+  );
 
 /** Each package that exports a module, at `/reference/<folder>`. */
 const packagePages = (): PackagePage[] =>

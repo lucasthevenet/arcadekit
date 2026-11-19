@@ -4,6 +4,7 @@ import { Component, Field } from "../src/ecs/component";
 import type { ComponentDef, Entity } from "../src/ecs/component";
 import { CommandBuffer, World } from "../src/ecs/world";
 import type { QuerySpec, Terms } from "../src/ecs/world";
+import { entity } from "./entities";
 
 const Position = Component.define("st/Position", {
   x: Field.f32,
@@ -29,6 +30,38 @@ const query = <const D extends Terms>(
   withDefs: QuerySpec["withDefs"] = [],
   withoutDefs: QuerySpec["withoutDefs"] = []
 ): QuerySpec<D> => ({ terms, withDefs, withoutDefs });
+
+/** A field of an accessor a loop was handed, read by name. */
+const valueIn = (accessor: unknown, field: string): unknown => {
+  if (typeof accessor !== "object" || accessor === null) {
+    throw new Error(
+      `The loop was handed ${String(accessor)}, not an accessor.`
+    );
+  }
+  return Reflect.get(accessor, field);
+};
+
+/** A number field of an accessor a loop was handed, read by name. */
+const numberIn = (accessor: unknown, field: string): number => {
+  const value = valueIn(accessor, field);
+  if (typeof value !== "number") {
+    throw new Error(
+      `The field "${field}" holds ${String(value)}, not a number.`
+    );
+  }
+  return value;
+};
+
+/** Writes a field of an accessor a loop was handed, by name. */
+const setIn = (accessor: unknown, field: string, value: unknown): void => {
+  if (
+    typeof accessor !== "object" ||
+    accessor === null ||
+    !Reflect.set(accessor, field, value)
+  ) {
+    throw new Error(`The field "${field}" could not be written.`);
+  }
+};
 
 describe("entities and components", () => {
   it("spawns, reads, writes and despawns", () => {
@@ -95,7 +128,7 @@ describe("entities and components", () => {
         x: 9,
         wide: 9,
         hp: 9,
-        who: 9 as Entity,
+        who: entity(9),
         name: "old",
         cache: {},
       }),
@@ -104,8 +137,10 @@ describe("entities and components", () => {
     world.despawn(old);
     // Past the compiler, as JavaScript or a cast gets there.
     const spawned = world.spawn(
-      Mixed.of({ x: 3 } as never),
-      Faint.of({} as never)
+      // @ts-expect-error: fields left out
+      Mixed.of({ x: 3 }),
+      // @ts-expect-error: fields left out
+      Faint.of({})
     );
     expect(world.get(spawned, Mixed)).toEqual({
       x: 3,
@@ -119,27 +154,34 @@ describe("entities and components", () => {
     expect(world.get(spawned, Faint)).toEqual({ seconds: 0, turns: 0 });
     // Named and not given is the same as not named.
     const named = world.spawn(
-      Mixed.of({ x: undefined, wide: 2, hp: undefined } as never)
+      // @ts-expect-error: fields named and not given
+      Mixed.of({ x: undefined, wide: 2, hp: undefined })
     );
     expect(world.get(named, Mixed)).toMatchObject({ x: 0, wide: 2, hp: 0 });
     // Added, to an entity without it and over the one it has: a value is
     // the whole component, and what it leaves out is 0 again.
     const added = world.spawn();
-    world.add(added, Mixed.of({ wide: 4 } as never));
+    // @ts-expect-error: fields left out
+    world.add(added, Mixed.of({ wide: 4 }));
     expect(world.get(added, Mixed)).toMatchObject({ x: 0, wide: 4, hp: 0 });
-    world.add(spawned, Mixed.of({ hp: 5 } as never));
+    // @ts-expect-error: fields left out
+    world.add(spawned, Mixed.of({ hp: 5 }));
     expect(world.get(spawned, Mixed)).toMatchObject({ x: 0, wide: 0, hp: 5 });
-    world.add(spawned, Faint.of({ turns: 2 } as never));
+    // @ts-expect-error: fields left out
+    world.add(spawned, Faint.of({ turns: 2 }));
     expect(world.get(spawned, Faint)).toEqual({ seconds: 0, turns: 2 });
     // Through a command buffer, which is how a system does either.
     const commands = new CommandBuffer(world);
-    const later = commands.spawn(Mixed.of({ hp: 7 } as never));
-    commands.add(added, Faint.of({} as never));
+    // @ts-expect-error: fields left out
+    const later = commands.spawn(Mixed.of({ hp: 7 }));
+    // @ts-expect-error: fields left out
+    commands.add(added, Faint.of({}));
     commands.apply();
     expect(world.get(later, Mixed)).toMatchObject({ x: 0, wide: 0, hp: 7 });
     expect(world.get(added, Faint)).toEqual({ seconds: 0, turns: 0 });
     // A number that is given is written as it is, whatever it is.
-    const odd = world.spawn(Mixed.of({ x: Number.NaN, wide: -0 } as never));
+    // @ts-expect-error: fields left out
+    const odd = world.spawn(Mixed.of({ x: Number.NaN, wide: -0 }));
     expect(world.get(odd, Mixed)!.x).toBeNaN();
     expect(Object.is(world.get(odd, Mixed)!.wide, -0)).toBe(true);
   });
@@ -160,11 +202,14 @@ describe("entities and components", () => {
       Mixed.of({ x: 1.5, hp: 4, name: "one" }),
       Faint.of({ seconds: 2.5 })
     );
-    world.set(one, Mixed, { x: undefined, hp: 6 } as never);
+    // @ts-expect-error: a number named and not given
+    world.set(one, Mixed, { x: undefined, hp: 6 });
     expect(world.get(one, Mixed)).toEqual({ x: 1.5, hp: 6, name: "one" });
-    world.set(one, Mixed, { hp: undefined, x: 8 } as never);
+    // @ts-expect-error: a number named and not given
+    world.set(one, Mixed, { hp: undefined, x: 8 });
     expect(world.get(one, Mixed)).toEqual({ x: 8, hp: 6, name: "one" });
-    world.set(one, Faint, { seconds: undefined } as never);
+    // @ts-expect-error: a number named and not given
+    world.set(one, Faint, { seconds: undefined });
     expect(world.get(one, Faint)).toEqual({ seconds: 2.5 });
     // A field that holds anything holds nothing when it is told to.
     world.set(one, Mixed, { name: undefined });
@@ -662,7 +707,7 @@ describe("what each hands its callback", () => {
     json: Field.json<string>(),
     ref: Field.ref<Date>({
       encode: (date) => date.getTime(),
-      decode: (time) => new Date(time as number),
+      decode: (time) => new Date(Number(time)),
     }),
     transient: Field.transient<{ readonly n: number }>(),
   };
@@ -678,12 +723,14 @@ describe("what each hands its callback", () => {
     u32: 3_000_000_000 + n,
     u16: 60_000 + n,
     u8: (200 + n) & 255,
-    entity: (n + 7) as Entity,
+    entity: entity(n + 7),
     json: `text ${n}`,
     ref: new Date(1000 * n),
     transient: { n },
   });
-  const names = Object.keys(fields) as (keyof typeof fields)[];
+  const names = Object.keys(fields).filter(
+    (name): name is keyof typeof fields => name in fields
+  );
 
   for (const def of [Every, EverySparse]) {
     it(`reads and writes a field of every kind, each in its own column and at its own row (${def.storage})`, () => {
@@ -722,7 +769,7 @@ describe("what each hands its callback", () => {
       view.each((health, every) => {
         const next = valueOf(health.hp + 100);
         for (const name of names) {
-          (every as Record<string, unknown>)[name] = next[name];
+          setIn(every, name, next[name]);
         }
       });
       for (const entity of having) {
@@ -757,11 +804,11 @@ describe("what each hands its callback", () => {
       const read = (spec: QuerySpec): unknown[] => {
         const rows: unknown[] = [];
         world.view(spec).each((...args: unknown[]) => {
-          const [health, every] = args as [
-            { readonly hp: number },
-            Record<string, unknown>,
-          ];
-          rows.push([health.hp, ...names.map((name) => every[name])]);
+          const [health, every] = args;
+          rows.push([
+            numberIn(health, "hp"),
+            ...names.map((name) => valueIn(every, name)),
+          ]);
         });
         return rows;
       };
@@ -789,9 +836,7 @@ describe("what each hands its callback", () => {
         const written: Entity[] = [];
         world.view(plain).each((health, every, entity) => {
           if (health.hp % 5 === 0) {
-            (every as Record<string, unknown>)[name] = valueOf(health.hp + 50)[
-              name
-            ];
+            setIn(every, name, valueOf(health.hp + 50)[name]);
             written.push(entity);
           }
         });
@@ -826,21 +871,21 @@ describe("what each hands its callback", () => {
       for (const each of [view, plain]) {
         const seen: number[] = [];
         each.each((...args: unknown[]) => {
-          const [health, burning] = args as [
-            { hp: number },
-            { seconds: number } | Entity,
-          ];
-          seen.push(health.hp);
+          // The second is an accessor of Burning, or the entity for a
+          // query of Health alone.
+          const [health, burning] = args;
+          const hp = numberIn(health, "hp");
+          seen.push(hp);
           if (typeof burning === "object") {
-            expect(burning.seconds).toBe(health.hp / 2);
-            burning.seconds += 0;
+            expect(numberIn(burning, "seconds")).toBe(hp / 2);
+            setIn(burning, "seconds", numberIn(burning, "seconds") + 0);
           }
-          health.hp += 1000;
+          setIn(health, "hp", hp + 1000);
         });
         expect(seen).toEqual(Array.from({ length: count }, (_, n) => n));
         // The write went where the world reads from.
         each.each((health) => {
-          (health as { hp: number }).hp -= 1000;
+          setIn(health, "hp", numberIn(health, "hp") - 1000);
         });
       }
       for (let n = 0; n < count; n++) {
@@ -924,11 +969,11 @@ describe("what each hands its callback", () => {
     for (const terms of lists) {
       const rows: number[][] = [];
       world.view(query(terms)).each((...args: unknown[]) => {
-        const entity = args.pop() as Entity;
-        const n = entities.indexOf(entity);
-        rows.push([n, ...args.map((term) => (term as { v: number }).v)]);
+        const entity = args.pop();
+        const n = entities.findIndex((one) => one === entity);
+        rows.push([n, ...args.map((term) => numberIn(term, "v"))]);
         for (const term of args) {
-          (term as { v: number }).v += 1;
+          setIn(term, "v", numberIn(term, "v") + 1);
         }
       });
       const scale = new Map<ComponentDef, number>([
@@ -946,7 +991,7 @@ describe("what each hands its callback", () => {
         expect(values).toEqual(
           terms.map(
             (def) =>
-              (world.get(entities[n!]!, def) as { readonly v: number }).v -
+              numberIn(world.get(entities[n!]!, def), "v") -
               terms.filter((other) => other === def).length
           )
         );
@@ -1148,7 +1193,7 @@ describe("randomized comparison against a simple model", () => {
           view.eachChunk((start, end, pos, entities) => {
             expect(end).toBeGreaterThan(start);
             for (let i = start; i < end; i++) {
-              const entity = entities[i] as Entity;
+              const entity = entities[i]!;
               expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id)!.y);
               chunked.push(entity);
             }
@@ -1179,7 +1224,7 @@ describe("randomized comparison against a simple model", () => {
         const chunked: Entity[] = [];
         view.eachChunk((start, end, health, burning, entities) => {
           for (let i = start; i < end; i++) {
-            const entity = entities[i] as Entity;
+            const entity = entities[i]!;
             expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id)!.hp);
             expect(burning.columns.seconds[burning.indexOf(entity)]).toBe(
               model.get(entity)!.get(Burning.id)!.seconds
@@ -1202,7 +1247,7 @@ describe("randomized comparison against a simple model", () => {
         .view(query([Position], [], [Stunned]))
         .eachChunk((start, end, _pos, entities) => {
           for (let i = start; i < end; i++) {
-            chunked.push(entities[i] as Entity);
+            chunked.push(entities[i]!);
           }
         });
       expect(chunked.sort((a, b) => a - b)).toEqual(awake);

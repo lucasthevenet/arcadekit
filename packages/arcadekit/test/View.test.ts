@@ -28,7 +28,9 @@ const Phase = State.define("vw/Phase", ["title", "playing"]);
 
 // What the UI may see.
 const Hud = View.define("vw/Hud", { gold: 0, coins: 0 });
-const Menu = View.define("vw/Menu", { phase: "title" as "title" | "playing" });
+const Menu = View.define<{ phase: "title" | "playing" }>("vw/Menu", {
+  phase: "title",
+});
 // What it may ask for.
 const Start = Action.define("vw/Start", Schema.Struct({}));
 const Buy = Action.define("vw/Buy", Schema.Struct({ price: Schema.Int }));
@@ -205,9 +207,12 @@ describe("a view", () => {
   });
 
   it("is compared as data, however deep, and not by the object that holds it", () => {
-    const Board = View.define("vw/Board", {
-      rows: [[0, 0]] as number[][],
-      turn: { player: 1, note: undefined as string | undefined },
+    const Board = View.define<{
+      rows: number[][];
+      turn: { player: number; note: string | undefined };
+    }>("vw/Board", {
+      rows: [[0, 0]],
+      turn: { player: 1, note: undefined },
     });
     const ui = View.makeBridge();
     const { heard } = listen(ui, Board);

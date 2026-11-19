@@ -56,6 +56,8 @@ import * as System from "./System";
 export interface View<A> {
   readonly name: string;
   readonly initial: A;
+  /** @internal The view's value and listeners on each bridge that has it. */
+  readonly slots: WeakMap<Bridge, Slot<A>>;
 }
 
 /**
@@ -76,6 +78,7 @@ export interface View<A> {
 export const define = <A>(name: string, initial: A): View<A> => ({
   name,
   initial,
+  slots: new WeakMap(),
 });
 
 // --- the bridge ------------------------------------------------------------------
@@ -152,11 +155,11 @@ export interface Bridge {
 
 const NOTHING: readonly Sent[] = Object.freeze([]);
 
-interface Slot {
-  readonly view: View<unknown>;
-  value: unknown;
-  /** Each of the slot's view: handed its value, and nothing else. */
-  readonly listeners: Set<(value: never) => void>;
+/** @internal A view's value on one bridge, and who listens to it there. */
+export interface Slot<A> {
+  value: A;
+  /** Checked as a method's parameter is, so a view of any value is a `View<unknown>`. */
+  readonly listeners: Set<{ hear(value: A): void }["hear"]>;
 }
 
 /**
@@ -176,24 +179,27 @@ interface Slot {
  * @category Constructors
  */
 export const makeBridge = (): Bridge => {
-  const slots = new Map<string, Slot>();
+  const named = new Map<string, View<unknown>>();
   let sent: Sent[] = [];
   // Which actions the game handles, once a game is there to say.
   let handles: ((action: Sent["action"]) => boolean) | undefined;
-  const slotOf = (view: View<unknown>): Slot => {
-    let slot = slots.get(view.name);
+  const slotOf = <A>(view: View<A>): Slot<A> => {
+    let slot = view.slots.get(bridge);
     if (slot === undefined) {
-      slot = { view, value: view.initial, listeners: new Set() };
-      slots.set(view.name, slot);
-    } else if (slot.view !== view) {
-      throw new Error(
-        `Two different views are both named "${view.name}". A view's name identifies it on a bridge, so give each its own, prefixed with the feature it belongs to.`
-      );
+      const known = named.get(view.name);
+      if (known !== undefined && known !== view) {
+        throw new Error(
+          `Two different views are both named "${view.name}". A view's name identifies it on a bridge, so give each its own, prefixed with the feature it belongs to.`
+        );
+      }
+      named.set(view.name, view);
+      slot = { value: view.initial, listeners: new Set() };
+      view.slots.set(bridge, slot);
     }
     return slot;
   };
-  return {
-    get: (view) => slotOf(view).value as never,
+  const bridge: Bridge = {
+    get: (view) => slotOf(view).value,
     subscribe(view, listener) {
       const { listeners } = slotOf(view);
       listeners.add(listener);
@@ -225,7 +231,7 @@ export const makeBridge = (): Bridge => {
         for (const listener of Array.from(slot.listeners)) {
           if (slot.listeners.has(listener)) {
             try {
-              listener(value as never);
+              listener(value);
             } catch (error) {
               failure ??= { error };
             }
@@ -255,6 +261,7 @@ export const makeBridge = (): Bridge => {
       };
     },
   };
+  return bridge;
 };
 
 const noBridge: Bridge = {
@@ -288,7 +295,7 @@ export const Bridge: Context.Reference<Bridge> = Context.Reference<Bridge>(
  * @category Layers
  */
 export const layer = (bridge: Bridge): Layer.Layer<never> =>
-  Layer.succeed(Bridge, bridge) as Layer.Layer<never>;
+  Layer.succeed(Bridge, bridge);
 
 // --- the app's end of the bridge ---------------------------------------------------
 
@@ -418,15 +425,16 @@ export const publish = <
   body: () => Generator<Eff, A, never>
 ): System.System<System.GenError<Eff>, System.GenServices<Eff> | Port> => {
   const read = Effect.gen(body);
-  return System.make(`View.publish(${view.name})`, function* () {
-    const port = yield* Port;
-    if (port.connected) {
-      port.publish(view, yield* read);
-    }
-  }).pipe(System.inStage("frame")) as System.System<
-    System.GenError<Eff>,
-    System.GenServices<Eff> | Port
-  >;
+  return System.ofEffect(
+    `View.publish(${view.name})`,
+    Effect.flatMap(Port, (port) =>
+      port.connected
+        ? Effect.map(read, (value) => {
+            port.publish(view, value);
+          })
+        : Effect.void
+    )
+  ).pipe(System.inStage("frame"));
 };
 
 /**

@@ -8,37 +8,41 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-interface SubpathExport {
-  readonly source: string;
-  readonly types: string;
-  readonly default: string;
-}
+/** `value[key]` where `value` is an object, and undefined where it is not. */
+const fieldOf = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 
 export const entries = (dir: string): Record<string, string> => {
-  const pkg = JSON.parse(
+  const pkg: unknown = JSON.parse(
     readFileSync(path.join(dir, "package.json"), "utf-8")
-  ) as {
-    readonly name: string;
-    readonly exports: Readonly<Record<string, SubpathExport>>;
-  };
+  );
+  const packageName = String(fieldOf(pkg, "name"));
+  const exports = fieldOf(pkg, "exports");
+  if (typeof exports !== "object" || exports === null) {
+    throw new Error(`${packageName}: package.json has no exports`);
+  }
   const result: Record<string, string> = {};
-  for (const [subpath, target] of Object.entries(pkg.exports)) {
+  for (const subpath of Object.keys(exports)) {
     if (subpath === "./package.json") {
       continue;
     }
     const name = subpath === "." ? "index" : subpath.slice("./".length);
-    const keys = Object.keys(target).join(",");
+    const target: unknown = Reflect.get(exports, subpath);
+    const source = fieldOf(target, "source");
     if (
       !(subpath === "." || subpath.startsWith("./")) ||
-      keys !== "source,types,default" ||
-      target.types !== `./dist/${name}.d.ts` ||
-      target.default !== `./dist/${name}.js`
+      typeof target !== "object" ||
+      target === null ||
+      Object.keys(target).join(",") !== "source,types,default" ||
+      typeof source !== "string" ||
+      fieldOf(target, "types") !== `./dist/${name}.d.ts` ||
+      fieldOf(target, "default") !== `./dist/${name}.js`
     ) {
       throw new Error(
-        `${pkg.name}: exports["${subpath}"] must be { source, types: "./dist/${name}.d.ts", default: "./dist/${name}.js" }`
+        `${packageName}: exports["${subpath}"] must be { source, types: "./dist/${name}.d.ts", default: "./dist/${name}.js" }`
       );
     }
-    result[name] = target.source;
+    result[name] = source;
   }
   return result;
 };

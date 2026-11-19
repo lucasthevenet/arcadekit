@@ -57,7 +57,11 @@ const Fountain = Effect.gen(function* () {
 // Node is a timer. Before its first frame it hands the app to `ready`,
 // where this demo steps the same app by hand.
 const program = Effect.gen(function* () {
-  const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
+  const noted: { ticks: number; frames: number; app: App.Any | undefined } = {
+    ticks: 0,
+    frames: 0,
+    app: undefined,
+  };
   yield* App.run(
     { plugins: [Demo], seed: 7 },
     {

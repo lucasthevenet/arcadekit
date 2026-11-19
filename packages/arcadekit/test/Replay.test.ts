@@ -1,6 +1,6 @@
 import { Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -18,6 +18,12 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+
+/** Why a replay stopped, which a test expects to be a hash that differs. */
+const mismatchOf = (reason: unknown): App.HashMismatch => {
+  assert(reason instanceof App.HashMismatch);
+  return reason;
+};
 
 // --- a small game: coins are dropped, drift about at random, and are taken ------
 
@@ -375,8 +381,7 @@ describe("a replay that checks itself", () => {
     expect(moves(replayed.log).every((entry) => entry.tick < 40)).toBe(true);
     expect(moves(recorded.log).some((entry) => entry.tick >= 40)).toBe(true);
 
-    const reason = stopped.reason as App.HashMismatch;
-    expect(reason).toBeInstanceOf(App.HashMismatch);
+    const reason = mismatchOf(stopped.reason);
     expect(reason.tick).toBe(40);
     expect(reason.agreedAt).toBe(39);
     expect(reason.expected).toBe(recorded.hashes[39]);
@@ -432,7 +437,7 @@ describe("a replay that checks itself", () => {
     );
     expect(replayed.stopped!.tick).toBe(50);
     expect(replayed.tick).toBe(50);
-    const reason = replayed.stopped!.reason as App.HashMismatch;
+    const reason = mismatchOf(replayed.stopped!.reason);
     expect(reason.agreedAt).toBe(40);
     expect(reason.expected).toBe(recorded.hashes[49]);
     // A fault on a checkpoint's own tick is caught by that checkpoint.
@@ -448,7 +453,7 @@ describe("a replay that checks itself", () => {
       recorded.ticks
     );
     expect(after.stopped!.tick).toBe(60);
-    expect((after.stopped!.reason as App.HashMismatch).agreedAt).toBe(50);
+    expect(mismatchOf(after.stopped!.reason).agreedAt).toBe(50);
   });
 
   it("stops before its first tick when it does not start where the game started", () => {
@@ -457,7 +462,7 @@ describe("a replay that checks itself", () => {
     expect(otherSeed.stopped!.tick).toBe(0);
     expect(otherSeed.tick).toBe(0);
     expect(otherSeed.stopped!.index).toBe(0);
-    const reason = otherSeed.stopped!.reason as App.HashMismatch;
+    const reason = mismatchOf(otherSeed.stopped!.reason);
     expect(reason.agreedAt).toBeUndefined();
     expect(reason.expected).toBe(recorded.starting);
     expect(otherSeed.stopped!.message).toMatch(
@@ -472,7 +477,8 @@ describe("a replay that checks itself", () => {
       try {
         App.replay(app, recorded.log, { delta: 1 / 60, ticks: 30 });
       } catch (error) {
-        return error as App.ReplayDiverged;
+        assert(error instanceof App.ReplayDiverged);
+        return error;
       }
     });
     expect(crowded!.tick).toBe(0);
@@ -496,13 +502,15 @@ describe("a replay that checks itself", () => {
 
     // A coin of another value: a legal move, and a different game.
     const changed = edit((log) => {
-      const drop = log[at] as Action.Logged;
-      const { value } = drop.payload as { readonly value: number };
+      const drop = log[at]!;
+      assert(!Action.isCheckpoint(drop));
+      const value = Reflect.get(Object(drop.payload), "value");
+      assert(typeof value === "number");
       log[at] = { ...drop, payload: { value: value + 1 } };
     });
     expect(changed!.reason).toBeInstanceOf(App.HashMismatch);
     expect(changed!.tick).toBe(tick + 1);
-    expect((changed!.reason as App.HashMismatch).agreedAt).toBe(tick);
+    expect(mismatchOf(changed!.reason).agreedAt).toBe(tick);
 
     // A move taken out, and a move put in.
     const removed = edit((log) => {
@@ -519,11 +527,12 @@ describe("a replay that checks itself", () => {
       const index = log.findIndex(
         (entry) => entry.tick === 20 && Action.isCheckpoint(entry)
       );
-      const checkpoint = log[index] as Action.Checkpoint;
+      const checkpoint = log[index]!;
+      assert(Action.isCheckpoint(checkpoint));
       log[index] = { ...checkpoint, hash: checkpoint.hash ^ 1 };
     });
     expect(forged!.tick).toBe(20);
-    expect((forged!.reason as App.HashMismatch).agreedAt).toBe(19);
+    expect(mismatchOf(forged!.reason).agreedAt).toBe(19);
   });
 
   it("catches a world that was changed behind the log's back", () => {
@@ -541,7 +550,7 @@ describe("a replay that checks itself", () => {
     });
     const replayed = replayInto({}, recorded, 20);
     expect(replayed.stopped!.tick).toBe(9);
-    expect((replayed.stopped!.reason as App.HashMismatch).agreedAt).toBe(8);
+    expect(mismatchOf(replayed.stopped!.reason).agreedAt).toBe(8);
   });
 
   it("says so when the log has a checkpoint the replay never reaches", () => {
@@ -562,7 +571,8 @@ describe("a replay that checks itself", () => {
   it("says so when a queued action meets another fate than the log records", () => {
     const recorded = withApp(game({ checkpointEvery: 0 }), (app) => {
       const dropped = app.dispatch(Drop, { value: 4 });
-      const coin = Exit.isSuccess(dropped) ? dropped.value : (0 as Entity);
+      assert(Exit.isSuccess(dropped));
+      const coin = dropped.value;
       app.tick(1 / 60);
       app.enqueue(Take, { coin });
       app.enqueue(Take, { coin }); // refused: the coin is gone by then
@@ -579,7 +589,8 @@ describe("a replay that checks itself", () => {
 
     // The game accepted the first take, and in this log it names no coin.
     const refusedNow = [...recorded];
-    const take = refusedNow[1] as Action.Logged;
+    const take = refusedNow[1]!;
+    assert(!Action.isCheckpoint(take));
     refusedNow[1] = { ...take, payload: { coin: 4000 } };
     const first = replayInto({}, refusedNow, 3).stopped!;
     expect(first.index).toBe(1);
@@ -832,7 +843,8 @@ describe("a game whose simulation issues actions itself", () => {
       try {
         App.replay(app, withBotMoves, { delta: 1, ticks: 9 });
       } catch (error) {
-        return error as App.ReplayDiverged;
+        assert(error instanceof App.ReplayDiverged);
+        return error;
       }
     });
     expect(stopped!.reason).toBeInstanceOf(App.HashMismatch);

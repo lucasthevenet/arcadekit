@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
+import { assert, describe, expect, it } from "vitest";
 
 import * as Ecs from "../src/ecs/index";
 import * as Main from "../src/index";
@@ -31,12 +32,20 @@ const sources = import.meta.glob("../src/**/*.ts", {
   eager: true,
 });
 const modules = import.meta.glob("../src/*.ts", { eager: true });
-interface Target {
-  readonly source: string;
-  readonly types: string;
-  readonly default: string;
-}
-const manifest = JSON.parse(
+const Target = Schema.Struct({
+  source: Schema.String,
+  types: Schema.String,
+  default: Schema.String,
+});
+const Manifest = Schema.Struct({
+  exports: Schema.Record(Schema.String, Target),
+  peerDependencies: Schema.Record(Schema.String, Schema.String),
+  peerDependenciesMeta: Schema.Record(
+    Schema.String,
+    Schema.Struct({ optional: Schema.optionalKey(Schema.Boolean) })
+  ),
+});
+const manifest: unknown = JSON.parse(
   Object.values(
     import.meta.glob("../package.json", {
       query: "?raw",
@@ -44,14 +53,8 @@ const manifest = JSON.parse(
       eager: true,
     })
   )[0]!
-) as {
-  readonly exports: Record<string, Target>;
-  readonly peerDependencies: Record<string, string>;
-  readonly peerDependenciesMeta: Record<
-    string,
-    { readonly optional?: boolean }
-  >;
-};
+);
+assert(Schema.is(Manifest)(manifest));
 
 /** What a file imports from, type-only imports among them. */
 const imported = (text: string): string[] => {
@@ -118,7 +121,7 @@ describe("the package's entries", () => {
   it("are the package itself, every module, and the storage core", () => {
     // What the sources say the entries are: a module's is named as its
     // file is.
-    const expected: Record<string, Target> = {};
+    const expected: Record<string, typeof Target.Type> = {};
     const entry = (name: string, source: string): void => {
       const built = name === "." ? "index" : name.slice("./".length);
       expected[name] = {
@@ -200,7 +203,6 @@ describe("the package's entries", () => {
   });
 
   it("the package's own entry gives every module as its entry does: the same module, not a copy", () => {
-    const main = Main as Record<string, unknown>;
     const namespaces = [
       "Action",
       "App",
@@ -227,7 +229,7 @@ describe("the package's entries", () => {
       "View",
     ];
     for (const name of namespaces) {
-      expect(main[name], name).toBe(modules[`../src/${name}.ts`]);
+      expect(Reflect.get(Main, name), name).toBe(modules[`../src/${name}.ts`]);
     }
     // The three it gives the names of, in place of the module.
     expect(Main.EntityId).toBe(modules["../src/Schemas.ts"]!.EntityId);
@@ -244,7 +246,7 @@ describe("the package's entries", () => {
         .filter((name) => name !== "index" && !namespaces.includes(name))
         .toSorted()
     ).toEqual(["Browser", "Schemas", "Services", "TickScheduler"]);
-    expect("Browser" in main).toBe(false);
+    expect("Browser" in Main).toBe(false);
   });
 });
 

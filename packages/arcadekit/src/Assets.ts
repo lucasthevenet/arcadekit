@@ -170,7 +170,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
       }
       const exit = decode(parsed);
       return Exit.isSuccess(exit)
-        ? Effect.succeed(exit.value as S["Type"])
+        ? Effect.succeed(exit.value)
         : Effect.fail(
             new AssetFailed({
               url: at,
@@ -255,7 +255,7 @@ export const layerMemory = (
           typeof file === "string" ? new TextEncoder().encode(file) : file
         );
       }),
-  }) as Layer.Layer<never>;
+  });
 
 // --- a bundle: what is loaded, and let go, together -----------------------------------
 
@@ -303,6 +303,8 @@ export class Bundle<B extends Entries> extends Effectable.Class<
   never,
   Store
 > {
+  /** @internal What each store that has the bundle holds of it. */
+  readonly held = new WeakMap<StoreShape, Held<B>>();
   private effect: Effect.Effect<Status<Loaded<B>>, never, Store> | undefined;
 
   constructor(
@@ -395,12 +397,12 @@ export interface StoreShape {
    * Registers `holder` as using the bundle. The first holder starts loading it,
    * in a scope of its own.
    */
-  readonly hold: (bundle: Bundle<Entries>, holder: string) => void;
+  readonly hold: <B extends Entries>(bundle: Bundle<B>, holder: string) => void;
   /**
    * Releases `holder`'s use of the bundle. When no holder remains, its scope
    * closes: loaded assets are released, and pending loads are cancelled.
    */
-  readonly drop: (bundle: Bundle<Entries>, holder: string) => void;
+  readonly drop: <B extends Entries>(bundle: Bundle<B>, holder: string) => void;
 }
 
 /**
@@ -423,10 +425,11 @@ export class Store extends Context.Service<Store, StoreShape>()(
   "arcadekit/Assets.Store"
 ) {}
 
-interface Held {
-  readonly bundle: Bundle<Entries>;
+/** @internal A bundle in one store: who holds it, and how far it has loaded. */
+export interface Held<B extends Entries> {
+  readonly bundle: Bundle<B>;
   readonly holders: Set<string>;
-  status: Status<unknown>;
+  status: Status<Loaded<B>>;
   /** The scope the bundle is loaded in, while it is loading or loaded. */
   scope: Scope.Closeable | undefined;
   fiber: Fiber.Fiber<unknown, AssetFailed> | undefined;
@@ -452,9 +455,10 @@ const storeLayer = Layer.effect(
       Action.Actions,
       Input.Devices,
       EffectRandom.Random
-    )(yield* Effect.context<never>()) as Context.Context<never>;
+    )(yield* Effect.context<never>());
     const runFork = Effect.runForkWith(context);
-    const held = new Map<Bundle<Entries>, Held>();
+    // Every bundle the store has held, to let go of when the app ends.
+    const all = new Set<Held<Entries>>();
     // Between ticks an app's world is frozen: that is how the stages that
     // may know about assets are told from the tick.
     const world = yield* World;
@@ -466,8 +470,8 @@ const storeLayer = Layer.effect(
       }
     };
 
-    const entryOf = (bundle: Bundle<Entries>): Held => {
-      let entry = held.get(bundle);
+    const entryOf = <B extends Entries>(bundle: Bundle<B>): Held<B> => {
+      let entry = bundle.held.get(store);
       if (entry === undefined) {
         entry = {
           bundle,
@@ -476,18 +480,19 @@ const storeLayer = Layer.effect(
           scope: undefined,
           fiber: undefined,
         };
-        held.set(bundle, entry);
+        bundle.held.set(store, entry);
+        all.add(entry);
       }
       return entry;
     };
 
-    const start = (entry: Held): void => {
+    const start = <B extends Entries>(entry: Held<B>): void => {
       const scope = Scope.makeUnsafe();
       entry.scope = scope;
       entry.status = LOADING;
       const fiber = runFork(Scope.provide(load(entry.bundle), scope));
       entry.fiber = fiber;
-      const ended = (exit: Exit.Exit<unknown, AssetFailed>): void => {
+      const ended = (exit: Exit.Exit<Loaded<B>, AssetFailed>): void => {
         // Let go while it was loading: nobody is waiting for this.
         if (entry.fiber !== fiber) {
           return;
@@ -525,7 +530,7 @@ const storeLayer = Layer.effect(
     };
 
     /** Cancels pending loads, and releases loaded assets. */
-    const letGo = (entry: Held): Effect.Effect<void> =>
+    const letGo = <B extends Entries>(entry: Held<B>): Effect.Effect<void> =>
       Effect.suspend(() => {
         const { fiber, scope } = entry;
         entry.fiber = undefined;
@@ -542,15 +547,15 @@ const storeLayer = Layer.effect(
 
     // Whatever is still loaded when the app's scope closes goes with it.
     yield* Effect.addFinalizer(() =>
-      Effect.forEach(Array.from(held.values()), (entry) => letGo(entry), {
+      Effect.forEach(Array.from(all), (entry) => letGo(entry), {
         discard: true,
       })
     );
 
-    return {
-      status<B extends Entries>(bundle: Bundle<B>) {
+    const store: StoreShape = {
+      status(bundle) {
         betweenTicks(bundle, "asked for");
-        return (held.get(bundle)?.status ?? ABSENT) as Status<Loaded<B>>;
+        return bundle.held.get(store)?.status ?? ABSENT;
       },
       hold(bundle, holder) {
         betweenTicks(bundle, "held");
@@ -565,7 +570,7 @@ const storeLayer = Layer.effect(
       },
       drop(bundle, holder) {
         betweenTicks(bundle, "let go of");
-        const entry = held.get(bundle);
+        const entry = bundle.held.get(store);
         if (entry === undefined || !entry.holders.delete(holder)) {
           return;
         }
@@ -574,6 +579,7 @@ const storeLayer = Layer.effect(
         }
       },
     };
+    return store;
   })
 );
 

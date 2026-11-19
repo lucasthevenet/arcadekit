@@ -1,7 +1,8 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
+import { EntityArray } from "../src/ecs/component";
 import type { Terms } from "../src/ecs/world";
 import {
   Action,
@@ -17,7 +18,7 @@ import {
   System,
   Time,
 } from "../src/index";
-import type { Entity, EntityColumn } from "../src/index";
+import type { Entity } from "../src/index";
 
 const Position = Component.define("ch/Position", {
   x: Field.f32,
@@ -653,7 +654,10 @@ describe("changes against a simple model", () => {
           lazy: r === 1,
         }))
       );
-      const lost = { reader: world.removed(Health), expected: [] as Entity[] };
+      const lost = {
+        reader: world.removed(Health),
+        expected: Array.of<Entity>(),
+      };
       const fire = (what: string, entity: Entity): void => {
         for (const reader of readers) {
           if (reader.spec.fires.includes(what)) {
@@ -719,11 +723,13 @@ describe("changes against a simple model", () => {
         } else if (roll < 14) {
           const name = dice.pick(["Position", "Health", "Heat"] as const);
           if (world.has(some, defs[name])) {
-            world.set(
-              some,
-              defs[name] as typeof Position,
-              (value(name) as { value: { x: number; y: number } }).value
-            );
+            if (name === "Position") {
+              world.set(some, Position, { x: dice.int(0, 99), y: 0 });
+            } else if (name === "Health") {
+              world.set(some, Health, { hp: dice.int(1, 99) });
+            } else {
+              world.set(some, Heat, { degrees: dice.int(1, 99) });
+            }
             fire(`${name}:changed`, some);
           }
         } else if (roll < 16) {
@@ -777,11 +783,14 @@ describe("changes against a simple model", () => {
               reader.pending.clear();
               if (!reader.spec.raw || dice.next() < 0.5) {
                 reader.view.each((...args) => {
-                  seen.push(args.at(-1) as Entity);
+                  const entity = args.at(-1);
+                  assert(typeof entity === "number");
+                  seen.push(entity);
                 });
               } else {
                 reader.view.eachChunk((start, end, ...args) => {
-                  const ids = args.at(-1) as EntityColumn;
+                  const ids = args.at(-1);
+                  assert(ids instanceof EntityArray);
                   for (let i = start; i < end; i++) {
                     seen.push(ids[i]!);
                   }
@@ -1481,7 +1490,8 @@ describe("change queries in an app", () => {
         const misshapen = Save.decode(
           Save.encode({
             ...save.value,
-            changes: [{ component: 1 }] as unknown as Save.Save["changes"],
+            // @ts-expect-error: a change with none of the rest of a change
+            changes: [{ component: 1 }],
           })
         );
         expect(

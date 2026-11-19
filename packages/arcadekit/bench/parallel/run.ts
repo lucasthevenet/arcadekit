@@ -20,9 +20,12 @@
  * it may not sleep. `plain` gives the columns ordinary memory, with no
  * workers, to see what shared memory costs a loop on one thread.
  */
+import assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
+
+import { Schema } from "effect";
 
 import { DONE, INTEGERS, JOB, KERNEL, RANGES, SPIN, kernels } from "./kernels";
 
@@ -138,7 +141,7 @@ if (kernel === undefined) {
     let ms = Infinity;
     let sum = 0;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const out = JSON.parse(
+      const out: unknown = JSON.parse(
         execFileSync(
           process.execPath,
           [
@@ -156,7 +159,10 @@ if (kernel === undefined) {
           .trim()
           .split("\n")
           .pop()!
-      ) as { readonly ms: number; readonly sum: number };
+      );
+      assert(
+        Schema.is(Schema.Struct({ ms: Schema.Number, sum: Schema.Number }))(out)
+      );
       ms = Math.min(ms, out.ms);
       ({ sum } = out);
     }

@@ -11,7 +11,7 @@ import {
   Scope,
 } from "effect";
 import type { Scope as ScopeType } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import * as Browser from "../src/Browser";
 import {
@@ -35,6 +35,9 @@ const Ships = Query.all(Ship);
 
 const run = <A, E>(effect: Effect.Effect<A, E, ScopeType.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
+
+/** What a stand-in holds before the code under test sets it. */
+const nothing = (): unknown => undefined;
 
 /** Lets what is waiting on a promise or a timer run. */
 const settle = (): Promise<void> =>
@@ -687,10 +690,9 @@ describe("a picture", () => {
         Effect.provide(Assets.layerMemory(files))
       )
     );
-    const error = Cause.squash(
-      (exit as Exit.Failure<never, unknown>).cause
-    ) as Assets.AssetFailed;
-    expect(error).toBeInstanceOf(Assets.AssetFailed);
+    assert(Exit.isFailure(exit));
+    const error = Cause.squash(exit.cause);
+    assert(error instanceof Assets.AssetFailed);
     expect(error.message).toBe(
       "It could not be made a picture: The source image could not be decoded."
     );
@@ -799,10 +801,8 @@ describe("Browser.runMain", () => {
     // Gone for good.
     page.window.send("pagehide", { persisted: false });
     await settle();
-    expect(ended !== undefined && Exit.isFailure(ended)).toBe(true);
-    expect(
-      Cause.hasInterruptsOnly((ended as Exit.Failure<unknown, unknown>).cause)
-    ).toBe(true);
+    assert(ended !== undefined && Exit.isFailure(ended));
+    expect(Cause.hasInterruptsOnly(ended.cause)).toBe(true);
     expect(log).toEqual(["sound opened", "sound closed"]);
     expect(page.requested.size).toBe(0);
     expect(page.visibility.size).toBe(0);
@@ -831,10 +831,8 @@ describe("Browser.runMain", () => {
       },
     });
     await settle();
-    expect(ended !== undefined && Exit.isFailure(ended)).toBe(true);
-    expect(
-      Cause.squash((ended as Exit.Failure<unknown, unknown>).cause)
-    ).toEqual(new NoCanvas());
+    assert(ended !== undefined && Exit.isFailure(ended));
+    expect(Cause.squash(ended.cause)).toEqual(new NoCanvas());
     // Nothing of the page is held on to.
     expect(page.window.total).toBe(0);
     // Told not to report it, it said nothing. Otherwise it is reported.
@@ -896,23 +894,23 @@ describe("a page's sound", () => {
       state: "running",
       /** The audio's own clock, which the test turns. */
       currentTime: 0,
-      started: [] as {
+      started: Array.of<{
         readonly buffer: unknown;
         readonly rate: number;
         readonly volume: number;
         readonly into: unknown;
-      }[],
+      }>(),
       /** Every source that was started as a channel's track. */
-      loops: [] as Looped[],
+      loops: Array.of<Looped>(),
       resumed: 0,
       suspended: 0,
       closed: 0,
       /** What was streamed into it, each with the volume it plays at. */
-      streams: [] as { readonly media: unknown; readonly gain: Gain }[],
+      streams: Array.of<{ readonly media: unknown; readonly gain: Gain }>(),
       createMediaElementSource(media: unknown) {
         return {
-          connect(to: unknown) {
-            audio.streams.push({ media, gain: to as Gain });
+          connect(to: Gain) {
+            audio.streams.push({ media, gain: to });
             return to;
           },
         };
@@ -922,7 +920,7 @@ describe("a page's sound", () => {
         let looped: Looped | undefined;
         let loop = false;
         const source = {
-          buffer: undefined as unknown,
+          buffer: nothing(),
           get loop(): boolean {
             return loop;
           },
@@ -937,8 +935,8 @@ describe("a page's sound", () => {
             }
           },
           playbackRate: { value: 1 },
-          connect(to: unknown) {
-            gain = to as Gain;
+          connect(to: Gain) {
+            gain = to;
             return to;
           },
           start() {
@@ -1069,8 +1067,7 @@ describe("a page's sound", () => {
     const page = new Listened();
     const audio = makeAudio();
     if (options.noStreams === true) {
-      delete (audio as { createMediaElementSource?: unknown })
-        .createMediaElementSource;
+      Reflect.deleteProperty(audio, "createMediaElementSource");
     }
     const streamed: ReturnType<typeof makeMedia>[] = [];
     const display = Driver.makeManualDisplay();
@@ -1715,7 +1712,7 @@ describe("a page's sound", () => {
     expect(audio.state).toBe("running");
     // An audio that does not say how it is, as one of your own may not,
     // is taken to be running.
-    delete (audio as { state?: string }).state;
+    Reflect.deleteProperty(audio, "state");
     output.play("theme", 1, 1);
     expect(audio.started.length).toBe(2);
     page.send("keydown", { code: "Enter" });
@@ -1904,11 +1901,11 @@ describe("a page's sound", () => {
         )
       ).pipe(Effect.provide(Assets.layerMemory(sounds)))
     );
-    expect(Exit.isFailure(exit)).toBe(true);
-    const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
-    expect(error).toBeInstanceOf(Assets.AssetFailed);
-    expect((error as Assets.AssetFailed).url).toBe("/noise.wav");
-    expect((error as Assets.AssetFailed).message).toBe(
+    assert(Exit.isFailure(exit));
+    const error = Cause.squash(exit.cause);
+    assert(error instanceof Assets.AssetFailed);
+    expect(error.url).toBe("/noise.wav");
+    expect(error.message).toBe(
       "It could not be made a sound: Unable to decode audio data"
     );
   });

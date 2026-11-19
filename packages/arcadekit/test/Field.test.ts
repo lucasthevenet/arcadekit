@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import { Component, EcsWorld, Field, Query, SnapshotError } from "../src/index";
 import type { ComponentDef, Entity, RefCodec } from "../src/index";
@@ -20,7 +20,12 @@ const dates: RefCodec<Date> = {
 };
 const sets: RefCodec<Set<string>> = {
   encode: (value) => [...value].toSorted(),
-  decode: (data) => new Set(data as string[]),
+  decode: (data) => {
+    if (!Array.isArray(data) || !data.every((tag) => typeof tag === "string")) {
+      throw new TypeError(`${JSON.stringify(data)} is not a list of tags`);
+    }
+    return new Set(data);
+  },
 };
 
 const Profile = Schema.Struct({
@@ -43,7 +48,7 @@ const fields = {
 };
 const Card = Component.define("fld/Card", fields);
 const Badge = Component.define("fld/Badge", fields, { storage: "sparse" });
-const both = [Card, Badge] as ComponentDef[];
+const both = [Card, Badge] as const;
 
 const card = (n: number) => ({
   data: [{ n }, ["list", n], n % 2 === 0 ? null : `text ${n}`][n % 3],
@@ -59,10 +64,6 @@ const card = (n: number) => ({
   handle: { id: n },
   hp: n,
 });
-
-type Row = Omit<ReturnType<typeof card>, "handle"> & {
-  readonly handle: { readonly id: number } | undefined;
-};
 
 const populated = (count = 9) => {
   const world = new EcsWorld({ seed: 1 });
@@ -112,8 +113,8 @@ describe("a field that is not a number", () => {
     const copy = reload(world);
     for (const def of both) {
       for (const [n, entity] of entities.entries()) {
-        const then = world.get(entity, def) as Row;
-        const now = copy.get(entity, def) as Row;
+        const then = world.get(entity, def)!;
+        const now = copy.get(entity, def)!;
         expect(now.data).toEqual(then.data);
         expect(now.when).toEqual(then.when);
         expect(now.when).toBeInstanceOf(Date);
@@ -156,7 +157,7 @@ describe("a field that is not a number", () => {
           const changed = world.hash();
           expect(changed, `${def.name}.${field}`).not.toBe(base);
           seen.add(changed);
-          world.set(entity, def, { [field]: original[field] });
+          world.set(entity, def, { [field]: Reflect.get(original, field) });
           expect(world.hash(), `${def.name}.${field} restored`).toBe(base);
         }
         world.set(entity, def, { handle: { id: 999 } });
@@ -202,7 +203,8 @@ describe("a field that is not a number", () => {
       try {
         new EcsWorld().load(bytes, [data, Badge]);
       } catch (error) {
-        return error as SnapshotError;
+        assert(error instanceof SnapshotError);
+        return error;
       }
     };
     const transient = retyped(
@@ -233,7 +235,8 @@ describe("a field that is not a number", () => {
       try {
         world.snapshot();
       } catch (error) {
-        return error as SnapshotError;
+        assert(error instanceof SnapshotError);
+        return error;
       }
     };
     const date = refused({ when: new Date(Number.NaN) })!;
@@ -273,10 +276,10 @@ describe("a field that is not a number", () => {
     } catch (caught) {
       error = caught;
     }
-    expect(error).toBeInstanceOf(SnapshotError);
-    expect((error as SnapshotError).problem).toBe("component changed");
-    expect((error as SnapshotError).component).toBe("fld/Card");
-    expect((error as SnapshotError).message).toBe(
+    assert(error instanceof SnapshotError);
+    expect(error.problem).toBe("component changed");
+    expect(error.component).toBe("fld/Card");
+    expect(error.message).toBe(
       '"fld/Card.when" has a codec that refuses a value the snapshot holds: a date is saved as a number here'
     );
   });
@@ -299,9 +302,9 @@ describe("a field that is not a number", () => {
     } catch (caught) {
       error = caught;
     }
-    expect(error).toBeInstanceOf(SnapshotError);
-    expect((error as SnapshotError).problem).toBe("corrupt");
-    expect((error as SnapshotError).message).toMatch(/is not JSON/);
+    assert(error instanceof SnapshotError);
+    expect(error.problem).toBe("corrupt");
+    expect(error.message).toMatch(/is not JSON/);
   });
 
   it("saves plain data in a json field as JSON does: what comes back is what JSON makes of it", () => {

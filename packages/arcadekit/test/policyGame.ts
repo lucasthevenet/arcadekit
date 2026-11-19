@@ -20,6 +20,10 @@ import {
   Time,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { entity } from "./entities";
+
+/** The id of the first entity a world spawns. */
+const FIRST = entity(0);
 
 const Position = Component.define("policy/Position", {
   x: Field.f32,
@@ -69,7 +73,7 @@ const refused = (attempt: () => void): void => {
   try {
     attempt();
   } catch (error) {
-    reason = (error as Error).message;
+    reason = error instanceof Error ? error.message : String(error);
   }
   if (!refusals.includes(reason)) {
     refusals.push(reason);
@@ -115,7 +119,8 @@ const Fire = System.make("policy/Fire", function* () {
     // A query that only reads refuses a write, and says which field.
     (yield* Moving).each((_, velocity) => {
       refused(() => {
-        (velocity as { x: number }).x = 9;
+        // @ts-expect-error: the query only reads Velocity
+        velocity.x = 9;
       });
     });
   }
@@ -131,7 +136,7 @@ const Following = System.make("policy/Following", function* () {
     if (tick === 2) {
       // A relation's target is the world's to change.
       refused(() => {
-        follows.target = 0 as Entity;
+        follows.target = FIRST;
       });
     }
   });
@@ -210,7 +215,7 @@ export const play = (): Record<string, unknown> =>
                     gold: 2,
                     level: i,
                     flags: i & 255,
-                    rival: 0 as Entity,
+                    rival: FIRST,
                     name: `hero ${i}`,
                     born: DateTime.toDateUtc(
                       DateTime.makeUnsafe(1_000_000 * i)

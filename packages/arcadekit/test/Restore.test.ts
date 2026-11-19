@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   CommandBuffer,
@@ -8,7 +8,7 @@ import {
   Query,
   SnapshotError,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { ComponentDef } from "../src/index";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
 const Marked = Component.tag("rs/Marked");
@@ -383,7 +383,7 @@ describe("a world that is restored from a snapshot", () => {
     expect(world.hash()).toBe(before);
     world.restore(bytes);
     expect(world.isAlive(ball)).toBe(true);
-    expect(world.isAlive(queued as Entity)).toBe(false);
+    expect(world.isAlive(queued)).toBe(false);
   });
 
   it("refuses bytes that are not a snapshot, as load does", () => {
@@ -400,7 +400,7 @@ describe("a world that is restored from a snapshot", () => {
     } catch (error) {
       refused = error;
     }
-    expect(refused).toBeInstanceOf(SnapshotError);
-    expect((refused as SnapshotError).problem).toBe("unknown component");
+    assert(refused instanceof SnapshotError);
+    expect(refused.problem).toBe("unknown component");
   });
 });

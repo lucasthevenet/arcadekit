@@ -29,10 +29,11 @@ import {
   PerspectiveCamera,
   Quaternion,
   SRGBColorSpace,
+  Scene,
   Vector3,
 } from "three";
-import type { Camera, Scene } from "three";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import type { Camera } from "three";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { Three } from "../src/index";
 
@@ -60,25 +61,24 @@ const material = new MeshBasicMaterial();
 
 /** A renderer that draws nothing and notes what it was asked to draw. */
 const makeRenderer = () => {
-  const renderer = {
-    frames: 0,
-    scene: undefined as Scene | undefined,
-    camera: undefined as Camera | undefined,
+  const seen: {
+    frames: number;
+    scene: Scene | undefined;
+    camera: Camera | undefined;
     /** How many instances each instanced mesh had when the scene was drawn. */
-    counts: [] as number[],
-    layer: undefined as unknown as Layer.Layer<Three.Renderer>,
-  };
-  renderer.layer = Layer.succeed(Three.Renderer, {
+    counts: number[];
+  } = { frames: 0, scene: undefined, camera: undefined, counts: [] };
+  const layer = Layer.succeed(Three.Renderer, {
     render(scene, camera) {
-      renderer.frames++;
-      renderer.scene = scene;
-      renderer.camera = camera;
-      renderer.counts = scene.children
+      seen.frames++;
+      seen.scene = scene;
+      seen.camera = camera;
+      seen.counts = scene.children
         .filter((child) => child instanceof InstancedMesh)
         .map((mesh) => mesh.count);
     },
   });
-  return renderer;
+  return Object.assign(seen, { layer });
 };
 
 /** An app in a scope of its own, which the test closes when it likes. */
@@ -417,7 +417,7 @@ describe("Three.instances", () => {
         const roll = random.int(9);
         const one = alive[random.int(alive.length)];
         if (roll < 3 || one === undefined) {
-          const parts = [Rock, place()] as ComponentInput[];
+          const parts: ComponentInput[] = [Rock, place()];
           if (random.next() < 0.5) {
             parts.push(turn());
           }
@@ -685,7 +685,7 @@ describe("Three.instances", () => {
         // Of every kind: an eighth each only placed, sized, turned, and
         // both, in three dimensions and in two.
         const flat = i % 8 >= 4;
-        const parts = [
+        const parts: ComponentInput[] = [
           Rock,
           flat
             ? Transform2d.Position.of({ x: random.next(), y: random.next() })
@@ -695,7 +695,7 @@ describe("Three.instances", () => {
                 z: random.next(),
               }),
           Velocity.of({ x: random.next(), y: random.next(), z: random.next() }),
-        ] as ComponentInput[];
+        ];
         if (colored) {
           parts.push(
             Paint.of({
@@ -848,7 +848,7 @@ describe("a flat game's Transform2d", () => {
         const roll = random.int(10);
         const one = alive[random.int(alive.length)];
         if (roll < 3 || one === undefined) {
-          const parts = [Rock] as ComponentInput[];
+          const parts: ComponentInput[] = [Rock];
           // Most are flat; some are in three dimensions; a few are both.
           const kind = random.int(6);
           if (kind !== 0) {
@@ -1915,13 +1915,13 @@ describe("a colour per instance", () => {
         const one = alive[random.int(alive.length)];
         if (roll < 4 || one === undefined) {
           const y = ++heights;
-          const parts = [
+          const parts: ComponentInput[] = [
             Rock,
             random.next() < 0.5
               ? Position.of({ x: random.int(50), y, z: 0 })
               : Flat.Position.of({ x: random.int(50), y }),
             paint(random.next(), random.next(), random.next()),
-          ] as ComponentInput[];
+          ];
           if (random.next() < 0.3) {
             parts.push(
               Scale.of({ x: 2, y: 2, z: 2 }),
@@ -2324,7 +2324,8 @@ describe("a colour per instance", () => {
     // Two of the three are not a colour either.
     const Rg = Component.define("th/Rg", { r: Field.f32, g: Field.f32 });
     expect(() =>
-      Three.instances("th/Rg", { ...base, color: Rg as never })
+      // @ts-expect-error: two fields are not a colour
+      Three.instances("th/Rg", { ...base, color: Rg })
     ).toThrow('was given "th/Rg" as its colour');
     // Nor are three that are not all floats or all whole numbers, or not
     // numbers at all.
@@ -2514,9 +2515,11 @@ describe("Three.objects", () => {
   it("takes the object out and frees it when its entity is gone, or is no longer one of these", () => {
     const { app, renderer } = fresh();
     const at = (x: number) => Position.of({ x, y: 0, z: 0 });
-    const [gone, unmarked, hidden, nowhere, stays] = [1, 2, 3, 4, 5].map((x) =>
-      app.world.spawn(Ship, at(x))
-    ) as [Entity, Entity, Entity, Entity, Entity];
+    const gone = app.world.spawn(Ship, at(1));
+    const unmarked = app.world.spawn(Ship, at(2));
+    const hidden = app.world.spawn(Ship, at(3));
+    const nowhere = app.world.spawn(Ship, at(4));
+    const stays = app.world.spawn(Ship, at(5));
     app.frame(0);
     expect(made.length).toBe(5);
     const objects = new Map(made.map((one) => [one.entity, one.object]));
@@ -2612,13 +2615,13 @@ describe("Three.objects", () => {
         const roll = random.int(10);
         const one = all[random.int(all.length)];
         if (roll < 3 || one === undefined) {
-          const parts = [
+          const parts: ComponentInput[] = [
             Position.of({
               x: random.int(100),
               y: random.int(100),
               z: random.int(100),
             }),
-          ] as ComponentInput[];
+          ];
           if (random.next() < 0.8) {
             parts.push(Ship);
           }
@@ -2885,7 +2888,9 @@ describe("Three.layerRenderer", () => {
         asked.push(`size ${width}x${height} ${updateStyle}`);
       },
       render(_scene: Scene, camera: Camera) {
-        asked.push(`render ${(camera as PerspectiveCamera).aspect}`);
+        asked.push(
+          `render ${camera instanceof PerspectiveCamera ? camera.aspect : camera.type}`
+        );
       },
       dispose() {
         asked.push("dispose");
@@ -2917,7 +2922,7 @@ describe("Three.layerRenderer", () => {
       close: () => Effect.runSync(Scope.close(scope, Exit.void)),
     };
   };
-  const scene = new Object3D() as Scene;
+  const scene = new Scene();
 
   it("fits the picture to the size the canvas has on the page, when that changes, and a perspective camera with it", () => {
     const size = { clientWidth: 800, clientHeight: 400 };
@@ -2968,24 +2973,23 @@ describe("Three.layerRenderer", () => {
     const standIn = makeStandIn({ clientWidth: 100, clientHeight: 100 });
     const { renderer } = use(standIn);
     const camera = new PerspectiveCamera();
-    const page = globalThis as { devicePixelRatio?: number };
     try {
       renderer.render(scene, camera);
       expect(standIn.asked[0]).toBe("ratio 1");
-      page.devicePixelRatio = 1.5;
+      vi.stubGlobal("devicePixelRatio", 1.5);
       renderer.render(scene, camera);
       expect(standIn.asked.slice(3, 5)).toEqual([
         "ratio 1.5",
         "size 100x100 false",
       ]);
-      page.devicePixelRatio = 3;
+      vi.stubGlobal("devicePixelRatio", 3);
       renderer.render(scene, camera);
       expect(standIn.asked.slice(6, 8)).toEqual([
         "ratio 2",
         "size 100x100 false",
       ]);
     } finally {
-      delete page.devicePixelRatio;
+      vi.unstubAllGlobals();
     }
   });
 
