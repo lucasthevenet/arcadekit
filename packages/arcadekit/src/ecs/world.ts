@@ -146,12 +146,14 @@ const writeRow = (
   row: number,
   value: Readonly<Record<string, unknown>> | undefined
 ): void => {
+  // A bare component is its initial value, when it says one.
+  const from = value ?? def.initial;
   for (let f = 0; f < def.fields.length; f++) {
     const name = def.fields[f];
     // A number that is not given is 0, whether the whole value was left
     // out or the one field, which JavaScript and a cast allow: written as
     // it came, an undefined would be NaN in a column of floats.
-    const given = value === undefined ? undefined : value[name!];
+    const given = from === undefined ? undefined : from[name!];
     cols[name!]![row] =
       given === undefined && !isBoxed(def.kinds[f]!) ? 0 : given;
   }

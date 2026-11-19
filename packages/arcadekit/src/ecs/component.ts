@@ -370,6 +370,11 @@ export interface ComponentDef<
    */
   readonly relation: OnTargetDespawn | undefined;
   /**
+   * The value of a component added or spawned bare, with no value: see
+   * `Component.define`. Undefined for one whose bare value is all zeros.
+   */
+  readonly initial: Readonly<ValueOf<S>> | undefined;
+  /**
    * Pairs this component with a value, for `spawn` and `add`. A method, so
    * that any component is a `ComponentDef`.
    */
@@ -419,7 +424,7 @@ export interface SingletonSpec<S extends Schema = Schema> {
 export type Listed = ComponentDef | SingletonSpec;
 
 export const isSingletonSpec = (u: Listed): u is SingletonSpec =>
-  "initial" in u;
+  "component" in u;
 
 // A component's name is its identity in a save, on the network and in a tool.
 // A world keeps the names of the components it stores and refuses two with one
@@ -745,6 +750,7 @@ const define = <
     readonly storage?: St;
     readonly single?: boolean;
     readonly relation?: OnTargetDespawn;
+    readonly initial?: ValueOf<S>;
   }
 ): ComponentDef<S, St, N> => {
   const fields = Object.keys(schema);
@@ -759,6 +765,7 @@ const define = <
     isTag: fields.length === 0,
     single: options?.single === true,
     relation: options?.relation,
+    initial: options?.initial,
     of: (value) => ({ def, value }),
   };
   return def;
@@ -778,6 +785,10 @@ export const Component = {
    * components with the same name refuses the second. With `storage: "sparse"`,
    * it is stored in a set of its own, for a component that is added and removed
    * often or that few entities have.
+   *
+   * Added or spawned bare, with no value, a component is `initial`, or all
+   * zeros without it: give `initial` to a component whose zeros are wrong, such
+   * as a size, `{ initial: { x: 1, y: 1 } }`.
    */
   define: <
     const N extends string,
@@ -786,7 +797,7 @@ export const Component = {
   >(
     name: N,
     schema: S,
-    options?: { readonly storage?: St }
+    options?: { readonly storage?: St; readonly initial?: ValueOf<S> }
   ): ComponentDef<S, St, N> => define(name, schema, options),
   /**
    * Defines a singleton: data the world holds once, with its value until it is

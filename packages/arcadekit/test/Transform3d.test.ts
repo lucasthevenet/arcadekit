@@ -34,6 +34,14 @@ describe("Transform3d", () => {
       // In tables, so that a loop over columns reads them row for row.
       expect(component.storage).toBe("table");
     }
+    // Added bare, it is where it was made, turned by nothing, and of its
+    // own size: a Scale of zeros would be drawn as nothing.
+    const { world } = run(App.make({ plugins: [Transform3d.plugin] }));
+    const bare = world.spawn(Position, Rotation, Scale);
+    expect(world.get(bare, Scale)).toEqual({ x: 1, y: 1, z: 1 });
+    expect(new Set(Object.values(world.get(bare, Position)!))).toEqual(
+      new Set([0])
+    );
     // One module, whichever entry it is reached through.
     expect(Entry.Position).toBe(Position);
     expect(Entry.plugin).toBe(Transform3d.plugin);

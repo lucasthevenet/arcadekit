@@ -56,6 +56,42 @@ describe("entities and components", () => {
     expect(world.entityCount).toBe(0);
   });
 
+  it("gives a component added bare its initial value, where it says one, and zeros where it does not", () => {
+    const Size = Component.define(
+      "test/Size",
+      { width: Field.f32, height: Field.f32 },
+      { initial: { width: 1, height: 2 } }
+    );
+    const Glow = Component.define(
+      "test/Glow",
+      { level: Field.u8 },
+      { storage: "sparse", initial: { level: 7 } }
+    );
+    const world = new World();
+    // Spawned bare, in a table and in a sparse set.
+    const spawned = world.spawn(Size, Glow, Position);
+    expect(world.get(spawned, Size)).toEqual({ width: 1, height: 2 });
+    expect(world.get(spawned, Glow)).toEqual({ level: 7 });
+    expect(world.get(spawned, Position)).toEqual({ x: 0, y: 0 });
+    // Added bare, as the entity moves to another table.
+    const added = world.spawn(Health.of({ hp: 3 }));
+    world.add(added, Size);
+    world.add(added, Glow);
+    expect(world.get(added, Size)).toEqual({ width: 1, height: 2 });
+    expect(world.get(added, Glow)).toEqual({ level: 7 });
+    // A value says what it is; added bare again, a component it has keeps
+    // its value.
+    const given = world.spawn(Size.of({ width: 5, height: 6 }));
+    expect(world.get(given, Size)).toEqual({ width: 5, height: 6 });
+    world.add(given, Size);
+    expect(world.get(given, Size)).toEqual({ width: 5, height: 6 });
+    // A slot that is used again holds nothing of the entity before it.
+    world.despawn(spawned);
+    const again = world.spawn(Size, Glow);
+    expect(world.get(again, Size)).toEqual({ width: 1, height: 2 });
+    expect(world.get(again, Glow)).toEqual({ level: 7 });
+  });
+
   it("reuses a slot with a new generation, so stale handles stay dead", () => {
     const world = new World();
     const a = world.spawn(Health.of({ hp: 1 }));
