@@ -98,7 +98,7 @@ interface Single {
    * Its value in a world that hasn't written it, once the world has been given
    * it: what `restore` puts back when the snapshot doesn't hold it.
    */
-  initial: unknown;
+  initial: ValueOf<Schema> | undefined;
   /**
    * False until it is first written. Until then it holds its initial value and
    * behaves as if absent: it isn't saved, and isn't in the hash.
@@ -150,7 +150,7 @@ const writeRow = (
   def: ComponentDef,
   cols: Columns,
   row: number,
-  value: any | undefined
+  value: ValueOf<Schema> | undefined
 ): void => {
   for (let f = 0; f < def.fields.length; f += 1) {
     const name = def.fields[f];
@@ -163,15 +163,21 @@ const writeRow = (
   }
 };
 
-const readRow = (def: ComponentDef, cols: Columns, row: number): any => {
-  const out: any = {};
+const readRow = <S extends Schema>(
+  def: ComponentDef<S>,
+  cols: Columns,
+  row: number
+): ValueOf<S> => {
+  const out: ValueOf<Schema> = {};
 
   for (let f = 0; f < def.fields.length; f += 1) {
     const name = def.fields[f];
     out[name!] = cols[name!]![row];
   }
 
-  return out;
+  // SAFETY: `out` has a value for each field of `def`, read from the field's
+  // own column, which holds values of the field's type.
+  return out as ValueOf<S>;
 };
 
 const corrupt = (how: string): SnapshotError =>
@@ -341,7 +347,7 @@ export class SparseSet {
   readonly indexOf = (entity: number): number =>
     this.sparse[entity & INDEX_MASK]!;
 
-  add(index: number, value: any | undefined): void {
+  add(index: number, value: ValueOf<Schema> | undefined): void {
     if (index >= this.sparse.length) {
       let size = this.sparse.length;
 
@@ -1093,7 +1099,7 @@ export interface QuerySpec<D extends Terms = Terms> {
 }
 
 export type AccessorsOf<D extends Terms> = {
-  [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, any>
+  [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema>
     ? D[K] extends ReadOnlyTerm
       ? Readonly<ValueOf<S>>
       : ValueOf<S>
@@ -2092,7 +2098,7 @@ export class QueryView<D extends Terms = Terms> {
         f(a, b, c, ents[i]);
       }
     } else {
-      const args: any[] = Array.from({ length: n + 1 });
+      const args: unknown[] = Array.from({ length: n + 1 });
 
       for (let k = 0; k < n; k += 1) {
         args[k] = fields[k];
@@ -2178,7 +2184,7 @@ export class QueryView<D extends Terms = Terms> {
     try {
       const f = fn as Callback;
       const { n } = this;
-      const cols: any[] = Array.from({ length: n });
+      const cols: unknown[] = Array.from({ length: n });
 
       for (let k = 0; k < n; k += 1) {
         cols[k] = this.termSet[k];
@@ -2911,7 +2917,7 @@ export class World {
     index: number,
     entity: Entity,
     def: ComponentDef,
-    value: any | undefined
+    value: ValueOf<Schema> | undefined
   ): boolean {
     if (def.storage === "sparse") {
       const set = this._sparse(def);

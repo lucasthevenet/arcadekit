@@ -16,7 +16,7 @@ import {
   System,
   Time,
 } from "../src/index";
-import type { Entity } from "../src/index";
+import type { Entity, EntityColumn } from "../src/index";
 
 const Position = Component.define("ch/Position", {
   x: Field.f32,
@@ -823,10 +823,10 @@ describe("changes against a simple model", () => {
         const seen: Entity[] = [];
 
         reader.view.eachChunk((start, end, ...args) => {
-          const ids = args.at(-1) as Uint32Array;
+          const ids = args.at(-1) as EntityColumn;
 
           for (let i = start; i < end; i += 1) {
-            seen.push(ids[i] as Entity);
+            seen.push(ids[i]!);
           }
         });
 

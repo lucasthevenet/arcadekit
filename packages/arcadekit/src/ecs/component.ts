@@ -111,8 +111,8 @@ export const isBoxed = (kind: FieldKind): boolean =>
  * @category Models
  */
 export interface RefCodec<T> {
-  readonly encode: (value: T) => unknown;
-  readonly decode: (data: unknown) => T;
+  encode(value: T): unknown;
+  decode(data: unknown): T;
 }
 
 /**
@@ -241,7 +241,7 @@ export const growColumn = (
 // Components
 // ---------------------------------------------------------------------------
 
-export type Schema = Record<string, FieldDef<any, any>>;
+export type Schema = Record<string, FieldDef<unknown, unknown>>;
 
 /**
  * The plain-object shape of a component: `{ x: number, y: number }`.
@@ -249,17 +249,17 @@ export type Schema = Record<string, FieldDef<any, any>>;
  * @category Type-level
  */
 export type ValueOf<S extends Schema> = {
-  -readonly [K in keyof S]: S[K] extends FieldDef<infer T, any> ? T : never;
+  -readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown> ? T : never;
 };
 
 /** The column shape of a component: `{ x: Float32Array, y: Float32Array }`. */
 export type ColumnsOf<S extends Schema> = {
-  readonly [K in keyof S]: S[K] extends FieldDef<any, infer C> ? C : never;
+  readonly [K in keyof S]: S[K] extends FieldDef<unknown, infer C> ? C : never;
 };
 
 /** The columns of a component a query only reads: indexable, but not assignable. */
 export type ReadonlyColumnsOf<S extends Schema> = {
-  readonly [K in keyof S]: S[K] extends FieldDef<infer T, any>
+  readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown>
     ? ReadonlyColumn<T>
     : never;
 };
@@ -377,7 +377,7 @@ export interface ComponentDef<
   readonly fields: readonly string[];
   readonly kinds: readonly FieldKind[];
   /** For each field, the codec of a `ref` field, or undefined for any other. */
-  readonly codecs: readonly (RefCodec<any> | undefined)[];
+  readonly codecs: readonly (RefCodec<unknown> | undefined)[];
   /** Tracked in the type, so queries know which terms have row-aligned columns. */
   readonly storage: St;
   readonly isTag: boolean;
