@@ -2,12 +2,17 @@ import { defineConfig } from "oxlint";
 import core from "ultracite/oxlint/core";
 import vitest from "ultracite/oxlint/vitest";
 
+// The Vitest preset is one override, for the test files. It is taken in here
+// rather than extended, since a later override cannot change the options of
+// a rule an earlier one set.
+const [tests] = vitest.overrides ?? [];
+
 // Ultracite's core and Vitest presets; anti-slop and its Effect rules, vendored
 // in tooling/oxlint/anti-slop; and arcadekit's own rules,
 // tooling/oxlint/arcadekit, on the sources of the published packages.
 export default defineConfig({
   env: core.env,
-  extends: [core, vitest],
+  extends: [core],
   ignorePatterns: [
     ...core.ignorePatterns,
     ".agents/**",
@@ -70,6 +75,14 @@ export default defineConfig({
     "eslint/require-yield": "off",
   },
   overrides: [
+    {
+      ...tests,
+      rules: {
+        ...tests?.rules,
+        // Vitest's expect takes a message as its second argument.
+        "vitest/valid-expect": ["error", { maxArgs: 2 }],
+      },
+    },
     {
       files: ["packages/*/src/**"],
       rules: {
