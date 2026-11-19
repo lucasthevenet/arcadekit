@@ -1,7 +1,7 @@
 /**
  * Things that fall: where they are, how fast they go, and what pulls them
  * down. The other plugins of the demo import what they need of it from
- * here, and nothing from `Loops.ts`.
+ * here, and nothing from `loops.ts`.
  */
 import {
   Component,
@@ -12,7 +12,7 @@ import {
   System,
   Time,
 } from "../../../src/index";
-import { fall } from "./Loops";
+import { fall } from "./loops";
 
 export const Position = Component.define("demo/Position", {
   x: Field.f32,

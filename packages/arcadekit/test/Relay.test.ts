@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
 import { Lockstep, Relay, Rollback, Transport } from "../src/index";
-import { DELTA, game, moves, players, purseOf } from "./Peers";
-import type { Game, Peer } from "./Peers";
+import { DELTA, game, moves, players, purseOf } from "./peers";
+import type { Game, Peer } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
   from,

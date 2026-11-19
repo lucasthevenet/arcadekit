@@ -11,7 +11,7 @@ The examples use [Vitest](https://vitest.dev), but any test runner works.
 
 An app is created inside a scope. A test creates it, steps it with `tick`, and inspects the world:
 
-```ts title="Rules.test.ts"
+```ts title="rules.test.ts"
 import { Action, App, Field, Plugin, Singleton } from "arcadekit";
 import { Effect, Schema } from "effect";
 import type { Scope } from "effect";
@@ -55,7 +55,7 @@ it("adds points", () =>
 
 By default, an app has no devices. A test provides a source it drives by hand:
 
-```ts title="Rules.test.ts"
+```ts title="rules.test.ts"
 import { Input } from "arcadekit";
 
 it("hears a key", () =>
@@ -79,7 +79,7 @@ To test what a game does with a key, you don't need a device. Dispatch the actio
 
 `Sound.makeRecorder()` is an output that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each is playing now in `playing`.
 
-```ts title="Rules.test.ts"
+```ts title="rules.test.ts"
 import { Sound } from "arcadekit";
 
 it("plays nothing when nothing happens", () =>

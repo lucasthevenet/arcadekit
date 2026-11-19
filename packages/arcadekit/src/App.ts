@@ -47,12 +47,12 @@ import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
-import { isSingletonSpec } from "./ecs/Component";
-import type { Listed } from "./ecs/Component";
-import { Rng } from "./ecs/Random";
-import { SnapshotError } from "./ecs/Snapshot";
-import { CommandBuffer, World as EcsWorld } from "./ecs/World";
-import type { Guard, SavedChanges } from "./ecs/World";
+import { isSingletonSpec } from "./ecs/component";
+import type { Listed } from "./ecs/component";
+import { Rng } from "./ecs/random";
+import { SnapshotError } from "./ecs/snapshot";
+import { CommandBuffer, World as EcsWorld } from "./ecs/world";
+import type { Guard, SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
 import type { EventGuard, EventsMoment } from "./Event";
 import * as Input from "./Input";

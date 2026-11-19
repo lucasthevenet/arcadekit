@@ -1,6 +1,6 @@
 /**
  * What a comparison of two builds comes to: the arithmetic of
- * `bench/Compare.ts`, apart from it so that a test can hold it to account.
+ * `bench/compare.ts`, apart from it so that a test can hold it to account.
  * Plain functions of numbers and text, with nothing of Node in them.
  *
  * A variant of the benchmark is run several times by each build, turn and

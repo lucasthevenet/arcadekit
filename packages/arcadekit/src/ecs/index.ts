@@ -17,7 +17,7 @@
  * `World` service, and leaves out `entityIndex` and `entityGeneration`, which
  * are only available here.
  */
-export { Component, entityGeneration, entityIndex, Field } from "./Component";
+export { Component, entityGeneration, entityIndex, Field } from "./component";
 
 export type {
   ComponentDef,
@@ -32,11 +32,11 @@ export type {
   SingletonSpec,
   Storage,
   ValueOf,
-} from "./Component";
+} from "./component";
 
-export { Rng } from "./Random";
+export { Rng } from "./random";
 
-export { readSnapshot, SnapshotError, writeSnapshot } from "./Snapshot";
+export { readSnapshot, SnapshotError, writeSnapshot } from "./snapshot";
 
 export type {
   SnapshotComponent,
@@ -45,9 +45,9 @@ export type {
   SnapshotSingleton,
   SnapshotSparse,
   SnapshotTable,
-} from "./Snapshot";
+} from "./snapshot";
 
-export { CommandBuffer, QueryView, RemovedReader, World } from "./World";
+export { CommandBuffer, QueryView, RemovedReader, World } from "./world";
 
 export type {
   ChangeKind,
@@ -57,4 +57,4 @@ export type {
   SavedChanges,
   SparseColumns,
   Terms,
-} from "./World";
+} from "./world";

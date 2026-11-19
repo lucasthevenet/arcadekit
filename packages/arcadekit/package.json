@@ -179,15 +179,15 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
-    "demo": "tsx examples/demo/Main.ts",
-    "duel": "tsx examples/Duel.ts",
+    "demo": "tsx examples/demo/main.ts",
+    "duel": "tsx examples/duel.ts",
     "page": "vite examples/page",
-    "relay": "tsx examples/Relay.ts",
-    "relay:check": "tsx examples/RelayCheck.ts",
+    "relay": "tsx examples/relay.ts",
+    "relay:check": "tsx examples/relayCheck.ts",
     "relay:cloudflare": "cd examples/relay-cloudflare && alchemy dev",
-    "bench": "tsx bench/Accessors.ts",
-    "bench:compare": "tsx bench/Compare.ts",
-    "bench:parallel": "tsx bench/parallel/Run.ts"
+    "bench": "tsx bench/accessors.ts",
+    "bench:compare": "tsx bench/compare.ts",
+    "bench:parallel": "tsx bench/parallel/run.ts"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.87",

@@ -7,7 +7,7 @@ import { Effect } from "effect";
 import { HttpServerRequest } from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
-import Room from "./Room";
+import Room from "./room";
 
 export default Cloudflare.Worker(
   "Relay",

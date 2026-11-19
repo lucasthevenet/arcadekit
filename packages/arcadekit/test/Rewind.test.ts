@@ -27,8 +27,8 @@ import {
   Take,
   Whisper,
   withApp,
-} from "./Peers";
-import type { Game } from "./Peers";
+} from "./peers";
+import type { Game } from "./peers";
 
 /** A stretch of a game, played by a seed: the same moves for the same seed. */
 const stretch = (app: Game, seed: number, ticks: number): number[] => {

@@ -23,9 +23,9 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/Snapshot";
-import type { SnapshotContents, SnapshotProblem } from "./ecs/Snapshot";
-import type { SavedChanges } from "./ecs/World";
+import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/snapshot";
+import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
+import type { SavedChanges } from "./ecs/world";
 
 /**
  * The events of one type that were waiting to be read when the game was saved.

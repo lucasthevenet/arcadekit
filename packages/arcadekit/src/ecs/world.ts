@@ -41,7 +41,7 @@ import {
   frozenWrite,
   makeEntity,
   retarget,
-} from "./Component";
+} from "./component";
 import type {
   Accessor,
   Column,
@@ -56,9 +56,9 @@ import type {
   Schema,
   SingletonSpec,
   ValueOf,
-} from "./Component";
-import { add, addColumn, addColumnPerRow, finish, shapeOf } from "./Hash";
-import { Rng } from "./Random";
+} from "./component";
+import { add, addColumn, addColumnPerRow, finish, shapeOf } from "./hash";
+import { Rng } from "./random";
 import {
   END,
   FORMAT,
@@ -71,7 +71,7 @@ import {
   WIDTH,
   writeColumn,
   Writer,
-} from "./Snapshot";
+} from "./snapshot";
 
 const NOT_PLACED = -1;
 const FREE = -2;

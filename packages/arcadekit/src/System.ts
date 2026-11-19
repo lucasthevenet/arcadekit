@@ -13,8 +13,8 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
-import type { ComponentDef, SingletonSpec } from "./ecs/Component";
-import type { QuerySpec } from "./ecs/World";
+import type { ComponentDef, SingletonSpec } from "./ecs/component";
+import type { QuerySpec } from "./ecs/world";
 import type { EventDef } from "./Event";
 
 /**

@@ -16,8 +16,8 @@ import {
   Tip,
   withApp,
   withPeers,
-} from "./Peers";
-import type { Peer } from "./Peers";
+} from "./peers";
+import type { Peer } from "./peers";
 
 describe("who issued an action", () => {
   it("is told to its handler when the action came with a name", () => {

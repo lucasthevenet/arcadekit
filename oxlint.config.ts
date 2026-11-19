@@ -100,22 +100,33 @@ export default defineConfig({
         "vitest/max-expects": "off",
       },
     },
+    // Files are named as Effect names its own. A module, which an entry is,
+    // is PascalCase, as it is imported: arcadekit/Query. So is the test of
+    // one, test/Query.test.ts. Everything else is camelCase: the storage
+    // core behind arcadekit/ecs, a test's helpers, the benchmarks and the
+    // examples. index.ts and the files a tool names keep their names.
     {
-      // A package's files are named in PascalCase, as its entries are
-      // imported: arcadekit/Query, @arcadekit/three/Gltf. The files named by
-      // a tool keep the tool's names.
       files: ["packages/**"],
       rules: {
         "unicorn/filename-case": [
           "error",
           {
-            case: "pascalCase",
+            case: "camelCase",
             ignore: [
               String.raw`^index\.ts$`,
               String.raw`\.config\.ts$`,
               String.raw`^alchemy\.run\.ts$`,
             ],
           },
+        ],
+      },
+    },
+    {
+      files: ["packages/*/src/*.ts", "packages/*/test/**/*.test.ts"],
+      rules: {
+        "unicorn/filename-case": [
+          "error",
+          { case: "pascalCase", ignore: [String.raw`^index\.ts$`] },
         ],
       },
     },

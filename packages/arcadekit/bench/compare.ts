@@ -1,6 +1,6 @@
 /**
  * Did a change make the storage core slower? Runs the variants of
- * `bench/Core.ts` for two checkouts of the repository, the base and this
+ * `bench/core.ts` for two checkouts of the repository, the base and this
  * one, turn and turn about, and says for each whether this one is slower
  * by more than the noise. It ends with a failure if any is, unless a
  * commit of the change says it meant to.
@@ -23,11 +23,11 @@
  * pull request that touches the storage core, against what the pull request
  * would be merged into.
  *
- * Both builds run this checkout's `bench/Core.ts`, which is copied into
+ * Both builds run this checkout's `bench/core.ts`, which is copied into
  * the base for as long as the comparison lasts, under a name of its own,
  * so that the two are asked the same thing and the base is left as it was
  * found; a variant the base cannot run is new, and compared with nothing.
- * Each run is a process of its own. `bench/Verdict.ts` holds the rule, and
+ * Each run is a process of its own. `bench/verdict.ts` holds the rule, and
  * says why it is the rule, what it finds and what it does not.
  *
  * A variant whose two builds are within 2.5% of each other after six runs
@@ -52,7 +52,7 @@ import { appendFileSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { inUnit, variants } from "./Core";
+import { inUnit, variants } from "./core";
 import {
   CHANCE,
   failures,
@@ -61,8 +61,8 @@ import {
   onPurpose,
   settled,
   table,
-} from "./Verdict";
-import type { Line } from "./Verdict";
+} from "./verdict";
+import type { Line } from "./verdict";
 
 const here = import.meta.dirname;
 const head = path.resolve(here, "..");
@@ -134,7 +134,7 @@ for (const name of only ?? []) {
 const ASKED = "core.compared.ts";
 const asked = path.join(base, "bench", ASKED);
 
-copyFileSync(path.join(head, "bench", "Core.ts"), asked);
+copyFileSync(path.join(head, "bench", "core.ts"), asked);
 
 process.on("exit", () => {
   rmSync(asked, { force: true });
@@ -145,7 +145,7 @@ const run = (build: string, name: string): number =>
   JSON.parse(
     execFileSync(
       process.execPath,
-      ["--import", "tsx", `bench/${build === base ? ASKED : "Core.ts"}`, name],
+      ["--import", "tsx", `bench/${build === base ? ASKED : "core.ts"}`, name],
       { cwd: build, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
     )
       .trim()
@@ -176,7 +176,7 @@ const done = new Set<string>();
 const ENOUGH = 6;
 
 console.log(
-  `Comparing ${names.length} variants of bench/Core.ts, up to ${runs} runs each by each build.`
+  `Comparing ${names.length} variants of bench/core.ts, up to ${runs} runs each by each build.`
 );
 
 for (let round = 0; round < runs; round += 1) {

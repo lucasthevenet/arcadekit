@@ -1,11 +1,11 @@
 /**
- * A worker of `bench/parallel/Run.ts`: it waits for a job, runs the kernel
+ * A worker of `bench/parallel/run.ts`: it waits for a job, runs the kernel
  * it is told over the rows it is told, on columns it shares with the main
  * thread, and says when it is done.
  */
 import { workerData } from "node:worker_threads";
 
-import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./Kernels";
+import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./kernels";
 
 const { columns, control, id } = workerData as {
   readonly columns: readonly SharedArrayBuffer[];

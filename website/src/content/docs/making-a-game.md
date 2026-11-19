@@ -22,7 +22,7 @@ A game's rules are a plugin: its components, its systems, the actions a player c
 
 Start with the data. A coin is an entity with a position and a falling speed. There is only one basket, so instead of an entity it is a singleton.
 
-```ts title="Rules.ts"
+```ts title="rules.ts"
 import {
   Action,
   Commands,
@@ -56,7 +56,7 @@ A component's fields are stored as numbers in typed arrays. Its name, `"catch/Po
 
 Next come the systems. A system runs once per tick as one Effect, and loops over the entities its query matches with a plain function. It reads the time from `Time`, never from the system clock.
 
-```ts title="Rules.ts"
+```ts title="rules.ts"
 const BASKET_WIDTH = 1;
 const BASKET_SPEED = 6;
 
@@ -78,7 +78,7 @@ const Drop = System.make("catch/Drop", function* () {
 
 When a coin reaches the ground, it is either caught or missed, and despawned in both cases. You despawn an entity through `Commands`, which applies the change after the system finishes, so the world never changes under a running loop.
 
-```ts title="Rules.ts"
+```ts title="rules.ts"
 export const Caught = Event.define(
   "catch/Caught",
   Schema.Struct({ total: Schema.Int })
@@ -109,7 +109,7 @@ const Land = System.make("catch/Land", function* () {
 
 Players change the game only through actions. An action has a name and a payload, which is validated against a schema before its handler runs: here, a direction of -1, 0 or 1. The handler either applies the action or refuses it with a typed error, and a refused action changes nothing.
 
-```ts title="Rules.ts"
+```ts title="rules.ts"
 export const Move = Action.define(
   "catch/Move",
   Schema.Struct({
@@ -132,7 +132,7 @@ const move = Action.handler(Move, function* ({ dx }) {
 
 A script is code that runs across many ticks. This one drops a coin at a random position every second. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
 
-```ts title="Rules.ts"
+```ts title="rules.ts"
 const Rain = Effect.gen(function* () {
   const script = yield* Script;
   const commands = yield* Commands;
@@ -151,7 +151,7 @@ const Rain = Effect.gen(function* () {
 
 ## The plugin
 
-```ts title="Rules.ts"
+```ts title="rules.ts"
 export const Rules = Plugin.make("catch/Rules", {
   components: [Position, Fall, Basket],
   systems: [Steer, Drop, Land],
@@ -166,13 +166,13 @@ Systems run in the order they are listed. `components` lists every component a s
 
 You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page.
 
-```ts title="Rules.test.ts"
+```ts title="rules.test.ts"
 import { App } from "arcadekit";
 import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { expect, it } from "vitest";
 
-import { Basket, Fall, Move, Position, Rules } from "./Rules";
+import { Basket, Fall, Move, Position, Rules } from "./rules";
 
 const play = <A>(body: Effect.Effect<A, unknown, Scope.Scope>) =>
   Effect.runSync(Effect.scoped(body));
@@ -204,7 +204,7 @@ it("refuses a move once the game is over", () =>
 
 A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation, and `App.replay` plays the log into a new app, verifying the world's hash along the way:
 
-```ts title="Rules.test.ts"
+```ts title="rules.test.ts"
 it("plays the same game again from its log", () =>
   play(
     Effect.gen(function* () {
@@ -231,12 +231,12 @@ Keys become actions. `Input.bind` creates an input-stage system, which runs befo
 
 Drawing happens in the frame stage, between ticks, where the world is read-only. A frame system can read anything and change nothing, so drawing never affects the simulation.
 
-```ts title="Main.ts"
+```ts title="main.ts"
 import { App, Input, Plugin, Query, System } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Context, Effect, Layer } from "effect";
 
-import { Basket, Fall, Move, Position, Rules } from "./Rules";
+import { Basket, Fall, Move, Position, Rules } from "./rules";
 
 const canvas = document.querySelector("canvas")!;
 
@@ -287,7 +287,7 @@ Browser.runMain(
 
 `App.run` creates the app and runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
-Serve `Main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`.
+Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`.
 
 ## Where to go next
 

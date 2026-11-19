@@ -43,16 +43,16 @@ import {
   sizes,
   Position,
   Velocity,
-} from "./Core";
-import type { Variant } from "./Core";
+} from "./core";
+import type { Variant } from "./core";
 
-// As `bench/Core.ts` has them, and constants of this module so that a loop
+// As `bench/core.ts` has them, and constants of this module so that a loop
 // reads them at no cost.
 const N = 100_000;
 const DT = 1 / 60;
 
 if (N !== sizes.entities || DT !== sizes.step) {
-  throw new Error("bench/Accessors.ts and bench/Core.ts differ on N or DT.");
+  throw new Error("bench/accessors.ts and bench/core.ts differ on N or DT.");
 }
 
 const Moving = Query.all(Position, Velocity);
@@ -525,7 +525,7 @@ const MovementRaw = System.make("MovementRaw", function* () {
 });
 
 const variants: Record<string, Variant> = {
-  // The storage core's own, which `bench/Core.ts` holds and CI compares.
+  // The storage core's own, which `bench/core.ts` holds and CI compares.
   ...coreVariants,
 
   objects: {

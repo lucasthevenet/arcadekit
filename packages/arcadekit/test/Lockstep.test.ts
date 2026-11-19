@@ -21,8 +21,8 @@ import {
   Whisper,
   withApp,
   withPeers,
-} from "./Peers";
-import type { Peer } from "./Peers";
+} from "./peers";
+import type { Peer } from "./peers";
 
 const attempt = (options: Partial<Lockstep.Options>) =>
   withApp(game(), (app) =>

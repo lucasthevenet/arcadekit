@@ -26,9 +26,9 @@ export {
   type OnTargetDespawn,
   type RefCodec,
   type SingletonSpec,
-} from "./ecs/Component";
+} from "./ecs/component";
 
-export type { Rng } from "./ecs/Random";
+export type { Rng } from "./ecs/random";
 
 export {
   readSnapshot,
@@ -40,7 +40,7 @@ export {
   type SnapshotSparse,
   type SnapshotTable,
   writeSnapshot,
-} from "./ecs/Snapshot";
+} from "./ecs/snapshot";
 
 export {
   type ChangeKind,
@@ -51,7 +51,7 @@ export {
   type SavedChanges,
   type SparseColumns,
   World as EcsWorld,
-} from "./ecs/World";
+} from "./ecs/world";
 
 export * as Event from "./Event";
 

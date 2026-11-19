@@ -5,8 +5,8 @@ import { Context } from "effect";
 import type { Effect, Fiber } from "effect";
 
 import type { Actions } from "./Action";
-import type { Rng } from "./ecs/Random";
-import type { CommandBuffer, World as EcsWorld } from "./ecs/World";
+import type { Rng } from "./ecs/random";
+import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
 

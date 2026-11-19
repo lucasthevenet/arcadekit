@@ -20,7 +20,7 @@
  * have a size of their own. A save names each by module and component, as the
  * world does: `"arcadekit/Transform3d.Position"`.
  */
-import { Component, Field } from "./ecs/Component";
+import { Component, Field } from "./ecs/component";
 import * as Plugin from "./Plugin";
 
 /**

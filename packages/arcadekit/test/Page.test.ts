@@ -3,10 +3,10 @@ import { Effect, Exit, Layer, Scope } from "effect";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Game, Screen } from "../examples/page/Game";
-import { Hud, Menu, Start } from "../examples/page/Protocol";
-import { mount as mountDom } from "../examples/page/UiDom";
-import { mount as mountReact } from "../examples/page/UiReact";
+import { Game, Screen } from "../examples/page/game";
+import { Hud, Menu, Start } from "../examples/page/protocol";
+import { mount as mountDom } from "../examples/page/uiDom";
+import { mount as mountReact } from "../examples/page/uiReact";
 import { App, Assets, Input, Sound, View } from "../src/index";
 
 // The example page's game, with its menu and its heads-up display built
@@ -315,27 +315,27 @@ describe("the page's UI", () => {
   };
 
   it("holds no reference to the world: it imports the views and actions it may use, and the type of the bridge", () => {
-    expect(imported("UiDom.ts")).toStrictEqual([
+    expect(imported("uiDom.ts")).toStrictEqual([
       "../../src/View",
-      "./Protocol",
+      "./protocol",
     ]);
-    expect(imported("UiReact.ts")).toStrictEqual([
+    expect(imported("uiReact.ts")).toStrictEqual([
       "../../src/View",
-      "./Protocol",
+      "./protocol",
       "react",
       "react",
       "react-dom/client",
     ]);
 
     // Of the bridge they import the type alone: they are handed the bridge.
-    for (const file of ["UiDom.ts", "UiReact.ts"]) {
+    for (const file of ["uiDom.ts", "uiReact.ts"]) {
       expect(sources[`../examples/page/${file}`]).toContain(
         'import type * as View from "../../src/View";'
       );
     }
 
     // And what they share with the game is keys: no component, no system.
-    expect(imported("Protocol.ts")).toStrictEqual([
+    expect(imported("protocol.ts")).toStrictEqual([
       "../../src/Action",
       "../../src/View",
       "effect",

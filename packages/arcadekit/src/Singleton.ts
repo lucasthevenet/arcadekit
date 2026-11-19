@@ -15,13 +15,13 @@
  */
 import { Effect, Effectable } from "effect";
 
-import { Component } from "./ecs/Component";
+import { Component } from "./ecs/component";
 import type {
   ComponentDef,
   Schema,
   SingletonSpec,
   ValueOf,
-} from "./ecs/Component";
+} from "./ecs/component";
 import { World } from "./Services";
 
 /**

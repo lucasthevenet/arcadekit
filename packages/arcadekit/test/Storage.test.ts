@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { Component, Field } from "../src/ecs/Component";
-import type { ComponentDef, Entity } from "../src/ecs/Component";
-import { CommandBuffer, World } from "../src/ecs/World";
-import type { QuerySpec, Terms } from "../src/ecs/World";
+import { Component, Field } from "../src/ecs/component";
+import type { ComponentDef, Entity } from "../src/ecs/component";
+import { CommandBuffer, World } from "../src/ecs/world";
+import type { QuerySpec, Terms } from "../src/ecs/world";
 
 const Position = Component.define("st/Position", {
   x: Field.f32,

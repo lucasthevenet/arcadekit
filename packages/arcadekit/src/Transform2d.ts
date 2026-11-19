@@ -20,7 +20,7 @@
  * `Transform2d.Position`. A save names each by module and component, as the
  * world does: `"arcadekit/Transform2d.Position"`.
  */
-import { Component, Field } from "./ecs/Component";
+import { Component, Field } from "./ecs/component";
 import * as Plugin from "./Plugin";
 
 /**

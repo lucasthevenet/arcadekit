@@ -1,6 +1,6 @@
 /**
  * The page's menu and heads-up display again, built with a UI library:
- * React. It is the same UI as UiDom.ts, on the same bridge.
+ * React. It is the same UI as uiDom.ts, on the same bridge.
  *
  * What binds the bridge to React is `useView`, three lines: a view is an
  * external store, whose value is the same object until it changes.
@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 import type * as View from "../../src/View";
-import { Hud, Menu, Quit, Start, TogglePause } from "./Protocol";
+import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
 
 /** A view's value, in a component that is drawn again when it changes. */
 const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>

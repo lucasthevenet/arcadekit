@@ -16,7 +16,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Alchemy from "alchemy";
 import { Effect } from "effect";
 
-import Relay from "./src/Worker";
+import Relay from "./src/worker";
 
 export default Alchemy.Stack(
   "arcadekit-relay",

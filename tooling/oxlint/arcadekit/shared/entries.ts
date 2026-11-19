@@ -76,7 +76,7 @@ export const mayReach = (from: EntryRule, to: EntryRule): boolean =>
 export interface PackageRules {
   /** Its folder under packages/. */
   readonly dir: string;
-  /** The rule of a source file, by its path in the package, such as "src/ecs/World.ts". */
+  /** The rule of a source file, by its path in the package, such as "src/ecs/world.ts". */
   readonly ofFile: (file: string) => EntryRule;
 }
 

@@ -62,13 +62,13 @@ Deciding whether to admit that peer under that name is the host's responsibility
 
 `Relay.make(options)` tracks connections itself. `relay.connect(url, send)` returns a connection, to `receive` what the peer sent and to `close` when it leaves.
 
-[`examples/Relay.ts`](../../../../../packages/arcadekit/examples/Relay.ts) wraps it in a WebSocket server on Node, in about forty lines. `pnpm --filter arcadekit relay` runs it on port 8787, or on `PORT` if set: two machines on the same network can play through it as is.
+[`examples/relay.ts`](../../../../../packages/arcadekit/examples/relay.ts) wraps it in a WebSocket server on Node, in about forty lines. `pnpm --filter arcadekit relay` runs it on port 8787, or on `PORT` if set: two machines on the same network can play through it as is.
 
 ## A host that sleeps
 
 A host that sleeps between messages calls `join` and `forward` itself, and stores the connected members somewhere durable.
 
-[`examples/relay-cloudflare`](../../../../../packages/arcadekit/examples/relay-cloudflare) implements the relay as a Worker with one Durable Object per room, declared and deployed with [Alchemy](https://alchemy.run): three files, of which `src/Room.ts` is the host.
+[`examples/relay-cloudflare`](../../../../../packages/arcadekit/examples/relay-cloudflare) implements the relay as a Worker with one Durable Object per room, declared and deployed with [Alchemy](https://alchemy.run): three files, of which `src/room.ts` is the host.
 
 - The room keeps nothing in memory. Cloudflare hibernates a Durable Object between messages while keeping its sockets open. Each socket carries its member as an attachment, read back on every call: that is all `join` and `forward` need.
 - `pnpm --filter arcadekit relay:cloudflare` runs it locally in workerd with `alchemy dev`, with no Cloudflare account, keeping the stack's state in a folder next to it. `alchemy deploy`, run from `examples/relay-cloudflare`, deploys it to an account.

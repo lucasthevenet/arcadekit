@@ -2,8 +2,8 @@ import { Context, Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App, Driver, Lockstep, Rollback, Transport } from "../src/index";
-import { DELTA, Drop, game, moves, players, setGlitch, withApp } from "./Peers";
-import type { Game, Peer } from "./Peers";
+import { DELTA, Drop, game, moves, players, setGlitch, withApp } from "./peers";
+import type { Game, Peer } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
   from,
@@ -52,7 +52,7 @@ const seated = (
     return seats;
   });
 
-/** As the players of `Peers.ts` see a peer. */
+/** As the players of `peers.ts` see a peer. */
 const asPeer = (seat: Seat): Peer => seat as unknown as Peer;
 
 const run = (seed: number): number[] => {

@@ -3,7 +3,7 @@
  * catches them, and both are drawn on a canvas once per repaint, wherever
  * they are by then.
  *
- * What the UI may see of it, and ask of it, is in Protocol.ts. The game
+ * What the UI may see of it, and ask of it, is in protocol.ts. The game
  * publishes the first and handles the second, and knows nothing of what
  * the UI is built with.
  */
@@ -30,7 +30,7 @@ import {
   Time,
   View,
 } from "../../src/index";
-import { Hud, Menu, Quit, Start, TogglePause } from "./Protocol";
+import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
 
 export const WIDTH = 480;
 export const HEIGHT = 320;
@@ -126,7 +126,7 @@ const Fall = System.make("Fall", function* () {
 // --- what a player can ask for ---------------------------------------------------
 // The game knows nothing of keys: the bindings below turn a key into one of
 // these actions, which are logged like any other.
-// `Start`, `Quit` and `TogglePause` are in Protocol.ts, since the UI sends
+// `Start`, `Quit` and `TogglePause` are in protocol.ts, since the UI sends
 // them too.
 // What a level is made of. It comes from a file, so it has a schema, and it
 // reaches the game as the payload of an action: a replay has it in its log

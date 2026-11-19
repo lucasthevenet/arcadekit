@@ -1,5 +1,5 @@
 /**
- * The loops of `bench/parallel/Run.ts`: plain functions over columns and a
+ * The loops of `bench/parallel/run.ts`: plain functions over columns and a
  * range of rows, in a module that the main thread and every worker import.
  * A worker has no closure of the main thread's to run, so what runs on one
  * is a function it has imported itself, given nothing but arrays and
