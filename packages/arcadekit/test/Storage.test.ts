@@ -284,7 +284,7 @@ describe("queries", () => {
       pos.y += vel.y;
       seen.push(entity);
     });
-    expect(seen.sort()).toEqual([a, b].sort());
+    expect(seen.sort((a, b) => a - b)).toEqual([a, b].sort((a, b) => a - b));
     expect(world.get(a, Position)).toEqual({ x: 1, y: 2 });
     expect(world.get(b, Position)).toEqual({ x: 9, y: 10 });
     expect(world.get(still, Position)).toEqual({ x: 5, y: 5 });
@@ -344,8 +344,8 @@ describe("queries", () => {
       world
         .view(query([Position], [Enemy]))
         .entities()
-        .sort()
-    ).toEqual([enemy, stunned].sort());
+        .sort((a, b) => a - b)
+    ).toEqual([enemy, stunned].sort((a, b) => a - b));
     expect(world.view(query([Position], [], [Enemy])).entities()).toEqual([
       plain,
     ]);
@@ -714,7 +714,9 @@ describe("what each hands its callback", () => {
         expect(Object.keys(every)).toEqual([]);
         expect(names.every((name) => name in every)).toBe(true);
       });
-      expect(seen.toSorted()).toEqual(having.toSorted());
+      expect(seen.toSorted((a, b) => a - b)).toEqual(
+        having.toSorted((a, b) => a - b)
+      );
 
       // Written through the accessors: what the world then holds.
       view.each((health, every) => {
@@ -1098,15 +1100,15 @@ describe("randomized comparison against a simple model", () => {
                 values.has(required.id) && !values.has(excluded.id)
             )
             .map(([entity]) => entity)
-            .sort();
+            .sort((a, b) => a - b);
           const view = world.view(query([required], [], [excluded]));
-          expect(view.entities().sort()).toEqual(expected);
+          expect(view.entities().sort((a, b) => a - b)).toEqual(expected);
           expect(view.count()).toBe(expected.length);
           const visited: Entity[] = [];
           view.each((_, entity) => {
             visited.push(entity);
           });
-          expect(visited.sort()).toEqual(expected);
+          expect(visited.sort((a, b) => a - b)).toEqual(expected);
         }
       }
 
@@ -1122,7 +1124,7 @@ describe("randomized comparison against a simple model", () => {
                 !values.has(Enemy.id)
             )
             .map(([entity]) => entity)
-            .sort();
+            .sort((a, b) => a - b);
           const view = world.view(query([Position], [sparse], [Enemy]));
           view._path = path;
           const visited: Entity[] = [];
@@ -1130,7 +1132,7 @@ describe("randomized comparison against a simple model", () => {
             expect(pos.x).toBe(model.get(entity)!.get(Position.id).x);
             visited.push(entity);
           });
-          expect(visited.sort()).toEqual(expected);
+          expect(visited.sort((a, b) => a - b)).toEqual(expected);
           const chunked: Entity[] = [];
           view.eachChunk((start, end, pos, entities) => {
             expect(end).toBeGreaterThan(start);
@@ -1140,7 +1142,7 @@ describe("randomized comparison against a simple model", () => {
               chunked.push(entity);
             }
           });
-          expect(chunked.sort()).toEqual(expected);
+          expect(chunked.sort((a, b) => a - b)).toEqual(expected);
         }
 
         const expected = [...model]
@@ -1151,7 +1153,7 @@ describe("randomized comparison against a simple model", () => {
               !values.has(Stunned.id)
           )
           .map(([entity]) => entity)
-          .sort();
+          .sort((a, b) => a - b);
         const view = world.view(query([Health, Burning], [], [Stunned]));
         view._path = path;
         const visited: Entity[] = [];
@@ -1160,7 +1162,7 @@ describe("randomized comparison against a simple model", () => {
           expect(burn.seconds).toBe(model.get(entity)!.get(Burning.id).seconds);
           visited.push(entity);
         });
-        expect(visited.sort()).toEqual(expected);
+        expect(visited.sort((a, b) => a - b)).toEqual(expected);
         const chunked: Entity[] = [];
         view.eachChunk((start, end, health, burning, entities) => {
           for (let i = start; i < end; i++) {
@@ -1172,7 +1174,7 @@ describe("randomized comparison against a simple model", () => {
             chunked.push(entity);
           }
         });
-        expect(chunked.sort()).toEqual(expected);
+        expect(chunked.sort((a, b) => a - b)).toEqual(expected);
       }
 
       // A sparse `without` must split raw chunks without losing or adding rows.
@@ -1181,7 +1183,7 @@ describe("randomized comparison against a simple model", () => {
           ([, values]) => values.has(Position.id) && !values.has(Stunned.id)
         )
         .map(([entity]) => entity)
-        .sort();
+        .sort((a, b) => a - b);
       const chunked: Entity[] = [];
       world
         .view(query([Position], [], [Stunned]))
@@ -1190,7 +1192,7 @@ describe("randomized comparison against a simple model", () => {
             chunked.push(entities[i] as Entity);
           }
         });
-      expect(chunked.sort()).toEqual(awake);
+      expect(chunked.sort((a, b) => a - b)).toEqual(awake);
     });
   }
 });

@@ -27,7 +27,7 @@ class NotPaused extends Data.TaggedError("NotPaused")<{}> {}
 const resume = Action.handler(Resume, function* () {
   const phase = yield* Phase;
   if (!phase.is("paused")) {
-    return yield* Effect.fail(new NotPaused());
+    return yield* new NotPaused();
   }
   phase.set("playing");
 });

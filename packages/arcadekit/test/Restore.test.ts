@@ -314,10 +314,12 @@ describe("a world that is restored from a snapshot", () => {
     // What follows is given up.
     world.set(third, Body, { x: 30 });
     world.despawn(first);
-    expect(world.view(Moved, "watcher").entities().toSorted()).toEqual([
-      second,
-      third,
-    ]);
+    expect(
+      world
+        .view(Moved, "watcher")
+        .entities()
+        .toSorted((a, b) => a - b)
+    ).toEqual([second, third]);
 
     world.restore(bytes);
     world.restoreChanges(changes);
@@ -333,11 +335,12 @@ describe("a world that is restored from a snapshot", () => {
 
     // With nothing taken back, a watcher starts over: everything is new.
     world.restore(bytes);
-    expect(world.view(Moved, "watcher").entities().toSorted()).toEqual([
-      first,
-      second,
-      third,
-    ]);
+    expect(
+      world
+        .view(Moved, "watcher")
+        .entities()
+        .toSorted((a, b) => a - b)
+    ).toEqual([first, second, third]);
   });
 
   it("works out again who points at whom", () => {

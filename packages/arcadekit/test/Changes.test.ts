@@ -1155,7 +1155,7 @@ const push = Action.handler(Push, function* ({ refuse, slot }) {
     }
   });
   if (refuse) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
 });
 const spawn = Action.handler(Spawn, function* () {

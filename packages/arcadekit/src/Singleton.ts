@@ -5,7 +5,7 @@
  *   const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 })
  *
  *   const turn = yield* Turn          // in a system, a handler or a script
- *   if (turn.player !== mine) return yield* Effect.fail(new NotYourTurn())
+ *   if (turn.player !== mine) return yield* new NotYourTurn()
  *   turn.player = turn.player === 1 ? 2 : 1
  *
  * The value belongs to the world: it is saved with it and included in its hash,

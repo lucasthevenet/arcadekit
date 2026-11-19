@@ -71,7 +71,7 @@ const Game = Plugin.make("vw/Game", {
     Action.handler(Buy, function* ({ price }) {
       const purse = yield* Purse;
       if (purse.gold < price) {
-        return yield* Effect.fail(new TooPoor());
+        return yield* new TooPoor();
       }
       purse.gold -= price;
       (yield* Commands).spawn(Coin.of({ value: 1 }));

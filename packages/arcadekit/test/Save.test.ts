@@ -57,7 +57,7 @@ const double = Action.handler(Double, function* () {
     refuse = tally.value > 1e9;
   });
   if (refuse) {
-    return yield* Effect.fail(new TooBig());
+    return yield* new TooBig();
   }
 });
 const scatter = Action.handler(Scatter, function* ({ count }) {
@@ -684,7 +684,7 @@ describe("a plugin's scripts", () => {
     let cleanedUp = false;
     const Failing = Effect.gen(function* () {
       yield* (yield* Script).nextTick;
-      return yield* Effect.fail(new TooBig());
+      return yield* new TooBig();
     });
     const Forever = Effect.gen(function* () {
       yield* Effect.addFinalizer(() =>

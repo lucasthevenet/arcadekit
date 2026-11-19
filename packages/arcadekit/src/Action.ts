@@ -10,7 +10,7 @@
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Turn
- *     if (turn.player !== owner) return yield* Effect.fail(new NotYourTurn())
+ *     if (turn.player !== owner) return yield* new NotYourTurn()
  *     (yield* Commands).despawn(card)
  *     (yield* CardPlayed).emit({ card, target })
  *   })
@@ -162,7 +162,7 @@ export interface Handler<N extends string, P, A, E, R> {
  *
  *   const pass = Action.handler(Pass, function* (_, { from }) {
  *     const turn = yield* Turn
- *     if (turn.player !== from) return yield* Effect.fail(new NotYourTurn())
+ *     if (turn.player !== from) return yield* new NotYourTurn()
  *     ...
  *   })
  *

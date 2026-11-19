@@ -166,7 +166,7 @@ const tax = Action.handler(Tax, function* ({ amount }) {
   });
   // A u32 wraps: a sheet that could not pay holds a huge number.
   if (poorest > 1_000_000) {
-    return yield* Effect.fail(new TooPoor());
+    return yield* new TooPoor();
   }
 });
 

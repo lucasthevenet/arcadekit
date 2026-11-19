@@ -271,9 +271,9 @@ describe("a slot whose generations are used up", () => {
       world.despawn(entity);
     }
     const after = [0, 1, 2, 3, 4].map((n) => world.spawn(Body.of({ x: n })));
-    expect(after.map((entity) => entityIndex(entity)).toSorted()).toEqual([
-      1, 2, 3, 4, 5,
-    ]);
+    expect(
+      after.map((entity) => entityIndex(entity)).toSorted((a, b) => a - b)
+    ).toEqual([1, 2, 3, 4, 5]);
     expect(world.isAlive(last)).toBe(false);
     expect(world.isAlive(0 as Entity)).toBe(false);
   });

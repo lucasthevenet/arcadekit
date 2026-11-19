@@ -673,10 +673,10 @@ describe("a picture", () => {
     );
     expect(loaded.one.width).toBe(1);
     expect(loaded.two.width).toBe(4);
-    expect(given.toSorted()).toEqual([2, 3]);
+    expect(given.toSorted((a, b) => a - b)).toEqual([2, 3]);
     expect(closed).toEqual([]);
     await Effect.runPromise(Scope.close(scope, Exit.void));
-    expect(closed.toSorted()).toEqual([2, 3]);
+    expect(closed.toSorted((a, b) => a - b)).toEqual([2, 3]);
 
     // Where there is no such thing, or the bytes are no picture, it fails.
     vi.stubGlobal("createImageBitmap", () =>
@@ -1137,7 +1137,7 @@ describe("a page's sound", () => {
       thud: "/thud.wav",
     });
     // The files are decoded as they arrive, which needs no touch.
-    expect(decoded.toSorted()).toEqual([3, 5]);
+    expect(decoded.toSorted((a, b) => a - b)).toEqual([3, 5]);
     // A page may not make a sound before its user has touched it: nothing
     // is made, and what is asked for is not played, then or later.
     expect(made()).toBe(0);
@@ -1885,7 +1885,7 @@ describe("a page's sound", () => {
     // Named for where it came from, which is what a log calls it.
     expect([chirp.name, chirp.data]).toEqual(["/coin.wav", { samples: 3 }]);
     expect([wind.name, wind.data]).toEqual(["/thud.wav", { samples: 5 }]);
-    expect(decoded.toSorted()).toEqual([3, 5]);
+    expect(decoded.toSorted((a, b) => a - b)).toEqual([3, 5]);
     // The page plays it as it is.
     const { audio, output, page } = await build({});
     page.send("pointerdown");

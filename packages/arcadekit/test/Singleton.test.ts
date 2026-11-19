@@ -487,7 +487,7 @@ class Caught extends Data.TaggedError("Caught")<{}> {}
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turn = yield* Turn;
   if (turn.player !== player) {
-    return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
+    return yield* new NotYourTurn({ waitingFor: turn.player });
   }
   turn.player = player === 1 ? 2 : 1;
   turn.round++;
@@ -499,7 +499,7 @@ const cheat = Action.handler(Cheat, function* () {
   turn.round += 100;
   score.points += 1000;
   score.best = "the cheat";
-  return yield* Effect.fail(new Caught());
+  return yield* new Caught();
 });
 const Reward = System.make("Reward", function* () {
   const turn = yield* Turn;

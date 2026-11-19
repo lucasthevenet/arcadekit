@@ -837,15 +837,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         world.restoreChanges(save.changes);
       } catch (error) {
         if (error instanceof SnapshotError) {
-          return yield* Effect.fail(
-            new Save.LoadRefused({
-              problem: error.problem,
-              message:
-                error.problem === "unknown component"
-                  ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
-                  : error.message,
-            })
-          );
+          return yield* new Save.LoadRefused({
+            problem: error.problem,
+            message:
+              error.problem === "unknown component"
+                ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
+                : error.message,
+          });
         }
         throw error;
       }

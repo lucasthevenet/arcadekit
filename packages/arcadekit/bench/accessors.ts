@@ -66,11 +66,11 @@ const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   const world = yield* WorldService;
   const position = world.get(target, Position);
   if (position === undefined) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
   world.set(target, Position, { x: position.x + 1 });
   if (refuse) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
 });
 
@@ -84,7 +84,7 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
     pos.y += vel.y * DT;
   });
   if (refuse) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
 });
 

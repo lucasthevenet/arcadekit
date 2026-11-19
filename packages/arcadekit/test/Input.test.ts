@@ -601,7 +601,7 @@ describe("the input stage", () => {
     const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }));
     const attempt = Action.handler(Try, function* ({ by }) {
       if (by > 5) {
-        return yield* Effect.fail(new TooMuch());
+        return yield* new TooMuch();
       }
       (yield* Done).emit({ by });
     });
@@ -812,7 +812,7 @@ describe("the input stage", () => {
         const Read = System.make("Read", function* () {
           ran++;
           if (broken) {
-            return yield* Effect.fail(new NoKeyboard());
+            return yield* new NoKeyboard();
           }
         }).pipe(System.inStage("input"));
         let ticked = 0;
@@ -878,7 +878,7 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const Fail = System.make("Fail", function* () {
-          return yield* Effect.fail(new NoKeyboard());
+          return yield* new NoKeyboard();
         }).pipe(System.inStage("input"));
         const app = yield* App.make({ systems: [Fail] });
         const exit = app.inputExit();
@@ -1653,7 +1653,7 @@ describe("the picture of the devices in the world", () => {
     const Shoot = Action.define("in/Shoot", Schema.Struct({}));
     const shoot = Action.handler(Shoot, function* () {
       if (!(yield* Input.Keyboard).down("Space")) {
-        return yield* Effect.fail(new NotHeld());
+        return yield* new NotHeld();
       }
       (yield* Score).points += 1;
     });

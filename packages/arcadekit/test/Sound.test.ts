@@ -89,7 +89,7 @@ const Rules = Plugin.make("sd/Rules", {
     Action.handler(Drop, function* ({ height }) {
       (yield* Dropped).emit({});
       if (height > 100) {
-        return yield* Effect.fail(new TooHigh());
+        return yield* new TooHigh();
       }
       (yield* Commands).spawn(Ball.of({ y: height, speed: 0 }));
     }),

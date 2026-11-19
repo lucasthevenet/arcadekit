@@ -90,7 +90,7 @@ const Heal = Action.define<{ readonly amount: number }>()("Heal");
 const heal = Action.handler(Heal, function* ({ amount }) {
   const wounded = yield* Query.all(Health);
   if (wounded.count() === 0) {
-    return yield* Effect.fail(new NothingToHeal());
+    return yield* new NothingToHeal();
   }
   let total = 0;
   wounded.each((health) => {
@@ -108,7 +108,7 @@ const BumpDamage = System.make("BumpDamage", function* () {
       continue;
     }
     if (health.hp <= 1) {
-      return yield* Effect.fail(new Fragile({ entity }));
+      return yield* new Fragile({ entity });
     }
     world.set(entity, Health, { hp: health.hp - 1 });
   }

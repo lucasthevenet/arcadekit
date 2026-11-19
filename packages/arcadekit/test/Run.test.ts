@@ -305,7 +305,7 @@ describe("App.run", () => {
     const { Game, log } = makeGame();
     const Jam = System.make("Jam", function* () {
       if ((yield* Time).tick === 2) {
-        return yield* Effect.fail(new Jammed());
+        return yield* new Jammed();
       }
     });
     const display = Driver.makeManualDisplay();

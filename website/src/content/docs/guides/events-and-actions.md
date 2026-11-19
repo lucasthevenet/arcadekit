@@ -64,7 +64,7 @@ class NoSuchFighter extends Data.TaggedError("NoSuchFighter")<{}> {}
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const world = yield* World;
   if (!world.isAlive(attacker) || !world.isAlive(target)) {
-    return yield* Effect.fail(new NoSuchFighter());
+    return yield* new NoSuchFighter();
   }
   (yield* Commands).despawn(target);
 });
@@ -85,7 +85,7 @@ The payload's type comes from the schema, and its JSON encoding is what the log 
 
 Before the handler runs, the payload is validated against the schema, including refinements the compiler can't see, such as a number between 1 and 10. A mismatch is an `Action.InvalidPayload`.
 
-The handler checks the game's rules and refuses with a typed error: a tagged class made with `Data.TaggedError`, failed and returned with `return yield* Effect.fail(new NoSuchFighter())`. Without the `return`, TypeScript doesn't know the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag: two classes with the same tag are caught as one, with no warning.
+The handler checks the game's rules and refuses with a typed error: a tagged class made with `Data.TaggedError`, failed and returned with `return yield* new NoSuchFighter()`. Without the `return`, TypeScript doesn't know the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag: two classes with the same tag are caught as one, with no warning.
 
 A refusal changes nothing, even after the handler has written to the world, so a handler can check as it goes. A refusal rolls back:
 
@@ -115,7 +115,7 @@ A handler receives the action's origin alongside the payload:
 const pass = Action.handler(Pass, function* (_, { from }) {
   const turn = yield* Turn;
   if (turn.player !== from) {
-    return yield* Effect.fail(new NotYourTurn());
+    return yield* new NotYourTurn();
   }
   /* … */
 });

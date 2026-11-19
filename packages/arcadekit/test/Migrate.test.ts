@@ -300,9 +300,12 @@ describe("a save from another version of the game", () => {
 
       // The ids are the ones the old game handed out, dead ones stay dead,
       // and the next entity gets the id the old game would have given.
-      expect(world.view(Query.all(Health2)).entities().toSorted()).toEqual(
-        entities.toSorted()
-      );
+      expect(
+        world
+          .view(Query.all(Health2))
+          .entities()
+          .toSorted((a, b) => a - b)
+      ).toEqual(entities.toSorted((a, b) => a - b));
       const next = world.spawn(Health2.of({ armor: 0, points: 1 }));
       expect(next & 0x3f_ff_ff).toBe(4);
       expect(next >>> 22).toBe(1);
@@ -339,7 +342,9 @@ describe("a save from another version of the game", () => {
         "unit 8",
         "unit 6",
       ]);
-      expect(order.toSorted()).toEqual(entities.toSorted());
+      expect(order.toSorted((a, b) => a - b)).toEqual(
+        entities.toSorted((a, b) => a - b)
+      );
       let chunks = 0;
       app.world.view(Query.all(Name2)).eachChunk(() => {
         chunks++;

@@ -171,7 +171,7 @@ describe("who issued an action", () => {
     });
     const Never = Action.define<{ readonly n: number }>()("or/Never");
     const never = Action.handler(Never, function* () {
-      return yield* Effect.fail(new Stranger({ from: undefined }));
+      return yield* new Stranger({ from: undefined });
     });
     withApp(App.make({ systems: [Hear], handlers: [never] }), (app) => {
       app.enqueueByName("or/Never", { n: 1 }, "ada");

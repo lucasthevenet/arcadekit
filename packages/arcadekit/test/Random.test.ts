@@ -140,7 +140,9 @@ describe("the random number generator", () => {
       const roll = rng.int(1, 6);
       counts.set(roll, (counts.get(roll) ?? 0) + 1);
     }
-    expect([...counts.keys()].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    expect([...counts.keys()].sort((a, b) => a - b)).toEqual([
+      1, 2, 3, 4, 5, 6,
+    ]);
     for (const count of counts.values()) {
       expect(count).toBeGreaterThan(9600);
       expect(count).toBeLessThan(10_400);
@@ -202,7 +204,7 @@ describe("the random number generator", () => {
     const items = [1, 2, 3, 4, 5, 6, 7, 8];
     const returned = rng.shuffle(items);
     expect(returned).toBe(items);
-    expect([...items].sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect([...items].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(items).not.toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
     const orders = new Map<string, number>();
@@ -238,7 +240,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
   const random = yield* Random;
   const dice = yield* Query.all(Die);
   if (dice.count() === 0) {
-    return yield* Effect.fail(new NoSuchDie());
+    return yield* new NoSuchDie();
   }
   let face = 0;
   dice.each((die) => {

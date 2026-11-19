@@ -15,7 +15,7 @@ Do not use any other copy of Effect's documentation. Effect's own guide says the
 
 - **`Effect.fn("Module.name")`** for a reusable function that returns an Effect and is worth seeing in a trace. **`Effect.fnUntraced`** for one that is not, which is most of a library's internals. Do not write a function whose whole body is `return Effect.gen(...)`: that is what these two are for. See the [Effect.fn example](https://github.com/Effect-TS/effect/blob/main/ai-docs/src/01_effect/01_basics/02_effect-fn.ts).
 - **Not for anything that runs every tick.** `Effect.fn` records a stack trace on each call. A system is built once with `Effect.gen` and the same Effect value is run every tick; `System.make` does this for you.
-- **Fail with `Effect.fail`, and return it**: `return yield* Effect.fail(new NotYourTurn(...))`. A tagged error can also be yielded on its own (`yield* new NotYourTurn()`), and Effect treats the two alike; this package writes the failure out, so that it reads as one to someone who has not met yieldable errors, and looks the same whatever kind of value the error is. Without `return`, TypeScript does not know the code below is unreachable.
+- **Fail by yielding the error, and return it**: `return yield* new NotYourTurn(...)`. A tagged error is yieldable, so it needs no `Effect.fail`, and the lint rule `effecttsgo/unnecessary-fail-yieldable-error` refuses one. A value that is not yieldable, such as a plain `Error`, is failed with `Effect.fail`. Without `return`, TypeScript does not know the code below is unreachable.
 
 ```ts sketch
 export const loadLevel = Effect.fn("Level.load")(function* (name: string) {

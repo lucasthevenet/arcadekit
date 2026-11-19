@@ -1003,7 +1003,10 @@ describe("a flat game's Transform2d", () => {
     world.spawn(Ship, Flat.Rotation, Flat.Scale);
     world.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
     app.frame(0);
-    expect(made.map((one) => one.entity).toSorted()).toEqual([plain, whole]);
+    expect(made.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual([
+      plain,
+      whole,
+    ]);
     expect(objectOf(plain).position.toArray()).toEqual([1, 2, 5]);
     expect(objectOf(plain).rotation.z).toBe(0);
     expect(objectOf(plain).scale.toArray()).toEqual([1, 1, 4]);
@@ -1045,7 +1048,9 @@ describe("a flat game's Transform2d", () => {
     world.despawn(plain);
     world.add(whole, Hidden);
     app.frame(0);
-    expect(freed.toSorted()).toEqual([plain, whole].toSorted());
+    expect(freed.toSorted((a, b) => a - b)).toEqual(
+      [plain, whole].toSorted((a, b) => a - b)
+    );
     expect(renderer.scene?.children).toEqual([]);
   });
 
@@ -1367,9 +1372,9 @@ describe("an entity drawn between two ticks", () => {
       Rotation.of(Transform3d.axisAngle(0, 0, 1, 2.5)),
       Scale.of({ x: 6, y: 7, z: 8 })
     );
-    expect([flat & 0x3f_ff_ff, solid & 0x3f_ff_ff].toSorted()).toEqual(
-      olds.map((one) => one & 0x3f_ff_ff).toSorted()
-    );
+    expect(
+      [flat & 0x3f_ff_ff, solid & 0x3f_ff_ff].toSorted((a, b) => a - b)
+    ).toEqual(olds.map((one) => one & 0x3f_ff_ff).toSorted((a, b) => a - b));
     app.tick(1);
     app.frame(0.5);
     expectDrawn(mesh(), app, [flat, solid]);
@@ -2462,7 +2467,10 @@ describe("Three.objects", () => {
     // One that is turned and sized, and nowhere.
     app.world.spawn(Ship, Rotation, Scale);
     app.frame(0);
-    expect(made.map((one) => one.entity).toSorted()).toEqual([plain, whole]);
+    expect(made.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual([
+      plain,
+      whole,
+    ]);
     expect(renderer.scene?.children.toSorted((a, b) => a.id - b.id)).toEqual(
       made.map((one) => one.object).toSorted((a, b) => a.id - b.id)
     );
@@ -2517,8 +2525,8 @@ describe("Three.objects", () => {
     app.world.add(hidden, Hidden);
     app.world.remove(nowhere, Position);
     app.frame(0);
-    expect(freed.map((one) => one.entity).toSorted()).toEqual(
-      [gone, unmarked, hidden, nowhere].toSorted()
+    expect(freed.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
+      [gone, unmarked, hidden, nowhere].toSorted((a, b) => a - b)
     );
     for (const one of freed) {
       expect(one.object).toBe(objects.get(one.entity));
@@ -2654,8 +2662,8 @@ describe("Three.objects", () => {
       const kept = made.filter(
         (one) => !freed.some((other) => other.object === one.object)
       );
-      expect(kept.map((one) => one.entity).toSorted()).toEqual(
-        shown.toSorted()
+      expect(kept.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
+        shown.toSorted((a, b) => a - b)
       );
       expect(new Set(renderer.scene?.children)).toEqual(
         new Set(kept.map((one) => one.object))
@@ -2712,7 +2720,9 @@ describe("Three.objects", () => {
     app.frame(0);
     expect(freed.length).toBe(1);
     close();
-    expect(freed.map((one) => one.entity).toSorted()).toEqual(ships.toSorted());
+    expect(freed.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
+      ships.toSorted((a, b) => a - b)
+    );
     expect(renderer.scene?.children).toEqual([]);
   });
 });

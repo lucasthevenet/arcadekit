@@ -346,7 +346,7 @@ const survey = Action.handler(Survey, function* ({ limit }) {
     }
   });
   if (fastest > limit) {
-    return yield* Effect.fail(new TooFast());
+    return yield* new TooFast();
   }
   return fastest;
 });

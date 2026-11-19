@@ -122,7 +122,7 @@ export class GameOver extends Data.TaggedError("GameOver")<{}> {}
 const move = Action.handler(Move, function* ({ dx }) {
   const basket = yield* Basket;
   if (basket.lives === 0) {
-    return yield* Effect.fail(new GameOver());
+    return yield* new GameOver();
   }
   basket.dx = dx;
 });

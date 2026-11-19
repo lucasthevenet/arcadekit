@@ -87,7 +87,7 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
   const world = yield* World;
   const held = world.get(coin, Coin);
   if (held === undefined) {
-    return yield* Effect.fail(new NoSuchCoin({ coin }));
+    return yield* new NoSuchCoin({ coin });
   }
   (yield* Commands).despawn(coin);
   (yield* Taken).emit({ value: held.value });
@@ -102,7 +102,7 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
 });
 export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
-    return yield* Effect.fail(new Stranger({ from }));
+    return yield* new Stranger({ from });
   }
   (yield* Purse)[from] += amount;
   return from;

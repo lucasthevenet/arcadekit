@@ -361,7 +361,7 @@ describe("the frame loop", () => {
     const Jam = System.make("Jam", function* () {
       const { tick } = yield* Time;
       if (tick === 3) {
-        return yield* Effect.fail(new Jammed({ at: tick }));
+        return yield* new Jammed({ at: tick });
       }
     });
     const display = Driver.makeManualDisplay();

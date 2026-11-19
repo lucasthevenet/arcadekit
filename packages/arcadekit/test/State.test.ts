@@ -45,7 +45,7 @@ const go = Action.handler(Go, function* ({ refuse, to }) {
   const from = phase.value;
   phase.set(to);
   if (refuse) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
   return from;
 });
@@ -198,7 +198,7 @@ describe("a run condition", () => {
       const held = yield* Switch;
       held.asked++;
       if (held.asked > 100) {
-        return yield* Effect.fail(new Broken());
+        return yield* new Broken();
       }
       return held.on;
     });

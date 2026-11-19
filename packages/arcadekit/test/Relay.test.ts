@@ -489,7 +489,11 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             (entry) => entry.name === "ls/Tip"
           );
           expect(tips.length).toBeGreaterThan(4);
-          expect(tips.map((entry) => entry.from).toSorted()).toEqual([
+          expect(
+            tips
+              .map((entry) => entry.from)
+              .toSorted((a, b) => (a ?? "").localeCompare(b ?? ""))
+          ).toEqual([
             ...tips.filter((entry) => entry.from === "ada").map(() => "ada"),
             ...tips
               .filter((entry) => entry.from === "grace")

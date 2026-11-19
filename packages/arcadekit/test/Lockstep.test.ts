@@ -376,7 +376,7 @@ describe("a lockstep session", () => {
     const Fuse = System.make("ls/Fuse", function* () {
       const { tick } = yield* Time;
       if (tick === 2) {
-        return yield* Effect.fail(new Blown({ at: tick }));
+        return yield* new Blown({ at: tick });
       }
     });
     withApp(App.make({ systems: [Fuse] }), (app) => {
@@ -408,7 +408,7 @@ describe("a lockstep session", () => {
     let jam = true;
     const Keys = System.make("ls/Keys", function* () {
       if (jam) {
-        return yield* Effect.fail(new Jammed());
+        return yield* new Jammed();
       }
     }).pipe(System.inStage("input"));
     withApp(App.make({ systems: [Keys] }), (app) => {

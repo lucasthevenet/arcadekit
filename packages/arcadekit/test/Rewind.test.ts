@@ -259,7 +259,7 @@ describe("a game that is put back to a moment", () => {
       while ((yield* Time).tick < 2) {
         yield* script.nextTick;
       }
-      return yield* Effect.fail(new Tripped());
+      return yield* new Tripped();
     });
     const Fragile = Plugin.make("rw/Fragile", { scripts: [Trip] });
     withApp(
