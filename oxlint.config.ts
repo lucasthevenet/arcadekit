@@ -247,5 +247,17 @@ export default defineConfig({
         "effecttsgo/unsafe-effect-type-assertion": "off",
       },
     },
+    {
+      // The storage core is plain TypeScript, with no Effect: its errors are
+      // thrown, and App turns them into tagged ones.
+      files: ["packages/arcadekit/src/ecs/**"],
+      rules: { "effecttsgo/extends-native-error": "off" },
+    },
+    {
+      // A schema field's codec is called by the storage core, in a snapshot
+      // or a hash, which throws what it can't encode.
+      files: ["packages/arcadekit/src/Field.ts"],
+      rules: { "effecttsgo/schema-sync": "off" },
+    },
   ],
 });

@@ -45,6 +45,7 @@ import {
   Schema,
   Scope,
 } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 
 import * as Action from "./Action";
 import * as Input from "./Input";
@@ -183,8 +184,8 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
 // --- where bytes come from ---------------------------------------------------------
 
 /**
- * Fetches an asset's bytes. In a page it uses `fetch`; a test provides one that
- * reads from memory.
+ * Fetches an asset's bytes. In a page it uses Effect's `HttpClient`, over
+ * `fetch`; a test provides one that reads from memory.
  *
  * @category Services
  */
@@ -193,26 +194,37 @@ export interface LoaderShape {
   readonly bytes: (url: string) => Effect.Effect<Uint8Array, AssetFailed>;
 }
 
+// What a request that got no answer says: what was asked, and why.
+const unanswered = (error: HttpClientError.HttpClientError): string => {
+  const cause = error.reason.cause;
+  return cause instanceof Error && cause.message !== ""
+    ? `${error.message}: ${cause.message}`
+    : error.message;
+};
+
 const fetching: LoaderShape = {
   bytes: (url) =>
-    Effect.tryPromise({
-      try: async (signal) => {
-        const response = await fetch(url, { signal });
-        if (!response.ok) {
-          throw new Error(
-            `The server answered ${response.status} ${response.statusText}`.trim()
-          );
-        }
-        return new Uint8Array(await response.arrayBuffer());
-      },
-      catch: (error) => new AssetFailed({ url, message: describe(error) }),
-    }),
+    Effect.gen(function* () {
+      const response = yield* HttpClient.get(url);
+      if (response.status < 200 || response.status >= 300) {
+        return yield* new AssetFailed({
+          url,
+          message: `The server answered ${response.status}`,
+        });
+      }
+      return new Uint8Array(yield* response.arrayBuffer);
+    }).pipe(
+      Effect.catchTag("HttpClientError", (error) =>
+        Effect.fail(new AssetFailed({ url, message: unanswered(error) }))
+      ),
+      Effect.provide(FetchHttpClient.layer)
+    ),
 };
 
 /**
  * Where asset bytes come from. Nothing has to provide it: the default is
- * `fetch`, available in pages and Node alike. A test provides its own files
- * with `Assets.layerMemory`.
+ * Effect's `HttpClient` over `fetch`, available in pages and Node alike. A
+ * test provides its own files with `Assets.layerMemory`.
  *
  * @category Services
  */
@@ -247,8 +259,8 @@ export const layerMemory = (
 
 // --- a bundle: what is loaded, and let go, together -----------------------------------
 
-// `any`: an asset is of whatever its `decode` makes, and a bundle holds
-// assets of several kinds.
+// An asset is of whatever its `decode` makes, and a bundle holds assets of
+// several kinds.
 type Entries = Readonly<Record<string, Asset<unknown>>>;
 
 /**

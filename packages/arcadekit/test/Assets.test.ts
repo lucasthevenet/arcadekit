@@ -312,7 +312,10 @@ describe("an asset", () => {
         () => new Response("no", { status: 404, statusText: "Not Found" }),
       ],
     ]);
-    vi.stubGlobal("fetch", (url: string, init: { signal: AbortSignal }) => {
+    // A page asks for a file by its path, from where the page is.
+    vi.stubGlobal("location", new URL("https://game.test/play/"));
+    vi.stubGlobal("fetch", (asked: URL, init: { signal: AbortSignal }) => {
+      const url = asked.pathname;
       requests.push({ url, signal: init.signal });
       const answer = answers.get(url);
       return answer === undefined
@@ -334,7 +337,7 @@ describe("an asset", () => {
     expectFailed(
       Cause.squash((gone as Exit.Failure<never, unknown>).cause),
       "/gone.txt",
-      "The server answered 404 Not Found"
+      "The server answered 404"
     );
     // A request that never answers, and a load that is interrupted.
     const fiber = Effect.runFork(one("/slow.txt"));
