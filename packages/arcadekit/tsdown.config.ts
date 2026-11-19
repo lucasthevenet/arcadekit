@@ -4,8 +4,12 @@
 // subpath has a `source` condition naming its file in src/, and `types` and `default` naming
 // what this build writes to dist/.
 //
-// All entries are one build, so what two entries share is written once, to a chunk both import:
-// a class or an Effect service is the same object whichever entry it is reached through.
+// All entries are one build, and each source file is written to a file of its own, dist/ecs/world.js
+// for src/ecs/world.ts, which the entries share: a class or an Effect service is the same object
+// whichever entry it is reached through. Since no file of the build holds two source files, it
+// imports what its source does and nothing else, so the Oxlint rule `arcadekit/entry-imports`, which
+// holds what each source file imports, holds the build as well. A bundled build could put what two
+// entries share in one chunk, and give an entry what only the other may import.
 import { defineConfig } from "tsdown";
 import type { UserConfig } from "tsdown";
 
@@ -18,6 +22,8 @@ const config: UserConfig = defineConfig({
   platform: "neutral",
   target: "es2022",
   outDir: "dist",
+  // One file for each source file: see above.
+  unbundle: true,
   clean: true,
   sourcemap: true,
   // Declarations come from the TypeScript compiler itself, so an export's type may be inferred

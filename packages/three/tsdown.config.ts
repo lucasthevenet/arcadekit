@@ -14,6 +14,8 @@ const config: UserConfig = defineConfig({
   platform: "neutral",
   target: "es2022",
   outDir: "dist",
+  // One file for each source file, as the kit's own.
+  unbundle: true,
   clean: true,
   sourcemap: true,
   dts: { generator: "tsgo", sourcemap: true },
