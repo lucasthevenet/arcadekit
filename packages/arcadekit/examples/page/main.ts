@@ -10,14 +10,14 @@
  * it is paused.
  *
  * The menu and the heads-up display are built twice, on the same bridge:
- * with the page's own DOM (ui-dom.ts), and with React (ui-react.ts), which
+ * with the page's own DOM (uiDom.ts), and with React (uiReact.ts), which
  * `?ui=react` shows.
  *
  *   pnpm --filter arcadekit page
  *
  * `?stream` plays the music as a stream.
  */
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 
 // In a game of your own these are "arcadekit/Browser" and "arcadekit".
 import * as Browser from "../../src/Browser";
@@ -31,8 +31,8 @@ import { Game, Screen } from "./game";
 const ui = View.makeBridge();
 const { mount } =
   new URLSearchParams(location.search).get("ui") === "react"
-    ? await import("./ui-react")
-    : await import("./ui-dom");
+    ? await import("./uiReact")
+    : await import("./uiDom");
 mount(document.querySelector("#ui")!, ui);
 
 // --- the entry point -------------------------------------------------------------
@@ -44,8 +44,7 @@ mount(document.querySelector("#ui")!, ui);
 // more.
 Browser.runMain(
   App.run({ plugins: [Game], seed: Date.now() }, { hz: 60 }).pipe(
-    Effect.provide(Screen.layer),
-    Effect.provide(View.layer(ui))
+    Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))
   ),
   {
     target: document.querySelector("#game")!,

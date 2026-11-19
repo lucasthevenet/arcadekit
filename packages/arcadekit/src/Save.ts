@@ -23,7 +23,7 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/snapshot";
+import { SnapshotError, readSnapshot, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 import type { SavedChanges } from "./ecs/world";
 
@@ -348,7 +348,7 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
   } catch {
     return refuse("corrupt", "The save is damaged: its text is not text.");
   }
-  const header = Schema.decodeUnknownExit(Header)(text);
+  const header = Schema.decodeExit(Header)(text);
   if (Exit.isFailure(header)) {
     const error = Cause.squash(header.cause);
     return refuse(

@@ -8,7 +8,7 @@
 //   if it has one, must be an anchor on that page: a heading of a page, a term of the glossary.
 //   GitHub gives a heading the same anchor, so a fragment that works here works there too, except
 //   a term's, which is a heading only here.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 

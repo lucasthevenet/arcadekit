@@ -66,7 +66,7 @@ const variant = (
   // What else the frame runs, for a variant that needs it.
   also: readonly System.System<never, Assets.Store>[] = []
 ): void => {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
     App.make({
       plugins: [Three.plugin, Assets.plugin],
@@ -234,7 +234,7 @@ variant(
 // What the loops above replace: an Object3D per entity, its matrix worked
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
     App.make({
       plugins: [Plugin.make("bench/Bare", { plugins: [Transform3d.plugin] })],

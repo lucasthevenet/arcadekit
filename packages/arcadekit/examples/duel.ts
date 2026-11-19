@@ -11,7 +11,7 @@
  *   pnpm --filter arcadekit duel
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
+import { Console, Context, Data, Effect, Exit, Layer, Schema } from "effect";
 
 import {
   Action,
@@ -83,16 +83,14 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const me = world.get(attacker, Fighter);
   const them = world.get(target, Fighter);
   if (me === undefined || them === undefined) {
-    return yield* Effect.fail(new NoSuchFighter());
+    return yield* new NoSuchFighter();
   }
   const turn = yield* Turn;
   if (me.player !== turn.player) {
-    return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
+    return yield* new NotYourTurn({ waitingFor: turn.player });
   }
   if (me.energy < STRIKE_COST) {
-    return yield* Effect.fail(
-      new TooTired({ energy: me.energy, cost: STRIKE_COST })
-    );
+    return yield* new TooTired({ energy: me.energy, cost: STRIKE_COST });
   }
   // Every check has passed. Only now does anything change.
   world.set(attacker, Fighter, { energy: me.energy - STRIKE_COST });
@@ -104,7 +102,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 const pass = Action.handler(Pass, function* ({ player }) {
   const turn = yield* Turn;
   if (player !== turn.player) {
-    return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
+    return yield* new NotYourTurn({ waitingFor: turn.player });
   }
   const next = player === 1 ? 2 : 1;
   turn.player = next;
@@ -245,7 +243,7 @@ const program = Effect.gen(function* () {
         onSuccess: (hpLeft) => `hits, target is left with ${hpLeft} hp`,
       }
     );
-    console.log(`${who} strikes: ${outcome}`);
+    yield* Console.log(`${who} strikes: ${outcome}`);
     app.tick(1);
   });
   const passTurn = (player: 1 | 2) => {
@@ -254,7 +252,7 @@ const program = Effect.gen(function* () {
     console.log(`player ${player} passes -> ${standing(app)}`);
   };
 
-  console.log(`start -> ${standing(app)}`);
+  yield* Console.log(`start -> ${standing(app)}`);
   yield* strikeWith("Rogue", rogue, knight); // out of turn
   yield* strikeWith("Knight", knight, rogue);
   yield* strikeWith("Knight", knight, rogue);
@@ -264,14 +262,17 @@ const program = Effect.gen(function* () {
   passTurn(2);
   yield* strikeWith("Knight", knight, rogue); // the Rogue falls
   yield* strikeWith("Knight", knight, rogue); // nobody left to hit
-  console.log(`end -> ${standing(app)}; referee: ${referee.pollUnsafe()}`);
+  const verdict = referee.pollUnsafe();
+  yield* Console.log(
+    `end -> ${standing(app)}; referee: ${verdict !== undefined && Exit.isSuccess(verdict) ? verdict.value : "no verdict"}`
+  );
 
   // The log holds the moves that were accepted, and the world's hash after
   // every tick. Written out as text and read back, it reproduces this game in
   // a fresh one, which checks itself against those hashes as it goes. The
   // replay installs only the rules, so it is silent.
   const saved = Action.encodeLog(app.actionLog);
-  console.log(`saved: ${saved}`);
+  yield* Console.log(`saved: ${saved}`);
   // A fresh app in a scope of its own, closed when the replay is over.
   const replay = Effect.fnUntraced(function* (text: string) {
     const loaded = Action.decodeLog(text);
@@ -280,24 +281,26 @@ const program = Effect.gen(function* () {
     }
     const headless = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
     seat(headless);
-    try {
-      App.replay(headless, loaded.value, { delta: 1, ticks: app.time.tick });
-      return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
-    } catch (error) {
-      return `stopped: ${(error as Error).message}`;
-    }
+    // A replay that goes another way throws, and says where.
+    return yield* Effect.try({
+      try: () => {
+        App.replay(headless, loaded.value, { delta: 1, ticks: app.time.tick });
+        return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
+      },
+      catch: (error) => (error instanceof Error ? error.message : "it threw"),
+    }).pipe(Effect.catch((why) => Effect.succeed(`stopped: ${why}`)));
   }, Effect.scoped);
-  console.log(`replayed -> ${yield* replay(saved)}`);
+  yield* Console.log(`replayed -> ${yield* replay(saved)}`);
   // Someone edits the save so that a player who does not exist passes.
-  console.log(
+  yield* Console.log(
     `edited save -> ${yield* replay(saved.replace('"player":1', '"player":3'))}`
   );
   // Someone edits it so that the Knight's first strike lands on the Knight.
   // The rules allow that move, so nothing is refused: the hash gives it away.
-  console.log(
+  yield* Console.log(
     `legal but altered -> ${yield* replay(saved.replace('"target":1', '"target":0'))}`
   );
-  console.log(`garbage -> ${yield* replay("<html>")}`);
+  yield* Console.log(`garbage -> ${yield* replay("<html>")}`);
 
   // A save is the game as it stands, as bytes. Loaded into the rules alone,
   // it is the same fight at the same point: no replay, and no setup run.
@@ -307,7 +310,7 @@ const program = Effect.gen(function* () {
     const read = Save.decode(file);
     if (Exit.isSuccess(read)) {
       const loaded = yield* App.load(read.value, { plugins: [Rules] });
-      console.log(
+      yield* Console.log(
         `saved (${file.length} bytes) and loaded -> ${standing(loaded)} at tick ${loaded.time.tick} (${standing(loaded) === standing(app) ? "identical" : "DIFFERENT"})`
       );
     }

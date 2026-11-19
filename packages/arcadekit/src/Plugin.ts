@@ -40,13 +40,13 @@ import type * as System from "./System";
  *
  * @category Type-level
  */
-export type AnySystem = System.System<any, any>;
+export type AnySystem = System.System<unknown, unknown>;
 /**
  * Any action handler, whatever its action, result and requirements.
  *
  * @category Type-level
  */
-export type AnyHandler = Action.Handler<any, any, any, any, any>;
+export type AnyHandler = Action.AnyHandler;
 
 /**
  * A plugin, as `Plugin.make` returns it and `App.make` installs it.
@@ -71,10 +71,10 @@ export interface Plugin<
   readonly name: string;
   readonly systems: readonly AnySystem[];
   readonly handlers: readonly AnyHandler[];
-  readonly layer: Layer.Layer<never, any, any> | undefined;
-  readonly setup: Effect.Effect<void, any, any> | undefined;
+  readonly layer: Layer.Layer<never, unknown, unknown> | undefined;
+  readonly setup: Effect.Effect<void, unknown, unknown> | undefined;
   readonly components: readonly Listed[];
-  readonly scripts: readonly Effect.Effect<unknown, any, any>[];
+  readonly scripts: readonly Effect.Effect<unknown, unknown, unknown>[];
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
   /** Type-only. */
@@ -93,7 +93,7 @@ export interface Plugin<
  *
  * @category Type-level
  */
-export type Any = Plugin<any, any, any, any, any, any>;
+export type Any = Plugin<unknown, unknown, unknown, unknown, unknown, unknown>;
 
 // Distributive, so they work on a union of plugins and give `never` for none.
 /**
@@ -102,53 +102,70 @@ export type Any = Plugin<any, any, any, any, any, any>;
  * @category Type-level
  */
 export type TickErrorOf<T> =
-  T extends Plugin<infer X, any, any, any, any, any> ? X : never;
+  T extends Plugin<infer X, unknown, unknown, unknown, unknown, unknown>
+    ? X
+    : never;
 /**
  * A plugin's action handlers, or a union's.
  *
  * @category Type-level
  */
 export type HandlerOf<T> =
-  T extends Plugin<any, infer X, any, any, any, any> ? X : never;
+  T extends Plugin<unknown, infer X, unknown, unknown, unknown, unknown>
+    ? X
+    : never;
 /**
  * The services a plugin's layer provides, or a union's.
  *
  * @category Type-level
  */
 export type ProvidedOf<T> =
-  T extends Plugin<any, any, infer X, any, any, any> ? X : never;
+  T extends Plugin<unknown, unknown, infer X, unknown, unknown, unknown>
+    ? X
+    : never;
 /**
  * The error that building a plugin's layer or running its setup can fail with.
  *
  * @category Type-level
  */
 export type ErrorOf<T> =
-  T extends Plugin<any, any, any, infer X, any, any> ? X : never;
+  T extends Plugin<unknown, unknown, unknown, infer X, unknown, unknown>
+    ? X
+    : never;
 /**
  * What a plugin's layer requires that its dependencies don't provide.
  *
  * @category Type-level
  */
 export type LayerNeedsOf<T> =
-  T extends Plugin<any, any, any, any, infer X, any> ? X : never;
+  T extends Plugin<unknown, unknown, unknown, unknown, infer X, unknown>
+    ? X
+    : never;
 /**
  * What a plugin's systems, handlers and setup require.
  *
  * @category Type-level
  */
 export type NeedsOf<T> =
-  T extends Plugin<any, any, any, any, any, infer X> ? X : never;
+  T extends Plugin<unknown, unknown, unknown, unknown, unknown, infer X>
+    ? X
+    : never;
 
-type SystemError<T> = T extends System.System<infer E, any> ? E : never;
-type SystemNeeds<T> = T extends System.System<any, infer R> ? R : never;
+type SystemError<T> = T extends System.System<infer E, unknown> ? E : never;
+type SystemNeeds<T> = T extends System.System<unknown, infer R> ? R : never;
 type HandlerNeeds<T> =
-  T extends Action.Handler<any, any, any, any, infer R> ? R : never;
+  T extends Action.Handler<string, infer _P, unknown, unknown, infer R>
+    ? R
+    : never;
 type LayerProvides<L> =
-  L extends Layer.Layer<infer ROut, any, any> ? ROut : never;
-type LayerError<L> = L extends Layer.Layer<any, infer E, any> ? E : never;
-type LayerNeeds<L> = L extends Layer.Layer<any, any, infer RIn> ? RIn : never;
-type EffectError<T> = T extends Effect.Effect<any, infer E, any> ? E : never;
-type EffectNeeds<T> = T extends Effect.Effect<any, any, infer R> ? R : never;
+  L extends Layer.Layer<infer ROut, unknown, unknown> ? ROut : never;
+type LayerError<L> = L extends Layer.Layer<never, infer E, unknown> ? E : never;
+type LayerNeeds<L> =
+  L extends Layer.Layer<never, unknown, infer RIn> ? RIn : never;
+type EffectError<T> =
+  T extends Effect.Effect<unknown, infer E, unknown> ? E : never;
+type EffectNeeds<T> =
+  T extends Effect.Effect<unknown, unknown, infer R> ? R : never;
 
 /**
  * Makes a plugin: a feature of a game, with the plugins it depends on, its
@@ -171,10 +188,10 @@ type EffectNeeds<T> = T extends Effect.Effect<any, any, infer R> ? R : never;
 export const make = <
   S extends readonly AnySystem[] = readonly [],
   H extends readonly AnyHandler[] = readonly [],
-  L extends Layer.Layer<never, any, any> = Layer.Layer<never>,
-  SU extends Effect.Effect<void, any, any> = Effect.Effect<void>,
+  L extends Layer.Layer<never, unknown, unknown> = Layer.Layer<never>,
+  SU extends Effect.Effect<void, unknown, unknown> = Effect.Effect<void>,
   P extends readonly Any[] = readonly [],
-  SC extends readonly Effect.Effect<unknown, any, any>[] = readonly [],
+  SC extends readonly Effect.Effect<unknown, unknown, unknown>[] = readonly [],
 >(
   name: string,
   options: {

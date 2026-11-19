@@ -8,7 +8,7 @@
 // - Each module of a package, at `/reference/<package>/<Module>`, made from its doc comments
 //   (api.ts): `arcadekit/Sound` at `/reference/arcadekit/Sound`.
 // The folders are read whole, so a new page or a new package is a page without a change here.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import type { ReferencePackage } from "./reference.ts";

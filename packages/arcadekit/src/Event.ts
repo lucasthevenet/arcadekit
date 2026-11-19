@@ -40,8 +40,11 @@ import { Events } from "./Services";
  * @category Models
  */
 export interface EventHandle<P> {
-  /** Queues an event. Synchronous, so it can be called inside query loops. */
-  readonly emit: (payload: P) => void;
+  /**
+   * Queues an event. Synchronous, so it can be called inside query loops. A
+   * method, so that any event is an `EventDef<unknown>`.
+   */
+  emit(payload: P): void;
   /** Returns the events not yet seen through this handle, oldest first. */
   readonly read: () => readonly P[];
   /**
@@ -124,9 +127,9 @@ export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
   readonly message: string;
 }> {}
 
-const convert = <A>(
-  def: EventDef<any>,
-  run: (codec: Schema.Codec<any, unknown>) => Exit.Exit<A, unknown>
+const convert = <P, A>(
+  def: EventDef<P>,
+  run: (codec: Schema.Codec<P, unknown>) => Exit.Exit<A, unknown>
 ): Exit.Exit<A, InvalidEvent> => {
   if (def.codec === undefined) {
     return Exit.fail(
@@ -228,7 +231,10 @@ interface ChannelState {
 interface ReadLog {
   /** True from `mark` until `rollback` or `commit`. */
   open: boolean;
-  readonly moved: { readonly handle: Handle<any>; readonly cursor: number }[];
+  readonly moved: {
+    readonly handle: Handle<unknown>;
+    readonly cursor: number;
+  }[];
 }
 
 class Channel<P> implements ChannelState {
@@ -283,7 +289,7 @@ class Handle<P> implements EventHandle<P> {
 
   /** Whether this is a handle of the frame stage: it reads, and cannot emit. */
   private readonly forFrame: boolean;
-  readonly emit: (payload: P) => void;
+  readonly emit: EventHandle<P>["emit"];
 
   /**
    * @param refusal what emitting throws, for the handle of a system that
@@ -429,10 +435,10 @@ export class EventBus {
   // definition's own `P`, which a Map's type cannot say, so `channel` below
   // is the one place that restores it.
   private readonly channels: Map<object, ChannelState> = new Map();
-  private readonly order: Channel<any>[] = [];
+  private readonly order: Channel<unknown>[] = [];
   /** Events read from a save, waiting for their channel to be asked for. */
   private readonly parked: Map<string, SavedEvents> = new Map();
-  private readonly names: Map<string, EventDef<any>> = new Map();
+  private readonly names: Map<string, EventDef<unknown>> = new Map();
   private readonly reads: ReadLog = { open: false, moved: [] };
   /** True while events are kept for a frame stage that is running. */
   private frames = false;

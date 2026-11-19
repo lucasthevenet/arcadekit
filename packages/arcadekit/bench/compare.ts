@@ -55,8 +55,8 @@ import { fileURLToPath } from "node:url";
 import { inUnit, variants } from "./core";
 import {
   CHANCE,
-  failures,
   FLOOR,
+  failures,
   judge,
   onPurpose,
   settled,

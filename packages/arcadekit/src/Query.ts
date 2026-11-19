@@ -40,11 +40,11 @@ export class Query<D extends Terms>
 
   constructor(
     readonly terms: D,
-    readonly withDefs: readonly ComponentDef<any>[],
-    readonly withoutDefs: readonly ComponentDef<any>[],
-    readonly changedDefs: readonly ComponentDef<any>[] = [],
-    readonly addedDefs: readonly ComponentDef<any>[] = [],
-    readonly readDefs: readonly ComponentDef<any>[] = []
+    readonly withDefs: readonly ComponentDef[],
+    readonly withoutDefs: readonly ComponentDef[],
+    readonly changedDefs: readonly ComponentDef[] = [],
+    readonly addedDefs: readonly ComponentDef[] = [],
+    readonly readDefs: readonly ComponentDef[] = []
   ) {
     super();
   }
@@ -76,17 +76,14 @@ export const all = <const D extends Terms>(...terms: D): Query<D> =>
  */
 const with_: {
   (
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): <D extends Terms>(self: Query<D>) => Query<D>;
-  <D extends Terms>(
-    self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
-  ): Query<D>;
+  <D extends Terms>(self: Query<D>, ...defs: readonly ComponentDef[]): Query<D>;
 } = dual(
   (args) => args[0] instanceof Query,
   <D extends Terms>(
     self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): Query<D> =>
     new Query(
       self.terms,
@@ -110,17 +107,14 @@ export {
  */
 export const without: {
   (
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): <D extends Terms>(self: Query<D>) => Query<D>;
-  <D extends Terms>(
-    self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
-  ): Query<D>;
+  <D extends Terms>(self: Query<D>, ...defs: readonly ComponentDef[]): Query<D>;
 } = dual(
   (args) => args[0] instanceof Query,
   <D extends Terms>(
     self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): Query<D> =>
     new Query(
       self.terms,
@@ -172,17 +166,14 @@ export const without: {
  */
 export const changed: {
   (
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): <D extends Terms>(self: Query<D>) => Query<D>;
-  <D extends Terms>(
-    self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
-  ): Query<D>;
+  <D extends Terms>(self: Query<D>, ...defs: readonly ComponentDef[]): Query<D>;
 } = dual(
   (args) => args[0] instanceof Query,
   <D extends Terms>(
     self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): Query<D> =>
     new Query(
       self.terms,
@@ -203,17 +194,14 @@ export const changed: {
  */
 export const added: {
   (
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): <D extends Terms>(self: Query<D>) => Query<D>;
-  <D extends Terms>(
-    self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
-  ): Query<D>;
+  <D extends Terms>(self: Query<D>, ...defs: readonly ComponentDef[]): Query<D>;
 } = dual(
   (args) => args[0] instanceof Query,
   <D extends Terms>(
     self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
+    ...defs: readonly ComponentDef[]
   ): Query<D> =>
     new Query(
       self.terms,
@@ -269,19 +257,19 @@ export type Reading<D extends Terms, R> = {
  * @category Combinators
  */
 export const reads: {
-  <const R extends readonly ComponentDef<any>[]>(
+  <const R extends readonly ComponentDef[]>(
     ...defs: R
   ): <D extends Terms>(self: Query<D>) => Query<Reading<D, R[number]>>;
-  <D extends Terms, const R extends readonly ComponentDef<any>[]>(
+  <D extends Terms, const R extends readonly ComponentDef[]>(
     self: Query<D>,
     ...defs: R
   ): Query<Reading<D, R[number]>>;
 } = dual(
   (args) => args[0] instanceof Query,
-  <D extends Terms>(
+  <D extends Terms, const R extends readonly ComponentDef[]>(
     self: Query<D>,
-    ...defs: readonly ComponentDef<any>[]
-  ): Query<any> => {
+    ...defs: R
+  ): Query<Reading<D, R[number]>> => {
     for (const def of defs) {
       if (!self.terms.includes(def)) {
         throw new Error(
@@ -290,9 +278,11 @@ export const reads: {
       }
     }
     // In the order of the terms, each once.
-    const given = defs.length === 0 ? self.terms : defs;
+    const given: readonly ComponentDef[] =
+      defs.length === 0 ? self.terms : defs;
     return new Query(
-      self.terms,
+      // The same terms, with the ones it reads marked in the type.
+      self.terms as Terms as Reading<D, R[number]>,
       self.withDefs,
       self.withoutDefs,
       self.changedDefs,
@@ -316,7 +306,7 @@ export const reads: {
 export class Removed extends Effectable.Class<RemovedReader, never, World> {
   private effect: Effect.Effect<RemovedReader, never, World> | undefined;
 
-  constructor(readonly component: ComponentDef<any>) {
+  constructor(readonly component: ComponentDef) {
     super();
   }
 
@@ -333,5 +323,5 @@ export class Removed extends Effectable.Class<RemovedReader, never, World> {
  *
  * @category Constructors
  */
-export const removed = (component: ComponentDef<any>): Removed =>
+export const removed = (component: ComponentDef): Removed =>
   new Removed(component);

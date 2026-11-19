@@ -46,6 +46,7 @@ Before changing an area, read its section: these are the mistakes the code will 
 - **A `Transform3d.Scale` or `Transform2d.Scale` added with no value is all zeros, and its entity is drawn as nothing.** A component added with no value is zeros, which is a place and a turn that are right and a size that is not. To close it: a component that can say what it is when nothing is said, or a renderer that says so once.
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
 - **What a frame that failed said of a channel stands until a frame ends.** Systems that say something else of it in the next frame are refused as if two had spoken at once, unless the failure was that refusal itself. A game under a driver stops at a failed frame; a test that steps on after one has to know.
+- **An asset's URL that is a path is read from the page's address, and a `<base href>` is not.** The default `Assets.Loader` asks through Effect's `HttpClient`, which resolves a path against `location`, where `fetch` resolved it against the document's base. A page that sets a base loads from somewhere else, and is told only of the file it did not find. To close it: a loader of `Browser` that resolves against `document.baseURI`, or a refusal of a page that has a base.
 
 ## Who lets go of what
 

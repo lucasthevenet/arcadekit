@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "types": ["node"],
-    "declaration": false,
-    "declarationMap": false
-  },
-  "include": ["examples", "bench"]
-}

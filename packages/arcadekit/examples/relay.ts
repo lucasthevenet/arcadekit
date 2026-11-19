@@ -29,8 +29,12 @@ server.on("connection", (socket, request) => {
   const { member } = connection.value;
   console.log(`${member.peer} is in ${member.room}`);
   socket.on("message", (data, isBinary) => {
+    // What ws hands over: a buffer, an ArrayBuffer, or its fragments.
+    const bytes = Array.isArray(data)
+      ? Buffer.concat(data)
+      : new Uint8Array(data);
     const received = connection.value.receive(
-      isBinary ? (data as Uint8Array) : String(data)
+      isBinary ? bytes : new TextDecoder().decode(bytes)
     );
     if (Exit.isFailure(received)) {
       const refused = Cause.squash(received.cause) as Relay.Refused;

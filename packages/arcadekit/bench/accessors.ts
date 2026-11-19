@@ -21,7 +21,6 @@ import {
   Action,
   App,
   Driver,
-  EcsWorld as World,
   EntityId,
   Event,
   Field,
@@ -33,16 +32,17 @@ import {
   System,
   Time,
   View,
+  EcsWorld as World,
   World as WorldService,
 } from "../src/index";
 import type { Entity } from "../src/index";
 import {
+  Position,
+  Velocity,
   variants as coreVariants,
   measure,
   populate,
   sizes,
-  Position,
-  Velocity,
 } from "./core";
 import type { Variant } from "./core";
 
@@ -66,11 +66,11 @@ const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   const world = yield* WorldService;
   const position = world.get(target, Position);
   if (position === undefined) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
   world.set(target, Position, { x: position.x + 1 });
   if (refuse) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
 });
 
@@ -84,7 +84,7 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
     pos.y += vel.y * DT;
   });
   if (refuse) {
-    return yield* Effect.fail(new Refused());
+    return yield* new Refused();
   }
 });
 
@@ -109,7 +109,7 @@ const scanReads = Action.handler(Scan, function* () {
 
 /** Median milliseconds of one dispatch, in an app whose world holds N entities. */
 const dispatching = <P>(
-  action: Action.ActionDef<any, P, any>,
+  action: Action.ActionDef<string, P, unknown>,
   payload: (target: Entity) => P,
   runs = 20_000,
   warmup = 5000
