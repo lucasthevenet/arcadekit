@@ -1,4 +1,4 @@
-import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Context, Data, Effect, Exit, Result, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
@@ -83,31 +83,41 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const seen: string[] = [];
+        const asked: unknown[] = [];
         const Watch = System.make("Watch", function* () {
           const phase = yield* Phase;
           seen.push(`${phase.value}${phase.next ? `>${phase.next}` : ""}`);
           const { tick } = yield* Time;
           if (tick === 2) {
             phase.set("playing");
-            // Asked for, and not entered yet.
-            expect([phase.value, phase.next]).toEqual(["menu", "playing"]);
+            asked.push([phase.value, phase.next]);
           }
           if (tick === 4) {
-            // @ts-expect-error not one of the state's values
-            expect(() => phase.set("flying")).toThrow(
-              /"st\/Phase" has no value "flying"/
+            const flying = Result.try(() =>
+              // @ts-expect-error not one of the state's values
+              phase.set("flying")
             );
-            // Asking for where the game is takes an earlier ask back.
+            asked.push(Result.isFailure(flying) ? flying.failure : "set");
             phase.set("paused");
-            expect(phase.next).toBe("paused");
+            asked.push(phase.next);
             phase.set("playing");
-            expect(phase.next).toBeUndefined();
+            asked.push(phase.next);
           }
         });
         const app = yield* App.make({ systems: [Watch], handlers: [go] });
         for (let tick = 0; tick < 5; tick++) {
           app.tick(1);
         }
+        expect(asked).toEqual([
+          // Asked for, and not entered yet.
+          ["menu", "playing"],
+          new Error(
+            'The state "st/Phase" has no value "flying". Its values are: menu, playing, paused.'
+          ),
+          // Asking for where the game is takes an earlier ask back.
+          "paused",
+          undefined,
+        ]);
         expect(seen).toEqual(["menu", "menu", "playing", "playing", "playing"]);
         // From outside, an action asks; the next tick enters.
         expect(app.dispatch(Go, { to: "paused", refuse: false })).toEqual(

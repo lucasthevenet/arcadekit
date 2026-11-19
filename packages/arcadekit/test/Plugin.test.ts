@@ -292,7 +292,7 @@ describe("plugins", () => {
         App.make({ plugins: [Sfx] }),
         (app) => app.tick(1)
       )
-    ).toThrow();
+    ).toThrow(/Service not found: .*Audio/);
   });
 
   it("require a layer's dependencies to be declared", () => {
@@ -329,7 +329,7 @@ describe("plugins", () => {
         App.make({ plugins: [Undeclared, Physics] }),
         (app) => app.tick(1)
       )
-    ).toThrow();
+    ).toThrow(/Service not found: .*Bounds/);
     withApp(
       App.make({ plugins: [Undeclared] }).pipe(
         Effect.provideService(Bounds, {

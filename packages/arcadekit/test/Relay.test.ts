@@ -21,6 +21,13 @@ const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   return Cause.squash(exit.cause) as Relay.Refused;
 };
 
+const joined = <A>(exit: Exit.Exit<A, Relay.Refused>): A => {
+  if (Exit.isFailure(exit)) {
+    throw new Error("it was refused", { cause: Cause.squash(exit.cause) });
+  }
+  return exit.value;
+};
+
 const ada = { room: "blue", peer: "ada" };
 const grace = { room: "blue", peer: "grace" };
 const edsger = { room: "blue", peer: "edsger" };
@@ -224,13 +231,8 @@ describe("a relay that keeps its rooms itself", () => {
   it("sends what a peer sent to the others in its room", () => {
     const relay = Relay.make();
     const got: Record<string, string[]> = { ada: [], grace: [], linus: [] };
-    const connect = (url: string, name: string) => {
-      const connection = relay.connect(url, (sent) => got[name]!.push(sent));
-      if (Exit.isFailure(connection)) {
-        throw new Error("it was refused");
-      }
-      return connection.value;
-    };
+    const connect = (url: string, name: string) =>
+      joined(relay.connect(url, (sent) => got[name]!.push(sent)));
     const first = connect("/blue?peer=ada", "ada");
     const second = connect("/blue?peer=grace", "grace");
     const third = connect("/red?peer=linus", "linus");
@@ -255,7 +257,7 @@ describe("a relay that keeps its rooms itself", () => {
   it("refuses a name that is taken, and frees it when its peer has gone", () => {
     const relay = Relay.make({ maxPeers: 2 });
     const none = (): void => {};
-    const first = relay.connect("/blue?peer=ada", none);
+    const first = joined(relay.connect("/blue?peer=ada", none));
     expect(refusal(relay.connect("/blue?peer=ada", none)).reason).toBe(
       "name taken"
     );
@@ -263,34 +265,27 @@ describe("a relay that keeps its rooms itself", () => {
     expect(refusal(relay.connect("/blue?peer=edsger", none)).reason).toBe(
       "room full"
     );
-    if (Exit.isSuccess(first)) {
-      first.value.close();
-      // Closing twice frees nobody else's name.
-      first.value.close();
-    }
+    first.close();
+    // Closing twice frees nobody else's name.
+    first.close();
     expect(relay.members("blue")).toEqual([grace]);
     const again = relay.connect("/blue?peer=ada", none);
     expect(Exit.isSuccess(again)).toBe(true);
     // The first connection's close, come late, does not take the new one out.
-    if (Exit.isSuccess(first)) {
-      first.value.close();
-    }
+    first.close();
     expect(relay.members("blue")).toEqual([grace, ada]);
   });
 
   it("holds what its members send to the limits it was made with", () => {
     const relay = Relay.make({ maxLength: 60, peers: ["ada", "grace"] });
     const sent: string[] = [];
-    const first = relay.connect("/blue?peer=ada", () => {});
+    const first = joined(relay.connect("/blue?peer=ada", () => {}));
     relay.connect("/blue?peer=grace", (arrived) => sent.push(arrived));
     expect(refusal(relay.connect("/blue?peer=edsger", () => {})).reason).toBe(
       "not a peer"
     );
-    if (Exit.isFailure(first)) {
-      throw new Error("ada was refused");
-    }
-    expect(first.value.receive(text("ada", 0))).toEqual(Exit.void);
-    expect(refusal(first.value.receive(text("ada", 1, 123_456))).reason).toBe(
+    expect(first.receive(text("ada", 0))).toEqual(Exit.void);
+    expect(refusal(first.receive(text("ada", 1, 123_456))).reason).toBe(
       "too long"
     );
     expect(sent).toEqual([text("ada", 0)]);
@@ -301,11 +296,9 @@ describe("a relay that keeps its rooms itself", () => {
     const one = relay.connect("/blue?peer=ada", () => {});
     const two = relay.connect("/blue?peer=grace", () => {});
     expect(relay.rooms).toBe(1);
-    if (Exit.isSuccess(one) && Exit.isSuccess(two)) {
-      one.value.close();
-      expect(relay.rooms).toBe(1);
-      two.value.close();
-    }
+    joined(one).close();
+    expect(relay.rooms).toBe(1);
+    joined(two).close();
     expect(relay.rooms).toBe(0);
     expect(relay.members("blue")).toEqual([]);
   });

@@ -261,13 +261,14 @@ describe("a transaction of a world", () => {
       for (const write of Object.values(writers)) {
         write(world, entities);
       }
-      if (round % 4 === 3) {
+      const kept = round % 4 === 3;
+      if (kept) {
         world.commit();
-        expect(world.hash()).not.toBe(before);
       } else {
         world.rollback();
-        expect(world.hash()).toBe(before);
       }
+      // What was committed changed the world; what was taken back did not.
+      expect(world.hash() === before).toBe(!kept);
     }
   });
 
@@ -737,12 +738,11 @@ describe("an action that is refused", () => {
         const y = (): number => app.world.get(target, Body)!.y;
         const before = y();
         app.tick(1);
+        const dispatched: Exit.Exit<unknown, unknown>[] = [];
         for (const attempt of attempts) {
           const payload = { target, steps: ["read" as const], refuse: true };
           if (attempt === "refused") {
-            expect(app.dispatch(Act, payload)).toEqual(
-              Exit.fail(new Refused())
-            );
+            dispatched.push(app.dispatch(Act, payload));
           } else {
             // Refused when its turn comes, at the start of the next tick.
             app.enqueue(Act, payload);
@@ -750,6 +750,11 @@ describe("an action that is refused", () => {
           }
           expect(y()).toBe(before);
         }
+        expect(dispatched).toEqual(
+          attempts
+            .filter((attempt) => attempt === "refused")
+            .map(() => Exit.fail(new Refused()))
+        );
         app.dispatch(Act, { target, steps: ["read"], refuse: false });
         const heard = y() - before;
         // And what was read by an action that was accepted stays read.

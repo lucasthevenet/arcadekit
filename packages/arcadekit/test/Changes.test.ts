@@ -18,6 +18,7 @@ import {
   Time,
 } from "../src/index";
 import type { Entity, EntityColumn } from "../src/index";
+import { expectChecked, makeChecks } from "./checks";
 
 const Position = Component.define("ch/Position", {
   x: Field.f32,
@@ -647,6 +648,7 @@ describe("changes against a simple model", () => {
       const readers = specs.flatMap((spec, s) =>
         [0, 1].map((r) => ({
           spec,
+          label: `reader ${s}.${r}`,
           view: world.view(spec.query, `reader ${s}.${r}`),
           pending: new Set<Entity>(),
           fresh: true,
@@ -654,6 +656,7 @@ describe("changes against a simple model", () => {
         }))
       );
       const lost = { reader: world.removed(Health), expected: [] as Entity[] };
+      const checks = makeChecks();
       const fire = (what: string, entity: Entity): void => {
         for (const reader of readers) {
           if (reader.spec.fires.includes(what)) {
@@ -770,7 +773,11 @@ describe("changes against a simple model", () => {
                 ? matching
                 : matching.filter((entity) => reader.pending.has(entity));
               if (dice.next() < 0.3) {
-                expect(reader.view.count()).toBe(expected.length);
+                checks.check(
+                  `step ${step}: ${reader.label} counts`,
+                  reader.view.count(),
+                  expected.length
+                );
               }
               const seen: Entity[] = [];
               // Before the visit: what the visit itself fires is for later.
@@ -797,16 +804,25 @@ describe("changes against a simple model", () => {
                   }
                 }
               }
-              expect(seen).toEqual(expected);
+              checks.check(
+                `step ${step}: ${reader.label} visits`,
+                seen,
+                expected
+              );
               reader.fresh = false;
             }
           }
           if (dice.next() < 0.3) {
-            expect(lost.reader.read()).toEqual(lost.expected);
+            checks.check(
+              `step ${step}: what lost Health`,
+              lost.reader.read(),
+              lost.expected
+            );
             lost.expected = [];
           }
         }
       }
+      expectChecked(checks, 1000);
     });
   }
 });
@@ -822,6 +838,7 @@ describe("a change log", () => {
     sometimes.entities();
     const expected = new Set<Entity>();
     const lately = new Set<Entity>();
+    const checks = makeChecks();
     let longest = 0;
     // Ten entities are written once, long before the readers that stay
     // away come back, and the other forty over and over.
@@ -841,13 +858,16 @@ describe("a change log", () => {
       busy.entities();
       if (round % 331 === 5 || round % 331 === 6) {
         // A reader part of the way along sees what is new to it, no more.
-        expect(sometimes.entities()).toEqual(
+        checks.check(
+          `round ${round}`,
+          sometimes.entities(),
           entities.filter((entity) => lately.has(entity))
         );
         lately.clear();
       }
       longest = Math.max(longest, world.saveChanges()[0]!.entries.length);
     }
+    expectChecked(checks, 18);
     // Some 17,000 writes were logged, of 50 entities.
     expect(longest).toBeLessThan(2100);
     expect(expected.size).toBe(50);

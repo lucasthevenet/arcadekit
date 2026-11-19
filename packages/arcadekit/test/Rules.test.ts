@@ -374,9 +374,11 @@ describe("actions", () => {
       expect(app.world.entityCount).toBe(entities + 1);
       expect(app.events.pending(Died)).toBe(1);
       // The id the refused summon had reserved was released and is reused.
-      if (Exit.isSuccess(accepted)) {
-        expect(app.world.get(accepted.value, Health)).toEqual({ hp: 5 });
-      }
+      const summoned = Exit.match(accepted, {
+        onSuccess: (entity) => app.world.get(entity, Health),
+        onFailure: () => undefined,
+      });
+      expect(summoned).toEqual({ hp: 5 });
     });
   });
 

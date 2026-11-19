@@ -544,20 +544,18 @@ describe("relations against a simple model", () => {
           graveyard.push(entity);
         }
 
-        if (step % 50 === 0 || step > 3990) {
-          expect(world.entityCount).toBe(alive.size);
-          for (const entity of alive) {
-            expect(world.isAlive(entity)).toBe(true);
-          }
-          for (const [r, relation] of all.entries()) {
-            const held = new Map<Entity, Entity>();
-            world.view(Query.all(relation)).each((row, entity) => {
-              held.set(entity, row.target);
-            });
-            expect(held).toEqual(model[r]);
-          }
-          expectNoDangling(world);
+        expect(world.entityCount).toBe(alive.size);
+        expect([...alive].filter((entity) => !world.isAlive(entity))).toEqual(
+          []
+        );
+        for (const [r, relation] of all.entries()) {
+          const held = new Map<Entity, Entity>();
+          world.view(Query.all(relation)).each((row, entity) => {
+            held.set(entity, row.target);
+          });
+          expect(held).toEqual(model[r]);
         }
+        expectNoDangling(world);
       }
     });
   }

@@ -15,7 +15,15 @@ export default defineConfig({
     typeAware: true,
     typeCheck: false,
   },
-  plugins: ["import", "effecttsgo", "typescript", "node", "unicorn", "oxc"],
+  plugins: [
+    "import",
+    "effecttsgo",
+    "typescript",
+    "node",
+    "unicorn",
+    "oxc",
+    "vitest",
+  ],
   ignorePatterns: ["**/dist/**", "**/node_modules/**"],
   jsPlugins: ["./tooling/lint/plugin.ts"],
   rules: {
@@ -193,6 +201,19 @@ export default defineConfig({
     "unicorn/no-useless-length-check": "error",
     "unicorn/no-useless-spread": "error",
     "unicorn/prefer-string-starts-ends-with": "error",
+
+    // An expect that runs on some paths alone passes on the others.
+    "vitest/no-conditional-expect": "error",
+    // A test with no expect checks nothing, unless through a helper that
+    // expects, which is named expect<Something>.
+    "vitest/expect-expect": [
+      "error",
+      { assertFunctionNames: ["expect", "expect*", "assert", "assert.*"] },
+    ],
+    // What a toThrow is to throw is said, or it passes for any error.
+    "vitest/require-to-throw-message": "error",
+    // Vitest's expect takes a message as its second argument.
+    "vitest/valid-expect": ["error", { maxArgs: 2 }],
   },
   overrides: [
     // Files are named as Effect names its own. A module, which an entry is,

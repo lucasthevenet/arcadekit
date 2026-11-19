@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
 import type { Scope } from "effect";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   Action,
@@ -1831,8 +1831,10 @@ describe("bindings", () => {
   });
 
   it("take a payload that the compiler checks against the action", () => {
-    Input.onPress("KeyF", Fire, { x: 1, y: 2 });
-    Input.onPress("KeyJ", Jump);
+    expectTypeOf(
+      Input.onPress("KeyF", Fire, { x: 1, y: 2 })
+    ).toEqualTypeOf<Input.Binding>();
+    expectTypeOf(Input.onPress("KeyJ", Jump)).toEqualTypeOf<Input.Binding>();
     Input.onPress(
       "KeyF",
       Fire,

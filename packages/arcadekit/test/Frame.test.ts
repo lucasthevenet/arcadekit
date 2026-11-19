@@ -1074,12 +1074,11 @@ describe("a frame stage that is checked", () => {
           // It is a defect: nothing in the error channel to handle.
           expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
           // Checked, a draw from the world's generator is laid at the door
-          // of the system that made it, and taken back as ever.
+          // of the system that made it, and taken back as ever. A write
+          // through a raw column is not taken back: #195.
           const before = app.world.hash();
           expect(() => app.frame(0)).toThrow(App.FrameChangedWorld);
-          if (how === "random") {
-            expect(app.world.hash()).toBe(before);
-          }
+          expect(app.world.hash() === before).toBe(how === "random");
         })
       );
     }
