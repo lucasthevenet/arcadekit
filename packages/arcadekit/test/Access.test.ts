@@ -101,6 +101,64 @@ const ticking = (
     )
   );
 
+const hashes = (systems: readonly System.System<any, any>[]): number[] =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const app = yield* playing(systems);
+        const out: number[] = [];
+
+        for (let tick = 0; tick < 12; tick += 1) {
+          app.tick(1 / 60);
+          out.push(app.world.hash());
+        }
+
+        // The game is one in which things happen.
+        expect(app.world.singleton(Score).points).toBeGreaterThan(20);
+        expect(app.world.entityCount).toBeLessThan(6);
+
+        return out;
+      })
+    )
+  );
+
+const refused = (
+  access: System.Access,
+  use: (commands: Commands["Service"]) => void
+): string => {
+  let message = "it was not refused";
+  ticking(access, function* () {
+    const commands = yield* Commands;
+
+    try {
+      use(commands);
+    } catch (error) {
+      ({ message } = error as Error);
+    }
+  });
+
+  return message;
+};
+
+const frame = (system: System.System<any, any>): void =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const app = yield* playing([system]);
+        app.tick(1);
+        app.frame(0);
+      })
+    )
+  );
+
+const touches = (access: System.Access): [string, System.Touch][] =>
+  Array.from(
+    System.accessOf(
+      System.make("S", function* () {}).pipe(System.access(access))
+    )!.components,
+    ([name, { touch }]) => [name, touch]
+  );
+
 describe("a system that says what it reads and writes", () => {
   const Movement = System.make("Movement", function* () {
     const { delta } = yield* Time;
@@ -142,27 +200,6 @@ describe("a system that says what it reads and writes", () => {
   ];
 
   it("is the same game as one whose systems said nothing", () => {
-    const hashes = (systems: readonly System.System<any, any>[]): number[] =>
-      Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const app = yield* playing(systems);
-            const out: number[] = [];
-
-            for (let tick = 0; tick < 12; tick += 1) {
-              app.tick(1 / 60);
-              out.push(app.world.hash());
-            }
-
-            // The game is one in which things happen.
-            expect(app.world.singleton(Score).points).toBeGreaterThan(20);
-            expect(app.world.entityCount).toBeLessThan(6);
-
-            return out;
-          })
-        )
-      );
-
     expect(hashes(said)).toStrictEqual(hashes([Movement, Wounding, Scoring]));
   });
 
@@ -325,24 +362,6 @@ describe("a system that says what it reads and writes", () => {
 
   it("is held to it through commands, where they are queued", () => {
     const first = 0 as Entity;
-
-    const refused = (
-      access: System.Access,
-      use: (commands: Commands["Service"]) => void
-    ): string => {
-      let message = "it was not refused";
-      ticking(access, function* () {
-        const commands = yield* Commands;
-
-        try {
-          use(commands);
-        } catch (error) {
-          ({ message } = error as Error);
-        }
-      });
-
-      return message;
-    };
 
     expect(
       refused({ writes: [Position] }, (commands) =>
@@ -507,17 +526,6 @@ describe("a system that says what it reads and writes", () => {
   });
 
   it("is held to it in the frame stage too, and in what it does in place of running", () => {
-    const frame = (system: System.System<any, any>): void =>
-      Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const app = yield* playing([system]);
-            app.tick(1);
-            app.frame(0);
-          })
-        )
-      );
-
     expect(() =>
       frame(
         System.make("Draw", function* () {
@@ -725,14 +733,6 @@ describe("a system that says what it reads and writes", () => {
   });
 
   it("takes the strongest of the ways it touches a thing", () => {
-    const touches = (access: System.Access): [string, System.Touch][] =>
-      Array.from(
-        System.accessOf(
-          System.make("S", function* () {}).pipe(System.access(access))
-        )!.components,
-        ([name, { touch }]) => [name, touch]
-      );
-
     expect(
       touches({
         queries: [
@@ -759,47 +759,47 @@ describe("a system that says what it reads and writes", () => {
   });
 });
 
-describe("a world with a guard", () => {
-  // The storage core on its own: what an app sets before such a system.
-  const guarded = (
-    reads: readonly ComponentDef<any>[],
-    writes: readonly ComponentDef<any>[]
-  ): { readonly world: EcsWorld; readonly guard: Guard; first: Entity } => {
-    const world = new EcsWorld();
+// The storage core on its own: what an app sets before such a system.
+const guarded = (
+  reads: readonly ComponentDef<any>[],
+  writes: readonly ComponentDef<any>[]
+): { readonly world: EcsWorld; readonly guard: Guard; first: Entity } => {
+  const world = new EcsWorld();
 
-    const first = world.spawn(
-      Position.of({ x: 1, y: 2 }),
-      Health.of({ hp: 3 }),
-      Bullet
-    );
+  const first = world.spawn(
+    Position.of({ x: 1, y: 2 }),
+    Health.of({ hp: 3 }),
+    Bullet
+  );
 
-    const guard: Guard = {
-      who: "The test",
-      advice: " Say so.",
-      reads: [],
-      writes: [],
-      writeDefs: writes,
-      queries: new Set(),
-    };
-
-    for (const def of [...reads, ...writes]) {
-      (guard.reads as true[])[def.id] = true;
-    }
-
-    for (const def of writes) {
-      (guard.writes as true[])[def.id] = true;
-    }
-
-    world.guard = guard;
-
-    return { world, guard, first };
+  const guard: Guard = {
+    who: "The test",
+    advice: " Say so.",
+    reads: [],
+    writes: [],
+    writeDefs: writes,
+    queries: new Set(),
   };
 
-  const spec = (
-    terms: readonly ComponentDef<any>[],
-    more: Partial<QuerySpec> = {}
-  ): QuerySpec<any> => ({ terms, withDefs: [], withoutDefs: [], ...more });
+  for (const def of [...reads, ...writes]) {
+    (guard.reads as true[])[def.id] = true;
+  }
 
+  for (const def of writes) {
+    (guard.writes as true[])[def.id] = true;
+  }
+
+  world.guard = guard;
+
+  return { world, guard, first };
+};
+
+const spec = (
+  terms: readonly ComponentDef<any>[],
+  more: Partial<QuerySpec> = {}
+): QuerySpec<any> => ({ terms, withDefs: [], withoutDefs: [], ...more });
+
+describe("a world with a guard", () => {
   it("refuses what was not said where it is done, and says who, what and what to do", () => {
     const { first, world } = guarded([Health], [Position]);
     expect(world.get(first, Health)).toStrictEqual({ hp: 3 });
@@ -906,16 +906,16 @@ describe("a world with a guard", () => {
   });
 });
 
+const system = (
+  name: string,
+  access?: System.Access
+): System.System<never, never> => {
+  const made = System.make(name, function* () {});
+
+  return access === undefined ? made : made.pipe(System.access(access));
+};
+
 describe("the order of systems", () => {
-  const system = (
-    name: string,
-    access?: System.Access
-  ): System.System<never, never> => {
-    const made = System.make(name, function* () {});
-
-    return access === undefined ? made : made.pipe(System.access(access));
-  };
-
   const Move = system("Move", { queries: [Moving] });
 
   const Aim = system("Aim", {

@@ -914,6 +914,52 @@ describe("Browser.runMain", () => {
   });
 });
 
+/** Makes a sound of a file: one of a single byte is none. */
+const decodeInto =
+  (decoded: number[]) =>
+  (data: ArrayBuffer): Promise<unknown> => {
+    decoded.push(data.byteLength);
+
+    return data.byteLength === 1
+      ? Promise.reject(new Error("Unable to decode audio data"))
+      : Promise.resolve({ samples: data.byteLength });
+  };
+
+/** Builds the layer into a scope of the test's, and gives what it provides. */
+/** A stand-in for what plays a streamed track, which notes what it is asked. */
+const makeMedia = (url: string, broken: boolean) => {
+  const media = {
+    url,
+    loop: false,
+    playing: false,
+    plays: 0,
+    pauses: 0,
+    play(): Promise<void> {
+      media.plays += 1;
+
+      if (broken) {
+        return Promise.reject(
+          new Error("The element has no supported sources.")
+        );
+      }
+
+      media.playing = true;
+
+      return Promise.resolve();
+    },
+    pause(): void {
+      media.pauses += 1;
+      media.playing = false;
+    },
+  };
+
+  return media;
+};
+
+/** What is said, once, of a cue that came before the page was touched. */
+const UNTOUCHED = (cue: string): string =>
+  `The cue "${cue}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`;
+
 describe("a page's sound", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1091,48 +1137,6 @@ describe("a page's sound", () => {
     "/noise.wav": new Uint8Array(1),
   };
 
-  /** Makes a sound of a file: one of a single byte is none. */
-  const decodeInto =
-    (decoded: number[]) =>
-    (data: ArrayBuffer): Promise<unknown> => {
-      decoded.push(data.byteLength);
-
-      return data.byteLength === 1
-        ? Promise.reject(new Error("Unable to decode audio data"))
-        : Promise.resolve({ samples: data.byteLength });
-    };
-
-  /** Builds the layer into a scope of the test's, and gives what it provides. */
-  /** A stand-in for what plays a streamed track, which notes what it is asked. */
-  const makeMedia = (url: string, broken: boolean) => {
-    const media = {
-      url,
-      loop: false,
-      playing: false,
-      plays: 0,
-      pauses: 0,
-      play(): Promise<void> {
-        media.plays += 1;
-
-        if (broken) {
-          return Promise.reject(
-            new Error("The element has no supported sources.")
-          );
-        }
-
-        media.playing = true;
-
-        return Promise.resolve();
-      },
-      pause(): void {
-        media.pauses += 1;
-        media.playing = false;
-      },
-    };
-
-    return media;
-  };
-
   const build = async (
     files: Readonly<Record<string, string | Sound.Clip>>,
     options: {
@@ -1212,10 +1216,6 @@ describe("a page's sound", () => {
       close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
     };
   };
-
-  /** What is said, once, of a cue that came before the page was touched. */
-  const UNTOUCHED = (cue: string): string =>
-    `The cue "${cue}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`;
 
   it("makes the page's audio at the first touch, and plays a cue's file through it", async () => {
     const { audio, decoded, logged, made, output, page } = await build({

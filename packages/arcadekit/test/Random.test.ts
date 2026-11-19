@@ -51,6 +51,10 @@ const KNOWN_FIRST_DRAWS_OF_SEED_1 = [
   393_288_148, 4_155_725_614, 3_709_563_501, 954_221_178,
 ];
 
+// The same seed shuffles the same way.
+const order = (seed: number) =>
+  new Rng(seed).shuffle(Array.from({ length: 20 }, (_, i) => i));
+
 describe("the random number generator", () => {
   it("gives the same numbers for the same seed, and different ones for another", () => {
     expect(draws(new Rng(42), 100)).toStrictEqual(draws(new Rng(42), 100));
@@ -245,10 +249,6 @@ describe("the random number generator", () => {
     expect(rng.shuffle([])).toStrictEqual([]);
     expect(rng.shuffle(["one"])).toStrictEqual(["one"]);
 
-    // The same seed shuffles the same way.
-    const order = (seed: number) =>
-      new Rng(seed).shuffle(Array.from({ length: 20 }, (_, i) => i));
-
     expect(order(77)).toStrictEqual(order(77));
     expect(order(77)).not.toStrictEqual(order(78));
   });
@@ -355,6 +355,25 @@ const snapshot = (app: App.Any) => {
   };
 };
 
+// The script's rolls are in the log as actions, so the replay runs the
+// systems and the handler but not the script, and must still draw the
+// same numbers in the same order to end in the same state.
+const record = (seed: number) =>
+  withApp(App.make({ systems: [Sparks], handlers: [roll], seed }), (app) => {
+    app.world.spawn(Die.of({ face: 1, rolls: 0 }));
+    const other = new Rng(seed + 1000);
+
+    for (let i = 0; i < 150; i += 1) {
+      if (other.int(1, 4) === 1) {
+        app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
+      }
+
+      app.tick(1 / 60);
+    }
+
+    return snapshot(app);
+  });
+
 describe("the Random service", () => {
   it("is the world's generator, so its state is part of the world", () => {
     let seen: Rng | undefined;
@@ -392,28 +411,6 @@ describe("the Random service", () => {
   });
 
   it("lets a game that uses it replay identically from its log", () => {
-    // The script's rolls are in the log as actions, so the replay runs the
-    // systems and the handler but not the script, and must still draw the
-    // same numbers in the same order to end in the same state.
-    const record = (seed: number) =>
-      withApp(
-        App.make({ systems: [Sparks], handlers: [roll], seed }),
-        (app) => {
-          app.world.spawn(Die.of({ face: 1, rolls: 0 }));
-          const other = new Rng(seed + 1000);
-
-          for (let i = 0; i < 150; i += 1) {
-            if (other.int(1, 4) === 1) {
-              app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
-            }
-
-            app.tick(1 / 60);
-          }
-
-          return snapshot(app);
-        }
-      );
-
     const replayOf = (recorded: ReturnType<typeof record>, seed: number) =>
       withApp(
         App.make({ systems: [Sparks], handlers: [roll], seed }),

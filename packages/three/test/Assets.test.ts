@@ -636,27 +636,27 @@ describe("instances whose look is made of assets", () => {
   });
 });
 
+/** Deer, each an object made of the forest's bark. */
+const makeDeer = (Forest: Forest, log: string[]) =>
+  Three.objects("ta/Deer", {
+    of: Deer,
+    from: Forest,
+    make: (entity, { bark }) => {
+      const object = new Object3D();
+      object.name = `deer ${entity} of ${bark.load}`;
+      object.userData = { bark };
+      log.push(`make ${entity} of ${bark.load}`);
+
+      return object;
+    },
+    free: (object, entity) => {
+      log.push(
+        `free ${entity} of ${(object.userData as { bark: Bark }).bark.load}`
+      );
+    },
+  });
+
 describe("objects made of assets", () => {
-  /** Deer, each an object made of the forest's bark. */
-  const makeDeer = (Forest: Forest, log: string[]) =>
-    Three.objects("ta/Deer", {
-      of: Deer,
-      from: Forest,
-      make: (entity, { bark }) => {
-        const object = new Object3D();
-        object.name = `deer ${entity} of ${bark.load}`;
-        object.userData = { bark };
-        log.push(`make ${entity} of ${bark.load}`);
-
-        return object;
-      },
-      free: (object, entity) => {
-        log.push(
-          `free ${entity} of ${(object.userData as { bark: Bark }).bark.load}`
-        );
-      },
-    });
-
   it("are made while the app holds the bundle loaded, of what it holds, and all let go when it does not", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
@@ -796,39 +796,39 @@ describe("objects made of assets", () => {
   });
 });
 
+/** What a page's `createImageBitmap` is, to a test: it notes what it was asked. */
+const stubBitmaps = () => {
+  const asked: { readonly bytes: number[]; readonly options: unknown }[] = [];
+  const bitmaps: { width: number; height: number; closed: number }[] = [];
+  vi.stubGlobal("createImageBitmap", async (blob: Blob, options: unknown) => {
+    const bytes = [...new Uint8Array(await blob.arrayBuffer())];
+    asked.push({ bytes, options });
+
+    if (bytes[0] === 0) {
+      throw new Error("The source image could not be decoded.");
+    }
+
+    const bitmap = {
+      width: 2,
+      height: 2,
+      closed: 0,
+      close() {
+        bitmap.closed += 1;
+      },
+    };
+
+    bitmaps.push(bitmap);
+
+    return bitmap;
+  });
+
+  return { asked, bitmaps };
+};
+
 describe("a texture", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
-
-  /** What a page's `createImageBitmap` is, to a test: it notes what it was asked. */
-  const stubBitmaps = () => {
-    const asked: { readonly bytes: number[]; readonly options: unknown }[] = [];
-    const bitmaps: { width: number; height: number; closed: number }[] = [];
-    vi.stubGlobal("createImageBitmap", async (blob: Blob, options: unknown) => {
-      const bytes = [...new Uint8Array(await blob.arrayBuffer())];
-      asked.push({ bytes, options });
-
-      if (bytes[0] === 0) {
-        throw new Error("The source image could not be decoded.");
-      }
-
-      const bitmap = {
-        width: 2,
-        height: 2,
-        closed: 0,
-        close() {
-          bitmap.closed += 1;
-        },
-      };
-
-      bitmaps.push(bitmap);
-
-      return bitmap;
-    });
-
-    return { asked, bitmaps };
-  };
 
   it("is a picture decoded for Three.js, the right way up, and let go with the scope it was loaded in", async () => {
     const { asked, bitmaps } = stubBitmaps();

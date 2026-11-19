@@ -261,23 +261,23 @@ describe("an entity's id", () => {
   });
 });
 
+/** A world whose one entity is of its slot's last generation. */
+const atTheLast = (): { readonly world: World; readonly last: Entity } => {
+  const first = new World({ seed: 3 });
+  first.spawn(Body.of({ x: 1 }));
+  first.spawn(Body.of({ x: 2 }));
+  first.despawn(1 as Entity);
+  const contents = readSnapshot(first.snapshot());
+  const last = ((GENERATIONS - 1) * SLOTS) as Entity;
+  contents.generations[0] = GENERATIONS - 1;
+  contents.tables[0]!.entities[0] = last;
+  const world = new World();
+  world.load(writeSnapshot(contents), all);
+
+  return { world, last };
+};
+
 describe("a slot whose generations are used up", () => {
-  /** A world whose one entity is of its slot's last generation. */
-  const atTheLast = (): { readonly world: World; readonly last: Entity } => {
-    const first = new World({ seed: 3 });
-    first.spawn(Body.of({ x: 1 }));
-    first.spawn(Body.of({ x: 2 }));
-    first.despawn(1 as Entity);
-    const contents = readSnapshot(first.snapshot());
-    const last = ((GENERATIONS - 1) * SLOTS) as Entity;
-    contents.generations[0] = GENERATIONS - 1;
-    contents.tables[0]!.entities[0] = last;
-    const world = new World();
-    world.load(writeSnapshot(contents), all);
-
-    return { world, last };
-  };
-
   it("is given out no more, so that no id is ever given out twice", () => {
     const { last, world } = atTheLast();
     expect(last).toBeLessThan(2 ** 53);

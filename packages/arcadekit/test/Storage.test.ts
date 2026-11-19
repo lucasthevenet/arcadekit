@@ -746,6 +746,20 @@ describe("queries", () => {
   });
 });
 
+/** A value that is a different one in every field for every `n`. */
+const valueOf = (n: number) => ({
+  f32: n + 0.5,
+  f64: n + 0.1,
+  i32: -n - 1,
+  u32: 3_000_000_000 + n,
+  u16: 60_000 + n,
+  u8: (200 + n) & 255,
+  entity: (n + 7) as Entity,
+  json: `text ${n}`,
+  ref: new Date(1000 * n),
+  transient: { n },
+});
+
 describe("what each hands its callback", () => {
   // One field of every kind a column can be.
   const fields = {
@@ -768,20 +782,6 @@ describe("what each hands its callback", () => {
 
   const EverySparse = Component.define("st/EverySparse", fields, {
     storage: "sparse",
-  });
-
-  /** A value that is a different one in every field for every `n`. */
-  const valueOf = (n: number) => ({
-    f32: n + 0.5,
-    f64: n + 0.1,
-    i32: -n - 1,
-    u32: 3_000_000_000 + n,
-    u16: 60_000 + n,
-    u8: (200 + n) & 255,
-    entity: (n + 7) as Entity,
-    json: `text ${n}`,
-    ref: new Date(1000 * n),
-    transient: { n },
   });
 
   const names = Object.keys(fields) as (keyof typeof fields)[];
@@ -1161,16 +1161,16 @@ describe("structural changes during iteration", () => {
   });
 });
 
+const random = (seed: number) => () => {
+  seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
+
+  return seed / 0x1_00_00_00_00;
+};
+
 describe("randomized comparison against a simple model", () => {
   // A second, obviously-correct implementation: a Map of entity -> components.
   // Thousands of random operations must leave both in the same state.
   const defs = [Position, Velocity, Health, Enemy, Stunned, Burning] as const;
-
-  const random = (seed: number) => () => {
-    seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
-
-    return seed / 0x1_00_00_00_00;
-  };
 
   const sample = (def: (typeof defs)[number], rnd: () => number): any => {
     if (def === Position || def === Velocity) {

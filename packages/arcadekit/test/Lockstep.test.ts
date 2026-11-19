@@ -24,6 +24,16 @@ import {
 } from "./Peers";
 import type { Peer } from "./Peers";
 
+const attempt = (options: Partial<Lockstep.Options>) =>
+  withApp(game(), (app) =>
+    Lockstep.make(app, {
+      peer: "ada",
+      peers: ["ada", "grace"],
+      delta: DELTA,
+      ...options,
+    })
+  );
+
 describe("a lockstep session", () => {
   it("keeps two peers hash-equal at every tick, over a network that delays and reorders", () => {
     for (const [seed, lag] of [
@@ -604,16 +614,6 @@ describe("a lockstep session", () => {
   });
 
   it("refuses options that could not be a game", () => {
-    const attempt = (options: Partial<Lockstep.Options>) =>
-      withApp(game(), (app) =>
-        Lockstep.make(app, {
-          peer: "ada",
-          peers: ["ada", "grace"],
-          delta: DELTA,
-          ...options,
-        })
-      );
-
     expect(() => attempt({ peer: "linus" })).toThrow(
       /"linus" is not among the peers of its own session: ada, grace/u
     );

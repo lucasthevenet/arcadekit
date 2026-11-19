@@ -163,6 +163,19 @@ const migrations: Save.Migration[] = [
 
 const version2 = { plugins: [Game2], version: 2, migrations } as const;
 
+const row = (n: number) => ({
+  single: n / 3,
+  double: n / 7,
+  signed: -n,
+  unsigned: 4_000_000_000 - n,
+  short: 65_000 - n,
+  byte: n % 256,
+  other: n as Entity,
+  data: [n, { n }, `text ${n}`, null, undefined, 5n][n % 6],
+  when: new Date(n * 1000),
+  handle: { n },
+});
+
 describe("a snapshot read without the program's components", () => {
   it("describes its own components, and writes back to the same bytes", () => {
     const { save } = savedByVersion0();
@@ -237,19 +250,6 @@ describe("a snapshot read without the program's components", () => {
     const Wide = Component.define("mg/Wide", kinds);
     const Thin = Component.define("mg/Thin", kinds, { storage: "sparse" });
     const Tag = Component.tag("mg/Tag");
-
-    const row = (n: number) => ({
-      single: n / 3,
-      double: n / 7,
-      signed: -n,
-      unsigned: 4_000_000_000 - n,
-      short: 65_000 - n,
-      byte: n % 256,
-      other: n as Entity,
-      data: [n, { n }, `text ${n}`, null, undefined, 5n][n % 6],
-      when: new Date(n * 1000),
-      handle: { n },
-    });
 
     const dice = new EcsWorld({ seed: 5 }).random;
 

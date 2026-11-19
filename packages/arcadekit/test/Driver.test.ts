@@ -536,35 +536,35 @@ describe("the display when none is provided", () => {
   });
 });
 
-describe("ticking when needed", () => {
-  /** Something to step that says when it is settled, and notes what it was asked. */
-  const makeStepped = () => {
-    const stepped = {
-      settled: true,
-      calls: [] as string[],
-      ticks: 0,
-      /** Run by the input stage: where a move comes in. */
-      onInput: (): void => {},
-      /** Run by a tick: what it leaves waiting, if anything. */
-      onTick: (): void => {},
-      input() {
-        stepped.calls.push("input");
-        stepped.onInput();
-      },
-      tick(delta: number) {
-        stepped.calls.push(`tick ${delta}`);
-        stepped.ticks += 1;
-        stepped.onTick();
-      },
-      frame(alpha: number) {
-        // To two decimals: what is left of a tick is a sum of floats.
-        stepped.calls.push(`frame ${Math.round(alpha * 100) / 100}`);
-      },
-    };
-
-    return stepped;
+/** Something to step that says when it is settled, and notes what it was asked. */
+const makeStepped = () => {
+  const stepped = {
+    settled: true,
+    calls: [] as string[],
+    ticks: 0,
+    /** Run by the input stage: where a move comes in. */
+    onInput: (): void => {},
+    /** Run by a tick: what it leaves waiting, if anything. */
+    onTick: (): void => {},
+    input() {
+      stepped.calls.push("input");
+      stepped.onInput();
+    },
+    tick(delta: number) {
+      stepped.calls.push(`tick ${delta}`);
+      stepped.ticks += 1;
+      stepped.onTick();
+    },
+    frame(alpha: number) {
+      // To two decimals: what is left of a tick is a sum of floats.
+      stepped.calls.push(`frame ${Math.round(alpha * 100) / 100}`);
+    },
   };
 
+  return stepped;
+};
+
+describe("ticking when needed", () => {
   it("rests while nothing is waiting: the input stage and the frame stage run, and no tick", () => {
     const game = makeStepped();
     const advance = Driver.fixedStep(game, { hz: 10, ticks: "whenNeeded" });

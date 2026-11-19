@@ -89,6 +89,27 @@ const reload = (world: EcsWorld, components = both): EcsWorld => {
   return copy;
 };
 
+const hashWith = (tags: Set<string>, when: Date): number => {
+  const world = new EcsWorld();
+  world.spawn(Card.of({ ...card(1), tags, when }));
+
+  return world.hash();
+};
+
+const refused = (
+  change: Record<string, unknown>,
+  def: ComponentDef<any> = Card
+) => {
+  const { entities, world } = populated(3);
+  world.set(entities[1]!, def, change);
+
+  try {
+    world.snapshot();
+  } catch (error) {
+    return error as SnapshotError;
+  }
+};
+
 describe("a field that is not a number", () => {
   it("says where it is defined what kind it is: Field.ref takes a codec", () => {
     expect(() =>
@@ -183,13 +204,6 @@ describe("a field that is not a number", () => {
   });
 
   it("hashes a ref field by what its codec makes of it, not by which object it is", () => {
-    const hashWith = (tags: Set<string>, when: Date): number => {
-      const world = new EcsWorld();
-      world.spawn(Card.of({ ...card(1), tags, when }));
-
-      return world.hash();
-    };
-
     const base = hashWith(new Set(["a", "b"]), new Date(5));
     // Another Set with the same members, added in another order.
     expect(hashWith(new Set(["b", "a"]), new Date(5))).toBe(base);
@@ -243,20 +257,6 @@ describe("a field that is not a number", () => {
   });
 
   it("refuses a snapshot when a codec or a schema will not take a value, and names the field", () => {
-    const refused = (
-      change: Record<string, unknown>,
-      def: ComponentDef<any> = Card
-    ) => {
-      const { entities, world } = populated(3);
-      world.set(entities[1]!, def, change);
-
-      try {
-        world.snapshot();
-      } catch (error) {
-        return error as SnapshotError;
-      }
-    };
-
     const date = refused({ when: new Date(Number.NaN) })!;
     expect(date).toBeInstanceOf(SnapshotError);
     expect(date.problem).toBe("cannot be saved");

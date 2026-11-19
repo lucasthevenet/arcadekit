@@ -55,6 +55,26 @@ const seated = (
 /** As the players of `Peers.ts` see a peer. */
 const asPeer = (seat: Seat): Peer => seat as unknown as Peer;
 
+const run = (seed: number): number[] => {
+  const hub = Transport.makeHub({ delay: { min: 0, max: 6 }, seed });
+  const ada = hub.port("ada");
+  const grace = hub.port("grace");
+  const order: number[] = [];
+
+  for (let tick = 0; tick < 40; tick += 1) {
+    ada.send(message("ada", tick));
+    hub.step();
+    order.push(...grace.receive().map((arrived) => arrived.tick));
+  }
+
+  for (let i = 0; i < 6; i += 1) {
+    hub.step();
+    order.push(...grace.receive().map((arrived) => arrived.tick));
+  }
+
+  return order;
+};
+
 describe("a hub, the network in memory", () => {
   it("carries what one port sends to every other, and not back", () => {
     const hub = Transport.makeHub();
@@ -108,26 +128,6 @@ describe("a hub, the network in memory", () => {
   });
 
   it("lets messages overtake each other when the delay is a range, the same way for the same seed", () => {
-    const run = (seed: number): number[] => {
-      const hub = Transport.makeHub({ delay: { min: 0, max: 6 }, seed });
-      const ada = hub.port("ada");
-      const grace = hub.port("grace");
-      const order: number[] = [];
-
-      for (let tick = 0; tick < 40; tick += 1) {
-        ada.send(message("ada", tick));
-        hub.step();
-        order.push(...grace.receive().map((arrived) => arrived.tick));
-      }
-
-      for (let i = 0; i < 6; i += 1) {
-        hub.step();
-        order.push(...grace.receive().map((arrived) => arrived.tick));
-      }
-
-      return order;
-    };
-
     const order = run(1);
     // Every one arrived, once, and not in the order they were sent.
     expect(order.toSorted((a, b) => a - b)).toStrictEqual(
@@ -409,9 +409,9 @@ const later = (ms = 5): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
-describe("the transport between tabs, a BroadcastChannel", () => {
-  const nextRoom = (): string => `arcadekit-test/${crypto.randomUUID()}`;
+const nextRoom = (): string => `arcadekit-test/${crypto.randomUUID()}`;
 
+describe("the transport between tabs, a BroadcastChannel", () => {
   it("carries messages to whoever opened the same name, and closes with its scope", async () => {
     const name = nextRoom();
     const stranger = new BroadcastChannel(name);

@@ -64,16 +64,16 @@ const Roll = System.make("Roll", function* () {
   });
 });
 
+const populated = (): { world: EcsWorld; ball: Entity } => {
+  const world = new EcsWorld({ seed: 1 });
+  const ball = world.spawn(Ball.of({ x: 1, vx: 2 }), Glow.of({ level: 3 }));
+  world.spawn(Ball.of({ x: 5, vx: 0 }));
+  world.singleton(Score).points = 7;
+
+  return { world, ball };
+};
+
 describe("a frozen world", () => {
-  const populated = (): { world: EcsWorld; ball: Entity } => {
-    const world = new EcsWorld({ seed: 1 });
-    const ball = world.spawn(Ball.of({ x: 1, vx: 2 }), Glow.of({ level: 3 }));
-    world.spawn(Ball.of({ x: 5, vx: 0 }));
-    world.singleton(Score).points = 7;
-
-    return { world, ball };
-  };
-
   it("is read as ever, and whatever would change it throws and says why", () => {
     const { ball, world } = populated();
     const commands = new CommandBuffer(world);
@@ -210,6 +210,12 @@ describe("a frozen world", () => {
     world.rollback();
   });
 });
+
+const sys = (name: string, stage: System.Stage) =>
+  System.make(name, function* () {}).pipe(System.inStage(stage));
+
+const names = (list: readonly System.System<any, any>[]) =>
+  System.order(list).map((system) => system.name);
 
 // --- in an app --------------------------------------------------------------------
 
@@ -357,12 +363,6 @@ describe("the frame stage", () => {
   });
 
   it("takes a system's word about one of another stage when it is so already, and refuses it when it cannot be", () => {
-    const sys = (name: string, stage: System.Stage) =>
-      System.make(name, function* () {}).pipe(System.inStage(stage));
-
-    const names = (list: readonly System.System<any, any>[]) =>
-      System.order(list).map((system) => system.name);
-
     // True as it stands: nothing is moved, and nothing is wrong.
     expect(
       names([
@@ -789,6 +789,23 @@ describe("the frame stage", () => {
   });
 });
 
+const make = (systems: readonly System.System<never, any>[]) =>
+  Effect.gen(function* () {
+    const app = yield* App.make({
+      components: [Ball, Score, Phase],
+      systems,
+      checkpointEvery: 1,
+      seed: 3,
+      verifyFrames: true,
+    });
+
+    for (let n = 0; n < 4; n += 1) {
+      app.world.spawn(Ball.of({ x: n, vx: 1 }));
+    }
+
+    return app;
+  });
+
 describe("what the frame stage reads", () => {
   const Bounced = Event.define("fr/Bounced", Schema.Struct({ at: Schema.Int }));
 
@@ -1064,23 +1081,6 @@ describe("what the frame stage reads", () => {
           (yield* Bounced).emit({ at: 0 });
         });
 
-        const make = (systems: readonly System.System<never, any>[]) =>
-          Effect.gen(function* () {
-            const app = yield* App.make({
-              components: [Ball, Score, Phase],
-              systems,
-              checkpointEvery: 1,
-              seed: 3,
-              verifyFrames: true,
-            });
-
-            for (let n = 0; n < 4; n += 1) {
-              app.world.spawn(Ball.of({ x: n, vx: 1 }));
-            }
-
-            return app;
-          });
-
         const drawn = yield* make([Roll, Tally, Watch]);
         const undrawn = yield* make([Roll, Tally]);
 
@@ -1107,20 +1107,20 @@ describe("what the frame stage reads", () => {
   });
 });
 
-describe("a frame stage that is checked", () => {
-  const Sneak = (how: "raw" | "random" | "none") =>
-    System.make("Sneak", function* () {
-      if (how === "raw") {
-        (yield* Balls).eachChunk((start, end, balls) => {
-          for (let i = start; i < end; i += 1) {
-            balls.x[i]! += 1;
-          }
-        });
-      } else if (how === "random") {
-        (yield* World).random.next();
-      }
-    }).pipe(System.inStage("frame"));
+const Sneak = (how: "raw" | "random" | "none") =>
+  System.make("Sneak", function* () {
+    if (how === "raw") {
+      (yield* Balls).eachChunk((start, end, balls) => {
+        for (let i = start; i < end; i += 1) {
+          balls.x[i]! += 1;
+        }
+      });
+    } else if (how === "random") {
+      (yield* World).random.next();
+    }
+  }).pipe(System.inStage("frame"));
 
+describe("a frame stage that is checked", () => {
   const Honest = System.make("Honest", function* () {
     void (yield* Balls).count();
   }).pipe(System.inStage("frame"));

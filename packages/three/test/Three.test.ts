@@ -303,6 +303,8 @@ describe("arcadekit's Transform3d, as Three.js reads it", () => {
   });
 });
 
+const at = (x: number) => Position.of({ x, y: 0, z: 0 });
+
 describe("Three.instances", () => {
   it("draws every entity of a kind as one instance of one mesh, where the entity is", () => {
     const renderer = makeRenderer();
@@ -515,7 +517,7 @@ describe("Three.instances", () => {
     );
 
     const { world } = app;
-    const at = (x: number) => Position.of({ x, y: 0, z: 0 });
+
     const turn = Rotation.of(Transform3d.axisAngle(0, 1, 0, 1));
     const size = Scale.of({ x: 2, y: 3, z: 4 });
 
@@ -1242,6 +1244,19 @@ describe("a flat game's Transform2d", () => {
   });
 });
 
+/** The sixteen numbers of the instance that is at this height: no two of a test share one. */
+const rowAt = (mesh: InstancedMesh, y: number): number[] => {
+  for (let i = 0; i < mesh.count; i += 1) {
+    const row = [...mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)];
+
+    if (Math.abs(row[13]! - y) < 1e-4) {
+      return row;
+    }
+  }
+
+  throw new Error(`Nothing is drawn at height ${y}`);
+};
+
 describe("an entity drawn between two ticks", () => {
   const Flat = Transform2d;
 
@@ -1278,19 +1293,6 @@ describe("an entity drawn between two ticks", () => {
     );
 
     return { app, renderer, mesh: () => meshOf(renderer.scene, "th/Smoothed") };
-  };
-
-  /** The sixteen numbers of the instance that is at this height: no two of a test share one. */
-  const rowAt = (mesh: InstancedMesh, y: number): number[] => {
-    for (let i = 0; i < mesh.count; i += 1) {
-      const row = [...mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)];
-
-      if (Math.abs(row[13]! - y) < 1e-4) {
-        return row;
-      }
-    }
-
-    throw new Error(`Nothing is drawn at height ${y}`);
   };
 
   const xAt = (mesh: InstancedMesh, y: number): number => rowAt(mesh, y)[12]!;
@@ -2027,6 +2029,17 @@ describe("an entity drawn between two ticks", () => {
   });
 });
 
+/** The colour of the instance that is drawn at this height. */
+const colorAt = (mesh: InstancedMesh, y: number): number[] => {
+  for (let i = 0; i < mesh.count; i += 1) {
+    if (Math.abs(mesh.instanceMatrix.array[i * 16 + 13]! - y) < 1e-4) {
+      return [...mesh.instanceColor!.array.subarray(i * 3, i * 3 + 3)];
+    }
+  }
+
+  throw new Error(`Nothing is drawn at height ${y}`);
+};
+
 describe("a colour per instance", () => {
   const Flat = Transform2d;
 
@@ -2059,17 +2072,6 @@ describe("a colour per instance", () => {
 
   const paint = (r: number, g: number, b: number) =>
     Paint.of({ r, g, b, shine: 9 });
-
-  /** The colour of the instance that is drawn at this height. */
-  const colorAt = (mesh: InstancedMesh, y: number): number[] => {
-    for (let i = 0; i < mesh.count; i += 1) {
-      if (Math.abs(mesh.instanceMatrix.array[i * 16 + 13]! - y) < 1e-4) {
-        return [...mesh.instanceColor!.array.subarray(i * 3, i * 3 + 3)];
-      }
-    }
-
-    throw new Error(`Nothing is drawn at height ${y}`);
-  };
 
   it("is the colour its entity has, for every kind of entity, beside the matrix of the same entity", () => {
     const { app, mesh } = play();
@@ -3223,32 +3225,29 @@ describe("Three.plugin", () => {
   });
 });
 
-describe("Three.layerRenderer", () => {
-  /** As much of a Three.js renderer as the layer uses, noting what it is asked. */
-  const makeStandIn = (size: {
-    clientWidth?: number;
-    clientHeight?: number;
-  }) => {
-    const asked: string[] = [];
+/** As much of a Three.js renderer as the layer uses, noting what it is asked. */
+const makeStandIn = (size: { clientWidth?: number; clientHeight?: number }) => {
+  const asked: string[] = [];
 
-    return {
-      asked,
-      domElement: size,
-      setPixelRatio(ratio: number) {
-        asked.push(`ratio ${ratio}`);
-      },
-      setSize(width: number, height: number, updateStyle?: boolean) {
-        asked.push(`size ${width}x${height} ${updateStyle}`);
-      },
-      render(_scene: Scene, camera: Camera) {
-        asked.push(`render ${(camera as PerspectiveCamera).aspect}`);
-      },
-      dispose() {
-        asked.push("dispose");
-      },
-    };
+  return {
+    asked,
+    domElement: size,
+    setPixelRatio(ratio: number) {
+      asked.push(`ratio ${ratio}`);
+    },
+    setSize(width: number, height: number, updateStyle?: boolean) {
+      asked.push(`size ${width}x${height} ${updateStyle}`);
+    },
+    render(_scene: Scene, camera: Camera) {
+      asked.push(`render ${(camera as PerspectiveCamera).aspect}`);
+    },
+    dispose() {
+      asked.push("dispose");
+    },
   };
+};
 
+describe("Three.layerRenderer", () => {
   const use = (
     standIn: ReturnType<typeof makeStandIn>,
     options?: Three.FitOptions

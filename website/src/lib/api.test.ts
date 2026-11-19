@@ -58,17 +58,17 @@ const built = existsSync(
   path.join(REPO_ROOT, "packages/arcadekit/dist/Sound.d.ts")
 );
 
+const readSound = () =>
+  readModule(
+    REPO_ROOT,
+    "packages/arcadekit",
+    "arcadekit",
+    "Sound",
+    "packages/arcadekit/src/Sound.ts"
+  );
+
 // Read from the packages' built declarations, which CI's tests run before building.
 describe.runIf(built)("a module's page", () => {
-  const readSound = () =>
-    readModule(
-      REPO_ROOT,
-      "packages/arcadekit",
-      "arcadekit",
-      "Sound",
-      "packages/arcadekit/src/Sound.ts"
-    );
-
   it("lists what the module exports, each with its signature and its comment", () => {
     const clip = readSound().exports.find((item) => item.name === "clip");
     expect(clip?.parts[0]?.signature).toBe(

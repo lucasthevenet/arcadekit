@@ -81,6 +81,35 @@ const expectNoDangling = (world: EcsWorld): void => {
   }
 };
 
+// Two worlds that made their relations in opposite orders lose the
+// same entities in the same order, so the same ids come back.
+const build = (heldFirst: boolean): number[] => {
+  const world = new EcsWorld();
+  const target = body(world);
+  const [held, child, both] = [body(world), body(world), body(world)];
+
+  const steps = [
+    () => world.add(held, HeldBy.of({ target })),
+    () => world.add(child, ChildOf.of({ target })),
+    () => world.add(both, HeldBy.of({ target })),
+    () => world.add(both, ChildOf.of({ target })),
+  ];
+
+  for (const step of heldFirst ? steps : steps.toReversed()) {
+    step();
+  }
+
+  const lost = [world.removed(ChildOf), world.removed(HeldBy)];
+  world.despawn(target);
+  expect(world.entityCount).toBe(0);
+  // "rl/ChildOf" before "rl/HeldBy": the child and the one with both,
+  // then the one that was only held.
+  expect(lost[0]!.read()).toStrictEqual([child, both]);
+  expect(lost[1]!.read()).toStrictEqual([both, held]);
+
+  return [0, 1, 2, 3].map(() => world.spawn(Body) & 0x3f_ff_ff);
+};
+
 describe("a relation", () => {
   it("is a component that points at another entity, and knows who points at whom", () => {
     const world = new EcsWorld();
@@ -190,35 +219,6 @@ describe("a relation", () => {
   });
 
   it("goes through relations in order of name, and holders in order of id", () => {
-    // Two worlds that made their relations in opposite orders lose the
-    // same entities in the same order, so the same ids come back.
-    const build = (heldFirst: boolean): number[] => {
-      const world = new EcsWorld();
-      const target = body(world);
-      const [held, child, both] = [body(world), body(world), body(world)];
-
-      const steps = [
-        () => world.add(held, HeldBy.of({ target })),
-        () => world.add(child, ChildOf.of({ target })),
-        () => world.add(both, HeldBy.of({ target })),
-        () => world.add(both, ChildOf.of({ target })),
-      ];
-
-      for (const step of heldFirst ? steps : steps.toReversed()) {
-        step();
-      }
-
-      const lost = [world.removed(ChildOf), world.removed(HeldBy)];
-      world.despawn(target);
-      expect(world.entityCount).toBe(0);
-      // "rl/ChildOf" before "rl/HeldBy": the child and the one with both,
-      // then the one that was only held.
-      expect(lost[0]!.read()).toStrictEqual([child, both]);
-      expect(lost[1]!.read()).toStrictEqual([both, held]);
-
-      return [0, 1, 2, 3].map(() => world.spawn(Body) & 0x3f_ff_ff);
-    };
-
     expect(build(true)).toStrictEqual([1, 3, 2, 0]);
     expect(build(false)).toStrictEqual([1, 3, 2, 0]);
   });
@@ -397,6 +397,18 @@ describe("a relation", () => {
   });
 });
 
+// The tables hold the children in another order, so compare what goes.
+const survivors = (world: EcsWorld): number[] => {
+  const parent = world.view(Query.all(Body)).entities()[0]!;
+  world.despawn(parent);
+  const xs: number[] = [];
+  world.view(Query.all(Body)).each((row) => {
+    xs.push(row.x);
+  });
+
+  return xs.toSorted((a, b) => a - b);
+};
+
 describe("relations and a snapshot", () => {
   /** A family tree with debts, built in the order given. */
   const family = (order: readonly number[]): EcsWorld => {
@@ -444,18 +456,6 @@ describe("relations and a snapshot", () => {
   it("do not depend on the order the relations were made in", () => {
     const one = family([0, 1, 2, 3, 4, 5]);
     const other = family([5, 3, 1, 4, 2, 0]);
-
-    // The tables hold the children in another order, so compare what goes.
-    const survivors = (world: EcsWorld): number[] => {
-      const parent = world.view(Query.all(Body)).entities()[0]!;
-      world.despawn(parent);
-      const xs: number[] = [];
-      world.view(Query.all(Body)).each((row) => {
-        xs.push(row.x);
-      });
-
-      return xs.toSorted((a, b) => a - b);
-    };
 
     expect(survivors(other)).toStrictEqual(survivors(one));
     // And the slots they left are reused in the same order.

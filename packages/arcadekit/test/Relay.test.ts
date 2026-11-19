@@ -239,6 +239,8 @@ describe("what a member sent", () => {
   });
 });
 
+const none = (): void => {};
+
 describe("a relay that keeps its rooms itself", () => {
   it("sends what a peer sent to the others in its room", () => {
     const relay = Relay.make();
@@ -277,7 +279,7 @@ describe("a relay that keeps its rooms itself", () => {
 
   it("refuses a name that is taken, and frees it when its peer has gone", () => {
     const relay = Relay.make({ maxPeers: 2 });
-    const none = (): void => {};
+
     const first = relay.connect("/blue?peer=ada", none);
     expect(refusal(relay.connect("/blue?peer=ada", none)).reason).toBe(
       "name taken"
@@ -413,18 +415,36 @@ const until = async (holds: () => boolean, what: string): Promise<void> => {
   throw new Error(`timed out waiting until ${what}`);
 };
 
+/** A peer's transport, in a scope the test closes. */
+const open = (url: string) =>
+  Effect.map(Layer.build(Transport.layerWebSocket(url)), (context) =>
+    Context.get(context, Transport.Transport)
+  );
+
+const closedWith = (transport: Transport.Shape) =>
+  Effect.promise(async () => {
+    let thrown: unknown;
+    await until(() => {
+      try {
+        transport.receive();
+
+        return false;
+      } catch (error) {
+        thrown = error;
+
+        return true;
+      }
+    }, "it was closed");
+
+    return thrown as Transport.Closed;
+  });
+
 describe("the transport between machines, a WebSocket to a relay", () => {
   let stop: (() => Promise<void>) | undefined;
   afterEach(async () => {
     await stop?.();
     stop = undefined;
   });
-
-  /** A peer's transport, in a scope the test closes. */
-  const open = (url: string) =>
-    Effect.map(Layer.build(Transport.layerWebSocket(url)), (context) =>
-      Context.get(context, Transport.Transport)
-    );
 
   it("carries a message to the other peers of the room, and what was sent before it opened", async () => {
     const served = await serve();
@@ -667,24 +687,6 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           );
           const taken = yield* open(Relay.address(served.url, long));
           const nowhere = yield* open(`${served.url}/blue`);
-
-          const closedWith = (transport: Transport.Shape) =>
-            Effect.promise(async () => {
-              let thrown: unknown;
-              await until(() => {
-                try {
-                  transport.receive();
-
-                  return false;
-                } catch (error) {
-                  thrown = error;
-
-                  return true;
-                }
-              }, "it was closed");
-
-              return thrown as Transport.Closed;
-            });
 
           expect((yield* closedWith(taken)).reason).toBe("name taken");
           expect((yield* closedWith(nowhere)).reason).toBe("not an address");

@@ -510,23 +510,23 @@ describe("a run condition", () => {
   });
 });
 
-describe("hooks", () => {
-  const game = (ran: string[], extra: Plugin.AnySystem[] = []) =>
-    App.make({
-      components: [Phase, Weather, Ball],
-      systems: [
-        noting("Tick", ran),
-        noting("EnterMenu", ran).pipe(State.onEnter(Phase, "menu")),
-        noting("ExitMenu", ran).pipe(State.onExit(Phase, "menu")),
-        noting("EnterPlaying", ran).pipe(State.onEnter(Phase, "playing")),
-        noting("ExitPlaying", ran).pipe(State.onExit(Phase, "playing")),
-        noting("EnterPaused", ran).pipe(State.onEnter(Phase, "paused")),
-        ...extra,
-      ],
-      handlers: [go],
-      checkpointEvery: 1,
-    });
+const game = (ran: string[], extra: Plugin.AnySystem[] = []) =>
+  App.make({
+    components: [Phase, Weather, Ball],
+    systems: [
+      noting("Tick", ran),
+      noting("EnterMenu", ran).pipe(State.onEnter(Phase, "menu")),
+      noting("ExitMenu", ran).pipe(State.onExit(Phase, "menu")),
+      noting("EnterPlaying", ran).pipe(State.onEnter(Phase, "playing")),
+      noting("ExitPlaying", ran).pipe(State.onExit(Phase, "playing")),
+      noting("EnterPaused", ran).pipe(State.onEnter(Phase, "paused")),
+      ...extra,
+    ],
+    handlers: [go],
+    checkpointEvery: 1,
+  });
 
+describe("hooks", () => {
   it("run once when a state is left and entered, before the tick's systems", () => {
     run(
       Effect.gen(function* () {

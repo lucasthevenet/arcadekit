@@ -826,35 +826,35 @@ describe("the action log", () => {
   });
 });
 
-describe("a game whose simulation issues actions itself", () => {
-  /** Outside moves mixed in with the bot's, the script's and a handler's. */
-  const play = (app: Effect.Success<ReturnType<typeof busy>>["app"]) => {
-    const dice = new EcsWorld({ seed: 77 }).random;
+/** Outside moves mixed in with the bot's, the script's and a handler's. */
+const play = (app: Effect.Success<ReturnType<typeof busy>>["app"]) => {
+  const dice = new EcsWorld({ seed: 77 }).random;
 
-    for (let tick = 0; tick < 90; tick += 1) {
-      for (let n = dice.int(0, 3); n > 0; n -= 1) {
-        const by = dice.int(1, 5);
-        const move = dice.int(1, 6);
+  for (let tick = 0; tick < 90; tick += 1) {
+    for (let n = dice.int(0, 3); n > 0; n -= 1) {
+      const by = dice.int(1, 5);
+      const move = dice.int(1, 6);
 
-        if (move === 1) {
-          app.enqueue(Add, { by });
-        } else if (move === 2) {
-          app.dispatch(Chain, { by });
-        } else if (move === 3) {
-          app.enqueueByName("rp/Double", {});
-        } else if (move === 4) {
-          app.dispatch(Add, { by });
-        } else if (move === 5) {
-          app.enqueueByName("rp/Add", { by: "not a number" });
-        } else {
-          app.enqueue(Chain, { by });
-        }
+      if (move === 1) {
+        app.enqueue(Add, { by });
+      } else if (move === 2) {
+        app.dispatch(Chain, { by });
+      } else if (move === 3) {
+        app.enqueueByName("rp/Double", {});
+      } else if (move === 4) {
+        app.dispatch(Add, { by });
+      } else if (move === 5) {
+        app.enqueueByName("rp/Add", { by: "not a number" });
+      } else {
+        app.enqueue(Chain, { by });
       }
-
-      app.tick(1);
     }
-  };
 
+    app.tick(1);
+  }
+};
+
+describe("a game whose simulation issues actions itself", () => {
   it("replays from its log, checkpoint by checkpoint", () => {
     const recorded = withApp(busy(), ({ app, tally }) => {
       play(app);

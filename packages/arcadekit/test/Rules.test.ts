@@ -625,6 +625,12 @@ describe("actions", () => {
   });
 });
 
+const listed = (log: readonly Action.LogEntry[]) =>
+  moves(log).map(
+    (entry) =>
+      `${entry.tick}:${entry.name}${entry.queued === true ? " queued" : ""}${entry.refused === undefined ? "" : ` refused (${entry.refused})`}`
+  );
+
 describe("replay", () => {
   it("rebuilds the same game from the action log alone", () => {
     const play = () =>
@@ -656,12 +662,6 @@ describe("replay", () => {
       });
 
     const original = play();
-
-    const listed = (log: readonly Action.LogEntry[]) =>
-      moves(log).map(
-        (entry) =>
-          `${entry.tick}:${entry.name}${entry.queued === true ? " queued" : ""}${entry.refused === undefined ? "" : ` refused (${entry.refused})`}`
-      );
 
     expect(listed(original.log)).toStrictEqual([
       "0:Attack",

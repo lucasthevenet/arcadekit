@@ -128,6 +128,9 @@ const play = (
   };
 };
 
+const refused = (first: string, second: string) =>
+  `The channel "music" was told to play two things in one frame: ${first} and ${second}. A channel plays one track at a time. The systems made with Sound.music share the channel "music" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`;
+
 describe("Sound.music", () => {
   it("keeps a channel playing what the game, as it is, should sound like", () => {
     const sound = Sound.makeRecorder();
@@ -379,9 +382,6 @@ describe("Sound.music", () => {
     });
 
     const { app, step } = play([One, Two], sound);
-
-    const refused = (first: string, second: string) =>
-      `The channel "music" was told to play two things in one frame: ${first} and ${second}. A channel plays one track at a time. The systems made with Sound.music share the channel "music" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`;
 
     expect(() => app.frame(0)).toThrow(refused('"theme"', '"wind"'));
     // One track at two volumes is two things, and so is once and over and over.

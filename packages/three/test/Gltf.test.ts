@@ -585,6 +585,8 @@ describe("Gltf.mesh", () => {
   });
 });
 
+const at = (x: number) => Transform3d.Position.of({ x, y: 0, z: 0 });
+
 describe("a level's models", () => {
   const Ship = Component.tag("gl/Ship");
   const Rock = Component.tag("gl/Rock");
@@ -633,7 +635,6 @@ describe("a level's models", () => {
       )
     );
 
-    const at = (x: number) => Transform3d.Position.of({ x, y: 0, z: 0 });
     app.world.spawn(Ship, at(1));
     app.world.spawn(Ship, at(2));
     app.world.spawn(Rock, at(3));

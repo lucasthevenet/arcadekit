@@ -45,6 +45,42 @@ const settle = (peers: readonly Peer[], net: Network, lag: number): number => {
   return catchUp(peers, net);
 };
 
+const ticksAfter = (ahead: number | undefined): number =>
+  withPeers(["ada", "grace"], ahead === undefined ? {} : { ahead }, (peers) => {
+    const net = network(5, { min: 3, max: 6 });
+    const act = players(6);
+
+    for (let i = 0; i < 120; i += 1) {
+      act(peers[0]!);
+      round(peers, net);
+    }
+
+    return peers[0]!.app.time.tick;
+  });
+
+const counted = (app: Effect.Success<ReturnType<typeof game>>) => {
+  const count = { captures: 0 };
+
+  const session = Rollback.make(
+    {
+      ...app,
+      capture: () => {
+        count.captures += 1;
+
+        return app.capture();
+      },
+    },
+    { peer: "ada", peers: ["ada", "grace"], delta: DELTA }
+  );
+
+  return { count, session };
+};
+
+const order = (peer: Peer) =>
+  moves(peer.app.actionLog).map(
+    (entry) => (entry.payload as { value: number }).value
+  );
+
 describe("a rollback session", () => {
   afterEach(() => {
     setGlitch(undefined);
@@ -191,23 +227,6 @@ describe("a rollback session", () => {
   });
 
   it("runs a tick every round where a lockstep session under the same network waits", () => {
-    const ticksAfter = (ahead: number | undefined): number =>
-      withPeers(
-        ["ada", "grace"],
-        ahead === undefined ? {} : { ahead },
-        (peers) => {
-          const net = network(5, { min: 3, max: 6 });
-          const act = players(6);
-
-          for (let i = 0; i < 120; i += 1) {
-            act(peers[0]!);
-            round(peers, net);
-          }
-
-          return peers[0]!.app.time.tick;
-        }
-      );
-
     expect(ticksAfter(10)).toBe(120);
     expect(ticksAfter(undefined)).toBeLessThan(80);
   });
@@ -289,24 +308,6 @@ describe("a rollback session", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const counted = (app: Effect.Success<ReturnType<typeof game>>) => {
-            const count = { captures: 0 };
-
-            const session = Rollback.make(
-              {
-                ...app,
-                capture: () => {
-                  count.captures += 1;
-
-                  return app.capture();
-                },
-              },
-              { peer: "ada", peers: ["ada", "grace"], delta: DELTA }
-            );
-
-            return { count, session };
-          };
-
           // Grace says everything before ada runs: ada is sure of every tick.
           const sure = counted(yield* game());
           const start = sure.session.peers.length;
@@ -427,11 +428,6 @@ describe("a rollback session", () => {
       grace.app.enqueue(Drop, { by: "grace", value: 2 });
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       settle(peers, net, 5);
-
-      const order = (peer: Peer) =>
-        moves(peer.app.actionLog).map(
-          (entry) => (entry.payload as { value: number }).value
-        );
 
       expect(order(ada)).toStrictEqual([3, 1, 2]);
       expect(order(grace)).toStrictEqual([3, 1, 2]);

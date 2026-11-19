@@ -152,13 +152,13 @@ const makeGame = () => {
   return { Cave, Forest, Game, Go, Level, drawn, log };
 };
 
+// tooling/build/vitest-setup.ts sees to it: without it the first of these
+// passes whatever the two messages are.
+const failed = (url: string, message: string) =>
+  new Assets.AssetFailed({ url, message });
+
 describe("a failure, in these tests", () => {
   it("is not equal to one that differs only in its reason, which toEqual alone would not see", () => {
-    // tooling/build/vitest-setup.ts sees to it: without it the first of these
-    // passes whatever the two messages are.
-    const failed = (url: string, message: string) =>
-      new Assets.AssetFailed({ url, message });
-
     expect(failed("/a", "It is not there.")).not.toStrictEqual(
       failed("/a", "It is not JSON.")
     );
@@ -176,6 +176,24 @@ describe("a failure, in these tests", () => {
     expect(new Error("one")).toStrictEqual(new Error("one"));
   });
 });
+
+const tryLoad = (file: string | Uint8Array) =>
+  Effect.runPromise(
+    Effect.exit(
+      Effect.scoped(
+        Assets.load(
+          Assets.bundle("as/One", {
+            layout: Assets.json("/layout.json", Layout),
+          })
+        )
+      )
+    ).pipe(Effect.provide(Assets.layerMemory({ "/layout.json": file })))
+  );
+
+const one = (url: string) =>
+  Effect.scoped(
+    Assets.load(Assets.bundle("as/Fetched", { file: Assets.text(url) }))
+  );
 
 describe("an asset", () => {
   afterEach(() => {
@@ -275,19 +293,6 @@ describe("an asset", () => {
   });
 
   it("is checked against its schema, since it comes from outside", async () => {
-    const tryLoad = (file: string | Uint8Array) =>
-      Effect.runPromise(
-        Effect.exit(
-          Effect.scoped(
-            Assets.load(
-              Assets.bundle("as/One", {
-                layout: Assets.json("/layout.json", Layout),
-              })
-            )
-          )
-        ).pipe(Effect.provide(Assets.layerMemory({ "/layout.json": file })))
-      );
-
     const failure = async (file: string | Uint8Array) => {
       const exit = await tryLoad(file);
       expect(Exit.isFailure(exit)).toBe(true);
@@ -358,11 +363,6 @@ describe("an asset", () => {
           })
         : Promise.resolve(answer());
     });
-
-    const one = (url: string) =>
-      Effect.scoped(
-        Assets.load(Assets.bundle("as/Fetched", { file: Assets.text(url) }))
-      );
 
     await expect(Effect.runPromise(one("/notes.txt"))).resolves.toStrictEqual({
       file: "fetched",

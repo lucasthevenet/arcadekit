@@ -695,6 +695,19 @@ const everyStep: Steps = [
   "read",
 ];
 
+const next = (dirty: boolean) =>
+  withApp(game(), ({ app, entities }) => {
+    if (dirty) {
+      app.dispatch(Act, {
+        target: entities[0]!,
+        steps: ["spawn", "spawn", "spawn", "despawn"],
+        refuse: true,
+      });
+    }
+
+    return [app.world.spawn(), app.world.spawn(), app.world.spawn()];
+  });
+
 describe("an action that is refused", () => {
   for (const step of everyStep) {
     it(`leaves nothing behind after "${step}"`, () => {
@@ -913,19 +926,6 @@ describe("an action that is refused", () => {
   });
 
   it("gives the same ids afterwards as if it had never been dispatched", () => {
-    const next = (dirty: boolean) =>
-      withApp(game(), ({ app, entities }) => {
-        if (dirty) {
-          app.dispatch(Act, {
-            target: entities[0]!,
-            steps: ["spawn", "spawn", "spawn", "despawn"],
-            refuse: true,
-          });
-        }
-
-        return [app.world.spawn(), app.world.spawn(), app.world.spawn()];
-      });
-
     expect(next(true)).toStrictEqual(next(false));
   });
 });

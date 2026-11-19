@@ -419,14 +419,14 @@ describe("a snapshot that cannot be taken", () => {
   });
 });
 
+const sample = (): Uint8Array => {
+  const world = new EcsWorld({ seed: 2 });
+  play(world, C, 2, 60);
+
+  return world.snapshot();
+};
+
 describe("a snapshot that cannot be loaded", () => {
-  const sample = (): Uint8Array => {
-    const world = new EcsWorld({ seed: 2 });
-    play(world, C, 2, 60);
-
-    return world.snapshot();
-  };
-
   it("is refused by a world that is not empty", () => {
     const bytes = sample();
     const used = new EcsWorld();

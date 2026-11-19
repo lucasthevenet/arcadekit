@@ -445,32 +445,32 @@ describe("events with a schema", () => {
   });
 });
 
+const record = () =>
+  withApp(game, ({ app, target }) => {
+    app.dispatch(Damage, { target, amount: 4, seed: 1n });
+    app.tick(1);
+    app.enqueue(Damage, { target, amount: 10, seed: 2n, note: "big hit" });
+    app.tick(1);
+    app.tick(1);
+    app.dispatchByName("Damage", { target, amount: 1, seed: "3" });
+    app.dispatch(Rename, { name: "x" });
+    app.tick(1);
+
+    return {
+      text: Action.encodeLog(app.actionLog),
+      hp: app.world.get(target, Health)!.hp,
+      ticks: app.time.tick,
+    };
+  });
+
+const replayInto = (log: readonly Action.LogEntry[], ticks: number) =>
+  withApp(game, ({ app, target }) => {
+    App.replay(app, log, { delta: 1, ticks });
+
+    return app.world.get(target, Health)!.hp;
+  });
+
 describe("saving and replaying", () => {
-  const record = () =>
-    withApp(game, ({ app, target }) => {
-      app.dispatch(Damage, { target, amount: 4, seed: 1n });
-      app.tick(1);
-      app.enqueue(Damage, { target, amount: 10, seed: 2n, note: "big hit" });
-      app.tick(1);
-      app.tick(1);
-      app.dispatchByName("Damage", { target, amount: 1, seed: "3" });
-      app.dispatch(Rename, { name: "x" });
-      app.tick(1);
-
-      return {
-        text: Action.encodeLog(app.actionLog),
-        hp: app.world.get(target, Health)!.hp,
-        ticks: app.time.tick,
-      };
-    });
-
-  const replayInto = (log: readonly Action.LogEntry[], ticks: number) =>
-    withApp(game, ({ app, target }) => {
-      App.replay(app, log, { delta: 1, ticks });
-
-      return app.world.get(target, Health)!.hp;
-    });
-
   it("round-trips the log through text and reproduces the game", () => {
     const saved = record();
     expect(saved.hp).toBe(35);

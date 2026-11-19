@@ -26,41 +26,37 @@ const runsOf = (random: Rng, speed: number, count: number): number[] =>
       (random.next() < 1 / 6 ? 1.5 + random.next() : 1)
   );
 
+// Every way of dealing the runs 1 to n into two hands, counted.
+const counted = (beaten: number, winners: number, losers: number): number => {
+  const size = winners + losers;
+  let deals = 0;
+  let extreme = 0;
+
+  for (let mask = 0; mask < 1 << size; mask += 1) {
+    const first: number[] = [];
+    const second: number[] = [];
+
+    for (let run = 0; run < size; run += 1) {
+      (((mask >> run) & 1) === 1 ? first : second).push(run);
+    }
+
+    if (first.length !== winners) {
+      continue;
+    }
+
+    deals += 1;
+    const best = Math.min(...second);
+
+    if (first.filter((run) => run < best).length >= beaten) {
+      extreme += 1;
+    }
+  }
+
+  return extreme / deals;
+};
+
 describe("how often by chance", () => {
   it("is the share of the deals in which that many runs of one hand beat all of the other's", () => {
-    // Every way of dealing the runs 1 to n into two hands, counted.
-    const counted = (
-      beaten: number,
-      winners: number,
-      losers: number
-    ): number => {
-      const size = winners + losers;
-      let deals = 0;
-      let extreme = 0;
-
-      for (let mask = 0; mask < 1 << size; mask += 1) {
-        const first: number[] = [];
-        const second: number[] = [];
-
-        for (let run = 0; run < size; run += 1) {
-          (((mask >> run) & 1) === 1 ? first : second).push(run);
-        }
-
-        if (first.length !== winners) {
-          continue;
-        }
-
-        deals += 1;
-        const best = Math.min(...second);
-
-        if (first.filter((run) => run < best).length >= beaten) {
-          extreme += 1;
-        }
-      }
-
-      return extreme / deals;
-    };
-
     for (const [winners, losers] of [
       [4, 4],
       [5, 5],
@@ -296,14 +292,14 @@ describe("what a change slows on purpose", () => {
   });
 });
 
-describe("the report", () => {
-  const line = (name: string, verdict: Line["verdict"]): Line => ({
-    name,
-    label: `label of ${name}`,
-    unit: "ns/entity",
-    verdict,
-  });
+const line = (name: string, verdict: Line["verdict"]): Line => ({
+  name,
+  label: `label of ${name}`,
+  unit: "ns/entity",
+  verdict,
+});
 
+describe("the report", () => {
   const base = Array.from({ length: 15 }, (_, i) => 10 + i / 100);
 
   const lines = [

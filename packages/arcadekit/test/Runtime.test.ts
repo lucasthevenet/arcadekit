@@ -50,6 +50,10 @@ const withApp = <T, A>(
   use: (app: T) => A
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
+// `before` slots a system in ahead of one registered earlier.
+const names = (list: readonly System.System<any, any>[]) =>
+  System.order(list).map((s) => s.name);
+
 describe("systems", () => {
   it("run with yieldable queries and game time", () => {
     withApp(App.make({ systems: [Movement] }), (app) => {
@@ -102,10 +106,6 @@ describe("systems", () => {
     expect(() => System.order([sys("x").pipe(System.after("nope"))])).toThrow(
       /not in the "update" stage/u
     );
-
-    // `before` slots a system in ahead of one registered earlier.
-    const names = (list: readonly System.System<any, any>[]) =>
-      System.order(list).map((s) => s.name);
 
     expect(
       names([sys("p"), sys("q"), sys("r").pipe(System.before("p"))])
@@ -583,19 +583,19 @@ class Tripped extends Data.TaggedError("Tripped")<{
   readonly on: string;
 }> {}
 
+/** Waits `ticks` ticks, then fails. */
+const trips = (ticks: number, on = "a wire") =>
+  Effect.gen(function* () {
+    const { nextTick } = yield* Script;
+
+    for (let i = 0; i < ticks; i += 1) {
+      yield* nextTick;
+    }
+
+    return yield* Effect.fail(new Tripped({ on }));
+  });
+
 describe("a script that fails", () => {
-  /** Waits `ticks` ticks, then fails. */
-  const trips = (ticks: number, on = "a wire") =>
-    Effect.gen(function* () {
-      const { nextTick } = yield* Script;
-
-      for (let i = 0; i < ticks; i += 1) {
-        yield* nextTick;
-      }
-
-      return yield* Effect.fail(new Tripped({ on }));
-    });
-
   it("is logged with its cause, once, and the game goes on without it", () => {
     const logs = capturedLogs();
     withApp(
@@ -930,54 +930,54 @@ describe("a script that fails", () => {
   });
 });
 
-describe("determinism", () => {
-  it("replays identically from the same inputs", () => {
-    const run = () => {
-      const trace: string[] = [];
+const run = () => {
+  const trace: string[] = [];
 
-      const Bounce = System.make("Bounce", function* () {
-        const moving = yield* Moving;
-        moving.each((pos, vel) => {
-          if (pos.x > 10 || pos.x < 0) {
-            vel.x = -vel.x;
-          }
-        });
-      }).pipe(System.after(Movement));
+  const Bounce = System.make("Bounce", function* () {
+    const moving = yield* Moving;
+    moving.each((pos, vel) => {
+      if (pos.x > 10 || pos.x < 0) {
+        vel.x = -vel.x;
+      }
+    });
+  }).pipe(System.after(Movement));
 
-      withApp(App.make({ systems: [Movement, Bounce] }), (app) => {
-        for (let i = 0; i < 50; i += 1) {
-          app.world.spawn(
-            Position.of({ x: i % 10, y: 0 }),
-            Velocity.of({ x: (i % 7) - 3, y: 0 })
+  withApp(App.make({ systems: [Movement, Bounce] }), (app) => {
+    for (let i = 0; i < 50; i += 1) {
+      app.world.spawn(
+        Position.of({ x: i % 10, y: 0 }),
+        Velocity.of({ x: (i % 7) - 3, y: 0 })
+      );
+    }
+
+    app.spawnScript(
+      Effect.gen(function* () {
+        const script = yield* Script;
+        const commands = yield* Commands;
+
+        for (let i = 0; i < 20; i += 1) {
+          yield* script.sleep(0.1);
+          commands.spawn(
+            Position.of({ x: 5, y: i }),
+            Velocity.of({ x: i, y: 0 })
           );
         }
+      })
+    );
+    const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 10_000 });
+    step(5);
+    const all = app.world.view(Moving);
+    all.each((pos, vel, entity) => {
+      trace.push(`${entity}:${pos.x},${pos.y},${vel.x}`);
+    });
+    trace.push(`ticks=${app.time.tick} entities=${app.world.entityCount}`);
+  });
 
-        app.spawnScript(
-          Effect.gen(function* () {
-            const script = yield* Script;
-            const commands = yield* Commands;
+  return trace;
+};
 
-            for (let i = 0; i < 20; i += 1) {
-              yield* script.sleep(0.1);
-              commands.spawn(
-                Position.of({ x: 5, y: i }),
-                Velocity.of({ x: i, y: 0 })
-              );
-            }
-          })
-        );
-        const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 10_000 });
-        step(5);
-        const all = app.world.view(Moving);
-        all.each((pos, vel, entity) => {
-          trace.push(`${entity}:${pos.x},${pos.y},${vel.x}`);
-        });
-        trace.push(`ticks=${app.time.tick} entities=${app.world.entityCount}`);
-      });
-
-      return trace;
-    };
-
+describe("determinism", () => {
+  it("replays identically from the same inputs", () => {
     const first = run();
     expect(first).toHaveLength(71);
     expect(run()).toStrictEqual(first);

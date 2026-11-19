@@ -253,6 +253,9 @@ const record = (ticks: number, saveAt: number) =>
     };
   });
 
+const heard = (of: GameApp) =>
+  of.world.get(of.world.view(Tallies).entities()[0]!, Tally)!.heard;
+
 describe("a saved game", () => {
   it("loads into a game that goes on exactly as the saved one did", () => {
     for (const saveAt of [0, 1, 7, 30, 59]) {
@@ -388,9 +391,6 @@ describe("a saved game", () => {
           read: { Sound: 1 },
         },
       ]);
-
-      const heard = (of: GameApp) =>
-        of.world.get(of.world.view(Tallies).entities()[0]!, Tally)!.heard;
 
       expect(heard(app)).toBe(1 + 2 + 3);
       app.tick(1);
@@ -584,12 +584,12 @@ describe("a game that cannot be saved as it stands", () => {
   });
 });
 
-describe("a save that cannot be loaded", () => {
-  const load = (save: Save.Save, given: object = options) =>
-    Effect.runSync(
-      Effect.scoped(Effect.exit(App.load(save, given as typeof options)))
-    );
+const load = (save: Save.Save, given: object = options) =>
+  Effect.runSync(
+    Effect.scoped(Effect.exit(App.load(save, given as typeof options)))
+  );
 
+describe("a save that cannot be loaded", () => {
   it("names a component that no plugin lists, and says where to list it", () => {
     const { save } = record(10, 5);
 

@@ -732,6 +732,36 @@ export const run = <
     External<S, H, P> | Exclude<R2, Scope.Scope>
   >;
 
+const notInTick = (): never => {
+  throw new Error(
+    'Frame was read by a system that runs in the tick. It tells the frame stage how far a frame is between two ticks, in real time, which a simulation must not depend on: read Time instead, or move the system to the frame stage with System.inStage("frame").'
+  );
+};
+
+const notInInput = (): never => {
+  throw new Error(
+    'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").'
+  );
+};
+
+const hookKey = (trigger: System.Trigger): string =>
+  `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
+
+const notInFrame = (what: string) => (): never => {
+  throw new Error(
+    `${what} was used in the frame stage or the input stage. A script runs in the tick and is part of the simulation; those stages run between ticks and finish at once.`
+  );
+};
+
+const noFrame = (): never => {
+  throw new Error(
+    "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
+  );
+};
+
+const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
+  Exit.fail(new Save.SaveRefused({ message }));
+
 const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   options: Options<S, H, P>,
   given: Save.Save | undefined
@@ -1128,18 +1158,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     const frame: FrameState = { alpha: 0, delta: 0, count: 0 };
 
-    const notInTick = (): never => {
-      throw new Error(
-        'Frame was read by a system that runs in the tick. It tells the frame stage how far a frame is between two ticks, in real time, which a simulation must not depend on: read Time instead, or move the system to the frame stage with System.inStage("frame").'
-      );
-    };
-
-    const notInInput = (): never => {
-      throw new Error(
-        'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").'
-      );
-    };
-
     const builtIns = Context.empty().pipe(
       Context.add(World, world),
       Context.add(Time, time),
@@ -1258,9 +1276,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       frame: frameSystems.length > 0,
       input: inputSystems.length > 0,
     });
-
-    const hookKey = (trigger: System.Trigger): string =>
-      `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
 
     const hooks = new Map<string, Plugin.AnySystem[]>();
     const states = State.registryOf(world);
@@ -1530,12 +1545,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const verifyFrames = options.verifyFrames === true;
     const frameRandom = new Rng(options.seed ?? 0);
 
-    const notInFrame = (what: string) => (): never => {
-      throw new Error(
-        `${what} was used in the frame stage or the input stage. A script runs in the tick and is part of the simulation; those stages run between ticks and finish at once.`
-      );
-    };
-
     const frameContext = context.pipe(
       Context.add(Frame, frame),
       Context.add(Random, frameRandom),
@@ -1585,12 +1594,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       released: [],
       axes: new Map(),
       moved: [],
-    };
-
-    const noFrame = (): never => {
-      throw new Error(
-        "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
-      );
     };
 
     const inputContext = frameContext.pipe(
@@ -2086,9 +2089,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             "save() was called during a tick or a frame. A game is saved between ticks."
           );
         }
-
-        const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
-          Exit.fail(new Save.SaveRefused({ message }));
 
         if (commands.size > 0) {
           return refused(
