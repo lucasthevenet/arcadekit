@@ -475,9 +475,9 @@ describe("a saved game", () => {
     // A view into a larger buffer reads as itself.
     const padded = new Uint8Array(bytes.length + 9);
     padded.set(bytes, 5);
-    expect(unwrap(Save.decode(padded.subarray(5, 5 + bytes.length)))).toStrictEqual(
-      recorded.save
-    );
+    expect(
+      unwrap(Save.decode(padded.subarray(5, 5 + bytes.length)))
+    ).toStrictEqual(recorded.save);
   });
 
   it("knows the components its plugins list, from the start", () => {

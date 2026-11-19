@@ -42,7 +42,7 @@ const settle = (): Promise<void> =>
 
 /** What a sample says, in a form that compares. */
 const told = (devices: Input.Sample) => ({
-  down: Array.from(devices.down).toSorted(),
+  down: [...devices.down].toSorted(),
   pressed: devices.pressed.toSorted(),
   released: devices.released.toSorted(),
   axes: Object.fromEntries(devices.axes),
@@ -186,7 +186,7 @@ const makePage = () => {
     visibility,
     window,
     repaint(now: number): void {
-      const due = Array.from(requested.values());
+      const due = [...requested.values()];
       requested.clear();
 
       for (const callback of due) {
@@ -197,14 +197,14 @@ const makePage = () => {
     hide(): void {
       document.visibilityState = "hidden";
 
-      for (const listener of Array.from(visibility)) {
+      for (const listener of [...visibility]) {
         listener();
       }
     },
     show(): void {
       document.visibilityState = "visible";
 
-      for (const listener of Array.from(visibility)) {
+      for (const listener of [...visibility]) {
         listener();
       }
     },
@@ -252,7 +252,7 @@ describe("a page's display", () => {
     vi.stubGlobal("document", document);
 
     const repaint = (now: number): void => {
-      const due = Array.from(requested.values());
+      const due = [...requested.values()];
       requested.clear();
 
       for (const callback of due) {
@@ -431,7 +431,10 @@ describe("a page's devices", () => {
         // The middle button is the third bit of `buttons`, not the second.
         canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
         page.send("pointermove", { ...at, button: 1, buttons: 5 });
-        expect(told(source.sample()).down).toStrictEqual(["Pointer0", "Pointer1"]);
+        expect(told(source.sample()).down).toStrictEqual([
+          "Pointer0",
+          "Pointer1",
+        ]);
         // Let go of outside the window, the page hears of no release: the
         // next move, with nothing down, is how it is known.
         page.send("pointermove", { ...at, button: -1, buttons: 0 });
@@ -1395,7 +1398,7 @@ describe("a page's sound", () => {
     );
 
     // Both asked for at once, and neither is here.
-    expect(Array.from(waiting.keys()).toSorted()).toStrictEqual([
+    expect([...waiting.keys()].toSorted()).toStrictEqual([
       "/coin.wav",
       "/thud.wav",
     ]);
@@ -1671,10 +1674,12 @@ describe("a page's sound", () => {
     // starts only what was playing.
     display.hide();
     display.show();
-    expect(streamed.map((media) => [media.playing, media.plays])).toStrictEqual([
-      [false, 1],
-      [true, 2],
-    ]);
+    expect(streamed.map((media) => [media.playing, media.plays])).toStrictEqual(
+      [
+        [false, 1],
+        [true, 2],
+      ]
+    );
     // A cue is to be heard at once, and a stream is not there yet.
     output.play(wind, 1, 1);
     output.play("theme", 1, 1);
@@ -1708,18 +1713,26 @@ describe("a page's sound", () => {
     display.hide();
     // It keeps a time of its own, which the audio's sleep does not stop.
     expect(audio.suspended).toBe(1);
-    expect(streamed.map((media) => media.playing)).toStrictEqual([false, false]);
-    display.show();
-    expect(streamed.map((media) => [media.playing, media.plays])).toStrictEqual([
-      [true, 2],
-      [true, 2],
+    expect(streamed.map((media) => media.playing)).toStrictEqual([
+      false,
+      false,
     ]);
+    display.show();
+    expect(streamed.map((media) => [media.playing, media.plays])).toStrictEqual(
+      [
+        [true, 2],
+        [true, 2],
+      ]
+    );
     // One more on its way out, for a moment that has not gone when the
     // scope closes.
     output.music("score", undefined, 0, 0.01);
     const before = streamed.map((media) => media.pauses);
     await close();
-    expect(streamed.map((media) => media.playing)).toStrictEqual([false, false]);
+    expect(streamed.map((media) => media.playing)).toStrictEqual([
+      false,
+      false,
+    ]);
     expect(streamed.map((media) => media.pauses)).toStrictEqual(
       before.map((pauses) => pauses + 1)
     );
@@ -1921,7 +1934,9 @@ describe("a page's sound", () => {
         into: audio.destination,
       },
     ]);
-    expect(audio.loops.map((loop) => loop.buffer)).toStrictEqual([{ samples: 99 }]);
+    expect(audio.loops.map((loop) => loop.buffer)).toStrictEqual([
+      { samples: 99 },
+    ]);
     // Another clip of the same file is another track: the one fades to it.
     const again = Sound.clip("/wind.ogg", { samples: 98 });
     output.music("air", again, 0.25, 1);
@@ -2002,7 +2017,10 @@ describe("a page's sound", () => {
 
     expect(chirp).toBeInstanceOf(Sound.Clip);
     // Named for where it came from, which is what a log calls it.
-    expect([chirp.name, chirp.data]).toStrictEqual(["/coin.wav", { samples: 3 }]);
+    expect([chirp.name, chirp.data]).toStrictEqual([
+      "/coin.wav",
+      { samples: 3 },
+    ]);
     expect([wind.name, wind.data]).toStrictEqual(["/thud.wav", { samples: 5 }]);
     expect(decoded.toSorted()).toStrictEqual([3, 5]);
     // The page plays it as it is.

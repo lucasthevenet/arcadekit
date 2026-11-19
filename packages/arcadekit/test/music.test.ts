@@ -260,7 +260,10 @@ describe("Sound.music", () => {
     const second = play([Twice], other);
     second.app.frame(0);
     second.step(SetHush, { on: true });
-    expect(other.scored.map((one) => one.once)).toStrictEqual([undefined, true]);
+    expect(other.scored.map((one) => one.once)).toStrictEqual([
+      undefined,
+      true,
+    ]);
     // Left and come back to, it plays again from its start.
     step(Go, { to: "menu" });
     step(SetHush, { on: false });
@@ -355,7 +358,9 @@ describe("Sound.music", () => {
         { channel: "music", track: "drip", volume: 1, fade: 0.5 },
         { channel: "music", track: "theme", volume: 1, fade: 0.5 },
       ]);
-      expect(Object.fromEntries(sound.playing)).toStrictEqual({ music: "theme" });
+      expect(Object.fromEntries(sound.playing)).toStrictEqual({
+        music: "theme",
+      });
     }
   });
 
@@ -693,7 +698,10 @@ describe("Sound.Player.music", () => {
     expect(frame(["a", "hum"])).toStrictEqual([
       { channel: "a", track: "hum", volume: 1, fade: 0.5 },
     ]);
-    expect(Object.fromEntries(sound.playing)).toStrictEqual({ a: "hum", b: "buzz" });
+    expect(Object.fromEntries(sound.playing)).toStrictEqual({
+      a: "hum",
+      b: "buzz",
+    });
   });
 
   it("is heard in the same frame as the frame's cues, each as it was asked", () => {
@@ -713,7 +721,9 @@ describe("Sound.Player.music", () => {
 
     // A cue alone, while the channel has never played.
     app.frame(0);
-    expect(sound.played).toStrictEqual([{ cue: "click", volume: 0.5, rate: 1 }]);
+    expect(sound.played).toStrictEqual([
+      { cue: "click", volume: 0.5, rate: 1 },
+    ]);
     expect(sound.scored).toStrictEqual([]);
     // A cue and a track; and a cue while the track goes on.
     on = true;
@@ -854,13 +864,13 @@ describe("a clip", () => {
     app.frame(0);
     // The louder of the two asks for the one clip wins; another clip of
     // the same name is another sound.
-    expect(sound.played.map((one) => [one.clip, one.volume, one.rate])).toStrictEqual(
-      [
-        [creak, 1, 1],
-        [other, 1, 1],
-        [undefined, 1, 1],
-      ]
-    );
+    expect(
+      sound.played.map((one) => [one.clip, one.volume, one.rate])
+    ).toStrictEqual([
+      [creak, 1, 1],
+      [other, 1, 1],
+      [undefined, 1, 1],
+    ]);
     expect(sound.played[1]!.clip).toBe(other);
   });
 

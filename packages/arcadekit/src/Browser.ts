@@ -766,7 +766,7 @@ export const layerSound = (
             Effect.match(loader.bytes(url), {
               onSuccess: (bytes) => {
                 // A copy: decoding keeps the buffer it is given.
-                decode(bytes.slice().buffer).then(
+                decode(new Uint8Array(bytes).buffer).then(
                   (buffer) => {
                     if (!closed) {
                       buffers.set(cue, buffer);
@@ -952,7 +952,8 @@ export const sound = (url: string): Assets.Asset<Sound.Clip> =>
   Assets.make(url, (data, at) =>
     Effect.tryPromise({
       // A copy: decoding keeps the buffer it is given.
-      try: async () => Sound.clip(at, await decodeOffline(data.slice().buffer)),
+      try: async () =>
+        Sound.clip(at, await decodeOffline(new Uint8Array(data).buffer)),
       catch: (error) =>
         new Assets.AssetFailed({
           url: at,
@@ -979,7 +980,7 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
       Effect.tryPromise({
         try: () =>
           // A copy: a Blob wants bytes that nothing else can change.
-          createImageBitmap(new Blob([data.slice()])),
+          createImageBitmap(new Blob([new Uint8Array(data)])),
         catch: (error) =>
           new Assets.AssetFailed({
             url: at,

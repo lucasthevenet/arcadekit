@@ -1656,7 +1656,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         // Copied first: interrupting a fiber removes it from the set.
-        for (const fiber of Array.from(scripts)) {
+        for (const fiber of [...scripts]) {
           fiber.interruptUnsafe();
         }
 
@@ -2020,7 +2020,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
         if (waiters.size > 0) {
           // Copied first: a resumed script usually starts waiting again.
-          const batch = Array.from(waiters);
+          const batch = [...waiters];
           waiters.clear();
 
           for (const resume of batch) {
@@ -2216,7 +2216,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             (reader) => !reader.startsWith(FRAME_READER)
           ),
           events: events.capture(),
-          queued: queued.slice(),
+          queued: [...queued],
           logLength: actionLog.length,
           started,
           wanted,
@@ -2248,7 +2248,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         const was = moment as Captured;
 
         // The scripts first: none of them is part of what was captured.
-        for (const fiber of Array.from(scripts)) {
+        for (const fiber of [...scripts]) {
           fiber.interruptUnsafe();
         }
 

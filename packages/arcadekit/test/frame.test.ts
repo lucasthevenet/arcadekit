@@ -180,7 +180,7 @@ describe("a frozen world", () => {
   it("finds a draw from its random generator when it is thawed, and takes it back", () => {
     const { world } = populated();
     const before = world.hash();
-    const state = Array.from(world.random.state);
+    const state = [...world.random.state];
     world.freeze();
     world.random.next();
     world.random.shuffle([1, 2, 3]);
@@ -189,18 +189,18 @@ describe("a frozen world", () => {
     );
     // Thawed all the same, and as it was found.
     expect(world.frozen).toBe(false);
-    expect(Array.from(world.random.state)).toStrictEqual(state);
+    expect([...world.random.state]).toStrictEqual(state);
     expect(world.hash()).toBe(before);
     // A freeze with no draw in it thaws quietly, after draws before it.
     world.random.next();
-    const drawn = Array.from(world.random.state);
+    const drawn = [...world.random.state];
     world.freeze();
     world.thaw();
-    expect(Array.from(world.random.state)).toStrictEqual(drawn);
+    expect([...world.random.state]).toStrictEqual(drawn);
     // Thawing a world that is not frozen is nothing.
     world.random.next();
     world.thaw();
-    expect(Array.from(world.random.state)).not.toStrictEqual(drawn);
+    expect([...world.random.state]).not.toStrictEqual(drawn);
   });
 
   it("cannot be frozen in the middle of a transaction", () => {
@@ -302,7 +302,11 @@ describe("the frame stage", () => {
           "Fit 0.25",
           "Show 0.25",
         ]);
-        expect(System.frameStages).toStrictEqual(["preFrame", "frame", "postFrame"]);
+        expect(System.frameStages).toStrictEqual([
+          "preFrame",
+          "frame",
+          "postFrame",
+        ]);
         expect(System.frameStages.map(System.isFrameStage)).toStrictEqual([
           true,
           true,
@@ -564,12 +568,12 @@ describe("the frame stage", () => {
 
         const app = yield* App.make({ systems: [Sparkle, Roll], seed: 5 });
         const before = app.world.hash();
-        const state = Array.from(app.world.random.state);
+        const state = [...app.world.random.state];
         app.frame(0);
         app.frame(0);
         expect(new Set(drawn).size).toBe(4);
         expect(app.world.hash()).toBe(before);
-        expect(Array.from(app.world.random.state)).toStrictEqual(state);
+        expect([...app.world.random.state]).toStrictEqual(state);
         // Seeded, so the same game sparkles the same way.
         const again = yield* App.make({ systems: [Sparkle, Roll], seed: 5 });
         drawn.length = 0;

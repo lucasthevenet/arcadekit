@@ -660,7 +660,7 @@ export class EventBus {
 
     for (const channel of this.order) {
       // Copied first: a resumed script may start or cancel other waits.
-      for (const waiter of Array.from(channel.waiters)) {
+      for (const waiter of [...channel.waiters]) {
         if (channel.waiters.has(waiter) && waiter()) {
           channel.waiters.delete(waiter);
           resumed = true;
@@ -782,7 +782,7 @@ export class EventBus {
 
         return {
           channel,
-          buffer: channel.buffer.slice(),
+          buffer: [...channel.buffer],
           offset: channel.offset,
           tickOffset: channel.tickOffset,
           frameSeen: channel.frameSeen,
@@ -829,7 +829,7 @@ export class EventBus {
         continue;
       }
 
-      channel.buffer = was.buffer.slice();
+      channel.buffer = [...was.buffer];
       channel.offset = was.offset;
       channel.tickOffset = was.tickOffset;
       channel.frameSeen = was.frameSeen;

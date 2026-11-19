@@ -61,7 +61,11 @@ describe("Transform3d", () => {
     const flat = app.world.spawn(Position);
     app.tick(0.5);
     expect(app.world.get(rock, Position)).toStrictEqual({ x: 2, y: 2, z: 2.5 });
-    expect(app.world.get(flat, Position)).toStrictEqual({ x: 1, y: 0, z: -0.5 });
+    expect(app.world.get(flat, Position)).toStrictEqual({
+      x: 1,
+      y: 0,
+      z: -0.5,
+    });
   });
 
   it("axisAngle gives the unit quaternion of a turn about an axis", () => {
@@ -125,7 +129,11 @@ describe("Transform3d", () => {
     });
 
     expect(Transform3d.plugin.name).toBe("arcadekit/Transform3d");
-    expect(Transform3d.plugin.components).toStrictEqual([Position, Rotation, Scale]);
+    expect(Transform3d.plugin.components).toStrictEqual([
+      Position,
+      Rotation,
+      Scale,
+    ]);
     const made = run(App.make({ plugins: [Rules] }));
 
     const rock = made.world.spawn(
@@ -149,7 +157,11 @@ describe("Transform3d", () => {
 
     const loaded = run(App.load(read.value, { plugins: [Rules] }));
     expect(loaded.world.hash()).toBe(made.world.hash());
-    expect(loaded.world.get(rock, Position)).toStrictEqual({ x: 1, y: 2, z: 3 });
+    expect(loaded.world.get(rock, Position)).toStrictEqual({
+      x: 1,
+      y: 2,
+      z: 3,
+    });
     expect(loaded.world.get(rock, Rotation)).toStrictEqual(
       made.world.get(rock, Rotation)
     );

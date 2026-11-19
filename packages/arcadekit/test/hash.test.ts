@@ -804,7 +804,9 @@ describe("the hash of an app's world", () => {
 
   it("agrees tick by tick between two apps given the same seed, which is how peers know they have not drifted", () => {
     const first = hashes(App.make({ systems: [Drift], seed: 5 }));
-    expect(hashes(App.make({ systems: [Drift], seed: 5 }))).toStrictEqual(first);
+    expect(hashes(App.make({ systems: [Drift], seed: 5 }))).toStrictEqual(
+      first
+    );
     expect(new Set(first).size).toBe(100);
     const other = hashes(App.make({ systems: [Drift], seed: 6 }));
     expect(other[0]).not.toBe(first[0]);

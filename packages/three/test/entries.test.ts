@@ -97,8 +97,8 @@ const reach = (
   visit(entry);
 
   return {
-    files: Array.from(files).toSorted(),
-    packages: Array.from(packages).toSorted(),
+    files: [...files].toSorted(),
+    packages: [...packages].toSorted(),
   };
 };
 
@@ -135,7 +135,11 @@ describe("the entries of @arcadekit/three", () => {
     }
 
     expect(manifest.exports).toStrictEqual(expected);
-    expect(Object.keys(manifest.exports)).toStrictEqual([".", "./Gltf", "./Three"]);
+    expect(Object.keys(manifest.exports)).toStrictEqual([
+      ".",
+      "./Gltf",
+      "./Three",
+    ]);
     // Every source file is a module or the entry that gives them all.
     expect(Object.keys(sources).toSorted()).toStrictEqual([
       "../src/Gltf.ts",

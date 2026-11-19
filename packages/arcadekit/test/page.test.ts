@@ -82,7 +82,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   });
 
   const before = {
-    buttons: Array.from(root.querySelectorAll("button"))
+    buttons: [...root.querySelectorAll("button")]
       .filter((button) => !button.hidden)
       .map((button) => button.textContent),
     hud: root.querySelector(".hud")?.textContent,
@@ -132,12 +132,12 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
       return count;
     },
     buttons: () =>
-      Array.from(root.querySelectorAll("button"))
+      [...root.querySelectorAll("button")]
         .filter((button) => !button.hidden)
         .map((button) => button.textContent),
     hud: () => root.querySelector(".hud")?.textContent,
     click: async (label: string) => {
-      const button = Array.from(root.querySelectorAll("button")).find(
+      const button = [...root.querySelectorAll("button")].find(
         (one) => !one.hidden && one.textContent === label
       );
 
@@ -191,7 +191,9 @@ describe.each([
     expect(page.buttons()).toStrictEqual(["Pause", "Quit"]);
     expect(page.hud()).toBe("Loading");
     // The game is heard as it is seen: from its events, in the frame.
-    expect(page.sound.played).toStrictEqual([{ cue: "start", volume: 1, rate: 1 }]);
+    expect(page.sound.played).toStrictEqual([
+      { cue: "start", volume: 1, rate: 1 },
+    ]);
     // And its music has begun, which is not an event but how things are.
     expect(page.sound.scored).toStrictEqual([
       { channel: "music", track: "theme", volume: 0.4, fade: 0.6 },
@@ -313,7 +315,10 @@ describe("the page's UI", () => {
   };
 
   it("holds no reference to the world: it imports the views and actions it may use, and the type of the bridge", () => {
-    expect(imported("ui-dom.ts")).toStrictEqual(["../../src/View", "./protocol"]);
+    expect(imported("ui-dom.ts")).toStrictEqual([
+      "../../src/View",
+      "./protocol",
+    ]);
     expect(imported("ui-react.ts")).toStrictEqual([
       "../../src/View",
       "./protocol",

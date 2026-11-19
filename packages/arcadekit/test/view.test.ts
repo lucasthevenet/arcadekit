@@ -501,7 +501,7 @@ describe("what the UI sends", () => {
     app.tick(1);
     expect(app.world.view(Coins).count()).toBe(1);
     expect(app.world.singleton(Purse).gold).toBe(3);
-    const log = app.actionLog.slice();
+    const log = [...app.actionLog];
     expect(
       log
         .filter((entry) => !Action.isCheckpoint(entry))

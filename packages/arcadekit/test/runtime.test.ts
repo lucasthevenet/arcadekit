@@ -643,7 +643,10 @@ describe("a script that fails", () => {
         app.tick(1);
         expect(
           logs.entries.slice(2).map((entry) => Cause.squash(entry.cause))
-        ).toStrictEqual([new Tripped({ on: "one" }), new Tripped({ on: "two" })]);
+        ).toStrictEqual([
+          new Tripped({ on: "one" }),
+          new Tripped({ on: "two" }),
+        ]);
       }
     );
   });

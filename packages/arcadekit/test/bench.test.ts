@@ -278,7 +278,7 @@ describe("what a change slows on purpose", () => {
       "Not-a-trailer: raw",
     ].join("\n");
 
-    expect(Array.from(onPurpose(log)).toSorted()).toStrictEqual([
+    expect([...onPurpose(log)].toSorted()).toStrictEqual([
       "each",
       "eachMany",
       "fragmented",

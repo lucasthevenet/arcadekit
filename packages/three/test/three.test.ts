@@ -127,9 +127,7 @@ const drawn = (mesh: InstancedMesh): string[] => {
 
   for (let i = 0; i < mesh.count; i += 1) {
     out.push(
-      Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)).join(
-        " "
-      )
+      [...mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)].join(" ")
     );
   }
 
@@ -150,7 +148,7 @@ const matrixOf = (app: App.Any, entity: Entity): string => {
       : new Vector3(scale.x, scale.y, scale.z)
   );
 
-  return Array.from(new Float32Array(matrix.elements)).join(" ");
+  return [...new Float32Array(matrix.elements)].join(" ");
 };
 
 /**
@@ -203,8 +201,8 @@ const placeOf = (app: App.Any, entity: Entity): number[] => {
   const rotation = app.world.get(entity, Transform2d.Rotation);
   const scale = app.world.get(entity, Transform2d.Scale);
 
-  return Array.from(
-    new Float32Array(
+  return [
+    ...new Float32Array(
       new Matrix4().compose(
         new Vector3(position.x, position.y, 0),
         new Quaternion().setFromAxisAngle(
@@ -215,8 +213,8 @@ const placeOf = (app: App.Any, entity: Entity): number[] => {
           ? new Vector3(1, 1, 1)
           : new Vector3(scale.x, scale.y, 1)
       ).elements
-    )
-  );
+    ),
+  ];
 };
 
 /** In order of where they are, which no two entities of a test share. */
@@ -239,9 +237,7 @@ const expectDrawn = (
   const rows: number[][] = [];
 
   for (let i = 0; i < mesh.count; i += 1) {
-    rows.push(
-      Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
-    );
+    rows.push([...mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)]);
   }
 
   const drawnRows = byPlace(rows);
@@ -405,9 +401,9 @@ describe("Three.instances", () => {
     // And by hand. A quarter turn about z takes x to y and y to the
     // opposite of x, and leaves z: at the size it has, and no other.
     const rows = byPlace(
-      [0, 1, 2].map((i) =>
-        Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
-      )
+      [0, 1, 2].map((i) => [
+        ...mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16),
+      ])
     );
 
     const byHand = [
@@ -909,9 +905,9 @@ describe("a flat game's Transform2d", () => {
     expect(drawn(mesh)).toContain("2 0 0 0 0 5 0 0 0 0 1 0 -1 2 0 1");
 
     const quarter = byPlace(
-      Array.from({ length: 4 }, (_, i) =>
-        Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
-      )
+      Array.from({ length: 4 }, (_, i) => [
+        ...mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16),
+      ])
     ).find((row) => row[12] === 6)!;
 
     expect(quarter[0]).toBeCloseTo(0, 6);
@@ -1120,7 +1116,10 @@ describe("a flat game's Transform2d", () => {
     world.spawn(Ship, Flat.Rotation, Flat.Scale);
     world.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
     app.frame(0);
-    expect(made.map((one) => one.entity).toSorted()).toStrictEqual([plain, whole]);
+    expect(made.map((one) => one.entity).toSorted()).toStrictEqual([
+      plain,
+      whole,
+    ]);
     expect(objectOf(plain).position.toArray()).toStrictEqual([1, 2, 5]);
     expect(objectOf(plain).rotation.z).toBe(0);
     expect(objectOf(plain).scale.toArray()).toStrictEqual([1, 1, 4]);
@@ -1282,9 +1281,7 @@ describe("an entity drawn between two ticks", () => {
   /** The sixteen numbers of the instance that is at this height: no two of a test share one. */
   const rowAt = (mesh: InstancedMesh, y: number): number[] => {
     for (let i = 0; i < mesh.count; i += 1) {
-      const row = Array.from(
-        mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)
-      );
+      const row = [...mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)];
 
       if (Math.abs(row[13]! - y) < 1e-4) {
         return row;
@@ -2065,7 +2062,7 @@ describe("a colour per instance", () => {
   const colorAt = (mesh: InstancedMesh, y: number): number[] => {
     for (let i = 0; i < mesh.count; i += 1) {
       if (Math.abs(mesh.instanceMatrix.array[i * 16 + 13]! - y) < 1e-4) {
-        return Array.from(mesh.instanceColor!.array.subarray(i * 3, i * 3 + 3));
+        return [...mesh.instanceColor!.array.subarray(i * 3, i * 3 + 3)];
       }
     }
 
@@ -2185,7 +2182,11 @@ describe("a colour per instance", () => {
 
       for (const one of shown) {
         const { b, g, r } = world.get(one.entity, Paint)!;
-        expect(colorAt(mesh(), one.y), `frame ${frame}`).toStrictEqual([r, g, b]);
+        expect(colorAt(mesh(), one.y), `frame ${frame}`).toStrictEqual([
+          r,
+          g,
+          b,
+        ]);
       }
     }
 
@@ -2424,12 +2425,12 @@ describe("a colour per instance", () => {
 
     // In the renderer's own space a byte is a 255th, and no more is done.
     const linear = made("srgb-linear");
-    expect(colorAt(linear, 1)).toStrictEqual(
-      Array.from(new Float32Array([1, 0x61 / 255, 0x88 / 255]))
-    );
-    expect(colorAt(linear, 2)).toStrictEqual(
-      Array.from(new Float32Array([0, 1 / 255, 254 / 255]))
-    );
+    expect(colorAt(linear, 1)).toStrictEqual([
+      ...new Float32Array([1, 97 / 255, 136 / 255]),
+    ]);
+    expect(colorAt(linear, 2)).toStrictEqual([
+      ...new Float32Array([0, 1 / 255, 254 / 255]),
+    ]);
   });
 
   it("refuses a number that is no colour, and says which entity has it", () => {
@@ -2506,7 +2507,9 @@ describe("a colour per instance", () => {
     );
 
     app.frame(0);
-    expect(colorAt(meshOf(renderer.scene, "th/Painted"), 1)).toStrictEqual([1, 1, 1]);
+    expect(colorAt(meshOf(renderer.scene, "th/Painted"), 1)).toStrictEqual([
+      1, 1, 1,
+    ]);
 
     for (const [r, g, b] of [
       [256, 0, 0],
@@ -2766,8 +2769,13 @@ describe("Three.objects", () => {
     // One that is turned and sized, and nowhere.
     app.world.spawn(Ship, Rotation, Scale);
     app.frame(0);
-    expect(made.map((one) => one.entity).toSorted()).toStrictEqual([plain, whole]);
-    expect(renderer.scene?.children.toSorted((a, b) => a.id - b.id)).toStrictEqual(
+    expect(made.map((one) => one.entity).toSorted()).toStrictEqual([
+      plain,
+      whole,
+    ]);
+    expect(
+      renderer.scene?.children.toSorted((a, b) => a.id - b.id)
+    ).toStrictEqual(
       made.map((one) => one.object).toSorted((a, b) => a.id - b.id)
     );
     expect(objectOf(plain)!.position.toArray()).toStrictEqual([1, 2, 3]);
@@ -3042,7 +3050,9 @@ describe("Three.objects", () => {
     app.frame(0);
     expect(freed).toHaveLength(1);
     close();
-    expect(freed.map((one) => one.entity).toSorted()).toStrictEqual(ships.toSorted());
+    expect(freed.map((one) => one.entity).toSorted()).toStrictEqual(
+      ships.toSorted()
+    );
     expect(renderer.scene?.children).toStrictEqual([]);
   });
 });

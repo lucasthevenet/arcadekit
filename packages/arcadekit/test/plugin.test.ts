@@ -134,7 +134,11 @@ describe("plugins", () => {
   it("bundle systems, handlers, services and setup into one value", () => {
     withApp(App.make({ plugins: [Combat] }), (app) => {
       expect(app.plugins).toStrictEqual(["Physics", "Combat"]);
-      expect(app.systemOrder).toStrictEqual(["Movement", "Walls", "BumpDamage"]);
+      expect(app.systemOrder).toStrictEqual([
+        "Movement",
+        "Walls",
+        "BumpDamage",
+      ]);
       // Physics' setup spawned the ball.
       expect(app.world.entityCount).toBe(1);
       const ball = app.world.view(Query.all(Position)).entities()[0];

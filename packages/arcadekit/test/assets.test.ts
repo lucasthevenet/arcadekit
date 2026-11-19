@@ -481,7 +481,10 @@ describe("a level's assets", () => {
             systems: [Draw, Keep],
           });
 
-          expect(app.frameOrder).toStrictEqual(["Assets.during(as/Ordered)", "Draw"]);
+          expect(app.frameOrder).toStrictEqual([
+            "Assets.during(as/Ordered)",
+            "Draw",
+          ]);
 
           const go = (to: "menu" | "forest"): void => {
             app.spawnScript(Effect.map(Level, (level) => level.set(to)));
@@ -766,9 +769,9 @@ describe("a level's assets", () => {
           );
           expect(reached).toStrictEqual([]);
           // The game that loaded is the game that did not.
-          expect(Array.from(seen.world.random.state)).toStrictEqual(
-            Array.from(unseen.world.random.state)
-          );
+          expect([...seen.world.random.state]).toStrictEqual([
+            ...unseen.world.random.state,
+          ]);
           seen.tick(1);
           unseen.tick(1);
           expect(seen.world.hash()).toBe(unseen.world.hash());

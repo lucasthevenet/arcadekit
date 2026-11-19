@@ -361,7 +361,10 @@ describe("a field that is not a number", () => {
     const back = entities.map((entity) => copy.get(entity, Note)!.v);
     expect(back.slice(0, 11)).toStrictEqual(values.slice(0, 11));
     expect(Object.is(back[6], -0)).toBe(true);
-    expect(back[11]).toStrictEqual({ when: "1970-01-01T00:00:00.000Z", bad: null });
+    expect(back[11]).toStrictEqual({
+      when: "1970-01-01T00:00:00.000Z",
+      bad: null,
+    });
     // The hash is of the saved form, so it agrees all the same.
     expect(copy.hash()).toBe(world.hash());
   });

@@ -148,11 +148,19 @@ describe("Sound.cues", () => {
     about(app, 5);
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played.at(-1)).toStrictEqual({ cue: "thud", volume: 0.6, rate: 1 });
+    expect(sound.played.at(-1)).toStrictEqual({
+      cue: "thud",
+      volume: 0.6,
+      rate: 1,
+    });
     about(app, 20);
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played.at(-1)).toStrictEqual({ cue: "thud", volume: 1, rate: 2 });
+    expect(sound.played.at(-1)).toStrictEqual({
+      cue: "thud",
+      volume: 1,
+      rate: 2,
+    });
     // Or that there is nothing to hear.
     const before = sound.played.length;
     const lines = asked;
@@ -174,7 +182,10 @@ describe("Sound.cues", () => {
     about(app, 6);
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played.map((one) => one.cue)).toStrictEqual(["whoosh", "thud"]);
+    expect(sound.played.map((one) => one.cue)).toStrictEqual([
+      "whoosh",
+      "thud",
+    ]);
     // A frame with no tick before it, and ticks with nothing to say.
     app.frame(0.4);
     app.tick(0.001);
@@ -277,7 +288,10 @@ describe("Sound.cues", () => {
     advance(0.01);
     expect(sound.played).toStrictEqual([]);
     advance(0.1);
-    expect(sound.played.map((one) => one.cue)).toStrictEqual(["whoosh", "thud"]);
+    expect(sound.played.map((one) => one.cue)).toStrictEqual([
+      "whoosh",
+      "thud",
+    ]);
   });
 });
 
@@ -361,7 +375,9 @@ describe("Sound.Player", () => {
     };
 
     // As it is, and as it is told.
-    expect(frame(undefined)).toStrictEqual([{ cue: "click", volume: 1, rate: 1 }]);
+    expect(frame(undefined)).toStrictEqual([
+      { cue: "click", volume: 1, rate: 1 },
+    ]);
     expect(frame({ volume: 0.25 })).toStrictEqual([
       { cue: "click", volume: 0.25, rate: 1 },
     ]);
@@ -425,7 +441,11 @@ describe("Sound.Player", () => {
       "thud",
       "ping",
     ]);
-    expect(sound.played[0]).toStrictEqual({ cue: "whoosh", volume: 1, rate: 1 });
+    expect(sound.played[0]).toStrictEqual({
+      cue: "whoosh",
+      volume: 1,
+      rate: 1,
+    });
     expect(sound.played[1]!.volume).toBeGreaterThan(0.3);
   });
 

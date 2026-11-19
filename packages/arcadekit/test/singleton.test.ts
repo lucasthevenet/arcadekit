@@ -438,16 +438,16 @@ describe("a singleton in a snapshot", () => {
       "sg/Everything",
       "sg/Turn",
     ]);
-    expect(contents.components.find((each) => each.name === "sg/Turn")).toStrictEqual(
-      {
-        name: "sg/Turn",
-        storage: "singleton",
-        fields: [
-          { name: "player", kind: "u8" },
-          { name: "round", kind: "u32" },
-        ],
-      }
-    );
+    expect(
+      contents.components.find((each) => each.name === "sg/Turn")
+    ).toStrictEqual({
+      name: "sg/Turn",
+      storage: "singleton",
+      fields: [
+        { name: "player", kind: "u8" },
+        { name: "round", kind: "u32" },
+      ],
+    });
     Migrate.renameComponent(contents, "sg/Turn", "sg/Clock");
     Migrate.renameField(contents, "sg/Clock", "round", "lap");
     Migrate.addField(contents, "sg/Clock", "speed", "f32", 2);
@@ -581,9 +581,13 @@ describe("a singleton in an app", () => {
         expect(app.dispatch(EndTurn, { player: 2 })).toStrictEqual(
           Exit.fail(new NotYourTurn({ waitingFor: 1 }))
         );
-        expect(app.dispatch(EndTurn, { player: 1 })).toStrictEqual(Exit.succeed(1));
+        expect(app.dispatch(EndTurn, { player: 1 })).toStrictEqual(
+          Exit.succeed(1)
+        );
         app.tick(1);
-        expect(app.dispatch(EndTurn, { player: 2 })).toStrictEqual(Exit.succeed(2));
+        expect(app.dispatch(EndTurn, { player: 2 })).toStrictEqual(
+          Exit.succeed(2)
+        );
         app.tick(1);
         expect({ ...app.world.singleton(Turn) }).toStrictEqual({
           player: 1,

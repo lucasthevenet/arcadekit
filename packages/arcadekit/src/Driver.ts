@@ -270,7 +270,7 @@ export const makeManualDisplay = (): ManualDisplay => {
 
     hidden = value;
 
-    for (const listener of Array.from(listeners)) {
+    for (const listener of [...listeners]) {
       listener();
     }
   };

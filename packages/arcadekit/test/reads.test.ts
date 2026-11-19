@@ -424,7 +424,9 @@ describe("a query that says what it only reads, in an app", () => {
           Exit.fail(new TooFast())
         );
         expect(app.world.hash()).toBe(before);
-        expect(app.dispatch(Survey, { limit: 5 })).toStrictEqual(Exit.succeed(3));
+        expect(app.dispatch(Survey, { limit: 5 })).toStrictEqual(
+          Exit.succeed(3)
+        );
         expect(app.world.hash()).not.toBe(before);
         app.tick(1);
         expect(turned.at(-1)).toBe(0);

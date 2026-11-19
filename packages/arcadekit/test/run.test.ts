@@ -134,7 +134,11 @@ describe("App.run", () => {
 
     // Made, with its setup run, and told to its caller before any frame
     // is asked for.
-    expect(log).toStrictEqual(["sound opened", "setup", "ready, 0 frames asked for"]);
+    expect(log).toStrictEqual([
+      "sound opened",
+      "setup",
+      "ready, 0 frames asked for",
+    ]);
     expect(display.pending).toBe(1);
     expect(display.watching).toBe(1);
     turn(display, 4);
@@ -147,7 +151,10 @@ describe("App.run", () => {
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
-    expect(log.slice(4).toSorted()).toStrictEqual(["script stopped", "sound closed"]);
+    expect(log.slice(4).toSorted()).toStrictEqual([
+      "script stopped",
+      "sound closed",
+    ]);
     expect(display.frame(1000)).toBe(0);
     expect(made!.time.tick).toBe(3);
   });
@@ -232,7 +239,10 @@ describe("App.run", () => {
       Cause.squash((failed as Exit.Failure<never, NoCanvas>).cause)
     ).toStrictEqual(new NoCanvas());
     expect(log.slice(0, 2)).toStrictEqual(["sound opened", "setup"]);
-    expect(log.slice(2).toSorted()).toStrictEqual(["script stopped", "sound closed"]);
+    expect(log.slice(2).toSorted()).toStrictEqual([
+      "script stopped",
+      "sound closed",
+    ]);
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
 
@@ -259,9 +269,9 @@ describe("App.run", () => {
 
     // Typed: what the plugins and ready can fail with, and nothing else.
     const typed: Exit.Exit<never, NoSound> = exit;
-    expect(Cause.squash((typed as Exit.Failure<never, NoSound>).cause)).toStrictEqual(
-      new NoSound()
-    );
+    expect(
+      Cause.squash((typed as Exit.Failure<never, NoSound>).cause)
+    ).toStrictEqual(new NoSound());
     expect(ready).toBe(false);
     expect(display.pending).toBe(0);
   });
@@ -354,9 +364,9 @@ describe("App.run", () => {
     turn(display, 3);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toStrictEqual(
-      new Jammed()
-    );
+    expect(
+      Cause.squash((exit as Exit.Failure<never, never>).cause)
+    ).toStrictEqual(new Jammed());
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
     expect(log).toContain("sound closed");

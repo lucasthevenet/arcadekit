@@ -956,7 +956,9 @@ describe("an action that is accepted", () => {
     withApp(App.make({ handlers: [twice] }), (app) => {
       const target = app.world.spawn(Body.of({ x: 1, y: 5 }));
       app.world.spawn(Body.of({ x: 1, y: 5 }));
-      expect(app.dispatch(Twice, { target })).toStrictEqual(Exit.succeed([20, 2]));
+      expect(app.dispatch(Twice, { target })).toStrictEqual(
+        Exit.succeed([20, 2])
+      );
       expect(app.world.get(target, Body)).toStrictEqual({ x: 20, y: 1 });
     });
   });

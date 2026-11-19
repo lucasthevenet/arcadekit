@@ -241,7 +241,7 @@ export const makeManualSource = (): ManualSource => {
       }
     },
     releaseAll(only) {
-      for (const code of Array.from(down)) {
+      for (const code of [...down]) {
         if (only === undefined || only(code)) {
           release(code);
         }
@@ -250,10 +250,10 @@ export const makeManualSource = (): ManualSource => {
     sample() {
       const sample: Sample = {
         down: new Set(down),
-        pressed: Array.from(pressed),
-        released: Array.from(released),
+        pressed: [...pressed],
+        released: [...released],
         axes: new Map(axes),
-        moved: Array.from(moved),
+        moved: [...moved],
       };
 
       pressed = new Set();

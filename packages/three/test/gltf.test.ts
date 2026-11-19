@@ -163,8 +163,8 @@ const shape = (model: Gltf.Model | undefined) => {
   return {
     mesh,
     name: mesh.name,
-    indices: Array.from(mesh.geometry.index!.array),
-    positions: Array.from(mesh.geometry.attributes.position!.array),
+    indices: [...mesh.geometry.index!.array],
+    positions: [...mesh.geometry.attributes.position!.array],
   };
 };
 
@@ -414,7 +414,7 @@ describe("a model", () => {
     const bitmaps: { closed: number }[] = [];
     vi.stubGlobal("createImageBitmap", async (blob: Blob) => {
       decoded.push({
-        bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
+        bytes: [...new Uint8Array(await blob.arrayBuffer())],
         type: blob.type,
       });
 
@@ -471,7 +471,7 @@ describe("a model", () => {
     const { map } = shape(model).mesh.material as MeshStandardMaterial;
     expect(map).toBeInstanceOf(Texture);
     // The picture's own bytes, and the kind they say they are.
-    expect(decoded).toStrictEqual([{ bytes: Array.from(jpeg), type: "image/jpeg" }]);
+    expect(decoded).toStrictEqual([{ bytes: [...jpeg], type: "image/jpeg" }]);
     expect(map!.image).toBe(bitmaps[0]);
     let disposed = 0;
     map!.addEventListener("dispose", () => {
@@ -490,7 +490,9 @@ describe("a model", () => {
       "/m/skins/plain.bin",
       "/m/tri.bin",
     ]);
-    expect(decoded.toSorted((a, b) => a.type.localeCompare(b.type))).toStrictEqual([
+    expect(
+      decoded.toSorted((a, b) => a.type.localeCompare(b.type))
+    ).toStrictEqual([
       { bytes: [1, 2, 3], type: "image/png" },
       { bytes: [1, 2, 3], type: "image/webp" },
     ]);

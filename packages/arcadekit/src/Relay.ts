@@ -352,7 +352,7 @@ export const make = (options: Options = {}): Server => {
   return {
     connect(url, send) {
       // Only that room's members are needed, and the address says which.
-      const all = Array.from(rooms.keys()).flatMap((room) => members(room));
+      const all = [...rooms.keys()].flatMap((room) => members(room));
       const joined = join(url, all, options);
 
       if (Exit.isFailure(joined)) {

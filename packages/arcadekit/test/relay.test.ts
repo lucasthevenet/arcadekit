@@ -49,7 +49,9 @@ describe("a relay's address", () => {
     }
 
     // A host is often handed the path alone.
-    expect(Relay.join("/rooms/blue?peer=ada", [])).toStrictEqual(Exit.succeed(ada));
+    expect(Relay.join("/rooms/blue?peer=ada", [])).toStrictEqual(
+      Exit.succeed(ada)
+    );
   });
 });
 

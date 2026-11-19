@@ -877,9 +877,9 @@ export class ChangeLog {
     return {
       component: this.def.name,
       kind: this.kind,
-      entries: Array.from(
-        this.entries.subarray(start, this.first + (this.end - this.base))
-      ),
+      entries: [
+        ...this.entries.subarray(start, this.first + (this.end - this.base)),
+      ],
       readers,
     };
   }
@@ -964,7 +964,7 @@ export class RemovedReader {
     cursor.at = log.end;
     this.world._read(log);
 
-    return Array.from(ids) as Entity[];
+    return [...ids] as Entity[];
   }
 }
 
@@ -3928,7 +3928,7 @@ export class World {
       used.set(single.def, 0);
     }
 
-    const components = Array.from(used.keys()).toSorted(byName);
+    const components = [...used.keys()].toSorted(byName);
 
     for (let i = 0; i < components.length; i += 1) {
       used.set(components[i]!, i);

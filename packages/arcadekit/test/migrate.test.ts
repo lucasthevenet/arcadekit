@@ -201,7 +201,7 @@ describe("a snapshot read without the program's components", () => {
       ["mg/Hp", "mg/Name", "mg/Pos"],
       ["mg/Hp", "mg/Name", "mg/Old", "mg/Pos"],
     ]);
-    expect(Array.from(contents.tables[1]!.columns["mg/Hp"]!.points!)).toStrictEqual([
+    expect([...contents.tables[1]!.columns["mg/Hp"]!.points!]).toStrictEqual([
       0, 20, 80, 60,
     ]);
     expect(contents.tables[1]!.columns["mg/Name"]!.value).toStrictEqual([
@@ -211,7 +211,7 @@ describe("a snapshot read without the program's components", () => {
       "unit 6",
     ]);
     expect(contents.sparse).toHaveLength(1);
-    expect(Array.from(contents.sparse[0]!.members)).toStrictEqual([0, 3, 6]);
+    expect([...contents.sparse[0]!.members]).toStrictEqual([0, 3, 6]);
     expect(contents.freed).toStrictEqual([4]);
     expect(contents.generations).toHaveLength(9);
     expect(writeSnapshot(contents)).toStrictEqual(save.world);
@@ -333,9 +333,9 @@ describe("a save from another version of the game", () => {
 
       // The ids are the ones the old game handed out, dead ones stay dead,
       // and the next entity gets the id the old game would have given.
-      expect(world.view(Query.all(Health2)).entities().toSorted()).toStrictEqual(
-        entities.toSorted()
-      );
+      expect(
+        world.view(Query.all(Health2)).entities().toSorted()
+      ).toStrictEqual(entities.toSorted());
       const next = world.spawn(Health2.of({ armor: 0, points: 1 }));
       expect(next & 0x3f_ff_ff).toBe(4);
       expect(next >>> 22).toBe(1);
@@ -569,7 +569,10 @@ describe("a save from another version of the game", () => {
     world.load(bytes, [Apos, Zhp, Boon, Name0]);
     expect(world.get(entities[0]!, Apos)).toStrictEqual({ x: 0, y: -0 });
     expect(world.get(entities[2]!, Zhp)).toStrictEqual({ points: 20 });
-    expect(world.get(entities[3]!, Boon)).toStrictEqual({ power: 3, note: "buff 3" });
+    expect(world.get(entities[3]!, Boon)).toStrictEqual({
+      power: 3,
+      note: "buff 3",
+    });
     expect(world.view(Query.all(Boon)).count()).toBe(3);
     // Byte for byte what the loaded world saves: one form, not two.
     expect(world.snapshot()).toStrictEqual(bytes);

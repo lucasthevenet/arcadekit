@@ -475,7 +475,7 @@ export const build = <E>(
 
     const final = Math.min(known(), app.time.tick);
 
-    for (const tick of Array.from(taken.keys()).toSorted((a, b) => a - b)) {
+    for (const tick of [...taken.keys()].toSorted((a, b) => a - b)) {
       if (tick > final) {
         break;
       }
@@ -496,7 +496,7 @@ export const build = <E>(
       theirs.delete(tick);
     }
 
-    for (const tick of Array.from(theirs.keys()).toSorted((a, b) => a - b)) {
+    for (const tick of [...theirs.keys()].toSorted((a, b) => a - b)) {
       if (tick > final) {
         // This peer is not sure of that tick yet.
         break;

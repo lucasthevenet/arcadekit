@@ -173,9 +173,7 @@ describe("a snapshot of a world", () => {
       expect(copy.hash()).toBe(world.hash());
       expect(copy.entityCount).toBe(world.entityCount);
       expect(contents(copy, C)).toStrictEqual(contents(world, C));
-      expect(Array.from(copy.random.state)).toStrictEqual(
-        Array.from(world.random.state)
-      );
+      expect([...copy.random.state]).toStrictEqual([...world.random.state]);
       // The history really did despawn, reuse slots and empty tables.
       expect(world.entityCount).toBeGreaterThan(10);
     }

@@ -45,7 +45,7 @@ const withSource =
 
 /** What a system of the input stage was told, in a form that compares. */
 const told = (devices: Input.Sample) => ({
-  down: Array.from(devices.down).toSorted(),
+  down: [...devices.down].toSorted(),
   pressed: devices.pressed.toSorted(),
   released: devices.released.toSorted(),
   axes: Object.fromEntries(devices.axes),
@@ -585,7 +585,11 @@ describe("the input stage", () => {
         expect(order).toStrictEqual(["frame", "frame"]);
         // The tick that comes due hears what was pressed in every frame since.
         step(0.04);
-        expect(order.slice(2)).toStrictEqual(["input KeyA+KeyB", "tick 1", "frame"]);
+        expect(order.slice(2)).toStrictEqual([
+          "input KeyA+KeyB",
+          "tick 1",
+          "frame",
+        ]);
         // A long frame reads the devices before each of its ticks.
         order.length = 0;
         source.press("KeyC");
@@ -959,7 +963,7 @@ describe("the input stage", () => {
         source.press("ArrowRight");
         app.tick(1);
         app.tick(1);
-        log = app.actionLog.slice();
+        log = [...app.actionLog];
         hash = app.world.hash();
         expect(ship(app).x).toBe(20);
       }).pipe(withSource(source))
@@ -1079,11 +1083,11 @@ describe("the input stage", () => {
         }).pipe(System.inStage("input"));
 
         const app = yield* App.make({ systems: [Jitter], seed: 5 });
-        const state = Array.from(app.world.random.state);
+        const state = [...app.world.random.state];
         app.input();
         app.input();
         expect(new Set(drawn).size).toBe(2);
-        expect(Array.from(app.world.random.state)).toStrictEqual(state);
+        expect([...app.world.random.state]).toStrictEqual(state);
       })
     );
   });
@@ -1184,7 +1188,10 @@ describe("the picture of the devices in the world", () => {
           "First 13: down",
           "Second 13: down",
         ]);
-        expect(reports(app).at(-1)).toStrictEqual({ up: ["KeyA"], down: ["KeyA"] });
+        expect(reports(app).at(-1)).toStrictEqual({
+          up: ["KeyA"],
+          down: ["KeyA"],
+        });
         // A held key let go, pressed and let go again between two ticks:
         // it went up, it was pressed, and it is not held.
         source.release("KeyA");
@@ -1198,7 +1205,10 @@ describe("the picture of the devices in the world", () => {
           "First 15:",
           "Second 15:",
         ]);
-        expect(reports(app).at(-1)).toStrictEqual({ up: ["KeyA"], tapped: ["KeyA"] });
+        expect(reports(app).at(-1)).toStrictEqual({
+          up: ["KeyA"],
+          tapped: ["KeyA"],
+        });
         // Read twice with no tick between, what did not change is said once.
         const said = reports(app).length;
         source.move(Input.pointerX, 5);

@@ -66,10 +66,16 @@ describe("a hub, the network in memory", () => {
     ada.send(message("ada", 0, 3));
     ada.send(message("ada", 1));
     expect(hub.inFlight).toBe(4);
-    expect(grace.receive()).toStrictEqual([message("ada", 0, 3), message("ada", 1)]);
+    expect(grace.receive()).toStrictEqual([
+      message("ada", 0, 3),
+      message("ada", 1),
+    ]);
     // Taken: asked again, there is nothing.
     expect(grace.receive()).toStrictEqual([]);
-    expect(edsger.receive()).toStrictEqual([message("ada", 0, 3), message("ada", 1)]);
+    expect(edsger.receive()).toStrictEqual([
+      message("ada", 0, 3),
+      message("ada", 1),
+    ]);
     expect(ada.receive()).toStrictEqual([]);
     expect(hub.inFlight).toBe(0);
     // A port is the same port each time it is asked for.
@@ -161,7 +167,9 @@ describe("a session joined to a transport", () => {
           ada!.app.enqueue(Drop, { by: "ada", value: 4 });
           // It waits for grace, and has said its piece all the same.
           expect(ada!.connected.tick()).toBe(false);
-          expect(grace.receive().map((sent) => sent.tick)).toStrictEqual([0, 1, 2]);
+          expect(grace.receive().map((sent) => sent.tick)).toStrictEqual([
+            0, 1, 2,
+          ]);
 
           for (let tick = 0; tick <= 2; tick += 1) {
             grace.send(message("grace", tick));
@@ -172,7 +180,9 @@ describe("a session joined to a transport", () => {
           expect(ada!.connected.tick()).toBe(true);
           expect(ada!.app.time.tick).toBe(3);
           expect(moves(ada!.app.actionLog)).toHaveLength(1);
-          expect(grace.receive().map((sent) => sent.tick)).toStrictEqual([3, 4]);
+          expect(grace.receive().map((sent) => sent.tick)).toStrictEqual([
+            3, 4,
+          ]);
         })
       )
     );
@@ -290,9 +300,9 @@ describe("a session joined to a transport", () => {
             // Both, and with the same report.
             expect(stopped.get("ada")).toBeInstanceOf(Lockstep.Drifted);
             expect(stopped.get("grace")).toBeInstanceOf(Lockstep.Drifted);
-            expect((stopped.get("ada") as Lockstep.Drifted).hashes).toStrictEqual(
-              (stopped.get("grace") as Lockstep.Drifted).hashes
-            );
+            expect(
+              (stopped.get("ada") as Lockstep.Drifted).hashes
+            ).toStrictEqual((stopped.get("grace") as Lockstep.Drifted).hashes);
             setGlitch(undefined);
           })
         )

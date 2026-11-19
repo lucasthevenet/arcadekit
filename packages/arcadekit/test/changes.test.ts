@@ -279,7 +279,9 @@ describe("a change query", () => {
       Query.all(Position, Heat).pipe(Query.without(Frozen), Query.changed(Heat))
     );
 
-    expect(warmed.entities()).toStrictEqual([1, 2, 3, 4].map((n) => entities[n]));
+    expect(warmed.entities()).toStrictEqual(
+      [1, 2, 3, 4].map((n) => entities[n])
+    );
     expect(thawed.entities()).toStrictEqual([1, 3, 4].map((n) => entities[n]));
 
     world.set(entities[2]!, Heat, { degrees: 20 });
@@ -296,7 +298,9 @@ describe("a change query", () => {
       seen.push(heat.degrees);
     });
     expect(seen).toStrictEqual([10, 30, 40]);
-    expect(warmed.entities()).toStrictEqual([1, 2, 3, 4].map((n) => entities[n]));
+    expect(warmed.entities()).toStrictEqual(
+      [1, 2, 3, 4].map((n) => entities[n])
+    );
     // A raw loop over a sparse component counts the rows it is handed.
     world
       .view(Query.all(Position, Heat).pipe(Query.without(Frozen)))
@@ -1097,10 +1101,9 @@ describe("changes and a snapshot", () => {
     const saved = world.saveChanges();
     // Plain data, in order of name.
     expect(JSON.parse(JSON.stringify(saved))).toStrictEqual(saved);
-    expect(saved.map((each) => `${each.component} ${each.kind}`)).toStrictEqual([
-      "ch/Health removed",
-      "ch/Position changed",
-    ]);
+    expect(saved.map((each) => `${each.component} ${each.kind}`)).toStrictEqual(
+      ["ch/Health removed", "ch/Position changed"]
+    );
     // Nothing of it is in the hash or in the snapshot.
     expect(world.hash()).toBe(before);
 
@@ -1143,9 +1146,9 @@ describe("changes and a snapshot", () => {
         },
       },
     ]);
-    expect(world.saveChanges((reader) => reader === "nobody at all")).toStrictEqual(
-      []
-    );
+    expect(
+      world.saveChanges((reader) => reader === "nobody at all")
+    ).toStrictEqual([]);
   });
 
   it("refuses changes that do not fit the world, and a world already watched", () => {
@@ -1535,10 +1538,9 @@ describe("change queries in an app", () => {
                   "ch/Place"
                 );
                 // A migration is handed the changes too.
-                expect(contents.changes.map((each) => each.component)).toStrictEqual([
-                  "ch/Health",
-                  "ch/Position",
-                ]);
+                expect(
+                  contents.changes.map((each) => each.component)
+                ).toStrictEqual(["ch/Health", "ch/Position"]);
               },
             },
           ],

@@ -364,9 +364,9 @@ describe("a relation", () => {
     // The despawn has not happened yet: nothing has gone.
     expect(world.isAlive(child)).toBe(true);
     commands.apply();
-    expect([child, sibling, queuedParent].map((e) => world.isAlive(e))).toStrictEqual(
-      [false, false, false]
-    );
+    expect(
+      [child, sibling, queuedParent].map((e) => world.isAlive(e))
+    ).toStrictEqual([false, false, false]);
     expect(world.isAlive(parent)).toBe(true);
 
     // A target whose queued spawn is taken back is a target that is gone.
@@ -545,7 +545,7 @@ describe("relations against a simple model", () => {
       const anyone = (): Entity =>
         graveyard.length > 0 && dice.next() < 0.1
           ? dice.pick(graveyard)
-          : dice.pick(Array.from(alive));
+          : dice.pick([...alive]);
 
       for (let step = 0; step < 4000; step += 1) {
         const roll = dice.int(0, 9);
@@ -571,7 +571,7 @@ describe("relations against a simple model", () => {
           }
         } else if (roll < 6) {
           const r = dice.int(0, relations.length - 1);
-          const source = dice.pick(Array.from(alive));
+          const source = dice.pick([...alive]);
           const target = anyone();
           world.add(
             source,
@@ -582,11 +582,11 @@ describe("relations against a simple model", () => {
           relate(r, source, target);
         } else if (roll < 7) {
           const r = dice.int(0, relations.length - 1);
-          const source = dice.pick(Array.from(alive));
+          const source = dice.pick([...alive]);
           world.remove(source, relations[r]!);
           model[r]!.delete(source);
         } else {
-          const entity = dice.pick(Array.from(alive));
+          const entity = dice.pick([...alive]);
           world.despawn(entity);
           kill(entity);
           graveyard.push(entity);

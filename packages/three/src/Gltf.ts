@@ -197,7 +197,7 @@ const pack = (
 
     // A binary glTF that names no file is whole as it is.
     if (!named && binary !== undefined) {
-      return data.slice().buffer;
+      return new Uint8Array(data).buffer;
     }
 
     /**

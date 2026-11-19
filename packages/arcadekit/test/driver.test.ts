@@ -425,9 +425,9 @@ describe("the frame loop", () => {
     turn(display, 1, 3000 / 60);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toStrictEqual(
-      new Jammed({ at: 3 })
-    );
+    expect(
+      Cause.squash((exit as Exit.Failure<never, never>).cause)
+    ).toStrictEqual(new Jammed({ at: 3 }));
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
   });

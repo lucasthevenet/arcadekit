@@ -98,7 +98,10 @@ describe("a state", () => {
           if (tick === 2) {
             phase.set("playing");
             // Asked for, and not entered yet.
-            expect([phase.value, phase.next]).toStrictEqual(["menu", "playing"]);
+            expect([phase.value, phase.next]).toStrictEqual([
+              "menu",
+              "playing",
+            ]);
           }
 
           if (tick === 4) {
@@ -120,7 +123,13 @@ describe("a state", () => {
           app.tick(1);
         }
 
-        expect(seen).toStrictEqual(["menu", "menu", "playing", "playing", "playing"]);
+        expect(seen).toStrictEqual([
+          "menu",
+          "menu",
+          "playing",
+          "playing",
+          "playing",
+        ]);
         // From outside, an action asks; the next tick enters.
         expect(app.dispatch(Go, { to: "paused", refuse: false })).toStrictEqual(
           Exit.succeed("playing")

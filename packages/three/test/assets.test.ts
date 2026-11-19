@@ -554,7 +554,7 @@ describe("instances whose look is made of assets", () => {
     app.world.spawn(Tree, at(99));
     enter("forest");
     expect(xs(mesh()!)).toStrictEqual([0]);
-    expect(Array.from(mesh()!.instanceColor!.array.subarray(0, 3))).toStrictEqual([
+    expect([...mesh()!.instanceColor!.array.subarray(0, 3)]).toStrictEqual([
       0.25, 0.5, 0.75,
     ]);
     app.world.set(tree, Position, { x: 10 });
@@ -672,21 +672,31 @@ describe("objects made of assets", () => {
     expect(renderer.drew).toStrictEqual([]);
 
     enter("forest");
-    expect(log).toStrictEqual(["open 1", `make ${one} of 1`, `make ${two} of 1`]);
-    expect(renderer.drew).toStrictEqual([`deer ${one} of 1`, `deer ${two} of 1`]);
-    expect(renderer.scene!.children.map((child) => child.position.x)).toStrictEqual([
-      1, 2,
+    expect(log).toStrictEqual([
+      "open 1",
+      `make ${one} of 1`,
+      `make ${two} of 1`,
     ]);
+    expect(renderer.drew).toStrictEqual([
+      `deer ${one} of 1`,
+      `deer ${two} of 1`,
+    ]);
+    expect(
+      renderer.scene!.children.map((child) => child.position.x)
+    ).toStrictEqual([1, 2]);
     // While it lasts they are objects as any: made once, placed each
     // frame, and one whose entity goes is let go alone.
     app.world.set(one, Position, { x: 5 });
     app.world.despawn(two);
     const three = app.world.spawn(Deer, at(3));
     app.frame(0);
-    expect(log.slice(3)).toStrictEqual([`free ${two} of 1`, `make ${three} of 1`]);
-    expect(renderer.scene!.children.map((child) => child.position.x)).toStrictEqual([
-      5, 3,
+    expect(log.slice(3)).toStrictEqual([
+      `free ${two} of 1`,
+      `make ${three} of 1`,
     ]);
+    expect(
+      renderer.scene!.children.map((child) => child.position.x)
+    ).toStrictEqual([5, 3]);
     log.length = 0;
 
     // The level is left: every deer goes, once.
@@ -796,7 +806,7 @@ describe("a texture", () => {
     const asked: { readonly bytes: number[]; readonly options: unknown }[] = [];
     const bitmaps: { width: number; height: number; closed: number }[] = [];
     vi.stubGlobal("createImageBitmap", async (blob: Blob, options: unknown) => {
-      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      const bytes = [...new Uint8Array(await blob.arrayBuffer())];
       asked.push({ bytes, options });
 
       if (bytes[0] === 0) {
@@ -905,13 +915,15 @@ describe("a texture", () => {
       })
     );
 
-    expect(plain).toStrictEqual(Exit.succeed({ flipY: false, image: bitmaps[0] }));
+    expect(plain).toStrictEqual(
+      Exit.succeed({ flipY: false, image: bitmaps[0] })
+    );
     expect(seen).toStrictEqual([false]);
     // And turned over, which is what it is when nothing says: the texture
     // says of itself how it was decoded.
-    expect(await load(Three.texture("/skin.png", { flipY: true }))).toStrictEqual(
-      Exit.succeed({ flipY: true, image: bitmaps[1] })
-    );
+    expect(
+      await load(Three.texture("/skin.png", { flipY: true }))
+    ).toStrictEqual(Exit.succeed({ flipY: true, image: bitmaps[1] }));
     expect(asked.map((one) => one.options)).toStrictEqual([
       { imageOrientation: "from-image" },
       { imageOrientation: "flipY" },
@@ -948,7 +960,9 @@ describe("a texture", () => {
     // @ts-expect-error prepare is named
     Three.texture("/skin.png", () => {});
     // What was decoded for a load that failed is not kept.
-    expect(bitmaps.map((bitmap) => bitmap.closed)).toStrictEqual([1, 1, 1, 1, 1]);
+    expect(bitmaps.map((bitmap) => bitmap.closed)).toStrictEqual([
+      1, 1, 1, 1, 1,
+    ]);
   });
 
   it("fails as an asset that could not be loaded when the file is no picture", async () => {

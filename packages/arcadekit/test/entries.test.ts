@@ -118,8 +118,8 @@ const reach = (
   visit(entry);
 
   return {
-    files: Array.from(files).toSorted(),
-    packages: Array.from(packages).toSorted(),
+    files: [...files].toSorted(),
+    packages: [...packages].toSorted(),
   };
 };
 
@@ -179,9 +179,9 @@ describe("the package's entries", () => {
       entries.flatMap((name) => reach(sourceOf(name)).files)
     );
 
-    expect(Object.keys(sources).filter((file) => !reached.has(file))).toStrictEqual(
-      []
-    );
+    expect(
+      Object.keys(sources).filter((file) => !reached.has(file))
+    ).toStrictEqual([]);
   });
 
   // What a source may import or name, by the entry it is behind, is held by
@@ -314,9 +314,9 @@ describe("arcadekit/ecs", () => {
     copy.load(bytes, [Position, Tired]);
     expect(copy.hash()).toBe(world.hash());
     // A snapshot names what is stored: nobody is tired any more.
-    expect(Ecs.readSnapshot(bytes).components.map((one) => one.name)).toStrictEqual([
-      "en/Position",
-    ]);
+    expect(
+      Ecs.readSnapshot(bytes).components.map((one) => one.name)
+    ).toStrictEqual(["en/Position"]);
     expect(() => copy.load(bytes, [Position, Tired])).toThrow(
       Ecs.SnapshotError
     );

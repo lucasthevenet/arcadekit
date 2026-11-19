@@ -470,10 +470,9 @@ describe("a rollback session", () => {
           (entry) => entry.name === "ls/Take"
         );
 
-        expect(takes.map((entry) => entry.refused !== undefined)).toStrictEqual([
-          false,
-          true,
-        ]);
+        expect(takes.map((entry) => entry.refused !== undefined)).toStrictEqual(
+          [false, true]
+        );
       }
 
       expect(ada.app.actionLog).toStrictEqual(grace.app.actionLog);

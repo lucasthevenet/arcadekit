@@ -151,7 +151,7 @@ const contents = (world: EcsWorld) => ({
   warm: world.view(Warm).entities(),
   score: { ...world.singleton(Score) },
   level: { ...world.singleton(Level) },
-  random: Array.from(world.random.state),
+  random: [...world.random.state],
 });
 
 /** What a world does from here, step by step, for a seed. */
@@ -227,7 +227,9 @@ describe("a world that is restored from a snapshot", () => {
       expect(contents(world), `snapshot ${at}`).toStrictEqual(taken[at]!.held);
     }
 
-    expect(future(world, 90)).toStrictEqual(future(loaded(taken[0]!.bytes), 90));
+    expect(future(world, 90)).toStrictEqual(
+      future(loaded(taken[0]!.bytes), 90)
+    );
   });
 
   it("empties a world when the snapshot is of an empty one", () => {

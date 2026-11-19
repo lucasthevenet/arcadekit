@@ -185,10 +185,18 @@ describe("entities and components", () => {
     expect(world.get(one, Faint)).toStrictEqual({ seconds: 2.5 });
     // A field that holds anything holds nothing when it is told to.
     world.set(one, Mixed, { name: undefined });
-    expect(world.get(one, Mixed)).toStrictEqual({ x: 8, hp: 6, name: undefined });
+    expect(world.get(one, Mixed)).toStrictEqual({
+      x: 8,
+      hp: 6,
+      name: undefined,
+    });
     // And a number that is given is written, zero among them.
     world.set(one, Mixed, { x: 0, hp: 0 });
-    expect(world.get(one, Mixed)).toStrictEqual({ x: 0, hp: 0, name: undefined });
+    expect(world.get(one, Mixed)).toStrictEqual({
+      x: 0,
+      hp: 0,
+      name: undefined,
+    });
   });
 
   it("stores arbitrary values and entity references", () => {
@@ -373,9 +381,9 @@ describe("queries", () => {
         .entities()
         .sort()
     ).toStrictEqual([enemy, stunned].sort());
-    expect(world.view(query([Position], [], [Enemy])).entities()).toStrictEqual([
-      plain,
-    ]);
+    expect(world.view(query([Position], [], [Enemy])).entities()).toStrictEqual(
+      [plain]
+    );
     expect(
       world.view(query([Position], [Enemy], [Stunned])).entities()
     ).toStrictEqual([enemy]);
@@ -947,7 +955,9 @@ describe("what each hands its callback", () => {
 
       for (let n = 0; n < count; n += 1) {
         expect(world.get(entities[n]!, Health)).toStrictEqual({ hp: n });
-        expect(world.get(entities[n]!, Burning)).toStrictEqual({ seconds: n / 2 });
+        expect(world.get(entities[n]!, Burning)).toStrictEqual({
+          seconds: n / 2,
+        });
       }
     }
 
@@ -1216,7 +1226,9 @@ describe("randomized comparison against a simple model", () => {
 
         for (const def of defs) {
           expect(world.has(entity, def)).toBe(values.has(def.id));
-          expect(world.get(entity, def as any)).toStrictEqual(values.get(def.id));
+          expect(world.get(entity, def as any)).toStrictEqual(
+            values.get(def.id)
+          );
         }
       }
 

@@ -730,7 +730,9 @@ describe("peers that have come apart", () => {
               expect(
                 (stopped.get("ada") as Lockstep.Drifted).hashes,
                 where
-              ).toStrictEqual((stopped.get("grace") as Lockstep.Drifted).hashes);
+              ).toStrictEqual(
+                (stopped.get("grace") as Lockstep.Drifted).hashes
+              );
             }
           );
         }
@@ -890,7 +892,11 @@ describe("peers that have come apart", () => {
 
       // Every report has every peer's hash: two agree and one does not.
       for (const report of reports) {
-        expect(Object.keys(report.hashes)).toStrictEqual(["ada", "edsger", "grace"]);
+        expect(Object.keys(report.hashes)).toStrictEqual([
+          "ada",
+          "edsger",
+          "grace",
+        ]);
         expect(report.hashes.ada).toBe(report.hashes.edsger);
         expect(report.hashes.grace).not.toBe(report.hashes.ada);
         expect(report.hashes).toStrictEqual(reports[0]!.hashes);

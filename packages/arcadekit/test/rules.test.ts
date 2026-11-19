@@ -175,7 +175,10 @@ describe("events", () => {
       app.tick(1);
       expect(log).toStrictEqual([]);
       app.tick(1);
-      expect(log).toStrictEqual(["first got 7 at tick 2", "second got 99 at tick 2"]);
+      expect(log).toStrictEqual([
+        "first got 7 at tick 2",
+        "second got 99 at tick 2",
+      ]);
       expect(second.pollUnsafe()).toStrictEqual(Exit.succeed("done"));
     });
   });
@@ -603,7 +606,8 @@ describe("actions", () => {
       App.make({ systems: [], handlers: [roll] }).pipe(
         Effect.provide(Layer.succeed(Rng, { next: () => 4 }))
       ),
-      (app) => expect(app.dispatch(Unhandled, {})).toStrictEqual(Exit.succeed(4))
+      (app) =>
+        expect(app.dispatch(Unhandled, {})).toStrictEqual(Exit.succeed(4))
     );
   });
 

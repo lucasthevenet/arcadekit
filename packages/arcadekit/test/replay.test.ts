@@ -305,11 +305,9 @@ describe("checkpoints", () => {
       expect(app.actionLog).toStrictEqual([{ tick: 2, hash }]);
       app.dispatch(Drop, { value: 2 });
       app.checkpoint();
-      expect(app.actionLog.map((entry) => Action.isCheckpoint(entry))).toStrictEqual([
-        true,
-        false,
-        true,
-      ]);
+      expect(
+        app.actionLog.map((entry) => Action.isCheckpoint(entry))
+      ).toStrictEqual([true, false, true]);
       expect(checkpoints(app.actionLog)[1]!.hash).not.toBe(hash);
     });
 
@@ -318,9 +316,9 @@ describe("checkpoints", () => {
       app.world.spawn(Coin.of({ value: 1, x: 0 }));
       app.checkpoint();
       app.tick(1);
-      expect(checkpoints(app.actionLog).map((entry) => entry.tick)).toStrictEqual([
-        0,
-      ]);
+      expect(
+        checkpoints(app.actionLog).map((entry) => entry.tick)
+      ).toStrictEqual([0]);
     });
 
     let inside: unknown;
@@ -346,7 +344,10 @@ describe("checkpoints", () => {
     const text = Action.encodeLog(recorded.log);
     const loaded = Action.decodeLog(text);
     expect(Exit.isSuccess(loaded) && loaded.value).toStrictEqual(recorded.log);
-    expect(JSON.parse(text)[0]).toStrictEqual({ tick: 0, hash: recorded.starting });
+    expect(JSON.parse(text)[0]).toStrictEqual({
+      tick: 0,
+      hash: recorded.starting,
+    });
 
     for (const entry of [
       { tick: 0, hash: -1 },
@@ -384,9 +385,9 @@ describe("a replay that checks itself", () => {
 
     // Recording as it replays, it writes the same log again.
     const recorded = record({ ticks: 40, checkpointEvery: 1 });
-    expect(replayInto({ checkpointEvery: 1 }, recorded.log, 40).log).toStrictEqual(
-      recorded.log
-    );
+    expect(
+      replayInto({ checkpointEvery: 1 }, recorded.log, 40).log
+    ).toStrictEqual(recorded.log);
   });
 
   it("stops at the tick it diverged on, not at the next refused action", () => {
@@ -416,7 +417,10 @@ describe("a replay that checks itself", () => {
     expect(reason.expected).toBe(recorded.hashes[39]);
     expect(reason.actual).toBe(replayed.hash);
     expect(reason.actual).not.toBe(reason.expected);
-    expect(stopped.entry).toStrictEqual({ tick: 40, hash: recorded.hashes[39] });
+    expect(stopped.entry).toStrictEqual({
+      tick: 40,
+      hash: recorded.hashes[39],
+    });
     expect(recorded.log[stopped.index]).toBe(stopped.entry);
     expect(stopped.message).toBe(
       `The replay diverged from its log (entry ${stopped.index}): the world's hash at tick 40 is ${reason.actual}, and ${reason.expected} was recorded. The last checkpoint that matched was at tick 39.`

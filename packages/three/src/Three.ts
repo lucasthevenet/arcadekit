@@ -919,7 +919,7 @@ export const texture = (
         try: async () => {
           const bitmap = await createImageBitmap(
             // A copy: a Blob wants bytes that nothing else can change.
-            new Blob([data.slice()]),
+            new Blob([new Uint8Array(data)]),
             { imageOrientation: flipY ? "flipY" : "from-image" }
           );
 

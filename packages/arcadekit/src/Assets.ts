@@ -555,7 +555,7 @@ const storeLayer = Layer.effect(
 
     // Whatever is still loaded when the app's scope closes goes with it.
     yield* Effect.addFinalizer(() =>
-      Effect.forEach(Array.from(held.values()), (entry) => letGo(entry), {
+      Effect.forEach([...held.values()], (entry) => letGo(entry), {
         discard: true,
       })
     );

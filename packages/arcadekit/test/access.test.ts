@@ -713,7 +713,7 @@ describe("a system that says what it reads and writes", () => {
       ["ac/Velocity", "reads"],
       ["ac/Score", "writes"],
     ]);
-    expect(Array.from(said.events)).toStrictEqual([["ac/Hit", "reads"]]);
+    expect([...said.events]).toStrictEqual([["ac/Hit", "reads"]]);
     expect([said.random, said.actions, said.scripts]).toStrictEqual([
       true,
       true,
@@ -980,7 +980,9 @@ describe("the order of systems", () => {
     // An order said of two others settles nothing between these two.
     expect(
       System.conflicts([Move, Between.pipe(System.after(Move)), Aim]).conflicts
-    ).toStrictEqual([expect.objectContaining({ first: "Move", second: "Aim" })]);
+    ).toStrictEqual([
+      expect.objectContaining({ first: "Move", second: "Aim" }),
+    ]);
   });
 
   it("is none between two that only read, and says who watches for changes", () => {
@@ -1094,7 +1096,9 @@ describe("the order of systems", () => {
         Move.pipe(System.inStage("preUpdate")),
         Aim.pipe(System.inStage("preUpdate")),
       ]).conflicts
-    ).toStrictEqual([expect.objectContaining({ first: "Move", second: "Aim" })]);
+    ).toStrictEqual([
+      expect.objectContaining({ first: "Move", second: "Aim" }),
+    ]);
     const Enter = Move.pipe(State.onEnter(Phase, "playing"));
     expect(System.conflicts([Enter, Aim]).conflicts).toStrictEqual([]);
     // Hooks of one moment are a list of their own.

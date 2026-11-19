@@ -363,7 +363,9 @@ describe("events with a schema", () => {
     );
     // JSON all the way: text and back.
     const text = JSON.stringify(Exit.isSuccess(encoded) && encoded.value);
-    expect(Event.decode(Hit, JSON.parse(text))).toStrictEqual(Exit.succeed(payload));
+    expect(Event.decode(Hit, JSON.parse(text))).toStrictEqual(
+      Exit.succeed(payload)
+    );
 
     for (const bad of [
       { ...payload, amount: 500 },

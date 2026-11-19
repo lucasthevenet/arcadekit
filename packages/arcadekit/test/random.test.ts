@@ -81,7 +81,7 @@ describe("the random number generator", () => {
   it("matches the published algorithm, bit for bit, from any state", () => {
     for (const seed of [0, 1, 7, 2 ** 31, 2 ** 32, 2 ** 40 + 12_345]) {
       const rng = new Rng(seed);
-      const expected = reference(Array.from(rng.state));
+      const expected = reference([...rng.state]);
 
       for (let i = 0; i < 2000; i += 1) {
         expect(rng.bits()).toBe(expected());
@@ -349,7 +349,7 @@ const snapshot = (app: App.Any) => {
     sparks,
     dice,
     log: app.actionLog,
-    generator: Array.from(app.world.random.state),
+    generator: [...app.world.random.state],
   };
 };
 
@@ -364,9 +364,7 @@ describe("the Random service", () => {
     withApp(App.make({ systems: [Probe], seed: 5 }), (app) => {
       app.tick(1);
       expect(seen).toBe(app.world.random);
-      expect(Array.from(app.world.random.state)).toStrictEqual(
-        Array.from(new Rng(5).state)
-      );
+      expect([...app.world.random.state]).toStrictEqual([...new Rng(5).state]);
     });
     expect(Random.key).toBe("arcadekit/Random");
   });
@@ -454,7 +452,7 @@ describe("the Random service", () => {
     const run = (seed: number) =>
       withApp(App.make({ seed }), (app) => {
         const out: number[] = [];
-        const before = Array.from(app.world.random.state);
+        const before = [...app.world.random.state];
         app.spawnScript(
           Effect.gen(function* () {
             out.push(yield* EffectRandom.next);
@@ -466,7 +464,7 @@ describe("the Random service", () => {
           })
         );
         // It drew from the world's generator, not from one of its own.
-        expect(Array.from(app.world.random.state)).not.toStrictEqual(before);
+        expect([...app.world.random.state]).not.toStrictEqual(before);
 
         return out;
       });

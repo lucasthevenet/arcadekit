@@ -616,7 +616,7 @@ const byEvent = (lines: readonly Line[]): Heard => {
     }
   }
 
-  return Array.from(found);
+  return [...found];
 };
 
 /**

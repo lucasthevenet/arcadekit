@@ -58,7 +58,11 @@ describe("Transform2d", () => {
 
     world.set(both, Position, { x: 3, y: 4 });
     expect(world.get(both, Position)).toStrictEqual({ x: 3, y: 4 });
-    expect(world.get(both, Transform3d.Position)).toStrictEqual({ x: 7, y: 8, z: 9 });
+    expect(world.get(both, Transform3d.Position)).toStrictEqual({
+      x: 7,
+      y: 8,
+      z: 9,
+    });
     expect(world.view(Query.all(Position)).count()).toBe(1);
     world.remove(both, Position);
     expect(world.has(both, Transform3d.Position)).toBe(true);
@@ -103,7 +107,11 @@ describe("Transform2d", () => {
     });
 
     expect(Transform2d.plugin.name).toBe("arcadekit/Transform2d");
-    expect(Transform2d.plugin.components).toStrictEqual([Position, Rotation, Scale]);
+    expect(Transform2d.plugin.components).toStrictEqual([
+      Position,
+      Rotation,
+      Scale,
+    ]);
     const made = run(App.make({ plugins: [Rules] }));
 
     const card = made.world.spawn(
