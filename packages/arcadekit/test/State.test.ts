@@ -1,6 +1,6 @@
 import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -797,6 +797,35 @@ describe("a state in a save", () => {
         const again = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
         App.replay(again, app.actionLog, { delta: 1, ticks: 4 });
         expect(again.world.hash()).toBe(app.world.hash());
+      })
+    );
+  });
+
+  it("refuses to give a value it no longer has, which a save from before could hold", () => {
+    const Before = State.define("st/Door", ["open", "shut", "ajar"]);
+    const After = State.define("st/Door", ["open", "shut"]);
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ components: [Before] });
+        app.spawnScript(
+          Effect.gen(function* () {
+            (yield* Before).set("ajar");
+          })
+        );
+        app.tick(1);
+        const save = app.save();
+        assert(Exit.isSuccess(save));
+        const loaded = yield* App.load(save.value, { components: [After] });
+        const read = loaded.spawnScript(
+          Effect.gen(function* () {
+            return (yield* After).value;
+          })
+        );
+        const exit = read.pollUnsafe();
+        assert(exit !== undefined && Exit.isFailure(exit));
+        expect(String(Cause.squash(exit.cause))).toContain(
+          'The state "st/Door" holds "ajar", which is not one of its values: open, shut.'
+        );
       })
     );
   });
