@@ -1,6 +1,6 @@
 /**
  * A small game that goes through every way a loop reads and writes
- * component data, for `policy.test.ts`: it is played once as it is and
+ * component data, for `Policy.test.ts`: it is played once as it is and
  * once in a process that may not make code from text, which is what a
  * page under a strict Content Security Policy is, and has to give the
  * same answer in both.

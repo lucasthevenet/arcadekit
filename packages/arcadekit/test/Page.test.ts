@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Game, Screen } from "../examples/page/game";
 import { Hud, Menu, Start } from "../examples/page/protocol";
-import { mount as mountDom } from "../examples/page/ui-dom";
-import { mount as mountReact } from "../examples/page/ui-react";
+import { mount as mountDom } from "../examples/page/uiDom";
+import { mount as mountReact } from "../examples/page/uiReact";
 import { App, Assets, Input, Sound, View } from "../src/index";
 
 // The example page's game, with its menu and its heads-up display built
@@ -14,7 +14,7 @@ import { App, Assets, Input, Sound, View } from "../src/index";
 // UI library. Here both are mounted in a document and played.
 
 // `import.meta.glob`, which gives a test the text of files, is declared in
-// entries.test.ts.
+// Entries.test.ts.
 declare global {
   // React asks for this before it lets a test wrap its work in `act`.
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -293,8 +293,8 @@ describe("the page's UI", () => {
   };
 
   it("holds no reference to the world: it imports the views and actions it may use, and the type of the bridge", () => {
-    expect(imported("ui-dom.ts")).toEqual(["../../src/View", "./protocol"]);
-    expect(imported("ui-react.ts")).toEqual([
+    expect(imported("uiDom.ts")).toEqual(["../../src/View", "./protocol"]);
+    expect(imported("uiReact.ts")).toEqual([
       "../../src/View",
       "./protocol",
       "react",
@@ -302,7 +302,7 @@ describe("the page's UI", () => {
       "react-dom/client",
     ]);
     // Of the bridge they import the type alone: they are handed the bridge.
-    for (const file of ["ui-dom.ts", "ui-react.ts"]) {
+    for (const file of ["uiDom.ts", "uiReact.ts"]) {
       expect(sources[`../examples/page/${file}`]).toContain(
         'import type * as View from "../../src/View";'
       );

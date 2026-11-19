@@ -1,6 +1,6 @@
 /**
  * The page's menu and heads-up display again, built with a UI library:
- * React. It is the same UI as ui-dom.ts, on the same bridge.
+ * React. It is the same UI as uiDom.ts, on the same bridge.
  *
  * What binds the bridge to React is `useView`, three lines: a view is an
  * external store, whose value is the same object until it changes.

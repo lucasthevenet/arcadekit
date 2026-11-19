@@ -191,4 +191,4 @@ Play a game in a test, replay it into a fresh app with `App.replay`, and assert 
 
 ## Read more
 
-- arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`test/page.test.ts`](../../../../../packages/arcadekit/test/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.
+- arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`test/Page.test.ts`](../../../../../packages/arcadekit/test/Page.test.ts) mounts the example page's two UIs in a document and plays the game through them.

@@ -4,7 +4,7 @@ What a game reaches outside itself, a test gives it by hand: files in memory, a 
 
 What only the package's own tests need beside it:
 
-- **What only a page has is tested against stand-ins**, in `test/browser.test.ts`: event targets that count their listeners, and `vi.stubGlobal` for `requestAnimationFrame`, the document and the window's `addEventListener`. Unstub them after each test.
+- **What only a page has is tested against stand-ins**, in `test/Browser.test.ts`: event targets that count their listeners, and `vi.stubGlobal` for `requestAnimationFrame`, the document and the window's `addEventListener`. Unstub them after each test.
 - **What is drawn is compared with what Three.js makes.** Three.js makes its scenes and meshes under Node as in a page, so a test looks at what was put in the scene, and compares a matrix with the one Three.js itself makes of the same place.
 - **A claim about allocation is measured**: the heap before and after a frame, many times, and the middle one.
 - **The page's own sound output is tested against a stand-in for its audio**, given as `audio` and `decode`, as its devices are.
