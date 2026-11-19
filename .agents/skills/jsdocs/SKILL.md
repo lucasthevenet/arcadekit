@@ -20,6 +20,8 @@ A module's page of the reference is made from its doc comments and from nothing 
 
 Public declarations use a multiline block with one self-contained practical description paragraph. Start functions and methods with a present-tense action; match nearby noun-family phrasing for values. Name things as the site's concepts and guides name them. Optional non-empty sections appear once in this order: `**When to use**`, `**Details**`, `**Gotchas**`. Separate descriptions, sections, examples, and tags with one blank line. `**When to use**` states a positive use case distinct from the description; reserve `**Gotchas**` for concrete caveats and failure modes.
 
+The wording of a doc comment is for whoever writes and reviews it. Prose is not checked by automated tests: do not add a test or a lint rule for wording.
+
 The task is complete when every changed public declaration satisfies each applicable reference, has a `@category` of the list, reads right on its page, and the checks above pass or are reported as not run.
 
 What the reference reads of a doc comment is defined in `website/src/lib/api.ts`.
