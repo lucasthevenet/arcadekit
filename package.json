@@ -25,6 +25,7 @@
     "happy-dom": "^21.0.4",
     "oxfmt": "^0.75.0",
     "oxlint": "^1.90.0",
+    "oxlint-plugin-effect": "0.32.4",
     "publint": "^0.3.25",
     "tsdown": "^0.23.5",
     "typescript": "^7.0.2",
