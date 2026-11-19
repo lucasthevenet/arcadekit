@@ -1230,10 +1230,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     for (const plugin of plugins) {
       if (plugin.layer !== undefined) {
-        layer = Layer.provideMerge(
-          plugin.layer as Layer.Layer<never, unknown, unknown>,
-          layer
-        );
+        layer = Layer.provideMerge(plugin.layer, layer);
       }
     }
 
@@ -1246,7 +1243,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // (systems, handlers, scripts, and anything they fork) use the tick dispatcher.
     const context = Context.merge(provided, built).pipe(
       Context.add(Scheduler.Scheduler, scheduler)
-    ) as Context.Context<any>;
+    );
 
     const runFork = Effect.runForkWith(context);
     reportContext = context;
@@ -1476,10 +1473,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Action.Actions, {
-        enqueue: ((action, payload) => {
+        enqueue: (action, payload) => {
           refuseAction(action.name);
           enqueue(action, payload);
-        }) as typeof enqueue,
+        },
         handles,
       }),
       Context.add(Script, {
@@ -1524,7 +1521,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           return noFrame();
         },
       })
-    ) as Context.Context<any>;
+    );
 
     const runInputFork = Effect.runForkWith(inputContext);
     let frameHash = 0;

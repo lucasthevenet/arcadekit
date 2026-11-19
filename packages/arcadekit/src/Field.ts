@@ -143,6 +143,6 @@ export const schema = <S extends Schema.Codec<unknown, unknown>>(
 
   return ref<S["Type"]>({
     encode: (value) => encode(value),
-    decode: (data) => decode(data) as S["Type"],
+    decode: (data) => decode(data),
   });
 };

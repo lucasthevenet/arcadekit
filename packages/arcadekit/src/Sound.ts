@@ -152,7 +152,7 @@ export const Output: Context.Reference<Output> = Context.Reference<Output>(
  * @category Layers
  */
 export const layer = (output: Output): Layer.Layer<never> =>
-  Layer.succeed(Output, output) as Layer.Layer<never>;
+  Layer.succeed(Output, output);
 
 /**
  * A played cue, as a recorder records it.
@@ -848,5 +848,5 @@ export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
         player.music(channel, undefined, options);
       })
     )
-  ) as System.System<Effect.Error<Eff>, Effect.Services<Eff> | Player>;
+  );
 };

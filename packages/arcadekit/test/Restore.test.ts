@@ -413,7 +413,7 @@ describe("a world that is restored from a snapshot", () => {
     expect(world.hash()).toBe(before);
     world.restore(bytes);
     expect(world.isAlive(ball)).toBe(true);
-    expect(world.isAlive(queued as Entity)).toBe(false);
+    expect(world.isAlive(queued)).toBe(false);
   });
 
   it("refuses bytes that are not a snapshot, as load does", () => {

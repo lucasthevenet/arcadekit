@@ -173,7 +173,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
       const exit = decode(parsed);
 
       return Exit.isSuccess(exit)
-        ? Effect.succeed(exit.value as S["Type"])
+        ? Effect.succeed(exit.value)
         : Effect.fail(
             new AssetFailed({
               url: at,
@@ -253,7 +253,7 @@ export const layerMemory = (
           typeof file === "string" ? new TextEncoder().encode(file) : file
         );
       }),
-  }) as Layer.Layer<never>;
+  });
 
 // --- a bundle: what is loaded, and let go, together -----------------------------------
 
@@ -457,7 +457,7 @@ const storeLayer = Layer.effect(
       Action.Actions,
       Input.Devices,
       EffectRandom.Random
-    )(yield* Effect.context<never>()) as Context.Context<never>;
+    )(yield* Effect.context<never>());
 
     const runFork = Effect.runForkWith(context);
     const held = new Map<Bundle<Entries>, Held>();

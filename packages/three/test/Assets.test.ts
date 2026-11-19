@@ -107,7 +107,7 @@ const makeRenderer = () => {
       renderer.drew = scene.children.map((child) => child.name);
 
       for (const child of scene.children) {
-        const { bark } = child.userData as { bark?: Bark };
+        const { bark } = child.userData;
 
         if (bark !== undefined && !bark.open) {
           renderer.stale += 1;
@@ -469,7 +469,7 @@ describe("instances whose look is made of assets", () => {
         Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
           waiting.push((exit) => resume(exit));
         }),
-    }) as Layer.Layer<never>;
+    });
 
     const { app, enter, renderer } = play([during(Forest), Trees], slow);
     app.world.spawn(Tree, at(1));

@@ -533,7 +533,7 @@ describe("a replay that checks itself", () => {
     const recorded = record({ ticks: 60, checkpointEvery: 1 });
 
     const edit = (change: (log: any[]) => void) => {
-      const log = structuredClone(recorded.log) as any[];
+      const log = structuredClone(recorded.log);
       change(log);
 
       return replayInto({}, log, recorded.ticks).stopped;

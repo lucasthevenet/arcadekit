@@ -302,7 +302,7 @@ export const Bridge: Context.Reference<Bridge> = Context.Reference<Bridge>(
  * @category Layers
  */
 export const layer = (bridge: Bridge): Layer.Layer<never> =>
-  Layer.succeed(Bridge, bridge) as Layer.Layer<never>;
+  Layer.succeed(Bridge, bridge);
 
 // --- the app's end of the bridge ---------------------------------------------------
 
@@ -448,10 +448,7 @@ export const publish = <
     if (port.connected) {
       port.publish(view, yield* read);
     }
-  }).pipe(System.inStage("frame")) as System.System<
-    Effect.Error<Eff>,
-    Effect.Services<Eff> | Port
-  >;
+  }).pipe(System.inStage("frame"));
 };
 
 /**

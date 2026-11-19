@@ -125,7 +125,7 @@ const makeLoader = (files: Readonly<Record<string, Uint8Array | string>>) => {
               typeof file === "string" ? new TextEncoder().encode(file) : file
             );
       }),
-  }) as Layer.Layer<never>;
+  });
 
   return { asked, layer };
 };
@@ -373,7 +373,7 @@ describe("a model", () => {
                 givenUp.push(url);
               });
             }),
-    }) as Layer.Layer<never>;
+    });
 
     const fiber = Effect.runFork(
       Effect.scoped(

@@ -963,7 +963,7 @@ describe("what each hands its callback", () => {
         expect(seen).toStrictEqual(Array.from({ length: count }, (_, n) => n));
         // The write went where the world reads from.
         each.each((health) => {
-          (health as { hp: number }).hp -= 1000;
+          health.hp -= 1000;
         });
       }
 

@@ -582,7 +582,7 @@ export const accessOf = (
 
     queries.push(query);
 
-    for (const def of query.terms as readonly ComponentDef[]) {
+    for (const def of query.terms) {
       component(
         def,
         query.readDefs?.includes(def) === true ? "reads" : "writes"

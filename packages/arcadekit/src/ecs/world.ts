@@ -1999,7 +1999,6 @@ export class QueryView<D extends Terms = Terms> {
     const frame = this.enter();
 
     try {
-      const f = fn as Callback;
       const loop = (frame.loop ??= this.makeLoop(frame.frozen));
       const acc = loop.accessors;
       // Sparse columns are replaced when a set grows, and its members'
@@ -2048,9 +2047,9 @@ export class QueryView<D extends Terms = Terms> {
         }
 
         if (this.hasSparseTerms) {
-          this.visitSparse(f, loop, table.entities, start, end);
+          this.visitSparse(fn, loop, table.entities, start, end);
         } else {
-          this.visit(f, loop, table.entities, start, end);
+          this.visit(fn, loop, table.entities, start, end);
         }
       });
     } finally {
@@ -3396,7 +3395,7 @@ export class World {
    * query that passes is remembered and not checked again.
    */
   private guardQuery(guard: Guard, spec: QuerySpec): void {
-    for (const def of spec.terms as readonly ComponentDef[]) {
+    for (const def of spec.terms) {
       if (spec.readDefs?.includes(def) === true) {
         if (guard.reads[def.id] !== true) {
           this.refuse(`asked for a query that reads "${def.name}"`, "read");

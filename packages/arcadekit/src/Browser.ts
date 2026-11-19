@@ -775,7 +775,7 @@ export const layerSound = (
         },
       };
     })
-  ) as Layer.Layer<never>;
+  );
 
 /**
  * Returns a layer that provides a page's display and input devices to a whole
@@ -814,7 +814,7 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
         (listening) => listening.source
       )
     )
-  ) as Layer.Layer<never>;
+  );
 
   return options.sounds === false
     ? page

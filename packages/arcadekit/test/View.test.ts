@@ -214,7 +214,7 @@ describe("a view", () => {
 
   it("is compared as data, however deep, and not by the object that holds it", () => {
     const Board = View.define("vw/Board", {
-      rows: [[0, 0]] as number[][],
+      rows: [[0, 0]],
       turn: { player: 1, note: undefined as string | undefined },
     });
 

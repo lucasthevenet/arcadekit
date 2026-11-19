@@ -320,7 +320,8 @@ const pack = (
 const isTexture = (value: unknown): value is Texture =>
   typeof value === "object" &&
   value !== null &&
-  (value as { isTexture?: boolean }).isTexture === true;
+  "isTexture" in value &&
+  value.isTexture === true;
 
 /** Disposes of every geometry, material and texture a model's scenes hold, each once. */
 const dispose = (model: Model): void => {

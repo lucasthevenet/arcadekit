@@ -101,7 +101,7 @@ export const handleOf = <V extends string>(
   const found = registry.handles.get(state);
 
   if (found !== undefined) {
-    return found as StateHandle<V>;
+    return found;
   }
 
   const held = world.singleton(state);

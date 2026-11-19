@@ -165,10 +165,7 @@ export const encode = (message: Message): string => JSON.stringify(message);
  * @category Codecs
  */
 export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
-  Schema.decodeUnknownExit(MessageSchema)(text) as Exit.Exit<
-    Message,
-    Schema.SchemaError
-  >;
+  Schema.decodeUnknownExit(MessageSchema)(text);
 
 /**
  * Options for a lockstep session: this peer, every peer, and how many ticks
