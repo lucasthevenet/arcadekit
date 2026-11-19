@@ -104,7 +104,7 @@ export interface Options {
   /** Where key presses and pointer movement are listened for. Defaults to the window. */
   readonly window?: EventTarget;
   /** The gamepads, read once per sample. Defaults to `navigator.getGamepads`. */
-  readonly gamepads?: () => ArrayLike<GamepadLike | null>;
+  readonly gamepads?: () => Iterable<GamepadLike | null>;
   /**
    * The page's sounds for its whole lifetime, by the name a cue or a track is
    * played with, as `Browser.layerSound` takes them: each is either the URL of
@@ -145,7 +145,7 @@ const listen = (
 
   const gamepads =
     options.gamepads ??
-    ((): ArrayLike<GamepadLike | null> =>
+    ((): Iterable<GamepadLike | null> =>
       typeof navigator !== "undefined" &&
       typeof navigator.getGamepads === "function"
         ? navigator.getGamepads()
@@ -269,9 +269,7 @@ const listen = (
     const seen = new Set<string>();
     const pads = gamepads();
 
-    for (let p = 0; p < pads.length; p += 1) {
-      const pad = pads[p];
-
+    for (const pad of pads) {
       if (pad === null || pad === undefined || !pad.connected) {
         continue;
       }

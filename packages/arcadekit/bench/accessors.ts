@@ -537,8 +537,7 @@ const variants: Record<string, Variant> = {
       }));
 
       return measure(() => {
-        for (let i = 0; i < objects.length; i += 1) {
-          const o = objects[i]!;
+        for (const o of objects) {
           o.pos.x += o.vel.x * DT;
           o.pos.y += o.vel.y * DT;
         }
