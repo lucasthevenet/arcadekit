@@ -93,6 +93,17 @@ export default defineConfig({
       },
     },
     {
+      // A module at the top of a package's src is one of its entries, named
+      // as it is imported: arcadekit/Query, @arcadekit/three/Gltf.
+      files: ["packages/*/src/*.ts"],
+      rules: {
+        "unicorn/filename-case": [
+          "error",
+          { case: "pascalCase", ignore: [String.raw`^index\.ts$`] },
+        ],
+      },
+    },
+    {
       files: ["packages/*/src/**"],
       rules: {
         "arcadekit/entry-imports": "error",
