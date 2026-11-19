@@ -2,6 +2,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { Terms } from "../src/ecs/world";
 import {
   Action,
   App,
@@ -16,7 +17,7 @@ import {
   System,
   Time,
 } from "../src/index";
-import type { Entity } from "../src/index";
+import type { Entity, EntityColumn } from "../src/index";
 
 const Position = Component.define("ch/Position", {
   x: Field.f32,
@@ -329,7 +330,7 @@ describe("a change query", () => {
     const alike = Query.all(Position).pipe(Query.changed(Position));
     expect(world.view(alike, "first")).toBe(first);
     // One that watches something else is another query, however alike.
-    const others: Query.Query<any>[] = [
+    const others: Query.Query<Terms>[] = [
       Query.all(Position).pipe(Query.changed(Health)),
       Query.all(Position).pipe(Query.added(Position)),
       Query.all(Position).pipe(Query.changed(Position), Query.with(Boss)),
@@ -580,8 +581,8 @@ describe("changes against a simple model", () => {
   // was written since it last visited, narrowed to what matches now, in
   // the order a plain query visits them.
   const specs: {
-    query: Query.Query<any>;
-    plain: Query.Query<any>;
+    query: Query.Query<Terms>;
+    plain: Query.Query<Terms>;
     fires: string[];
     raw: boolean;
   }[] = [
@@ -780,9 +781,9 @@ describe("changes against a simple model", () => {
                 });
               } else {
                 reader.view.eachChunk((start, end, ...args) => {
-                  const ids = args.at(-1) as Uint32Array;
+                  const ids = args.at(-1) as EntityColumn;
                   for (let i = start; i < end; i++) {
-                    seen.push(ids[i] as Entity);
+                    seen.push(ids[i]!);
                   }
                 });
                 // The raw loop was handed the rows it visited: to every

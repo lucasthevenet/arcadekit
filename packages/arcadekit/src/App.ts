@@ -79,10 +79,12 @@ type Handlers = readonly Plugin.AnyHandler[];
 type Plugins = readonly Plugin.Any[];
 
 // Distributive on purpose: an empty list must give `never`, not `unknown`.
-type SystemError<T> = T extends System.System<infer E, any> ? E : never;
-type SystemNeeds<T> = T extends System.System<any, infer R> ? R : never;
+type SystemError<T> = T extends System.System<infer E, unknown> ? E : never;
+type SystemNeeds<T> = T extends System.System<unknown, infer R> ? R : never;
 type HandlerNeeds<T> =
-  T extends Action.Handler<any, any, any, any, infer R> ? R : never;
+  T extends Action.Handler<string, infer _P, unknown, unknown, infer R>
+    ? R
+    : never;
 
 type TickError<S extends Systems, P extends Plugins> =
   | SystemError<S[number]>
@@ -110,20 +112,38 @@ type External<S extends Systems, H extends Handlers, P extends Plugins> =
 type ActionNames<HU> = HU extends Plugin.AnyHandler
   ? HU["action"]["name"]
   : never;
-type HandlerFor<HU, N extends string> = Extract<
-  HU,
-  Action.Handler<N, any, any, any, any>
->;
+type HandlerFor<HU, N extends string> =
+  HU extends Action.Handler<N, infer _P, unknown, unknown, unknown>
+    ? HU
+    : never;
 type PayloadFor<HU, N extends string> =
-  HandlerFor<HU, N> extends Action.Handler<any, infer P, any, any, any>
+  HandlerFor<HU, N> extends Action.Handler<
+    string,
+    infer P,
+    unknown,
+    unknown,
+    unknown
+  >
     ? P
     : never;
 type ResultFor<HU, N extends string> =
-  HandlerFor<HU, N> extends Action.Handler<any, any, infer A, any, any>
+  HandlerFor<HU, N> extends Action.Handler<
+    string,
+    infer _P,
+    infer A,
+    unknown,
+    unknown
+  >
     ? A
     : never;
 type FailureFor<HU, N extends string> =
-  HandlerFor<HU, N> extends Action.Handler<any, any, any, infer E, any>
+  HandlerFor<HU, N> extends Action.Handler<
+    string,
+    infer _P,
+    unknown,
+    infer E,
+    unknown
+  >
     ? E
     : never;
 
@@ -408,7 +428,7 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * game alone: use `enqueue` instead.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>, any>,
+    action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
   /**
@@ -423,7 +443,7 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * peer, and one without a schema throws.
    */
   readonly enqueue: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>, any>,
+    action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
     payload: PayloadFor<HU, N>
   ) => void;
 }
@@ -759,12 +779,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       });
 
     // Scripts the app watches: started with `app.spawnScript` or `Script.spawn`.
-    const scripts = new Set<Fiber.Fiber<any, any>>();
+    const scripts = new Set<Fiber.Fiber<unknown, unknown>>();
     const stopOnFailure = options.onScriptFailure === "stop";
     let stopped: ScriptFailed | undefined;
     // Reports are logged with the app's context once it is built, so they
     // reach the loggers the caller provided.
-    let reportContext = Context.empty() as Context.Context<any>;
+    let reportContext: Context.Context<never> = Context.empty();
     const watch = <A, E>(fiber: Fiber.Fiber<A, E>): Fiber.Fiber<A, E> => {
       const ended = (exit: Exit.Exit<A, E>): void => {
         scripts.delete(fiber);
@@ -865,7 +885,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ...(options.handlers ?? []),
     ];
 
-    const handlers = new Map<string, Action.Handler<any, any, any, any, any>>();
+    const handlers = new Map<string, Action.AnyHandler>();
     for (const handler of allHandlers) {
       if (handlers.has(handler.action.name)) {
         throw new Error(`Two handlers for action "${handler.action.name}"`);
@@ -958,15 +978,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       actionLog.push(entry);
       return entry;
     };
-    const handles = (action: Action.ActionDef<string, any, any>): boolean =>
+    const handles = (action: Action.AnyActionDef): boolean =>
       handlers.has(action.name);
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** Enqueues from outside the simulation: `app.enqueue`. */
-    const enqueue = (
-      action: Action.ActionDef<string, any, any>,
-      payload: unknown
-    ): void => {
+    const enqueue = (action: Action.AnyActionDef, payload: unknown): void => {
       const handler = handlers.get(action.name);
       if (handler === undefined) {
         throw new Error(`No handler for action "${action.name}"`);
@@ -1036,7 +1053,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
      * because a replay's own systems, scripts and handlers issue it again.
      */
     const enqueueFromInside = (
-      action: Action.ActionDef<string, any, any>,
+      action: Action.AnyActionDef,
       payload: unknown
     ): void => {
       if (!handlers.has(action.name)) {
@@ -1122,16 +1139,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Plugin layers are chained in dependency order, so each one can use the
     // built-in services and whatever the plugins before it provide. Effect
     // builds a layer that appears more than once only once.
-    let layer: Layer.Layer<any, any, any> = Layer.succeedContext(builtIns);
+    let layer: Layer.Layer<never, unknown, unknown> =
+      Layer.succeedContext(builtIns);
     for (const plugin of plugins) {
       if (plugin.layer !== undefined) {
-        layer = Layer.provideMerge(
-          plugin.layer as Layer.Layer<any, any, any>,
-          layer
-        );
+        layer = Layer.provideMerge(plugin.layer, layer);
       }
     }
-    const built = (yield* Layer.build(layer)) as Context.Context<any>;
+    const built = yield* Layer.build(layer);
     // Everything the caller provided (their services, resource overrides, the
     // scope) is captured once here and handed to every system and script.
     const provided = yield* Effect.context<External<S, H, P>>();
@@ -1139,7 +1154,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // (systems, handlers, scripts, and anything they fork) use the tick dispatcher.
     const context = Context.merge(provided, built).pipe(
       Context.add(Scheduler.Scheduler, scheduler)
-    ) as Context.Context<any>;
+    ) as Context.Context<unknown>;
     const runFork = Effect.runForkWith(context);
     reportContext = context;
 
@@ -1435,7 +1450,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         },
       })
-    ) as Context.Context<any>;
+    ) as Context.Context<unknown>;
     const runFrameFork = Effect.runForkWith(frameContext);
     // The input stage is told what the devices say: one picture of them,
     // taken when the stage begins. It is not told about the frame.
@@ -1467,7 +1482,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           return noFrame();
         },
       })
-    ) as Context.Context<any>;
+    ) as Context.Context<unknown>;
     const runInputFork = Effect.runForkWith(inputContext);
     let frameHash = 0;
     const stageEffect = (
@@ -1606,7 +1621,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       world.reader = events.reader;
       let fiber: Fiber.Fiber<unknown, unknown>;
       try {
-        fiber = runFork(handler.handle(value, { from }));
+        // The payload is the action's: its schema decoded it, or the
+        // compiler checked it in a typed dispatch.
+        fiber = runFork(handler.handle(value as never, { from }));
       } finally {
         events.reader = undefined;
         world.reader = undefined;
@@ -2045,7 +2062,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // As after a load: each plugin's scripts, from their beginning.
         for (const plugin of plugins) {
           for (const script of plugin.scripts) {
-            watch(runFork(script as Effect.Effect<unknown, unknown, any>));
+            watch(runFork(script));
           }
         }
         commands.apply();
@@ -2080,7 +2097,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       },
       spawnScript(effect) {
-        return watch(runFork(effect as Effect.Effect<any, any, any>));
+        return watch(runFork(effect));
       },
       dispatch(action, payload) {
         assertBetweenTicks(action.name);
@@ -2088,9 +2105,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (!handlers.has(action.name)) {
           throw new Error(`No handler for action "${action.name}"`);
         }
+        // What the action's handler returns or fails with.
         return apply(action.name, payload, false, true, undefined) as Exit.Exit<
-          any,
-          any
+          never,
+          never
         >;
       },
       enqueue,
@@ -2139,7 +2157,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // a script runs up to its first wait, and from then on during ticks.
     for (const plugin of plugins) {
       for (const script of plugin.scripts) {
-        watch(runFork(script as Effect.Effect<unknown, unknown, any>));
+        watch(runFork(script));
       }
     }
     commands.apply();

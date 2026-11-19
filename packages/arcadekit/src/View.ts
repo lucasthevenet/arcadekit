@@ -89,7 +89,7 @@ type PayloadArgument<P> = undefined extends P ? [payload?: P] : [payload: P];
  * @category Models
  */
 export interface Sent {
-  readonly action: Action.ActionDef<string, any, unknown>;
+  readonly action: Action.AnyActionDef;
   readonly payload: unknown;
 }
 
@@ -153,9 +153,10 @@ export interface Bridge {
 const NOTHING: readonly Sent[] = Object.freeze([]);
 
 interface Slot {
-  readonly view: View<any>;
+  readonly view: View<unknown>;
   value: unknown;
-  readonly listeners: Set<(value: any) => void>;
+  /** Each of the slot's view: handed its value, and nothing else. */
+  readonly listeners: Set<(value: never) => void>;
 }
 
 /**
@@ -179,7 +180,7 @@ export const makeBridge = (): Bridge => {
   let sent: Sent[] = [];
   // Which actions the game handles, once a game is there to say.
   let handles: ((action: Sent["action"]) => boolean) | undefined;
-  const slotOf = (view: View<any>): Slot => {
+  const slotOf = (view: View<unknown>): Slot => {
     let slot = slots.get(view.name);
     if (slot === undefined) {
       slot = { view, value: view.initial, listeners: new Set() };
@@ -224,7 +225,7 @@ export const makeBridge = (): Bridge => {
         for (const listener of Array.from(slot.listeners)) {
           if (slot.listeners.has(listener)) {
             try {
-              listener(value);
+              listener(value as never);
             } catch (error) {
               failure ??= { error };
             }
@@ -409,7 +410,10 @@ export const plugin = Plugin.make("arcadekit/View", {
  *
  * @category Systems
  */
-export const publish = <A, Eff extends Effect.Effect<any, any, any>>(
+export const publish = <
+  A,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
   view: View<A>,
   body: () => Generator<Eff, A, never>
 ): System.System<Effect.Error<Eff>, Effect.Services<Eff> | Port> => {

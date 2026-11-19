@@ -15,6 +15,7 @@ import {
   State,
   System,
   Time,
+  World,
 } from "../src/index";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
@@ -448,7 +449,7 @@ describe("a run condition", () => {
 });
 
 describe("hooks", () => {
-  const game = (ran: string[], extra: Plugin.AnySystem[] = []) =>
+  const game = (ran: string[], extra: System.System<never, World>[] = []) =>
     App.make({
       components: [Phase, Weather, Ball],
       systems: [

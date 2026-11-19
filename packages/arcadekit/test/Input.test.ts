@@ -23,6 +23,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship);
@@ -305,7 +306,7 @@ describe("the input stage", () => {
     const bump = Action.handler(Bump, function* () {
       (yield* Score).points += 1;
     });
-    const attempts: Record<string, Effect.Effect<unknown, never, any>> = {
+    const attempts: Record<string, Effect.Effect<unknown, never, BuiltIn>> = {
       'assignment to "in/Ship.x"': Effect.map(Ships, (ships) =>
         ships.each((one) => {
           one.x = 99;

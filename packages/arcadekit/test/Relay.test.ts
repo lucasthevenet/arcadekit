@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Exit, Layer } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Result } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
@@ -531,10 +531,10 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           // The message it sent as itself came through, and the other did not.
           expect(honest.receive()).toEqual([message("ada", 0)]);
           // Its own transport says what became of it.
-          const thrown = yield* Effect.flip(
-            Effect.try({ try: () => liar.receive(), catch: (error) => error })
-          );
-          expect(thrown).toEqual(
+          const received = Result.try(() => liar.receive());
+          expect(
+            Result.isFailure(received) ? received.failure : "it did not throw"
+          ).toEqual(
             new Transport.Closed({
               url: Relay.address(served.url, ada),
               code: 1008,

@@ -32,7 +32,7 @@ const Level = Component.singleton(
   { number: 3 }
 );
 
-const optional: ComponentDef<any>[] = [Body, Marked, Aura, Chilled];
+const optional: ComponentDef[] = [Body, Marked, Aura, Chilled];
 const Bodies = Query.all(Body);
 const Warm = Query.all(Aura).pipe(Query.without(Chilled));
 const Moved = Query.all(Body).pipe(Query.changed(Body));
@@ -52,7 +52,7 @@ const play = (
   const dice = new EcsWorld({ seed }).random;
   const commands = new CommandBuffer(world);
   let serial = seed * 1000;
-  const valueFor = (def: ComponentDef<any>) =>
+  const valueFor = (def: ComponentDef) =>
     def === Body
       ? Body.of({ x: ++serial, y: dice.next() })
       : def === Aura

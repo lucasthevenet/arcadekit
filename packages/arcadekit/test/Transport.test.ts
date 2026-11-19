@@ -250,12 +250,7 @@ describe("a session joined to a transport", () => {
             for (let i = 0; i < 200 && stopped.size < 2; i++) {
               hub.step();
               for (const seat of seats) {
-                const ticked = yield* Effect.result(
-                  Effect.try({
-                    try: () => seat.connected.tick(),
-                    catch: (error) => error,
-                  })
-                );
+                const ticked = Result.try(() => seat.connected.tick());
                 if (Result.isFailure(ticked)) {
                   stopped.set(seat.name, ticked.failure);
                 }

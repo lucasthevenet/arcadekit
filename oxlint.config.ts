@@ -4,8 +4,9 @@ import { defineConfig } from "oxlint";
 // Foldkit (github.com/foldkit/foldkit, .oxlintrc.json and .oxlintrc.effect.json)
 // lint with: oxlint's default rules (its "correctness" category), type-aware;
 // the Effect rules of @effect/tsgo, which `effect-tsgo oxlint` adds to oxlint;
-// Alchemy's type-aware TypeScript rules; Foldkit's import sorting; and unused
-// names allowed when they start with `_`, as both have it. Then arcadekit's own:
+// Alchemy's type-aware TypeScript rules; Foldkit's import sorting and its
+// refusal of `any`; and unused names allowed when they start with `_`, as both
+// have it. Then arcadekit's own:
 // its file names, and its plugin, tooling/lint/plugin.ts, on the sources of the
 // published packages.
 export default defineConfig({
@@ -34,6 +35,8 @@ export default defineConfig({
       "error",
       { ignoreDeclarationSort: true, ignoreCase: false },
     ],
+    // Foldkit's, everywhere: no `any`.
+    "typescript/no-explicit-any": "error",
 
     // Alchemy's, as it has them.
     "effecttsgo/abort-controller-in-effect": "error",

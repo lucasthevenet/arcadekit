@@ -109,7 +109,7 @@ const scanReads = Action.handler(Scan, function* () {
 
 /** Median milliseconds of one dispatch, in an app whose world holds N entities. */
 const dispatching = <P>(
-  action: Action.ActionDef<any, P, any>,
+  action: Action.ActionDef<string, P, unknown>,
   payload: (target: Entity) => P,
   runs = 20_000,
   warmup = 5000

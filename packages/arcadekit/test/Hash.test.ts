@@ -153,7 +153,7 @@ describe("the hash of a world", () => {
       const seen = new Set([base]);
       let changes = 0;
       for (const entity of entities) {
-        for (const def of [Body, Sheet, Aura] as ComponentDef<any>[]) {
+        for (const def of [Body, Sheet, Aura] as ComponentDef[]) {
           const original = world.get(entity, def)!;
           for (let f = 0; f < def.fields.length; f++) {
             const field = def.fields[f]!;
@@ -293,7 +293,7 @@ describe("the hash of a world", () => {
       second: Record<string, (typeof Field)["f32" | "i32"]>
     ) => {
       // Defined in the order given, so the ids differ from one call to the next.
-      const defs = new Map<string, ComponentDef<any>>();
+      const defs = new Map<string, ComponentDef>();
       for (const name of names) {
         defs.set(
           name,
@@ -304,7 +304,7 @@ describe("the hash of a world", () => {
       }
       return defs;
     };
-    const hashWith = (defs: Map<string, ComponentDef<any>>): number => {
+    const hashWith = (defs: Map<string, ComponentDef>): number => {
       const world = new EcsWorld();
       const a = defs.get("hash/order/A")!;
       const b = defs.get([...defs.keys()].find((name) => name !== a.name)!)!;
@@ -606,8 +606,8 @@ const history = (seed: number, steps: number): number[] => {
   const alive: Entity[] = [];
   const hashes: number[] = [];
   let serial = 0;
-  const optional = [Body, Sheet, Marked, Aura, Chilled] as ComponentDef<any>[];
-  const valueFor = (def: ComponentDef<any>) =>
+  const optional = [Body, Sheet, Marked, Aura, Chilled] as ComponentDef[];
+  const valueFor = (def: ComponentDef) =>
     def === Body
       ? Body.of({ x: ++serial, y: dice.next() })
       : def === Sheet
@@ -639,7 +639,7 @@ const history = (seed: number, steps: number): number[] => {
     } else if (choice === 5) {
       world.random.next();
     } else {
-      const def = dice.pick([Body, Sheet, Aura] as ComponentDef<any>[]);
+      const def = dice.pick([Body, Sheet, Aura] as ComponentDef[]);
       if (world.has(entity, def)) {
         const f = dice.int(0, def.fields.length - 1);
         const field = def.fields[f]!;

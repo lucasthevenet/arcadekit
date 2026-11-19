@@ -64,9 +64,7 @@ const closed = (transport: Transport.Shape) =>
   Effect.gen(function* () {
     for (let i = 0; i < 400; i++) {
       // A transport whose socket has closed throws, and says why.
-      const heard = yield* Effect.result(
-        Effect.try({ try: () => transport.receive(), catch: (error) => error })
-      );
+      const heard = Result.try(() => transport.receive());
       if (Result.isFailure(heard)) {
         if (heard.failure instanceof Transport.Closed) {
           return heard.failure;

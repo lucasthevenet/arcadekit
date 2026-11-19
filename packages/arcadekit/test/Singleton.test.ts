@@ -417,7 +417,13 @@ describe("a singleton in a snapshot", () => {
     Migrate.renameComponent(contents, "sg/Turn", "sg/Clock");
     Migrate.renameField(contents, "sg/Clock", "round", "lap");
     Migrate.addField(contents, "sg/Clock", "speed", "f32", 2);
-    Migrate.mapField(contents, "sg/Clock", "lap", "f64", (lap) => lap / 8);
+    Migrate.mapField(
+      contents,
+      "sg/Clock",
+      "lap",
+      "f64",
+      (lap: number) => lap / 8
+    );
     Migrate.removeField(contents, "sg/Clock", "player");
     Migrate.removeComponent(contents, "sg/Everything");
     const Clock = Singleton.define(

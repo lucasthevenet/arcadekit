@@ -481,8 +481,8 @@ describe("a replay that checks itself", () => {
 
   it("catches a log that was edited into another game the rules allow", () => {
     const recorded = record({ ticks: 60, checkpointEvery: 1 });
-    const edit = (change: (log: any[]) => void) => {
-      const log = structuredClone(recorded.log) as any[];
+    const edit = (change: (log: Action.LogEntry[]) => void) => {
+      const log = [...recorded.log];
       change(log);
       return replayInto({}, log, recorded.ticks).stopped;
     };
@@ -496,7 +496,9 @@ describe("a replay that checks itself", () => {
 
     // A coin of another value: a legal move, and a different game.
     const changed = edit((log) => {
-      log[at].payload.value += 1;
+      const drop = log[at] as Action.Logged;
+      const { value } = drop.payload as { readonly value: number };
+      log[at] = { ...drop, payload: { value: value + 1 } };
     });
     expect(changed!.reason).toBeInstanceOf(App.HashMismatch);
     expect(changed!.tick).toBe(tick + 1);
@@ -515,9 +517,10 @@ describe("a replay that checks itself", () => {
     // A checkpoint that was altered is itself the entry that does not hold.
     const forged = edit((log) => {
       const index = log.findIndex(
-        (entry) => entry.tick === 20 && "hash" in entry
+        (entry) => entry.tick === 20 && Action.isCheckpoint(entry)
       );
-      log[index].hash ^= 1;
+      const checkpoint = log[index] as Action.Checkpoint;
+      log[index] = { ...checkpoint, hash: checkpoint.hash ^ 1 };
     });
     expect(forged!.tick).toBe(20);
     expect((forged!.reason as App.HashMismatch).agreedAt).toBe(19);
@@ -575,8 +578,9 @@ describe("a replay that checks itself", () => {
     expect(replayInto({}, recorded, 3).stopped).toBeUndefined();
 
     // The game accepted the first take, and in this log it names no coin.
-    const refusedNow = structuredClone(recorded) as any[];
-    refusedNow[1].payload.coin = 4000;
+    const refusedNow = [...recorded];
+    const take = refusedNow[1] as Action.Logged;
+    refusedNow[1] = { ...take, payload: { coin: 4000 } };
     const first = replayInto({}, refusedNow, 3).stopped!;
     expect(first.index).toBe(1);
     expect(first.reason).toBe("NoSuchCoin");
@@ -586,7 +590,7 @@ describe("a replay that checks itself", () => {
 
     // The game refused the second take, and here the first is gone, so the
     // second finds its coin.
-    const acceptedNow = structuredClone(recorded) as any[];
+    const acceptedNow = [...recorded];
     acceptedNow.splice(1, 1);
     const second = replayInto({}, acceptedNow, 3).stopped!;
     expect(second.index).toBe(1);

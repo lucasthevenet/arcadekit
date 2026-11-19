@@ -51,8 +51,10 @@ export interface StateHandle<V extends string> {
   readonly value: V;
   /** The requested state that hasn't been entered yet, if any. */
   readonly next: V | undefined;
+  // `is` and `set` are methods, so that a handle of any state is a
+  // `StateHandle<string>`.
   /** Returns whether the game is in one of these states. */
-  readonly is: (...values: readonly V[]) => boolean;
+  is(...values: readonly V[]): boolean;
   /**
    * Requests a state. The game enters it at the start of the next tick: the
    * exit hooks of the old state run, then the enter hooks of the new one, and
@@ -60,7 +62,7 @@ export interface StateHandle<V extends string> {
    * transition per tick, so the last request before it wins. Requesting the
    * current state cancels an earlier request, and isn't a transition.
    */
-  readonly set: (value: V) => void;
+  set(value: V): void;
 }
 
 /**
@@ -139,8 +141,8 @@ const known = new WeakMap<EcsWorld, Registry>();
 /** @internal */
 export interface Registry {
   /** Sorted by name, so transitions happen in the same order everywhere. */
-  states: State<any>[];
-  readonly handles: Map<State<any>, StateHandle<any>>;
+  states: State<string>[];
+  readonly handles: Map<State<string>, StateHandle<string>>;
 }
 
 /** @internal The states of a world that anyone has asked for. */
@@ -217,7 +219,7 @@ export interface Move {
  */
 export const pending = (
   world: EcsWorld,
-  state: State<any>
+  state: State<string>
 ): Move | undefined => {
   const held = world.singleton(state);
   if (held.entered === 0) {
@@ -234,7 +236,11 @@ export const pending = (
  * the new. What a hook asks for waits for the next tick.
  * @internal
  */
-export const enter = (world: EcsWorld, state: State<any>, move: Move): void => {
+export const enter = (
+  world: EcsWorld,
+  state: State<string>,
+  move: Move
+): void => {
   const held = world.singleton(state);
   if (move.from === undefined) {
     held.entered = 1;

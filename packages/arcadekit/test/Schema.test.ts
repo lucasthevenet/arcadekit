@@ -1,6 +1,6 @@
-import { Data, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -63,11 +63,11 @@ const withApp = <A, T>(
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
   log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
 
-const failure = (exit: Exit.Exit<unknown, unknown>): any => {
+const failure = <E>(exit: Exit.Exit<unknown, E>): E => {
   if (!Exit.isFailure(exit)) {
     throw new Error("expected a failure");
   }
-  return (exit.cause.reasons[0] as any).error;
+  return Option.getOrThrow(Cause.findErrorOption(exit.cause));
 };
 
 describe("actions with a schema", () => {
@@ -106,7 +106,7 @@ describe("actions with a schema", () => {
       received.length = 0;
       const exit = app.dispatch(Damage, { target, amount: 999, seed: 1n });
       const error = failure(exit);
-      expect(error).toBeInstanceOf(Action.InvalidPayload);
+      assert(error instanceof Action.InvalidPayload);
       expect(error.action).toBe("Damage");
       expect(error.message).toMatch(/amount/);
       // The handler never ran, nothing changed, nothing was logged.
@@ -157,7 +157,7 @@ describe("actions with a schema", () => {
       ];
       for (const [label, payload] of bad) {
         const error = failure(app.dispatchByName("Damage", payload));
-        expect(error, label).toBeInstanceOf(Action.InvalidPayload);
+        assert(error instanceof Action.InvalidPayload, label);
         expect(error.message.length, label).toBeGreaterThan(0);
       }
       expect(failure(app.dispatchByName("Nope", {}))).toEqual(
@@ -425,9 +425,20 @@ describe("saving and replaying", () => {
       };
     });
 
-  const replayInto = (log: readonly Action.LogEntry[], ticks: number) =>
+  /** A log entry as its JSON has it, which a player can edit into anything. */
+  interface Written {
+    tick: number;
+    name?: string;
+    payload?: Record<string, unknown>;
+    hash?: number;
+  }
+  const replayInto = (
+    log: readonly (Action.LogEntry | Written)[],
+    ticks: number
+  ) =>
     withApp(game, ({ app, target }) => {
-      App.replay(app, log, { delta: 1, ticks });
+      // Whatever the file says: the replay is what checks it.
+      App.replay(app, log as readonly Action.LogEntry[], { delta: 1, ticks });
       return app.world.get(target, Health)!.hp;
     });
 
@@ -466,7 +477,7 @@ describe("saving and replaying", () => {
     const saved = record();
     // Entry 0 is the checkpoint of the state the game started from; the four
     // actions follow it.
-    const log = JSON.parse(saved.text) as any[];
+    const log = JSON.parse(saved.text) as Written[];
     expect(log.map((entry) => entry.name)).toEqual([
       undefined,
       "Damage",
@@ -477,7 +488,7 @@ describe("saving and replaying", () => {
 
     // An edited save file: a hit far above what the schema allows.
     const edited = structuredClone(log);
-    edited[2].payload.amount = 9999;
+    edited[2]!.payload!.amount = 9999;
     let caught: unknown;
     try {
       replayInto(edited, saved.ticks);
@@ -496,19 +507,19 @@ describe("saving and replaying", () => {
 
     // An action this build of the game does not have.
     const renamed = structuredClone(log);
-    renamed[1].name = "Smite";
+    renamed[1]!.name = "Smite";
     expect(() => replayInto(renamed, saved.ticks)).toThrow(
       /Log entry 1 \("Smite" at tick 0\)/
     );
 
     // Valid entries the rules refuse: the target is not in this game.
     const retargeted = structuredClone(log);
-    retargeted[3].payload.target = 4000;
+    retargeted[3]!.payload!.target = 4000;
     expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 3/);
 
     // Entries that could never be reached.
     const late = structuredClone(log);
-    late[4].tick = 99;
+    late[4]!.tick = 99;
     expect(() => replayInto(late, saved.ticks)).toThrow(
       /its tick \(99\) was never reached/
     );

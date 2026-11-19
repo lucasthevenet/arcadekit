@@ -43,7 +43,7 @@ const fields = {
 };
 const Card = Component.define("fld/Card", fields);
 const Badge = Component.define("fld/Badge", fields, { storage: "sparse" });
-const both = [Card, Badge] as ComponentDef<any>[];
+const both = [Card, Badge] as ComponentDef[];
 
 const card = (n: number) => ({
   data: [{ n }, ["list", n], n % 2 === 0 ? null : `text ${n}`][n % 3],
@@ -198,7 +198,7 @@ describe("a field that is not a number", () => {
   it("is part of what its component is: a snapshot does not load into another kind", () => {
     const { world } = populated(2);
     const bytes = world.snapshot();
-    const retyped = (data: ComponentDef<any>) => {
+    const retyped = (data: ComponentDef) => {
       try {
         new EcsWorld().load(bytes, [data, Badge]);
       } catch (error) {
@@ -226,7 +226,7 @@ describe("a field that is not a number", () => {
   it("refuses a snapshot when a codec or a schema will not take a value, and names the field", () => {
     const refused = (
       change: Record<string, unknown>,
-      def: ComponentDef<any> = Card
+      def: ComponentDef = Card
     ) => {
       const { entities, world } = populated(3);
       world.set(entities[1]!, def, change);

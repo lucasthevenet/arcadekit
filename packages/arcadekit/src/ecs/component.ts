@@ -107,8 +107,9 @@ export const isBoxed = (kind: FieldKind): boolean =>
  * @category Models
  */
 export interface RefCodec<T> {
-  readonly encode: (value: T) => unknown;
-  readonly decode: (data: unknown) => T;
+  // Methods, so that a codec of any value is a `RefCodec<unknown>`.
+  encode(value: T): unknown;
+  decode(data: unknown): T;
 }
 
 /**
@@ -171,7 +172,7 @@ export type Column =
   | Uint32Array
   | Uint16Array
   | Uint8Array
-  | any[];
+  | unknown[];
 
 export const makeColumn = (kind: FieldKind, capacity: number): Column => {
   switch (kind) {
@@ -212,8 +213,8 @@ export const growColumn = (
 ): Column => {
   const next = makeColumn(kind, capacity);
   if (isBoxed(kind)) {
-    const from = old as any[];
-    const to = next as any[];
+    const from = old as unknown[];
+    const to = next as unknown[];
     for (let i = 0; i < from.length; i++) {
       to[i] = from[i];
     }
@@ -227,7 +228,7 @@ export const growColumn = (
 // Components
 // ---------------------------------------------------------------------------
 
-export type Schema = Record<string, FieldDef<any, any>>;
+export type Schema = Record<string, FieldDef<unknown, unknown>>;
 
 /**
  * The plain-object shape of a component: `{ x: number, y: number }`.
@@ -235,17 +236,17 @@ export type Schema = Record<string, FieldDef<any, any>>;
  * @category Type-level
  */
 export type ValueOf<S extends Schema> = {
-  -readonly [K in keyof S]: S[K] extends FieldDef<infer T, any> ? T : never;
+  -readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown> ? T : never;
 };
 
 /** The column shape of a component: `{ x: Float32Array, y: Float32Array }`. */
 export type ColumnsOf<S extends Schema> = {
-  readonly [K in keyof S]: S[K] extends FieldDef<any, infer C> ? C : never;
+  readonly [K in keyof S]: S[K] extends FieldDef<unknown, infer C> ? C : never;
 };
 
 /** The columns of a component a query only reads: indexable, but not assignable. */
 export type ReadonlyColumnsOf<S extends Schema> = {
-  readonly [K in keyof S]: S[K] extends FieldDef<infer T, any>
+  readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown>
     ? ReadonlyColumn<T>
     : never;
 };
@@ -354,7 +355,7 @@ export interface ComponentDef<
   readonly fields: readonly string[];
   readonly kinds: readonly FieldKind[];
   /** For each field, the codec of a `ref` field, or undefined for any other. */
-  readonly codecs: readonly (RefCodec<any> | undefined)[];
+  readonly codecs: readonly (RefCodec<unknown> | undefined)[];
   /** Tracked in the type, so queries know which terms have row-aligned columns. */
   readonly storage: St;
   readonly isTag: boolean;
@@ -368,8 +369,11 @@ export interface ComponentDef<
    * for any other component. See `Component.relation`.
    */
   readonly relation: OnTargetDespawn | undefined;
-  /** Pairs this component with a value, for `spawn` and `add`. */
-  readonly of: (value: ValueOf<S>) => ComponentValue<S>;
+  /**
+   * Pairs this component with a value, for `spawn` and `add`. A method, so
+   * that any component is a `ComponentDef`.
+   */
+  of(value: ValueOf<S>): ComponentValue<S>;
 }
 
 /**
@@ -389,9 +393,9 @@ export interface ComponentValue<S extends Schema = Schema> {
  *
  * @category Type-level
  */
-export type ComponentInput = ComponentValue<any> | ComponentDef<any>;
+export type ComponentInput = ComponentValue | ComponentDef;
 
-export const isComponentDef = (u: ComponentInput): u is ComponentDef<any> =>
+export const isComponentDef = (u: ComponentInput): u is ComponentDef =>
   "id" in u;
 
 /**
@@ -412,9 +416,9 @@ export interface SingletonSpec<S extends Schema = Schema> {
 }
 
 /** What an app is told about, so a save that contains it can be loaded. */
-export type Listed = ComponentDef<any> | SingletonSpec<any>;
+export type Listed = ComponentDef | SingletonSpec;
 
-export const isSingletonSpec = (u: Listed): u is SingletonSpec<any> =>
+export const isSingletonSpec = (u: Listed): u is SingletonSpec =>
   "initial" in u;
 
 // A component's name is its identity in a save, on the network and in a tool.
@@ -687,7 +691,7 @@ const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
  * @internal
  */
 export const makeAccessor = (
-  def: ComponentDef<any>,
+  def: ComponentDef,
   mode: AccessorMode,
   row: Row
 ): Accessor => {

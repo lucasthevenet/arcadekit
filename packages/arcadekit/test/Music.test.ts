@@ -13,6 +13,7 @@ import {
   State,
   System,
 } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 // --- a game of levels, which knows nothing of sound ---------------------------------
 const Level = State.define("mu/Level", ["menu", "forest", "cave"]);
@@ -90,8 +91,10 @@ const start = <A, E, R>(
 };
 
 const play = (
-  // `any`: whatever the systems need is among the plugins, or the test fails.
-  systems: readonly System.System<never, any>[],
+  systems: readonly System.System<
+    never,
+    BuiltIn | Sound.Player | Assets.Store
+  >[],
   output?: Sound.OutputShape
 ) => {
   asked = 0;
@@ -107,7 +110,7 @@ const play = (
     app,
     close,
     /** The game does something, a tick applies it, and a frame is heard. */
-    step: (action: Action.ActionDef<any, any, any>, payload: unknown): void => {
+    step: (action: Action.AnyActionDef, payload: unknown): void => {
       app.dispatch(action as never, payload as never);
       app.tick(0.1);
       app.frame(0);
@@ -819,10 +822,7 @@ describe("a level's cues", () => {
       }).pipe(Effect.provide(files)),
       sound
     );
-    const step = (
-      action: Action.ActionDef<any, any, any>,
-      payload: unknown
-    ): void => {
+    const step = (action: Action.AnyActionDef, payload: unknown): void => {
       app.dispatch(action as never, payload as never);
       app.tick(0.1);
       app.frame(0);

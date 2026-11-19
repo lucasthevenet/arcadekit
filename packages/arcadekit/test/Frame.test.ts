@@ -32,6 +32,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
 const Glow = Component.define(
@@ -341,7 +342,7 @@ describe("the frame stage", () => {
   it("takes a system's word about one of another stage when it is so already, and refuses it when it cannot be", () => {
     const sys = (name: string, stage: System.Stage) =>
       System.make(name, function* () {}).pipe(System.inStage(stage));
-    const names = (list: readonly System.System<any, any>[]) =>
+    const names = (list: readonly System.System<unknown, unknown>[]) =>
       System.order(list).map((system) => system.name);
     // True as it stands: nothing is moved, and nothing is wrong.
     expect(
@@ -471,7 +472,7 @@ describe("the frame stage", () => {
 
   it("cannot change the game: whatever would throws, and names what did", () => {
     const Pinged = Event.define("fr/Pinged", Schema.Struct({}));
-    const attempts: Record<string, Effect.Effect<unknown, never, any>> = {
+    const attempts: Record<string, Effect.Effect<unknown, never, BuiltIn>> = {
       'assignment to "fr/Ball.x"': Effect.map(Balls, (balls) =>
         balls.each((ball) => {
           ball.x = 99;
@@ -611,7 +612,7 @@ describe("the frame stage", () => {
             (yield* Action.Actions).enqueue(Kick, { by: 4 });
           }
         }).pipe(System.inStage("frame"));
-        const make = (systems: readonly System.System<never, any>[]) =>
+        const make = (systems: readonly System.System<never, BuiltIn>[]) =>
           Effect.gen(function* () {
             const app = yield* App.make({
               systems,
@@ -972,7 +973,7 @@ describe("what the frame stage reads", () => {
           });
           (yield* Bounced).emit({ at: 0 });
         });
-        const make = (systems: readonly System.System<never, any>[]) =>
+        const make = (systems: readonly System.System<never, BuiltIn>[]) =>
           Effect.gen(function* () {
             const app = yield* App.make({
               components: [Ball, Score, Phase],

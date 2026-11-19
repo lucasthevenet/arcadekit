@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -28,8 +28,12 @@ const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   }
   return exit.value;
 };
-const refusal = (exit: Exit.Exit<unknown, unknown>): any =>
-  Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+const refusal = <E>(exit: Exit.Exit<unknown, E>): E => {
+  if (!Exit.isFailure(exit)) {
+    throw new Error("expected a refusal");
+  }
+  return Option.getOrThrow(Cause.findErrorOption(exit.cause));
+};
 
 // --- version 0 of a game ----------------------------------------------------------
 
@@ -118,7 +122,13 @@ const migrations: Save.Migration[] = [
     from: 1,
     migrate: (contents) => {
       const { world } = contents;
-      Migrate.mapField(world, "mg/Health", "points", "f32", (hp) => hp / 4);
+      Migrate.mapField(
+        world,
+        "mg/Health",
+        "points",
+        "f32",
+        (hp: number) => hp / 4
+      );
       Migrate.removeField(world, "mg/Pos", "y");
       Migrate.removeComponent(world, "mg/Old");
       Migrate.mapField(
@@ -126,7 +136,7 @@ const migrations: Save.Migration[] = [
         "mg/Buff",
         "power",
         "u16",
-        (power) => power * 100
+        (power: number) => power * 100
       );
       Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
       // The action that was waiting has another name and payload now.
@@ -598,13 +608,13 @@ describe("a save from another version of the game", () => {
       "mg/Thing",
       "b",
       "f64",
-      (b) => Number(b.slice(1)) / 2
+      (b: string) => Number(b.slice(1)) / 2
     );
     Migrate.addField(contents, "mg/Thing", "c", "entity", entities[0]);
     Migrate.addField(contents, "mg/Thing", "d", "json", "new", "a");
     Migrate.addField(contents, "mg/Thing", "e", "u16", 500);
     Migrate.addField(contents, "mg/Thing", "f", "f32", 0.5);
-    const Thing2: ComponentDef<any> = Component.define("mg/Thing", {
+    const Thing2: ComponentDef = Component.define("mg/Thing", {
       d: Field.json<string>(),
       a: Field.json<{ was: number }>(),
       b: Field.f64,

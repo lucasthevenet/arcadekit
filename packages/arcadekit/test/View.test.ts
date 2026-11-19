@@ -92,8 +92,9 @@ const play = (ui: View.Bridge | undefined, seed = 1) => {
 };
 
 // What the game above has no handler for.
-const Unknown = Action.define("vw/Unknown", Schema.Struct({}));
-const Other = Action.define("vw/Other", Schema.Struct({}));
+const Nothing = Schema.Struct({});
+const Unknown = Action.define("vw/Unknown", Nothing);
+const Other = Action.define("vw/Other", Nothing);
 
 /**
  * The same game, kept until `end` is called. `play` ends its app's scope
@@ -101,7 +102,14 @@ const Other = Action.define("vw/Other", Schema.Struct({}));
  */
 const keep = (
   ui: View.Bridge,
-  handlers: readonly Action.Handler<any, any, any, any, never>[] = []
+  // Handlers of the one action the game itself does not handle.
+  handlers: readonly Action.Handler<
+    "vw/Unknown",
+    typeof Nothing.Type,
+    void,
+    Action.InvalidPayload,
+    never
+  >[] = []
 ) => {
   const scope = Scope.makeUnsafe();
   const app = Effect.runSync(

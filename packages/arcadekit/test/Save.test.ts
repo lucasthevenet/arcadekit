@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Logger, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -193,8 +193,12 @@ const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   }
   return exit.value;
 };
-const refusal = (exit: Exit.Exit<unknown, unknown>): any =>
-  Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+const refusal = <E>(exit: Exit.Exit<unknown, E>): E => {
+  if (!Exit.isFailure(exit)) {
+    throw new Error("expected a refusal");
+  }
+  return Option.getOrThrow(Cause.findErrorOption(exit.cause));
+};
 
 /** Plays `ticks` ticks, saving after tick `saveAt`. */
 const record = (ticks: number, saveAt: number) =>

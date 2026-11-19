@@ -153,6 +153,32 @@ export interface Handler<N extends string, P, A, E, R> {
 }
 
 /**
+ * Any action, whatever its name and payload: what a question about the action
+ * itself, such as whether it has a handler, takes.
+ *
+ * @category Type-level
+ */
+export interface AnyActionDef {
+  readonly name: string;
+  readonly codec: Schema.Codec<unknown, unknown> | undefined;
+}
+
+/**
+ * Any handler, whatever its action, result and requirements. Its payload is
+ * `never`, since only whoever checked a payload against the handler's action
+ * may hand it one.
+ *
+ * @category Type-level
+ */
+export interface AnyHandler {
+  readonly action: AnyActionDef;
+  readonly handle: (
+    payload: never,
+    origin: Origin
+  ) => Effect.Effect<unknown, unknown, unknown>;
+}
+
+/**
  * Defines how an action is validated against the rules and applied. It must
  * complete synchronously. For an action with a schema, the payload it receives
  * is already validated.
@@ -335,6 +361,6 @@ export class Actions extends Context.Service<
      * Returns whether the game has a handler for an action. An action without
      * one can't be issued: `enqueue` throws.
      */
-    readonly handles: (action: ActionDef<string, any, unknown>) => boolean;
+    readonly handles: (action: AnyActionDef) => boolean;
   }
 >()("arcadekit/Actions") {}

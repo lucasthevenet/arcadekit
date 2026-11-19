@@ -379,7 +379,7 @@ export interface AudioLike {
     connect(to: unknown): unknown;
   };
   /** Routes a streamed track's player into the audio graph, so it fades like any track. */
-  createMediaElementSource?(media: any): { connect(to: unknown): unknown };
+  createMediaElementSource?(media: unknown): { connect(to: unknown): unknown };
   /** Stops its clock, and with it every sound, until resumed. */
   suspend?(): Promise<unknown>;
   resume?(): Promise<unknown>;

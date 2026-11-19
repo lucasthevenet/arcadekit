@@ -55,7 +55,7 @@ const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
 const Wounded = Query.all(Health);
 
 /** An app of these systems, with something in its world to visit. */
-const playing = (systems: readonly System.System<any, any>[]) =>
+const playing = (systems: readonly System.System<unknown, unknown>[]) =>
   Effect.gen(function* () {
     const app = yield* App.make({
       systems: systems as readonly System.System<never, never>[],
@@ -77,7 +77,7 @@ const playing = (systems: readonly System.System<any, any>[]) =>
 /** Runs `body` as the one system of an app, with this access, for one tick. */
 const ticking = (
   access: System.Access | undefined,
-  body: () => Generator<Effect.Effect<any, any, any>, void, never>
+  body: () => Generator<Effect.Effect<unknown, unknown, unknown>, void, never>
 ): void =>
   Effect.runSync(
     Effect.scoped(
@@ -127,7 +127,9 @@ describe("a system that says what it reads and writes", () => {
   ];
 
   it("is the same game as one whose systems said nothing", () => {
-    const hashes = (systems: readonly System.System<any, any>[]): number[] =>
+    const hashes = (
+      systems: readonly System.System<unknown, unknown>[]
+    ): number[] =>
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
@@ -477,7 +479,7 @@ describe("a system that says what it reads and writes", () => {
   });
 
   it("is held to it in the frame stage too, and in what it does in place of running", () => {
-    const frame = (system: System.System<any, any>): void =>
+    const frame = (system: System.System<unknown, unknown>): void =>
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
@@ -719,8 +721,8 @@ describe("a system that says what it reads and writes", () => {
 describe("a world with a guard", () => {
   // The storage core on its own: what an app sets before such a system.
   const guarded = (
-    reads: readonly ComponentDef<any>[],
-    writes: readonly ComponentDef<any>[]
+    reads: readonly ComponentDef[],
+    writes: readonly ComponentDef[]
   ): { readonly world: EcsWorld; readonly guard: Guard; first: Entity } => {
     const world = new EcsWorld();
     const first = world.spawn(
@@ -746,9 +748,9 @@ describe("a world with a guard", () => {
     return { world, guard, first };
   };
   const spec = (
-    terms: readonly ComponentDef<any>[],
+    terms: readonly ComponentDef[],
     more: Partial<QuerySpec> = {}
-  ): QuerySpec<any> => ({ terms, withDefs: [], withoutDefs: [], ...more });
+  ): QuerySpec => ({ terms, withDefs: [], withoutDefs: [], ...more });
 
   it("refuses what was not said where it is done, and says who, what and what to do", () => {
     const { first, world } = guarded([Health], [Position]);

@@ -541,9 +541,9 @@ export type CueOf<P> =
  */
 export interface Line {
   /** @internal */
-  readonly event: Event.EventDef<any>;
+  readonly event: Event.EventDef<unknown>;
   /** @internal */
-  readonly pick: (payload: any) => Playable | Cue | undefined;
+  readonly pick: (payload: never) => Playable | Cue | undefined;
 }
 
 /**
@@ -566,19 +566,19 @@ export const on = <P>(event: Event.EventDef<P>, cue: CueOf<P>): Line => ({
 
 /** The assets of a bundle, whatever their types. */
 // `any`: an asset is of whatever its `decode` makes.
-type Entries = Readonly<Record<string, Assets.Asset<any>>>;
+type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 const isCue = (picked: Playable | Cue): picked is Cue =>
   typeof picked !== "string" && !(picked instanceof Clip);
 
 /** Entries grouped by event, so a system reads each event once for all of them. */
 type Heard = readonly (readonly [
-  Event.EventDef<any>,
+  Event.EventDef<unknown>,
   readonly Line["pick"][],
 ])[];
 
 const byEvent = (lines: readonly Line[]): Heard => {
-  const found = new Map<Event.EventDef<any>, Line["pick"][]>();
+  const found = new Map<Event.EventDef<unknown>, Line["pick"][]>();
   for (const line of lines) {
     const picks = found.get(line.event);
     if (picks === undefined) {
@@ -623,22 +623,21 @@ const byEvent = (lines: readonly Line[]): Heard => {
  *
  * @category Systems
  */
-export const cues: {
-  <B extends Entries>(
-    name: string,
-    from: Assets.Bundle<B>,
-    lines: (assets: Assets.Loaded<B>) => readonly Line[]
-  ): System.System<never, Player | Events | Assets.Store>;
-  (
-    name: string,
-    ...lines: readonly Line[]
-  ): System.System<never, Player | Events>;
-} = (
+export function cues<B extends Entries>(
+  name: string,
+  from: Assets.Bundle<B>,
+  lines: (assets: Assets.Loaded<B>) => readonly Line[]
+): System.System<never, Player | Events | Assets.Store>;
+export function cues(
+  name: string,
+  ...lines: readonly Line[]
+): System.System<never, Player | Events>;
+// One body for both: the system of lines that are there asks for no store of
+// assets, which the second signature says.
+export function cues(
   name: string,
   ...rest: readonly unknown[]
-  // `any`: the system of lines that are there asks for no store of assets,
-  // which the two signatures above say and one body cannot.
-): System.System<never, any> => {
+): System.System<never, Player | Events | Assets.Store> {
   const from = rest[0] instanceof Assets.Bundle ? rest[0] : undefined;
   const fixed =
     from === undefined ? byEvent(rest as readonly Line[]) : undefined;
@@ -675,7 +674,8 @@ export const cues: {
       const heard = (yield* event).read();
       for (const pick of picks) {
         for (const payload of heard) {
-          const picked = pick(payload);
+          // Of the line's event, which is the one it was read from.
+          const picked = pick(payload as never);
           if (picked === undefined) {
             continue;
           }
@@ -689,7 +689,7 @@ export const cues: {
       }
     }
   }).pipe(System.inStage("frame"));
-};
+}
 
 // --- music: what should be heard, for as long as the game is as it is ----------------
 
@@ -756,7 +756,7 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *
  * @category Systems
  */
-export const music = <Eff extends Effect.Effect<any, any, any>>(
+export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, TrackOf, never>,
   options: { readonly fade?: number; readonly channel?: string } = {}

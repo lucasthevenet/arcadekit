@@ -206,17 +206,18 @@ export const removeField = (
 
 /**
  * Changes a field's type, and computes each new value from the old one:
- * `mapField(world, "game/Hp", "points", "f32", (hp) => hp / 2)`. For a `ref`
- * field, the old value is its encoded form.
+ * `mapField(world, "game/Hp", "points", "f32", (hp: number) => hp / 2)`. The
+ * save doesn't know the old value's type, so `map` names it. For a `ref` field,
+ * the old value is its encoded form.
  *
  * @category Migrations
  */
-export const mapField = (
+export const mapField = <T>(
   world: SnapshotContents,
   component: string,
   field: string,
   kind: FieldKind,
-  map: (value: any) => unknown
+  map: (value: T) => unknown
 ): void => {
   const definition = componentOf(world, component);
   const found = fieldOf(definition, field);
@@ -230,7 +231,9 @@ export const mapField = (
     }
     const next = column(kind, count, 0);
     for (let row = 0; row < count; row++) {
-      next[row] = map(was === "transient" ? undefined : old?.[row]) as never;
+      next[row] = map(
+        (was === "transient" ? undefined : old?.[row]) as T
+      ) as never;
     }
     columns[field] = next;
   }

@@ -754,7 +754,7 @@ describe("what each hands its callback", () => {
       for (let n = 0; n < 12; n++) {
         world.spawn(Health.of({ hp: n }), def.of(valueOf(n)));
       }
-      const read = (spec: QuerySpec<any>): unknown[] => {
+      const read = (spec: QuerySpec): unknown[] => {
         const rows: unknown[] = [];
         world.view(spec).each((...args: unknown[]) => {
           const [health, every] = args as [
@@ -906,7 +906,7 @@ describe("what each hands its callback", () => {
       world.add(entities[n]!, E.of({ v: 10_000 * n }));
     }
     // Components of one shape and several names: told apart nowhere here.
-    const lists: ComponentDef<any>[][] = [
+    const lists: ComponentDef[][] = [
       // In the table alone: one loop for each number of terms up to three,
       // and one for any number past that.
       [B],
@@ -931,7 +931,7 @@ describe("what each hands its callback", () => {
           (term as { v: number }).v += 1;
         }
       });
-      const scale = new Map<ComponentDef<any>, number>([
+      const scale = new Map<ComponentDef, number>([
         [A, 1],
         [B, 10],
         [C, 100],
@@ -1020,12 +1020,23 @@ describe("structural changes during iteration", () => {
 describe("randomized comparison against a simple model", () => {
   // A second, obviously-correct implementation: a Map of entity -> components.
   // Thousands of random operations must leave both in the same state.
-  const defs = [Position, Velocity, Health, Enemy, Stunned, Burning] as const;
+  // As any component: the model holds plain objects, whatever the component.
+  const defs: readonly ComponentDef[] = [
+    Position,
+    Velocity,
+    Health,
+    Enemy,
+    Stunned,
+    Burning,
+  ];
   const random = (seed: number) => () => {
     seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
     return seed / 0x1_00_00_00_00;
   };
-  const sample = (def: (typeof defs)[number], rnd: () => number): any => {
+  const sample = (
+    def: ComponentDef,
+    rnd: () => number
+  ): Record<string, number> => {
     if (def === Position || def === Velocity) {
       return { x: Math.fround(rnd() * 100), y: Math.fround(rnd() * 100) };
     }
@@ -1042,7 +1053,7 @@ describe("randomized comparison against a simple model", () => {
     it(`seed ${seed}`, () => {
       const rnd = random(seed);
       const world = new World();
-      const model = new Map<Entity, Map<number, any>>();
+      const model = new Map<Entity, Map<number, Record<string, number>>>();
       const dead: Entity[] = [];
 
       for (let step = 0; step < 4000; step++) {
@@ -1053,11 +1064,11 @@ describe("randomized comparison against a simple model", () => {
         const def = defs[Math.floor(rnd() * defs.length)]!;
         if (roll < 0.3 || pick === undefined) {
           const chosen = defs.filter(() => rnd() < 0.4);
-          const values = new Map<number, any>();
+          const values = new Map<number, Record<string, number>>();
           const inputs = chosen.map((d) => {
             const value = sample(d, rnd);
             values.set(d.id, value);
-            return (d as any).of(value);
+            return d.of(value);
           });
           model.set(world.spawn(...inputs), values);
         } else if (roll < 0.45) {
@@ -1066,7 +1077,7 @@ describe("randomized comparison against a simple model", () => {
           dead.push(pick);
         } else if (roll < 0.75) {
           const value = sample(def!, rnd);
-          world.add(pick, (def as any).of(value));
+          world.add(pick, def.of(value));
           model.get(pick)!.set(def.id, value);
         } else {
           expect(world.remove(pick, def)).toBe(model.get(pick)!.delete(def.id));
@@ -1081,7 +1092,7 @@ describe("randomized comparison against a simple model", () => {
         expect(world.isAlive(entity)).toBe(true);
         for (const def of defs) {
           expect(world.has(entity, def)).toBe(values.has(def.id));
-          expect(world.get(entity, def as any)).toEqual(values.get(def.id));
+          expect(world.get(entity, def)).toEqual(values.get(def.id));
         }
       }
 
@@ -1129,7 +1140,7 @@ describe("randomized comparison against a simple model", () => {
           view._path = path;
           const visited: Entity[] = [];
           view.each((pos, entity) => {
-            expect(pos.x).toBe(model.get(entity)!.get(Position.id).x);
+            expect(pos.x).toBe(model.get(entity)!.get(Position.id)!.x);
             visited.push(entity);
           });
           expect(visited.sort((a, b) => a - b)).toEqual(expected);
@@ -1138,7 +1149,7 @@ describe("randomized comparison against a simple model", () => {
             expect(end).toBeGreaterThan(start);
             for (let i = start; i < end; i++) {
               const entity = entities[i] as Entity;
-              expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id).y);
+              expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id)!.y);
               chunked.push(entity);
             }
           });
@@ -1158,8 +1169,10 @@ describe("randomized comparison against a simple model", () => {
         view._path = path;
         const visited: Entity[] = [];
         view.each((health, burn, entity) => {
-          expect(health.hp).toBe(model.get(entity)!.get(Health.id).hp);
-          expect(burn.seconds).toBe(model.get(entity)!.get(Burning.id).seconds);
+          expect(health.hp).toBe(model.get(entity)!.get(Health.id)!.hp);
+          expect(burn.seconds).toBe(
+            model.get(entity)!.get(Burning.id)!.seconds
+          );
           visited.push(entity);
         });
         expect(visited.sort((a, b) => a - b)).toEqual(expected);
@@ -1167,9 +1180,9 @@ describe("randomized comparison against a simple model", () => {
         view.eachChunk((start, end, health, burning, entities) => {
           for (let i = start; i < end; i++) {
             const entity = entities[i] as Entity;
-            expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id).hp);
+            expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id)!.hp);
             expect(burning.columns.seconds[burning.indexOf(entity)]).toBe(
-              model.get(entity)!.get(Burning.id).seconds
+              model.get(entity)!.get(Burning.id)!.seconds
             );
             chunked.push(entity);
           }
