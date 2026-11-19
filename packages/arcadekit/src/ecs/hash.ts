@@ -10,7 +10,7 @@
  *
  * No Effect dependency.
  */
-import { columnOfKind } from "./component";
+import { columnOfKind, unreachable } from "./component";
 import type { Column, FieldKind, RefCodec } from "./component";
 
 /** Folds one 32-bit word into a hash state. */
@@ -306,6 +306,10 @@ export const addColumn = (
     case "transient": {
       // Not part of the game's state: not saved, so not hashed.
       return h;
+    }
+
+    default: {
+      return unreachable(kind);
     }
   }
 };

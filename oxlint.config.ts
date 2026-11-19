@@ -59,13 +59,11 @@ export default defineConfig({
     "unicorn/prefer-reflect-apply": "off",
     // Off for now, to be turned back on once the rest is fixed: key order
     // carries meaning (schema fields, config sections); Effect.gen takes an
-    // unnamed function*; Effect's APIs take callbacks; TypeScript checks a
-    // switch over a union is exhaustive, and a default would hide a missing
-    // case; Schema names a value and its type alike.
+    // unnamed function*; Effect's APIs take callbacks; Schema names a value
+    // and its type alike.
     "eslint/sort-keys": "off",
     "eslint/func-names": "off",
     "promise/prefer-await-to-callbacks": "off",
-    "eslint/default-case": "off",
     "eslint/no-redeclare": "off",
     // TypeDoc's tag, which sorts the reference into sections.
     "jsdoc/check-tag-names": ["error", { definedTags: ["category"] }],

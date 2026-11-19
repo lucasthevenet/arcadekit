@@ -1,5 +1,6 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
+import { absurd } from "effect/Function";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -599,6 +600,10 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
 
       case "bug": {
         throw new Error("a bug in the handler");
+      }
+
+      default: {
+        return absurd(step);
       }
     }
   }

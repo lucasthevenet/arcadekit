@@ -41,6 +41,7 @@ import {
   frozenWrite,
   makeEntity,
   retarget,
+  unreachable,
 } from "./component";
 import type {
   Accessor,
@@ -5068,6 +5069,10 @@ export class CommandBuffer {
         case "remove": {
           world.remove(cmd.entity, cmd.def);
           break;
+        }
+
+        default: {
+          unreachable(cmd);
         }
       }
     }

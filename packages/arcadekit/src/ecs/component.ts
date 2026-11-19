@@ -105,6 +105,14 @@ export type FieldKind =
 export const isBoxed = (kind: FieldKind): kind is BoxedKind =>
   kind === "json" || kind === "ref" || kind === "transient";
 
+/**
+ * Throws for a value that a switch has no case for. It takes `never`, so the
+ * switch doesn't compile while one of its cases is missing.
+ */
+export const unreachable = (value: never): never => {
+  throw new Error(`There is no case for ${String(value)}.`);
+};
+
 /** The field types whose values are stored in a plain array. */
 export type BoxedKind = "json" | "ref" | "transient";
 
@@ -248,6 +256,10 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
     case "ref":
     case "transient": {
       return Array.from({ length: capacity });
+    }
+
+    default: {
+      return unreachable(kind);
     }
   }
 };
