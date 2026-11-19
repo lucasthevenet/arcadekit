@@ -224,7 +224,7 @@ export interface FitOptions {
 }
 
 const isPerspective = (camera: Camera): camera is PerspectiveCamera =>
-  (camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera === true;
+  "isPerspectiveCamera" in camera && camera.isPerspectiveCamera === true;
 
 /**
  * Returns a layer for a renderer you create, which is disposed of when the
@@ -264,8 +264,10 @@ export const layerRenderer = (
               const r =
                 options.pixelRatio ??
                 Math.min(
-                  (globalThis as { devicePixelRatio?: number })
-                    .devicePixelRatio ?? 1,
+                  // Not where there is no window, as in a test.
+                  "devicePixelRatio" in globalThis
+                    ? globalThis.devicePixelRatio
+                    : 1,
                   2
                 );
 
@@ -960,6 +962,8 @@ export const texture = (
       (made) =>
         Effect.sync(() => {
           made.dispose();
+          // SAFETY: it was made of a bitmap, which has close, and prepare
+          // may have given it another picture, which may not.
           (made.image as { close?: () => void } | null)?.close?.();
         })
     )
@@ -1985,13 +1989,17 @@ export const instances: {
     let drawn: Instances | undefined;
 
     if (from === undefined) {
+      // SAFETY: what is kept under a system's name is kept by that system,
+      // and App.make refuses two systems of one name.
       drawn = kept._kept.get(name) as Instances | undefined;
 
       if (drawn === undefined) {
+        // SAFETY: options with no `from` are the other signature's.
         drawn = new Instances(kept.scene, name, options as InstancesOptions);
         kept._kept.set(name, drawn);
       }
     } else {
+      // SAFETY: as above, what is kept under a system's name is its own.
       let sourced = kept._kept.get(name) as FromAssets<Sourced> | undefined;
 
       if (sourced === undefined) {
@@ -2161,6 +2169,7 @@ class Objects<O extends Object3D> implements Kept {
     const object = this.objects[index]!;
     this.objects[index] = undefined;
     this.scene.remove(object);
+    // SAFETY: `owner` holds the entity each object was made for.
     this.options.free?.(object, this.owner[index] as Entity);
   }
 
@@ -2528,6 +2537,8 @@ export const objects: {
     let held: Objects<O> | undefined;
 
     if (from === undefined) {
+      // SAFETY: what is kept under a system's name is kept by that system,
+      // and App.make refuses two systems of one name.
       held = kept._kept.get(name) as Objects<O> | undefined;
 
       if (held === undefined) {
@@ -2535,6 +2546,7 @@ export const objects: {
         kept._kept.set(name, held);
       }
     } else {
+      // SAFETY: as above, what is kept under a system's name is its own.
       let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
 
       if (sourced === undefined) {

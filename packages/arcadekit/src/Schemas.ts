@@ -18,6 +18,8 @@ import type { Entity } from "./ecs/component";
  *
  * @category Schemas
  */
+// SAFETY: an Entity is a number with a brand of arcadekit's own, which this
+// check stands for: a whole number in the range of ids.
 export const EntityId: Schema.Codec<Entity, number> = Schema.Int.check(
   Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })
 ) as unknown as Schema.Codec<Entity, number>;

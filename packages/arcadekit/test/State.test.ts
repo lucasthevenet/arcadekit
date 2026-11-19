@@ -906,6 +906,20 @@ describe("a state in a save", () => {
     );
   });
 
+  it("says so when it holds a value it no longer has", () => {
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ plugins: [Rules] });
+        // As a save from a version of the game with a fourth level would.
+        app.world.singleton(Level).value = "four";
+
+        expect(() => app.tick(1)).toThrow(
+          'The state "st/Level" holds "four", which is not one of its values: one, two, three. A save from a version of the game that had it is migrated with Migrate.mapField(world, "st/Level", "value", "json", ...).'
+        );
+      })
+    );
+  });
+
   it("has to be listed, like any singleton, to be loaded", () => {
     run(
       Effect.gen(function* () {

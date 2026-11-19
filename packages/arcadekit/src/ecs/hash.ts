@@ -10,6 +10,7 @@
  *
  * No Effect dependency.
  */
+import { columnOfKind } from "./component";
 import type { Column, FieldKind, RefCodec } from "./component";
 
 /** Folds one 32-bit word into a hash state. */
@@ -206,24 +207,24 @@ export const addColumn = (
 
   switch (kind) {
     case "f32": {
-      const { buffer, byteOffset } = column as Float32Array;
+      const { buffer, byteOffset } = columnOfKind(kind, column);
 
       return addFloat32s(h, new Uint32Array(buffer, byteOffset, count), count);
     }
 
     case "i32": {
       // The same bits, read as unsigned so that one loop serves both.
-      const { buffer, byteOffset } = column as Int32Array;
+      const { buffer, byteOffset } = columnOfKind(kind, column);
 
       return addWords(h, new Uint32Array(buffer, byteOffset, count), count);
     }
 
     case "u32": {
-      return addWords(h, column as Uint32Array, count);
+      return addWords(h, columnOfKind(kind, column), count);
     }
 
     case "u16": {
-      const values = column as Uint16Array;
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         h = add(h, values[i]!);
@@ -233,7 +234,7 @@ export const addColumn = (
     }
 
     case "u8": {
-      const values = column as Uint8Array;
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         h = add(h, values[i]!);
@@ -248,7 +249,7 @@ export const addColumn = (
       // takes words four at a time. Going through the loop for floats,
       // which looks at each for NaN, made hashing a world of four float
       // fields half as slow again.
-      const { buffer, byteOffset } = column as Float64Array;
+      const { buffer, byteOffset } = columnOfKind(kind, column);
       const words = new Uint32Array(buffer, byteOffset, count * 2);
 
       if (LOW_FIRST) {
@@ -268,7 +269,7 @@ export const addColumn = (
     }
 
     case "f64": {
-      const { buffer, byteOffset } = column as Float64Array;
+      const { buffer, byteOffset } = columnOfKind(kind, column);
       const words = new Uint32Array(buffer, byteOffset, count * 2);
 
       for (let i = 0; i < count; i += 1) {
@@ -283,7 +284,7 @@ export const addColumn = (
     }
 
     case "json": {
-      const values = column as unknown[];
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         h = addData(h, values[i]);
@@ -293,7 +294,7 @@ export const addColumn = (
     }
 
     case "ref": {
-      const values = column as unknown[];
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         h = addData(h, codec!.encode(values[i]));
@@ -322,7 +323,7 @@ export const addColumnPerRow = (
 ): void => {
   switch (kind) {
     case "f32": {
-      const { buffer, byteOffset } = column as Float32Array;
+      const { buffer, byteOffset } = columnOfKind(kind, column);
       const words = new Uint32Array(buffer, byteOffset, count);
 
       for (let i = 0; i < count; i += 1) {
@@ -335,7 +336,7 @@ export const addColumnPerRow = (
 
     case "entity":
     case "f64": {
-      const values = column as Float64Array;
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         states[i] = addFloat64(states[i]!, values[i]!);
@@ -345,7 +346,7 @@ export const addColumnPerRow = (
     }
 
     case "json": {
-      const values = column as unknown[];
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         states[i] = addData(states[i]!, values[i]);
@@ -355,7 +356,7 @@ export const addColumnPerRow = (
     }
 
     case "ref": {
-      const values = column as unknown[];
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         states[i] = addData(states[i]!, codec!.encode(values[i]));
@@ -369,7 +370,7 @@ export const addColumnPerRow = (
     }
 
     default: {
-      const values = column as Uint32Array;
+      const values = columnOfKind(kind, column);
 
       for (let i = 0; i < count; i += 1) {
         states[i] = add(states[i]!, values[i]!);

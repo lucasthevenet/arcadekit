@@ -158,10 +158,11 @@ const listen = (
     type: string,
     listener: (event: E) => void
   ): void => {
-    where.addEventListener(type, listener as EventListener);
-    stops.push(() =>
-      where.removeEventListener(type, listener as EventListener)
-    );
+    // SAFETY: the page calls a listener of `type` with that type's event,
+    // which each call below names as E.
+    const heard = listener as EventListener;
+    where.addEventListener(type, heard);
+    stops.push(() => where.removeEventListener(type, heard));
   };
 
   on(page, "keydown", (event: KeyboardEvent) => {

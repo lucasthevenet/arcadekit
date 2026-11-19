@@ -781,8 +781,8 @@ export const build = <E>(
  * @category Constructors
  */
 export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
-  // A lockstep session predicts nothing, so it captures nothing, and a
-  // capture is all that fails with `SaveRefused`.
+  // SAFETY: a lockstep session predicts nothing, so it captures nothing, and
+  // a capture is all that fails with `SaveRefused`.
   build(app, {
     ...options,
     delay: options.delay ?? 2,

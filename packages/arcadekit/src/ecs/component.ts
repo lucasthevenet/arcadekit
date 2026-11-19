@@ -67,6 +67,8 @@ export const entityGeneration = (entity: Entity): number =>
   Math.floor(entity / INDEX_RANGE);
 
 export const makeEntity = (index: number, generation: number): Entity =>
+  // SAFETY: an id is its generation times INDEX_RANGE plus its index, which
+  // entityIndex and entityGeneration take apart; this is where ids are made.
   (generation * INDEX_RANGE + index) as Entity;
 
 // ---------------------------------------------------------------------------
@@ -100,8 +102,14 @@ export type FieldKind =
  * - `ref`: any value, saved and hashed through a codec.
  * - `transient`: neither saved nor hashed.
  */
-export const isBoxed = (kind: FieldKind): boolean =>
+export const isBoxed = (kind: FieldKind): kind is BoxedKind =>
   kind === "json" || kind === "ref" || kind === "transient";
+
+/** The field types whose values are stored in a plain array. */
+export type BoxedKind = "json" | "ref" | "transient";
+
+/** The field types whose values are stored in a typed array. */
+export type NumericKind = Exclude<FieldKind, BoxedKind>;
 
 /**
  * Converts the values of a `ref` field to plain data and back. `encode` returns
@@ -177,6 +185,29 @@ export type Column =
   | Uint8Array
   | any[];
 
+/** The column a field of each kind is stored in, as makeColumn makes it. */
+export interface ColumnOfKind {
+  f32: Float32Array;
+  f64: Float64Array;
+  i32: Int32Array;
+  u32: Uint32Array;
+  u16: Uint16Array;
+  u8: Uint8Array;
+  entity: Float64Array;
+  json: unknown[];
+  ref: unknown[];
+  transient: unknown[];
+}
+
+/** A column of a field of this kind, typed as it is stored. */
+export const columnOfKind = <K extends FieldKind>(
+  kind: K,
+  column: Column
+): ColumnOfKind[K] =>
+  // SAFETY: makeColumn makes a field's columns by its kind, as ColumnOfKind
+  // says, and a column is only ever replaced by another made the same way.
+  column as ColumnOfKind[K];
+
 export const makeColumn = (kind: FieldKind, capacity: number): Column => {
   switch (kind) {
     case "f32": {
@@ -224,14 +255,14 @@ export const growColumn = (
   const next = makeColumn(kind, capacity);
 
   if (isBoxed(kind)) {
-    const from = old as unknown[];
-    const to = next as unknown[];
+    const from = columnOfKind(kind, old);
+    const to = columnOfKind(kind, next);
 
     for (let i = 0; i < from.length; i += 1) {
       to[i] = from[i];
     }
   } else {
-    (next as Float32Array).set(old as Float32Array);
+    columnOfKind(kind, next).set(columnOfKind(kind, old));
   }
 
   return next;
@@ -491,9 +522,10 @@ export const retarget = (name: string): string =>
 
 /** What an accessor that records writes was last bound to. */
 interface Noting {
-  /** A table's ids, or a sparse set's indexes. */
-  entities: Uint32Array | Float64Array;
-  log: WriteLog;
+  /** A table's ids, or a sparse set's indexes. Bound before the first write. */
+  entities: Uint32Array | Float64Array | undefined;
+  /** Bound before the first write. */
+  log: WriteLog | undefined;
 }
 
 /**
@@ -517,196 +549,210 @@ const refuse = (message: string) => (): never => {
 // else. They are not one function given the type: see above.
 
 const defineF32: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Float32Array;
+  let column: Float32Array | undefined;
 
   const write =
     noting === undefined
       ? (value: number) => {
-          column[row.i] = value;
+          column![row.i] = value;
         }
       : (value: number) => {
-          column[row.i] = value;
+          column![row.i] = value;
           // The log keeps one entry per entity until a reader has been.
           // The check `note` starts with is written out here, so that a
           // row which is noted already costs a few reads and a
           // comparison, and no call. `noted` is read through the log
           // each time: the log replaces it when it grows.
-          const index = noting.entities[row.i]! & INDEX_MASK;
+          const index = noting.entities![row.i]! & INDEX_MASK;
 
-          if (noting.log.noted[index] !== 1) {
-            noting.log.note(index);
+          if (noting.log!.noted[index] !== 1) {
+            noting.log!.note(index);
           }
         };
 
   Object.defineProperty(target, name, {
-    get: () => column[row.i],
+    get: () => column![row.i],
     set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
+    // SAFETY: An `f32` field's columns are Float32Arrays: makeColumn makes
+    // them by the field's kind, and DEFINE_FIELD picks this by the same kind.
     column = to as Float32Array;
   };
 };
 
 const defineF64: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Float64Array;
+  let column: Float64Array | undefined;
 
   const write =
     noting === undefined
       ? (value: number) => {
-          column[row.i] = value;
+          column![row.i] = value;
         }
       : (value: number) => {
-          column[row.i] = value;
-          const index = noting.entities[row.i]! & INDEX_MASK;
+          column![row.i] = value;
+          const index = noting.entities![row.i]! & INDEX_MASK;
 
-          if (noting.log.noted[index] !== 1) {
-            noting.log.note(index);
+          if (noting.log!.noted[index] !== 1) {
+            noting.log!.note(index);
           }
         };
 
   Object.defineProperty(target, name, {
-    get: () => column[row.i],
+    get: () => column![row.i],
     set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
+    // SAFETY: An `f64` or `entity` field's columns are Float64Arrays: makeColumn makes
+    // them by the field's kind, and DEFINE_FIELD picks this by the same kind.
     column = to as Float64Array;
   };
 };
 
 const defineI32: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Int32Array;
+  let column: Int32Array | undefined;
 
   const write =
     noting === undefined
       ? (value: number) => {
-          column[row.i] = value;
+          column![row.i] = value;
         }
       : (value: number) => {
-          column[row.i] = value;
-          const index = noting.entities[row.i]! & INDEX_MASK;
+          column![row.i] = value;
+          const index = noting.entities![row.i]! & INDEX_MASK;
 
-          if (noting.log.noted[index] !== 1) {
-            noting.log.note(index);
+          if (noting.log!.noted[index] !== 1) {
+            noting.log!.note(index);
           }
         };
 
   Object.defineProperty(target, name, {
-    get: () => column[row.i],
+    get: () => column![row.i],
     set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
+    // SAFETY: An `i32` field's columns are Int32Arrays: makeColumn makes
+    // them by the field's kind, and DEFINE_FIELD picks this by the same kind.
     column = to as Int32Array;
   };
 };
 
 const defineU32: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Uint32Array;
+  let column: Uint32Array | undefined;
 
   const write =
     noting === undefined
       ? (value: number) => {
-          column[row.i] = value;
+          column![row.i] = value;
         }
       : (value: number) => {
-          column[row.i] = value;
-          const index = noting.entities[row.i]! & INDEX_MASK;
+          column![row.i] = value;
+          const index = noting.entities![row.i]! & INDEX_MASK;
 
-          if (noting.log.noted[index] !== 1) {
-            noting.log.note(index);
+          if (noting.log!.noted[index] !== 1) {
+            noting.log!.note(index);
           }
         };
 
   Object.defineProperty(target, name, {
-    get: () => column[row.i],
+    get: () => column![row.i],
     set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
+    // SAFETY: A `u32` field's columns are Uint32Arrays: makeColumn makes
+    // them by the field's kind, and DEFINE_FIELD picks this by the same kind.
     column = to as Uint32Array;
   };
 };
 
 const defineU16: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Uint16Array;
+  let column: Uint16Array | undefined;
 
   const write =
     noting === undefined
       ? (value: number) => {
-          column[row.i] = value;
+          column![row.i] = value;
         }
       : (value: number) => {
-          column[row.i] = value;
-          const index = noting.entities[row.i]! & INDEX_MASK;
+          column![row.i] = value;
+          const index = noting.entities![row.i]! & INDEX_MASK;
 
-          if (noting.log.noted[index] !== 1) {
-            noting.log.note(index);
+          if (noting.log!.noted[index] !== 1) {
+            noting.log!.note(index);
           }
         };
 
   Object.defineProperty(target, name, {
-    get: () => column[row.i],
+    get: () => column![row.i],
     set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
+    // SAFETY: A `u16` field's columns are Uint16Arrays: makeColumn makes
+    // them by the field's kind, and DEFINE_FIELD picks this by the same kind.
     column = to as Uint16Array;
   };
 };
 
 const defineU8: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as Uint8Array;
+  let column: Uint8Array | undefined;
 
   const write =
     noting === undefined
       ? (value: number) => {
-          column[row.i] = value;
+          column![row.i] = value;
         }
       : (value: number) => {
-          column[row.i] = value;
-          const index = noting.entities[row.i]! & INDEX_MASK;
+          column![row.i] = value;
+          const index = noting.entities![row.i]! & INDEX_MASK;
 
-          if (noting.log.noted[index] !== 1) {
-            noting.log.note(index);
+          if (noting.log!.noted[index] !== 1) {
+            noting.log!.note(index);
           }
         };
 
   Object.defineProperty(target, name, {
-    get: () => column[row.i],
+    get: () => column![row.i],
     set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
+    // SAFETY: A `u8` field's columns are Uint8Arrays: makeColumn makes
+    // them by the field's kind, and DEFINE_FIELD picks this by the same kind.
     column = to as Uint8Array;
   };
 };
 
 /** Defines a `json`, `ref` or `transient` field: a plain array, one value per row. */
 const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
-  let column = undefined as unknown as unknown[];
+  let column: unknown[] | undefined;
 
   const write =
     noting === undefined
       ? (value: unknown) => {
-          column[row.i] = value;
+          column![row.i] = value;
         }
       : (value: unknown) => {
-          column[row.i] = value;
-          const index = noting.entities[row.i]! & INDEX_MASK;
+          column![row.i] = value;
+          const index = noting.entities![row.i]! & INDEX_MASK;
 
-          if (noting.log.noted[index] !== 1) {
-            noting.log.note(index);
+          if (noting.log!.noted[index] !== 1) {
+            noting.log!.note(index);
           }
         };
 
   Object.defineProperty(target, name, {
-    get: () => column[row.i],
+    get: () => column![row.i],
     set: refusal === undefined ? write : refuse(refusal),
   });
 
   return (to) => {
+    // SAFETY: A `json`, `ref` or `transient` field's columns are plain arrays: makeColumn makes
+    // them by the field's kind, and DEFINE_FIELD picks this by the same kind.
     column = to as unknown[];
   };
 };
@@ -760,12 +806,7 @@ export const makeAccessor = (
   const { fields, kinds } = def;
 
   const noting: Noting | undefined =
-    mode === "notes"
-      ? {
-          entities: undefined as unknown as Float64Array,
-          log: undefined as unknown as WriteLog,
-        }
-      : undefined;
+    mode === "notes" ? { entities: undefined, log: undefined } : undefined;
 
   const target = {};
 
@@ -780,15 +821,15 @@ export const makeAccessor = (
   );
 
   return {
-    fields: Object.create(target) as object,
+    fields: Object.create(target),
     bind(columns, entities, log) {
       for (let f = 0; f < binders.length; f += 1) {
         binders[f]!(columns[fields[f]!]!);
       }
 
       if (noting !== undefined) {
-        noting.entities = entities!;
-        noting.log = log!;
+        noting.entities = entities;
+        noting.log = log;
       }
     },
   };
@@ -819,6 +860,7 @@ const define = <
     fields,
     kinds: Object.values(schema).map((fieldDef) => fieldDef.kind),
     codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
+    // SAFETY: St is "table" when no storage is given, its default.
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
     single: options?.single === true,
@@ -905,6 +947,8 @@ export const Component = {
   ): ComponentDef<RelationSchema<S>, St, N> =>
     define<RelationSchema<S>, St, N>(
       name,
+      // SAFETY: the target field and then the given ones, which is what
+      // RelationSchema says; TypeScript types a spread of a generic loosely.
       {
         target: Field.entity,
         ...options.fields,

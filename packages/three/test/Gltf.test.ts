@@ -298,6 +298,8 @@ describe("a model", () => {
       ),
       // A binary glTF that says it has a document, and has none.
       "/hollow.glb": glb({}).subarray(0, 12),
+      // JSON whose buffers are not a list of buffers.
+      "/odd.gltf": JSON.stringify({ buffers: 3 }),
     };
 
     expect((await load("/m/tri.gltf", files)).failure).toStrictEqual(
@@ -320,6 +322,13 @@ describe("a model", () => {
     expect([hollow.url, hollow.message]).toStrictEqual([
       "/hollow.glb",
       "It is not a glTF model: It is a binary glTF with no JSON in it.",
+    ]);
+
+    const odd = (await load("/odd.gltf", files)).failure as Assets.AssetFailed;
+
+    expect([odd.url, odd.message]).toStrictEqual([
+      "/odd.gltf",
+      "It is not a glTF model: Its JSON is not a glTF document.",
     ]);
 
     // JSON, and no model: Three.js says what it makes of it.

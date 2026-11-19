@@ -196,7 +196,9 @@ export const makeBridge = (): Bridge => {
   };
 
   return {
-    get: (view) => slotOf(view).value as never,
+    // SAFETY: slotOf returns the view's own slot, which only the view's
+    // initial value and what is published of it are put in.
+    get: <A>(view: View<A>): A => slotOf(view).value as A,
     subscribe(view, listener) {
       const { listeners } = slotOf(view);
       listeners.add(listener);
@@ -436,6 +438,8 @@ export const publish = <
   view: View<A>,
   body: () => Generator<Eff, A, never>
 ): System.System<Effect.Error<Eff>, Effect.Services<Eff> | Port> => {
+  // SAFETY: Effect.gen's error and services are Effect.Error<Eff> and
+  // Effect.Services<Eff>, which it writes as conditional types of its own.
   const read = Effect.gen(body) as Effect.Effect<
     A,
     Effect.Error<Eff>,

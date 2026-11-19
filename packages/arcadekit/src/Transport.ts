@@ -221,7 +221,7 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
               channel.onmessage = (event: MessageEvent<unknown>) => {
                 // Whatever else is posted under the name is not text, and
                 // is dropped as what is not a message.
-                onText(event.data as string);
+                onText(String(event.data));
               };
 
               return () => {
@@ -353,7 +353,7 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
             listen(onText) {
               socket.onmessage = (event: MessageEvent<unknown>) => {
                 // A frame that is not text is dropped as what is not a message.
-                onText(event.data as string);
+                onText(String(event.data));
               };
 
               return () => {

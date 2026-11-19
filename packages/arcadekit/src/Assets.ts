@@ -375,34 +375,35 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
  */
 export const load: <B extends Entries>(
   bundle: Bundle<B>
-) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope> = Effect.fn(
-  "Assets.load"
-)(function* (which: Bundle<Entries>) {
-  const loader = yield* Loader;
-  const names = Object.keys(which.assets);
+) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope> =
+  // SAFETY: it returns each of the bundle's names as its asset decoded it,
+  // which is what Loaded<B> says.
+  Effect.fn("Assets.load")(function* (which: Bundle<Entries>) {
+    const loader = yield* Loader;
+    const names = Object.keys(which.assets);
 
-  const values = yield* Effect.forEach(
-    names,
-    (name) => {
-      const asset = which.assets[name]!;
+    const values = yield* Effect.forEach(
+      names,
+      (name) => {
+        const asset = which.assets[name]!;
 
-      return Effect.flatMap(loader.bytes(asset.url), (data) =>
-        asset.decode(data)
-      );
-    },
-    { concurrency: "unbounded" }
-  );
+        return Effect.flatMap(loader.bytes(asset.url), (data) =>
+          asset.decode(data)
+        );
+      },
+      { concurrency: "unbounded" }
+    );
 
-  const loaded: Record<string, unknown> = {};
+    const loaded: Record<string, unknown> = {};
 
-  for (let i = 0; i < names.length; i += 1) {
-    loaded[names[i]!] = values[i];
-  }
+    for (let i = 0; i < names.length; i += 1) {
+      loaded[names[i]!] = values[i];
+    }
 
-  return loaded;
-}) as <B extends Entries>(
-  bundle: Bundle<B>
-) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope>;
+    return loaded;
+  }) as <B extends Entries>(
+    bundle: Bundle<B>
+  ) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope>;
 
 // --- an app's assets -----------------------------------------------------------------
 
@@ -568,6 +569,7 @@ const storeLayer = Layer.effect(
       status<B extends Entries>(which: Bundle<B>) {
         betweenTicks(which, "asked for");
 
+        // SAFETY: a bundle's entry holds what its own assets loaded as.
         return (held.get(which)?.status ?? ABSENT) as Status<Loaded<B>>;
       },
       hold(which, holder) {

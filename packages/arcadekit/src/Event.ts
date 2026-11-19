@@ -474,6 +474,7 @@ export class EventBus {
     const existing = this.channels.get(def);
 
     if (existing !== undefined) {
+      // SAFETY: an event's channel is made for it, below, and kept by it.
       return existing as Channel<P>;
     }
 
@@ -506,8 +507,10 @@ export class EventBus {
       const payload = decode(channel.def, data);
 
       if (Exit.isFailure(payload)) {
+        const reason = Cause.squash(payload.cause);
+
         throw new Error(
-          `The save holds an event "${saved.name}" that no longer reads: ${(Cause.squash(payload.cause) as Error).message}`
+          `The save holds an event "${saved.name}" that no longer reads: ${reason instanceof Error ? reason.message : String(reason)}`
         );
       }
 
@@ -547,7 +550,7 @@ export class EventBus {
         const data = encode(channel.def, payload);
 
         if (Exit.isFailure(data)) {
-          return Exit.fail(Cause.squash(data.cause) as InvalidEvent);
+          return Exit.failCause(data.cause);
         }
 
         payloads.push(data.value);

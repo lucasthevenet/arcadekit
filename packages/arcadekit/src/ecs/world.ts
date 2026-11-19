@@ -212,6 +212,18 @@ const componentAt = ({ named, reader }: Loading): ComponentDef => {
   return def;
 };
 
+/** The target a relation's value points at. */
+const targetOf = (value: ValueOf<Schema>): Entity =>
+  // SAFETY: a relation's schema has `target: Field.entity`, whose values are
+  // entities (Component.relation).
+  value.target as Entity;
+
+/** The targets of a relation's rows. */
+const targetsOf = (columns: Columns): EntityColumn =>
+  // SAFETY: a relation's `target` is an `entity` field, whose columns are
+  // Float64Arrays of entities.
+  columns.target as EntityColumn;
+
 /** Explains that a relation was given without a value, and so has no target. */
 const targetless = (def: ComponentDef): Error =>
   new Error(
@@ -236,10 +248,17 @@ const describeValue = (value: unknown): string => {
 // Table (one archetype)
 // ---------------------------------------------------------------------------
 
+/** The ids of a table's rows, as the table writes them. */
+type Ids = Float64Array & Record<number, Entity>;
+
+const makeIds = (capacity: number): Ids =>
+  // SAFETY: a new array holds no id yet, and a table writes only entities to it.
+  new Float64Array(capacity) as Ids;
+
 /** @internal */
 export class Table {
   /** The id of the entity in each row. */
-  entities: Float64Array;
+  entities: Ids;
   count = 0;
   capacity: number;
   /** Indexed by component id. The record identity is stable; its arrays are replaced on growth. */
@@ -261,7 +280,7 @@ export class Table {
     this.defs = defs;
 
     this.capacity = capacity;
-    this.entities = new Float64Array(capacity);
+    this.entities = makeIds(capacity);
     this.defsByName = defs.toSorted(byName);
 
     for (const def of defs) {
@@ -274,7 +293,7 @@ export class Table {
   push(entity: Entity): number {
     if (this.count === this.capacity) {
       const capacity = this.capacity * 2;
-      const entities = new Float64Array(capacity);
+      const entities = makeIds(capacity);
       entities.set(this.entities);
       this.entities = entities;
 
@@ -299,7 +318,7 @@ export class Table {
     let moved: Entity | undefined;
 
     if (row !== last) {
-      moved = this.entities[last] as Entity;
+      moved = this.entities[last]!;
       this.entities[row] = moved;
     }
 
@@ -1014,6 +1033,7 @@ export class RemovedReader {
     cursor.at = log.end;
     this.world._read(log);
 
+    // SAFETY: a change log notes the ids of the entities that changed.
     return [...ids] as Entity[];
   }
 }
@@ -1204,7 +1224,8 @@ interface Members {
   count: number;
 }
 
-type Callback = (...args: any[]) => void;
+/** A callback of `each` or `eachChunk`, as the loops that call it see it. */
+type Callback = (...args: unknown[]) => void;
 
 type OnRun = (table: Table, start: number, end: number) => void;
 
@@ -2006,6 +2027,9 @@ export class QueryView<D extends Terms = Terms> {
    * the callback, but don't keep references to them.
    */
   each(fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void): void {
+    // SAFETY: visit and visitSparse call it with an accessor per term, in the
+    // order of the terms, and then the entity.
+    const f = fn as Callback;
     const frame = this.enter();
 
     try {
@@ -2057,9 +2081,9 @@ export class QueryView<D extends Terms = Terms> {
         }
 
         if (this.hasSparseTerms) {
-          this.visitSparse(fn, loop, table.entities, start, end);
+          this.visitSparse(f, loop, table.entities, start, end);
         } else {
-          this.visit(fn, loop, table.entities, start, end);
+          this.visit(f, loop, table.entities, start, end);
         }
       });
     } finally {
@@ -2191,6 +2215,8 @@ export class QueryView<D extends Terms = Terms> {
     const frame = this.enter();
 
     try {
+      // SAFETY: it is called with the column set of each term, in the order
+      // of the terms, and then the table's entities.
       const f = fn as Callback;
       const { n } = this;
       const cols: unknown[] = Array.from({ length: n });
@@ -2331,7 +2357,7 @@ export class QueryView<D extends Terms = Terms> {
       try {
         this.runs(frame, (table, start, end) => {
           for (let i = start; i < end; i += 1) {
-            out.push(table.entities[i] as Entity);
+            out.push(table.entities[i]!);
           }
         });
       } finally {
@@ -2346,7 +2372,7 @@ export class QueryView<D extends Terms = Terms> {
     for (const table of this.tables) {
       for (let i = 0; i < table.count; i += 1) {
         if (!this.filtered || this.pass(table.entities[i]!)) {
-          out.push(table.entities[i] as Entity);
+          out.push(table.entities[i]!);
         }
       }
     }
@@ -2694,6 +2720,8 @@ export class World {
       }
 
       if (def.relation !== undefined) {
+        // SAFETY: _registerAll, which runs first, refuses a relation given
+        // without a value.
         (related ??= []).push(input as ComponentValue);
       }
     }
@@ -2713,7 +2741,7 @@ export class World {
     const dangling: ComponentDef[] = [];
 
     for (const { def, value } of related) {
-      const target = value.target as Entity;
+      const target = targetOf(value);
 
       if (this.isAlive(target)) {
         this.relationOf(def).link(index, entityIndex(target));
@@ -2902,7 +2930,7 @@ export class World {
       throw targetless(def);
     }
 
-    const target = value.target as Entity;
+    const target = targetOf(value);
 
     if (!this.isAlive(target)) {
       // A target that is gone already: what its despawn would have done.
@@ -3181,11 +3209,11 @@ export class World {
 
       const link = (
         entities: Uint32Array | Float64Array,
-        targets: Float64Array,
+        targets: EntityColumn,
         count: number
       ): void => {
         for (let row = 0; row < count; row += 1) {
-          const target = targets[row] as Entity;
+          const target = targets[row]!;
 
           if (!this.isAlive(target)) {
             throw corrupt(
@@ -3204,7 +3232,7 @@ export class World {
         const set = this.sparseById.get(def.id);
 
         if (set !== undefined) {
-          link(set.dense, set.columns.target as Float64Array, set.count);
+          link(set.dense, targetsOf(set.columns), set.count);
         }
 
         continue;
@@ -3214,7 +3242,7 @@ export class World {
         const columns = table.columns[def.id];
 
         if (columns !== undefined) {
-          link(table.entities, columns.target as Float64Array, table.count);
+          link(table.entities, targetsOf(columns), table.count);
         }
       }
     }
@@ -3551,12 +3579,16 @@ export class World {
         if (row !== WHOLE) {
           column[row] = copies[f];
         } else if (isBoxed(def.kinds[f]!)) {
+          // SAFETY: a whole save's copies are the columns _saveColumns made
+          // by each field's kind, a plain array for a boxed one.
           const from = copies[f] as unknown[];
 
           for (let r = 0; r < count; r += 1) {
             column[r] = from[r];
           }
         } else {
+          // SAFETY: as above, and for any other kind the copy is a typed
+          // array of the same type as the column.
           (column as Float32Array).set(
             (copies[f] as Float32Array).subarray(0, count)
           );
@@ -3638,6 +3670,8 @@ export class World {
     for (let f = 0; f < def.fields.length; f += 1) {
       const column = cols[def.fields[f]!]!;
       const kind = def.kinds[f]!;
+      // SAFETY: the spare copies of `cols` are the columns made below, one
+      // per field, kept for the next transaction.
       let kept = copies[f] as Column | undefined;
 
       if (kept === undefined || kept.length < count) {
@@ -3647,12 +3681,15 @@ export class World {
       }
 
       if (isBoxed(kind)) {
+        // SAFETY: made by makeColumn for this boxed kind: a plain array.
         const to = kept as unknown[];
 
         for (let r = 0; r < count; r += 1) {
           to[r] = column[r];
         }
       } else {
+        // SAFETY: made by makeColumn for the column's own kind: a typed array
+        // of the column's type.
         (kept as Float32Array).set((column as Float32Array).subarray(0, count));
       }
     }
@@ -4000,7 +4037,7 @@ export class World {
 
       for (const def of table.defs) {
         for (const kind of def.kinds) {
-          estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind as "f32"]);
+          estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind]);
         }
       }
     }
@@ -4477,7 +4514,7 @@ export class World {
     const { nextIndex } = this;
 
     for (let row = 0; row < table.count; row += 1) {
-      const entity = table.entities[row] as Entity;
+      const entity = table.entities[row]!;
       const index = entityIndex(entity);
 
       // Eight bytes can hold what is no id at all: a number that is not

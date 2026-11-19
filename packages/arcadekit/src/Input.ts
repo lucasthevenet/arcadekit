@@ -798,6 +798,8 @@ const binding =
     ...payload: PayloadArgument<P>
   ): Binding => {
     const watched = typeof codes === "string" ? [codes] : codes;
+    // SAFETY: by PayloadArgument, the payload is given, or left out where P
+    // takes undefined, which left out is.
     const given = payload[0] as PayloadOf<P>;
 
     return {
@@ -808,6 +810,8 @@ const binding =
           happened.length > 0 &&
           watched.some((code) => happened.includes(code))
         ) {
+          // SAFETY: a payload is data, which a function is not: one given
+          // is what makes the payload from the devices.
           enqueue(
             action,
             typeof given === "function"

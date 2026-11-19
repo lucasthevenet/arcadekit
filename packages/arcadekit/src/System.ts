@@ -57,7 +57,7 @@ export type Stage =
 export const isFrameStage = (
   stage: Stage
 ): stage is (typeof frameStages)[number] =>
-  (frameStages as readonly string[]).includes(stage);
+  frameStages.some((frameStage) => frameStage === stage);
 
 /** Every stage, in the order they run when several run together. */
 const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
@@ -221,6 +221,8 @@ export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
     stage: "update",
     after: [],
     before: [],
+    // SAFETY: Effect.gen's error and services are Effect.Error<Eff> and
+    // Effect.Services<Eff>, which it writes as conditional types of its own.
     run: Effect.gen(body) as Effect.Effect<
       void,
       Effect.Error<Eff>,
@@ -629,7 +631,7 @@ export const accessOf = (
 export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
   build({
     ...self,
-    run: Effect.withSpan(self.run, self.name) as Effect.Effect<void, E, R>,
+    run: Effect.withSpan(self.run, self.name),
   });
 
 /**
@@ -987,7 +989,7 @@ export const conflicts = (
     systems.filter(
       (system) =>
         system.trigger === undefined &&
-        (stages as readonly string[]).includes(system.stage)
+        stages.some((stage) => stage === system.stage)
     )
   );
 

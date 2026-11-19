@@ -487,6 +487,14 @@ describe("a save from another version of the game", () => {
         (world) => Migrate.removeComponent(world, "mg/Nope"),
         /no component named/u,
       ],
+      [
+        (world) => Migrate.addField(world, "mg/Pos", "z", "f32", "zero"),
+        /The f32 field "z" holds numbers, and was given zero/u,
+      ],
+      [
+        (world) => Migrate.mapField(world, "mg/Pos", "x", "i32", (x) => `${x}`),
+        /The i32 field "x" holds numbers, and was given 1/u,
+      ],
     ];
 
     for (const [change, message] of cases) {

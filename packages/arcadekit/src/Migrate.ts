@@ -18,6 +18,9 @@
  * that doesn't match its save says so. Singletons are migrated the same way, by
  * name, and are present in the save only if the game wrote them.
  */
+import { Predicate } from "effect";
+
+import { columnOfKind, growColumn, isBoxed, makeColumn } from "./ecs/component";
 import type { Column, FieldKind } from "./ecs/component";
 import type {
   SnapshotComponent,
@@ -72,40 +75,56 @@ const fieldOf = (component: SnapshotComponent, field: string) => {
   return found;
 };
 
-const column = (kind: FieldKind, count: number, value: unknown): Column => {
-  switch (kind) {
-    case "f32": {
-      return new Float32Array(count).fill(value as number);
-    }
-
-    case "f64": {
-      return new Float64Array(count).fill(value as number);
-    }
-
-    case "i32": {
-      return new Int32Array(count).fill(value as number);
-    }
-
-    case "u32": {
-      return new Uint32Array(count).fill(value as number);
-    }
-
-    case "entity": {
-      return new Float64Array(count).fill(value as number);
-    }
-
-    case "u16": {
-      return new Uint16Array(count).fill(value as number);
-    }
-
-    case "u8": {
-      return new Uint8Array(count).fill(value as number);
-    }
-
-    default: {
-      return Array.from({ length: count }, () => value);
-    }
+/**
+ * A column of a field of `kind` holding `values`. A number field refuses a
+ * value that is not a number, which its typed array would make NaN.
+ */
+const columnHolding = (
+  kind: FieldKind,
+  field: string,
+  values: readonly unknown[]
+): Column => {
+  if (isBoxed(kind)) {
+    return [...values];
   }
+
+  const numbers = values.map((value) => {
+    if (!Predicate.isNumber(value)) {
+      throw new TypeError(
+        `The ${kind} field "${field}" holds numbers, and was given ${String(value)}.`
+      );
+    }
+
+    return value;
+  });
+
+  const made = makeColumn(kind, numbers.length);
+  columnOfKind(kind, made).set(numbers);
+
+  return made;
+};
+
+/** Two columns of a field of `kind` one after the other. */
+const joinColumns = (
+  kind: FieldKind,
+  first: Column,
+  second: Column
+): Column => {
+  const count = first.length;
+  const joined = growColumn(kind, first, count + second.length);
+
+  if (isBoxed(kind)) {
+    const to = columnOfKind(kind, joined);
+    const from = columnOfKind(kind, second);
+
+    for (let row = 0; row < from.length; row += 1) {
+      to[count + row] = from[row];
+    }
+  } else {
+    columnOfKind(kind, joined).set(columnOfKind(kind, second), count);
+  }
+
+  return joined;
 };
 
 /**
@@ -174,7 +193,8 @@ export const renameField = (
 /**
  * Adds a field to a component, with the same value for every entity that has
  * the component. The field goes after the existing ones, or before the field
- * named in `before`: a component's fields are in definition order.
+ * named in `before`: a component's fields are in definition order. A field of
+ * a numeric type throws if the value is not a number.
  *
  * @category Migrations
  */
@@ -204,7 +224,11 @@ export const addField = (
   }
 
   for (const { columns, count } of columnsOf(world, component)) {
-    columns[field] = column(kind, count, value);
+    columns[field] = columnHolding(
+      kind,
+      field,
+      Array.from({ length: count }, () => value)
+    );
   }
 };
 
@@ -232,7 +256,8 @@ export const removeField = (
 /**
  * Changes a field's type, and computes each new value from the old one:
  * `mapField(world, "game/Hp", "points", "f32", (hp) => hp / 2)`. For a `ref`
- * field, the old value is its encoded form.
+ * field, the old value is its encoded form. A field of a numeric type throws
+ * if `map` returns anything but a number.
  *
  * @category Migrations
  */
@@ -256,13 +281,13 @@ export const mapField = (
       continue;
     }
 
-    const next = column(kind, count, 0);
-
-    for (let row = 0; row < count; row += 1) {
-      next[row] = map(was === "transient" ? undefined : old?.[row]) as never;
-    }
-
-    columns[field] = next;
+    columns[field] = columnHolding(
+      kind,
+      field,
+      Array.from({ length: count }, (_, row) =>
+        map(was === "transient" ? undefined : old?.[row])
+      )
+    );
   }
 };
 
@@ -318,17 +343,11 @@ export const removeComponent = (
           continue;
         }
 
-        if (Array.isArray(values)) {
-          columns[field] = [...values, ...(more as unknown[])];
-        } else {
-          const joined = new (values.constructor as Float32ArrayConstructor)(
-            entities.length
-          );
-
-          joined.set(values as Float32Array);
-          joined.set(more as Float32Array, count);
-          columns[field] = joined;
-        }
+        columns[field] = joinColumns(
+          fieldOf(componentOf(world, of), field).kind,
+          values,
+          more
+        );
       }
     }
   }

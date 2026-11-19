@@ -190,6 +190,8 @@ export const handler = <
   action,
   // Built once: `fnUntraced` runs the generator itself on each call, with no
   // closure around the payload and no stack trace captured.
+  // SAFETY: its error and services are Effect.Error<Eff> and
+  // Effect.Services<Eff>, which it writes as conditional types of its own.
   handle: Effect.fnUntraced(body) as (
     payload: P,
     origin: Origin

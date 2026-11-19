@@ -676,9 +676,12 @@ export const cues: {
 ): System.System<never, any> => {
   const from = rest[0] instanceof Assets.Bundle ? rest[0] : undefined;
 
+  // SAFETY: by the signatures above, what follows the name is lines, or a
+  // bundle and a function of its assets that returns them.
   const fixed =
     from === undefined ? byEvent(rest as readonly Line[]) : undefined;
 
+  // SAFETY: as above; it is called only when the first is a bundle.
   const make = rest[1] as (assets: unknown) => readonly Line[];
 
   // The lines of a bundle, and the assets they were made of: per app, by
@@ -812,6 +815,8 @@ export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   body: () => Generator<Eff, TrackOf, never>,
   options: { readonly fade?: number; readonly channel?: string } = {}
 ): System.System<Effect.Error<Eff>, Effect.Services<Eff> | Player> => {
+  // SAFETY: Effect.gen's error and services are Effect.Error<Eff> and
+  // Effect.Services<Eff>, which it writes as conditional types of its own.
   const pick = Effect.gen(body) as Effect.Effect<
     TrackOf,
     Effect.Error<Eff>,

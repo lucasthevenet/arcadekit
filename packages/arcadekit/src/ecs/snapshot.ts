@@ -11,8 +11,8 @@
  *
  * No Effect dependency.
  */
-import { isBoxed } from "./component";
-import type { Column, FieldKind, RefCodec } from "./component";
+import { columnOfKind, isBoxed } from "./component";
+import type { Column, FieldKind, NumericKind, RefCodec } from "./component";
 import { byName } from "./order";
 
 /**
@@ -67,10 +67,7 @@ export const END = 0x21_44_4e_45;
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
 /** Bytes per element of a numeric column. */
-export const WIDTH: Record<
-  Exclude<FieldKind, "json" | "ref" | "transient">,
-  number
-> = {
+export const WIDTH: Record<NumericKind, number> = {
   f32: 4,
   f64: 8,
   i32: 4,
@@ -431,7 +428,7 @@ export const writeColumn = (
   codec?: RefCodec<unknown>
 ): number => {
   if (!isBoxed(kind)) {
-    writer.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+    writer.numbers(columnOfKind(kind, column), count, WIDTH[kind]);
 
     return -1;
   }
@@ -440,7 +437,7 @@ export const writeColumn = (
     return -1;
   }
 
-  const values = column as unknown[];
+  const values = columnOfKind(kind, column);
 
   for (let row = 0; row < count; row += 1) {
     let value = values[row];
@@ -477,13 +474,13 @@ export const readColumn = (
   if (kind === "entity" && narrow) {
     const ids = new Uint32Array(count);
     reader.numbers(ids, count, 4);
-    (column as Float64Array).set(ids);
+    columnOfKind(kind, column).set(ids);
 
     return;
   }
 
   if (!isBoxed(kind)) {
-    reader.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+    reader.numbers(columnOfKind(kind, column), count, WIDTH[kind]);
 
     return;
   }
@@ -492,7 +489,7 @@ export const readColumn = (
     return;
   }
 
-  const values = column as unknown[];
+  const values = columnOfKind(kind, column);
 
   for (let row = 0; row < count; row += 1) {
     const value = reader.value();

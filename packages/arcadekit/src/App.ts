@@ -745,6 +745,7 @@ const hooksOf = (
       continue;
     }
 
+    // SAFETY: a trigger is made by State.onEnter or State.onExit, of a state.
     const state = system.trigger.state as State.State<string>;
 
     if (System.isFrameStage(system.stage)) {
@@ -836,12 +837,22 @@ const holdsOf = (systems: readonly Plugin.AnySystem[]): Map<string, Hold> => {
   return holds;
 };
 
-const build = <S extends Systems, H extends Handlers, P extends Plugins>(
+/** How loading a save can fail, when there is one to load. */
+type LoadFailure<SV extends Save.Save | undefined> = SV extends Save.Save
+  ? Save.LoadRefused
+  : never;
+
+const build = <
+  S extends Systems,
+  H extends Handlers,
+  P extends Plugins,
+  SV extends Save.Save | undefined,
+>(
   options: Options<S, H, P>,
-  given: Save.Save | undefined
+  given: SV
 ): Effect.Effect<
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+  Plugin.ErrorOf<P[number]> | LoadFailure<SV>,
   Scope.Scope | External<S, H, P>
 > =>
   Effect.gen(function* () {
@@ -945,6 +956,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const version = versionOf(options.version);
 
     // Before anything else can touch the world: a load fills an empty one.
+    // SAFETY: a load fails only where there is a save, and there SV is a Save.
     const save =
       given === undefined
         ? undefined
@@ -953,7 +965,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             given,
             version,
             options.migrations
-          );
+          ) as Effect.Effect<Save.Save, LoadFailure<SV>>;
 
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
@@ -986,8 +998,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     }
 
     const actionLog: Action.LogEntry[] = [];
-    // The moments this app has captured: `rewind` takes no other.
-    const moments = new WeakSet<Moment>();
+    // The moments this app has captured, each kept as what it holds:
+    // `rewind` takes no other.
+    const moments = new WeakMap<Moment, Captured>();
 
     /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
@@ -1247,11 +1260,16 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     }
 
-    // SAFETY: the layer is the built-in services' with every plugin's layer
-    // merged in, and a plugin's layer provides what its type says it does.
-    const built = (yield* Layer.build(layer)) as Context.Context<
-      BuiltIn | Provided<P>
-    >;
+    const built = yield* Layer.build(
+      // SAFETY: the built-in services' layer with every plugin's merged in,
+      // and a plugin's layer provides, fails with and needs what its type
+      // says it does.
+      layer as Layer.Layer<
+        BuiltIn | Provided<P>,
+        Plugin.ErrorOf<P[number]>,
+        External<S, H, P>
+      >
+    );
 
     // Everything the caller provided (their services, resource overrides, the
     // scope) is captured once here and handed to every system and script.
@@ -1793,6 +1811,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           events.endInput();
         }
 
+        // SAFETY: every system of the stage is one of S, or of a plugin of P,
+        // and fails as its type says.
         exit = outcome as Exit.Exit<void, TickError<S, P>>;
       } finally {
         between = undefined;
@@ -1980,6 +2000,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           return Exit.die(stopped);
         }
 
+        // SAFETY: every system of the tick is one of S, or of a plugin of P,
+        // and fails as its type says.
         return exit as Exit.Exit<void, TickError<S, P>>;
       } finally {
         ticking = false;
@@ -2152,7 +2174,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           wanted,
         };
 
-        moments.add(moment);
+        moments.set(moment, moment);
 
         return Exit.succeed(moment);
       },
@@ -2169,13 +2191,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
 
-        if (!moments.has(moment)) {
+        const was = moments.get(moment);
+
+        if (was === undefined) {
           throw new Error(
             "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
           );
         }
-
-        const was = moment as Captured;
 
         // The scripts first: none of them is part of what was captured.
         for (const fiber of [...scripts]) {
@@ -2320,6 +2342,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
 
       if (Exit.isFailure(exit)) {
+        // SAFETY: a plugin's setup fails as its type says.
         return yield* exit as Exit.Exit<never, Plugin.ErrorOf<P[number]>>;
       }
 
@@ -2337,11 +2360,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     commands.apply();
 
     return app;
-  }) as Effect.Effect<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    Plugin.ErrorOf<P[number]> | Save.LoadRefused,
-    Scope.Scope | External<S, H, P>
-  >;
+  });
 
 /**
  * Starts a fresh game: every plugin's `setup` runs, then its scripts start.
@@ -2358,12 +2377,7 @@ export const make = <
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]>,
   Scope.Scope | External<S, H, P>
-> =>
-  build(options, undefined) as Effect.Effect<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    Plugin.ErrorOf<P[number]>,
-    Scope.Scope | External<S, H, P>
-  >;
+> => build(options, undefined);
 
 /**
  * Restores a game from a save: its world, its time, the actions queued for the
@@ -2497,13 +2511,7 @@ export const run = <
 
       return yield* Driver.frames(app, drive);
     })
-  ) as Effect.Effect<
-    never,
-    | Plugin.ErrorOf<P[number]>
-    | E2
-    | (SV extends Save.Save ? Save.LoadRefused : never),
-    External<S, H, P> | Exclude<R2, Scope.Scope>
-  >;
+  );
 
 /**
  * A world's hash differs from the one recorded at the same point in the game.
@@ -2653,6 +2661,8 @@ export const replay = (
         waiting.push({
           index: next,
           entry,
+          // SAFETY: no session has taken over the replay's app, so queueing
+          // an action logs it, last.
           mine: app.actionLog.at(-1) as Action.Logged,
         });
       } else {
