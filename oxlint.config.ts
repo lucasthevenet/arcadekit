@@ -57,10 +57,11 @@ export default defineConfig({
     "typescript/consistent-indexed-object-style": "off",
     "unicorn/no-immediate-mutation": "off",
     "unicorn/prefer-reflect-apply": "off",
-    // Off for now, to be turned back on once the rest is fixed: key order
-    // carries meaning (schema fields, config sections); Effect.gen takes an
-    // unnamed function*; Effect's APIs take callbacks; Schema names a value
-    // and its type alike.
+    // Off for good, as Effect's style goes against them: key order carries
+    // meaning (a component's fields are its columns, in the save and the
+    // hash); Effect.gen takes an unnamed function*; a frame is requested with
+    // a callback, as requestAnimationFrame is; a service's interface and its
+    // Context.Service share a name.
     "eslint/sort-keys": "off",
     "eslint/func-names": "off",
     "promise/prefer-await-to-callbacks": "off",
