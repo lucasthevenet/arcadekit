@@ -312,6 +312,16 @@ const commentLines = (value: string): string[] =>
     .trim()
     .split("\n");
 
+/** The tags whose text goes in the list of parameters. */
+const PARAM_TAGS = new Set(["param", "typeParam"]);
+
+/** A `@param` or `@typeParam` tag's text as a line of the list of parameters. */
+const paramLine = (rest: string): string => {
+  const param = /^(?<name>\S+)\s*(?<text>.*)$/u.exec(rest);
+
+  return `- \`${param?.groups?.name ?? rest}\`: ${param?.groups?.text ?? ""}`;
+};
+
 /**
  * A doc comment as markdown. The comments are written for an editor's tooltip, with examples as
  * lines indented under a blank line; here each such run of lines is a `ts` block.
@@ -356,14 +366,8 @@ export const docMarkdown = (
         category = rest;
       } else if (tag.groups.name === "internal") {
         internal = true;
-      } else if (
-        tag.groups.name === "param" ||
-        tag.groups.name === "typeParam"
-      ) {
-        const param = /^(?<name>\S+)\s*(?<text>.*)$/u.exec(rest);
-        params.push(
-          `- \`${param?.groups?.name ?? rest}\`: ${param?.groups?.text ?? ""}`
-        );
+      } else if (PARAM_TAGS.has(tag.groups.name ?? "")) {
+        params.push(paramLine(rest));
       }
 
       continue;

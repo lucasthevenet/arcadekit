@@ -696,16 +696,193 @@ describe("changes against a simple model", () => {
 
       const defs = { Position, Health, Heat } as const;
 
-      const value = (name: keyof typeof defs) =>
-        name === "Position"
-          ? Position.of({ x: dice.int(0, 99), y: 0 })
-          : name === "Health"
-            ? Health.of({ hp: dice.int(1, 99) })
-            : Heat.of({ degrees: dice.int(1, 99) });
+      const values = {
+        Position: () => Position.of({ x: dice.int(0, 99), y: 0 }),
+        Health: () => Health.of({ hp: dice.int(1, 99) }),
+        Heat: () => Heat.of({ degrees: dice.int(1, 99) }),
+      };
+
+      const value = (name: keyof typeof defs) => values[name]();
 
       const gained = (name: keyof typeof defs, entity: Entity): void => {
         fire(`${name}:added`, entity);
         fire(`${name}:changed`, entity);
+      };
+
+      const spawn = (): void => {
+        const names = (["Position", "Health", "Heat"] as const).filter(
+          () => dice.next() < 0.6
+        );
+
+        const entity = world.spawn(...names.map((name) => value(name)));
+        alive.push(entity);
+
+        for (const name of names) {
+          gained(name, entity);
+        }
+      };
+
+      const despawn = (some: Entity): void => {
+        if (world.has(some, Health)) {
+          lost.expected.push(some);
+        }
+
+        world.despawn(some);
+        alive.splice(alive.indexOf(some), 1);
+
+        for (const reader of readers) {
+          reader.pending.delete(some);
+        }
+      };
+
+      const addOne = (some: Entity): void => {
+        const name = dice.pick(["Position", "Health", "Heat"] as const);
+        const had = world.has(some, defs[name]);
+        const bare = dice.next() < 0.3;
+        world.add(some, bare ? defs[name] : value(name));
+
+        if (!had) {
+          gained(name, some);
+        } else if (!bare) {
+          fire(`${name}:changed`, some);
+        }
+      };
+
+      const removeOne = (some: Entity): void => {
+        const name = dice.pick(["Position", "Health", "Heat"] as const);
+
+        if (name === "Health" && world.has(some, Health)) {
+          lost.expected.push(some);
+        }
+
+        world.remove(some, defs[name]);
+      };
+
+      const toggleFrozen = (some: Entity): void => {
+        if (world.has(some, Frozen)) {
+          world.remove(some, Frozen);
+        } else {
+          world.add(some, Frozen);
+        }
+      };
+
+      const setOne = (some: Entity): void => {
+        const name = dice.pick(["Position", "Health", "Heat"] as const);
+
+        if (world.has(some, defs[name])) {
+          world.set(
+            some,
+            defs[name] as typeof Position,
+            (value(name) as { value: { x: number; y: number } }).value
+          );
+          fire(`${name}:changed`, some);
+        }
+      };
+
+      // A loop that writes some of the rows it visits.
+      const writeSome = (): void => {
+        const modulus = dice.int(2, 5);
+        world.view(Query.all(Health)).each((health, entity) => {
+          if (entity % modulus === 0) {
+            health.hp += 1;
+            fire("Health:changed", entity);
+          }
+        });
+        world
+          .view(Query.all(Heat, Position).pipe(Query.without(Frozen)))
+          .each((heat, pos, entity) => {
+            if (entity % modulus === 1) {
+              heat.degrees += 1;
+              fire("Heat:changed", entity);
+            } else if (entity % modulus === 0) {
+              pos.y += 1;
+              fire("Position:changed", entity);
+            }
+          });
+      };
+
+      // A raw loop: every row it is handed counts.
+      const writeRaw = (): void => {
+        world
+          .view(Query.all(Position).pipe(Query.with(Frozen)))
+          .eachChunk((start, end, _, ids) => {
+            for (let i = start; i < end; i += 1) {
+              fire("Position:changed", ids[i]!);
+            }
+          });
+        // Unless the loop says it only reads it.
+        world.view(RawReader).eachChunk((start, end, _, __, ids) => {
+          for (let i = start; i < end; i += 1) {
+            fire("Health:changed", ids[i]!);
+          }
+        });
+      };
+
+      /** Visits with a raw loop, which writes what it watches. */
+      const visitRaw = (reader: (typeof readers)[number]): Entity[] => {
+        const seen: Entity[] = [];
+
+        reader.view.eachChunk((start, end, ...args) => {
+          const ids = args.at(-1) as Uint32Array;
+
+          for (let i = start; i < end; i += 1) {
+            seen.push(ids[i] as Entity);
+          }
+        });
+
+        // The raw loop was handed the rows it visited: to every reader that
+        // watches one of its terms, they were written, but for the terms it
+        // said it only reads.
+        for (const entity of seen) {
+          for (const def of reader.spec.query.terms) {
+            if (!reader.spec.query.readDefs.includes(def)) {
+              fire(`${def.name.slice(3)}:changed`, entity);
+            }
+          }
+        }
+
+        return seen;
+      };
+
+      const visit = (reader: (typeof readers)[number]): void => {
+        reader.view._path = dice.pick(["auto", "sorted", "mask"]);
+        const matching = world.view(reader.spec.plain).entities();
+
+        const expected = reader.fresh
+          ? matching
+          : matching.filter((entity) => reader.pending.has(entity));
+
+        if (dice.next() < 0.3) {
+          expect(reader.view.count()).toBe(expected.length);
+        }
+
+        const seen: Entity[] = [];
+        // Before the visit: what the visit itself fires is for later.
+        reader.pending.clear();
+
+        if (!reader.spec.raw || dice.next() < 0.5) {
+          reader.view.each((...args) => {
+            seen.push(args.at(-1) as Entity);
+          });
+        } else {
+          seen.push(...visitRaw(reader));
+        }
+
+        expect(seen).toStrictEqual(expected);
+        reader.fresh = false;
+      };
+
+      const check = (): void => {
+        for (const reader of readers) {
+          if (dice.next() < (reader.lazy ? 0.05 : 0.5)) {
+            visit(reader);
+          }
+        }
+
+        if (dice.next() < 0.3) {
+          expect(lost.reader.read()).toStrictEqual(lost.expected);
+          lost.expected = [];
+        }
       };
 
       for (let step = 0; step < 3000; step += 1) {
@@ -713,150 +890,23 @@ describe("changes against a simple model", () => {
         const some = alive.length > 0 ? dice.pick(alive) : undefined;
 
         if (roll < 3 || some === undefined) {
-          const names = (["Position", "Health", "Heat"] as const).filter(
-            () => dice.next() < 0.6
-          );
-
-          const entity = world.spawn(...names.map((name) => value(name)));
-          alive.push(entity);
-
-          for (const name of names) {
-            gained(name, entity);
-          }
+          spawn();
         } else if (roll < 5) {
-          if (world.has(some, Health)) {
-            lost.expected.push(some);
-          }
-
-          world.despawn(some);
-          alive.splice(alive.indexOf(some), 1);
-
-          for (const reader of readers) {
-            reader.pending.delete(some);
-          }
+          despawn(some);
         } else if (roll < 8) {
-          const name = dice.pick(["Position", "Health", "Heat"] as const);
-          const had = world.has(some, defs[name]);
-          const bare = dice.next() < 0.3;
-          world.add(some, bare ? defs[name] : value(name));
-
-          if (!had) {
-            gained(name, some);
-          } else if (!bare) {
-            fire(`${name}:changed`, some);
-          }
+          addOne(some);
         } else if (roll < 10) {
-          const name = dice.pick(["Position", "Health", "Heat"] as const);
-
-          if (name === "Health" && world.has(some, Health)) {
-            lost.expected.push(some);
-          }
-
-          world.remove(some, defs[name]);
+          removeOne(some);
         } else if (roll < 11) {
-          if (world.has(some, Frozen)) {
-            world.remove(some, Frozen);
-          } else {
-            world.add(some, Frozen);
-          }
+          toggleFrozen(some);
         } else if (roll < 14) {
-          const name = dice.pick(["Position", "Health", "Heat"] as const);
-
-          if (world.has(some, defs[name])) {
-            world.set(
-              some,
-              defs[name] as typeof Position,
-              (value(name) as { value: { x: number; y: number } }).value
-            );
-            fire(`${name}:changed`, some);
-          }
+          setOne(some);
         } else if (roll < 16) {
-          // A loop that writes some of the rows it visits.
-          const modulus = dice.int(2, 5);
-          world.view(Query.all(Health)).each((health, entity) => {
-            if (entity % modulus === 0) {
-              health.hp += 1;
-              fire("Health:changed", entity);
-            }
-          });
-          world
-            .view(Query.all(Heat, Position).pipe(Query.without(Frozen)))
-            .each((heat, pos, entity) => {
-              if (entity % modulus === 1) {
-                heat.degrees += 1;
-                fire("Heat:changed", entity);
-              } else if (entity % modulus === 0) {
-                pos.y += 1;
-                fire("Position:changed", entity);
-              }
-            });
+          writeSome();
         } else if (roll < 17) {
-          // A raw loop: every row it is handed counts.
-          world
-            .view(Query.all(Position).pipe(Query.with(Frozen)))
-            .eachChunk((start, end, _, ids) => {
-              for (let i = start; i < end; i += 1) {
-                fire("Position:changed", ids[i]!);
-              }
-            });
-          // Unless the loop says it only reads it.
-          world.view(RawReader).eachChunk((start, end, _, __, ids) => {
-            for (let i = start; i < end; i += 1) {
-              fire("Health:changed", ids[i]!);
-            }
-          });
+          writeRaw();
         } else {
-          for (const reader of readers) {
-            if (dice.next() < (reader.lazy ? 0.05 : 0.5)) {
-              reader.view._path = dice.pick(["auto", "sorted", "mask"]);
-              const matching = world.view(reader.spec.plain).entities();
-
-              const expected = reader.fresh
-                ? matching
-                : matching.filter((entity) => reader.pending.has(entity));
-
-              if (dice.next() < 0.3) {
-                expect(reader.view.count()).toBe(expected.length);
-              }
-
-              const seen: Entity[] = [];
-              // Before the visit: what the visit itself fires is for later.
-              reader.pending.clear();
-
-              if (!reader.spec.raw || dice.next() < 0.5) {
-                reader.view.each((...args) => {
-                  seen.push(args.at(-1) as Entity);
-                });
-              } else {
-                reader.view.eachChunk((start, end, ...args) => {
-                  const ids = args.at(-1) as Uint32Array;
-
-                  for (let i = start; i < end; i += 1) {
-                    seen.push(ids[i] as Entity);
-                  }
-                });
-
-                // The raw loop was handed the rows it visited: to every
-                // reader that watches one of its terms, they were written,
-                // but for the terms it said it only reads.
-                for (const entity of seen) {
-                  for (const def of reader.spec.query.terms) {
-                    if (!reader.spec.query.readDefs.includes(def)) {
-                      fire(`${def.name.slice(3)}:changed`, entity);
-                    }
-                  }
-                }
-              }
-
-              expect(seen).toStrictEqual(expected);
-              reader.fresh = false;
-            }
-          }
-
-          if (dice.next() < 0.3) {
-            expect(lost.reader.read()).toStrictEqual(lost.expected);
-            lost.expected = [];
-          }
+          check();
         }
       }
     });

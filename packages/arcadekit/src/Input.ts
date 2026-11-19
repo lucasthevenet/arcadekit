@@ -311,6 +311,9 @@ const ReportSchema = Schema.Struct({
 
 type ReportPayload = typeof ReportSchema.Type;
 
+/** A payload being put together, a property at a time. */
+type Draft<T> = { -readonly [K in keyof T]: T[K] };
+
 /**
  * What the devices did since the game's last report: the action that keeps the
  * input state in the world. `Input.plugin` issues it from the input stage and
@@ -435,12 +438,8 @@ const report = Action.handler(Report, function* (payload) {
   }
 });
 
-/** Returns what must be reported for the input state to match the devices. */
-const difference = (
-  buttons: Buttons,
-  axes: Axes,
-  devices: Sample
-): ReportPayload | undefined => {
+/** The buttons that went down, went up and were tapped since the last sample. */
+const buttonChanges = (buttons: Buttons, devices: Sample) => {
   const down: string[] = [];
   const up: string[] = [];
   const tapped: string[] = [];
@@ -470,6 +469,14 @@ const difference = (
     }
   }
 
+  return { down, tapped, up };
+};
+
+/** The axes that moved since the last sample, or undefined if none did. */
+const axisMoves = (
+  axes: Axes,
+  devices: Sample
+): Record<string, number> | undefined => {
   let moves: Record<string, number> | undefined;
 
   for (const [code, value] of devices.axes) {
@@ -485,21 +492,38 @@ const difference = (
     }
   }
 
-  if (
-    down.length === 0 &&
-    up.length === 0 &&
-    tapped.length === 0 &&
-    moves === undefined
-  ) {
-    return undefined;
+  return moves;
+};
+
+/** Returns what must be reported for the input state to match the devices. */
+const difference = (
+  buttons: Buttons,
+  axes: Axes,
+  devices: Sample
+): ReportPayload | undefined => {
+  const { down, tapped, up } = buttonChanges(buttons, devices);
+  const moves = axisMoves(axes, devices);
+
+  // In the order the lists are applied.
+  const payload: Draft<ReportPayload> = {};
+
+  if (up.length > 0) {
+    payload.up = up;
   }
 
-  return {
-    ...(up.length > 0 ? { up } : {}),
-    ...(down.length > 0 ? { down } : {}),
-    ...(tapped.length > 0 ? { tapped } : {}),
-    ...(moves === undefined ? {} : { axes: moves }),
-  };
+  if (down.length > 0) {
+    payload.down = down;
+  }
+
+  if (tapped.length > 0) {
+    payload.tapped = tapped;
+  }
+
+  if (moves !== undefined) {
+    payload.axes = moves;
+  }
+
+  return Object.keys(payload).length === 0 ? undefined : payload;
 };
 
 // What each world's `Read` has reported since the last tick. The reports

@@ -600,6 +600,217 @@ const notInInput = (): never => {
   );
 };
 
+/** Registers the components a plugin or the app lists. */
+const registerAll = (world: EcsWorld, components: readonly Listed[]): void => {
+  for (const listed of components) {
+    if (isSingletonSpec(listed)) {
+      world.singleton(listed);
+    } else {
+      world.register(listed);
+    }
+  }
+};
+
+const versionOf = (given: number | undefined): number => {
+  const version = given ?? 0;
+
+  if (!Number.isSafeInteger(version) || version < 0) {
+    throw new Error(
+      `A game's version must be a whole number from 0 up, and this one is ${version}.`
+    );
+  }
+
+  return version;
+};
+
+const checkpointEveryOf = (given: number | undefined): number => {
+  const every = given ?? 60;
+
+  if (!Number.isSafeInteger(every) || every < 0) {
+    throw new Error(
+      `checkpointEvery must be a whole number of ticks, 0 for none, and this one is ${every}.`
+    );
+  }
+
+  return every;
+};
+
+/** What a save is loaded into. */
+interface Restored {
+  readonly world: EcsWorld;
+  readonly time: TimeState;
+  readonly events: EventBus;
+}
+
+/**
+ * Brings a save up to this version of the game, then fills the empty world,
+ * the clock and the bus from it. Returns the save as it is now.
+ */
+const restore = (
+  into: Restored,
+  given: Save.Save,
+  version: number,
+  migrations: readonly Save.Migration[] = []
+): Effect.Effect<Save.Save, Save.LoadRefused> =>
+  Effect.gen(function* () {
+    const save = yield* Save.migrate(given, version, migrations);
+
+    try {
+      into.world.load(save.world);
+      into.world.restoreChanges(save.changes);
+    } catch (error) {
+      if (error instanceof SnapshotError) {
+        return yield* Effect.fail(
+          new Save.LoadRefused({
+            problem: error.problem,
+            message:
+              error.problem === "unknown component"
+                ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
+                : error.message,
+          })
+        );
+      }
+
+      throw error;
+    }
+
+    into.time.tick = save.tick;
+    into.time.elapsed = save.elapsed;
+    into.time.delta = save.delta;
+    into.events.restore(save.events);
+
+    return save;
+  });
+
+const handlersByName = (
+  all: readonly Action.Handler<any, any, any, any, any>[]
+): Map<string, Action.Handler<any, any, any, any, any>> => {
+  const handlers = new Map<string, Action.Handler<any, any, any, any, any>>();
+
+  for (const handler of all) {
+    if (handlers.has(handler.action.name)) {
+      throw new Error(`Two handlers for action "${handler.action.name}"`);
+    }
+
+    handlers.set(handler.action.name, handler);
+  }
+
+  return handlers;
+};
+
+/**
+ * Returns the hooks, by the moment they run at, each moment's in order; and
+ * gives every state the app knows of its handle in the world.
+ */
+const hooksOf = (
+  world: EcsWorld,
+  components: readonly Listed[],
+  systems: readonly Plugin.AnySystem[]
+): Map<string, Plugin.AnySystem[]> => {
+  const hooks = new Map<string, Plugin.AnySystem[]>();
+
+  for (const listed of components) {
+    if (listed instanceof State.State) {
+      State.handleOf(world, listed);
+    }
+  }
+
+  for (const system of systems) {
+    if (system.trigger === undefined) {
+      continue;
+    }
+
+    const state = system.trigger.state as State.State<string>;
+
+    if (System.isFrameStage(system.stage)) {
+      throw new Error(
+        `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
+      );
+    }
+
+    if (system.stage === "input") {
+      throw new Error(
+        `System "${system.name}" is a hook and is in the input stage. A hook runs at the start of a tick, when the game enters or leaves a state; the input stage runs before the tick. Read the devices only in some states with System.runIf(State.is(...)).`
+      );
+    }
+
+    if (!state.values.includes(system.trigger.value)) {
+      throw new Error(
+        `System "${system.name}" is a hook for "${system.trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
+      );
+    }
+
+    State.handleOf(world, state);
+    const key = hookKey(system.trigger);
+    hooks.set(key, [...(hooks.get(key) ?? []), system]);
+  }
+
+  for (const [key, group] of hooks) {
+    // `after` and `before` order the hooks of one moment among themselves.
+    hooks.set(key, System.order(group));
+  }
+
+  return hooks;
+};
+
+/** Returns what each system that said what it touches is held to, by name. */
+const holdsOf = (systems: readonly Plugin.AnySystem[]): Map<string, Hold> => {
+  const holds = new Map<string, Hold>();
+
+  for (const system of systems) {
+    const said = System.accessOf(system);
+
+    if (said === undefined) {
+      continue;
+    }
+
+    const who = `System "${system.name}"`;
+    const reads: (true | undefined)[] = [];
+    const writes: (true | undefined)[] = [];
+    const writeDefs = [];
+
+    for (const { def, touch } of said.components.values()) {
+      reads[def.id] = true;
+
+      if (touch === "writes") {
+        writes[def.id] = true;
+        writeDefs.push(def);
+      }
+    }
+
+    const emits = new Set<string>();
+
+    for (const [name, touch] of said.events) {
+      if (touch === "writes") {
+        emits.add(name);
+      }
+    }
+
+    holds.set(system.name, {
+      who,
+      world: {
+        who,
+        advice: ADVICE,
+        reads,
+        writes,
+        writeDefs,
+        queries: new Set(said.queries),
+      },
+      events: {
+        who,
+        advice: ADVICE,
+        reads: new Set(said.events.keys()),
+        emits,
+      },
+      random: said.random,
+      actions: said.actions,
+      scripts: said.scripts,
+    });
+  }
+
+  return holds;
+};
+
 const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   options: Options<S, H, P>,
   given: Save.Save | undefined
@@ -705,81 +916,29 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ...(options.components ?? []),
     ];
 
-    for (const listed of components) {
-      if (isSingletonSpec(listed)) {
-        world.singleton(listed);
-      } else {
-        world.register(listed);
-      }
-    }
+    registerAll(world, components);
+    const version = versionOf(options.version);
 
-    const version = options.version ?? 0;
-
-    if (!Number.isSafeInteger(version) || version < 0) {
-      throw new Error(
-        `A game's version must be a whole number from 0 up, and this one is ${version}.`
-      );
-    }
-
-    let save: Save.Save | undefined;
-
-    if (given !== undefined) {
-      // An older save is brought up to this version of the game first.
-      const current = Save.migrate(given, version, options.migrations ?? []);
-
-      if (Exit.isFailure(current)) {
-        return yield* current;
-      }
-
-      save = current.value;
-    }
-
-    if (save !== undefined) {
-      // Before anything else can touch the world: a load fills an empty one.
-      try {
-        world.load(save.world);
-        world.restoreChanges(save.changes);
-      } catch (error) {
-        if (error instanceof SnapshotError) {
-          return yield* Effect.fail(
-            new Save.LoadRefused({
-              problem: error.problem,
-              message:
-                error.problem === "unknown component"
-                  ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
-                  : error.message,
-            })
+    // Before anything else can touch the world: a load fills an empty one.
+    const save =
+      given === undefined
+        ? undefined
+        : yield* restore(
+            { events, time, world },
+            given,
+            version,
+            options.migrations
           );
-        }
-
-        throw error;
-      }
-
-      time.tick = save.tick;
-      time.elapsed = save.elapsed;
-      time.delta = save.delta;
-      events.restore(save.events);
-    }
 
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
       ...(options.systems ?? []),
     ];
 
-    const allHandlers = [
+    const handlers = handlersByName([
       ...plugins.flatMap((plugin) => plugin.handlers),
       ...(options.handlers ?? []),
-    ];
-
-    const handlers = new Map<string, Action.Handler<any, any, any, any, any>>();
-
-    for (const handler of allHandlers) {
-      if (handlers.has(handler.action.name)) {
-        throw new Error(`Two handlers for action "${handler.action.name}"`);
-      }
-
-      handlers.set(handler.action.name, handler);
-    }
+    ]);
 
     // `encoded` says which form the payload is in: the JSON form that arrives
     // from outside, or the value a handler works with. `entry` is the log
@@ -818,13 +977,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       readonly wanted: boolean;
     }
 
-    const checkpointEvery = options.checkpointEvery ?? 60;
-
-    if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
-      throw new Error(
-        `checkpointEvery must be a whole number of ticks, 0 for none, and this one is ${checkpointEvery}.`
-      );
-    }
+    const checkpointEvery = checkpointEveryOf(options.checkpointEvery);
 
     const checkpoint = (): number => {
       const hash = world.hash();
@@ -1118,106 +1271,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       input: inputSystems.length > 0,
     });
 
-    const hooks = new Map<string, Plugin.AnySystem[]>();
     const states = State.registryOf(world);
-
-    for (const listed of components) {
-      if (listed instanceof State.State) {
-        State.handleOf(world, listed);
-      }
-    }
-
-    for (const system of allSystems) {
-      if (system.trigger === undefined) {
-        continue;
-      }
-
-      const state = system.trigger.state as State.State<string>;
-
-      if (System.isFrameStage(system.stage)) {
-        throw new Error(
-          `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
-        );
-      }
-
-      if (system.stage === "input") {
-        throw new Error(
-          `System "${system.name}" is a hook and is in the input stage. A hook runs at the start of a tick, when the game enters or leaves a state; the input stage runs before the tick. Read the devices only in some states with System.runIf(State.is(...)).`
-        );
-      }
-
-      if (!state.values.includes(system.trigger.value)) {
-        throw new Error(
-          `System "${system.name}" is a hook for "${system.trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
-        );
-      }
-
-      State.handleOf(world, state);
-      const key = hookKey(system.trigger);
-      hooks.set(key, [...(hooks.get(key) ?? []), system]);
-    }
-
-    for (const [key, group] of hooks) {
-      // `after` and `before` order the hooks of one moment among themselves.
-      hooks.set(key, System.order(group));
-    }
+    const hooks = hooksOf(world, components, allSystems);
 
     // --- what a system said it reads and writes -----------------------------------
     // A system that said it, with `System.access`, is held to it while it
     // runs: the world and the bus are told what it may touch, and refuse
     // the rest where it is done. One that has not said is held to nothing.
-    const holds = new Map<string, Hold>();
-
-    for (const system of allSystems) {
-      const said = System.accessOf(system);
-
-      if (said === undefined) {
-        continue;
-      }
-
-      const who = `System "${system.name}"`;
-      const reads: (true | undefined)[] = [];
-      const writes: (true | undefined)[] = [];
-      const writeDefs = [];
-
-      for (const { def, touch } of said.components.values()) {
-        reads[def.id] = true;
-
-        if (touch === "writes") {
-          writes[def.id] = true;
-          writeDefs.push(def);
-        }
-      }
-
-      const emits = new Set<string>();
-
-      for (const [name, touch] of said.events) {
-        if (touch === "writes") {
-          emits.add(name);
-        }
-      }
-
-      holds.set(system.name, {
-        who,
-        world: {
-          who,
-          advice: ADVICE,
-          reads,
-          writes,
-          writeDefs,
-          queries: new Set(said.queries),
-        },
-        events: {
-          who,
-          advice: ADVICE,
-          reads: new Set(said.events.keys()),
-          emits,
-        },
-        random: said.random,
-        actions: said.actions,
-        scripts: said.scripts,
-      });
-    }
+    const holds = holdsOf(allSystems);
 
     const randomWas = new Uint32Array(4);
 
@@ -1766,6 +1827,32 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       return runBetween("input");
     };
 
+    /** Applies the actions queued since the last tick, in order. */
+    const applyQueued = (): void => {
+      if (queued.length === 0) {
+        return;
+      }
+
+      for (const { encoded, entry, from, name, payload } of queued.splice(0)) {
+        const exit = apply(name, payload, encoded, false, from);
+
+        if (Exit.isFailure(exit)) {
+          const error = Cause.squash(exit.cause);
+
+          if (entry !== undefined) {
+            entry.refused = describe(error);
+          }
+
+          events.emit(Action.Rejected, {
+            action: name,
+            payload,
+            error,
+            from,
+          });
+        }
+      }
+    };
+
     const runTick = (
       delta: number,
       options?: TickOptions
@@ -1800,28 +1887,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       try {
         // Queued actions are applied before time advances, so they land at the
         // same point in the timeline as an action dispatched between ticks.
-        if (queued.length > 0) {
-          const batch = queued.splice(0);
-
-          for (const { encoded, entry, from, name, payload } of batch) {
-            const exit = apply(name, payload, encoded, false, from);
-
-            if (Exit.isFailure(exit)) {
-              const error = Cause.squash(exit.cause);
-
-              if (entry !== undefined) {
-                entry.refused = describe(error);
-              }
-
-              events.emit(Action.Rejected, {
-                action: name,
-                payload,
-                error,
-                from,
-              });
-            }
-          }
-        }
+        applyQueued();
 
         time.delta = delta;
         time.elapsed += delta;

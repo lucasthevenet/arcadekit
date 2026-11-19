@@ -431,6 +431,7 @@ describe("the input stage", () => {
         reach = () => made.save();
         expect(() => made.input()).toThrow(/save\(\) was called during/u);
         reach = () => {};
+
         made.input();
         expect(made.world.singleton(Score).points).toBe(0);
         // And the input stage is not run from inside a tick.

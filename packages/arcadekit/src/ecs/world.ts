@@ -66,6 +66,7 @@ import {
   MAGIC,
   Reader,
   readColumn,
+  readFormat,
   SnapshotError,
   STORAGES,
   WIDTH,
@@ -175,6 +176,28 @@ const readRow = (def: ComponentDef<any>, cols: Columns, row: number): any => {
 
 const corrupt = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
+
+/** What `World.load` reads with, once it has read the list of components. */
+interface Loading {
+  readonly reader: Reader;
+  /** Whether ids and generations are of the narrower formats before 3. */
+  readonly narrow: boolean;
+  /** The components the snapshot lists, in its order. */
+  readonly named: readonly ComponentDef<any>[];
+  /** 1 for each slot the snapshot says is free. */
+  readonly isFree: Uint8Array;
+}
+
+/** Reads a reference to one of the components the snapshot lists. */
+const componentAt = ({ named, reader }: Loading): ComponentDef<any> => {
+  const def = named[reader.u32()];
+
+  if (def === undefined) {
+    throw corrupt("it refers to a component it does not list");
+  }
+
+  return def;
+};
 
 /** Explains that a relation was given without a value, and so has no target. */
 const targetless = (def: ComponentDef<any>): Error =>
@@ -1176,6 +1199,11 @@ type Callback = (...args: any[]) => void;
 
 type OnRun = (table: Table, start: number, end: number) => void;
 
+// How a query's mask is scanned: see `scanOf`.
+const JS_SCAN = 0;
+const NATIVE_SKIP = 1;
+const NATIVE_RUN = 2;
+
 /**
  * A query bound to one world: what a system gets from `yield* SomeQuery`, to
  * iterate with `each`.
@@ -1568,15 +1596,7 @@ export class QueryView<D extends Terms = Terms> {
    */
   private runs(frame: Frame, onRun: OnRun): void {
     if (!this.filtered) {
-      this._lastPath = "dense";
-
-      for (let t = 0; t < this.tables.length; t += 1) {
-        const table = this.tables[t]!;
-
-        if (table.count > 0) {
-          onRun(table, 0, table.count);
-        }
-      }
+      this.denseRuns(onRun);
 
       return;
     }
@@ -1591,21 +1611,10 @@ export class QueryView<D extends Terms = Terms> {
 
       smallest = frame.members;
     } else {
-      for (let s = 0; s < this.sparseWith.length; s += 1) {
-        const set = this.sparseWith[s]!;
-
-        if (smallest === undefined || set.count < smallest.count) {
-          smallest = set;
-        }
-      }
+      smallest = this.smallestSparse();
     }
 
-    // A change query nested in itself has other entities to visit than the
-    // marks in place are for, so it sorts.
-    if (
-      smallest !== undefined &&
-      ((this.watching && this.depth > 1) || this.shouldSort(smallest))
-    ) {
+    if (this.sorts(smallest)) {
       this._lastPath = "sorted";
       this.sortedRuns(frame, smallest, onRun);
 
@@ -1622,20 +1631,9 @@ export class QueryView<D extends Terms = Terms> {
     }
 
     try {
-      let rows = 0;
-
-      for (let t = 0; t < this.tables.length; t += 1) {
-        rows += this.tables[t]!.count;
-      }
-
-      // Long uniform stretches are skipped with a native scan (indexOf), which
-      // is far faster per byte but costs more per call than a JS loop. Which
-      // stretches are long depends on what the mask marks:
-      //  - a required component (base 1): the skipped stretches, if it is rare
-      //  - only exclusions (base 0): the matching runs, if exclusions are rare
-      const rare = this.exceptions * NATIVE_SCAN_ROWS_PER_EXCEPTION < rows;
-      const nativeSkip = rare && this.maskBase === 1;
-      const nativeRun = rare && this.maskBase === 0;
+      const scan = this.scanOf();
+      const nativeSkip = scan === NATIVE_SKIP;
+      const nativeRun = scan === NATIVE_RUN;
 
       for (let t = 0; t < this.tables.length; t += 1) {
         const table = this.tables[t]!;
@@ -1689,6 +1687,66 @@ export class QueryView<D extends Terms = Terms> {
         this.unmark(smallest);
       }
     }
+  }
+
+  /** Every row of every table matches: one run per table that has rows. */
+  private denseRuns(onRun: OnRun): void {
+    this._lastPath = "dense";
+
+    for (let t = 0; t < this.tables.length; t += 1) {
+      const table = this.tables[t]!;
+
+      if (table.count > 0) {
+        onRun(table, 0, table.count);
+      }
+    }
+  }
+
+  /** The sparse set of the query's with the fewest members, if it has any. */
+  private smallestSparse(): SparseSet | undefined {
+    let smallest: SparseSet | undefined;
+
+    for (let s = 0; s < this.sparseWith.length; s += 1) {
+      const set = this.sparseWith[s]!;
+
+      if (smallest === undefined || set.count < smallest.count) {
+        smallest = set;
+      }
+    }
+
+    return smallest;
+  }
+
+  /** Whether the rows are found by sorting the members of `smallest`. */
+  private sorts(smallest: Members | undefined): smallest is Members {
+    // A change query nested in itself has other entities to visit than the
+    // marks in place are for, so it sorts.
+    return (
+      smallest !== undefined &&
+      ((this.watching && this.depth > 1) || this.shouldSort(smallest))
+    );
+  }
+
+  /**
+   * How the marks in place are scanned. Long uniform stretches are skipped
+   * with a native scan (indexOf), which is far faster per byte but costs more
+   * per call than a JS loop. Which stretches are long depends on what the mask
+   * marks:
+   *  - a required component (base 1): the skipped stretches, if it is rare
+   *  - only exclusions (base 0): the matching runs, if exclusions are rare
+   */
+  private scanOf(): number {
+    let rows = 0;
+
+    for (let t = 0; t < this.tables.length; t += 1) {
+      rows += this.tables[t]!.count;
+    }
+
+    if (this.exceptions * NATIVE_SCAN_ROWS_PER_EXCEPTION >= rows) {
+      return JS_SCAN;
+    }
+
+    return this.maskBase === 1 ? NATIVE_SKIP : NATIVE_RUN;
   }
 
   private shouldSort(smallest: Members): boolean {
@@ -4182,23 +4240,7 @@ export class World {
     }
 
     const reader = new Reader(bytes);
-
-    if (reader.left < 8 || reader.u32() !== MAGIC) {
-      throw new SnapshotError(
-        "not a snapshot",
-        "These bytes are not a snapshot of a world."
-      );
-    }
-
-    const format = reader.u32();
-
-    if (format < 1 || format > FORMAT) {
-      throw new SnapshotError(
-        "newer format",
-        `The snapshot is in format ${format}, and this version reads formats 1 to ${FORMAT}.`
-      );
-    }
-
+    const format = readFormat(reader);
     const random = this.random.state;
 
     for (let word = 0; word < 4; word += 1) {
@@ -4209,6 +4251,49 @@ export class World {
     // was two, and an id, in a table or in a field, eight where it was four.
     // An id of the older formats is the same number, in a narrower place.
     const narrow = format < 3;
+    const { freed, isFree, retired } = this.loadSlots(reader, narrow);
+
+    const loading: Loading = {
+      reader,
+      narrow,
+      named: this.loadComponents(reader),
+      isFree,
+    };
+
+    const tableCount = reader.count(8);
+
+    for (let t = 0; t < tableCount; t += 1) {
+      this.loadTable(loading);
+    }
+
+    if (this.alive + freed + retired !== this.nextIndex) {
+      throw corrupt("some entity slots are neither in a table nor free");
+    }
+
+    const setCount = reader.count(8);
+
+    for (let s = 0; s < setCount; s += 1) {
+      this.loadSparse(loading);
+    }
+
+    // Format 1 had no singletons.
+    this.loadSingletons(loading, format >= 2 ? reader.count(4) : 0);
+
+    if (reader.left !== 4 || reader.u32() !== END) {
+      throw corrupt("it does not end where it should");
+    }
+
+    this.indexRelations();
+  }
+
+  /**
+   * Reads the entity slots: their generations, and which are free. Returns
+   * how many are freed, and how many are used up.
+   */
+  private loadSlots(
+    reader: Reader,
+    narrow: boolean
+  ): { freed: number; isFree: Uint8Array; retired: number } {
     const nextIndex = reader.count(narrow ? 2 : 4);
 
     if (nextIndex > INDEX_MASK + 1) {
@@ -4263,7 +4348,11 @@ export class World {
 
     this.nextIndex = nextIndex;
 
-    // The components, checked against the ones this program defines.
+    return { freed, isFree, retired };
+  }
+
+  /** Reads the components, checked against the ones this program defines. */
+  private loadComponents(reader: Reader): ComponentDef<any>[] {
     const named: ComponentDef<any>[] = [];
     const componentCount = reader.count(9);
 
@@ -4306,139 +4395,138 @@ export class World {
       named.push(def);
     }
 
-    const componentAt = (): ComponentDef<any> => {
-      const def = named[reader.u32()];
+    return named;
+  }
 
-      if (def === undefined) {
-        throw corrupt("it refers to a component it does not list");
+  /** Reads one table: its components, its entities and their fields. */
+  private loadTable(loading: Loading): void {
+    const { narrow, reader } = loading;
+    const defs: ComponentDef<any>[] = [];
+    const defCount = reader.count(4);
+
+    for (let d = 0; d < defCount; d += 1) {
+      const def = componentAt(loading);
+
+      if (def.storage !== "table" || def.single || defs.includes(def)) {
+        throw corrupt(
+          "a table lists a component twice, or one that no table holds"
+        );
       }
 
-      return def;
-    };
-
-    const tableCount = reader.count(8);
-
-    for (let t = 0; t < tableCount; t += 1) {
-      const defs: ComponentDef<any>[] = [];
-      const defCount = reader.count(4);
-
-      for (let d = 0; d < defCount; d += 1) {
-        const def = componentAt();
-
-        if (def.storage !== "table" || def.single || defs.includes(def)) {
-          throw corrupt(
-            "a table lists a component twice, or one that no table holds"
-          );
-        }
-
-        defs.push(def);
-      }
-
-      const sorted = defs.toSorted((a, b) => a.id - b.id);
-      const key = sorted.map((def) => def.id).join(",");
-
-      if (this.tableByKey.has(key)) {
-        throw corrupt("it holds two tables for the same components");
-      }
-
-      const count = reader.count(narrow ? 4 : 8);
-      let capacity = 16;
-
-      while (capacity < count) {
-        capacity *= 2;
-      }
-
-      const table = new Table(this.tables.length, sorted, capacity);
-      this.tables.push(table);
-      this.tableByKey.set(key, table);
-
-      if (narrow) {
-        const ids = new Uint32Array(count);
-        reader.numbers(ids, count, 4);
-        table.entities.set(ids);
-      } else {
-        reader.numbers(table.entities, count, 8);
-      }
-
-      table.count = count;
-
-      for (let row = 0; row < count; row += 1) {
-        const entity = table.entities[row] as Entity;
-        const index = entityIndex(entity);
-
-        // Eight bytes can hold what is no id at all: a number that is not
-        // whole, below nothing, or past the last id. None of those is its
-        // index and a generation a slot could have; and a slot whose
-        // generations are used up, which the count below takes for
-        // nobody's, is one too many if it holds an entity.
-        if (
-          index >= nextIndex ||
-          isFree[index] === 1 ||
-          this.recTable[index] !== FREE ||
-          this.gens[index] !== (entity - index) / SLOTS
-        ) {
-          throw corrupt(
-            "an entity is in two places, or in a slot that is free or of another generation"
-          );
-        }
-
-        this.recTable[index] = table.index;
-        this.recRow[index] = row;
-      }
-
-      this.alive += count;
-
-      // The same order the fields were written in: components by name.
-      for (const def of defs) {
-        for (let f = 0; f < def.fields.length; f += 1) {
-          this.readField(reader, def, f, table.columns[def.id]!, count, narrow);
-        }
-      }
+      defs.push(def);
     }
 
-    if (this.alive + freed + retired !== nextIndex) {
-      throw corrupt("some entity slots are neither in a table nor free");
+    const sorted = defs.toSorted((a, b) => a.id - b.id);
+    const key = sorted.map((def) => def.id).join(",");
+
+    if (this.tableByKey.has(key)) {
+      throw corrupt("it holds two tables for the same components");
     }
 
-    const setCount = reader.count(8);
+    const count = reader.count(narrow ? 4 : 8);
+    let capacity = 16;
 
-    for (let s = 0; s < setCount; s += 1) {
-      const def = componentAt();
+    while (capacity < count) {
+      capacity *= 2;
+    }
 
-      if (def.storage !== "sparse" || def.single) {
-        throw corrupt("a sparse set is of a component that is not sparse");
-      }
+    const table = new Table(this.tables.length, sorted, capacity);
+    this.tables.push(table);
+    this.tableByKey.set(key, table);
 
-      const set = this._sparse(def);
-      const count = reader.count(4);
+    if (narrow) {
+      const ids = new Uint32Array(count);
+      reader.numbers(ids, count, 4);
+      table.entities.set(ids);
+    } else {
+      reader.numbers(table.entities, count, 8);
+    }
 
-      if (set.count > 0) {
-        throw corrupt("it holds two sparse sets for one component");
-      }
+    table.count = count;
+    this.claimRows(table, loading.isFree);
+    this.alive += count;
 
-      for (let i = 0; i < count; i += 1) {
-        const index = reader.u32();
-
-        if (index >= nextIndex || this.recTable[index]! < 0 || set.has(index)) {
-          throw corrupt(
-            "a sparse component is on an entity that does not exist, or on one twice"
-          );
-        }
-
-        set.add(index, undefined);
-      }
-
+    // The same order the fields were written in: components by name.
+    for (const def of defs) {
       for (let f = 0; f < def.fields.length; f += 1) {
-        this.readField(reader, def, f, set.columns, count, narrow);
+        this.readField(reader, def, f, table.columns[def.id]!, count, narrow);
       }
     }
+  }
 
-    // Format 1 had no singletons.
-    const singleCount = format >= 2 ? reader.count(4) : 0;
+  /** Records where each entity of a loaded table is, checking it is no other. */
+  private claimRows(table: Table, isFree: Uint8Array): void {
+    const { nextIndex } = this;
+
+    for (let row = 0; row < table.count; row += 1) {
+      const entity = table.entities[row] as Entity;
+      const index = entityIndex(entity);
+
+      // Eight bytes can hold what is no id at all: a number that is not
+      // whole, below nothing, or past the last id. None of those is its
+      // index and a generation a slot could have; and a slot whose
+      // generations are used up, which the count below takes for
+      // nobody's, is one too many if it holds an entity.
+      if (
+        index >= nextIndex ||
+        isFree[index] === 1 ||
+        this.recTable[index] !== FREE ||
+        this.gens[index] !== (entity - index) / SLOTS
+      ) {
+        throw corrupt(
+          "an entity is in two places, or in a slot that is free or of another generation"
+        );
+      }
+
+      this.recTable[index] = table.index;
+      this.recRow[index] = row;
+    }
+  }
+
+  /** Reads one sparse set: its members and their fields. */
+  private loadSparse(loading: Loading): void {
+    const { narrow, reader } = loading;
+    const def = componentAt(loading);
+
+    if (def.storage !== "sparse" || def.single) {
+      throw corrupt("a sparse set is of a component that is not sparse");
+    }
+
+    const set = this._sparse(def);
+    const count = reader.count(4);
+
+    if (set.count > 0) {
+      throw corrupt("it holds two sparse sets for one component");
+    }
+
+    for (let i = 0; i < count; i += 1) {
+      const index = reader.u32();
+
+      if (
+        index >= this.nextIndex ||
+        this.recTable[index]! < 0 ||
+        set.has(index)
+      ) {
+        throw corrupt(
+          "a sparse component is on an entity that does not exist, or on one twice"
+        );
+      }
+
+      set.add(index, undefined);
+    }
+
+    for (let f = 0; f < def.fields.length; f += 1) {
+      this.readField(reader, def, f, set.columns, count, narrow);
+    }
+  }
+
+  /** Reads `count` singletons. */
+  private loadSingletons(loading: Loading, count: number): void {
+    const { narrow, reader } = loading;
     const loaded = new Set<Single>();
 
-    for (let s = 0; s < singleCount; s += 1) {
-      const def = componentAt();
+    for (let s = 0; s < count; s += 1) {
+      const def = componentAt(loading);
 
       if (!def.single) {
         throw corrupt("a singleton is of a component that is not one");
@@ -4458,12 +4546,6 @@ export class World {
 
       single.written = true;
     }
-
-    if (reader.left !== 4 || reader.u32() !== END) {
-      throw corrupt("it does not end where it should");
-    }
-
-    this.indexRelations();
   }
 
   /** Reads one field's column, naming the field if its codec rejects a value. */

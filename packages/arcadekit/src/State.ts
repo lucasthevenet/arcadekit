@@ -25,7 +25,12 @@
 import { Effect, Effectable } from "effect";
 
 import { Component, Field } from "./ecs/component";
-import type { ComponentDef, FieldDef, Schema, SingletonSpec } from "./ecs/component";
+import type {
+  ComponentDef,
+  FieldDef,
+  Schema,
+  SingletonSpec,
+} from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
 import { World } from "./Services";
 import * as System from "./System";

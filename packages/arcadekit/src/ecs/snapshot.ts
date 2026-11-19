@@ -618,14 +618,8 @@ const columnOf = (kind: FieldKind, count: number): Column => {
 const damaged = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
 
-/**
- * Reads a snapshot into its contents, without needing component definitions.
- *
- * @category Codecs
- */
-export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
-  const reader = new Reader(bytes);
-
+/** Reads the start of a snapshot, and returns the format the rest is in. */
+export const readFormat = (reader: Reader): number => {
   if (reader.left < 8 || reader.u32() !== MAGIC) {
     throw new SnapshotError(
       "not a snapshot",
@@ -642,14 +636,12 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     );
   }
 
-  const random = new Uint32Array(4);
+  return format;
+};
 
-  for (let word = 0; word < 4; word += 1) {
-    random[word] = reader.u32();
-  }
+// See `FORMAT`: before format 3 a generation was two bytes and an id four.
 
-  // See `FORMAT`: before format 3 a generation was two bytes and an id four.
-  const narrow = format < 3;
+const readGenerations = (reader: Reader, narrow: boolean): Uint32Array => {
   const generations = new Uint32Array(reader.count(narrow ? 2 : 4));
 
   if (narrow) {
@@ -660,12 +652,24 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     reader.numbers(generations, generations.length, 4);
   }
 
-  const freed: number[] = [];
+  return generations;
+};
 
-  for (let i = reader.count(4); i > 0; i -= 1) {
-    freed.push(reader.u32());
+const readEntities = (reader: Reader, narrow: boolean): Float64Array => {
+  const entities = new Float64Array(reader.count(narrow ? 4 : 8));
+
+  if (narrow) {
+    const read = new Uint32Array(entities.length);
+    reader.numbers(read, read.length, 4);
+    entities.set(read);
+  } else {
+    reader.numbers(entities, entities.length, 8);
   }
 
+  return entities;
+};
+
+const readComponents = (reader: Reader): SnapshotComponent[] => {
   const components: SnapshotComponent[] = [];
 
   for (let c = reader.count(9); c > 0; c -= 1) {
@@ -692,66 +696,70 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     components.push({ name, storage, fields });
   }
 
-  const componentAt = (): SnapshotComponent => {
-    const component = components[reader.u32()];
+  return components;
+};
 
-    if (component === undefined) {
-      throw damaged("it refers to a component it does not list");
+/** What the parts after the list of components are read with. */
+interface Body {
+  readonly reader: Reader;
+  readonly components: readonly SnapshotComponent[];
+  readonly narrow: boolean;
+}
+
+const componentAt = ({ components, reader }: Body): SnapshotComponent => {
+  const component = components[reader.u32()];
+
+  if (component === undefined) {
+    throw damaged("it refers to a component it does not list");
+  }
+
+  return component;
+};
+
+const readFields = (
+  { narrow, reader }: Body,
+  component: SnapshotComponent,
+  count: number
+) => {
+  const columns: Record<string, Column> = {};
+
+  for (const { kind, name } of component.fields) {
+    if (kind === "transient") {
+      continue;
     }
 
-    return component;
-  };
+    const column = columnOf(kind, count);
+    // A ref field stays in its encoded form: there is no codec here.
+    readColumn(
+      reader,
+      kind === "ref" ? "json" : kind,
+      column,
+      count,
+      undefined,
+      narrow
+    );
+    columns[name] = column;
+  }
 
-  const readFields = (
-    component: SnapshotComponent,
-    count: number
-  ): Record<string, Column> => {
-    const columns: Record<string, Column> = {};
+  return columns;
+};
 
-    for (const { kind, name } of component.fields) {
-      if (kind === "transient") {
-        continue;
-      }
-
-      const column = columnOf(kind, count);
-      // A ref field stays in its encoded form: there is no codec here.
-      readColumn(
-        reader,
-        kind === "ref" ? "json" : kind,
-        column,
-        count,
-        undefined,
-        narrow
-      );
-      columns[name] = column;
-    }
-
-    return columns;
-  };
-
+const readTables = (body: Body): SnapshotTable[] => {
+  const { narrow, reader } = body;
   const tables: SnapshotTable[] = [];
 
   for (let t = reader.count(8); t > 0; t -= 1) {
     const of: SnapshotComponent[] = [];
 
     for (let d = reader.count(4); d > 0; d -= 1) {
-      of.push(componentAt());
+      of.push(componentAt(body));
     }
 
-    const entities = new Float64Array(reader.count(narrow ? 4 : 8));
-
-    if (narrow) {
-      const read = new Uint32Array(entities.length);
-      reader.numbers(read, read.length, 4);
-      entities.set(read);
-    } else {
-      reader.numbers(entities, entities.length, 8);
-    }
-
+    const entities = readEntities(reader, narrow);
     const columns: SnapshotTable["columns"] = {};
 
     for (const component of of) {
-      columns[component.name] = readFields(component, entities.length);
+      columns[component.name] = readFields(body, component, entities.length);
     }
 
     tables.push({
@@ -761,28 +769,69 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     });
   }
 
+  return tables;
+};
+
+const readSparse = (body: Body): SnapshotSparse[] => {
+  const { reader } = body;
   const sparse: SnapshotSparse[] = [];
 
   for (let s = reader.count(8); s > 0; s -= 1) {
-    const component = componentAt();
+    const component = componentAt(body);
     const members = new Uint32Array(reader.count(4));
     reader.numbers(members, members.length, 4);
     sparse.push({
       component: component.name,
       members,
-      columns: readFields(component, members.length),
+      columns: readFields(body, component, members.length),
     });
   }
 
+  return sparse;
+};
+
+/** Reads the singletons, which a snapshot holds from format 2. */
+const readSingletons = (body: Body, format: number): SnapshotSingleton[] => {
   const singletons: SnapshotSingleton[] = [];
 
-  for (let s = format >= 2 ? reader.count(4) : 0; s > 0; s -= 1) {
-    const component = componentAt();
+  for (let s = format >= 2 ? body.reader.count(4) : 0; s > 0; s -= 1) {
+    const component = componentAt(body);
     singletons.push({
       component: component.name,
-      columns: readFields(component, 1),
+      columns: readFields(body, component, 1),
     });
   }
+
+  return singletons;
+};
+
+/**
+ * Reads a snapshot into its contents, without needing component definitions.
+ *
+ * @category Codecs
+ */
+export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
+  const reader = new Reader(bytes);
+  const format = readFormat(reader);
+  const random = new Uint32Array(4);
+
+  for (let word = 0; word < 4; word += 1) {
+    random[word] = reader.u32();
+  }
+
+  const narrow = format < 3;
+  const generations = readGenerations(reader, narrow);
+  const freed: number[] = [];
+
+  for (let i = reader.count(4); i > 0; i -= 1) {
+    freed.push(reader.u32());
+  }
+
+  const components = readComponents(reader);
+  const body: Body = { reader, components, narrow };
+  const tables = readTables(body);
+  const sparse = readSparse(body);
+  const singletons = readSingletons(body, format);
 
   if (reader.left !== 4 || reader.u32() !== END) {
     throw damaged("it does not end where it should");
@@ -799,8 +848,14 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   };
 };
 
-const byName = (a: { name: string }, b: { name: string }): number =>
-  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+/** Orders by name, a code unit at a time: the same on every machine. */
+const byName = (a: { name: string }, b: { name: string }): number => {
+  if (a.name < b.name) {
+    return -1;
+  }
+
+  return a.name > b.name ? 1 : 0;
+};
 
 /**
  * Writes contents back into snapshot bytes. The contents must be consistent:
