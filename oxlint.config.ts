@@ -46,7 +46,6 @@ export default defineConfig({
     "anti-slop/no-unsafe-dictionary-type": "error",
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-readable-spacing": "error",
-    "anti-slop/require-safety-comment-for-type-assertion": "error",
     "anti-slop-effect/no-manual-effect-error-tag": "error",
     "anti-slop-effect/no-manual-tag-comparison": "error",
     "anti-slop-effect/no-manual-tagged-construction": "error",
@@ -144,8 +143,12 @@ export default defineConfig({
       rules: { "typescript/prefer-for-of": "off" },
     },
     {
+      // A cast in a package's source says why it holds. One in a test, an
+      // example or a benchmark needs no comment, and `as any` is refused
+      // everywhere by typescript/no-explicit-any.
       files: ["packages/*/src/**"],
       rules: {
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
         "arcadekit/entry-imports": "error",
         "arcadekit/no-page": "error",
         "arcadekit/no-code-from-text": "error",

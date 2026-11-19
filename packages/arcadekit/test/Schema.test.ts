@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -69,12 +69,18 @@ const withApp = <A, T>(
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
   log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
 
-const failure = (exit: Exit.Exit<unknown, unknown>): any => {
+const failure = <E>(exit: Exit.Exit<unknown, E>): E => {
   if (!Exit.isFailure(exit)) {
     throw new Error("expected a failure");
   }
 
-  return (exit.cause.reasons[0] as any).error;
+  const [reason] = exit.cause.reasons;
+
+  if (reason === undefined || !Cause.isFailReason(reason)) {
+    throw new Error("expected a typed failure");
+  }
+
+  return reason.error;
 };
 
 describe("actions with a schema", () => {
@@ -117,8 +123,10 @@ describe("actions with a schema", () => {
       const exit = app.dispatch(Damage, { target, amount: 999, seed: 1n });
       const error = failure(exit);
       expect(error).toBeInstanceOf(Action.InvalidPayload);
-      expect(error.action).toBe("Damage");
-      expect(error.message).toMatch(/amount/u);
+      expect(error).toMatchObject({
+        action: "Damage",
+        message: expect.stringMatching(/amount/u),
+      });
       // The handler never ran, nothing changed, nothing was logged.
       expect(received).toStrictEqual([]);
       expect(app.world.get(target, Health)).toStrictEqual({ hp: 50 });
@@ -172,7 +180,9 @@ describe("actions with a schema", () => {
       for (const [label, payload] of bad) {
         const error = failure(app.dispatchByName("Damage", payload));
         expect(error, label).toBeInstanceOf(Action.InvalidPayload);
-        expect(error.message.length, label).toBeGreaterThan(0);
+        expect(error, label).toMatchObject({
+          message: expect.stringMatching(/./u),
+        });
       }
 
       expect(failure(app.dispatchByName("Nope", {}))).toStrictEqual(
@@ -470,6 +480,20 @@ const replayInto = (log: readonly Action.LogEntry[], ticks: number) =>
     return app.world.get(target, Health)!.hp;
   });
 
+// Changes the action at `index` of a decoded log, as an edited save file would.
+const edit = (
+  log: readonly Action.LogEntry[],
+  index: number,
+  change: (entry: Action.Logged) => Action.Logged
+): readonly Action.LogEntry[] =>
+  log.map((entry, at) =>
+    at === index && !Action.isCheckpoint(entry) ? change(entry) : entry
+  );
+
+const fieldsOf = Schema.decodeUnknownSync(
+  Schema.Record(Schema.String, Schema.Unknown)
+);
+
 describe("saving and replaying", () => {
   it("round-trips the log through text and reproduces the game", () => {
     const saved = record();
@@ -509,18 +533,23 @@ describe("saving and replaying", () => {
     const saved = record();
     // Entry 0 is the checkpoint of the state the game started from; the four
     // actions follow it.
-    const log = JSON.parse(saved.text) as any[];
-    expect(log.map((entry) => entry.name)).toStrictEqual([
-      undefined,
-      "Damage",
-      "Damage",
-      "Damage",
-      "Rename",
-    ]);
+    const loaded = Action.decodeLog(saved.text);
+
+    if (!Exit.isSuccess(loaded)) {
+      throw new Error("the saved log did not decode");
+    }
+
+    const log = loaded.value;
+    expect(
+      log.map((entry) => (Action.isCheckpoint(entry) ? undefined : entry.name))
+    ).toStrictEqual([undefined, "Damage", "Damage", "Damage", "Rename"]);
 
     // An edited save file: a hit far above what the schema allows.
-    const edited = structuredClone(log);
-    edited[2].payload.amount = 9999;
+    const edited = edit(log, 2, (entry) => ({
+      ...entry,
+      payload: { ...fieldsOf(entry.payload), amount: 9999 },
+    }));
+
     let caught: unknown;
 
     try {
@@ -540,20 +569,21 @@ describe("saving and replaying", () => {
     );
 
     // An action this build of the game does not have.
-    const renamed = structuredClone(log);
-    renamed[1].name = "Smite";
+    const renamed = edit(log, 1, (entry) => ({ ...entry, name: "Smite" }));
     expect(() => replayInto(renamed, saved.ticks)).toThrow(
       /Log entry 1 \("Smite" at tick 0\)/u
     );
 
     // Valid entries the rules refuse: the target is not in this game.
-    const retargeted = structuredClone(log);
-    retargeted[3].payload.target = 4000;
+    const retargeted = edit(log, 3, (entry) => ({
+      ...entry,
+      payload: { ...fieldsOf(entry.payload), target: 4000 },
+    }));
+
     expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 3/u);
 
     // Entries that could never be reached.
-    const late = structuredClone(log);
-    late[4].tick = 99;
+    const late = edit(log, 4, (entry) => ({ ...entry, tick: 99 }));
     expect(() => replayInto(late, saved.ticks)).toThrow(
       /its tick \(99\) was never reached/u
     );

@@ -224,8 +224,8 @@ export const growColumn = (
   const next = makeColumn(kind, capacity);
 
   if (isBoxed(kind)) {
-    const from = old as any[];
-    const to = next as any[];
+    const from = old as unknown[];
+    const to = next as unknown[];
 
     for (let i = 0; i < from.length; i += 1) {
       to[i] = from[i];
@@ -757,7 +757,7 @@ export const makeAccessor = (
   mode: AccessorMode,
   row: Row
 ): Accessor => {
-  const { fields, kinds, name } = def;
+  const { fields, kinds } = def;
 
   const noting: Noting | undefined =
     mode === "notes"

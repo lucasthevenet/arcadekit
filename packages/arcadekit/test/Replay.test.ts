@@ -642,8 +642,10 @@ describe("a replay that checks itself", () => {
     expect(replayInto({}, recorded, 3).stopped).toBeUndefined();
 
     // The game accepted the first take, and in this log it names no coin.
-    const refusedNow = structuredClone(recorded) as any[];
-    refusedNow[1].payload.coin = 4000;
+    const refusedNow = recorded.map((entry, index) =>
+      index === 1 ? { ...entry, payload: { coin: 4000 } } : entry
+    );
+
     const first = replayInto({}, refusedNow, 3).stopped!;
     expect(first.index).toBe(1);
     expect(first.reason).toBe("NoSuchCoin");
@@ -653,8 +655,7 @@ describe("a replay that checks itself", () => {
 
     // The game refused the second take, and here the first is gone, so the
     // second finds its coin.
-    const acceptedNow = structuredClone(recorded) as any[];
-    acceptedNow.splice(1, 1);
+    const acceptedNow = recorded.toSpliced(1, 1);
     const second = replayInto({}, acceptedNow, 3).stopped!;
     expect(second.index).toBe(1);
     expect(second.message).toBe(

@@ -21,7 +21,6 @@
  * workers, to see what shared memory costs a loop on one thread.
  */
 import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./kernels";

@@ -50,7 +50,6 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { inUnit, variants } from "./core";
 import {

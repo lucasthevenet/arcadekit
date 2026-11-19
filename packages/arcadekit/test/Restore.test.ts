@@ -8,7 +8,7 @@ import {
   Query,
   SnapshotError,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { ComponentDef } from "../src/index";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
 const Marked = Component.tag("rs/Marked");

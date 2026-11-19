@@ -9,7 +9,7 @@ import {
   System,
   Transform3d,
 } from "arcadekit";
-import type { Entity } from "arcadekit";
+import type { Entity, Frame, Time, World } from "arcadekit";
 import { Cause, Effect, Exit, Layer, Logger, Schema, Scope } from "effect";
 import {
   BoxGeometry,
@@ -119,10 +119,12 @@ const makeRenderer = () => {
   return renderer;
 };
 
+/** What the systems of these tests use, all of which the game provides. */
+type Drawing = Assets.Store | Frame | Three.Scene | Time | World;
+
 /** A game of a menu and a forest, drawn by the systems it is given. */
 const play = (
-  // `any`: whatever the systems need is provided below, or the test fails.
-  systems: readonly System.System<never, any>[],
+  systems: readonly System.System<never, Drawing>[],
   loader: Layer.Layer<never> = files
 ) => {
   const renderer = makeRenderer();
@@ -139,9 +141,7 @@ const play = (
     made.pipe(
       Effect.provide(Layer.mergeAll(renderer.layer, loader, Logger.layer([]))),
       Scope.provide(scope)
-    ) as typeof made extends Effect.Effect<infer A, infer E, any>
-      ? Effect.Effect<A, E>
-      : never
+    )
   );
 
   return {
@@ -176,7 +176,7 @@ const during = (Forest: Forest) =>
  */
 const keepLate = (
   Forest: Forest,
-  ...drawing: readonly System.System<never, any>[]
+  ...drawing: readonly System.System<never, Drawing>[]
 ) => {
   let keep = System.make("ta/KeepLate", function* () {
     const store = yield* Assets.Store;

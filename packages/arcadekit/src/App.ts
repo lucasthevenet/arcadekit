@@ -582,6 +582,19 @@ export interface Options<
   readonly verifyFrames?: boolean;
 }
 
+/**
+ * An effect of a system, a handler, a plugin's setup or a script, to be run
+ * with the app's context.
+ */
+const runnable = <A, E>(
+  effect: Effect.Effect<A, E, unknown>
+): Effect.Effect<A, E, never> =>
+  // SAFETY: App.make's types require every service that its systems,
+  // handlers, setups and scripts need to come from the caller, a plugin or
+  // the app, and the app's context holds them all. Listed together, the
+  // effects' own types no longer say which they need.
+  effect as Effect.Effect<A, E, never>;
+
 const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
   Exit.fail(new Save.SaveRefused({ message }));
 
@@ -871,7 +884,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     let stopped: ScriptFailed | undefined;
     // Reports are logged with the app's context once it is built, so they
     // reach the loggers the caller provided.
-    let reportContext = Context.empty() as Context.Context<any>;
+    let reportContext: Context.Context<never> = Context.empty();
 
     const watch = <A, E>(fiber: Fiber.Fiber<A, E>): Fiber.Fiber<A, E> => {
       const ended = (exit: Exit.Exit<A, E>): void => {
@@ -1234,7 +1247,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     }
 
-    const built = (yield* Layer.build(layer)) as Context.Context<any>;
+    // SAFETY: the layer is the built-in services' with every plugin's layer
+    // merged in, and a plugin's layer provides what its type says it does.
+    const built = (yield* Layer.build(layer)) as Context.Context<
+      BuiltIn | Provided<P>
+    >;
+
     // Everything the caller provided (their services, resource overrides, the
     // scope) is captured once here and handed to every system and script.
     const provided = yield* Effect.context<External<S, H, P>>();
@@ -1491,7 +1509,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         },
       })
-    ) as Context.Context<any>;
+    );
 
     const runFrameFork = Effect.runForkWith(frameContext);
     // The input stage is told what the devices say: one picture of them,
@@ -1750,8 +1768,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
         const fiber =
           stage === "frame"
-            ? runFrameFork(frameEffect)
-            : runInputFork(inputEffect);
+            ? runFrameFork(runnable(frameEffect))
+            : runInputFork(runnable(inputEffect));
 
         events.reader = undefined;
         world.reader = undefined;
@@ -1905,7 +1923,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.tick += 1;
 
         events.beginTick();
-        const fiber = runFork(tickEffect);
+        const fiber = runFork(runnable(tickEffect));
         events.reader = undefined;
         world.reader = undefined;
         // A system that failed was not released.
@@ -2194,7 +2212,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // As after a load: each plugin's scripts, from their beginning.
         for (const plugin of plugins) {
           for (const script of plugin.scripts) {
-            watch(runFork(script as Effect.Effect<unknown, unknown, never>));
+            watch(runFork(runnable(script)));
           }
         }
 
@@ -2236,9 +2254,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       spawnScript<A, E2>(
         effect: Effect.Effect<A, E2, Provided<P> | External<S, H, P> | BuiltIn>
       ) {
-        return watch(runFork(effect as Effect.Effect<A, E2, never>));
+        return watch(runFork(runnable(effect)));
       },
-      dispatch(action, payload) {
+      dispatch<N extends ActionNames<AllHandlers<H, P>>>(
+        action: Action.ActionDef<N, PayloadFor<AllHandlers<H, P>, N>, unknown>,
+        payload: PayloadFor<AllHandlers<H, P>, N>
+      ) {
         assertBetweenTicks(action.name);
 
         // A typed dispatch of an action nobody handles is a programming error.
@@ -2246,9 +2267,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw new Error(`No handler for action "${action.name}"`);
         }
 
+        // SAFETY: the handler of an action named N is the one in the app's
+        // handlers whose action is named N, so it returns that handler's
+        // result or fails with its error.
         return apply(action.name, payload, false, true, undefined) as Exit.Exit<
-          any,
-          any
+          ResultFor<AllHandlers<H, P>, N>,
+          FailureFor<AllHandlers<H, P>, N>
         >;
       },
       enqueue,
@@ -2280,7 +2304,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
       events.reader = `setup:${plugin.name}`;
       world.reader = events.reader;
-      const fiber = runFork(plugin.setup);
+      const fiber = runFork(runnable(plugin.setup));
       events.reader = undefined;
       world.reader = undefined;
       const exit = fiber.pollUnsafe();
@@ -2306,7 +2330,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // a script runs up to its first wait, and from then on during ticks.
     for (const plugin of plugins) {
       for (const script of plugin.scripts) {
-        watch(runFork(script as Effect.Effect<unknown, unknown, never>));
+        watch(runFork(runnable(script)));
       }
     }
 

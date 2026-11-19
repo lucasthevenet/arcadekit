@@ -3119,7 +3119,10 @@ export class World {
       // A number named and not given is left as it was: `set` writes the
       // fields it is handed, and an undefined would be NaN among floats.
       if (given !== undefined || isBoxed(def.schema[key]!.kind)) {
-        cols[key]![row] = given as any;
+        // SAFETY: `given` is a value of the field, which its column holds:
+        // a number for a column of numbers. Written by index, a typed array
+        // and an array are the same.
+        (cols[key] as unknown[])[row] = given;
       }
     }
 

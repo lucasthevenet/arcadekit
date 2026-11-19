@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { Component, Field } from "../src/ecs/component";
-import type { ComponentDef, Entity } from "../src/ecs/component";
+import type {
+  ComponentDef,
+  Entity,
+  Schema,
+  ValueOf,
+} from "../src/ecs/component";
 import { CommandBuffer, World } from "../src/ecs/world";
 import type { QuerySpec, Terms } from "../src/ecs/world";
 
@@ -1170,9 +1175,16 @@ const random = (seed: number) => () => {
 describe("randomized comparison against a simple model", () => {
   // A second, obviously-correct implementation: a Map of entity -> components.
   // Thousands of random operations must leave both in the same state.
-  const defs = [Position, Velocity, Health, Enemy, Stunned, Burning] as const;
+  const defs: readonly ComponentDef[] = [
+    Position,
+    Velocity,
+    Health,
+    Enemy,
+    Stunned,
+    Burning,
+  ];
 
-  const sample = (def: (typeof defs)[number], rnd: () => number): any => {
+  const sample = (def: ComponentDef, rnd: () => number): ValueOf<Schema> => {
     if (def === Position || def === Velocity) {
       return { x: Math.fround(rnd() * 100), y: Math.fround(rnd() * 100) };
     }
@@ -1192,7 +1204,7 @@ describe("randomized comparison against a simple model", () => {
     it(`seed ${seed}`, () => {
       const rnd = random(seed);
       const world = new World();
-      const model = new Map<Entity, Map<number, any>>();
+      const model = new Map<Entity, Map<number, ValueOf<Schema>>>();
       const dead: Entity[] = [];
 
       for (let step = 0; step < 4000; step += 1) {
@@ -1206,13 +1218,13 @@ describe("randomized comparison against a simple model", () => {
 
         if (roll < 0.3 || pick === undefined) {
           const chosen = defs.filter(() => rnd() < 0.4);
-          const values = new Map<number, any>();
+          const values = new Map<number, ValueOf<Schema>>();
 
           const inputs = chosen.map((d) => {
             const value = sample(d, rnd);
             values.set(d.id, value);
 
-            return (d as any).of(value);
+            return d.of(value);
           });
 
           model.set(world.spawn(...inputs), values);
@@ -1221,8 +1233,8 @@ describe("randomized comparison against a simple model", () => {
           model.delete(pick);
           dead.push(pick);
         } else if (roll < 0.75) {
-          const value = sample(def!, rnd);
-          world.add(pick, (def as any).of(value));
+          const value = sample(def, rnd);
+          world.add(pick, def.of(value));
           model.get(pick)!.set(def.id, value);
         } else {
           expect(world.remove(pick, def)).toBe(model.get(pick)!.delete(def.id));
@@ -1240,9 +1252,7 @@ describe("randomized comparison against a simple model", () => {
 
         for (const def of defs) {
           expect(world.has(entity, def)).toBe(values.has(def.id));
-          expect(world.get(entity, def as any)).toStrictEqual(
-            values.get(def.id)
-          );
+          expect(world.get(entity, def)).toStrictEqual(values.get(def.id));
         }
       }
 
@@ -1294,7 +1304,7 @@ describe("randomized comparison against a simple model", () => {
           view._path = path;
           const visited: Entity[] = [];
           view.each((pos, entity) => {
-            expect(pos.x).toBe(model.get(entity)!.get(Position.id).x);
+            expect(pos.x).toBe(model.get(entity)!.get(Position.id)?.x);
             visited.push(entity);
           });
           expect(visited.toSorted()).toStrictEqual(expected);
@@ -1304,7 +1314,7 @@ describe("randomized comparison against a simple model", () => {
 
             for (let i = start; i < end; i += 1) {
               const entity = entities[i] as Entity;
-              expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id).y);
+              expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id)?.y);
               chunked.push(entity);
             }
           });
@@ -1325,8 +1335,10 @@ describe("randomized comparison against a simple model", () => {
         view._path = path;
         const visited: Entity[] = [];
         view.each((health, burn, entity) => {
-          expect(health.hp).toBe(model.get(entity)!.get(Health.id).hp);
-          expect(burn.seconds).toBe(model.get(entity)!.get(Burning.id).seconds);
+          expect(health.hp).toBe(model.get(entity)!.get(Health.id)?.hp);
+          expect(burn.seconds).toBe(
+            model.get(entity)!.get(Burning.id)?.seconds
+          );
           visited.push(entity);
         });
         expect(visited.toSorted()).toStrictEqual(expected);
@@ -1334,9 +1346,9 @@ describe("randomized comparison against a simple model", () => {
         view.eachChunk((start, end, health, burning, entities) => {
           for (let i = start; i < end; i += 1) {
             const entity = entities[i] as Entity;
-            expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id).hp);
+            expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id)?.hp);
             expect(burning.columns.seconds[burning.indexOf(entity)]).toBe(
-              model.get(entity)!.get(Burning.id).seconds
+              model.get(entity)!.get(Burning.id)?.seconds
             );
             chunked.push(entity);
           }
