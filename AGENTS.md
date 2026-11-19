@@ -13,8 +13,8 @@ Every session reads this file, so it holds only what every task needs. What one 
 | A page of the docs site, the site itself, a package's README | The `website-docs` skill |
 | The doc comment of an export | The `jsdocs` skill |
 | A changeset, a commit of a finished change, a pull request | The `pull-requests` skill |
-| Choosing what to build | `ROADMAP.md`, and `roadmap/decisions.md` for what an item waits on |
-| An area where things go wrong with no error | Its section of `roadmap/to-revisit.md` |
+| Choosing what to build | The roadmap, issue [#173](https://github.com/lucasthevenet/arcadekit/issues/173), and the issue of the item |
+| An area where things go wrong with no error | The open issues labelled `silent-failure`, listed by area in the roadmap |
 
 A skill is `.agents/skills/<name>/SKILL.md`; `.claude/skills` links to the folder.
 
@@ -26,7 +26,6 @@ What arcadekit does is documented in two places and no other: the site's pages, 
 - `packages/three/`: `@arcadekit/three`, laid out the same way.
 - `website/`: the docs site. Its pages are in `website/src/content/docs/`, and its reference is made from the packages' doc comments.
 - `tooling/`: the workspace's own code. `tooling/lint/` holds the checks: the Oxlint plugin `arcadekit` (`plugin.ts`), which `oxlint.config.ts` turns on, and the checks of the packed packages, `pnpm lint:packages`. `tooling/build/` holds what the build and the tests run. `.changeset/`: pending release notes.
-- `ROADMAP.md` and `roadmap/`: what to build next, what it waits on, and what to revisit.
 
 ## What every change keeps to
 
@@ -36,8 +35,8 @@ Whatever is in this repository is what the next change copies, whether a person 
 - **When you are corrected, ask first whether the correction can be a check**, and propose that check, in the same PR when it is small. Apply a single correction to the case it was about. It becomes a line of this file or of a skill only when no check can hold it, and then it says what would.
 - **Fix the cause.** A workaround is not a fix, and code that is already here is not precedent for one.
 - **Never disable, weaken or skip a check to get a change through**: no `oxlint-disable`, `@ts-ignore`, `it.skip`, a `describe.runIf` that is false in CI, an assertion loosened until it passes, a writer left out of a test's list, or `Bench-slower:` for a slowdown nobody chose. If a check seems wrong, stop and say so in the reply or the PR. A type test's `// @ts-expect-error` is not this.
-- **What goes wrong with no error, and that no check can hold yet, is a line of `roadmap/to-revisit.md`**, added in the same commit with what would close it, and taken out by the commit that closes it.
-- **No markdown nobody asked for**: no plan, summary or notes file, and no prose to defend a decision or to explain a workaround. Say that in the reply or the PR.
+- **What goes wrong with no error, and that no check can hold yet, is an issue labelled `silent-failure`**, filed with the change that finds it, saying what would close it, a sub-issue of the roadmap listed under its area, and closed by the PR that closes it.
+- **No markdown nobody asked for**: no plan, summary, notes or to-do file, and no prose to defend a decision or to explain a workaround. Say that in the reply or the PR. Work left for later is an issue, below.
 
 ## Verifying
 
@@ -56,3 +55,5 @@ CI runs `pnpm check`, `pnpm test` and `pnpm build`, on a pull request `pnpm buil
 ## Issues
 
 Issues live in this repository's GitHub Issues, with the triage labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` and `wontfix`.
+
+Whatever is found and left to fix later is an issue, filed when it is left and named in the PR that leaves it: a bug, a debt, a departure from a skill, or a thing that goes wrong with no error. A feature not built yet is a line under its area of the roadmap's "Not built yet" until it is work of its own, and then an issue. None of it is ever a markdown file of the repository, a list in a skill, or a `TODO` in the code. The roadmap is [#173](https://github.com/lucasthevenet/arcadekit/issues/173): what to build next, in order, and what to close before a stable release, as its sub-issues, and what is not built yet, by area, in its description.
