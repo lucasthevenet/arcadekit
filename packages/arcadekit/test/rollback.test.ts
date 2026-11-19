@@ -74,7 +74,7 @@ describe("a rollback session", () => {
         queued: true,
       };
 
-      expect(moves(ada.app.actionLog).at(-1)).toEqual(move);
+      expect(moves(ada.app.actionLog).at(-1)).toStrictEqual(move);
       const coin = coinsOf(ada).at(-1)!;
       expect(ada.app.world.get(coin, Coin)?.value).toBe(9);
       // Grace has run that tick too, and has not heard of it.
@@ -145,7 +145,7 @@ describe("a rollback session", () => {
         expect(ada.session.kept, where).toBeLessThanOrEqual(lag.max + 1);
         // The same game on both.
         expect(ada.app.world.hash(), where).toBe(grace.app.world.hash());
-        expect(ada.app.actionLog, where).toEqual(grace.app.actionLog);
+        expect(ada.app.actionLog, where).toStrictEqual(grace.app.actionLog);
         expect(ada.session.drifted, where).toBeUndefined();
         expect(grace.session.drifted, where).toBeUndefined();
         // And the game a single app plays when it is given those actions
@@ -154,7 +154,7 @@ describe("a rollback session", () => {
         withApp(game(), (alone) => {
           App.replay(alone, ada.app.actionLog, { delta: DELTA, ticks });
           expect(alone.world.hash(), where).toBe(ada.app.world.hash());
-          expect({ ...alone.world.singleton(Purse) }, where).toEqual({
+          expect({ ...alone.world.singleton(Purse) }, where).toStrictEqual({
             ...purse,
           });
         });
@@ -178,7 +178,7 @@ describe("a rollback session", () => {
 
       for (const other of others) {
         expect(other.app.world.hash()).toBe(first.app.world.hash());
-        expect(other.app.actionLog).toEqual(first.app.actionLog);
+        expect(other.app.actionLog).toStrictEqual(first.app.actionLog);
         expect(other.session.drifted).toBeUndefined();
       }
 
@@ -273,7 +273,7 @@ describe("a rollback session", () => {
       expect(ada.app.time.tick).toBe(6);
       // Sure of every tick but the one it has just run.
       expect(ada.session.kept).toBe(1);
-      expect(moves(ada.app.actionLog)).toEqual([
+      expect(moves(ada.app.actionLog)).toStrictEqual([
         {
           tick: 2,
           name: "ls/Drop",
@@ -340,12 +340,12 @@ describe("a rollback session", () => {
       expect(ada.session.delay).toBe(0);
 
       for (let i = 0; i < 3; i += 1) {
-        expect(ada.session.waitingFor).toEqual([]);
+        expect(ada.session.waitingFor).toStrictEqual([]);
         expect(ada.session.tick()).toBe(true);
       }
 
       // Three ticks past what grace has said, which is nothing.
-      expect(ada.session.waitingFor).toEqual(["grace"]);
+      expect(ada.session.waitingFor).toStrictEqual(["grace"]);
       expect(ada.session.tick()).toBe(false);
       expect(ada.app.time.tick).toBe(3);
       expect(ada.session.confirmed).toBe(0);
@@ -413,7 +413,7 @@ describe("a rollback session", () => {
       expect(ada.session.confirmed).toBe(ada.app.time.tick);
       expect(ada.app.time.tick).toBeGreaterThan(20);
       expect(ada.app.time.tick).toBeLessThan(140);
-      expect(ada.hashes).toEqual(grace.hashes);
+      expect(ada.hashes).toStrictEqual(grace.hashes);
     });
   });
 
@@ -433,8 +433,8 @@ describe("a rollback session", () => {
           (entry) => (entry.payload as { value: number }).value
         );
 
-      expect(order(ada)).toEqual([3, 1, 2]);
-      expect(order(grace)).toEqual([3, 1, 2]);
+      expect(order(ada)).toStrictEqual([3, 1, 2]);
+      expect(order(grace)).toStrictEqual([3, 1, 2]);
       expect(ada.app.world.hash()).toBe(grace.app.world.hash());
     });
   });
@@ -447,7 +447,7 @@ describe("a rollback session", () => {
       settle(peers, net, 5);
       const coin = coinsOf(grace)[0]!;
       // The first of them: the bot has dropped others since.
-      expect(coinsOf(ada)).toEqual(coinsOf(grace));
+      expect(coinsOf(ada)).toStrictEqual(coinsOf(grace));
       expect(ada.app.world.get(coin, Coin)?.value).toBe(5);
       // Both go for it on the same tick. Each sees itself take it.
       ada.app.enqueue(Take, { by: "ada", coin });
@@ -464,19 +464,19 @@ describe("a rollback session", () => {
           ada: purse.ada,
           grace: purse.grace,
           taken: purse.taken,
-        }).toEqual({ ada: 5, grace: 0, taken: 1 });
+        }).toStrictEqual({ ada: 5, grace: 0, taken: 1 });
 
         const takes = moves(peer.app.actionLog).filter(
           (entry) => entry.name === "ls/Take"
         );
 
-        expect(takes.map((entry) => entry.refused !== undefined)).toEqual([
+        expect(takes.map((entry) => entry.refused !== undefined)).toStrictEqual([
           false,
           true,
         ]);
       }
 
-      expect(ada.app.actionLog).toEqual(grace.app.actionLog);
+      expect(ada.app.actionLog).toStrictEqual(grace.app.actionLog);
     });
   });
 
@@ -538,8 +538,8 @@ describe("a rollback session", () => {
         delta: DELTA,
       });
 
-      expect(session.tickExit()).toEqual(Exit.succeed(true));
-      expect(session.tickExit()).toEqual(Exit.succeed(true));
+      expect(session.tickExit()).toStrictEqual(Exit.succeed(true));
+      expect(session.tickExit()).toStrictEqual(Exit.succeed(true));
       const exit = session.tickExit();
       expect(Exit.isFailure(exit)).toBe(true);
       const refused = Exit.isFailure(exit) ? exit.cause : undefined;

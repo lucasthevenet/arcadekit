@@ -75,9 +75,9 @@ describe("events", () => {
       }
 
       // The later system sees events the tick they are emitted...
-      expect(seen.After).toEqual([[10, 11], [20, 21], [], []]);
+      expect(seen.After).toStrictEqual([[10, 11], [20, 21], [], []]);
       // ...the earlier one sees the same events, once, a tick later.
-      expect(seen.Before).toEqual([[], [10, 11], [20, 21], []]);
+      expect(seen.Before).toStrictEqual([[], [10, 11], [20, 21], []]);
       // And then they are gone.
       expect(app.events.pending(Ping)).toBe(0);
     });
@@ -107,7 +107,7 @@ describe("events", () => {
       const a = app.world.spawn(Health.of({ hp: 10 }));
       const b = app.world.spawn(Health.of({ hp: 10 }));
       app.tick(1);
-      expect(log).toEqual([`${a}:3`, `${b}:3`]);
+      expect(log).toStrictEqual([`${a}:3`, `${b}:3`]);
     });
   });
 
@@ -131,7 +131,7 @@ describe("events", () => {
       app.events.emit(Ping, 3);
       app.tick(1);
       // It looked at ticks 1 and 4 only: events 1 and 2 had been dropped by then.
-      expect(seen).toEqual([[], [3]]);
+      expect(seen).toStrictEqual([[], [3]]);
     });
   });
 
@@ -173,10 +173,10 @@ describe("events", () => {
       );
 
       app.tick(1);
-      expect(log).toEqual([]);
+      expect(log).toStrictEqual([]);
       app.tick(1);
-      expect(log).toEqual(["first got 7 at tick 2", "second got 99 at tick 2"]);
-      expect(second.pollUnsafe()).toEqual(Exit.succeed("done"));
+      expect(log).toStrictEqual(["first got 7 at tick 2", "second got 99 at tick 2"]);
+      expect(second.pollUnsafe()).toStrictEqual(Exit.succeed("done"));
     });
   });
 
@@ -192,7 +192,7 @@ describe("events", () => {
         })
       );
 
-      expect(fiber.pollUnsafe()).toEqual(Exit.succeed([1, 2]));
+      expect(fiber.pollUnsafe()).toStrictEqual(Exit.succeed([1, 2]));
     });
   });
 });
@@ -373,10 +373,10 @@ describe("actions", () => {
   it("are validated and applied by their handler, and the result comes straight back", () => {
     withApp(duel(), ({ app, one, two }) => {
       const exit = app.dispatch(Attack, { attacker: one, target: two });
-      expect(exit).toEqual(Exit.succeed(2));
-      expect(app.world.get(two, Health)).toEqual({ hp: 2 });
-      expect(app.world.get(one, Energy)).toEqual({ points: 1 });
-      expect(moves(app.actionLog)).toEqual([
+      expect(exit).toStrictEqual(Exit.succeed(2));
+      expect(app.world.get(two, Health)).toStrictEqual({ hp: 2 });
+      expect(app.world.get(one, Energy)).toStrictEqual({ points: 1 });
+      expect(moves(app.actionLog)).toStrictEqual([
         { tick: 0, name: "Attack", payload: { attacker: one, target: two } },
       ]);
 
@@ -400,14 +400,14 @@ describe("actions", () => {
     withApp(duel(), ({ app, one, two }) => {
       const before = snapshot(app);
       const notYours = app.dispatch(Attack, { attacker: two, target: one });
-      expect(notYours).toEqual(Exit.fail(new NotYourTurn({ player: 1 })));
+      expect(notYours).toStrictEqual(Exit.fail(new NotYourTurn({ player: 1 })));
 
       app.dispatch(Attack, { attacker: one, target: two });
       const tired = app.dispatch(Attack, { attacker: one, target: two });
-      expect(tired).toEqual(
+      expect(tired).toStrictEqual(
         Exit.fail(new NotEnoughEnergy({ have: 1, need: 2 }))
       );
-      expect(app.world.get(two, Health)).toEqual({ hp: 2 });
+      expect(app.world.get(two, Health)).toStrictEqual({ hp: 2 });
       expect(moves(app.actionLog)).toHaveLength(1);
       expect(before).toHaveLength(4);
     });
@@ -429,7 +429,7 @@ describe("actions", () => {
 
       // The id the refused summon had reserved was released and is reused.
       if (Exit.isSuccess(accepted)) {
-        expect(app.world.get(accepted.value, Health)).toEqual({ hp: 5 });
+        expect(app.world.get(accepted.value, Health)).toStrictEqual({ hp: 5 });
       }
     });
   });
@@ -453,10 +453,10 @@ describe("actions", () => {
       expect(app.world.isAlive(two)).toBe(true);
       app.tick(1); // energy is back to 3
       app.dispatch(Attack, { attacker: one, target: two });
-      expect(app.world.get(two, Health)).toEqual({ hp: -2 });
+      expect(app.world.get(two, Health)).toStrictEqual({ hp: -2 });
       app.tick(1);
       expect(app.world.isAlive(two)).toBe(false);
-      expect(deaths).toEqual([two]);
+      expect(deaths).toStrictEqual([two]);
     });
   });
 
@@ -495,14 +495,14 @@ describe("actions", () => {
     withApp(make, ({ app, one, two }) => {
       app.enqueue(Attack, { attacker: one, target: two });
       app.enqueue(Attack, { attacker: two, target: one });
-      expect(app.world.get(two, Health)).toEqual({ hp: 6 });
+      expect(app.world.get(two, Health)).toStrictEqual({ hp: 6 });
       app.tick(1);
-      expect(app.world.get(two, Health)).toEqual({ hp: 2 });
-      expect(app.world.get(one, Health)).toEqual({ hp: 10 });
-      expect(rejected).toEqual(["Attack: NotYourTurn"]);
+      expect(app.world.get(two, Health)).toStrictEqual({ hp: 2 });
+      expect(app.world.get(one, Health)).toStrictEqual({ hp: 10 });
+      expect(rejected).toStrictEqual(["Attack: NotYourTurn"]);
       // Both are in the log, in the order they arrived: a replay enqueues
       // both again, and its own rules refuse the second.
-      expect(moves(app.actionLog)).toEqual([
+      expect(moves(app.actionLog)).toStrictEqual([
         {
           tick: 0,
           name: "Attack",
@@ -549,7 +549,7 @@ describe("actions", () => {
       // simulation's doing: a replay's bot makes it again.
       expect(
         moves(app.actionLog).map((entry) => `${entry.tick}:${entry.name}`)
-      ).toEqual(["0:EndTurn"]);
+      ).toStrictEqual(["0:EndTurn"]);
     });
   });
 
@@ -603,7 +603,7 @@ describe("actions", () => {
       App.make({ systems: [], handlers: [roll] }).pipe(
         Effect.provide(Layer.succeed(Rng, { next: () => 4 }))
       ),
-      (app) => expect(app.dispatch(Unhandled, {})).toEqual(Exit.succeed(4))
+      (app) => expect(app.dispatch(Unhandled, {})).toStrictEqual(Exit.succeed(4))
     );
   });
 
@@ -659,7 +659,7 @@ describe("replay", () => {
           `${entry.tick}:${entry.name}${entry.queued === true ? " queued" : ""}${entry.refused === undefined ? "" : ` refused (${entry.refused})`}`
       );
 
-    expect(listed(original.log)).toEqual([
+    expect(listed(original.log)).toStrictEqual([
       "0:Attack",
       "1:EndTurn queued",
       "2:Summon",
@@ -679,7 +679,7 @@ describe("replay", () => {
       return { log: [...app.actionLog], state: snapshot(app) };
     });
 
-    expect(replayed.state).toEqual(original.state);
-    expect(replayed.log).toEqual(original.log);
+    expect(replayed.state).toStrictEqual(original.state);
+    expect(replayed.log).toStrictEqual(original.log);
   });
 });

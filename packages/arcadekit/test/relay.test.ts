@@ -45,28 +45,28 @@ describe("a relay's address", () => {
     ]) {
       expect(
         Relay.join(Relay.address("wss://r.example/rooms", member), [])
-      ).toEqual(Exit.succeed(member));
+      ).toStrictEqual(Exit.succeed(member));
     }
 
     // A host is often handed the path alone.
-    expect(Relay.join("/rooms/blue?peer=ada", [])).toEqual(Exit.succeed(ada));
+    expect(Relay.join("/rooms/blue?peer=ada", [])).toStrictEqual(Exit.succeed(ada));
   });
 });
 
 describe("a peer that asks to come in", () => {
   it("is let in beside whoever is there, under a name nobody has", () => {
-    expect(Relay.join("/blue?peer=grace", [ada, linus])).toEqual(
+    expect(Relay.join("/blue?peer=grace", [ada, linus])).toStrictEqual(
       Exit.succeed(grace)
     );
     // The same name in another room is another peer.
-    expect(Relay.join("/red?peer=ada", [ada, linus])).toEqual(
+    expect(Relay.join("/red?peer=ada", [ada, linus])).toStrictEqual(
       Exit.succeed({ room: "red", peer: "ada" })
     );
   });
 
   it("is refused when its name is taken in that room", () => {
     const refused = refusal(Relay.join("/blue?peer=ada", [ada, grace]));
-    expect(refused).toEqual(
+    expect(refused).toStrictEqual(
       new Relay.Refused({
         reason: "name taken",
         message: 'A peer named "ada" is in the room "blue" already.',
@@ -79,7 +79,7 @@ describe("a peer that asks to come in", () => {
   it("is refused when the room is full", () => {
     expect(
       refusal(Relay.join("/blue?peer=edsger", [ada, grace], { maxPeers: 2 }))
-    ).toEqual(
+    ).toStrictEqual(
       new Relay.Refused({
         reason: "room full",
         message: 'The room "blue" has the 2 peers it takes.',
@@ -154,14 +154,14 @@ describe("what a member sent", () => {
       edsger,
     ]);
 
-    expect(deliveries).toEqual(
+    expect(deliveries).toStrictEqual(
       Exit.succeed([
         { to: grace, text: text("ada", 3, 2) },
         { to: edsger, text: text("ada", 3, 2) },
       ])
     );
     // Alone in its room, to nobody.
-    expect(Relay.forward(linus, text("linus", 0), [ada, linus])).toEqual(
+    expect(Relay.forward(linus, text("linus", 0), [ada, linus])).toStrictEqual(
       Exit.succeed([])
     );
   });
@@ -170,7 +170,7 @@ describe("what a member sent", () => {
     const bytes = new TextEncoder().encode(text("ada", 1));
 
     for (const data of [bytes, bytes.buffer]) {
-      expect(Relay.forward(ada, data, [ada, grace])).toEqual(
+      expect(Relay.forward(ada, data, [ada, grace])).toStrictEqual(
         Exit.succeed([{ to: grace, text: text("ada", 1) }])
       );
     }
@@ -181,7 +181,7 @@ describe("what a member sent", () => {
       extra: "x".repeat(100),
     });
 
-    expect(Relay.forward(ada, padded, [ada, grace])).toEqual(
+    expect(Relay.forward(ada, padded, [ada, grace])).toStrictEqual(
       Exit.succeed([{ to: grace, text: text("ada", 1) }])
     );
   });
@@ -191,7 +191,7 @@ describe("what a member sent", () => {
       Relay.forward(ada, text("grace", 3, 9), [ada, grace, edsger])
     );
 
-    expect(refused).toEqual(
+    expect(refused).toStrictEqual(
       new Relay.Refused({
         reason: "speaks for another",
         message:
@@ -255,13 +255,13 @@ describe("a relay that keeps its rooms itself", () => {
     const first = connect("/blue?peer=ada", "ada");
     const second = connect("/blue?peer=grace", "grace");
     const third = connect("/red?peer=linus", "linus");
-    expect(first.member).toEqual(ada);
-    expect(relay.members("blue")).toEqual([ada, grace]);
+    expect(first.member).toStrictEqual(ada);
+    expect(relay.members("blue")).toStrictEqual([ada, grace]);
     expect(relay.rooms).toBe(2);
-    expect(first.receive(text("ada", 0, 4))).toEqual(Exit.void);
-    expect(second.receive(text("grace", 0))).toEqual(Exit.void);
-    expect(third.receive(text("linus", 0))).toEqual(Exit.void);
-    expect(got).toEqual({
+    expect(first.receive(text("ada", 0, 4))).toStrictEqual(Exit.void);
+    expect(second.receive(text("grace", 0))).toStrictEqual(Exit.void);
+    expect(third.receive(text("linus", 0))).toStrictEqual(Exit.void);
+    expect(got).toStrictEqual({
       ada: [text("grace", 0)],
       grace: [text("ada", 0, 4)],
       linus: [],
@@ -291,7 +291,7 @@ describe("a relay that keeps its rooms itself", () => {
       first.value.close();
     }
 
-    expect(relay.members("blue")).toEqual([grace]);
+    expect(relay.members("blue")).toStrictEqual([grace]);
     const again = relay.connect("/blue?peer=ada", none);
     expect(Exit.isSuccess(again)).toBe(true);
 
@@ -300,7 +300,7 @@ describe("a relay that keeps its rooms itself", () => {
       first.value.close();
     }
 
-    expect(relay.members("blue")).toEqual([grace, ada]);
+    expect(relay.members("blue")).toStrictEqual([grace, ada]);
   });
 
   it("holds what its members send to the limits it was made with", () => {
@@ -316,11 +316,11 @@ describe("a relay that keeps its rooms itself", () => {
       throw new Error("ada was refused");
     }
 
-    expect(first.value.receive(text("ada", 0))).toEqual(Exit.void);
+    expect(first.value.receive(text("ada", 0))).toStrictEqual(Exit.void);
     expect(refusal(first.value.receive(text("ada", 1, 123_456))).reason).toBe(
       "too long"
     );
-    expect(sent).toEqual([text("ada", 0)]);
+    expect(sent).toStrictEqual([text("ada", 0)]);
   });
 
   it("forgets a room when the last peer has left it", () => {
@@ -336,7 +336,7 @@ describe("a relay that keeps its rooms itself", () => {
     }
 
     expect(relay.rooms).toBe(0);
-    expect(relay.members("blue")).toEqual([]);
+    expect(relay.members("blue")).toStrictEqual([]);
   });
 });
 
@@ -453,12 +453,12 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               return heard.grace!.length === 2 && heard.ada!.length === 1;
             }, "the messages arrived")
           );
-          expect(heard).toEqual({
+          expect(heard).toStrictEqual({
             ada: [message("grace", 0)],
             grace: [message("ada", 0, 3), message("ada", 1)],
             linus: [],
           });
-          expect(served.relay.members("blue")).toEqual([ada, grace]);
+          expect(served.relay.members("blue")).toStrictEqual([ada, grace]);
         })
       )
     );
@@ -532,7 +532,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           expect(one.app.time.tick).toBe(two.app.time.tick);
           expect(one.app.time.tick).toBeGreaterThan(40);
           expect(one.app.world.hash()).toBe(two.app.world.hash());
-          expect(one.app.actionLog).toEqual(two.app.actionLog);
+          expect(one.app.actionLog).toStrictEqual(two.app.actionLog);
           expect(one.session.drifted).toBeUndefined();
 
           // Tips went to whoever issued them, by the name the relay knows.
@@ -541,7 +541,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           );
 
           expect(tips.length).toBeGreaterThan(4);
-          expect(tips.map((entry) => entry.from).toSorted()).toEqual([
+          expect(tips.map((entry) => entry.from).toSorted()).toStrictEqual([
             ...tips.filter((entry) => entry.from === "ada").map(() => "ada"),
             ...tips
               .filter((entry) => entry.from === "grace")
@@ -550,7 +550,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           expect(tips.some((entry) => entry.from === "ada")).toBe(true);
           expect(tips.some((entry) => entry.from === "grace")).toBe(true);
           expect(tips.every((entry) => entry.refused === undefined)).toBe(true);
-          expect(purseOf(two.app)).toEqual(purseOf(one.app));
+          expect(purseOf(two.app)).toStrictEqual(purseOf(one.app));
         })
       )
     );
@@ -570,10 +570,10 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           yield* Effect.promise(() =>
             until(() => served.closes.length === 1, "the relay refused it")
           );
-          expect(served.closes).toEqual([{ peer: "ada", code: 1008 }]);
+          expect(served.closes).toStrictEqual([{ peer: "ada", code: 1008 }]);
           yield* Effect.promise(() => later(20));
           // The message it sent as itself came through, and the other did not.
-          expect(honest.receive()).toEqual([message("ada", 0)]);
+          expect(honest.receive()).toStrictEqual([message("ada", 0)]);
           // Its own transport says what became of it.
           let thrown: unknown;
 
@@ -583,7 +583,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             thrown = error;
           }
 
-          expect(thrown).toEqual(
+          expect(thrown).toStrictEqual(
             new Transport.Closed({
               url: Relay.address(served.url, ada),
               code: 1008,
@@ -626,7 +626,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             `The transport's socket to ${Relay.address(served.url, ada)} is closed (code 1008: name taken). Every message has to arrive, so the game cannot go on over it.`
           );
           // The first is none the worse.
-          expect(first.receive()).toEqual([]);
+          expect(first.receive()).toStrictEqual([]);
         })
       )
     );
@@ -691,7 +691,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           yield* Effect.promise(() =>
             until(() => served.relay.rooms === 2, "the next is in")
           );
-          expect(next.receive()).toEqual([]);
+          expect(next.receive()).toStrictEqual([]);
         })
       )
     );
@@ -707,7 +707,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           yield* Effect.promise(() =>
             until(() => served.relay.rooms === 1, "it connected")
           );
-          expect(transport.receive()).toEqual([]);
+          expect(transport.receive()).toStrictEqual([]);
           yield* Effect.promise(() => served.stop());
           yield* Effect.promise(() =>
             until(() => {

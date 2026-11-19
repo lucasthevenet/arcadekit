@@ -63,7 +63,7 @@ const tracked = (url: string, log: string[]) =>
 /** An asset failed, at this URL and for this reason. */
 const expectFailed = (error: unknown, url: string, message: string): void => {
   expect(error).toBeInstanceOf(Assets.AssetFailed);
-  expect(error).toEqual(new Assets.AssetFailed({ url, message }));
+  expect(error).toStrictEqual(new Assets.AssetFailed({ url, message }));
 };
 
 const files = {
@@ -159,21 +159,21 @@ describe("a failure, in these tests", () => {
     const failed = (url: string, message: string) =>
       new Assets.AssetFailed({ url, message });
 
-    expect(failed("/a", "It is not there.")).not.toEqual(
+    expect(failed("/a", "It is not there.")).not.toStrictEqual(
       failed("/a", "It is not JSON.")
     );
-    expect(failed("/a", "It is not there.")).not.toEqual(
+    expect(failed("/a", "It is not there.")).not.toStrictEqual(
       failed("/b", "It is not there.")
     );
-    expect(failed("/a", "It is not there.")).toEqual(
+    expect(failed("/a", "It is not there.")).toStrictEqual(
       failed("/a", "It is not there.")
     );
-    expect({ error: failed("/a", "one") }).not.toEqual({
+    expect({ error: failed("/a", "one") }).not.toStrictEqual({
       error: failed("/a", "two"),
     });
     // An error that is not one of Effect's, the same.
-    expect(new Error("one")).not.toEqual(new Error("two"));
-    expect(new Error("one")).toEqual(new Error("one"));
+    expect(new Error("one")).not.toStrictEqual(new Error("two"));
+    expect(new Error("one")).toStrictEqual(new Error("one"));
   });
 });
 
@@ -201,7 +201,7 @@ describe("an asset", () => {
       )
     );
 
-    expect(loaded).toEqual({
+    expect(loaded).toStrictEqual({
       backdrop: { at: "/forest.png", size: 3 },
       layout: { walls: 3, name: "Forest" },
       notes: "héllo",
@@ -211,9 +211,9 @@ describe("an asset", () => {
     const walls: number = loaded.layout.walls;
     const notes: string = loaded.notes;
     void [walls, notes];
-    expect(log).toEqual(["open /forest.png"]);
+    expect(log).toStrictEqual(["open /forest.png"]);
     await Effect.runPromise(Scope.close(scope, Exit.void));
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+    expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
 
     // With Effect.scoped, the scope is the block.
     log.length = 0;
@@ -222,7 +222,7 @@ describe("an asset", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const { backdrop } = yield* Assets.load(Forest);
-          expect(log).toEqual(["open /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png"]);
 
           return backdrop.size;
         })
@@ -230,7 +230,7 @@ describe("an asset", () => {
     );
 
     expect(size).toBe(3);
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+    expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
   });
 
   it("fails with the asset that could not be loaded, and what the others made is let go with the scope", async () => {
@@ -297,7 +297,7 @@ describe("an asset", () => {
       ) as Assets.AssetFailed;
     };
 
-    expect(await tryLoad('{"walls":2,"name":"Ok"}')).toEqual(
+    expect(await tryLoad('{"walls":2,"name":"Ok"}')).toStrictEqual(
       Exit.succeed({ layout: { walls: 2, name: "Ok" } })
     );
     const notJson = await failure("<html>");
@@ -364,7 +364,7 @@ describe("an asset", () => {
         Assets.load(Assets.bundle("as/Fetched", { file: Assets.text(url) }))
       );
 
-    expect(await Effect.runPromise(one("/notes.txt"))).toEqual({
+    expect(await Effect.runPromise(one("/notes.txt"))).toStrictEqual({
       file: "fetched",
     });
     const gone = await Effect.runPromise(Effect.exit(one("/gone.txt")));
@@ -400,7 +400,7 @@ describe("a level's assets", () => {
 
           app.tick(1);
           expect(frame()).toBe("menu: forest Absent, cave Absent");
-          expect(log).toEqual([]);
+          expect(log).toStrictEqual([]);
 
           // The game enters the forest: its assets are loaded.
           app.dispatch(Go, { to: "forest" });
@@ -409,18 +409,18 @@ describe("a level's assets", () => {
           expect(frame()).toBe(
             "forest: forest Ready (Forest, 3 bytes), cave Absent"
           );
-          expect(log).toEqual(["open /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png"]);
           // They stay for as long as it does, loaded once.
           app.tick(1);
           frame();
           frame();
-          expect(log).toEqual(["open /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png"]);
 
           // It leaves for the cave: the forest's are freed, the cave's loaded.
           app.dispatch(Go, { to: "cave" });
           app.tick(1);
           expect(frame()).toBe("cave: forest Absent, cave Ready");
-          expect(log).toEqual([
+          expect(log).toStrictEqual([
             "open /forest.png",
             "close /forest.png",
             "open /cave.png",
@@ -430,7 +430,7 @@ describe("a level's assets", () => {
           app.dispatch(Go, { to: "menu" });
           app.tick(1);
           expect(frame()).toBe("menu: forest Absent, cave Absent");
-          expect(log).toEqual([
+          expect(log).toStrictEqual([
             "open /forest.png",
             "close /forest.png",
             "open /cave.png",
@@ -481,7 +481,7 @@ describe("a level's assets", () => {
             systems: [Draw, Keep],
           });
 
-          expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
+          expect(app.frameOrder).toStrictEqual(["Assets.during(as/Ordered)", "Draw"]);
 
           const go = (to: "menu" | "forest"): void => {
             app.spawnScript(Effect.map(Level, (level) => level.set(to)));
@@ -492,8 +492,8 @@ describe("a level's assets", () => {
           app.frame(0);
           go("forest");
           go("menu");
-          expect(seen).toEqual(["Absent", "Ready", "Absent"]);
-          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+          expect(seen).toStrictEqual(["Absent", "Ready", "Absent"]);
+          expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
         })
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
@@ -516,7 +516,7 @@ describe("a level's assets", () => {
           app.dispatch(Go, { to: "forest" });
           app.tick(1);
           expect(frame()).toBe("forest: forest Loading, cave Absent");
-          expect(slow.asked.toSorted()).toEqual([
+          expect(slow.asked.toSorted()).toStrictEqual([
             "/forest.json",
             "/forest.png",
           ]);
@@ -544,12 +544,12 @@ describe("a level's assets", () => {
           app.tick(1);
           expect(frame()).toBe("menu: forest Absent, cave Absent");
           yield* Effect.promise(settle);
-          expect(slow.givenUp).toEqual(["/cave.png"]);
+          expect(slow.givenUp).toStrictEqual(["/cave.png"]);
           // Arriving late, it is nobody's.
           slow.waiting.get("/cave.png")!.arrive(new Uint8Array(1));
           yield* Effect.promise(settle);
           expect(frame()).toBe("menu: forest Absent, cave Absent");
-          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
         })
       ).pipe(Effect.provideService(Assets.Loader, slow.loader))
     );
@@ -585,13 +585,13 @@ describe("a level's assets", () => {
           frame();
           slow.waiting.get("/forest.png")!.arrive(new Uint8Array(2));
           yield* Effect.promise(settle);
-          expect(log).toEqual(["open /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png"]);
           slow.waiting.get("/forest.json")!.fail("The disk is full.");
           yield* Effect.promise(settle);
           expect(frame()).toBe("forest: forest Failed, cave Absent");
           expectFailed(errors.at(-1), "/forest.json", "The disk is full.");
           // The picture that did load is let go at once.
-          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
           // It is said once, through the app's loggers.
           expect(logged).toHaveLength(1);
           expect(String(logged[0])).toMatch(
@@ -640,12 +640,12 @@ describe("a level's assets", () => {
     app.frame(0);
     slow.waiting.get("/forest.png")!.arrive(new Uint8Array(2));
     await settle();
-    expect(log).toEqual(["open /forest.png"]);
-    expect(slow.givenUp).toEqual([]);
+    expect(log).toStrictEqual(["open /forest.png"]);
+    expect(slow.givenUp).toStrictEqual([]);
     await Effect.runPromise(Scope.close(scope, Exit.void));
     // The file that had not arrived is given up, and the one that had is let go.
-    expect(slow.givenUp).toEqual(["/forest.json"]);
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+    expect(slow.givenUp).toStrictEqual(["/forest.json"]);
+    expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
   });
 
   it("are no part of the simulation: a game that never draws loads nothing and is the same game", async () => {
@@ -684,7 +684,7 @@ describe("a level's assets", () => {
           }
 
           expect(asked).toBe(0);
-          expect(bare.log).toEqual([]);
+          expect(bare.log).toStrictEqual([]);
           expect(drawnGame.log).toHaveLength(4);
 
           // The log of one replays in the other, which has no files.
@@ -764,9 +764,9 @@ describe("a level's assets", () => {
           expect(drawnGame.drawn.at(-1)).toBe(
             "forest: forest Ready (Drawn, 26 bytes), cave Absent"
           );
-          expect(reached).toEqual([]);
+          expect(reached).toStrictEqual([]);
           // The game that loaded is the game that did not.
-          expect(Array.from(seen.world.random.state)).toEqual(
+          expect(Array.from(seen.world.random.state)).toStrictEqual(
             Array.from(unseen.world.random.state)
           );
           seen.tick(1);
@@ -928,7 +928,7 @@ describe("a level's assets", () => {
               (entry) =>
                 !Action.isCheckpoint(entry) && entry.name === "as/Build"
             )
-          ).toEqual([
+          ).toStrictEqual([
             {
               tick: 3,
               name: "as/Build",
@@ -982,11 +982,11 @@ describe("a level's assets", () => {
 
           drawn.length = 0;
           loaded.frame(0);
-          expect(drawn).toEqual([
+          expect(drawn).toStrictEqual([
             "forest: forest Ready (Forest, 3 bytes), cave Absent",
           ]);
           // Each app holds its own.
-          expect(log).toEqual(["open /forest.png", "open /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png", "open /forest.png"]);
         })
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
@@ -1028,11 +1028,11 @@ describe("a level's assets", () => {
             app.frame(0);
           }
 
-          expect(log).toEqual(["open /cave.png"]);
+          expect(log).toStrictEqual(["open /cave.png"]);
           app.dispatch(Go, { to: "menu" });
           app.tick(1);
           app.frame(0);
-          expect(log).toEqual(["open /cave.png", "close /cave.png"]);
+          expect(log).toStrictEqual(["open /cave.png", "close /cave.png"]);
         })
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
@@ -1067,14 +1067,14 @@ describe("a level's assets", () => {
           // Nobody holds it, and dropping what is not held does nothing.
           frame();
           frame();
-          expect(log).toEqual([]);
+          expect(log).toStrictEqual([]);
           app.dispatch(Go, { to: "forest" });
           app.tick(1);
           frame();
           keep = true;
           frame();
           // Held twice, loaded once.
-          expect(log).toEqual(["open /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png"]);
           app.dispatch(Go, { to: "menu" });
           app.tick(1);
           frame();
@@ -1083,12 +1083,12 @@ describe("a level's assets", () => {
           expect(frame()).toBe(
             "menu: forest Ready (Forest, 3 bytes), cave Absent"
           );
-          expect(log).toEqual(["open /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png"]);
           keep = false;
           // The frame that drops it has it still; it is gone by the next.
           frame();
           expect(frame()).toBe("menu: forest Absent, cave Absent");
-          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+          expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
         })
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
@@ -1147,8 +1147,8 @@ describe("a level's assets", () => {
         Effect.provide(Assets.layerMemory(files))
       )
     );
-    expect(log).toEqual(["open /forest.png"]);
+    expect(log).toStrictEqual(["open /forest.png"]);
     await Effect.runPromise(Scope.close(scope, Exit.void));
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+    expect(log).toStrictEqual(["open /forest.png", "close /forest.png"]);
   });
 });

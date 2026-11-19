@@ -96,11 +96,11 @@ describe("a game that is put back to a moment", () => {
           log: app.actionLog,
           time: { ...app.time },
           settled: app.settled,
-        }).toEqual(then);
+        }).toStrictEqual(then);
         // The same moves from there give the same game, tick for tick,
         // and the same log, the refusals in it among them.
-        expect(stretch(app, seed + 10, 30)).toEqual(first);
-        expect(app.actionLog).toEqual(firstLog);
+        expect(stretch(app, seed + 10, 30)).toStrictEqual(first);
+        expect(app.actionLog).toStrictEqual(firstLog);
         expect(
           moves(app.actionLog).some((entry) => entry.refused !== undefined)
         ).toBe(true);
@@ -123,22 +123,22 @@ describe("a game that is put back to a moment", () => {
       return [...before, ...stretch(app, 6, 25)];
     });
 
-    expect(wandering).toEqual(straight);
+    expect(wandering).toStrictEqual(straight);
   });
 
   it("can be a moment before the game had started", () => {
     withApp(game(), (app) => {
       const moment = captured(app);
-      expect(app.actionLog).toEqual([]);
+      expect(app.actionLog).toStrictEqual([]);
       const first = stretch(app, 8, 5);
       const log = structuredClone(app.actionLog);
       // The log begins with the hash of the state the game starts from.
-      expect(log[0]).toEqual({ tick: 0, hash: expect.any(Number) });
+      expect(log[0]).toStrictEqual({ tick: 0, hash: expect.any(Number) });
       app.rewind(moment);
-      expect(app.actionLog).toEqual([]);
-      expect(stretch(app, 8, 5)).toEqual(first);
+      expect(app.actionLog).toStrictEqual([]);
+      expect(stretch(app, 8, 5)).toStrictEqual(first);
       // It starts again, and says so again.
-      expect(app.actionLog).toEqual(log);
+      expect(app.actionLog).toStrictEqual(log);
     });
   });
 
@@ -171,7 +171,7 @@ describe("a game that is put back to a moment", () => {
       expect(Exit.isFailure(app.save())).toBe(true);
       const moment = captured(app);
       app.tick(DELTA);
-      expect(moves(app.actionLog).map((entry) => entry.name)).toEqual([
+      expect(moves(app.actionLog).map((entry) => entry.name)).toStrictEqual([
         "ls/Drop",
         "ls/Whisper",
       ]);
@@ -223,13 +223,13 @@ describe("a game that is put back to a moment", () => {
       const moment = captured(app);
       app.tick(DELTA);
       app.tick(DELTA);
-      expect(heard).toEqual([[], [1], [2], [3]]);
+      expect(heard).toStrictEqual([[], [1], [2], [3]]);
       app.rewind(moment);
       heard.length = 0;
       app.tick(DELTA);
       app.tick(DELTA);
       // Each once, from where it was: 2 was waiting, and 3 is rung again.
-      expect(heard).toEqual([[2], [3]]);
+      expect(heard).toStrictEqual([[2], [3]]);
     });
   });
 
@@ -253,7 +253,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       const moment = captured(app);
       app.tick(DELTA);
-      expect(starts).toEqual([
+      expect(starts).toStrictEqual([
         "listed starts",
         "by hand starts",
         "listed 1",
@@ -267,7 +267,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       // The listed one from its beginning, as after a load. The other is
       // gone: nothing says it was ever started.
-      expect(starts).toEqual(["listed starts", "listed 2", "listed 3"]);
+      expect(starts).toStrictEqual(["listed starts", "listed 2", "listed 3"]);
     });
   });
 
@@ -332,7 +332,7 @@ describe("a game that is put back to a moment", () => {
         const moment = captured(app);
         app.tick(DELTA);
         app.frame(0);
-        expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
+        expect(seen).toStrictEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
         app.rewind(moment);
         seen.tick.length = 0;
         seen.frame.length = 0;
@@ -340,7 +340,7 @@ describe("a game that is put back to a moment", () => {
         app.frame(0);
         // The system of the tick sees the one dot it had yet to see. What
         // draws sees every dot again: all four are new to it.
-        expect(seen).toEqual({ tick: [1], frame: [4] });
+        expect(seen).toStrictEqual({ tick: [1], frame: [4] });
       }
     );
   });
@@ -412,7 +412,7 @@ describe("a game that is put back to a moment", () => {
 
     withApp(App.make({ components: [Holder] }), (app) => {
       app.commands.spawn(Holder.of({ thing: 1 }));
-      expect(app.capture()).toEqual(
+      expect(app.capture()).toStrictEqual(
         Exit.fail(
           new Save.SaveRefused({
             message:

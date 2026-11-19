@@ -135,7 +135,7 @@ describe("the hash of a world", () => {
     for (const seed of [1, 2, 3, 4]) {
       const first = history(seed, 400);
       const second = history(seed, 400);
-      expect(second).toEqual(first);
+      expect(second).toStrictEqual(first);
 
       // Every operation of the history changes something a simulation can
       // see, so no two neighbouring steps may share a hash.
@@ -148,7 +148,7 @@ describe("the hash of a world", () => {
       expect(new Set(first).size).toBeGreaterThan(300);
     }
 
-    expect(history(1, 50)).not.toEqual(history(2, 50));
+    expect(history(1, 50)).not.toStrictEqual(history(2, 50));
   });
 
   it("changes when any one field of any one component of any one entity changes", () => {
@@ -416,8 +416,8 @@ describe("the hash of a world", () => {
 
     const first = build(0);
     const second = build(1);
-    expect(first.order).toEqual([first.pair[1], first.pair[0]]);
-    expect(second.order).toEqual([second.pair[0], second.pair[1]]);
+    expect(first.order).toStrictEqual([first.pair[1], first.pair[0]]);
+    expect(second.order).toStrictEqual([second.pair[0], second.pair[1]]);
     expect(first.world.hash()).not.toBe(second.world.hash());
     expect(build(0).world.hash()).toBe(first.world.hash());
   });
@@ -442,7 +442,7 @@ describe("the hash of a world", () => {
     const first = build(true);
     const second = build(false);
     // The same one entity with the same data in both...
-    expect(first.view(Query.all(Body)).entities()).toEqual(
+    expect(first.view(Query.all(Body)).entities()).toStrictEqual(
       second.view(Query.all(Body)).entities()
     );
     expect(first.hash()).not.toBe(second.hash());
@@ -455,7 +455,7 @@ describe("the hash of a world", () => {
       return world.view(Query.all(Body)).entities().indexOf(marked);
     });
 
-    expect(later).toEqual([0, 1]);
+    expect(later).toStrictEqual([0, 1]);
   });
 
   it("covers the ids the next entities will get", () => {
@@ -804,7 +804,7 @@ describe("the hash of an app's world", () => {
 
   it("agrees tick by tick between two apps given the same seed, which is how peers know they have not drifted", () => {
     const first = hashes(App.make({ systems: [Drift], seed: 5 }));
-    expect(hashes(App.make({ systems: [Drift], seed: 5 }))).toEqual(first);
+    expect(hashes(App.make({ systems: [Drift], seed: 5 }))).toStrictEqual(first);
     expect(new Set(first).size).toBe(100);
     const other = hashes(App.make({ systems: [Drift], seed: 6 }));
     expect(other[0]).not.toBe(first[0]);
@@ -832,6 +832,6 @@ describe("the hash of an app's world", () => {
     const faulty = hashes(App.make({ systems: [Drift, Wrong], seed: 5 }));
     const firstDifference = honest.findIndex((hash, i) => hash !== faulty[i]);
     expect(firstDifference).toBe(39);
-    expect(faulty.slice(0, 39)).toEqual(honest.slice(0, 39));
+    expect(faulty.slice(0, 39)).toStrictEqual(honest.slice(0, 39));
   });
 });

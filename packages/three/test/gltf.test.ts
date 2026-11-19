@@ -188,9 +188,9 @@ describe("a model", () => {
 
     expect(shape(model)).toMatchObject(TRIANGLE);
     expect(model!.scenes).toHaveLength(1);
-    expect(model!.animations).toEqual([]);
+    expect(model!.animations).toStrictEqual([]);
     // One file, asked for once: it names no other.
-    expect(asked).toEqual(["/tri.glb"]);
+    expect(asked).toStrictEqual(["/tri.glb"]);
     const { mesh } = shape(model);
     const gone: string[] = [];
     mesh.geometry.addEventListener("dispose", () => gone.push("geometry"));
@@ -198,7 +198,7 @@ describe("a model", () => {
       gone.push("material")
     );
     await close();
-    expect(gone.toSorted()).toEqual(["geometry", "material"]);
+    expect(gone.toSorted()).toStrictEqual(["geometry", "material"]);
   });
 
   it("is a .gltf with its files beside it, each fetched through the loader, once, from where the model is", async () => {
@@ -231,13 +231,13 @@ describe("a model", () => {
 
     const beside = await load("/models/tri.gltf", files);
     expect(shape(beside.model)).toMatchObject(TRIANGLE);
-    expect(beside.asked).toEqual(["/models/tri.gltf", "/models/tri.bin"]);
+    expect(beside.asked).toStrictEqual(["/models/tri.gltf", "/models/tri.bin"]);
     const far = await load("/far.gltf", files);
     expect(shape(far.model)).toMatchObject(TRIANGLE);
-    expect(far.asked).toEqual(["/far.gltf", "/shared/tri.bin"]);
+    expect(far.asked).toStrictEqual(["/far.gltf", "/shared/tri.bin"]);
     const inline = await load("/inline.gltf", files);
     expect(shape(inline.model)).toMatchObject(TRIANGLE);
-    expect(inline.asked).toEqual(["/inline.gltf"]);
+    expect(inline.asked).toStrictEqual(["/inline.gltf"]);
   });
 
   it("puts several buffers into one, each where the model's views expect it", async () => {
@@ -277,10 +277,10 @@ describe("a model", () => {
 
     const two = await load("/m/two.gltf", files);
     expect(shape(two.model)).toMatchObject(TRIANGLE);
-    expect(two.asked).toEqual(["/m/two.gltf", "/m/positions.bin"]);
+    expect(two.asked).toStrictEqual(["/m/two.gltf", "/m/positions.bin"]);
     const mixed = await load("/m/mixed.glb", files);
     expect(shape(mixed.model)).toMatchObject(TRIANGLE);
-    expect(mixed.asked).toEqual(["/m/mixed.glb", "/m/positions.bin"]);
+    expect(mixed.asked).toStrictEqual(["/m/mixed.glb", "/m/positions.bin"]);
   });
 
   it("fails its bundle with the file that was missing, or with what was wrong with the model", async () => {
@@ -300,7 +300,7 @@ describe("a model", () => {
       "/hollow.glb": glb({}).subarray(0, 12),
     };
 
-    expect((await load("/m/tri.gltf", files)).failure).toEqual(
+    expect((await load("/m/tri.gltf", files)).failure).toStrictEqual(
       new Assets.AssetFailed({
         url: "/m/gone.bin",
         message: "There is no such file.",
@@ -317,7 +317,7 @@ describe("a model", () => {
     const hollow = (await load("/hollow.glb", files))
       .failure as Assets.AssetFailed;
 
-    expect([hollow.url, hollow.message]).toEqual([
+    expect([hollow.url, hollow.message]).toStrictEqual([
       "/hollow.glb",
       "It is not a glTF model: It is a binary glTF with no JSON in it.",
     ]);
@@ -334,7 +334,7 @@ describe("a model", () => {
     expect(bad.message).toMatch(
       /^A file written into it could not be read: .+/u
     );
-    expect((await load("/plain.gltf", files)).failure).toEqual(
+    expect((await load("/plain.gltf", files)).failure).toStrictEqual(
       new Assets.AssetFailed({
         url: "/plain.gltf",
         message:
@@ -385,9 +385,9 @@ describe("a model", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     // Both at once, and neither is here.
-    expect(waiting.toSorted()).toEqual(["/m/a.bin", "/m/b.bin"]);
+    expect(waiting.toSorted()).toStrictEqual(["/m/a.bin", "/m/b.bin"]);
     await Effect.runPromise(Fiber.interrupt(fiber));
-    expect(givenUp.toSorted()).toEqual(["/m/a.bin", "/m/b.bin"]);
+    expect(givenUp.toSorted()).toStrictEqual(["/m/a.bin", "/m/b.bin"]);
   });
 
   it("hands its loader to prepare, once each time it is loaded, before the model is read", async () => {
@@ -461,7 +461,7 @@ describe("a model", () => {
     };
 
     const { asked, close, model } = await load("/m/skin.gltf", files);
-    expect(asked.toSorted()).toEqual([
+    expect(asked.toSorted()).toStrictEqual([
       "/m/skin.gltf",
       "/m/skin.jpg",
       "/m/tri.bin",
@@ -471,7 +471,7 @@ describe("a model", () => {
     const { map } = shape(model).mesh.material as MeshStandardMaterial;
     expect(map).toBeInstanceOf(Texture);
     // The picture's own bytes, and the kind they say they are.
-    expect(decoded).toEqual([{ bytes: Array.from(jpeg), type: "image/jpeg" }]);
+    expect(decoded).toStrictEqual([{ bytes: Array.from(jpeg), type: "image/jpeg" }]);
     expect(map!.image).toBe(bitmaps[0]);
     let disposed = 0;
     map!.addEventListener("dispose", () => {
@@ -485,19 +485,19 @@ describe("a model", () => {
     // do not say what they are, the document's word is taken, or a PNG.
     decoded.length = 0;
     const kinds = await load("/m/kinds.gltf", files);
-    expect(kinds.asked.toSorted()).toEqual([
+    expect(kinds.asked.toSorted()).toStrictEqual([
       "/m/kinds.gltf",
       "/m/skins/plain.bin",
       "/m/tri.bin",
     ]);
-    expect(decoded.toSorted((a, b) => a.type.localeCompare(b.type))).toEqual([
+    expect(decoded.toSorted((a, b) => a.type.localeCompare(b.type))).toStrictEqual([
       { bytes: [1, 2, 3], type: "image/png" },
       { bytes: [1, 2, 3], type: "image/webp" },
     ]);
     const material = shape(kinds.model).mesh.material as MeshStandardMaterial;
     expect(material.emissiveMap).toBeInstanceOf(Texture);
     await kinds.close();
-    expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1, 1]);
+    expect(bitmaps.map((bitmap) => bitmap.closed)).toStrictEqual([1, 1, 1]);
   });
 });
 
@@ -646,7 +646,7 @@ describe("a level's models", () => {
     };
 
     app.frame(0);
-    expect(scene!.children).toEqual([]);
+    expect(scene!.children).toStrictEqual([]);
     await go("space");
 
     const [one, two] = scene!.children.filter(
@@ -658,7 +658,7 @@ describe("a level's models", () => {
     )!;
 
     // Two ships, each a copy of the model's scene, where its entity is.
-    expect([one!.position.x, two!.position.x]).toEqual([1, 2]);
+    expect([one!.position.x, two!.position.x]).toStrictEqual([1, 2]);
     expect(one).not.toBe(two);
     const hull = (one!.children[0] as Mesh).geometry;
     expect((two!.children[0] as Mesh).geometry).toBe(hull);
@@ -670,7 +670,7 @@ describe("a level's models", () => {
       disposed += 1;
     });
     await go("dock");
-    expect(scene!.children).toEqual([]);
+    expect(scene!.children).toStrictEqual([]);
     expect(disposed).toBe(1);
     Effect.runSync(Scope.close(scope, Exit.void));
   });

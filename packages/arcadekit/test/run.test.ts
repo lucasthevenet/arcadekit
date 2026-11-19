@@ -134,7 +134,7 @@ describe("App.run", () => {
 
     // Made, with its setup run, and told to its caller before any frame
     // is asked for.
-    expect(log).toEqual(["sound opened", "setup", "ready, 0 frames asked for"]);
+    expect(log).toStrictEqual(["sound opened", "setup", "ready, 0 frames asked for"]);
     expect(display.pending).toBe(1);
     expect(display.watching).toBe(1);
     turn(display, 4);
@@ -147,7 +147,7 @@ describe("App.run", () => {
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
-    expect(log.slice(4).toSorted()).toEqual(["script stopped", "sound closed"]);
+    expect(log.slice(4).toSorted()).toStrictEqual(["script stopped", "sound closed"]);
     expect(display.frame(1000)).toBe(0);
     expect(made!.time.tick).toBe(3);
   });
@@ -230,9 +230,9 @@ describe("App.run", () => {
     expect(Exit.isFailure(failed)).toBe(true);
     expect(
       Cause.squash((failed as Exit.Failure<never, NoCanvas>).cause)
-    ).toEqual(new NoCanvas());
-    expect(log.slice(0, 2)).toEqual(["sound opened", "setup"]);
-    expect(log.slice(2).toSorted()).toEqual(["script stopped", "sound closed"]);
+    ).toStrictEqual(new NoCanvas());
+    expect(log.slice(0, 2)).toStrictEqual(["sound opened", "setup"]);
+    expect(log.slice(2).toSorted()).toStrictEqual(["script stopped", "sound closed"]);
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
 
@@ -259,7 +259,7 @@ describe("App.run", () => {
 
     // Typed: what the plugins and ready can fail with, and nothing else.
     const typed: Exit.Exit<never, NoSound> = exit;
-    expect(Cause.squash((typed as Exit.Failure<never, NoSound>).cause)).toEqual(
+    expect(Cause.squash((typed as Exit.Failure<never, NoSound>).cause)).toStrictEqual(
       new NoSound()
     );
     expect(ready).toBe(false);
@@ -298,7 +298,7 @@ describe("App.run", () => {
     );
 
     // No setup: the save holds what it spawned.
-    expect(log).toEqual(["sound opened"]);
+    expect(log).toStrictEqual(["sound opened"]);
     expect(made!.time.tick).toBe(5);
     expect(position(made!)).toBeCloseTo(5, 4);
     turn(display, 3, 5000);
@@ -354,7 +354,7 @@ describe("App.run", () => {
     turn(display, 3);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toEqual(
+    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toStrictEqual(
       new Jammed()
     );
     expect(display.pending).toBe(0);
@@ -486,7 +486,7 @@ describe("App.run", () => {
       Object.assign(new Event("keydown"), { code: "KeyA", repeat: false })
     );
     turn(display, 2, 2000 / 60);
-    expect(seen).toEqual([false, true, true]);
+    expect(seen).toStrictEqual([false, true, true]);
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(page.listening).toBe(0);
   });

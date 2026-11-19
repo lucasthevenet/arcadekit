@@ -262,14 +262,14 @@ describe("a saved game", () => {
       expect(save.delta).toBe(saveAt === 0 ? 0 : 1 / 60);
 
       const resumed = withApp(App.load(save, options), (app) => {
-        expect(app.time).toEqual({
+        expect(app.time).toStrictEqual({
           tick: saveAt,
           elapsed: save.elapsed,
           delta: save.delta,
         });
         // The log starts again, and what the game logged after the save is
         // replayed against the checkpoints it took after every tick.
-        expect(app.actionLog).toEqual([]);
+        expect(app.actionLog).toStrictEqual([]);
         App.replay(app, recorded.log.slice(save.logLength), {
           delta: 1 / 60,
           ticks: 90 - saveAt,
@@ -287,7 +287,7 @@ describe("a saved game", () => {
       });
 
       expect(resumed.hash).toBe(recorded.hashes.at(-1));
-      expect(resumed.tally).toEqual(recorded.tally);
+      expect(resumed.tally).toStrictEqual(recorded.tally);
       expect(resumed.time.tick).toBe(90);
       expect(resumed.time.elapsed).toBeCloseTo(recorded.time.elapsed, 9);
       // Its first entry is the checkpoint of the state it was loaded in.
@@ -313,7 +313,7 @@ describe("a saved game", () => {
       app.enqueue(Add, { by: 100 });
       app.enqueueByName("sv/Double", {});
       const save = unwrap(app.save());
-      expect(save.queued).toEqual([
+      expect(save.queued).toStrictEqual([
         { name: "sv/Add", payload: { by: 7 } },
         { name: "sv/Double", payload: {} },
         { name: "sv/Add", payload: { by: 100 } },
@@ -356,7 +356,7 @@ describe("a saved game", () => {
     const save = withApp(App.make(given), (app) => {
       app.tick(1);
       const taken = unwrap(app.save());
-      expect(taken.queued).toEqual([
+      expect(taken.queued).toStrictEqual([
         {
           name: "sv/Stamp",
           payload: { at: "1970-01-02T00:00:00.000Z", big: "5" },
@@ -370,7 +370,7 @@ describe("a saved game", () => {
     withApp(App.load(save, given), (app) => {
       app.tick(1);
     });
-    expect(stamps).toEqual([[86_400_000, "bigint", 5n]]);
+    expect(stamps).toStrictEqual([[86_400_000, "bigint", 5n]]);
   });
 
   it("holds the events that were waiting, and how far each system had read them", () => {
@@ -381,7 +381,7 @@ describe("a saved game", () => {
 
       const save = unwrap(app.save());
       // The event of tick 4 is waiting: Sound has read it, Listen has not.
-      expect(save.events).toEqual([
+      expect(save.events).toStrictEqual([
         {
           name: "sv/Sounded",
           payloads: [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
@@ -414,14 +414,14 @@ describe("a saved game", () => {
     scriptStarts = 0;
 
     const save = withApp(App.make(options), (app) => {
-      expect([setups, scriptStarts]).toEqual([1, 1]);
+      expect([setups, scriptStarts]).toStrictEqual([1, 1]);
       app.tick(1);
 
       return unwrap(app.save());
     });
 
     withApp(App.load(save, options), (app) => {
-      expect([setups, scriptStarts]).toEqual([1, 2]);
+      expect([setups, scriptStarts]).toStrictEqual([1, 2]);
       // One tally and whatever motes the game had: none spawned twice.
       expect(app.world.view(Tallies).count()).toBe(1);
 
@@ -462,7 +462,7 @@ describe("a saved game", () => {
     const bytes = Save.encode(recorded.save);
     expect(bytes).toBeInstanceOf(Uint8Array);
     const decoded = unwrap(Save.decode(bytes));
-    expect(decoded).toEqual(recorded.save);
+    expect(decoded).toStrictEqual(recorded.save);
     // It is the world's snapshot and a little text.
     expect(bytes.length).toBeLessThan(recorded.save.world.length + 600);
     withApp(App.load(decoded, options), (app) => {
@@ -475,7 +475,7 @@ describe("a saved game", () => {
     // A view into a larger buffer reads as itself.
     const padded = new Uint8Array(bytes.length + 9);
     padded.set(bytes, 5);
-    expect(unwrap(Save.decode(padded.subarray(5, 5 + bytes.length)))).toEqual(
+    expect(unwrap(Save.decode(padded.subarray(5, 5 + bytes.length)))).toStrictEqual(
       recorded.save
     );
   });
@@ -742,10 +742,10 @@ describe("a plugin's scripts", () => {
     });
 
     withApp(App.make({ plugins: [WithScript] }), (app) => {
-      expect(order).toEqual(["setup", "script sees 1 tally"]);
+      expect(order).toStrictEqual(["setup", "script sees 1 tally"]);
       app.tick(1);
       app.tick(1);
-      expect(order.slice(2)).toEqual(["tick 1", "tick 2"]);
+      expect(order.slice(2)).toStrictEqual(["tick 1", "tick 2"]);
     });
   });
 

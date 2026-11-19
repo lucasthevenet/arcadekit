@@ -66,11 +66,11 @@ describe("a hub, the network in memory", () => {
     ada.send(message("ada", 0, 3));
     ada.send(message("ada", 1));
     expect(hub.inFlight).toBe(4);
-    expect(grace.receive()).toEqual([message("ada", 0, 3), message("ada", 1)]);
+    expect(grace.receive()).toStrictEqual([message("ada", 0, 3), message("ada", 1)]);
     // Taken: asked again, there is nothing.
-    expect(grace.receive()).toEqual([]);
-    expect(edsger.receive()).toEqual([message("ada", 0, 3), message("ada", 1)]);
-    expect(ada.receive()).toEqual([]);
+    expect(grace.receive()).toStrictEqual([]);
+    expect(edsger.receive()).toStrictEqual([message("ada", 0, 3), message("ada", 1)]);
+    expect(ada.receive()).toStrictEqual([]);
     expect(hub.inFlight).toBe(0);
     // A port is the same port each time it is asked for.
     expect(hub.port("ada")).toBe(ada);
@@ -82,7 +82,7 @@ describe("a hub, the network in memory", () => {
     ada.send(message("ada", 0));
     const grace = hub.port("grace");
     ada.send(message("ada", 1));
-    expect(grace.receive()).toEqual([message("ada", 1)]);
+    expect(grace.receive()).toStrictEqual([message("ada", 1)]);
   });
 
   it("keeps a message on its way for as many steps as its delay", () => {
@@ -90,15 +90,15 @@ describe("a hub, the network in memory", () => {
     const ada = hub.port("ada");
     const grace = hub.port("grace");
     ada.send(message("ada", 0));
-    expect(grace.receive()).toEqual([]);
+    expect(grace.receive()).toStrictEqual([]);
     hub.step();
     ada.send(message("ada", 1));
-    expect(grace.receive()).toEqual([]);
+    expect(grace.receive()).toStrictEqual([]);
     hub.step();
-    expect(grace.receive()).toEqual([message("ada", 0)]);
+    expect(grace.receive()).toStrictEqual([message("ada", 0)]);
     expect(hub.inFlight).toBe(1);
     hub.step();
-    expect(grace.receive()).toEqual([message("ada", 1)]);
+    expect(grace.receive()).toStrictEqual([message("ada", 1)]);
   });
 
   it("lets messages overtake each other when the delay is a range, the same way for the same seed", () => {
@@ -124,12 +124,12 @@ describe("a hub, the network in memory", () => {
 
     const order = run(1);
     // Every one arrived, once, and not in the order they were sent.
-    expect(order.toSorted((a, b) => a - b)).toEqual(
+    expect(order.toSorted((a, b) => a - b)).toStrictEqual(
       Array.from({ length: 40 }, (_, tick) => tick)
     );
-    expect(order).not.toEqual(order.toSorted((a, b) => a - b));
-    expect(run(1)).toEqual(order);
-    expect(run(2)).not.toEqual(order);
+    expect(order).not.toStrictEqual(order.toSorted((a, b) => a - b));
+    expect(run(1)).toStrictEqual(order);
+    expect(run(2)).not.toStrictEqual(order);
   });
 
   it("refuses a delay that is no number of steps", () => {
@@ -161,7 +161,7 @@ describe("a session joined to a transport", () => {
           ada!.app.enqueue(Drop, { by: "ada", value: 4 });
           // It waits for grace, and has said its piece all the same.
           expect(ada!.connected.tick()).toBe(false);
-          expect(grace.receive().map((sent) => sent.tick)).toEqual([0, 1, 2]);
+          expect(grace.receive().map((sent) => sent.tick)).toStrictEqual([0, 1, 2]);
 
           for (let tick = 0; tick <= 2; tick += 1) {
             grace.send(message("grace", tick));
@@ -172,7 +172,7 @@ describe("a session joined to a transport", () => {
           expect(ada!.connected.tick()).toBe(true);
           expect(ada!.app.time.tick).toBe(3);
           expect(moves(ada!.app.actionLog)).toHaveLength(1);
-          expect(grace.receive().map((sent) => sent.tick)).toEqual([3, 4]);
+          expect(grace.receive().map((sent) => sent.tick)).toStrictEqual([3, 4]);
         })
       )
     );
@@ -235,7 +235,7 @@ describe("a session joined to a transport", () => {
               ahead === undefined ? 60 : 200
             );
             expect(ada.app.world.hash()).toBe(grace.app.world.hash());
-            expect(ada.app.actionLog).toEqual(grace.app.actionLog);
+            expect(ada.app.actionLog).toStrictEqual(grace.app.actionLog);
             expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
             expect(ada.session.drifted).toBeUndefined();
 
@@ -290,7 +290,7 @@ describe("a session joined to a transport", () => {
             // Both, and with the same report.
             expect(stopped.get("ada")).toBeInstanceOf(Lockstep.Drifted);
             expect(stopped.get("grace")).toBeInstanceOf(Lockstep.Drifted);
-            expect((stopped.get("ada") as Lockstep.Drifted).hashes).toEqual(
+            expect((stopped.get("ada") as Lockstep.Drifted).hashes).toStrictEqual(
               (stopped.get("grace") as Lockstep.Drifted).hashes
             );
             setGlitch(undefined);
@@ -375,18 +375,18 @@ describe("a transport over text", () => {
     });
 
     transport.send(message("ada", 3, 2));
-    expect(sent).toEqual([Lockstep.encode(message("ada", 3, 2))]);
+    expect(sent).toStrictEqual([Lockstep.encode(message("ada", 3, 2))]);
     deliver(Lockstep.encode(message("grace", 0)));
     deliver("not a message");
     deliver(JSON.stringify({ from: "grace", tick: -1, actions: [] }));
     deliver(Lockstep.encode(message("grace", 1, 5)));
     // What is not a message is dropped, and counted.
-    expect(transport.receive()).toEqual([
+    expect(transport.receive()).toStrictEqual([
       message("grace", 0),
       message("grace", 1, 5),
     ]);
     expect(transport.dropped).toBe(2);
-    expect(transport.receive()).toEqual([]);
+    expect(transport.receive()).toStrictEqual([]);
     expect(listening).toBe(1);
     transport.close();
     expect(listening).toBe(0);
@@ -426,14 +426,14 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           stranger.postMessage({ not: "text" });
           stranger.postMessage("nor is this");
           yield* Effect.promise(() => later(20));
-          expect(grace.receive()).toEqual([message("ada", 0, 7)]);
-          expect(ada.receive()).toEqual([message("grace", 0)]);
-          expect(grace.receive()).toEqual([]);
+          expect(grace.receive()).toStrictEqual([message("ada", 0, 7)]);
+          expect(ada.receive()).toStrictEqual([message("grace", 0)]);
+          expect(grace.receive()).toStrictEqual([]);
         })
       )
     );
     // As text, as any wire would carry it.
-    expect(heard).toEqual([
+    expect(heard).toStrictEqual([
       Lockstep.encode(message("ada", 0, 7)),
       Lockstep.encode(message("grace", 0)),
     ]);
@@ -488,7 +488,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             expect(typeof made[0]!.onmessage).toBe("function");
             expect(made[0]!.closed).toBe(false);
             transport.send(message("ada", 0));
-            expect(made[0]!.posted).toEqual([
+            expect(made[0]!.posted).toStrictEqual([
               Lockstep.encode(message("ada", 0)),
             ]);
           })
@@ -568,7 +568,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           expect(ada.app.time.tick).toBeGreaterThan(40);
           expect(moves(ada.app.actionLog).length).toBeGreaterThan(10);
           expect(ada.app.world.hash()).toBe(grace.app.world.hash());
-          expect(ada.app.actionLog).toEqual(grace.app.actionLog);
+          expect(ada.app.actionLog).toStrictEqual(grace.app.actionLog);
           expect(ada.session.drifted).toBeUndefined();
           expect(grace.session.drifted).toBeUndefined();
         })

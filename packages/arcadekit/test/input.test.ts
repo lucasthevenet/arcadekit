@@ -126,22 +126,22 @@ describe("the input stage", () => {
           ],
         });
 
-        expect(app.inputOrder).toEqual(["First", "Second", "Sometimes"]);
-        expect(app.systemOrder).toEqual(["Tick"]);
-        expect(app.frameOrder).toEqual(["Draw"]);
+        expect(app.inputOrder).toStrictEqual(["First", "Second", "Sometimes"]);
+        expect(app.systemOrder).toStrictEqual(["Tick"]);
+        expect(app.frameOrder).toStrictEqual(["Draw"]);
         // A tick hears the devices first. Nobody ran the stage, so the
         // tick does; a frame never does.
         app.tick(1);
         app.frame(0);
-        expect(ran).toEqual(["First", "Second", "Tick", "Draw"]);
+        expect(ran).toStrictEqual(["First", "Second", "Tick", "Draw"]);
         // Run by whoever steps the app, as a driver does, it is not run
         // again by the tick that follows, and is by the one after that.
         ran.length = 0;
         app.input();
-        expect(ran).toEqual(["First", "Second"]);
+        expect(ran).toStrictEqual(["First", "Second"]);
         app.tick(1);
         app.tick(1);
-        expect(ran).toEqual([
+        expect(ran).toStrictEqual([
           "First",
           "Second",
           "Tick",
@@ -154,16 +154,16 @@ describe("the input stage", () => {
         ran.length = 0;
         app.tick(1, { input: false });
         expect(Exit.isSuccess(app.tickExit(1, { input: false }))).toBe(true);
-        expect(ran).toEqual(["Tick", "Tick"]);
+        expect(ran).toStrictEqual(["Tick", "Tick"]);
         app.tick(1, { input: true });
-        expect(ran).toEqual(["Tick", "Tick", "First", "Second", "Tick"]);
+        expect(ran).toStrictEqual(["Tick", "Tick", "First", "Second", "Tick"]);
         // Heard by hand before a tick that reads nothing, the next tick
         // hears for itself all the same.
         ran.length = 0;
         app.input();
         app.tick(1, { input: false });
         app.tick(1);
-        expect(ran).toEqual([
+        expect(ran).toStrictEqual([
           "First",
           "Second",
           "Tick",
@@ -176,10 +176,10 @@ describe("the input stage", () => {
         app.tick(1);
         ran.length = 0;
         expect(Exit.isSuccess(app.inputExit())).toBe(true);
-        expect(ran).toEqual(["First", "Second", "Sometimes"]);
+        expect(ran).toStrictEqual(["First", "Second", "Sometimes"]);
         // An app with no input stage is driven as before.
         const plain = yield* App.make({ systems: [note("Other", "update")] });
-        expect(plain.inputOrder).toEqual([]);
+        expect(plain.inputOrder).toStrictEqual([]);
         plain.input();
       })
     );
@@ -215,7 +215,7 @@ describe("the input stage", () => {
           moved: ["PointerX"],
         };
 
-        expect(seen).toEqual([first, first]);
+        expect(seen).toStrictEqual([first, first]);
         source.release("KeyA");
         app.input();
 
@@ -227,7 +227,7 @@ describe("the input stage", () => {
           moved: [],
         };
 
-        expect(seen.slice(2)).toEqual([second, second]);
+        expect(seen.slice(2)).toStrictEqual([second, second]);
       }).pipe(withSource(source))
     );
   });
@@ -243,7 +243,7 @@ describe("the input stage", () => {
 
         const app = yield* App.make({ systems: [A] });
         app.input();
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           { down: [], pressed: [], released: [], axes: {}, moved: [] },
         ]);
       })
@@ -543,15 +543,15 @@ describe("the input stage", () => {
         source.press("Enter");
         app.input();
         expect(app.world.singleton(Score).points).toBe(0);
-        expect(app.actionLog).toEqual([
+        expect(app.actionLog).toStrictEqual([
           { tick: 0, name: "in/Bump", payload: { by: 5 }, queued: true },
         ]);
         app.tick(1);
-        expect(seen).toEqual([5]);
+        expect(seen).toStrictEqual([5]);
         // Held is not pressed again.
         app.input();
         app.tick(1);
-        expect(seen).toEqual([5, 5]);
+        expect(seen).toStrictEqual([5, 5]);
         expect(app.actionLog).toHaveLength(1);
       }).pipe(withSource(source))
     );
@@ -582,15 +582,15 @@ describe("the input stage", () => {
         step(0.04);
         source.tap("KeyB");
         step(0.04);
-        expect(order).toEqual(["frame", "frame"]);
+        expect(order).toStrictEqual(["frame", "frame"]);
         // The tick that comes due hears what was pressed in every frame since.
         step(0.04);
-        expect(order.slice(2)).toEqual(["input KeyA+KeyB", "tick 1", "frame"]);
+        expect(order.slice(2)).toStrictEqual(["input KeyA+KeyB", "tick 1", "frame"]);
         // A long frame reads the devices before each of its ticks.
         order.length = 0;
         source.press("KeyC");
         step(0.2);
-        expect(order).toEqual([
+        expect(order).toStrictEqual([
           "input KeyC",
           "tick 2",
           "input ",
@@ -641,8 +641,8 @@ describe("the input stage", () => {
         }
 
         // Each system of the stage hears each event, once.
-        expect(heard).toEqual([1, 2]);
-        expect(also).toEqual([1, 2]);
+        expect(heard).toStrictEqual([1, 2]);
+        expect(also).toStrictEqual([1, 2]);
 
         // What draws the game still hears every event of a frame of
         // several ticks: the input stage ran before each, and is not it.
@@ -657,13 +657,13 @@ describe("the input stage", () => {
         const step = Driver.fixedStep(both, { hz: 10 });
         step(0.1);
         step(0.3);
-        expect(drawn).toEqual([1, 2, 3, 4]);
+        expect(drawn).toStrictEqual([1, 2, 3, 4]);
         // The game cannot tell that its devices are read.
         expect(app.world.hash()).toBe(plain.world.hash());
         const save = app.save();
         const bare = plain.save();
         expect(Exit.isSuccess(save) && Exit.isSuccess(bare)).toBe(true);
-        expect((save as Exit.Success<Save.Save>).value.events).toEqual(
+        expect((save as Exit.Success<Save.Save>).value.events).toStrictEqual(
           (bare as Exit.Success<Save.Save>).value.events
         );
       })
@@ -746,12 +746,12 @@ describe("the input stage", () => {
         alone.input();
         together.input();
         // Each event once, the first tick's among them, and the refusal.
-        expect(heard).toEqual([1, 3]);
-        expect(refused).toEqual(["in/Try TooMuch"]);
-        expect(both).toEqual([1, 3]);
-        expect(drawn).toEqual([1, 3]);
-        expect(drawnRefused).toEqual(["in/Try TooMuch"]);
-        expect(onlyDrawn).toEqual([1, 3]);
+        expect(heard).toStrictEqual([1, 3]);
+        expect(refused).toStrictEqual(["in/Try TooMuch"]);
+        expect(both).toStrictEqual([1, 3]);
+        expect(drawn).toStrictEqual([1, 3]);
+        expect(drawnRefused).toStrictEqual(["in/Try TooMuch"]);
+        expect(onlyDrawn).toStrictEqual([1, 3]);
         // And the game cannot tell that anyone was listening.
         expect(alone.world.hash()).toBe(bare.world.hash());
         const saves = [alone, together, bare].map((app) => app.save());
@@ -761,8 +761,8 @@ describe("the input stage", () => {
           (save) => (save as Exit.Success<Save.Save>).value.events
         );
 
-        expect(events[0]).toEqual(events[2]);
-        expect(events[1]).toEqual(events[2]);
+        expect(events[0]).toStrictEqual(events[2]);
+        expect(events[1]).toStrictEqual(events[2]);
 
         // Heard, they are kept no longer.
         for (let i = 0; i < 3; i += 1) {
@@ -771,7 +771,7 @@ describe("the input stage", () => {
         }
 
         expect(alone.events.pending(Done)).toBe(0);
-        expect(heard).toEqual([1, 3]);
+        expect(heard).toStrictEqual([1, 3]);
       })
     );
   });
@@ -821,7 +821,7 @@ describe("the input stage", () => {
           app.input();
           // The input stage runs before a tick, so what it has not had
           // its chance at is the tick before; the frame stage runs after.
-          expect(heard, stage).toEqual(stage === "input" ? [5, 6] : [6]);
+          expect(heard, stage).toStrictEqual(stage === "input" ? [5, 6] : [6]);
         }
       })
     );
@@ -891,9 +891,9 @@ describe("the input stage", () => {
         source.release("ArrowRight");
         source.tap("Space");
         app.tick(1);
-        expect(ship(app)).toEqual({ x: 20, shots: 1 });
+        expect(ship(app)).toStrictEqual({ x: 20, shots: 1 });
         // Each tick read the devices once, and reported what had changed.
-        expect(reports(app)).toEqual([
+        expect(reports(app)).toStrictEqual([
           { down: ["ArrowRight"] },
           { up: ["ArrowRight"], tapped: ["Space"] },
         ]);
@@ -903,7 +903,7 @@ describe("the input stage", () => {
         source.press("ArrowLeft");
         step(0.3);
         expect(app.time.tick).toBe(6);
-        expect(reports(app).slice(2)).toEqual([{ down: ["ArrowLeft"] }]);
+        expect(reports(app).slice(2)).toStrictEqual([{ down: ["ArrowLeft"] }]);
         expect(ship(app).x).toBeCloseTo(17, 5);
       }).pipe(withSource(source))
     );
@@ -936,15 +936,15 @@ describe("the input stage", () => {
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(
           NoKeyboard
         );
-        expect([ran, ticked, app.time.tick]).toEqual([1, 0, 0]);
+        expect([ran, ticked, app.time.tick]).toStrictEqual([1, 0, 0]);
         expect(() => app.tick(1)).toThrow(NoKeyboard);
-        expect([ran, ticked, app.time.tick]).toEqual([2, 0, 0]);
+        expect([ran, ticked, app.time.tick]).toStrictEqual([2, 0, 0]);
         // Told to read nothing, the tick runs.
         app.tick(1, { input: false });
-        expect([ran, ticked, app.time.tick]).toEqual([2, 1, 1]);
+        expect([ran, ticked, app.time.tick]).toStrictEqual([2, 1, 1]);
         broken = false;
         app.tick(1);
-        expect([ran, ticked, app.time.tick]).toEqual([3, 2, 2]);
+        expect([ran, ticked, app.time.tick]).toStrictEqual([3, 2, 2]);
       })
     );
   });
@@ -977,8 +977,8 @@ describe("the input stage", () => {
 
         App.replay(again, log, { delta: 1, ticks: 2 });
         expect(again.world.hash()).toBe(hash);
-        expect(ship(again)).toEqual({ x: 20, shots: 0 });
-        expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
+        expect(ship(again)).toStrictEqual({ x: 20, shots: 0 });
+        expect(reports(again)).toStrictEqual([{ down: ["ArrowRight"] }]);
         // Played on from there, by hand, it hears the machine it is on.
         again.tick(1);
         expect(ship(again).shots).toBe(1);
@@ -1000,7 +1000,7 @@ describe("the input stage", () => {
         expect(Exit.isFailure(exit)).toBe(true);
         expect(
           Cause.squash((exit as Exit.Failure<void, NoKeyboard>).cause)
-        ).toEqual(new NoKeyboard());
+        ).toStrictEqual(new NoKeyboard());
         expect(() => app.input()).toThrow(NoKeyboard);
         expect(app.world.frozen).toBe(false);
         // An app that has stopped on a failed script reads no devices.
@@ -1083,7 +1083,7 @@ describe("the input stage", () => {
         app.input();
         app.input();
         expect(new Set(drawn).size).toBe(2);
-        expect(Array.from(app.world.random.state)).toEqual(state);
+        expect(Array.from(app.world.random.state)).toStrictEqual(state);
       })
     );
   });
@@ -1121,7 +1121,7 @@ describe("the picture of the devices in the world", () => {
         source.release("KeyA");
         step();
         step();
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "First 1:",
           "Second 1:",
           "First 2: down pressed",
@@ -1139,7 +1139,7 @@ describe("the picture of the devices in the world", () => {
         source.tap("KeyA");
         step();
         step();
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "First 6: pressed released",
           "Second 6: pressed released",
           "First 7:",
@@ -1154,7 +1154,7 @@ describe("the picture of the devices in the world", () => {
         app.input();
         app.tick(1);
         app.tick(1);
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "First 8: pressed released",
           "Second 8: pressed released",
           "First 9:",
@@ -1178,13 +1178,13 @@ describe("the picture of the devices in the world", () => {
         seen.length = 0;
         step();
         step();
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "First 12: down pressed released",
           "Second 12: down pressed released",
           "First 13: down",
           "Second 13: down",
         ]);
-        expect(reports(app).at(-1)).toEqual({ up: ["KeyA"], down: ["KeyA"] });
+        expect(reports(app).at(-1)).toStrictEqual({ up: ["KeyA"], down: ["KeyA"] });
         // A held key let go, pressed and let go again between two ticks:
         // it went up, it was pressed, and it is not held.
         source.release("KeyA");
@@ -1192,13 +1192,13 @@ describe("the picture of the devices in the world", () => {
         seen.length = 0;
         step();
         step();
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "First 14: pressed released",
           "Second 14: pressed released",
           "First 15:",
           "Second 15:",
         ]);
-        expect(reports(app).at(-1)).toEqual({ up: ["KeyA"], tapped: ["KeyA"] });
+        expect(reports(app).at(-1)).toStrictEqual({ up: ["KeyA"], tapped: ["KeyA"] });
         // Read twice with no tick between, what did not change is said once.
         const said = reports(app).length;
         source.move(Input.pointerX, 5);
@@ -1206,7 +1206,7 @@ describe("the picture of the devices in the world", () => {
         app.input();
         app.input();
         app.input();
-        expect(reports(app).slice(said)).toEqual([
+        expect(reports(app).slice(said)).toStrictEqual([
           { down: ["KeyB"], axes: { PointerX: 5 } },
         ]);
       }).pipe(withSource(source))
@@ -1242,7 +1242,7 @@ describe("the picture of the devices in the world", () => {
 
         app.input();
         app.tick(1);
-        expect(seen).toEqual({
+        expect(seen).toStrictEqual({
           at: [0, 0],
           main: [false, false, false],
           second: [false, false, false],
@@ -1260,7 +1260,7 @@ describe("the picture of the devices in the world", () => {
         source.press(Input.padButton(1, 3));
         app.input();
         app.tick(1);
-        expect(seen).toEqual({
+        expect(seen).toStrictEqual({
           at: [120, 45.5],
           main: [false, false, false],
           second: [true, true, false],
@@ -1275,7 +1275,7 @@ describe("the picture of the devices in the world", () => {
         source.release(Input.padButton(0, 0));
         app.input();
         app.tick(1);
-        expect(seen).toEqual({
+        expect(seen).toStrictEqual({
           at: [120, 45.5],
           main: [true, true, false],
           second: [false, false, true],
@@ -1292,7 +1292,7 @@ describe("the picture of the devices in the world", () => {
           Input.pointerButton(1),
           Input.padButton(2, 7),
           Input.padAxis(3, 1),
-        ]).toEqual([
+        ]).toStrictEqual([
           "PointerX",
           "PointerY",
           "Pointer0",
@@ -1337,7 +1337,7 @@ describe("the picture of the devices in the world", () => {
         source.tap("Space");
         frame();
         frame();
-        expect(reports(app)).toEqual([
+        expect(reports(app)).toStrictEqual([
           { down: ["ArrowRight"] },
           { down: ["Space"] },
           {
@@ -1378,7 +1378,7 @@ describe("the picture of the devices in the world", () => {
         });
 
         App.replay(again, entries, { delta: 0.1, ticks });
-        expect(ship(again)).toEqual(played);
+        expect(ship(again)).toStrictEqual(played);
         expect(again.world.hash()).toBe(hashes.at(-1));
         // Checked against every tick's checkpoint on the way.
         expect(
@@ -1427,7 +1427,7 @@ describe("the picture of the devices in the world", () => {
           bare.tick(1);
         }
 
-        expect(app.actionLog).toEqual([]);
+        expect(app.actionLog).toStrictEqual([]);
         expect(app.world.hash()).toBe(bare.world.hash());
         source.press("KeyQ");
         app.input();
@@ -1439,7 +1439,7 @@ describe("the picture of the devices in the world", () => {
           app.tick(1);
         }
 
-        expect(reports(app)).toEqual([{ down: ["KeyQ"] }]);
+        expect(reports(app)).toStrictEqual([{ down: ["KeyQ"] }]);
         expect(app.world.hash()).not.toBe(bare.world.hash());
       }).pipe(withSource(source))
     );
@@ -1595,7 +1595,7 @@ describe("the picture of the devices in the world", () => {
         }
 
         // Nothing was reported of devices that are not there.
-        expect(reports(app)).toEqual(log.map((entry) => entry.payload));
+        expect(reports(app)).toStrictEqual(log.map((entry) => entry.payload));
         // And a key said to be held stays held, however often it is read.
         app.dispatch(Input.Report, { down: ["ArrowLeft"] });
         const before = ship(app).x;
@@ -1636,12 +1636,12 @@ describe("the picture of the devices in the world", () => {
         app.dispatch(Input.Report, { down: ["ArrowRight"] });
         app.tick(1);
         expect(ship(app).x).toBe(20);
-        expect(reports(app).at(-1)).toEqual({ up: ["ArrowRight"] });
+        expect(reports(app).at(-1)).toStrictEqual({ up: ["ArrowRight"] });
         app.dispatch(Input.Report, { down: ["ArrowRight"] });
         app.tick(1, { input: false });
         expect(ship(app).x).toBe(30);
         step();
-        expect(reports(app).at(-1)).toEqual({ up: ["ArrowRight"] });
+        expect(reports(app).at(-1)).toStrictEqual({ up: ["ArrowRight"] });
         expect(ship(app).x).toBe(30);
       }).pipe(withSource(source))
     );
@@ -1712,7 +1712,7 @@ describe("the picture of the devices in the world", () => {
         app.input();
         app.tick(1);
         expect(ship(app).x).toBe(10);
-        expect(reports(app)).toEqual([{ up: ["ArrowRight"] }]);
+        expect(reports(app)).toStrictEqual([{ up: ["ArrowRight"] }]);
         app.input();
         app.tick(1);
         expect(reports(app)).toHaveLength(1);
@@ -1723,7 +1723,7 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const app = yield* App.load(save, { plugins: [Flying] });
         app.input();
-        expect(reports(app)).toEqual([
+        expect(reports(app)).toStrictEqual([
           { up: ["ArrowRight"], axes: { PointerX: 0 } },
         ]);
       }).pipe(withSource(Input.makeManualSource()))
@@ -1777,7 +1777,7 @@ describe("the picture of the devices in the world", () => {
         step();
         source.release("Space");
         step();
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "handler 1: down pressed",
           "system 1: down pressed",
           "handler 2: down",
@@ -1793,7 +1793,7 @@ describe("the picture of the devices in the world", () => {
         // A tick that reads no device, so that the report stands.
         app.tick(1, { input: false });
         app.dispatch(Probe, {});
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "handler 4: down pressed",
           "system 4: down pressed",
           "handler 5: down",
@@ -1868,7 +1868,7 @@ describe("the picture of the devices in the world", () => {
         app.tick(1);
         const before = app.world.hash();
         app.frame(0);
-        expect(drawn).toEqual(["3,0 true"]);
+        expect(drawn).toStrictEqual(["3,0 true"]);
         expect(app.world.hash()).toBe(before);
         expect(Exit.isSuccess(app.dispatch(Shoot, {}))).toBe(true);
         expect(app.world.singleton(Score).points).toBe(1);
@@ -1932,7 +1932,7 @@ describe("bindings", () => {
       Effect.gen(function* () {
         done.length = 0;
         const app = yield* App.make({ plugins: [Game], checkpointEvery: 0 });
-        expect(app.inputOrder).toEqual(["in/Controls"]);
+        expect(app.inputOrder).toStrictEqual(["in/Controls"]);
 
         const step = (): void => {
           app.input();
@@ -1940,12 +1940,12 @@ describe("bindings", () => {
         };
 
         step();
-        expect(done).toEqual([]);
+        expect(done).toStrictEqual([]);
         // Two of its codes at once is one press.
         source.press("Space");
         source.press(Input.padButton(0, 0));
         step();
-        expect(done).toEqual(["jump at 1"]);
+        expect(done).toStrictEqual(["jump at 1"]);
         // Held: nothing more.
         step();
         expect(done).toHaveLength(1);
@@ -1954,7 +1954,7 @@ describe("bindings", () => {
         source.move(Input.pointerY, 30);
         source.press(Input.pointerButton());
         step();
-        expect(done.slice(1)).toEqual(["land", "fire 40,30", "aim 40"]);
+        expect(done.slice(1)).toStrictEqual(["land", "fire 40,30", "aim 40"]);
         // An axis nobody is bound to moves nothing, and a button of the
         // pointer that is not the main one fires nothing.
         source.move(Input.pointerY, 31);
@@ -1965,12 +1965,12 @@ describe("bindings", () => {
         // A tap is a press and a release.
         source.tap("Space");
         step();
-        expect(done.slice(4)).toEqual(["jump at 5", "land"]);
+        expect(done.slice(4)).toStrictEqual(["jump at 5", "land"]);
         expect(
           app.actionLog.map((entry) =>
             Action.isCheckpoint(entry) ? "?" : entry.name
           )
-        ).toEqual([
+        ).toStrictEqual([
           "in/Jump",
           "in/Land",
           "in/Fire",
@@ -2002,8 +2002,8 @@ describe("bindings", () => {
     );
 
     const played = [...done];
-    expect(played).toEqual(["jump at 0", "aim 7", "fire 7,0"]);
-    expect(log.filter((entry) => !Action.isCheckpoint(entry))).toEqual([
+    expect(played).toStrictEqual(["jump at 0", "aim 7", "fire 7,0"]);
+    expect(log.filter((entry) => !Action.isCheckpoint(entry))).toStrictEqual([
       { tick: 0, name: "in/Jump", payload: undefined, queued: true },
       { tick: 0, name: "in/Aim", payload: { x: 7 }, queued: true },
       { tick: 1, name: "in/Fire", payload: { x: 7, y: 0 }, queued: true },
@@ -2013,9 +2013,9 @@ describe("bindings", () => {
         done.length = 0;
         // The same handlers, and nothing that listens to a device.
         const again = yield* App.make({ handlers, checkpointEvery: 1 });
-        expect(again.inputOrder).toEqual([]);
+        expect(again.inputOrder).toStrictEqual([]);
         App.replay(again, log, { delta: 1, ticks: 2 });
-        expect(done).toEqual(played);
+        expect(done).toStrictEqual(played);
       })
     );
   });
@@ -2055,7 +2055,7 @@ describe("bindings", () => {
 describe("a source worked by hand", () => {
   it("says what is down, and what went down, went up or moved since it was last asked", () => {
     const source = Input.makeManualSource();
-    expect(told(source.sample())).toEqual({
+    expect(told(source.sample())).toStrictEqual({
       down: [],
       pressed: [],
       released: [],
@@ -2067,7 +2067,7 @@ describe("a source worked by hand", () => {
     source.release("KeyB");
     source.move("PointerX", 0);
     source.move("PointerY", 3);
-    expect(told(source.sample())).toEqual({
+    expect(told(source.sample())).toStrictEqual({
       down: ["KeyA"],
       pressed: ["KeyA"],
       released: [],
@@ -2075,7 +2075,7 @@ describe("a source worked by hand", () => {
       moved: ["PointerY"],
     });
     // Nothing since: the same picture, and nothing happened.
-    expect(told(source.sample())).toEqual({
+    expect(told(source.sample())).toStrictEqual({
       down: ["KeyA"],
       pressed: [],
       released: [],
@@ -2089,7 +2089,7 @@ describe("a source worked by hand", () => {
     source.press("KeyA");
     source.move("PointerY", 3);
     source.move("PointerY", 0);
-    expect(told(source.sample())).toEqual({
+    expect(told(source.sample())).toStrictEqual({
       down: ["KeyA"],
       pressed: ["KeyA"],
       released: ["KeyA"],
@@ -2100,7 +2100,7 @@ describe("a source worked by hand", () => {
     source.press("Pointer0");
     source.sample();
     source.releaseAll((code) => !code.startsWith("Pad"));
-    expect(told(source.sample())).toEqual({
+    expect(told(source.sample())).toStrictEqual({
       down: ["Pad0Button1"],
       pressed: [],
       released: ["KeyA", "Pointer0"],
@@ -2108,12 +2108,12 @@ describe("a source worked by hand", () => {
       moved: [],
     });
     source.releaseAll();
-    expect(told(source.sample()).released).toEqual(["Pad0Button1"]);
+    expect(told(source.sample()).released).toStrictEqual(["Pad0Button1"]);
     // A sample is not changed by what happens after it was taken.
     const kept = source.sample();
     source.press("KeyK");
     source.move("PointerX", 9);
-    expect(told(kept)).toEqual({
+    expect(told(kept)).toStrictEqual({
       down: [],
       pressed: [],
       released: [],

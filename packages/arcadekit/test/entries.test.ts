@@ -157,9 +157,9 @@ describe("the package's entries", () => {
       }
     }
 
-    expect(manifest.exports).toEqual(expected);
+    expect(manifest.exports).toStrictEqual(expected);
     // In order, the package first, so that the list reads.
-    expect(entries).toEqual([".", ...entries.slice(1).toSorted()]);
+    expect(entries).toStrictEqual([".", ...entries.slice(1).toSorted()]);
     // A few by name, so that this test does not only agree with itself.
     expect(entries).toContain("./App");
     expect(entries).toContain("./Input");
@@ -172,14 +172,14 @@ describe("the package's entries", () => {
         (file) =>
           !/^\.\.\/src\/\w+\.ts$/u.test(file) && !file.startsWith("../src/ecs/")
       )
-    ).toEqual([]);
+    ).toStrictEqual([]);
 
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
     );
 
-    expect(Object.keys(sources).filter((file) => !reached.has(file))).toEqual(
+    expect(Object.keys(sources).filter((file) => !reached.has(file))).toStrictEqual(
       []
     );
   });
@@ -191,7 +191,7 @@ describe("the package's entries", () => {
   // names what only a page has, and no source makes code from text.
 
   it("arcadekit/ecs is all of the storage core", () => {
-    expect(reach(sourceOf("./ecs")).files).toEqual(
+    expect(reach(sourceOf("./ecs")).files).toStrictEqual(
       Object.keys(sources)
         .filter((file) => file.startsWith("../src/ecs/"))
         .toSorted()
@@ -204,12 +204,12 @@ describe("the package's entries", () => {
       Object.keys(sources)
         .filter((file) => !main.includes(file))
         .toSorted()
-    ).toEqual(["../src/Browser.ts", "../src/ecs/index.ts"]);
+    ).toStrictEqual(["../src/Browser.ts", "../src/ecs/index.ts"]);
   });
 
   it("arcadekit/Browser is the one entry that imports a browser package, which is an optional peer", () => {
     const { files, packages } = reach(sourceOf("./Browser"));
-    expect(packages.filter((one) => !isEffect(one))).toEqual([
+    expect(packages.filter((one) => !isEffect(one))).toStrictEqual([
       "@effect/platform-browser/BrowserRuntime",
     ]);
     expect(manifest.peerDependencies["@effect/platform-browser"]).toBeDefined();
@@ -218,7 +218,7 @@ describe("the package's entries", () => {
     ).toBe(true);
     // Only its own file is its own: the rest is the game's, shared.
     const main = reach(sourceOf(".")).files;
-    expect(files.filter((file) => !main.includes(file))).toEqual([
+    expect(files.filter((file) => !main.includes(file))).toStrictEqual([
       "../src/Browser.ts",
     ]);
   });
@@ -270,7 +270,7 @@ describe("the package's entries", () => {
         .map((file) => file.slice("../src/".length, -".ts".length))
         .filter((name) => name !== "index" && !namespaces.includes(name))
         .toSorted()
-    ).toEqual(["Browser", "Schemas", "Services", "TickScheduler"]);
+    ).toStrictEqual(["Browser", "Schemas", "Services", "TickScheduler"]);
     expect("Browser" in main).toBe(false);
   });
 });
@@ -300,21 +300,21 @@ describe("arcadekit/ecs", () => {
     view.each((position) => {
       position.x += 10;
     });
-    expect(world.get(first, Position)).toEqual({ x: 11, y: 2 });
-    expect(world.get(second, Position)).toEqual({ x: 3, y: 4 });
+    expect(world.get(first, Position)).toStrictEqual({ x: 11, y: 2 });
+    expect(world.get(second, Position)).toStrictEqual({ x: 3, y: 4 });
 
     const commands = new Ecs.CommandBuffer(world);
     commands.remove(second, Tired);
     commands.despawn(first);
     commands.apply();
-    expect(world.view(moving).entities()).toEqual([second]);
+    expect(world.view(moving).entities()).toStrictEqual([second]);
 
     const bytes = world.snapshot();
     const copy = new Ecs.World();
     copy.load(bytes, [Position, Tired]);
     expect(copy.hash()).toBe(world.hash());
     // A snapshot names what is stored: nobody is tired any more.
-    expect(Ecs.readSnapshot(bytes).components.map((one) => one.name)).toEqual([
+    expect(Ecs.readSnapshot(bytes).components.map((one) => one.name)).toStrictEqual([
       "en/Position",
     ]);
     expect(() => copy.load(bytes, [Position, Tired])).toThrow(

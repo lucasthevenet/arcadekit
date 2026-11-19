@@ -181,12 +181,12 @@ const replayInto = (
 describe("checkpoints", () => {
   it("are recorded before the first action or tick, and after every tick the interval divides", () => {
     const recorded = record({ ticks: 10, checkpointEvery: 3 });
-    expect(checkpoints(recorded.log).map((entry) => entry.tick)).toEqual([
+    expect(checkpoints(recorded.log).map((entry) => entry.tick)).toStrictEqual([
       0, 3, 6, 9,
     ]);
     // Each is the world's hash at that point: the first before anything
     // happened, the others when that many ticks had completed.
-    expect(checkpoints(recorded.log).map((entry) => entry.hash)).toEqual([
+    expect(checkpoints(recorded.log).map((entry) => entry.hash)).toStrictEqual([
       recorded.starting,
       recorded.hashes[2],
       recorded.hashes[5],
@@ -234,7 +234,7 @@ describe("checkpoints", () => {
       for (let tick = 1; tick <= 5; tick += 1) {
         app.tick(1 / 60);
         expect(app.world.entityCount).toBe(tick);
-        expect(app.actionLog.at(-1)).toEqual({
+        expect(app.actionLog.at(-1)).toStrictEqual({
           tick,
           hash: app.world.hash(),
         });
@@ -251,11 +251,11 @@ describe("checkpoints", () => {
         }).log
       ).map((entry) => entry.tick);
 
-    expect(ticksOf()).toEqual([0, 60, 120]);
-    expect(ticksOf(1)).toEqual(Array.from({ length: 131 }, (_, i) => i));
-    expect(ticksOf(50)).toEqual([0, 50, 100]);
-    expect(ticksOf(1000)).toEqual([0]);
-    expect(ticksOf(0)).toEqual([]);
+    expect(ticksOf()).toStrictEqual([0, 60, 120]);
+    expect(ticksOf(1)).toStrictEqual(Array.from({ length: 131 }, (_, i) => i));
+    expect(ticksOf(50)).toStrictEqual([0, 50, 100]);
+    expect(ticksOf(1000)).toStrictEqual([0]);
+    expect(ticksOf(0)).toStrictEqual([]);
 
     for (const bad of [-1, 1.5, Number.NaN, Infinity]) {
       expect(() => withApp(game({ checkpointEvery: bad }), () => 0)).toThrow(
@@ -283,12 +283,12 @@ describe("checkpoints", () => {
 
     for (const first of firsts) {
       withApp(game(), (app) => {
-        expect(app.actionLog).toEqual([]);
+        expect(app.actionLog).toStrictEqual([]);
         // What a game does between making its app and starting to play.
         const coin = app.world.spawn(Coin.of({ value: 5, x: 0 }));
         const starting = app.world.hash();
         first(app, coin);
-        expect(app.actionLog[0]).toEqual({ tick: 0, hash: starting });
+        expect(app.actionLog[0]).toStrictEqual({ tick: 0, hash: starting });
         expect(checkpoints(app.actionLog)).toHaveLength(1);
       });
     }
@@ -299,13 +299,13 @@ describe("checkpoints", () => {
       app.world.spawn(Coin.of({ value: 1, x: 0 }));
       app.tick(1);
       app.tick(1);
-      expect(app.actionLog).toEqual([]);
+      expect(app.actionLog).toStrictEqual([]);
       const hash = app.checkpoint();
       expect(hash).toBe(app.world.hash());
-      expect(app.actionLog).toEqual([{ tick: 2, hash }]);
+      expect(app.actionLog).toStrictEqual([{ tick: 2, hash }]);
       app.dispatch(Drop, { value: 2 });
       app.checkpoint();
-      expect(app.actionLog.map((entry) => Action.isCheckpoint(entry))).toEqual([
+      expect(app.actionLog.map((entry) => Action.isCheckpoint(entry))).toStrictEqual([
         true,
         false,
         true,
@@ -318,7 +318,7 @@ describe("checkpoints", () => {
       app.world.spawn(Coin.of({ value: 1, x: 0 }));
       app.checkpoint();
       app.tick(1);
-      expect(checkpoints(app.actionLog).map((entry) => entry.tick)).toEqual([
+      expect(checkpoints(app.actionLog).map((entry) => entry.tick)).toStrictEqual([
         0,
       ]);
     });
@@ -345,8 +345,8 @@ describe("checkpoints", () => {
     const recorded = record({ ticks: 12, checkpointEvery: 4 });
     const text = Action.encodeLog(recorded.log);
     const loaded = Action.decodeLog(text);
-    expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recorded.log);
-    expect(JSON.parse(text)[0]).toEqual({ tick: 0, hash: recorded.starting });
+    expect(Exit.isSuccess(loaded) && loaded.value).toStrictEqual(recorded.log);
+    expect(JSON.parse(text)[0]).toStrictEqual({ tick: 0, hash: recorded.starting });
 
     for (const entry of [
       { tick: 0, hash: -1 },
@@ -384,7 +384,7 @@ describe("a replay that checks itself", () => {
 
     // Recording as it replays, it writes the same log again.
     const recorded = record({ ticks: 40, checkpointEvery: 1 });
-    expect(replayInto({ checkpointEvery: 1 }, recorded.log, 40).log).toEqual(
+    expect(replayInto({ checkpointEvery: 1 }, recorded.log, 40).log).toStrictEqual(
       recorded.log
     );
   });
@@ -416,7 +416,7 @@ describe("a replay that checks itself", () => {
     expect(reason.expected).toBe(recorded.hashes[39]);
     expect(reason.actual).toBe(replayed.hash);
     expect(reason.actual).not.toBe(reason.expected);
-    expect(stopped.entry).toEqual({ tick: 40, hash: recorded.hashes[39] });
+    expect(stopped.entry).toStrictEqual({ tick: 40, hash: recorded.hashes[39] });
     expect(recorded.log[stopped.index]).toBe(stopped.entry);
     expect(stopped.message).toBe(
       `The replay diverged from its log (entry ${stopped.index}): the world's hash at tick 40 is ${reason.actual}, and ${reason.expected} was recorded. The last checkpoint that matched was at tick 39.`
@@ -507,7 +507,7 @@ describe("a replay that checks itself", () => {
       /No earlier checkpoint matched, so the two did not start from the same state: check the seed and what was spawned before the first tick\.$/u
     );
     // Nothing was applied to a world that was wrong from the start.
-    expect(moves(otherSeed.log)).toEqual([]);
+    expect(moves(otherSeed.log)).toStrictEqual([]);
 
     // The right seed, but something in the world that the game did not have.
     const crowded = withApp(game({ seed: 5 }), (app) => {
@@ -629,7 +629,7 @@ describe("a replay that checks itself", () => {
       return [...app.actionLog];
     });
 
-    expect(moves(recorded).map((entry) => entry.refused)).toEqual([
+    expect(moves(recorded).map((entry) => entry.refused)).toStrictEqual([
       undefined,
       undefined,
       "NoSuchCoin",
@@ -755,7 +755,7 @@ describe("the action log", () => {
       app.dispatch(Chain, { by: 100 }); // its handler enqueues an Add
       app.enqueueByName("rp/Double", {});
       app.dispatch(Add, { by: 1000 });
-      expect(app.actionLog).toEqual([
+      expect(app.actionLog).toStrictEqual([
         { tick: 0, name: "rp/Add", payload: { by: 1 }, queued: true },
         { tick: 0, name: "rp/Chain", payload: { by: 100 } },
         { tick: 0, name: "rp/Double", payload: {}, queued: true },
@@ -788,7 +788,7 @@ describe("the action log", () => {
         app.actionLog.map((entry) =>
           Action.isCheckpoint(entry) ? "?" : [entry.name, entry.refused]
         )
-      ).toEqual([
+      ).toStrictEqual([
         ["rp/Double", "TooBig"],
         ["rp/Nothing", "UnknownAction"],
         ["rp/Add", expect.stringMatching(/by/u)],
@@ -808,7 +808,7 @@ describe("the action log", () => {
     ];
 
     const loaded = Action.decodeLog(Action.encodeLog(log));
-    expect(Exit.isSuccess(loaded) && loaded.value).toEqual(log);
+    expect(Exit.isSuccess(loaded) && loaded.value).toStrictEqual(log);
 
     for (const entry of [
       { tick: 0, name: "a", payload: 1, queued: false },
@@ -883,9 +883,9 @@ describe("a game whose simulation issues actions itself", () => {
     });
 
     expect(replayed.hash).toBe(recorded.hash);
-    expect(replayed.tally).toEqual(recorded.tally);
+    expect(replayed.tally).toStrictEqual(recorded.tally);
     // The replay's own log is the game's, entry for entry, marks included.
-    expect(replayed.log).toEqual(recorded.log);
+    expect(replayed.log).toStrictEqual(recorded.log);
   });
 
   it("would not replay if the simulation's own moves were replayed from the log as well", () => {
@@ -900,7 +900,7 @@ describe("a game whose simulation issues actions itself", () => {
       return [...app.actionLog];
     });
 
-    expect(moves(recorded)).toEqual([]);
+    expect(moves(recorded)).toStrictEqual([]);
     const withBotMoves = [...recorded];
 
     const at = withBotMoves.findIndex(
@@ -971,11 +971,11 @@ describe("a game whose simulation issues actions itself", () => {
     const addedFirst = play("dispatch");
     expect(doubledFirst.value).toBe(1 * 2 + 10);
     expect(addedFirst.value).toBe((1 + 10) * 2);
-    expect(moves(doubledFirst.log).map((entry) => entry.name)).toEqual([
+    expect(moves(doubledFirst.log).map((entry) => entry.name)).toStrictEqual([
       "rp/Double",
       "rp/Chain",
     ]);
-    expect(moves(addedFirst.log).map((entry) => entry.name)).toEqual([
+    expect(moves(addedFirst.log).map((entry) => entry.name)).toStrictEqual([
       "rp/Chain",
       "rp/Double",
     ]);

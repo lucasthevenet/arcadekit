@@ -100,7 +100,7 @@ describe("the verdict on a variant", () => {
   it("is faster the other way round, and counts the head's runs then", () => {
     const base = [10, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8];
     const head = [8, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 20];
-    expect(judge(base, head)).toEqual({
+    expect(judge(base, head)).toStrictEqual({
       outcome: "faster",
       ratio: 0.8,
       base: 10,
@@ -110,7 +110,7 @@ describe("the verdict on a variant", () => {
       chance: chance(8, 9, 9),
     });
     // And is slower with the two changed over, by as much.
-    expect(judge(head, base)).toEqual({
+    expect(judge(head, base)).toStrictEqual({
       outcome: "slower",
       ratio: 1.25,
       base: 8,
@@ -278,7 +278,7 @@ describe("what a change slows on purpose", () => {
       "Not-a-trailer: raw",
     ].join("\n");
 
-    expect(Array.from(onPurpose(log)).toSorted()).toEqual([
+    expect(Array.from(onPurpose(log)).toSorted()).toStrictEqual([
       "each",
       "eachMany",
       "fragmented",
@@ -334,12 +334,12 @@ describe("the report", () => {
   ];
 
   it("fails on what is slower and was not meant to be, and on nothing else", () => {
-    expect(failures(lines)).toEqual(["slow"]);
-    expect(failures(lines.slice(0, 4))).toEqual([]);
+    expect(failures(lines)).toStrictEqual(["slow"]);
+    expect(failures(lines.slice(0, 4))).toStrictEqual([]);
   });
 
   it("is a table with what failed first, then what changed, and each build's fastest run", () => {
-    expect(table(lines).split("\n")).toEqual([
+    expect(table(lines).split("\n")).toStrictEqual([
       "| Variant | Base | Head | Change | Runs that beat every run of the other, and how often by chance | |",
       "| --- | ---: | ---: | ---: | --- | --- |",
       "| label of slow (`slow`) | 10.00 | 12.50 ns/entity | +25.0% | 15 of 15, 1 in 155,117,520 | **slower** |",

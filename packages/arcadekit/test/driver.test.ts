@@ -81,7 +81,7 @@ describe("the frame loop", () => {
     expect(display.pending).toBe(1);
     // The first frame draws the game as it stands and runs no tick.
     expect(app.time.tick).toBe(0);
-    expect(drawn).toEqual([0]);
+    expect(drawn).toStrictEqual([0]);
     turn(display, 6, 1000 + 1000 / 60);
     expect(app.time.tick).toBe(6);
     expect(drawn).toHaveLength(7);
@@ -105,8 +105,8 @@ describe("the frame loop", () => {
       ticks.push(app.time.tick);
     }
 
-    expect(ticks).toEqual([0, 0, 0, 1, 1, 2, 5]);
-    expect(drawn.map((alpha) => Math.round(alpha * 100) / 100)).toEqual([
+    expect(ticks).toStrictEqual([0, 0, 0, 1, 1, 2, 5]);
+    expect(drawn.map((alpha) => Math.round(alpha * 100) / 100)).toStrictEqual([
       0, 0.4, 0.8, 0.2, 0.6, 0, 0.3,
     ]);
     // Each tick was a tenth of a second of the game, exactly.
@@ -143,7 +143,7 @@ describe("the frame loop", () => {
     display.frame(175);
     // A clock that went backwards is no time at all, not negative time.
     display.frame(170);
-    expect(deltas.map((delta) => Math.round(delta * 1000))).toEqual([
+    expect(deltas.map((delta) => Math.round(delta * 1000))).toStrictEqual([
       0, 25, 50, 0,
     ]);
     await Effect.runPromise(Fiber.interrupt(fiber));
@@ -373,7 +373,7 @@ describe("the frame loop", () => {
 
     turn(display, 4, 0);
     expect(app.time.tick).toBe(3);
-    expect(log).toEqual(["sound opened"]);
+    expect(log).toStrictEqual(["sound opened"]);
     expect(fiber.pollUnsafe()).toBeUndefined();
 
     await Effect.runPromise(Scope.close(scope, Exit.void));
@@ -387,7 +387,7 @@ describe("the frame loop", () => {
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
     // The script was stopped and what the plugin held was let go.
-    expect(log.toSorted()).toEqual([
+    expect(log.toSorted()).toStrictEqual([
       "script stopped",
       "sound closed",
       "sound opened",
@@ -425,7 +425,7 @@ describe("the frame loop", () => {
     turn(display, 1, 3000 / 60);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toEqual(
+    expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toStrictEqual(
       new Jammed({ at: 3 })
     );
     expect(display.pending).toBe(0);
@@ -530,7 +530,7 @@ describe("the display when none is provided", () => {
     // The frame that was asked for and not yet due was taken back, and no
     // other was.
     expect(asked.length).toBeGreaterThan(3);
-    expect(asked.filter((id) => cleared.has(id))).toEqual([asked.at(-1)]);
+    expect(asked.filter((id) => cleared.has(id))).toStrictEqual([asked.at(-1)]);
     await new Promise((resolve) => set(resolve, 60));
     expect(app!.time.tick).toBe(ticks);
   });
@@ -571,7 +571,7 @@ describe("ticking when needed", () => {
     // Until a tick's worth of time has passed nothing is due, as ever.
     expect(advance(0)).toBe(0);
     expect(advance(0.04)).toBe(0);
-    expect(game.calls).toEqual(["frame 0", "frame 0.4"]);
+    expect(game.calls).toStrictEqual(["frame 0", "frame 0.4"]);
     game.calls.length = 0;
 
     // From then on: every frame the devices are read, and the game is
@@ -581,8 +581,8 @@ describe("ticking when needed", () => {
     }
 
     expect(game.ticks).toBe(0);
-    expect(game.calls.slice(0, 2)).toEqual(["frame 0.56", "frame 0.72"]);
-    expect(game.calls.slice(-4)).toEqual([
+    expect(game.calls.slice(0, 2)).toStrictEqual(["frame 0.56", "frame 0.72"]);
+    expect(game.calls.slice(-4)).toStrictEqual([
       "input",
       "frame 1",
       "input",
@@ -616,7 +616,7 @@ describe("ticking when needed", () => {
 
     // However little time has passed: the time spent at rest was kept.
     expect(advance(0.001)).toBe(1);
-    expect(game.calls).toEqual(["input", "tick 0.1", "frame 0"]);
+    expect(game.calls).toStrictEqual(["input", "tick 0.1", "frame 0"]);
     // Then at the game's own rate, as any game: no tick until one is due.
     expect(advance(0.05)).toBe(0);
     expect(advance(0.05)).toBe(1);
@@ -628,7 +628,7 @@ describe("ticking when needed", () => {
     game.calls.length = 0;
     expect(advance(0.1)).toBe(0);
     expect(advance(0.1)).toBe(0);
-    expect(game.calls).toEqual(["input", "frame 1", "input", "frame 1"]);
+    expect(game.calls).toStrictEqual(["input", "frame 1", "input", "frame 1"]);
     expect(game.ticks).toBe(3);
     // A frame long enough for the last tick and for finding the game at
     // rest after it: drawn all the way to that tick, in that same frame.
@@ -636,7 +636,7 @@ describe("ticking when needed", () => {
     advance(0.05);
     game.calls.length = 0;
     expect(advance(0.3)).toBe(2);
-    expect(game.calls).toEqual([
+    expect(game.calls).toStrictEqual([
       "input",
       "tick 0.1",
       "input",

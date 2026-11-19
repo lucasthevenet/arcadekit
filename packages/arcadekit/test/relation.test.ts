@@ -74,7 +74,7 @@ const expectNoDangling = (world: EcsWorld): void => {
     });
 
     for (const [target, sources] of byTarget) {
-      expect(world.sources(target, relation)).toEqual(
+      expect(world.sources(target, relation)).toStrictEqual(
         sources.toSorted((a, b) => (a & 0x3f_ff_ff) - (b & 0x3f_ff_ff))
       );
     }
@@ -88,16 +88,16 @@ describe("a relation", () => {
     const first = childOf(world, parent);
     const second = childOf(world, parent);
     const other = body(world);
-    expect(world.get(first, ChildOf)).toEqual({ target: parent });
-    expect(world.sources(parent, ChildOf)).toEqual([first, second]);
-    expect(world.sources(other, ChildOf)).toEqual([]);
-    expect(world.sources(parent, Targets)).toEqual([]);
+    expect(world.get(first, ChildOf)).toStrictEqual({ target: parent });
+    expect(world.sources(parent, ChildOf)).toStrictEqual([first, second]);
+    expect(world.sources(other, ChildOf)).toStrictEqual([]);
+    expect(world.sources(parent, Targets)).toStrictEqual([]);
     // In a query it is read like any component.
     const seen: [Entity, Entity][] = [];
     world.view(Query.all(Body, ChildOf)).each((_, child, entity) => {
       seen.push([entity, child.target]);
     });
-    expect(seen).toEqual([
+    expect(seen).toStrictEqual([
       [first, parent],
       [second, parent],
     ]);
@@ -115,9 +115,9 @@ describe("a relation", () => {
     });
     // Losing the relation is no longer pointing.
     world.remove(first, ChildOf);
-    expect(world.sources(parent, ChildOf)).toEqual([second]);
+    expect(world.sources(parent, ChildOf)).toStrictEqual([second]);
     world.despawn(second);
-    expect(world.sources(parent, ChildOf)).toEqual([]);
+    expect(world.sources(parent, ChildOf)).toStrictEqual([]);
     expect(world.isAlive(parent)).toBe(true);
   });
 
@@ -143,7 +143,7 @@ describe("a relation", () => {
     expect(world.entityCount).toBe(2);
     // Each went as any despawned entity goes, its relation lost: a child
     // and all that hangs from it before the next child.
-    expect(lost.read()).toEqual([
+    expect(lost.read()).toStrictEqual([
       kids[0],
       grandkids[0],
       grandkids[1],
@@ -171,7 +171,7 @@ describe("a relation", () => {
       expect(world.isAlive(hunter)).toBe(true);
       expect(world.has(hunter, Targets)).toBe(false);
       expect(world.get(hunter, Targets)).toBeUndefined();
-      expect(world.get(hunter, Body)).toEqual({ x: 5 });
+      expect(world.get(hunter, Body)).toStrictEqual({ x: 5 });
     }
 
     expect(world.isAlive(debtor)).toBe(true);
@@ -180,12 +180,12 @@ describe("a relation", () => {
     // the newcomer for the one that died.
     const newcomer = body(world);
     expect(newcomer & 0x3f_ff_ff).toBe(prey & 0x3f_ff_ff);
-    expect(world.sources(newcomer, Targets)).toEqual([]);
+    expect(world.sources(newcomer, Targets)).toStrictEqual([]);
     expect(world.view(Query.all(Targets)).count()).toBe(0);
     // And what points at the newcomer does not point at the one that died.
     world.add(hunters[0]!, Targets.of({ target: newcomer }));
-    expect(world.sources(newcomer, Targets)).toEqual([hunters[0]]);
-    expect(world.sources(prey, Targets)).toEqual([]);
+    expect(world.sources(newcomer, Targets)).toStrictEqual([hunters[0]]);
+    expect(world.sources(prey, Targets)).toStrictEqual([]);
     expectNoDangling(world);
   });
 
@@ -213,14 +213,14 @@ describe("a relation", () => {
       expect(world.entityCount).toBe(0);
       // "rl/ChildOf" before "rl/HeldBy": the child and the one with both,
       // then the one that was only held.
-      expect(lost[0]!.read()).toEqual([child, both]);
-      expect(lost[1]!.read()).toEqual([both, held]);
+      expect(lost[0]!.read()).toStrictEqual([child, both]);
+      expect(lost[1]!.read()).toStrictEqual([both, held]);
 
       return [0, 1, 2, 3].map(() => world.spawn(Body) & 0x3f_ff_ff);
     };
 
-    expect(build(true)).toEqual([1, 3, 2, 0]);
-    expect(build(false)).toEqual([1, 3, 2, 0]);
+    expect(build(true)).toStrictEqual([1, 3, 2, 0]);
+    expect(build(false)).toStrictEqual([1, 3, 2, 0]);
   });
 
   it("is given another target by adding it again, and by nothing else", () => {
@@ -230,19 +230,19 @@ describe("a relation", () => {
     const debtor = world.spawn(Owes.of({ target: a, amount: 1 }));
 
     expect(world.add(child, ChildOf.of({ target: b }))).toBe(true);
-    expect(world.get(child, ChildOf)).toEqual({ target: b });
-    expect(world.sources(a, ChildOf)).toEqual([]);
-    expect(world.sources(b, ChildOf)).toEqual([child]);
+    expect(world.get(child, ChildOf)).toStrictEqual({ target: b });
+    expect(world.sources(a, ChildOf)).toStrictEqual([]);
+    expect(world.sources(b, ChildOf)).toStrictEqual([child]);
     world.add(debtor, Owes.of({ target: b, amount: 2 }));
-    expect(world.get(debtor, Owes)).toEqual({ target: b, amount: 2 });
-    expect(world.sources(a, Owes)).toEqual([]);
+    expect(world.get(debtor, Owes)).toStrictEqual({ target: b, amount: 2 });
+    expect(world.sources(a, Owes)).toStrictEqual([]);
 
     // Its other fields are written like any field.
     world.set(debtor, Owes, { amount: 3 });
     world.view(Query.all(Owes)).each((owes) => {
       owes.amount += 1;
     });
-    expect(world.get(debtor, Owes)).toEqual({ target: b, amount: 4 });
+    expect(world.get(debtor, Owes)).toStrictEqual({ target: b, amount: 4 });
     // Its target is not: the world would lose track of who points at whom.
     expect(() => world.set(debtor, Owes, { target: a })).toThrow(
       /"rl\/Owes" is a relation.*add\(entity, .*\.of\(\{ target \}\)\)/u
@@ -252,7 +252,7 @@ describe("a relation", () => {
         owes.target = a;
       })
     ).toThrow(/is a relation/u);
-    expect(world.sources(b, Owes)).toEqual([debtor]);
+    expect(world.sources(b, Owes)).toStrictEqual([debtor]);
 
     // The old target's despawn is nothing to it now; the new one's is.
     world.despawn(a);
@@ -290,11 +290,11 @@ describe("a relation", () => {
     world.add(hunter, Targets.of({ target: parent }));
     expect(world.add(hunter, Targets.of({ target: dead }))).toBe(false);
     expect(world.has(hunter, Targets)).toBe(false);
-    expect(world.sources(parent, Targets)).toEqual([]);
+    expect(world.sources(parent, Targets)).toStrictEqual([]);
     const child = childOf(world, parent);
     expect(world.add(child, ChildOf.of({ target: dead }))).toBe(false);
     expect(world.isAlive(child)).toBe(false);
-    expect(world.sources(parent, ChildOf)).toEqual([]);
+    expect(world.sources(parent, ChildOf)).toStrictEqual([]);
     expectNoDangling(world);
   });
 
@@ -308,11 +308,11 @@ describe("a relation", () => {
 
     const other = body(world);
     world.add(cards[1]!, HeldBy.of({ target: other }));
-    expect(world.sources(hand, HeldBy)).toEqual([cards[0], cards[2]]);
-    expect(world.sources(other, HeldBy)).toEqual([cards[1]]);
+    expect(world.sources(hand, HeldBy)).toStrictEqual([cards[0], cards[2]]);
+    expect(world.sources(other, HeldBy)).toStrictEqual([cards[1]]);
     world.remove(cards[2]!, HeldBy);
     world.despawn(hand);
-    expect(cards.map((card) => world.isAlive(card))).toEqual([
+    expect(cards.map((card) => world.isAlive(card))).toStrictEqual([
       false,
       true,
       true,
@@ -326,7 +326,7 @@ describe("a relation", () => {
     const world = new EcsWorld();
     const self = body(world);
     world.add(self, ChildOf.of({ target: self }));
-    expect(world.sources(self, ChildOf)).toEqual([self]);
+    expect(world.sources(self, ChildOf)).toStrictEqual([self]);
     world.despawn(self);
     expect(world.entityCount).toBe(0);
 
@@ -358,13 +358,13 @@ describe("a relation", () => {
     const child = commands.spawn(Body, ChildOf.of({ target: queuedParent }));
     const sibling = commands.spawn(Body, ChildOf.of({ target: parent }));
     commands.apply();
-    expect(world.sources(queuedParent, ChildOf)).toEqual([child]);
+    expect(world.sources(queuedParent, ChildOf)).toStrictEqual([child]);
     commands.add(sibling, ChildOf.of({ target: queuedParent }));
     commands.despawn(queuedParent);
     // The despawn has not happened yet: nothing has gone.
     expect(world.isAlive(child)).toBe(true);
     commands.apply();
-    expect([child, sibling, queuedParent].map((e) => world.isAlive(e))).toEqual(
+    expect([child, sibling, queuedParent].map((e) => world.isAlive(e))).toStrictEqual(
       [false, false, false]
     );
     expect(world.isAlive(parent)).toBe(true);
@@ -393,7 +393,7 @@ describe("a relation", () => {
     expect(() => world.despawn(a)).toThrow(/inside a transaction/u);
     world.rollback();
     expect(world.hash()).toBe(before);
-    expect(world.sources(a, ChildOf)).toEqual([child]);
+    expect(world.sources(a, ChildOf)).toStrictEqual([child]);
   });
 });
 
@@ -423,7 +423,7 @@ describe("relations and a snapshot", () => {
     expect(copy.hash()).toBe(world.hash());
     expectNoDangling(copy);
     const parents = world.view(Query.all(Body)).entities().slice(0, 2);
-    expect(copy.sources(parents[0]!, ChildOf)).toEqual(
+    expect(copy.sources(parents[0]!, ChildOf)).toStrictEqual(
       world.sources(parents[0]!, ChildOf)
     );
 
@@ -435,7 +435,7 @@ describe("relations and a snapshot", () => {
 
     expect(copy.hash()).toBe(world.hash());
     expect(copy.entityCount).toBe(world.entityCount);
-    expect(copy.view(Query.all(Body)).entities()).toEqual(
+    expect(copy.view(Query.all(Body)).entities()).toStrictEqual(
       world.view(Query.all(Body)).entities()
     );
     expectNoDangling(copy);
@@ -457,9 +457,9 @@ describe("relations and a snapshot", () => {
       return xs.toSorted((a, b) => a - b);
     };
 
-    expect(survivors(other)).toEqual(survivors(one));
+    expect(survivors(other)).toStrictEqual(survivors(one));
     // And the slots they left are reused in the same order.
-    expect([body(other), body(other), body(other)]).toEqual([
+    expect([body(other), body(other), body(other)]).toStrictEqual([
       body(one),
       body(one),
       body(one),
@@ -604,7 +604,7 @@ describe("relations against a simple model", () => {
             world.view(Query.all(relation)).each((row, entity) => {
               held.set(entity, row.target);
             });
-            expect(held).toEqual(model[r]);
+            expect(held).toStrictEqual(model[r]);
           }
 
           expectNoDangling(world);
@@ -677,14 +677,14 @@ describe("relations in an app", () => {
         expect(app.world.sources(trees[0]!, ChildOf)).toHaveLength(3);
         const branch = app.world.sources(trees[0]!, ChildOf)[0]!;
         // A handler changes who points at whom through Commands.
-        expect(app.dispatch(Graft, { branch, onto: trees[1]! })).toEqual(
+        expect(app.dispatch(Graft, { branch, onto: trees[1]! })).toStrictEqual(
           Exit.succeed(3)
         );
         expect(app.world.sources(trees[1]!, ChildOf)).toHaveLength(4);
         app.dispatch(Fell, { tree: trees[0]! });
         expect(app.world.isAlive(trees[0]!)).toBe(false);
         expect(app.world.isAlive(branch)).toBe(true);
-        expect(app.world.sources(trees[0]!, ChildOf)).toEqual([]);
+        expect(app.world.sources(trees[0]!, ChildOf)).toStrictEqual([]);
         app.enqueue(Fell, { tree: trees[1]! });
         app.tick(1);
         expect(app.world.isAlive(branch)).toBe(false);
@@ -729,7 +729,7 @@ describe("relations in an app", () => {
         }
 
         expect(loaded.world.hash()).toBe(app.world.hash());
-        expect(loaded.world.sources(trees[0]!, ChildOf)).toEqual(
+        expect(loaded.world.sources(trees[0]!, ChildOf)).toStrictEqual(
           app.world.sources(trees[0]!, ChildOf)
         );
         // Two trees are left, each with its first branch and three more.

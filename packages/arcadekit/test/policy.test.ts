@@ -51,9 +51,9 @@ describe("under a policy that forbids making code from text", () => {
     const here = play();
     // The game is one that does something, and refuses what it should.
     expect(here.hash).toBe(here.loaded);
-    expect(here.outcomes).toEqual(["paid", "refused"]);
+    expect(here.outcomes).toStrictEqual(["paid", "refused"]);
     expect(here.noticed).toBeGreaterThan(0);
-    expect(here.refusals).toEqual([
+    expect(here.refusals).toStrictEqual([
       expect.stringContaining(
         'An assignment to "policy/Position.x" was made while the world is frozen'
       ),
@@ -69,7 +69,7 @@ describe("under a policy that forbids making code from text", () => {
     // The policy was in force there, and is not here.
     expect(there.generates).toBe(false);
     expect(generates()).toBe(true);
-    expect(there.game).toEqual(JSON.parse(JSON.stringify(here)));
+    expect(there.game).toStrictEqual(JSON.parse(JSON.stringify(here)));
   }, 30_000);
 
   it("is a policy the test would notice the lack of", () => {

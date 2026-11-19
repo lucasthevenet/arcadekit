@@ -45,13 +45,13 @@ describe("entities and components", () => {
 
     expect(world.isAlive(e)).toBe(true);
     expect(world.entityCount).toBe(1);
-    expect(world.get(e, Position)).toEqual({ x: 1, y: 2 });
+    expect(world.get(e, Position)).toStrictEqual({ x: 1, y: 2 });
     expect(world.has(e, Enemy)).toBe(true);
     expect(world.has(e, Velocity)).toBe(false);
     expect(world.get(e, Velocity)).toBeUndefined();
 
     world.set(e, Position, { y: 5 });
-    expect(world.get(e, Position)).toEqual({ x: 1, y: 5 });
+    expect(world.get(e, Position)).toStrictEqual({ x: 1, y: 5 });
 
     expect(world.despawn(e)).toBe(true);
     expect(world.isAlive(e)).toBe(false);
@@ -68,7 +68,7 @@ describe("entities and components", () => {
     expect(b).not.toBe(a);
     expect(world.isAlive(a)).toBe(false);
     expect(world.get(a, Health)).toBeUndefined();
-    expect(world.get(b, Health)).toEqual({ hp: 2 });
+    expect(world.get(b, Health)).toStrictEqual({ hp: 2 });
   });
 
   it("zeroes a bare component and never leaks data from a removed row", () => {
@@ -76,7 +76,7 @@ describe("entities and components", () => {
     const a = world.spawn(Position.of({ x: 9, y: 9 }));
     world.despawn(a);
     const b = world.spawn(Position);
-    expect(world.get(b, Position)).toEqual({ x: 0, y: 0 });
+    expect(world.get(b, Position)).toStrictEqual({ x: 0, y: 0 });
   });
 
   it("takes a number left out of a value for 0, as in a component added with none, and never for NaN", () => {
@@ -118,7 +118,7 @@ describe("entities and components", () => {
       Faint.of({} as never)
     );
 
-    expect(world.get(spawned, Mixed)).toEqual({
+    expect(world.get(spawned, Mixed)).toStrictEqual({
       x: 3,
       wide: 0,
       hp: 0,
@@ -127,7 +127,7 @@ describe("entities and components", () => {
       name: undefined,
       cache: undefined,
     });
-    expect(world.get(spawned, Faint)).toEqual({ seconds: 0, turns: 0 });
+    expect(world.get(spawned, Faint)).toStrictEqual({ seconds: 0, turns: 0 });
 
     // Named and not given is the same as not named.
     const named = world.spawn(
@@ -143,14 +143,14 @@ describe("entities and components", () => {
     world.add(spawned, Mixed.of({ hp: 5 } as never));
     expect(world.get(spawned, Mixed)).toMatchObject({ x: 0, wide: 0, hp: 5 });
     world.add(spawned, Faint.of({ turns: 2 } as never));
-    expect(world.get(spawned, Faint)).toEqual({ seconds: 0, turns: 2 });
+    expect(world.get(spawned, Faint)).toStrictEqual({ seconds: 0, turns: 2 });
     // Through a command buffer, which is how a system does either.
     const commands = new CommandBuffer(world);
     const later = commands.spawn(Mixed.of({ hp: 7 } as never));
     commands.add(added, Faint.of({} as never));
     commands.apply();
     expect(world.get(later, Mixed)).toMatchObject({ x: 0, wide: 0, hp: 7 });
-    expect(world.get(added, Faint)).toEqual({ seconds: 0, turns: 0 });
+    expect(world.get(added, Faint)).toStrictEqual({ seconds: 0, turns: 0 });
     // A number that is given is written as it is, whatever it is.
     const odd = world.spawn(Mixed.of({ x: Number.NaN, wide: -0 } as never));
     expect(world.get(odd, Mixed)!.x).toBeNaN();
@@ -178,17 +178,17 @@ describe("entities and components", () => {
     );
 
     world.set(one, Mixed, { x: undefined, hp: 6 } as never);
-    expect(world.get(one, Mixed)).toEqual({ x: 1.5, hp: 6, name: "one" });
+    expect(world.get(one, Mixed)).toStrictEqual({ x: 1.5, hp: 6, name: "one" });
     world.set(one, Mixed, { hp: undefined, x: 8 } as never);
-    expect(world.get(one, Mixed)).toEqual({ x: 8, hp: 6, name: "one" });
+    expect(world.get(one, Mixed)).toStrictEqual({ x: 8, hp: 6, name: "one" });
     world.set(one, Faint, { seconds: undefined } as never);
-    expect(world.get(one, Faint)).toEqual({ seconds: 2.5 });
+    expect(world.get(one, Faint)).toStrictEqual({ seconds: 2.5 });
     // A field that holds anything holds nothing when it is told to.
     world.set(one, Mixed, { name: undefined });
-    expect(world.get(one, Mixed)).toEqual({ x: 8, hp: 6, name: undefined });
+    expect(world.get(one, Mixed)).toStrictEqual({ x: 8, hp: 6, name: undefined });
     // And a number that is given is written, zero among them.
     world.set(one, Mixed, { x: 0, hp: 0 });
-    expect(world.get(one, Mixed)).toEqual({ x: 0, hp: 0, name: undefined });
+    expect(world.get(one, Mixed)).toStrictEqual({ x: 0, hp: 0, name: undefined });
   });
 
   it("stores arbitrary values and entity references", () => {
@@ -200,10 +200,10 @@ describe("entities and components", () => {
       Target.of({ entity: a })
     );
 
-    expect(world.get(b, Name)).toEqual({ value: "archer" });
+    expect(world.get(b, Name)).toStrictEqual({ value: "archer" });
     const target = world.get(b, Target)!.entity;
     expect(target).toBe(a);
-    expect(world.get(target, Name)).toEqual({ value: "goblin" });
+    expect(world.get(target, Name)).toStrictEqual({ value: "goblin" });
   });
 
   it("keeps data when adding and removing components moves an entity between tables", () => {
@@ -214,18 +214,18 @@ describe("entities and components", () => {
 
     // Moving `a` out swaps `c` into its row; both must still read correctly.
     world.add(a, Velocity.of({ x: 7, y: 8 }));
-    expect(world.get(a, Position)).toEqual({ x: 1, y: 1 });
-    expect(world.get(a, Velocity)).toEqual({ x: 7, y: 8 });
-    expect(world.get(b, Position)).toEqual({ x: 2, y: 2 });
-    expect(world.get(c, Position)).toEqual({ x: 3, y: 3 });
+    expect(world.get(a, Position)).toStrictEqual({ x: 1, y: 1 });
+    expect(world.get(a, Velocity)).toStrictEqual({ x: 7, y: 8 });
+    expect(world.get(b, Position)).toStrictEqual({ x: 2, y: 2 });
+    expect(world.get(c, Position)).toStrictEqual({ x: 3, y: 3 });
 
     world.remove(a, Position);
     expect(world.has(a, Position)).toBe(false);
-    expect(world.get(a, Velocity)).toEqual({ x: 7, y: 8 });
+    expect(world.get(a, Velocity)).toStrictEqual({ x: 7, y: 8 });
 
     // Adding a component the entity already has overwrites in place.
     world.add(a, Velocity.of({ x: 0, y: 1 }));
-    expect(world.get(a, Velocity)).toEqual({ x: 0, y: 1 });
+    expect(world.get(a, Velocity)).toStrictEqual({ x: 0, y: 1 });
     expect(world.remove(a, Health)).toBe(false);
   });
 
@@ -256,12 +256,12 @@ describe("entities and components", () => {
     expect(commands.size).toBe(0);
     // A refused component leaves the world as it was.
     expect(world.entityCount).toBe(1);
-    expect(world.get(entity, mine)).toEqual({ x: 1 });
+    expect(world.get(entity, mine)).toStrictEqual({ x: 1 });
     expect(world.has(entity, theirs)).toBe(false);
 
     const other = new World();
     const there = other.spawn(theirs.of({ x: 2 }));
-    expect(other.get(there, theirs)).toEqual({ x: 2 });
+    expect(other.get(there, theirs)).toStrictEqual({ x: 2 });
     expect(() => other.spawn(mine)).toThrow(/both named/u);
   });
 
@@ -306,10 +306,10 @@ describe("queries", () => {
       pos.y += vel.y;
       seen.push(entity);
     });
-    expect(seen.sort()).toEqual([a, b].sort());
-    expect(world.get(a, Position)).toEqual({ x: 1, y: 2 });
-    expect(world.get(b, Position)).toEqual({ x: 9, y: 10 });
-    expect(world.get(still, Position)).toEqual({ x: 5, y: 5 });
+    expect(seen.sort()).toStrictEqual([a, b].sort());
+    expect(world.get(a, Position)).toStrictEqual({ x: 1, y: 2 });
+    expect(world.get(b, Position)).toStrictEqual({ x: 9, y: 10 });
+    expect(world.get(still, Position)).toStrictEqual({ x: 5, y: 5 });
     expect(moving.count()).toBe(2);
   });
 
@@ -339,7 +339,7 @@ describe("queries", () => {
 
       chunks.push([start, end]);
     });
-    expect(chunks).toEqual([
+    expect(chunks).toStrictEqual([
       [0, 100],
       [0, 50],
     ]);
@@ -372,14 +372,14 @@ describe("queries", () => {
         .view(query([Position], [Enemy]))
         .entities()
         .sort()
-    ).toEqual([enemy, stunned].sort());
-    expect(world.view(query([Position], [], [Enemy])).entities()).toEqual([
+    ).toStrictEqual([enemy, stunned].sort());
+    expect(world.view(query([Position], [], [Enemy])).entities()).toStrictEqual([
       plain,
     ]);
     expect(
       world.view(query([Position], [Enemy], [Stunned])).entities()
-    ).toEqual([enemy]);
-    expect(world.view(query([Position], [Stunned])).entities()).toEqual([
+    ).toStrictEqual([enemy]);
+    expect(world.view(query([Position], [Stunned])).entities()).toStrictEqual([
       stunned,
     ]);
   });
@@ -392,9 +392,9 @@ describe("queries", () => {
     world.add(e, Burning.of({ seconds: 3 }));
     expect(world.tables).toHaveLength(tables);
     expect(world.has(e, Stunned)).toBe(true);
-    expect(world.get(e, Burning)).toEqual({ seconds: 3 });
+    expect(world.get(e, Burning)).toStrictEqual({ seconds: 3 });
     world.set(e, Burning, { seconds: 1 });
-    expect(world.get(e, Burning)).toEqual({ seconds: 1 });
+    expect(world.get(e, Burning)).toStrictEqual({ seconds: 1 });
     world.remove(e, Stunned);
     expect(world.has(e, Stunned)).toBe(false);
     expect(world.tables).toHaveLength(tables);
@@ -422,12 +422,12 @@ describe("queries", () => {
         pos.x[i]! += 100;
       }
     });
-    expect(chunks).toEqual([
+    expect(chunks).toStrictEqual([
       [0, 3],
       [4, 7],
       [8, 10],
     ]);
-    expect(all.map((e) => world.get(e, Position)!.x)).toEqual([
+    expect(all.map((e) => world.get(e, Position)!.x)).toStrictEqual([
       100, 101, 102, 3, 104, 105, 106, 7, 108, 109,
     ]);
 
@@ -436,7 +436,7 @@ describe("queries", () => {
     world.add(all[9]!, Stunned);
     chunks.length = 0;
     awake.eachChunk((start, end) => void chunks.push([start, end]));
-    expect(chunks).toEqual([
+    expect(chunks).toStrictEqual([
       [1, 3],
       [4, 7],
       [8, 9],
@@ -448,7 +448,7 @@ describe("queries", () => {
 
     chunks.length = 0;
     awake.eachChunk((start, end) => void chunks.push([start, end]));
-    expect(chunks).toEqual([]);
+    expect(chunks).toStrictEqual([]);
   });
 
   it("reads and writes sparse components as query data through accessors", () => {
@@ -473,9 +473,9 @@ describe("queries", () => {
       seen.push(`${entity}:${pos.x}:${burn.seconds}`);
       burn.seconds -= pos.x;
     });
-    expect(seen.sort()).toEqual([`${a}:1:5`, `${c}:3:9`].sort());
-    expect(world.get(a, Burning)).toEqual({ seconds: 4 });
-    expect(world.get(c, Burning)).toEqual({ seconds: 6 });
+    expect(seen.sort()).toStrictEqual([`${a}:1:5`, `${c}:3:9`].sort());
+    expect(world.get(a, Burning)).toStrictEqual({ seconds: 4 });
+    expect(world.get(c, Burning)).toStrictEqual({ seconds: 6 });
     expect(world.has(b, Burning)).toBe(false);
     expect(burning.count()).toBe(2);
   });
@@ -506,7 +506,7 @@ describe("queries", () => {
         }
       });
       // Neighbouring rows are merged into one chunk whichever strategy found them.
-      expect(chunks).toEqual([
+      expect(chunks).toStrictEqual([
         [2, 5],
         [11, 12],
       ]);
@@ -515,7 +515,7 @@ describe("queries", () => {
 
     expect(
       [2, 3, 4, 11].map((i) => world.get(ents[i]!, Burning)!.seconds)
-    ).toEqual([5, 7, 9, 23]);
+    ).toStrictEqual([5, 7, 9, 23]);
   });
 
   it("visits entities in the same order whichever strategy finds them", () => {
@@ -546,14 +546,14 @@ describe("queries", () => {
     };
 
     const tableOrder = [500, 900, 3, 17];
-    expect(order("mask")).toEqual(tableOrder);
-    expect(order("sorted")).toEqual(tableOrder);
-    expect(view.entities().map((e) => world.get(e, Position)!.x)).toEqual(
+    expect(order("mask")).toStrictEqual(tableOrder);
+    expect(order("sorted")).toStrictEqual(tableOrder);
+    expect(view.entities().map((e) => world.get(e, Position)!.x)).toStrictEqual(
       tableOrder
     );
 
     // Rare component: sort its few members. Common component: scan a mask.
-    expect(order("auto")).toEqual(tableOrder);
+    expect(order("auto")).toStrictEqual(tableOrder);
     expect(view._lastPath).toBe("sorted");
 
     for (let i = 0; i < 1000; i += 1) {
@@ -562,7 +562,7 @@ describe("queries", () => {
 
     const common = order("auto");
     expect(view._lastPath).toBe("mask");
-    expect(order("sorted")).toEqual(common);
+    expect(order("sorted")).toStrictEqual(common);
     // The four early members are among the first thousand, so 1,000 in total.
     expect(common).toHaveLength(1000);
   });
@@ -584,13 +584,13 @@ describe("queries", () => {
       return out;
     };
 
-    expect(chunks()).toEqual([[0, 3000]]);
+    expect(chunks()).toStrictEqual([[0, 3000]]);
 
     for (const i of [0, 1000, 1001, 2999]) {
       world.add(ents[i]!, Stunned);
     }
 
-    expect(chunks()).toEqual([
+    expect(chunks()).toStrictEqual([
       [1, 1000],
       [1002, 2999],
     ]);
@@ -628,7 +628,7 @@ describe("queries", () => {
 
         seen.push(xs);
       });
-      expect(seen).toEqual([[2], [1003]]);
+      expect(seen).toStrictEqual([[2], [1003]]);
     }
   });
 
@@ -667,7 +667,7 @@ describe("queries", () => {
         expected.push(`after:${a}`);
       }
 
-      expect(pairs).toEqual(expected);
+      expect(pairs).toStrictEqual(expected);
     }
   });
 
@@ -697,7 +697,7 @@ describe("queries", () => {
 
     const before = snapshot();
     expect(before[0]).toHaveLength(47);
-    expect(before[1]).toEqual([5, 6, 30]);
+    expect(before[1]).toStrictEqual([5, 6, 30]);
 
     for (const view of [awake, stunned]) {
       expect(() =>
@@ -709,14 +709,14 @@ describe("queries", () => {
       ).toThrow("boom");
     }
 
-    expect(snapshot()).toEqual(before);
+    expect(snapshot()).toStrictEqual(before);
 
     // The world moved on: the masks must reflect it, not the previous pass.
     world.remove(ents[5]!, Stunned);
     world.add(ents[40]!, Stunned);
     world.despawn(ents[0]!);
     const after = snapshot();
-    expect([...after[1]!].sort((a, b) => a - b)).toEqual([6, 30, 40]);
+    expect([...after[1]!].sort((a, b) => a - b)).toStrictEqual([6, 30, 40]);
     expect(after[0]).toHaveLength(46);
     expect(after[0]).not.toContain(40);
     expect(after[0]).toContain(5);
@@ -790,14 +790,14 @@ describe("what each hands its callback", () => {
         const expected = valueOf(health.hp);
 
         for (const name of names) {
-          expect(every[name], name).toEqual(expected[name]);
+          expect(every[name], name).toStrictEqual(expected[name]);
         }
 
         // What it holds is its fields, and no more.
-        expect(Object.keys(every)).toEqual([]);
+        expect(Object.keys(every)).toStrictEqual([]);
         expect(names.every((name) => name in every)).toBe(true);
       });
-      expect(seen.toSorted()).toEqual(having.toSorted());
+      expect(seen.toSorted()).toStrictEqual(having.toSorted());
 
       // Written through the accessors: what the world then holds.
       view.each((health, every) => {
@@ -810,7 +810,7 @@ describe("what each hands its callback", () => {
 
       for (const entity of having) {
         const n = world.get(entity, Health)!.hp;
-        expect(world.get(entity, def)).toEqual(valueOf(n + 100));
+        expect(world.get(entity, def)).toStrictEqual(valueOf(n + 100));
       }
 
       // One field written leaves the others, and the rows beside it.
@@ -823,7 +823,7 @@ describe("what each hands its callback", () => {
 
       for (const entity of having) {
         const n = world.get(entity, Health)!.hp;
-        expect(world.get(entity, def)).toEqual(
+        expect(world.get(entity, def)).toStrictEqual(
           entity === target ? { ...valueOf(n + 100), u16: 1 } : valueOf(n + 100)
         );
       }
@@ -861,12 +861,12 @@ describe("what each hands its callback", () => {
       ]);
 
       const plain = query([Health, def]);
-      expect(read(plain)).toEqual(expected);
-      expect(read({ ...query([Health, def]), readDefs: [def] })).toEqual(
+      expect(read(plain)).toStrictEqual(expected);
+      expect(read({ ...query([Health, def]), readDefs: [def] })).toStrictEqual(
         expected
       );
       world.freeze();
-      expect(read(plain)).toEqual(expected);
+      expect(read(plain)).toStrictEqual(expected);
       world.thaw();
 
       // A query that watches the component: from now on its writes are noted.
@@ -876,7 +876,7 @@ describe("what each hands its callback", () => {
       });
 
       watching.entities();
-      expect(read(plain)).toEqual(expected);
+      expect(read(plain)).toStrictEqual(expected);
 
       // And every field's assignment is one, noted for the entity it was.
       for (const name of names) {
@@ -889,10 +889,10 @@ describe("what each hands its callback", () => {
             written.push(entity);
           }
         });
-        expect(watching.entities(), name).toEqual(written);
+        expect(watching.entities(), name).toStrictEqual(written);
       }
 
-      expect(read(plain)).toEqual(
+      expect(read(plain)).toStrictEqual(
         Array.from({ length: 12 }, (_, n) => [
           n,
           ...names.map((name) => valueOf(n % 5 === 0 ? n + 50 : n)[name]),
@@ -938,7 +938,7 @@ describe("what each hands its callback", () => {
 
           health.hp += 1000;
         });
-        expect(seen).toEqual(Array.from({ length: count }, (_, n) => n));
+        expect(seen).toStrictEqual(Array.from({ length: count }, (_, n) => n));
         // The write went where the world reads from.
         each.each((health) => {
           (health as { hp: number }).hp -= 1000;
@@ -946,8 +946,8 @@ describe("what each hands its callback", () => {
       }
 
       for (let n = 0; n < count; n += 1) {
-        expect(world.get(entities[n]!, Health)).toEqual({ hp: n });
-        expect(world.get(entities[n]!, Burning)).toEqual({ seconds: n / 2 });
+        expect(world.get(entities[n]!, Health)).toStrictEqual({ hp: n });
+        expect(world.get(entities[n]!, Burning)).toStrictEqual({ seconds: n / 2 });
       }
     }
 
@@ -970,12 +970,12 @@ describe("what each hands its callback", () => {
         seen.push(mark.v);
         mark.v = -mark.v;
       });
-      expect(seen.toSorted((a, b) => a - b)).toEqual(
+      expect(seen.toSorted((a, b) => a - b)).toStrictEqual(
         Array.from({ length: count }, (_, n) => n)
       );
 
       for (let n = 0; n < count; n += 1) {
-        expect(world.get(entities[n]!, Mark)).toEqual({ v: -n || 0 });
+        expect(world.get(entities[n]!, Mark)).toStrictEqual({ v: -n || 0 });
       }
     }
   });
@@ -1059,7 +1059,7 @@ describe("what each hands its callback", () => {
       for (const [n, ...values] of rows) {
         // A term that is there twice was handed out twice, and added to
         // twice.
-        expect(values).toEqual(
+        expect(values).toStrictEqual(
           terms.map(
             (def) =>
               (world.get(entities[n!]!, def) as { readonly v: number }).v -
@@ -1114,7 +1114,7 @@ describe("structural changes during iteration", () => {
     expect(commands.apply()).toBe(7);
     expect(commands.size).toBe(0);
     expect(view.count()).toBe(6);
-    expect(world.get(spawned!, Health)).toEqual({ hp: 100 });
+    expect(world.get(spawned!, Health)).toStrictEqual({ hp: 100 });
     expect(world.has(spawned!, Enemy)).toBe(true);
   });
 
@@ -1130,7 +1130,7 @@ describe("structural changes during iteration", () => {
     commands.add(doomed, Enemy);
     commands.apply();
     expect(world.has(e, Position)).toBe(false);
-    expect(world.get(e, Velocity)).toEqual({ x: 2, y: 2 });
+    expect(world.get(e, Velocity)).toStrictEqual({ x: 2, y: 2 });
     expect(world.has(e, Stunned)).toBe(true);
     expect(world.isAlive(doomed)).toBe(false);
     expect(world.entityCount).toBe(1);
@@ -1216,7 +1216,7 @@ describe("randomized comparison against a simple model", () => {
 
         for (const def of defs) {
           expect(world.has(entity, def)).toBe(values.has(def.id));
-          expect(world.get(entity, def as any)).toEqual(values.get(def.id));
+          expect(world.get(entity, def as any)).toStrictEqual(values.get(def.id));
         }
       }
 
@@ -1240,13 +1240,13 @@ describe("randomized comparison against a simple model", () => {
             .sort();
 
           const view = world.view(query([required], [], [excluded]));
-          expect(view.entities().sort()).toEqual(expected);
+          expect(view.entities().sort()).toStrictEqual(expected);
           expect(view.count()).toBe(expected.length);
           const visited: Entity[] = [];
           view.each((_, entity) => {
             visited.push(entity);
           });
-          expect(visited.sort()).toEqual(expected);
+          expect(visited.sort()).toStrictEqual(expected);
         }
       }
 
@@ -1271,7 +1271,7 @@ describe("randomized comparison against a simple model", () => {
             expect(pos.x).toBe(model.get(entity)!.get(Position.id).x);
             visited.push(entity);
           });
-          expect(visited.sort()).toEqual(expected);
+          expect(visited.sort()).toStrictEqual(expected);
           const chunked: Entity[] = [];
           view.eachChunk((start, end, pos, entities) => {
             expect(end).toBeGreaterThan(start);
@@ -1282,7 +1282,7 @@ describe("randomized comparison against a simple model", () => {
               chunked.push(entity);
             }
           });
-          expect(chunked.sort()).toEqual(expected);
+          expect(chunked.sort()).toStrictEqual(expected);
         }
 
         const expected = [...model]
@@ -1303,7 +1303,7 @@ describe("randomized comparison against a simple model", () => {
           expect(burn.seconds).toBe(model.get(entity)!.get(Burning.id).seconds);
           visited.push(entity);
         });
-        expect(visited.sort()).toEqual(expected);
+        expect(visited.sort()).toStrictEqual(expected);
         const chunked: Entity[] = [];
         view.eachChunk((start, end, health, burning, entities) => {
           for (let i = start; i < end; i += 1) {
@@ -1315,7 +1315,7 @@ describe("randomized comparison against a simple model", () => {
             chunked.push(entity);
           }
         });
-        expect(chunked.sort()).toEqual(expected);
+        expect(chunked.sort()).toStrictEqual(expected);
       }
 
       // A sparse `without` must split raw chunks without losing or adding rows.
@@ -1334,7 +1334,7 @@ describe("randomized comparison against a simple model", () => {
             chunked.push(entities[i] as Entity);
           }
         });
-      expect(chunked.sort()).toEqual(awake);
+      expect(chunked.sort()).toStrictEqual(awake);
     });
   }
 });

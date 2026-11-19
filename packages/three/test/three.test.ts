@@ -350,7 +350,7 @@ describe("Three.instances", () => {
     // rock that is only somewhere is drawn there, upright.
     expect(drawn(mesh)).toContain("1 0 0 0 0 1 0 0 0 0 1 0 1 2 3 1");
     // It is the one mesh of the scene, and it is not culled.
-    expect(renderer.scene?.children).toEqual([mesh]);
+    expect(renderer.scene?.children).toStrictEqual([mesh]);
     expect(mesh.frustumCulled).toBe(false);
   });
 
@@ -365,7 +365,7 @@ describe("Three.instances", () => {
       Scale.of({ x: 2, y: 2, z: 2 })
     );
     app.frame(0);
-    expect(drawn(meshOf(renderer.scene, "th/Rocks"))).toEqual([
+    expect(drawn(meshOf(renderer.scene, "th/Rocks"))).toStrictEqual([
       "1 0 0 0 0 1 0 0 0 0 1 0 1 2 3 1",
       "2 0 0 0 0 2 0 0 0 0 2 0 4 5 6 1",
     ]);
@@ -549,7 +549,7 @@ describe("Three.instances", () => {
     app.frame(0);
     const mesh = meshOf(renderer.scene, "th/Heavies");
     expect(mesh.count).toBe(4);
-    expect(drawn(mesh)).toEqual(expected(app, shown));
+    expect(drawn(mesh)).toStrictEqual(expected(app, shown));
 
     // Shown again, and hidden.
     for (const one of hidden) {
@@ -562,7 +562,7 @@ describe("Three.instances", () => {
 
     app.frame(0);
     expect(mesh.count).toBe(4);
-    expect(drawn(mesh)).toEqual(expected(app, hidden));
+    expect(drawn(mesh)).toStrictEqual(expected(app, hidden));
   });
 
   it("makes its mesh once, names it, and hands it over once to be prepared", () => {
@@ -592,7 +592,7 @@ describe("Three.instances", () => {
     app.tick(1 / 60);
     app.frame(0);
     const mesh = meshOf(renderer.scene, "th/Shadows");
-    expect(prepared).toEqual([mesh]);
+    expect(prepared).toStrictEqual([mesh]);
     expect(mesh.castShadow).toBe(true);
     // What `prepare` says stands: it is asked last.
     expect(mesh.frustumCulled).toBe(true);
@@ -642,7 +642,7 @@ describe("Three.instances", () => {
     expect(mesh.instanceMatrix).not.toBe(first);
     expect(mesh.instanceMatrix.array).toHaveLength(8 * 16);
     expect(dropped).toBe(1);
-    expect(drawn(mesh)).toEqual(expected(app, rocks));
+    expect(drawn(mesh)).toStrictEqual(expected(app, rocks));
     // Far over, in one frame and across two kinds of table.
     more(40);
     rocks.push(
@@ -656,7 +656,7 @@ describe("Three.instances", () => {
     expect(mesh.instanceMatrix.array).toHaveLength(64 * 16);
     expect(dropped).toBe(2);
     expect(mesh.count).toBe(46);
-    expect(drawn(mesh)).toEqual(expected(app, rocks));
+    expect(drawn(mesh)).toStrictEqual(expected(app, rocks));
     // The room is kept when the entities go.
     const full = mesh.instanceMatrix;
 
@@ -667,7 +667,7 @@ describe("Three.instances", () => {
     app.frame(0);
     expect(mesh.instanceMatrix).toBe(full);
     expect(mesh.count).toBe(2);
-    expect(drawn(mesh)).toEqual(expected(app, rocks));
+    expect(drawn(mesh)).toStrictEqual(expected(app, rocks));
   });
 
   it("tells the renderer to send what is drawn and no more, each frame something is", () => {
@@ -680,18 +680,18 @@ describe("Three.instances", () => {
 
     app.frame(0);
     const attribute = meshOf(renderer.scene, "th/Rocks").instanceMatrix;
-    expect(attribute.updateRanges).toEqual([{ start: 0, count: 48 }]);
+    expect(attribute.updateRanges).toStrictEqual([{ start: 0, count: 48 }]);
     const sent = attribute.version;
     expect(sent).toBeGreaterThan(0);
     // The renderer empties the list once it has sent it.
     attribute.clearUpdateRanges();
     app.world.despawn(rocks[0]!);
     app.frame(0);
-    expect(attribute.updateRanges).toEqual([{ start: 0, count: 32 }]);
+    expect(attribute.updateRanges).toStrictEqual([{ start: 0, count: 32 }]);
     expect(attribute.version).toBe(sent + 1);
     // A renderer that sent nothing in between is not told twice.
     app.frame(0);
-    expect(attribute.updateRanges).toEqual([{ start: 0, count: 32 }]);
+    expect(attribute.updateRanges).toStrictEqual([{ start: 0, count: 32 }]);
     // Nothing to draw: nothing to send.
     app.world.despawn(rocks[1]!);
     app.world.despawn(rocks[2]!);
@@ -699,7 +699,7 @@ describe("Three.instances", () => {
     const before = attribute.version;
     app.frame(0);
     expect(meshOf(renderer.scene, "th/Rocks").count).toBe(0);
-    expect(attribute.updateRanges).toEqual([]);
+    expect(attribute.updateRanges).toStrictEqual([]);
     expect(attribute.version).toBe(before);
   });
 
@@ -842,7 +842,7 @@ describe("Three.instances", () => {
       expect(attribute.updateRanges[0]).toBe(range);
       // They did move, and they were drawn where they are.
       expect(renderer.frames).toBe(301);
-      expect(renderer.counts).toEqual([count]);
+      expect(renderer.counts).toStrictEqual([count]);
       // All the way to the tick they are at, which is where both draw them.
       app.frame(1);
       expect(app.world.get(rocks[0]!, Position)!.x).toBeGreaterThan(
@@ -866,9 +866,9 @@ describe("Three.instances", () => {
     geometry.addEventListener("dispose", () => disposed.push("geometry"));
     material.addEventListener("dispose", () => disposed.push("material"));
     close();
-    expect(disposed).toEqual(["mesh"]);
+    expect(disposed).toStrictEqual(["mesh"]);
     expect(mesh.parent).toBeNull();
-    expect(renderer.scene?.children).toEqual([]);
+    expect(renderer.scene?.children).toStrictEqual([]);
   });
 });
 
@@ -918,7 +918,7 @@ describe("a flat game's Transform2d", () => {
     expect(quarter[1]).toBeCloseTo(1, 6);
     expect(quarter[4]).toBeCloseTo(-1, 6);
     expect(quarter[5]).toBeCloseTo(0, 6);
-    expect(quarter.slice(8)).toEqual([0, 0, 1, 0, 6, -7, 0, 1]);
+    expect(quarter.slice(8)).toStrictEqual([0, 0, 1, 0, 6, -7, 0, 1]);
   });
 
   it("is drawn beside entities placed in three dimensions, and an entity with both positions once, from that one", () => {
@@ -1120,33 +1120,33 @@ describe("a flat game's Transform2d", () => {
     world.spawn(Ship, Flat.Rotation, Flat.Scale);
     world.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
     app.frame(0);
-    expect(made.map((one) => one.entity).toSorted()).toEqual([plain, whole]);
-    expect(objectOf(plain).position.toArray()).toEqual([1, 2, 5]);
+    expect(made.map((one) => one.entity).toSorted()).toStrictEqual([plain, whole]);
+    expect(objectOf(plain).position.toArray()).toStrictEqual([1, 2, 5]);
     expect(objectOf(plain).rotation.z).toBe(0);
-    expect(objectOf(plain).scale.toArray()).toEqual([1, 1, 4]);
-    expect(objectOf(whole).position.toArray()).toEqual([-3, -4, 5]);
+    expect(objectOf(plain).scale.toArray()).toStrictEqual([1, 1, 4]);
+    expect(objectOf(whole).position.toArray()).toStrictEqual([-3, -4, 5]);
     expect(objectOf(whole).rotation.x).toBe(0.25);
     expect(objectOf(whole).rotation.z).toBe(0.5);
-    expect(objectOf(whole).scale.toArray()).toEqual([2, 3, 4]);
+    expect(objectOf(whole).scale.toArray()).toStrictEqual([2, 3, 4]);
     // It follows its entity, and is not made again.
     world.set(whole, Flat.Position, { x: 10, y: 20 });
     world.set(whole, Flat.Rotation, { angle: 1.5 });
     world.set(whole, Flat.Scale, { x: 5, y: 6 });
     app.frame(0);
     expect(made).toHaveLength(2);
-    expect(objectOf(whole).position.toArray()).toEqual([10, 20, 5]);
+    expect(objectOf(whole).position.toArray()).toStrictEqual([10, 20, 5]);
     expect(objectOf(whole).rotation.z).toBe(1.5);
-    expect(objectOf(whole).scale.toArray()).toEqual([5, 6, 4]);
+    expect(objectOf(whole).scale.toArray()).toStrictEqual([5, 6, 4]);
     // One that is no longer turned, or sized, is as one that never was:
     // in the plane only, the rest as it was made.
     world.remove(whole, Flat.Rotation);
     app.frame(0);
     expect(objectOf(whole).rotation.z).toBe(0);
     expect(objectOf(whole).rotation.x).toBe(0.25);
-    expect(objectOf(whole).scale.toArray()).toEqual([5, 6, 4]);
+    expect(objectOf(whole).scale.toArray()).toStrictEqual([5, 6, 4]);
     world.remove(whole, Flat.Scale);
     app.frame(0);
-    expect(objectOf(whole).scale.toArray()).toEqual([1, 1, 4]);
+    expect(objectOf(whole).scale.toArray()).toStrictEqual([1, 1, 4]);
     // What the game then sets is left alone.
     objectOf(whole).rotation.z = 2;
     objectOf(whole).scale.x = 7;
@@ -1156,14 +1156,14 @@ describe("a flat game's Transform2d", () => {
     // Lifted out of the plane, it is placed in three dimensions.
     world.add(plain, Position.of({ x: 7, y: 8, z: 9 }));
     app.frame(0);
-    expect(objectOf(plain).position.toArray()).toEqual([7, 8, 9]);
+    expect(objectOf(plain).position.toArray()).toStrictEqual([7, 8, 9]);
     expect(made).toHaveLength(2);
     // And it goes with its entity like any other.
     world.despawn(plain);
     world.add(whole, Hidden);
     app.frame(0);
-    expect(freed.toSorted()).toEqual([plain, whole].toSorted());
-    expect(renderer.scene?.children).toEqual([]);
+    expect(freed.toSorted()).toStrictEqual([plain, whole].toSorted());
+    expect(renderer.scene?.children).toStrictEqual([]);
   });
 
   it("keeps what it knows of its objects when a frame brings so many more that its room has to grow", () => {
@@ -1457,8 +1457,8 @@ describe("an entity drawn between two ticks", () => {
     world.set(card, Flat.Position, { x: 320, y: 92 });
     app.tick(1);
     app.frame(0.5);
-    expect(rowAt(mesh(), 91).slice(12, 15)).toEqual([-370, 91, 60]);
-    expect(rowAt(mesh(), 92).slice(12, 15)).toEqual([330, 92, 0]);
+    expect(rowAt(mesh(), 91).slice(12, 15)).toStrictEqual([-370, 91, 60]);
+    expect(rowAt(mesh(), 92).slice(12, 15)).toStrictEqual([330, 92, 0]);
     world.set(rock, Position, { y: 1, z: 0 });
     app.tick(1);
     app.frame(1);
@@ -1515,7 +1515,7 @@ describe("an entity drawn between two ticks", () => {
       Scale.of({ x: 6, y: 7, z: 8 })
     );
 
-    expect([flat & 0x3f_ff_ff, solid & 0x3f_ff_ff].toSorted()).toEqual(
+    expect([flat & 0x3f_ff_ff, solid & 0x3f_ff_ff].toSorted()).toStrictEqual(
       olds.map((one) => one & 0x3f_ff_ff).toSorted()
     );
     app.tick(1);
@@ -1562,7 +1562,7 @@ describe("an entity drawn between two ticks", () => {
     }
 
     // One that is not turned at all stays so.
-    expect(rowAt(mesh(), 2).slice(0, 11)).toEqual([
+    expect(rowAt(mesh(), 2).slice(0, 11)).toStrictEqual([
       1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
     ]);
     // The opposite quaternion is the same turn: it does not swing round
@@ -1853,16 +1853,16 @@ describe("an entity drawn between two ticks", () => {
     );
 
     app.frame(0.5);
-    expect(made.get(ship)!.position.toArray()).toEqual([0, 1, 2]);
-    expect(made.get(card)!.position.toArray()).toEqual([0, 4, 9]);
+    expect(made.get(ship)!.position.toArray()).toStrictEqual([0, 1, 2]);
+    expect(made.get(card)!.position.toArray()).toStrictEqual([0, 4, 9]);
     world.set(ship, Rotation, Transform3d.axisAngle(0, 0, 1, Math.PI / 2));
     world.set(ship, Scale, { x: 3, y: 3, z: 3 });
     world.set(card, Flat.Rotation, { angle: 1.5 });
     world.set(card, Flat.Scale, { x: 5, y: 7 });
     app.tick(1);
     app.frame(0.5);
-    expect(made.get(ship)!.position.toArray()).toEqual([5, 1, 2]);
-    expect(made.get(ship)!.scale.toArray()).toEqual([2, 2, 2]);
+    expect(made.get(ship)!.position.toArray()).toStrictEqual([5, 1, 2]);
+    expect(made.get(ship)!.scale.toArray()).toStrictEqual([2, 2, 2]);
 
     const half = new Quaternion().setFromAxisAngle(
       new Vector3(0, 0, 1),
@@ -1873,9 +1873,9 @@ describe("an entity drawn between two ticks", () => {
     expect(made.get(ship)!.quaternion.y).toBeCloseTo(half.y, 6);
     expect(made.get(ship)!.quaternion.z).toBeCloseTo(half.z, 6);
     expect(made.get(ship)!.quaternion.w).toBeCloseTo(half.w, 6);
-    expect(made.get(card)!.position.toArray()).toEqual([5, 4, 9]);
+    expect(made.get(card)!.position.toArray()).toStrictEqual([5, 4, 9]);
     expect(made.get(card)!.rotation.z).toBeCloseTo(1, 6);
-    expect(made.get(card)!.scale.toArray()).toEqual([3, 4, 1]);
+    expect(made.get(card)!.scale.toArray()).toStrictEqual([3, 4, 1]);
     // Too far to have gone in a tick: it is where it is.
     world.set(ship, Position, { x: 1000 });
     app.tick(1);
@@ -2017,14 +2017,14 @@ describe("an entity drawn between two ticks", () => {
       expect(drawnGame.world.hash()).toBe(bare.world.hash());
     }
 
-    expect(drawnGame.actionLog).toEqual(bare.actionLog);
+    expect(drawnGame.actionLog).toStrictEqual(bare.actionLog);
 
     const saves = [drawnGame.save(), bare.save()].map((save) =>
       Exit.isSuccess(save) ? save.value : undefined
     );
 
     expect(saves[0]).toBeDefined();
-    expect(saves[0]).toEqual(saves[1]);
+    expect(saves[0]).toStrictEqual(saves[1]);
   });
 });
 
@@ -2106,11 +2106,11 @@ describe("a colour per instance", () => {
     expectDrawn(mesh(), app, rocks);
 
     for (let y = 1; y <= 4; y += 1) {
-      expect(colorAt(mesh(), y)).toEqual([y / 8, 0, 0]);
+      expect(colorAt(mesh(), y)).toStrictEqual([y / 8, 0, 0]);
     }
 
     for (let y = 5; y <= 8; y += 1) {
-      expect(colorAt(mesh(), y)).toEqual([0, (y - 4) / 8, 0.75]);
+      expect(colorAt(mesh(), y)).toStrictEqual([0, (y - 4) / 8, 0.75]);
     }
 
     // Three numbers an instance, in a buffer of its own that changes often.
@@ -2122,8 +2122,8 @@ describe("a colour per instance", () => {
     world.despawn(rocks[1]!);
     app.frame(0);
     expect(mesh().count).toBe(7);
-    expect(colorAt(mesh(), 1)).toEqual([0, 1, 0.5]);
-    expect(colorAt(mesh(), 3)).toEqual([0.375, 0, 0]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([0, 1, 0.5]);
+    expect(colorAt(mesh(), 3)).toStrictEqual([0.375, 0, 0]);
   });
 
   it("keeps each colour with its instance while they come, go and change, and the room for them grows", () => {
@@ -2185,7 +2185,7 @@ describe("a colour per instance", () => {
 
       for (const one of shown) {
         const { b, g, r } = world.get(one.entity, Paint)!;
-        expect(colorAt(mesh(), one.y), `frame ${frame}`).toEqual([r, g, b]);
+        expect(colorAt(mesh(), one.y), `frame ${frame}`).toStrictEqual([r, g, b]);
       }
     }
 
@@ -2207,14 +2207,14 @@ describe("a colour per instance", () => {
 
     app.frame(0);
     const colors = mesh().instanceColor!;
-    expect(colors.updateRanges).toEqual([{ start: 0, count: 9 }]);
+    expect(colors.updateRanges).toStrictEqual([{ start: 0, count: 9 }]);
     const [range] = colors.updateRanges;
     const sent = colors.version;
     expect(sent).toBeGreaterThan(0);
     colors.clearUpdateRanges();
     app.world.despawn(rocks[0]!);
     app.frame(0);
-    expect(colors.updateRanges).toEqual([{ start: 0, count: 6 }]);
+    expect(colors.updateRanges).toStrictEqual([{ start: 0, count: 6 }]);
     expect(colors.updateRanges[0]).toBe(range);
     expect(colors.version).toBe(sent + 1);
     // A renderer that sent nothing in between is not told twice.
@@ -2226,7 +2226,7 @@ describe("a colour per instance", () => {
     colors.clearUpdateRanges();
     const before = colors.version;
     app.frame(0);
-    expect(colors.updateRanges).toEqual([]);
+    expect(colors.updateRanges).toStrictEqual([]);
     expect(colors.version).toBe(before);
     expect(mesh().instanceColor).toBe(colors);
   });
@@ -2252,15 +2252,15 @@ describe("a colour per instance", () => {
     );
 
     app.frame(0.5);
-    expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([0, 0.5, 1]);
     app.world.set(rock, Paint, { r: 1, g: 0.5, b: 0 });
     app.tick(1);
     app.frame(0);
-    expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([0, 0.5, 1]);
     app.frame(0.25);
-    expect(colorAt(mesh(), 1)).toEqual([0.25, 0.5, 0.75]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([0.25, 0.5, 0.75]);
     app.frame(1);
-    expect(colorAt(mesh(), 1)).toEqual([1, 0.5, 0]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([1, 0.5, 0]);
   });
 
   it("is a hex code's numbers unless told otherwise, converted for the renderer as Three.js converts them", () => {
@@ -2424,10 +2424,10 @@ describe("a colour per instance", () => {
 
     // In the renderer's own space a byte is a 255th, and no more is done.
     const linear = made("srgb-linear");
-    expect(colorAt(linear, 1)).toEqual(
+    expect(colorAt(linear, 1)).toStrictEqual(
       Array.from(new Float32Array([1, 0x61 / 255, 0x88 / 255]))
     );
-    expect(colorAt(linear, 2)).toEqual(
+    expect(colorAt(linear, 2)).toStrictEqual(
       Array.from(new Float32Array([0, 1 / 255, 254 / 255]))
     );
   });
@@ -2451,7 +2451,7 @@ describe("a colour per instance", () => {
     );
 
     app.frame(0);
-    expect(colorAt(mesh(), 1)).toEqual([0, 1, 1]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([0, 1, 1]);
 
     // A hex code's bytes, not over 255: each channel is told from the others.
     for (const [r, g, b] of [
@@ -2471,7 +2471,7 @@ describe("a colour per instance", () => {
     // Put right, it is drawn again.
     world.set(fine, Paint, { r: 1, g: 0, b: 0 });
     app.frame(0);
-    expect(colorAt(mesh(), 1)).toEqual([1, 0, 0]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([1, 0, 0]);
   });
 
   it("refuses a whole number that is no byte, and takes any number in the renderer's own space", () => {
@@ -2506,7 +2506,7 @@ describe("a colour per instance", () => {
     );
 
     app.frame(0);
-    expect(colorAt(meshOf(renderer.scene, "th/Painted"), 1)).toEqual([1, 1, 1]);
+    expect(colorAt(meshOf(renderer.scene, "th/Painted"), 1)).toStrictEqual([1, 1, 1]);
 
     for (const [r, g, b] of [
       [256, 0, 0],
@@ -2528,7 +2528,7 @@ describe("a colour per instance", () => {
       paint(4, 0, -1)
     );
     bright.frame(0);
-    expect(colorAt(mesh(), 1)).toEqual([4, 0, -1]);
+    expect(colorAt(mesh(), 1)).toStrictEqual([4, 0, -1]);
   });
 
   it("changes evenly between two ticks in the numbers the game has, and is converted then", () => {
@@ -2737,7 +2737,7 @@ describe("Three.objects", () => {
       expect(object.quaternion.w).toBeCloseTo(Math.SQRT1_2, 6);
     }
 
-    expect(objectOf(still)!.quaternion.toArray()).toEqual([0, 0, 0, 1]);
+    expect(objectOf(still)!.quaternion.toArray()).toStrictEqual([0, 0, 0, 1]);
     // So what Three.js draws of it is turned and sized, and not skewed.
     objectOf(long)!.updateMatrix();
     const wanted = [0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 4, 0, 1, 0, 0, 1];
@@ -2766,26 +2766,26 @@ describe("Three.objects", () => {
     // One that is turned and sized, and nowhere.
     app.world.spawn(Ship, Rotation, Scale);
     app.frame(0);
-    expect(made.map((one) => one.entity).toSorted()).toEqual([plain, whole]);
-    expect(renderer.scene?.children.toSorted((a, b) => a.id - b.id)).toEqual(
+    expect(made.map((one) => one.entity).toSorted()).toStrictEqual([plain, whole]);
+    expect(renderer.scene?.children.toSorted((a, b) => a.id - b.id)).toStrictEqual(
       made.map((one) => one.object).toSorted((a, b) => a.id - b.id)
     );
-    expect(objectOf(plain)!.position.toArray()).toEqual([1, 2, 3]);
-    expect(objectOf(plain)!.quaternion.toArray()).toEqual([0, 0, 0, 1]);
-    expect(objectOf(plain)!.scale.toArray()).toEqual([1, 1, 1]);
-    expect(objectOf(whole)!.position.toArray()).toEqual([-1, -2, -3]);
+    expect(objectOf(plain)!.position.toArray()).toStrictEqual([1, 2, 3]);
+    expect(objectOf(plain)!.quaternion.toArray()).toStrictEqual([0, 0, 0, 1]);
+    expect(objectOf(plain)!.scale.toArray()).toStrictEqual([1, 1, 1]);
+    expect(objectOf(whole)!.position.toArray()).toStrictEqual([-1, -2, -3]);
     expectTurned(objectOf(whole)!, turn);
-    expect(objectOf(whole)!.scale.toArray()).toEqual([2, 3, 4]);
+    expect(objectOf(whole)!.scale.toArray()).toStrictEqual([2, 3, 4]);
     // It moves with its entity, and is not made again.
     app.world.set(plain, Position, { x: 10, y: 20, z: 30 });
     app.world.set(whole, Scale, { x: 5, y: 5, z: 5 });
     app.world.set(whole, Rotation, { x: 0, y: 0, z: 1, w: 0 });
     app.frame(0);
     expect(made).toHaveLength(2);
-    expect(freed).toEqual([]);
-    expect(objectOf(plain)!.position.toArray()).toEqual([10, 20, 30]);
-    expect(objectOf(whole)!.scale.toArray()).toEqual([5, 5, 5]);
-    expect(objectOf(whole)!.quaternion.toArray()).toEqual([0, 0, 1, 0]);
+    expect(freed).toStrictEqual([]);
+    expect(objectOf(plain)!.position.toArray()).toStrictEqual([10, 20, 30]);
+    expect(objectOf(whole)!.scale.toArray()).toStrictEqual([5, 5, 5]);
+    expect(objectOf(whole)!.quaternion.toArray()).toStrictEqual([0, 0, 1, 0]);
   });
 
   it("keeps the one object of an entity whose id is past what 32 bits hold", () => {
@@ -2804,9 +2804,9 @@ describe("Three.objects", () => {
     app.frame(0);
     // Made once, for this entity, and not again for every frame that
     // finds it.
-    expect(made.map((one) => one.entity)).toEqual([ship]);
-    expect(freed).toEqual([]);
-    expect(objectOf(ship)!.position.toArray()).toEqual([4, 5, 6]);
+    expect(made.map((one) => one.entity)).toStrictEqual([ship]);
+    expect(freed).toStrictEqual([]);
+    expect(objectOf(ship)!.position.toArray()).toStrictEqual([4, 5, 6]);
   });
 
   it("takes the object out and frees it when its entity is gone, or is no longer one of these", () => {
@@ -2825,7 +2825,7 @@ describe("Three.objects", () => {
     app.world.add(hidden, Hidden);
     app.world.remove(nowhere, Position);
     app.frame(0);
-    expect(freed.map((one) => one.entity).toSorted()).toEqual(
+    expect(freed.map((one) => one.entity).toSorted()).toStrictEqual(
       [gone, unmarked, hidden, nowhere].toSorted()
     );
 
@@ -2834,7 +2834,7 @@ describe("Three.objects", () => {
       expect(one.object.parent).toBeNull();
     }
 
-    expect(renderer.scene?.children).toEqual([objects.get(stays)]);
+    expect(renderer.scene?.children).toStrictEqual([objects.get(stays)]);
     // Each was freed once.
     app.frame(0);
     expect(freed).toHaveLength(4);
@@ -2866,14 +2866,14 @@ describe("Three.objects", () => {
     expect(second & 0x3f_ff_ff).toBe(first & 0x3f_ff_ff);
     expect(second).not.toBe(first);
     app.frame(0);
-    expect(freed).toEqual([{ object: old, entity: first }]);
+    expect(freed).toStrictEqual([{ object: old, entity: first }]);
     expect(objectOf(second)).not.toBe(old);
-    expect(objectOf(second)!.position.toArray()).toEqual([2, 2, 2]);
+    expect(objectOf(second)!.position.toArray()).toStrictEqual([2, 2, 2]);
     // The new one was never turned or sized: what `make` gave it stands,
     // this frame and the next.
     app.frame(0);
-    expect(objectOf(second)!.quaternion.toArray()).toEqual([0, 1, 0, 0]);
-    expect(objectOf(second)!.scale.toArray()).toEqual([2, 2, 2]);
+    expect(objectOf(second)!.quaternion.toArray()).toStrictEqual([0, 1, 0, 0]);
+    expect(objectOf(second)!.scale.toArray()).toStrictEqual([2, 2, 2]);
     expect(old.parent).toBeNull();
     expect(objectOf(second)!.parent).not.toBeNull();
     expect(made).toHaveLength(2);
@@ -2891,20 +2891,20 @@ describe("Three.objects", () => {
 
     app.frame(0);
     const object = objectOf(ship)!;
-    expect(object.quaternion.toArray()).toEqual([1, 0, 0, 0]);
+    expect(object.quaternion.toArray()).toStrictEqual([1, 0, 0, 0]);
     app.world.remove(ship, Rotation);
     app.frame(0);
-    expect(object.quaternion.toArray()).toEqual([0, 0, 0, 1]);
-    expect(object.scale.toArray()).toEqual([3, 3, 3]);
+    expect(object.quaternion.toArray()).toStrictEqual([0, 0, 0, 1]);
+    expect(object.scale.toArray()).toStrictEqual([3, 3, 3]);
     app.world.remove(ship, Scale);
     app.frame(0);
-    expect(object.scale.toArray()).toEqual([1, 1, 1]);
+    expect(object.scale.toArray()).toStrictEqual([1, 1, 1]);
     // What the game itself then sets on the object is left alone.
     object.scale.set(7, 7, 7);
     object.quaternion.set(0, 1, 0, 0);
     app.frame(0);
-    expect(object.scale.toArray()).toEqual([7, 7, 7]);
-    expect(object.quaternion.toArray()).toEqual([0, 1, 0, 0]);
+    expect(object.scale.toArray()).toStrictEqual([7, 7, 7]);
+    expect(object.quaternion.toArray()).toStrictEqual([0, 1, 0, 0]);
     expect(made).toHaveLength(1);
   });
 
@@ -2978,16 +2978,16 @@ describe("Three.objects", () => {
         (one) => !freed.some((other) => other.object === one.object)
       );
 
-      expect(kept.map((one) => one.entity).toSorted()).toEqual(
+      expect(kept.map((one) => one.entity).toSorted()).toStrictEqual(
         shown.toSorted()
       );
-      expect(new Set(renderer.scene?.children)).toEqual(
+      expect(new Set(renderer.scene?.children)).toStrictEqual(
         new Set(kept.map((one) => one.object))
       );
 
       for (const { entity, object } of kept) {
         const position = world.get(entity, Position)!;
-        expect(object.position.toArray()).toEqual([
+        expect(object.position.toArray()).toStrictEqual([
           position.x,
           position.y,
           position.z,
@@ -2995,7 +2995,7 @@ describe("Three.objects", () => {
         const rotation = world.get(entity, Rotation);
         expectTurned(object, rotation);
         const scale = world.get(entity, Scale);
-        expect(object.scale.toArray()).toEqual(
+        expect(object.scale.toArray()).toStrictEqual(
           scale === undefined ? [1, 1, 1] : [scale.x, scale.y, scale.z]
         );
       }
@@ -3023,11 +3023,11 @@ describe("Three.objects", () => {
     const renderer = makeRenderer();
     const { app } = start(App.load(save.value, { plugins: [Fleet] }), renderer);
     expect(app.world.hash()).toBe(hash);
-    expect(made).toEqual([]);
+    expect(made).toStrictEqual([]);
     app.frame(0);
-    expect(made.map((one) => one.entity)).toEqual([ship]);
-    expect(objectOf(ship)!.position.toArray()).toEqual([4, 5, 6]);
-    expect(renderer.scene?.children).toEqual([objectOf(ship)]);
+    expect(made.map((one) => one.entity)).toStrictEqual([ship]);
+    expect(objectOf(ship)!.position.toArray()).toStrictEqual([4, 5, 6]);
+    expect(renderer.scene?.children).toStrictEqual([objectOf(ship)]);
   });
 
   it("frees every object it still has when the app's scope closes", () => {
@@ -3042,8 +3042,8 @@ describe("Three.objects", () => {
     app.frame(0);
     expect(freed).toHaveLength(1);
     close();
-    expect(freed.map((one) => one.entity).toSorted()).toEqual(ships.toSorted());
-    expect(renderer.scene?.children).toEqual([]);
+    expect(freed.map((one) => one.entity).toSorted()).toStrictEqual(ships.toSorted());
+    expect(renderer.scene?.children).toStrictEqual([]);
   });
 });
 
@@ -3099,11 +3099,11 @@ describe("Three.plugin", () => {
     app.tick(1 / 60);
     expect(renderer.frames).toBe(0);
     app.frame(0);
-    expect(order).toEqual(["make", "aim", "render"]);
+    expect(order).toStrictEqual(["make", "aim", "render"]);
     expect(renderer.frames).toBe(1);
     expect(renderer.camera).toBe(camera);
     // The instances were counted before the scene was drawn.
-    expect(renderer.counts).toEqual([3]);
+    expect(renderer.counts).toStrictEqual([3]);
     app.frame(0.5);
     app.frame(0.9);
     expect(renderer.frames).toBe(3);
@@ -3126,11 +3126,11 @@ describe("Three.plugin", () => {
     const renderer = makeRenderer();
     const { app } = start(App.make({ plugins: [Stage] }), renderer);
     expect(seen?.camera).toBeInstanceOf(PerspectiveCamera);
-    expect(seen?.camera.position.toArray()).toEqual([0, 0, 10]);
+    expect(seen?.camera.position.toArray()).toStrictEqual([0, 0, 10]);
     app.frame(0);
     expect(renderer.scene).toBe(seen?.scene);
     expect(renderer.camera).toBe(seen?.camera);
-    expect(renderer.scene?.children).toEqual([light]);
+    expect(renderer.scene?.children).toStrictEqual([light]);
   });
 
   it("leaves the game as it found it: a game that is drawn is the same game as one that is not", () => {
@@ -3192,8 +3192,8 @@ describe("Three.plugin", () => {
       expect(drawnGame.world.hash()).toBe(bare.world.hash());
     }
 
-    expect(drawnGame.actionLog).toEqual(bare.actionLog);
-    expect(renderer.counts).toEqual([8]);
+    expect(drawnGame.actionLog).toStrictEqual(bare.actionLog);
+    expect(renderer.counts).toStrictEqual([8]);
     expect(renderer.frames).toBe(120);
   });
 
@@ -3283,7 +3283,7 @@ describe("Three.layerRenderer", () => {
 
     renderer.render(scene, camera);
     // Without touching the canvas's style: the page decides its size.
-    expect(standIn.asked).toEqual([
+    expect(standIn.asked).toStrictEqual([
       "ratio 2",
       "size 800x400 false",
       "render 2",
@@ -3292,11 +3292,11 @@ describe("Three.layerRenderer", () => {
     // The same size again costs a comparison.
     renderer.render(scene, camera);
     renderer.render(scene, camera);
-    expect(standIn.asked.slice(3)).toEqual(["render 2", "render 2"]);
+    expect(standIn.asked.slice(3)).toStrictEqual(["render 2", "render 2"]);
     expect(projected).toBe(1);
     size.clientHeight = 200;
     renderer.render(scene, camera);
-    expect(standIn.asked.slice(5)).toEqual([
+    expect(standIn.asked.slice(5)).toStrictEqual([
       "ratio 2",
       "size 800x200 false",
       "render 4",
@@ -3305,7 +3305,7 @@ describe("Three.layerRenderer", () => {
     // A camera the game swapped in is fitted too, with nothing resized.
     const other = new PerspectiveCamera(50, 1, 0.1, 100);
     renderer.render(scene, other);
-    expect(standIn.asked.slice(8)).toEqual(["render 4"]);
+    expect(standIn.asked.slice(8)).toStrictEqual(["render 4"]);
     expect(other.aspect).toBe(4);
     // One of another kind is the game's to fit.
     const flat = new OrthographicCamera(-1, 1, 1, -1);
@@ -3325,13 +3325,13 @@ describe("Three.layerRenderer", () => {
       expect(standIn.asked[0]).toBe("ratio 1");
       page.devicePixelRatio = 1.5;
       renderer.render(scene, camera);
-      expect(standIn.asked.slice(3, 5)).toEqual([
+      expect(standIn.asked.slice(3, 5)).toStrictEqual([
         "ratio 1.5",
         "size 100x100 false",
       ]);
       page.devicePixelRatio = 3;
       renderer.render(scene, camera);
-      expect(standIn.asked.slice(6, 8)).toEqual([
+      expect(standIn.asked.slice(6, 8)).toStrictEqual([
         "ratio 2",
         "size 100x100 false",
       ]);
@@ -3344,7 +3344,7 @@ describe("Three.layerRenderer", () => {
     const camera = new PerspectiveCamera(50, 1.25, 0.1, 100);
     const told = makeStandIn({ clientWidth: 800, clientHeight: 400 });
     use(told, { fit: false }).renderer.render(scene, camera);
-    expect(told.asked).toEqual(["render 1.25"]);
+    expect(told.asked).toStrictEqual(["render 1.25"]);
 
     for (const size of [
       {},
@@ -3353,7 +3353,7 @@ describe("Three.layerRenderer", () => {
     ]) {
       const standIn = makeStandIn(size);
       use(standIn).renderer.render(scene, camera);
-      expect(standIn.asked).toEqual(["render 1.25"]);
+      expect(standIn.asked).toStrictEqual(["render 1.25"]);
     }
   });
 

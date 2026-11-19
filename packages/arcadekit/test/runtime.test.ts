@@ -66,9 +66,9 @@ describe("systems", () => {
 
       app.tick(0.5);
       app.tick(0.5);
-      expect(app.world.get(a, Position)).toEqual({ x: 2, y: 4 });
-      expect(app.world.get(b, Position)).toEqual({ x: 0, y: 0 });
-      expect(app.time).toEqual({ delta: 0.5, elapsed: 1, tick: 2 });
+      expect(app.world.get(a, Position)).toStrictEqual({ x: 2, y: 4 });
+      expect(app.world.get(b, Position)).toStrictEqual({ x: 0, y: 0 });
+      expect(app.time).toStrictEqual({ delta: 0.5, elapsed: 1, tick: 2 });
     });
   });
 
@@ -89,9 +89,9 @@ describe("systems", () => {
     ];
 
     withApp(App.make({ systems }), (app) => {
-      expect(app.systemOrder).toEqual(["input", "b", "a", "c", "render"]);
+      expect(app.systemOrder).toStrictEqual(["input", "b", "a", "c", "render"]);
       app.tick(1);
-      expect(log).toEqual(["input", "b", "a", "c", "render"]);
+      expect(log).toStrictEqual(["input", "b", "a", "c", "render"]);
     });
     expect(() =>
       System.order([
@@ -109,14 +109,14 @@ describe("systems", () => {
 
     expect(
       names([sys("p"), sys("q"), sys("r").pipe(System.before("p"))])
-    ).toEqual(["r", "p", "q"]);
+    ).toStrictEqual(["r", "p", "q"]);
     expect(
       names([
         sys("p"),
         sys("q").pipe(System.after("r")),
         sys("r").pipe(System.before("p")),
       ])
-    ).toEqual(["r", "p", "q"]);
+    ).toStrictEqual(["r", "p", "q"]);
     expect(() =>
       System.order([
         sys("x").pipe(System.before("y")),
@@ -164,7 +164,7 @@ describe("systems", () => {
       app.tick(0.5);
       expect(app.world.entityCount).toBe(0);
       app.tick(0.5);
-      expect(counts).toEqual([1, 1, 0]);
+      expect(counts).toStrictEqual([1, 1, 0]);
     });
   });
 
@@ -219,8 +219,8 @@ describe("systems", () => {
         app.tick(1);
       }
 
-      expect(app.world.get(torch, Health)).toEqual({ hp: 80 });
-      expect(app.world.get(rock, Health)).toEqual({ hp: 100 });
+      expect(app.world.get(torch, Health)).toStrictEqual({ hp: 80 });
+      expect(app.world.get(rock, Health)).toStrictEqual({ hp: 100 });
       expect(app.world.has(torch, Burning)).toBe(false);
       expect(app.world.tables).toHaveLength(tables);
     });
@@ -241,7 +241,7 @@ describe("systems", () => {
       ),
       (app) => app.tick(1)
     );
-    expect(seen).toEqual([9.81, 1.62]);
+    expect(seen).toStrictEqual([9.81, 1.62]);
   });
 
   it("get their services the usual Effect way, and a missing one does not compile", () => {
@@ -269,7 +269,7 @@ describe("systems", () => {
       app.world.spawn(Position.of({ x: 1, y: 1 }));
       app.tick(1);
     });
-    expect(played).toEqual(["beep x1"]);
+    expect(played).toStrictEqual(["beep x1"]);
 
     // Forgetting the layer leaves `Audio` as an unmet requirement.
     expect(() =>
@@ -338,7 +338,7 @@ describe("the built-in services", () => {
       Action.Actions,
     ].map((service) => service.key);
 
-    expect(keys).toEqual([
+    expect(keys).toStrictEqual([
       "arcadekit/World",
       "arcadekit/Time",
       "arcadekit/Commands",
@@ -394,12 +394,12 @@ describe("the tick scheduler", () => {
       fiber.addObserver(resolve)
     );
 
-    expect(exit).toEqual(Exit.succeed(10_000));
+    expect(exit).toStrictEqual(Exit.succeed(10_000));
   });
 
   it("never pauses a fiber mid-tick", () => {
     const fiber = Effect.runFork(busy, { scheduler: new TickScheduler() });
-    expect(fiber.pollUnsafe()).toEqual(Exit.succeed(10_000));
+    expect(fiber.pollUnsafe()).toStrictEqual(Exit.succeed(10_000));
   });
 
   it("lets a heavy system finish inside its tick", () => {
@@ -428,15 +428,15 @@ describe("the tick scheduler", () => {
               log.push("after yieldNow");
             })
           );
-          expect(log).toEqual(["start"]);
+          expect(log).toStrictEqual(["start"]);
           expect(app.dispatcher.pending).toBe(1);
           // Give timers and microtasks every chance to run it behind our back.
           yield* Effect.promise(
             () => new Promise((resolve) => setTimeout(resolve, 20))
           );
-          expect(log).toEqual(["start"]);
+          expect(log).toStrictEqual(["start"]);
           app.tick(1);
-          expect(log).toEqual(["start", "after yieldNow"]);
+          expect(log).toStrictEqual(["start", "after yieldNow"]);
           expect(app.dispatcher.pending).toBe(0);
         })
       )
@@ -471,14 +471,14 @@ describe("scripts", () => {
     withApp(App.make({ systems: [] }), (app) => {
       const a = app.spawnScript(script("a", 2));
       const b = app.spawnScript(script("b", 1));
-      expect(log).toEqual([]);
+      expect(log).toStrictEqual([]);
       app.tick(1);
-      expect(log).toEqual(["a@1", "b@1"]);
-      expect(b.pollUnsafe()).toEqual(Exit.succeed("b"));
+      expect(log).toStrictEqual(["a@1", "b@1"]);
+      expect(b.pollUnsafe()).toStrictEqual(Exit.succeed("b"));
       expect(a.pollUnsafe()).toBeUndefined();
       app.tick(1);
-      expect(log).toEqual(["a@1", "b@1", "a@2"]);
-      expect(a.pollUnsafe()).toEqual(Exit.succeed("a"));
+      expect(log).toStrictEqual(["a@1", "b@1", "a@2"]);
+      expect(a.pollUnsafe()).toStrictEqual(Exit.succeed("a"));
     });
   });
 
@@ -501,7 +501,7 @@ describe("scripts", () => {
       step(0.6);
       expect(app.world.entityCount).toBe(0);
       // 60 ticks of 1/60 s is one second of game time, however long it really took.
-      expect(fiber.pollUnsafe()).toEqual(Exit.succeed(60));
+      expect(fiber.pollUnsafe()).toStrictEqual(Exit.succeed(60));
     });
   });
 
@@ -527,9 +527,9 @@ describe("scripts", () => {
 
     withApp(App.make({ systems: [Starter] }), (app) => {
       app.tick(1);
-      expect(log).toEqual(["started@1"]);
+      expect(log).toStrictEqual(["started@1"]);
       app.tick(1);
-      expect(log).toEqual(["started@1", "resumed@2"]);
+      expect(log).toStrictEqual(["started@1", "resumed@2"]);
     });
   });
 
@@ -597,13 +597,13 @@ describe("a script that fails", () => {
       (app) => {
         const fiber = app.spawnScript(trips(2));
         app.tick(1);
-        expect(logs.entries).toEqual([]);
+        expect(logs.entries).toStrictEqual([]);
         app.tick(1);
         expect(logs.entries).toHaveLength(1);
         const [entry] = logs.entries;
         expect(entry!.level).toBe("Error");
         expect(entry!.message).toBe("A script failed at tick 2");
-        expect(Cause.squash(entry!.cause)).toEqual(
+        expect(Cause.squash(entry!.cause)).toStrictEqual(
           new Tripped({ on: "a wire" })
         );
         // The same cause the fiber ended with, for whoever observes it.
@@ -626,15 +626,15 @@ describe("a script that fails", () => {
       App.make({ systems: [] }).pipe(Effect.provide(logs.layer)),
       (app) => {
         app.spawnScript(Effect.die(new Error("a bug")));
-        expect(logs.entries.map((entry) => entry.message)).toEqual([
+        expect(logs.entries.map((entry) => entry.message)).toStrictEqual([
           "A script failed at tick 0",
         ]);
-        expect(Cause.squash(logs.entries[0]!.cause)).toEqual(
+        expect(Cause.squash(logs.entries[0]!.cause)).toStrictEqual(
           new Error("a bug")
         );
         app.spawnScript(trips(0, "the doorstep"));
         expect(logs.entries).toHaveLength(2);
-        expect(Cause.squash(logs.entries[1]!.cause)).toEqual(
+        expect(Cause.squash(logs.entries[1]!.cause)).toStrictEqual(
           new Tripped({ on: "the doorstep" })
         );
         // Each of two scripts that fail in one tick is reported.
@@ -643,7 +643,7 @@ describe("a script that fails", () => {
         app.tick(1);
         expect(
           logs.entries.slice(2).map((entry) => Cause.squash(entry.cause))
-        ).toEqual([new Tripped({ on: "one" }), new Tripped({ on: "two" })]);
+        ).toStrictEqual([new Tripped({ on: "one" }), new Tripped({ on: "two" })]);
       }
     );
   });
@@ -677,7 +677,7 @@ describe("a script that fails", () => {
         expect(app.time.tick).toBe(3);
       }
     );
-    expect(logs.entries).toEqual([]);
+    expect(logs.entries).toStrictEqual([]);
   });
 
   it("is watched the same way when a system starts it with Script.spawn", () => {
@@ -721,17 +721,17 @@ describe("a script that fails", () => {
       App.make({ systems: [Starter, After] }).pipe(Effect.provide(logs.layer)),
       (app) => {
         app.tick(1);
-        expect(order).toEqual([
+        expect(order).toStrictEqual([
           "spawned, running: true",
           "After@1",
           "script started",
         ]);
-        expect(logs.entries).toEqual([]);
+        expect(logs.entries).toStrictEqual([]);
         app.tick(1);
-        expect(logs.entries.map((entry) => entry.message)).toEqual([
+        expect(logs.entries.map((entry) => entry.message)).toStrictEqual([
           "A script failed at tick 2",
         ]);
-        expect(Cause.squash(logs.entries[0]!.cause)).toEqual(
+        expect(Cause.squash(logs.entries[0]!.cause)).toStrictEqual(
           new Tripped({ on: "a system's script" })
         );
         expect(cleanedUp).toBe(false);
@@ -762,7 +762,7 @@ describe("a script that fails", () => {
         expect(app.time.tick).toBe(3);
       }
     );
-    expect(logs.entries).toEqual([]);
+    expect(logs.entries).toStrictEqual([]);
   });
 
   it("stops the app when it was told to: the tick ends, fails with ScriptFailed, and no later tick runs", () => {
@@ -789,7 +789,7 @@ describe("a script that fails", () => {
           })
         );
 
-        expect(app.tickExit(1)).toEqual(Exit.void);
+        expect(app.tickExit(1)).toStrictEqual(Exit.void);
 
         const exit = app.tickExit(1);
 
@@ -800,7 +800,7 @@ describe("a script that fails", () => {
         expect(failure).toBeInstanceOf(App.ScriptFailed);
         const stopped = failure as App.ScriptFailed;
         expect(stopped.tick).toBe(2);
-        expect(Cause.squash(stopped.cause)).toEqual(
+        expect(Cause.squash(stopped.cause)).toStrictEqual(
           new Tripped({ on: "tick two" })
         );
         const ended = fiber.pollUnsafe();
@@ -818,13 +818,13 @@ describe("a script that fails", () => {
 
         // From here on a tick runs nothing and fails the same way.
         expect(() => app.tick(1)).toThrow(stopped);
-        expect(app.tickExit(1)).toEqual(Exit.die(stopped));
+        expect(app.tickExit(1)).toStrictEqual(Exit.die(stopped));
         const step = Driver.fixedStep(app, { hz: 60 });
         expect(() => step(1)).toThrow(App.ScriptFailed);
         expect(ran).toBe(2);
-        expect(app.time).toEqual({ delta: 1, elapsed: 2, tick: 2 });
+        expect(app.time).toStrictEqual({ delta: 1, elapsed: 2, tick: 2 });
         // It is logged as well, once.
-        expect(logs.entries.map((entry) => entry.message)).toEqual([
+        expect(logs.entries.map((entry) => entry.message)).toStrictEqual([
           "A script failed at tick 2",
         ]);
       }
@@ -855,7 +855,7 @@ describe("a script that fails", () => {
 
         expect(stopped).toBeInstanceOf(App.ScriptFailed);
         expect(stopped.tick).toBe(1);
-        expect(Cause.squash(stopped.cause)).toEqual(
+        expect(Cause.squash(stopped.cause)).toStrictEqual(
           new Tripped({ on: "first" })
         );
         expect(ran).toBe(1);
@@ -881,7 +881,7 @@ describe("a script that fails", () => {
       (app) => {
         app.spawnScript(trips(2));
         app.tick(1);
-        expect(app.tickExit(1)).toEqual(Exit.fail(new Jammed()));
+        expect(app.tickExit(1)).toStrictEqual(Exit.fail(new Jammed()));
         const next = app.tickExit(1);
         expect(Exit.isFailure(next) && Cause.squash(next.cause)).toBeInstanceOf(
           App.ScriptFailed
@@ -964,7 +964,7 @@ describe("determinism", () => {
 
     const first = run();
     expect(first).toHaveLength(71);
-    expect(run()).toEqual(first);
+    expect(run()).toStrictEqual(first);
   });
 });
 

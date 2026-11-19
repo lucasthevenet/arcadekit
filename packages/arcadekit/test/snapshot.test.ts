@@ -172,8 +172,8 @@ describe("a snapshot of a world", () => {
       const copy = loaded(world.snapshot());
       expect(copy.hash()).toBe(world.hash());
       expect(copy.entityCount).toBe(world.entityCount);
-      expect(contents(copy, C)).toEqual(contents(world, C));
-      expect(Array.from(copy.random.state)).toEqual(
+      expect(contents(copy, C)).toStrictEqual(contents(world, C));
+      expect(Array.from(copy.random.state)).toStrictEqual(
         Array.from(world.random.state)
       );
       // The history really did despawn, reuse slots and empty tables.
@@ -226,7 +226,7 @@ describe("a snapshot of a world", () => {
         ).toBe(true);
       }
 
-      expect(copy.get(entity, C.Aura)).toEqual(world.get(entity, C.Aura));
+      expect(copy.get(entity, C.Aura)).toStrictEqual(world.get(entity, C.Aura));
     }
 
     expect(copy.get(entities[13]!, C.Sheet)!.note).toBe(
@@ -255,7 +255,7 @@ describe("a snapshot of a world", () => {
 
       play(world, C, seed + 100, 200, record(world, original));
       play(copy, C, seed + 100, 200, record(copy, resumed));
-      expect(resumed).toEqual(original);
+      expect(resumed).toStrictEqual(original);
       expect(copy.random.next()).toBe(world.random.next());
       expect(copy.spawn()).toBe(world.spawn());
     }
@@ -278,9 +278,9 @@ describe("a snapshot of a world", () => {
     }
 
     expect(copy.isAlive(third)).toBe(true);
-    expect(copy.get(third, C.Body)).toEqual({ x: 3, y: 3 });
+    expect(copy.get(third, C.Body)).toStrictEqual({ x: 3, y: 3 });
     const next = [world.spawn(), world.spawn(), world.spawn()];
-    expect([copy.spawn(), copy.spawn(), copy.spawn()]).toEqual(next);
+    expect([copy.spawn(), copy.spawn(), copy.spawn()]).toStrictEqual(next);
   });
 
   it("keeps a table that has emptied in its place", () => {
@@ -291,7 +291,7 @@ describe("a snapshot of a world", () => {
     expect(copy.hash()).toBe(world.hash());
     // The table of marked bodies was made first, so its entities come first.
     const marked = [world, copy].map((each) => each.spawn(C.Body, C.Marked));
-    expect(copy.view(Query.all(C.Body)).entities()).toEqual(
+    expect(copy.view(Query.all(C.Body)).entities()).toStrictEqual(
       world.view(Query.all(C.Body)).entities()
     );
     expect(copy.view(Query.all(C.Body)).entities()[0]).toBe(marked[1]);
@@ -319,8 +319,8 @@ describe("a snapshot of a world", () => {
     const before = Uint8Array.from(bytes);
     world.set(entity, C.Body, { x: 9 });
     world.spawn(C.Sheet.of(sheet(1)));
-    expect(bytes).toEqual(before);
-    expect(loaded(bytes).get(entity, C.Body)).toEqual({ x: 1, y: 1 });
+    expect(bytes).toStrictEqual(before);
+    expect(loaded(bytes).get(entity, C.Body)).toStrictEqual({ x: 1, y: 1 });
     // Taking a snapshot reads and changes nothing, in a transaction or out.
     const hash = world.hash();
     world.begin();
@@ -328,7 +328,7 @@ describe("a snapshot of a world", () => {
     const inside = world.snapshot();
     world.rollback();
     expect(world.hash()).toBe(hash);
-    expect(loaded(inside).get(entity, C.Body)).toEqual({ x: 9, y: 5 });
+    expect(loaded(inside).get(entity, C.Body)).toStrictEqual({ x: 9, y: 5 });
   });
 
   it("knows components by name, whatever order this program defined them in", () => {
@@ -346,7 +346,7 @@ describe("a snapshot of a world", () => {
     const copy = loaded(world.snapshot(), Object.values(other));
     expect(copy.hash()).toBe(world.hash());
     expect(copy.component("snap/Body")).toBe(other.Body);
-    expect(contents(copy, other)).toEqual(contents(world, C));
+    expect(contents(copy, other)).toStrictEqual(contents(world, C));
     // Components given to load are known to the world, used or not.
     const empty = new EcsWorld();
     empty.load(new EcsWorld().snapshot(), [C.Body]);
@@ -606,7 +606,7 @@ describe("a snapshot that cannot be loaded", () => {
     expect([
       view.getUint32(freed + 4, true),
       view.getUint32(freed + 8, true),
-    ]).toEqual([1, 2]);
+    ]).toStrictEqual([1, 2]);
 
     /** Where two ids stand side by side in the bytes. */
     const find = (first: number, second: number): number => {

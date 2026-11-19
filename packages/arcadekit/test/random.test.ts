@@ -53,10 +53,10 @@ const KNOWN_FIRST_DRAWS_OF_SEED_1 = [
 
 describe("the random number generator", () => {
   it("gives the same numbers for the same seed, and different ones for another", () => {
-    expect(draws(new Rng(42), 100)).toEqual(draws(new Rng(42), 100));
-    expect(draws(new Rng(42), 100)).not.toEqual(draws(new Rng(43), 100));
+    expect(draws(new Rng(42), 100)).toStrictEqual(draws(new Rng(42), 100));
+    expect(draws(new Rng(42), 100)).not.toStrictEqual(draws(new Rng(43), 100));
     // No seed is seed 0, so a game is repeatable until it asks not to be.
-    expect(draws(new Rng(), 10)).toEqual(draws(new Rng(0), 10));
+    expect(draws(new Rng(), 10)).toStrictEqual(draws(new Rng(0), 10));
   });
 
   it("gives a different sequence for every seed, close together or far apart", () => {
@@ -90,7 +90,7 @@ describe("the random number generator", () => {
 
     // The first numbers of seed 1, written down. A change here changes every
     // game ever recorded with a seed, so it has to be meant.
-    expect(draws(new Rng(1), 4)).toEqual(KNOWN_FIRST_DRAWS_OF_SEED_1);
+    expect(draws(new Rng(1), 4)).toStrictEqual(KNOWN_FIRST_DRAWS_OF_SEED_1);
   });
 
   it("refuses a seed that is not a whole number from 0 up", () => {
@@ -104,7 +104,7 @@ describe("the random number generator", () => {
     const rng = new Rng(5);
     rng.bits();
     rng.seed(5);
-    expect(draws(rng, 5)).toEqual(draws(new Rng(5), 5));
+    expect(draws(rng, 5)).toStrictEqual(draws(new Rng(5), 5));
   });
 
   it("resumes from a copy of its state", () => {
@@ -114,7 +114,7 @@ describe("the random number generator", () => {
     const expected = draws(rng, 50);
     const restored = new Rng(1234);
     restored.state.set(saved);
-    expect(draws(restored, 50)).toEqual(expected);
+    expect(draws(restored, 50)).toStrictEqual(expected);
     // The state is all there is: four 32-bit numbers.
     expect(rng.state).toHaveLength(4);
     expect(rng.state).toBeInstanceOf(Uint32Array);
@@ -154,7 +154,7 @@ describe("the random number generator", () => {
       counts.set(roll, (counts.get(roll) ?? 0) + 1);
     }
 
-    expect([...counts.keys()].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    expect([...counts.keys()].sort()).toStrictEqual([1, 2, 3, 4, 5, 6]);
 
     for (const count of counts.values()) {
       expect(count).toBeGreaterThan(9600);
@@ -163,7 +163,7 @@ describe("the random number generator", () => {
 
     expect(rng.int(5, 5)).toBe(5);
     const negatives = Array.from({ length: 200 }, () => rng.int(-2, 1));
-    expect(new Set(negatives)).toEqual(new Set([-2, -1, 0, 1]));
+    expect(new Set(negatives)).toStrictEqual(new Set([-2, -1, 0, 1]));
     // The widest range it takes is all 2^32 values.
     const wide = rng.int(0, 2 ** 32 - 1);
     expect(Number.isInteger(wide) && wide >= 0 && wide < 2 ** 32).toBe(true);
@@ -196,7 +196,7 @@ describe("the random number generator", () => {
     expect(() => rng.int(0, 2 ** 32)).toThrow(/no more than 2\^32 - 1 above/u);
     expect(() => rng.int(Number.NaN, 3)).toThrow(/whole numbers/u);
     // A refused call draws nothing.
-    expect(draws(rng, 3)).toEqual(draws(new Rng(1), 3));
+    expect(draws(rng, 3)).toStrictEqual(draws(new Rng(1), 3));
   });
 
   it("pick() returns each item about as often as any other, and refuses an empty list", () => {
@@ -223,8 +223,8 @@ describe("the random number generator", () => {
     const items = [1, 2, 3, 4, 5, 6, 7, 8];
     const returned = rng.shuffle(items);
     expect(returned).toBe(items);
-    expect([...items].sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(items).not.toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect([...items].sort()).toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(items).not.toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
     const orders = new Map<string, number>();
 
@@ -240,15 +240,15 @@ describe("the random number generator", () => {
       expect(count).toBeLessThan(1150);
     }
 
-    expect(rng.shuffle([])).toEqual([]);
-    expect(rng.shuffle(["one"])).toEqual(["one"]);
+    expect(rng.shuffle([])).toStrictEqual([]);
+    expect(rng.shuffle(["one"])).toStrictEqual(["one"]);
 
     // The same seed shuffles the same way.
     const order = (seed: number) =>
       new Rng(seed).shuffle(Array.from({ length: 20 }, (_, i) => i));
 
-    expect(order(77)).toEqual(order(77));
-    expect(order(77)).not.toEqual(order(78));
+    expect(order(77)).toStrictEqual(order(77));
+    expect(order(77)).not.toStrictEqual(order(78));
   });
 });
 
@@ -364,7 +364,7 @@ describe("the Random service", () => {
     withApp(App.make({ systems: [Probe], seed: 5 }), (app) => {
       app.tick(1);
       expect(seen).toBe(app.world.random);
-      expect(Array.from(app.world.random.state)).toEqual(
+      expect(Array.from(app.world.random.state)).toStrictEqual(
         Array.from(new Rng(5).state)
       );
     });
@@ -374,7 +374,7 @@ describe("the Random service", () => {
   it("makes two apps with one seed agree, and two seeds differ", () => {
     const first = play(2024, 120);
     const second = play(2024, 120);
-    expect(second).toEqual(first);
+    expect(second).toStrictEqual(first);
     // The game really is random: it rolled, spawned and moved things.
     expect(first.sparks.length).toBeGreaterThan(0);
     expect(first.dice[0]![1]).toBeGreaterThan(20);
@@ -383,12 +383,12 @@ describe("the Random service", () => {
     expect(first.log.length).toBeGreaterThan(15);
 
     const other = play(2025, 120);
-    expect(other.generator).not.toEqual(first.generator);
-    expect(other.sparks).not.toEqual(first.sparks);
-    expect(other.log).not.toEqual(first.log);
+    expect(other.generator).not.toStrictEqual(first.generator);
+    expect(other.sparks).not.toStrictEqual(first.sparks);
+    expect(other.log).not.toStrictEqual(first.log);
     // Leaving the seed out is seed 0, not a different game each time.
-    expect(play(undefined, 60)).toEqual(play(0, 60));
-    expect(play(undefined, 60)).toEqual(play(undefined, 60));
+    expect(play(undefined, 60)).toStrictEqual(play(0, 60));
+    expect(play(undefined, 60)).toStrictEqual(play(undefined, 60));
   });
 
   it("lets a game that uses it replay identically from its log", () => {
@@ -435,7 +435,7 @@ describe("the Random service", () => {
     const recorded = record(31);
     expect(recorded.dice[0]![1]).toBeGreaterThan(10);
     expect(recorded.sparks.length).toBeGreaterThan(0);
-    expect(replayOf(recorded, 31)).toEqual(recorded);
+    expect(replayOf(recorded, 31)).toStrictEqual(recorded);
     // With another seed the same moves would be a different game, and the
     // replay says so before its first tick.
     expect(() => replayOf(recorded, 32)).toThrow(App.ReplayDiverged);
@@ -466,14 +466,14 @@ describe("the Random service", () => {
           })
         );
         // It drew from the world's generator, not from one of its own.
-        expect(Array.from(app.world.random.state)).not.toEqual(before);
+        expect(Array.from(app.world.random.state)).not.toStrictEqual(before);
 
         return out;
       });
 
     const first = run(8);
-    expect(run(8)).toEqual(first);
-    expect(run(9)).not.toEqual(first);
+    expect(run(8)).toStrictEqual(first);
+    expect(run(9)).not.toStrictEqual(first);
     expect(first[0]! >= 0 && first[0]! < 1).toBe(true);
     expect(Number.isSafeInteger(first[1])).toBe(true);
     expect(first[2]! >= 1 && first[2]! <= 6).toBe(true);

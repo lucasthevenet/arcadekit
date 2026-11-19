@@ -146,23 +146,23 @@ describe("a view", () => {
   it("has its initial value until the game publishes, and then what the game last said", () => {
     const ui = View.makeBridge();
     // A UI can be there before the game is.
-    expect(ui.get(Hud)).toEqual({ gold: 0, coins: 0 });
+    expect(ui.get(Hud)).toStrictEqual({ gold: 0, coins: 0 });
     expect(ui.get(Hud)).toBe(Hud.initial);
-    expect(ui.get(Menu)).toEqual({ phase: "title" });
+    expect(ui.get(Menu)).toStrictEqual({ phase: "title" });
     const app = play(ui);
     app.world.spawn(Coin.of({ value: 5 }));
     // Making the app publishes nothing: a frame does.
     expect(ui.get(Hud)).toBe(Hud.initial);
     app.frame(0);
-    expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
-    expect(ui.get(Menu)).toEqual({ phase: "title" });
+    expect(ui.get(Hud)).toStrictEqual({ gold: 0, coins: 1 });
+    expect(ui.get(Menu)).toStrictEqual({ phase: "title" });
     app.dispatch(Start, {});
     app.tick(1);
     // A tick publishes nothing either.
-    expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
+    expect(ui.get(Hud)).toStrictEqual({ gold: 0, coins: 1 });
     app.frame(0);
-    expect(ui.get(Hud)).toEqual({ gold: 5, coins: 1 });
-    expect(ui.get(Menu)).toEqual({ phase: "playing" });
+    expect(ui.get(Hud)).toStrictEqual({ gold: 5, coins: 1 });
+    expect(ui.get(Menu)).toStrictEqual({ phase: "playing" });
   });
 
   it("is published once per frame, and only when it changed: a value that did not change costs the UI nothing", () => {
@@ -173,8 +173,8 @@ describe("a view", () => {
     app.world.spawn(Coin.of({ value: 2 }));
     app.frame(0);
     // The menu is as it was at first: nobody is told. The display is not.
-    expect(menu.heard).toEqual([]);
-    expect(hud.heard).toEqual([{ gold: 0, coins: 1 }]);
+    expect(menu.heard).toStrictEqual([]);
+    expect(hud.heard).toStrictEqual([{ gold: 0, coins: 1 }]);
     const shown = ui.get(Hud);
     const first = ui.get(Menu);
 
@@ -192,18 +192,18 @@ describe("a view", () => {
     expect(ui.get(Menu)).toBe(first);
     expect(first).toBe(Menu.initial);
     // The game worked each out every frame; that is all it cost.
-    expect(worked).toEqual({ hud: 41, menu: 41 });
+    expect(worked).toStrictEqual({ hud: 41, menu: 41 });
     app.dispatch(Start, {});
     // Several ticks, then one frame: told once, of the latest.
     app.tick(1);
     app.tick(1);
     app.tick(1);
     app.frame(0);
-    expect(hud.heard).toEqual([
+    expect(hud.heard).toStrictEqual([
       { gold: 0, coins: 1 },
       { gold: 6, coins: 1 },
     ]);
-    expect(menu.heard).toEqual([{ phase: "playing" }]);
+    expect(menu.heard).toStrictEqual([{ phase: "playing" }]);
     expect(ui.get(Hud)).not.toBe(shown);
     // And once more, nothing.
     app.frame(0.3);
@@ -248,7 +248,7 @@ describe("a view", () => {
       app.frame(0);
     }
 
-    expect(heard).toEqual([values[2], values[4], values[5], values[6]]);
+    expect(heard).toStrictEqual([values[2], values[4], values[5], values[6]]);
     expect(heard[0]).toBe(values[2]);
     expect(ui.get(Board)).toBe(values[6]);
   });
@@ -260,15 +260,15 @@ describe("a view", () => {
     const app = play(ui);
     const coin = app.world.spawn(Coin.of({ value: 1 }));
     app.frame(0);
-    expect(a.heard).toEqual([{ gold: 0, coins: 1 }]);
-    expect(b.heard).toEqual(a.heard);
+    expect(a.heard).toStrictEqual([{ gold: 0, coins: 1 }]);
+    expect(b.heard).toStrictEqual(a.heard);
     a.stop();
     // Stopping twice is stopping once.
     a.stop();
     app.world.despawn(coin);
     app.frame(0);
     expect(a.heard).toHaveLength(1);
-    expect(b.heard).toEqual([
+    expect(b.heard).toStrictEqual([
       { gold: 0, coins: 1 },
       { gold: 0, coins: 0 },
     ]);
@@ -289,7 +289,7 @@ describe("a view", () => {
     app.frame(0);
     app.world.spawn(Coin.of({ value: 1 }));
     app.frame(0);
-    expect(order).toEqual(["once"]);
+    expect(order).toStrictEqual(["once"]);
     expect(b.heard).toHaveLength(4);
   });
 
@@ -306,9 +306,9 @@ describe("a view", () => {
     const app = play(ui);
     app.world.spawn(Coin.of({ value: 1 }));
     expect(() => app.frame(0)).toThrow("the label is gone");
-    expect(after.heard).toEqual([{ gold: 0, coins: 1 }]);
+    expect(after.heard).toStrictEqual([{ gold: 0, coins: 1 }]);
     // The value was published: the next frame has nothing new to say.
-    expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
+    expect(ui.get(Hud)).toStrictEqual({ gold: 0, coins: 1 });
     app.frame(0);
     expect(after.heard).toHaveLength(1);
   });
@@ -322,12 +322,12 @@ describe("a view", () => {
       app.frame(0);
     }
 
-    expect(worked).toEqual({ hud: 0, menu: 0 });
+    expect(worked).toStrictEqual({ hud: 0, menu: 0 });
     // With one, once per frame.
     const withUi = play(View.makeBridge());
     withUi.frame(0);
     withUi.frame(0);
-    expect(worked).toEqual({ hud: 2, menu: 2 });
+    expect(worked).toStrictEqual({ hud: 2, menu: 2 });
   });
 
   it("keeps the value it had while the system that publishes it does not run", () => {
@@ -355,12 +355,12 @@ describe("a view", () => {
 
     app.world.singleton(Purse).gold = 9;
     app.frame(0);
-    expect(heard).toEqual([]);
+    expect(heard).toStrictEqual([]);
     expect(ui.get(Hud)).toBe(Hud.initial);
     app.dispatch(Start, {});
     app.tick(1);
     app.frame(0);
-    expect(heard).toEqual([{ gold: 9, coins: 0 }]);
+    expect(heard).toStrictEqual([{ gold: 9, coins: 0 }]);
     expect(Shown.name).toBe("View.publish(vw/Hud)");
     expect(Shown.stage).toBe("frame");
   });
@@ -407,18 +407,18 @@ describe("a view", () => {
     // At the title it is what it was defined as, and nobody is told so.
     step();
     step();
-    expect(heard).toEqual([]);
+    expect(heard).toStrictEqual([]);
     step(Start);
-    expect(heard).toEqual([{ gold: 9, coins: 0 }]);
+    expect(heard).toStrictEqual([{ gold: 9, coins: 0 }]);
     // The game goes back to the title: the gold of the game that was left
     // is not left on the screen. Told once, however long it stays there.
     step(Quit);
     step();
     step();
-    expect(heard).toEqual([{ gold: 9, coins: 0 }, Hud.initial]);
+    expect(heard).toStrictEqual([{ gold: 9, coins: 0 }, Hud.initial]);
     expect(ui.get(Hud)).toBe(Hud.initial);
     step(Start);
-    expect(heard.at(-1)).toEqual({ gold: 9, coins: 0 });
+    expect(heard.at(-1)).toStrictEqual({ gold: 9, coins: 0 });
     // Where no UI is there, it publishes to nobody and asks nothing more
     // than the port.
     const alone = run(made);
@@ -455,8 +455,8 @@ describe("a view", () => {
     app.frame(0);
     app.frame(0);
     // Whether each was news: the first is what the view was at first.
-    expect(told).toEqual([false, true, false]);
-    expect(heard).toEqual([{ gold: 1, coins: 0 }]);
+    expect(told).toStrictEqual([false, true, false]);
+    expect(heard).toStrictEqual([{ gold: 1, coins: 0 }]);
 
     const InTick = System.make("vw/InTick", function* () {
       (yield* View.Port).publish(Hud, { gold: 1, coins: 1 });
@@ -506,7 +506,7 @@ describe("what the UI sends", () => {
       log
         .filter((entry) => !Action.isCheckpoint(entry))
         .map((entry) => (Action.isCheckpoint(entry) ? "" : entry.name))
-    ).toEqual(["vw/Buy", "vw/Start"]);
+    ).toStrictEqual(["vw/Buy", "vw/Start"]);
     // A replay with a UI of its own that is sending things is told what
     // the log says and nothing else.
     const other = View.makeBridge();
@@ -532,12 +532,12 @@ describe("what the UI sends", () => {
     // Nothing happens until the game takes it.
     expect(
       app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
-    ).toEqual([]);
+    ).toStrictEqual([]);
     expect(app.world.singleton(Purse).gold).toBe(5);
     app.input();
     expect(
       app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
-    ).toEqual([
+    ).toStrictEqual([
       { tick: 0, name: "vw/Buy", payload: { price: 3 }, queued: true },
       { tick: 0, name: "vw/Start", payload: {}, queued: true },
       { tick: 0, name: "vw/Buy", payload: { price: 4 }, queued: true },
@@ -548,13 +548,13 @@ describe("what the UI sends", () => {
     // Three spent, and one earned by the coin it bought, once the game began.
     expect(app.world.singleton(Purse).gold).toBe(3);
     app.frame(0);
-    expect(ui.get(Menu)).toEqual({ phase: "playing" });
+    expect(ui.get(Menu)).toStrictEqual({ phase: "playing" });
 
     const logged = app.actionLog.filter(
       (entry): entry is Action.Logged => !Action.isCheckpoint(entry)
     );
 
-    expect(logged.map((entry) => entry.refused)).toEqual([
+    expect(logged.map((entry) => entry.refused)).toStrictEqual([
       undefined,
       undefined,
       "TooPoor",
@@ -590,7 +590,7 @@ describe("what the UI sends", () => {
     app.input();
     app.tick(1);
     app.frame(0);
-    expect(menu.heard).toEqual([{ phase: "playing" }]);
+    expect(menu.heard).toStrictEqual([{ phase: "playing" }]);
   });
 
   it("is issued by a driver before each tick, so a button is as good as a key", () => {
@@ -599,13 +599,13 @@ describe("what the UI sends", () => {
     const advance = Driver.fixedStep(app, { hz: 10 });
     const menu = listen(ui, Menu);
     advance(0.1);
-    expect(menu.heard).toEqual([]);
+    expect(menu.heard).toStrictEqual([]);
     ui.send(Start, {});
     // A frame in which no tick is due issues nothing, and loses nothing.
     advance(0.01);
-    expect(menu.heard).toEqual([]);
+    expect(menu.heard).toStrictEqual([]);
     advance(0.1);
-    expect(menu.heard).toEqual([{ phase: "playing" }]);
+    expect(menu.heard).toStrictEqual([{ phase: "playing" }]);
   });
 
   it("replays with no UI: the log holds what it sent, and the game goes the same way", () => {
@@ -659,11 +659,11 @@ describe("what the UI sends", () => {
     // And was not kept: the game goes on, and hears what it does handle.
     ui.send(Start, {});
     app.tick(1);
-    expect(app.actionLog.filter(isAction).map((e) => e.name)).toEqual([
+    expect(app.actionLog.filter(isAction).map((e) => e.name)).toStrictEqual([
       "vw/Start",
     ]);
     app.frame(0);
-    expect(ui.get(Menu)).toEqual({ phase: "playing" });
+    expect(ui.get(Menu)).toStrictEqual({ phase: "playing" });
     end();
   });
 
@@ -737,7 +737,7 @@ describe("what the UI sends", () => {
 
     app.tick(1);
     app.frame(0);
-    expect(said).toEqual([true, false, true, false, true, false]);
+    expect(said).toStrictEqual([true, false, true, false, true, false]);
   });
 
   it("cannot be sent to the bridge that stands for no UI", () => {
@@ -786,15 +786,15 @@ describe("the bridge", () => {
       expect(watched.world.hash()).toBe(alone.world.hash());
     }
 
-    expect(watched.actionLog).toEqual(alone.actionLog);
+    expect(watched.actionLog).toStrictEqual(alone.actionLog);
 
     const saves = [watched.save(), alone.save()].map((save) =>
       Exit.isSuccess(save) ? save.value : undefined
     );
 
     expect(saves[0]).toBeDefined();
-    expect(saves[0]).toEqual(saves[1]);
-    expect(ui.get(Hud)).toEqual({ gold: 90, coins: 1 });
+    expect(saves[0]).toStrictEqual(saves[1]);
+    expect(ui.get(Hud)).toStrictEqual({ gold: 90, coins: 1 });
   });
 
   it("is what a plugin's systems need: a game that publishes and leaves out View.plugin does not compile", () => {

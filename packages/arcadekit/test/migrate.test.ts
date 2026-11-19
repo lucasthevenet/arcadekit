@@ -167,7 +167,7 @@ describe("a snapshot read without the program's components", () => {
   it("describes its own components, and writes back to the same bytes", () => {
     const { save } = savedByVersion0();
     const contents = readSnapshot(save.world);
-    expect(contents.components).toEqual([
+    expect(contents.components).toStrictEqual([
       {
         name: "mg/Buff",
         storage: "sparse",
@@ -197,24 +197,24 @@ describe("a snapshot read without the program's components", () => {
       },
     ]);
     // Two tables: units without the tag, then units with it.
-    expect(contents.tables.map((table) => table.components)).toEqual([
+    expect(contents.tables.map((table) => table.components)).toStrictEqual([
       ["mg/Hp", "mg/Name", "mg/Pos"],
       ["mg/Hp", "mg/Name", "mg/Old", "mg/Pos"],
     ]);
-    expect(Array.from(contents.tables[1]!.columns["mg/Hp"]!.points!)).toEqual([
+    expect(Array.from(contents.tables[1]!.columns["mg/Hp"]!.points!)).toStrictEqual([
       0, 20, 80, 60,
     ]);
-    expect(contents.tables[1]!.columns["mg/Name"]!.value).toEqual([
+    expect(contents.tables[1]!.columns["mg/Name"]!.value).toStrictEqual([
       "unit 0",
       "unit 2",
       "unit 8",
       "unit 6",
     ]);
     expect(contents.sparse).toHaveLength(1);
-    expect(Array.from(contents.sparse[0]!.members)).toEqual([0, 3, 6]);
-    expect(contents.freed).toEqual([4]);
+    expect(Array.from(contents.sparse[0]!.members)).toStrictEqual([0, 3, 6]);
+    expect(contents.freed).toStrictEqual([4]);
     expect(contents.generations).toHaveLength(9);
-    expect(writeSnapshot(contents)).toEqual(save.world);
+    expect(writeSnapshot(contents)).toStrictEqual(save.world);
   });
 
   it("writes back the bytes of any world it read", () => {
@@ -282,7 +282,7 @@ describe("a snapshot read without the program's components", () => {
       }
 
       const bytes = world.snapshot();
-      expect(writeSnapshot(readSnapshot(bytes))).toEqual(bytes);
+      expect(writeSnapshot(readSnapshot(bytes))).toStrictEqual(bytes);
     }
   });
 });
@@ -313,17 +313,17 @@ describe("a save from another version of the game", () => {
         const n = world.get(entity, Name2)!.value.slice("unit ".length);
         // Hp became Health: points a quarter of what they were, as a float,
         // behind an armor of 5 that every unit was given.
-        expect(world.get(entity, Health2)).toEqual({
+        expect(world.get(entity, Health2)).toStrictEqual({
           armor: 5,
           points: (10 * Number(n)) / 4,
         });
         // Pos kept x under its new name and lost y.
-        expect(world.get(entity, Pos2)).toEqual({ px: Number(n) });
+        expect(world.get(entity, Pos2)).toStrictEqual({ px: Number(n) });
       }
 
       // The sparse component kept its members, with power a hundredfold.
       const buffed = entities.filter((entity) => world.has(entity, Buff2));
-      expect(buffed.map((entity) => world.get(entity, Buff2))).toEqual([
+      expect(buffed.map((entity) => world.get(entity, Buff2))).toStrictEqual([
         { power: 0, note: "buff 0", fresh: undefined },
         { power: 300, note: "buff 3", fresh: undefined },
         { power: 600, note: "buff 6", fresh: undefined },
@@ -333,7 +333,7 @@ describe("a save from another version of the game", () => {
 
       // The ids are the ones the old game handed out, dead ones stay dead,
       // and the next entity gets the id the old game would have given.
-      expect(world.view(Query.all(Health2)).entities().toSorted()).toEqual(
+      expect(world.view(Query.all(Health2)).entities().toSorted()).toStrictEqual(
         entities.toSorted()
       );
       const next = world.spawn(Health2.of({ armor: 0, points: 1 }));
@@ -362,7 +362,7 @@ describe("a save from another version of the game", () => {
       // One table now: the units that never had the tag, then those that did.
       const order = app.world.view(Query.all(Name2)).entities();
       const names = order.map((entity) => app.world.get(entity, Name2)!.value);
-      expect(names).toEqual([
+      expect(names).toStrictEqual([
         "unit 1",
         "unit 3",
         "unit 5",
@@ -372,7 +372,7 @@ describe("a save from another version of the game", () => {
         "unit 8",
         "unit 6",
       ]);
-      expect(order.toSorted()).toEqual(entities.toSorted());
+      expect(order.toSorted()).toStrictEqual(entities.toSorted());
       let chunks = 0;
       app.world.view(Query.all(Name2)).eachChunk(() => {
         chunks += 1;
@@ -537,12 +537,12 @@ describe("a save from another version of the game", () => {
     const moved = unwrap(Save.migrate(save, 1, counting));
     expect(ran).toBe(1);
     expect(moved.version).toBe(1);
-    expect(moved.world).toEqual(save.world);
-    expect({ ...moved, version: 0 }).toEqual(save);
+    expect(moved.world).toStrictEqual(save.world);
+    expect({ ...moved, version: 0 }).toStrictEqual(save);
     // The save it was given is not changed by a migration that edits.
     const before = structuredClone(save);
     unwrap(Save.migrate(save, 2, migrations));
-    expect(save).toEqual(before);
+    expect(save).toStrictEqual(before);
   });
 
   it("is written back the way the game itself would write it, whatever was renamed or removed", () => {
@@ -567,21 +567,21 @@ describe("a save from another version of the game", () => {
 
     const world = new EcsWorld();
     world.load(bytes, [Apos, Zhp, Boon, Name0]);
-    expect(world.get(entities[0]!, Apos)).toEqual({ x: 0, y: -0 });
-    expect(world.get(entities[2]!, Zhp)).toEqual({ points: 20 });
-    expect(world.get(entities[3]!, Boon)).toEqual({ power: 3, note: "buff 3" });
+    expect(world.get(entities[0]!, Apos)).toStrictEqual({ x: 0, y: -0 });
+    expect(world.get(entities[2]!, Zhp)).toStrictEqual({ points: 20 });
+    expect(world.get(entities[3]!, Boon)).toStrictEqual({ power: 3, note: "buff 3" });
     expect(world.view(Query.all(Boon)).count()).toBe(3);
     // Byte for byte what the loaded world saves: one form, not two.
-    expect(world.snapshot()).toEqual(bytes);
+    expect(world.snapshot()).toStrictEqual(bytes);
 
     // The sparse component taken out altogether.
     Migrate.removeComponent(contents, "mg/Boon");
-    expect(contents.sparse).toEqual([]);
+    expect(contents.sparse).toStrictEqual([]);
     const without = new EcsWorld();
     without.load(writeSnapshot(contents), [Apos, Zhp, Name0]);
     expect(without.entityCount).toBe(8);
     expect(without.component("mg/Boon")).toBeUndefined();
-    expect(without.snapshot()).toEqual(writeSnapshot(contents));
+    expect(without.snapshot()).toStrictEqual(writeSnapshot(contents));
   });
 
   it("is refused when a migration leaves a column with the wrong number of values", () => {
@@ -675,7 +675,7 @@ describe("a save from another version of the game", () => {
 
     const loaded = new EcsWorld();
     loaded.load(writeSnapshot(contents), [Thing2]);
-    expect(entities.map((entity) => loaded.get(entity, Thing2))).toEqual([
+    expect(entities.map((entity) => loaded.get(entity, Thing2))).toStrictEqual([
       { d: "new", a: { was: 1 }, b: 0.5, c: entities[0], e: 500, f: 0.5 },
       { d: "new", a: { was: 2 }, b: 1, c: entities[0], e: 500, f: 0.5 },
       { d: "new", a: { was: 3 }, b: 1.5, c: entities[0], e: 500, f: 0.5 },

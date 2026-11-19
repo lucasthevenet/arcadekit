@@ -133,8 +133,8 @@ const Combat = Plugin.make("Combat", {
 describe("plugins", () => {
   it("bundle systems, handlers, services and setup into one value", () => {
     withApp(App.make({ plugins: [Combat] }), (app) => {
-      expect(app.plugins).toEqual(["Physics", "Combat"]);
-      expect(app.systemOrder).toEqual(["Movement", "Walls", "BumpDamage"]);
+      expect(app.plugins).toStrictEqual(["Physics", "Combat"]);
+      expect(app.systemOrder).toStrictEqual(["Movement", "Walls", "BumpDamage"]);
       // Physics' setup spawned the ball.
       expect(app.world.entityCount).toBe(1);
       const ball = app.world.view(Query.all(Position)).entities()[0];
@@ -142,14 +142,14 @@ describe("plugins", () => {
 
       app.tick(1); // 9 -> 11, bounces off the wall at 10, loses 1 hp
       expect(app.world.get(ball!, Position)!.x).toBe(10);
-      expect(app.world.get(ball!, Health)).toEqual({ hp: 2 });
+      expect(app.world.get(ball!, Health)).toStrictEqual({ hp: 2 });
 
       // The handler came with the plugin, and dispatch is typed from it.
       const healed: Exit.Exit<number, NothingToHeal> = app.dispatch(Heal, {
         amount: 5,
       });
 
-      expect(healed).toEqual(Exit.succeed(7));
+      expect(healed).toStrictEqual(Exit.succeed(7));
 
       // So is the tick's failure type.
       const exit: Exit.Exit<void, Fragile> = app.tickExit(1);
@@ -174,8 +174,8 @@ describe("plugins", () => {
       App.make({ plugins: [Physics], systems: [Watch], handlers: [ping] }),
       (app) => {
         app.tick(1);
-        expect(seen).toEqual([1]);
-        expect(app.dispatch(Ping, {})).toEqual(Exit.succeed("pong"));
+        expect(seen).toStrictEqual([1]);
+        expect(app.dispatch(Ping, {})).toStrictEqual(Exit.succeed("pong"));
         // @ts-expect-error Heal belongs to Combat, which this app did not install
         expect(() => app.dispatch(Heal, { amount: 1 })).toThrow(/No handler/u);
       }
@@ -235,9 +235,9 @@ describe("plugins", () => {
     const Top = plugin("Top", [Left, Right]);
 
     withApp(App.make({ plugins: [Top, Core] }), (app) => {
-      expect(app.plugins).toEqual(["Core", "Left", "Right", "Top"]);
+      expect(app.plugins).toStrictEqual(["Core", "Left", "Right", "Top"]);
       expect(built).toBe(1);
-      expect(order).toEqual([
+      expect(order).toStrictEqual([
         "setup:Core",
         "setup:Left",
         "setup:Right",
@@ -245,7 +245,7 @@ describe("plugins", () => {
       ]);
       order.length = 0;
       app.tick(1);
-      expect(order).toEqual([
+      expect(order).toStrictEqual([
         "tick:Core",
         "tick:Left:1",
         "tick:Right:1",
@@ -289,7 +289,7 @@ describe("plugins", () => {
 
     withApp(App.make({ plugins: [ArenaPlugin], systems: [Look] }), (app) => {
       app.tick(1);
-      expect(seen).toEqual(["wall 10 of 10"]);
+      expect(seen).toStrictEqual(["wall 10 of 10"]);
     });
   });
 
@@ -321,7 +321,7 @@ describe("plugins", () => {
     );
 
     withApp(provided, (app) => app.tick(1));
-    expect(played).toEqual(["boing"]);
+    expect(played).toStrictEqual(["boing"]);
 
     expect(() =>
       withApp(
@@ -355,7 +355,7 @@ describe("plugins", () => {
     });
 
     withApp(App.make({ plugins: [Declared] }), (app) => app.tick(1));
-    expect(limits).toEqual([20]);
+    expect(limits).toStrictEqual([20]);
 
     // Installing Physics alongside is not enough: the layer is built from
     // what the plugin itself declares, so the missing service stays a
@@ -380,7 +380,7 @@ describe("plugins", () => {
       ),
       (app) => app.tick(1)
     );
-    expect(limits).toEqual([20, 6]);
+    expect(limits).toStrictEqual([20, 6]);
   });
 
   it("fail the app with a typed error when a layer or a setup fails", () => {
@@ -401,12 +401,12 @@ describe("plugins", () => {
     const make: Effect.Effect<unknown, NoSaveFile | BadConfig, Scope.Scope> =
       App.make({ plugins: [Loader, Config] });
 
-    expect(Effect.runSyncExit(Effect.scoped(make))).toEqual(
+    expect(Effect.runSyncExit(Effect.scoped(make))).toStrictEqual(
       Exit.fail(new BadConfig())
     );
     expect(
       Effect.runSyncExit(Effect.scoped(App.make({ plugins: [Loader] })))
-    ).toEqual(Exit.fail(new NoSaveFile({ path: "slot1" })));
+    ).toStrictEqual(Exit.fail(new NoSaveFile({ path: "slot1" })));
 
     const Slow = Plugin.make("Slow", {
       setup: Effect.gen(function* () {
@@ -432,7 +432,7 @@ describe("plugins", () => {
     ).toThrow(/both named "Twin"/u);
     // The same plugin listed twice is fine.
     withApp(App.make({ plugins: [one, one] }), (app) =>
-      expect(app.plugins).toEqual(["Twin"])
+      expect(app.plugins).toStrictEqual(["Twin"])
     );
 
     const clash = Plugin.make("Clash", { systems: [Movement] });

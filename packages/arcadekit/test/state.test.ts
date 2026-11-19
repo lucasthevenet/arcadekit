@@ -69,10 +69,10 @@ describe("a state", () => {
           })
         );
 
-        expect(read.pollUnsafe()).toEqual(
+        expect(read.pollUnsafe()).toStrictEqual(
           Exit.succeed(["menu", undefined, "wet", true])
         );
-        expect(Phase.values).toEqual(["menu", "playing", "paused"]);
+        expect(Phase.values).toStrictEqual(["menu", "playing", "paused"]);
         expect(Phase.name).toBe("st/Phase");
       })
     );
@@ -98,7 +98,7 @@ describe("a state", () => {
           if (tick === 2) {
             phase.set("playing");
             // Asked for, and not entered yet.
-            expect([phase.value, phase.next]).toEqual(["menu", "playing"]);
+            expect([phase.value, phase.next]).toStrictEqual(["menu", "playing"]);
           }
 
           if (tick === 4) {
@@ -120,9 +120,9 @@ describe("a state", () => {
           app.tick(1);
         }
 
-        expect(seen).toEqual(["menu", "menu", "playing", "playing", "playing"]);
+        expect(seen).toStrictEqual(["menu", "menu", "playing", "playing", "playing"]);
         // From outside, an action asks; the next tick enters.
-        expect(app.dispatch(Go, { to: "paused", refuse: false })).toEqual(
+        expect(app.dispatch(Go, { to: "paused", refuse: false })).toStrictEqual(
           Exit.succeed("playing")
         );
         app.tick(1);
@@ -156,11 +156,11 @@ describe("a state", () => {
         app.dispatch(Go, { to: "menu", refuse: false });
         expect(app.world.hash()).toBe(before);
         app.tick(1);
-        expect(ran).toEqual([]);
+        expect(ran).toStrictEqual([]);
         app.dispatch(Go, { to: "playing", refuse: false });
         expect(app.world.hash()).not.toBe(before);
         app.tick(1);
-        expect(ran).toEqual(["Entered"]);
+        expect(ran).toStrictEqual(["Entered"]);
       })
     );
   });
@@ -192,16 +192,16 @@ describe("a run condition", () => {
           return [...ran];
         };
 
-        expect(tick()).toEqual(["Always"]);
+        expect(tick()).toStrictEqual(["Always"]);
         app.dispatch(Go, { to: "playing", refuse: false });
-        expect(tick()).toEqual(["Always", "Playing", "NotMenu"]);
-        expect(tick()).toEqual(["Always", "Playing", "NotMenu"]);
+        expect(tick()).toStrictEqual(["Always", "Playing", "NotMenu"]);
+        expect(tick()).toStrictEqual(["Always", "Playing", "NotMenu"]);
         app.dispatch(Go, { to: "paused", refuse: false });
-        expect(tick()).toEqual(["Always", "NotMenu"]);
+        expect(tick()).toStrictEqual(["Always", "NotMenu"]);
         app.dispatch(Go, { to: "menu", refuse: false });
-        expect(tick()).toEqual(["Always"]);
+        expect(tick()).toStrictEqual(["Always"]);
         // The order systems run in is not the conditions' business.
-        expect(app.systemOrder).toEqual(["Always", "Playing", "NotMenu"]);
+        expect(app.systemOrder).toStrictEqual(["Always", "Playing", "NotMenu"]);
       })
     );
   });
@@ -249,14 +249,14 @@ describe("a run condition", () => {
           app.tick(1);
         }
 
-        expect(ran).toEqual([2, 4, 6]);
+        expect(ran).toStrictEqual([2, 4, 6]);
         // The second condition is asked only when the first held; the
         // other system asks every tick.
         expect(held.asked).toBe(3 + 6);
         held.on = false;
         app.tick(1);
         app.tick(1);
-        expect(ran).toEqual([2, 4, 6]);
+        expect(ran).toStrictEqual([2, 4, 6]);
         // What a condition can fail with is what the tick can fail with.
         held.asked = 100;
         const exit = app.tickExit(1);
@@ -338,7 +338,7 @@ describe("a run condition", () => {
           return [...ran];
         };
 
-        expect(tick()).toEqual([
+        expect(tick()).toStrictEqual([
           "Hud hidden",
           "Music off",
           "Music gone",
@@ -347,7 +347,7 @@ describe("a run condition", () => {
           "Draw nothing",
         ]);
         app.dispatch(Go, { to: "playing", refuse: false });
-        expect(tick()).toEqual([
+        expect(tick()).toStrictEqual([
           "Hud",
           "Music",
           "Spawner",
@@ -356,7 +356,7 @@ describe("a run condition", () => {
           "Draw",
         ]);
         app.dispatch(Go, { to: "paused", refuse: false });
-        expect(tick()).toEqual([
+        expect(tick()).toStrictEqual([
           "Hud hidden",
           "Music",
           "2 balls",
@@ -364,7 +364,7 @@ describe("a run condition", () => {
           "Draw nothing",
         ]);
         // It is asked for every time, not once.
-        expect(tick()).toEqual([
+        expect(tick()).toStrictEqual([
           "Hud hidden",
           "Music",
           "3 balls",
@@ -402,7 +402,7 @@ describe("a run condition", () => {
     const typed: System.System<Burnt, Lamp> = Lit;
     // @ts-expect-error it can fail, and needs a lamp
     const untyped: System.System<never, never> = Lit;
-    expect([typed.name, untyped.name]).toEqual(["Lit", "Lit"]);
+    expect([typed.name, untyped.name]).toStrictEqual(["Lit", "Lit"]);
     expect(Lit.idle).toBeDefined();
     expect(noting("Plain", []).idle).toBeUndefined();
   });
@@ -428,12 +428,12 @@ describe("a run condition", () => {
         });
 
         app.tick(1);
-        expect(ran).toEqual([]);
+        expect(ran).toStrictEqual([]);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
         app.tick(1);
         // Once, when it was set off, and not every tick after.
-        expect(ran).toEqual(["Too wet for a fanfare"]);
+        expect(ran).toStrictEqual(["Too wet for a fanfare"]);
       })
     );
   });
@@ -492,10 +492,10 @@ describe("a run condition", () => {
         app.tick(1);
         // It hears the event of the tick before it came back, and none of
         // the six it sat out before that.
-        expect(heard).toEqual([1, 8]);
+        expect(heard).toStrictEqual([1, 8]);
         // But every ball that moved while it was away is there to visit:
         // all three, each once.
-        expect(moved).toEqual([3, 1, 3]);
+        expect(moved).toStrictEqual([3, 1, 3]);
       })
     );
   });
@@ -532,38 +532,38 @@ describe("hooks", () => {
         };
 
         // The state a game starts in is entered on its first tick.
-        expect(ran).toEqual([]);
-        expect(tick()).toEqual(["EnterMenu", "Tick"]);
+        expect(ran).toStrictEqual([]);
+        expect(tick()).toStrictEqual(["EnterMenu", "Tick"]);
         // A move asked for before the first tick follows it at once.
         const eager = yield* game([]);
         const early: string[] = [];
         const hasty = yield* game(early);
         hasty.dispatch(Go, { to: "playing", refuse: false });
         hasty.tick(1);
-        expect(early).toEqual([
+        expect(early).toStrictEqual([
           "EnterMenu",
           "ExitMenu",
           "EnterPlaying",
           "Tick",
         ]);
         void eager;
-        expect(tick()).toEqual(["Tick"]);
+        expect(tick()).toStrictEqual(["Tick"]);
         app.dispatch(Go, { to: "playing", refuse: false });
         // Nothing runs until the tick.
-        expect(ran).toEqual(["Tick"]);
-        expect(tick()).toEqual(["ExitMenu", "EnterPlaying", "Tick"]);
-        expect(tick()).toEqual(["Tick"]);
+        expect(ran).toStrictEqual(["Tick"]);
+        expect(tick()).toStrictEqual(["ExitMenu", "EnterPlaying", "Tick"]);
+        expect(tick()).toStrictEqual(["Tick"]);
         // Asking for the state the game is in is not a move.
         app.dispatch(Go, { to: "playing", refuse: false });
-        expect(tick()).toEqual(["Tick"]);
+        expect(tick()).toStrictEqual(["Tick"]);
         app.dispatch(Go, { to: "paused", refuse: false });
-        expect(tick()).toEqual(["ExitPlaying", "EnterPaused", "Tick"]);
+        expect(tick()).toStrictEqual(["ExitPlaying", "EnterPaused", "Tick"]);
         // Only the last ask before a tick counts.
         app.dispatch(Go, { to: "playing", refuse: false });
         app.dispatch(Go, { to: "menu", refuse: false });
-        expect(tick()).toEqual(["EnterMenu", "Tick"]);
+        expect(tick()).toStrictEqual(["EnterMenu", "Tick"]);
         // Hooks are not among the systems that run every tick.
-        expect(app.systemOrder).toEqual(["Tick"]);
+        expect(app.systemOrder).toStrictEqual(["Tick"]);
       })
     );
   });
@@ -598,7 +598,7 @@ describe("hooks", () => {
         app.tick(1);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
-        expect(seen).toEqual([
+        expect(seen).toStrictEqual([
           "tick with 0",
           "leaving menu",
           "entering playing with 1",
@@ -649,7 +649,7 @@ describe("hooks", () => {
         app.tick(1);
         // As with any systems: each keeps its place, and what has to run
         // before it is pulled forward to just ahead of it.
-        expect(ran).toEqual(["Last", "Third", "Zeroth", "First"]);
+        expect(ran).toStrictEqual(["Last", "Third", "Zeroth", "First"]);
       })
     );
   });
@@ -671,15 +671,15 @@ describe("hooks", () => {
 
         const app = yield* game(ran, [SkipIntro, Bail]);
         app.tick(1);
-        expect(ran).toEqual(["EnterMenu", "SkipIntro", "Tick"]);
+        expect(ran).toStrictEqual(["EnterMenu", "SkipIntro", "Tick"]);
         ran.length = 0;
         app.tick(1);
         // The move that was under way is made; what the leaving hook asked
         // for waits its turn.
-        expect(ran).toEqual(["ExitMenu", "Bail", "EnterPlaying", "Tick"]);
+        expect(ran).toStrictEqual(["ExitMenu", "Bail", "EnterPlaying", "Tick"]);
         ran.length = 0;
         app.tick(1);
-        expect(ran).toEqual(["ExitPlaying", "EnterPaused", "Tick"]);
+        expect(ran).toStrictEqual(["ExitPlaying", "EnterPaused", "Tick"]);
       })
     );
   });
@@ -698,10 +698,10 @@ describe("hooks", () => {
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
         // The hook asked last, and what a hook asks for waits a tick.
-        expect(ran).toEqual(["EnterMenu", "Overrule", "Tick"]);
+        expect(ran).toStrictEqual(["EnterMenu", "Overrule", "Tick"]);
         ran.length = 0;
         app.tick(1);
-        expect(ran).toEqual(["ExitMenu", "EnterPaused", "Tick"]);
+        expect(ran).toStrictEqual(["ExitMenu", "EnterPaused", "Tick"]);
       })
     );
   });
@@ -767,7 +767,7 @@ describe("hooks", () => {
           app.tick(1);
           app.tick(1);
           // "st/Phase" before "st/Weather".
-          expect(ran).toEqual(["Menu", "Rain", "Play", "Sun"]);
+          expect(ran).toStrictEqual(["Menu", "Rain", "Play", "Sun"]);
         })
       );
     }
@@ -847,7 +847,7 @@ describe("a state in a save", () => {
         const fresh = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
         expect(fresh.world.hash()).toBe(app.world.hash());
         app.tick(1);
-        expect(built(app)).toEqual(["one"]);
+        expect(built(app)).toStrictEqual(["one"]);
         expect(app.world.hash()).not.toBe(fresh.world.hash());
         // Saved with a move asked for and not made yet.
         app.dispatch(Next, {});
@@ -878,7 +878,7 @@ describe("a state in a save", () => {
         }
 
         // Level one was not built again; two and three were built once.
-        expect(built(loaded)).toEqual(["one", "two", "three"]);
+        expect(built(loaded)).toStrictEqual(["one", "two", "three"]);
         expect(loaded.world.hash()).toBe(app.world.hash());
         let x = 0;
         loaded.world.view(Balls).each((ball) => {

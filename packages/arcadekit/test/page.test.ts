@@ -175,7 +175,7 @@ describe.each([
   it("shows the game, and acts on it only by sending actions", async () => {
     const page = await play(mount);
     // Before the game has said anything: every view at its initial value.
-    expect(page.before).toEqual({ buttons: ["Start"], hud: "Caught 0" });
+    expect(page.before).toStrictEqual({ buttons: ["Start"], hud: "Caught 0" });
     // The game's first frames say what the UI already shows: it is told
     // nothing, and nothing in the document changes.
     await page.step(3);
@@ -185,15 +185,15 @@ describe.each([
     // A button sends an action, and nothing else: the menu is as it was
     // until the game has applied it and published what it then is.
     await page.click("Start");
-    expect(page.buttons()).toEqual(["Start"]);
+    expect(page.buttons()).toStrictEqual(["Start"]);
     expect(await page.changed()).toBe(0);
     await page.step();
-    expect(page.buttons()).toEqual(["Pause", "Quit"]);
+    expect(page.buttons()).toStrictEqual(["Pause", "Quit"]);
     expect(page.hud()).toBe("Loading");
     // The game is heard as it is seen: from its events, in the frame.
-    expect(page.sound.played).toEqual([{ cue: "start", volume: 1, rate: 1 }]);
+    expect(page.sound.played).toStrictEqual([{ cue: "start", volume: 1, rate: 1 }]);
     // And its music has begun, which is not an event but how things are.
-    expect(page.sound.scored).toEqual([
+    expect(page.sound.scored).toStrictEqual([
       { channel: "music", track: "theme", volume: 0.4, fade: 0.6 },
     ]);
     expect(await page.changed()).toBeGreaterThan(0);
@@ -228,7 +228,7 @@ describe.each([
     // A sound for each frame in which stars were caught, and no other.
     // It is the level's own sound, a clip its bundle holds.
     const heard = page.sound.played.filter((one) => one.cue === "/caught.wav");
-    expect(heard[0]!.clip!.data).toEqual({ samples: 2 });
+    expect(heard[0]!.clip!.data).toStrictEqual({ samples: 2 });
     expect(heard.length).toBeGreaterThanOrEqual(1);
     expect(heard.length).toBeLessThanOrEqual(caught);
     expect(page.sound.played).toHaveLength(1 + heard.length);
@@ -239,9 +239,9 @@ describe.each([
     // Paused from the menu: the game stands still, and so does the UI.
     await page.click("Pause");
     await page.step();
-    expect(page.buttons()).toEqual(["Resume", "Quit"]);
+    expect(page.buttons()).toStrictEqual(["Resume", "Quit"]);
     // The music is turned down, not off.
-    expect(page.sound.scored.at(-1)).toEqual({
+    expect(page.sound.scored.at(-1)).toStrictEqual({
       channel: "music",
       track: "theme",
       volume: 0.1,
@@ -257,7 +257,7 @@ describe.each([
     // Resumed from the keyboard: the menu follows the game, whoever asked.
     page.source.tap("KeyP");
     await page.step();
-    expect(page.buttons()).toEqual(["Pause", "Quit"]);
+    expect(page.buttons()).toStrictEqual(["Pause", "Quit"]);
 
     // Enter starts a game, and this one is started: nothing begins, and
     // nothing says that anything did.
@@ -269,9 +269,9 @@ describe.each([
 
     await page.click("Quit");
     await page.step();
-    expect(page.buttons()).toEqual(["Start"]);
+    expect(page.buttons()).toStrictEqual(["Start"]);
     expect(page.hud()).toBe("Caught 0");
-    expect(page.ui.get(Menu)).toEqual({ phase: "title" });
+    expect(page.ui.get(Menu)).toStrictEqual({ phase: "title" });
     // Back at the title there is no music.
     expect(page.sound.playing.size).toBe(0);
     expect(page.sound.scored).toHaveLength(4);
@@ -282,7 +282,7 @@ describe.each([
     const told = page.told();
     page.ui.send(Start, {});
     await page.step(2);
-    expect(page.ui.get(Menu)).toEqual({ phase: "playing" });
+    expect(page.ui.get(Menu)).toStrictEqual({ phase: "playing" });
     expect(page.told()).toBe(told);
     expect(page.root.childNodes).toHaveLength(0);
     await page.close();
@@ -313,8 +313,8 @@ describe("the page's UI", () => {
   };
 
   it("holds no reference to the world: it imports the views and actions it may use, and the type of the bridge", () => {
-    expect(imported("ui-dom.ts")).toEqual(["../../src/View", "./protocol"]);
-    expect(imported("ui-react.ts")).toEqual([
+    expect(imported("ui-dom.ts")).toStrictEqual(["../../src/View", "./protocol"]);
+    expect(imported("ui-react.ts")).toStrictEqual([
       "../../src/View",
       "./protocol",
       "react",
@@ -330,7 +330,7 @@ describe("the page's UI", () => {
     }
 
     // And what they share with the game is keys: no component, no system.
-    expect(imported("protocol.ts")).toEqual([
+    expect(imported("protocol.ts")).toStrictEqual([
       "../../src/Action",
       "../../src/View",
       "effect",

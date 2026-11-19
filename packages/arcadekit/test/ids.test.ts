@@ -91,7 +91,7 @@ describe("an entity's id", () => {
       expect(world.despawn(old)).toBe(false);
     }
 
-    expect(world.get(last, Body)).toEqual({ x: 7 });
+    expect(world.get(last, Body)).toStrictEqual({ x: 7 });
     expect(world.entityCount).toBe(1);
 
     // Nor does a number that is no id at all, though its low bits are a
@@ -106,11 +106,11 @@ describe("an entity's id", () => {
     const world = new World();
     world.spawn(Body.of({ x: 0 }));
     const second = world.spawn(Body.of({ x: 1 }));
-    expect([entityIndex(second), entityGeneration(second)]).toEqual([1, 0]);
+    expect([entityIndex(second), entityGeneration(second)]).toStrictEqual([1, 0]);
     world.despawn(second);
     const again = world.spawn(Body.of({ x: 2 }));
     expect(again).toBe(SLOTS + 1);
-    expect([entityIndex(again), entityGeneration(again)]).toEqual([1, 1]);
+    expect([entityIndex(again), entityGeneration(again)]).toStrictEqual([1, 1]);
     // An id of the first 1,024 generations is the number it always was.
     world.despawn(again);
     const narrow = worn(world, 1021);
@@ -121,7 +121,7 @@ describe("an entity's id", () => {
     const wide = world.spawn(Body.of({ x: 0 }));
     expect(wide).toBe(1024 * SLOTS + 1);
     expect(wide).toBeGreaterThan(2 ** 32);
-    expect([entityIndex(wide), entityGeneration(wide)]).toEqual([1, 1024]);
+    expect([entityIndex(wide), entityGeneration(wide)]).toStrictEqual([1, 1024]);
     expect(Number.isSafeInteger(wide)).toBe(true);
   });
 
@@ -132,7 +132,7 @@ describe("an entity's id", () => {
     expect(wide).toBe(1500 * SLOTS + 1);
     // In a field, written each way a field is written.
     const owned = world.spawn(Body.of({ x: 1 }), Owned.of({ by: wide, n: 1 }));
-    expect(world.get(owned, Owned)).toEqual({ by: wide, n: 1 });
+    expect(world.get(owned, Owned)).toStrictEqual({ by: wide, n: 1 });
     world.set(owned, Owned, { by: anchor });
     world.view(query([Owned])).each((held) => {
       expect(held.by).toBe(anchor);
@@ -153,23 +153,23 @@ describe("an entity's id", () => {
     world.view(query([Body])).each((_, entity) => {
       handed.push(entity);
     });
-    expect(handed).toEqual([anchor, wide, owned]);
-    expect(world.view(query([Body])).entities()).toEqual(handed);
+    expect(handed).toStrictEqual([anchor, wide, owned]);
+    expect(world.view(query([Body])).entities()).toStrictEqual(handed);
     // In a sparse set, a relation and a singleton.
     world.add(wide, Mark.of({ to: wide }));
     world.add(anchor, Mark.of({ to: owned }));
-    expect(world.get(wide, Mark)).toEqual({ to: wide });
+    expect(world.get(wide, Mark)).toStrictEqual({ to: wide });
     const marked: [Entity, Entity][] = [];
     world.view(query([Mark])).each((mark, entity) => {
       marked.push([entity, mark.to]);
     });
-    expect(marked).toEqual([
+    expect(marked).toStrictEqual([
       [anchor, owned],
       [wide, wide],
     ]);
     const child = world.spawn(ChildOf.of({ target: wide }));
-    expect(world.get(child, ChildOf)).toEqual({ target: wide });
-    expect(world.sources(wide, ChildOf)).toEqual([child]);
+    expect(world.get(child, ChildOf)).toStrictEqual({ target: wide });
+    expect(world.sources(wide, ChildOf)).toStrictEqual([child]);
     world.singleton(Count).last = wide;
     expect(world.singleton(Count).last).toBe(wide);
 
@@ -187,18 +187,18 @@ describe("an entity's id", () => {
 
       expect(each.hash()).toBe(hash);
       expect(each.isAlive(wide)).toBe(true);
-      expect(each.view(query([Body])).entities()).toEqual(handed);
-      expect(each.get(owned, Owned)).toEqual({ by: wide, n: 1 });
-      expect(each.get(wide, Mark)).toEqual({ to: wide });
-      expect(each.sources(wide, ChildOf)).toEqual([child]);
+      expect(each.view(query([Body])).entities()).toStrictEqual(handed);
+      expect(each.get(owned, Owned)).toStrictEqual({ by: wide, n: 1 });
+      expect(each.get(wide, Mark)).toStrictEqual({ to: wide });
+      expect(each.sources(wide, ChildOf)).toStrictEqual([child]);
       expect(each.singleton(Count).last).toBe(wide);
     }
 
     const contents = readSnapshot(bytes);
     expect(contents.generations).toBeInstanceOf(Uint32Array);
-    expect(Array.from(contents.generations)).toEqual([0, 1500, 0, 0]);
-    expect(Array.from(contents.tables[0]!.entities)).toEqual([anchor, wide]);
-    expect(writeSnapshot(contents)).toEqual(bytes);
+    expect(Array.from(contents.generations)).toStrictEqual([0, 1500, 0, 0]);
+    expect(Array.from(contents.tables[0]!.entities)).toStrictEqual([anchor, wide]);
+    expect(writeSnapshot(contents)).toStrictEqual(bytes);
     // A different id in a field is a different world, though they differ
     // only above their 32nd bit: in a table, and in a sparse set.
     copy.set(owned, Owned, { by: (wide + 2 ** 32) as Entity });
@@ -215,19 +215,19 @@ describe("an entity's id", () => {
     const changed = world.view(query([Body], { changedDefs: [Body] }));
     changed.entities();
     world.set(wide, Body, { x: 9 });
-    expect(changed.entities()).toEqual([wide]);
+    expect(changed.entities()).toStrictEqual([wide]);
     // Its child goes with it. What a reader has yet to hear of is kept
     // whole in what a save holds of it.
     world.despawn(wide);
     const unread = world.saveChanges();
-    expect(unread.find((each) => each.kind === "removed")?.entries).toEqual([
+    expect(unread.find((each) => each.kind === "removed")?.entries).toStrictEqual([
       wide,
     ]);
     const later = new World();
     later.load(world.snapshot(), all);
     later.restoreChanges(unread);
-    expect(later.removed(Body).read()).toEqual([wide]);
-    expect(gone.read()).toEqual([wide]);
+    expect(later.removed(Body).read()).toStrictEqual([wide]);
+    expect(gone.read()).toStrictEqual([wide]);
     expect(world.isAlive(child)).toBe(false);
     // The slots that came free are given out again, last first, each with
     // its next generation.
@@ -239,8 +239,8 @@ describe("an entity's id", () => {
   it("is one a schema takes, and a migration can put in a field", () => {
     const decode = Schema.decodeUnknownExit(EntityId);
     const wide = (1500 * SLOTS + 1) as Entity;
-    expect(decode(wide)).toEqual(Exit.succeed(wide));
-    expect(JSON.parse(JSON.stringify({ wide }))).toEqual({ wide });
+    expect(decode(wide)).toStrictEqual(Exit.succeed(wide));
+    expect(JSON.parse(JSON.stringify({ wide }))).toStrictEqual({ wide });
     const world = new World();
     world.spawn(Body.of({ x: 1 }));
     const contents = readSnapshot(world.snapshot());
@@ -253,7 +253,7 @@ describe("an entity's id", () => {
 
     const moved = new World();
     moved.load(writeSnapshot(contents), [Bodied]);
-    expect(moved.get(0 as Entity, Bodied)).toEqual({ x: 1, by: wide });
+    expect(moved.get(0 as Entity, Bodied)).toStrictEqual({ x: 1, by: wide });
   });
 });
 
@@ -279,7 +279,7 @@ describe("a slot whose generations are used up", () => {
     expect(last).toBeLessThan(2 ** 53);
     expect(Number.isSafeInteger(last)).toBe(true);
     expect(world.isAlive(last)).toBe(true);
-    expect(world.get(last, Body)).toEqual({ x: 1 });
+    expect(world.get(last, Body)).toStrictEqual({ x: 1 });
     expect(entityGeneration(last)).toBe(GENERATIONS - 1);
     expect(world.despawn(last)).toBe(true);
     expect(world.isAlive(last)).toBe(false);
@@ -287,14 +287,14 @@ describe("a slot whose generations are used up", () => {
     // The slot that was freed before is given out, and then new ones: slot
     // 0 is not, ever.
     const next = [0, 1, 2, 3].map((n) => world.spawn(Body.of({ x: n })));
-    expect(next.map((entity) => entityIndex(entity))).toEqual([1, 2, 3, 4]);
+    expect(next.map((entity) => entityIndex(entity))).toStrictEqual([1, 2, 3, 4]);
 
     for (const entity of next) {
       world.despawn(entity);
     }
 
     const after = [0, 1, 2, 3, 4].map((n) => world.spawn(Body.of({ x: n })));
-    expect(after.map((entity) => entityIndex(entity)).toSorted()).toEqual([
+    expect(after.map((entity) => entityIndex(entity)).toSorted()).toStrictEqual([
       1, 2, 3, 4, 5,
     ]);
     expect(world.isAlive(last)).toBe(false);
@@ -308,7 +308,7 @@ describe("a slot whose generations are used up", () => {
     const copy = new World();
     copy.load(bytes, all);
     expect(copy.hash()).toBe(world.hash());
-    expect(Array.from(readSnapshot(bytes).generations)).toEqual([
+    expect(Array.from(readSnapshot(bytes).generations)).toStrictEqual([
       GENERATIONS,
       1,
     ]);
@@ -409,20 +409,20 @@ describe("a snapshot from before ids were widened", () => {
         .view(query([Body]))
         .entities()
         .map((entity) => [entity, world.get(entity, Body)!.x])
-    ).toEqual(facts.bodies);
+    ).toStrictEqual(facts.bodies);
     expect(entityGeneration(facts.two)).toBe(6);
-    expect(world.get(facts.owned, Owned)).toEqual(facts.ownedBy);
-    expect(world.get(facts.child, ChildOf)).toEqual(facts.childOf);
-    expect(world.sources(facts.four, ChildOf)).toEqual(facts.sources);
+    expect(world.get(facts.owned, Owned)).toStrictEqual(facts.ownedBy);
+    expect(world.get(facts.child, ChildOf)).toStrictEqual(facts.childOf);
+    expect(world.sources(facts.four, ChildOf)).toStrictEqual(facts.sources);
     expect(
       facts.marks.map(([entity]) => [entity, world.get(entity, Mark)!.to])
-    ).toEqual(facts.marks);
-    expect({ ...world.singleton(Count) }).toEqual(facts.count);
-    expect(Array.from(world.random.state)).toEqual(facts.random);
+    ).toStrictEqual(facts.marks);
+    expect({ ...world.singleton(Count) }).toStrictEqual(facts.count);
+    expect(Array.from(world.random.state)).toStrictEqual(facts.random);
     // And it goes on as that world went on: the same ids to come.
     const again = new World();
     again.load(old, all);
-    expect([0, 0, 0].map(() => again.spawn(Body.of({ x: 0 })))).toEqual(
+    expect([0, 0, 0].map(() => again.spawn(Body.of({ x: 0 })))).toStrictEqual(
       facts.after
     );
   });
@@ -433,12 +433,12 @@ describe("a snapshot from before ids were widened", () => {
     const today = world.snapshot();
     expect(new DataView(today.buffer).getUint32(4, true)).toBe(3);
     expect(today.length).toBeGreaterThan(old.length);
-    expect(writeSnapshot(readSnapshot(old))).toEqual(today);
+    expect(writeSnapshot(readSnapshot(old))).toStrictEqual(today);
     const copy = new World();
     copy.load(today, all);
     expect(copy.hash()).toBe(world.hash());
     const contents = readSnapshot(old);
-    expect(Array.from(contents.generations)).toEqual([0, 1, 6, 0, 2, 1, 0]);
-    expect(contents.freed).toEqual([1]);
+    expect(Array.from(contents.generations)).toStrictEqual([0, 1, 6, 0, 2, 1, 0]);
+    expect(contents.freed).toStrictEqual([1]);
   });
 });

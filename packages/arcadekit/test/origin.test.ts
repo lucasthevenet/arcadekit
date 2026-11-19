@@ -23,28 +23,28 @@ describe("who issued an action", () => {
   it("is told to its handler when the action came with a name", () => {
     withApp(game(), (app) => {
       // Brought in on someone's behalf, as a server does for its clients.
-      expect(app.dispatchByName("ls/Tip", { amount: 3 }, "ada")).toEqual(
+      expect(app.dispatchByName("ls/Tip", { amount: 3 }, "ada")).toStrictEqual(
         Exit.succeed("ada")
       );
       app.enqueueByName("ls/Tip", { amount: 4 }, "grace");
       app.tick(DELTA);
-      expect(purseOf(app)).toEqual({ ada: 3, grace: 4 });
+      expect(purseOf(app)).toStrictEqual({ ada: 3, grace: 4 });
     });
   });
 
   it("is nobody for an action this program issued itself", () => {
     withApp(game(), (app) => {
       // Typed, through the app: a game of one has no one to name.
-      expect(app.dispatch(Tip, { amount: 1 })).toEqual(
+      expect(app.dispatch(Tip, { amount: 1 })).toStrictEqual(
         Exit.fail(new Stranger({ from: undefined }))
       );
-      expect(app.dispatchByName("ls/Tip", { amount: 1 })).toEqual(
+      expect(app.dispatchByName("ls/Tip", { amount: 1 })).toStrictEqual(
         Exit.fail(new Stranger({ from: undefined }))
       );
       app.enqueue(Tip, { amount: 1 });
       app.tick(DELTA);
       expect(moves(app.actionLog).at(-1)?.refused).toBeDefined();
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 0 });
+      expect(purseOf(app)).toStrictEqual({ ada: 0, grace: 0 });
     });
     // And for one the simulation issues, a bot's: no peer stands behind it.
     const told: (string | undefined)[] = [];
@@ -63,7 +63,7 @@ describe("who issued an action", () => {
     withApp(App.make({ systems: [Bot], handlers: [poke] }), (app) => {
       app.tick(DELTA);
       app.tick(DELTA);
-      expect(told).toEqual([undefined]);
+      expect(told).toStrictEqual([undefined]);
     });
   });
 
@@ -77,7 +77,7 @@ describe("who issued an action", () => {
       return { log: [...app.actionLog], hash: app.world.hash() };
     });
 
-    expect(moves(recorded.log)).toEqual([
+    expect(moves(recorded.log)).toStrictEqual([
       { tick: 0, name: "ls/Tip", payload: { amount: 2 }, from: "ada" },
       {
         tick: 0,
@@ -98,14 +98,14 @@ describe("who issued an action", () => {
     // As text and back, as a log that is kept would be.
     const text = Action.encodeLog(recorded.log);
     const read = Action.decodeLog(text);
-    expect(read).toEqual(Exit.succeed(recorded.log));
+    expect(read).toStrictEqual(Exit.succeed(recorded.log));
     withApp(game(), (app) => {
       App.replay(app, Exit.isSuccess(read) ? read.value : [], {
         delta: DELTA,
         ticks: 1,
       });
       expect(app.world.hash()).toBe(recorded.hash);
-      expect(purseOf(app)).toEqual({ ada: 2, grace: 5 });
+      expect(purseOf(app)).toStrictEqual({ ada: 2, grace: 5 });
     });
 
     // A log that had lost who issued each is another game, and says so.
@@ -144,17 +144,17 @@ describe("who issued an action", () => {
         throw new Error("the game could not be saved");
       }
 
-      expect(save.value.queued).toEqual([
+      expect(save.value.queued).toStrictEqual([
         { name: "ls/Tip", payload: { amount: 6 }, from: "grace" },
       ]);
       // And where a game goes back to: the tip is waiting again, hers still.
       const moment = app.capture();
       app.tick(DELTA);
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });
+      expect(purseOf(app)).toStrictEqual({ ada: 0, grace: 6 });
       app.rewind(Exit.isSuccess(moment) ? moment.value : { tick: -1 });
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 0 });
+      expect(purseOf(app)).toStrictEqual({ ada: 0, grace: 0 });
       app.tick(DELTA);
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });
+      expect(purseOf(app)).toStrictEqual({ ada: 0, grace: 6 });
 
       return Save.encode(save.value);
     });
@@ -171,7 +171,7 @@ describe("who issued an action", () => {
           const app = yield* App.load(read.value, gameOptions());
           app.tick(DELTA);
           const { ada, grace } = app.world.singleton(Purse);
-          expect({ ada, grace }).toEqual({ ada: 0, grace: 6 });
+          expect({ ada, grace }).toStrictEqual({ ada: 0, grace: 6 });
         })
       )
     );
@@ -198,7 +198,7 @@ describe("who issued an action", () => {
       app.enqueueByName("or/Nobody", {}, "grace");
       app.tick(DELTA);
       // Whose each was, so that a UI can show a player their own.
-      expect(heard).toEqual(["ada", undefined, "grace"]);
+      expect(heard).toStrictEqual(["ada", undefined, "grace"]);
     });
   });
 });
@@ -223,13 +223,13 @@ describe("who issued an action, in a session", () => {
           catchUp(peers, net);
 
           for (const peer of peers) {
-            expect(purseOf(peer.app)).toEqual({ ada: 2, grace: 6 });
+            expect(purseOf(peer.app)).toStrictEqual({ ada: 2, grace: 6 });
             expect(
               moves(peer.app.actionLog).map((entry) => [
                 entry.from,
                 (entry.payload as { amount: number }).amount,
               ])
-            ).toEqual([
+            ).toStrictEqual([
               ["ada", 2],
               ["grace", 5],
               ["grace", 1],
@@ -253,7 +253,7 @@ describe("who issued an action, in a session", () => {
       }
 
       catchUp(peers, net);
-      expect(moves(ada.app.actionLog)).toEqual([
+      expect(moves(ada.app.actionLog)).toStrictEqual([
         {
           tick: expect.any(Number),
           name: "ls/Fire",
@@ -262,7 +262,7 @@ describe("who issued an action, in a session", () => {
           queued: true,
         },
       ]);
-      expect(ada.app.actionLog).toEqual(grace.app.actionLog);
+      expect(ada.app.actionLog).toStrictEqual(grace.app.actionLog);
     });
   });
 
@@ -279,7 +279,7 @@ describe("who issued an action, in a session", () => {
       ada.session.tick();
       expect(
         ada.session.outgoing().flatMap((message) => message.actions)
-      ).toEqual([{ name: "ls/Tip", payload: { amount: 1 } }]);
+      ).toStrictEqual([{ name: "ls/Tip", payload: { amount: 1 } }]);
     });
   });
 
@@ -293,8 +293,8 @@ describe("who issued an action, in a session", () => {
         tick: 0,
         actions: [{ name: "ls/Tip", payload: { amount: 7 } }],
       });
-      expect(ada.session.tickExit()).toEqual(Exit.succeed(true));
-      expect(purseOf(ada.app)).toEqual({ ada: 0, grace: 7 });
+      expect(ada.session.tickExit()).toStrictEqual(Exit.succeed(true));
+      expect(purseOf(ada.app)).toStrictEqual({ ada: 0, grace: 7 });
     });
   });
 });

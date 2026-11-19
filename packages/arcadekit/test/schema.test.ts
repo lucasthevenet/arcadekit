@@ -88,13 +88,13 @@ describe("actions with a schema", () => {
         seed: 12_345_678_901_234_567_890n,
       });
 
-      expect(exit).toEqual(Exit.succeed(46));
+      expect(exit).toStrictEqual(Exit.succeed(46));
       // The handler gets the value as given...
-      expect(received).toEqual([
+      expect(received).toStrictEqual([
         { target, amount: 4, seed: 12_345_678_901_234_567_890n },
       ]);
       // ...and the log gets something JSON can hold.
-      expect(moves(app.actionLog)).toEqual([
+      expect(moves(app.actionLog)).toStrictEqual([
         {
           tick: 0,
           name: "Damage",
@@ -120,9 +120,9 @@ describe("actions with a schema", () => {
       expect(error.action).toBe("Damage");
       expect(error.message).toMatch(/amount/u);
       // The handler never ran, nothing changed, nothing was logged.
-      expect(received).toEqual([]);
-      expect(app.world.get(target, Health)).toEqual({ hp: 50 });
-      expect(moves(app.actionLog)).toEqual([]);
+      expect(received).toStrictEqual([]);
+      expect(app.world.get(target, Health)).toStrictEqual({ hp: 50 });
+      expect(moves(app.actionLog)).toStrictEqual([]);
     });
   });
 
@@ -137,12 +137,12 @@ describe("actions with a schema", () => {
         note: "from the network",
       });
 
-      expect(exit).toEqual(Exit.succeed(47));
+      expect(exit).toStrictEqual(Exit.succeed(47));
       // Decoded for the handler: the seed is a bigint again.
-      expect(received).toEqual([
+      expect(received).toStrictEqual([
         { target, amount: 3, seed: 77n, note: "from the network" },
       ]);
-      expect(moves(app.actionLog)[0]!.payload).toEqual({
+      expect(moves(app.actionLog)[0]!.payload).toStrictEqual({
         target,
         amount: 3,
         seed: "77",
@@ -175,7 +175,7 @@ describe("actions with a schema", () => {
         expect(error.message.length, label).toBeGreaterThan(0);
       }
 
-      expect(failure(app.dispatchByName("Nope", {}))).toEqual(
+      expect(failure(app.dispatchByName("Nope", {}))).toStrictEqual(
         new Action.UnknownAction({ action: "Nope" })
       );
       expect(failure(app.dispatchByName("constructor", {}))).toBeInstanceOf(
@@ -188,11 +188,11 @@ describe("actions with a schema", () => {
         failure(
           app.dispatchByName("Damage", { target: dead, amount: 3, seed: "1" })
         )
-      ).toEqual(new NoSuchTarget({ target: dead }));
+      ).toStrictEqual(new NoSuchTarget({ target: dead }));
 
       expect(received).toHaveLength(1); // only the last one reached the handler
-      expect(app.world.get(target, Health)).toEqual({ hp: 50 });
-      expect(moves(app.actionLog)).toEqual([]);
+      expect(app.world.get(target, Health)).toStrictEqual({ hp: 50 });
+      expect(moves(app.actionLog)).toStrictEqual([]);
     });
   });
 
@@ -223,8 +223,8 @@ describe("actions with a schema", () => {
       app.enqueue(Damage, { target, amount: 2, seed: 9n });
       app.enqueue(Damage, { target, amount: -2, seed: 9n });
       app.tick(1);
-      expect(app.world.get(target, Health)).toEqual({ hp: 43 });
-      expect(rejected).toEqual([
+      expect(app.world.get(target, Health)).toStrictEqual({ hp: 43 });
+      expect(rejected).toStrictEqual([
         "Damage: InvalidPayload",
         "Teleport: UnknownAction",
         "Damage: InvalidPayload",
@@ -238,7 +238,7 @@ describe("actions with a schema", () => {
           entry.queued,
           entry.refused === undefined ? "applied" : "refused",
         ])
-      ).toEqual([
+      ).toStrictEqual([
         ["Damage", 5, true, "applied"],
         ["Damage", 500, true, "refused"],
         ["Teleport", undefined, true, "refused"],
@@ -256,7 +256,7 @@ describe("actions with a schema", () => {
       );
       expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/u);
       expect(moves(app.actionLog)[2]!.refused).toBe("UnknownAction");
-      expect(moves(app.actionLog)[3]!.payload).toEqual({
+      expect(moves(app.actionLog)[3]!.payload).toStrictEqual({
         target,
         amount: 2,
         seed: "9",
@@ -271,7 +271,7 @@ describe("actions with a schema", () => {
         name: "bob",
       });
 
-      expect(exit).toEqual(Exit.succeed("BOB"));
+      expect(exit).toStrictEqual(Exit.succeed("BOB"));
       // By name, the payload is passed through as it is. A wrong shape reaches
       // the handler, which here crashes on it: a defect, contained in the Exit.
       const crashed = app.dispatchByName("Rename", { name: 42 });
@@ -336,7 +336,7 @@ describe("events with a schema", () => {
 
     withApp(App.make({ systems: [Emit, Read] }), (app) => {
       app.tick(1);
-      expect(seen).toEqual([3, "three", 500]);
+      expect(seen).toStrictEqual([3, "three", 500]);
       expect(app.events.pending(Hit)).toBe(3);
     });
     expect(Hit.name).toBe("sc/Hit");
@@ -353,7 +353,7 @@ describe("events with a schema", () => {
     };
 
     const encoded = Event.encode(Hit, payload);
-    expect(encoded).toEqual(
+    expect(encoded).toStrictEqual(
       Exit.succeed({
         target: 7,
         amount: 3,
@@ -363,7 +363,7 @@ describe("events with a schema", () => {
     );
     // JSON all the way: text and back.
     const text = JSON.stringify(Exit.isSuccess(encoded) && encoded.value);
-    expect(Event.decode(Hit, JSON.parse(text))).toEqual(Exit.succeed(payload));
+    expect(Event.decode(Hit, JSON.parse(text))).toStrictEqual(Exit.succeed(payload));
 
     for (const bad of [
       { ...payload, amount: 500 },
@@ -483,7 +483,7 @@ describe("saving and replaying", () => {
 
     expect(
       moves(loaded.value).map((entry) => `${entry.tick}:${entry.name}`)
-    ).toEqual(["0:Damage", "1:Damage", "3:Damage", "3:Rename"]);
+    ).toStrictEqual(["0:Damage", "1:Damage", "3:Damage", "3:Rename"]);
     expect(replayInto(loaded.value, saved.ticks)).toBe(saved.hp);
   });
 
@@ -508,7 +508,7 @@ describe("saving and replaying", () => {
     // Entry 0 is the checkpoint of the state the game started from; the four
     // actions follow it.
     const log = JSON.parse(saved.text) as any[];
-    expect(log.map((entry) => entry.name)).toEqual([
+    expect(log.map((entry) => entry.name)).toStrictEqual([
       undefined,
       "Damage",
       "Damage",

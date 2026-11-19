@@ -103,9 +103,9 @@ describe("app.settled", () => {
     expect(app.settled).toBe(true);
     app.dispatch(Begin, {});
     expect(app.settled).toBe(false);
-    expect(entered).toEqual([]);
+    expect(entered).toStrictEqual([]);
     app.tick(1);
-    expect(entered).toEqual(["playing"]);
+    expect(entered).toStrictEqual(["playing"]);
     expect(app.settled).toBe(true);
   });
 
@@ -118,7 +118,7 @@ describe("app.settled", () => {
     // Applied at the start of the tick, and the state it asked for is
     // entered by the same tick: nothing is left waiting.
     app.tick(1);
-    expect(entered).toEqual(["playing"]);
+    expect(entered).toStrictEqual(["playing"]);
     expect(app.settled).toBe(true);
   });
 
@@ -171,7 +171,7 @@ describe("app.settled", () => {
     // that draws, and the game is at rest all the same.
     expect(app.settled).toBe(true);
     app.frame(0);
-    expect(heard).toEqual([2]);
+    expect(heard).toStrictEqual([2]);
     expect(app.settled).toBe(true);
   });
 
@@ -197,10 +197,10 @@ describe("app.settled", () => {
     app.tick(0.1);
     expect(app.settled).toBe(false);
     app.tick(0.1);
-    expect(done).toEqual(["slept"]);
+    expect(done).toStrictEqual(["slept"]);
     expect(app.settled).toBe(false);
     app.tick(0.1);
-    expect(done).toEqual(["slept", "ticked"]);
+    expect(done).toStrictEqual(["slept", "ticked"]);
     expect(app.settled).toBe(true);
 
     for (let i = 0; i < 5; i += 1) {
@@ -224,10 +224,10 @@ describe("app.settled", () => {
         Effect.sync(() => ran.push("ran"))
       )
     );
-    expect(ran).toEqual([]);
+    expect(ran).toStrictEqual([]);
     expect(app.settled).toBe(false);
     app.tick(1);
-    expect(ran).toEqual(["ran"]);
+    expect(ran).toStrictEqual(["ran"]);
     expect(app.settled).toBe(true);
   });
 
@@ -317,7 +317,7 @@ describe("a game that ticks when its player moves", () => {
     // Drawn all the while, all the way to its last tick.
     expect(frames).toBe(610);
     expect(lastAlpha).toBe(1);
-    expect(ui.get(Shown)).toEqual({ x: 0, moves: 0, phase: "title" });
+    expect(ui.get(Shown)).toStrictEqual({ x: 0, moves: 0, phase: "title" });
   });
 
   it("ticks for a move from the UI or a key until everything that follows from it is done, and rests again", () => {
@@ -336,9 +336,9 @@ describe("a game that ticks when its player moves", () => {
     // one more.
     source.tap("ArrowRight");
     expect(frame()).toBe(1);
-    expect(ui.get(Shown)).toEqual({ x: 1, moves: 0, phase: "playing" });
+    expect(ui.get(Shown)).toStrictEqual({ x: 1, moves: 0, phase: "playing" });
     expect(frame()).toBe(1);
-    expect(ui.get(Shown)).toEqual({ x: 1, moves: 1, phase: "playing" });
+    expect(ui.get(Shown)).toStrictEqual({ x: 1, moves: 1, phase: "playing" });
     expect(frame()).toBe(1);
     expect(frame(100)).toBe(0);
     expect(app.time.tick).toBe(rested + 3);
@@ -366,9 +366,9 @@ describe("a game that ticks when its player moves", () => {
     );
     // Half a second of the game's time is thirty ticks at sixty a second.
     expect(frame(29)).toBe(29);
-    expect(said).toEqual([]);
+    expect(said).toStrictEqual([]);
     expect(frame(1)).toBe(1);
-    expect(said).toEqual([before + 30]);
+    expect(said).toStrictEqual([before + 30]);
     // And once more, and then rest.
     expect(frame(50)).toBe(1);
     expect(app.time.tick).toBe(before + 31);
@@ -383,7 +383,7 @@ describe("a game that ticks when its player moves", () => {
     frame(7);
     ui.send(Move, { by: -4 });
     frame(200);
-    expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
+    expect(ui.get(Shown)).toStrictEqual({ x: -3, moves: 2, phase: "playing" });
 
     // The same game with no UI, no devices and no rest: tick after tick.
     const again = run(
@@ -456,7 +456,7 @@ describe("a system that has more to do", () => {
     }
 
     // Three ticks with more to do; the fourth finds it run down.
-    expect(settled).toEqual([false, false, false, true, true]);
+    expect(settled).toStrictEqual([false, false, false, true, true]);
     expect(app.world.singleton(Clock).left).toBe(0);
     // Looking does not change it, and nor do the stages between ticks.
     app.dispatch(Wind, { ticks: 1 });
@@ -557,7 +557,7 @@ describe("a system that has more to do", () => {
 
     expect(said.time.tick).toBe(5);
     expect(said.world.hash()).toBe(unsaid.world.hash());
-    expect(said.actionLog).toEqual(unsaid.actionLog);
+    expect(said.actionLog).toStrictEqual(unsaid.actionLog);
   });
 
   it("is asked again of a game that was loaded: the first tick of an app is always run", () => {

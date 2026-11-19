@@ -195,16 +195,16 @@ describe("a world that is restored from a snapshot", () => {
       const then = contents(world);
       // On from there, into a future that is then given up.
       play(world, seed + 50, 150);
-      expect(contents(world)).not.toEqual(then);
+      expect(contents(world)).not.toStrictEqual(then);
 
       world.restore(bytes);
-      expect(contents(world)).toEqual(then);
-      expect(contents(world)).toEqual(contents(loaded(bytes)));
+      expect(contents(world)).toStrictEqual(then);
+      expect(contents(world)).toStrictEqual(contents(loaded(bytes)));
       // Byte for byte what it was restored from.
-      expect(world.snapshot()).toEqual(bytes);
+      expect(world.snapshot()).toStrictEqual(bytes);
       // And from there, what a new world does: the same ids for the next
       // entities, the same order, the same numbers, the same changes seen.
-      expect(future(world, seed + 100)).toEqual(
+      expect(future(world, seed + 100)).toStrictEqual(
         future(loaded(bytes), seed + 100)
       );
     }
@@ -224,10 +224,10 @@ describe("a world that is restored from a snapshot", () => {
     for (const at of [4, 0, 3, 3, 1, 4, 2, 0]) {
       play(world, 70 + at, 25);
       world.restore(taken[at]!.bytes);
-      expect(contents(world), `snapshot ${at}`).toEqual(taken[at]!.held);
+      expect(contents(world), `snapshot ${at}`).toStrictEqual(taken[at]!.held);
     }
 
-    expect(future(world, 90)).toEqual(future(loaded(taken[0]!.bytes), 90));
+    expect(future(world, 90)).toStrictEqual(future(loaded(taken[0]!.bytes), 90));
   });
 
   it("empties a world when the snapshot is of an empty one", () => {
@@ -240,7 +240,7 @@ describe("a world that is restored from a snapshot", () => {
     world.hash();
     world.restore(empty);
     expect(world.entityCount).toBe(0);
-    expect(world.view(Bodies).entities()).toEqual([]);
+    expect(world.view(Bodies).entities()).toStrictEqual([]);
     expect(world.hash()).toBe(new EcsWorld({ seed: 4 }).hash());
     expect(world.singleton(Score).points).toBe(7);
     // The first entity of a world, again.
@@ -260,12 +260,12 @@ describe("a world that is restored from a snapshot", () => {
     level.number = 9;
     world.restore(bytes);
     // Read through the objects that were held, before the world is asked.
-    expect({ ...score }).toEqual({ points: 40, name: "nobody" });
+    expect({ ...score }).toStrictEqual({ points: 40, name: "nobody" });
     expect(level.number).toBe(3);
     expect(world.singleton(Score)).toBe(score);
     expect(world.singleton(Level)).toBe(level);
     expect(world.hash()).toBe(loaded(bytes).hash());
-    expect(world.snapshot()).toEqual(bytes);
+    expect(world.snapshot()).toStrictEqual(bytes);
     // And it is written through the same object afterwards.
     score.points = 41;
     expect(world.singleton(Score).points).toBe(41);
@@ -282,7 +282,7 @@ describe("a world that is restored from a snapshot", () => {
     world.load(written, [Score.component]);
     world.restore(unwritten);
     // Told what it starts as only now, it has that.
-    expect({ ...world.singleton(Score) }).toEqual({
+    expect({ ...world.singleton(Score) }).toStrictEqual({
       points: 7,
       name: "nobody",
     });
@@ -299,7 +299,7 @@ describe("a world that is restored from a snapshot", () => {
     random.int(1, 6);
     world.restore(bytes);
     expect(world.random).toBe(random);
-    expect([random.next(), random.next()]).toEqual(expected);
+    expect([random.next(), random.next()]).toStrictEqual(expected);
   });
 
   it("has a view that was asked for before throw, and gives a new one that works", () => {
@@ -328,7 +328,7 @@ describe("a world that is restored from a snapshot", () => {
     const after = world.view(Bodies);
     expect(after).not.toBe(before);
     expect(after.count()).toBe(1);
-    expect(world.removed(Body, "watcher").read()).toEqual([]);
+    expect(world.removed(Body, "watcher").read()).toStrictEqual([]);
   });
 
   it("forgets what change queries had yet to visit, and takes back what was saved with the snapshot", () => {
@@ -345,7 +345,7 @@ describe("a world that is restored from a snapshot", () => {
     // What follows is given up.
     world.set(third, Body, { x: 30 });
     world.despawn(first);
-    expect(world.view(Moved, "watcher").entities().toSorted()).toEqual([
+    expect(world.view(Moved, "watcher").entities().toSorted()).toStrictEqual([
       second,
       third,
     ]);
@@ -354,17 +354,17 @@ describe("a world that is restored from a snapshot", () => {
     world.restoreChanges(changes);
     // Where it was when the snapshot was taken, and no further.
     expect(world.view(Moved, "watcher").count()).toBe(1);
-    expect(world.view(Moved, "watcher").entities()).toEqual([second]);
-    expect(world.removed(Body, "watcher").read()).toEqual([]);
+    expect(world.view(Moved, "watcher").entities()).toStrictEqual([second]);
+    expect(world.removed(Body, "watcher").read()).toStrictEqual([]);
     // And it hears of what is written from here on.
     world.set(first, Body, { x: 10 });
     world.despawn(third);
-    expect(world.view(Moved, "watcher").entities()).toEqual([first]);
-    expect(world.removed(Body, "watcher").read()).toEqual([third]);
+    expect(world.view(Moved, "watcher").entities()).toStrictEqual([first]);
+    expect(world.removed(Body, "watcher").read()).toStrictEqual([third]);
 
     // With nothing taken back, a watcher starts over: everything is new.
     world.restore(bytes);
-    expect(world.view(Moved, "watcher").entities().toSorted()).toEqual([
+    expect(world.view(Moved, "watcher").entities().toSorted()).toStrictEqual([
       first,
       second,
       third,
@@ -380,7 +380,7 @@ describe("a world that is restored from a snapshot", () => {
     world.add(turret, ChildOf.of({ target: truck }));
     world.spawn(ChildOf.of({ target: truck }));
     world.restore(bytes);
-    expect(world.sources(tank, ChildOf)).toEqual([turret]);
+    expect(world.sources(tank, ChildOf)).toStrictEqual([turret]);
     expect(world.isAlive(truck)).toBe(false);
     world.despawn(tank);
     expect(world.isAlive(turret)).toBe(false);

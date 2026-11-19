@@ -71,8 +71,8 @@ describe("a change query", () => {
   it("visits every entity that matches the first time, and after that only what was written", () => {
     const { entities, world } = populated();
     const moved = world.view(Moved);
-    expect(moved.entities()).toEqual(entities);
-    expect(moved.entities()).toEqual([]);
+    expect(moved.entities()).toStrictEqual(entities);
+    expect(moved.entities()).toStrictEqual([]);
 
     world.set(entities[7]!, Position, { x: 70 });
     world.set(entities[2]!, Position, { y: 20 });
@@ -81,7 +81,7 @@ describe("a change query", () => {
       seen.push([entity, pos.x, pos.y]);
     });
     // In the order any query visits them, not the order they were written in.
-    expect(seen).toEqual([
+    expect(seen).toStrictEqual([
       [entities[2], 2, 20],
       [entities[7], 70, 0],
     ]);
@@ -109,10 +109,10 @@ describe("a change query", () => {
       }
     });
     // And it is waiting once: what nobody has visited is not noted again.
-    expect(world.saveChanges()[0]!.entries).toEqual([3, 1]);
-    expect(moved.entities()).toEqual([entities[1], entities[3]]);
+    expect(world.saveChanges()[0]!.entries).toStrictEqual([3, 1]);
+    expect(moved.entities()).toStrictEqual([entities[1], entities[3]]);
     world.set(entities[3]!, Position, { x: 9 });
-    expect(moved.entities()).toEqual([entities[3]]);
+    expect(moved.entities()).toStrictEqual([entities[3]]);
   });
 
   it("notices a write by set, by add with a value, and by a setter in each: per row", () => {
@@ -121,21 +121,21 @@ describe("a change query", () => {
     moved.entities();
 
     world.set(entities[0]!, Position, { x: 1 });
-    expect(moved.entities()).toEqual([entities[0]]);
+    expect(moved.entities()).toStrictEqual([entities[0]]);
 
     // Adding a component the entity has, with a value, writes it.
     world.add(entities[4]!, Position.of({ x: 4, y: 4 }));
-    expect(moved.entities()).toEqual([entities[4]]);
+    expect(moved.entities()).toStrictEqual([entities[4]]);
     // Without a value nothing is written.
     world.add(entities[4]!, Position);
-    expect(moved.entities()).toEqual([]);
+    expect(moved.entities()).toStrictEqual([]);
 
     world.view(Positions).each((pos) => {
       if (pos.x === 6 || pos.x === 9) {
         pos.y = 1;
       }
     });
-    expect(moved.entities()).toEqual([entities[6], entities[9]]);
+    expect(moved.entities()).toStrictEqual([entities[6], entities[9]]);
   });
 
   it("counts every row that eachChunk hands out as written", () => {
@@ -150,9 +150,9 @@ describe("a change query", () => {
         void health.hp[i];
       }
     });
-    expect(hurt.entities()).toEqual(entities.slice(0, 5));
+    expect(hurt.entities()).toStrictEqual(entities.slice(0, 5));
     // Only the components the loop was handed.
-    expect(moved.entities()).toEqual([]);
+    expect(moved.entities()).toStrictEqual([]);
   });
 
   it("refuses to hand out raw columns of a component it watches itself", () => {
@@ -181,7 +181,7 @@ describe("a change query", () => {
     hurt.eachChunk(() => {});
     world.set(entities[2]!, Health, { hp: 1 });
     hurt.eachChunk(() => {});
-    expect(moved.entities()).toEqual([entities[2]]);
+    expect(moved.entities()).toStrictEqual([entities[2]]);
   });
 
   it("does not take a read for a write", () => {
@@ -200,7 +200,7 @@ describe("a change query", () => {
     world.snapshot();
     expect(sum).toBe(45);
     expect(moved.count()).toBe(0);
-    expect(moved.entities()).toEqual([]);
+    expect(moved.entities()).toStrictEqual([]);
   });
 
   it("counts what it has yet to visit without visiting it", () => {
@@ -214,7 +214,7 @@ describe("a change query", () => {
     world.set(entities[1]!, Position, { x: 1 });
     world.set(entities[5]!, Position, { x: 0 });
     expect(moved.count()).toBe(2);
-    expect(moved.entities()).toEqual([entities[1], entities[5]]);
+    expect(moved.entities()).toStrictEqual([entities[1], entities[5]]);
   });
 
   it("takes an entity that has just gained the component for a changed one", () => {
@@ -223,7 +223,7 @@ describe("a change query", () => {
     hurt.entities();
     world.add(entities[6]!, Health.of({ hp: 3 }));
     const spawned = world.spawn(Health.of({ hp: 1 }));
-    expect(hurt.entities()).toEqual([entities[6], spawned]);
+    expect(hurt.entities()).toStrictEqual([entities[6], spawned]);
   });
 
   it("leaves out an entity that no longer matches, or no longer exists", () => {
@@ -235,7 +235,7 @@ describe("a change query", () => {
     world.set(entities[4]!, Health, { hp: 1 });
     world.remove(entities[0]!, Health);
     world.despawn(entities[2]!);
-    expect(hurt.entities()).toEqual([entities[4]]);
+    expect(hurt.entities()).toStrictEqual([entities[4]]);
 
     // An entity in the slot of one that was written and despawned was not
     // written: it is visited for having gained the component, and once.
@@ -243,10 +243,10 @@ describe("a change query", () => {
     world.despawn(entities[4]!);
     const reused = world.spawn(Health.of({ hp: 5 }));
     expect(reused & 0x3f_ff_ff).toBe(entities[4]! & 0x3f_ff_ff);
-    expect(hurt.entities()).toEqual([reused]);
+    expect(hurt.entities()).toStrictEqual([reused]);
     const bystander = world.spawn(Position.of({ x: 0, y: 0 }));
     expect(world.isAlive(bystander)).toBe(true);
-    expect(hurt.entities()).toEqual([]);
+    expect(hurt.entities()).toStrictEqual([]);
   });
 
   it("follows an entity that moved to another table after it was written", () => {
@@ -262,7 +262,7 @@ describe("a change query", () => {
     moved.each((pos) => {
       seen.push(pos.x);
     });
-    expect(seen.toSorted((a, b) => a - b)).toEqual([100, 900]);
+    expect(seen.toSorted((a, b) => a - b)).toStrictEqual([100, 900]);
   });
 
   it("watches a sparse component, and filters on others", () => {
@@ -279,8 +279,8 @@ describe("a change query", () => {
       Query.all(Position, Heat).pipe(Query.without(Frozen), Query.changed(Heat))
     );
 
-    expect(warmed.entities()).toEqual([1, 2, 3, 4].map((n) => entities[n]));
-    expect(thawed.entities()).toEqual([1, 3, 4].map((n) => entities[n]));
+    expect(warmed.entities()).toStrictEqual([1, 2, 3, 4].map((n) => entities[n]));
+    expect(thawed.entities()).toStrictEqual([1, 3, 4].map((n) => entities[n]));
 
     world.set(entities[2]!, Heat, { degrees: 20 });
     world.set(entities[3]!, Heat, { degrees: 30 });
@@ -295,13 +295,13 @@ describe("a change query", () => {
     thawed.each((_, heat) => {
       seen.push(heat.degrees);
     });
-    expect(seen).toEqual([10, 30, 40]);
-    expect(warmed.entities()).toEqual([1, 2, 3, 4].map((n) => entities[n]));
+    expect(seen).toStrictEqual([10, 30, 40]);
+    expect(warmed.entities()).toStrictEqual([1, 2, 3, 4].map((n) => entities[n]));
     // A raw loop over a sparse component counts the rows it is handed.
     world
       .view(Query.all(Position, Heat).pipe(Query.without(Frozen)))
       .eachChunk(() => {});
-    expect(warmed.entities()).toEqual([1, 3, 4].map((n) => entities[n]));
+    expect(warmed.entities()).toStrictEqual([1, 3, 4].map((n) => entities[n]));
   });
 
   it("visits an entity when any of the components it watches fired", () => {
@@ -323,15 +323,15 @@ describe("a change query", () => {
     world.set(entities[4]!, Health, { hp: 1 });
     // Entity 6 has no health, so it does not match however it moves.
     world.set(entities[6]!, Position, { x: 1 });
-    expect(either.entities()).toEqual([0, 2, 4].map((n) => entities[n]));
+    expect(either.entities()).toStrictEqual([0, 2, 4].map((n) => entities[n]));
     // Watching Boss requires it.
-    expect(both.entities()).toEqual([]);
+    expect(both.entities()).toStrictEqual([]);
     world.add(entities[1]!, Boss);
     world.add(entities[4]!, Boss);
-    expect(both.entities()).toEqual([entities[1], entities[4]]);
+    expect(both.entities()).toStrictEqual([entities[1], entities[4]]);
     world.set(entities[4]!, Position, { x: 2 });
     world.set(entities[0]!, Position, { x: 2 });
-    expect(both.entities()).toEqual([entities[4]]);
+    expect(both.entities()).toStrictEqual([entities[4]]);
   });
 
   it("gives each reader its own place, and one place to a reader of two alike queries", () => {
@@ -374,11 +374,11 @@ describe("a change query", () => {
     ];
 
     expect(world.view(built[0]!, "first")).toBe(world.view(built[1]!, "first"));
-    expect(world.saveChanges()).toEqual([]);
+    expect(world.saveChanges()).toStrictEqual([]);
     world.view(built[1]!, "first").entities();
     expect(
       world.saveChanges().map((each) => [each.component, each.kind])
-    ).toEqual([
+    ).toStrictEqual([
       ["ch/Health", "changed"],
       ["ch/Heat", "added"],
     ]);
@@ -390,13 +390,13 @@ describe("a change query", () => {
     first.entities();
     second.entities();
     world.set(entities[1]!, Position, { x: 0 });
-    expect(first.entities()).toEqual([entities[1]]);
+    expect(first.entities()).toStrictEqual([entities[1]]);
     world.set(entities[2]!, Position, { x: 0 });
     world.set(entities[1]!, Position, { x: 5 });
-    expect(first.entities()).toEqual([entities[1], entities[2]]);
+    expect(first.entities()).toStrictEqual([entities[1], entities[2]]);
     // The second reader has seen none of it, and sees each entity once.
-    expect(second.entities()).toEqual([entities[1], entities[2]]);
-    expect(second.entities()).toEqual([]);
+    expect(second.entities()).toStrictEqual([entities[1], entities[2]]);
+    expect(second.entities()).toStrictEqual([]);
 
     // With no reader named, `world.reader` says who is asking.
     world.reader = "first";
@@ -423,7 +423,7 @@ describe("a change query", () => {
       }
     });
     expect(visits).toBe(8);
-    expect(moved.entities()).toEqual([entities[0]]);
+    expect(moved.entities()).toStrictEqual([entities[0]]);
   });
 
   it("can be nested in itself, each level visiting what is new to it", () => {
@@ -446,9 +446,9 @@ describe("a change query", () => {
 
       void pos;
     });
-    expect(outer).toEqual([entities[0], entities[2]]);
-    expect(inner).toEqual([entities[1]]);
-    expect(moved.entities()).toEqual([]);
+    expect(outer).toStrictEqual([entities[0], entities[2]]);
+    expect(inner).toStrictEqual([entities[1]]);
+    expect(moved.entities()).toStrictEqual([]);
   });
 
   it("finds its rows the same way by sorting and by marking", () => {
@@ -474,14 +474,14 @@ describe("a change query", () => {
         }
       });
       expect(moved._lastPath).toBe(path);
-      expect(seen).toEqual(
+      expect(seen).toStrictEqual(
         [0, 3, 77, 78, 79, 150, 199].map((n) => entities[n])
       );
       // Consecutive rows come as one run, in either table.
       expect(chunks).toHaveLength(5);
       // And the marks are gone: a later visit starts clean.
       world.set(entities[5]!, Position, { y: 2 });
-      expect(moved.entities()).toEqual([entities[5]]);
+      expect(moved.entities()).toStrictEqual([entities[5]]);
     }
   });
 
@@ -498,15 +498,15 @@ describe("a change query", () => {
 
       pos.x += 1;
     });
-    expect(early).toEqual(entities);
+    expect(early).toStrictEqual(entities);
     // What the loop wrote after the watch began is not lost.
     const late = world.view(Moved);
-    expect(late.entities()).toEqual(entities);
-    expect(late.entities()).toEqual([]);
+    expect(late.entities()).toStrictEqual(entities);
+    expect(late.entities()).toStrictEqual([]);
     world.view(Positions).each((pos) => {
       pos.x += 1;
     });
-    expect(late.entities()).toEqual(entities);
+    expect(late.entities()).toStrictEqual(entities);
   });
 
   it("costs nothing to components nobody watches", () => {
@@ -519,7 +519,7 @@ describe("a change query", () => {
     });
     expect(
       world.saveChanges().map((each) => [each.component, each.entries])
-    ).toEqual([["ch/Health", []]]);
+    ).toStrictEqual([["ch/Health", []]]);
   });
 });
 
@@ -528,7 +528,7 @@ describe("added and removed", () => {
     const { entities, world } = populated();
     const first = world.spawn(Sprite.of({ frame: 1 }));
     const born = world.view(Born);
-    expect(born.entities()).toEqual([first]);
+    expect(born.entities()).toStrictEqual([first]);
 
     world.add(entities[3]!, Sprite.of({ frame: 2 }));
     const second = world.spawn(Position.of({ x: 0, y: 0 }), Sprite);
@@ -539,17 +539,17 @@ describe("added and removed", () => {
     born.each((sprite) => {
       seen.push(sprite.frame);
     });
-    expect(seen).toEqual([2, 0]);
-    expect(born.entities()).toEqual([]);
+    expect(seen).toStrictEqual([2, 0]);
+    expect(born.entities()).toStrictEqual([]);
 
     // Lost and gained again is gained.
     world.remove(second, Sprite);
     world.add(second, Sprite);
-    expect(born.entities()).toEqual([second]);
+    expect(born.entities()).toStrictEqual([second]);
     // Gained and lost again is not there to visit.
     world.add(entities[5]!, Sprite);
     world.remove(entities[5]!, Sprite);
-    expect(born.entities()).toEqual([]);
+    expect(born.entities()).toStrictEqual([]);
   });
 
   it("reports what lost a component, by remove or despawn, once per removal", () => {
@@ -558,7 +558,7 @@ describe("added and removed", () => {
     world.add(entities[2]!, Heat.of({ degrees: 2 }));
     const lostHealth = world.removed(Health);
     const lostHeat = world.removed(Heat);
-    expect(lostHealth.read()).toEqual([]);
+    expect(lostHealth.read()).toStrictEqual([]);
 
     world.remove(entities[0]!, Health);
     // Not there to lose.
@@ -566,16 +566,16 @@ describe("added and removed", () => {
     world.remove(entities[0]!, Health);
     world.despawn(entities[2]!);
     world.despawn(entities[7]!);
-    expect(lostHealth.read()).toEqual([entities[0], entities[2]]);
-    expect(lostHealth.read()).toEqual([]);
-    expect(lostHeat.read()).toEqual([entities[2]]);
+    expect(lostHealth.read()).toStrictEqual([entities[0], entities[2]]);
+    expect(lostHealth.read()).toStrictEqual([]);
+    expect(lostHeat.read()).toStrictEqual([entities[2]]);
     expect(world.isAlive(entities[0]!)).toBe(true);
     expect(world.isAlive(entities[2]!)).toBe(false);
 
     world.remove(entities[1]!, Heat);
     world.add(entities[1]!, Heat);
     world.remove(entities[1]!, Heat);
-    expect(lostHeat.read()).toEqual([entities[1], entities[1]]);
+    expect(lostHeat.read()).toStrictEqual([entities[1], entities[1]]);
   });
 
   it("gives each reader of removals its own place", () => {
@@ -586,8 +586,8 @@ describe("added and removed", () => {
     const second = world.removed(Health, "second");
     expect(world.removed(Health, "first")).toBe(first);
     world.remove(entities[2]!, Health);
-    expect(second.read()).toEqual([entities[2]]);
-    expect(first.read()).toEqual([entities[0], entities[2]]);
+    expect(second.read()).toStrictEqual([entities[2]]);
+    expect(first.read()).toStrictEqual([entities[0], entities[2]]);
     world.reader = "second";
     expect(world.removed(Health)).toBe(second);
     world.reader = undefined;
@@ -844,13 +844,13 @@ describe("changes against a simple model", () => {
                 }
               }
 
-              expect(seen).toEqual(expected);
+              expect(seen).toStrictEqual(expected);
               reader.fresh = false;
             }
           }
 
           if (dice.next() < 0.3) {
-            expect(lost.reader.read()).toEqual(lost.expected);
+            expect(lost.reader.read()).toStrictEqual(lost.expected);
             lost.expected = [];
           }
         }
@@ -893,7 +893,7 @@ describe("a change log", () => {
 
       if (round % 331 === 5 || round % 331 === 6) {
         // A reader part of the way along sees what is new to it, no more.
-        expect(sometimes.entities()).toEqual(
+        expect(sometimes.entities()).toStrictEqual(
           entities.filter((entity) => lately.has(entity))
         );
         lately.clear();
@@ -906,15 +906,15 @@ describe("a change log", () => {
     expect(longest).toBeLessThan(2100);
     expect(expected.size).toBe(50);
     expect(away.count()).toBe(expected.size);
-    expect(away.entities()).toEqual(
+    expect(away.entities()).toStrictEqual(
       entities.filter((entity) => expected.has(entity))
     );
     sometimes.entities();
-    expect(world.saveChanges()[0]!.entries).toEqual([]);
+    expect(world.saveChanges()[0]!.entries).toStrictEqual([]);
     world.set(entities[0]!, Position, { x: -1 });
-    expect(busy.entities()).toEqual([entities[0]]);
-    expect(away.entities()).toEqual([entities[0]]);
-    expect(sometimes.entities()).toEqual([entities[0]]);
+    expect(busy.entities()).toStrictEqual([entities[0]]);
+    expect(away.entities()).toStrictEqual([entities[0]]);
+    expect(sometimes.entities()).toStrictEqual([entities[0]]);
   });
 
   it("keeps up with a world that grows past the room it was made with", () => {
@@ -928,7 +928,7 @@ describe("a change log", () => {
     }
 
     expect(moved.count()).toBe(5000);
-    expect(moved.entities()).toEqual(entities.slice(10));
+    expect(moved.entities()).toStrictEqual(entities.slice(10));
 
     for (let pass = 0; pass < 3; pass += 1) {
       world.view(Positions).each((pos) => {
@@ -946,7 +946,7 @@ describe("a change log", () => {
       }
     });
     world.set(entities[4500]!, Position, { y: 1 });
-    expect(moved.entities()).toEqual(
+    expect(moved.entities()).toStrictEqual(
       entities.filter((entity, n) => entity % 1000 === 7 || n === 4500)
     );
 
@@ -954,7 +954,7 @@ describe("a change log", () => {
       world.despawn(entity);
     }
 
-    expect(lost.read()).toEqual(entities.slice(3000));
+    expect(lost.read()).toStrictEqual(entities.slice(3000));
     expect(moved.count()).toBe(0);
   });
 
@@ -968,7 +968,7 @@ describe("a change log", () => {
     world.set(entities[2]!, Position, { x: 0 });
     first.entities();
     world.set(entities[3]!, Position, { x: 0 });
-    expect(world.saveChanges()).toEqual([
+    expect(world.saveChanges()).toStrictEqual([
       {
         component: "ch/Position",
         kind: "changed",
@@ -980,9 +980,9 @@ describe("a change log", () => {
       },
     ]);
     second.entities();
-    expect(world.saveChanges()[0]!.entries).toEqual([3]);
+    expect(world.saveChanges()[0]!.entries).toStrictEqual([3]);
     first.entities();
-    expect(world.saveChanges()[0]!.entries).toEqual([]);
+    expect(world.saveChanges()[0]!.entries).toStrictEqual([]);
   });
 });
 
@@ -1005,20 +1005,20 @@ describe("changes in a transaction", () => {
     expect(moved.count()).toBe(10);
     world.rollback();
     // What was written before the transaction is still there to visit.
-    expect(hurt.entities()).toEqual([]);
-    expect(moved.entities()).toEqual([entities[8]]);
+    expect(hurt.entities()).toStrictEqual([]);
+    expect(moved.entities()).toStrictEqual([entities[8]]);
 
     world.begin();
     world.set(entities[1]!, Position, { x: 1 });
     world.commit();
-    expect(moved.entities()).toEqual([entities[1]]);
+    expect(moved.entities()).toStrictEqual([entities[1]]);
 
     // An entity noted in a transaction that was rolled back is noted again.
     world.begin();
     world.set(entities[2]!, Position, { x: 2 });
     world.rollback();
     world.set(entities[2]!, Position, { x: 3 });
-    expect(moved.entities()).toEqual([entities[2]]);
+    expect(moved.entities()).toStrictEqual([entities[2]]);
   });
 
   it("puts a reader back where it was on rollback", () => {
@@ -1030,32 +1030,32 @@ describe("changes in a transaction", () => {
     world.remove(entities[4]!, Health);
 
     world.begin();
-    expect(moved.entities()).toEqual([entities[4]]);
-    expect(lost.read()).toEqual([entities[4]]);
+    expect(moved.entities()).toStrictEqual([entities[4]]);
+    expect(lost.read()).toStrictEqual([entities[4]]);
     world.set(entities[5]!, Position, { x: 5 });
-    expect(moved.entities()).toEqual([entities[5]]);
+    expect(moved.entities()).toStrictEqual([entities[5]]);
     world.rollback();
     // The visits of a refused action never happened.
-    expect(moved.entities()).toEqual([entities[4]]);
-    expect(lost.read()).toEqual([entities[4]]);
+    expect(moved.entities()).toStrictEqual([entities[4]]);
+    expect(lost.read()).toStrictEqual([entities[4]]);
 
     world.set(entities[6]!, Position, { x: 6 });
     world.begin();
-    expect(moved.entities()).toEqual([entities[6]]);
+    expect(moved.entities()).toStrictEqual([entities[6]]);
     // Written again after the visit: that is news, in the transaction and
     // after it.
     world.set(entities[6]!, Position, { x: 7 });
     world.commit();
-    expect(moved.entities()).toEqual([entities[6]]);
-    expect(moved.entities()).toEqual([]);
+    expect(moved.entities()).toStrictEqual([entities[6]]);
+    expect(moved.entities()).toStrictEqual([]);
     world.set(entities[7]!, Position, { x: 6 });
     world.begin();
-    expect(moved.entities()).toEqual([entities[7]]);
+    expect(moved.entities()).toStrictEqual([entities[7]]);
     world.set(entities[7]!, Position, { x: 7 });
     world.set(entities[8]!, Position, { x: 7 });
     world.rollback();
     world.set(entities[8]!, Position, { x: 8 });
-    expect(moved.entities()).toEqual([entities[7], entities[8]]);
+    expect(moved.entities()).toStrictEqual([entities[7], entities[8]]);
 
     // A visit in a transaction, after a write in it, went further than the
     // log goes once both are taken back. What is written afterwards is
@@ -1063,12 +1063,12 @@ describe("changes in a transaction", () => {
     world.begin();
     world.set(entities[1]!, Position, { x: 1 });
     world.set(entities[2]!, Position, { x: 1 });
-    expect(moved.entities()).toEqual([entities[1], entities[2]]);
+    expect(moved.entities()).toStrictEqual([entities[1], entities[2]]);
     world.rollback();
 
     for (let round = 0; round < 3; round += 1) {
       world.set(entities[3]!, Position, { x: round });
-      expect(moved.entities()).toEqual([entities[3]]);
+      expect(moved.entities()).toStrictEqual([entities[3]]);
     }
 
     // A query that first runs in a transaction that is rolled back has
@@ -1096,8 +1096,8 @@ describe("changes and a snapshot", () => {
     const before = world.hash();
     const saved = world.saveChanges();
     // Plain data, in order of name.
-    expect(JSON.parse(JSON.stringify(saved))).toEqual(saved);
-    expect(saved.map((each) => `${each.component} ${each.kind}`)).toEqual([
+    expect(JSON.parse(JSON.stringify(saved))).toStrictEqual(saved);
+    expect(saved.map((each) => `${each.component} ${each.kind}`)).toStrictEqual([
       "ch/Health removed",
       "ch/Position changed",
     ]);
@@ -1110,19 +1110,19 @@ describe("changes and a snapshot", () => {
     expect(copy.hash()).toBe(before);
     // Watched from the moment it is loaded, before any reader asks.
     copy.set(entities[1]!, Position, { x: 10 });
-    expect(copy.view(Moved, "mover").entities()).toEqual(
+    expect(copy.view(Moved, "mover").entities()).toStrictEqual(
       [1, 2, 6].map((n) => entities[n])
     );
-    expect(copy.removed(Health, "mourner").read()).toEqual([entities[4]]);
+    expect(copy.removed(Health, "mourner").read()).toStrictEqual([entities[4]]);
     // A reader the save does not know starts from everything.
-    expect(copy.view(Moved, "newcomer").entities()).toEqual(
+    expect(copy.view(Moved, "newcomer").entities()).toStrictEqual(
       copy.view(Positions).entities()
     );
     expect(copy.view(Born, "never ran").count()).toBe(0);
     // And the original goes on the same.
     world.set(entities[1]!, Position, { x: 10 });
-    expect(moved.entities()).toEqual([1, 2, 6].map((n) => entities[n]));
-    expect(lost.read()).toEqual([entities[4]]);
+    expect(moved.entities()).toStrictEqual([1, 2, 6].map((n) => entities[n]));
+    expect(lost.read()).toStrictEqual([entities[4]]);
   });
 
   it("can leave readers out of a save", () => {
@@ -1133,7 +1133,7 @@ describe("changes and a snapshot", () => {
     world.view(Moved, "kept").entities();
     world.set(entities[3]!, Position, { x: 30 });
     const saved = world.saveChanges((reader) => !reader.startsWith("frame:"));
-    expect(saved).toEqual([
+    expect(saved).toStrictEqual([
       {
         component: "ch/Position",
         kind: "changed",
@@ -1143,7 +1143,7 @@ describe("changes and a snapshot", () => {
         },
       },
     ]);
-    expect(world.saveChanges((reader) => reader === "nobody at all")).toEqual(
+    expect(world.saveChanges((reader) => reader === "nobody at all")).toStrictEqual(
       []
     );
   });
@@ -1168,7 +1168,7 @@ describe("changes and a snapshot", () => {
       /further than they go/u
     );
     const copy = restore([0, 2], { [`reader\n${MOVED}`]: 1 });
-    expect(copy.view(Moved, "reader").entities()).toEqual([2]);
+    expect(copy.view(Moved, "reader").entities()).toStrictEqual([2]);
     expect(() => copy.restoreChanges([])).toThrow(/already being watched/u);
     // A component the world does not know is left out.
     const other = new EcsWorld();
@@ -1176,7 +1176,7 @@ describe("changes and a snapshot", () => {
     other.restoreChanges([
       { component: "ch/Gone", kind: "changed", entries: [9], readers: {} },
     ]);
-    expect(other.saveChanges()).toEqual([]);
+    expect(other.saveChanges()).toStrictEqual([]);
   });
 });
 
@@ -1404,15 +1404,15 @@ describe("change queries in an app", () => {
             }
           })
         );
-        expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(3));
-        expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(0));
+        expect(app.dispatch(Inspect, {})).toStrictEqual(Exit.succeed(3));
+        expect(app.dispatch(Inspect, {})).toStrictEqual(Exit.succeed(0));
         app.dispatch(Push, { slot: 1, refuse: false });
         app.tick(1);
-        expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(1));
+        expect(app.dispatch(Inspect, {})).toStrictEqual(Exit.succeed(1));
         app.tick(1);
         // The script reads after the system each tick, from its own place.
-        expect(seen).toEqual([3, 1, 0]);
-        expect(watched).toEqual([3, 0]);
+        expect(seen).toStrictEqual([3, 1, 0]);
+        expect(watched).toStrictEqual([3, 0]);
         // Between ticks nobody in particular is asking.
         expect(app.world.reader).toBeUndefined();
       })
@@ -1429,7 +1429,7 @@ describe("change queries in an app", () => {
         const again = yield* game();
         App.replay(again, app.actionLog, { delta: 1, ticks: 40 });
         expect(again.world.hash()).toBe(app.world.hash());
-        expect(tallyOf(again)).toEqual(tallyOf(app));
+        expect(tallyOf(again)).toStrictEqual(tallyOf(app));
       })
     );
   });
@@ -1455,7 +1455,7 @@ describe("change queries in an app", () => {
             throw new Error("the save did not decode");
           }
 
-          expect(read.value.changes).toEqual(save.value.changes);
+          expect(read.value.changes).toStrictEqual(save.value.changes);
 
           const loaded = yield* App.load(read.value, {
             components: [Position, Sprite, Tally, Health],
@@ -1471,7 +1471,7 @@ describe("change queries in an app", () => {
             delta: 1,
             ticks: 12,
           });
-          expect(tallyOf(loaded)).toEqual(tallyOf(app));
+          expect(tallyOf(loaded)).toStrictEqual(tallyOf(app));
           expect(loaded.world.hash()).toBe(app.world.hash());
         })
       );
@@ -1510,7 +1510,7 @@ describe("change queries in an app", () => {
           return { entities: made };
         })();
 
-        expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4]));
+        expect(app.dispatch(Look, {})).toStrictEqual(Exit.succeed([4, 4]));
         app.world.view(Moved, "action:ch/Look").entities();
         app.world.view(Hurt, "action:ch/Look").entities();
         app.world.set(entities[1]!, Health, { hp: 9 });
@@ -1535,7 +1535,7 @@ describe("change queries in an app", () => {
                   "ch/Place"
                 );
                 // A migration is handed the changes too.
-                expect(contents.changes.map((each) => each.component)).toEqual([
+                expect(contents.changes.map((each) => each.component)).toStrictEqual([
                   "ch/Health",
                   "ch/Position",
                 ]);
@@ -1545,7 +1545,7 @@ describe("change queries in an app", () => {
         });
 
         // Everything placed counts as changed; health goes on from the save.
-        expect(loaded.dispatch(Look, {})).toEqual(Exit.succeed([4, 1]));
+        expect(loaded.dispatch(Look, {})).toStrictEqual(Exit.succeed([4, 1]));
       })
     );
   });

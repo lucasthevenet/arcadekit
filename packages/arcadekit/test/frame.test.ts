@@ -81,7 +81,7 @@ describe("a frozen world", () => {
     world.freeze();
     expect(world.frozen).toBe(true);
     // Reading.
-    expect(world.get(ball, Ball)).toEqual({ x: 1, vx: 2 });
+    expect(world.get(ball, Ball)).toStrictEqual({ x: 1, vx: 2 });
     expect(world.view(Balls).count()).toBe(2);
     expect(world.singleton(Score).points).toBe(7);
     let sum = 0;
@@ -163,7 +163,7 @@ describe("a frozen world", () => {
         seen.push(rows.x[i]!);
       }
     });
-    expect(seen).toEqual([1, 5]);
+    expect(seen).toStrictEqual([1, 5]);
     // The visit was a visit, and noted nothing for anyone.
     expect(moved.count()).toBe(0);
     expect(other.count()).toBe(0);
@@ -173,7 +173,7 @@ describe("a frozen world", () => {
     expect(() => moved.eachChunk(() => {})).toThrow(/watches "fr\/Ball"/u);
     world.set(ball, Ball, { x: 4 });
     world.freeze();
-    expect(moved.entities()).toEqual([ball]);
+    expect(moved.entities()).toStrictEqual([ball]);
     world.thaw();
   });
 
@@ -189,18 +189,18 @@ describe("a frozen world", () => {
     );
     // Thawed all the same, and as it was found.
     expect(world.frozen).toBe(false);
-    expect(Array.from(world.random.state)).toEqual(state);
+    expect(Array.from(world.random.state)).toStrictEqual(state);
     expect(world.hash()).toBe(before);
     // A freeze with no draw in it thaws quietly, after draws before it.
     world.random.next();
     const drawn = Array.from(world.random.state);
     world.freeze();
     world.thaw();
-    expect(Array.from(world.random.state)).toEqual(drawn);
+    expect(Array.from(world.random.state)).toStrictEqual(drawn);
     // Thawing a world that is not frozen is nothing.
     world.random.next();
     world.thaw();
-    expect(Array.from(world.random.state)).not.toEqual(drawn);
+    expect(Array.from(world.random.state)).not.toStrictEqual(drawn);
   });
 
   it("cannot be frozen in the middle of a transaction", () => {
@@ -239,22 +239,22 @@ describe("the frame stage", () => {
           ],
         });
 
-        expect(app.systemOrder).toEqual(["Tick"]);
-        expect(app.frameOrder).toEqual(["Clear", "Draw", "Hud"]);
+        expect(app.systemOrder).toStrictEqual(["Tick"]);
+        expect(app.frameOrder).toStrictEqual(["Clear", "Draw", "Hud"]);
         app.frame(0);
-        expect(ran).toEqual(["Clear", "Draw"]);
+        expect(ran).toStrictEqual(["Clear", "Draw"]);
         app.tick(1);
         app.tick(1);
-        expect(ran).toEqual(["Clear", "Draw", "Tick", "Tick"]);
+        expect(ran).toStrictEqual(["Clear", "Draw", "Tick", "Tick"]);
         ran.length = 0;
         app.spawnScript(Effect.map(Phase, (phase) => phase.set("paused")));
         app.frame(0.5);
         // A state is entered by a tick, not by a frame.
-        expect(ran).toEqual(["Clear", "Draw"]);
+        expect(ran).toStrictEqual(["Clear", "Draw"]);
         app.tick(1);
         ran.length = 0;
         app.frame(0.5);
-        expect(ran).toEqual(["Clear", "Draw", "Hud"]);
+        expect(ran).toStrictEqual(["Clear", "Draw", "Hud"]);
       })
     );
   });
@@ -284,7 +284,7 @@ describe("the frame stage", () => {
         });
 
         // The stage first, then what the systems say, then as listed.
-        expect(app.frameOrder).toEqual([
+        expect(app.frameOrder).toStrictEqual([
           "Load",
           "Clear",
           "Draw",
@@ -292,9 +292,9 @@ describe("the frame stage", () => {
           "Fit",
           "Show",
         ]);
-        expect(app.systemOrder).toEqual(["Tick"]);
+        expect(app.systemOrder).toStrictEqual(["Tick"]);
         app.frame(0.25);
-        expect(ran).toEqual([
+        expect(ran).toStrictEqual([
           "Load 0.25",
           "Clear 0.25",
           "Draw 0.25",
@@ -302,8 +302,8 @@ describe("the frame stage", () => {
           "Fit 0.25",
           "Show 0.25",
         ]);
-        expect(System.frameStages).toEqual(["preFrame", "frame", "postFrame"]);
-        expect(System.frameStages.map(System.isFrameStage)).toEqual([
+        expect(System.frameStages).toStrictEqual(["preFrame", "frame", "postFrame"]);
+        expect(System.frameStages.map(System.isFrameStage)).toStrictEqual([
           true,
           true,
           true,
@@ -312,7 +312,7 @@ describe("the frame stage", () => {
           (["preUpdate", "update", "postUpdate", "input"] as const).map(
             System.isFrameStage
           )
-        ).toEqual([false, false, false, false]);
+        ).toStrictEqual([false, false, false, false]);
       })
     );
   });
@@ -368,7 +368,7 @@ describe("the frame stage", () => {
         sys("Load", "preFrame").pipe(System.before("Draw")),
         sys("Last", "postFrame").pipe(System.after("Camera")),
       ])
-    ).toEqual(["Load", "Camera", "Draw", "Show", "Last"]);
+    ).toStrictEqual(["Load", "Camera", "Draw", "Show", "Last"]);
     // And of a tick's stages the same.
     expect(
       names([
@@ -376,7 +376,7 @@ describe("the frame stage", () => {
         sys("Rules", "update").pipe(System.after("Early")),
         sys("Early", "preUpdate").pipe(System.before("Late")),
       ])
-    ).toEqual(["Early", "Rules", "Late"]);
+    ).toStrictEqual(["Early", "Rules", "Late"]);
     // What cannot be: a stage runs whole before the next.
     expect(() =>
       System.order([
@@ -450,12 +450,12 @@ describe("the frame stage", () => {
         app.frame(0.5, 0.008);
         app.tick(0.5);
         app.frame(0.25);
-        expect(frames).toEqual([
+        expect(frames).toStrictEqual([
           { alpha: 0, delta: 0.016, count: 1 },
           { alpha: 0.5, delta: 0.008, count: 2 },
           { alpha: 0.25, delta: 0, count: 3 },
         ]);
-        expect(drawn).toEqual([5, 7.5, 11.25]);
+        expect(drawn).toStrictEqual([5, 7.5, 11.25]);
       })
     );
   });
@@ -473,8 +473,8 @@ describe("the frame stage", () => {
         const step = Driver.fixedStep(app, { hz: 10 });
         // Frames of 40 ms against ticks of 100 ms.
         const ticks = [0, 1, 2, 3, 4, 5, 6].map(() => step(0.04));
-        expect(ticks).toEqual([0, 0, 1, 0, 1, 0, 0]);
-        expect(alphas).toEqual([0.4, 0.8, 0.2, 0.6, 0, 0.4, 0.8]);
+        expect(ticks).toStrictEqual([0, 0, 1, 0, 1, 0, 0]);
+        expect(alphas).toStrictEqual([0.4, 0.8, 0.2, 0.6, 0, 0.4, 0.8]);
         expect(app.time.tick).toBe(2);
         // A long frame runs several ticks and then draws once.
         expect(step(0.33)).toBe(4);
@@ -483,7 +483,7 @@ describe("the frame stage", () => {
         // An app with no frame stage is driven as before.
         const plain = yield* App.make({ systems: [Roll] });
         expect(Driver.fixedStep(plain, { hz: 10 })(0.25)).toBe(2);
-        expect(plain.frameOrder).toEqual([]);
+        expect(plain.frameOrder).toStrictEqual([]);
         plain.frame(0.5);
       })
     );
@@ -569,7 +569,7 @@ describe("the frame stage", () => {
         app.frame(0);
         expect(new Set(drawn).size).toBe(4);
         expect(app.world.hash()).toBe(before);
-        expect(Array.from(app.world.random.state)).toEqual(state);
+        expect(Array.from(app.world.random.state)).toStrictEqual(state);
         // Seeded, so the same game sparkles the same way.
         const again = yield* App.make({ systems: [Sparkle, Roll], seed: 5 });
         drawn.length = 0;
@@ -580,7 +580,7 @@ describe("the frame stage", () => {
         const third = yield* App.make({ systems: [Sparkle, Roll], seed: 5 });
         third.frame(0);
         third.frame(0);
-        expect(drawn).toEqual(first);
+        expect(drawn).toStrictEqual(first);
       })
     );
   });
@@ -612,7 +612,7 @@ describe("the frame stage", () => {
         expect(app.world.hash()).toBe(before);
         expect(app.world.frozen).toBe(false);
         // The frame ran to its end first, and the outcome is a defect.
-        expect(drawn).toEqual(["After"]);
+        expect(drawn).toStrictEqual(["After"]);
         const exit = app.frameExit(0);
         expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
         expect(app.world.hash()).toBe(before);
@@ -665,10 +665,10 @@ describe("the frame stage", () => {
 
         expect(
           app.world.get(app.world.view(Balls).entities()[0]!, Ball)
-        ).toEqual({ x: 1 + 1 + 1 + 5 + 5, vx: 5 });
+        ).toStrictEqual({ x: 1 + 1 + 1 + 5 + 5, vx: 5 });
         expect(
           app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
-        ).toEqual([
+        ).toStrictEqual([
           { tick: 3, name: "fr/Kick", payload: { by: 4 }, queued: true },
         ]);
         // The replay has no button and draws no frame.
@@ -725,7 +725,7 @@ describe("the frame stage", () => {
           /App\.frame was called from inside a tick/u
         );
         // Nothing was drawn in the middle of the tick.
-        expect(drawn).toEqual([]);
+        expect(drawn).toStrictEqual([]);
         inTick = undefined;
         app.tick(1);
         app.frame(0);
@@ -815,7 +815,7 @@ describe("what the frame stage reads", () => {
         const app = yield* App.make({ systems: [Late, Emit, Listen] });
         app.tick(1);
         app.frame(0);
-        expect(heard).toEqual([1]);
+        expect(heard).toStrictEqual([1]);
 
         // Four ticks with no frame between them, as after a hitch.
         for (let n = 0; n < 4; n += 1) {
@@ -823,9 +823,9 @@ describe("what the frame stage reads", () => {
         }
 
         app.frame(0);
-        expect(heard).toEqual([1, 2, 3, 4, 5]);
+        expect(heard).toStrictEqual([1, 2, 3, 4, 5]);
         app.frame(0);
-        expect(heard).toEqual([1, 2, 3, 4, 5]);
+        expect(heard).toStrictEqual([1, 2, 3, 4, 5]);
         // The simulation cannot tell that anything was kept for the frame
         // stage: a system that first reads on tick 4 hears what it would
         // have heard with no frame stage at all.
@@ -838,7 +838,7 @@ describe("what the frame stage reads", () => {
         }
 
         without.push(...late);
-        expect(without).toEqual([3, 4]);
+        expect(without).toStrictEqual([3, 4]);
         late.length = 0;
         const again = yield* App.make({ systems: [Late, Emit, Listen] });
         again.tick(1);
@@ -848,7 +848,7 @@ describe("what the frame stage reads", () => {
           again.tick(1);
         }
 
-        expect(late).toEqual(without);
+        expect(late).toStrictEqual(without);
         expect(again.events.pending(Bounced)).toBe(
           headless.events.pending(Bounced)
         );
@@ -882,8 +882,8 @@ describe("what the frame stage reads", () => {
           })
         );
 
-        expect(yield* runs[0]!).toEqual([5]);
-        expect(yield* runs[1]!).toEqual([5]);
+        expect(yield* runs[0]!).toStrictEqual([5]);
+        expect(yield* runs[1]!).toStrictEqual([5]);
 
         // Nor can a save: it holds what the simulation has yet to read, and
         // nothing that was only kept for the frame stage, or of its readers.
@@ -893,8 +893,8 @@ describe("what the frame stage reads", () => {
           return Exit.isSuccess(save) ? save.value.events : undefined;
         });
 
-        expect(saves[0]).toEqual(saves[1]);
-        expect(saves[0]).toEqual([
+        expect(saves[0]).toStrictEqual(saves[1]);
+        expect(saves[0]).toStrictEqual([
           { name: "fr/Bounced", payloads: [{ at: 5 }], read: {} },
         ]);
       })
@@ -938,7 +938,7 @@ describe("what the frame stage reads", () => {
 
         app.frame(0);
         // All 500 were kept.
-        expect(heard).toEqual([1, 500]);
+        expect(heard).toStrictEqual([1, 500]);
 
         for (let n = 0; n < 2000; n += 1) {
           app.tick(1);
@@ -998,9 +998,9 @@ describe("what the frame stage reads", () => {
         app.frame(0);
         app.frame(0);
         // The first frame draws everything; the next, the two that moved.
-        expect(drawn).toEqual([3, 2, 0]);
+        expect(drawn).toStrictEqual([3, 2, 0]);
         // The simulation's own reader saw each change once, a tick late.
-        expect(counted).toEqual([3, 1]);
+        expect(counted).toStrictEqual([3, 1]);
 
         app.tick(1);
         const save = app.save();
@@ -1029,8 +1029,8 @@ describe("what the frame stage reads", () => {
         loaded.tick(1);
         // A loaded game has everything still to draw, and its simulation
         // goes on from where it was.
-        expect(drawn).toEqual([3]);
-        expect(counted).toEqual([1]);
+        expect(drawn).toStrictEqual([3]);
+        expect(counted).toStrictEqual([1]);
       })
     );
   });
@@ -1091,13 +1091,13 @@ describe("what the frame stage reads", () => {
           expect(drawn.world.hash()).toBe(undrawn.world.hash());
         }
 
-        expect(drawn.actionLog).toEqual(undrawn.actionLog);
+        expect(drawn.actionLog).toStrictEqual(undrawn.actionLog);
 
         const saved = [drawn.save(), undrawn.save()].map((save) =>
           Exit.isSuccess(save) ? Save.encode(save.value) : undefined
         );
 
-        expect(saved[0]).toEqual(saved[1]);
+        expect(saved[0]).toStrictEqual(saved[1]);
       })
     );
   });

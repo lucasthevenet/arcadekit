@@ -85,18 +85,18 @@ describe("a singleton", () => {
   it("holds its initial value until it is written, and is read and written in place", () => {
     const world = new EcsWorld();
     const turn = world.singleton(Turn);
-    expect({ ...turn }).toEqual({ player: 1, round: 0 });
+    expect({ ...turn }).toStrictEqual({ player: 1, round: 0 });
     turn.player = 2;
     turn.round += 3;
     // One value per world, whoever asks.
     expect(world.singleton(Turn)).toBe(turn);
     expect(world.singleton(Turn).round).toBe(3);
-    expect(Object.keys(turn)).toEqual(["player", "round"]);
+    expect(Object.keys(turn)).toStrictEqual(["player", "round"]);
     // A field keeps what its kind can hold, as a component's does.
     turn.player = 257;
     expect(turn.player).toBe(1);
     // Another world has its own.
-    expect({ ...new EcsWorld().singleton(Turn) }).toEqual({
+    expect({ ...new EcsWorld().singleton(Turn) }).toStrictEqual({
       player: 1,
       round: 0,
     });
@@ -105,7 +105,7 @@ describe("a singleton", () => {
   it("has fields of every kind", () => {
     const world = new EcsWorld();
     const all = world.singleton(Everything);
-    expect({ ...all }).toEqual({ ...Everything.initial });
+    expect({ ...all }).toStrictEqual({ ...Everything.initial });
     const handle = { open: true };
     all.handle = handle;
     all.note = "text";
@@ -248,8 +248,8 @@ describe("a singleton in a snapshot", () => {
     const copy = new EcsWorld();
     copy.load(bytes, listed);
     expect(copy.hash()).toBe(world.hash());
-    expect({ ...copy.singleton(Turn) }).toEqual({ player: 1, round: 12 });
-    expect({ ...copy.singleton(Everything) }).toEqual({
+    expect({ ...copy.singleton(Turn) }).toStrictEqual({ player: 1, round: 12 });
+    expect({ ...copy.singleton(Everything) }).toStrictEqual({
       ...Everything.initial,
       note: [1, { two: 2 }],
       when: new Date("2030-05-06T07:08:09Z"),
@@ -257,7 +257,7 @@ describe("a singleton in a snapshot", () => {
       // Not saved.
       handle: undefined,
     });
-    expect(copy.snapshot()).toEqual(bytes);
+    expect(copy.snapshot()).toStrictEqual(bytes);
     // It goes on the same.
     copy.singleton(Turn).round += 1;
     world.singleton(Turn).round += 1;
@@ -276,7 +276,7 @@ describe("a singleton in a snapshot", () => {
 
     const copy = new EcsWorld();
     copy.load(bytes, [Body, Turn.component, Everything.component]);
-    expect({ ...copy.singleton(Rescored) }).toEqual({
+    expect({ ...copy.singleton(Rescored) }).toStrictEqual({
       points: 100,
       best: "the house",
     });
@@ -418,27 +418,27 @@ describe("a singleton in a snapshot", () => {
     const copy = new EcsWorld();
     copy.load(old, [Body]);
     expect(copy.hash()).toBe(world.hash());
-    expect(readSnapshot(old).singletons).toEqual([]);
+    expect(readSnapshot(old).singletons).toStrictEqual([]);
     // Written again, it is in the format of today.
-    expect(writeSnapshot(readSnapshot(old))).toEqual(bytes);
+    expect(writeSnapshot(readSnapshot(old))).toStrictEqual(bytes);
   });
 
   it("describes itself, so a migration can change it by name", () => {
     const bytes = written().snapshot();
     const contents = readSnapshot(bytes);
-    expect(writeSnapshot(contents)).toEqual(bytes);
+    expect(writeSnapshot(contents)).toStrictEqual(bytes);
     // In order of name, whatever order a migration leaves them in.
     expect(
       writeSnapshot({
         ...contents,
         singletons: contents.singletons.toReversed(),
       })
-    ).toEqual(bytes);
-    expect(contents.singletons.map((each) => each.component)).toEqual([
+    ).toStrictEqual(bytes);
+    expect(contents.singletons.map((each) => each.component)).toStrictEqual([
       "sg/Everything",
       "sg/Turn",
     ]);
-    expect(contents.components.find((each) => each.name === "sg/Turn")).toEqual(
+    expect(contents.components.find((each) => each.name === "sg/Turn")).toStrictEqual(
       {
         name: "sg/Turn",
         storage: "singleton",
@@ -463,7 +463,7 @@ describe("a singleton in a snapshot", () => {
 
     const copy = new EcsWorld();
     copy.load(writeSnapshot(contents), [Body, Clock.component]);
-    expect({ ...copy.singleton(Clock) }).toEqual({ lap: 1.5, speed: 2 });
+    expect({ ...copy.singleton(Clock) }).toStrictEqual({ lap: 1.5, speed: 2 });
     expect(copy.component("sg/Everything")).toBeUndefined();
   });
 });
@@ -488,9 +488,9 @@ describe("a singleton in a transaction", () => {
     expect(turn.round).toBe(10);
     expect(world.hash()).not.toBe(before);
     world.rollback();
-    expect({ ...turn }).toEqual({ player: 1, round: 0 });
-    expect({ ...score }).toEqual({ points: 5, best: "nobody" });
-    expect({ ...all }).toEqual({ ...Everything.initial });
+    expect({ ...turn }).toStrictEqual({ player: 1, round: 0 });
+    expect({ ...score }).toStrictEqual({ points: 5, best: "nobody" });
+    expect({ ...all }).toStrictEqual({ ...Everything.initial });
     // Turn and Everything were never written, and are not again.
     expect(world.hash()).toBe(before);
 
@@ -578,22 +578,22 @@ describe("a singleton in an app", () => {
             }
           })
         );
-        expect(app.dispatch(EndTurn, { player: 2 })).toEqual(
+        expect(app.dispatch(EndTurn, { player: 2 })).toStrictEqual(
           Exit.fail(new NotYourTurn({ waitingFor: 1 }))
         );
-        expect(app.dispatch(EndTurn, { player: 1 })).toEqual(Exit.succeed(1));
+        expect(app.dispatch(EndTurn, { player: 1 })).toStrictEqual(Exit.succeed(1));
         app.tick(1);
-        expect(app.dispatch(EndTurn, { player: 2 })).toEqual(Exit.succeed(2));
+        expect(app.dispatch(EndTurn, { player: 2 })).toStrictEqual(Exit.succeed(2));
         app.tick(1);
-        expect({ ...app.world.singleton(Turn) }).toEqual({
+        expect({ ...app.world.singleton(Turn) }).toStrictEqual({
           player: 1,
           round: 2,
         });
-        expect({ ...app.world.singleton(Score) }).toEqual({
+        expect({ ...app.world.singleton(Score) }).toStrictEqual({
           points: 2,
           best: "player 1",
         });
-        expect(rounds).toEqual([0, 1, 2]);
+        expect(rounds).toStrictEqual([0, 1, 2]);
         // No entity was needed for any of it.
         expect(app.world.entityCount).toBe(0);
         expect(app.world.view(Query.all()).count()).toBe(0);
@@ -617,7 +617,7 @@ describe("a singleton in an app", () => {
           app.tick(1);
         }
 
-        expect({ ...app.world.singleton(Turn) }).toEqual({
+        expect({ ...app.world.singleton(Turn) }).toStrictEqual({
           player: 1,
           round: 12,
         });
@@ -662,11 +662,11 @@ describe("a singleton in an app", () => {
         });
 
         expect(loaded.world.hash()).toBe(app.world.hash());
-        expect({ ...loaded.world.singleton(Turn) }).toEqual({
+        expect({ ...loaded.world.singleton(Turn) }).toStrictEqual({
           player: 2,
           round: 5,
         });
-        expect(loaded.dispatch(EndTurn, { player: 2 })).toEqual(
+        expect(loaded.dispatch(EndTurn, { player: 2 })).toStrictEqual(
           Exit.succeed(6)
         );
         app.dispatch(EndTurn, { player: 2 });

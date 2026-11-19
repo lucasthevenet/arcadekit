@@ -97,7 +97,7 @@ describe("a field that is not a number", () => {
         v: Field.ref<string>(),
       })
     ).not.toThrow();
-    expect(Card.kinds).toEqual([
+    expect(Card.kinds).toStrictEqual([
       "json",
       "ref",
       "ref",
@@ -105,7 +105,7 @@ describe("a field that is not a number", () => {
       "transient",
       "i32",
     ]);
-    expect(Card.codecs.map((codec) => codec !== undefined)).toEqual([
+    expect(Card.codecs.map((codec) => codec !== undefined)).toStrictEqual([
       false,
       true,
       true,
@@ -123,17 +123,17 @@ describe("a field that is not a number", () => {
       for (const [n, entity] of entities.entries()) {
         const then = world.get(entity, def) as Row;
         const now = copy.get(entity, def) as Row;
-        expect(now.data).toEqual(then.data);
-        expect(now.when).toEqual(then.when);
+        expect(now.data).toStrictEqual(then.data);
+        expect(now.when).toStrictEqual(then.when);
         expect(now.when).toBeInstanceOf(Date);
-        expect(now.tags).toEqual(then.tags);
+        expect(now.tags).toStrictEqual(then.tags);
         expect(now.tags).toBeInstanceOf(Set);
-        expect(now.profile).toEqual(then.profile);
+        expect(now.profile).toStrictEqual(then.profile);
         expect(now.profile.joined).toBeInstanceOf(Date);
         expect(typeof now.profile.gold).toBe("bigint");
         expect(now.hp).toBe(then.hp);
         // Not saved: the loaded world has to make its handles again.
-        expect(then.handle).toEqual({ id: def === Card ? n : n + 50 });
+        expect(then.handle).toStrictEqual({ id: def === Card ? n : n + 50 });
         expect(now.handle).toBeUndefined();
       }
     }
@@ -143,7 +143,7 @@ describe("a field that is not a number", () => {
     const { world } = populated();
     expect(reload(world).hash()).toBe(world.hash());
     // And a loaded world saves to the same bytes again.
-    expect(reload(world).snapshot()).toEqual(world.snapshot());
+    expect(reload(world).snapshot()).toStrictEqual(world.snapshot());
   });
 
   it("changes the hash when it changes, unless it is transient", () => {
@@ -208,7 +208,7 @@ describe("a field that is not a number", () => {
     });
     world.rollback();
     expect(world.get(entities[0]!, Card)!.handle).toBe(handle);
-    expect(world.get(entities[1]!, Card)!.data).toEqual(card(1).data);
+    expect(world.get(entities[1]!, Card)!.data).toStrictEqual(card(1).data);
   });
 
   it("is part of what its component is: a snapshot does not load into another kind", () => {
@@ -359,9 +359,9 @@ describe("a field that is not a number", () => {
     const copy = new EcsWorld();
     copy.load(world.snapshot(), [Note]);
     const back = entities.map((entity) => copy.get(entity, Note)!.v);
-    expect(back.slice(0, 11)).toEqual(values.slice(0, 11));
+    expect(back.slice(0, 11)).toStrictEqual(values.slice(0, 11));
     expect(Object.is(back[6], -0)).toBe(true);
-    expect(back[11]).toEqual({ when: "1970-01-01T00:00:00.000Z", bad: null });
+    expect(back[11]).toStrictEqual({ when: "1970-01-01T00:00:00.000Z", bad: null });
     // The hash is of the saved form, so it agrees all the same.
     expect(copy.hash()).toBe(world.hash());
   });

@@ -70,7 +70,7 @@ describe("a query that says what it only reads", () => {
       pos.x += vel.x;
       pos.y += vel.y;
     });
-    expect(world.get(entities[3]!, Position)).toEqual({ x: 4, y: 2 });
+    expect(world.get(entities[3]!, Position)).toStrictEqual({ x: 4, y: 2 });
     expect(() =>
       world.view(Moving).each((pos, vel) => {
         pos.x = 0;
@@ -80,7 +80,7 @@ describe("a query that says what it only reads", () => {
     ).toThrow(
       /"rd\/Velocity\.x" was assigned to through a query that only reads "rd\/Velocity".*Query\.reads/u
     );
-    expect(world.get(entities[0]!, Velocity)).toEqual({ x: 1, y: 2 });
+    expect(world.get(entities[0]!, Velocity)).toStrictEqual({ x: 1, y: 2 });
     // The same components through a query that does not say so are written.
     world.view(Query.all(Position, Velocity)).each((pos, vel) => {
       vel.x = pos.x;
@@ -157,14 +157,14 @@ describe("a query that says what it only reads", () => {
     turned.entities();
     world.view(Moving).eachChunk(() => {});
     // The positions were handed out to be written; the velocities were not.
-    expect(moved.entities()).toEqual(entities);
-    expect(turned.entities()).toEqual([]);
+    expect(moved.entities()).toStrictEqual(entities);
+    expect(turned.entities()).toStrictEqual([]);
     world.view(Looking).eachChunk(() => {});
-    expect(moved.entities()).toEqual([]);
-    expect(turned.entities()).toEqual([]);
+    expect(moved.entities()).toStrictEqual([]);
+    expect(turned.entities()).toStrictEqual([]);
     // Without the word, every row that is handed out counts.
     world.view(Query.all(Position, Velocity)).eachChunk(() => {});
-    expect(turned.entities()).toEqual(entities);
+    expect(turned.entities()).toStrictEqual(entities);
   });
 
   it("lets a change query read what it watches with raw columns", () => {
@@ -188,18 +188,18 @@ describe("a query that says what it only reads", () => {
       return seen;
     };
 
-    expect(visit()).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(visit()).toStrictEqual([0, 1, 2, 3, 4, 5]);
     // It did not take its own visit for a change.
-    expect(visit()).toEqual([]);
+    expect(visit()).toStrictEqual([]);
     world.set(entities[4]!, Position, { x: 40 });
-    expect(visit()).toEqual([40]);
-    expect(visit()).toEqual([]);
+    expect(visit()).toStrictEqual([40]);
+    expect(visit()).toStrictEqual([]);
     // But what it is handed and does not only read counts for others.
-    expect(world.view(Turned).entities()).toEqual(entities);
+    expect(world.view(Turned).entities()).toStrictEqual(entities);
     visit();
     world.set(entities[1]!, Position, { x: 10 });
     visit();
-    expect(world.view(Turned).entities()).toEqual([entities[1]]);
+    expect(world.view(Turned).entities()).toStrictEqual([entities[1]]);
     // One that hands out what it watches without the word is still refused.
     expect(() => world.view(Moved).eachChunk(() => {})).toThrow(
       /watches "rd\/Position" for changes and also hands it out.*Query\.reads/u
@@ -269,7 +269,7 @@ describe("a query that says what it only reads", () => {
     ];
 
     for (const query of built) {
-      expect(query.readDefs).toEqual([Velocity]);
+      expect(query.readDefs).toStrictEqual([Velocity]);
       expect(() =>
         world.view(query, "anyone").each((pos, vel) => {
           pos.x = 1;
@@ -310,7 +310,7 @@ describe("a query that says what it only reads", () => {
       Query.reads(Position)
     );
 
-    expect(twice.readDefs).toEqual([Position, Velocity]);
+    expect(twice.readDefs).toStrictEqual([Position, Velocity]);
 
     const byHand = {
       terms: [Position, Velocity] as const,
@@ -418,13 +418,13 @@ describe("a query that says what it only reads, in an app", () => {
         app.tick(1);
         // The system reads the velocities every tick, raw, and the one
         // that watches them is left in peace after its first look.
-        expect(turned).toEqual([4, 0, 0]);
+        expect(turned).toStrictEqual([4, 0, 0]);
         const before = app.world.hash();
-        expect(app.dispatch(Survey, { limit: 2 })).toEqual(
+        expect(app.dispatch(Survey, { limit: 2 })).toStrictEqual(
           Exit.fail(new TooFast())
         );
         expect(app.world.hash()).toBe(before);
-        expect(app.dispatch(Survey, { limit: 5 })).toEqual(Exit.succeed(3));
+        expect(app.dispatch(Survey, { limit: 5 })).toStrictEqual(Exit.succeed(3));
         expect(app.world.hash()).not.toBe(before);
         app.tick(1);
         expect(turned.at(-1)).toBe(0);

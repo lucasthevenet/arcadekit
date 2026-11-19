@@ -133,11 +133,11 @@ describe("Sound.cues", () => {
     const app = play(sound);
     app.dispatch(Drop, { height: 5 });
     // Nothing is played until a frame is drawn: not by the action, not by a tick.
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
     app.tick(0.1);
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
     app.frame(0);
-    expect(sound.played).toEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
+    expect(sound.played).toStrictEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
     // Heard once: the next frames have nothing new to play.
     app.frame(0.5);
     app.tick(0.1);
@@ -148,11 +148,11 @@ describe("Sound.cues", () => {
     about(app, 5);
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played.at(-1)).toEqual({ cue: "thud", volume: 0.6, rate: 1 });
+    expect(sound.played.at(-1)).toStrictEqual({ cue: "thud", volume: 0.6, rate: 1 });
     about(app, 20);
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played.at(-1)).toEqual({ cue: "thud", volume: 1, rate: 2 });
+    expect(sound.played.at(-1)).toStrictEqual({ cue: "thud", volume: 1, rate: 2 });
     // Or that there is nothing to hear.
     const before = sound.played.length;
     const lines = asked;
@@ -174,7 +174,7 @@ describe("Sound.cues", () => {
     about(app, 6);
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "thud"]);
+    expect(sound.played.map((one) => one.cue)).toStrictEqual(["whoosh", "thud"]);
     // A frame with no tick before it, and ticks with nothing to say.
     app.frame(0.4);
     app.tick(0.001);
@@ -197,7 +197,7 @@ describe("Sound.cues", () => {
     // Four bounces and two drops: two sounds. The loudest bounce was the
     // fast one, and it is played at its own rate.
     expect(asked).toBe(4);
-    expect(sound.played).toEqual([
+    expect(sound.played).toStrictEqual([
       { cue: "whoosh", volume: 1, rate: 1 },
       // The speed is a 32-bit float in the world.
       { cue: "thud", volume: Math.fround(9 + 10 * 0.01) / 10, rate: 2 },
@@ -218,7 +218,7 @@ describe("Sound.cues", () => {
     app.enqueue(Drop, { height: 500 });
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
   });
 
   it("plays nothing while its system does not run, and nothing later of what happened meanwhile", () => {
@@ -239,15 +239,15 @@ describe("Sound.cues", () => {
     app.dispatch(Drop, { height: 1 });
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
     app.dispatch(Mute, { on: false });
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
     app.dispatch(Drop, { height: 1 });
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played).toEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
+    expect(sound.played).toStrictEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
     expect(Quiet.name).toBe("sd/Quiet");
     expect(Quiet.stage).toBe("frame");
   });
@@ -275,9 +275,9 @@ describe("Sound.cues", () => {
     app.enqueue(Drop, { height: 3 });
     // A frame in which no tick is due plays nothing: nothing happened.
     advance(0.01);
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
     advance(0.1);
-    expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "thud"]);
+    expect(sound.played.map((one) => one.cue)).toStrictEqual(["whoosh", "thud"]);
   });
 });
 
@@ -298,7 +298,7 @@ describe("Sound.Player", () => {
     expect(() => app.tick(0.1)).toThrow(
       'The cue "bang" was played in the tick'
     );
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
 
     // Nor by an action's handler, which is the simulation too.
     const Bang = Action.define("sd/Bang", Schema.Struct({}));
@@ -319,7 +319,7 @@ describe("Sound.Player", () => {
     expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toContain(
       'The cue "bang" was played in the tick'
     );
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
   });
 
   it("plays for a system of the frame stage or the input stage, as it is told, once the frame's systems have run", () => {
@@ -361,36 +361,36 @@ describe("Sound.Player", () => {
     };
 
     // As it is, and as it is told.
-    expect(frame(undefined)).toEqual([{ cue: "click", volume: 1, rate: 1 }]);
-    expect(frame({ volume: 0.25 })).toEqual([
+    expect(frame(undefined)).toStrictEqual([{ cue: "click", volume: 1, rate: 1 }]);
+    expect(frame({ volume: 0.25 })).toStrictEqual([
       { cue: "click", volume: 0.25, rate: 1 },
     ]);
-    expect(frame({ rate: 1.5 })).toEqual([
+    expect(frame({ rate: 1.5 })).toStrictEqual([
       { cue: "click", volume: 1, rate: 1.5 },
     ]);
     // Not below nothing.
-    expect(frame({ volume: -3, rate: 0.5 })).toEqual([
+    expect(frame({ volume: -3, rate: 0.5 })).toStrictEqual([
       { cue: "click", volume: 0, rate: 0.5 },
     ]);
-    expect(heard).toEqual([0, 0, 0, 0]);
+    expect(heard).toStrictEqual([0, 0, 0, 0]);
     // Asked several times in one frame it is one sound, as the loudest
     // asked, and of two as loud the first.
     expect(
       frame({ volume: 0.5, rate: 2 }, { volume: 0.9, rate: 3 }, { volume: 0.9 })
-    ).toEqual([{ cue: "click", volume: 0.9, rate: 3 }]);
+    ).toStrictEqual([{ cue: "click", volume: 0.9, rate: 3 }]);
     // And nothing is left of a frame for the next.
-    expect(frame()).toEqual([]);
+    expect(frame()).toStrictEqual([]);
     // Asked for in the input stage, it is heard with the frame that
     // follows, and before what that frame asks.
     beep = true;
     app.input();
-    expect(sound.played).toEqual([]);
+    expect(sound.played).toStrictEqual([]);
     beep = false;
-    expect(frame(undefined)).toEqual([
+    expect(frame(undefined)).toStrictEqual([
       { cue: "beep", volume: 2, rate: 1 },
       { cue: "click", volume: 1, rate: 1 },
     ]);
-    expect(app.frameOrder).toEqual(["sd/Click", "arcadekit/Sound.Flush"]);
+    expect(app.frameOrder).toStrictEqual(["sd/Click", "arcadekit/Sound.Flush"]);
   });
 
   it("makes one sound of a cue that several systems play in one frame, whichever they are", () => {
@@ -420,12 +420,12 @@ describe("Sound.Player", () => {
     // The game's own cues ask for a whoosh and a thud, the second system
     // for both again, and the third for a whoosh: one of each, each as
     // the loudest asked, in the order they were first asked for.
-    expect(sound.played.map((one) => one.cue)).toEqual([
+    expect(sound.played.map((one) => one.cue)).toStrictEqual([
       "whoosh",
       "thud",
       "ping",
     ]);
-    expect(sound.played[0]).toEqual({ cue: "whoosh", volume: 1, rate: 1 });
+    expect(sound.played[0]).toStrictEqual({ cue: "whoosh", volume: 1, rate: 1 });
     expect(sound.played[1]!.volume).toBeGreaterThan(0.3);
   });
 
@@ -443,7 +443,7 @@ describe("Sound.Player", () => {
     run(
       App.make(options).pipe(Effect.provide(Sound.layer(Sound.makeRecorder())))
     ).frame(0);
-    expect(seen).toEqual([false, true]);
+    expect(seen).toStrictEqual([false, true]);
   });
 
   it("is what a plugin's systems need: a game with cues that leaves out Sound.plugin does not compile", () => {
@@ -490,14 +490,14 @@ describe("a game with sound", () => {
       expect(heard.world.hash()).toBe(deaf.world.hash());
     }
 
-    expect(heard.actionLog).toEqual(deaf.actionLog);
+    expect(heard.actionLog).toStrictEqual(deaf.actionLog);
 
     const saves = [heard.save(), deaf.save()].map((save) =>
       Exit.isSuccess(save) ? save.value : undefined
     );
 
     expect(saves[0]).toBeDefined();
-    expect(saves[0]).toEqual(saves[1]);
+    expect(saves[0]).toStrictEqual(saves[1]);
     // And it was heard: every bounce that was fast enough.
     expect(heard.world.singleton(Bounces).count).toBeGreaterThan(5);
     expect(
@@ -521,7 +521,7 @@ describe("a game with sound", () => {
     const replayed = play(again, 3);
     App.replay(replayed, app.actionLog, { delta: 0.05, ticks: 30 });
     expect(replayed.world.hash()).toBe(app.world.hash());
-    expect(again.played).toEqual([]);
+    expect(again.played).toStrictEqual([]);
   });
 });
 
@@ -530,11 +530,11 @@ describe("Sound.makeRecorder", () => {
     const sound = Sound.makeRecorder();
     sound.play("a", 1, 1);
     sound.play("b", 0.5, 2);
-    expect(sound.played).toEqual([
+    expect(sound.played).toStrictEqual([
       { cue: "a", volume: 1, rate: 1 },
       { cue: "b", volume: 0.5, rate: 2 },
     ]);
     // Each its own.
-    expect(Sound.makeRecorder().played).toEqual([]);
+    expect(Sound.makeRecorder().played).toStrictEqual([]);
   });
 });

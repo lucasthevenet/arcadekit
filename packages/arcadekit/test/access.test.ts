@@ -163,7 +163,7 @@ describe("a system that says what it reads and writes", () => {
         )
       );
 
-    expect(hashes(said)).toEqual(hashes([Movement, Wounding, Scoring]));
+    expect(hashes(said)).toStrictEqual(hashes([Movement, Wounding, Scoring]));
   });
 
   it("is refused a query it did not name, where it asks, and told what to do", () => {
@@ -308,7 +308,7 @@ describe("a system that says what it reads and writes", () => {
     ticking({ writes: [Health] }, function* () {
       const world = yield* World;
       world.set(first, Health, { hp: 1 });
-      expect(world.get(first, Health)).toEqual({ hp: 1 });
+      expect(world.get(first, Health)).toStrictEqual({ hp: 1 });
     });
     // Outside a loop the world may be changed directly, and is held the same.
     expect(() =>
@@ -590,7 +590,7 @@ describe("a system that says what it reads and writes", () => {
         })
       )
     );
-    expect(log).toEqual(["free", "script"]);
+    expect(log).toStrictEqual(["free", "script"]);
   });
 
   it("reads the picture of the devices without saying so, as it reads the time", () => {
@@ -708,13 +708,13 @@ describe("a system that says what it reads and writes", () => {
     const said = System.accessOf(system)!;
     expect(
       Array.from(said.components, ([name, { touch }]) => [name, touch])
-    ).toEqual([
+    ).toStrictEqual([
       ["ac/Position", "writes"],
       ["ac/Velocity", "reads"],
       ["ac/Score", "writes"],
     ]);
-    expect(Array.from(said.events)).toEqual([["ac/Hit", "reads"]]);
-    expect([said.random, said.actions, said.scripts]).toEqual([
+    expect(Array.from(said.events)).toStrictEqual([["ac/Hit", "reads"]]);
+    expect([said.random, said.actions, said.scripts]).toStrictEqual([
       true,
       true,
       false,
@@ -741,7 +741,7 @@ describe("a system that says what it reads and writes", () => {
         ],
         reads: [Health, Position],
       })
-    ).toEqual([
+    ).toStrictEqual([
       ["ac/Position", "writes"],
       ["ac/Bullet", "reads"],
       ["ac/Health", "watches"],
@@ -752,7 +752,7 @@ describe("a system that says what it reads and writes", () => {
         queries: [Query.all(Health).pipe(Query.reads(), Query.added(Health))],
         writes: [Phase],
       })
-    ).toEqual([
+    ).toStrictEqual([
       ["ac/Health", "watches"],
       ["ac/Phase", "writes"],
     ]);
@@ -802,10 +802,10 @@ describe("a world with a guard", () => {
 
   it("refuses what was not said where it is done, and says who, what and what to do", () => {
     const { first, world } = guarded([Health], [Position]);
-    expect(world.get(first, Health)).toEqual({ hp: 3 });
+    expect(world.get(first, Health)).toStrictEqual({ hp: 3 });
     expect(world.set(first, Position, { x: 9 })).toBe(true);
     // What may be written may be read.
-    expect(world.get(first, Position)).toEqual({ x: 9, y: 2 });
+    expect(world.get(first, Position)).toStrictEqual({ x: 9, y: 2 });
     expect(() => world.set(first, Health, { hp: 0 })).toThrow(
       'The test wrote "ac/Health" through the world, and did not say it would write it. Say so.'
     );
@@ -824,7 +824,7 @@ describe("a world with a guard", () => {
     // Nothing of it was done.
     world.guard = undefined;
     expect(world.entityCount).toBe(1);
-    expect(world.get(first, Health)).toEqual({ hp: 3 });
+    expect(world.get(first, Health)).toStrictEqual({ hp: 3 });
     expect(world.has(first, Velocity)).toBe(false);
   });
 
@@ -924,7 +924,7 @@ describe("the order of systems", () => {
   });
 
   it("is in conflict where one writes what another touches and nothing says which runs first", () => {
-    expect(System.conflicts([Move, Aim])).toEqual({
+    expect(System.conflicts([Move, Aim])).toStrictEqual({
       conflicts: [
         {
           first: "Move",
@@ -942,7 +942,7 @@ describe("the order of systems", () => {
       undeclared: [],
     });
     // Listed the other way round, they run the other way round.
-    expect(System.conflicts([Aim, Move]).conflicts).toEqual([
+    expect(System.conflicts([Aim, Move]).conflicts).toStrictEqual([
       {
         first: "Aim",
         second: "Move",
@@ -961,13 +961,13 @@ describe("the order of systems", () => {
   it("is settled by saying the order, directly or through others", () => {
     expect(
       System.conflicts([Move, Aim.pipe(System.after(Move))]).conflicts
-    ).toEqual([]);
+    ).toStrictEqual([]);
     expect(
       System.conflicts([Move.pipe(System.before(Aim)), Aim]).conflicts
-    ).toEqual([]);
+    ).toStrictEqual([]);
     expect(
       System.conflicts([Aim, Move.pipe(System.before("Aim"))]).conflicts
-    ).toEqual([]);
+    ).toStrictEqual([]);
     // Through a system that touches nothing of theirs.
     const Between = system("Between", { writes: [Phase] });
     expect(
@@ -976,11 +976,11 @@ describe("the order of systems", () => {
         Between.pipe(System.after(Move)),
         Aim.pipe(System.after(Between)),
       ]).conflicts
-    ).toEqual([]);
+    ).toStrictEqual([]);
     // An order said of two others settles nothing between these two.
     expect(
       System.conflicts([Move, Between.pipe(System.after(Move)), Aim]).conflicts
-    ).toEqual([expect.objectContaining({ first: "Move", second: "Aim" })]);
+    ).toStrictEqual([expect.objectContaining({ first: "Move", second: "Aim" })]);
   });
 
   it("is none between two that only read, and says who watches for changes", () => {
@@ -995,10 +995,10 @@ describe("the order of systems", () => {
       ],
     });
 
-    expect(System.conflicts([Read, Watch, Aim]).conflicts).toEqual([]);
+    expect(System.conflicts([Read, Watch, Aim]).conflicts).toStrictEqual([]);
     // Listed ahead of what it watches, it hears of it a tick late.
     const Clean = system("Clean", { writes: [Bullet, Position] });
-    expect(System.conflicts([Watch, Clean]).conflicts).toEqual([
+    expect(System.conflicts([Watch, Clean]).conflicts).toStrictEqual([
       {
         first: "Watch",
         second: "Clean",
@@ -1037,7 +1037,7 @@ describe("the order of systems", () => {
       scripts: true,
     });
 
-    expect(System.conflicts([One, Two]).conflicts).toEqual([
+    expect(System.conflicts([One, Two]).conflicts).toStrictEqual([
       {
         first: "One",
         second: "Two",
@@ -1082,31 +1082,31 @@ describe("the order of systems", () => {
         system("Draws", { random: true, actions: true }),
         system("Starts", { scripts: true }),
       ]).conflicts
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("is none across stages, which run one after the other, nor between a hook and the tick", () => {
     expect(
       System.conflicts([Move.pipe(System.inStage("postUpdate")), Aim]).conflicts
-    ).toEqual([]);
+    ).toStrictEqual([]);
     expect(
       System.conflicts([
         Move.pipe(System.inStage("preUpdate")),
         Aim.pipe(System.inStage("preUpdate")),
       ]).conflicts
-    ).toEqual([expect.objectContaining({ first: "Move", second: "Aim" })]);
+    ).toStrictEqual([expect.objectContaining({ first: "Move", second: "Aim" })]);
     const Enter = Move.pipe(State.onEnter(Phase, "playing"));
-    expect(System.conflicts([Enter, Aim]).conflicts).toEqual([]);
+    expect(System.conflicts([Enter, Aim]).conflicts).toStrictEqual([]);
     // Hooks of one moment are a list of their own.
     const AlsoEnter = Aim.pipe(State.onEnter(Phase, "playing"));
     const Leave = Aim.pipe(State.onExit(Phase, "playing"));
-    expect(System.conflicts([Enter, AlsoEnter]).conflicts).toEqual([
+    expect(System.conflicts([Enter, AlsoEnter]).conflicts).toStrictEqual([
       expect.objectContaining({ first: "Move", second: "Aim" }),
     ]);
-    expect(System.conflicts([Enter, Leave]).conflicts).toEqual([]);
+    expect(System.conflicts([Enter, Leave]).conflicts).toStrictEqual([]);
     expect(
       System.conflicts([Enter, AlsoEnter.pipe(System.after(Enter))]).conflicts
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("leaves out the stages that change nothing, and names the systems that said nothing", () => {
@@ -1120,7 +1120,7 @@ describe("the order of systems", () => {
     const Hook = system("Hook").pipe(State.onEnter(Phase, "over"));
     expect(
       System.conflicts([Move, system("Quiet"), Draw, Listen, Paint, Hook, Aim])
-    ).toEqual({
+    ).toStrictEqual({
       conflicts: [expect.objectContaining({ first: "Move", second: "Aim" })],
       undeclared: ["Hook", "Quiet"],
     });
@@ -1133,7 +1133,7 @@ describe("the order of systems", () => {
         ({ first, over, second }) =>
           `${first} then ${second}: ${over.map((each) => each.what).join(", ")}`
       )
-    ).toEqual([
+    ).toStrictEqual([
       "Third then Move: ac/Position",
       "Third then Aim: ac/Position, ac/Score",
       "Move then Aim: ac/Position",
@@ -1146,7 +1146,7 @@ describe("the order of systems", () => {
         Move,
         Aim.pipe(System.before(Third)),
       ]).conflicts.map(({ first, second }) => `${first} then ${second}`)
-    ).toEqual(["Aim then Move", "Third then Move"]);
+    ).toStrictEqual(["Aim then Move", "Third then Move"]);
   });
 
   it("is an app's own: its plugins' systems and its own, as they are ordered", () => {
@@ -1161,9 +1161,9 @@ describe("the order of systems", () => {
             components: [Position, Velocity, Score],
           });
 
-          expect(app.systemOrder).toEqual(["Move", "Aim", "Quiet"]);
-          expect(app.undeclared).toEqual(["Quiet"]);
-          expect(app.conflicts).toEqual([
+          expect(app.systemOrder).toStrictEqual(["Move", "Aim", "Quiet"]);
+          expect(app.undeclared).toStrictEqual(["Quiet"]);
+          expect(app.conflicts).toStrictEqual([
             {
               first: "Move",
               second: "Aim",
@@ -1184,8 +1184,8 @@ describe("the order of systems", () => {
             components: [Position, Velocity, Score],
           });
 
-          expect(settled.conflicts).toEqual([]);
-          expect(settled.undeclared).toEqual([]);
+          expect(settled.conflicts).toStrictEqual([]);
+          expect(settled.undeclared).toStrictEqual([]);
         })
       )
     );

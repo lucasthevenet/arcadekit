@@ -215,7 +215,7 @@ describe("a transaction of a world", () => {
           world.get(entity, Sheet),
           world.get(entity, Aura),
         ])
-      ).toEqual(values);
+      ).toStrictEqual(values);
 
       world.begin();
       write(world, entities);
@@ -414,7 +414,7 @@ describe("commands that are rolled back", () => {
       commands.spawn(Aura),
     ];
 
-    expect(reserved).toEqual(expected);
+    expect(reserved).toStrictEqual(expected);
     expect(world.hash()).not.toBe(before);
     commands.rollback(mark);
     expect(commands.size).toBe(0);
@@ -425,7 +425,7 @@ describe("commands that are rolled back", () => {
       world.spawn(),
       world.spawn(),
       world.spawn(),
-    ]).toEqual(expected);
+    ]).toStrictEqual(expected);
   });
 
   it("keep the commands queued before the mark, and their ids", () => {
@@ -440,7 +440,7 @@ describe("commands that are rolled back", () => {
     commands.apply();
     expect(world.isAlive(kept)).toBe(true);
     expect(world.isAlive(dropped)).toBe(false);
-    expect(world.get(kept, Body)).toEqual({ x: 1, y: 1 });
+    expect(world.get(kept, Body)).toStrictEqual({ x: 1, y: 1 });
     // The dropped id is the next one handed out, as if it had not been asked for.
     expect(world.spawn()).toBe(dropped);
   });
@@ -711,15 +711,15 @@ describe("an action that is refused", () => {
           refuse: true,
         });
 
-        expect(exit).toEqual(Exit.fail(new Refused()));
+        expect(exit).toStrictEqual(Exit.fail(new Refused()));
         expect(app.world.hash()).toBe(before);
         expect(app.commands.size).toBe(0);
         expect(app.events.pending(Noted)).toBe(0);
         expect(app.actionLog).toHaveLength(log);
         // Nor does it show up later: no queued action, no event, no entity.
         app.tick(1);
-        expect(echoes).toEqual([]);
-        expect(notes).toEqual([]);
+        expect(echoes).toStrictEqual([]);
+        expect(notes).toStrictEqual([]);
         expect(app.world.hash()).toBe(before);
 
         // The same steps in an action that is accepted do change the game.
@@ -729,7 +729,7 @@ describe("an action that is refused", () => {
           refuse: false,
         });
 
-        expect(accepted).toEqual(Exit.succeed(1));
+        expect(accepted).toStrictEqual(Exit.succeed(1));
         app.tick(1);
         app.tick(1);
 
@@ -762,7 +762,7 @@ describe("an action that is refused", () => {
           steps: ["set"],
           refuse: false,
         })
-      ).toEqual(Exit.succeed(1));
+      ).toStrictEqual(Exit.succeed(1));
     });
   });
 
@@ -780,11 +780,11 @@ describe("an action that is refused", () => {
       });
       app.enqueue(Echo, { by: 3 });
       app.tick(1);
-      expect(echoes).toEqual([2, 3]);
+      expect(echoes).toStrictEqual([2, 3]);
       const after = app.world.hash();
       expect(after).not.toBe(before);
       app.tick(1);
-      expect(echoes).toEqual([2, 3]);
+      expect(echoes).toStrictEqual([2, 3]);
       expect(app.world.hash()).toBe(after);
 
       // The same two actions with nothing between them give the same world.
@@ -812,7 +812,7 @@ describe("an action that is refused", () => {
           const payload = { target, steps: ["read" as const], refuse: true };
 
           if (attempt === "refused") {
-            expect(app.dispatch(Act, payload)).toEqual(
+            expect(app.dispatch(Act, payload)).toStrictEqual(
               Exit.fail(new Refused())
             );
           } else {
@@ -884,7 +884,7 @@ describe("an action that is refused", () => {
       app.tick(1);
       app.enqueue(Act, { target, steps: ["read"], refuse: true });
       app.tick(1);
-      expect(rings).toEqual([1, 2, 3, 4, 5]);
+      expect(rings).toStrictEqual([1, 2, 3, 4, 5]);
     });
   });
 
@@ -926,7 +926,7 @@ describe("an action that is refused", () => {
         return [app.world.spawn(), app.world.spawn(), app.world.spawn()];
       });
 
-    expect(next(true)).toEqual(next(false));
+    expect(next(true)).toStrictEqual(next(false));
   });
 });
 
@@ -956,8 +956,8 @@ describe("an action that is accepted", () => {
     withApp(App.make({ handlers: [twice] }), (app) => {
       const target = app.world.spawn(Body.of({ x: 1, y: 5 }));
       app.world.spawn(Body.of({ x: 1, y: 5 }));
-      expect(app.dispatch(Twice, { target })).toEqual(Exit.succeed([20, 2]));
-      expect(app.world.get(target, Body)).toEqual({ x: 20, y: 1 });
+      expect(app.dispatch(Twice, { target })).toStrictEqual(Exit.succeed([20, 2]));
+      expect(app.world.get(target, Body)).toStrictEqual({ x: 20, y: 1 });
     });
   });
 
@@ -990,7 +990,7 @@ describe("an action that is accepted", () => {
         /World\.despawn\(\) was called inside a transaction/u
       );
       expect(app.world.hash()).toBe(before);
-      expect(app.world.get(target, Body)).toEqual({ x: 1, y: 1 });
+      expect(app.world.get(target, Body)).toStrictEqual({ x: 1, y: 1 });
 
       expect(
         Exit.isSuccess(app.dispatch(Direct, { target, how: "commands" }))
@@ -1017,7 +1017,7 @@ describe("an action that is accepted", () => {
       expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
         /dispatch\("tx\/Echo"\) was called from the handler of "tx\/Outer".*Actions\.enqueue/u
       );
-      expect(made.world.get(entity, Body)).toEqual({ x: 1, y: 1 });
+      expect(made.world.get(entity, Body)).toStrictEqual({ x: 1, y: 1 });
       // The world is out of its transaction: the next dispatch works.
       expect(Exit.isSuccess(made.dispatchByName("tx/Echo", { by: 1 }))).toBe(
         true

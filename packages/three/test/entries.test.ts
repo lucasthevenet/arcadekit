@@ -134,10 +134,10 @@ describe("the entries of @arcadekit/three", () => {
       }
     }
 
-    expect(manifest.exports).toEqual(expected);
-    expect(Object.keys(manifest.exports)).toEqual([".", "./Gltf", "./Three"]);
+    expect(manifest.exports).toStrictEqual(expected);
+    expect(Object.keys(manifest.exports)).toStrictEqual([".", "./Gltf", "./Three"]);
     // Every source file is a module or the entry that gives them all.
-    expect(Object.keys(sources).toSorted()).toEqual([
+    expect(Object.keys(sources).toSorted()).toStrictEqual([
       "../src/Gltf.ts",
       "../src/Three.ts",
       "../src/index.ts",
@@ -166,21 +166,21 @@ describe("the entries of @arcadekit/three", () => {
       reach(sourceOf("./Three")).packages.map((one) => packageOf(one))
     ).toContain("three");
     expect(manifest.dependencies).toBeUndefined();
-    expect(Object.keys(manifest.peerDependencies).toSorted()).toEqual([
+    expect(Object.keys(manifest.peerDependencies).toSorted()).toStrictEqual([
       "@types/three",
       "arcadekit",
       "effect",
       "three",
     ]);
     // Only the types are optional: a game written in JavaScript needs none.
-    expect(manifest.peerDependenciesMeta).toEqual({
+    expect(manifest.peerDependenciesMeta).toStrictEqual({
       "@types/three": { optional: true },
     });
   });
 
   it("the package's own entry gives each module as its entry does: the same module, not a copy", () => {
     const main = Main as Record<string, unknown>;
-    expect(Object.keys(main).toSorted()).toEqual(["Gltf", "Three"]);
+    expect(Object.keys(main).toSorted()).toStrictEqual(["Gltf", "Three"]);
     expect(main.Three).toBe(modules["../src/Three.ts"]);
     expect(main.Gltf).toBe(modules["../src/Gltf.ts"]);
     // The loader of models comes with the module of models, and with no
@@ -192,7 +192,7 @@ describe("the entries of @arcadekit/three", () => {
       reach(sourceOf("./Three")).packages.filter((one) =>
         one.startsWith("three/")
       )
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("is built on the game's own arcadekit, not on a copy of it", () => {
@@ -207,12 +207,12 @@ describe("the entries of @arcadekit/three", () => {
     expect(world.component("arcadekit/Transform3d.Position")).toBe(
       Arcadekit.Transform3d.Position
     );
-    expect(world.get(entity, Arcadekit.Transform3d.Position)).toEqual({
+    expect(world.get(entity, Arcadekit.Transform3d.Position)).toStrictEqual({
       x: 1,
       y: 2,
       z: 3,
     });
-    expect(Main.Three.plugin.plugins).toEqual([
+    expect(Main.Three.plugin.plugins).toStrictEqual([
       Arcadekit.Transform3d.plugin,
       Arcadekit.Transform2d.plugin,
     ]);
