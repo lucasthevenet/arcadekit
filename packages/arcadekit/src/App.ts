@@ -40,6 +40,7 @@ import {
   Random as EffectRandom,
   Exit,
   Layer,
+  Result,
   Schema,
 } from "effect";
 import type { Fiber, Scope } from "effect";
@@ -831,21 +832,24 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       save = current.value;
     }
     if (save !== undefined) {
+      const { world: stored, changes } = save;
       // Before anything else can touch the world: a load fills an empty one.
-      try {
-        world.load(save.world);
-        world.restoreChanges(save.changes);
-      } catch (error) {
-        if (error instanceof SnapshotError) {
-          return yield* new Save.LoadRefused({
-            problem: error.problem,
-            message:
-              error.problem === "unknown component"
-                ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
-                : error.message,
-          });
+      const loaded = Result.try(() => {
+        world.load(stored);
+        world.restoreChanges(changes);
+      });
+      if (Result.isFailure(loaded)) {
+        const error = loaded.failure;
+        if (!(error instanceof SnapshotError)) {
+          return yield* Effect.die(error);
         }
-        throw error;
+        return yield* new Save.LoadRefused({
+          problem: error.problem,
+          message:
+            error.problem === "unknown component"
+              ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
+              : error.message,
+        });
       }
       time.tick = save.tick;
       time.elapsed = save.elapsed;

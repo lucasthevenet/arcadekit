@@ -1,5 +1,5 @@
 import { Data, Effect, Exit, Schema, Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   Action,
@@ -103,7 +103,7 @@ const keep = (
   ui: View.Bridge,
   handlers: readonly Action.Handler<any, any, any, any, never>[] = []
 ) => {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
     App.make({ plugins: [Game], handlers, seed: 1 }).pipe(
       Effect.provide(View.layer(ui)),
@@ -733,15 +733,16 @@ describe("the bridge", () => {
   });
 
   it("is what a plugin's systems need: a game that publishes and leaves out View.plugin does not compile", () => {
-    const made = App.make({ systems: [ShowHud], components: [Purse] });
-    // @ts-expect-error View.Port is still needed: View.plugin provides it
-    const complete: Effect.Effect<unknown, never, Scope.Scope> = made;
-    const withPlugin: Effect.Effect<unknown, never, Scope.Scope> = App.make({
-      plugins: [View.plugin],
-      systems: [ShowHud],
-      components: [Purse],
-    });
-    expect(complete).toBe(made);
-    expect(withPlugin).not.toBe(made);
+    // View.Port is still needed: View.plugin provides it.
+    expectTypeOf(
+      App.make({ systems: [ShowHud], components: [Purse] })
+    ).not.toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
+    expectTypeOf(
+      App.make({
+        plugins: [View.plugin],
+        systems: [ShowHud],
+        components: [Purse],
+      })
+    ).toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
   });
 });

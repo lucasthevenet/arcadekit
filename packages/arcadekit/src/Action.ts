@@ -294,10 +294,7 @@ export const encodeLog = (log: readonly LogEntry[]): string =>
 export const decodeLog = (
   text: string
 ): Exit.Exit<readonly LogEntry[], Schema.SchemaError> =>
-  Schema.decodeUnknownExit(LogSchema)(text) as Exit.Exit<
-    readonly LogEntry[],
-    Schema.SchemaError
-  >;
+  Schema.decodeExit(LogSchema)(text);
 
 /**
  * Emitted when a queued action is refused. A directly dispatched action returns

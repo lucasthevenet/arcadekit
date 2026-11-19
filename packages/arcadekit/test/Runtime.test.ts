@@ -1,4 +1,4 @@
-import { Cause, Context, Data, Effect, Exit, Layer, Logger } from "effect";
+import { Cause, Context, Data, Effect, Exit, Logger } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -233,11 +233,10 @@ describe("systems", () => {
       const things = yield* Query.all(Position);
       audio.play(`beep x${things.count()}`);
     });
-    // Written inline on purpose: this is how layers are usually provided.
     const make = App.make({ systems: [Beep] }).pipe(
-      Effect.provide(
-        Layer.succeed(Audio, { play: (sound) => void played.push(sound) })
-      )
+      Effect.provideService(Audio, {
+        play: (sound) => void played.push(sound),
+      })
     );
     withApp(make, (app) => {
       app.world.spawn(Position.of({ x: 1, y: 1 }));
@@ -345,7 +344,7 @@ describe("the tick scheduler", () => {
   const busy = Effect.gen(function* () {
     let total = 0;
     for (let i = 0; i < 10_000; i++) {
-      total += yield* Effect.sync(() => 1);
+      yield* Effect.sync(() => void (total += 1));
     }
     return total;
   });
@@ -493,7 +492,7 @@ describe("scripts", () => {
           yield* Effect.addFinalizer(() =>
             Effect.sync(() => void (cleanedUp = true))
           );
-          yield* Effect.forever(nextTick);
+          return yield* Effect.forever(nextTick);
         }).pipe(Effect.scoped)
       )
     );
@@ -601,7 +600,7 @@ describe("a script that fails", () => {
       ),
       (app) => {
         const forever = Effect.gen(function* () {
-          yield* Effect.forever((yield* Script).nextTick);
+          return yield* Effect.forever((yield* Script).nextTick);
         });
         app.spawnScript(Effect.succeed("done at once"));
         app.spawnScript(
@@ -646,7 +645,7 @@ describe("a script that fails", () => {
           yield* Effect.addFinalizer(() =>
             Effect.sync(() => void (cleanedUp = true))
           );
-          yield* Effect.forever(script.nextTick);
+          return yield* Effect.forever(script.nextTick);
         }).pipe(Effect.scoped)
       );
     });

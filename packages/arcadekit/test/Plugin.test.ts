@@ -279,9 +279,9 @@ describe("plugins", () => {
       ],
     });
     const provided = App.make({ plugins: [Sfx] }).pipe(
-      Effect.provide(
-        Layer.succeed(Audio, { play: (sound) => void played.push(sound) })
-      )
+      Effect.provideService(Audio, {
+        play: (sound) => void played.push(sound),
+      })
     );
     withApp(provided, (app) => app.tick(1));
     expect(played).toEqual(["boing"]);
@@ -332,9 +332,10 @@ describe("plugins", () => {
     ).toThrow();
     withApp(
       App.make({ plugins: [Undeclared] }).pipe(
-        Effect.provide(
-          Layer.succeed(Bounds, { width: 3, clamp: (x) => Math.min(x, 3) })
-        )
+        Effect.provideService(Bounds, {
+          width: 3,
+          clamp: (x) => Math.min(x, 3),
+        })
       ),
       (app) => app.tick(1)
     );

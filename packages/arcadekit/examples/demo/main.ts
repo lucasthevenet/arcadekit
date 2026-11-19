@@ -5,7 +5,7 @@
  *   pnpm --filter arcadekit demo
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Effect } from "effect";
+import { Console, Effect, Exit } from "effect";
 
 import {
   App,
@@ -63,8 +63,8 @@ const program = Effect.gen(function* () {
     {
       hz: 60,
       ready: (app) =>
-        Effect.sync(() => {
-          console.log(
+        Effect.gen(function* () {
+          yield* Console.log(
             `system order: ${app.systemOrder.join(" -> ")}; each frame: ${app.frameOrder.join(" -> ")}`
           );
 
@@ -81,7 +81,7 @@ const program = Effect.gen(function* () {
           const started = performance.now();
           for (let second = 1; second <= 3; second++) {
             step(1);
-            console.log(
+            yield* Console.log(
               `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${app.world.entityCount} ` +
                 `rock.y=${app.world.get(rock, Position)!.y.toFixed(1)}`
             );
@@ -89,14 +89,17 @@ const program = Effect.gen(function* () {
               app.world.remove(rock, Frozen);
             } // the rock starts falling
           }
-          console.log(
-            `180 ticks took ${(performance.now() - started).toFixed(1)} ms; script: ${fountain.pollUnsafe()}`
+          const sprayed = fountain.pollUnsafe();
+          yield* Console.log(
+            `180 ticks took ${(performance.now() - started).toFixed(1)} ms; script: ${sprayed !== undefined && Exit.isSuccess(sprayed) ? sprayed.value : "not finished"}`
           );
 
           // 2. Turn-based: nothing happens until a player acts, then exactly one tick.
           const before = app.time.tick;
           app.tick(1);
-          console.log(`turn-based step: tick ${before} -> ${app.time.tick}`);
+          yield* Console.log(
+            `turn-based step: tick ${before} -> ${app.time.tick}`
+          );
 
           // 3. Real time is what App.run does next, from here.
           app.world.spawn(
@@ -115,7 +118,7 @@ const program = Effect.gen(function* () {
     // and closes the app's scope.
     Effect.timeoutOption("250 millis")
   );
-  console.log(
+  yield* Console.log(
     `real time: ${noted.app!.time.tick - noted.ticks} ticks and ${Sketch.sketch.frames - noted.frames} frames in 250 ms`
   );
 });

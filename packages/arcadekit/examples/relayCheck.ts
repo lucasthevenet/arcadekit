@@ -10,7 +10,7 @@
  * `examples/relay-cloudflare` with `/rooms` after it, or one of your own.
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Console, Context, Data, Effect, Layer, Result, Schema } from "effect";
 
 import {
   Action,
@@ -37,9 +37,12 @@ const Purse = Singleton.define(
   { ada: 0, grace: 0 }
 );
 const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }));
+class NotSeated extends Data.TaggedError("NotSeated")<{
+  readonly from: string;
+}> {}
 const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
-    return yield* Effect.fail(new Error(`a tip from ${from}`));
+    return yield* new NotSeated({ from });
   }
   (yield* Purse)[from] += amount;
 });
@@ -60,13 +63,15 @@ const open = (peer: string, inRoom = room) =>
 const closed = (transport: Transport.Shape) =>
   Effect.gen(function* () {
     for (let i = 0; i < 400; i++) {
-      try {
-        transport.receive();
-      } catch (error) {
-        if (error instanceof Transport.Closed) {
-          return error;
+      // A transport whose socket has closed throws, and says why.
+      const heard = yield* Effect.result(
+        Effect.try({ try: () => transport.receive(), catch: (error) => error })
+      );
+      if (Result.isFailure(heard)) {
+        if (heard.failure instanceof Transport.Closed) {
+          return heard.failure;
         }
-        throw error;
+        return yield* Effect.die(heard.failure);
       }
       yield* wait(10);
     }
@@ -129,7 +134,7 @@ const check = Effect.gen(function* () {
       )
     );
   }
-  console.log(
+  yield* Console.log(
     `✓ two peers played ${ada.app.time.tick} ticks through it and hold the same world (${ada.session.rewinds + grace.session.rewinds} rewinds)`
   );
 
@@ -142,7 +147,7 @@ const check = Effect.gen(function* () {
       new Error(`a second "ada" was closed with: ${taken.message}`)
     );
   }
-  console.log(
+  yield* Console.log(
     taken.code === 1006
       ? "✓ a second peer of the same name was turned away at the door"
       : `✓ a second peer of the same name was refused (${taken.code}: ${taken.reason})`
@@ -164,10 +169,10 @@ const check = Effect.gen(function* () {
       )
     );
   }
-  console.log(
+  yield* Console.log(
     `✓ a message in another's name was refused, and not passed on (${refused.code}: ${refused.reason})`
   );
-  console.log(`The relay at ${base} does what a relay does.`);
+  yield* Console.log(`The relay at ${base} does what a relay does.`);
 });
 
 NodeRuntime.runMain(Effect.scoped(check));

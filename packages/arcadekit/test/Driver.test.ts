@@ -63,7 +63,7 @@ const started = Effect.fnUntraced(function* (
 describe("the frame loop", () => {
   it("asks the display for a frame, and for the next after each", async () => {
     const display = Driver.makeManualDisplay();
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const { app, drawn } = await Effect.runPromise(
       Scope.provide(started(display), scope)
     );
@@ -82,7 +82,7 @@ describe("the frame loop", () => {
 
   it("ticks at its own rate whatever the rate of frames, and tells the frame stage how far between two ticks it is", async () => {
     const display = Driver.makeManualDisplay();
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     // Ticks of 100 ms against frames of 40 ms.
     const { app, drawn } = await Effect.runPromise(
       Scope.provide(started(display, 10), scope)
@@ -135,7 +135,7 @@ describe("the frame loop", () => {
 
   it("asks for no frame while the tab is hidden, and the time spent hidden does not count", async () => {
     const display = Driver.makeManualDisplay();
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const { app, drawn } = await Effect.runPromise(
       Scope.provide(started(display), scope)
     );
@@ -182,7 +182,7 @@ describe("the frame loop", () => {
       },
       hidden: () => hidden,
     };
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const { app, drawn } = await Effect.runPromise(
       Scope.provide(started(display), scope)
     );
@@ -207,7 +207,7 @@ describe("the frame loop", () => {
   it("waits for the tab to be shown when it starts hidden", async () => {
     const display = Driver.makeManualDisplay();
     display.hide();
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const { app } = await Effect.runPromise(
       Scope.provide(started(display), scope)
     );
@@ -316,7 +316,7 @@ describe("the frame loop", () => {
         }).pipe(Effect.scoped),
       ],
     });
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const { app, fiber } = await Effect.runPromise(
       Scope.provide(
         Effect.gen(function* () {
@@ -612,7 +612,7 @@ describe("ticking when needed", () => {
     const Draw = System.make("Draw", function* () {
       alphas.push((yield* Frame).alpha);
     }).pipe(System.inStage("frame"));
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
       App.make({ systems: [Roll, Draw] }).pipe(Scope.provide(scope))
     );

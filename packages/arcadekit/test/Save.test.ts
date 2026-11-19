@@ -690,7 +690,7 @@ describe("a plugin's scripts", () => {
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => void (cleanedUp = true))
       );
-      yield* Effect.forever((yield* Script).nextTick);
+      return yield* Effect.forever((yield* Script).nextTick);
     }).pipe(Effect.scoped);
     const Watched = Plugin.make("sv/Watched", { scripts: [Failing, Forever] });
     withApp(

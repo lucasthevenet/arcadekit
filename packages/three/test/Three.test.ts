@@ -31,7 +31,7 @@ import {
   Vector3,
 } from "three";
 import type { Camera, Scene } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { Three } from "../src/index";
 
@@ -85,7 +85,7 @@ const start = <A, E, R>(
   make: Effect.Effect<A, E, R>,
   renderer: { readonly layer: Layer.Layer<Three.Renderer> }
 ) => {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
     make.pipe(
       Effect.provide(renderer.layer),
@@ -1789,7 +1789,7 @@ describe("an entity drawn between two ticks", () => {
       App.make({ plugins: [Drawn], checkpointEvery: 1, verifyFrames: true }),
       makeRenderer()
     ).app;
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const bare = Effect.runSync(
       App.make({ plugins: [Rules], checkpointEvery: 1 }).pipe(
         Scope.provide(scope)
@@ -2838,7 +2838,7 @@ describe("Three.plugin", () => {
       }),
       renderer
     ).app;
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const bare = Effect.runSync(
       App.make({ plugins: [Rules], seed: 3, checkpointEvery: 1 }).pipe(
         Scope.provide(scope)
@@ -2858,13 +2858,13 @@ describe("Three.plugin", () => {
 
   it("does not compile without a renderer", () => {
     const made = App.make({ plugins: [Look] });
-    // @ts-expect-error Three.Renderer is still needed
-    const complete: Effect.Effect<unknown, never, Scope.Scope> = made;
-    const provided: Effect.Effect<unknown, never, Scope.Scope> = made.pipe(
-      Effect.provide(makeRenderer().layer)
-    );
-    expect(complete).toBe(made);
-    expect(provided).not.toBe(made);
+    // Three.Renderer is still needed.
+    expectTypeOf(made).not.toExtend<
+      Effect.Effect<unknown, never, Scope.Scope>
+    >();
+    expectTypeOf(made.pipe(Effect.provide(makeRenderer().layer))).toExtend<
+      Effect.Effect<unknown, never, Scope.Scope>
+    >();
   });
 });
 
@@ -2896,7 +2896,7 @@ describe("Three.layerRenderer", () => {
     standIn: ReturnType<typeof makeStandIn>,
     options?: Three.FitOptions
   ) => {
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     let makes = 0;
     // Built into a scope of the test's, as a program's layers are built
     // into the program's.

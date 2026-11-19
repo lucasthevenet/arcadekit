@@ -542,10 +542,10 @@ export const layerSound = (
       let closed = false;
       // Whether it was said that a cue came before the first touch.
       let early = false;
-      const failed = (cue: string, error: unknown): void => {
+      const failed = (cue: string, url: string, error: unknown): void => {
         report(
           Effect.logWarning(
-            `The sound "${cue}" (${String(files[cue])}) will not be played: ${describe(error)}`
+            `The sound "${cue}" (${url}) will not be played: ${describe(error)}`
           )
         );
       };
@@ -710,10 +710,10 @@ export const layerSound = (
                       settleAll();
                     }
                   },
-                  (error: unknown) => failed(cue, error)
+                  (error: unknown) => failed(cue, url, error)
                 );
               },
-              onFailure: (error) => failed(cue, error.message),
+              onFailure: (error) => failed(cue, url, error.message),
             }),
           { concurrency: "unbounded", discard: true }
         )

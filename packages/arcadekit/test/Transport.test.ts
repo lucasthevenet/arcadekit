@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App, Driver, Lockstep, Rollback, Transport } from "../src/index";
@@ -250,10 +250,14 @@ describe("a session joined to a transport", () => {
             for (let i = 0; i < 200 && stopped.size < 2; i++) {
               hub.step();
               for (const seat of seats) {
-                try {
-                  seat.connected.tick();
-                } catch (error) {
-                  stopped.set(seat.name, error);
+                const ticked = yield* Effect.result(
+                  Effect.try({
+                    try: () => seat.connected.tick(),
+                    catch: (error) => error,
+                  })
+                );
+                if (Result.isFailure(ticked)) {
+                  stopped.set(seat.name, ticked.failure);
                 }
               }
             }
@@ -463,9 +467,9 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     const outside = new BroadcastChannel(name);
     // Provided to the one line that asks for it, and gone with that line.
     const kept = await Effect.runPromise(
-      Effect.gen(function* () {
-        return yield* Transport.Transport;
-      }).pipe(Effect.provide(Transport.layerBroadcastChannel(name)))
+      Transport.Transport.pipe(
+        Effect.provide(Transport.layerBroadcastChannel(name))
+      )
     );
     outside.postMessage(Lockstep.encode(message("grace", 0)));
     await later(20);

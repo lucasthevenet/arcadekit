@@ -114,7 +114,7 @@ const play = (
   loader: Layer.Layer<never> = files
 ) => {
   const renderer = makeRenderer();
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const made = App.make({
     plugins: [Three.plugin, Assets.plugin],
     components: [Tree, Deer, Paint, Level],
@@ -576,7 +576,7 @@ describe("instances whose look is made of assets", () => {
 
   it("ask nothing of an app's assets when their look is there: such an app needs no Assets.plugin", () => {
     const renderer = makeRenderer();
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const material = new MeshBasicMaterial();
     const app = Effect.runSync(
       App.make({
@@ -781,7 +781,7 @@ describe("a texture", () => {
         },
       }),
     });
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const { bark, normals } = await Effect.runPromise(
       Assets.load(Forest).pipe(
         Scope.provide(scope),

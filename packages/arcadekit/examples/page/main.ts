@@ -17,7 +17,7 @@
  *
  * `?stream` plays the music as a stream.
  */
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 
 // In a game of your own these are "arcadekit/Browser" and "arcadekit".
 import * as Browser from "../../src/Browser";
@@ -44,8 +44,7 @@ mount(document.querySelector("#ui")!, ui);
 // more.
 Browser.runMain(
   App.run({ plugins: [Game], seed: Date.now() }, { hz: 60 }).pipe(
-    Effect.provide(Screen.layer),
-    Effect.provide(View.layer(ui))
+    Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))
   ),
   {
     target: document.querySelector("#game")!,

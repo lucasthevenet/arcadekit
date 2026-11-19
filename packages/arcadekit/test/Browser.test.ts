@@ -664,7 +664,7 @@ describe("a picture", () => {
       one: Browser.image("/forest.png"),
       two: Browser.image("/cave.png"),
     });
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const loaded = await Effect.runPromise(
       Assets.load(Art).pipe(
         Scope.provide(scope),
@@ -1079,7 +1079,7 @@ describe("a page's sound", () => {
     const decoded: number[] = [];
     const decode = options.decode ?? decodeInto(decoded);
     const logged: string[] = [];
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const context = await Effect.runPromise(
       Layer.build(
         Browser.layerSound(files, {
@@ -1100,16 +1100,16 @@ describe("a page's sound", () => {
         Scope.provide(scope),
         Effect.provideService(Driver.Display, display),
         Effect.provide(
-          options.loader === undefined
-            ? Assets.layerMemory(sounds)
-            : Layer.succeed(Assets.Loader, options.loader)
-        ),
-        Effect.provide(
-          Logger.layer([
-            Logger.make((entry) => {
-              logged.push(String(entry.message));
-            }),
-          ])
+          Layer.mergeAll(
+            options.loader === undefined
+              ? Assets.layerMemory(sounds)
+              : Layer.succeed(Assets.Loader, options.loader),
+            Logger.layer([
+              Logger.make((entry) => {
+                logged.push(String(entry.message));
+              }),
+            ])
+          )
         )
       )
     );
@@ -1211,7 +1211,7 @@ describe("a page's sound", () => {
     expect(typeof AudioContext).toBe("undefined");
     const page = new Listened();
     const logged: string[] = [];
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const context = await Effect.runPromise(
       Layer.build(
         Browser.layerSound(
@@ -1221,13 +1221,15 @@ describe("a page's sound", () => {
       ).pipe(
         Scope.provide(scope),
         Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
-        Effect.provide(Assets.layerMemory(sounds)),
         Effect.provide(
-          Logger.layer([
-            Logger.make((entry) => {
-              logged.push(String(entry.message));
-            }),
-          ])
+          Layer.mergeAll(
+            Assets.layerMemory(sounds),
+            Logger.layer([
+              Logger.make((entry) => {
+                logged.push(String(entry.message));
+              }),
+            ])
+          )
         )
       )
     );
@@ -1686,7 +1688,7 @@ describe("a page's sound", () => {
     expect(audio.started).toEqual([]);
     // Seen again, the audio takes its time to wake, as a laptop's does
     // when its lid is opened, while the game goes on at once.
-    const waking = audio.resume;
+    const waking = audio.resume.bind(audio);
     audio.resume = () => {
       audio.resumed++;
       return Promise.resolve();
@@ -1843,7 +1845,7 @@ describe("a page's sound", () => {
     // No Web Audio at all, as under Node: a touch makes nothing, and
     // nothing throws.
     const bare = new Listened();
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const context = await Effect.runPromise(
       Layer.build(Browser.layerSound(undefined, { window: bare })).pipe(
         Scope.provide(scope)
@@ -1935,8 +1937,11 @@ describe("a page's sound", () => {
     const start = (options: Browser.Options) =>
       Effect.runFork(
         App.run({ plugins: [Game], systems: [Ask] }, { hz: 60 }).pipe(
-          Effect.provide(Browser.layer({ gamepads: () => [], ...options })),
-          Effect.provide(Assets.layerMemory(sounds))
+          Effect.provide(
+            Browser.layer({ gamepads: () => [], ...options }).pipe(
+              Layer.provideMerge(Assets.layerMemory(sounds))
+            )
+          )
         )
       );
     const fiber = start({

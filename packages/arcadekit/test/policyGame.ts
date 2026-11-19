@@ -5,7 +5,7 @@
  * page under a strict Content Security Policy is, and has to give the
  * same answer in both.
  */
-import { Data, Effect, Exit, Schema } from "effect";
+import { Data, DateTime, Effect, Exit, Schema } from "effect";
 
 import {
   Action,
@@ -212,7 +212,9 @@ export const play = (): Record<string, unknown> =>
                     flags: i & 255,
                     rival: 0 as Entity,
                     name: `hero ${i}`,
-                    born: new Date(1_000_000 * i),
+                    born: DateTime.toDateUtc(
+                      DateTime.makeUnsafe(1_000_000 * i)
+                    ),
                     cache: undefined,
                   }),
                 ]

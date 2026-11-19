@@ -470,7 +470,7 @@ const storeLayer = Layer.effect(
     };
 
     const start = (entry: Held): void => {
-      const scope = Effect.runSync(Scope.make());
+      const scope = Scope.makeUnsafe();
       entry.scope = scope;
       entry.status = LOADING;
       const fiber = runFork(Scope.provide(load(entry.bundle), scope));

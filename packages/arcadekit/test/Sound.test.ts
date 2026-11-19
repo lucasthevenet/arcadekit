@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   Action,
@@ -411,14 +411,13 @@ describe("Sound.Player", () => {
   });
 
   it("is what a plugin's systems need: a game with cues that leaves out Sound.plugin does not compile", () => {
-    const made = App.make({ plugins: [Rules], systems: [Cues] });
-    // @ts-expect-error Sound.Player is still needed: Sound.plugin provides it
-    const complete: Effect.Effect<unknown, never, Scope.Scope> = made;
-    const withPlugin: Effect.Effect<unknown, never, Scope.Scope> = App.make({
-      plugins: [Game],
-    });
-    expect(complete).toBe(made);
-    expect(withPlugin).not.toBe(made);
+    // Sound.Player is still needed: Sound.plugin provides it.
+    expectTypeOf(App.make({ plugins: [Rules], systems: [Cues] })).not.toExtend<
+      Effect.Effect<unknown, never, Scope.Scope>
+    >();
+    expectTypeOf(App.make({ plugins: [Game] })).toExtend<
+      Effect.Effect<unknown, never, Scope.Scope>
+    >();
   });
 });
 

@@ -75,7 +75,7 @@ const start = <A, E, R>(
   make: Effect.Effect<A, E, R>,
   output?: Sound.OutputShape
 ) => {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const provided =
     output === undefined
       ? make

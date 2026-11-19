@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit, Layer } from "effect";
+import { Context, Data, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -530,7 +530,7 @@ describe("actions", () => {
     );
     withApp(
       App.make({ systems: [], handlers: [roll] }).pipe(
-        Effect.provide(Layer.succeed(Rng, { next: () => 4 }))
+        Effect.provideService(Rng, { next: () => 4 })
       ),
       (app) => expect(app.dispatch(Unhandled, {})).toEqual(Exit.succeed(4))
     );

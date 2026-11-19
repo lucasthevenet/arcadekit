@@ -332,8 +332,12 @@ const serve = async (options?: Relay.Options) => {
     }
     const { member } = connection.value;
     socket.on("message", (data, isBinary) => {
+      // What ws hands over: a buffer, an ArrayBuffer, or its fragments.
+      const bytes = Array.isArray(data)
+        ? Buffer.concat(data)
+        : new Uint8Array(data);
       const received = connection.value.receive(
-        isBinary ? (data as Uint8Array) : String(data)
+        isBinary ? bytes : new TextDecoder().decode(bytes)
       );
       if (Exit.isFailure(received)) {
         const refused = Cause.squash(received.cause) as Relay.Refused;
@@ -527,12 +531,9 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           // The message it sent as itself came through, and the other did not.
           expect(honest.receive()).toEqual([message("ada", 0)]);
           // Its own transport says what became of it.
-          let thrown: unknown;
-          try {
-            liar.receive();
-          } catch (error) {
-            thrown = error;
-          }
+          const thrown = yield* Effect.flip(
+            Effect.try({ try: () => liar.receive(), catch: (error) => error })
+          );
           expect(thrown).toEqual(
             new Transport.Closed({
               url: Relay.address(served.url, ada),
@@ -687,9 +688,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     stop = served.stop;
     const url = Relay.address(served.url, ada);
     const kept = await Effect.runPromise(
-      Effect.gen(function* () {
-        return yield* Transport.Transport;
-      }).pipe(Effect.provide(Transport.layerWebSocket(url)))
+      Transport.Transport.pipe(Effect.provide(Transport.layerWebSocket(url)))
     );
     expect(() => kept.receive()).toThrow(
       /was used after its scope had closed, and its socket with it.*provide it to the whole program/u

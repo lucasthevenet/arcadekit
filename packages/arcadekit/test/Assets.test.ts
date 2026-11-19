@@ -176,7 +176,7 @@ describe("an asset", () => {
       notes: Assets.text("/notes.txt"),
       raw: Assets.bytes("/cave.png"),
     });
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const loaded = await Effect.runPromise(
       Assets.load(Forest).pipe(
         Scope.provide(scope),
@@ -331,7 +331,7 @@ describe("an asset", () => {
     expect(await Effect.runPromise(one("/notes.txt"))).toEqual({
       file: "fetched",
     });
-    const gone = await Effect.runPromise(Effect.exit(one("/gone.txt")));
+    const gone = await Effect.runPromiseExit(one("/gone.txt"));
     expectFailed(
       Cause.squash((gone as Exit.Failure<never, unknown>).cause),
       "/gone.txt",
@@ -571,7 +571,7 @@ describe("a level's assets", () => {
   it("go with the app's scope, loaded or still loading", async () => {
     const { Game, Go, log } = makeGame();
     const slow = makeSlowLoader();
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const app = await Effect.runPromise(
       App.make({ plugins: [Game] }).pipe(
         Scope.provide(scope),
@@ -1000,7 +1000,7 @@ describe("a level's assets", () => {
           expect(status?._tag).toBe("Failed");
           expectFailed((status as { error: unknown }).error, "", "boom");
         })
-      ).pipe(Effect.provide(Assets.layerMemory(files)), Effect.provide(quiet))
+      ).pipe(Effect.provide(Layer.mergeAll(Assets.layerMemory(files), quiet)))
     );
   });
 
@@ -1016,7 +1016,7 @@ describe("a level's assets", () => {
     const Ui = Plugin.make("Ui", {
       layer: Layer.effect(Fonts, Assets.load(Common)),
     });
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     await Effect.runPromise(
       App.make({ plugins: [Ui] }).pipe(
         Scope.provide(scope),

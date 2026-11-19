@@ -119,7 +119,7 @@ const load = async (
   options?: Gltf.ModelOptions
 ) => {
   const loader = makeLoader(files);
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const exit = await Effect.runPromise(
     Effect.exit(
       Assets.load(
@@ -557,7 +557,7 @@ describe("a level's models", () => {
         scene = drawn;
       },
     });
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
       App.make({
         plugins: [Three.plugin, Assets.plugin],

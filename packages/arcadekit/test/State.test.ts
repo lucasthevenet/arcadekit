@@ -1,4 +1,4 @@
-import { Cause, Context, Data, Effect, Exit, Layer, Schema } from "effect";
+import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -73,7 +73,7 @@ describe("a state", () => {
       /cannot start in "c".*Its values are: a, b/
     );
     // @ts-expect-error not one of the state's values
-    State.is(Phase, "flying");
+    const _flying = State.is(Phase, "flying");
     // @ts-expect-error a hook for a value the state does not have
     State.onEnter(Phase, "flying");
   });
@@ -214,7 +214,7 @@ describe("a run condition", () => {
           switchedOn
         );
         const app = yield* App.make({ systems: [Both, Either] }).pipe(
-          Effect.provide(Layer.succeed(Switch, held))
+          Effect.provideService(Switch, held)
         );
         for (let tick = 0; tick < 6; tick++) {
           app.tick(1);

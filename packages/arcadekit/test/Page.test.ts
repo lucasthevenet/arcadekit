@@ -62,7 +62,11 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   // What the UI is handed: the bridge, counting how often it is told.
   let told = 0;
   const handed: View.Bridge = {
-    ...ui,
+    get: ui.get,
+    send: ui.send,
+    _publish: ui._publish,
+    _take: ui._take,
+    _connect: ui._connect,
     subscribe: (view, listener) =>
       ui.subscribe(view, (value) => {
         told++;
@@ -94,13 +98,17 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   });
   const source = Input.makeManualSource();
   const sound = Sound.makeRecorder();
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
     App.make({ plugins: [Game], seed: 3 }).pipe(
-      Effect.provide(Layer.succeed(Screen, { canvas })),
-      Effect.provide(View.layer(ui)),
-      Effect.provide(Sound.layer(sound)),
-      Effect.provide(Assets.layerMemory(files)),
+      Effect.provide(
+        Layer.mergeAll(
+          View.layer(ui),
+          Sound.layer(sound),
+          Assets.layerMemory(files)
+        )
+      ),
+      Effect.provideService(Screen, { canvas }),
       Effect.provideService(Input.Source, source),
       Scope.provide(scope)
     )
