@@ -1171,10 +1171,14 @@ describe("structural changes during iteration", () => {
   });
 });
 
-const random = (seed: number) => () => {
-  seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
+const random = (seed: number) => {
+  let state = seed;
 
-  return seed / 0x1_00_00_00_00;
+  return () => {
+    state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+
+    return state / 0x1_00_00_00_00;
+  };
 };
 
 describe("randomized comparison against a simple model", () => {

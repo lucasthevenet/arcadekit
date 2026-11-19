@@ -82,7 +82,7 @@ export const registryOf = (world: EcsWorld): Registry => {
   let registry = known.get(world);
 
   if (registry === undefined) {
-    registry = { states: [], handles: new Map() };
+    registry = { states: [] };
     known.set(world, registry);
   }
 
@@ -98,8 +98,7 @@ export const handleOf = <V extends string>(
   world: EcsWorld,
   state: State<V>
 ): StateHandle<V> => {
-  const registry = registryOf(world);
-  const found = registry.handles.get(state);
+  const found = state._handles.get(world);
 
   if (found !== undefined) {
     return found;
@@ -146,7 +145,8 @@ export const handleOf = <V extends string>(
     },
   };
 
-  registry.handles.set(state, handle);
+  state._handles.set(world, handle);
+  const registry = registryOf(world);
   registry.states = [...registry.states, state].toSorted(byName);
 
   return handle;
@@ -166,6 +166,12 @@ export class State<V extends string>
   readonly component: ComponentDef<Fields>;
   readonly initial: { value: string; next: string | null; entered: number };
   private effect: Effect.Effect<StateHandle<V>, never, World> | undefined;
+  /**
+   * Its handle in each world that has asked for one.
+   *
+   * @internal
+   */
+  readonly _handles = new WeakMap<EcsWorld, StateHandle<V>>();
 
   readonly name: string;
   readonly values: readonly V[];
@@ -227,11 +233,19 @@ export const define = <const V extends string>(
   return new State(name, values, first);
 };
 
+/**
+ * What an app does with a state, whatever its values: it has a name, and is
+ * kept in a singleton.
+ * @internal
+ */
+export interface AnyState extends SingletonSpec<Fields> {
+  readonly name: string;
+}
+
 /** @internal */
 export interface Registry {
   /** Sorted by name, so transitions happen in the same order everywhere. */
-  states: State<any>[];
-  readonly handles: Map<State<any>, StateHandle<any>>;
+  states: AnyState[];
 }
 
 /**
@@ -256,10 +270,7 @@ export interface Move {
  * the move that was asked for before it, if one was.
  * @internal
  */
-export const pending = (
-  world: EcsWorld,
-  state: State<any>
-): Move | undefined => {
+export const pending = (world: EcsWorld, state: AnyState): Move | undefined => {
   const held = world.singleton(state);
 
   if (held.entered === 0) {
@@ -277,7 +288,7 @@ export const pending = (
  * the new. What a hook asks for waits for the next tick.
  * @internal
  */
-export const enter = (world: EcsWorld, state: State<any>, move: Move): void => {
+export const enter = (world: EcsWorld, state: AnyState, move: Move): void => {
   const held = world.singleton(state);
 
   if (move.from === undefined) {

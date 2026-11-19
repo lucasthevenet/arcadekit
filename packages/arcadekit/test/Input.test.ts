@@ -25,6 +25,11 @@ import {
   World,
 } from "../src/index";
 
+/** An app that a system of its own reaches, once the app is made. */
+interface Made {
+  app?: App.Any;
+}
+
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship);
 
@@ -365,7 +370,7 @@ describe("the input stage", () => {
       "A draw from world.random": Effect.map(World, (world) =>
         world.random.next()
       ),
-    } satisfies Record<string, Effect.Effect<unknown, never, any>>;
+    } satisfies Record<string, Effect.Effect<unknown, never, unknown>>;
 
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
@@ -436,14 +441,14 @@ describe("the input stage", () => {
         expect(made.world.singleton(Score).points).toBe(0);
         // And the input stage is not run from inside a tick.
         // The app the system is in, once it is made.
-        let outer: App.Any | undefined;
+        const outer: Made = {};
 
         const Nested = System.make("Nested", function* () {
-          outer?.input();
+          outer.app?.input();
         });
 
         const nested = yield* App.make({ systems: [Nested, Reach] });
-        outer = nested;
+        outer.app = nested;
         expect(() => nested.tick(1)).toThrow(
           /App\.input was called from inside a tick/u
         );

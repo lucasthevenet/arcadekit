@@ -61,7 +61,7 @@ const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
 const Wounded = Query.all(Health);
 
 /** An app of these systems, with something in its world to visit. */
-const playing = (systems: readonly System.System<any, any>[]) =>
+const playing = (systems: readonly System.System<unknown, unknown>[]) =>
   Effect.gen(function* () {
     const app = yield* App.make({
       systems: systems as readonly System.System<never, never>[],
@@ -101,7 +101,9 @@ const ticking = (
     )
   );
 
-const hashes = (systems: readonly System.System<any, any>[]): number[] =>
+const hashes = (
+  systems: readonly System.System<unknown, unknown>[]
+): number[] =>
   Effect.runSync(
     Effect.scoped(
       Effect.gen(function* () {
@@ -140,7 +142,7 @@ const refused = (
   return message;
 };
 
-const frame = (system: System.System<any, any>): void =>
+const frame = (system: System.System<unknown, unknown>): void =>
   Effect.runSync(
     Effect.scoped(
       Effect.gen(function* () {

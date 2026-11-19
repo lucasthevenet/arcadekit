@@ -121,7 +121,7 @@ const scanReads = Action.handler(Scan, function* () {
 
 /** Median milliseconds of one dispatch, in an app whose world holds N entities. */
 const dispatching = <P>(
-  action: Action.ActionDef<any, P, any>,
+  action: Action.ActionDef<string, P, unknown>,
   payload: (target: Entity) => P,
   runs = 20_000,
   warmup = 5000
@@ -558,16 +558,20 @@ const variants: Record<string, Variant> = {
       const view = world.view(Moving);
 
       const perEntity = Effect.gen(function* () {
-        let px!: Float32Array;
-        let py!: Float32Array;
-        let vx!: Float32Array;
-        let vy!: Float32Array;
+        const found: Record<"px" | "py" | "vx" | "vy", Float32Array> = {
+          px: new Float32Array(0),
+          py: new Float32Array(0),
+          vx: new Float32Array(0),
+          vy: new Float32Array(0),
+        };
+
         view.eachChunk((_start, _end, pos, vel) => {
-          px = pos.x;
-          py = pos.y;
-          vx = vel.x;
-          vy = vel.y;
+          found.px = pos.x;
+          found.py = pos.y;
+          found.vx = vel.x;
+          found.vy = vel.y;
         });
+        const { px, py, vx, vy } = found;
 
         for (let i = 0; i < N; i += 1) {
           yield* Effect.sync(() => {

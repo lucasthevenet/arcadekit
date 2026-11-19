@@ -31,8 +31,16 @@ const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   return exit.value;
 };
 
-const refusal = (exit: Exit.Exit<unknown, unknown>): any =>
-  Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+/** What a load or a migration was refused with, which is a `LoadRefused`. */
+const refusal = (exit: Exit.Exit<unknown, unknown>): Save.LoadRefused => {
+  const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+
+  if (!(error instanceof Save.LoadRefused)) {
+    throw new TypeError(`Expected a LoadRefused, and got ${String(error)}`);
+  }
+
+  return error;
+};
 
 // --- version 0 of a game ----------------------------------------------------------
 
@@ -136,7 +144,13 @@ const migrations: Save.Migration[] = [
     from: 1,
     migrate: (contents) => {
       const { world } = contents;
-      Migrate.mapField(world, "mg/Health", "points", "f32", (hp) => hp / 4);
+      Migrate.mapField(
+        world,
+        "mg/Health",
+        "points",
+        "f32",
+        (hp) => Number(hp) / 4
+      );
       Migrate.removeField(world, "mg/Pos", "y");
       Migrate.removeComponent(world, "mg/Old");
       Migrate.mapField(
@@ -144,7 +158,7 @@ const migrations: Save.Migration[] = [
         "mg/Buff",
         "power",
         "u16",
-        (power) => power * 100
+        (power) => Number(power) * 100
       );
       Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
 
@@ -670,7 +684,7 @@ describe("a save from another version of the game", () => {
       "mg/Thing",
       "b",
       "f64",
-      (b) => Number(b.slice(1)) / 2
+      (b) => Number(String(b).slice(1)) / 2
     );
     Migrate.addField(contents, "mg/Thing", "c", "entity", entities[0]);
     Migrate.addField(contents, "mg/Thing", "d", "json", "new", "a");

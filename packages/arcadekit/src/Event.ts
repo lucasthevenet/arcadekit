@@ -85,6 +85,17 @@ export class EventDef<P> extends Effectable.Class<
 }
 
 /**
+ * An event of any payload, where what is the same for every event is all
+ * that is needed: its name, and whether it can be written down.
+ *
+ * @category Models
+ */
+export interface AnyEventDef {
+  readonly name: string;
+  readonly codec: Schema.Codec<unknown, unknown> | undefined;
+}
+
+/**
  * Defines an event type.
  *
  * With a schema, the payload type is inferred from it and the event is
@@ -125,9 +136,9 @@ export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
   readonly message: string;
 }> {}
 
-const convert = <A>(
-  def: EventDef<any>,
-  run: (codec: Schema.Codec<any, unknown>) => Exit.Exit<A, unknown>
+const convert = <P, A>(
+  def: EventDef<P>,
+  run: (codec: Schema.Codec<P, unknown>) => Exit.Exit<A, unknown>
 ): Exit.Exit<A, InvalidEvent> => {
   if (def.codec === undefined) {
     return Exit.fail(
@@ -224,6 +235,27 @@ interface ChannelState {
   dropOldest: (count: number) => void;
   /** Forgets every event from sequence number `end` on. */
   truncate: (end: number) => void;
+  /** The name of its event. */
+  readonly name: string;
+  /**
+   * The events the simulation can still read, in their JSON form, with how
+   * far each reader that is saved has read; undefined when there are none.
+   */
+  save: () => Exit.Exit<SavedEvents | undefined, InvalidEvent>;
+  /** The channel as it stands, and how to put it back so. */
+  capture: () => () => void;
+  /** Puts the channel back as it was before anything was emitted on it. */
+  reset: () => void;
+  /** Puts the events of a save into the channel, as they were waiting. */
+  adopt: (saved: SavedEvents) => void;
+  /** Its event, which it is the channel of. */
+  readonly def: object;
+}
+
+/** What `ReadLog` puts back of a handle that read. */
+interface Rewinds {
+  /** Puts the handle back where it was before a read. */
+  rewind: (cursor: number) => void;
 }
 
 /**
@@ -233,43 +265,7 @@ interface ChannelState {
 interface ReadLog {
   /** True from `mark` until `rollback` or `commit`. */
   open: boolean;
-  readonly moved: { readonly handle: Handle<any>; readonly cursor: number }[];
-}
-
-class Channel<P> implements ChannelState {
-  readonly def: EventDef<P>;
-  readonly reads: ReadLog;
-  buffer: P[] = [];
-  offset = 0;
-  tickOffset = 0;
-  frameSeen = 0;
-  inputSeen = 0;
-  tickStart = 0;
-  readonly readers = new Map<string, Handle<P>>();
-  readonly waiters = new Set<() => boolean>();
-
-  constructor(def: EventDef<P>, reads: ReadLog) {
-    this.def = def;
-    this.reads = reads;
-  }
-
-  get end(): number {
-    return this.offset + this.buffer.length;
-  }
-
-  /** How many events the simulation can still read. */
-  get size(): number {
-    return this.end - this.tickOffset;
-  }
-
-  dropOldest(count: number): void {
-    this.buffer.splice(0, count);
-    this.offset += count;
-  }
-
-  truncate(end: number): void {
-    this.buffer.length = Math.max(0, end - this.offset);
-  }
+  readonly moved: { readonly handle: Rewinds; readonly cursor: number }[];
 }
 
 class Handle<P> implements EventHandle<P> {
@@ -372,6 +368,140 @@ class Handle<P> implements EventHandle<P> {
   });
 }
 
+class Channel<P> implements ChannelState {
+  readonly def: EventDef<P>;
+  readonly reads: ReadLog;
+  buffer: P[] = [];
+  offset = 0;
+  tickOffset = 0;
+  frameSeen = 0;
+  inputSeen = 0;
+  tickStart = 0;
+  readonly readers = new Map<string, Handle<P>>();
+  readonly waiters = new Set<() => boolean>();
+
+  constructor(def: EventDef<P>, reads: ReadLog) {
+    this.def = def;
+    this.reads = reads;
+  }
+
+  get end(): number {
+    return this.offset + this.buffer.length;
+  }
+
+  /** How many events the simulation can still read. */
+  get size(): number {
+    return this.end - this.tickOffset;
+  }
+
+  dropOldest(count: number): void {
+    this.buffer.splice(0, count);
+    this.offset += count;
+  }
+
+  truncate(end: number): void {
+    this.buffer.length = Math.max(0, end - this.offset);
+  }
+
+  get name(): string {
+    return this.def.name;
+  }
+
+  save(): Exit.Exit<SavedEvents | undefined, InvalidEvent> {
+    if (this.size === 0) {
+      return Exit.succeed(undefined);
+    }
+
+    const payloads: unknown[] = [];
+
+    // What the simulation can read: not what is only kept for the frame
+    // stage, whose readers are not saved either.
+    for (const payload of this.buffer.slice(this.tickOffset - this.offset)) {
+      const data = encode(this.def, payload);
+
+      if (Exit.isFailure(data)) {
+        return Exit.failCause(data.cause);
+      }
+
+      payloads.push(data.value);
+    }
+
+    const read: Record<string, number> = {};
+
+    for (const [reader, handle] of this.readers) {
+      const count = handle.position - this.tickOffset;
+
+      if (count > 0 && !reader.startsWith(FRAME_READER)) {
+        read[reader] = Math.min(count, this.size);
+      }
+    }
+
+    return Exit.succeed({ name: this.def.name, payloads, read });
+  }
+
+  capture(): () => void {
+    const buffer = [...this.buffer];
+    const { offset, tickOffset, frameSeen, inputSeen, tickStart } = this;
+    const cursors = new Map<string, number>();
+
+    for (const [reader, handle] of this.readers) {
+      cursors.set(reader, handle.position);
+    }
+
+    return () => {
+      this.buffer = [...buffer];
+      this.offset = offset;
+      this.tickOffset = tickOffset;
+      this.frameSeen = frameSeen;
+      this.inputSeen = inputSeen;
+      this.tickStart = tickStart;
+
+      for (const [reader, handle] of this.readers) {
+        const at = cursors.get(reader);
+
+        if (at === undefined) {
+          this.readers.delete(reader);
+        } else {
+          handle.rewind(at);
+        }
+      }
+    };
+  }
+
+  adopt(saved: SavedEvents): void {
+    for (const data of saved.payloads) {
+      const payload = decode(this.def, data);
+
+      if (Exit.isFailure(payload)) {
+        const reason = Cause.squash(payload.cause);
+
+        throw new Error(
+          `The save holds an event "${saved.name}" that no longer reads: ${reason instanceof Error ? reason.message : String(reason)}`
+        );
+      }
+
+      this.buffer.push(payload.value);
+    }
+
+    // Whoever had read some of them goes on from where it was.
+    for (const [reader, count] of Object.entries(saved.read)) {
+      this.readers.set(
+        reader,
+        new Handle(this, this.offset + Math.min(count, this.size))
+      );
+    }
+  }
+
+  reset(): void {
+    this.buffer = [];
+    this.tickOffset = this.offset;
+    this.frameSeen = this.offset;
+    this.inputSeen = this.offset;
+    this.tickStart = this.offset;
+    this.readers.clear();
+  }
+}
+
 /**
  * A record of how many events each channel held, for rolling back.
  *
@@ -392,16 +522,8 @@ export interface EventsMoment {
   readonly inputs: boolean;
   readonly ticksSinceInput: number;
   readonly parked: ReadonlyMap<string, SavedEvents>;
-  readonly channels: readonly {
-    readonly channel: object;
-    readonly buffer: readonly unknown[];
-    readonly offset: number;
-    readonly tickOffset: number;
-    readonly frameSeen: number;
-    readonly inputSeen: number;
-    readonly tickStart: number;
-    readonly cursors: ReadonlyMap<string, number>;
-  }[];
+  /** Each channel there was, and how to put it back as it was. */
+  readonly channels: ReadonlyMap<object, () => void>;
 }
 
 /** All of an app's event channels. Provided as the `Events` service. */
@@ -420,31 +542,6 @@ export interface EventGuard {
   /** The names of the events it may emit, and so may read. */
   readonly emits: ReadonlySet<string>;
 }
-
-/** Puts the events of a save into their channel, as they were waiting. */
-const adopt = <P>(channel: Channel<P>, saved: SavedEvents): void => {
-  for (const data of saved.payloads) {
-    const payload = decode(channel.def, data);
-
-    if (Exit.isFailure(payload)) {
-      const reason = Cause.squash(payload.cause);
-
-      throw new Error(
-        `The save holds an event "${saved.name}" that no longer reads: ${reason instanceof Error ? reason.message : String(reason)}`
-      );
-    }
-
-    channel.buffer.push(payload.value);
-  }
-
-  // Whoever had read some of them goes on from where it was.
-  for (const [reader, count] of Object.entries(saved.read)) {
-    channel.readers.set(
-      reader,
-      new Handle(channel, channel.offset + Math.min(count, channel.size))
-    );
-  }
-};
 
 /**
  * Where an app's events wait to be read, with each reader's position. The app
@@ -472,10 +569,11 @@ export class EventBus {
   // definition's own `P`, which a Map's type cannot say, so `channel` below
   // is the one place that restores it.
   private readonly channels = new Map<object, ChannelState>();
-  private readonly order: Channel<any>[] = [];
+  private readonly order: ChannelState[] = [];
   /** Events read from a save, waiting for their channel to be asked for. */
   private readonly parked = new Map<string, SavedEvents>();
-  private readonly names = new Map<string, EventDef<any>>();
+  /** The channel of each event's name: a name is one event's in an app. */
+  private readonly names = new Map<string, ChannelState>();
   private readonly reads: ReadLog = { open: false, moved: [] };
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
@@ -506,21 +604,21 @@ export class EventBus {
     // The name is how a save, a tool and another machine know the event.
     const known = this.names.get(def.name);
 
-    if (known !== undefined && known !== def) {
+    if (known !== undefined && known.def !== def) {
       throw new Error(
         `Two different events are both named "${def.name}". An event's name identifies it in an app, so give each its own, prefixed with the feature it belongs to.`
       );
     }
 
-    this.names.set(def.name, def);
     const channel = new Channel<P>(def, this.reads);
+    this.names.set(def.name, channel);
     this.channels.set(def, channel);
     this.order.push(channel);
     const saved = this.parked.get(def.name);
 
     if (saved !== undefined) {
       this.parked.delete(def.name);
-      adopt(channel, saved);
+      channel.adopt(saved);
     }
 
     return channel;
@@ -536,37 +634,15 @@ export class EventBus {
     const out: SavedEvents[] = [];
 
     for (const channel of this.order) {
-      if (channel.size === 0) {
-        continue;
+      const saved = channel.save();
+
+      if (Exit.isFailure(saved)) {
+        return Exit.failCause(saved.cause);
       }
 
-      const payloads: unknown[] = [];
-
-      // What the simulation can read: not what is only kept for the frame
-      // stage, whose readers are not saved either.
-      for (const payload of channel.buffer.slice(
-        channel.tickOffset - channel.offset
-      )) {
-        const data = encode(channel.def, payload);
-
-        if (Exit.isFailure(data)) {
-          return Exit.failCause(data.cause);
-        }
-
-        payloads.push(data.value);
+      if (saved.value !== undefined) {
+        out.push(saved.value);
       }
-
-      const read: Record<string, number> = {};
-
-      for (const [reader, handle] of channel.readers) {
-        const count = handle.position - channel.tickOffset;
-
-        if (count > 0 && !reader.startsWith(FRAME_READER)) {
-          read[reader] = Math.min(count, channel.size);
-        }
-      }
-
-      out.push({ name: channel.def.name, payloads, read });
     }
 
     // In order of name, so that the same game always saves the same bytes.
@@ -580,12 +656,12 @@ export class EventBus {
    */
   restore(saved: readonly SavedEvents[]): void {
     for (const events of saved) {
-      const def = this.names.get(events.name);
+      const channel = this.names.get(events.name);
 
-      if (def === undefined) {
+      if (channel === undefined) {
         this.parked.set(events.name, events);
       } else {
-        adopt(this.channel(def), events);
+        channel.adopt(events);
       }
     }
   }
@@ -780,24 +856,9 @@ export class EventBus {
       inputs: this.inputs,
       ticksSinceInput: this.ticksSinceInput,
       parked: new Map(this.parked),
-      channels: this.order.map((channel) => {
-        const cursors = new Map<string, number>();
-
-        for (const [reader, handle] of channel.readers) {
-          cursors.set(reader, handle.position);
-        }
-
-        return {
-          channel,
-          buffer: [...channel.buffer],
-          offset: channel.offset,
-          tickOffset: channel.tickOffset,
-          frameSeen: channel.frameSeen,
-          inputSeen: channel.inputSeen,
-          tickStart: channel.tickStart,
-          cursors,
-        };
-      }),
+      channels: new Map(
+        this.order.map((channel) => [channel, channel.capture()])
+      ),
     };
   }
 
@@ -819,38 +880,13 @@ export class EventBus {
       this.parked.set(name, saved);
     }
 
-    const captured = new Map(
-      moment.channels.map((entry) => [entry.channel, entry])
-    );
-
     for (const channel of this.order) {
-      const was = captured.get(channel);
+      const putBack = moment.channels.get(channel);
 
-      if (was === undefined) {
-        channel.buffer = [];
-        channel.tickOffset = channel.offset;
-        channel.frameSeen = channel.offset;
-        channel.inputSeen = channel.offset;
-        channel.tickStart = channel.offset;
-        channel.readers.clear();
-        continue;
-      }
-
-      channel.buffer = [...was.buffer];
-      channel.offset = was.offset;
-      channel.tickOffset = was.tickOffset;
-      channel.frameSeen = was.frameSeen;
-      channel.inputSeen = was.inputSeen;
-      channel.tickStart = was.tickStart;
-
-      for (const [reader, handle] of channel.readers) {
-        const at = was.cursors.get(reader);
-
-        if (at === undefined) {
-          channel.readers.delete(reader);
-        } else {
-          handle.rewind(at);
-        }
+      if (putBack === undefined) {
+        channel.reset();
+      } else {
+        putBack();
       }
     }
   }

@@ -574,9 +574,15 @@ export type CueOf<P> =
  */
 export interface Line {
   /** @internal */
-  readonly event: Event.EventDef<any>;
+  readonly event: Event.AnyEventDef;
+  /**
+   * Reads the event: once a frame for every line of it.
+   *
+   * @internal
+   */
+  readonly read: Effect.Effect<readonly unknown[], never, Events>;
   /** @internal */
-  readonly pick: (payload: any) => Playable | Cue | undefined;
+  readonly pick: (payload: never) => Playable | Cue | undefined;
 }
 
 /**
@@ -594,36 +600,36 @@ export interface Line {
  */
 export const on = <P>(event: Event.EventDef<P>, cue: CueOf<P>): Line => ({
   event,
+  read: Effect.map(event.asEffect(), (handle) => handle.read()),
   pick: typeof cue === "function" ? cue : () => cue,
 });
 
 /** The assets of a bundle, whatever their types. */
-// `any`: an asset is of whatever its `decode` makes.
-type Entries = Readonly<Record<string, Assets.Asset<any>>>;
+type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 const isCue = (picked: Playable | Cue): picked is Cue =>
   typeof picked !== "string" && !(picked instanceof Clip);
 
 /** Entries grouped by event, so a system reads each event once for all of them. */
-type Heard = readonly (readonly [
-  Event.EventDef<any>,
-  readonly Line["pick"][],
-])[];
+type Heard = readonly (readonly [Line["read"], readonly Line["pick"][]])[];
 
 const byEvent = (lines: readonly Line[]): Heard => {
-  const found = new Map<Event.EventDef<any>, Line["pick"][]>();
+  const found = new Map<
+    Event.AnyEventDef,
+    readonly [Line["read"], Line["pick"][]]
+  >();
 
   for (const line of lines) {
-    const picks = found.get(line.event);
+    const known = found.get(line.event);
 
-    if (picks === undefined) {
-      found.set(line.event, [line.pick]);
+    if (known === undefined) {
+      found.set(line.event, [line.read, [line.pick]]);
     } else {
-      picks.push(line.pick);
+      known[1].push(line.pick);
     }
   }
 
-  return [...found];
+  return [...found.values()];
 };
 
 /**
@@ -659,22 +665,19 @@ const byEvent = (lines: readonly Line[]): Heard => {
  *
  * @category Systems
  */
-export const cues: {
-  <B extends Entries>(
-    name: string,
-    from: Assets.Bundle<B>,
-    lines: (assets: Assets.Loaded<B>) => readonly Line[]
-  ): System.System<never, Player | Events | Assets.Store>;
-  (
-    name: string,
-    ...lines: readonly Line[]
-  ): System.System<never, Player | Events>;
-} = (
+export function cues<B extends Entries>(
+  name: string,
+  from: Assets.Bundle<B>,
+  lines: (assets: Assets.Loaded<B>) => readonly Line[]
+): System.System<never, Player | Events | Assets.Store>;
+export function cues(
+  name: string,
+  ...lines: readonly Line[]
+): System.System<never, Player | Events>;
+export function cues(
   name: string,
   ...rest: readonly unknown[]
-  // `any`: the system of lines that are there asks for no store of assets,
-  // which the two signatures above say and one body cannot.
-): System.System<never, any> => {
+): System.System<never, Player | Events | Assets.Store> {
   const from = rest[0] instanceof Assets.Bundle ? rest[0] : undefined;
 
   // SAFETY: by the signatures above, what follows the name is lines, or a
@@ -721,14 +724,18 @@ export const cues: {
       ({ lines } = now);
     }
 
-    for (const [event, picks] of lines!) {
+    for (const [read, picks] of lines!) {
       // Read once: a system is handed an event once, however many of its
       // lines are of it.
-      const heard = (yield* event).read();
+      const heard = yield* read;
 
       for (const pick of picks) {
         for (const payload of heard) {
-          const picked = pick(payload);
+          const picked = pick(
+            // SAFETY: the lines of a group are all of one event, and what is
+            // read of an event is of its payload.
+            payload as never
+          );
 
           if (picked === undefined) {
             continue;
@@ -744,7 +751,7 @@ export const cues: {
       }
     }
   }).pipe(System.inStage("frame"));
-};
+}
 
 // --- music: what should be heard, for as long as the game is as it is ----------------
 

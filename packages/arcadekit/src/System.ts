@@ -16,7 +16,7 @@ import type { Pipeable } from "effect/Pipeable";
 import type { ComponentDef, SingletonSpec } from "./ecs/component";
 import { compareText } from "./ecs/order";
 import type { QuerySpec } from "./ecs/world";
-import type { EventDef } from "./Event";
+import type { AnyEventDef } from "./Event";
 
 /**
  * The stages of a tick, in the order they run.
@@ -81,7 +81,7 @@ export interface Trigger {
  *
  * @category Models
  */
-export type Touched = ComponentDef | SingletonSpec | EventDef<any>;
+export type Touched = ComponentDef | SingletonSpec | AnyEventDef;
 
 /**
  * What a system declares it reads and writes, as `System.access` takes it. It

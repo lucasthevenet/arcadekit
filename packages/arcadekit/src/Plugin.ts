@@ -28,7 +28,7 @@
  *     setup: spawnTheFirstClouds          // a fresh start only: a load already has them
  *   })
  */
-import type { Effect, Layer } from "effect";
+import type { Effect, Layer, Schema } from "effect";
 
 import type * as Action from "./Action";
 import type { Listed } from "./ecs/component";
@@ -43,11 +43,22 @@ import type * as System from "./System";
 export type AnySystem = System.System<unknown, unknown>;
 
 /**
- * Any action handler, whatever its action, result and requirements.
+ * Any action handler, whatever its action and result, and of requirements
+ * among `R`: what is the same for every handler. Its payload is unknown, so `handle` takes one
+ * only by a cast that says why the payload is the handler's.
  *
  * @category Type-level
  */
-export type AnyHandler = Action.Handler<any, any, any, any, any>;
+export interface AnyHandler<R = unknown> {
+  readonly action: {
+    readonly name: string;
+    readonly codec: Schema.Codec<unknown, unknown> | undefined;
+  };
+  readonly handle: (
+    payload: never,
+    origin: Action.Origin
+  ) => Effect.Effect<unknown, unknown, R>;
+}
 
 /**
  * A plugin, as `Plugin.make` returns it and `App.make` installs it.
@@ -161,8 +172,11 @@ type SystemError<T> = T extends System.System<infer E, unknown> ? E : never;
 
 type SystemNeeds<T> = T extends System.System<unknown, infer R> ? R : never;
 
-type HandlerNeeds<T> =
-  T extends Action.Handler<any, any, any, any, infer R> ? R : never;
+type HandlerNeeds<T> = T extends {
+  readonly handle: (...args: never) => Effect.Effect<unknown, unknown, infer R>;
+}
+  ? R
+  : never;
 
 type LayerProvides<L> =
   L extends Layer.Layer<infer ROut, unknown, unknown> ? ROut : never;

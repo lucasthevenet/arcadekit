@@ -198,30 +198,30 @@ export const variants: Record<string, Variant> = {
       const view = world.view(Moving);
       const positions = world.view(query([Position]));
       const velocities = world.view(query([Velocity]));
-      let sink = 0;
+      const sink = { total: 0 };
 
       for (let pass = 0; pass < 80; pass += 1) {
         positions.each((pos) => {
-          sink += pos.x;
+          sink.total += pos.x;
         });
         positions.each((pos) => {
-          sink += pos.y;
+          sink.total += pos.y;
         });
         velocities.each((vel) => {
-          sink += vel.x;
+          sink.total += vel.x;
         });
         velocities.each((vel, entity) => {
-          sink += entity;
+          sink.total += entity;
         });
         view.each((pos, vel) => {
-          sink += pos.x - vel.y;
+          sink.total += pos.x - vel.y;
         });
         view.each((_, vel, entity) => {
-          sink += vel.x + entity;
+          sink.total += vel.x + entity;
         });
       }
 
-      void sink;
+      void sink.total;
 
       return measure(() => {
         view.each((pos, vel) => {
@@ -298,7 +298,7 @@ export const variants: Record<string, Variant> = {
       const painted = world.view(query([Colour, Label]));
       const owned = world.view(query([Owner, Mass]));
       const falling = world.view(query([Mass, Age, Spin]));
-      let sink = 0;
+      const sink = { total: 0 };
 
       for (let pass = 0; pass < 400; pass += 1) {
         wounds.each((health, team) => {
@@ -313,14 +313,14 @@ export const variants: Record<string, Variant> = {
         });
         owned.each((owner, mass, entity) => {
           owner.since += 1;
-          sink += owner.by + mass.kg + entity;
+          sink.total += owner.by + mass.kg + entity;
         });
         falling.each((mass, age, spin) => {
           spin.speed -= mass.drag * age.seconds * DT;
         });
       }
 
-      void sink;
+      void sink.total;
 
       return measure(() => {
         view.each((pos, vel) => {
@@ -716,14 +716,14 @@ export const variants: Record<string, Variant> = {
       populate(world);
       const watcher = world.view(Repositioned);
       watcher.eachChunk(visitNothing);
-      let sink = 0;
+      const sink = { total: 0 };
 
       const ms = measure(
         () => {
           // A thousand visits a sample: one is too short to time.
           for (let i = 0; i < 1000; i += 1) {
             watcher.each((vel) => {
-              sink += vel.x;
+              sink.total += vel.x;
             });
           }
         },
@@ -731,7 +731,7 @@ export const variants: Record<string, Variant> = {
         500
       );
 
-      void sink;
+      void sink.total;
 
       return ms / 1000;
     },
@@ -745,14 +745,14 @@ export const variants: Record<string, Variant> = {
       const watcher = world.view(Repositioned);
       watcher.eachChunk(visitNothing);
       const target = world.view(Moving).entities()[N >> 1]!;
-      let sink = 0;
+      const sink = { total: 0 };
 
       const ms = measure(
         () => {
           for (let i = 0; i < 1000; i += 1) {
             world.set(target, Position, { x: i });
             watcher.each((vel) => {
-              sink += vel.x;
+              sink.total += vel.x;
             });
           }
         },
@@ -760,7 +760,7 @@ export const variants: Record<string, Variant> = {
         500
       );
 
-      void sink;
+      void sink.total;
 
       return ms / 1000;
     },

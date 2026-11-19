@@ -338,6 +338,6 @@ export class Actions extends Context.Service<
      * Returns whether the game has a handler for an action. An action without
      * one can't be issued: `enqueue` throws.
      */
-    readonly handles: (action: ActionDef<string, any, unknown>) => boolean;
+    readonly handles: (action: { readonly name: string }) => boolean;
   }
 >()("arcadekit/Actions") {}

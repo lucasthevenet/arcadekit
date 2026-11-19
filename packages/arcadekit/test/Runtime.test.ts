@@ -62,7 +62,7 @@ const withApp = <T, A>(
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
 // `before` slots a system in ahead of one registered earlier.
-const names = (list: readonly System.System<any, any>[]) =>
+const names = (list: readonly System.System<unknown, unknown>[]) =>
   System.order(list).map((s) => s.name);
 
 describe("systems", () => {

@@ -84,15 +84,27 @@ export const define = <A>(name: string, initial: A): View<A> => ({
 /** Omitted for an action that takes no payload. */
 type PayloadArgument<P> = undefined extends P ? [payload?: P] : [payload: P];
 
+/** The payload a `PayloadArgument` holds. */
+const payloadOf = <P>(argument: PayloadArgument<P>): P =>
+  // SAFETY: the payload is left out only where undefined is a P.
+  argument[0] as P;
+
 /**
  * An action the UI requested, waiting for the input stage.
  *
  * @category Models
  */
 export interface Sent {
-  readonly action: Action.ActionDef<string, any, unknown>;
-  readonly payload: unknown;
+  readonly action: { readonly name: string };
+  /** Issues the action, with its payload, by the game's `enqueue`. */
+  readonly issue: (enqueue: Enqueue) => void;
 }
+
+/** How the game issues an action: `Actions`' `enqueue`. */
+type Enqueue = <N extends string, P>(
+  action: Action.ActionDef<N, P, unknown>,
+  payload: P
+) => void;
 
 /**
  * What the UI receives: the game's views, and a way to request actions.
@@ -153,10 +165,10 @@ export interface Bridge {
 
 const NOTHING: readonly Sent[] = Object.freeze([]);
 
-interface Slot {
-  readonly view: View<any>;
-  value: unknown;
-  readonly listeners: Set<(value: any) => void>;
+interface Slot<A> {
+  readonly view: View<A>;
+  value: A;
+  readonly listeners: Set<(value: A) => void>;
 }
 
 /**
@@ -176,12 +188,12 @@ interface Slot {
  * @category Constructors
  */
 export const makeBridge = (): Bridge => {
-  const slots = new Map<string, Slot>();
+  const slots = new Map<string, Slot<unknown>>();
   let sent: Sent[] = [];
   // Which actions the game handles, once a game is there to say.
   let handles: ((action: Sent["action"]) => boolean) | undefined;
 
-  const slotOf = (view: View<any>): Slot => {
+  const slotOf = <A>(view: View<A>): Slot<A> => {
     let slot = slots.get(view.name);
 
     if (slot === undefined) {
@@ -193,13 +205,14 @@ export const makeBridge = (): Bridge => {
       );
     }
 
-    return slot;
+    // SAFETY: the slot is the view's own, made with the view's initial value,
+    // and only what is published of the view, and listeners to it, are put
+    // in it.
+    return slot as Slot<A>;
   };
 
   return {
-    // SAFETY: slotOf returns the view's own slot, which only the view's
-    // initial value and what is published of it are put in.
-    get: <A>(view: View<A>): A => slotOf(view).value as A,
+    get: (view) => slotOf(view).value,
     subscribe(view, listener) {
       const { listeners } = slotOf(view);
       listeners.add(listener);
@@ -215,7 +228,12 @@ export const makeBridge = (): Bridge => {
         );
       }
 
-      sent.push({ action, payload: payload[0] });
+      sent.push({
+        action,
+        issue: (enqueue) => {
+          enqueue(action, payloadOf(payload));
+        },
+      });
     },
     _publish(view, value) {
       const slot = slotOf(view);
@@ -386,7 +404,7 @@ const Send = System.make("arcadekit/View.Send", function* () {
   const { enqueue } = yield* Action.Actions;
 
   for (const one of sent) {
-    enqueue(one.action, one.payload);
+    one.issue(enqueue);
   }
 }).pipe(System.inStage("input"));
 

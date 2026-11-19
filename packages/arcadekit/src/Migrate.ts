@@ -255,8 +255,9 @@ export const removeField = (
 
 /**
  * Changes a field's type, and computes each new value from the old one:
- * `mapField(world, "game/Hp", "points", "f32", (hp) => hp / 2)`. For a `ref`
- * field, the old value is its encoded form. A field of a numeric type throws
+ * `mapField(world, "game/Hp", "points", "f32", (hp) => Number(hp) / 2)`. The
+ * old value is what the save holds, of whatever type the field had: for a
+ * `ref` field, its encoded form. A field of a numeric type throws
  * if `map` returns anything but a number.
  *
  * @category Migrations
@@ -266,7 +267,7 @@ export const mapField = (
   component: string,
   field: string,
   kind: FieldKind,
-  map: (value: any) => unknown
+  map: (value: unknown) => unknown
 ): void => {
   const definition = componentOf(world, component);
   const found = fieldOf(definition, field);

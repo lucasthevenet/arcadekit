@@ -53,6 +53,7 @@ import type {
   Entity,
   EntityColumn,
   FieldDef,
+  QueryView,
 } from "arcadekit/ecs";
 import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
@@ -804,25 +805,24 @@ const smoothOf = (which: Which): Smooth | undefined =>
 // --- what is made of assets ----------------------------------------------------------
 
 /** The assets of a bundle, whatever their types. */
-// `any`: an asset is of whatever its `decode` makes.
-type Entries = Readonly<Record<string, Assets.Asset<any>>>;
+type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 /**
  * What a system builds from a bundle's assets: available while the app has the
  * bundle loaded, released when it doesn't, and rebuilt from the next load.
  */
-class FromAssets<T extends Kept> implements Kept {
-  private assets: unknown;
+class FromAssets<B extends Entries, T extends Kept> implements Kept {
+  private assets: Assets.Loaded<B> | undefined;
   private made: T | undefined;
 
   private readonly store: Assets.Store;
-  private readonly bundle: Assets.Bundle<Entries>;
-  private readonly make: (assets: any) => T;
+  private readonly bundle: Assets.Bundle<B>;
+  private readonly make: (assets: Assets.Loaded<B>) => T;
 
   constructor(
     store: Assets.Store,
-    bundle: Assets.Bundle<Entries>,
-    make: (assets: any) => T
+    bundle: Assets.Bundle<B>,
+    make: (assets: Assets.Loaded<B>) => T
   ) {
     this.store = store;
     this.bundle = bundle;
@@ -830,7 +830,7 @@ class FromAssets<T extends Kept> implements Kept {
   }
 
   /** Returns the assets the app currently holds, if any. */
-  private held(): unknown {
+  private held(): Assets.Loaded<B> | undefined {
     const status = this.store.status(this.bundle);
 
     return status._tag === "Ready" ? status.assets : undefined;
@@ -1006,11 +1006,11 @@ const isWhole = (kind: string): boolean =>
  *
  * @category Models
  */
-export type ColorComponent = ComponentDef<any, "table"> & {
+export type ColorComponent = ComponentDef<ComponentDef["schema"], "table"> & {
   readonly schema: {
-    readonly r: FieldDef<number, any>;
-    readonly g: FieldDef<number, any>;
-    readonly b: FieldDef<number, any>;
+    readonly r: FieldDef<number, unknown>;
+    readonly g: FieldDef<number, unknown>;
+    readonly b: FieldDef<number, unknown>;
   };
 };
 
@@ -1122,6 +1122,20 @@ type Loop =
   | "turnedFlat"
   | "wholeFlat";
 
+/** A loop of a kind, as its query sees it: of columns of whatever components. */
+type Chunked = Parameters<
+  QueryView<Query.Reading<readonly ComponentDef[], never>>["eachChunk"]
+>[0];
+
+/** A loop of a kind, typed as its query sees it. */
+const chunked = (
+  loop: (start: number, end: number, ...columns: never) => void
+): Chunked =>
+  // SAFETY: `instances` makes each kind's query of the components its loop
+  // reads, in the loop's order, then the colour when there is one, which
+  // the loop is painted for.
+  loop as Chunked;
+
 /** One instanced mesh, and the loops that fill its buffer from columns. */
 class Instances implements Kept {
   readonly mesh: InstancedMesh;
@@ -1146,7 +1160,7 @@ class Instances implements Kept {
    * The eight loops as the system passes them to its queries: as is, or, for a
    * kind with a colour, each followed by the colours of its rows.
    */
-  readonly loops: Record<Loop, (...columns: any[]) => void>;
+  readonly loops: Record<Loop, Chunked>;
 
   constructor(scene: ThreeScene, name: string, options: InstancesOptions) {
     this.scene = scene;
@@ -1162,26 +1176,26 @@ class Instances implements Kept {
 
     if (options.color === undefined) {
       this.loops = {
-        placed: this.placed,
-        sized: this.sized,
-        turned: this.turned,
-        whole: this.whole,
-        placedFlat: this.placedFlat,
-        sizedFlat: this.sizedFlat,
-        turnedFlat: this.turnedFlat,
-        wholeFlat: this.wholeFlat,
+        placed: chunked(this.placed),
+        sized: chunked(this.sized),
+        turned: chunked(this.turned),
+        whole: chunked(this.whole),
+        placedFlat: chunked(this.placedFlat),
+        sizedFlat: chunked(this.sizedFlat),
+        turnedFlat: chunked(this.turnedFlat),
+        wholeFlat: chunked(this.wholeFlat),
       };
     } else {
       this.colors = new Float32Array(this.capacity * 3);
       this.loops = {
-        placed: this.painted1(this.placed),
-        sized: this.painted2(this.sized),
-        turned: this.painted2(this.turned),
-        whole: this.painted3(this.whole),
-        placedFlat: this.painted1(this.placedFlat),
-        sizedFlat: this.painted2(this.sizedFlat),
-        turnedFlat: this.painted2(this.turnedFlat),
-        wholeFlat: this.painted3(this.wholeFlat),
+        placed: chunked(this.painted1(this.placed)),
+        sized: chunked(this.painted2(this.sized)),
+        turned: chunked(this.painted2(this.turned)),
+        whole: chunked(this.painted3(this.whole)),
+        placedFlat: chunked(this.painted1(this.placedFlat)),
+        sizedFlat: chunked(this.painted2(this.sizedFlat)),
+        turnedFlat: chunked(this.painted2(this.turnedFlat)),
+        wholeFlat: chunked(this.painted3(this.wholeFlat)),
       };
     }
 
@@ -1911,18 +1925,18 @@ type Needs = Frame | Scene | Time | World;
  *
  * @category Systems
  */
-export const instances: {
-  <B extends Entries, L extends Look = Look>(
-    name: string,
-    options: InstancesFromOptions<B, L>
-  ): System.System<never, Needs | Assets.Store>;
-  (name: string, options: InstancesOptions): System.System<never, Needs>;
-} = (
+export function instances<B extends Entries, L extends Look = Look>(
   name: string,
-  options: InstancesOptions | InstancesFromOptions<Entries>
-  // `any`: the system of a look that is there asks for no store of assets,
-  // which the two signatures above say and one body cannot.
-): System.System<never, any> => {
+  options: InstancesFromOptions<B, L>
+): System.System<never, Needs | Assets.Store>;
+export function instances(
+  name: string,
+  options: InstancesOptions
+): System.System<never, Needs>;
+export function instances<B extends Entries, L extends Look>(
+  name: string,
+  options: InstancesOptions | InstancesFromOptions<B, L>
+): System.System<never, Needs | Assets.Store> {
   const from = "from" in options ? options : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
@@ -1956,12 +1970,10 @@ export const instances: {
     }
   }
 
-  // `any`: the terms of a query are a tuple in its type, and a kind with a
-  // colour has one more than one without, after the ones its loop reads.
   const kind = (
     own: readonly ComponentDef[],
     absent: readonly ComponentDef[]
-  ): Query.Query<any> =>
+  ) =>
     Query.all(...own, ...(color === undefined ? [] : [color])).pipe(
       Query.with(...marked),
       Query.without(...excluded, ...absent),
@@ -2040,7 +2052,7 @@ export const instances: {
       }
     } else {
       // SAFETY: as above, what is kept under a system's name is its own.
-      let sourced = kept._kept.get(name) as FromAssets<Sourced> | undefined;
+      let sourced = kept._kept.get(name) as FromAssets<B, Sourced> | undefined;
 
       if (sourced === undefined) {
         // The room the instances came to need is kept from one loading of
@@ -2094,7 +2106,7 @@ export const instances: {
     wholeFlat.eachChunk(loops.wholeFlat);
     drawn.finish();
   }).pipe(System.inStage("frame"));
-};
+}
 
 // --- objects ---------------------------------------------------------------------
 
@@ -2148,18 +2160,20 @@ export interface ObjectsFromOptions<
   readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
 }
 
-/** Either set of options, as the class that keeps the objects sees them. */
-interface ObjectsOf<O extends Object3D> extends ObjectsShared<O> {
-  // `any`: the assets of whichever bundle, or none.
-  readonly make: (entity: Entity, assets: any) => O;
+/**
+ * Either set of options, as the class that keeps the objects sees them: `A` is
+ * the assets they are made of, or undefined for none.
+ */
+interface ObjectsOf<O extends Object3D, A> extends ObjectsShared<O> {
+  readonly make: (entity: Entity, assets: A) => O;
 }
 
 /** One object per entity, by entity index, and the loops that position them. */
-class Objects<O extends Object3D> implements Kept {
+class Objects<O extends Object3D, A> implements Kept {
   private readonly scene: ThreeScene;
-  private readonly options: ObjectsOf<O>;
+  private readonly options: ObjectsOf<O, A>;
   /** What the objects are built from, for a kind built from assets. */
-  private readonly assets: unknown;
+  private readonly assets: A;
   private readonly objects: (O | undefined)[] = [];
   /** For each entity index, the id of the entity its object was created for. */
   private owner = new Float64Array(0);
@@ -2175,7 +2189,7 @@ class Objects<O extends Object3D> implements Kept {
   /** What interpolates the objects between two ticks, when the system was asked to. */
   private readonly smooth: Smooth | undefined;
 
-  constructor(scene: ThreeScene, options: ObjectsOf<O>, assets: unknown) {
+  constructor(scene: ThreeScene, options: ObjectsOf<O, A>, assets: A) {
     this.scene = scene;
     this.options = options;
     this.assets = assets;
@@ -2512,21 +2526,19 @@ class Objects<O extends Object3D> implements Kept {
  */
 // The one made of assets is first, so that the two things its `make` is
 // handed are typed from it.
-export const objects: {
-  <B extends Entries, O extends Object3D = Object3D>(
-    name: string,
-    options: ObjectsFromOptions<B, O>
-  ): System.System<never, Needs | Assets.Store>;
-  <O extends Object3D = Object3D>(
-    name: string,
-    options: ObjectsOptions<O>
-  ): System.System<never, Needs>;
-} = <O extends Object3D>(
+export function objects<B extends Entries, O extends Object3D = Object3D>(
   name: string,
-  options: ObjectsOptions<O> | ObjectsFromOptions<Entries, O>
-  // `any`: as for `instances`.
-): System.System<never, any> => {
-  const from = "from" in options ? options.from : undefined;
+  options: ObjectsFromOptions<B, O>
+): System.System<never, Needs | Assets.Store>;
+export function objects<O extends Object3D = Object3D>(
+  name: string,
+  options: ObjectsOptions<O>
+): System.System<never, Needs>;
+export function objects<B extends Entries, O extends Object3D>(
+  name: string,
+  options: ObjectsOptions<O> | ObjectsFromOptions<B, O>
+): System.System<never, Needs | Assets.Store> {
+  const from = "from" in options ? options : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
@@ -2580,27 +2592,36 @@ export const objects: {
     const sizedFlat = yield* SizedFlat;
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
-    let held: Objects<O> | undefined;
+    let held: Objects<O, undefined> | Objects<O, Assets.Loaded<B>> | undefined;
 
     if (from === undefined) {
       // SAFETY: what is kept under a system's name is kept by that system,
       // and App.make refuses two systems of one name.
-      held = kept._kept.get(name) as Objects<O> | undefined;
+      let plain = kept._kept.get(name) as Objects<O, undefined> | undefined;
 
-      if (held === undefined) {
-        held = new Objects(kept.scene, options, undefined);
-        kept._kept.set(name, held);
+      if (plain === undefined) {
+        plain = new Objects(
+          kept.scene,
+          // SAFETY: options with no `from` are the other signature's.
+          options as ObjectsOptions<O>,
+          undefined
+        );
+        kept._kept.set(name, plain);
       }
+
+      held = plain;
     } else {
       // SAFETY: as above, what is kept under a system's name is its own.
-      let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
+      let sourced = kept._kept.get(name) as
+        | FromAssets<B, Objects<O, Assets.Loaded<B>>>
+        | undefined;
 
       if (sourced === undefined) {
         const { scene } = kept;
         sourced = new FromAssets(
           yield* Assets.Store,
-          from,
-          (assets) => new Objects(scene, options, assets)
+          from.from,
+          (assets) => new Objects(scene, from, assets)
         );
         kept._kept.set(name, sourced);
       }
@@ -2625,4 +2646,4 @@ export const objects: {
     sizedFlat.eachChunk(held.sizedFlat);
     held.finish();
   }).pipe(System.inStage("frame"));
-};
+}

@@ -2,6 +2,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { Terms } from "../src/ecs";
 import {
   Action,
   App,
@@ -349,7 +350,7 @@ describe("a change query", () => {
     expect(world.view(alike, "first")).toBe(first);
 
     // One that watches something else is another query, however alike.
-    const others: Query.Query<any>[] = [
+    const others: Query.Query<Terms>[] = [
       Query.all(Position).pipe(Query.changed(Health)),
       Query.all(Position).pipe(Query.added(Position)),
       Query.all(Position).pipe(Query.changed(Position), Query.with(Boss)),
@@ -610,8 +611,8 @@ describe("changes against a simple model", () => {
   // was written since it last visited, narrowed to what matches now, in
   // the order a plain query visits them.
   const specs: {
-    query: Query.Query<any>;
-    plain: Query.Query<any>;
+    query: Query.Query<Terms>;
+    plain: Query.Query<Terms>;
     fires: string[];
     raw: boolean;
   }[] = [

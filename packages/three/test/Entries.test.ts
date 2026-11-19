@@ -113,7 +113,7 @@ const packageOf = (specifier: string): string =>
 describe("the entries of @arcadekit/three", () => {
   it("are the package itself and every module", () => {
     // The package itself, then a module for each file named as one is.
-    const modules = Object.keys(sources).flatMap((file) => {
+    const named = Object.keys(sources).flatMap((file) => {
       const name = /^\.\.\/src\/(?<name>[A-Z]\w*)\.ts$/u.exec(file)?.groups
         ?.name;
 
@@ -129,7 +129,7 @@ describe("the entries of @arcadekit/three", () => {
           default: "./dist/index.js",
         },
       ],
-      ...modules.map((name): [string, Target] => [
+      ...named.map((name): [string, Target] => [
         `./${name}`,
         {
           source: `./src/${name}.ts`,

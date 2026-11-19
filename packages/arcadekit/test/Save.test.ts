@@ -219,8 +219,27 @@ const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   return exit.value;
 };
 
-const refusal = (exit: Exit.Exit<unknown, unknown>): any =>
-  Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+/** What a save was refused with, which is a `SaveRefused`. */
+const saveRefusal = (exit: Exit.Exit<unknown, unknown>): Save.SaveRefused => {
+  const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+
+  if (!(error instanceof Save.SaveRefused)) {
+    throw new TypeError(`Expected a SaveRefused, and got ${String(error)}`);
+  }
+
+  return error;
+};
+
+/** What a load was refused with, which is a `LoadRefused`. */
+const loadRefusal = (exit: Exit.Exit<unknown, unknown>): Save.LoadRefused => {
+  const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+
+  if (!(error instanceof Save.LoadRefused)) {
+    throw new TypeError(`Expected a LoadRefused, and got ${String(error)}`);
+  }
+
+  return error;
+};
 
 /** Plays `ticks` ticks, saving after tick `saveAt`. */
 const record = (ticks: number, saveAt: number) =>
@@ -506,7 +525,7 @@ describe("a game that cannot be saved as it stands", () => {
   it("says which action is waiting with no schema to save it by", () => {
     withApp(App.make({ handlers: [typed] }), (app) => {
       app.enqueue(Typed, { n: 1 });
-      const error = refusal(app.save());
+      const error = saveRefusal(app.save());
       expect(error).toBeInstanceOf(Save.SaveRefused);
       expect(error.message).toMatch(
         /The action "sv\/Typed" is waiting for the next tick.*no schema/u
@@ -533,7 +552,7 @@ describe("a game that cannot be saved as it stands", () => {
 
     withApp(App.make({ systems: [Issue], handlers: [small] }), (app) => {
       app.tick(1);
-      expect(refusal(app.save()).message).toMatch(
+      expect(saveRefusal(app.save()).message).toMatch(
         /The action "sv\/Small" is waiting.*payload its schema does not take/u
       );
     });
@@ -543,7 +562,7 @@ describe("a game that cannot be saved as it stands", () => {
     withApp(App.make({ systems: [Hum] }), (app) => {
       expect(Exit.isSuccess(app.save())).toBe(true);
       app.tick(1);
-      const error = refusal(app.save());
+      const error = saveRefusal(app.save());
       expect(error).toBeInstanceOf(Save.SaveRefused);
       expect(error.message).toMatch(/The event "sv\/Quiet".*no schema/u);
     });
@@ -552,11 +571,11 @@ describe("a game that cannot be saved as it stands", () => {
   it("says which field holds what cannot be saved, and that commands are queued", () => {
     withApp(App.make({ components: [Blob] }), (app) => {
       const entity = app.world.spawn(Blob.of({ v: () => 1 }));
-      expect(refusal(app.save()).message).toContain('"sv/Blob.v"');
+      expect(saveRefusal(app.save()).message).toContain('"sv/Blob.v"');
       app.world.set(entity, Blob, { v: "fine" });
       expect(Exit.isSuccess(app.save())).toBe(true);
       app.commands.despawn(entity);
-      expect(refusal(app.save()).message).toMatch(
+      expect(saveRefusal(app.save()).message).toMatch(
         /1 commands are queued and not applied/u
       );
       app.tick(1);
@@ -599,7 +618,7 @@ describe("a save that cannot be loaded", () => {
       handlers: [add, double, scatter, pulse],
     });
 
-    const error = refusal(load(save, { plugins: [Partial] }));
+    const error = loadRefusal(load(save, { plugins: [Partial] }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("unknown component");
     expect(error.message).toMatch(
@@ -624,7 +643,7 @@ describe("a save that cannot be loaded", () => {
       ],
     });
 
-    const error = refusal(load(save, { plugins: [Changed] }));
+    const error = loadRefusal(load(save, { plugins: [Changed] }));
     expect(error.problem).toBe("component changed");
     expect(error.message).toContain("x: f32");
     expect(error.message).toContain("x: f64");
@@ -633,23 +652,28 @@ describe("a save that cannot be loaded", () => {
   it("is refused when its world is damaged", () => {
     const { save } = record(10, 5);
 
-    const error = refusal(load({ ...save, world: save.world.subarray(0, -9) }));
+    const error = loadRefusal(
+      load({ ...save, world: save.world.subarray(0, -9) })
+    );
 
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(["truncated", "corrupt"]).toContain(error.problem);
-    expect(refusal(load({ ...save, world: new Uint8Array(40) })).problem).toBe(
-      "not a snapshot"
-    );
+    expect(
+      loadRefusal(load({ ...save, world: new Uint8Array(40) })).problem
+    ).toBe("not a snapshot");
   });
 
   it("is refused as bytes that are not a save, or are cut short, or damaged", () => {
     const bytes = Save.encode(record(10, 5).save);
-    const problem = (given: Uint8Array) => refusal(Save.decode(given)).problem;
+
+    const problem = (given: Uint8Array) =>
+      loadRefusal(Save.decode(given)).problem;
+
     expect(problem(new Uint8Array(0))).toBe("not a save");
     expect(problem(new TextEncoder().encode("<html>no</html>"))).toBe(
       "not a save"
     );
-    expect(refusal(Save.decode(new Uint8Array(30)))).toBeInstanceOf(
+    expect(loadRefusal(Save.decode(new Uint8Array(30)))).toBeInstanceOf(
       Save.LoadRefused
     );
     const newer = Uint8Array.from(bytes);
@@ -684,7 +708,7 @@ describe("a save that cannot be loaded", () => {
     // Cut inside the world: the save's own shape is whole, and the world
     // is found short when it is loaded.
     const short = unwrap(Save.decode(bytes.subarray(0, -5)));
-    expect(refusal(load(short))).toBeInstanceOf(Save.LoadRefused);
+    expect(loadRefusal(load(short))).toBeInstanceOf(Save.LoadRefused);
   });
 
   it("says which waiting event no longer reads, when its schema has changed", () => {

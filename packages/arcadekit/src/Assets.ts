@@ -257,9 +257,8 @@ export const layerMemory = (
 
 // --- a bundle: what is loaded, and let go, together -----------------------------------
 
-// `any`: an asset is of whatever its `decode` makes, and a bundle holds
-// assets of several kinds.
-type Entries = Readonly<Record<string, Asset<any>>>;
+/** The assets of a bundle, of whatever kinds. */
+type Entries = Readonly<Record<string, Asset<unknown>>>;
 
 /**
  * A loaded bundle: each asset under its name.

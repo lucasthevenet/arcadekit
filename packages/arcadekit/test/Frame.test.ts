@@ -31,7 +31,11 @@ import {
   Time,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
+
+/** An app that a system of its own reaches, once the app is made. */
+interface Made {
+  app?: App.Any;
+}
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
 
@@ -214,7 +218,7 @@ describe("a frozen world", () => {
 const sys = (name: string, stage: System.Stage) =>
   System.make(name, function* () {}).pipe(System.inStage(stage));
 
-const names = (list: readonly System.System<any, any>[]) =>
+const names = (list: readonly System.System<unknown, unknown>[]) =>
   System.order(list).map((system) => system.name);
 
 // --- in an app --------------------------------------------------------------------
@@ -525,7 +529,7 @@ describe("the frame stage", () => {
         Script,
         (script) => script.nextTick
       ),
-    } satisfies Record<string, Effect.Effect<unknown, never, any>>;
+    } satisfies Record<string, Effect.Effect<unknown, never, unknown>>;
 
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
@@ -647,7 +651,9 @@ describe("the frame stage", () => {
           }
         }).pipe(System.inStage("frame"));
 
-        const make = (systems: readonly System.System<never, any>[]) =>
+        const make = <S extends System.System<never, unknown>>(
+          systems: readonly S[]
+        ) =>
           Effect.gen(function* () {
             const app = yield* App.make({
               systems,
@@ -681,14 +687,14 @@ describe("the frame stage", () => {
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.
         // The app the system is in, once it is made.
-        let own: App.Any | undefined;
+        const own: Made = {};
 
         const Hasty = System.make("Hasty", function* () {
-          own?.dispatchByName("fr/Kick", { by: 1 });
+          own.app?.dispatchByName("fr/Kick", { by: 1 });
         }).pipe(System.inStage("frame"));
 
         const hasty = yield* make([Hasty]);
-        own = hasty;
+        own.app = hasty;
         expect(() => hasty.frame(0)).toThrow(
           /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/u
         );
@@ -790,7 +796,7 @@ describe("the frame stage", () => {
   });
 });
 
-const make = (systems: readonly System.System<never, any>[]) =>
+const make = <S extends System.System<never, unknown>>(systems: readonly S[]) =>
   Effect.gen(function* () {
     const app = yield* App.make({
       components: [Ball, Score, Phase],

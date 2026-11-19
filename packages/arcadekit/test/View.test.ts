@@ -17,6 +17,11 @@ import {
   View,
 } from "../src/index";
 
+/** A way to stop listening, once there is one. */
+interface Stopper {
+  stop?: () => void;
+}
+
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
@@ -111,7 +116,7 @@ const Other = Action.define("vw/Other", Schema.Struct({}));
  */
 const keep = (
   ui: View.Bridge,
-  handlers: readonly Action.Handler<any, any, any, any, never>[] = []
+  handlers: readonly Plugin.AnyHandler<never>[] = []
 ) => {
   const scope = Effect.runSync(Scope.make());
 
@@ -276,15 +281,15 @@ describe("a view", () => {
     const order: string[] = [];
 
     // The listener after it, which it stops, subscribes after it.
-    let stopLater: (() => void) | undefined;
+    const later: Stopper = {};
 
     const stopOnce = ui.subscribe(Hud, () => {
       order.push("once");
       stopOnce();
-      stopLater?.();
+      later.stop?.();
     });
 
-    stopLater = ui.subscribe(Hud, () => {
+    later.stop = ui.subscribe(Hud, () => {
       order.push("later");
     });
 

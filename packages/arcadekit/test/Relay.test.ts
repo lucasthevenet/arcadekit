@@ -390,14 +390,15 @@ const serve = async (options?: Relay.Options) => {
     relay,
     closes,
     url: `ws://127.0.0.1:${port}/rooms`,
-    stop: () =>
-      new Promise<void>((resolve) => {
-        for (const client of server.clients) {
-          client.terminate();
-        }
+    stop: async () => {
+      for (const client of server.clients) {
+        client.terminate();
+      }
 
-        server.close(() => resolve());
-      }),
+      const closed = once(server, "close");
+      server.close();
+      await closed;
+    },
   };
 };
 

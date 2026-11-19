@@ -24,7 +24,8 @@ import type { Entity } from "../src/index";
 const Coin = Component.define("rp/Coin", { value: Field.i32, x: Field.f32 });
 const Coins = Query.all(Coin);
 
-const Drop = Action.define("rp/Drop", Schema.Struct({ value: Schema.Int }));
+const DropPayload = Schema.Struct({ value: Schema.Int });
+const Drop = Action.define("rp/Drop", DropPayload);
 const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }));
 
 class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
@@ -532,7 +533,7 @@ describe("a replay that checks itself", () => {
   it("catches a log that was edited into another game the rules allow", () => {
     const recorded = record({ ticks: 60, checkpointEvery: 1 });
 
-    const edit = (change: (log: any[]) => void) => {
+    const edit = (change: (log: Action.LogEntry[]) => void) => {
       const log = structuredClone(recorded.log);
       change(log);
 
@@ -541,16 +542,17 @@ describe("a replay that checks itself", () => {
 
     const drops = recorded.log.flatMap((entry, index) =>
       !Action.isCheckpoint(entry) && entry.name === "rp/Drop" && entry.tick > 5
-        ? [index]
+        ? [{ at: index, dropped: entry }]
         : []
     );
 
-    const at = drops[0]!;
-    const { tick } = recorded.log[at]!;
+    const { at, dropped } = drops[0]!;
+    const { tick } = dropped;
 
     // A coin of another value: a legal move, and a different game.
     const changed = edit((log) => {
-      log[at].payload.value += 1;
+      const { value } = Schema.decodeUnknownSync(DropPayload)(dropped.payload);
+      log[at] = { ...dropped, payload: { value: value + 1 } };
     });
 
     expect(changed!.reason).toBeInstanceOf(App.HashMismatch);
@@ -572,11 +574,15 @@ describe("a replay that checks itself", () => {
 
     // A checkpoint that was altered is itself the entry that does not hold.
     const forged = edit((log) => {
-      const index = log.findIndex(
-        (entry) => entry.tick === 20 && "hash" in entry
-      );
+      const checkpoint = log.find(
+        (entry): entry is Action.Checkpoint =>
+          entry.tick === 20 && Action.isCheckpoint(entry)
+      )!;
 
-      log[index].hash ^= 1;
+      log[log.indexOf(checkpoint)] = {
+        ...checkpoint,
+        hash: checkpoint.hash ^ 1,
+      };
     });
 
     expect(forged!.tick).toBe(20);

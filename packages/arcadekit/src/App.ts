@@ -1387,7 +1387,7 @@ const build = <
 
     /** Makes one state transition: the exit hooks, the transition, then the enter hooks. */
     const makeMove = Effect.fnUntraced(function* (
-      state: State.State<string>,
+      state: State.AnyState,
       move: State.Move
     ) {
       if (move.from !== undefined) {
@@ -1709,7 +1709,17 @@ const build = <
       let fiber: Fiber.Fiber<unknown, unknown>;
 
       try {
-        fiber = runFork(handler.handle(value, { from }));
+        fiber = runFork(
+          runnable(
+            handler.handle(
+              // SAFETY: the payload is the handler's action's: `dispatch` is
+              // typed by the action, and a payload from the log or another
+              // peer was decoded by the action's codec above.
+              value as never,
+              { from }
+            )
+          )
+        );
       } finally {
         events.reader = undefined;
         world.reader = undefined;

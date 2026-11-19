@@ -100,9 +100,8 @@ const start = <A, E, R>(
   };
 };
 
-const play = (
-  // `any`: whatever the systems need is among the plugins, or the test fails.
-  systems: readonly System.System<never, any>[],
+const play = <S extends System.System<never, unknown>>(
+  systems: readonly S[],
   output?: Sound.Output
 ) => {
   asked = 0;
@@ -120,7 +119,10 @@ const play = (
     app,
     close,
     /** The game does something, a tick applies it, and a frame is heard. */
-    step: (action: Action.ActionDef<any, any, any>, payload: unknown): void => {
+    step: <P>(
+      action: Action.ActionDef<string, P, unknown>,
+      payload: NoInfer<P>
+    ): void => {
       app.dispatch(action as never, payload as never);
       app.tick(0.1);
       app.frame(0);
@@ -917,9 +919,9 @@ describe("a level's cues", () => {
       sound
     );
 
-    const step = (
-      action: Action.ActionDef<any, any, any>,
-      payload: unknown
+    const step = <P>(
+      action: Action.ActionDef<string, P, unknown>,
+      payload: NoInfer<P>
     ): void => {
       app.dispatch(action as never, payload as never);
       app.tick(0.1);

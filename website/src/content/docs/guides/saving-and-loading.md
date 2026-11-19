@@ -79,7 +79,13 @@ const migrations: Save.Migration[] = [
     migrate: ({ world }) => {
       Migrate.renameComponent(world, "game/Hp", "game/Health");
       Migrate.addField(world, "game/Health", "armor", "i32", 0);
-      Migrate.mapField(world, "game/Health", "points", "f32", (hp) => hp / 2);
+      Migrate.mapField(
+        world,
+        "game/Health",
+        "points",
+        "f32",
+        (hp) => Number(hp) / 2
+      );
     },
   },
 ];
