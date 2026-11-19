@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -52,59 +52,6 @@ describe("the site's pages", () => {
       "@arcadekit/three",
     ]);
     expect(pages.packages[1]?.modules).toStrictEqual(["Gltf", "Three"]);
-  });
-
-  it("has no page that mentions the roadmap, which is the repository's and not the docs'", () => {
-    const own = readdirSync(path.join(REPO_ROOT, "website/src/content/docs"), {
-      recursive: true,
-    })
-      .map(String)
-      .filter((file) => /\.mdx?$/u.test(file));
-    for (const file of own) {
-      const text = readFileSync(
-        path.join(REPO_ROOT, "website/src/content/docs", file),
-        "utf-8"
-      );
-      expect(text, file).not.toMatch(/roadmap/iu);
-    }
-    expect(pages.all.map((page) => page.file)).not.toContain("ROADMAP.md");
-  });
-
-  it("describes arcadekit as it is, with nothing of what is not built or what it once was", () => {
-    // What is not built goes in ROADMAP.md's "Not built yet", and what changed in the changeset.
-    const notAsItIs = [
-      /not done yet/iu,
-      /\b(?:built|implemented|supported|decided) yet\b/iu,
-      /\byet to be (?:built|done|added|decided)\b/iu,
-      /\b(?:is|are) planned\b|\bplanned for\b/iu,
-      /\bused to be\b/iu,
-      /\bno longer (?:supported|exists?|available)\b/iu,
-      /\bpreviously\b|\bformerly\b/iu,
-      /\bin a (?:future|later) (?:version|release)\b|\bcoming soon\b/iu,
-      /\bfor now\b/iu,
-    ];
-    const docs = path.join(REPO_ROOT, "website/src/content/docs");
-    const pageFiles = readdirSync(docs, { recursive: true })
-      .map(String)
-      .filter((file) => /\.mdx?$/u.test(file))
-      .map((file) => path.join(docs, file));
-    // The reference is made from the doc comments of the packages' sources.
-    const sourceFiles = pages.packages.flatMap((page) => {
-      const src = path.join(REPO_ROOT, path.dirname(page.file), "src");
-      return readdirSync(src, { recursive: true })
-        .map(String)
-        .filter((file) => file.endsWith(".ts"))
-        .map((file) => path.join(src, file));
-    });
-    const docComments = (text: string) =>
-      [...text.matchAll(/\/\*\*[\s\S]*?\*\//gu)].map((match) => match[0]);
-    for (const file of [...pageFiles, ...sourceFiles]) {
-      const text = readFileSync(file, "utf-8");
-      const prose = file.endsWith(".ts") ? docComments(text).join("\n") : text;
-      for (const pattern of notAsItIs) {
-        expect(prose, path.relative(REPO_ROOT, file)).not.toMatch(pattern);
-      }
-    }
   });
 
   it("names files that exist, each served at an address of its own", () => {

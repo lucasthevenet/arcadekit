@@ -10,7 +10,7 @@ The documentation is in two places, and a thing is said in one of them and linke
 | The walkthrough, the concepts, the guides | `website/src/content/docs/` | The site's own pages: how and why a game's author uses a part, the rules to follow, and what goes wrong |
 | A module's reference | Its doc comments | A page of the site for each module: exactly what each export does. Written with the `jsdocs` skill, not this one |
 
-A package's README is neither. It is what GitHub and npm show: a sentence or two on what the package is, how to install it, and links to the site. It explains nothing, and what would be said there is said on a page. The site describes arcadekit as it is today. What is not built yet goes under its area in `ROADMAP.md`'s "Not built yet", and what was removed or changed goes in the changeset: neither is on a page or in a doc comment, which `website/src/lib/pages.test.ts` holds.
+A package's README is neither. It is what GitHub and npm show: a sentence or two on what the package is, how to install it, and links to the site. It explains nothing, and what would be said there is said on a page. The site describes arcadekit as it is today. What is not built yet goes under its area in `ROADMAP.md`'s "Not built yet", and what was removed or changed goes in the changeset: neither is on a page or in a doc comment.
 
 ## Workflow
 
@@ -35,6 +35,9 @@ A package's README is neither. It is what GitHub and npm show: a sentence or two
    - A sentence that makes the game responsible for something ("your game must", "you are responsible for") is something the code does not stop: it also gets a line of [to-revisit.md](../../../roadmap/to-revisit.md).
    - A guide that passes 12 KB is probably two: split it, and name the new page in `OUTLINE` of `website/src/lib/sidebar.ts`, which a test holds every guide to.
    - No doc sentence explains a workaround or why the right thing was not done.
+
+   These rules are for whoever writes and reviews the page. Prose is not checked by automated tests: do not add a test or a lint rule for wording.
+
 3. Run `pnpm fix`, then `pnpm --filter @arcadekit/website typecheck`, which builds the packages and compiles the pages' code, and `pnpm build:docs`, which fails on a dead link. To look at a page, `pnpm dev:docs`; restart it after adding a page.
 
 The task is complete when the change is said in one place, the two commands pass or are reported as not run, and a page whose look changed has been looked at.
