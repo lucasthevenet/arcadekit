@@ -811,13 +811,22 @@ describe("a level's assets", () => {
 
           // The store that keeps them is no way round: it says the same of
           // being asked, and of being told to load or to let go.
-          const calls: Record<string, (store: Assets.Store) => unknown> = {
+          const calls = {
             "asked for": (store) => store.status(Forest),
             held: (store) => store.hold(Forest, "Sneak"),
             "let go of": (store) => store.drop(Forest, "Sneak"),
-          };
+          } satisfies Record<string, (store: Assets.Store) => void>;
 
           let asked = 0;
+
+          // Counts what is asked of it, whichever program asks.
+          const loader: Assets.Loader = {
+            bytes: () => {
+              asked += 1;
+
+              return Effect.succeed(new Uint8Array(1));
+            },
+          };
 
           for (const [what, call] of Object.entries(calls)) {
             const Sneak = System.make("Sneak", function* () {
@@ -827,15 +836,7 @@ describe("a level's assets", () => {
             const sneaking = yield* App.make({
               plugins: [Game],
               systems: [Sneak],
-            }).pipe(
-              Effect.provideService(Assets.Loader, {
-                bytes: () => {
-                  asked += 1;
-
-                  return Effect.succeed(new Uint8Array(1));
-                },
-              })
-            );
+            }).pipe(Effect.provideService(Assets.Loader, loader));
 
             expect(() => sneaking.tick(1), what).toThrow(
               new RegExp(`The assets "as/Forest" were ${what} in the tick`, "u")

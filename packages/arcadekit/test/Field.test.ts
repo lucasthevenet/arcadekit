@@ -169,13 +169,13 @@ describe("a field that is not a number", () => {
     const base = world.hash();
     const seen = new Set([base]);
 
-    const changes: Record<string, unknown> = {
+    const changes = {
       data: { other: true },
       when: new Date(0),
       tags: new Set(["x"]),
       profile: { ...card(0).profile, level: 42 },
       hp: -1,
-    };
+    } satisfies Record<string, unknown>;
 
     for (const def of both) {
       for (const entity of entities) {

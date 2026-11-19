@@ -43,7 +43,7 @@ const Turned = Query.all(Velocity).pipe(Query.changed(Velocity));
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
-const populated = (count = 6): { world: EcsWorld; entities: Entity[] } => {
+const populated = (count = 6) => {
   const world = new EcsWorld();
   const entities: Entity[] = [];
 

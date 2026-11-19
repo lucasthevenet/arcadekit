@@ -45,6 +45,7 @@
  * which run no frame stage, play nothing, and the game they run is the same.
  */
 import { Context, Effect, Layer } from "effect";
+import { constVoid } from "effect/Function";
 
 import * as Assets from "./Assets";
 import type * as Event from "./Event";
@@ -128,7 +129,7 @@ export interface Output {
   ) => void;
 }
 
-const silent: Output = { play() {}, music() {} };
+const silent: Output = { play: constVoid, music: constVoid };
 
 /**
  * Where sound goes. A `Context.Reference` whose default is nowhere, which suits

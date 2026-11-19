@@ -15,6 +15,7 @@ import { execFileSync } from "node:child_process";
  *   pnpm --filter arcadekit bench
  */
 import { Data, Effect, Exit, Schema } from "effect";
+import { constVoid } from "effect/Function";
 
 import {
   Action,
@@ -311,7 +312,9 @@ const sounding = (happening: boolean): number =>
           plugins: [Sound.plugin],
           systems: [Score, Cues],
           checkpointEvery: 0,
-        }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+        }).pipe(
+          Effect.provide(Sound.layer({ play: constVoid, music: constVoid }))
+        );
 
         return measure(
           () => app.frame(0),
@@ -345,7 +348,9 @@ const scoring = (): number =>
           components: [Phase],
           systems: [Score],
           checkpointEvery: 0,
-        }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+        }).pipe(
+          Effect.provide(Sound.layer({ play: constVoid, music: constVoid }))
+        );
 
         return measure(() => app.frame(0), 50_000, 20_000);
       })

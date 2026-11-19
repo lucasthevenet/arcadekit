@@ -21,6 +21,7 @@ import {
 import type { System, Frame, Time, World } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
+import { constVoid } from "effect/Function";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 
 import { Three } from "../src/index";
@@ -32,7 +33,7 @@ const geometry = new BoxGeometry(1, 1, 1);
 const material = new MeshBasicMaterial();
 
 const noRenderer = Layer.mergeAll(
-  Layer.succeed(Three.Renderer, { render() {} }),
+  Layer.succeed(Three.Renderer, { render: constVoid }),
   Assets.layerMemory({ "/bark.png": "" })
 );
 

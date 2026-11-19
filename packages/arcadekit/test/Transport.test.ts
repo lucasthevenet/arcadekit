@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { Context, Effect, Layer } from "effect";
+import { constVoid } from "effect/Function";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App, Driver, Lockstep, Rollback, Transport } from "../src/index";
@@ -369,7 +370,7 @@ describe("a session joined to a transport", () => {
 describe("a transport over text", () => {
   it("sends a message as text, and reads the texts that are messages", () => {
     const sent: string[] = [];
-    let deliver: (text: string) => void = () => {};
+    let deliver: (text: string) => void = constVoid;
     let listening = 0;
 
     const transport = Transport.text({
@@ -454,8 +455,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     const made: {
       name: string;
       closed: boolean;
-      listeners: Set<unknown>;
-      posted: unknown[];
+      listeners: Set<(event: MessageEvent<string>) => void>;
+      posted: string[];
     }[] = [];
 
     vi.stubGlobal(
@@ -466,20 +467,26 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           this.record = {
             name,
             closed: false,
-            listeners: new Set<unknown>(),
-            posted: [] as unknown[],
+            listeners: new Set<(event: MessageEvent<string>) => void>(),
+            posted: Array.of<string>(),
           };
           made.push(this.record);
         }
-        addEventListener(type: string, listener: unknown): void {
+        addEventListener(
+          type: string,
+          listener: (event: MessageEvent<string>) => void
+        ): void {
           expect(type).toBe("message");
           this.record.listeners.add(listener);
         }
-        removeEventListener(type: string, listener: unknown): void {
+        removeEventListener(
+          type: string,
+          listener: (event: MessageEvent<string>) => void
+        ): void {
           expect(type).toBe("message");
           this.record.listeners.delete(listener);
         }
-        postMessage(data: unknown): void {
+        postMessage(data: string): void {
           this.record.posted.push(data);
         }
         close(): void {

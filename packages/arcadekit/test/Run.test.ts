@@ -10,6 +10,7 @@ import {
   Layer,
   Schema,
 } from "effect";
+import { constVoid } from "effect/Function";
 import { describe, expect, it } from "vitest";
 
 import * as Browser from "../src/Browser";
@@ -170,7 +171,7 @@ describe("App.run", () => {
       { readonly onStart: (press: () => void) => void }
     >()("run/Menu") {}
 
-    let press = (): void => {};
+    let press: () => void = constVoid;
 
     const fiber = Effect.runFork(
       App.run(
@@ -384,7 +385,7 @@ describe("App.run", () => {
     }).pipe(System.inStage("frame"));
 
     let made: App.Any | undefined;
-    let ask = (_by: number): void => {};
+    let ask: (by: number) => void = constVoid;
 
     const fiber = Effect.runFork(
       App.run(

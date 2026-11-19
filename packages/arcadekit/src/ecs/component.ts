@@ -183,7 +183,7 @@ export type Column =
   | Uint32Array
   | Uint16Array
   | Uint8Array
-  | any[];
+  | unknown[];
 
 /** The column a field of each kind is stored in, as makeColumn makes it. */
 export interface ColumnOfKind {

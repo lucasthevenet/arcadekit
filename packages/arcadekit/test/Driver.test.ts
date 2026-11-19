@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { Cause, Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
+import { constVoid } from "effect/Function";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -280,7 +281,7 @@ describe("the frame loop", () => {
     // be, and that goes on telling a listener it was asked to forget.
     const callbacks: ((now: number) => void)[] = [];
     let listening = 0;
-    let tell = (): void => {};
+    let tell: () => void = constVoid;
     let hidden = false;
 
     const display: Driver.Display = {

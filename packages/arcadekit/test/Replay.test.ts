@@ -178,6 +178,14 @@ const replayInto = (
     };
   });
 
+const ticksOf = (checkpointEvery?: number) =>
+  checkpoints(
+    record({
+      ticks: 130,
+      ...(checkpointEvery === undefined ? {} : { checkpointEvery }),
+    }).log
+  ).map((entry) => entry.tick);
+
 describe("checkpoints", () => {
   it("are recorded before the first action or tick, and after every tick the interval divides", () => {
     const recorded = record({ ticks: 10, checkpointEvery: 3 });
@@ -243,14 +251,6 @@ describe("checkpoints", () => {
   });
 
   it("come every 60 ticks unless told otherwise, every tick with 1, and never with 0", () => {
-    const ticksOf = (checkpointEvery?: number) =>
-      checkpoints(
-        record({
-          ticks: 130,
-          ...(checkpointEvery === undefined ? {} : { checkpointEvery }),
-        }).log
-      ).map((entry) => entry.tick);
-
     expect(ticksOf()).toStrictEqual([0, 60, 120]);
     expect(ticksOf(1)).toStrictEqual(Array.from({ length: 131 }, (_, i) => i));
     expect(ticksOf(50)).toStrictEqual([0, 50, 100]);
@@ -627,7 +627,8 @@ describe("a replay that checks itself", () => {
       const coin = Exit.isSuccess(dropped) ? dropped.value : (0 as Entity);
       app.tick(1 / 60);
       app.enqueue(Take, { coin });
-      app.enqueue(Take, { coin }); // refused: the coin is gone by then
+      // Refused: the coin is gone by then.
+      app.enqueue(Take, { coin });
       app.tick(1 / 60);
       app.tick(1 / 60);
 
@@ -758,7 +759,8 @@ describe("the action log", () => {
   it("holds what came from outside, as it arrived, and not what the simulation issued itself", () => {
     withApp(busy(0), ({ app, tally }) => {
       app.enqueue(Add, { by: 1 });
-      app.dispatch(Chain, { by: 100 }); // its handler enqueues an Add
+      // Its handler enqueues an Add.
+      app.dispatch(Chain, { by: 100 });
       app.enqueueByName("rp/Double", {});
       app.dispatch(Add, { by: 1000 });
       expect(app.actionLog).toStrictEqual([

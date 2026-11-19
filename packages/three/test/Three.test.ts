@@ -1258,6 +1258,8 @@ const rowAt = (mesh: InstancedMesh, y: number): number[] => {
   throw new Error(`Nothing is drawn at height ${y}`);
 };
 
+const xAt = (mesh: InstancedMesh, y: number): number => rowAt(mesh, y)[12]!;
+
 describe("an entity drawn between two ticks", () => {
   const Flat = Transform2d;
 
@@ -1295,8 +1297,6 @@ describe("an entity drawn between two ticks", () => {
 
     return { app, renderer, mesh: () => meshOf(renderer.scene, "th/Smoothed") };
   };
-
-  const xAt = (mesh: InstancedMesh, y: number): number => rowAt(mesh, y)[12]!;
 
   it("is where it is the first frame it is seen, and from then on between where it was a tick ago and where it is", () => {
     const { app, mesh } = play(Smoothed);
@@ -2041,6 +2041,8 @@ const colorAt = (mesh: InstancedMesh, y: number): number[] => {
   throw new Error(`Nothing is drawn at height ${y}`);
 };
 
+const atHeight = (y: number) => Position.of({ x: 0, y, z: 0 });
+
 describe("a colour per instance", () => {
   const Flat = Transform2d;
 
@@ -2081,7 +2083,6 @@ describe("a colour per instance", () => {
     const size = Scale.of({ x: 2, y: 2, z: 2 });
     const flatTurn = Flat.Rotation.of({ angle: 1 });
     const flatSize = Flat.Scale.of({ x: 2, y: 2 });
-    const atHeight = (y: number) => Position.of({ x: 0, y, z: 0 });
     const flat = (y: number) => Flat.Position.of({ x: 0, y });
 
     // One of each of the eight, each of a colour of its own.
@@ -2136,6 +2137,10 @@ describe("a colour per instance", () => {
     const alive: { readonly entity: Entity; readonly y: number }[] = [];
     let dropped = 0;
 
+    const countDropped = (): void => {
+      dropped += 1;
+    };
+
     for (let frame = 0; frame < 120; frame += 1) {
       for (let step = 0; step < 6; step += 1) {
         const roll = random.int(8);
@@ -2177,9 +2182,7 @@ describe("a colour per instance", () => {
       app.frame(0);
 
       if (frame === 0) {
-        mesh().addEventListener("dispose", () => {
-          dropped += 1;
-        });
+        mesh().addEventListener("dispose", countDropped);
       }
 
       const shown = alive.filter((one) => world.has(one.entity, Paint));
@@ -3248,36 +3251,36 @@ const makeStandIn = (size: { clientWidth?: number; clientHeight?: number }) => {
   };
 };
 
-describe("Three.layerRenderer", () => {
-  const use = (
-    standIn: ReturnType<typeof makeStandIn>,
-    options?: Three.FitOptions
-  ) => {
-    const scope = Effect.runSync(Scope.make());
-    let makes = 0;
+const use = (
+  standIn: ReturnType<typeof makeStandIn>,
+  options?: Three.FitOptions
+) => {
+  const scope = Effect.runSync(Scope.make());
+  let makes = 0;
 
-    // Built into a scope of the test's, as a program's layers are built
-    // into the program's.
-    const renderer = Context.get(
-      Effect.runSync(
-        Layer.build(
-          Three.layerRenderer(() => {
-            makes += 1;
+  // Built into a scope of the test's, as a program's layers are built
+  // into the program's.
+  const renderer = Context.get(
+    Effect.runSync(
+      Layer.build(
+        Three.layerRenderer(() => {
+          makes += 1;
 
-            return standIn;
-          }, options)
-        ).pipe(Scope.provide(scope))
-      ),
-      Three.Renderer
-    );
+          return standIn;
+        }, options)
+      ).pipe(Scope.provide(scope))
+    ),
+    Three.Renderer
+  );
 
-    return {
-      renderer,
-      makes: () => makes,
-      close: () => Effect.runSync(Scope.close(scope, Exit.void)),
-    };
+  return {
+    renderer,
+    makes: () => makes,
+    close: () => Effect.runSync(Scope.close(scope, Exit.void)),
   };
+};
 
+describe("Three.layerRenderer", () => {
   const scene = new Object3D() as Scene;
 
   it("fits the picture to the size the canvas has on the page, when that changes, and a perspective camera with it", () => {

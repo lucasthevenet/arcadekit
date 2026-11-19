@@ -23,6 +23,9 @@ import { pathToFileURL } from "node:url";
 import { Component, Field, World } from "../src/ecs/index";
 import type { Entity, QuerySpec, Terms } from "../src/ecs/index";
 
+/** A loop that visits the rows and does nothing with them. */
+const visitNothing = (): void => undefined;
+
 // Not exported: a loop that reads an exported constant reads it through the
 // module each time, which measured a tenth slower over these loops.
 const N = 100_000;
@@ -624,7 +627,7 @@ export const variants: Record<string, Variant> = {
         },
         300,
         80,
-        () => watcher.eachChunk(() => {})
+        () => watcher.eachChunk(visitNothing)
       );
     },
   },
@@ -634,7 +637,7 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const view = world.view(Moving);
-      world.view(Repositioned).eachChunk(() => {});
+      world.view(Repositioned).eachChunk(visitNothing);
 
       return measure(() => {
         view.each((pos, vel) => {
@@ -668,7 +671,7 @@ export const variants: Record<string, Variant> = {
         },
         300,
         80,
-        () => watcher.eachChunk(() => {})
+        () => watcher.eachChunk(visitNothing)
       );
     },
   },
@@ -701,7 +704,7 @@ export const variants: Record<string, Variant> = {
         },
         300,
         80,
-        () => watcher.eachChunk(() => {})
+        () => watcher.eachChunk(visitNothing)
       );
     },
   },
@@ -712,7 +715,7 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const watcher = world.view(Repositioned);
-      watcher.eachChunk(() => {});
+      watcher.eachChunk(visitNothing);
       let sink = 0;
 
       const ms = measure(
@@ -740,7 +743,7 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const watcher = world.view(Repositioned);
-      watcher.eachChunk(() => {});
+      watcher.eachChunk(visitNothing);
       const target = world.view(Moving).entities()[N >> 1]!;
       let sink = 0;
 
@@ -769,7 +772,7 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const watcher = world.view(Repositioned);
-      watcher.eachChunk(() => {});
+      watcher.eachChunk(visitNothing);
       const all = world.view(Moving).entities();
       let sink = 0;
 

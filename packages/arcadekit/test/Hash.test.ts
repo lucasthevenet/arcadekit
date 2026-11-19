@@ -245,9 +245,9 @@ const history = (seed: number, steps: number): number[] => {
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
 
     if (choice <= 1 || entity === undefined) {
-      const inputs = optional
-        .filter(() => dice.int(0, 1) === 1)
-        .map((def) => valueFor(def));
+      const inputs = optional.flatMap((def) =>
+        dice.int(0, 1) === 1 ? [valueFor(def)] : []
+      );
 
       alive.push(
         choice === 0 ? world.spawn(...inputs) : commands.spawn(...inputs)
@@ -289,6 +289,119 @@ const history = (seed: number, steps: number): number[] => {
 // It was 1,013,956,505 while an entity's id was 32 bits and hashed as one
 // word: an id is hashed as the 64 bits it is kept in now.
 const KNOWN_HASH = 2_316_040_553;
+
+// Both worlds hold the same two entities with the same data, the same
+// tables and the same ids to come. One entity made a round trip through
+// another table, which put it last in its own: which one differs.
+const buildTraveller = (traveller: 0 | 1) => {
+  const world = new EcsWorld();
+
+  const pair = [
+    world.spawn(Body.of({ x: 1, y: 1 })),
+    world.spawn(Body.of({ x: 2, y: 2 })),
+  ] as const;
+
+  world.add(pair[traveller], Marked);
+  world.remove(pair[traveller], Marked);
+
+  return { world, order: world.view(Query.all(Body)).entities(), pair };
+};
+
+/** What a world goes through that leaves it as it was. */
+const stir = (world: EcsWorld, entities: Entity[]): void => {
+  // Queries: they cache tables, keep masks and create empty sparse sets.
+  const Unused = Component.tag("hash/Unused", { storage: "sparse" });
+
+  const view = world.view(
+    Query.all(Body).pipe(Query.with(Aura), Query.without(Chilled, Unused))
+  );
+
+  const read: number[] = [];
+
+  view.each((body) => {
+    read.push(body.x);
+  });
+  view.eachChunk(() => {});
+  view.count();
+  world.view(Query.all(Aura).pipe(Query.with(Unused))).entities();
+  // Reads, writes that put the same value back, and a registration.
+  world.get(entities[0]!, Sheet);
+  world.has(entities[1]!, Marked);
+  world.set(entities[2]!, Body, { x: 99 });
+  world.set(entities[2]!, Body, { x: 2 });
+  world.register(Component.define("hash/Idle", { v: Field.f32 }));
+  expect(new CommandBuffer(world).size).toBe(0);
+  // A sparse component that came and went.
+  world.add(entities[5]!, Unused);
+  world.remove(entities[5]!, Unused);
+};
+
+const buildNoisy = (noise: boolean): EcsWorld => {
+  const world = new EcsWorld({ seed: 3 });
+  const entities: Entity[] = [];
+
+  for (let n = 0; n < 40; n += 1) {
+    entities.push(world.spawn(Body.of({ x: n, y: n }), Sheet.of(sheet(n))));
+  }
+
+  if (noise) {
+    // A query that meets the sparse components in another order first.
+    world.view(Query.all(Body).pipe(Query.without(Chilled, Aura))).count();
+  }
+
+  // Members join the sparse sets in another order: the same members.
+  const joining = noise ? entities.toReversed() : entities;
+
+  for (const entity of joining) {
+    if (entity % 3 === 0) {
+      world.add(entity, Aura.of(sheet(entity)));
+    }
+
+    if (entity % 4 === 0) {
+      world.add(entity, Chilled);
+    }
+  }
+
+  if (noise) {
+    stir(world, entities);
+  }
+
+  return world;
+};
+
+// The last-spawned entity is despawned in both; its data stays behind in
+// the column's spare room, and differs between the two worlds.
+const buildGhost = (ghost: number): EcsWorld => {
+  const world = new EcsWorld();
+  world.spawn(Body.of({ x: 1, y: 1 }), Sheet.of(sheet(1)));
+
+  const gone = world.spawn(
+    Body.of({ x: ghost, y: ghost }),
+    Sheet.of(sheet(ghost))
+  );
+
+  world.add(gone, Aura.of(sheet(ghost)));
+  world.despawn(gone);
+
+  return world;
+};
+
+const hashNote = (note: unknown): number => {
+  const world = new EcsWorld();
+  world.spawn(Sheet.of({ ...sheet(1), note }));
+  world.add(world.spawn(), Aura.of({ ...sheet(2), note }));
+
+  return world.hash();
+};
+
+const buildMarked = (marked: number, chilled: number): number => {
+  const world = new EcsWorld();
+  const entities = [0, 1, 2].map(() => world.spawn(Body));
+  world.add(entities[marked]!, Marked);
+  world.add(entities[chilled]!, Chilled);
+
+  return world.hash();
+};
 
 describe("the hash of a world", () => {
   it("is a whole number from 0 to 2^32 - 1, and does not change the world it reads", () => {
@@ -438,8 +551,10 @@ describe("the hash of a world", () => {
 
   it("follows which entity and which field a value is in, not just the values", () => {
     const base = build([1, 2], [3, 4]);
-    expect(build([3, 4], [1, 2])).not.toBe(base); // swapped between entities
-    expect(build([2, 1], [3, 4])).not.toBe(base); // swapped between fields
+    // Swapped between entities.
+    expect(build([3, 4], [1, 2])).not.toBe(base);
+    // Swapped between fields.
+    expect(build([2, 1], [3, 4])).not.toBe(base);
     expect(build([1, 4], [3, 2])).not.toBe(base);
     expect(build([1, 2], [3, 4])).toBe(base);
 
@@ -481,23 +596,6 @@ describe("the hash of a world", () => {
   });
 
   it("covers the order queries visit entities in", () => {
-    // Both worlds hold the same two entities with the same data, the same
-    // tables and the same ids to come. One entity made a round trip through
-    // another table, which put it last in its own: which one differs.
-    const buildTraveller = (traveller: 0 | 1) => {
-      const world = new EcsWorld();
-
-      const pair = [
-        world.spawn(Body.of({ x: 1, y: 1 })),
-        world.spawn(Body.of({ x: 2, y: 2 })),
-      ] as const;
-
-      world.add(pair[traveller], Marked);
-      world.remove(pair[traveller], Marked);
-
-      return { world, order: world.view(Query.all(Body)).entities(), pair };
-    };
-
     const first = buildTraveller(0);
     const second = buildTraveller(1);
     expect(first.order).toStrictEqual([first.pair[1], first.pair[0]]);
@@ -631,101 +729,14 @@ describe("the hash of a world", () => {
   });
 
   it("does not depend on what a simulation cannot tell apart", () => {
-    /** What a world goes through that leaves it as it was. */
-    const stir = (world: EcsWorld, entities: Entity[]): void => {
-      // Queries: they cache tables, keep masks and create empty sparse sets.
-      const Unused = Component.tag("hash/Unused", { storage: "sparse" });
-
-      const view = world.view(
-        Query.all(Body).pipe(Query.with(Aura), Query.without(Chilled, Unused))
-      );
-
-      const read: number[] = [];
-
-      view.each((body) => {
-        read.push(body.x);
-      });
-      view.eachChunk(() => {});
-      view.count();
-      world.view(Query.all(Aura).pipe(Query.with(Unused))).entities();
-      // Reads, writes that put the same value back, and a registration.
-      world.get(entities[0]!, Sheet);
-      world.has(entities[1]!, Marked);
-      world.set(entities[2]!, Body, { x: 99 });
-      world.set(entities[2]!, Body, { x: 2 });
-      world.register(Component.define("hash/Idle", { v: Field.f32 }));
-      expect(new CommandBuffer(world).size).toBe(0);
-      // A sparse component that came and went.
-      world.add(entities[5]!, Unused);
-      world.remove(entities[5]!, Unused);
-    };
-
-    const buildNoisy = (noise: boolean): EcsWorld => {
-      const world = new EcsWorld({ seed: 3 });
-      const entities: Entity[] = [];
-
-      for (let n = 0; n < 40; n += 1) {
-        entities.push(world.spawn(Body.of({ x: n, y: n }), Sheet.of(sheet(n))));
-      }
-
-      if (noise) {
-        // A query that meets the sparse components in another order first.
-        world.view(Query.all(Body).pipe(Query.without(Chilled, Aura))).count();
-      }
-
-      // Members join the sparse sets in another order: the same members.
-      const joining = noise ? entities.toReversed() : entities;
-
-      for (const entity of joining) {
-        if (entity % 3 === 0) {
-          world.add(entity, Aura.of(sheet(entity)));
-        }
-
-        if (entity % 4 === 0) {
-          world.add(entity, Chilled);
-        }
-      }
-
-      if (noise) {
-        stir(world, entities);
-      }
-
-      return world;
-    };
-
     expect(buildNoisy(true).hash()).toBe(buildNoisy(false).hash());
   });
 
   it("ignores what is left in a column past its last row", () => {
-    // The last-spawned entity is despawned in both; its data stays behind in
-    // the column's spare room, and differs between the two worlds.
-    const buildGhost = (ghost: number): EcsWorld => {
-      const world = new EcsWorld();
-      world.spawn(Body.of({ x: 1, y: 1 }), Sheet.of(sheet(1)));
-
-      const gone = world.spawn(
-        Body.of({ x: ghost, y: ghost }),
-        Sheet.of(sheet(ghost))
-      );
-
-      world.add(gone, Aura.of(sheet(ghost)));
-      world.despawn(gone);
-
-      return world;
-    };
-
     expect(buildGhost(7).hash()).toBe(buildGhost(8).hash());
   });
 
   it("counts an array or an object in a json field by what is in it", () => {
-    const hashNote = (note: unknown): number => {
-      const world = new EcsWorld();
-      world.spawn(Sheet.of({ ...sheet(1), note }));
-      world.add(world.spawn(), Aura.of({ ...sheet(2), note }));
-
-      return world.hash();
-    };
-
     const values: unknown[] = [
       { hp: 1 },
       { hp: 2 },
@@ -759,15 +770,6 @@ describe("the hash of a world", () => {
   });
 
   it("counts tags, which have no data, by who has them", () => {
-    const buildMarked = (marked: number, chilled: number): number => {
-      const world = new EcsWorld();
-      const entities = [0, 1, 2].map(() => world.spawn(Body));
-      world.add(entities[marked]!, Marked);
-      world.add(entities[chilled]!, Chilled);
-
-      return world.hash();
-    };
-
     const all = [0, 1, 2].flatMap((marked) =>
       [0, 1, 2].map((chilled) => buildMarked(marked, chilled))
     );

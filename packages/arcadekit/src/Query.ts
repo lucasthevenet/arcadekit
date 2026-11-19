@@ -282,7 +282,7 @@ export const reads: {
   <D extends Terms>(
     self: Query<D>,
     ...defs: readonly ComponentDef[]
-  ): Query<any> => {
+  ): Query<Terms> => {
     for (const def of defs) {
       if (!self.terms.includes(def)) {
         throw new Error(

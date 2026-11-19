@@ -64,7 +64,7 @@ const Auras = Query.all(Aura);
 const Both = Query.all(Body, Aura).pipe(Query.without(Chilled));
 
 /** A world with a few tables, some sparse members and some freed slots. */
-const populated = (): { world: EcsWorld; entities: Entity[] } => {
+const populated = () => {
   const world = new EcsWorld({ seed: 12 });
   const entities: Entity[] = [];
 
@@ -98,7 +98,7 @@ const populated = (): { world: EcsWorld; entities: Entity[] } => {
 };
 
 /** Every way plain code can write to component data. */
-const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
+const writers = {
   "set on a table component": (world, entities) => {
     world.set(entities[0]!, Body, { x: 99 });
     world.set(entities[0]!, Sheet, sheet(77));
@@ -189,7 +189,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
     world.random.next();
     world.random.shuffle([1, 2, 3, 4]);
   },
-};
+} satisfies Record<string, (world: EcsWorld, entities: Entity[]) => void>;
 
 describe("a transaction of a world", () => {
   it.each(Object.entries(writers))(
@@ -233,7 +233,6 @@ describe("a transaction of a world", () => {
   );
 
   it("takes back every writer at once, in any order", () => {
-    const names = Object.keys(writers);
     const dice = new EcsWorld({ seed: 5 }).random;
 
     for (let round = 0; round < 30; round += 1) {
@@ -241,8 +240,8 @@ describe("a transaction of a world", () => {
       const before = world.hash();
       world.begin();
 
-      for (const name of dice.shuffle([...names])) {
-        writers[name]!(world, entities);
+      for (const write of dice.shuffle(Object.values(writers))) {
+        write(world, entities);
       }
 
       world.rollback();

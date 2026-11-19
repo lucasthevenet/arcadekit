@@ -52,7 +52,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
  * A world of `count` entities with a position, the first half of them with
  * health: two tables, which a query visits in the order of `entities`.
  */
-const populated = (count = 10): { world: EcsWorld; entities: Entity[] } => {
+const populated = (count = 10) => {
   const world = new EcsWorld();
   const entities: Entity[] = [];
 
@@ -1269,18 +1269,13 @@ const Tally = Component.define("ch/Tally", {
 const Tallies = Query.all(Tally);
 
 const tallyOf = (app: App.Any) => {
-  let out: Record<string, number> = {};
-  app.world.view(Tallies).each((tally) => {
-    out = {
-      moved: tally.moved,
-      hurt: tally.hurt,
-      born: tally.born,
-      gone: tally.gone,
-      early: tally.early,
-    };
-  });
+  const [tally] = app.world.view(Tallies).entities();
 
-  return out;
+  if (tally === undefined) {
+    throw new Error("The app has no tally.");
+  }
+
+  return { ...app.world.get(tally, Tally)! };
 };
 
 const Push = Action.define(

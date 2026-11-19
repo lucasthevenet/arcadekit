@@ -361,7 +361,7 @@ describe("a snapshot of a world", () => {
   });
 });
 
-const problemOf = (run: () => unknown): SnapshotError => {
+const problemOf = (run: () => void): SnapshotError => {
   try {
     run();
   } catch (error) {
@@ -375,9 +375,14 @@ const problemOf = (run: () => unknown): SnapshotError => {
   throw new Error("expected a SnapshotError");
 };
 
+/** A value that holds itself, which no snapshot can write down. */
+interface Cyclic {
+  self?: Cyclic;
+}
+
 describe("a snapshot that cannot be taken", () => {
   it("names the field that holds a value that is not plain data", () => {
-    const cyclic: { self?: unknown } = {};
+    const cyclic: Cyclic = {};
     cyclic.self = cyclic;
 
     for (const [value, what] of [
@@ -426,6 +431,11 @@ const sample = (): Uint8Array => {
   return world.snapshot();
 };
 
+const changed = (body: ComponentDef) =>
+  problemOf(() =>
+    loaded(sample(), [...all.filter((def) => def !== C.Body), body])
+  );
+
 describe("a snapshot that cannot be loaded", () => {
   it("is refused by a world that is not empty", () => {
     const bytes = sample();
@@ -471,11 +481,6 @@ describe("a snapshot that cannot be loaded", () => {
   });
 
   it("names a component whose fields are not what they were, and says how", () => {
-    const changed = (body: ComponentDef) =>
-      problemOf(() =>
-        loaded(sample(), [...all.filter((def) => def !== C.Body), body])
-      );
-
     const renamed = changed(
       Component.define("snap/Body", { x: Field.f32, z: Field.f32 })
     );

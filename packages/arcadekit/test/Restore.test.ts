@@ -83,9 +83,9 @@ const play = (
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
 
     if (choice <= 1 || entity === undefined) {
-      const inputs = optional
-        .filter(() => dice.int(0, 1) === 1)
-        .map((def) => valueFor(def));
+      const inputs = optional.flatMap((def) =>
+        dice.int(0, 1) === 1 ? [valueFor(def)] : []
+      );
 
       if (choice === 0) {
         world.spawn(...inputs);

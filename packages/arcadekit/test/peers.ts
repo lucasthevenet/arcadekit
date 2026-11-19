@@ -236,7 +236,7 @@ export const game = (seed = 5, checkpointEvery = 1) =>
 export type Game = Effect.Success<ReturnType<typeof game>>;
 
 /** What each of the two players has in the purse. */
-export const purseOf = (app: Game): { ada: number; grace: number } => {
+export const purseOf = (app: Game) => {
   const { ada, grace } = app.world.singleton(Purse);
 
   return { ada, grace };
@@ -376,7 +376,7 @@ export const round = (
     }
 
     net.send(
-      peers.filter((other) => other !== peer).map((other) => other.name),
+      peers.flatMap((other) => (other === peer ? [] : [other.name])),
       peer.session.outgoing()
     );
   }
@@ -456,7 +456,7 @@ export const untilStopped = (
       }
 
       net.send(
-        peers.filter((other) => other !== peer).map((other) => other.name),
+        peers.flatMap((other) => (other === peer ? [] : [other.name])),
         peer.session.outgoing()
       );
     }

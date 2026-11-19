@@ -40,6 +40,7 @@
  * same actions.
  */
 import { Context, Effect, Equal, Layer } from "effect";
+import { constVoid } from "effect/Function";
 
 import * as Action from "./Action";
 import * as Plugin from "./Plugin";
@@ -277,7 +278,7 @@ export const makeBridge = (): Bridge => {
 
 const noBridge: Bridge = {
   get: (view) => view.initial,
-  subscribe: () => () => {},
+  subscribe: () => constVoid,
   send() {
     throw new Error(
       "An action was sent to the bridge that stands for no UI. Make one with View.makeBridge() and provide it to the game with View.layer."
@@ -285,7 +286,7 @@ const noBridge: Bridge = {
   },
   _publish: () => false,
   _take: () => NOTHING,
-  _connect: () => () => {},
+  _connect: () => constVoid,
 };
 
 /**

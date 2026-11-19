@@ -276,15 +276,15 @@ describe("a view", () => {
     const order: string[] = [];
 
     // The listener after it, which it stops, subscribes after it.
-    const later: { stop?: () => void } = {};
+    let stopLater: (() => void) | undefined;
 
     const stopOnce = ui.subscribe(Hud, () => {
       order.push("once");
       stopOnce();
-      later.stop?.();
+      stopLater?.();
     });
 
-    later.stop = ui.subscribe(Hud, () => {
+    stopLater = ui.subscribe(Hud, () => {
       order.push("later");
     });
 
@@ -506,9 +506,7 @@ describe("what the UI sends", () => {
     expect(app.world.singleton(Purse).gold).toBe(3);
     const log = [...app.actionLog];
     expect(
-      log
-        .filter((entry) => !Action.isCheckpoint(entry))
-        .map((entry) => (Action.isCheckpoint(entry) ? "" : entry.name))
+      log.flatMap((entry) => (Action.isCheckpoint(entry) ? [] : [entry.name]))
     ).toStrictEqual(["vw/Buy", "vw/Start"]);
     // A replay with a UI of its own that is sending things is told what
     // the log says and nothing else.

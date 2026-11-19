@@ -218,6 +218,32 @@ const pictureType = (bytes: Uint8Array): string | undefined => {
 const aligned = (length: number): number => (length + 3) & ~3;
 
 /**
+ * Returns the bytes a URI refers to, embedded in the URI itself or in a
+ * file beside the model at `url`.
+ */
+const fetched = (
+  uri: string,
+  url: string,
+  loader: Assets.Loader
+): Effect.Effect<
+  { readonly bytes: Uint8Array; readonly type: string },
+  Assets.AssetFailed
+> =>
+  uri.startsWith("data:")
+    ? Effect.try({
+        try: () => fromDataUri(uri),
+        catch: (error) =>
+          new Assets.AssetFailed({
+            url,
+            message: `A file written into it could not be read: ${describe(error)}`,
+          }),
+      })
+    : Effect.map(loader.bytes(beside(url, uri)), (bytes) => ({
+        bytes,
+        type: "",
+      }));
+
+/**
  * Packs a model and every file it references into a single binary glTF: its
  * buffers joined into one, with its images in that buffer too. Content already
  * in the file is taken from it; files alongside it are fetched through the
@@ -250,30 +276,6 @@ const pack = (
       return new Uint8Array(data).buffer;
     }
 
-    /**
-     * Returns the bytes a URI refers to, embedded in the URI itself or in a
-     * file alongside the model.
-     */
-    const fetched = (
-      uri: string
-    ): Effect.Effect<
-      { readonly bytes: Uint8Array; readonly type: string },
-      Assets.AssetFailed
-    > =>
-      uri.startsWith("data:")
-        ? Effect.try({
-            try: () => fromDataUri(uri),
-            catch: (error) =>
-              new Assets.AssetFailed({
-                url,
-                message: `A file written into it could not be read: ${describe(error)}`,
-              }),
-          })
-        : Effect.map(loader.bytes(beside(url, uri)), (bytes) => ({
-            bytes,
-            type: "",
-          }));
-
     const [bufferBytes, imageBytes] = yield* Effect.all(
       [
         Effect.forEach(
@@ -281,7 +283,10 @@ const pack = (
           (buffer) =>
             buffer.uri === undefined
               ? Effect.succeed(binary ?? new Uint8Array(0))
-              : Effect.map(fetched(buffer.uri), (file) => file.bytes),
+              : Effect.map(
+                  fetched(buffer.uri, url, loader),
+                  (file) => file.bytes
+                ),
           { concurrency: "unbounded" }
         ),
         Effect.forEach(
@@ -289,7 +294,7 @@ const pack = (
           (image) =>
             image.uri === undefined
               ? Effect.succeed(undefined)
-              : fetched(image.uri),
+              : fetched(image.uri, url, loader),
           { concurrency: "unbounded" }
         ),
       ],

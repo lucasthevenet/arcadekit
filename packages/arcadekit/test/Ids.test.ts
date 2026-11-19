@@ -263,7 +263,7 @@ describe("an entity's id", () => {
 });
 
 /** A world whose one entity is of its slot's last generation. */
-const atTheLast = (): { readonly world: World; readonly last: Entity } => {
+const atTheLast = () => {
   const first = new World({ seed: 3 });
   first.spawn(Body.of({ x: 1 }));
   first.spawn(Body.of({ x: 2 }));

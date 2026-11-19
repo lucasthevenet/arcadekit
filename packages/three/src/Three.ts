@@ -1386,14 +1386,15 @@ class Instances implements Kept {
   readonly placed = (
     start: number,
     end: number,
-    position: Xyz,
+    storedPosition: Xyz,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.position.blend(start, end, storedPosition, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -1424,16 +1425,21 @@ class Instances implements Kept {
   readonly sized = (
     start: number,
     end: number,
-    position: Xyz,
-    scale: Xyz,
+    storedPosition: Xyz,
+    storedScale: Xyz,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
-      scale = smooth.scale.blend(start, end, scale, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.position.blend(start, end, storedPosition, entities);
+
+    const scale =
+      smooth === undefined
+        ? storedScale
+        : smooth.scale.blend(start, end, storedScale, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -1465,16 +1471,21 @@ class Instances implements Kept {
   readonly turned = (
     start: number,
     end: number,
-    position: Xyz,
-    rotation: Xyzw,
+    storedPosition: Xyz,
+    storedRotation: Xyzw,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
-      rotation = smooth.rotation.blend(start, end, rotation, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.position.blend(start, end, storedPosition, entities);
+
+    const rotation =
+      smooth === undefined
+        ? storedRotation
+        : smooth.rotation.blend(start, end, storedRotation, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -1518,18 +1529,27 @@ class Instances implements Kept {
   readonly whole = (
     start: number,
     end: number,
-    position: Xyz,
-    rotation: Xyzw,
-    scale: Xyz,
+    storedPosition: Xyz,
+    storedRotation: Xyzw,
+    storedScale: Xyz,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
-      rotation = smooth.rotation.blend(start, end, rotation, entities);
-      scale = smooth.scale.blend(start, end, scale, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.position.blend(start, end, storedPosition, entities);
+
+    const rotation =
+      smooth === undefined
+        ? storedRotation
+        : smooth.rotation.blend(start, end, storedRotation, entities);
+
+    const scale =
+      smooth === undefined
+        ? storedScale
+        : smooth.scale.blend(start, end, storedScale, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -1580,14 +1600,15 @@ class Instances implements Kept {
   readonly placedFlat = (
     start: number,
     end: number,
-    position: Xy,
+    storedPosition: Xy,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.flatPosition.blend(start, end, storedPosition, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -1618,16 +1639,21 @@ class Instances implements Kept {
   readonly sizedFlat = (
     start: number,
     end: number,
-    position: Xy,
-    scale: Xy,
+    storedPosition: Xy,
+    storedScale: Xy,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
-      scale = smooth.flatScale.blend(start, end, scale, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.flatPosition.blend(start, end, storedPosition, entities);
+
+    const scale =
+      smooth === undefined
+        ? storedScale
+        : smooth.flatScale.blend(start, end, storedScale, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -1659,16 +1685,21 @@ class Instances implements Kept {
   readonly turnedFlat = (
     start: number,
     end: number,
-    position: Xy,
-    rotation: Angle,
+    storedPosition: Xy,
+    storedRotation: Angle,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
-      rotation = smooth.flatRotation.blend(start, end, rotation, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.flatPosition.blend(start, end, storedPosition, entities);
+
+    const rotation =
+      smooth === undefined
+        ? storedRotation
+        : smooth.flatRotation.blend(start, end, storedRotation, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -1702,18 +1733,27 @@ class Instances implements Kept {
   readonly wholeFlat = (
     start: number,
     end: number,
-    position: Xy,
-    rotation: Angle,
-    scale: Xy,
+    storedPosition: Xy,
+    storedRotation: Angle,
+    storedScale: Xy,
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
 
-    if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
-      rotation = smooth.flatRotation.blend(start, end, rotation, entities);
-      scale = smooth.flatScale.blend(start, end, scale, entities);
-    }
+    const position =
+      smooth === undefined
+        ? storedPosition
+        : smooth.flatPosition.blend(start, end, storedPosition, entities);
+
+    const rotation =
+      smooth === undefined
+        ? storedRotation
+        : smooth.flatRotation.blend(start, end, storedRotation, entities);
+
+    const scale =
+      smooth === undefined
+        ? storedScale
+        : smooth.flatScale.blend(start, end, storedScale, entities);
 
     let at = this.reserve(end - start);
     const out = this.array;
@@ -2199,12 +2239,13 @@ class Objects<O extends Object3D> implements Kept {
   readonly placed = (
     start: number,
     end: number,
-    position: Xyz,
+    storedPosition: Xyz,
     entities: EntityColumn
   ): void => {
-    if (this.smooth !== undefined) {
-      position = this.smooth.position.blend(start, end, position, entities);
-    }
+    const position =
+      this.smooth === undefined
+        ? storedPosition
+        : this.smooth.position.blend(start, end, storedPosition, entities);
 
     const { x, y, z } = position;
     const { objects, stamp } = this;
@@ -2236,12 +2277,13 @@ class Objects<O extends Object3D> implements Kept {
   readonly placedFlat = (
     start: number,
     end: number,
-    position: Xy,
+    storedPosition: Xy,
     entities: EntityColumn
   ): void => {
-    if (this.smooth !== undefined) {
-      position = this.smooth.flatPosition.blend(start, end, position, entities);
-    }
+    const position =
+      this.smooth === undefined
+        ? storedPosition
+        : this.smooth.flatPosition.blend(start, end, storedPosition, entities);
 
     const { x, y } = position;
     const { objects, stamp } = this;
@@ -2270,12 +2312,13 @@ class Objects<O extends Object3D> implements Kept {
   readonly turnedFlat = (
     start: number,
     end: number,
-    rotation: Angle,
+    storedRotation: Angle,
     entities: EntityColumn
   ): void => {
-    if (this.smooth !== undefined) {
-      rotation = this.smooth.flatRotation.blend(start, end, rotation, entities);
-    }
+    const rotation =
+      this.smooth === undefined
+        ? storedRotation
+        : this.smooth.flatRotation.blend(start, end, storedRotation, entities);
 
     const { angle } = rotation;
     const { objects, stamp, turnedAt } = this;
@@ -2290,12 +2333,13 @@ class Objects<O extends Object3D> implements Kept {
   readonly sizedFlat = (
     start: number,
     end: number,
-    scale: Xy,
+    storedScale: Xy,
     entities: EntityColumn
   ): void => {
-    if (this.smooth !== undefined) {
-      scale = this.smooth.flatScale.blend(start, end, scale, entities);
-    }
+    const scale =
+      this.smooth === undefined
+        ? storedScale
+        : this.smooth.flatScale.blend(start, end, storedScale, entities);
 
     const { x, y } = scale;
     const { objects, sizedAt, stamp } = this;
@@ -2312,12 +2356,13 @@ class Objects<O extends Object3D> implements Kept {
   readonly turned = (
     start: number,
     end: number,
-    rotation: Xyzw,
+    storedRotation: Xyzw,
     entities: EntityColumn
   ): void => {
-    if (this.smooth !== undefined) {
-      rotation = this.smooth.rotation.blend(start, end, rotation, entities);
-    }
+    const rotation =
+      this.smooth === undefined
+        ? storedRotation
+        : this.smooth.rotation.blend(start, end, storedRotation, entities);
 
     const { x, y, z, w } = rotation;
     const { objects, stamp, turnedAt } = this;
@@ -2347,12 +2392,13 @@ class Objects<O extends Object3D> implements Kept {
   readonly sized = (
     start: number,
     end: number,
-    scale: Xyz,
+    storedScale: Xyz,
     entities: EntityColumn
   ): void => {
-    if (this.smooth !== undefined) {
-      scale = this.smooth.scale.blend(start, end, scale, entities);
-    }
+    const scale =
+      this.smooth === undefined
+        ? storedScale
+        : this.smooth.scale.blend(start, end, storedScale, entities);
 
     const { x, y, z } = scale;
     const { objects, sizedAt, stamp } = this;

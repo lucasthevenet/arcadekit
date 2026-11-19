@@ -1,5 +1,6 @@
 import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
 import type { Scope } from "effect";
+import { constVoid } from "effect/Function";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type { Save } from "../src/index";
@@ -343,7 +344,7 @@ describe("the input stage", () => {
       (yield* Score).points += 1;
     });
 
-    const attempts: Record<string, Effect.Effect<unknown, never, any>> = {
+    const attempts = {
       'assignment to "in/Ship.x"': Effect.map(Ships, (ships) =>
         ships.each((one) => {
           one.x = 99;
@@ -364,7 +365,7 @@ describe("the input stage", () => {
       "A draw from world.random": Effect.map(World, (world) =>
         world.random.next()
       ),
-    };
+    } satisfies Record<string, Effect.Effect<unknown, never, any>>;
 
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
@@ -399,7 +400,7 @@ describe("the input stage", () => {
     // Nor can it be reached around: the app says where it is.
     run(
       Effect.gen(function* () {
-        let reach: () => unknown = () => {};
+        let reach: () => void = constVoid;
 
         const Reach = System.make("Reach", function* () {
           reach();
@@ -435,14 +436,14 @@ describe("the input stage", () => {
         expect(made.world.singleton(Score).points).toBe(0);
         // And the input stage is not run from inside a tick.
         // The app the system is in, once it is made.
-        const outer: { app?: App.Any } = {};
+        let outer: App.Any | undefined;
 
         const Nested = System.make("Nested", function* () {
-          outer.app?.input();
+          outer?.input();
         });
 
         const nested = yield* App.make({ systems: [Nested, Reach] });
-        outer.app = nested;
+        outer = nested;
         expect(() => nested.tick(1)).toThrow(
           /App\.input was called from inside a tick/u
         );

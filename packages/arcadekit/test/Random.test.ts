@@ -210,7 +210,7 @@ describe("the random number generator", () => {
   it("pick() returns each item about as often as any other, and refuses an empty list", () => {
     const rng = new Rng(4);
     const items = ["a", "b", "c", "d"] as const;
-    const counts: Record<string, number> = { a: 0, b: 0, c: 0, d: 0 };
+    const counts = { a: 0, b: 0, c: 0, d: 0 } satisfies Record<string, number>;
 
     for (let i = 0; i < 40_000; i += 1) {
       counts[rng.pick(items)]! += 1;

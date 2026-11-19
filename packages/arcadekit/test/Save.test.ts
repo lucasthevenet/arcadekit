@@ -256,6 +256,22 @@ const record = (ticks: number, saveAt: number) =>
 const heard = (of: GameApp) =>
   of.world.get(of.world.view(Tallies).entities()[0]!, Tally)!.heard;
 
+// A save is the world as it is, and the log since: loading replays the
+// ticks after the save, however many came before it.
+const ticksToLoad = (ticks: number, saveAt: number): number => {
+  const recorded = record(ticks, saveAt);
+  ticksRun = 0;
+  withApp(App.load(recorded.save, options), (app) => {
+    App.replay(app, recorded.log.slice(recorded.save.logLength), {
+      delta: 1 / 60,
+      ticks: ticks - saveAt,
+    });
+    expect(app.world.hash()).toBe(recorded.hashes.at(-1));
+  });
+
+  return ticksRun;
+};
+
 describe("a saved game", () => {
   it("loads into a game that goes on exactly as the saved one did", () => {
     for (const saveAt of [0, 1, 7, 30, 59]) {
@@ -437,22 +453,6 @@ describe("a saved game", () => {
   });
 
   it("costs the same to load after a long game as after a short one", () => {
-    // A save is the world as it is, and the log since: loading replays the
-    // ticks after the save, however many came before it.
-    const ticksToLoad = (ticks: number, saveAt: number): number => {
-      const recorded = record(ticks, saveAt);
-      ticksRun = 0;
-      withApp(App.load(recorded.save, options), (app) => {
-        App.replay(app, recorded.log.slice(recorded.save.logLength), {
-          delta: 1 / 60,
-          ticks: ticks - saveAt,
-        });
-        expect(app.world.hash()).toBe(recorded.hashes.at(-1));
-      });
-
-      return ticksRun;
-    };
-
     expect(ticksToLoad(20, 10)).toBe(10);
     expect(ticksToLoad(1500, 1490)).toBe(10);
   });

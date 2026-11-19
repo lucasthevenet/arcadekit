@@ -46,12 +46,12 @@ const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
 
 describe("events", () => {
   it("reach every system exactly once, whichever side of the emitter it runs on", () => {
-    const seen: Record<string, number[][]> = { Before: [], After: [] };
+    const seen = { Before: Array.of<number[]>(), After: Array.of<number[]>() };
 
-    const reader = (name: string) =>
+    const reader = (name: keyof typeof seen) =>
       System.make(name, function* () {
         const ping = yield* Ping;
-        seen[name]!.push([...ping.read()]);
+        seen[name].push([...ping.read()]);
       });
 
     const Emitter = System.make("Emitter", function* () {
@@ -124,7 +124,8 @@ describe("events", () => {
     });
 
     withApp(App.make({ systems: [Sometimes] }), (app) => {
-      app.tick(1); // creates the reader
+      // Creates the reader.
+      app.tick(1);
       app.events.emit(Ping, 1);
       app.tick(1);
       app.events.emit(Ping, 2);
@@ -452,7 +453,8 @@ describe("actions", () => {
       app.dispatch(Attack, { attacker: one, target: two });
       app.tick(1);
       expect(app.world.isAlive(two)).toBe(true);
-      app.tick(1); // energy is back to 3
+      // Energy is back to 3.
+      app.tick(1);
       app.dispatch(Attack, { attacker: one, target: two });
       expect(app.world.get(two, Health)).toStrictEqual({ hp: -2 });
       app.tick(1);
@@ -542,9 +544,11 @@ describe("actions", () => {
 
     withApp(make, (app) => {
       app.dispatch(EndTurn, { player: 1 });
-      app.tick(1); // the bot sees it is its turn and queues EndTurn
+      // The bot sees it is its turn and queues EndTurn.
+      app.tick(1);
       expect(snapshot(app)).toContain("turn 2 player 2");
-      app.tick(1); // applied at the start of this tick
+      // Applied at the start of this tick.
+      app.tick(1);
       expect(snapshot(app)).toContain("turn 3 player 1");
       // The log holds the move that came from outside. The bot's own is the
       // simulation's doing: a replay's bot makes it again.

@@ -761,7 +761,7 @@ describe("a system that says what it reads and writes", () => {
 const guarded = (
   reads: readonly ComponentDef[],
   writes: readonly ComponentDef[]
-): { readonly world: EcsWorld; readonly guard: Guard; first: Entity } => {
+) => {
   const world = new EcsWorld();
 
   const first = world.spawn(

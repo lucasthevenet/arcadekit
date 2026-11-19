@@ -267,6 +267,6 @@ export const table = (lines: readonly Line[]): string => {
 
 /** The names of the variants that fail the check. */
 export const failures = (lines: readonly Line[]): string[] =>
-  lines
-    .filter((line) => line.verdict.outcome === "slower")
-    .map((line) => line.name);
+  lines.flatMap((line) =>
+    line.verdict.outcome === "slower" ? [line.name] : []
+  );

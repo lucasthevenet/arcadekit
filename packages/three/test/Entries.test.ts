@@ -72,9 +72,7 @@ const imported = (text: string): string[] => {
 };
 
 /** Every file an entry reaches, and every package it imports. */
-const reach = (
-  entry: string
-): { readonly files: string[]; readonly packages: string[] } => {
+const reach = (entry: string) => {
   const files = new Set<string>();
   const packages = new Set<string>();
 
@@ -114,26 +112,32 @@ const packageOf = (specifier: string): string =>
 
 describe("the entries of @arcadekit/three", () => {
   it("are the package itself and every module", () => {
-    const expected: Record<string, Target> = {
-      ".": {
-        source: "./src/index.ts",
-        types: "./dist/index.d.ts",
-        default: "./dist/index.js",
-      },
-    };
+    // The package itself, then a module for each file named as one is.
+    const modules = Object.keys(sources).flatMap((file) => {
+      const name = /^\.\.\/src\/(?<name>[A-Z]\w*)\.ts$/u.exec(file)?.groups
+        ?.name;
 
-    for (const file of Object.keys(sources)) {
-      const module = /^\.\.\/src\/(?<name>[A-Z]\w*)\.ts$/u.exec(file);
+      return name === undefined ? [] : [name];
+    });
 
-      if (module !== null) {
-        const name = module.groups!.name!;
-        expected[`./${name}`] = {
+    const expected = Object.fromEntries([
+      [
+        ".",
+        {
+          source: "./src/index.ts",
+          types: "./dist/index.d.ts",
+          default: "./dist/index.js",
+        },
+      ],
+      ...modules.map((name): [string, Target] => [
+        `./${name}`,
+        {
           source: `./src/${name}.ts`,
           types: `./dist/${name}.d.ts`,
           default: `./dist/${name}.js`,
-        };
-      }
-    }
+        },
+      ]),
+    ]);
 
     expect(manifest.exports).toStrictEqual(expected);
     expect(Object.keys(manifest.exports)).toStrictEqual([

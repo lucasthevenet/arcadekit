@@ -282,15 +282,19 @@ const program = Effect.gen(function* () {
   };
 
   console.log(`start -> ${standing(app)}`);
-  yield* strikeWith("Rogue", rogue, knight); // out of turn
+  // Out of turn.
+  yield* strikeWith("Rogue", rogue, knight);
   yield* strikeWith("Knight", knight, rogue);
   yield* strikeWith("Knight", knight, rogue);
-  yield* strikeWith("Knight", knight, rogue); // out of energy
+  // Out of energy.
+  yield* strikeWith("Knight", knight, rogue);
   passTurn(1);
   yield* strikeWith("Rogue", rogue, knight);
   passTurn(2);
-  yield* strikeWith("Knight", knight, rogue); // the Rogue falls
-  yield* strikeWith("Knight", knight, rogue); // nobody left to hit
+  // The Rogue falls.
+  yield* strikeWith("Knight", knight, rogue);
+  // Nobody left to hit.
+  yield* strikeWith("Knight", knight, rogue);
   console.log(`end -> ${standing(app)}; referee: ${referee.pollUnsafe()}`);
 
   // The log holds the moves that were accepted, and the world's hash after

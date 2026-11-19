@@ -112,7 +112,7 @@ interface Single {
    */
   written: boolean;
   /** What `World.singleton` returns: reads and writes go to `columns`. */
-  readonly value: any;
+  readonly value: ValueOf<Schema>;
 }
 
 type Columns = Record<string, Column>;
@@ -1071,17 +1071,18 @@ export interface Guard {
   readonly queries: Set<QuerySpec>;
 }
 
+/** The names of some components, as `describeSpec` writes them. */
+const nameList = (defs: readonly ComponentDef[] | undefined): string =>
+  (defs ?? []).map((def) => def.name).join(",");
+
 /** Describes a query as text: how a save identifies a change query. */
 const describeSpec = (spec: QuerySpec): string => {
-  const names = (defs: readonly ComponentDef[] | undefined): string =>
-    (defs ?? []).map((def) => def.name).join(",");
-
   // What it only reads, in the order of its terms, however it was said.
   const reads = spec.terms.filter(
     (def: ComponentDef) => spec.readDefs?.includes(def) === true
   );
 
-  return `all(${names(spec.terms)}) with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)}) reads(${names(reads)})`;
+  return `all(${nameList(spec.terms)}) with(${nameList(spec.withDefs)}) without(${nameList(spec.withoutDefs)}) changed(${nameList(spec.changedDefs)}) added(${nameList(spec.addedDefs)}) reads(${nameList(reads)})`;
 };
 
 // ---------------------------------------------------------------------------
@@ -1182,7 +1183,8 @@ const SORT_ROWS_PER_MEMBER = 64;
  */
 const NATIVE_SCAN_ROWS_PER_EXCEPTION = 64;
 
-const ROW_RANGE = 4_294_967_296; // 2^32: keys are `slot * ROW_RANGE + row`
+// 2^32: keys are `slot * ROW_RANGE + row`.
+const ROW_RANGE = 4_294_967_296;
 
 /** What `each` hands out, and the loop's position, for one level of iteration. */
 interface Loop {
@@ -2428,6 +2430,28 @@ const refuseSingle = (def: ComponentDef): void => {
 };
 
 /**
+ * A view of a world's cache, as the view of the spec it is held under. It was
+ * made of that spec, or of one that `describeSpec` describes the same.
+ */
+const viewOf = <D extends Terms>(
+  view: QueryView,
+  _spec: QuerySpec<D>
+): QueryView<D> =>
+  // SAFETY: a view is cached under the spec it was made of, or under the
+  // key that describes that spec's terms, so its terms are the spec's.
+  view as QueryView<D>;
+
+/** A singleton's value, as the value of the spec it was asked for with. */
+const valueOfSingle = <S extends Schema>(
+  single: Single,
+  _spec: SingletonSpec<S>
+): ValueOf<S> =>
+  // SAFETY: the world holds one singleton per component, made with a
+  // field for each of the component's fields, and the spec is of that
+  // component: its schema is the spec's.
+  single.value as ValueOf<S>;
+
+/**
  * The storage core: entities, the tables of their components, sparse sets,
  * singletons and change logs. Plain synchronous code with no Effect; an app
  * holds one and provides it to systems as the `World` service.
@@ -2464,7 +2488,7 @@ export class World {
   private readonly tableByKey = new Map<string, Table>();
   private readonly sparseById = new Map<number, SparseSet>();
   private readonly sparseList: SparseSet[] = [];
-  private readonly views = new Map<QuerySpec, QueryView<any>>();
+  private readonly views = new Map<QuerySpec, QueryView>();
   private readonly componentsByName = new Map<string, ComponentDef>();
   /** Indexed by component id: true once registered, so the common check is a single read. */
   private readonly registered: (true | undefined)[] = [];
@@ -2520,11 +2544,8 @@ export class World {
   _watched = 0;
   /** Logs started while a query was iterating, whose accessors record nothing. */
   private lateLogs: ChangeLog[] = [];
-  private readonly watchViews = new Map<
-    QuerySpec,
-    Map<string, QueryView<any>>
-  >();
-  private readonly watchViewsByKey = new Map<string, QueryView<any>>();
+  private readonly watchViews = new Map<QuerySpec, Map<string, QueryView>>();
+  private readonly watchViewsByKey = new Map<string, QueryView>();
   private readonly removedReaders = new Map<string, RemovedReader>();
   /** Indexed by component id: which entities point at which, once a relation is stored. */
   private readonly relations: (RelationIndex | undefined)[] = [];
@@ -3324,7 +3345,7 @@ export class World {
         }
       }
 
-      return found.value;
+      return valueOfSingle(found, spec);
     }
 
     if (!spec.component.single) {
@@ -3337,7 +3358,7 @@ export class World {
     single.initial = spec.initial;
     writeRow(spec.component, single.columns, 0, spec.initial);
 
-    return single.value;
+    return valueOfSingle(single, spec);
   }
 
   /** Returns a singleton's instance, creating it if needed with every field zero. */
@@ -3833,17 +3854,17 @@ export class World {
       this.guardQuery(this.guard, spec);
     }
 
-    let view = this.views.get(spec);
+    const made = this.views.get(spec);
 
-    if (view !== undefined) {
-      return view;
+    if (made !== undefined) {
+      return viewOf(made, spec);
     }
 
     const watching =
       (spec.changedDefs?.length ?? 0) + (spec.addedDefs?.length ?? 0) > 0;
 
     const who = reader ?? this.reader ?? "";
-    let byReader: Map<string, QueryView<any>> | undefined;
+    let byReader: Map<string, QueryView> | undefined;
 
     if (watching) {
       byReader = this.watchViews.get(spec);
@@ -3853,10 +3874,10 @@ export class World {
         this.watchViews.set(spec, byReader);
       }
 
-      view = byReader.get(who);
+      const read = byReader.get(who);
 
-      if (view !== undefined) {
-        return view;
+      if (read !== undefined) {
+        return viewOf(read, spec);
       }
     }
 
@@ -3873,17 +3894,21 @@ export class World {
     }
 
     if (byReader === undefined) {
-      view = new QueryView(this, spec);
+      const view = new QueryView(this, spec);
       this.views.set(spec, view);
 
       return view;
     }
 
     const key = `${who}\n${describeSpec(spec)}`;
-    view = this.watchViewsByKey.get(key);
+    const shared = this.watchViewsByKey.get(key);
 
-    if (view === undefined) {
-      view = new QueryView(this, spec, key);
+    const view =
+      shared === undefined
+        ? new QueryView(this, spec, key)
+        : viewOf(shared, spec);
+
+    if (shared === undefined) {
       this.watchViewsByKey.set(key, view);
     }
 

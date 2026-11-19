@@ -247,10 +247,15 @@ const none = (): void => {};
 describe("a relay that keeps its rooms itself", () => {
   it("sends what a peer sent to the others in its room", () => {
     const relay = Relay.make();
-    const got: Record<string, string[]> = { ada: [], grace: [], linus: [] };
 
-    const connect = (url: string, name: string) => {
-      const connection = relay.connect(url, (sent) => got[name]!.push(sent));
+    const got = {
+      ada: Array.of<string>(),
+      grace: Array.of<string>(),
+      linus: Array.of<string>(),
+    };
+
+    const connect = (url: string, name: keyof typeof got) => {
+      const connection = relay.connect(url, (sent) => got[name].push(sent));
 
       if (Exit.isFailure(connection)) {
         throw new Error("it was refused");
@@ -454,19 +459,19 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           one.send(message("ada", 1));
           two.send(message("grace", 0));
 
-          const heard: Record<string, Lockstep.Message[]> = {
-            ada: [],
-            grace: [],
-            linus: [],
+          const heard = {
+            ada: Array.of<Lockstep.Message>(),
+            grace: Array.of<Lockstep.Message>(),
+            linus: Array.of<Lockstep.Message>(),
           };
 
           yield* Effect.promise(() =>
             until(() => {
-              heard.ada!.push(...one.receive());
-              heard.grace!.push(...two.receive());
-              heard.linus!.push(...elsewhere.receive());
+              heard.ada.push(...one.receive());
+              heard.grace.push(...two.receive());
+              heard.linus.push(...elsewhere.receive());
 
-              return heard.grace!.length === 2 && heard.ada!.length === 1;
+              return heard.grace.length === 2 && heard.ada.length === 1;
             }, "the messages arrived")
           );
           expect(heard).toStrictEqual({

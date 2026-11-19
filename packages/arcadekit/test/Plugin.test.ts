@@ -144,7 +144,8 @@ describe("plugins", () => {
       const [ball] = app.world.view(Query.all(Position)).entities();
       app.world.add(ball!, Health.of({ hp: 3 }));
 
-      app.tick(1); // 9 -> 11, bounces off the wall at 10, loses 1 hp
+      // 9 -> 11, bounces off the wall at 10, loses 1 hp.
+      app.tick(1);
       expect(app.world.get(ball!, Position)!.x).toBe(10);
       expect(app.world.get(ball!, Health)).toStrictEqual({ hp: 2 });
 
@@ -276,8 +277,10 @@ describe("plugins", () => {
       layer: Layer.effect(
         Arena,
         Effect.gen(function* () {
-          const { width } = yield* Bounds; // from the Physics plugin
-          const commands = yield* Commands; // built in
+          // From the Physics plugin.
+          const { width } = yield* Bounds;
+          // Built in.
+          const commands = yield* Commands;
           const wall = commands.spawn(Position.of({ x: width, y: 0 }));
           commands.apply();
 

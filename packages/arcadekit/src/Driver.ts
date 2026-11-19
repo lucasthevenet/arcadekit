@@ -8,6 +8,7 @@
  *   yield* Driver.interval(app, { hz: 60 })          // on a timer
  */
 import { Context, Effect } from "effect";
+import { constVoid } from "effect/Function";
 
 /**
  * Anything with a `tick`, so drivers work with every kind of app.
@@ -209,7 +210,7 @@ const timerDisplay: Display = {
     return () => clearTimeout(id);
   },
   hidden: () => false,
-  onVisibilityChange: () => () => {},
+  onVisibilityChange: () => constVoid,
 };
 
 /**
@@ -366,7 +367,7 @@ export const frames: (
     // over: at the first frame, and after the tab was hidden.
     let last: number | undefined;
     let takeBack: (() => void) | undefined;
-    let unwatch = (): void => {};
+    let unwatch: () => void = constVoid;
     let stopped = false;
 
     const stop = (): void => {

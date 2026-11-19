@@ -2,6 +2,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { Effect, Exit, Layer, Scope } from "effect";
+import { constVoid } from "effect/Function";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -70,7 +71,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
 
   const root = document.createElement("div");
   document.body.append(root);
-  let unmount = (): void => {};
+  let unmount: () => void = constVoid;
 
   // The UI is there before the game is.
   await act(() => {
@@ -78,9 +79,9 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   });
 
   const before = {
-    buttons: [...root.querySelectorAll("button")]
-      .filter((button) => !button.hidden)
-      .map((button) => button.textContent),
+    buttons: [...root.querySelectorAll("button")].flatMap((button) =>
+      button.hidden ? [] : [button.textContent]
+    ),
     hud: root.querySelector(".hud")?.textContent,
   };
 
@@ -128,9 +129,9 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
       return count;
     },
     buttons: () =>
-      [...root.querySelectorAll("button")]
-        .filter((button) => !button.hidden)
-        .map((button) => button.textContent),
+      [...root.querySelectorAll("button")].flatMap((button) =>
+        button.hidden ? [] : [button.textContent]
+      ),
     hud: () => root.querySelector(".hud")?.textContent,
     click: async (label: string) => {
       const button = [...root.querySelectorAll("button")].find(

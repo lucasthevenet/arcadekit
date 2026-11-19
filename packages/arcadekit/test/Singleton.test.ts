@@ -67,7 +67,7 @@ const Body = Component.define("sg/Body", { x: Field.f32 });
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
-const problemOf = (attempt: () => unknown): SnapshotError => {
+const problemOf = (attempt: () => void): SnapshotError => {
   try {
     attempt();
   } catch (error) {

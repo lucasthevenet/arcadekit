@@ -200,7 +200,8 @@ describe("actions with a schema", () => {
         )
       ).toStrictEqual(new NoSuchTarget({ target: dead }));
 
-      expect(received).toHaveLength(1); // only the last one reached the handler
+      // Only the last one reached the handler.
+      expect(received).toHaveLength(1);
       expect(app.world.get(target, Health)).toStrictEqual({ hp: 50 });
       expect(moves(app.actionLog)).toStrictEqual([]);
     });

@@ -73,15 +73,16 @@ const base64 = (bytes: Uint8Array): string =>
 
 const text = (document: Doc): string => JSON.stringify(document);
 
+/** Bytes made up to a multiple of four with `fill`, as a chunk of a binary glTF is. */
+const pad = (bytes: Uint8Array, fill: number): Uint8Array => {
+  const out = new Uint8Array((bytes.length + 3) & ~3).fill(fill);
+  out.set(bytes);
+
+  return out;
+};
+
 /** A binary glTF of a document and what goes in its one chunk of data. */
 const glb = (document: Doc, binary?: Uint8Array): Uint8Array => {
-  const pad = (bytes: Uint8Array, fill: number): Uint8Array => {
-    const out = new Uint8Array((bytes.length + 3) & ~3).fill(fill);
-    out.set(bytes);
-
-    return out;
-  };
-
   const json = pad(new TextEncoder().encode(text(document)), 0x20);
   const chunks: (readonly [number, Uint8Array])[] = [[0x4e_4f_53_4a, json]];
 

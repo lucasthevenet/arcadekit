@@ -93,9 +93,7 @@ const resolve = (from: string, specifier: string): string => {
 };
 
 /** Every file an entry reaches, and every package it imports. */
-const reach = (
-  entry: string
-): { readonly files: string[]; readonly packages: string[] } => {
+const reach = (entry: string) => {
   const files = new Set<string>();
   const packages = new Set<string>();
 

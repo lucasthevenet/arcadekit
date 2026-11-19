@@ -92,9 +92,10 @@ const program = Effect.gen(function* () {
                 `rock.y=${app.world.get(rock, Position)!.y.toFixed(1)}`
             );
 
+            // After a second, the rock starts falling.
             if (second === 1) {
               app.world.remove(rock, Frozen);
-            } // the rock starts falling
+            }
           }
 
           console.log(

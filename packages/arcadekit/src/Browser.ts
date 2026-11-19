@@ -21,6 +21,7 @@
 import * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";
 import { Effect, Layer } from "effect";
 import type { Runtime } from "effect";
+import { constVoid } from "effect/Function";
 
 import * as Assets from "./Assets";
 import * as Driver from "./Driver";
@@ -658,7 +659,7 @@ export const layerSound = (
                 void audio?.resume?.();
 
                 for (const element of streaming) {
-                  element.play().catch(() => {});
+                  element.play().catch(constVoid);
                 }
               }
             });

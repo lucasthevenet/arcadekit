@@ -64,7 +64,7 @@ const Roll = System.make("Roll", function* () {
   });
 });
 
-const populated = (): { world: EcsWorld; ball: Entity } => {
+const populated = () => {
   const world = new EcsWorld({ seed: 1 });
   const ball = world.spawn(Ball.of({ x: 1, vx: 2 }), Glow.of({ level: 3 }));
   world.spawn(Ball.of({ x: 5, vx: 0 }));
@@ -97,7 +97,7 @@ describe("a frozen world", () => {
     // Changing.
     const bytes = new EcsWorld().snapshot();
 
-    const changes: [string, () => unknown][] = [
+    const changes: [string, () => void][] = [
       ["World.spawn()", () => world.spawn(Ball)],
       ["World.despawn()", () => world.despawn(ball)],
       ["World.add()", () => world.add(ball, Glow.of({ level: 1 }))],
@@ -496,7 +496,7 @@ describe("the frame stage", () => {
   it("cannot change the game: whatever would throws, and names what did", () => {
     const Pinged = Event.define("fr/Pinged", Schema.Struct({}));
 
-    const attempts: Record<string, Effect.Effect<unknown, never, any>> = {
+    const attempts = {
       'assignment to "fr/Ball.x"': Effect.map(Balls, (balls) =>
         balls.each((ball) => {
           ball.x = 99;
@@ -525,7 +525,7 @@ describe("the frame stage", () => {
         Script,
         (script) => script.nextTick
       ),
-    };
+    } satisfies Record<string, Effect.Effect<unknown, never, any>>;
 
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
@@ -681,14 +681,14 @@ describe("the frame stage", () => {
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.
         // The app the system is in, once it is made.
-        const own: { app?: App.Any } = {};
+        let own: App.Any | undefined;
 
         const Hasty = System.make("Hasty", function* () {
-          own.app?.dispatchByName("fr/Kick", { by: 1 });
+          own?.dispatchByName("fr/Kick", { by: 1 });
         }).pipe(System.inStage("frame"));
 
         const hasty = yield* make([Hasty]);
-        own.app = hasty;
+        own = hasty;
         expect(() => hasty.frame(0)).toThrow(
           /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/u
         );
@@ -699,8 +699,8 @@ describe("the frame stage", () => {
   it("refuses a tick, a frame or a save from inside a frame, and a frame from inside a tick", () => {
     run(
       Effect.gen(function* () {
-        let inFrame: (() => unknown) | undefined;
-        let inTick: (() => unknown) | undefined;
+        let inFrame: (() => void) | undefined;
+        let inTick: (() => void) | undefined;
         const drawn: number[] = [];
 
         const Reenter = System.make("Reenter", function* () {

@@ -1280,10 +1280,9 @@ describe("randomized comparison against a simple model", () => {
         }
 
         const expected = [...model]
-          .filter(
-            ([, values]) => values.has(required.id) && !values.has(excluded.id)
+          .flatMap(([entity, values]) =>
+            values.has(required.id) && !values.has(excluded.id) ? [entity] : []
           )
-          .map(([entity]) => entity)
           .toSorted();
 
         const view = world.view(query([required], [], [excluded]));
@@ -1302,13 +1301,13 @@ describe("randomized comparison against a simple model", () => {
     for (const path of ["mask", "sorted"] as const) {
       for (const sparse of [Stunned, Burning]) {
         const expected = [...model]
-          .filter(
-            ([, values]) =>
-              values.has(Position.id) &&
-              values.has(sparse.id) &&
-              !values.has(Enemy.id)
+          .flatMap(([entity, values]) =>
+            values.has(Position.id) &&
+            values.has(sparse.id) &&
+            !values.has(Enemy.id)
+              ? [entity]
+              : []
           )
-          .map(([entity]) => entity)
           .toSorted();
 
         const view = world.view(query([Position], [sparse], [Enemy]));
@@ -1333,13 +1332,13 @@ describe("randomized comparison against a simple model", () => {
       }
 
       const expected = [...model]
-        .filter(
-          ([, values]) =>
-            values.has(Health.id) &&
-            values.has(Burning.id) &&
-            !values.has(Stunned.id)
+        .flatMap(([entity, values]) =>
+          values.has(Health.id) &&
+          values.has(Burning.id) &&
+          !values.has(Stunned.id)
+            ? [entity]
+            : []
         )
-        .map(([entity]) => entity)
         .toSorted();
 
       const view = world.view(query([Health, Burning], [], [Stunned]));
@@ -1367,10 +1366,9 @@ describe("randomized comparison against a simple model", () => {
 
     // A sparse `without` must split raw chunks without losing or adding rows.
     const awake = [...model]
-      .filter(
-        ([, values]) => values.has(Position.id) && !values.has(Stunned.id)
+      .flatMap(([entity, values]) =>
+        values.has(Position.id) && !values.has(Stunned.id) ? [entity] : []
       )
-      .map(([entity]) => entity)
       .toSorted();
 
     const chunked: Entity[] = [];
