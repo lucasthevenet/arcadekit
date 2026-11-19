@@ -1730,6 +1730,31 @@ describe("bindings", () => {
   );
   const Game = Plugin.make("Game", { handlers, systems: [Controls] });
 
+  it("throw for a payload the action's schema refuses, which no other peer could hear of", () => {
+    const Step = Action.define("in/Step", Schema.Struct({ by: Schema.Int }));
+    const Walk = Input.bind(
+      "in/Walk",
+      Input.onMove(Input.pointerX, Step, (devices) => ({
+        by: devices.axes.get(Input.pointerX) ?? 0,
+      }))
+    );
+    const source = Input.makeManualSource();
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({
+          handlers: [Action.handler(Step, function* () {})],
+          systems: [Walk],
+        });
+        source.move(Input.pointerX, 2);
+        app.input();
+        source.move(Input.pointerX, 2.5);
+        expect(() => app.input()).toThrow(
+          'A system of the frame or input stage issued the action "in/Step" with a payload its schema does not take: Expected an integer'
+        );
+      }).pipe(withSource(source))
+    );
+  });
+
   it("issue the game's own actions when their moment comes, once each, in the order they were given", () => {
     const source = Input.makeManualSource();
     run(

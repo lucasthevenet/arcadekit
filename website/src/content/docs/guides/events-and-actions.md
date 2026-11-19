@@ -73,7 +73,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 List the handler in a plugin's `handlers`. The app then accepts the action in two ways:
 
 - **`app.dispatch(Strike, payload)`** applies it immediately and returns an `Exit`: the handler's result, or why it was refused. Use it for turn-based input.
-- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick, where a refusal becomes an `Action.Rejected` event. Use it for real-time input.
+- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick, where a refusal becomes an `Action.Rejected` event. Use it for real-time input. A payload the schema refuses is refused at once: `enqueue` returns an `Exit` that fails with `Action.InvalidPayload`, and nothing is queued or logged.
 
 Dispatching an action that has no handler, or with the wrong payload, is a compile error.
 

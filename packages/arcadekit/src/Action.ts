@@ -346,7 +346,8 @@ export const Rejected = Event.define<{
  *
  * A frame-stage or input-stage system is outside the simulation, and a replay
  * runs neither stage, so what it issues here is logged, as `app.enqueue` logs
- * it.
+ * it. A payload its schema does not take throws there, where `app.enqueue`
+ * returns the failure.
  *
  * @category Services
  */

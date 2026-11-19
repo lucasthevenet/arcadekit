@@ -91,7 +91,6 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 
 - **Check `from`, not the payload.** A handler receives the peer that issued an action. Check permissions against `from`, never against a name in the payload. See [who issued an action](events-and-actions.md#who-issued-an-action).
 - **Give every action a schema.** An action defined with only a type can't be sent to other peers, and enqueuing one throws.
-- **Only enqueue payloads the schema accepts.** A payload its schema rejects has no JSON form to send, so it is refused on the issuing peer only, as an `Action.Rejected` the other peers never see. A system that reads that event and writes what it read makes the peers drift apart.
 - **Keep everything the simulation reads in the world.** A rewind restores the world and the app's pending work, and nothing else. With rollback, do in a system what a script would do, or keep the script's progress in the world.
   - Each plugin's `scripts` restart from the beginning, and a script started by hand is stopped. A script that keeps its progress in its own variables runs its part twice on a peer that rewound but not on one that didn't, so the peers drift apart, and the report says at which tick but not why.
   - State held by your game's own services isn't restored, and nothing tells a service the game rewound: a counter kept in a layer continues from the discarded future.

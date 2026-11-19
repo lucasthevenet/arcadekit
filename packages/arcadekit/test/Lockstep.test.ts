@@ -1,7 +1,15 @@
 import { Data, Effect, Exit } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { App, Driver, Input, Lockstep, System, Time } from "../src/index";
+import {
+  Action,
+  App,
+  Driver,
+  Input,
+  Lockstep,
+  System,
+  Time,
+} from "../src/index";
 import {
   Coin,
   DELTA,
@@ -350,21 +358,28 @@ describe("a lockstep session", () => {
     });
   });
 
-  it("leaves a payload its schema refuses to the peer that issued it", () => {
+  it("refuses a payload its schema refuses where it is issued, so no peer hears of it", () => {
     withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
       const net = network(1, { min: 0, max: 0 });
       const [ada, grace] = peers as [Peer, Peer];
       refusals.length = 0;
       // The compiler takes 1.5 for a number; the schema wants a whole one.
-      ada.app.enqueue(Drop, { by: "ada", value: 1.5 });
+      // It has no JSON form to send, so it is refused here and now, and not
+      // when its turn comes on this machine alone.
+      expect(ada.app.enqueue(Drop, { by: "ada", value: 1.5 })).toEqual(
+        Exit.fail(
+          new Action.InvalidPayload({
+            action: "ls/Drop",
+            message: 'Expected an integer\n  at ["value"]',
+          })
+        )
+      );
       for (let i = 0; i < 5; i++) {
         round(peers, net);
       }
       catchUp(peers, net);
-      // It has no JSON form to send, so it is refused here when its turn
-      // comes, as in a game of one: one app heard of it, and it is in
-      // nobody's log.
-      expect(refusals).toEqual(["ls/Drop"]);
+      // Neither app heard of it, and it is in nobody's log.
+      expect(refusals).toEqual([]);
       expect(moves(ada.app.actionLog)).toEqual([]);
       expect(moves(grace.app.actionLog)).toEqual([]);
       expect(ada.app.world.hash()).toBe(grace.app.world.hash());

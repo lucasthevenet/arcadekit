@@ -181,7 +181,7 @@ describe("actions with a schema", () => {
     });
   });
 
-  it("report bad queued input as events", () => {
+  it("report bad queued input as events, and refuse a payload with no JSON form where it is enqueued", () => {
     const rejected: string[] = [];
     const Watch = System.make("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
@@ -201,17 +201,27 @@ describe("actions with a schema", () => {
       app.enqueueByName("Damage", { target, amount: 5, seed: "9" });
       app.enqueueByName("Damage", { target, amount: 500, seed: "9" });
       app.enqueueByName("Teleport", { x: 1 });
-      app.enqueue(Damage, { target, amount: 2, seed: 9n });
-      app.enqueue(Damage, { target, amount: -2, seed: 9n });
+      expect(app.enqueue(Damage, { target, amount: 2, seed: 9n })).toEqual(
+        Exit.void
+      );
+      // A payload its schema refuses has no JSON form to log or send: it is
+      // refused where it is enqueued, and nothing is queued.
+      expect(app.enqueue(Damage, { target, amount: -2, seed: 9n })).toEqual(
+        Exit.fail(
+          new Action.InvalidPayload({
+            action: "Damage",
+            message: 'Expected a value between 1 and 10\n  at ["amount"]',
+          })
+        )
+      );
       app.tick(1);
       expect(app.world.get(target, Health)).toEqual({ hp: 43 });
       expect(rejected).toEqual([
         "Damage: InvalidPayload",
         "Teleport: UnknownAction",
-        "Damage: InvalidPayload",
       ]);
       // What was enqueued is in the log as it arrived, with what became of
-      // it. The last one is not: its payload has no JSON form to log.
+      // it.
       expect(
         moves(app.actionLog).map((entry) => [
           entry.name,
