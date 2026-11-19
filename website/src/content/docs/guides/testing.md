@@ -11,7 +11,7 @@ The examples use [Vitest](https://vitest.dev), but any test runner works.
 
 An app is created inside a scope. A test creates it, steps it with `tick`, and inspects the world:
 
-```ts title="rules.test.ts"
+```ts title="Rules.test.ts"
 import { Action, App, Field, Plugin, Singleton } from "arcadekit";
 import { Effect, Schema } from "effect";
 import type { Scope } from "effect";
@@ -55,7 +55,7 @@ it("adds points", () =>
 
 By default, an app has no devices. A test provides a source it drives by hand:
 
-```ts title="rules.test.ts"
+```ts title="Rules.test.ts"
 import { Input } from "arcadekit";
 
 it("hears a key", () =>
@@ -79,7 +79,7 @@ To test what a game does with a key, you don't need a device. Dispatch the actio
 
 `Sound.makeRecorder()` is an output that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each is playing now in `playing`.
 
-```ts title="rules.test.ts"
+```ts title="Rules.test.ts"
 import { Sound } from "arcadekit";
 
 it("plays nothing when nothing happens", () =>
@@ -191,4 +191,4 @@ Play a game in a test, replay it into a fresh app with `App.replay`, and assert 
 
 ## Read more
 
-- arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`test/page.test.ts`](../../../../../packages/arcadekit/test/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.
+- arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`test/Page.test.ts`](../../../../../packages/arcadekit/test/Page.test.ts) mounts the example page's two UIs in a document and plays the game through them.

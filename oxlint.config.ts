@@ -101,13 +101,21 @@ export default defineConfig({
       },
     },
     {
-      // A package's source files are named in PascalCase, as its entries are
-      // imported: arcadekit/Query, @arcadekit/three/Gltf.
-      files: ["packages/*/src/**"],
+      // A package's files are named in PascalCase, as its entries are
+      // imported: arcadekit/Query, @arcadekit/three/Gltf. The files named by
+      // a tool keep the tool's names.
+      files: ["packages/**"],
       rules: {
         "unicorn/filename-case": [
           "error",
-          { case: "pascalCase", ignore: [String.raw`^index\.ts$`] },
+          {
+            case: "pascalCase",
+            ignore: [
+              String.raw`^index\.ts$`,
+              String.raw`\.config\.ts$`,
+              String.raw`^alchemy\.run\.ts$`,
+            ],
+          },
         ],
       },
     },

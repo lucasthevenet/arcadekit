@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { generates, play } from "./policy-game";
+import { generates, play } from "./PolicyGame";
 
 // Node's own, declared here, since the tests are compiled with no types
 // but their own.
@@ -17,7 +17,7 @@ const { execFileSync } = (await import(
 };
 
 /**
- * Plays the game of `policy-game.ts` in a process of its own and gives
+ * Plays the game of `PolicyGame.ts` in a process of its own and gives
  * what it printed: whether that process may make code from text, and how
  * the game went.
  */
@@ -33,7 +33,7 @@ const playIn = (
         "tsx",
         "--input-type=module",
         "--eval",
-        'const { generates, play } = await import("./test/policy-game.ts"); console.log(JSON.stringify({ generates: generates(), game: play() }));',
+        'const { generates, play } = await import("./test/PolicyGame.ts"); console.log(JSON.stringify({ generates: generates(), game: play() }));',
       ],
       { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8" }
     )

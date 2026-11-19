@@ -15,7 +15,7 @@ pnpm add arcadekit @arcadekit/three effect three
 
 Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`. `@arcadekit/three` has no components of its own and only reads these. The plugins that hold your rules import nothing from it, so a server or a replay installs neither it nor Three.js.
 
-```ts title="rules.ts"
+```ts title="Rules.ts"
 import { Commands, Component, Plugin, Transform3d } from "arcadekit";
 import { Effect } from "effect";
 
@@ -39,14 +39,14 @@ export const Rules = Plugin.make("game/Rules", {
 
 Only page code imports `@arcadekit/three`: the plugin that defines how each kind of entity looks, and the module that starts the game and provides a renderer.
 
-```ts title="main.ts"
+```ts title="Main.ts"
 import { Three } from "@arcadekit/three";
 import { App, Plugin } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect, Layer } from "effect";
 import { AmbientLight, IcosahedronGeometry, MeshStandardMaterial } from "three";
 
-import { Rock, Rules } from "./rules";
+import { Rock, Rules } from "./Rules";
 
 const canvas = document.querySelector("canvas")!;
 

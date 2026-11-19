@@ -73,7 +73,7 @@ export const OUTLINE: readonly (Group & {
       },
       {
         label: "A turn-based duel",
-        link: `${REPO_URL}/blob/${BRANCH}/packages/arcadekit/examples/duel.ts`,
+        link: `${REPO_URL}/blob/${BRANCH}/packages/arcadekit/examples/Duel.ts`,
       },
       {
         label: "Ten thousand objects in Three.js",

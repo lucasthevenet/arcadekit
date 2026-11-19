@@ -3,10 +3,10 @@ import { Effect, Exit, Layer, Scope } from "effect";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Game, Screen } from "../examples/page/game";
-import { Hud, Menu, Start } from "../examples/page/protocol";
-import { mount as mountDom } from "../examples/page/ui-dom";
-import { mount as mountReact } from "../examples/page/ui-react";
+import { Game, Screen } from "../examples/page/Game";
+import { Hud, Menu, Start } from "../examples/page/Protocol";
+import { mount as mountDom } from "../examples/page/UiDom";
+import { mount as mountReact } from "../examples/page/UiReact";
 import { App, Assets, Input, Sound, View } from "../src/index";
 
 // The example page's game, with its menu and its heads-up display built
@@ -14,7 +14,7 @@ import { App, Assets, Input, Sound, View } from "../src/index";
 // UI library. Here both are mounted in a document and played.
 
 // `import.meta.glob`, which gives a test the text of files, is declared in
-// entries.test.ts.
+// Entries.test.ts.
 declare global {
   // React asks for this before it lets a test wrap its work in `act`.
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -315,27 +315,27 @@ describe("the page's UI", () => {
   };
 
   it("holds no reference to the world: it imports the views and actions it may use, and the type of the bridge", () => {
-    expect(imported("ui-dom.ts")).toStrictEqual([
+    expect(imported("UiDom.ts")).toStrictEqual([
       "../../src/View",
-      "./protocol",
+      "./Protocol",
     ]);
-    expect(imported("ui-react.ts")).toStrictEqual([
+    expect(imported("UiReact.ts")).toStrictEqual([
       "../../src/View",
-      "./protocol",
+      "./Protocol",
       "react",
       "react",
       "react-dom/client",
     ]);
 
     // Of the bridge they import the type alone: they are handed the bridge.
-    for (const file of ["ui-dom.ts", "ui-react.ts"]) {
+    for (const file of ["UiDom.ts", "UiReact.ts"]) {
       expect(sources[`../examples/page/${file}`]).toContain(
         'import type * as View from "../../src/View";'
       );
     }
 
     // And what they share with the game is keys: no component, no system.
-    expect(imported("protocol.ts")).toStrictEqual([
+    expect(imported("Protocol.ts")).toStrictEqual([
       "../../src/Action",
       "../../src/View",
       "effect",

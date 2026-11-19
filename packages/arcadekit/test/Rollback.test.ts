@@ -29,8 +29,8 @@ import {
   untilStopped,
   withApp,
   withPeers,
-} from "./peers";
-import type { Network, Peer } from "./peers";
+} from "./Peers";
+import type { Network, Peer } from "./Peers";
 
 /**
  * Lets a game come to rest: rounds in which nobody issues anything, long

@@ -104,21 +104,21 @@ Give each plugin its own folder, and make the app in a file at the root:
 
 ```
 game/
-  main.ts           your game's own plugin, and App.run
+  Main.ts           your game's own plugin, and App.run
   physics/
     index.ts        the plugin, and what other plugins use from it
-    loops.ts        its raw loops: plain functions with no imports
+    Loops.ts        its raw loops: plain functions with no imports
   look/
     index.ts        rendering, which the rules never import
 ```
 
 - A plugin's `index.ts` exports `plugin`, and the components, queries, systems, events and actions other plugins build on. Other plugins import only that file, `import * as Physics from "../physics/index"`, and list `Physics.plugin` in their `plugins`.
-- A plugin's raw loops, the bodies of its `eachChunk` calls, go in their own `loops.ts`: plain functions of a range of rows, columns and numbers, with no imports and no closures, so they can be tested and run on their own. Such a loop doesn't read fields that hold objects, and uses sparse components only as filters, not as data. A plugin without such loops has no `loops.ts`.
+- A plugin's raw loops, the bodies of its `eachChunk` calls, go in their own `Loops.ts`: plain functions of a range of rows, columns and numbers, with no imports and no closures, so they can be tested and run on their own. Such a loop doesn't read fields that hold objects, and uses sparse components only as filters, not as data. A plugin without such loops has no `Loops.ts`.
 - Rendering, sound and UI are plugins of their own, which the rules never import, so a server or a replay runs the rules alone.
 
 The system itself stays in `index.ts`. It reads what the loop needs, such as the time, a resource or a singleton, and passes it in:
 
-```ts title="physics/loops.ts"
+```ts title="physics/Loops.ts"
 export const fall = (
   start: number,
   end: number,
@@ -135,7 +135,7 @@ export const fall = (
 ```ts title="physics/index.ts"
 import { Component, Field, Plugin, Query, System, Time } from "arcadekit";
 
-import { fall } from "./loops";
+import { fall } from "./Loops";
 
 export const Position = Component.define("physics/Position", { y: Field.f32 });
 export const Velocity = Component.define("physics/Velocity", { y: Field.f32 });
@@ -156,7 +156,7 @@ export const plugin = Plugin.make("physics/Physics", {
 });
 ```
 
-A loop that draws from `Random`, spawns or despawns through `Commands`, emits an event, or reads a `json` or `transient` field doesn't belong in `loops.ts`: it stays in its system.
+A loop that draws from `Random`, spawns or despawns through `Commands`, emits an event, or reads a `json` or `transient` field doesn't belong in `Loops.ts`: it stays in its system.
 
 [`examples/demo`](../../../../../packages/arcadekit/examples/demo) follows this layout.
 

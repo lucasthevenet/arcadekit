@@ -9,8 +9,8 @@ import {
   onPurpose,
   settled,
   table,
-} from "../bench/verdict";
-import type { Line } from "../bench/verdict";
+} from "../bench/Verdict";
+import type { Line } from "../bench/Verdict";
 import { Rng } from "../src/ecs/Random";
 
 /**

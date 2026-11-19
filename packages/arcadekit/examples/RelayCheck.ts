@@ -6,7 +6,7 @@
  *   pnpm --filter arcadekit relay:check ws://localhost:8787
  *
  * The address is the relay's own, to which a room and a peer are added:
- * the Node relay of `examples/relay.ts`, the Worker of
+ * the Node relay of `examples/Relay.ts`, the Worker of
  * `examples/relay-cloudflare` with `/rooms` after it, or one of your own.
  */
 import { NodeRuntime } from "@effect/platform-node";

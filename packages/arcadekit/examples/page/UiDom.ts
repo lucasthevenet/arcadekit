@@ -6,7 +6,7 @@
  * and acts by sending actions.
  */
 import type * as View from "../../src/View";
-import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
+import { Hud, Menu, Quit, Start, TogglePause } from "./Protocol";
 
 /** Puts the UI in `root`, and returns what takes it out again. */
 export const mount = (root: Element, ui: View.Bridge): (() => void) => {

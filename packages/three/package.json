@@ -50,7 +50,7 @@
     "build": "tsdown",
     "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
     "page": "vite examples/page",
-    "bench": "tsx --conditions=source bench/instances.ts"
+    "bench": "tsx --conditions=source bench/Instances.ts"
   },
   "devDependencies": {
     "@effect/platform-browser": "~4.1.4",

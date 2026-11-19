@@ -10,7 +10,7 @@
  * it is paused.
  *
  * The menu and the heads-up display are built twice, on the same bridge:
- * with the page's own DOM (ui-dom.ts), and with React (ui-react.ts), which
+ * with the page's own DOM (UiDom.ts), and with React (UiReact.ts), which
  * `?ui=react` shows.
  *
  *   pnpm --filter arcadekit page
@@ -22,7 +22,7 @@ import { Effect } from "effect";
 // In a game of your own these are "arcadekit/Browser" and "arcadekit".
 import * as Browser from "../../src/Browser";
 import { App, View } from "../../src/index";
-import { Game, Screen } from "./game";
+import { Game, Screen } from "./Game";
 
 // --- the UI ----------------------------------------------------------------------
 // The bridge is made here, handed to the UI, and provided to the game. The
@@ -32,8 +32,8 @@ const ui = View.makeBridge();
 
 const { mount } =
   new URLSearchParams(location.search).get("ui") === "react"
-    ? await import("./ui-react")
-    : await import("./ui-dom");
+    ? await import("./UiReact")
+    : await import("./UiDom");
 
 mount(document.querySelector("#ui")!, ui);
 

@@ -9,7 +9,7 @@ Build your game's menus and heads-up display with any UI library you like: the p
 
 Put the views and actions the UI and the game share in one module. It is the only part of the game the UI imports.
 
-```ts title="protocol.ts"
+```ts title="Protocol.ts"
 import { Action, View } from "arcadekit";
 import { Schema } from "effect";
 
@@ -25,10 +25,10 @@ Like an action, a view is a key and not part of the game. The game never reads a
 
 `View.publish` creates a frame-stage system. Each frame it computes the value, and publishes it only if it differs from what the UI has.
 
-```ts title="game.ts"
+```ts title="Game.ts"
 import { Field, Plugin, Singleton, View, Action } from "arcadekit";
 
-import { Hud, NewGame } from "./protocol";
+import { Hud, NewGame } from "./Protocol";
 
 const Score = Singleton.define(
   "game/Score",
@@ -70,7 +70,7 @@ A UI never holds the app. It receives a `View.Bridge`, and nothing else from the
 ```ts title="ui.ts"
 import type { View } from "arcadekit";
 
-import { Hud, NewGame } from "./protocol";
+import { Hud, NewGame } from "./Protocol";
 
 export const mount = (root: Element, ui: View.Bridge) => {
   const label = root.querySelector("output")!;
@@ -94,12 +94,12 @@ A bridge refuses two different views with the same name.
 
 ## Connecting them at the entry point
 
-```ts title="main.ts"
+```ts title="Main.ts"
 import { App, View } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect } from "effect";
 
-import { Game } from "./game";
+import { Game } from "./Game";
 import { mount } from "./ui";
 
 const ui = View.makeBridge();
@@ -133,7 +133,7 @@ const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
 
 `View.publish` accepts `System.runIf` like any system. A view that isn't published keeps its last value, which suits a costly view computed only now and then. A view that belongs to one part of the game, and shouldn't be visible elsewhere, returns to its initial value while its system doesn't run:
 
-```ts title="game.ts"
+```ts title="Game.ts"
 import { State, System } from "arcadekit";
 
 // Listed in a plugin's components, as Score is.
@@ -152,5 +152,5 @@ In a multiplayer game played with [rollback](lockstep-and-rollback.md), a tick c
 ## Read more
 
 - [`View`](/reference/arcadekit/View) in the API reference.
-- [`examples/page`](../../../../../packages/arcadekit/examples/page) builds its menu and HUD twice on one bridge, with the DOM (`ui-dom.ts`) and with React (`ui-react.ts`, shown with `?ui=react`). Neither imports anything from the game except `protocol.ts`.
+- [`examples/page`](../../../../../packages/arcadekit/examples/page) builds its menu and HUD twice on one bridge, with the DOM (`UiDom.ts`) and with React (`UiReact.ts`, shown with `?ui=react`). Neither imports anything from the game except `Protocol.ts`.
 - [Testing](testing.md#a-ui) a game through its bridge.

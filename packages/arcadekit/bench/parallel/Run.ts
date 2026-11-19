@@ -13,7 +13,7 @@
  * Each line is the best of three processes, the median pass of each. A
  * line is run on its own as
  *
- *   node --import tsx bench/parallel/run.ts <kernel> <entities> <workers> <wait|spin> [plain]
+ *   node --import tsx bench/parallel/Run.ts <kernel> <entities> <workers> <wait|spin> [plain]
  *
  * `wait` has the threads sleep until they are needed and `spin` has them
  * turn in place, which is what a page's main thread has to do in any case:
@@ -24,7 +24,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
-import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./kernels";
+import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./Kernels";
 
 const DT = 1 / 60;
 
@@ -62,7 +62,7 @@ const run = async (
   const pool = Array.from(
     { length: workers },
     (_, id) =>
-      new Worker(new URL("worker.ts", import.meta.url), {
+      new Worker(new URL("Worker.ts", import.meta.url), {
         execArgv: ["--import", "tsx"],
         workerData: { columns, control, id },
       })

@@ -483,7 +483,7 @@ export const retarget = (name: string): string =>
 //   into a dictionary by V8 and read five times slower.
 //
 // Measured against classes generated with `new Function`, which this
-// replaces, in `bench/accessors.ts`: 8.0 ns an entity against 6.7 with one
+// replaces, in `bench/Accessors.ts`: 8.0 ns an entity against 6.7 with one
 // callback in the program, 10.7 against 9.6 with seven, and 10.2 against
 // 17.7 in a program of ten components. A generated class kept its row in a
 // field of its own, and the loop that assigned it had by then met too many

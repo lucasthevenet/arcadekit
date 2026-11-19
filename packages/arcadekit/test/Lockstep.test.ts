@@ -21,8 +21,8 @@ import {
   Whisper,
   withApp,
   withPeers,
-} from "./peers";
-import type { Peer } from "./peers";
+} from "./Peers";
+import type { Peer } from "./Peers";
 
 describe("a lockstep session", () => {
   it("keeps two peers hash-equal at every tick, over a network that delays and reorders", () => {

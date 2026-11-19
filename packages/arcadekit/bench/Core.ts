@@ -6,12 +6,12 @@
  * the same 100,000 entities. Each reports the median time of a pass, after
  * warm-up.
  *
- * `bench/accessors.ts` reports these with the rest of the package's, and
- * `bench/compare.ts` runs them for two builds of the storage core, turn and
+ * `bench/Accessors.ts` reports these with the rest of the package's, and
+ * `bench/Compare.ts` runs them for two builds of the storage core, turn and
  * turn about, to say whether a change made any of them slower: that is the
  * check CI runs on a pull request. A variant is run on its own as
  *
- *   node --import tsx bench/core.ts <name>
+ *   node --import tsx bench/Core.ts <name>
  *
  * which prints the median milliseconds of a pass. Each run is a process of
  * its own: V8 optimises a call site for the functions it has seen there, so
@@ -918,7 +918,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 
   if (variant === undefined) {
     throw new Error(
-      `bench/core.ts is given the name of a variant, one of: ${Object.keys(variants).join(", ")}.`
+      `bench/Core.ts is given the name of a variant, one of: ${Object.keys(variants).join(", ")}.`
     );
   }
 
