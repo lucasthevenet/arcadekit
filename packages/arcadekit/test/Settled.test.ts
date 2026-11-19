@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -567,18 +567,11 @@ describe("a system that has more to do", () => {
     app.tick(1);
     app.tick(1);
     expect(app.world.singleton(Clock).left).toBe(4);
-    const save = app.save();
-    expect(save._tag).toBe("Success");
-
-    if (save._tag !== "Success") {
-      return;
-    }
+    const save = Option.getOrThrow(Exit.getSuccess(app.save()));
 
     // Loaded in the middle of the clock's run. What the system asked is
     // not in the save; the first tick asks it afresh.
-    const loaded = run(
-      App.load(save.value, { ...options, systems: [RunDown] })
-    );
+    const loaded = run(App.load(save, { ...options, systems: [RunDown] }));
 
     expect(loaded.settled).toBe(false);
     const advance = Driver.fixedStep(loaded, { hz: 10, ticks: "whenNeeded" });

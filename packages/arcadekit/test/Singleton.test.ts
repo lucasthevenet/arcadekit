@@ -1,5 +1,6 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
+import { constVoid } from "effect/Function";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -690,10 +691,14 @@ describe("a singleton in an app", () => {
           App.load(read.value, { handlers: [endTurn], systems: [Reward] })
         );
 
-        expect(
-          Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined
-        ).toMatchObject({
-          _tag: "LoadRefused",
+        const refusedError = Exit.match(refused, {
+          onFailure: Cause.squash,
+          onSuccess: constVoid,
+        });
+
+        expect(refusedError).toBeInstanceOf(Save.LoadRefused);
+
+        expect(refusedError).toMatchObject({
           problem: "unknown component",
           message: expect.stringMatching(
             /"sg\/Score".*List it in a plugin's `components`/u

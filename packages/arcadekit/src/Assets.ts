@@ -23,7 +23,7 @@
  *
  *   const Draw = System.make("Draw", function*() {
  *     const forest = yield* Forest               // the bundle's current status
- *     if (forest._tag === "Ready") draw(forest.assets.backdrop)
+ *     if (Predicate.isTagged(forest, "Ready")) draw(forest.assets.backdrop)
  *   }).pipe(System.inStage("frame"))
  *
  * Loading takes real time, so it isn't part of the simulation: nothing in a
@@ -274,19 +274,32 @@ export type Loaded<B extends Entries> = {
  *
  * @category Models
  */
-export type Status<A> =
+export type Status<A> = Data.TaggedEnum<{
   /** No one has requested it. */
-  | { readonly _tag: "Absent" }
-  | { readonly _tag: "Loading" }
-  | { readonly _tag: "Ready"; readonly assets: A }
+  Absent: Record<never, never>;
+  Loading: Record<never, never>;
+  Ready: { readonly assets: A };
   /**
    * It couldn't be loaded, which is logged once. Nothing that did load is kept,
    * and it is retried the next time it is requested afresh.
    */
-  | { readonly _tag: "Failed"; readonly error: AssetFailed };
+  Failed: { readonly error: AssetFailed };
+}>;
 
-const ABSENT: Status<never> = { _tag: "Absent" };
-const LOADING: Status<never> = { _tag: "Loading" };
+interface StatusOf extends Data.TaggedEnum.WithGenerics<1> {
+  readonly taggedEnum: Status<this["A"]>;
+}
+
+/**
+ * Makes a bundle's status, and tells statuses apart:
+ * `Assets.Status.$is("Ready")(status)`, or `Predicate.isTagged(status, "Ready")`.
+ *
+ * @category Constructors
+ */
+export const Status = Data.taggedEnum<StatusOf>();
+
+const ABSENT: Status<never> = Status.Absent();
+const LOADING: Status<never> = Status.Loading();
 
 /**
  * The bundles an app has loaded. `Assets.plugin` provides it, `Assets.during`
@@ -504,19 +517,18 @@ const storeLayer = Layer.effect(
         }
 
         if (Exit.isSuccess(exit)) {
-          entry.status = { _tag: "Ready", assets: exit.value };
+          entry.status = Status.Ready({ assets: exit.value });
 
           return;
         }
 
         const error = Cause.squash(exit.cause);
-        entry.status = {
-          _tag: "Failed",
+        entry.status = Status.Failed({
           error:
             error instanceof AssetFailed
               ? error
               : new AssetFailed({ url: "", message: describe(error) }),
-        };
+        });
         // What did load is no use without the rest: it is let go now, and
         // not when the bundle is.
         runFork(

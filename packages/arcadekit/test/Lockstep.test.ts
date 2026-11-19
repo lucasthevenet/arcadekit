@@ -768,14 +768,18 @@ describe("peers that have come apart", () => {
 
       // Grace, by hand: every message up to tick 5, and a hash for tick 2
       // that is not ada's.
+      const hashed = new Map([
+        [0, [{ tick: 0, hash: start }]],
+        [4, [{ tick: 2, hash: 12_345 }]],
+      ]);
+
       for (let tick = 0; tick <= 5; tick += 1) {
-        ada.session.receive({
-          from: "grace",
-          tick,
-          actions: [],
-          ...(tick === 0 ? { checkpoints: [{ tick: 0, hash: start }] } : {}),
-          ...(tick === 4 ? { checkpoints: [{ tick: 2, hash: 12_345 }] } : {}),
-        });
+        const message = { from: "grace", tick, actions: [] };
+        const checkpoints = hashed.get(tick);
+
+        ada.session.receive(
+          checkpoints === undefined ? message : { ...message, checkpoints }
+        );
       }
 
       expect(ada.session.tickExit()).toStrictEqual(Exit.succeed(true));

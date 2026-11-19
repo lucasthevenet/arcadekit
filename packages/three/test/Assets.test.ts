@@ -99,25 +99,25 @@ const makeRenderer = () => {
     drew: [] as string[],
     /** How many things, over all draws, were drawn with what had been let go. */
     stale: 0,
-    layer: undefined as unknown as Layer.Layer<Three.Renderer>,
   };
 
-  renderer.layer = Layer.succeed(Three.Renderer, {
-    render(scene) {
-      renderer.scene = scene;
-      renderer.drew = scene.children.map((child) => child.name);
+  // The same object, with the layer that draws into it.
+  return Object.assign(renderer, {
+    layer: Layer.succeed(Three.Renderer, {
+      render(scene) {
+        renderer.scene = scene;
+        renderer.drew = scene.children.map((child) => child.name);
 
-      for (const child of scene.children) {
-        const { bark } = child.userData;
+        for (const child of scene.children) {
+          const { bark } = child.userData;
 
-        if (bark !== undefined && !bark.open) {
-          renderer.stale += 1;
+          if (bark !== undefined && !bark.open) {
+            renderer.stale += 1;
+          }
         }
-      }
-    },
+      },
+    }),
   });
-
-  return renderer;
 };
 
 /** What the systems of these tests use, all of which the game provides. */
@@ -944,16 +944,20 @@ describe("a texture", () => {
     ] as const;
 
     const exits = await Promise.all(
-      cases.map(([made, set]) =>
-        load(
-          Three.texture("/skin.png", {
-            ...(made === undefined ? {} : { flipY: made }),
-            prepare: (texture) => {
-              texture.flipY = set;
-            },
-          })
-        )
-      )
+      cases.map(([made, set]) => {
+        const options = {
+          prepare: (texture: Texture) => {
+            texture.flipY = set;
+          },
+        };
+
+        return load(
+          Three.texture(
+            "/skin.png",
+            made === undefined ? options : { ...options, flipY: made }
+          )
+        );
+      })
     );
 
     for (const [index, [, set]] of cases.entries()) {

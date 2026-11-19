@@ -44,7 +44,7 @@
  * calls the player: playing during the tick throws. A replay and a server,
  * which run no frame stage, play nothing, and the game they run is the same.
  */
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Predicate } from "effect";
 import { constVoid } from "effect/Function";
 
 import * as Assets from "./Assets";
@@ -707,7 +707,7 @@ export function cues(
     if (from !== undefined) {
       const status = yield* from;
 
-      if (status._tag !== "Ready") {
+      if (!Predicate.isTagged(status, "Ready")) {
         // The lines hold the bundle's clips: let go, so that they can be.
         made.delete(player);
 

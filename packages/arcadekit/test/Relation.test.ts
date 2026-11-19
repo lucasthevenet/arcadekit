@@ -19,7 +19,7 @@ import {
   World,
   writeSnapshot,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { Entity } from "../src/index";
 
 const Body = Component.define("rl/Body", { x: Field.f32 });
 
@@ -55,14 +55,7 @@ const childOf = (world: EcsWorld, parent: Entity): Entity =>
   world.spawn(Body.of({ x: 0 }), ChildOf.of({ target: parent }));
 
 // Any of them: what a loop over the four of them reads is `target`.
-const all = [
-  ChildOf,
-  Targets,
-  Owes,
-  HeldBy,
-] as unknown as readonly ComponentDef<{
-  target: typeof Field.entity;
-}>[];
+const all = [ChildOf, Targets, Owes, HeldBy];
 
 /** Every relation of a world points at a live entity, and `sources` agrees. */
 const expectNoDangling = (world: EcsWorld): void => {

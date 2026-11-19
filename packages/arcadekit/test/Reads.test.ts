@@ -225,10 +225,10 @@ describe("a query that says what it only reads", () => {
     world.begin();
     world.view(Looking).eachChunk((start, end, pos, _, heat) => {
       for (let i = start; i < end; i += 1) {
-        (pos.y as unknown as Float32Array)[i] = 77;
+        Reflect.set(pos.y, i, 77);
       }
 
-      (heat.columns.degrees as unknown as Float32Array)[0] = 77;
+      Reflect.set(heat.columns.degrees, 0, 77);
     });
     world.rollback();
     expect(world.get(entities[0]!, Position)!.y).toBe(77);

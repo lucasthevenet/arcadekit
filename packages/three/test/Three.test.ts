@@ -67,21 +67,21 @@ const makeRenderer = () => {
     camera: undefined as Camera | undefined,
     /** How many instances each instanced mesh had when the scene was drawn. */
     counts: [] as number[],
-    layer: undefined as unknown as Layer.Layer<Three.Renderer>,
   };
 
-  renderer.layer = Layer.succeed(Three.Renderer, {
-    render(scene, camera) {
-      renderer.frames += 1;
-      renderer.scene = scene;
-      renderer.camera = camera;
-      renderer.counts = scene.children
-        .filter((child) => child instanceof InstancedMesh)
-        .map((mesh) => mesh.count);
-    },
+  // The same object, with the layer that draws into it.
+  return Object.assign(renderer, {
+    layer: Layer.succeed(Three.Renderer, {
+      render(scene, camera) {
+        renderer.frames += 1;
+        renderer.scene = scene;
+        renderer.camera = camera;
+        renderer.counts = scene.children
+          .filter((child) => child instanceof InstancedMesh)
+          .map((mesh) => mesh.count);
+      },
+    }),
   });
-
-  return renderer;
 };
 
 /** An app in a scope of its own, which the test closes when it likes. */
@@ -730,14 +730,18 @@ describe("Three.instances", () => {
         });
       });
 
-      const Crowd = Three.instances("th/Crowd", {
+      const crowd = {
         of: Rock,
         geometry,
         material,
         capacity: 16_384,
         smooth,
-        ...(colored ? { color: Paint } : {}),
-      });
+      };
+
+      const Crowd = Three.instances(
+        "th/Crowd",
+        colored ? { ...crowd, color: Paint } : crowd
+      );
 
       const renderer = makeRenderer();
 
@@ -2386,19 +2390,17 @@ describe("a colour per instance", () => {
 
     const made = (space: "srgb" | "srgb-linear" | undefined) => {
       const renderer = makeRenderer();
+      const painted = { of: Rock, geometry, material, color: Bytes };
 
       const { app } = start(
         App.make({
           plugins: [Three.plugin],
           components: [Rock, Bytes],
           systems: [
-            Three.instances("th/Painted", {
-              of: Rock,
-              geometry,
-              material,
-              color: Bytes,
-              ...(space === undefined ? {} : { colorSpace: space }),
-            }),
+            Three.instances(
+              "th/Painted",
+              space === undefined ? painted : { ...painted, colorSpace: space }
+            ),
           ],
         }),
         renderer

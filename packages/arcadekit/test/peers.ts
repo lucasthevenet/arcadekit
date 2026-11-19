@@ -289,13 +289,15 @@ export const withPeers = <A>(
                 ? names.toReversed()
                 : names,
             delta: DELTA,
-            ...(setup.delay === undefined ? {} : { delay: setup.delay }),
           };
+
+          const { delay } = setup;
+          const timed = delay === undefined ? options : { ...options, delay };
 
           const session =
             setup.ahead === undefined
-              ? (Lockstep.make(app, options) as Rollback.Session)
-              : Rollback.make(app, { ...options, ahead: setup.ahead });
+              ? (Lockstep.make(app, timed) as Rollback.Session)
+              : Rollback.make(app, { ...timed, ahead: setup.ahead });
 
           peers.push({ name, app, session, hashes: [], source });
         }
@@ -399,14 +401,17 @@ export const catchUp = (peers: readonly Peer[], net: Network): number => {
   throw new Error("the peers never caught up with each other");
 };
 
-export const coinsOf = (peer: Peer): Entity[] =>
+/** What a player sees of a peer: its name, and its game. */
+export type Played = Pick<Peer, "name" | "app">;
+
+export const coinsOf = (peer: Played): Entity[] =>
   peer.app.world.view(Coins).entities();
 
 /** Each peer's player does something at random, from what its own world holds. */
 export const players = (seed: number) => {
   const dice = new EcsWorld({ seed }).random;
 
-  return (peer: Peer): void => {
+  return (peer: Played): void => {
     const by = peer.name as "ada" | "grace";
     const roll = dice.int(1, 6);
 

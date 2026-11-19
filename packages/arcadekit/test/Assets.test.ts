@@ -10,6 +10,7 @@ import {
   Layer,
   Logger,
   Option,
+  Predicate,
   Schema,
   Scope,
 } from "effect";
@@ -143,7 +144,7 @@ const makeGame = () => {
     const forest = yield* Forest;
     const cave = yield* Cave;
     drawn.push(
-      `${(yield* Level).value}: forest ${forest._tag}${forest._tag === "Ready" ? ` (${forest.assets.layout.name}, ${forest.assets.backdrop.size} bytes)` : ""}, cave ${cave._tag}`
+      `${(yield* Level).value}: forest ${forest._tag}${Predicate.isTagged(forest, "Ready") ? ` (${forest.assets.layout.name}, ${forest.assets.backdrop.size} bytes)` : ""}, cave ${cave._tag}`
     );
   }).pipe(System.inStage("frame"));
 
@@ -573,7 +574,7 @@ describe("a level's assets", () => {
     const Peek = System.make("Peek", function* () {
       const forest = yield* Forest;
 
-      if (forest._tag === "Failed") {
+      if (Predicate.isTagged(forest, "Failed")) {
         errors.push(forest.error);
       }
     }).pipe(System.inStage("frame"));
@@ -897,7 +898,7 @@ describe("a level's assets", () => {
     const Begin = System.make("Begin", function* () {
       const forest = yield* Forest;
 
-      if (forest._tag === "Ready" && (yield* Built).level === "") {
+      if (Predicate.isTagged(forest, "Ready") && (yield* Built).level === "") {
         (yield* Action.Actions).enqueue(Build, forest.assets.layout);
       }
     }).pipe(System.inStage("input"));

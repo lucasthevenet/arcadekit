@@ -93,7 +93,7 @@ Sounds a page receives by name are available for the page's lifetime. A level's 
 ```ts
 import { Assets, Event, Sound } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
-import { Schema } from "effect";
+import { Predicate, Schema } from "effect";
 
 const Stepped = Event.define(
   "forest/Stepped",
@@ -116,7 +116,7 @@ const Air = Sound.music(
   "forest/Air",
   function* () {
     const forest = yield* Forest;
-    return forest._tag === "Ready"
+    return Predicate.isTagged(forest, "Ready")
       ? { track: forest.assets.wind, volume: 0.3 }
       : undefined;
   },

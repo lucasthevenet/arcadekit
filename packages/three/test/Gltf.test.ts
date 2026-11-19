@@ -459,10 +459,12 @@ describe("a model", () => {
         primitive: { material: 0 },
         document: {
           materials: [
-            {
-              pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
-              ...(uris.length > 1 ? { emissiveTexture: { index: 1 } } : {}),
-            },
+            uris.length > 1
+              ? {
+                  pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+                  emissiveTexture: { index: 1 },
+                }
+              : { pbrMetallicRoughness: { baseColorTexture: { index: 0 } } },
           ],
           textures: uris.map((_, source) => ({ source })),
           images: uris.map((uri) => ({ uri })),

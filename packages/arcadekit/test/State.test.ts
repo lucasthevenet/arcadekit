@@ -1,5 +1,6 @@
 import { Cause, Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Scope } from "effect";
+import { constVoid } from "effect/Function";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -940,10 +941,14 @@ describe("a state in a save", () => {
           App.load(save.value, { components: [Built, Ball], handlers: [next] })
         );
 
-        expect(
-          Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined
-        ).toMatchObject({
-          _tag: "LoadRefused",
+        const refusedError = Exit.match(refused, {
+          onFailure: Cause.squash,
+          onSuccess: constVoid,
+        });
+
+        expect(refusedError).toBeInstanceOf(Save.LoadRefused);
+
+        expect(refusedError).toMatchObject({
           problem: "unknown component",
           message: expect.stringContaining('"st/Level"'),
         });

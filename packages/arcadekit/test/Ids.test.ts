@@ -14,6 +14,9 @@ import {
 import type { Entity, QuerySpec, Terms } from "../src/ecs/index";
 import { EntityId, Migrate } from "../src/index";
 
+/** The entity a number is the id of. */
+const id = Schema.decodeSync(EntityId);
+
 const Body = Component.define("id/Body", { x: Field.f32 });
 const Owned = Component.define("id/Owned", { by: Field.entity, n: Field.u16 });
 
@@ -368,43 +371,29 @@ describe("a snapshot from before ids were widened", () => {
   // What that build said of the world it wrote, and of the three entities
   // it spawned next.
   const facts = {
-    two: 25_165_826,
-    four: 8_388_612,
-    owned: 4_194_309,
-    child: 6,
+    two: id(25_165_826),
+    four: id(8_388_612),
+    owned: id(4_194_309),
+    child: id(6),
     alive: 6,
     bodies: [
-      [0, 0],
-      [25_165_826, 25],
-      [8_388_612, 41],
-      [3, 3],
-      [4_194_309, 100],
+      [id(0), 0],
+      [id(25_165_826), 25],
+      [id(8_388_612), 41],
+      [id(3), 3],
+      [id(4_194_309), 100],
     ],
-    ownedBy: { by: 25_165_826, n: 7 },
-    childOf: { target: 8_388_612 },
-    sources: [6],
+    ownedBy: { by: id(25_165_826), n: 7 },
+    childOf: { target: id(8_388_612) },
+    sources: [id(6)],
     marks: [
-      [0, 25_165_826],
-      [8_388_612, 4_194_309],
+      [id(0), id(25_165_826)],
+      [id(8_388_612), id(4_194_309)],
     ],
-    count: { n: 3, last: 8_388_612 },
+    count: { n: 3, last: id(8_388_612) },
     random: [3_387_534_915, 427_231_553, 1_090_094_954, 2_995_374_812],
-    after: [4_194_305, 7, 8],
-  } as unknown as {
-    readonly two: Entity;
-    readonly four: Entity;
-    readonly owned: Entity;
-    readonly child: Entity;
-    readonly alive: number;
-    readonly bodies: readonly (readonly [Entity, number])[];
-    readonly ownedBy: { readonly by: Entity; readonly n: number };
-    readonly childOf: { readonly target: Entity };
-    readonly sources: readonly Entity[];
-    readonly marks: readonly (readonly [Entity, Entity])[];
-    readonly count: { readonly n: number; readonly last: Entity };
-    readonly random: readonly number[];
-    readonly after: readonly Entity[];
-  };
+    after: [id(4_194_305), id(7), id(8)],
+  } as const;
 
   it("is read as the world it was: every id the number it was, in a wider place", () => {
     expect(new DataView(old.buffer).getUint32(4, true)).toBe(2);

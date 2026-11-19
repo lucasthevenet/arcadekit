@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App, Driver, Lockstep, Rollback, Transport } from "../src/index";
 import { DELTA, Drop, game, moves, players, setGlitch, withApp } from "./peers";
-import type { Game, Peer } from "./peers";
+import type { Game } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
   from,
@@ -54,9 +54,6 @@ const seated = (
 
     return seats;
   });
-
-/** As the players of `peers.ts` see a peer. */
-const asPeer = (seat: Seat): Peer => seat as unknown as Peer;
 
 const run = (seed: number): number[] => {
   const hub = Transport.makeHub({ delay: { min: 0, max: 6 }, seed });
@@ -214,7 +211,7 @@ describe("a session joined to a transport", () => {
 
               for (const [index, seat] of seats.entries()) {
                 if (acting) {
-                  act(asPeer(seat));
+                  act(seat);
                 }
 
                 steps[index]!(DELTA);
@@ -562,7 +559,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           for (let i = 0; i < 60; i += 1) {
             for (const seat of seats) {
               if (i < 40) {
-                act(asPeer(seat));
+                act(seat);
               }
 
               seat.connected.tick();

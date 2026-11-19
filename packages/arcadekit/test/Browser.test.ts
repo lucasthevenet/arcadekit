@@ -1056,13 +1056,16 @@ describe("a page's sound", () => {
           start() {
             // A track's volume is led there; a cue's is set.
             if (source.loop || (gain?.levels.length ?? 0) > 0) {
-              looped = {
+              const playing = {
                 buffer: source.buffer,
                 into: gain?.into,
                 levels: gain?.levels ?? [],
                 stopped: undefined,
-                ...(source.loop ? {} : { once: true as const }),
               };
+
+              looped = source.loop
+                ? playing
+                : { ...playing, once: true as const };
               audio.loops.push(looped);
 
               return;
@@ -1172,24 +1175,30 @@ describe("a page's sound", () => {
     const logged: string[] = [];
     const scope = Effect.runSync(Scope.make());
 
+    const given = {
+      window: page,
+      audio: () => {
+        made += 1;
+
+        return audio;
+      },
+      decode,
+      media: (url: string) => {
+        const media = makeMedia(url, options.brokenMedia === true);
+        streamed.push(media);
+
+        return media;
+      },
+    };
+
+    const { volume } = options;
+
     const context = await Effect.runPromise(
       Layer.build(
-        Browser.layerSound(served, {
-          window: page,
-          audio: () => {
-            made += 1;
-
-            return audio;
-          },
-          decode,
-          media: (url) => {
-            const media = makeMedia(url, options.brokenMedia === true);
-            streamed.push(media);
-
-            return media;
-          },
-          ...(options.volume === undefined ? {} : { volume: options.volume }),
-        })
+        Browser.layerSound(
+          served,
+          volume === undefined ? given : { ...given, volume }
+        )
       ).pipe(
         Scope.provide(scope),
         Effect.provideService(Driver.Display, display),

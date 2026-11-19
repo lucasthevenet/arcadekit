@@ -11,7 +11,7 @@
  *   pnpm --filter arcadekit duel
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
+import { Context, Data, Effect, Exit, Layer, Match, Schema } from "effect";
 
 import {
   Action,
@@ -248,25 +248,16 @@ const program = Effect.gen(function* () {
       {
         // The failure type is exactly what can go wrong: the three errors the
         // handler raises, plus a payload the schema rejects.
-        onFailure: (error) => {
-          switch (error._tag) {
-            case "NotYourTurn": {
-              return `refused, it is player ${error.waitingFor}'s turn`;
-            }
-
-            case "TooTired": {
-              return `refused, needs ${error.cost} energy and has ${error.energy}`;
-            }
-
-            case "NoSuchFighter": {
-              return "refused, that fighter is not in the game";
-            }
-
-            case "InvalidPayload": {
-              return `refused, malformed move (${error.message})`;
-            }
-          }
-        },
+        onFailure: (error) =>
+          Match.valueTags(error, {
+            NotYourTurn: ({ waitingFor }) =>
+              `refused, it is player ${waitingFor}'s turn`,
+            TooTired: ({ cost, energy }) =>
+              `refused, needs ${cost} energy and has ${energy}`,
+            NoSuchFighter: () => "refused, that fighter is not in the game",
+            InvalidPayload: ({ message }) =>
+              `refused, malformed move (${message})`,
+          }),
         onSuccess: (hpLeft) => `hits, target is left with ${hpLeft} hp`,
       }
     );

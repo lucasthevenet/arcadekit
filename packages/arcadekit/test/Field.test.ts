@@ -50,17 +50,23 @@ const Card = Component.define("fld/Card", fields);
 const Badge = Component.define("fld/Badge", fields, { storage: "sparse" });
 const both = [Card, Badge] as ComponentDef[];
 
-const card = (n: number) => ({
-  data: [{ n }, ["list", n], n % 2 === 0 ? null : `text ${n}`][n % 3],
-  when: new Date(Date.UTC(2026, 0, 1 + n)),
-  tags: new Set([`t${n}`, "common"]),
-  profile: {
+/** A hero's profile; every other one has a title. */
+const profileOf = (n: number): Profile => {
+  const profile = {
     name: `hero ${n}`,
     level: 1 + (n % 99),
     joined: new Date(Date.UTC(2020, n % 12, 1)),
     gold: 10n ** 20n + BigInt(n),
-    ...(n % 2 === 0 ? { title: "the bold" } : {}),
-  },
+  };
+
+  return n % 2 === 0 ? { ...profile, title: "the bold" } : profile;
+};
+
+const card = (n: number) => ({
+  data: [{ n }, ["list", n], n % 2 === 0 ? null : `text ${n}`][n % 3],
+  when: new Date(Date.UTC(2026, 0, 1 + n)),
+  tags: new Set([`t${n}`, "common"]),
+  profile: profileOf(n),
   handle: { id: n },
   hp: n,
 });

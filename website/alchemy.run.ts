@@ -11,7 +11,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const stage = yield* Alchemy.Stage;
 
-    const site = yield* Cloudflare.Website.StaticSite("Docs", {
+    const options = {
       command: "pnpm run build",
       outdir: "dist",
       // The build reads markdown from all over the repository (src/lib/pages.ts), which a hash
@@ -22,8 +22,13 @@ export default Alchemy.Stack(
         htmlHandling: "drop-trailing-slash",
         notFoundHandling: "404-page",
       },
-      ...(stage === "prod" ? { domain: "arcadekit.dev" } : {}),
-    });
+    } as const;
+
+    // Only production is served at the domain.
+    const site = yield* Cloudflare.Website.StaticSite(
+      "Docs",
+      stage === "prod" ? { ...options, domain: "arcadekit.dev" } : options
+    );
 
     return { url: site.url };
   })

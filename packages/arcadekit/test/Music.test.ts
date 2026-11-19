@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Schema, Scope } from "effect";
+import { Cause, Effect, Exit, Predicate, Schema, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -1052,7 +1052,7 @@ describe("a level's music", () => {
     const Ambience = Sound.music("mu/Ambience", function* () {
       const forest = yield* Forest;
 
-      return forest._tag === "Ready"
+      return Predicate.isTagged(forest, "Ready")
         ? { track: forest.assets.wind, volume: 0.4 }
         : undefined;
     });

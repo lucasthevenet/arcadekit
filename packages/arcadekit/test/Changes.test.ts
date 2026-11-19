@@ -1,5 +1,6 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
+import { constVoid } from "effect/Function";
 import { describe, expect, it } from "vitest";
 
 import type { Terms } from "../src/ecs";
@@ -1650,10 +1651,14 @@ describe("change queries in an app", () => {
           })
         );
 
-        expect(
-          Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
-        ).toMatchObject({
-          _tag: "LoadRefused",
+        const exitError = Exit.match(exit, {
+          onFailure: Cause.squash,
+          onSuccess: constVoid,
+        });
+
+        expect(exitError).toBeInstanceOf(Save.LoadRefused);
+
+        expect(exitError).toMatchObject({
           problem: "corrupt",
           message: expect.stringContaining(
             'the changes it holds for "ch/Position" name an entity that cannot be'
@@ -1661,18 +1666,20 @@ describe("change queries in an app", () => {
         });
 
         // And bytes whose changes are not of the right shape do not decode.
-        const badChanges = Save.decode(
-          Save.encode({
-            ...save.value,
-            changes: [{ component: 1 }] as unknown as Save.Save["changes"],
-          })
-        );
+        const malformed = { ...save.value };
+        Reflect.set(malformed, "changes", [{ component: 1 }]);
+        const badChanges = Save.decode(Save.encode(malformed));
 
-        expect(
-          Exit.isFailure(badChanges)
-            ? Cause.squash(badChanges.cause)
-            : undefined
-        ).toMatchObject({ _tag: "LoadRefused", problem: "corrupt" });
+        const badChangesError = Exit.match(badChanges, {
+          onFailure: Cause.squash,
+          onSuccess: constVoid,
+        });
+
+        expect(badChangesError).toBeInstanceOf(Save.LoadRefused);
+
+        expect(badChangesError).toMatchObject({
+          problem: "corrupt",
+        });
       })
     );
   });

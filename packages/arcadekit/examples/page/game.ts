@@ -7,7 +7,7 @@
  * publishes the first and handles the second, and knows nothing of what
  * the UI is built with.
  */
-import { Context, Layer, Schema } from "effect";
+import { Context, Layer, Predicate, Schema } from "effect";
 
 // In a game of your own these are "arcadekit/Browser" and "arcadekit".
 import * as Browser from "../../src/Browser";
@@ -214,7 +214,7 @@ const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 const Begin = System.make("Begin", function* () {
   const level = yield* Level;
 
-  if (level._tag === "Ready" && (yield* Stars).count() === 0) {
+  if (Predicate.isTagged(level, "Ready") && (yield* Stars).count() === 0) {
     (yield* Action.Actions).enqueue(Scatter, level.assets.layout);
   }
 }).pipe(System.inStage("input"), System.runIf(State.is(Phase, "playing")));
@@ -246,7 +246,7 @@ const Draw = System.make("Draw", function* () {
 
   if (phase.is("title")) {
     canvas.fillText("Press Enter", WIDTH / 2, HEIGHT / 2);
-  } else if (level._tag === "Ready") {
+  } else if (Predicate.isTagged(level, "Ready")) {
     const picture = level.assets.star;
     // Each star is drawn where it is by now: `alpha` of a tick further on.
     const ahead = phase.is("paused") ? 0 : (yield* Frame).alpha * delta;
@@ -260,7 +260,7 @@ const Draw = System.make("Draw", function* () {
     canvas.fillRect(basket.x - BASKET.width / 2, BASKET.y, BASKET.width, 8);
   } else {
     canvas.fillText(
-      level._tag === "Failed" ? level.error.message : "Loading",
+      Predicate.isTagged(level, "Failed") ? level.error.message : "Loading",
       WIDTH / 2,
       HEIGHT / 2
     );

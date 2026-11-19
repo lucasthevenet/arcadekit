@@ -9,7 +9,7 @@
  * `Relay.join` and `Relay.forward` ask to be told.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare";
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Option } from "effect";
 import { HttpServerRequest } from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
@@ -34,7 +34,7 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
             .getAttachment(Relay.Member)
             .pipe(Effect.option);
 
-          if (member._tag === "Some") {
+          if (Option.isSome(member)) {
             members.push({ member: member.value, socket });
           }
         }
@@ -81,7 +81,7 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
             .getAttachment(Relay.Member)
             .pipe(Effect.option);
 
-          if (from._tag === "None") {
+          if (Option.isNone(from)) {
             return;
           }
 

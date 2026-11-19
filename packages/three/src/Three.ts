@@ -62,7 +62,7 @@ import type { World } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Predicate } from "effect";
 import {
   DynamicDrawUsage,
   InstancedBufferAttribute,
@@ -833,7 +833,7 @@ class FromAssets<B extends Entries, T extends Kept> implements Kept {
   private held(): Assets.Loaded<B> | undefined {
     const status = this.store.status(this.bundle);
 
-    return status._tag === "Ready" ? status.assets : undefined;
+    return Predicate.isTagged(status, "Ready") ? status.assets : undefined;
   }
 
   /** Returns what is built from the assets the app currently holds, if it holds them. */

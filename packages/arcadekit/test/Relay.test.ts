@@ -7,7 +7,7 @@ import { WebSocketServer } from "ws";
 
 import { Lockstep, Relay, Rollback, Transport } from "../src/index";
 import { DELTA, game, moves, players, purseOf } from "./peers";
-import type { Game, Peer } from "./peers";
+import type { Game } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
   from,
@@ -529,7 +529,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           for (let i = 0; i < 60; i += 1) {
             for (const seat of seats) {
               if (i < 40) {
-                act(seat as unknown as Peer);
+                act(seat);
               }
 
               seat.connected.tick();

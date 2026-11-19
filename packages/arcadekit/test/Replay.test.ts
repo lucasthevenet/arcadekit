@@ -91,16 +91,20 @@ interface Options {
   readonly faulty?: ReturnType<typeof fault>;
 }
 
-const game = (options: Options = {}) =>
-  App.make({
+const game = (options: Options = {}) => {
+  const made = {
     // A fault on tick -1 never happens: that is the game as it should be.
     systems: [Drift, options.faulty ?? fault(-1, "nudge")],
     handlers: [drop, take],
     seed: options.seed ?? 1,
-    ...(options.checkpointEvery === undefined
-      ? {}
-      : { checkpointEvery: options.checkpointEvery }),
-  });
+  };
+
+  const { checkpointEvery } = options;
+
+  return App.make(
+    checkpointEvery === undefined ? made : { ...made, checkpointEvery }
+  );
+};
 
 const withApp = <T, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
@@ -181,10 +185,11 @@ const replayInto = (
 
 const ticksOf = (checkpointEvery?: number) =>
   checkpoints(
-    record({
-      ticks: 130,
-      ...(checkpointEvery === undefined ? {} : { checkpointEvery }),
-    }).log
+    record(
+      checkpointEvery === undefined
+        ? { ticks: 130 }
+        : { ticks: 130, checkpointEvery }
+    ).log
   ).map((entry) => entry.tick);
 
 describe("checkpoints", () => {

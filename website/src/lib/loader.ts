@@ -27,14 +27,18 @@ const store = async (context: LoaderContext, page: LoadedPage, edit = true) => {
   // Astro's paths of an entry's file are relative to the site's folder.
   const filePath = path.relative(fileURLToPath(context.config.root), absolute);
 
+  const fields = {
+    title: page.title,
+    // The file is outside the site's folder, where Starlight's own edit link would point.
+    editUrl: edit ? `${REPO_URL}/edit/${BRANCH}/${page.file}` : false,
+  };
+
   const data = await context.parseData({
     id: page.slug,
-    data: {
-      title: page.title,
-      ...(page.description === "" ? {} : { description: page.description }),
-      // The file is outside the site's folder, where Starlight's own edit link would point.
-      editUrl: edit ? `${REPO_URL}/edit/${BRANCH}/${page.file}` : false,
-    },
+    data:
+      page.description === ""
+        ? fields
+        : { ...fields, description: page.description },
     filePath,
   });
 

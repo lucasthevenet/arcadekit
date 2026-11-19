@@ -33,8 +33,8 @@
  */
 import * as Assets from "arcadekit/Assets";
 import { Effect, Schema } from "effect";
-import { BufferGeometry, Material, Mesh } from "three";
-import type { Object3D, Texture } from "three";
+import { BufferGeometry, Material, Mesh, Texture } from "three";
+import type { Object3D } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
 
@@ -122,8 +122,8 @@ const documentOf = (bytes: Uint8Array): Document => {
   return parsed;
 };
 
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
+const describe = (cause: unknown): string =>
+  cause instanceof Error ? cause.message || cause.name : String(cause);
 
 /** Returns a model's document, and the binary chunk from the same file, if any. */
 const read = (
@@ -373,12 +373,6 @@ const pack = (
 
 // --- letting a model go --------------------------------------------------------------
 
-const isTexture = (value: unknown): value is Texture =>
-  typeof value === "object" &&
-  value !== null &&
-  "isTexture" in value &&
-  value.isTexture === true;
-
 /** Disposes of every geometry, material and texture a model's scenes hold, each once. */
 const dispose = (model: Model): void => {
   const geometries = new Set<BufferGeometry>();
@@ -404,7 +398,7 @@ const dispose = (model: Model): void => {
 
   for (const material of materials) {
     for (const value of Object.values(material)) {
-      if (isTexture(value)) {
+      if (value instanceof Texture) {
         textures.add(value);
       }
     }

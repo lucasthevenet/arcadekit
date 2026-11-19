@@ -334,13 +334,11 @@ const snapshot = (app: App.Any) => {
   };
 };
 
-const play = (seed: number | undefined, ticks: number) =>
-  withApp(
-    App.make({
-      systems: [Sparks],
-      handlers: [roll],
-      ...(seed === undefined ? {} : { seed }),
-    }),
+const play = (seed: number | undefined, ticks: number) => {
+  const options = { systems: [Sparks], handlers: [roll] };
+
+  return withApp(
+    App.make(seed === undefined ? options : { ...options, seed }),
     (app) => {
       app.world.spawn(Die.of({ face: 1, rolls: 0 }));
       app.spawnScript(Gambler);
@@ -356,6 +354,7 @@ const play = (seed: number | undefined, ticks: number) =>
       return snapshot(app);
     }
   );
+};
 
 // The script's rolls are in the log as actions, so the replay runs the
 // systems and the handler but not the script, and must still draw the

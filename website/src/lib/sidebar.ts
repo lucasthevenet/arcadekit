@@ -7,6 +7,7 @@
 // the end of Packages. A name in it that is no page fails the build, so the outline can't keep a
 // page that is gone.
 import type { StarlightUserConfig } from "@astrojs/starlight/types";
+import { Predicate } from "effect";
 import type { StarlightSidebarTopicsUserConfig } from "starlight-sidebar-topics";
 
 import type { SitePages } from "./pages.ts";
@@ -192,7 +193,7 @@ export const outlinedGroups = (
 
   const named = new Set(
     OUTLINE.flatMap((group) =>
-      group.items.filter((item) => typeof item === "string")
+      group.items.filter((item) => Predicate.isString(item))
     )
   );
 
@@ -231,7 +232,7 @@ export const outlinedGroups = (
 };
 
 const toItem = (item: string | Link | Group): SidebarItem => {
-  if (typeof item === "string") {
+  if (Predicate.isString(item)) {
     return item;
   }
 

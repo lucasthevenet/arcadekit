@@ -139,6 +139,11 @@ export interface FieldDef<T, C> {
 
 const fieldOfKind = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
 
+/** A relation's first field, its target: an entity, which is only read. */
+const relationTarget = () => ({
+  target: fieldOfKind<Entity, ReadonlyColumn<Entity>>("entity"),
+});
+
 /**
  * The field types a component is made of. Numbers go in typed arrays; any other
  * field type defines what snapshots and the hash do with it.
@@ -947,12 +952,8 @@ export const Component = {
   ): ComponentDef<RelationSchema<S>, St, N> =>
     define<RelationSchema<S>, St, N>(
       name,
-      // SAFETY: the target field and then the given ones, which is what
-      // RelationSchema says; TypeScript types a spread of a generic loosely.
-      {
-        target: Field.entity,
-        ...options.fields,
-      } as unknown as RelationSchema<S>,
+      // The target field, and then the given ones.
+      Object.assign(relationTarget(), options.fields),
       options.storage === undefined
         ? { relation: options.onTargetDespawn }
         : { storage: options.storage, relation: options.onTargetDespawn }

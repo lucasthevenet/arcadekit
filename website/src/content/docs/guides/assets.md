@@ -10,7 +10,7 @@ Images, sounds and data files load as a **scoped resource**: everything loaded i
 ```ts
 import { Assets, Plugin, State, System } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
-import { Schema } from "effect";
+import { Predicate, Schema } from "effect";
 
 const Layout = Schema.Struct({ walls: Schema.Array(Schema.Int) });
 const Level = State.define("game/Level", ["menu", "forest"]);
@@ -22,7 +22,7 @@ const Forest = Assets.bundle("game/Forest", {
 
 const Draw = System.make("game/Draw", function* () {
   const forest = yield* Forest; // the bundle's current status
-  if (forest._tag === "Ready") {
+  if (Predicate.isTagged(forest, "Ready")) {
     const picture: ImageBitmap = forest.assets.backdrop;
   }
 }).pipe(System.inStage("frame"));
@@ -53,7 +53,7 @@ When the rules need something from a file, such as where the walls are, it reach
 ```ts sketch
 const Begin = System.make("game/Begin", function* () {
   const forest = yield* Forest;
-  if (forest._tag === "Ready" && (yield* Walls).count() === 0) {
+  if (Predicate.isTagged(forest, "Ready") && (yield* Walls).count() === 0) {
     (yield* Action.Actions).enqueue(Build, forest.assets.layout);
   }
 }).pipe(System.inStage("input"));
