@@ -11,8 +11,8 @@
  *
  * No Effect dependency.
  */
-import { isBoxed } from "./component";
-import type { Column, FieldKind, RefCodec } from "./component";
+import { isBoxed } from "./Component";
+import type { Column, FieldKind, RefCodec } from "./Component";
 
 /**
  * Why a snapshot couldn't be taken or loaded.

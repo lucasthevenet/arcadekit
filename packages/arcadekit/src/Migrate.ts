@@ -18,12 +18,12 @@
  * that doesn't match its save says so. Singletons are migrated the same way, by
  * name, and are present in the save only if the game wrote them.
  */
-import type { Column, FieldKind } from "./ecs/component";
+import type { Column, FieldKind } from "./ecs/Component";
 import type {
   SnapshotComponent,
   SnapshotContents,
   SnapshotTable,
-} from "./ecs/snapshot";
+} from "./ecs/Snapshot";
 
 const componentOf = (
   world: SnapshotContents,

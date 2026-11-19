@@ -8,7 +8,7 @@
  */
 import { Schema } from "effect";
 
-import type { Entity } from "./ecs/component";
+import type { Entity } from "./ecs/Component";
 
 /**
  * An entity id: an integer from 0 up to, but not including, 2^53.

@@ -77,6 +77,12 @@ export default defineConfig({
     // are in range by construction, and an id's bits.
     "typescript/no-non-null-assertion": "off",
     "eslint/no-bitwise": "off",
+    // It takes Effect's data-first calls, Effect.map(effect, f), for an
+    // array's map with a thisArg.
+    "unicorn/no-array-method-this-argument": "off",
+    // A structural type of a DOM object, such as Browser's AudioLike, fits the
+    // real one only through a method's looser check of its parameters.
+    "typescript/method-signature-style": "off",
   },
   overrides: [
     {
@@ -93,9 +99,9 @@ export default defineConfig({
       },
     },
     {
-      // A module at the top of a package's src is one of its entries, named
-      // as it is imported: arcadekit/Query, @arcadekit/three/Gltf.
-      files: ["packages/*/src/*.ts"],
+      // A package's source files are named in PascalCase, as its entries are
+      // imported: arcadekit/Query, @arcadekit/three/Gltf.
+      files: ["packages/*/src/**"],
       rules: {
         "unicorn/filename-case": [
           "error",

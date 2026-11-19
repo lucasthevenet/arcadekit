@@ -105,7 +105,7 @@ if (args.length !== 1) {
 const baseRoot = path.resolve(process.env.INIT_CWD ?? process.cwd(), args[0]!);
 const base = path.join(baseRoot, "packages", "arcadekit");
 
-if (!existsSync(path.join(base, "src", "ecs", "world.ts"))) {
+if (!existsSync(path.join(base, "src", "ecs", "index.ts"))) {
   usage(`${baseRoot} is not a checkout of this repository.`);
 }
 

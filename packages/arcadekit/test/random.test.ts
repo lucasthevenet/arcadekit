@@ -2,8 +2,8 @@ import { Data, Effect, Exit, Random as EffectRandom, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { Rng } from "../src/ecs/random";
-import { World as EcsWorld } from "../src/ecs/world";
+import { Rng } from "../src/ecs/Random";
+import { World as EcsWorld } from "../src/ecs/World";
 import {
   Action,
   App,

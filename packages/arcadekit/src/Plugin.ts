@@ -31,7 +31,7 @@
 import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
-import type { Listed } from "./ecs/component";
+import type { Listed } from "./ecs/Component";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 

@@ -1,7 +1,7 @@
 /**
  * Component and field definitions.
  *
- * No Effect dependency: this file and world.ts are the storage core, and are
+ * No Effect dependency: this file and World.ts are the storage core, and are
  * plain synchronous TypeScript by design.
  */
 
@@ -307,7 +307,7 @@ export type RelationSchema<S extends Schema> = {
 } & S;
 
 /**
- * What an accessor that notices writes tells: `ChangeLog` in world.ts.
+ * What an accessor that notices writes tells: `ChangeLog` in World.ts.
  *
  * @internal
  */

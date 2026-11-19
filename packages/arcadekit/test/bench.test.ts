@@ -11,7 +11,7 @@ import {
   table,
 } from "../bench/verdict";
 import type { Line } from "../bench/verdict";
-import { Rng } from "../src/ecs/random";
+import { Rng } from "../src/ecs/Random";
 
 /**
  * Runs as a shared machine gives them: most within a few in a hundred of

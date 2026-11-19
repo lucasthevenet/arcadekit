@@ -19,8 +19,8 @@
 import { Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
 
-import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
-import type { QuerySpec, QueryView, RemovedReader, Terms } from "./ecs/world";
+import type { ComponentDef, ReadOnlyTerm } from "./ecs/Component";
+import type { QuerySpec, QueryView, RemovedReader, Terms } from "./ecs/World";
 import { World } from "./Services";
 
 /**

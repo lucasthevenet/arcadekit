@@ -45,7 +45,7 @@
 import { Context, Effect, Effectable, Schema } from "effect";
 
 import * as Action from "./Action";
-import type { World as EcsWorld } from "./ecs/world";
+import type { World as EcsWorld } from "./ecs/World";
 import * as Field from "./Field";
 import * as Plugin from "./Plugin";
 import { Time, World } from "./Services";

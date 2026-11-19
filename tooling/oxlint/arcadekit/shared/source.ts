@@ -16,7 +16,7 @@ export const sourceOf = (
     : { rules, file: match[2]! };
 };
 
-/** Where a relative specifier leads, from a file: "src/ecs/world.ts" and "../App" give "src/App". */
+/** Where a relative specifier leads, from a file: "src/ecs/World.ts" and "../App" give "src/App". */
 export const resolve = (file: string, specifier: string): string => {
   const parts = file.split("/").slice(0, -1);
 

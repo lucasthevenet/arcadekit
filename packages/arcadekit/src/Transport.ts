@@ -28,7 +28,7 @@
 import { Context, Data, Effect, Exit, Layer } from "effect";
 
 import type { Tickable } from "./Driver";
-import { Rng } from "./ecs/random";
+import { Rng } from "./ecs/Random";
 import * as Lockstep from "./Lockstep";
 
 /**
