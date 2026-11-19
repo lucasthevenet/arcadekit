@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Random as EffectRandom, Schema } from "effect";
+import { Data, Effect, Random as EffectRandom, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 

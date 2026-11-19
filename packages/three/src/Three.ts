@@ -68,8 +68,8 @@ import {
   InstancedMesh,
   PerspectiveCamera,
   SRGBColorSpace,
-  Scene as ThreeScene,
   Texture,
+  Scene as ThreeScene,
   WebGLRenderer,
 } from "three";
 import type {

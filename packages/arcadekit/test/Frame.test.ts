@@ -2,9 +2,9 @@ import {
   Cause,
   Data,
   Effect,
+  Random as EffectRandom,
   Exit,
   Logger,
-  Random as EffectRandom,
   Schema,
 } from "effect";
 import type { Scope } from "effect";

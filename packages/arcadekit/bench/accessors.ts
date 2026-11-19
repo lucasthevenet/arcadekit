@@ -21,7 +21,6 @@ import {
   Action,
   App,
   Driver,
-  EcsWorld as World,
   EntityId,
   Event,
   Field,
@@ -33,16 +32,17 @@ import {
   System,
   Time,
   View,
+  EcsWorld as World,
   World as WorldService,
 } from "../src/index";
 import type { Entity } from "../src/index";
 import {
+  Position,
+  Velocity,
   variants as coreVariants,
   measure,
   populate,
   sizes,
-  Position,
-  Velocity,
 } from "./core";
 import type { Variant } from "./core";
 

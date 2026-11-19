@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHANCE,
+  FLOOR,
   chance,
   failures,
-  FLOOR,
   judge,
   onPurpose,
   settled,

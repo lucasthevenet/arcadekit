@@ -3,17 +3,17 @@ import { describe, expect, it } from "vitest";
 
 import { Action, App, Save, System, Time } from "../src/index";
 import {
-  catchUp,
   DELTA,
+  Purse,
+  Stranger,
+  Tip,
+  catchUp,
   game,
   gameOptions,
   moves,
   network,
-  Purse,
   purseOf,
   round,
-  Stranger,
-  Tip,
   withApp,
   withPeers,
 } from "./peers";

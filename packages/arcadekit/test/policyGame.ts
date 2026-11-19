@@ -181,7 +181,7 @@ const options = {
 /** Whether this process may make code from text. */
 export const generates = (): boolean => {
   try {
-    // oxlint-disable-next-line no-new-func, no-implied-eval
+    // oxlint-disable-next-line no-implied-eval
     return new Function("return true")() === true;
   } catch {
     return false;

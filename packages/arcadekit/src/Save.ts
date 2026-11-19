@@ -23,7 +23,7 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/snapshot";
+import { SnapshotError, readSnapshot, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 import type { SavedChanges } from "./ecs/world";
 

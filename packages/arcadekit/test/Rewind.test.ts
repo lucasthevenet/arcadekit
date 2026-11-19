@@ -22,10 +22,10 @@ import {
   Coin,
   DELTA,
   Drop,
-  game,
-  moves,
   Take,
   Whisper,
+  game,
+  moves,
   withApp,
 } from "./peers";
 import type { Game } from "./peers";

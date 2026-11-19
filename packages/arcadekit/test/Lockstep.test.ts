@@ -3,22 +3,22 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { App, Driver, Input, Lockstep, System, Time } from "../src/index";
 import {
-  catchUp,
   Coin,
-  coinsOf,
   DELTA,
   Drop,
-  game,
   Mint,
+  Purse,
+  Whisper,
+  catchUp,
+  coinsOf,
+  game,
   moves,
   network,
   players,
-  Purse,
   refusals,
   round,
   setGlitch,
   untilStopped,
-  Whisper,
   withApp,
   withPeers,
 } from "./peers";

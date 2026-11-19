@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   Component,
-  entityGeneration,
-  entityIndex,
   Field,
-  readSnapshot,
   SnapshotError,
   World,
+  entityGeneration,
+  entityIndex,
+  readSnapshot,
   writeSnapshot,
 } from "../src/ecs/index";
 import type { Entity, QuerySpec, Terms } from "../src/ecs/index";

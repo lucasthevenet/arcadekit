@@ -10,8 +10,8 @@ import {
   Query,
   System,
   Time,
-  Transform3d,
   Transform2d,
+  Transform3d,
 } from "arcadekit";
 import type { Entity } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";

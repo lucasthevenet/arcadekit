@@ -16,9 +16,9 @@ import { fileURLToPath } from "node:url";
 import { defineMdastPlugin } from "satteri";
 import type {
   MdastContent,
+  MdastNode,
   MdastPluginDefinition,
   MdastVisitorContext,
-  MdastNode,
   PluginFactoryContext,
 } from "satteri";
 

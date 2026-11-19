@@ -12,8 +12,8 @@ import {
   Migrate,
   Plugin,
   Query,
-  readSnapshot,
   Save,
+  readSnapshot,
   writeSnapshot,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";

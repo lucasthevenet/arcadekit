@@ -12,11 +12,11 @@ import {
   EntityId,
   Field,
   Query,
-  readSnapshot,
   Save,
   SnapshotError,
   System,
   World,
+  readSnapshot,
   writeSnapshot,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";

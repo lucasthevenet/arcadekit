@@ -30,15 +30,15 @@
  * No Effect dependency.
  */
 import {
-  entityIndex,
   GENERATIONS,
-  growColumn,
   INDEX_MASK,
+  entityIndex,
+  frozenWrite,
+  growColumn,
   isBoxed,
   isComponentDef,
   makeAccessor,
   makeColumn,
-  frozenWrite,
   makeEntity,
   retarget,
 } from "./component";
@@ -65,12 +65,12 @@ import {
   KIND_CODES,
   MAGIC,
   Reader,
-  readColumn,
-  SnapshotError,
   STORAGES,
+  SnapshotError,
   WIDTH,
-  writeColumn,
   Writer,
+  readColumn,
+  writeColumn,
 } from "./snapshot";
 
 const NOT_PLACED = -1;
