@@ -46,8 +46,8 @@ describe("Transform3d", () => {
       const { delta } = yield* Time;
       (yield* Query.all(Position)).eachChunk((start, end, position) => {
         for (let i = start; i < end; i += 1) {
-          position.x[i] = position.x[i]! + 2 * delta;
-          position.z[i] = position.z[i]! - delta;
+          position.x[i]! += 2 * delta;
+          position.z[i]! -= delta;
         }
       });
     });

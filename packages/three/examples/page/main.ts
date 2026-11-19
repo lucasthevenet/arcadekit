@@ -152,7 +152,7 @@ const Wheel = System.make("Wheel", function* () {
       const y = position.y[i]!;
       position.x[i] = x * cos - y * sin;
       position.y[i] = x * sin + y * cos;
-      rotation.angle[i] = rotation.angle[i]! + delta * 1.5;
+      rotation.angle[i]! += delta * 1.5;
     }
   });
 });

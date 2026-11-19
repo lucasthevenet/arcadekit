@@ -314,7 +314,7 @@ export type RelationSchema<S extends Schema> = {
 export interface WriteLog {
   /** For each entity index, 1 when the entity is already recorded. */
   noted: Uint8Array;
-  note(index: number): void;
+  note: (index: number) => void;
 }
 
 /**
@@ -343,11 +343,11 @@ export interface Accessor {
    * accessor that records writes: the entity of each row (ids for a table,
    * indexes for a sparse set), and where a write is recorded.
    */
-  bind(
+  bind: (
     columns: Record<string, Column>,
     entities?: Uint32Array | Float64Array,
     log?: WriteLog
-  ): void;
+  ) => void;
 }
 
 /**

@@ -198,10 +198,10 @@ export interface RendererLike {
     readonly clientWidth?: number;
     readonly clientHeight?: number;
   };
-  setPixelRatio(ratio: number): void;
-  setSize(width: number, height: number, updateStyle?: boolean): void;
-  render(scene: ThreeScene, camera: Camera): void;
-  dispose(): void;
+  setPixelRatio: (ratio: number) => void;
+  setSize: (width: number, height: number, updateStyle?: boolean) => void;
+  render: (scene: ThreeScene, camera: Camera) => void;
+  dispose: () => void;
 }
 
 /**

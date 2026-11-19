@@ -220,9 +220,9 @@ interface ChannelState {
   /** Suspended `wait`s. Each returns true once it has resumed its fiber. */
   readonly waiters: Set<() => boolean>;
   /** Forgets the oldest `count` events. */
-  dropOldest(count: number): void;
+  dropOldest: (count: number) => void;
   /** Forgets every event from sequence number `end` on. */
-  truncate(end: number): void;
+  truncate: (end: number) => void;
 }
 
 /**

@@ -717,15 +717,15 @@ describe("Three.instances", () => {
         const { delta } = yield* Time;
         (yield* Moving).eachChunk((from, to, position, velocity) => {
           for (let i = from; i < to; i += 1) {
-            position.x[i] = position.x[i]! + velocity.x[i]! * delta;
-            position.y[i] = position.y[i]! + velocity.y[i]! * delta;
-            position.z[i] = position.z[i]! + velocity.z[i]! * delta;
+            position.x[i]! += velocity.x[i]! * delta;
+            position.y[i]! += velocity.y[i]! * delta;
+            position.z[i]! += velocity.z[i]! * delta;
           }
         });
         (yield* MovingFlat).eachChunk((from, to, position, velocity) => {
           for (let i = from; i < to; i += 1) {
-            position.x[i] = position.x[i]! + velocity.x[i]! * delta;
-            position.y[i] = position.y[i]! + velocity.y[i]! * delta;
+            position.x[i]! += velocity.x[i]! * delta;
+            position.y[i]! += velocity.y[i]! * delta;
           }
         });
       });

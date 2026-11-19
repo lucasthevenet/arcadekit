@@ -154,7 +154,7 @@ describe("the random number generator", () => {
       counts.set(roll, (counts.get(roll) ?? 0) + 1);
     }
 
-    expect([...counts.keys()].sort()).toStrictEqual([1, 2, 3, 4, 5, 6]);
+    expect([...counts.keys()].toSorted()).toStrictEqual([1, 2, 3, 4, 5, 6]);
 
     for (const count of counts.values()) {
       expect(count).toBeGreaterThan(9600);
@@ -223,7 +223,7 @@ describe("the random number generator", () => {
     const items = [1, 2, 3, 4, 5, 6, 7, 8];
     const returned = rng.shuffle(items);
     expect(returned).toBe(items);
-    expect([...items].sort()).toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect([...items].toSorted()).toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(items).not.toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
     const orders = new Map<string, number>();

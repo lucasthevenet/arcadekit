@@ -119,7 +119,7 @@ describe("a query that says what it only reads", () => {
     let sum = 0;
     world.view(Moving).eachChunk((start, end, pos, vel) => {
       for (let i = start; i < end; i += 1) {
-        pos.x[i] = pos.x[i]! + vel.x[i]!;
+        pos.x[i]! += vel.x[i]!;
         sum += vel.y[i]!;
 
         if (start < 0) {
@@ -371,7 +371,7 @@ const survey = Action.handler(Survey, function* ({ limit }) {
   (yield* Moving).eachChunk((start, end, pos, vel) => {
     for (let i = start; i < end; i += 1) {
       fastest = Math.max(fastest, vel.x[i]!);
-      pos.y[i] = pos.y[i]! + 1;
+      pos.y[i]! += 1;
     }
   });
 
@@ -391,7 +391,7 @@ describe("a query that says what it only reads, in an app", () => {
         const Move = System.make("Move", function* () {
           (yield* Moving).eachChunk((start, end, pos, vel) => {
             for (let i = start; i < end; i += 1) {
-              pos.x[i] = pos.x[i]! + vel.x[i]!;
+              pos.x[i]! += vel.x[i]!;
             }
           });
         });

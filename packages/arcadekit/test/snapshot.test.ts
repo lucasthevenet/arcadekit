@@ -558,7 +558,7 @@ describe("a snapshot that cannot be loaded", () => {
     for (let round = 0; round < 1500; round += 1) {
       const damaged = Uint8Array.from(bytes);
       const at = round < bytes.length ? round : dice.int(0, bytes.length - 1);
-      damaged[at] = damaged[at]! ^ (1 << dice.int(0, 7));
+      damaged[at]! ^= 1 << dice.int(0, 7);
 
       if (round % 5 === 0) {
         damaged[dice.int(0, bytes.length - 1)] = dice.int(0, 255);

@@ -428,8 +428,8 @@ export interface AudioLike {
  */
 export interface MediaLike {
   loop: boolean;
-  play(): Promise<unknown>;
-  pause(): void;
+  play: () => Promise<unknown>;
+  pause: () => void;
 }
 
 /** What a streamed clip holds: only its URL. */

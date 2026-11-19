@@ -938,13 +938,13 @@ describe("a page's sound", () => {
     interface Gain {
       readonly gain: {
         value: number;
-        setValueAtTime(value: number, time: number): void;
-        linearRampToValueAtTime(value: number, time: number): void;
-        cancelScheduledValues(time: number): void;
+        setValueAtTime: (value: number, time: number) => void;
+        linearRampToValueAtTime: (value: number, time: number) => void;
+        cancelScheduledValues: (time: number) => void;
       };
       readonly levels: (readonly [string, ...number[]])[];
       into: unknown;
-      connect(to: unknown): unknown;
+      connect: (to: unknown) => unknown;
     }
 
     const audio = {

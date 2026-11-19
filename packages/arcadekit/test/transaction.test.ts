@@ -142,7 +142,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
     world.view(Bodies).eachChunk((start, end, body) => {
       for (let i = start; i < end; i += 1) {
         body.x[i] = 5;
-        body.y[i] = body.y[i]! + 5;
+        body.y[i]! += 5;
       }
     });
     world.view(Sheets).eachChunk((start, end, row) => {
@@ -524,7 +524,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
       case "chunk": {
         (yield* Sheets).eachChunk((start, end, row) => {
           for (let i = start; i < end; i += 1) {
-            row.signed[i] = row.signed[i]! - 1;
+            row.signed[i]! -= 1;
             row.note[i] = `seen ${row.signed[i]}`;
           }
         });

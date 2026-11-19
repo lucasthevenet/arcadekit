@@ -483,7 +483,9 @@ export class RelationIndex {
       out.push(at);
     }
 
-    return out.sort((a, b) => a - b);
+    out.sort((a, b) => a - b);
+
+    return out;
   }
 }
 
@@ -2888,7 +2890,7 @@ export class World {
     let to = from.addEdges.get(def.id);
 
     if (to === undefined) {
-      to = this.tableFor([...from.defs, def].sort((a, b) => a.id - b.id));
+      to = this.tableFor([...from.defs, def].toSorted((a, b) => a.id - b.id));
       from.addEdges.set(def.id, to);
     }
 

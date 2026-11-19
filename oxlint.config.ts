@@ -73,6 +73,10 @@ export default defineConfig({
     // A system or a handler is a generator even when it needs no service,
     // so it may have no `yield`.
     "eslint/require-yield": "off",
+    // What the storage core is written with on purpose: indexed reads that
+    // are in range by construction, and an id's bits.
+    "typescript/no-non-null-assertion": "off",
+    "eslint/no-bitwise": "off",
   },
   overrides: [
     {
@@ -81,6 +85,11 @@ export default defineConfig({
         ...tests?.rules,
         // Vitest's expect takes a message as its second argument.
         "vitest/valid-expect": ["error", { maxArgs: 2 }],
+        // A test says what a value is, not only that it is truthy, and checks
+        // as much as it needs to.
+        "vitest/prefer-to-be-truthy": "off",
+        "vitest/prefer-to-be-falsy": "off",
+        "vitest/max-expects": "off",
       },
     },
     {

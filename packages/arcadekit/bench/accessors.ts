@@ -409,7 +409,7 @@ const rewinding = (back: boolean): number =>
         const Movement = System.make("Movement", function* () {
           (yield* Moving).eachChunk((start, end, pos, vel) => {
             for (let n = start; n < end; n += 1) {
-              pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
+              pos.x[n]! += vel.x[n]! * DT;
             }
           });
         });
