@@ -909,6 +909,7 @@ describe("a script that fails", () => {
     console.error = (...args: unknown[]) => {
       seen.push(args);
     };
+
     console.log = (...args: unknown[]) => {
       seen.push(args);
     };

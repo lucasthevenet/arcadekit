@@ -64,7 +64,7 @@ import {
 } from "./verdict";
 import type { Line } from "./verdict";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 const head = path.resolve(here, "..");
 
 const usage = (problem: string): never => {

@@ -633,9 +633,7 @@ describe("a save that cannot be loaded", () => {
   it("is refused when its world is damaged", () => {
     const { save } = record(10, 5);
 
-    const error = refusal(
-      load({ ...save, world: save.world.subarray(0, save.world.length - 9) })
-    );
+    const error = refusal(load({ ...save, world: save.world.subarray(0, -9) }));
 
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(["truncated", "corrupt"]).toContain(error.problem);
@@ -685,7 +683,7 @@ describe("a save that cannot be loaded", () => {
     expect(problem(notText)).toBe("corrupt");
     // Cut inside the world: the save's own shape is whole, and the world
     // is found short when it is loaded.
-    const short = unwrap(Save.decode(bytes.subarray(0, bytes.length - 5)));
+    const short = unwrap(Save.decode(bytes.subarray(0, -5)));
     expect(refusal(load(short))).toBeInstanceOf(Save.LoadRefused);
   });
 

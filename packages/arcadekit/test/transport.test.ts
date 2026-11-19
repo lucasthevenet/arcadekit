@@ -495,7 +495,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             const transport = Context.get(context, Transport.Transport);
             expect(made).toHaveLength(1);
             expect(made[0]!.name).toBe("game/room");
-            expect(typeof made[0]!.onmessage).toBe("function");
+            expect(made[0]!.onmessage).toBeTypeOf("function");
             expect(made[0]!.closed).toBe(false);
             transport.send(message("ada", 0));
             expect(made[0]!.posted).toStrictEqual([

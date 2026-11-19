@@ -140,7 +140,7 @@ const listen = (
   const state = Input.makeManualSource();
   const page: EventTarget = options.window ?? globalThis;
   const target: PointerTarget = options.target ?? page;
-  const prevented = new Set(options.preventDefault ?? []);
+  const prevented = new Set(options.preventDefault);
   const deadzone = options.deadzone ?? 0.1;
 
   const gamepads =

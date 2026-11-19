@@ -246,13 +246,7 @@ const Draw = System.make("Draw", function* () {
 
   if (phase.is("title")) {
     canvas.fillText("Press Enter", WIDTH / 2, HEIGHT / 2);
-  } else if (level._tag !== "Ready") {
-    canvas.fillText(
-      level._tag === "Failed" ? level.error.message : "Loading",
-      WIDTH / 2,
-      HEIGHT / 2
-    );
-  } else {
+  } else if (level._tag === "Ready") {
     const picture = level.assets.star;
     // Each star is drawn where it is by now: `alpha` of a tick further on.
     const ahead = phase.is("paused") ? 0 : (yield* Frame).alpha * delta;
@@ -264,6 +258,12 @@ const Draw = System.make("Draw", function* () {
     });
     canvas.fillStyle = phase.is("paused") ? "#5c6370" : "#78dce8";
     canvas.fillRect(basket.x - BASKET.width / 2, BASKET.y, BASKET.width, 8);
+  } else {
+    canvas.fillText(
+      level._tag === "Failed" ? level.error.message : "Loading",
+      WIDTH / 2,
+      HEIGHT / 2
+    );
   }
 }).pipe(System.inStage("frame"));
 

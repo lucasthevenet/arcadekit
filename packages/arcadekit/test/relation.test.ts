@@ -479,8 +479,8 @@ describe("relations and a snapshot", () => {
 
     try {
       new EcsWorld().load(writeSnapshot(contents), listed);
-    } catch (thrown) {
-      error = thrown;
+    } catch (error_) {
+      error = error_;
     }
 
     expect(error).toBeInstanceOf(SnapshotError);

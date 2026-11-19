@@ -412,8 +412,8 @@ describe("a singleton in a snapshot", () => {
 
     expect(new DataView(second.buffer).getUint32(4, true)).toBe(2);
     const old = new Uint8Array(second.length - 4);
-    old.set(second.subarray(0, second.length - 8));
-    old.set(second.subarray(second.length - 4), second.length - 8);
+    old.set(second.subarray(0, -8));
+    old.set(second.subarray(-4), second.length - 8);
     new DataView(old.buffer).setUint32(4, 1, true);
     const copy = new EcsWorld();
     copy.load(old, [Body]);

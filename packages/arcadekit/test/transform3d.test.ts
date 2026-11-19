@@ -21,7 +21,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 
 const Rock = Component.tag("tf/Rock");
 
-describe("Transform3d", () => {
+describe("the components of Transform3d", () => {
   it("is three components of the game, of 32-bit floats, each known by its name", () => {
     expect(Position.name).toBe("arcadekit/Transform3d.Position");
     expect(Rotation.name).toBe("arcadekit/Transform3d.Rotation");

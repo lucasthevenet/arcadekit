@@ -523,6 +523,7 @@ describe("a save from another version of the game", () => {
   it("is left as it is when it is of this version already", () => {
     const { save } = savedByVersion0();
     let ran = 0;
+
     const counting: Save.Migration[] = [
       {
         from: 0,
@@ -531,6 +532,7 @@ describe("a save from another version of the game", () => {
         },
       },
     ];
+
     expect(unwrap(Save.migrate(save, 0, counting))).toBe(save);
     expect(ran).toBe(0);
     // A migration that changes nothing gives the same game, a version on.

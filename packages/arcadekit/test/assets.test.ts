@@ -297,7 +297,7 @@ describe("an asset", () => {
       ) as Assets.AssetFailed;
     };
 
-    expect(await tryLoad('{"walls":2,"name":"Ok"}')).toStrictEqual(
+    await expect(tryLoad('{"walls":2,"name":"Ok"}')).resolves.toStrictEqual(
       Exit.succeed({ layout: { walls: 2, name: "Ok" } })
     );
     const notJson = await failure("<html>");
@@ -364,7 +364,7 @@ describe("an asset", () => {
         Assets.load(Assets.bundle("as/Fetched", { file: Assets.text(url) }))
       );
 
-    expect(await Effect.runPromise(one("/notes.txt"))).toStrictEqual({
+    await expect(Effect.runPromise(one("/notes.txt"))).resolves.toStrictEqual({
       file: "fetched",
     });
     const gone = await Effect.runPromise(Effect.exit(one("/gone.txt")));

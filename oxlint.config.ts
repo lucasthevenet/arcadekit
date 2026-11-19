@@ -77,6 +77,8 @@ export default defineConfig({
     // are in range by construction, and an id's bits.
     "typescript/no-non-null-assertion": "off",
     "eslint/no-bitwise": "off",
+    // x | 0 is int32 arithmetic, which a hash wraps on; Math.trunc is not.
+    "unicorn/prefer-math-trunc": "off",
     // It takes Effect's data-first calls, Effect.map(effect, f), for an
     // array's map with a thisArg.
     "unicorn/no-array-method-this-argument": "off",

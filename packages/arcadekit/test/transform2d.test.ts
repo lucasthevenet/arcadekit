@@ -22,7 +22,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 
 const Card = Component.tag("t2/Card");
 
-describe("Transform2d", () => {
+describe("the components of Transform2d", () => {
   it("is three components of a flat game, of 32-bit floats, each known by its name", () => {
     expect(Position.name).toBe("arcadekit/Transform2d.Position");
     expect(Rotation.name).toBe("arcadekit/Transform2d.Rotation");

@@ -1901,10 +1901,10 @@ export const instances: {
       (field) => field.kind
     );
 
-    const numbers = ["f32", "f64", "u8", "u16", "u32", "i32"];
+    const numbers = new Set(["f32", "f64", "u8", "u16", "u32", "i32"]);
 
     if (
-      !kinds.every((kind) => numbers.includes(kind)) ||
+      !kinds.every((kind) => numbers.has(kind)) ||
       new Set(kinds.map(isWhole)).size > 1
     ) {
       throw new Error(

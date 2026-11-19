@@ -1498,12 +1498,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // A system with no condition is asked nothing.
         if (system.condition !== undefined && !(yield* system.condition)) {
           // What it does in place of running, if it was given anything.
-          if (system.idle !== undefined) {
+          if (system.idle === undefined) {
+            release();
+          } else {
             yield* system.idle;
             release();
             commands.apply();
-          } else {
-            release();
           }
 
           continue;

@@ -62,7 +62,7 @@ const run = async (
   const pool = Array.from(
     { length: workers },
     (_, id) =>
-      new Worker(new URL("./worker.ts", import.meta.url), {
+      new Worker(new URL("worker.ts", import.meta.url), {
         execArgv: ["--import", "tsx"],
         workerData: { columns, control, id },
       })
@@ -136,7 +136,7 @@ const run = async (
 const [kernel, count, workers, mode, backing] = process.argv.slice(2);
 
 if (kernel === undefined) {
-  const self = fileURLToPath(import.meta.url);
+  const self = import.meta.filename;
   const lines: (readonly [string, number, number, string, string?])[] = [];
 
   for (const [name, size] of [

@@ -18,8 +18,7 @@ import {
   Transform2d,
   Transform3d,
 } from "arcadekit";
-import type { System } from "arcadekit";
-import type { Frame, Time, World } from "arcadekit";
+import type { System, Frame, Time, World } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";

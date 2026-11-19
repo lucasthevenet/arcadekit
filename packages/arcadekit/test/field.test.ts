@@ -130,7 +130,7 @@ describe("a field that is not a number", () => {
         expect(now.tags).toBeInstanceOf(Set);
         expect(now.profile).toStrictEqual(then.profile);
         expect(now.profile.joined).toBeInstanceOf(Date);
-        expect(typeof now.profile.gold).toBe("bigint");
+        expect(now.profile.gold).toBeTypeOf("bigint");
         expect(now.hp).toBe(then.hp);
         // Not saved: the loaded world has to make its handles again.
         expect(then.handle).toStrictEqual({ id: def === Card ? n : n + 50 });
@@ -295,8 +295,8 @@ describe("a field that is not a number", () => {
 
     try {
       new EcsWorld().load(world.snapshot(), [Changed, Badge]);
-    } catch (caught) {
-      error = caught;
+    } catch (error_) {
+      error = error_;
     }
 
     expect(error).toBeInstanceOf(SnapshotError);
@@ -325,8 +325,8 @@ describe("a field that is not a number", () => {
 
     try {
       new EcsWorld().load(bytes, [Note]);
-    } catch (caught) {
-      error = caught;
+    } catch (error_) {
+      error = error_;
     }
 
     expect(error).toBeInstanceOf(SnapshotError);

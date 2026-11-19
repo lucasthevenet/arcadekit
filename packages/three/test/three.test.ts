@@ -115,7 +115,7 @@ const meshOf = (scene: Scene | undefined, name: string): InstancedMesh => {
   const found = scene?.children.find((child) => child.name === name);
 
   if (!(found instanceof InstancedMesh)) {
-    throw new Error(`The scene has no instanced mesh named "${name}"`);
+    throw new TypeError(`The scene has no instanced mesh named "${name}"`);
   }
 
   return found;

@@ -3569,7 +3569,7 @@ export class World {
 
       if (kept === undefined || kept.length < count) {
         // Room for the column as it is now; a column only grows by doubling.
-        copies[f] = column.slice(0, column.length);
+        copies[f] = column.slice(0);
       } else if (isBoxed(def.kinds[f]!)) {
         const to = kept as unknown[];
 

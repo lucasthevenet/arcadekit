@@ -1296,7 +1296,7 @@ describe("a page's sound", () => {
   it("plays nothing on a page with no Web Audio, touched or not, and has nothing to say of it", async () => {
     // As it is here: nothing is given to make an audio with, and there
     // is no AudioContext to make one of.
-    expect(typeof AudioContext).toBe("undefined");
+    expect("AudioContext" in globalThis).toBe(false);
     const page = new Listened();
     const logged: string[] = [];
     const scope = Effect.runSync(Scope.make());

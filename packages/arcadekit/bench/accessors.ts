@@ -785,7 +785,7 @@ const variants: Record<string, Variant> = {
 const only = process.argv[2];
 
 if (only === undefined) {
-  const self = fileURLToPath(import.meta.url);
+  const self = import.meta.filename;
   const results: Record<string, number> = {};
 
   for (const [name, variant] of Object.entries(variants)) {
@@ -819,7 +819,7 @@ if (only === undefined) {
   }
 
   const ratio = (a: string, b: string) =>
-    (results[a]! / results[b]!).toFixed(1) + "x";
+    `${(results[a]! / results[b]!).toFixed(1)}x`;
 
   console.log("");
   console.log(

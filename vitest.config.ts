@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     // What every test file starts with: see the file.
     setupFiles: [
-      new URL("./tooling/build/vitest-setup.ts", import.meta.url).pathname,
+      new URL("tooling/build/vitest-setup.ts", import.meta.url).pathname,
     ],
   },
 });

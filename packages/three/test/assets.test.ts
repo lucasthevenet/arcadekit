@@ -921,9 +921,11 @@ describe("a texture", () => {
     expect(seen).toStrictEqual([false]);
     // And turned over, which is what it is when nothing says: the texture
     // says of itself how it was decoded.
-    expect(
-      await load(Three.texture("/skin.png", { flipY: true }))
-    ).toStrictEqual(Exit.succeed({ flipY: true, image: bitmaps[1] }));
+    const flipped = await load(Three.texture("/skin.png", { flipY: true }));
+
+    expect(flipped).toStrictEqual(
+      Exit.succeed({ flipY: true, image: bitmaps[1] })
+    );
     expect(asked.map((one) => one.options)).toStrictEqual([
       { imageOrientation: "from-image" },
       { imageOrientation: "flipY" },

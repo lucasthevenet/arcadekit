@@ -521,9 +521,8 @@ const defineF32: DefineField = (target, name, row, noting, refusal) => {
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
-      refusal !== undefined
-        ? refuse(refusal)
-        : noting === undefined
+      refusal === undefined
+        ? noting === undefined
           ? (value: number) => {
               column[row.i] = value;
             }
@@ -539,7 +538,8 @@ const defineF32: DefineField = (target, name, row, noting, refusal) => {
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
-            },
+            }
+        : refuse(refusal),
   });
 
   return (to) => {
@@ -552,9 +552,8 @@ const defineF64: DefineField = (target, name, row, noting, refusal) => {
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
-      refusal !== undefined
-        ? refuse(refusal)
-        : noting === undefined
+      refusal === undefined
+        ? noting === undefined
           ? (value: number) => {
               column[row.i] = value;
             }
@@ -565,7 +564,8 @@ const defineF64: DefineField = (target, name, row, noting, refusal) => {
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
-            },
+            }
+        : refuse(refusal),
   });
 
   return (to) => {
@@ -578,9 +578,8 @@ const defineI32: DefineField = (target, name, row, noting, refusal) => {
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
-      refusal !== undefined
-        ? refuse(refusal)
-        : noting === undefined
+      refusal === undefined
+        ? noting === undefined
           ? (value: number) => {
               column[row.i] = value;
             }
@@ -591,7 +590,8 @@ const defineI32: DefineField = (target, name, row, noting, refusal) => {
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
-            },
+            }
+        : refuse(refusal),
   });
 
   return (to) => {
@@ -604,9 +604,8 @@ const defineU32: DefineField = (target, name, row, noting, refusal) => {
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
-      refusal !== undefined
-        ? refuse(refusal)
-        : noting === undefined
+      refusal === undefined
+        ? noting === undefined
           ? (value: number) => {
               column[row.i] = value;
             }
@@ -617,7 +616,8 @@ const defineU32: DefineField = (target, name, row, noting, refusal) => {
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
-            },
+            }
+        : refuse(refusal),
   });
 
   return (to) => {
@@ -630,9 +630,8 @@ const defineU16: DefineField = (target, name, row, noting, refusal) => {
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
-      refusal !== undefined
-        ? refuse(refusal)
-        : noting === undefined
+      refusal === undefined
+        ? noting === undefined
           ? (value: number) => {
               column[row.i] = value;
             }
@@ -643,7 +642,8 @@ const defineU16: DefineField = (target, name, row, noting, refusal) => {
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
-            },
+            }
+        : refuse(refusal),
   });
 
   return (to) => {
@@ -656,9 +656,8 @@ const defineU8: DefineField = (target, name, row, noting, refusal) => {
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
-      refusal !== undefined
-        ? refuse(refusal)
-        : noting === undefined
+      refusal === undefined
+        ? noting === undefined
           ? (value: number) => {
               column[row.i] = value;
             }
@@ -669,7 +668,8 @@ const defineU8: DefineField = (target, name, row, noting, refusal) => {
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
-            },
+            }
+        : refuse(refusal),
   });
 
   return (to) => {
@@ -683,9 +683,8 @@ const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
   Object.defineProperty(target, name, {
     get: () => column[row.i],
     set:
-      refusal !== undefined
-        ? refuse(refusal)
-        : noting === undefined
+      refusal === undefined
+        ? noting === undefined
           ? (value: unknown) => {
               column[row.i] = value;
             }
@@ -696,7 +695,8 @@ const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
-            },
+            }
+        : refuse(refusal),
   });
 
   return (to) => {

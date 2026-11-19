@@ -180,13 +180,13 @@ describe.each([
     // nothing, and nothing in the document changes.
     await page.step(3);
     expect(page.told()).toBe(0);
-    expect(await page.changed()).toBe(0);
+    await expect(page.changed()).resolves.toBe(0);
 
     // A button sends an action, and nothing else: the menu is as it was
     // until the game has applied it and published what it then is.
     await page.click("Start");
     expect(page.buttons()).toStrictEqual(["Start"]);
-    expect(await page.changed()).toBe(0);
+    await expect(page.changed()).resolves.toBe(0);
     await page.step();
     expect(page.buttons()).toStrictEqual(["Pause", "Quit"]);
     expect(page.hud()).toBe("Loading");
@@ -198,7 +198,7 @@ describe.each([
     expect(page.sound.scored).toStrictEqual([
       { channel: "music", track: "theme", volume: 0.4, fade: 0.6 },
     ]);
-    expect(await page.changed()).toBeGreaterThan(0);
+    await expect(page.changed()).resolves.toBeGreaterThan(0);
 
     // The level's files arrive, and the game fills its sky.
     await settle();
@@ -253,7 +253,7 @@ describe.each([
     const paused = page.told();
     await page.step(60);
     expect(page.told()).toBe(paused);
-    expect(await page.changed()).toBe(0);
+    await expect(page.changed()).resolves.toBe(0);
     expect(page.hud()).toBe(`Caught ${caught}`);
 
     // Resumed from the keyboard: the menu follows the game, whoever asked.
