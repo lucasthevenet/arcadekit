@@ -44,7 +44,7 @@ An event is a fact: name it in the past tense, prefixed with its feature, such a
 
 A system that `System.runIf` can switch off shouldn't rely on events for anything it must not miss: the events from the ticks it skipped are gone when it runs again. Have it watch the game's state instead, with a [change query](queries.md) or a singleton.
 
-The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. `Event.define<Payload>("Name")` defines an event with a type and no schema, for events that never need to be serialized. A game can't be saved while such an event is waiting to be read.
+The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. `Event.define<Payload>("Name")` defines an event with a type and no schema, for events that never need to be serialized. A game can't be saved while such an event is waiting to be read, nor while one that no plugin lists in its `events` is.
 
 ## Actions
 
@@ -73,7 +73,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 List the handler in a plugin's `handlers`. The app then accepts the action in two ways:
 
 - **`app.dispatch(Strike, payload)`** applies it immediately and returns an `Exit`: the handler's result, or why it was refused. Use it for turn-based input.
-- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick, where a refusal becomes an `Action.Rejected` event. Use it for real-time input.
+- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick, where a refusal becomes an `Action.Rejected` event. Use it for real-time input. A payload the schema refuses is refused at once: `enqueue` returns an `Exit` that fails with `Action.InvalidPayload`, and nothing is queued or logged.
 
 Dispatching an action that has no handler, or with the wrong payload, is a compile error.
 

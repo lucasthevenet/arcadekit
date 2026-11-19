@@ -46,19 +46,16 @@ export const Rotation = Component.define("arcadekit/Transform2d.Rotation", {
 });
 
 /**
- * An entity's size along each axis, where 1 is its original size.
- *
- * **Gotchas**
- *
- * Added without a value it is all zeros, like any component, which means no
- * size at all: a renderer draws nothing. Give it a value when you add it.
+ * An entity's size along each axis, where 1 is its original size. Added
+ * without a value, it is 1 along each.
  *
  * @category Components
  */
-export const Scale = Component.define("arcadekit/Transform2d.Scale", {
-  x: Field.f32,
-  y: Field.f32,
-});
+export const Scale = Component.define(
+  "arcadekit/Transform2d.Scale",
+  { x: Field.f32, y: Field.f32 },
+  { initial: { x: 1, y: 1 } }
+);
 
 /**
  * Registers the three components, so a save that contains them can be loaded.

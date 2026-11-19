@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
 import type { Scope } from "effect";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   Action,
@@ -560,8 +560,9 @@ describe("the input stage", () => {
             hear("Hear", heard, "input"),
             hear("Also", also, "input"),
           ],
+          events: [Landed],
         });
-        const plain = yield* App.make({ systems: [Land] });
+        const plain = yield* App.make({ systems: [Land], events: [Landed] });
         for (let i = 0; i < 3; i++) {
           app.input();
           app.tick(1);
@@ -1729,6 +1730,31 @@ describe("bindings", () => {
   );
   const Game = Plugin.make("Game", { handlers, systems: [Controls] });
 
+  it("throw for a payload the action's schema refuses, which no other peer could hear of", () => {
+    const Step = Action.define("in/Step", Schema.Struct({ by: Schema.Int }));
+    const Walk = Input.bind(
+      "in/Walk",
+      Input.onMove(Input.pointerX, Step, (devices) => ({
+        by: devices.axes.get(Input.pointerX) ?? 0,
+      }))
+    );
+    const source = Input.makeManualSource();
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({
+          handlers: [Action.handler(Step, function* () {})],
+          systems: [Walk],
+        });
+        source.move(Input.pointerX, 2);
+        app.input();
+        source.move(Input.pointerX, 2.5);
+        expect(() => app.input()).toThrow(
+          'A system of the frame or input stage issued the action "in/Step" with a payload its schema does not take: Expected an integer'
+        );
+      }).pipe(withSource(source))
+    );
+  });
+
   it("issue the game's own actions when their moment comes, once each, in the order they were given", () => {
     const source = Input.makeManualSource();
     run(
@@ -1831,8 +1857,10 @@ describe("bindings", () => {
   });
 
   it("take a payload that the compiler checks against the action", () => {
-    Input.onPress("KeyF", Fire, { x: 1, y: 2 });
-    Input.onPress("KeyJ", Jump);
+    expectTypeOf(
+      Input.onPress("KeyF", Fire, { x: 1, y: 2 })
+    ).toEqualTypeOf<Input.Binding>();
+    expectTypeOf(Input.onPress("KeyJ", Jump)).toEqualTypeOf<Input.Binding>();
     Input.onPress(
       "KeyF",
       Fire,

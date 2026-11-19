@@ -55,7 +55,7 @@ import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { Guard, SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventGuard, EventsMoment } from "./Event";
+import type { EventDef, EventGuard, EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -433,8 +433,12 @@ export interface App<E = never, R = never, HU = never> extends Any {
   ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
   /**
    * Queues an action for the start of the next tick, and logs it. Use it for
-   * real-time input. A refusal becomes an `Action.Rejected` event, and is
-   * marked on the action's log entry.
+   * real-time input. A refusal when it is applied becomes an `Action.Rejected`
+   * event, and is marked on the action's log entry.
+   *
+   * Fails with `Action.InvalidPayload`, and queues nothing, when the action's
+   * schema does not take the payload: it could not be logged or sent to the
+   * other peers.
    *
    * For code outside the simulation. A system, a script or a handler issues an
    * action with `Actions.enqueue`, which doesn't log it: if logged, it would be
@@ -445,7 +449,7 @@ export interface App<E = never, R = never, HU = never> extends Any {
   readonly enqueue: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
     payload: PayloadFor<HU, N>
-  ) => void;
+  ) => Exit.Exit<void, Action.InvalidPayload>;
 }
 
 /**
@@ -529,6 +533,12 @@ export interface Options<
    * contains to be listed here or by a plugin.
    */
   readonly components?: readonly Listed[];
+  /**
+   * Events that belong to the app itself, not to a plugin, that a save may
+   * hold waiting to be read. A save that holds an event listed neither here
+   * nor by a plugin is refused, and so is saving while one is waiting.
+   */
+  readonly events?: readonly EventDef<unknown>[];
   /**
    * The game's version: an integer you increment when the game changes its
    * components or what its saves contain. Defaults to 0. A save records it.
@@ -836,6 +846,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         world.register(listed);
       }
     }
+    for (const listed of [
+      ...plugins.flatMap((plugin) => plugin.events),
+      ...(options.events ?? []),
+    ]) {
+      events.list(listed);
+    }
     const version = options.version ?? 0;
     if (!Number.isSafeInteger(version) || version < 0) {
       throw new Error(
@@ -874,7 +890,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       time.tick = save.tick;
       time.elapsed = save.elapsed;
       time.delta = save.delta;
-      events.restore(save.events);
+      const restored = events.restore(save.events);
+      if (restored !== undefined) {
+        return yield* new Save.LoadRefused(restored);
+      }
     }
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
@@ -983,36 +1002,47 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** Enqueues from outside the simulation: `app.enqueue`. */
-    const enqueue = (action: Action.AnyActionDef, payload: unknown): void => {
+    const enqueue = (
+      action: Action.AnyActionDef,
+      payload: unknown
+    ): Exit.Exit<void, Action.InvalidPayload> => {
       const handler = handlers.get(action.name);
       if (handler === undefined) {
         throw new Error(`No handler for action "${action.name}"`);
       }
-      // The log holds the JSON form. A payload that has none will be refused
-      // as invalid when its turn comes, and is not worth an entry.
       const { codec } = handler.action;
       if (diverted !== undefined && codec === undefined) {
         throw new Error(
           `The action "${action.name}" was defined with a type and no schema, so it cannot be sent to the other peers of this game. Give Action.define a schema.`
         );
       }
+      // The log holds the JSON form, and the other peers are sent it. A
+      // payload that has none is refused here, in a game of one too: queued,
+      // it would be refused on this machine alone.
       const json =
         codec === undefined
           ? Exit.succeed(payload)
           : Schema.encodeUnknownExit(codec)(payload);
-      if (diverted !== undefined && Exit.isSuccess(json)) {
+      if (Exit.isFailure(json)) {
+        return Exit.fail(
+          new Action.InvalidPayload({
+            action: action.name,
+            message: describe(Cause.squash(json.cause)),
+          })
+        );
+      }
+      if (diverted !== undefined) {
         diverted(action.name, json.value);
-        return;
+        return Exit.void;
       }
       queued.push({
         name: action.name,
         payload,
         encoded: false,
-        entry: Exit.isSuccess(json)
-          ? arrived(action.name, json.value, undefined)
-          : undefined,
+        entry: arrived(action.name, json.value, undefined),
         from: undefined,
       });
+      return Exit.void;
     };
     /** Queues an action that arrived as data for the next tick, and logs it. */
     const deliver = (name: string, payload: unknown, from?: string): void => {
@@ -1432,10 +1462,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Action.Actions, {
-        enqueue: ((action, payload) => {
+        enqueue: (action, payload) => {
           refuseAction(action.name);
-          enqueue(action, payload);
-        }) as typeof enqueue,
+          const queuedExit = enqueue(action, payload);
+          if (Exit.isFailure(queuedExit)) {
+            throw new Error(
+              `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${describe(Cause.squash(queuedExit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
+            );
+          }
+        },
         handles,
       }),
       Context.add(Script, {

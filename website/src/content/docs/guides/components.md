@@ -83,7 +83,20 @@ An id kept after its entity is despawned [refers to no entity](../concepts/entit
 
 Once a game is running, make changes from the simulation (a system, a handler or a script) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
 
-A component added without a value is all zeros, and a number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged.
+A component added without a value is all zeros, unless it says otherwise, and a number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. A component whose zeros are wrong, a size say, gives `initial`, the value it has when added bare:
+
+```ts
+import { Component, EcsWorld, Field } from "arcadekit";
+
+const Size = Component.define(
+  "game/Size",
+  { width: Field.f32, height: Field.f32 },
+  { initial: { width: 1, height: 1 } }
+);
+
+const world = new EcsWorld();
+world.spawn(Size); // 1 by 1
+```
 
 ## Tags and sparse storage
 

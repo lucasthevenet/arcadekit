@@ -94,7 +94,7 @@ A positive `angle` rotates from the x axis towards the y axis: counterclockwise 
 
 - **Use them for everything that is drawn**, rather than a position component of your own, so your rules and your renderer agree. [`@arcadekit/three`](drawing-with-three.md) draws from them and has no components of its own.
 - **Use one of the two per entity, never both.** They are separate components with separate names, and nothing keeps them in sync: a system that queries `Transform3d.Position` doesn't match an entity that only has a `Transform2d.Position`, and a plugin written for one doesn't read the other. `@arcadekit/three` draws an entity with both positions once, from the 3D one, and ignores its `Transform2d` rotation and scale. Nothing refuses it.
-- **Always give a `Scale` a value.** A component added without a value is all zeros: a `Position` at the origin and a `Rotation` drawn as no rotation are fine, but a zero `Scale` is drawn as nothing.
+- **Add them bare when the default fits.** Added without a value, a `Position` is at the origin, a `Rotation` turns nothing, and a `Scale` is 1 along each axis.
 - **An omitted number is 0**, never `NaN`. `of` requires every field, so the compiler asks for each, and a flat game using `Transform3d` sets every `z`. `world.set` writes only the fields you pass: a field you name without a value keeps its current value.
 - **A `Transform2d` has no depth.** In a flat game, the renderer decides what is drawn in front, per kind of entity.
 

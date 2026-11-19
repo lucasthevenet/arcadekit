@@ -18,12 +18,26 @@
  * that doesn't match its save says so. Singletons are migrated the same way, by
  * name, and are present in the save only if the game wrote them.
  */
+import { makeColumn } from "./ecs/component";
 import type { Column, FieldKind } from "./ecs/component";
 import type {
   SnapshotComponent,
   SnapshotContents,
   SnapshotTable,
 } from "./ecs/snapshot";
+
+/** The field types that hold numbers, in a typed array. */
+type NumericKind = "f32" | "f64" | "i32" | "u32" | "u16" | "u8" | "entity";
+
+/**
+ * What a migration gives a field of type `K`: a number for a field of a number
+ * type, and anything for a `json`, `ref` or `transient` field.
+ *
+ * @category Type-level
+ */
+export type ValueOfKind<K extends FieldKind> = K extends NumericKind
+  ? number
+  : unknown;
 
 const componentOf = (
   world: SnapshotContents,
@@ -68,33 +82,63 @@ const fieldOf = (component: SnapshotComponent, field: string) => {
   return found;
 };
 
-const column = (kind: FieldKind, count: number, value: unknown): Column => {
-  switch (kind) {
-    case "f32": {
-      return new Float32Array(count).fill(value as number);
+/**
+ * The values a field of each number type holds. A typed array stores anything
+ * else as something it is not: a string as NaN or the number it parses to, 300
+ * in a `u8` as 44, 1.5 in an `i32` as 1.
+ */
+const holds: Record<
+  NumericKind,
+  { readonly whole: boolean; min: number; max: number }
+> = {
+  f32: { whole: false, min: -Infinity, max: Infinity },
+  f64: { whole: false, min: -Infinity, max: Infinity },
+  i32: { whole: true, min: -(2 ** 31), max: 2 ** 31 - 1 },
+  u32: { whole: true, min: 0, max: 2 ** 32 - 1 },
+  u16: { whole: true, min: 0, max: 2 ** 16 - 1 },
+  u8: { whole: true, min: 0, max: 2 ** 8 - 1 },
+  entity: { whole: true, min: 0, max: Number.MAX_SAFE_INTEGER },
+};
+
+const isNumeric = (kind: FieldKind): kind is NumericKind => kind in holds;
+
+const shown = (value: unknown): string =>
+  typeof value === "string" ? JSON.stringify(value) : String(value);
+
+/**
+ * A column of `count` rows of a field of `kind`, each the value `at` gives for
+ * its row. A number field throws for a value it cannot hold, and says which.
+ */
+const columnOf = (
+  component: string,
+  field: string,
+  kind: FieldKind,
+  count: number,
+  at: (row: number) => unknown
+): Column => {
+  const made = makeColumn(kind, count);
+  if (!isNumeric(kind)) {
+    const boxed = made as unknown[];
+    for (let row = 0; row < count; row++) {
+      boxed[row] = at(row);
     }
-    case "f64": {
-      return new Float64Array(count).fill(value as number);
-    }
-    case "i32": {
-      return new Int32Array(count).fill(value as number);
-    }
-    case "u32": {
-      return new Uint32Array(count).fill(value as number);
-    }
-    case "entity": {
-      return new Float64Array(count).fill(value as number);
-    }
-    case "u16": {
-      return new Uint16Array(count).fill(value as number);
-    }
-    case "u8": {
-      return new Uint8Array(count).fill(value as number);
-    }
-    default: {
-      return Array.from({ length: count }, () => value);
-    }
+    return made;
   }
+  const { whole, min, max } = holds[kind];
+  const numbers = made as Exclude<Column, unknown[]>;
+  for (let row = 0; row < count; row++) {
+    const value = at(row);
+    if (
+      typeof value !== "number" ||
+      (whole && (!Number.isInteger(value) || value < min || value > max))
+    ) {
+      throw new Error(
+        `The ${kind} field "${field}" of "${component}" cannot hold ${shown(value)}: it holds ${whole ? `whole numbers from ${min} to ${max}` : "numbers"}.`
+      );
+    }
+    numbers[row] = value;
+  }
+  return made;
 };
 
 /**
@@ -155,16 +199,18 @@ export const renameField = (
 /**
  * Adds a field to a component, with the same value for every entity that has
  * the component. The field goes after the existing ones, or before the field
- * named in `before`: a component's fields are in definition order.
+ * named in `before`: a component's fields are in definition order. A field of
+ * a number type throws for a value it cannot hold: anything but a number, and
+ * for a whole-number type, a fraction or a number out of its range.
  *
  * @category Migrations
  */
-export const addField = (
+export const addField = <K extends FieldKind>(
   world: SnapshotContents,
   component: string,
   field: string,
-  kind: FieldKind,
-  value: unknown,
+  kind: K,
+  value: ValueOfKind<K>,
   before?: string
 ): void => {
   const definition = componentOf(world, component);
@@ -180,7 +226,7 @@ export const addField = (
     return;
   }
   for (const { columns, count } of columnsOf(world, component)) {
-    columns[field] = column(kind, count, value);
+    columns[field] = columnOf(component, field, kind, count, () => value);
   }
 };
 
@@ -208,16 +254,17 @@ export const removeField = (
  * Changes a field's type, and computes each new value from the old one:
  * `mapField(world, "game/Hp", "points", "f32", (hp: number) => hp / 2)`. The
  * save doesn't know the old value's type, so `map` names it. For a `ref` field,
- * the old value is its encoded form.
+ * the old value is its encoded form. A field of a number type throws for a
+ * value it cannot hold, as `addField` does.
  *
  * @category Migrations
  */
-export const mapField = <T>(
+export const mapField = <T, K extends FieldKind>(
   world: SnapshotContents,
   component: string,
   field: string,
-  kind: FieldKind,
-  map: (value: T) => unknown
+  kind: K,
+  map: (value: T) => ValueOfKind<K>
 ): void => {
   const definition = componentOf(world, component);
   const found = fieldOf(definition, field);
@@ -229,13 +276,9 @@ export const mapField = <T>(
       delete columns[field];
       continue;
     }
-    const next = column(kind, count, 0);
-    for (let row = 0; row < count; row++) {
-      next[row] = map(
-        (was === "transient" ? undefined : old?.[row]) as T
-      ) as never;
-    }
-    columns[field] = next;
+    columns[field] = columnOf(component, field, kind, count, (row) =>
+      map((was === "transient" ? undefined : old?.[row]) as T)
+    );
   }
 };
 

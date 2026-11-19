@@ -103,7 +103,10 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  * - `"newer version"`: a later version of the game wrote the save;
  * - `"no migration"`: an earlier version wrote it, and the game has no
  *   migration from that version;
- * - `"migration failed"`: a migration threw.
+ * - `"migration failed"`: a migration threw;
+ * - `"unknown event"`: an event waiting to be read is listed by no plugin;
+ * - `"event changed"`: an event waiting to be read is in a form its schema no
+ *   longer takes.
  *
  * @category Errors
  */
@@ -113,7 +116,9 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
     | "not a save"
     | "newer version"
     | "no migration"
-    | "migration failed";
+    | "migration failed"
+    | "unknown event"
+    | "event changed";
   readonly message: string;
 }> {}
 
@@ -161,9 +166,10 @@ export interface Contents {
  *
  * - A migration turns an old save into a new game: the log recorded before it
  *   no longer replays against it.
- * - Loading doesn't validate queued actions' and waiting events' payloads
- *   against the game's current schemas. A migration that accompanies a schema
- *   change must update those payloads too.
+ * - A migration that accompanies a schema change updates the payloads of
+ *   `queued` and `events` too. A waiting event that its schema no longer takes
+ *   refuses the save as it is loaded; a queued action is refused when it is
+ *   applied, as an `Action.Rejected` event.
  *
  * @category Models
  */

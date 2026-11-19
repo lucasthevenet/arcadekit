@@ -251,7 +251,7 @@ describe("systems", () => {
         App.make({ systems: [Beep] }),
         (app) => app.tick(1)
       )
-    ).toThrow();
+    ).toThrow(/Service not found: .*Audio/);
   });
 
   it("surface typed failures through tickExit, and tick() throws them", () => {

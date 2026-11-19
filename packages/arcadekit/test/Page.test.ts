@@ -202,18 +202,15 @@ describe.each([
     // Stars fall, sixty ticks a second, and now and then one is caught.
     // The UI is told when one is and at no other time: a frame in which
     // nothing it shows changed changes nothing in the document.
-    let quiet = 0;
+    const frames: { told: boolean; changed: boolean }[] = [];
     for (let i = 0; i < 900 && page.ui.get(Hud).caught < 3; i++) {
       const told = page.told();
       await page.step();
       const changed = await page.changed();
-      if (page.told() === told) {
-        quiet++;
-        expect(changed).toBe(0);
-      } else {
-        expect(changed).toBeGreaterThan(0);
-      }
+      frames.push({ told: page.told() !== told, changed: changed > 0 });
     }
+    expect(frames.filter((frame) => frame.told !== frame.changed)).toEqual([]);
+    const quiet = frames.filter((frame) => !frame.told).length;
     const { caught } = page.ui.get(Hud);
     expect(caught).toBeGreaterThanOrEqual(3);
     expect(page.hud()).toBe(`Caught ${caught}`);

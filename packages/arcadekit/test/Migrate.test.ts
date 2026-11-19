@@ -454,7 +454,8 @@ describe("a save from another version of the game", () => {
         /no field named "z"/,
       ],
       [
-        (world) => Migrate.mapField(world, "mg/Pos", "z", "f64", (v) => v),
+        (world) =>
+          Migrate.mapField(world, "mg/Pos", "z", "f64", (v: number) => v),
         /no field named "z"/,
       ],
       [
@@ -466,6 +467,57 @@ describe("a save from another version of the game", () => {
       const error = failing(({ world }) => change(world));
       expect(error.problem).toBe("migration failed");
       expect(error.message).toMatch(message);
+    }
+  });
+
+  it("is refused when a migration gives a number field what it cannot hold", () => {
+    const { save } = savedByVersion0();
+    const failing = (change: (world: Save.Contents["world"]) => void) =>
+      refusal(
+        Save.migrate(save, 1, [
+          { from: 0, migrate: ({ world }) => change(world) },
+        ])
+      );
+    const cases: [(world: Save.Contents["world"]) => void, string][] = [
+      [
+        // @ts-expect-error a number field is given a string
+        (world) => Migrate.addField(world, "mg/Pos", "z", "f32", "far"),
+        'The f32 field "z" of "mg/Pos" cannot hold "far": it holds numbers.',
+      ],
+      [
+        (world) => Migrate.addField(world, "mg/Pos", "z", "u8", 300),
+        'The u8 field "z" of "mg/Pos" cannot hold 300: it holds whole numbers from 0 to 255.',
+      ],
+      [
+        (world) => Migrate.addField(world, "mg/Pos", "z", "i32", 1.5),
+        'The i32 field "z" of "mg/Pos" cannot hold 1.5: it holds whole numbers from -2147483648 to 2147483647.',
+      ],
+      [
+        (world) => Migrate.addField(world, "mg/Pos", "z", "u32", -1),
+        'The u32 field "z" of "mg/Pos" cannot hold -1: it holds whole numbers from 0 to 4294967295.',
+      ],
+      [
+        (world) =>
+          Migrate.mapField(
+            world,
+            "mg/Hp",
+            "points",
+            "u16",
+            // @ts-expect-error a number field is given what is not a number
+            (points: number) => ({ points })
+          ),
+        'The u16 field "points" of "mg/Hp" cannot hold [object Object]: it holds whole numbers from 0 to 65535.',
+      ],
+      [
+        (world) =>
+          Migrate.mapField(world, "mg/Pos", "x", "u8", (x: number) => x * 100),
+        'The u8 field "x" of "mg/Pos" cannot hold',
+      ],
+    ];
+    for (const [change, message] of cases) {
+      const error = failing(change);
+      expect(error.problem).toBe("migration failed");
+      expect(error.message).toContain(message);
     }
   });
 
@@ -610,7 +662,7 @@ describe("a save from another version of the game", () => {
       "f64",
       (b: string) => Number(b.slice(1)) / 2
     );
-    Migrate.addField(contents, "mg/Thing", "c", "entity", entities[0]);
+    Migrate.addField(contents, "mg/Thing", "c", "entity", entities[0]!);
     Migrate.addField(contents, "mg/Thing", "d", "json", "new", "a");
     Migrate.addField(contents, "mg/Thing", "e", "u16", 500);
     Migrate.addField(contents, "mg/Thing", "f", "f32", 0.5);

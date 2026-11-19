@@ -564,7 +564,7 @@ export const accessOf = (
     }
   };
   const touched = (thing: Touched, touch: Touch): void => {
-    if ("initial" in thing) {
+    if ("component" in thing) {
       // A singleton, or a state, which is one.
       component(thing.component, touch);
     } else if ("id" in thing) {

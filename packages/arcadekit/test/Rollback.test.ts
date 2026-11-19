@@ -121,13 +121,15 @@ describe("a rollback session", () => {
         expect(purse.taken, where).toBeGreaterThan(0);
         expect(purse.tallied, where).toBeGreaterThan(0);
         expect(purse.born, where).toBeGreaterThan(40);
-        if (lag.max > 0) {
-          expect(ada.session.rewinds, where).toBeGreaterThan(5);
-          expect(grace.session.rewinds, where).toBeGreaterThan(5);
-          expect(ada.session.resimulated, where).toBeGreaterThanOrEqual(
-            ada.session.rewinds
-          );
-        }
+        // Over a network that takes no time, the peer that runs first in a
+        // round hears of the other's moves late, and the other on time.
+        expect(
+          [ada.session.rewinds > 5, grace.session.rewinds > 5],
+          where
+        ).toEqual(lag.max > 0 ? [true, true] : [true, false]);
+        expect(ada.session.resimulated, where).toBeGreaterThanOrEqual(
+          ada.session.rewinds
+        );
         // What it keeps to go back to is what it is not sure of, however
         // long the game has gone on; at rest, with everything said, that
         // is next to nothing.

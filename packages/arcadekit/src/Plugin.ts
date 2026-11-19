@@ -18,12 +18,13 @@
  * A plugin that several others depend on is installed once: its systems are
  * registered once and its layer is built once.
  *
- * Events and actions are plain values, so a plugin doesn't list them; its
- * module exports them like anything else. A plugin does list two things that
- * loading a saved game needs:
+ * Events and actions are plain values, which a plugin's module exports like
+ * anything else. A plugin does list three things that loading a saved game
+ * needs:
  *
  *   const Weather = Plugin.make("Weather", {
  *     components: [Cloud, Wind],          // so a save that contains them can be loaded
+ *     events: [Thundered],                // so a save can hold them, waiting to be read
  *     scripts: [Storms],                  // started with the app, and again after a load
  *     setup: spawnTheFirstClouds          // a fresh start only: a load already has them
  *   })
@@ -32,6 +33,7 @@ import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
 import type { Listed } from "./ecs/component";
+import type { EventDef } from "./Event";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
@@ -74,6 +76,7 @@ export interface Plugin<
   readonly layer: Layer.Layer<never, unknown, unknown> | undefined;
   readonly setup: Effect.Effect<void, unknown, unknown> | undefined;
   readonly components: readonly Listed[];
+  readonly events: readonly EventDef<unknown>[];
   readonly scripts: readonly Effect.Effect<unknown, unknown, unknown>[];
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
@@ -218,6 +221,12 @@ export const make = <
      */
     readonly components?: readonly Listed[];
     /**
+     * The events this plugin's feature emits that a save may hold, waiting to
+     * be read: each needs a schema. A save that holds an event no plugin
+     * lists is refused, and so is saving while one is waiting.
+     */
+    readonly events?: readonly EventDef<unknown>[];
+    /**
      * Long-running scripts, started with the app: after `setup` on a fresh
      * start, and again from the beginning when the app is loaded from a save. A
      * save can't hold a script mid-flight, so a script listed here keeps
@@ -245,6 +254,7 @@ export const make = <
   layer: options.layer,
   setup: options.setup,
   components: options.components ?? [],
+  events: options.events ?? [],
   scripts: options.scripts ?? [],
   plugins: options.plugins ?? [],
 });

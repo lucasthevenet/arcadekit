@@ -778,7 +778,10 @@ describe("what the frame stage reads", () => {
         // The simulation cannot tell that anything was kept for the frame
         // stage: a system that first reads on tick 4 hears what it would
         // have heard with no frame stage at all.
-        const headless = yield* App.make({ systems: [Late, Emit] });
+        const headless = yield* App.make({
+          systems: [Late, Emit],
+          events: [Bounced],
+        });
         const without: number[] = [];
         late.length = 0;
         for (let n = 0; n < 5; n++) {
@@ -787,7 +790,10 @@ describe("what the frame stage reads", () => {
         without.push(...late);
         expect(without).toEqual([3, 4]);
         late.length = 0;
-        const again = yield* App.make({ systems: [Late, Emit, Listen] });
+        const again = yield* App.make({
+          systems: [Late, Emit, Listen],
+          events: [Bounced],
+        });
         again.tick(1);
         again.frame(0);
         for (let n = 0; n < 4; n++) {
@@ -1074,12 +1080,11 @@ describe("a frame stage that is checked", () => {
           // It is a defect: nothing in the error channel to handle.
           expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
           // Checked, a draw from the world's generator is laid at the door
-          // of the system that made it, and taken back as ever.
+          // of the system that made it, and taken back as ever. A write
+          // through a raw column is not taken back: #195.
           const before = app.world.hash();
           expect(() => app.frame(0)).toThrow(App.FrameChangedWorld);
-          if (how === "random") {
-            expect(app.world.hash()).toBe(before);
-          }
+          expect(app.world.hash() === before).toBe(how === "random");
         })
       );
     }

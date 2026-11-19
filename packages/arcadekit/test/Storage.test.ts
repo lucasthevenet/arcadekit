@@ -4,6 +4,7 @@ import { Component, Field } from "../src/ecs/component";
 import type { ComponentDef, Entity } from "../src/ecs/component";
 import { CommandBuffer, World } from "../src/ecs/world";
 import type { QuerySpec, Terms } from "../src/ecs/world";
+import { expectChecked, makeChecks } from "./checks";
 
 const Position = Component.define("st/Position", {
   x: Field.f32,
@@ -53,6 +54,42 @@ describe("entities and components", () => {
     expect(world.get(e, Position)).toBeUndefined();
     expect(world.despawn(e)).toBe(false);
     expect(world.entityCount).toBe(0);
+  });
+
+  it("gives a component added bare its initial value, where it says one, and zeros where it does not", () => {
+    const Size = Component.define(
+      "test/Size",
+      { width: Field.f32, height: Field.f32 },
+      { initial: { width: 1, height: 2 } }
+    );
+    const Glow = Component.define(
+      "test/Glow",
+      { level: Field.u8 },
+      { storage: "sparse", initial: { level: 7 } }
+    );
+    const world = new World();
+    // Spawned bare, in a table and in a sparse set.
+    const spawned = world.spawn(Size, Glow, Position);
+    expect(world.get(spawned, Size)).toEqual({ width: 1, height: 2 });
+    expect(world.get(spawned, Glow)).toEqual({ level: 7 });
+    expect(world.get(spawned, Position)).toEqual({ x: 0, y: 0 });
+    // Added bare, as the entity moves to another table.
+    const added = world.spawn(Health.of({ hp: 3 }));
+    world.add(added, Size);
+    world.add(added, Glow);
+    expect(world.get(added, Size)).toEqual({ width: 1, height: 2 });
+    expect(world.get(added, Glow)).toEqual({ level: 7 });
+    // A value says what it is; added bare again, a component it has keeps
+    // its value.
+    const given = world.spawn(Size.of({ width: 5, height: 6 }));
+    expect(world.get(given, Size)).toEqual({ width: 5, height: 6 });
+    world.add(given, Size);
+    expect(world.get(given, Size)).toEqual({ width: 5, height: 6 });
+    // A slot that is used again holds nothing of the entity before it.
+    world.despawn(spawned);
+    const again = world.spawn(Size, Glow);
+    expect(world.get(again, Size)).toEqual({ width: 1, height: 2 });
+    expect(world.get(again, Glow)).toEqual({ level: 7 });
   });
 
   it("reuses a slot with a new generation, so stale handles stay dead", () => {
@@ -825,6 +862,7 @@ describe("what each hands its callback", () => {
       grow(count);
       for (const each of [view, plain]) {
         const seen: number[] = [];
+        const burnt: number[] = [];
         each.each((...args: unknown[]) => {
           const [health, burning] = args as [
             { hp: number },
@@ -832,12 +870,14 @@ describe("what each hands its callback", () => {
           ];
           seen.push(health.hp);
           if (typeof burning === "object") {
-            expect(burning.seconds).toBe(health.hp / 2);
+            burnt.push(burning.seconds);
             burning.seconds += 0;
           }
           health.hp += 1000;
         });
         expect(seen).toEqual(Array.from({ length: count }, (_, n) => n));
+        // Only the loop over both has the second, at the same rows.
+        expect(burnt).toEqual(each === view ? seen.map((hp) => hp / 2) : []);
         // The write went where the world reads from.
         each.each((health) => {
           (health as { hp: number }).hp -= 1000;
@@ -1055,6 +1095,7 @@ describe("randomized comparison against a simple model", () => {
       const world = new World();
       const model = new Map<Entity, Map<number, Record<string, number>>>();
       const dead: Entity[] = [];
+      const checks = makeChecks();
 
       for (let step = 0; step < 4000; step++) {
         const roll = rnd();
@@ -1072,7 +1113,7 @@ describe("randomized comparison against a simple model", () => {
           });
           model.set(world.spawn(...inputs), values);
         } else if (roll < 0.45) {
-          expect(world.despawn(pick)).toBe(true);
+          checks.check(`step ${step}: despawned`, world.despawn(pick), true);
           model.delete(pick);
           dead.push(pick);
         } else if (roll < 0.75) {
@@ -1080,9 +1121,14 @@ describe("randomized comparison against a simple model", () => {
           world.add(pick, def.of(value));
           model.get(pick)!.set(def.id, value);
         } else {
-          expect(world.remove(pick, def)).toBe(model.get(pick)!.delete(def.id));
+          checks.check(
+            `step ${step}: removed ${def.name}`,
+            world.remove(pick, def),
+            model.get(pick)!.delete(def.id)
+          );
         }
       }
+      expectChecked(checks, 1000);
 
       expect(world.entityCount).toBe(model.size);
       for (const entity of dead) {
