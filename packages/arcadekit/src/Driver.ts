@@ -7,7 +7,7 @@
  *   yield* Driver.frames(app, { hz: 60 })            // in a page, once per repaint
  *   yield* Driver.interval(app, { hz: 60 })          // on a timer
  */
-import { Context, Effect } from "effect";
+import { Clock, Context, Duration, Effect, Schedule } from "effect";
 
 /**
  * Anything with a `tick`, so drivers work with every kind of app.
@@ -138,9 +138,10 @@ export const fixedStep = (
  * Ticks on a timer until interrupted, then stops the timer. In a page, use
  * `frames`, which follows the display.
  *
- * Each timer callback is one `fixedStep` call: the input stage and the ticks
+ * Each beat of the timer is one `fixedStep` call: the input stage and the ticks
  * that are due, then the frame stage. If a tick or a frame throws, the timer
- * stops and the effect dies with the thrown error.
+ * stops and the effect dies with the thrown error. The timer runs on Effect's
+ * `Clock`, so a test moves it on with `TestClock`.
  *
  * @category Running
  */
@@ -148,20 +149,19 @@ export const interval = (
   app: Tickable,
   options: StepOptions
 ): Effect.Effect<never> =>
-  Effect.callback<never>((resume) => {
+  Effect.gen(function* () {
     const advance = fixedStep(app, options);
-    let last = performance.now();
-    const id = setInterval(() => {
-      const now = performance.now();
-      try {
-        advance((now - last) / 1000);
-      } catch (error) {
-        clearInterval(id);
-        resume(Effect.die(error));
-      }
-      last = now;
-    }, 1000 / options.hz);
-    return Effect.sync(() => clearInterval(id));
+    const period = Duration.millis(1000 / options.hz);
+    let last = yield* Clock.currentTimeNanos;
+    const step = Effect.flatMap(Clock.currentTimeNanos, (now) =>
+      Effect.sync(() => {
+        advance(Number(now - last) / 1e9);
+        last = now;
+      })
+    );
+    // The first beat a period from now, as a timer's.
+    yield* Effect.schedule(step, Schedule.fixed(period));
+    return yield* Effect.never;
   });
 
 /**

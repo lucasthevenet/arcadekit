@@ -760,12 +760,8 @@ export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, TrackOf, never>,
   options: { readonly fade?: number; readonly channel?: string } = {}
-): System.System<Effect.Error<Eff>, Effect.Services<Eff> | Player> => {
-  const pick = Effect.gen(body) as Effect.Effect<
-    TrackOf,
-    Effect.Error<Eff>,
-    Effect.Services<Eff>
-  >;
+): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player> => {
+  const pick = Effect.gen(body);
   const channel = options.channel ?? MUSIC;
   return System.make(name, function* () {
     const player = yield* Player;
@@ -792,5 +788,5 @@ export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
         player.music(channel, undefined, options);
       })
     )
-  ) as System.System<Effect.Error<Eff>, Effect.Services<Eff> | Player>;
+  ) as System.System<System.GenError<Eff>, System.GenServices<Eff> | Player>;
 };

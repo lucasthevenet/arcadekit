@@ -8,7 +8,7 @@ import {
   Layer,
   Schema,
 } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import * as Browser from "../src/Browser";
 import {
@@ -257,8 +257,8 @@ describe("App.run", () => {
     );
     turn(display, 6);
     const taken = made!.save();
-    expect(Exit.isSuccess(taken)).toBe(true);
-    const save = (taken as Exit.Success<Save.Save>).value;
+    assert(Exit.isSuccess(taken));
+    const save = taken.value;
     await Effect.runPromise(Fiber.interrupt(first));
     expect(save.tick).toBe(5);
 

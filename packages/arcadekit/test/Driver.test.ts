@@ -1,5 +1,6 @@
 import { Cause, Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { TestClock } from "effect/testing";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import {
   App,
@@ -474,6 +475,59 @@ describe("the display when none is provided", () => {
     expect(asked.filter((id) => cleared.has(id))).toEqual([asked.at(-1)]);
     await new Promise((resolve) => set(resolve, 60));
     expect(app!.time.tick).toBe(ticks);
+  });
+});
+
+describe("the timer", () => {
+  it("ticks on Effect's clock, a beat at a time, and stops when interrupted", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const app = yield* App.make({ systems: [Roll] });
+          app.world.spawn(Ball.of({ x: 0, vx: 1 }));
+          // A beat every eighth of a second, which a float holds exactly.
+          const fiber = yield* Effect.forkScoped(
+            Driver.interval(app, { hz: 8 })
+          );
+          // Nothing before the first beat.
+          yield* TestClock.adjust("124 millis");
+          expect(app.time.tick).toBe(0);
+          yield* TestClock.adjust("876 millis");
+          expect(app.time.tick).toBe(8);
+          expect(
+            app.world.get(app.world.view(Balls).entities()[0]!, Ball)?.x
+          ).toBe(1);
+          yield* Fiber.interrupt(fiber);
+          yield* TestClock.adjust("1 second");
+          expect(app.time.tick).toBe(8);
+        })
+      ).pipe(Effect.provide(TestClock.layer()))
+    );
+  });
+
+  it("stops and dies with what a tick throws", async () => {
+    class Jammed extends Data.TaggedError("Jammed")<{ readonly at: number }> {}
+    const Jam = System.make("Jam", function* () {
+      const { tick } = yield* Time;
+      if (tick === 3) {
+        return yield* new Jammed({ at: tick });
+      }
+    });
+    const exit = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const app = yield* App.make({ systems: [Jam] });
+          const fiber = yield* Effect.forkScoped(
+            Driver.interval(app, { hz: 8 })
+          );
+          yield* TestClock.adjust("1 second");
+          expect(app.time.tick).toBe(3);
+          return yield* Fiber.await(fiber);
+        })
+      ).pipe(Effect.provide(TestClock.layer()))
+    );
+    assert(Exit.isFailure(exit));
+    expect(Cause.squash(exit.cause)).toEqual(new Jammed({ at: 3 }));
   });
 });
 

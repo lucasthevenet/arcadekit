@@ -2062,7 +2062,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // As after a load: each plugin's scripts, from their beginning.
         for (const plugin of plugins) {
           for (const script of plugin.scripts) {
-            watch(runFork(script));
+            script.pipe(runFork, watch);
           }
         }
         commands.apply();
@@ -2097,7 +2097,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       },
       spawnScript(effect) {
-        return watch(runFork(effect));
+        return effect.pipe(runFork, watch);
       },
       dispatch(action, payload) {
         assertBetweenTicks(action.name);
@@ -2157,7 +2157,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // a script runs up to its first wait, and from then on during ticks.
     for (const plugin of plugins) {
       for (const script of plugin.scripts) {
-        watch(runFork(script));
+        script.pipe(runFork, watch);
       }
     }
     commands.apply();

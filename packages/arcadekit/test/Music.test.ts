@@ -72,8 +72,8 @@ const Score = Sound.music(
 );
 
 /** An app in a scope of its own, which the test closes when it likes. */
-const start = <A, E, R>(
-  make: Effect.Effect<A, E, R>,
+const start = <A, E>(
+  make: Effect.Effect<A, E, Scope.Scope>,
   output?: Sound.OutputShape
 ) => {
   const scope = Scope.makeUnsafe();
@@ -81,9 +81,7 @@ const start = <A, E, R>(
     output === undefined
       ? make
       : make.pipe(Effect.provide(Sound.layer(output)));
-  const app = Effect.runSync(
-    provided.pipe(Scope.provide(scope)) as Effect.Effect<A, E>
-  );
+  const app = Effect.runSync(provided.pipe(Scope.provide(scope)));
   return {
     app,
     close: () => Effect.runSync(Scope.close(scope, Exit.void)),

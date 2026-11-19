@@ -15,6 +15,7 @@ import {
 } from "arcadekit";
 import type { Entity } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
+import type { BuiltIn } from "arcadekit/Services";
 import { Context, Effect, Exit, Layer, Schema, Scope } from "effect";
 import {
   BoxGeometry,
@@ -81,16 +82,13 @@ const makeRenderer = () => {
 };
 
 /** An app in a scope of its own, which the test closes when it likes. */
-const start = <A, E, R>(
-  make: Effect.Effect<A, E, R>,
+const start = <A, E>(
+  make: Effect.Effect<A, E, Scope.Scope | Three.Renderer>,
   renderer: { readonly layer: Layer.Layer<Three.Renderer> }
 ) => {
   const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
-    make.pipe(
-      Effect.provide(renderer.layer),
-      Scope.provide(scope)
-    ) as Effect.Effect<A, E>
+    make.pipe(Effect.provide(renderer.layer), Scope.provide(scope))
   );
   return {
     app,
@@ -1135,7 +1133,9 @@ describe("an entity drawn between two ticks", () => {
     material,
     smooth: true,
   });
-  const play = (...systems: Parameters<typeof App.make>[0]["systems"] & {}) => {
+  const play = (
+    ...systems: readonly System.System<never, BuiltIn | Three.Scene>[]
+  ) => {
     const renderer = makeRenderer();
     const { app } = start(
       App.make({

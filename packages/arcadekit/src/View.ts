@@ -416,20 +416,16 @@ export const publish = <
 >(
   view: View<A>,
   body: () => Generator<Eff, A, never>
-): System.System<Effect.Error<Eff>, Effect.Services<Eff> | Port> => {
-  const read = Effect.gen(body) as Effect.Effect<
-    A,
-    Effect.Error<Eff>,
-    Effect.Services<Eff>
-  >;
+): System.System<System.GenError<Eff>, System.GenServices<Eff> | Port> => {
+  const read = Effect.gen(body);
   return System.make(`View.publish(${view.name})`, function* () {
     const port = yield* Port;
     if (port.connected) {
       port.publish(view, yield* read);
     }
   }).pipe(System.inStage("frame")) as System.System<
-    Effect.Error<Eff>,
-    Effect.Services<Eff> | Port
+    System.GenError<Eff>,
+    System.GenServices<Eff> | Port
   >;
 };
 

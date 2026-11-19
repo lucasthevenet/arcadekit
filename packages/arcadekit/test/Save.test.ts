@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Logger, Option, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -645,7 +645,8 @@ describe("a save that cannot be loaded", () => {
         )
       )
     );
-    expect(Cause.pretty((exit as Exit.Failure<never, never>).cause)).toMatch(
+    assert(Exit.isFailure(exit));
+    expect(Cause.pretty(exit.cause)).toMatch(
       /The save holds an event "sv\/Sounded" that no longer reads/
     );
   });

@@ -10,7 +10,7 @@ import {
   Schema,
   Scope,
 } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import {
   Action,
@@ -26,7 +26,6 @@ import {
   Plugin,
   Query,
   Random,
-  Save,
   Script,
   Singleton,
   State,
@@ -871,11 +870,8 @@ describe("a level's assets", () => {
           app.tick(1);
           app.frame(0);
           const save = app.save();
-          expect(Exit.isSuccess(save)).toBe(true);
-          const loaded = yield* App.load(
-            (save as Exit.Success<Save.Save>).value,
-            { plugins: [Game] }
-          );
+          assert(Exit.isSuccess(save));
+          const loaded = yield* App.load(save.value, { plugins: [Game] });
           drawn.length = 0;
           loaded.frame(0);
           expect(drawn).toEqual([

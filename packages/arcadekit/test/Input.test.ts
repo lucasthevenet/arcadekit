@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -15,7 +15,6 @@ import {
   Plugin,
   Query,
   Random,
-  Save,
   Script,
   Singleton,
   State,
@@ -588,10 +587,8 @@ describe("the input stage", () => {
         expect(app.world.hash()).toBe(plain.world.hash());
         const save = app.save();
         const bare = plain.save();
-        expect(Exit.isSuccess(save) && Exit.isSuccess(bare)).toBe(true);
-        expect((save as Exit.Success<Save.Save>).value.events).toEqual(
-          (bare as Exit.Success<Save.Save>).value.events
-        );
+        assert(Exit.isSuccess(save) && Exit.isSuccess(bare));
+        expect(save.value.events).toEqual(bare.value.events);
       })
     );
   });
@@ -669,10 +666,10 @@ describe("the input stage", () => {
         // And the game cannot tell that anyone was listening.
         expect(alone.world.hash()).toBe(bare.world.hash());
         const saves = [alone, together, bare].map((app) => app.save());
-        expect(saves.every((save) => Exit.isSuccess(save))).toBe(true);
-        const events = saves.map(
-          (save) => (save as Exit.Success<Save.Save>).value.events
-        );
+        const events = saves.map((save) => {
+          assert(Exit.isSuccess(save));
+          return save.value.events;
+        });
         expect(events[0]).toEqual(events[2]);
         expect(events[1]).toEqual(events[2]);
         // Heard, they are kept no longer.
@@ -1230,9 +1227,8 @@ describe("the picture of the devices in the world", () => {
     run(
       Effect.gen(function* () {
         const decoded = Action.decodeLog(log);
-        expect(Exit.isSuccess(decoded)).toBe(true);
-        const entries = (decoded as Exit.Success<readonly Action.LogEntry[]>)
-          .value;
+        assert(Exit.isSuccess(decoded));
+        const entries = decoded.value;
         const again = yield* App.make({
           plugins: [Flying],
           checkpointEvery: 1,
@@ -1519,8 +1515,8 @@ describe("the picture of the devices in the world", () => {
         app.tick(1);
         expect(ship(app).x).toBe(10);
         const taken = app.save();
-        expect(Exit.isSuccess(taken)).toBe(true);
-        return (taken as Exit.Success<Save.Save>).value;
+        assert(Exit.isSuccess(taken));
+        return taken.value;
       }).pipe(withSource(source))
     );
     // Loaded with no devices and never asked to read any: the key is held.

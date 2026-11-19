@@ -196,6 +196,28 @@ const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
 });
 
 /**
+ * What a generator's effects can fail with, as `Effect.gen` says it.
+ *
+ * @category Type-level
+ */
+export type GenError<Eff> = [Eff] extends [never]
+  ? never
+  : [Eff] extends [Effect.Effect<infer _A, infer E, infer _R>]
+    ? E
+    : never;
+
+/**
+ * What a generator's effects need, as `Effect.gen` says it.
+ *
+ * @category Type-level
+ */
+export type GenServices<Eff> = [Eff] extends [never]
+  ? never
+  : [Eff] extends [Effect.Effect<infer _A, infer _E, infer R>]
+    ? R
+    : never;
+
+/**
  * Defines a system from a generator.
  *
  * The body is wrapped with `Effect.gen` once, and the same Effect value runs
@@ -212,17 +234,13 @@ const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
 export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, void, never>
-): System<Effect.Error<Eff>, Effect.Services<Eff>> =>
+): System<GenError<Eff>, GenServices<Eff>> =>
   build({
     name,
     stage: "update",
     after: [],
     before: [],
-    run: Effect.gen(body) as Effect.Effect<
-      void,
-      Effect.Error<Eff>,
-      Effect.Services<Eff>
-    >,
+    run: Effect.gen(body),
     condition: undefined,
     idle: undefined,
     trigger: undefined,
