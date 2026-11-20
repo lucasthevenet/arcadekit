@@ -24,7 +24,7 @@ const Movement = System.make("game/Movement", function* () {
 
 The body gets what it needs with `yield*`: queries, singletons, events, `Time`, `Random`, `Commands`, `World`, and any service of your own. Anything it needs that no plugin provides becomes a requirement of the app, and a missing one is a compile error.
 
-A system finishes within its tick: a system that waits throws, and the error names it. Work that spans many ticks belongs in a [script](scripts.md). A system changes which entities exist only through `Commands`, and reacts to changes with a [change query](queries.md) rather than by comparing against a copy it keeps. It issues actions with the [`Actions` service](events-and-actions.md), never with `app.enqueue`, which would log the action and make a replay apply it twice.
+A system finishes within its tick: a system that waits throws, and the error names it. Work that spans many ticks belongs in a [script](scripts.md). A system changes which entities exist only through `Commands`, and reacts to changes with a [change query](queries.md) rather than by comparing against a copy it keeps. It issues actions with the [`Actions` service](events-and-actions.md). `app.enqueue` throws during a tick, since it would log the action and make a replay apply it twice.
 
 ## Ordering
 

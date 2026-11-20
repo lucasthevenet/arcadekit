@@ -545,7 +545,40 @@ describe("actions", () => {
     });
     withApp(App.make({ systems: [Sneaky], handlers: [endTurn] }), (made) => {
       app = made;
-      expect(() => made.tick(1)).toThrow(/Use enqueue/);
+      expect(() => made.tick(1)).toThrow(/with Actions\.enqueue/u);
+    });
+  });
+
+  it("cannot be enqueued from inside the simulation, where a replay would apply them twice", () => {
+    let app!: App.Any;
+    const advice =
+      "It logs the action, and a replay would apply it twice: once from the log, and once when the replay runs this code again. A system, a script or a handler issues an action with Actions.enqueue, which applies it on the next tick and isn't logged.";
+    const Sneaky = System.make("Sneaky", function* () {
+      yield* Effect.sync(() => app.enqueueByName("EndTurn", { player: 1 }));
+    });
+    withApp(App.make({ systems: [Sneaky], handlers: [endTurn] }), (made) => {
+      app = made;
+      expect(() => made.tick(1)).toThrow(
+        new Error(
+          `enqueueByName("EndTurn") was called during a tick. ${advice}`
+        )
+      );
+    });
+    const Relay = Action.define<{}>()("Relay");
+    const relay = Action.handler(Relay, function* () {
+      yield* Effect.sync(() => app.enqueueByName("EndTurn", { player: 1 }));
+    });
+    withApp(App.make({ handlers: [endTurn, relay] }), (made) => {
+      app = made;
+      expect(made.dispatch(Relay, {})).toEqual(
+        Exit.die(
+          new Error(
+            `enqueueByName("EndTurn") was called from the handler of "Relay". ${advice}`
+          )
+        )
+      );
+      // Nothing was logged: the handler was undone.
+      expect(made.actionLog.filter((entry) => "name" in entry)).toEqual([]);
     });
   });
 });

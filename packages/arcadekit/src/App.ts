@@ -249,7 +249,8 @@ export interface Any {
   ) => Exit.Exit<unknown, unknown>;
   /**
    * Like `enqueue`, for actions that arrive as data. Problems become
-   * `Action.Rejected` events.
+   * `Action.Rejected` events. Like `enqueue`, it throws during a tick and from
+   * a handler.
    *
    * `from` names the issuer, for code that brings actions in on someone else's
    * behalf, such as a server for its clients: the handler receives it, and the
@@ -518,9 +519,10 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * schema does not take the payload: it could not be logged or sent to the
    * other peers.
    *
-   * For code outside the simulation. A system, a script or a handler issues an
-   * action with `Actions.enqueue`, which doesn't log it: if logged, it would be
-   * applied twice on replay, once from the log and once by the replay's own
+   * For code outside the simulation: it throws during a tick and from a
+   * handler. A system, a script or a handler issues an action with
+   * `Actions.enqueue`, which doesn't log it: if logged, it would be applied
+   * twice on replay, once from the log and once by the replay's own
    * simulation. On an app a session has taken over, the action goes to every
    * peer, and one without a schema throws.
    */
@@ -1773,6 +1775,23 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       return exit;
     };
 
+    /**
+     * Refuses `app.enqueue` from inside the simulation, where a replay would
+     * apply the action twice: from the log, and from its own simulation.
+     */
+    const assertOutsideSimulation = (call: string): void => {
+      const where = ticking
+        ? "during a tick"
+        : applying === undefined
+          ? undefined
+          : `from the handler of "${applying}"`;
+      if (where !== undefined) {
+        throw new Error(
+          `${call} was called ${where}. It logs the action, and a replay would apply it twice: once from the log, and once when the replay runs this code again. A system, a script or a handler issues an action with Actions.enqueue, which applies it on the next tick and isn't logged.`
+        );
+      }
+    };
+
     const assertBetweenTicks = (name: string): void => {
       if (diverted !== undefined) {
         throw new Error(
@@ -1781,7 +1800,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       if (ticking) {
         throw new Error(
-          `dispatch("${name}") was called during a tick. Use enqueue from systems and scripts.`
+          `dispatch("${name}") was called during a tick. A system, a script or a handler issues an action with Actions.enqueue, which applies it on the next tick.`
         );
       }
       if (between !== undefined) {
@@ -2276,12 +2295,18 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           never
         >;
       },
-      enqueue,
+      enqueue(action, payload) {
+        assertOutsideSimulation(`enqueue("${action.name}")`);
+        return enqueue(action, payload);
+      },
       dispatchByName(name, payload, from) {
         assertBetweenTicks(name);
         return apply(name, payload, true, true, from);
       },
-      enqueueByName,
+      enqueueByName(name, payload, from) {
+        assertOutsideSimulation(`enqueueByName("${name}")`);
+        enqueueByName(name, payload, from);
+      },
       divert(take, divertOptions) {
         if (diverted !== undefined) {
           throw new Error(
