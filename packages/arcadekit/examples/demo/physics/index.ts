@@ -3,8 +3,6 @@
  * down. The other plugins of the demo import what they need of it from
  * here, and nothing from `loops.ts`.
  */
-import { Effect } from "effect";
-
 import {
   Component,
   Field,
@@ -39,16 +37,13 @@ export const Falling = Query.all(Position, Velocity).pipe(
 // query excludes Frozen, a sparse tag, so each table arrives as runs of
 // consecutive rows that are not frozen: a sparse component filters a raw
 // loop, and is not its data.
-export const Physics = System.setup("Physics", function* () {
-  const falling = yield* Falling;
-  return Effect.gen(function* () {
-    const gravity = yield* Gravity;
-    const { delta } = yield* Time;
-    falling.eachChunk((start, end, pos, vel) =>
-      fall(start, end, pos.x, pos.y, vel.x, vel.y, gravity, delta)
-    );
-  });
-});
+export const Physics = System.make("Physics", function* () {
+  const gravity = yield* Gravity;
+  const { delta } = yield* Time;
+  (yield* Falling).eachChunk((start, end, pos, vel) =>
+    fall(start, end, pos.x, pos.y, vel.x, vel.y, gravity, delta)
+  );
+}).pipe(System.access({ queries: [Falling] }));
 
 export const plugin = Plugin.make("Physics", {
   components: [Position, Velocity, Frozen],

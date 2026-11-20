@@ -1,6 +1,4 @@
 /** Things that last a while, and are gone when their time is up. */
-import { Effect } from "effect";
-
 import {
   Commands,
   Component,
@@ -20,19 +18,17 @@ const Mortal = Query.all(Lifetime);
 
 // It despawns from a callback per entity, through `Commands`: that is not
 // a raw loop, so it stays here and not in a module of loops.
-const Expiry = System.setup("Expiry", function* () {
+const Expiry = System.make("Expiry", function* () {
   const mortal = yield* Mortal;
   const commands = yield* Commands;
-  return Effect.gen(function* () {
-    const { delta } = yield* Time;
-    mortal.each((life, entity) => {
-      life.seconds -= delta;
-      if (life.seconds <= 0) {
-        commands.despawn(entity);
-      }
-    });
+  const { delta } = yield* Time;
+  mortal.each((life, entity) => {
+    life.seconds -= delta;
+    if (life.seconds <= 0) {
+      commands.despawn(entity);
+    }
   });
-}).pipe(System.after(Physics.Physics));
+}).pipe(System.after(Physics.Physics), System.access({ queries: [Mortal] }));
 
 export const plugin = Plugin.make("Lifetime", {
   plugins: [Physics.plugin],

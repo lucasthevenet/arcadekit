@@ -16,7 +16,6 @@ import type { Pipeable } from "effect/Pipeable";
 import type { ComponentDef, SingletonSpec } from "./ecs/component";
 import type { QuerySpec } from "./ecs/world";
 import type { EventDef } from "./Event";
-import type { Commands, Events, Random, World } from "./Services";
 
 /**
  * The stages of a tick, in the order they run.
@@ -187,13 +186,6 @@ export interface System<out E = never, out R = never> extends Pipeable {
   readonly access: Access | undefined;
   /** What its conditions read, which it doesn't need to declare again. */
   readonly implied: readonly Touched[];
-  /**
-   * For a system made with `System.setup`, what runs once when the app is
-   * made: it acquires what the system touches, and gives back what runs every
-   * tick. The app records what it acquired as the system's access. Undefined
-   * for a system made with `System.make`.
-   */
-  readonly setup: Effect.Effect<Effect.Effect<void, E, R>, E, R> | undefined;
 }
 
 const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
@@ -254,80 +246,6 @@ export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
     trigger: undefined,
     access: undefined,
     implied: [],
-    setup: undefined,
-  });
-
-/**
- * The services a tick made by `System.setup` may not reach: whatever it touches
- * of the game is acquired in its setup.
- *
- * @category Type-level
- */
-export type Reaching = World | Events | Commands | Random;
-
-/**
- * Refuses a tick that reaches the game itself, naming what it reached.
- *
- * @category Type-level
- */
-export type TickOnly<R> = [Extract<R, Reaching>] extends [never]
-  ? unknown
-  : {
-      readonly "A system's tick can't reach the game: yield this in its setup instead": Extract<
-        R,
-        Reaching
-      >;
-    };
-
-/**
- * Defines a system in two parts: a setup that runs once, when the app is made,
- * and a tick that runs every tick.
- *
- *   const Expiry = System.setup("Expiry", function* () {
- *     const mortal = yield* Mortal
- *     const commands = yield* Commands
- *     return Effect.gen(function* () {
- *       const { delta } = yield* Time
- *       mortal.each((life, entity) => { ... })
- *     })
- *   })
- *
- * What the setup yields of the game, a query, a singleton or an event, is the
- * system's access: the app records it, holds the system to it, and knows it
- * before the first tick, with nothing declared. What the setup gets back is a
- * handle that stays good for as long as the app lives, through a load or a
- * rollback.
- *
- * - The tick can't yield `World`, `Events`, `Commands` or `Random`: the
- *   compiler refuses it and names what it reached. It yields what isn't the
- *   game's state, such as `Time` or a resource.
- * - A singleton or an event acquired in setup counts as written.
- * - The setup runs before any tick: it acquires, and reads nothing of the game.
- *
- * @category Constructors
- */
-export const setup = <
-  Eff extends Effect.Effect<unknown, unknown, unknown>,
-  E2,
-  R2,
->(
-  name: string,
-  body: () => Generator<Eff, Effect.Effect<void, E2, R2> & TickOnly<R2>, never>
-): System<GenError<Eff> | E2, GenServices<Eff> | R2> =>
-  build<GenError<Eff> | E2, GenServices<Eff> | R2>({
-    name,
-    stage: "update",
-    after: [],
-    before: [],
-    run: Effect.die(
-      `System "${name}" was made with System.setup, and runs only in an app, which sets it up.`
-    ),
-    condition: undefined,
-    idle: undefined,
-    trigger: undefined,
-    access: undefined,
-    implied: [],
-    setup: Effect.gen(body),
   });
 
 /**
@@ -708,14 +626,6 @@ export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
   build({
     ...self,
     run: Effect.withSpan(self.run, self.name) as Effect.Effect<void, E, R>,
-    setup:
-      self.setup === undefined
-        ? undefined
-        : Effect.map(
-            self.setup,
-            (tick) =>
-              Effect.withSpan(tick, self.name) as Effect.Effect<void, E, R>
-          ),
   });
 
 /**
