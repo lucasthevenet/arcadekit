@@ -334,6 +334,31 @@ describe("a change query", () => {
     expect(both.entities()).toEqual([entities[4]]);
   });
 
+  it("is skipped by a reader that was off, which then sees only what changes after, and holds nothing back for it", () => {
+    const { entities, world } = populated(4);
+    const off = world.view(Moved, "off");
+    const gone = world.removed(Position, "off");
+    const on = world.view(Moved, "on");
+    off.entities();
+    gone.read();
+    on.entities();
+    world.set(entities[0]!, Position, { x: 1 });
+    world.despawn(entities[3]!);
+    world.skip("off");
+    expect(off.entities()).toEqual([]);
+    expect(gone.read()).toEqual([]);
+    // Another reader is not skipped with it.
+    expect(on.entities()).toEqual([entities[0]]);
+    // Nobody is left waiting for what was logged, and it is forgotten.
+    expect(world.saveChanges().flatMap((saved) => saved.entries)).toEqual([]);
+    world.set(entities[1]!, Position, { x: 2 });
+    expect(off.entities()).toEqual([entities[1]]);
+    // One that has never visited still visits everything that matches.
+    const late = world.view(Moved, "late");
+    world.skip("late");
+    expect(late.entities()).toEqual(entities.slice(0, 3));
+  });
+
   it("gives each reader its own place, and one place to a reader of two alike queries", () => {
     const { entities, world } = populated();
     const first = world.view(Moved, "first");

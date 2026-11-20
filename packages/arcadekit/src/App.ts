@@ -1374,6 +1374,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (turn.idle !== undefined) {
           yield* turn.idle;
         }
+        // It sees nothing that changed while it was off, as no event.
+        world.skip(running);
       } else {
         yield* turn.run;
       }
@@ -1440,6 +1442,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             yield* turn.idle;
             commands.apply();
           }
+          // It sees nothing that changed while it was off, as no event.
+          world.skip(running);
         } else {
           yield* turn.run;
           commands.apply();
@@ -1546,6 +1550,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             if (turn.idle !== undefined) {
               yield* turn.idle;
             }
+            world.skip(world.reader);
           } else {
             yield* turn.run;
           }

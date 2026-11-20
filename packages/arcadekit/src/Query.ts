@@ -140,8 +140,8 @@ export const without: {
  *
  * - Each system, and each action's handler, tracks its own position, and sees
  *   every change once. On its first visit, it sees every matching entity. A
- *   system that was skipped misses nothing: what changed in the meantime is
- *   there when it runs again.
+ *   system that `System.runIf` turned off sees nothing that changed while it
+ *   was off, as it hears no event from then: see `System.runIf`.
  * - `each`, `eachChunk` and `entities` count as visits. `count` only peeks.
  * - An entity is visited once however often it was written, in the usual query
  *   order. An entity that has since lost the component, or was despawned, isn't

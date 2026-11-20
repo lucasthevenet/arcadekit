@@ -271,10 +271,11 @@ export const before: {
  * all of them hold, and they are checked in order until one fails.
  *
  * - A system without a condition checks nothing, and costs nothing extra.
- * - A system that doesn't run doesn't read. The events from the ticks it
- *   skipped are gone when it runs again, as for any system that falls behind an
- *   event; what its change queries haven't visited is kept, however long it was
- *   disabled.
+ * - A system that doesn't run doesn't read, and sees nothing of what happened
+ *   while it was off. The events from the ticks it skipped are gone when it
+ *   runs again, and its change queries and `Query.removed` readers skip what
+ *   changed in them: they see what changed after its last skipped turn. A
+ *   change query it has never visited still visits everything that matches.
  * - The condition's requirements and errors become the system's.
  *
  * @category Combinators

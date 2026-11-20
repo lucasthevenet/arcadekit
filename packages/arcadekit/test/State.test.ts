@@ -403,7 +403,7 @@ describe("a run condition", () => {
     );
   });
 
-  it("keeps a system that did not run out of events, and not out of changes", () => {
+  it("keeps a system that did not run out of what happened while it was off, events and changes alike", () => {
     const Bounced = Event.define(
       "st/Bounced",
       Schema.Struct({ at: Schema.Int })
@@ -429,28 +429,44 @@ describe("a run condition", () => {
             (yield* Balls.pipe(Query.changed(Ball))).entities().length
           );
         }).pipe(System.runIf(State.is(Phase, "playing")));
+        // The same, drawn between ticks.
+        const drawn: number[] = [];
+        const Look = System.make("Look", function* () {
+          drawn.push(
+            (yield* Balls.pipe(Query.changed(Ball))).entities().length
+          );
+        }).pipe(
+          System.inStage("frame"),
+          System.runIf(State.is(Phase, "playing"))
+        );
         const app = yield* App.make({
-          systems: [Listen, Emit],
+          systems: [Listen, Emit, Look],
           handlers: [go],
         });
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: 0 }));
         }
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        app.tick(1);
-        app.dispatch(Go, { to: "paused", refuse: false });
-        for (let tick = 0; tick < 6; tick++) {
+        const tick = () => {
           app.tick(1);
+          app.frame(0);
+        };
+        app.dispatch(Go, { to: "playing", refuse: false });
+        tick();
+        tick();
+        app.dispatch(Go, { to: "paused", refuse: false });
+        for (let n = 0; n < 6; n++) {
+          tick();
         }
         app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        // It hears the event of the tick before it came back, and none of
-        // the six it sat out before that.
+        tick();
+        // It hears the event of the tick before it came back, which came
+        // after its turn, and none of the six it sat out before that.
         expect(heard).toEqual([1, 8]);
-        // But every ball that moved while it was away is there to visit:
-        // all three, each once.
-        expect(moved).toEqual([3, 1, 3]);
+        // And of the balls, only the one that moved after its turn in that
+        // tick: all three moved while it was away.
+        expect(moved).toEqual([3, 1, 1]);
+        // Drawn after each tick: the one ball the tick it came back moved.
+        expect(drawn).toEqual([3, 1, 1]);
       })
     );
   });

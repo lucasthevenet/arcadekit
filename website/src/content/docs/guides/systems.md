@@ -68,6 +68,8 @@ const Movement = System.make("game/Movement", function* () {
 }).pipe(System.runIf(State.is(Phase, "playing")));
 ```
 
+A system that doesn't run sees nothing of what happened while it was off: no event from the ticks it skipped, and none of what its change queries would have visited in them. When it runs again, it reads the state it needs.
+
 A system that keeps something outside itself up to date, such as music or a view, can declare what to do while it doesn't run with `System.otherwise(effect)`. See [states](states.md).
 
 ## Requesting ticks

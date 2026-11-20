@@ -17,7 +17,8 @@
  * so an event emitted while systems are running is kept until the end of the
  * following tick. An event emitted between ticks is dropped at the end of the
  * next tick. Events aren't kept for a system that `System.runIf` has disabled:
- * when it runs again, the events from the ticks it skipped are gone.
+ * when it runs again, the events from the ticks it skipped are gone, as are
+ * the changes its change queries would have seen in them.
  *
  * The payload type is inferred from the event's schema. Emitting is a plain
  * call with no validation: the schema is only used when the event leaves the

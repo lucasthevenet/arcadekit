@@ -460,6 +460,8 @@ export interface ChangeCursor {
   at: number;
   /** The reader's identity, as a save records it. */
   readonly key: string;
+  /** Who reads: the start of `key`, which a view follows with its query. */
+  readonly reader: string;
   /**
    * True until the reader's first visit, which covers everything that has the
    * component, since the log only knows what happened after it started.
@@ -686,9 +688,33 @@ export class ChangeLog {
         return cursor;
       }
     }
-    const cursor = { at: this.end, key, fresh, claimed: true };
+    const cursor = {
+      at: this.end,
+      key,
+      reader: readerOf(key),
+      fresh,
+      claimed: true,
+    };
     this.cursors.push(cursor);
     return cursor;
+  }
+
+  /**
+   * Moves every cursor of `reader` that has visited to the end, as a visit
+   * would: what was logged so far is no longer waiting for it.
+   */
+  skip(reader: string): void {
+    let moved = false;
+    for (const cursor of this.cursors) {
+      if (cursor.reader === reader && !cursor.fresh && cursor.at !== this.end) {
+        this.world._reading(cursor);
+        cursor.at = this.end;
+        moved = true;
+      }
+    }
+    if (moved) {
+      this.world._read(this);
+    }
   }
 
   /** Copies the entries from sequence number `from` on into `into` at `offset`. */
@@ -822,7 +848,13 @@ export class ChangeLog {
           `a reader of the changes to "${this.def.name}" is further than they go`
         );
       }
-      this.cursors.push({ at: visited, key, fresh: false, claimed: false });
+      this.cursors.push({
+        at: visited,
+        key,
+        reader: readerOf(key),
+        fresh: false,
+        claimed: false,
+      });
     }
     this.moved();
   }
@@ -870,6 +902,9 @@ export class RemovedReader {
     return Array.from(ids) as Entity[];
   }
 }
+
+/** Who a cursor's key belongs to: a view's key goes on with its query. */
+const readerOf = (key: string): string => key.split("\n", 1)[0]!;
 
 /** Describes a query as text: how a save identifies a change query. */
 const describeSpec = (spec: QuerySpec): string => {
@@ -3157,6 +3192,19 @@ export class World {
       }
     }
     return log;
+  }
+
+  /**
+   * Has `reader` skip what changed: each change query and `removed` reader of
+   * its that has visited before moves to the end, so that its next visit sees
+   * only what changes from now on. One that has never visited still sees
+   * everything that matches. An app calls this for a system that its
+   * condition doesn't let run, so that it sees nothing from while it was off.
+   */
+  skip(reader: string): void {
+    for (const log of this.logs) {
+      log.skip(reader);
+    }
   }
 
   /** @internal A reader is about to move. A rollback puts it back. */

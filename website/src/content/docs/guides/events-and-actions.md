@@ -42,7 +42,7 @@ const Dust = System.make("fx/Dust", function* () {
 
 An event is a fact: name it in the past tense, prefixed with its feature, such as `"physics/Landed"`. The name identifies the event within an app, and a second, different event with the same name is refused when it is first used.
 
-A system that `System.runIf` can switch off shouldn't rely on events for anything it must not miss: the events from the ticks it skipped are gone when it runs again. Have it watch the game's state instead, with a [change query](queries.md) or a singleton.
+A system that `System.runIf` can switch off hears no event from the ticks it skipped, and its [change queries](queries.md) see nothing that changed in them either. Have it read the state it needs when it runs again, with an ordinary query or a singleton.
 
 The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. An event with no payload takes only its name, `Event.define("Started")`.
 
