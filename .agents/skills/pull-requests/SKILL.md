@@ -19,8 +19,7 @@ A pull request is ready when a reviewer can judge the change from it, without ru
    - the benchmark before and after, for a hot path;
    - a screenshot of a page or of what is drawn, when either changed;
    - for a change to a flow (a session, the stages of a frame, states, a game that ticks when needed), a short diagram of it when that is clearer than prose;
-   - the engine a design was borrowed from, with a link to the part that was used;
-   - for a new export or option, what a game's author has to learn to use it, as the `arcadekit-development` skill's [design.md](../arcadekit-development/design.md) lists it.
+   - the engine a design was borrowed from, with a link to the part that was used.
 5. **Do not make it slower.** A slowdown on purpose says so in a commit's message, `Bench-slower: <variants>`, with the reason above it.
 6. **Say what breaks**, in the changeset, the commit and the PR: what a game wrote before, and what it writes now. A change that only adds says that nothing breaks.
 7. **Say what was left**: a workaround that was found and not fixed, a check that seems wrong, a rule this change could not turn into a check.
