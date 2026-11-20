@@ -227,6 +227,44 @@ describe("systems", () => {
     expect(seen).toEqual([9.81, 1.62]);
   });
 
+  it("read a resource's value as read-only, so that no app changes another's", () => {
+    const Config = Resource.make("rt/Config", {
+      defaultValue: () => ({ difficulty: 1, levels: [{ name: "start" }] }),
+    });
+    const Harden = System.make("rt/Harden", function* () {
+      const config = yield* Config;
+      // @ts-expect-error: a resource's value is read-only.
+      config.difficulty = 2;
+    });
+    const Rename = System.make("rt/Rename", function* () {
+      const config = yield* Config;
+      // @ts-expect-error: all the way down.
+      config.levels[0]!.name = "end";
+    });
+    for (const system of [Harden, Rename]) {
+      withApp(App.make({ systems: [system] }), (app) => {
+        expect(() => app.tick(1)).toThrow(TypeError);
+      });
+    }
+    const seen: unknown[] = [];
+    const Read = System.make("rt/Read", function* () {
+      seen.push(yield* Config);
+    });
+    withApp(App.make({ systems: [Read] }), (app) => app.tick(1));
+    expect(seen).toEqual([{ difficulty: 1, levels: [{ name: "start" }] }]);
+    // A layer's value is frozen too.
+    const given = { difficulty: 3, levels: [] };
+    withApp(
+      App.make({ systems: [Harden] }).pipe(
+        Effect.provide(Resource.layer(Config, given))
+      ),
+      (app) => {
+        expect(() => app.tick(1)).toThrow(TypeError);
+      }
+    );
+    expect(given.difficulty).toBe(3);
+  });
+
   it("get their services the usual Effect way, and a missing one does not compile", () => {
     class Audio extends Context.Service<
       Audio,

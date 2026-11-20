@@ -95,7 +95,7 @@ const OnTheMoon = Resource.layer(Gravity, -1.62);
 
 A system reads it with `yield* Gravity`. It is configuration, not game state, and isn't saved. Game state that exists once belongs in a [singleton](components.md#singletons), which lives in the world and is therefore saved, hashed, and restored when an action is refused.
 
-A resource's default is created once and shared by every app in the process, so never mutate it.
+A resource's default is created once and shared by every app in the process, so its value is read-only: its type says so all the way down, and a plain object or array is frozen, so that a write throws. To change it for an app, provide another value with `Resource.layer`.
 
 ## Project layout
 
