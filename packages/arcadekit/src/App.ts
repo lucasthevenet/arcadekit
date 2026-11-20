@@ -28,20 +28,37 @@
  * which receive the devices' state and turn it into actions, also with the
  * world frozen.
  *
+ * An app made where the program provides a tracer, such as `OtlpTracer.layer`
+ * of `effect/observability`, sends what it does as spans at the "Debug" level:
+ * one for each tick, `arcadekit/tick`, holding a span for each action applied
+ * in it, `action:<name>`, and for each system's turn, named after the system;
+ * and one for each run of the frame stage, `arcadekit/frame`, and of the input
+ * stage, `arcadekit/input`, holding their systems'. Each starts a trace of its
+ * own. A span costs about 3 µs. An app makes none, and costs nothing, when no
+ * tracer is provided, under `Effect.withTracerEnabled(false)`, or when
+ * `Tracer.MinimumTraceLevel` is above "Debug": a program that sends spans of
+ * its own and not the game's provides it as "Info". A span reads the real
+ * clock and draws its ids from `Math.random`, so tracing doesn't change the
+ * game.
+ *
  * A failed script is logged with its cause. An app created with
  * `onScriptFailure: "stop"` also stops: that tick and every later one fail with
  * `ScriptFailed`.
  */
 import {
   Cause,
+  Clock,
   Context,
   Data,
   Effect,
   Random as EffectRandom,
   Exit,
   Layer,
+  LogLevel,
+  References,
   Result,
   Schema,
+  Tracer,
 } from "effect";
 import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
@@ -49,7 +66,7 @@ import * as Scheduler from "effect/Scheduler";
 import * as Action from "./Action";
 import * as Driver from "./Driver";
 import { isSingletonSpec } from "./ecs/component";
-import type { Listed } from "./ecs/component";
+import type { Entity, Listed } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
@@ -303,6 +320,61 @@ export interface Any {
    * such as when it is saved. Only between ticks.
    */
   readonly checkpoint: () => number;
+  /**
+   * Copies what the game holds and what it did last, as plain data to read in
+   * a debugger or the console, or to show in a game's own UI: its entities and
+   * their components, its singletons, its systems with how long each took,
+   * and the events of the last tick. See `Inspection`. Reading it changes
+   * nothing.
+   *
+   * **Gotchas**
+   *
+   * - It copies the whole world, so call it when you look rather than every
+   *   frame.
+   * - It throws during a tick or a frame: inspect between ticks.
+   */
+  readonly inspect: () => Inspection;
+}
+
+/**
+ * What a game holds and what it did last, as `app.inspect()` copies it. Every
+ * value is a plain object or array, a copy, which can be kept, logged or shown
+ * without changing the game.
+ *
+ * @category Models
+ */
+export interface Inspection {
+  /** The number of ticks run. */
+  readonly tick: number;
+  /**
+   * Every live entity, in order of index, with a copy of each of its
+   * components' fields by component name.
+   */
+  readonly entities: readonly {
+    readonly id: Entity;
+    readonly components: Readonly<Record<string, object>>;
+  }[];
+  /** A copy of each singleton the world holds, by name. */
+  readonly singletons: Readonly<Record<string, object>>;
+  /**
+   * Every system: the tick's in the order they run, then the hooks, the input
+   * stage's and the frame stages'. Each has what its last turn was: whether
+   * it ran, false when a condition given with `System.runIf` didn't hold or
+   * when it hasn't had a turn yet, and how long the turn took in
+   * milliseconds, its condition and its commands included.
+   */
+  readonly systems: readonly {
+    readonly name: string;
+    readonly stage: System.Stage;
+    readonly ran: boolean;
+    readonly ms: number;
+  }[];
+  /**
+   * The events emitted in the last tick, and between it and the tick before,
+   * by event name, each in the order it was emitted. An event emitted by an
+   * action dispatched since is not here yet: it is in the next tick's.
+   */
+  readonly events: Readonly<Record<string, readonly unknown[]>>;
 }
 
 /**
@@ -438,6 +510,46 @@ export interface App<E = never, R = never, HU = never> extends Any {
     action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<void, Action.InvalidPayload>;
+}
+
+/**
+ * A system as the app runs it: its condition, then its run or what it
+ * does in place of running, in a span of its own when the app traces.
+ * Made once, so an app that doesn't trace runs what it would without.
+ * What its last turn was is kept for `inspect`.
+ */
+class Turn {
+  /** Asked before `run`, unless the span holds it. */
+  readonly condition: Effect.Effect<boolean, unknown, unknown> | undefined;
+  readonly idle: Effect.Effect<void, unknown, unknown> | undefined;
+  readonly run: Effect.Effect<void, unknown, unknown>;
+  ran = false;
+  ms = 0;
+  constructor(
+    readonly system: Plugin.AnySystem,
+    trace: boolean
+  ) {
+    const { condition, idle, run } = system;
+    if (!trace) {
+      // Asked in the loop, which is cheaper than a flatMap each tick.
+      this.condition = condition;
+      this.idle = idle;
+      this.run = run;
+      return;
+    }
+    this.condition = undefined;
+    this.idle = undefined;
+    this.run = Effect.withSpan(
+      condition === undefined
+        ? run
+        : Effect.flatMap(condition, (holds) => {
+            this.ran = holds;
+            return holds ? run : (idle ?? Effect.void);
+          }),
+      system.name,
+      { level: System.spanLevel }
+    );
+  }
 }
 
 /** Summarizes an error in a few words, for a log entry or a message. */
@@ -1136,8 +1248,39 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const runFork = Effect.runForkWith(context);
     reportContext = context;
 
-    // A hook runs when its state is entered or left, not with the rest.
+    // A tick's span is opened by hand, before its actions are applied each in
+    // a fiber of its own, so that their spans and the systems' are its own.
+    let tickSpan: Tracer.Span | undefined;
+    const openSpan = (
+      name: string,
+      attributes: Record<string, unknown>
+    ): Tracer.Span => {
+      const made = runFork(
+        Effect.makeSpan(name, {
+          root: true,
+          attributes,
+          level: System.spanLevel,
+        })
+      ).pollUnsafe();
+      if (made === undefined || Exit.isFailure(made)) {
+        throw new Error(`The span "${name}" could not be made.`);
+      }
+      return made.value;
+    };
+    const endSpan = (
+      span: Tracer.Span,
+      exit: Exit.Exit<unknown, unknown>
+    ): void => {
+      span.end(
+        Context.get(context, References.TracerTimingEnabled)
+          ? Context.get(context, Clock.Clock).currentTimeNanosUnsafe()
+          : 0n,
+        exit
+      );
+    };
+
     System.unique(allSystems);
+    // A hook runs when its state is entered or left, not with the rest.
     const ordered = System.order(
       allSystems.filter(
         (system) =>
@@ -1166,7 +1309,21 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     });
     const hookKey = (trigger: System.Trigger): string =>
       `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
-    const hooks = new Map<string, Plugin.AnySystem[]>();
+    // Chosen once, so an app that doesn't trace runs what it would without.
+    // The default tracer makes spans and sends them nowhere: Effect compares
+    // with it to tell that no tracer is installed. A span the minimum level
+    // leaves out would be made and not sent, so none is made.
+    const trace =
+      Context.get(context, Tracer.Tracer) !== Tracer.nativeTracer &&
+      Context.get(context, References.TracerEnabled) &&
+      !LogLevel.isGreaterThan(
+        Context.get(context, Tracer.MinimumTraceLevel),
+        System.spanLevel
+      );
+    const tickTurns = ordered.map((system) => new Turn(system, trace));
+    const frameTurns = frameSystems.map((system) => new Turn(system, trace));
+    const inputTurns = inputSystems.map((system) => new Turn(system, trace));
+    const hookGroups = new Map<string, Plugin.AnySystem[]>();
     const states = State.registryOf(world);
     for (const listed of components) {
       if (listed instanceof State.State) {
@@ -1195,28 +1352,39 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       State.handleOf(world, state);
       const key = hookKey(system.trigger);
-      hooks.set(key, [...(hooks.get(key) ?? []), system]);
+      hookGroups.set(key, [...(hookGroups.get(key) ?? []), system]);
     }
-    for (const [key, group] of hooks) {
+    const hooks = new Map<string, Turn[]>();
+    for (const [key, group] of hookGroups) {
       // `after` and `before` order the hooks of one moment among themselves.
-      hooks.set(key, System.order(group));
+      hooks.set(
+        key,
+        System.order(group).map((system) => new Turn(system, trace))
+      );
     }
 
     let running = "";
-    /** Runs one system as itself, with its own positions in events and changes. */
-    const runSystem = (
-      system: Plugin.AnySystem
-    ): Effect.Effect<void, unknown, unknown> =>
-      Effect.suspend(() => {
-        running = system.name;
-        events.reader = running;
-        world.reader = running;
-        return system.condition === undefined
-          ? system.run
-          : Effect.flatMap(system.condition, (holds) =>
-              holds ? system.run : (system.idle ?? Effect.void)
-            );
-      });
+    /**
+     * Runs one system of the tick as itself, with its own positions in
+     * events and changes, and applies its commands.
+     */
+    const takeTurn = Effect.fnUntraced(function* (turn: Turn) {
+      running = turn.system.name;
+      events.reader = running;
+      world.reader = running;
+      const began = performance.now();
+      turn.ran = true;
+      if (turn.condition !== undefined && !(yield* turn.condition)) {
+        turn.ran = false;
+        if (turn.idle !== undefined) {
+          yield* turn.idle;
+        }
+      } else {
+        yield* turn.run;
+      }
+      commands.apply();
+      turn.ms = performance.now() - began;
+    });
     /** Makes one state transition: the exit hooks, the transition, then the enter hooks. */
     const makeMove = Effect.fnUntraced(function* (
       state: State.State<string>,
@@ -1226,16 +1394,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         for (const hook of hooks.get(
           hookKey({ state, on: "exit", value: move.from })
         ) ?? []) {
-          yield* runSystem(hook);
-          commands.apply();
+          yield* takeTurn(hook);
         }
       }
       State.enter(world, state, move);
       for (const hook of hooks.get(
         hookKey({ state, on: "enter", value: move.to })
       ) ?? []) {
-        yield* runSystem(hook);
-        commands.apply();
+        yield* takeTurn(hook);
       }
     });
     /** Enters the requested states, and runs their hooks. */
@@ -1261,23 +1427,31 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (states.states.length > 0) {
         yield* enterStates;
       }
-      for (let at = 0; at < ordered.length; at++) {
-        const system = ordered[at]!;
-        running = system.name;
+      // Written out rather than calling `takeTurn`, which costs a generator
+      // per system per tick. One reading of the clock ends a turn and
+      // begins the next, which halves what timing them costs.
+      let clock = performance.now();
+      for (const turn of tickTurns) {
+        running = turn.system.name;
         // Each system reads events, and what changed, from its own position.
         events.reader = running;
         world.reader = running;
+        turn.ran = true;
         // A system with no condition is asked nothing.
-        if (system.condition !== undefined && !(yield* system.condition)) {
+        if (turn.condition !== undefined && !(yield* turn.condition)) {
+          turn.ran = false;
           // What it does in place of running, if it was given anything.
-          if (system.idle !== undefined) {
-            yield* system.idle;
+          if (turn.idle !== undefined) {
+            yield* turn.idle;
             commands.apply();
           }
-          continue;
+        } else {
+          yield* turn.run;
+          commands.apply();
         }
-        yield* system.run;
-        commands.apply();
+        const now = performance.now();
+        turn.ms = now - clock;
+        clock = now;
       }
     });
 
@@ -1368,36 +1542,60 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     let frameHash = 0;
     const stageEffect = (
       stage: "frame" | "input",
-      systems: readonly Plugin.AnySystem[]
+      turns: readonly Turn[]
     ): Effect.Effect<void, unknown, unknown> =>
       Effect.gen(function* () {
-        for (const system of systems) {
-          running = system.name;
+        let clock = performance.now();
+        for (const turn of turns) {
+          running = turn.system.name;
           // A place of its own in events and in what changed, apart from
           // the simulation's and never saved.
           events.reader = `${FRAME_READER}${running}`;
           world.reader = events.reader;
-          if (system.condition !== undefined && !(yield* system.condition)) {
-            if (system.idle === undefined) {
-              continue;
+          turn.ran = true;
+          if (turn.condition !== undefined && !(yield* turn.condition)) {
+            turn.ran = false;
+            if (turn.idle !== undefined) {
+              yield* turn.idle;
             }
-            yield* system.idle;
           } else {
-            yield* system.run;
+            yield* turn.run;
           }
-          if (verifyFrames && world.hash() !== frameHash) {
-            return yield* Effect.die(
-              new FrameChangedWorld({
-                stage,
-                system: running,
-                frame: frame.count,
-              })
-            );
+          const now = performance.now();
+          turn.ms = now - clock;
+          clock = now;
+          if (verifyFrames) {
+            if (world.hash() !== frameHash) {
+              return yield* Effect.die(
+                new FrameChangedWorld({
+                  stage,
+                  system: running,
+                  frame: frame.count,
+                })
+              );
+            }
+            // The hash is not the next system's to pay for.
+            clock = performance.now();
           }
         }
       });
-    const frameEffect = stageEffect("frame", frameSystems);
-    const inputEffect = stageEffect("input", inputSystems);
+    const drawn = stageEffect("frame", frameTurns);
+    const heardEffect = stageEffect("input", inputTurns);
+    const frameEffect = trace
+      ? Effect.suspend(() =>
+          Effect.withSpan(drawn, "arcadekit/frame", {
+            root: true,
+            attributes: { "arcadekit.frame": frame.count },
+            level: System.spanLevel,
+          })
+        )
+      : drawn;
+    const inputEffect = trace
+      ? Effect.withSpan(heardEffect, "arcadekit/input", {
+          root: true,
+          level: System.spanLevel,
+        })
+      : heardEffect;
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -1500,7 +1698,18 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       try {
         // The payload is the action's: its schema decoded it, or the
         // compiler checked it in a typed dispatch.
-        fiber = runFork(handler.handle(value as never, { from }));
+        const handled = handler.handle(value as never, { from });
+        fiber = runFork(
+          trace
+            ? Effect.withSpan(
+                handled,
+                `action:${name}`,
+                tickSpan === undefined
+                  ? { root: true, level: System.spanLevel }
+                  : { parent: tickSpan, level: System.spanLevel }
+              )
+            : handled
+        );
       } finally {
         events.reader = undefined;
         world.reader = undefined;
@@ -1671,6 +1880,26 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // Each tick is asked afresh: one in which nobody asks is the last.
       wanted = false;
       start();
+      if (!trace) {
+        return ticked(delta);
+      }
+      tickSpan = openSpan("arcadekit/tick", {
+        "arcadekit.tick": time.tick + 1,
+      });
+      let exit: Exit.Exit<void, TickError<S, P>> | undefined;
+      try {
+        exit = ticked(delta);
+        return exit;
+      } catch (error) {
+        exit = Exit.die(error);
+        throw error;
+      } finally {
+        endSpan(tickSpan, exit ?? Exit.void);
+        tickSpan = undefined;
+      }
+    };
+    /** Runs one tick, once the input stage has been seen to. */
+    const ticked = (delta: number): Exit.Exit<void, TickError<S, P>> => {
       ticking = true;
       try {
         // Queued actions are applied before time advances, so they land at the
@@ -1699,7 +1928,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.tick++;
 
         events.beginTick();
-        const fiber = runFork(tickEffect);
+        const fiber = runFork(
+          tickSpan === undefined
+            ? tickEffect
+            : Effect.withParentSpan(tickEffect, tickSpan)
+        );
         events.reader = undefined;
         world.reader = undefined;
         const exit = fiber.pollUnsafe();
@@ -1941,6 +2174,30 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // No script was running when the moment was captured, and none
         // starts again.
         commands.apply();
+      },
+      inspect() {
+        if (ticking || between !== undefined) {
+          throw new Error(
+            `inspect() was called from inside a ${busy()}. A game is inspected between ticks.`
+          );
+        }
+        const turns = [
+          ...tickTurns,
+          ...[...hooks.values()].flat(),
+          ...inputTurns,
+          ...frameTurns,
+        ];
+        return {
+          tick: time.tick,
+          ...world.contents(),
+          systems: turns.map(({ ms, ran, system }) => ({
+            name: system.name,
+            stage: system.stage,
+            ran,
+            ms,
+          })),
+          events: events.lastTick(),
+        };
       },
       checkpoint() {
         if (ticking) {

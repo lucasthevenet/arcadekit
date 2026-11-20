@@ -361,16 +361,11 @@ export const otherwise: {
 );
 
 /**
- * Wraps each run in a tracing span named after the system. Use it in
- * development builds.
- *
- * @category Combinators
+ * The level of the spans an app makes, as a program's
+ * `Tracer.MinimumTraceLevel` sees them.
+ * @internal
  */
-export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
-  build({
-    ...self,
-    run: Effect.withSpan(self.run, self.name) as Effect.Effect<void, E, R>,
-  });
+export const spanLevel = "Debug";
 
 /**
  * A system's name is its place in events and in what changed, so two
