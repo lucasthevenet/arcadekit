@@ -34,16 +34,18 @@
  */
 import {
   Cause,
+  Clock,
   Context,
   Data,
   Effect,
   Random as EffectRandom,
   Exit,
   Layer,
+  References,
   Result,
   Schema,
 } from "effect";
-import type { Fiber, Scope } from "effect";
+import type { Fiber, Scope, Tracer } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
@@ -556,6 +558,21 @@ export interface Options<
    * frame system per frame, so use it in development and tests.
    */
   readonly verifyFrames?: boolean;
+  /**
+   * Sends what the app does to the tracer the program provides, as spans: one
+   * for each tick, `arcadekit/tick`, holding a span for each action applied in
+   * it, `action:<name>`, and one for each system that had its turn, named
+   * after the system; and one for each run of the frame stage,
+   * `arcadekit/frame`, and of the input stage, `arcadekit/input`, holding their
+   * systems' spans. Each of the three is the root of a trace of its own.
+   *
+   * Provide a tracer as for any Effect program, such as `OtlpTracer.layer` of
+   * `effect/observability`; without one, the spans are made and go nowhere.
+   * What the game does is the same either way: a span reads the real clock and
+   * draws its ids from `Math.random`, never from the game's `Random`. Defaults
+   * to false, which costs nothing.
+   */
+  readonly trace?: boolean;
 }
 
 /**
@@ -852,7 +869,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return yield* new Save.LoadRefused(restored);
       }
     }
-    const allSystems = [
+    const listedSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
       ...(options.systems ?? []),
     ];
@@ -1136,8 +1153,38 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const runFork = Effect.runForkWith(context);
     reportContext = context;
 
+    // A tick's span is opened by hand, before its actions are applied each in
+    // a fiber of its own, so that their spans and the systems' are its own.
+    let tickSpan: Tracer.Span | undefined;
+    const openSpan = (
+      name: string,
+      attributes: Record<string, unknown>
+    ): Tracer.Span => {
+      const made = runFork(
+        Effect.makeSpan(name, { root: true, attributes })
+      ).pollUnsafe();
+      if (made === undefined || Exit.isFailure(made)) {
+        throw new Error(`The span "${name}" could not be made.`);
+      }
+      return made.value;
+    };
+    const endSpan = (
+      span: Tracer.Span,
+      exit: Exit.Exit<unknown, unknown>
+    ): void => {
+      span.end(
+        Context.get(context, References.TracerTimingEnabled)
+          ? Context.get(context, Clock.Clock).currentTimeNanosUnsafe()
+          : 0n,
+        exit
+      );
+    };
+
+    System.unique(listedSystems);
+    // Chosen once, so an app that doesn't trace runs what it would without.
+    const trace = options.trace === true;
+    const allSystems = trace ? listedSystems.map(System.traced) : listedSystems;
     // A hook runs when its state is entered or left, not with the rest.
-    System.unique(allSystems);
     const ordered = System.order(
       allSystems.filter(
         (system) =>
@@ -1396,8 +1443,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           }
         }
       });
-    const frameEffect = stageEffect("frame", frameSystems);
-    const inputEffect = stageEffect("input", inputSystems);
+    const drawn = stageEffect("frame", frameSystems);
+    const heardEffect = stageEffect("input", inputSystems);
+    const frameEffect = trace
+      ? Effect.suspend(() =>
+          Effect.withSpan(drawn, "arcadekit/frame", {
+            root: true,
+            attributes: { "arcadekit.frame": frame.count },
+          })
+        )
+      : drawn;
+    const inputEffect = trace
+      ? Effect.withSpan(heardEffect, "arcadekit/input", { root: true })
+      : heardEffect;
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -1500,7 +1558,16 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       try {
         // The payload is the action's: its schema decoded it, or the
         // compiler checked it in a typed dispatch.
-        fiber = runFork(handler.handle(value as never, { from }));
+        const handled = handler.handle(value as never, { from });
+        fiber = runFork(
+          trace
+            ? Effect.withSpan(
+                handled,
+                `action:${name}`,
+                tickSpan === undefined ? { root: true } : { parent: tickSpan }
+              )
+            : handled
+        );
       } finally {
         events.reader = undefined;
         world.reader = undefined;
@@ -1671,6 +1738,26 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // Each tick is asked afresh: one in which nobody asks is the last.
       wanted = false;
       start();
+      if (!trace) {
+        return ticked(delta);
+      }
+      tickSpan = openSpan("arcadekit/tick", {
+        "arcadekit.tick": time.tick + 1,
+      });
+      let exit: Exit.Exit<void, TickError<S, P>> | undefined;
+      try {
+        exit = ticked(delta);
+        return exit;
+      } catch (error) {
+        exit = Exit.die(error);
+        throw error;
+      } finally {
+        endSpan(tickSpan, exit ?? Exit.void);
+        tickSpan = undefined;
+      }
+    };
+    /** Runs one tick, once the input stage has been seen to. */
+    const ticked = (delta: number): Exit.Exit<void, TickError<S, P>> => {
       ticking = true;
       try {
         // Queued actions are applied before time advances, so they land at the
@@ -1699,7 +1786,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.tick++;
 
         events.beginTick();
-        const fiber = runFork(tickEffect);
+        const fiber = runFork(
+          tickSpan === undefined
+            ? tickEffect
+            : Effect.withParentSpan(tickEffect, tickSpan)
+        );
         events.reader = undefined;
         world.reader = undefined;
         const exit = fiber.pollUnsafe();

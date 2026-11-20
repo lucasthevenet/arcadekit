@@ -1,0 +1,233 @@
+import { Data, Effect, Exit, Option, Schema, Tracer } from "effect";
+import type { Scope } from "effect";
+import { describe, expect, it } from "vitest";
+
+import {
+  Action,
+  App,
+  Component,
+  Field,
+  Query,
+  Random,
+  State,
+  System,
+} from "../src/index";
+
+/** A tracer that keeps every span it makes, in the order it made them. */
+const recorder = () => {
+  const spans: Tracer.NativeSpan[] = [];
+  const tracer = Tracer.make({
+    span(options) {
+      const span = new Tracer.NativeSpan(options);
+      spans.push(span);
+      return span;
+    },
+  });
+  return { spans, tracer };
+};
+
+const traced = <A, E>(
+  tracer: Tracer.Tracer,
+  effect: Effect.Effect<A, E, Scope.Scope>
+): A =>
+  Effect.runSync(
+    Effect.scoped(effect).pipe(Effect.provideService(Tracer.Tracer, tracer))
+  );
+
+const parentOf = (span: Tracer.NativeSpan): string | undefined =>
+  Option.getOrUndefined(span.parent)?.spanId;
+
+/** The names of the spans whose parent is `span`, in the order they began. */
+const childrenOf = (
+  spans: readonly Tracer.NativeSpan[],
+  span: Tracer.NativeSpan
+): string[] =>
+  spans.filter((s) => parentOf(s) === span.spanId).map((s) => s.name);
+
+const Count = Component.define("tr/Count", { n: Field.i32 });
+const Counted = Query.all(Count);
+const Phase = State.define("tr/Phase", ["title", "playing"]);
+const Add = Action.define("tr/Add", Schema.Struct({ by: Schema.Int }));
+const Refused = Action.define("tr/Refused", Schema.Struct({}));
+const Begin = Action.define("tr/Begin", Schema.Struct({}));
+
+class NotNow extends Data.TaggedError("tr/NotNow") {}
+
+const Grow = System.make("tr/Grow", function* () {
+  (yield* Counted).each((count) => {
+    count.n += 1;
+  });
+});
+const Roll = System.make("tr/Roll", function* () {
+  const random = yield* Random;
+  (yield* Counted).each((count) => {
+    count.n += random.int(0, 10);
+  });
+});
+const Asleep = System.make("tr/Asleep", function* () {}).pipe(
+  System.runIf(Effect.succeed(false))
+);
+const Opening = System.make("tr/Opening", function* () {}).pipe(
+  State.onEnter(Phase, "playing")
+);
+const Draw = System.make("tr/Draw", function* () {}).pipe(
+  System.inStage("frame")
+);
+const Read = System.make("tr/Read", function* () {}).pipe(
+  System.inStage("input")
+);
+
+const handlers = [
+  Action.handler(Add, function* ({ by }) {
+    (yield* Counted).each((count) => {
+      count.n += by;
+    });
+  }),
+  Action.handler(Refused, function* () {
+    return yield* new NotNow();
+  }),
+  Action.handler(Begin, function* () {
+    (yield* Phase).set("playing");
+  }),
+];
+
+const game = (trace: boolean) =>
+  Effect.gen(function* () {
+    const app = yield* App.make({
+      components: [Count, Phase],
+      systems: [Grow, Roll, Asleep, Opening, Draw, Read],
+      handlers,
+      seed: 7,
+      trace,
+    });
+    app.world.spawn(Count.of({ n: 0 }));
+    return app;
+  });
+
+describe("App.make({ trace: true })", () => {
+  it("makes a span for each tick, holding the actions applied in it and a span for each system's turn", () => {
+    const { spans, tracer } = recorder();
+    const app = traced(tracer, game(true));
+    app.enqueue(Begin, {});
+    app.enqueue(Add, { by: 2 });
+    app.enqueue(Refused, {});
+    app.tick(1 / 60, { input: false });
+
+    const ticks = spans.filter((span) => span.name === "arcadekit/tick");
+    expect(ticks).toHaveLength(1);
+    const tick = ticks[0]!;
+    expect(tick.parent).toEqual(Option.none());
+    expect(tick.attributes.get("arcadekit.tick")).toBe(1);
+    // The hook runs when the state is entered, before the other systems;
+    // a system whose condition doesn't hold still had its turn.
+    expect(childrenOf(spans, tick)).toEqual([
+      "action:tr/Begin",
+      "action:tr/Add",
+      "action:tr/Refused",
+      "tr/Opening",
+      "tr/Grow",
+      "tr/Roll",
+      "tr/Asleep",
+    ]);
+    for (const span of spans) {
+      expect(span.status._tag).toBe("Ended");
+      expect(span.traceId).toBe(tick.traceId);
+    }
+    const refused = spans.find((span) => span.name === "action:tr/Refused")!;
+    expect(
+      refused.status._tag === "Ended" && Exit.isFailure(refused.status.exit)
+    ).toBe(true);
+    const ended = tick.status;
+    expect(ended._tag === "Ended" && Exit.isSuccess(ended.exit)).toBe(true);
+  });
+
+  it("makes a span for each run of the frame stage and of the input stage, holding their systems'", () => {
+    const { spans, tracer } = recorder();
+    const app = traced(tracer, game(true));
+    app.input();
+    app.tick(1 / 60);
+    app.frame(0.5);
+    app.frame(0.75);
+
+    expect(
+      spans.filter((span) => span.parent._tag === "None").map((s) => s.name)
+    ).toEqual([
+      "arcadekit/input",
+      "arcadekit/tick",
+      "arcadekit/frame",
+      "arcadekit/frame",
+    ]);
+    const [input, , first, second] = spans.filter(
+      (span) => span.parent._tag === "None"
+    );
+    expect(childrenOf(spans, input!)).toEqual(["tr/Read"]);
+    expect(childrenOf(spans, first!)).toEqual(["tr/Draw"]);
+    expect(first!.attributes.get("arcadekit.frame")).toBe(1);
+    expect(second!.attributes.get("arcadekit.frame")).toBe(2);
+    expect(first!.traceId).not.toBe(second!.traceId);
+  });
+
+  it("starts a trace of its own for each tick and each stage, whatever span the app was made in", () => {
+    const { spans, tracer } = recorder();
+    const app = traced(tracer, game(true).pipe(Effect.withSpan("made")));
+    app.input();
+    app.tick(1 / 60);
+    app.frame(0.5);
+    const roots = spans.filter((span) => span.name.startsWith("arcadekit/"));
+    expect(roots.map((span) => [span.name, span.parent._tag])).toEqual([
+      ["arcadekit/input", "None"],
+      ["arcadekit/tick", "None"],
+      ["arcadekit/frame", "None"],
+    ]);
+  });
+
+  it("makes a span of its own for an action dispatched between ticks", () => {
+    const { spans, tracer } = recorder();
+    const app = traced(tracer, game(true));
+    expect(Exit.isSuccess(app.dispatch(Add, { by: 1 }))).toBe(true);
+    expect(spans.map((span) => [span.name, span.parent._tag])).toEqual([
+      ["action:tr/Add", "None"],
+    ]);
+  });
+
+  it("ends a tick's span with the failure of the system that failed it", () => {
+    const { spans, tracer } = recorder();
+    const Fails = System.make("tr/Fails", function* () {
+      return yield* new NotNow();
+    });
+    const app = traced(tracer, App.make({ systems: [Fails], trace: true }));
+    const exit = app.tickExit(1 / 60);
+    expect(Exit.isFailure(exit)).toBe(true);
+    const [tick, fails] = spans;
+    expect(tick!.name).toBe("arcadekit/tick");
+    expect(fails!.name).toBe("tr/Fails");
+    for (const span of [tick!, fails!]) {
+      const status = span.status;
+      expect(status._tag === "Ended" && Exit.isFailure(status.exit)).toBe(true);
+    }
+  });
+
+  it("plays the same game as an app that doesn't trace", () => {
+    const { spans, tracer } = recorder();
+    const tracing = traced(tracer, game(true));
+    const quiet = traced(recorder().tracer, game(false));
+    for (let tick = 0; tick < 30; tick++) {
+      for (const app of [tracing, quiet]) {
+        app.enqueue(Add, { by: tick });
+        app.tick(1 / 60);
+        app.frame(0.5);
+      }
+      expect(tracing.world.hash()).toBe(quiet.world.hash());
+    }
+    expect(spans.length).toBeGreaterThan(0);
+  });
+
+  it("makes no span unless asked, even with a tracer provided", () => {
+    const { spans, tracer } = recorder();
+    const app = traced(tracer, game(false));
+    app.enqueue(Begin, {});
+    app.tick(1 / 60);
+    app.frame(0.5);
+    expect(spans).toEqual([]);
+  });
+});

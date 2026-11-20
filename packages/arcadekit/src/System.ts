@@ -361,15 +361,23 @@ export const otherwise: {
 );
 
 /**
- * Wraps each run in a tracing span named after the system. Use it in
- * development builds.
- *
- * @category Combinators
+ * The system as an app made with `trace` runs it: one span, named after the
+ * system, around its condition and whichever of its run or idle follows.
+ * @internal
  */
-export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
+export const traced = <E, R>(self: System<E, R>): System<E, R> =>
   build({
     ...self,
-    run: Effect.withSpan(self.run, self.name) as Effect.Effect<void, E, R>,
+    run: Effect.withSpan(
+      self.condition === undefined
+        ? self.run
+        : Effect.flatMap(self.condition, (holds) =>
+            holds ? self.run : (self.idle ?? Effect.void)
+          ),
+      self.name
+    ) as Effect.Effect<void, E, R>,
+    condition: undefined,
+    idle: undefined,
   });
 
 /**

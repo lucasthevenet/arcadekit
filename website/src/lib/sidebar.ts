@@ -124,6 +124,7 @@ export const OUTLINE: readonly (Group & {
     ],
   },
   { topic: "guides", label: "Testing", items: ["guides/testing"] },
+  { topic: "guides", label: "Debugging", items: ["guides/debugging"] },
   { topic: "guides", label: "Performance", items: ["guides/performance"] },
   { topic: "guides", label: "More", section: "guides", items: [] },
   {
