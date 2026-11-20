@@ -361,7 +361,14 @@ export const otherwise: {
 );
 
 /**
- * The system as an app made with `trace` runs it: one span, named after the
+ * The level of the spans an app makes, as a program's
+ * `Tracer.MinimumTraceLevel` sees them.
+ * @internal
+ */
+export const spanLevel = "Debug";
+
+/**
+ * The system as an app that traces runs it: one span, named after the
  * system, around its condition and whichever of its run or idle follows.
  * @internal
  */
@@ -374,7 +381,8 @@ export const traced = <E, R>(self: System<E, R>): System<E, R> =>
         : Effect.flatMap(self.condition, (holds) =>
             holds ? self.run : (self.idle ?? Effect.void)
           ),
-      self.name
+      self.name,
+      { level: spanLevel }
     ) as Effect.Effect<void, E, R>,
     condition: undefined,
     idle: undefined,
