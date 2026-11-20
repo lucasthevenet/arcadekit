@@ -49,6 +49,7 @@ import {
   Exit,
   Layer,
   LogLevel,
+  Metric,
   References,
   Result,
   Schema,
@@ -177,7 +178,10 @@ export interface Any {
   /** The names of the input-stage systems, in the order they run. */
   readonly inputOrder: readonly string[];
   /**
-   * Runs one tick. Throws if a system fails.
+   * Runs one tick. Throws if a system fails, or if a fiber started during the
+   * tick is still running when it ends: one forked with `Effect.forkDetach`,
+   * `Effect.forkIn` or into a scope of its own, which would change the game at
+   * a moment no replay repeats.
    *
    * A tick reads the devices first: if the input stage hasn't run since the
    * previous tick, it runs now, as a driver would have run it, so a game that
@@ -209,7 +213,8 @@ export interface Any {
    * ticks.
    *
    * The world is frozen while it runs, and anything that would change the game
-   * throws. Throws if a system fails. Only between ticks.
+   * throws. Throws if a system fails, or leaves a fiber running, as for `tick`.
+   * Only between ticks.
    */
   readonly frame: (alpha: number, delta?: number) => void;
   /**
@@ -222,7 +227,7 @@ export interface Any {
    * neither, since the actions are in its log.
    *
    * The world is frozen while it runs, as for `frame`. Throws if a system
-   * fails. Only between ticks.
+   * fails, or leaves a fiber running, as for `tick`. Only between ticks.
    */
   readonly input: () => void;
   /**
@@ -453,7 +458,8 @@ export interface App<E = never, HU = never> extends Any {
    * For code outside the simulation, and only between ticks: it throws during a
    * tick, during the frame or input stage, and from a handler. It also throws
    * on an app a session has taken over, where it would advance this machine's
-   * game alone: use `enqueue` instead.
+   * game alone: use `enqueue` instead. A handler that leaves a fiber running,
+   * as `tick` refuses, throws too, with its changes undone.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>>,
@@ -1112,10 +1118,62 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Everything the caller provided (their services, resource overrides, the
     // scope) is captured once here and handed to every system and handler.
     const provided = yield* Effect.context<External<S, H, P>>();
+    // The system running now, or the last one that ran.
+    let running = "";
+    // Every fiber started with the app's services is counted when it starts
+    // and when it ends, so that one still running after the code that
+    // started it has finished is refused: it would change the game at a
+    // moment no replay repeats. While a stage runs, the systems that start
+    // fibers are noted, for the message.
+    let fibers = 0;
+    let notingStarters = false;
+    let fiberStarters: Set<string> | undefined;
+    const outerMetrics = Context.get(
+      Context.merge(provided, built),
+      Metric.FiberRuntimeMetrics
+    );
+    const fiberCount: Metric.FiberRuntimeMetricsService = {
+      recordFiberStart(started) {
+        fibers++;
+        if (notingStarters && running !== "") {
+          (fiberStarters ??= new Set()).add(running);
+        }
+        outerMetrics?.recordFiberStart(started);
+      },
+      recordFiberEnd(ended, exit) {
+        fibers--;
+        outerMetrics?.recordFiberEnd(ended, exit);
+      },
+    };
+    /**
+     * The error to throw when more fibers are running than `before`, once what
+     * the dispatcher holds has run: `what` started a fiber and left it
+     * running. The systems noted as starting fibers are forgotten.
+     */
+    const leftFibers = (before: number, what: string): Error | undefined => {
+      dispatcher.flush();
+      const left = fibers - before;
+      const noted = fiberStarters;
+      notingStarters = false;
+      fiberStarters = undefined;
+      if (left > 0) {
+        const starters =
+          noted === undefined
+            ? ""
+            : ` (started while ${[...noted].map((name) => `"${name}"`).join(", ")} ran)`;
+        return new Error(
+          `${what} left ${left === 1 ? "a fiber" : `${left} fibers`} running${starters}, with Effect.forkDetach, Effect.forkIn or another fork that outlives it. ` +
+            `It would change the game later, at a moment no replay repeats. Wait for a fiber within the code that started it, ` +
+            `or keep work that takes longer than a tick in the world, in a component or a state that a system moves on each tick.`
+        );
+      }
+      return undefined;
+    };
     // Putting our scheduler in the context makes every fiber started from it
     // (systems, handlers, and anything they fork) use the tick dispatcher.
     const context = Context.merge(provided, built).pipe(
-      Context.add(Scheduler.Scheduler, scheduler)
+      Context.add(Scheduler.Scheduler, scheduler),
+      Context.add(Metric.FiberRuntimeMetrics, fiberCount)
     ) as Context.Context<unknown>;
     const runFork = Effect.runForkWith(context);
 
@@ -1239,7 +1297,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       );
     }
 
-    let running = "";
     /**
      * Runs one system of the tick as itself, with its own positions in
      * events and changes, and applies its commands.
@@ -1607,6 +1664,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       events.reader = `action:${name}`;
       world.reader = events.reader;
       let fiber: Fiber.Fiber<unknown, unknown>;
+      const fibersBefore = fibers;
+      notingStarters = false;
+      fiberStarters = undefined;
       try {
         // The payload is the action's: its schema decoded it, or the
         // compiler checked it in a typed dispatch.
@@ -1634,6 +1694,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         throw new Error(
           `The handler for "${name}" did not finish synchronously. Handlers must not wait.`
         );
+      }
+      const left = leftFibers(fibersBefore, `The handler for "${name}"`);
+      if (left !== undefined) {
+        undo(commandMark, eventMark, queuedMark);
+        throw left;
       }
       // A refusal, and a handler that died of a bug half-way, both leave the
       // game as it was.
@@ -1685,6 +1750,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (verifyFrames) {
           frameHash = world.hash();
         }
+        const fibersBefore = fibers;
+        notingStarters = true;
+        fiberStarters = undefined;
+        running = "";
         const fiber =
           stage === "frame"
             ? runFrameFork(frameEffect)
@@ -1697,6 +1766,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw new Error(
             `System "${running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`
           );
+        }
+        const left = leftFibers(
+          fibersBefore,
+          stage === "frame" ? "The frame" : "The input stage"
+        );
+        if (left !== undefined) {
+          throw left;
         }
         // Events are kept until each stage has heard them.
         if (stage === "frame") {
@@ -1831,6 +1907,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.tick++;
 
         events.beginTick();
+        const fibersBefore = fibers;
+        notingStarters = true;
+        fiberStarters = undefined;
+        running = "";
         const fiber = runFork(
           tickSpan === undefined
             ? tickEffect
@@ -1848,7 +1928,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
 
-        dispatcher.flush();
+        const left = leftFibers(fibersBefore, `Tick ${time.tick}`);
+        if (left !== undefined) {
+          throw left;
+        }
         commands.apply();
         events.endTick();
         if (checkpointEvery > 0 && time.tick % checkpointEvery === 0) {
@@ -2121,6 +2204,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       events.reader = `setup:${plugin.name}`;
       world.reader = events.reader;
       const { setup } = plugin;
+      const fibersBefore = fibers;
       const fiber = runOwn(() => runFork(setup));
       events.reader = undefined;
       world.reader = undefined;
@@ -2132,6 +2216,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `The setup of plugin "${plugin.name}" did not finish synchronously. Setup must not wait.`
           )
         );
+      }
+      const left = leftFibers(
+        fibersBefore,
+        `The setup of plugin "${plugin.name}"`
+      );
+      if (left !== undefined) {
+        return yield* Effect.die(left);
       }
       if (Exit.isFailure(exit)) {
         return yield* exit as Exit.Exit<never, Plugin.ErrorOf<P[number]>>;

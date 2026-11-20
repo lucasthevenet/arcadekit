@@ -202,7 +202,8 @@ export const make = <
     readonly layer?: L;
     /**
      * Runs once when a game starts fresh, after every plugin's layer is built,
-     * to spawn the initial entities. It must not wait. It doesn't run when the
+     * to spawn the initial entities. It must not wait, nor leave a fiber running
+     * when it ends: `App.make` dies if it does. It doesn't run when the
      * app is loaded from a save, which already holds those entities.
      */
     readonly setup?: SU;
