@@ -73,7 +73,10 @@ export const Mint = Action.define(
   "ls/Mint",
   Schema.Struct({ on: Schema.Date })
 );
-export const Whisper = Action.define<{ readonly to: string }>()("ls/Whisper");
+export const Whisper = Action.define(
+  "ls/Whisper",
+  Schema.Struct({ to: Schema.String })
+);
 
 export class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
   readonly coin: Entity;

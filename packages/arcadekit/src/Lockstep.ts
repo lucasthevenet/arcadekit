@@ -274,8 +274,6 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  * - It throws when the options can't describe a game: a peer not among `peers`,
  *   two peers with the same name, a `delay` that isn't a whole number of ticks,
  *   or a `delta` that isn't greater than 0.
- * - An action that must reach the other peers needs a schema. Enqueuing one
- *   defined with only a type throws.
  * - A payload its schema rejects has no JSON form to send: it is refused on the
  *   issuing peer only, and the others never see it.
  * - Each peer is configured with its own plugins, seed, `delta` and names, and

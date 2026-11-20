@@ -680,7 +680,7 @@ export const Gamepad = (index = 0): View<GamepadView> =>
 // --- bindings: from the devices to the game's own actions -------------------------
 
 type Enqueue = <N extends string, P>(
-  action: Action.ActionDef<N, P, unknown>,
+  action: Action.ActionDef<N, P>,
   payload: P
 ) => void;
 
@@ -712,7 +712,7 @@ const binding =
   (among: (devices: Sample) => readonly string[]) =>
   <N extends string, P>(
     codes: string | readonly string[],
-    action: Action.ActionDef<N, P, unknown>,
+    action: Action.ActionDef<N, P>,
     ...payload: PayloadArgument<P>
   ): Binding => {
     const watched = typeof codes === "string" ? [codes] : codes;

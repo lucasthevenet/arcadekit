@@ -1,4 +1,4 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { Action, App, Save, System, Time } from "../src/index";
@@ -48,7 +48,7 @@ describe("who issued an action", () => {
     });
     // And for one the simulation issues, a bot's: no peer stands behind it.
     const told: (string | undefined)[] = [];
-    const Poke = Action.define<{ readonly n: number }>()("or/Poke");
+    const Poke = Action.define("or/Poke", Schema.Struct({ n: Schema.Number }));
     const poke = Action.handler(Poke, function* (_, origin) {
       yield* Effect.sync(() => told.push(origin.from));
     });
@@ -169,7 +169,10 @@ describe("who issued an action", () => {
         heard.push(refusal.from);
       }
     });
-    const Never = Action.define<{ readonly n: number }>()("or/Never");
+    const Never = Action.define(
+      "or/Never",
+      Schema.Struct({ n: Schema.Number })
+    );
     const never = Action.handler(Never, function* () {
       return yield* new Stranger({ from: undefined });
     });

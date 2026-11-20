@@ -1694,7 +1694,7 @@ describe("the picture of the devices in the world", () => {
 });
 
 describe("bindings", () => {
-  const Jump = Action.define()("in/Jump");
+  const Jump = Action.define("in/Jump");
   const Land = Action.define("in/Land", Schema.Struct({}));
   const Fire = Action.define(
     "in/Fire",
@@ -1828,7 +1828,7 @@ describe("bindings", () => {
     const played = [...done];
     expect(played).toEqual(["jump at 0", "aim 7", "fire 7,0"]);
     expect(log.filter((entry) => !Action.isCheckpoint(entry))).toEqual([
-      { tick: 0, name: "in/Jump", payload: undefined, queued: true },
+      { tick: 0, name: "in/Jump", payload: null, queued: true },
       { tick: 0, name: "in/Aim", payload: { x: 7 }, queued: true },
       { tick: 1, name: "in/Fire", payload: { x: 7, y: 0 }, queued: true },
     ]);

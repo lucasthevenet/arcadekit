@@ -259,7 +259,7 @@ describe("app.inspect", () => {
       {
         action: "in/Refuse",
         payload: {},
-        error: new NotNow(),
+        error: { _tag: "in/NotNow", message: "" },
         from: undefined,
       },
     ]);

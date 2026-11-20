@@ -150,12 +150,10 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
-  it("needs no schema for what is waiting, where a save does", () => {
+  it("keeps an action that is waiting for the next tick", () => {
     withApp(game(), (app) => {
       app.dispatch(Drop, { by: "ada", value: 1 });
-      // An action with a type and no schema, waiting for the next tick.
       app.enqueue(Whisper, { to: "grace" });
-      expect(Exit.isFailure(app.save())).toBe(true);
       const moment = captured(app);
       app.tick(DELTA);
       expect(moves(app.actionLog).map((entry) => entry.name)).toEqual([

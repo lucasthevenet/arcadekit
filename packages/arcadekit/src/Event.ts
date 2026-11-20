@@ -2,7 +2,7 @@
  * Events let systems, handlers and scripts signal that something happened,
  * without knowing about each other.
  *
- *   const Collided = Event.define<{ a: Entity; b: Entity }>("Collided")
+ *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
  *
  *   // in a system
  *   const collided = yield* Collided
@@ -19,14 +19,10 @@
  * next tick. Events aren't kept for a system that `System.runIf` has disabled:
  * when it runs again, the events from the ticks it skipped are gone.
  *
- * Give an event a schema to make it serializable, for a save, a tool or another
- * machine:
- *
- *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
- *
- * The payload type is inferred from the schema. Emitting is still a plain call
- * with no validation: the schema is only used when the event leaves the
- * program, by `Event.encode` and `Event.decode`.
+ * The payload type is inferred from the event's schema. Emitting is a plain
+ * call with no validation: the schema is only used when the event leaves the
+ * program, for a save, a tool or another machine, by `Event.encode` and
+ * `Event.decode`.
  */
 import { Cause, Data, Effect, Effectable, Exit, Option, Schema } from "effect";
 
@@ -66,14 +62,11 @@ export class EventDef<P> extends Effectable.Class<
   Events
 > {
   readonly name: string;
-  /**
-   * Converts a payload to and from JSON. Derived from the event's schema;
-   * undefined for an event defined with only a type.
-   */
-  readonly codec: Schema.Codec<P, unknown> | undefined;
+  /** Converts a payload to and from JSON. Derived from the event's schema. */
+  readonly codec: Schema.Codec<P, unknown>;
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
 
-  constructor(name: string, codec?: Schema.Codec<P, unknown>) {
+  constructor(name: string, codec: Schema.Codec<P, unknown>) {
     super();
     this.name = name;
     this.codec = codec;
@@ -87,33 +80,26 @@ export class EventDef<P> extends Effectable.Class<
 }
 
 /**
- * Defines an event type.
- *
- * With a schema, the payload type is inferred from it and the event is
- * serializable: `Event.define("Collided", Schema.Struct({ ... }))`.
- *
- * Without one, pass the payload type: `Event.define<Payload>("Collided")`. Such
- * an event stays inside the program, and a game can't be saved while one is
- * waiting to be read.
+ * Defines an event type, with the schema of its payload. The payload type is
+ * inferred from the schema: `Event.define("Collided", Schema.Struct({ ... }))`.
+ * An event with no payload takes only its name, `Event.define("Started")`,
+ * and is emitted with `undefined`.
  *
  * An event's name is its identity within an app: when two different events
  * share a name, the second is refused the first time it is used.
  *
  * @category Constructors
  */
-export function define<P = void>(name: string): EventDef<P>;
+export function define(name: string): EventDef<void>;
 export function define<S extends Schema.Codec<unknown, unknown>>(
   name: string,
   payload: S
 ): EventDef<S["Type"]>;
 export function define(
   name: string,
-  payload?: Schema.Codec<unknown, unknown>
+  payload: Schema.Codec<unknown, unknown> = Schema.Void
 ): EventDef<unknown> {
-  return new EventDef<unknown>(
-    name,
-    payload === undefined ? undefined : Schema.toCodecJson(payload)
-  );
+  return new EventDef<unknown>(name, Schema.toCodecJson(payload));
 }
 
 /**
@@ -123,7 +109,7 @@ export function define(
  */
 export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
   readonly event: string;
-  /** What was wrong: the schema's report, or that the event has no schema. */
+  /** What was wrong, as the schema reported it. */
   readonly message: string;
 }> {}
 
@@ -131,14 +117,6 @@ const convert = <P, A>(
   def: EventDef<P>,
   run: (codec: Schema.Codec<P, unknown>) => Exit.Exit<A, unknown>
 ): Exit.Exit<A, InvalidEvent> => {
-  if (def.codec === undefined) {
-    return Exit.fail(
-      new InvalidEvent({
-        event: def.name,
-        message: `The event "${def.name}" was defined with a type and no schema, so it cannot be written down. Give Event.define a schema.`,
-      })
-    );
-  }
   const exit = run(def.codec);
   if (Exit.isSuccess(exit)) {
     return Exit.succeed(exit.value);
@@ -154,8 +132,7 @@ const convert = <P, A>(
 
 /**
  * Encodes an event's payload to its JSON form, for a save, a tool or the
- * network. Fails with `InvalidEvent` when the event has no schema, or its
- * schema rejects the payload.
+ * network. Fails with `InvalidEvent` when its schema rejects the payload.
  *
  * @category Codecs
  */
@@ -167,8 +144,7 @@ export const encode = <P>(
 
 /**
  * Decodes an event's payload from its JSON form, validated against its schema.
- * Fails with `InvalidEvent` when the event has no schema, or the data doesn't
- * match it.
+ * Fails with `InvalidEvent` when the data doesn't match it.
  *
  * @category Codecs
  */
@@ -450,18 +426,13 @@ export class EventBus {
    * @internal
    */
   list(def: EventDef<unknown>): void {
-    if (def.codec === undefined) {
-      throw new Error(
-        `The event "${def.name}" is listed so that a save can hold it, and was defined with a type and no schema, so it cannot be written down. Give Event.define a schema, or leave it out of \`events\`.`
-      );
-    }
     this.channel(def);
     this.listed.add(def.name);
   }
 
   /**
    * The events waiting to be read, in their JSON form, with how far each
-   * system and handler had read. Fails on one that has no schema, or whose
+   * system and handler had read. Fails on one that no plugin lists, or whose
    * payload its schema does not take.
    * @internal
    */

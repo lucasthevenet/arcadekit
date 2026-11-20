@@ -444,27 +444,7 @@ describe("a saved game", () => {
 });
 
 describe("a game that cannot be saved as it stands", () => {
-  const Typed = Action.define<{ readonly n: number }>()("sv/Typed");
-  const typed = Action.handler(Typed, function* () {});
-  const Quiet = Event.define<number>("sv/Quiet");
-  const Hum = System.make("Hum", function* () {
-    (yield* Quiet).emit(1);
-  });
   const Blob = Component.define("sv/Blob", { v: Field.json<unknown>() });
-
-  it("says which action is waiting with no schema to save it by", () => {
-    withApp(App.make({ handlers: [typed] }), (app) => {
-      app.enqueue(Typed, { n: 1 });
-      const error = refusal(app.save());
-      expect(error).toBeInstanceOf(Save.SaveRefused);
-      expect(error.message).toMatch(
-        /The action "sv\/Typed" is waiting for the next tick.*no schema/
-      );
-      // Once it has been applied there is nothing in the way.
-      app.tick(1);
-      expect(Exit.isSuccess(app.save())).toBe(true);
-    });
-  });
 
   it("says which action is waiting with a payload its schema does not take", () => {
     const Small = Action.define(
@@ -501,24 +481,6 @@ describe("a game that cannot be saved as it stands", () => {
     withApp(App.make({ systems: [Shout], events: [Loud] }), (app) => {
       app.tick(1);
       expect(Exit.isSuccess(app.save())).toBe(true);
-    });
-  });
-
-  it("refuses to list an event with no schema to save it by", () => {
-    expect(() =>
-      withApp(App.make({ systems: [Hum], events: [Quiet] }), () => {})
-    ).toThrow(
-      'The event "sv/Quiet" is listed so that a save can hold it, and was defined with a type and no schema'
-    );
-  });
-
-  it("says which event is waiting with no schema to save it by", () => {
-    withApp(App.make({ systems: [Hum] }), (app) => {
-      expect(Exit.isSuccess(app.save())).toBe(true);
-      app.tick(1);
-      const error = refusal(app.save());
-      expect(error).toBeInstanceOf(Save.SaveRefused);
-      expect(error.message).toMatch(/The event "sv\/Quiet".*no schema/);
     });
   });
 

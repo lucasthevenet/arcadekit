@@ -90,7 +90,6 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 ## Requirements for online play
 
 - **Check `from`, not the payload.** A handler receives the peer that issued an action. Check permissions against `from`, never against a name in the payload. See [who issued an action](events-and-actions.md#who-issued-an-action).
-- **Give every action a schema.** An action defined with only a type can't be sent to other peers, and enqueuing one throws.
 - **Keep everything the simulation reads in the world.** A rewind restores the world and the app's pending work, and nothing else.
   - Use systems and states, not scripts. A moment can't hold where a script is, so the game can't be captured while one runs, and the session stops with `Save.SaveRefused`.
   - State held by your game's own services isn't restored, and nothing tells a service the game rewound: a counter kept in a layer continues from the discarded future.

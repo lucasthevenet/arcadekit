@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit, Layer } from "effect";
+import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +7,7 @@ import {
   App,
   Commands,
   Component,
+  EntityId,
   Event,
   Field,
   Plugin,
@@ -28,7 +29,7 @@ const Velocity = Component.define("pl/Velocity", {
 });
 const Health = Component.define("pl/Health", { hp: Field.i32 });
 
-const Bumped = Event.define<{ readonly entity: Entity }>("pl/Bumped");
+const Bumped = Event.define("pl/Bumped", Schema.Struct({ entity: EntityId }));
 
 /** Builds an app, hands it to `use`, then closes its scope. */
 const withApp = <A, E, T>(
@@ -85,7 +86,7 @@ class Fragile extends Data.TaggedError("Fragile")<{
 }> {}
 class NothingToHeal extends Data.TaggedError("NothingToHeal")<{}> {}
 
-const Heal = Action.define<{ readonly amount: number }>()("Heal");
+const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }));
 
 const heal = Action.handler(Heal, function* ({ amount }) {
   const wounded = yield* Query.all(Health);
@@ -135,9 +136,10 @@ describe("plugins", () => {
       expect(app.world.get(ball!, Health)).toEqual({ hp: 2 });
 
       // The handler came with the plugin, and dispatch is typed from it.
-      const healed: Exit.Exit<number, NothingToHeal> = app.dispatch(Heal, {
-        amount: 5,
-      });
+      const healed: Exit.Exit<number, NothingToHeal | Action.InvalidPayload> =
+        app.dispatch(Heal, {
+          amount: 5,
+        });
       expect(healed).toEqual(Exit.succeed(7));
 
       // So is the tick's failure type.
@@ -147,7 +149,7 @@ describe("plugins", () => {
   });
 
   it("can be combined with systems and handlers the app defines itself", () => {
-    const Ping = Action.define<{}>()("Ping");
+    const Ping = Action.define("Ping", Schema.Struct({}));
     const ping = Action.handler(Ping, function* () {
       return "pong";
     });

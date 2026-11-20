@@ -6,7 +6,7 @@
  * against the current state, and either applies it or refuses it with a typed
  * error.
  *
- *   const PlayCard = Action.define<{ card: Entity; target: Entity }>()("PlayCard")
+ *   const PlayCard = Action.define("PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Turn
@@ -23,10 +23,9 @@
  * marks the events it read as unread. A handler spawns and despawns entities
  * through `Commands`; calling `world.spawn` and similar methods in one throws.
  *
- * Give an action a schema and its payload is validated on every path into the
- * game, and stored in the log in a JSON-safe form:
- *
- *   const PlayCard = Action.define("PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
+ * An action's schema validates its payload on every path into the game, and
+ * gives the payload the JSON form that the log, a save and the other peers
+ * hold.
  *
  * Every action from outside the simulation goes into `app.actionLog`, except a
  * dispatched action that was refused, which changed nothing, along with a
@@ -61,62 +60,43 @@ export class UnknownAction extends Data.TaggedError("UnknownAction")<{
 }> {}
 
 /**
- * @param N  the action's name
- * @param P  the payload a handler receives
- * @param VE `InvalidPayload` when the action has a schema, otherwise `never`
+ * @param N the action's name
+ * @param P the payload a handler receives
  *
  * @category Models
  */
-export interface ActionDef<N extends string, P, VE = never> {
+export interface ActionDef<N extends string, P> {
   readonly name: N;
   /**
    * Validates the payload and converts it to and from JSON. Derived from the
-   * action's schema; undefined for an action defined with only a type.
+   * action's schema.
    */
-  readonly codec: Schema.Codec<P, unknown> | undefined;
+  readonly codec: Schema.Codec<P, unknown>;
   /** Type-only: keeps the payload type attached and invariant. */
   readonly _P?: (payload: P) => P;
-  /** Type-only. */
-  readonly _VE?: VE;
 }
 
 /**
- * Defines an action.
+ * Defines an action, with the schema of its payload. The payload type is
+ * inferred from the schema, and every payload is validated:
+ * `Action.define("Strike", Schema.Struct({ ... }))`. The log and saves hold the
+ * payload in its JSON form, and that form is what other peers receive, so a
+ * bigint or a date in it is converted along the way.
  *
- * With a schema, the payload type is inferred from it and every payload is
- * validated: `Action.define("Strike", Schema.Struct({ ... }))`. The log and
- * saves hold the payload in its JSON form, and that form is what other peers
- * receive, so a bigint or a date in it is converted along the way.
- *
- * Without one, only the compiler checks the payload, which is fine for actions
- * that never leave the program. It is curried so you can pass the payload type
- * while the name is inferred: `Action.define<Payload>()("Strike")`.
- *
- * **Gotchas**
- *
- * An action without a schema can't be saved while it waits for a tick:
- * `app.save()` fails with `SaveRefused`. It can't be sent to the other peers of
- * a session either: `app.enqueue` throws.
+ * An action with no payload takes only its name, `Action.define("Pass")`, and
+ * is issued with `undefined`, which its JSON form holds as `null`.
  *
  * @category Constructors
  */
-export function define<P = void>(): <const N extends string>(
-  name: N
-) => ActionDef<N, P>;
+export function define<const N extends string>(name: N): ActionDef<N, void>;
 export function define<
   const N extends string,
   S extends Schema.Codec<unknown, unknown>,
->(name: N, payload: S): ActionDef<N, S["Type"], InvalidPayload>;
+>(name: N, payload: S): ActionDef<N, S["Type"]>;
 export function define(
-  name?: string,
-  payload?: Schema.Codec<unknown, unknown>
-): unknown {
-  if (name === undefined || payload === undefined) {
-    return (typeOnlyName: string) => ({
-      codec: undefined,
-      name: typeOnlyName,
-    });
-  }
+  name: string,
+  payload: Schema.Codec<unknown, unknown> = Schema.Void
+): AnyActionDef {
   // The JSON codec turns values such as dates and bigints into JSON on the
   // way out and back on the way in, so the log is always safe to serialize.
   return { codec: Schema.toCodecJson(payload), name };
@@ -148,7 +128,7 @@ export interface Origin {
  * @category Models
  */
 export interface Handler<N extends string, P, A, E, R> {
-  readonly action: ActionDef<N, P, unknown>;
+  readonly action: ActionDef<N, P>;
   readonly handle: (payload: P, origin: Origin) => Effect.Effect<A, E, R>;
 }
 
@@ -160,7 +140,7 @@ export interface Handler<N extends string, P, A, E, R> {
  */
 export interface AnyActionDef {
   readonly name: string;
-  readonly codec: Schema.Codec<unknown, unknown> | undefined;
+  readonly codec: Schema.Codec<unknown, unknown>;
 }
 
 /**
@@ -180,8 +160,9 @@ export interface AnyHandler {
 
 /**
  * Defines how an action is validated against the rules and applied. It must
- * complete synchronously. For an action with a schema, the payload it receives
- * is already validated.
+ * complete synchronously. The payload it receives is already validated, and a
+ * payload the action's schema refuses fails with `InvalidPayload` before it
+ * runs.
  *
  * Alongside the payload, it receives where the action came from, `{ from }`: in
  * a multiplayer game, the peer that issued it.
@@ -205,20 +186,29 @@ export interface AnyHandler {
 export const handler = <
   N extends string,
   P,
-  VE,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
   A,
 >(
-  action: ActionDef<N, P, VE>,
+  action: ActionDef<N, P>,
   body: (payload: P, origin: Origin) => Generator<Eff, A, never>
-): Handler<N, P, A, Effect.Error<Eff> | VE, Effect.Services<Eff>> => ({
+): Handler<
+  N,
+  P,
+  A,
+  Effect.Error<Eff> | InvalidPayload,
+  Effect.Services<Eff>
+> => ({
   action,
   // Built once: `fnUntraced` runs the generator itself on each call, with no
   // closure around the payload and no stack trace captured.
   handle: Effect.fnUntraced(body) as (
     payload: P,
     origin: Origin
-  ) => Effect.Effect<A, Effect.Error<Eff> | VE, Effect.Services<Eff>>,
+  ) => Effect.Effect<
+    A,
+    Effect.Error<Eff> | InvalidPayload,
+    Effect.Services<Eff>
+  >,
 });
 
 /**
@@ -231,7 +221,7 @@ export interface Logged {
   /** The number of ticks completed when the action was dispatched or enqueued. */
   readonly tick: number;
   readonly name: string;
-  /** For an action with a schema, the payload in its JSON form. */
+  /** The payload in its JSON form. */
   readonly payload: unknown;
   /**
    * The peer that issued it, when it came with a name. Absent for an action
@@ -326,15 +316,24 @@ export const decodeLog = (
  * Emitted when a queued action is refused. A directly dispatched action returns
  * its failure to the caller instead.
  *
+ * - `action`: the action's name.
+ * - `payload`: the payload in its JSON form, or `null` when its schema didn't
+ *   take it.
+ * - `error`: why it was refused, as the error's `_tag` and `message`, so the
+ *   event is the same on every peer and in a save.
+ * - `from`: the peer that issued it, as its handler would have received it.
+ *
  * @category Events
  */
-export const Rejected = Event.define<{
-  readonly action: string;
-  readonly payload: unknown;
-  readonly error: unknown;
-  /** The peer that issued it, as its handler would have received it. */
-  readonly from: string | undefined;
-}>("Action.Rejected");
+export const Rejected = Event.define(
+  "Action.Rejected",
+  Schema.Struct({
+    action: Schema.String,
+    payload: Schema.Unknown,
+    error: Schema.Struct({ _tag: Schema.String, message: Schema.String }),
+    from: Schema.UndefinedOr(Schema.String),
+  })
+);
 
 /**
  * Lets systems, scripts and handlers issue actions, so AI plays by the same
@@ -358,7 +357,7 @@ export class Actions extends Context.Service<
   Actions,
   {
     readonly enqueue: <N extends string, P>(
-      action: ActionDef<N, P, unknown>,
+      action: ActionDef<N, P>,
       payload: P
     ) => void;
     /**

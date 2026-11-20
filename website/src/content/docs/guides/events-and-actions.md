@@ -44,7 +44,7 @@ An event is a fact: name it in the past tense, prefixed with its feature, such a
 
 A system that `System.runIf` can switch off shouldn't rely on events for anything it must not miss: the events from the ticks it skipped are gone when it runs again. Have it watch the game's state instead, with a [change query](queries.md) or a singleton.
 
-The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. `Event.define<Payload>("Name")` defines an event with a type and no schema, for events that never need to be serialized. A game can't be saved while such an event is waiting to be read, nor while one that no plugin lists in its `events` is.
+The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. An event with no payload takes only its name, `Event.define("Started")`. A game can't be saved while an event that no plugin lists in its `events` is waiting to be read.
 
 ## Actions
 
@@ -79,7 +79,7 @@ Dispatching an action that has no handler, or with the wrong payload, is a compi
 
 Both are for code outside the simulation: the entry point, the network, a test. Once a game has started, they are the only way such code should change it: anything written into `app.world` directly isn't logged, so a [replay](replays.md) can't reproduce it. `dispatch` only works between ticks, and throws during a tick or a frame. In a multiplayer game, use `enqueue` only: `dispatch` would change one machine's game, and throws. See [lockstep and rollback](lockstep-and-rollback.md).
 
-The payload's type comes from the schema, and its JSON encoding is what the log and saves store and what other peers receive. Bigints and dates in a payload are converted along the way. `Action.define<Payload>()("Name")` defines an action with a type and no schema. Only the compiler checks it, it can't be saved while queued, and it can't be sent to other peers, so reserve it for actions that never leave the program.
+The payload's type comes from the schema, and its JSON encoding is what the log and saves store and what other peers receive. Bigints and dates in a payload are converted along the way. An action with no payload takes only its name, `Action.define("Pass")`, is issued with `undefined`, and is logged with `null`.
 
 ## Checking and refusing
 
@@ -123,7 +123,7 @@ const pass = Action.handler(Pass, function* (_, { from }) {
 
 In a multiplayer game, `from` is the name of the peer that issued the action, identical on every peer. In a single-player game it is `undefined`, as it is for actions the simulation issues itself. Check permissions against `from`, never against a name in the payload, which the sender controls.
 
-`from` is kept in the log and in a save for queued actions. `Action.Rejected` carries it too, alongside the action's name, payload and error, so a UI can show players their own refusals.
+`from` is kept in the log and in a save for queued actions. `Action.Rejected` carries it too, alongside the action's name, its payload in JSON form, and the error as its `_tag` and `message`, so a UI can show players their own refusals.
 
 A schema validates a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 

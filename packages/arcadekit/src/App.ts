@@ -277,8 +277,8 @@ export interface Any {
    * ticks.
    *
    * Fails with `SaveRefused`, which names what is in the way: a queued action
-   * or a waiting event without a schema, a field holding a value that can't be
-   * saved, commands queued but not applied, or a script started with
+   * or a waiting event whose payload its schema doesn't take, a waiting event no
+   * plugin lists, a field holding a value that can't be saved, commands queued but not applied, or a script started with
    * `spawnScript` or `Script.spawn` that hasn't ended.
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
@@ -487,7 +487,7 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * game alone: use `enqueue` instead.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
+    action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
   /**
@@ -498,7 +498,7 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * Where it is called decides whether it is logged. From outside the
    * simulation, between ticks, the action is input: it is logged, a refusal is
    * marked on its log entry, and on an app a session has taken over it goes to
-   * every peer, where one without a schema throws. From a system, a handler, a
+   * every peer. From a system, a handler, a
    * script, or a plugin's setup, it is the simulation's own move: it isn't
    * logged, since a replay's own simulation makes it again.
    *
@@ -507,7 +507,7 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * to the other peers.
    */
   readonly enqueue: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
+    action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<void, Action.InvalidPayload>;
 }
@@ -555,6 +555,23 @@ class Turn {
 /** Summarizes an error in a few words, for a log entry or a message. */
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
+
+/** Why an action was refused, as `Action.Rejected` carries it. */
+const refusal = (error: unknown): { _tag: string; message: string } => {
+  const tag =
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    typeof error._tag === "string"
+      ? error._tag
+      : error instanceof Error
+        ? error.name
+        : "Error";
+  return {
+    _tag: tag,
+    message: error instanceof Error ? error.message : String(error),
+  };
+};
 
 /**
  * A script failed in an app configured to stop on script failure. Every later
@@ -1068,6 +1085,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     const handles = (action: Action.AnyActionDef): boolean =>
       handlers.has(action.name);
+    /** A payload's JSON form, or `null` when its action's schema doesn't take it. */
+    const jsonOf = (name: string, payload: unknown): unknown => {
+      const codec = handlers.get(name)?.action.codec;
+      if (codec === undefined) {
+        return null;
+      }
+      const json = Schema.encodeUnknownExit(codec)(payload);
+      return Exit.isSuccess(json) ? json.value : null;
+    };
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** Enqueues from outside the simulation: `app.enqueue`. */
@@ -1079,19 +1105,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (handler === undefined) {
         throw new Error(`No handler for action "${action.name}"`);
       }
-      const { codec } = handler.action;
-      if (diverted !== undefined && codec === undefined) {
-        throw new Error(
-          `The action "${action.name}" was defined with a type and no schema, so it cannot be sent to the other peers of this game. Give Action.define a schema.`
-        );
-      }
       // The log holds the JSON form, and the other peers are sent it. A
       // payload that has none is refused here, in a game of one too: queued,
       // it would be refused on this machine alone.
-      const json =
-        codec === undefined
-          ? Exit.succeed(payload)
-          : Schema.encodeUnknownExit(codec)(payload);
+      const json = Schema.encodeUnknownExit(handler.action.codec)(payload);
       if (Exit.isFailure(json)) {
         return Exit.fail(
           new Action.InvalidPayload({
@@ -1717,24 +1734,22 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       let value = payload;
       let logged = payload;
       const { codec } = handler.action;
-      if (codec !== undefined) {
-        const converted = encoded
-          ? Schema.decodeUnknownExit(codec)(payload)
-          : Schema.encodeUnknownExit(codec)(payload);
-        if (Exit.isFailure(converted)) {
-          const error = Cause.squash(converted.cause);
-          return Exit.fail(
-            new Action.InvalidPayload({
-              action: name,
-              message: error instanceof Error ? error.message : String(error),
-            })
-          );
-        }
-        if (encoded) {
-          value = converted.value;
-        } else {
-          logged = converted.value;
-        }
+      const converted = encoded
+        ? Schema.decodeUnknownExit(codec)(payload)
+        : Schema.encodeUnknownExit(codec)(payload);
+      if (Exit.isFailure(converted)) {
+        const error = Cause.squash(converted.cause);
+        return Exit.fail(
+          new Action.InvalidPayload({
+            action: name,
+            message: error instanceof Error ? error.message : String(error),
+          })
+        );
+      }
+      if (encoded) {
+        value = converted.value;
+      } else {
+        logged = converted.value;
       }
 
       if (applying !== undefined) {
@@ -1970,8 +1985,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               }
               events.emit(Action.Rejected, {
                 action: name,
-                payload,
-                error,
+                payload: encoded ? payload : jsonOf(name, payload),
+                error: refusal(error),
                 from,
               });
             }
@@ -2080,7 +2095,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           const codec = handlers.get(name)?.action.codec;
           if (codec === undefined) {
             return refused(
-              `The action "${name}" is waiting for the next tick, and it was defined with a type and no schema, so it cannot be saved. Give Action.define a schema, or save after the tick that applies it.`
+              `The action "${name}" is waiting for the next tick, and the app has no handler for it.`
             );
           }
           const json = Schema.encodeUnknownExit(codec)(payload);

@@ -32,7 +32,7 @@ const Menu = View.define("vw/Menu", { phase: "title" as "title" | "playing" });
 // What it may ask for.
 const Start = Action.define("vw/Start", Schema.Struct({}));
 const Buy = Action.define("vw/Buy", Schema.Struct({ price: Schema.Int }));
-const Ping = Action.define<void>()("vw/Ping");
+const Ping = Action.define("vw/Ping");
 
 class TooPoor extends Data.TaggedError("TooPoor")<{}> {}
 

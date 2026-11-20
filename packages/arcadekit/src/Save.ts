@@ -86,8 +86,9 @@ export interface Save {
 
 /**
  * The game can't be saved in its current state. The message names what is in
- * the way: a queued action or a waiting event without a schema, a field holding
- * a value that can't be saved, or a command still queued.
+ * the way: a queued action or a waiting event whose payload its schema doesn't
+ * take, a waiting event no plugin lists, a field holding a value that can't be
+ * saved, or a command still queued.
  *
  * @category Errors
  */

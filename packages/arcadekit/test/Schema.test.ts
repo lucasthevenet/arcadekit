@@ -31,8 +31,9 @@ const Damage = Action.define(
   })
 );
 
-/** Type-only: checked by the compiler and nothing else. */
-const Rename = Action.define<{ readonly name: string }>()("Rename");
+const Rename = Action.define("Rename", Schema.Struct({ name: Schema.String }));
+/** No payload: only a name. */
+const Reset = Action.define("Reset");
 
 const received: unknown[] = [];
 const damage = Action.handler(Damage, function* (payload) {
@@ -48,11 +49,18 @@ const damage = Action.handler(Damage, function* (payload) {
 const rename = Action.handler(Rename, function* ({ name }) {
   return name.toUpperCase();
 });
-
-const game = Effect.map(App.make({ handlers: [damage, rename] }), (app) => {
-  const target = app.world.spawn(Health.of({ hp: 50 }));
-  return { app, target };
+const resets: unknown[] = [];
+const reset = Action.handler(Reset, function* (payload) {
+  resets.push(payload);
 });
+
+const game = Effect.map(
+  App.make({ handlers: [damage, rename, reset] }),
+  (app) => {
+    const target = app.world.spawn(Health.of({ hp: 50 }));
+    return { app, target };
+  }
+);
 
 const withApp = <A, T>(
   make: Effect.Effect<A, never, Scope.Scope>,
@@ -183,11 +191,11 @@ describe("actions with a schema", () => {
 
   it("report bad queued input as events, and refuse a payload with no JSON form where it is enqueued", () => {
     const rejected: string[] = [];
+    const events: (typeof Action.Rejected.codec)["Type"][] = [];
     const Watch = System.make("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
-        rejected.push(
-          `${event.action}: ${(event.error as { _tag: string })._tag}`
-        );
+        rejected.push(`${event.action}: ${event.error._tag}`);
+        events.push(event);
       }
     });
     const make = Effect.map(
@@ -204,6 +212,8 @@ describe("actions with a schema", () => {
       expect(app.enqueue(Damage, { target, amount: 2, seed: 9n })).toEqual(
         Exit.void
       );
+      // Refused by its handler: no such target.
+      app.enqueue(Damage, { target: 999 as Entity, amount: 3, seed: 7n });
       // A payload its schema refuses has no JSON form to log or send: it is
       // refused where it is enqueued, and nothing is queued.
       expect(app.enqueue(Damage, { target, amount: -2, seed: 9n })).toEqual(
@@ -219,7 +229,24 @@ describe("actions with a schema", () => {
       expect(rejected).toEqual([
         "Damage: InvalidPayload",
         "Teleport: UnknownAction",
+        "Damage: NoSuchTarget",
       ]);
+      // A refusal is data: the payload in its JSON form, the error as its tag
+      // and message. It is written down and read back as it was.
+      expect(events[2]).toEqual({
+        action: "Damage",
+        payload: { target: 999, amount: 3, seed: "7" },
+        error: { _tag: "NoSuchTarget", message: "" },
+        from: undefined,
+      });
+      for (const event of events) {
+        const encoded = Event.encode(Action.Rejected, event);
+        assert(Exit.isSuccess(encoded));
+        const json: unknown = JSON.parse(JSON.stringify(encoded.value));
+        expect(Event.decode(Action.Rejected, json)).toEqual(
+          Exit.succeed(event)
+        );
+      }
       // What was enqueued is in the log as it arrived, with what became of
       // it.
       expect(
@@ -234,6 +261,7 @@ describe("actions with a schema", () => {
         ["Damage", 500, true, "refused"],
         ["Teleport", undefined, true, "refused"],
         ["Damage", 2, true, "applied"],
+        ["Damage", 3, true, "refused"],
       ]);
       // The mark is the error's own message where it has one, and its name
       // where it has none.
@@ -253,17 +281,33 @@ describe("actions with a schema", () => {
     });
   });
 
-  it("leave type-only actions unchecked", () => {
+  it("are all defined with one: a payload's schema, or only a name", () => {
+    // @ts-expect-error an action's payload is given by a schema, not a type
+    void (() => Action.define<{ readonly name: string }>()("Typed"));
     withApp(game, ({ app }) => {
-      // No InvalidPayload in the failure type: there is no schema to fail.
-      const exit: Exit.Exit<string, never> = app.dispatch(Rename, {
-        name: "bob",
-      });
+      const exit: Exit.Exit<string, Action.InvalidPayload> = app.dispatch(
+        Rename,
+        { name: "bob" }
+      );
       expect(exit).toEqual(Exit.succeed("BOB"));
-      // By name, the payload is passed through as it is. A wrong shape reaches
-      // the handler, which here crashes on it: a defect, contained in the Exit.
-      const crashed = app.dispatchByName("Rename", { name: 42 });
-      expect(Exit.isFailure(crashed)).toBe(true);
+      // By name, a wrong shape is refused before the handler sees it.
+      const wrong = failure(app.dispatchByName("Rename", { name: 42 }));
+      expect(wrong).toBeInstanceOf(Action.InvalidPayload);
+
+      // An action with no payload is issued with nothing, logged as null, and
+      // taken by name as null.
+      resets.length = 0;
+      expect(Exit.isSuccess(app.dispatch(Reset, undefined))).toBe(true);
+      expect(Exit.isSuccess(app.dispatchByName("Reset", null))).toBe(true);
+      expect(failure(app.dispatchByName("Reset", { x: 1 }))).toBeInstanceOf(
+        Action.InvalidPayload
+      );
+      expect(resets).toEqual([undefined, undefined]);
+      expect(
+        moves(app.actionLog)
+          .filter((entry) => entry.name === "Reset")
+          .map((entry) => entry.payload)
+      ).toEqual([null, null]);
     });
   });
 
@@ -292,8 +336,8 @@ describe("events with a schema", () => {
       note: Schema.optional(Schema.String),
     })
   );
-  /** Type-only: the compiler checks it and nothing else can. */
-  const Quiet = Event.define<{ readonly n: number }>("sc/Quiet");
+  /** No payload: only a name. */
+  const Started = Event.define("sc/Started");
 
   it("infer the payload type, and are emitted and read as ever, with no check", () => {
     const seen: unknown[] = [];
@@ -324,7 +368,6 @@ describe("events with a schema", () => {
     });
     expect(Hit.name).toBe("sc/Hit");
     expect(Hit.codec).toBeDefined();
-    expect(Quiet.codec).toBeUndefined();
   });
 
   it("are written as JSON and read back, checked against the schema", () => {
@@ -372,16 +415,16 @@ describe("events with a schema", () => {
     ).toMatch(/amount/);
   });
 
-  it("cannot be written down without one, and say what to do", () => {
-    const encoded = failure(Event.encode(Quiet, { n: 1 }));
-    expect(encoded).toBeInstanceOf(Event.InvalidEvent);
-    expect(encoded.event).toBe("sc/Quiet");
-    expect(encoded.message).toMatch(/no schema.*Give Event\.define a schema/);
-    expect(failure(Event.decode(Quiet, { n: 1 })).message).toMatch(/no schema/);
+  it("all have one: a payload's schema, or only a name", () => {
+    // @ts-expect-error an event's payload is given by a schema, not a type
+    void (() => Event.define<{ readonly n: number }>("sc/Typed"));
+    expect(Event.encode(Started, undefined)).toEqual(Exit.succeed(null));
+    expect(Event.decode(Started, null)).toEqual(Exit.succeed(undefined));
+    expect(failure(Event.decode(Started, { n: 1 })).event).toBe("sc/Started");
   });
 
   it("are known by name in an app: two different events with one name are refused", () => {
-    const Twin = Event.define<number>("sc/Hit");
+    const Twin = Event.define("sc/Hit", Schema.Number);
     const Both = System.make("Both", function* () {
       (yield* Hit).emit({
         target: 1 as Entity,

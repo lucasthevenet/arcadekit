@@ -16,7 +16,6 @@ import {
   Drop,
   Mint,
   Purse,
-  Whisper,
   catchUp,
   coinsOf,
   game,
@@ -516,10 +515,6 @@ describe("a lockstep session", () => {
       );
       expect(() => ada.app.tickExit(DELTA)).toThrow(/taken over/u);
       expect(ada.app.time.tick).toBe(0);
-      // An action with no schema has no form to be sent in.
-      expect(() => ada.app.enqueue(Whisper, { to: "grace" })).toThrow(
-        /"ls\/Whisper" was defined with a type and no schema.*cannot be sent/u
-      );
       expect(() =>
         Lockstep.make(ada.app, { peer: "ada", peers: ["ada"], delta: DELTA })
       ).toThrow(/taken over already/u);

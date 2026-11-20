@@ -222,8 +222,8 @@ export const make = <
     readonly components?: readonly Listed[];
     /**
      * The events this plugin's feature emits that a save may hold, waiting to
-     * be read: each needs a schema. A save that holds an event no plugin
-     * lists is refused, and so is saving while one is waiting.
+     * be read. A save that holds an event no plugin lists is refused, and so
+     * is saving while one is waiting.
      */
     readonly events?: readonly EventDef<unknown>[];
     /**

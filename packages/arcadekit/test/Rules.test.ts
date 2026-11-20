@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit } from "effect";
+import { Context, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +7,7 @@ import {
   App,
   Commands,
   Component,
+  EntityId,
   Event,
   Field,
   Query,
@@ -24,12 +25,12 @@ const Turn = Component.define("ru/Turn", {
   number: Field.i32,
 });
 
-const Damaged = Event.define<{
-  readonly target: Entity;
-  readonly amount: number;
-}>("ru/Damaged");
-const Died = Event.define<{ readonly entity: Entity }>("ru/Died");
-const Ping = Event.define<number>("ru/Ping");
+const Damaged = Event.define(
+  "ru/Damaged",
+  Schema.Struct({ target: EntityId, amount: Schema.Number })
+);
+const Died = Event.define("ru/Died", Schema.Struct({ entity: EntityId }));
+const Ping = Event.define("ru/Ping", Schema.Number);
 
 /** Builds an app, hands it to `use`, then closes its scope. */
 const withApp = <A, T>(
@@ -185,16 +186,19 @@ class NotEnoughEnergy extends Data.TaggedError("NotEnoughEnergy")<{
 }> {}
 class NoSuchTarget extends Data.TaggedError("NoSuchTarget")<{}> {}
 
-const Attack = Action.define<{
-  readonly attacker: Entity;
-  readonly target: Entity;
-}>()("Attack");
-const EndTurn = Action.define<{ readonly player: number }>()("EndTurn");
-const Summon = Action.define<{
-  readonly player: number;
-  readonly hp: number;
-}>()("Summon");
-const Unhandled = Action.define<{}>()("Unhandled");
+const Attack = Action.define(
+  "Attack",
+  Schema.Struct({ attacker: EntityId, target: EntityId })
+);
+const EndTurn = Action.define(
+  "EndTurn",
+  Schema.Struct({ player: Schema.Number })
+);
+const Summon = Action.define(
+  "Summon",
+  Schema.Struct({ player: Schema.Number, hp: Schema.Number })
+);
+const Unhandled = Action.define("Unhandled", Schema.Struct({}));
 
 const TurnQuery = Query.all(Turn);
 const currentTurn = Effect.gen(function* () {
@@ -333,12 +337,13 @@ describe("actions", () => {
       // The result and the failure are typed per action.
       const typed: Exit.Exit<
         number,
-        NotYourTurn | NotEnoughEnergy | NoSuchTarget
+        NotYourTurn | NotEnoughEnergy | NoSuchTarget | Action.InvalidPayload
       > = exit;
       void typed;
-      const ended: Exit.Exit<void, NotYourTurn> = app.dispatch(EndTurn, {
-        player: 1,
-      });
+      const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> =
+        app.dispatch(EndTurn, {
+          player: 1,
+        });
       expect(Exit.isSuccess(ended)).toBe(true);
     });
   });
