@@ -1883,7 +1883,7 @@ export class QueryView<D extends Terms = Terms> {
       const log = this.termLog[k];
       if (log !== undefined && this.watches.some((each) => each.log === log)) {
         throw new Error(
-          `eachChunk() was called on a query that watches "${log.def.name}" for changes and also hands it out. Raw columns cannot tell a read from a write, so every row handed out counts as written, and the query would see its own visit as a change every time. Visit it with each(), whose accessors note only the rows they assign to; or, if the loop only reads "${log.def.name}", say so with Query.reads (readDefs); or take it out of the query's terms.`
+          `eachChunk() was called on a query that watches "${log.def.name}" for changes and also hands it out. Raw columns cannot tell a read from a write, so every row handed out counts as written, and the query would see its own visit as a change every time. Visit it with each(), whose accessors note only the rows they assign to; or, if the loop only reads "${log.def.name}", leave it out of Query.writes (readDefs); or take it out of the query's terms.`
         );
       }
     }

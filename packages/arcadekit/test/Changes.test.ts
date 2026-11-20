@@ -34,8 +34,11 @@ const Heat = Component.define(
 const Frozen = Component.tag("ch/Frozen", { storage: "sparse" });
 const Boss = Component.tag("ch/Boss");
 
-const Positions = Query.all(Position);
-const Moved = Query.all(Position).pipe(Query.changed(Position));
+const Positions = Query.all(Position).pipe(Query.writes(Position));
+const Moved = Query.all(Position).pipe(
+  Query.changed(Position),
+  Query.writes(Position)
+);
 const Hurt = Query.all(Health).pipe(Query.changed(Health));
 const Born = Query.all(Sprite).pipe(Query.added(Sprite));
 const Warmed = Query.all(Heat).pipe(Query.changed(Heat));
@@ -132,21 +135,24 @@ describe("a change query", () => {
     expect(moved.entities()).toEqual([entities[6], entities[9]]);
   });
 
-  it("counts every row that eachChunk hands out as written", () => {
+  it("counts every row that eachChunk hands out of what it writes as written", () => {
     const { entities, world } = populated();
     const hurt = world.view(Hurt);
     const moved = world.view(Moved);
     hurt.entities();
     moved.entities();
     // Raw columns cannot tell: the loop reads, and counts as writing.
-    world.view(Query.all(Health)).eachChunk((start, end, health) => {
+    const Healing = Query.all(Health).pipe(Query.writes(Health));
+    world.view(Healing).eachChunk((start, end, health) => {
       for (let i = start; i < end; i++) {
         void health.hp[i];
       }
     });
     expect(hurt.entities()).toEqual(entities.slice(0, 5));
-    // Only the components the loop was handed.
+    // Only the components the loop was handed to write.
     expect(moved.entities()).toEqual([]);
+    world.view(Query.all(Health)).eachChunk(() => {});
+    expect(hurt.entities()).toEqual([]);
   });
 
   it("refuses to hand out raw columns of a component it watches itself", () => {
@@ -160,7 +166,9 @@ describe("a change query", () => {
     expect(moved.count()).toBe(10);
     // Another component of the same query, which it does not watch, is fine,
     // and so is a query that watches for a component being gained.
-    const hurt = world.view(Query.all(Position).pipe(Query.changed(Health)));
+    const hurt = world.view(
+      Query.all(Position).pipe(Query.changed(Health), Query.writes(Position))
+    );
     const born = world.view(Query.all(Health).pipe(Query.added(Health)));
     let rows = 0;
     born.eachChunk((start, end) => {
@@ -274,7 +282,7 @@ describe("a change query", () => {
 
     world.set(entities[2]!, Heat, { degrees: 20 });
     world.set(entities[3]!, Heat, { degrees: 30 });
-    world.view(Query.all(Heat)).each((heat) => {
+    world.view(Query.all(Heat).pipe(Query.writes(Heat))).each((heat) => {
       if (heat.degrees === 4) {
         heat.degrees = 40;
       }
@@ -289,7 +297,12 @@ describe("a change query", () => {
     expect(warmed.entities()).toEqual([1, 2, 3, 4].map((n) => entities[n]));
     // A raw loop over a sparse component counts the rows it is handed.
     world
-      .view(Query.all(Position, Heat).pipe(Query.without(Frozen)))
+      .view(
+        Query.all(Position, Heat).pipe(
+          Query.without(Frozen),
+          Query.writes(Heat)
+        )
+      )
       .eachChunk(() => {});
     expect(warmed.entities()).toEqual([1, 3, 4].map((n) => entities[n]));
   });
@@ -328,10 +341,15 @@ describe("a change query", () => {
     expect(first).not.toBe(second);
     expect(world.view(Moved, "first")).toBe(first);
     // Another description that says the same is the same query to a reader.
-    const alike = Query.all(Position).pipe(Query.changed(Position));
+    const alike = Query.all(Position).pipe(
+      Query.writes(Position),
+      Query.changed(Position)
+    );
     expect(world.view(alike, "first")).toBe(first);
-    // One that watches something else is another query, however alike.
+    // One that watches something else, or writes something else, is another
+    // query, however alike.
     const others: Query.Query<Terms>[] = [
+      Query.all(Position).pipe(Query.changed(Position)),
       Query.all(Position).pipe(Query.changed(Health)),
       Query.all(Position).pipe(Query.added(Position)),
       Query.all(Position).pipe(Query.changed(Position), Query.with(Boss)),
@@ -573,7 +591,7 @@ describe("added and removed", () => {
 
 /** A raw loop that is handed positions to read and health to write. */
 const RawReader = Query.all(Position, Health).pipe(
-  Query.reads(Position),
+  Query.writes(Health),
   Query.without(Frozen)
 );
 
@@ -591,11 +609,14 @@ describe("changes against a simple model", () => {
       query: Query.all(Position).pipe(Query.changed(Position)),
       plain: Query.all(Position),
       fires: ["Position:changed"],
-      // Whether it can be visited with eachChunk: it hands out nothing it watches.
-      raw: false,
+      // Whether it can be visited with eachChunk: it writes nothing it watches.
+      raw: true,
     },
     {
-      query: Query.all(Position, Health).pipe(Query.changed(Health)),
+      query: Query.all(Position, Health).pipe(
+        Query.changed(Health),
+        Query.writes(Health)
+      ),
       plain: Query.all(Position, Health),
       fires: ["Health:changed"],
       raw: false,
@@ -607,31 +628,42 @@ describe("changes against a simple model", () => {
       ),
       plain: Query.all(Health, Position).pipe(Query.without(Frozen)),
       fires: ["Position:changed", "Health:changed"],
-      raw: false,
+      raw: true,
     },
     {
-      query: Query.all(Position).pipe(Query.added(Heat)),
+      query: Query.all(Position).pipe(
+        Query.added(Heat),
+        Query.writes(Position)
+      ),
       plain: Query.all(Position, Heat),
       fires: ["Heat:added"],
       raw: true,
     },
     {
-      query: Query.all(Heat).pipe(Query.with(Frozen), Query.changed(Heat)),
+      query: Query.all(Heat).pipe(
+        Query.with(Frozen),
+        Query.changed(Heat),
+        Query.writes(Heat)
+      ),
       plain: Query.all(Heat).pipe(Query.with(Frozen)),
       fires: ["Heat:changed"],
       raw: false,
     },
     {
-      query: Query.all(Position).pipe(Query.changed(Heat), Query.added(Health)),
+      query: Query.all(Position).pipe(
+        Query.changed(Heat),
+        Query.added(Health),
+        Query.writes(Position)
+      ),
       plain: Query.all(Position, Heat, Health),
       fires: ["Heat:changed", "Health:added"],
       raw: true,
     },
     {
-      // Hands out what it watches, and says it only reads it.
+      // Hands out what it watches, which it only reads.
       query: Query.all(Position, Health).pipe(
         Query.changed(Position),
-        Query.reads(Position)
+        Query.writes(Health)
       ),
       plain: Query.all(Position, Health),
       fires: ["Position:changed"],
@@ -732,14 +764,20 @@ describe("changes against a simple model", () => {
         } else if (roll < 16) {
           // A loop that writes some of the rows it visits.
           const modulus = dice.int(2, 5);
-          world.view(Query.all(Health)).each((health, entity) => {
+          const Healing = Query.all(Health).pipe(Query.writes(Health));
+          world.view(Healing).each((health, entity) => {
             if (entity % modulus === 0) {
               health.hp += 1;
               fire("Health:changed", entity);
             }
           });
           world
-            .view(Query.all(Heat, Position).pipe(Query.without(Frozen)))
+            .view(
+              Query.all(Heat, Position).pipe(
+                Query.without(Frozen),
+                Query.writes(Heat, Position)
+              )
+            )
             .each((heat, pos, entity) => {
               if (entity % modulus === 1) {
                 heat.degrees += 1;
@@ -750,15 +788,20 @@ describe("changes against a simple model", () => {
               }
             });
         } else if (roll < 17) {
-          // A raw loop: every row it is handed counts.
+          // A raw loop: every row it is handed to write counts.
           world
-            .view(Query.all(Position).pipe(Query.with(Frozen)))
+            .view(
+              Query.all(Position).pipe(
+                Query.with(Frozen),
+                Query.writes(Position)
+              )
+            )
             .eachChunk((start, end, _, ids) => {
               for (let i = start; i < end; i++) {
                 fire("Position:changed", ids[i]!);
               }
             });
-          // Unless the loop says it only reads it.
+          // And none it only reads.
           world.view(RawReader).eachChunk((start, end, _, __, ids) => {
             for (let i = start; i < end; i++) {
               fire("Health:changed", ids[i]!);
@@ -961,7 +1004,9 @@ describe("changes in a transaction", () => {
     world.view(Positions).each((pos) => {
       pos.y += 1;
     });
-    world.view(Query.all(Health)).eachChunk(() => {});
+    world
+      .view(Query.all(Health).pipe(Query.writes(Health)))
+      .eachChunk(() => {});
     expect(moved.count()).toBe(10);
     world.rollback();
     // What was written before the transaction is still there to visit.
@@ -1145,7 +1190,7 @@ const Tally = Component.define("ch/Tally", {
   gone: Field.u32,
   early: Field.u32,
 });
-const Tallies = Query.all(Tally);
+const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
 const tallyOf = (app: App.Any) => {
   let out: Record<string, number> = {};
   app.world.view(Tallies).each((tally) => {

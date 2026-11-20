@@ -23,7 +23,7 @@ import type { Entity } from "../src/index";
 // --- a small game: coins are dropped, drift about at random, and are taken ------
 
 const Coin = Component.define("rp/Coin", { value: Field.i32, x: Field.f32 });
-const Coins = Query.all(Coin);
+const Coins = Query.all(Coin).pipe(Query.writes(Coin));
 
 const Drop = Action.define("rp/Drop", Schema.Struct({ value: Schema.Int }));
 const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }));
@@ -607,7 +607,7 @@ const Tally = Component.define("rp/Tally", {
   value: Field.f64,
   rejections: Field.u32,
 });
-const Tallies = Query.all(Tally);
+const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
 
 const Double = Action.define("rp/Double", Schema.Struct({}));
 const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));

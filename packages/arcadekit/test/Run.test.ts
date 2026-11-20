@@ -30,7 +30,7 @@ import {
 } from "../src/index";
 
 const Ball = Component.define("run/Ball", { x: Field.f32, vx: Field.f32 });
-const Balls = Query.all(Ball);
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 const Score = Singleton.define(
   "run/Score",
   { points: Field.i32 },

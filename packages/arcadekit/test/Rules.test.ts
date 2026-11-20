@@ -79,7 +79,7 @@ describe("events", () => {
   it("can be emitted from inside a query loop and are read in order", () => {
     const Hit = System.make("Hit", function* () {
       const damaged = yield* Damaged;
-      const wounded = yield* Query.all(Health);
+      const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
       wounded.each((health, entity) => {
         health.hp -= 3;
         damaged.emit({ target: entity, amount: 3 });
@@ -200,7 +200,7 @@ const Summon = Action.define(
 );
 const Unhandled = Action.define("Unhandled", Schema.Struct({}));
 
-const TurnQuery = Query.all(Turn);
+const TurnQuery = Query.all(Turn).pipe(Query.writes(Turn));
 const currentTurn = Effect.gen(function* () {
   const turns = yield* TurnQuery;
   let player = 0;
@@ -281,7 +281,7 @@ const Death = System.make("Death", function* () {
 });
 
 const Recharge = System.make("Recharge", function* () {
-  const fighters = yield* Query.all(Energy);
+  const fighters = yield* Query.all(Energy).pipe(Query.writes(Energy));
   fighters.each((energy) => {
     energy.points += 1;
   });

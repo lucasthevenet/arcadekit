@@ -20,7 +20,9 @@ import {
 import { Effect } from "effect";
 
 const Rock = Component.tag("game/Rock");
-const Placed = Query.all(Transform3d.Position);
+const Placed = Query.all(Transform3d.Position).pipe(
+  Query.writes(Transform3d.Position)
+);
 
 const Drift = System.make("game/Drift", function* () {
   const { delta } = yield* Time;

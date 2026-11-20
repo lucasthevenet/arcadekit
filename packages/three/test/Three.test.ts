@@ -646,9 +646,9 @@ describe("Three.instances", () => {
   ])(
     "draws ten thousand moving objects without one allocation per object per frame (smooth: %s, each of a colour of its own: %s)",
     (smooth, colored) => {
-      const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+      const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
       const MovingFlat = Query.all(Transform2d.Position, Velocity).pipe(
-        Query.reads(Velocity)
+        Query.writes(Transform2d.Position)
       );
       const Move = System.make("th/Move", function* () {
         const { delta } = yield* Time;
@@ -1119,12 +1119,16 @@ describe("an entity drawn between two ticks", () => {
   const Flat = Transform2d;
   /** Moves every rock ten along x a tick, and every flat one too. */
   const Slide = System.make("th/Slide", function* () {
-    (yield* Query.all(Position)).each((position) => {
-      position.x += 10;
-    });
-    (yield* Query.all(Flat.Position)).each((position) => {
-      position.x += 10;
-    });
+    (yield* Query.all(Position).pipe(Query.writes(Position))).each(
+      (position) => {
+        position.x += 10;
+      }
+    );
+    (yield* Query.all(Flat.Position).pipe(Query.writes(Flat.Position))).each(
+      (position) => {
+        position.x += 10;
+      }
+    );
   });
   const Smoothed = Three.instances("th/Smoothed", {
     of: Rock,
@@ -1715,9 +1719,11 @@ describe("an entity drawn between two ticks", () => {
           systems: [Smoothed],
           handlers: [
             Action.handler(Go, function* () {
-              (yield* Query.all(Position)).each((position) => {
-                position.x += 10;
-              });
+              (yield* Query.all(Position).pipe(Query.writes(Position))).each(
+                (position) => {
+                  position.x += 10;
+                }
+              );
             }),
           ],
         }),
@@ -2798,9 +2804,11 @@ describe("Three.plugin", () => {
     const Spin = System.make("th/Spin", function* () {
       const { delta, tick } = yield* Time;
       const commands = yield* Commands;
-      (yield* Query.all(Position)).each((position) => {
-        position.x += delta * 3;
-      });
+      (yield* Query.all(Position).pipe(Query.writes(Position))).each(
+        (position) => {
+          position.x += delta * 3;
+        }
+      );
       if (tick % 7 === 0) {
         commands.spawn(Rock, Position.of({ x: tick, y: 0, z: 0 }));
         commands.spawn(Ship, Position.of({ x: 0, y: tick, z: 0 }), Rotation);

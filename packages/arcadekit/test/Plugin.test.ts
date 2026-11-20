@@ -48,7 +48,9 @@ class Bounds extends Context.Service<
 >()("pl/Bounds") {}
 
 const Movement = System.make("Movement", function* () {
-  const moving = yield* Query.all(Position, Velocity);
+  const moving = yield* Query.all(Position, Velocity).pipe(
+    Query.writes(Position)
+  );
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
     pos.x += vel.x * delta;
@@ -58,7 +60,9 @@ const Movement = System.make("Movement", function* () {
 const Walls = System.make("Walls", function* () {
   const { clamp, width } = yield* Bounds;
   const bumped = yield* Bumped;
-  const moving = yield* Query.all(Position, Velocity);
+  const moving = yield* Query.all(Position, Velocity).pipe(
+    Query.writes(Position, Velocity)
+  );
   moving.each((pos, vel, entity) => {
     if (pos.x > width) {
       pos.x = clamp(pos.x);
@@ -89,7 +93,7 @@ class NothingToHeal extends Data.TaggedError("NothingToHeal")<{}> {}
 const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }));
 
 const heal = Action.handler(Heal, function* ({ amount }) {
-  const wounded = yield* Query.all(Health);
+  const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
   if (wounded.count() === 0) {
     return yield* new NothingToHeal();
   }

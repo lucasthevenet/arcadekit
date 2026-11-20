@@ -32,7 +32,7 @@ export const Coin = Component.define("ls/Coin", {
   value: Field.i32,
   x: Field.f32,
 });
-export const Coins = Query.all(Coin);
+export const Coins = Query.all(Coin).pipe(Query.writes(Coin));
 export const Purse = Singleton.define(
   "ls/Purse",
   {

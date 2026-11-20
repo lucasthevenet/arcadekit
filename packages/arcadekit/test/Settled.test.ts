@@ -29,7 +29,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 // A board of pieces. A move slides one; a slide takes three tenths of a
 // second of the game's time, which a script waits out before it says so.
 const Piece = Component.define("st/Piece", { x: Field.i32 });
-const Pieces = Query.all(Piece);
+const Pieces = Query.all(Piece).pipe(Query.writes(Piece));
 const Score = Singleton.define("st/Score", { moves: Field.i32 }, { moves: 0 });
 const Phase = State.define("st/Phase", ["title", "playing"]);
 

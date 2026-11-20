@@ -25,7 +25,7 @@ import {
 import type { BuiltIn } from "../src/Services";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
-const Ships = Query.all(Ship);
+const Ships = Query.all(Ship).pipe(Query.writes(Ship));
 const Score = Singleton.define(
   "in/Score",
   { points: Field.i32 },

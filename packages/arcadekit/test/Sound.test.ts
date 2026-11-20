@@ -26,7 +26,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 // Balls fall and bounce off the floor. The simulation says so with an
 // event, and knows nothing of sound.
 const Ball = Component.define("sd/Ball", { y: Field.f32, speed: Field.f32 });
-const Balls = Query.all(Ball);
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 const Bounces = Singleton.define(
   "sd/Bounces",
   { count: Field.i32 },

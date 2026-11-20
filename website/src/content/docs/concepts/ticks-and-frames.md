@@ -44,7 +44,7 @@ const Velocity = Component.define("game/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
-const Moving = Query.all(Position, Velocity).pipe(Query.reads());
+const Moving = Query.all(Position, Velocity);
 
 const context = document.querySelector("canvas")!.getContext("2d")!;
 

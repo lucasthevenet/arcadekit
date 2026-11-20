@@ -48,12 +48,14 @@ describe("Transform3d", () => {
   it("is moved by a system with a loop over its columns, like any component", () => {
     const Drift = System.make("tf/Drift", function* () {
       const { delta } = yield* Time;
-      (yield* Query.all(Position)).eachChunk((start, end, position) => {
-        for (let i = start; i < end; i++) {
-          position.x[i] = position.x[i]! + 2 * delta;
-          position.z[i] = position.z[i]! - delta;
+      (yield* Query.all(Position).pipe(Query.writes(Position))).eachChunk(
+        (start, end, position) => {
+          for (let i = start; i < end; i++) {
+            position.x[i] = position.x[i]! + 2 * delta;
+            position.z[i] = position.z[i]! - delta;
+          }
         }
-      });
+      );
     });
     const app = run(App.make({ systems: [Drift] }));
     const rock = app.world.spawn(Position.of({ x: 1, y: 2, z: 3 }));

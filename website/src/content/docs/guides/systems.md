@@ -12,7 +12,7 @@ import { Component, Field, Query, System, Time } from "arcadekit";
 
 const Position = Component.define("game/Position", { x: Field.f32 });
 const Velocity = Component.define("game/Velocity", { x: Field.f32 });
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.make("game/Movement", function* () {
   const { delta } = yield* Time;
@@ -99,7 +99,7 @@ import { App, Component, Field, Query, Random, System } from "arcadekit";
 import { Effect } from "effect";
 
 const Spark = Component.define("game/Spark", { x: Field.f32 });
-const Sparks = Query.all(Spark);
+const Sparks = Query.all(Spark).pipe(Query.writes(Spark));
 
 const Scatter = System.make("game/Scatter", function* () {
   const random = yield* Random;

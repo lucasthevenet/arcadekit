@@ -238,7 +238,7 @@ class NoSuchDie extends Data.TaggedError("NoSuchDie")<{}> {}
 /** A handler that draws: the die's new face is random. */
 const roll = Action.handler(Roll, function* ({ sides }) {
   const random = yield* Random;
-  const dice = yield* Query.all(Die);
+  const dice = yield* Query.all(Die).pipe(Query.writes(Die));
   if (dice.count() === 0) {
     return yield* new NoSuchDie();
   }
@@ -255,7 +255,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
 const Sparks = System.make("Sparks", function* () {
   const random = yield* Random;
   const commands = yield* Commands;
-  const sparks = yield* Query.all(Spark);
+  const sparks = yield* Query.all(Spark).pipe(Query.writes(Spark));
   sparks.each((spark, entity) => {
     spark.x += random.next() - 0.5;
     spark.y += random.next() - 0.5;

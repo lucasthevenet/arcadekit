@@ -40,7 +40,7 @@ const Name = Component.define("duel/Name", { value: Field.json<string>() });
 // One per game, not one per entity: whose turn it is.
 const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 });
 
-const Fighters = Query.all(Fighter);
+const Fighters = Query.all(Fighter).pipe(Query.writes(Fighter));
 
 // --- what can happen -------------------------------------------------------------
 // Defined with schemas too, so that an event can be written down.

@@ -22,7 +22,7 @@ const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
 
 const Ball = Component.define("st/Ball", { x: Field.f32 });
-const Balls = Query.all(Ball);
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));

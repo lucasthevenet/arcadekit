@@ -55,12 +55,20 @@ const Stats = Singleton.define(
   { moved: 0, burnt: 0 }
 );
 
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
-const Sheets = Query.all(Sheet);
-const OnFire = Query.all(Position, Burning);
-const Followers = Query.all(Follows, Position, Velocity, Sheet);
-const Moved = Query.all(Position, Sheet).pipe(Query.changed(Position));
-const Drawn = Query.all(Position);
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
+const Sheets = Query.all(Sheet).pipe(Query.writes(Sheet));
+const OnFire = Query.all(Position, Burning).pipe(
+  Query.writes(Position, Burning)
+);
+const Followers = Query.all(Follows, Position, Velocity, Sheet).pipe(
+  Query.writes(Follows, Position, Sheet)
+);
+const Moved = Query.all(Position, Sheet).pipe(
+  Query.changed(Position),
+  Query.writes(Sheet)
+);
+// It says it writes, so that the frame stage is what refuses the write.
+const Drawn = Query.all(Position).pipe(Query.writes(Position));
 
 /** Why the game refused what it refused, each reason once. */
 const refusals: string[] = [];

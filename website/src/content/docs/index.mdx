@@ -43,7 +43,7 @@ const Velocity = Component.define("game/Velocity", {
   y: Field.f32,
 });
 
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.make("game/Movement", function* () {
   const { delta } = yield* Time;

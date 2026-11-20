@@ -76,8 +76,10 @@ const Tint = Component.define("page/Tint", {
   b: Field.f32,
 });
 
-const Drifting = Query.all(Position, Velocity, Tint);
-const Spinning = Query.all(Rotation, Spin);
+const Drifting = Query.all(Position, Velocity, Tint).pipe(
+  Query.writes(Position, Velocity, Tint)
+);
+const Spinning = Query.all(Rotation, Spin).pipe(Query.writes(Rotation, Spin));
 
 /** A hex code's three bytes, each over 255: what a `Tint` holds. */
 const code = (hex: number) => ({
@@ -132,6 +134,7 @@ const Turn = System.make("Turn", function* () {
 // The cards go round the middle, each turning as it goes: a flat game's
 // components, a position of two numbers and an angle.
 const Carded = Query.all(Transform2d.Position, Transform2d.Rotation).pipe(
+  Query.writes(Transform2d.Position, Transform2d.Rotation),
   Query.with(Card)
 );
 const Wheel = System.make("Wheel", function* () {
@@ -158,7 +161,10 @@ const Steer = System.make("Steer", function* () {
   if (x === 0 && y === 0) {
     return;
   }
-  (yield* Query.all(Position).pipe(Query.with(Ship))).each((position) => {
+  (yield* Query.all(Position).pipe(
+    Query.writes(Position),
+    Query.with(Ship)
+  )).each((position) => {
     position.x += x * 30 * delta;
     position.y += y * 30 * delta;
   });

@@ -32,8 +32,8 @@ const Mote = Component.define("sv/Mote", {
   x: Field.f32,
   name: Field.json<string>(),
 });
-const Tallies = Query.all(Tally);
-const Motes = Query.all(Mote);
+const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
+const Motes = Query.all(Mote).pipe(Query.writes(Mote));
 
 const Add = Action.define("sv/Add", Schema.Struct({ by: Schema.Int }));
 const Double = Action.define("sv/Double", Schema.Struct({}));

@@ -44,10 +44,14 @@ export class Query<D extends Terms>
     readonly withoutDefs: readonly ComponentDef[],
     readonly changedDefs: readonly ComponentDef[] = [],
     readonly addedDefs: readonly ComponentDef[] = [],
-    readonly readDefs: readonly ComponentDef[] = []
+    readonly writeDefs: readonly ComponentDef[] = []
   ) {
     super();
+    this.readDefs = terms.filter((def) => !writeDefs.includes(def));
   }
+
+  /** The terms it only reads: every one that `Query.writes` doesn't name. */
+  readonly readDefs: readonly ComponentDef[];
 
   asEffect(): Effect.Effect<QueryView<D>, never, World> {
     // Built once and reused: the world caches the view per query, so after
@@ -61,12 +65,15 @@ export class Query<D extends Terms>
 
 /**
  * Matches entities that have all of these components, and passes their data to
- * the loop.
+ * the loop. It only reads them: name the ones it writes with `Query.writes`.
+ *
+ *   const Drawn = Query.all(Position, Sprite)
+ *   const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position))
  *
  * @category Constructors
  */
-export const all = <const D extends Terms>(...terms: D): Query<D> =>
-  new Query(terms, [], []);
+export const all = <const D extends Terms>(...terms: D): Query<Reading<D>> =>
+  new Query(terms as Terms as Reading<D>, [], []);
 
 /**
  * Narrows a query to entities that also have these components, without
@@ -91,7 +98,7 @@ const with_: {
       self.withoutDefs,
       self.changedDefs,
       self.addedDefs,
-      self.readDefs
+      self.writeDefs
     )
 );
 
@@ -122,7 +129,7 @@ export const without: {
       [...self.withoutDefs, ...defs],
       self.changedDefs,
       self.addedDefs,
-      self.readDefs
+      self.writeDefs
     )
 );
 
@@ -141,9 +148,9 @@ export const without: {
  *   visited.
  * - A write is detected per entity by `world.set`, by adding the component with
  *   a value, and by assigning to a field in `each`. `eachChunk` hands out raw
- *   columns and can't detect writes, so every row it hands out counts as
- *   written, unless the query declares that it only reads the component with
- *   `Query.reads`. Reading records nothing.
+ *   columns and can't detect writes, so every row it hands out of a component
+ *   the query writes counts as written (see `Query.writes`). Reading records
+ *   nothing.
  * - Only watched components are tracked: writing a component no query watches
  *   costs nothing extra.
  * - A system that writes what it watches sees its own writes next time.
@@ -158,9 +165,8 @@ export const without: {
  *
  * **Gotchas**
  *
- * A change query can't `eachChunk` over a component it watches, and throws: it
- * would mistake its own visit for a change. Iterate with `each`, or declare
- * that the loop only reads the component with `Query.reads`.
+ * A change query can't `eachChunk` over a component it watches and writes, and
+ * throws: it would mistake its own visit for a change. Iterate with `each`.
  *
  * @category Combinators
  */
@@ -181,7 +187,7 @@ export const changed: {
       self.withoutDefs,
       [...self.changedDefs, ...defs],
       self.addedDefs,
-      self.readDefs
+      self.writeDefs
     )
 );
 
@@ -209,46 +215,57 @@ export const added: {
       self.withoutDefs,
       self.changedDefs,
       [...self.addedDefs, ...defs],
-      self.readDefs
+      self.writeDefs
     )
 );
 
 /**
- * A query's terms, with the read-only ones marked as such: `R` is the
- * components passed to `Query.reads`, or `never` for all of them. Components
- * are distinguished by name, which is part of their type.
+ * A query's terms, each marked as read-only.
  *
  * @category Type-level
  */
-export type Reading<D extends Terms, R> = {
-  [K in keyof D]: [R] extends [never]
-    ? D[K] & ReadOnlyTerm
-    : D[K] extends R
-      ? D[K] & ReadOnlyTerm
-      : D[K];
+export type Reading<D extends Terms> = {
+  [K in keyof D]: D[K] & ReadOnlyTerm;
+} extends infer Marked extends Terms
+  ? Marked
+  : never;
+
+/** The one of the components `W` that a marked term `T` was made from. */
+type Unmarked<T, W> = W extends unknown ? (T extends W ? W : never) : never;
+
+/**
+ * A query's terms, with the ones in `W` no longer read-only. Components are
+ * distinguished by name, which is part of their type.
+ *
+ * @category Type-level
+ */
+export type Writing<D extends Terms, W> = {
+  [K in keyof D]: D[K] extends ReadOnlyTerm
+    ? D[K] extends W
+      ? Unmarked<D[K], W>
+      : D[K]
+    : D[K];
 } extends infer Marked extends Terms
   ? Marked
   : never;
 
 /**
- * Declares which of a query's terms it only reads, or, given none, that it
- * reads all of them without writing:
+ * Names the terms a query writes. The others it only reads, which is what a
+ * query does with a term unless it is named here:
  *
- *   const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity))
- *   const Drawn = Query.all(Position, Sprite).pipe(Query.reads())
+ *   const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position))
  *
- * - `each` hands out an accessor for such a term whose fields can't be
+ * - `each` hands out an accessor for a term it only reads whose fields can't be
  *   assigned: the compiler rejects it, and it throws at run time.
- * - `eachChunk` hands out its columns typed as read-only, and doesn't count
- *   their rows as written. So a system that reads a watched component in a raw
- *   loop doesn't trigger the queries that watch it, and a change query can read
- *   what it watches through raw columns.
- * - In an action's handler, its columns aren't copied for a rollback, since
- *   there is nothing to restore.
+ * - `eachChunk` hands out the columns of a term it only reads typed as
+ *   read-only, and doesn't count their rows as written. A term it writes counts
+ *   every row it hands out as written for the change queries that watch it, as
+ *   raw columns can't tell a read from a write.
+ * - In an action's handler, only the columns of what it writes are copied for a
+ *   rollback.
  *
- * Leaving it out is never wrong, only slower. The declaration is the query's
- * own: raw columns are typed arrays regardless, and a loop that writes one past
- * the compiler has still written it. No change query sees that write, and no
+ * Raw columns are typed arrays all the same, and a loop that writes one past
+ * the compiler has still written it: no change query sees that write, and no
  * refusal rolls it back.
  *
  * Throws when given a component that isn't one of the query's terms: to require
@@ -256,39 +273,37 @@ export type Reading<D extends Terms, R> = {
  *
  * @category Combinators
  */
-export const reads: {
-  <const R extends readonly ComponentDef[]>(
-    ...defs: R
-  ): <D extends Terms>(self: Query<D>) => Query<Reading<D, R[number]>>;
-  <D extends Terms, const R extends readonly ComponentDef[]>(
+export const writes: {
+  <const W extends readonly [ComponentDef, ...ComponentDef[]]>(
+    ...defs: W
+  ): <D extends Terms>(self: Query<D>) => Query<Writing<D, W[number]>>;
+  <D extends Terms, const W extends readonly [ComponentDef, ...ComponentDef[]]>(
     self: Query<D>,
-    ...defs: R
-  ): Query<Reading<D, R[number]>>;
+    ...defs: W
+  ): Query<Writing<D, W[number]>>;
 } = dual(
   (args) => args[0] instanceof Query,
-  <D extends Terms, const R extends readonly ComponentDef[]>(
+  <D extends Terms, const W extends readonly [ComponentDef, ...ComponentDef[]]>(
     self: Query<D>,
-    ...defs: R
-  ): Query<Reading<D, R[number]>> => {
+    ...defs: W
+  ): Query<Writing<D, W[number]>> => {
     for (const def of defs) {
       if (!self.terms.includes(def)) {
         throw new Error(
-          `Query.reads was given "${def.name}", which is not one of the query's terms: ${self.terms.map((term) => term.name).join(", ") || "it has none"}. A query only reads what it is handed; to require a component without its data, use Query.with.`
+          `Query.writes was given "${def.name}", which is not one of the query's terms: ${self.terms.map((term) => term.name).join(", ") || "it has none"}. A query writes only what it is handed: add it to Query.all.`
         );
       }
     }
-    // In the order of the terms, each once.
-    const given: readonly ComponentDef[] =
-      defs.length === 0 ? self.terms : defs;
     return new Query(
-      // The same terms, with the ones it reads marked in the type.
-      self.terms as Terms as Reading<D, R[number]>,
+      // The same terms, with the ones it writes unmarked in the type.
+      self.terms as Terms as Writing<D, W[number]>,
       self.withDefs,
       self.withoutDefs,
       self.changedDefs,
       self.addedDefs,
+      // In the order of the terms, each once.
       self.terms.filter(
-        (def) => given.includes(def) || self.readDefs.includes(def)
+        (def) => defs.includes(def) || self.writeDefs.includes(def)
       )
     );
   }

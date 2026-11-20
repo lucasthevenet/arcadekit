@@ -45,7 +45,7 @@ const childrenOf = (
   spans.filter((s) => parentOf(s) === span.spanId).map((s) => s.name);
 
 const Count = Component.define("tr/Count", { n: Field.i32 });
-const Counted = Query.all(Count);
+const Counted = Query.all(Count).pipe(Query.writes(Count));
 const Phase = State.define("tr/Phase", ["title", "playing"]);
 const Add = Action.define("tr/Add", Schema.Struct({ by: Schema.Int }));
 const Refused = Action.define("tr/Refused", Schema.Struct({}));

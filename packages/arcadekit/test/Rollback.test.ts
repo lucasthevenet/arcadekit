@@ -472,7 +472,7 @@ describe("a rollback session", () => {
     });
     const Spoil = System.make("rb/Spoil", function* () {
       if ((yield* Time).tick === 2) {
-        (yield* Query.all(Holder)).each((holder) => {
+        (yield* Query.all(Holder).pipe(Query.writes(Holder))).each((holder) => {
           // Not plain data: no snapshot can hold it.
           holder.thing = () => 1;
         });

@@ -14,7 +14,7 @@ export const Lifetime = Component.define("demo/Lifetime", {
   seconds: Field.f32,
 });
 
-const Mortal = Query.all(Lifetime);
+const Mortal = Query.all(Lifetime).pipe(Query.writes(Lifetime));
 
 // It despawns from a callback per entity, through `Commands`: that is not
 // a raw loop, so it stays here and not in a module of loops.

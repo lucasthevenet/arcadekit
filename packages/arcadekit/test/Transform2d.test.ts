@@ -64,7 +64,9 @@ describe("Transform2d", () => {
   });
 
   it("is moved and turned by a system with a loop over its columns", () => {
-    const Moving = Query.all(Position, Rotation);
+    const Moving = Query.all(Position, Rotation).pipe(
+      Query.writes(Position, Rotation)
+    );
     const Drift = System.make("t2/Drift", function* () {
       const { delta } = yield* Time;
       (yield* Moving).eachChunk((start, end, position, rotation) => {

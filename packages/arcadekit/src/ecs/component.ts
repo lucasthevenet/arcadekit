@@ -340,7 +340,7 @@ export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
 /**
  * @param S  the component's fields
  * @param St where its data is stored
- * @param N  its name. Two components can have the same fields, and the compiler distinguishes them by name: for example, to know which of a query's terms `Query.reads` was given. A name built at run time is just `string`, and such a component is indistinguishable from others.
+ * @param N  its name. Two components can have the same fields, and the compiler distinguishes them by name: for example, to know which of a query's terms `Query.writes` was given. A name built at run time is just `string`, and such a component is indistinguishable from others.
  *
  * @category Models
  */
@@ -722,7 +722,7 @@ export const makeAccessor = (
       row,
       noting,
       mode === "reads"
-        ? `"${name}.${field}" was assigned to through a query that only reads "${name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`
+        ? `"${name}.${field}" was assigned to through a query that only reads "${name}". A query only reads its terms unless it names them with Query.writes: name "${name}" there to write it.`
         : mode === "frozen"
           ? frozenWrite(`An assignment to "${name}.${field}"`)
           : // A relation's target is the world's to change.

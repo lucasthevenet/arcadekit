@@ -27,7 +27,7 @@ class Bounds extends Context.Service<Bounds, { readonly width: number }>()(
   "physics/Bounds"
 ) {}
 
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.make("physics/Movement", function* () {
   const { width } = yield* Bounds;
@@ -139,7 +139,7 @@ import { fall } from "./loops";
 export const Position = Component.define("physics/Position", { y: Field.f32 });
 export const Velocity = Component.define("physics/Velocity", { y: Field.f32 });
 export const Falling = Query.all(Position, Velocity).pipe(
-  Query.reads(Velocity)
+  Query.writes(Position)
 );
 
 export const Fall = System.make("physics/Fall", function* () {

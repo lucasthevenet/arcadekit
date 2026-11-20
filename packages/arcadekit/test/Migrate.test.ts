@@ -48,7 +48,7 @@ const Buff0 = Component.define(
 );
 const Heal0 = Action.define("mg/Heal", Schema.Struct({ amount: Schema.Int }));
 const heal0 = Action.handler(Heal0, function* ({ amount }) {
-  (yield* Query.all(Hp0)).each((hp) => {
+  (yield* Query.all(Hp0).pipe(Query.writes(Hp0))).each((hp) => {
     hp.points += amount;
   });
 });
@@ -99,7 +99,7 @@ const Buff2 = Component.define(
 );
 const Mend2 = Action.define("mg/Mend", Schema.Struct({ by: Schema.Int }));
 const mend2 = Action.handler(Mend2, function* ({ by }) {
-  (yield* Query.all(Health2)).each((health) => {
+  (yield* Query.all(Health2).pipe(Query.writes(Health2))).each((health) => {
     health.points += by;
   });
 });

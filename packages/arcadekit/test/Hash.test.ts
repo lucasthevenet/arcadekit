@@ -241,12 +241,16 @@ describe("the hash of a world", () => {
           doubles.setUint32(row * 8 + 4, doubleHigh, true);
         }
       };
-      world.view(Query.all(Sheet)).eachChunk((_start, _end, columns) => {
-        overwrite(columns);
-      });
-      world.view(Query.all(Aura)).eachChunk((_start, _end, aura) => {
-        overwrite(aura.columns);
-      });
+      world
+        .view(Query.all(Sheet).pipe(Query.writes(Sheet)))
+        .eachChunk((_start, _end, columns) => {
+          overwrite(columns);
+        });
+      world
+        .view(Query.all(Aura).pipe(Query.writes(Aura)))
+        .eachChunk((_start, _end, aura) => {
+          overwrite(aura.columns);
+        });
       expect(
         world.get(world.view(Query.all(Sheet)).entities()[0]!, Sheet)
       ).toMatchObject({ single: Number.NaN, double: Number.NaN });
@@ -670,7 +674,7 @@ describe("the hash of an app's world", () => {
   const Drift = System.make("Drift", function* () {
     const random = yield* Random;
     const commands = yield* Commands;
-    const bodies = yield* Query.all(Body);
+    const bodies = yield* Query.all(Body).pipe(Query.writes(Body));
     bodies.each((body, entity) => {
       body.x += random.next();
       if (random.int(1, 20) === 1) {
@@ -704,7 +708,7 @@ describe("the hash of an app's world", () => {
       tick++;
       if (tick === 40) {
         let first = true;
-        (yield* Query.all(Body)).each((body) => {
+        (yield* Query.all(Body).pipe(Query.writes(Body))).each((body) => {
           if (first) {
             body.y = nudged("f32", body.y) as number;
             first = false;

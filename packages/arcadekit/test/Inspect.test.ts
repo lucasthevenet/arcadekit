@@ -48,7 +48,7 @@ const Refuse = Action.define("in/Refuse", Schema.Struct({}));
 
 class NotNow extends Data.TaggedError("in/NotNow") {}
 
-const Moved = Query.all(Position);
+const Moved = Query.all(Position).pipe(Query.writes(Position));
 const Move = System.make("in/Move", function* () {
   (yield* Moved).each((position) => {
     position.x += 1;

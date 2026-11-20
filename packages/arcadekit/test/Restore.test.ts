@@ -35,7 +35,7 @@ const Level = Component.singleton(
 );
 
 const optional: ComponentDef[] = [Body, Marked, Aura, Chilled];
-const Bodies = Query.all(Body);
+const Bodies = Query.all(Body).pipe(Query.writes(Body));
 const Warm = Query.all(Aura).pipe(Query.without(Chilled));
 const Moved = Query.all(Body).pipe(Query.changed(Body));
 const Born = Query.all(Body).pipe(Query.added(Body));

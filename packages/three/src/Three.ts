@@ -1915,8 +1915,7 @@ export function instances(
   ): Query.Query<readonly ComponentDef[]> =>
     Query.all(...own, ...(color === undefined ? [] : [color])).pipe(
       Query.with(...marked),
-      Query.without(...excluded, ...absent),
-      Query.reads()
+      Query.without(...excluded, ...absent)
     );
   // An entity's table has a rotation or it does not, and a scale or not:
   // four queries, each handed exactly the columns its entities have.
@@ -2441,35 +2440,29 @@ export function objects<O extends Object3D>(
   const excluded = options.without ?? [];
   const Placed = Query.all(Transform3d.Position).pipe(
     Query.with(...marked),
-    Query.without(...excluded),
-    Query.reads()
+    Query.without(...excluded)
   );
   const Turned = Query.all(Transform3d.Rotation).pipe(
     Query.with(Transform3d.Position, ...marked),
-    Query.without(...excluded),
-    Query.reads()
+    Query.without(...excluded)
   );
   const Sized = Query.all(Transform3d.Scale).pipe(
     Query.with(Transform3d.Position, ...marked),
-    Query.without(...excluded),
-    Query.reads()
+    Query.without(...excluded)
   );
   // A flat game's, but for the entities placed in three dimensions too.
   const flat = [...excluded, Transform3d.Position];
   const PlacedFlat = Query.all(Transform2d.Position).pipe(
     Query.with(...marked),
-    Query.without(...flat),
-    Query.reads()
+    Query.without(...flat)
   );
   const TurnedFlat = Query.all(Transform2d.Rotation).pipe(
     Query.with(Transform2d.Position, ...marked),
-    Query.without(...flat),
-    Query.reads()
+    Query.without(...flat)
   );
   const SizedFlat = Query.all(Transform2d.Scale).pipe(
     Query.with(Transform2d.Position, ...marked),
-    Query.without(...flat),
-    Query.reads()
+    Query.without(...flat)
   );
   return System.make(name, function* () {
     const kept = yield* Scene;

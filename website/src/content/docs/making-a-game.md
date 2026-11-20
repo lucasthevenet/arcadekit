@@ -60,7 +60,7 @@ Next come the systems. A system runs once per tick as one Effect, and loops over
 const BASKET_WIDTH = 1;
 const BASKET_SPEED = 6;
 
-const Coins = Query.all(Position, Fall).pipe(Query.reads(Fall));
+const Coins = Query.all(Position, Fall).pipe(Query.writes(Position));
 
 const Steer = System.make("catch/Steer", function* () {
   const basket = yield* Basket;
@@ -255,7 +255,7 @@ class Screen extends Context.Service<
   }));
 }
 
-const Coins = Query.all(Position, Fall).pipe(Query.reads());
+const Coins = Query.all(Position, Fall);
 const scale = 40;
 
 const Draw = System.make("catch/Draw", function* () {

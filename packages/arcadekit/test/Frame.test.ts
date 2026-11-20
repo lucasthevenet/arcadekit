@@ -46,8 +46,8 @@ const Score = Singleton.define(
   { points: 0 }
 );
 const Phase = State.define("fr/Phase", ["playing", "paused"]);
-const Balls = Query.all(Ball);
-const Moved = Query.all(Ball).pipe(Query.changed(Ball));
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
+const Moved = Query.all(Ball).pipe(Query.changed(Ball), Query.writes(Ball));
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -116,7 +116,7 @@ describe("a frozen world", () => {
       [
         'An assignment to "fr/Glow.level"',
         () =>
-          world.view(Query.all(Glow)).each((glow) => {
+          world.view(Query.all(Glow).pipe(Query.writes(Glow))).each((glow) => {
             glow.level = 0;
           }),
       ],
@@ -135,7 +135,7 @@ describe("a frozen world", () => {
     world.view(Balls).each((row) => {
       row.x += 1;
     });
-    world.view(Query.all(Glow)).each((glow) => {
+    world.view(Query.all(Glow).pipe(Query.writes(Glow))).each((glow) => {
       glow.level = 9;
     });
     expect(world.get(ball, Ball)!.x).toBe(2);

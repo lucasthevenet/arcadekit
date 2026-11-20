@@ -16,7 +16,7 @@ import {
 } from "../src/index";
 
 const Ball = Component.define("dr/Ball", { x: Field.f32, vx: Field.f32 });
-const Balls = Query.all(Ball);
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 
 const Roll = System.make("Roll", function* () {
   const { delta } = yield* Time;

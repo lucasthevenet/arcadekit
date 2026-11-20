@@ -31,7 +31,10 @@ const Velocity = Component.define("rt/Velocity", {
 const Lifetime = Component.define("rt/Lifetime", { seconds: Field.f32 });
 const Stunned = Component.tag("rt/Stunned", { storage: "sparse" });
 
-const Moving = Query.all(Position, Velocity).pipe(Query.without(Stunned));
+const Moving = Query.all(Position, Velocity).pipe(
+  Query.writes(Position, Velocity),
+  Query.without(Stunned)
+);
 
 const Movement = System.make("Movement", function* () {
   const moving = yield* Moving;
@@ -135,7 +138,7 @@ describe("systems", () => {
     const Reaper = System.make("Reaper", function* () {
       const commands = yield* Commands;
       const { delta } = yield* Time;
-      const mortal = yield* Query.all(Lifetime);
+      const mortal = yield* Query.all(Lifetime).pipe(Query.writes(Lifetime));
       counts.push(mortal.count());
       mortal.each((life, entity) => {
         life.seconds -= delta;
@@ -163,7 +166,9 @@ describe("systems", () => {
       { seconds: Field.f32, dps: Field.f32 },
       { storage: "sparse" }
     );
-    const OnFire = Query.all(Health, Burning);
+    const OnFire = Query.all(Health, Burning).pipe(
+      Query.writes(Health, Burning)
+    );
 
     const Burn = System.make("Burn", function* () {
       const onFire = yield* OnFire;
