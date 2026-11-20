@@ -276,8 +276,8 @@ export interface Any {
    * ticks.
    *
    * Fails with `SaveRefused`, which names what is in the way: a queued action
-   * or a waiting event whose payload its schema doesn't take, a waiting event no
-   * plugin lists, a field holding a value that can't be saved, commands queued but not applied, or a script started with
+   * or a waiting event whose payload its schema doesn't take, a field holding a
+   * value that can't be saved, commands queued but not applied, or a script started with
    * `spawnScript` or `Script.spawn` that hasn't ended.
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
@@ -710,7 +710,7 @@ export const make = <
  * the log's checkpoints as it goes.
  *
  * Fails with `LoadRefused` when the save's world can't be loaded: it contains a
- * component no plugin lists, or one whose fields have changed, or its bytes are
+ * component this program doesn't define, or one whose fields have changed, or its bytes are
  * damaged. It also fails when the save is from another version of the game and
  * `migrations` don't bring it up to this one: see `Save.migrate`.
  *

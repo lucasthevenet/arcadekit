@@ -113,7 +113,8 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 | `"newer version"` | Was written by a later version of the game |
 | `"no migration"` | Is older, and there is no migration from its version, or from a version on the way |
 | `"migration failed"` | Is older, and a migration threw: the message says which, and what it threw |
-| `"unknown component"` | Contains a component no plugin lists |
+| `"unknown component"` | Contains a component this program doesn't define, or no longer by that name |
+| `"unknown event"` | Holds an event waiting to be read that this program doesn't define |
 | `"component changed"` | Has a component whose fields differ from the game's: the message lists both. After migrations, they didn't bring the save fully up to date |
 
 ## Snapshots
