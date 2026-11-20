@@ -44,8 +44,9 @@ import {
   References,
   Result,
   Schema,
+  Tracer,
 } from "effect";
-import type { Fiber, Scope, Tracer } from "effect";
+import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
@@ -559,18 +560,23 @@ export interface Options<
    */
   readonly verifyFrames?: boolean;
   /**
-   * Sends what the app does to the tracer the program provides, as spans: one
+   * Whether the app sends what it does to the program's tracer, as spans: one
    * for each tick, `arcadekit/tick`, holding a span for each action applied in
    * it, `action:<name>`, and one for each system that had its turn, named
    * after the system; and one for each run of the frame stage,
    * `arcadekit/frame`, and of the input stage, `arcadekit/input`, holding their
    * systems' spans. Each of the three is the root of a trace of its own.
    *
-   * Provide a tracer as for any Effect program, such as `OtlpTracer.layer` of
-   * `effect/observability`; without one, the spans are made and go nowhere.
-   * What the game does is the same either way: a span reads the real clock and
-   * draws its ids from `Math.random`, never from the game's `Random`. Defaults
-   * to false, which costs nothing.
+   * Defaults to whether the program provides a tracer, such as `OtlpTracer.layer`
+   * of `effect/observability`: an app made without one makes no span and costs
+   * nothing. What the game does is the same either way: a span reads the real
+   * clock and draws its ids from `Math.random`, never from the game's `Random`.
+   *
+   * **Gotchas**
+   *
+   * - A span costs about 3 µs, so a traced tick of 10 systems takes about 30 µs
+   *   more. A program that provides a tracer for its own spans, such as a
+   *   game's server, and doesn't want the game's, sets `trace: false`.
    */
   readonly trace?: boolean;
 }
@@ -1182,7 +1188,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     System.unique(listedSystems);
     // Chosen once, so an app that doesn't trace runs what it would without.
-    const trace = options.trace === true;
+    // The default tracer makes spans and sends them nowhere: Effect compares
+    // with it to tell that no tracer is installed.
+    const trace =
+      options.trace ??
+      Context.get(context, Tracer.Tracer) !== Tracer.nativeTracer;
     const allSystems = trace ? listedSystems.map(System.traced) : listedSystems;
     // A hook runs when its state is entered or left, not with the rest.
     const ordered = System.order(

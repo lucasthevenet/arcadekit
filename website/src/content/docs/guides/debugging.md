@@ -7,7 +7,7 @@ description: "See what a game does as it runs. Learn how to trace every tick, fr
 
 ## Tracing an app
 
-Create the app with `trace: true`, and provide a tracer to the program:
+Provide a tracer to the program, and the app traces itself:
 
 ```ts
 import { App, System } from "arcadekit";
@@ -30,16 +30,14 @@ const Tracing = OtlpTracer.layer({
 );
 
 Browser.runMain(
-  App.run({ systems: [Move, Draw], trace: true }, { hz: 60 }).pipe(
-    Effect.provide(Tracing)
-  ),
+  App.run({ systems: [Move, Draw] }, { hz: 60 }).pipe(Effect.provide(Tracing)),
   { target: document.querySelector("canvas")! }
 );
 ```
 
 `OtlpTracer.layer`, from Effect, sends spans to an [OpenTelemetry](https://opentelemetry.io) collector, such as a local [Jaeger](https://www.jaegertracing.io) or Grafana. The spans are Effect's, so any tracer you provide to the program receives them.
 
-An app made with `trace: true` makes these spans:
+An app made where a tracer is provided makes these spans:
 
 | Span | When | Inside it |
 | --- | --- | --- |
@@ -55,13 +53,19 @@ An app made with `trace: true` makes these spans:
 
 Tracing doesn't change what the game does. A span reads the real clock, and its ids are drawn from `Math.random`, never from the game's `Random`. A traced game plays the same as one that isn't, and its replays and peers agree with it.
 
-## What tracing costs
+## Turning tracing off and on
 
-`trace` defaults to `false`, and an app made without it makes no span and runs exactly what it would otherwise. With it, every system and action makes a span on every tick, whether or not a tracer is provided. Turn it on in development, or for a session you want to look at:
+The `trace` option of `App.make` and `App.run` defaults to whether the program provides a tracer. Without one, the app makes no span and runs exactly what it would otherwise.
+
+A span costs about 3 µs, so a traced tick of 10 systems takes about 30 µs more, and a tracer receives a span for every system on every tick. A program that provides a tracer for spans of its own, such as a game's server, and doesn't want the game's, sets `trace: false`:
 
 ```ts sketch
-App.run({ plugins: [Game], trace: import.meta.env.DEV }, { hz: 60 });
+App.run({ plugins: [Game], trace: false }, { hz: 60 }).pipe(
+  Effect.provide(Tracing)
+);
 ```
+
+`trace: true` makes the spans even with no tracer provided, and sends them nowhere.
 
 ## Read more
 

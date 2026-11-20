@@ -91,23 +91,23 @@ const handlers = [
   }),
 ];
 
-const game = (trace: boolean) =>
+const game = (trace?: boolean) =>
   Effect.gen(function* () {
     const app = yield* App.make({
       components: [Count, Phase],
       systems: [Grow, Roll, Asleep, Opening, Draw, Read],
       handlers,
       seed: 7,
-      trace,
+      ...(trace === undefined ? {} : { trace }),
     });
     app.world.spawn(Count.of({ n: 0 }));
     return app;
   });
 
-describe("App.make({ trace: true })", () => {
+describe("tracing an app", () => {
   it("makes a span for each tick, holding the actions applied in it and a span for each system's turn", () => {
     const { spans, tracer } = recorder();
-    const app = traced(tracer, game(true));
+    const app = traced(tracer, game());
     app.enqueue(Begin, {});
     app.enqueue(Add, { by: 2 });
     app.enqueue(Refused, {});
@@ -143,7 +143,7 @@ describe("App.make({ trace: true })", () => {
 
   it("makes a span for each run of the frame stage and of the input stage, holding their systems'", () => {
     const { spans, tracer } = recorder();
-    const app = traced(tracer, game(true));
+    const app = traced(tracer, game());
     app.input();
     app.tick(1 / 60);
     app.frame(0.5);
@@ -169,7 +169,7 @@ describe("App.make({ trace: true })", () => {
 
   it("starts a trace of its own for each tick and each stage, whatever span the app was made in", () => {
     const { spans, tracer } = recorder();
-    const app = traced(tracer, game(true).pipe(Effect.withSpan("made")));
+    const app = traced(tracer, game().pipe(Effect.withSpan("made")));
     app.input();
     app.tick(1 / 60);
     app.frame(0.5);
@@ -183,7 +183,7 @@ describe("App.make({ trace: true })", () => {
 
   it("makes a span of its own for an action dispatched between ticks", () => {
     const { spans, tracer } = recorder();
-    const app = traced(tracer, game(true));
+    const app = traced(tracer, game());
     expect(Exit.isSuccess(app.dispatch(Add, { by: 1 }))).toBe(true);
     expect(spans.map((span) => [span.name, span.parent._tag])).toEqual([
       ["action:tr/Add", "None"],
@@ -195,7 +195,7 @@ describe("App.make({ trace: true })", () => {
     const Fails = System.make("tr/Fails", function* () {
       return yield* new NotNow();
     });
-    const app = traced(tracer, App.make({ systems: [Fails], trace: true }));
+    const app = traced(tracer, App.make({ systems: [Fails] }));
     const exit = app.tickExit(1 / 60);
     expect(Exit.isFailure(exit)).toBe(true);
     const [tick, fails] = spans;
@@ -209,7 +209,7 @@ describe("App.make({ trace: true })", () => {
 
   it("plays the same game as an app that doesn't trace", () => {
     const { spans, tracer } = recorder();
-    const tracing = traced(tracer, game(true));
+    const tracing = traced(tracer, game());
     const quiet = traced(recorder().tracer, game(false));
     for (let tick = 0; tick < 30; tick++) {
       for (const app of [tracing, quiet]) {
@@ -222,12 +222,52 @@ describe("App.make({ trace: true })", () => {
     expect(spans.length).toBeGreaterThan(0);
   });
 
-  it("makes no span unless asked, even with a tracer provided", () => {
+  it("makes no span with trace: false, even with a tracer provided", () => {
     const { spans, tracer } = recorder();
     const app = traced(tracer, game(false));
     app.enqueue(Begin, {});
     app.tick(1 / 60);
     app.frame(0.5);
+    expect(spans).toEqual([]);
+  });
+});
+
+describe("whether an app traces", () => {
+  /** Whether a system of an app made so runs inside a span. */
+  const inSpan = (
+    options: { readonly trace?: boolean },
+    tracer?: Tracer.Tracer
+  ): boolean => {
+    let seen: boolean | undefined;
+    const Look = System.make("tr/Look", function* () {
+      seen = Option.isSome(yield* Effect.option(Effect.currentSpan));
+    });
+    const made = App.make({ systems: [Look], ...options });
+    const app =
+      tracer === undefined
+        ? Effect.runSync(Effect.scoped(made))
+        : traced(tracer, made);
+    app.tick(1 / 60);
+    return seen!;
+  };
+
+  it("traces when the program provides a tracer", () => {
+    const { spans, tracer } = recorder();
+    expect(inSpan({}, tracer)).toBe(true);
+    expect(spans.map((span) => span.name)).toEqual([
+      "arcadekit/tick",
+      "tr/Look",
+    ]);
+  });
+
+  it("doesn't trace when the program provides none", () => {
+    expect(inSpan({})).toBe(false);
+  });
+
+  it("traces with trace: true and no tracer, and not with trace: false and one", () => {
+    expect(inSpan({ trace: true })).toBe(true);
+    const { spans, tracer } = recorder();
+    expect(inSpan({ trace: false }, tracer)).toBe(false);
     expect(spans).toEqual([]);
   });
 });
