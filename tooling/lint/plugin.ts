@@ -194,11 +194,50 @@ const noCodeFromText: Rule = {
   },
 };
 
+/** A node as far as finding what encloses it needs. */
+interface Enclosing {
+  readonly type: string;
+  readonly parent?: Enclosing | null;
+}
+
+/** The kinds of node whose body runs each time it is called. */
+const functionKinds = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+]);
+
+const topLevelClasses: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "A class is declared at the top level of its module, not inside a function.",
+    },
+  },
+  create: (context) => {
+    const check = (node: NodeOf<"ClassDeclaration">): void => {
+      let up: Enclosing | null | undefined = node.parent;
+      for (; up !== null && up !== undefined; up = up.parent) {
+        if (functionKinds.has(up.type)) {
+          context.report({
+            node,
+            message: `${node.id ? `The class ${node.id.name}` : "This class"} is declared inside a function, which makes a new class each time it runs and hides it from the rest of the module. Declare it at the top level, and pass what it used from the function to its constructor.`,
+          });
+          return;
+        }
+      }
+    };
+    return { ClassDeclaration: check, ClassExpression: check };
+  },
+};
+
 export default {
   meta: { name: "arcadekit" },
   rules: {
     "entry-imports": entryImports,
     "no-page": noPage,
     "no-code-from-text": noCodeFromText,
+    "top-level-classes": topLevelClasses,
   },
 };

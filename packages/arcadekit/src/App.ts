@@ -497,6 +497,45 @@ export interface App<E = never, R = never, HU = never> extends Any {
   ) => Exit.Exit<void, Action.InvalidPayload>;
 }
 
+/**
+ * A system as the app runs it: its condition, then its run or what it
+ * does in place of running, in a span of its own when the app traces.
+ * Made once, so an app that doesn't trace runs what it would without.
+ * What its last turn was is kept for `inspect`.
+ */
+class Turn {
+  /** Asked before `run`, unless the span holds it. */
+  readonly condition: Effect.Effect<boolean, unknown, unknown> | undefined;
+  readonly idle: Effect.Effect<void, unknown, unknown> | undefined;
+  readonly run: Effect.Effect<void, unknown, unknown>;
+  ran = false;
+  ms = 0;
+  constructor(
+    readonly system: Plugin.AnySystem,
+    trace: boolean
+  ) {
+    const { condition, idle, run } = system;
+    if (!trace) {
+      // Asked in the loop, which is cheaper than a flatMap each tick.
+      this.condition = condition;
+      this.idle = idle;
+      this.run = run;
+      return;
+    }
+    this.condition = undefined;
+    this.idle = undefined;
+    this.run = Effect.withSpan(
+      condition === undefined
+        ? run
+        : Effect.flatMap(condition, (holds) => {
+            this.ran = holds;
+            return holds ? run : (idle ?? Effect.void);
+          }),
+      system.name
+    );
+  }
+}
+
 /** Summarizes an error in a few words, for a log entry or a message. */
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
@@ -1266,44 +1305,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const hookKey = (trigger: System.Trigger): string =>
       `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
     const trace = options.trace === true;
-    /**
-     * A system as the app runs it: its condition, then its run or what it
-     * does in place of running, in a span of its own when the app traces.
-     * Made once, so an app that doesn't trace runs what it would without.
-     * What its last turn was is kept for `inspect`.
-     */
-    class Turn {
-      /** Asked before `run`, unless the span holds it. */
-      readonly condition: Effect.Effect<boolean, unknown, unknown> | undefined;
-      readonly idle: Effect.Effect<void, unknown, unknown> | undefined;
-      readonly run: Effect.Effect<void, unknown, unknown>;
-      ran = false;
-      ms = 0;
-      constructor(readonly system: Plugin.AnySystem) {
-        const { condition, idle, run } = system;
-        if (!trace) {
-          // Asked in the loop, which is cheaper than a flatMap each tick.
-          this.condition = condition;
-          this.idle = idle;
-          this.run = run;
-          return;
-        }
-        this.condition = undefined;
-        this.idle = undefined;
-        this.run = Effect.withSpan(
-          condition === undefined
-            ? run
-            : Effect.flatMap(condition, (holds) => {
-                this.ran = holds;
-                return holds ? run : (idle ?? Effect.void);
-              }),
-          system.name
-        );
-      }
-    }
-    const tickTurns = ordered.map((system) => new Turn(system));
-    const frameTurns = frameSystems.map((system) => new Turn(system));
-    const inputTurns = inputSystems.map((system) => new Turn(system));
+    const tickTurns = ordered.map((system) => new Turn(system, trace));
+    const frameTurns = frameSystems.map((system) => new Turn(system, trace));
+    const inputTurns = inputSystems.map((system) => new Turn(system, trace));
     const hookGroups = new Map<string, Plugin.AnySystem[]>();
     const states = State.registryOf(world);
     for (const listed of components) {
@@ -1340,7 +1344,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // `after` and `before` order the hooks of one moment among themselves.
       hooks.set(
         key,
-        System.order(group).map((system) => new Turn(system))
+        System.order(group).map((system) => new Turn(system, trace))
       );
     }
 
