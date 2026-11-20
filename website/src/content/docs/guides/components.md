@@ -80,7 +80,7 @@ const program = Effect.gen(function* () {
 
 An id kept after its entity is despawned [refers to no entity](../concepts/entities-and-systems.md#entity-ids), even once its slot is reused.
 
-Once a game is running, make changes from the simulation (a system, a handler or a script) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
+Once a game is running, make changes from the simulation (a system or a handler) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
 
 A component added without a value is all zeros, unless it says otherwise, and a number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. A component whose zeros are wrong, a size say, gives `initial`, the value it has when added bare:
 

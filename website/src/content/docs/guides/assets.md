@@ -95,7 +95,7 @@ const Game = Plugin.make("game/Game", {
 
 Load anything that needs releasing into a scope, never into a module-level variable, which no scope closes.
 
-`Assets.load` waits in real time, so it isn't for systems or scripts, although nothing refuses it there. A script that loads resumes in whatever tick the file happens to arrive in, and a replay of it downloads the file again.
+`Assets.load` waits in real time, so it isn't for systems: a system that waits throws, and the error names it. The rules get what is in a file as an action, as [above](#loading-happens-outside-the-simulation).
 
 ## Holding a bundle yourself
 

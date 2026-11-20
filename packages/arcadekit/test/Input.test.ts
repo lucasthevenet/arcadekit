@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
@@ -15,7 +15,6 @@ import {
   Plugin,
   Query,
   Random,
-  Script,
   Singleton,
   State,
   System,
@@ -319,8 +318,6 @@ describe("the input stage", () => {
       'singleton "in/Phase"': Effect.map(Phase, (phase) => phase.set("paused")),
       'event "in/Pinged" was emitted in the frame stage or the input stage':
         Effect.map(Pinged, (pinged) => pinged.emit({})),
-      "Script.spawn was used in the frame stage or the input stage":
-        Effect.flatMap(Script, (script) => script.spawn(Effect.void)),
       "A draw from world.random": Effect.map(World, (world) =>
         world.random.next()
       ),
@@ -354,7 +351,7 @@ describe("the input stage", () => {
     // Nor can it be reached around: the app says where it is.
     run(
       Effect.gen(function* () {
-        let app: App.App<never, never, typeof bump> | undefined;
+        let app: App.App<never, typeof bump> | undefined;
         let reach: () => unknown = () => undefined;
         const Reach = System.make("Reach", function* () {
           reach();
@@ -881,33 +878,6 @@ describe("the input stage", () => {
         ).toEqual(new NoKeyboard());
         expect(() => app.input()).toThrow(NoKeyboard);
         expect(app.world.frozen).toBe(false);
-        // An app that has stopped on a failed script reads no devices.
-        let samples = 0;
-        const stopping = yield* App.make({
-          systems: [
-            System.make("Listen", function* () {
-              yield* Input.Devices;
-            }).pipe(System.inStage("input")),
-          ],
-          onScriptFailure: "stop",
-        }).pipe(
-          Effect.provide(Logger.layer([])),
-          withSource({
-            sample() {
-              samples++;
-              return Input.makeManualSource().sample();
-            },
-          })
-        );
-        stopping.input();
-        expect(samples).toBe(1);
-        stopping.spawnScript(Effect.fail("broken"));
-        const stopped = stopping.inputExit();
-        expect(Exit.isFailure(stopped)).toBe(true);
-        expect(
-          Cause.squash((stopped as Exit.Failure<void, never>).cause)
-        ).toBeInstanceOf(App.ScriptFailed);
-        expect(samples).toBe(1);
         // A system that waits has not finished within the stage.
         const Wait = System.make("Wait", function* () {
           yield* Effect.never;

@@ -23,7 +23,6 @@ Each tick runs these steps in order:
 2. Advance game time by one step.
 3. Enter any states that were requested, running their hooks.
 4. Run every system in order, applying each one's commands when it finishes.
-5. Resume the scripts waiting for this tick or for an event.
 
 Every tick has the same length, `delta`, whatever the machine is doing, and systems read it from `Time`. This fixed timestep is what makes a tick produce the same result from the same inputs on any machine.
 
@@ -62,7 +61,7 @@ const Draw = System.make("game/Draw", function* () {
 }).pipe(System.inStage("frame"));
 ```
 
-The world is read-only during the frame stage. Anything that would change the game throws where it happens, with an explanation: spawning or despawning, adding or removing a component, `world.set`, writing a singleton or a state, a command, an assignment in `each`, emitting an event, starting a script, or dispatching an action.
+The world is read-only during the frame stage. Anything that would change the game throws where it happens, with an explanation: spawning or despawning, adding or removing a component, `world.set`, writing a singleton or a state, a command, an assignment in `each`, emitting an event, or dispatching an action.
 
 A frame system can read anything: queries, singletons, states, `Time`, events and change queries. `yield* Frame` describes the current frame:
 
@@ -112,7 +111,7 @@ So a replay reads no device: the log already holds what the devices reported, as
 - **`Driver.fixedStep`** runs the ticks that are due for a given amount of real time, each after the input stage, then the frame.
 - **`Driver.frames`** is the loop `App.run` uses, for a program that creates its app itself, and **`Driver.interval`** does the same on a timer.
 
-A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `App.run` still draws every frame but only ticks while something is pending: an action, a state change, a sleeping script, an unread event. See [running a game](../guides/running-a-game.md).
+A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `App.run` still draws every frame but only ticks while something is pending: an action, a state change, a system that asked for another tick, an unread event. See [running a game](../guides/running-a-game.md).
 
 To draw a moving entity between two ticks in a frame system of your own, compute its position from a velocity or a previous position the simulation keeps, as `Draw` does above. [`@arcadekit/three`](../guides/drawing-with-three.md) does this for what it draws, with `smooth: true`.
 

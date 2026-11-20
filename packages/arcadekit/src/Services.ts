@@ -1,8 +1,7 @@
 /**
- * The services every system and script can access with `yield*`.
+ * The services every system and handler can access with `yield*`.
  */
 import { Context } from "effect";
-import type { Effect, Fiber } from "effect";
 
 import type { Actions } from "./Action";
 import type { Rng } from "./ecs/random";
@@ -80,52 +79,6 @@ export class Commands extends Context.Service<Commands, CommandBuffer>()(
 ) {}
 
 /**
- * Lets a long-running script (a coroutine) wait, and lets a system start one.
- *
- *   const Fountain = Effect.gen(function*() {
- *     const script = yield* Script
- *     for (let wave = 1; wave <= 5; wave++) {
- *       (yield* Commands).spawn(Velocity.of({ x: 0, y: wave }))
- *       yield* script.sleep(0.5)       // half a second of game time
- *     }
- *   })
- *
- * A script advances only during ticks. It waits with `nextTick`, `sleep` or an
- * event's `wait`.
- *
- * **Gotchas**
- *
- * - `Effect.sleep`, a promise or a timer resumes a script outside the tick, at
- *   a moment no replay reproduces. Nothing prevents them.
- * - Under a driver that ticks only when needed, a script that sleeps or waits
- *   for a tick keeps the game ticking. A script that should let the game rest
- *   waits for an event instead.
- * - It belongs to the simulation: in the frame and input stages it throws.
- *
- * @category Services
- */
-export class Script extends Context.Service<
-  Script,
-  {
-    /** Suspends the fiber until the next tick. */
-    readonly nextTick: Effect.Effect<void>;
-    /** Suspends the fiber for a duration of game time. */
-    readonly sleep: (seconds: number) => Effect.Effect<void>;
-    /**
-     * Starts a script from a system, a handler or another script. It first runs
-     * when the tick flushes its scheduler, after the systems.
-     *
-     * The app supervises it like a script started with `app.spawnScript`: a
-     * failure is reported, and it is interrupted when the app's scope closes. A
-     * fiber started with `Effect.forkDetach` isn't supervised.
-     */
-    readonly spawn: <A, E, R>(
-      effect: Effect.Effect<A, E, R>
-    ) => Effect.Effect<Fiber.Fiber<A, E>, never, R>;
-  }
->()("arcadekit/Script") {}
-
-/**
  * Lets a system tell a driver that ticks only when needed that the game has
  * more to do.
  *
@@ -138,13 +91,13 @@ export class Script extends Context.Service<
  *   })
  *
  * A game that moves only when its player does rests when nothing is pending,
- * and the pending work an app can see is actions, state transitions, scripts
- * and events. A system that acts every tick while a condition of its own holds,
+ * and the pending work an app can see is actions, state transitions and
+ * events. A system that acts every tick while a condition of its own holds,
  * such as a running clock or a body in flight, isn't among them: it requests
  * the next tick itself, each tick it has more to do. The first tick in which no
  * one requests another is the last, and the game rests.
  *
- * - Call it during the tick, from a system, a handler or a script. Between
+ * - Call it during the tick, from a system or a handler. Between
  *   ticks it throws: the code that draws the game doesn't decide when it ticks.
  * - Under a driver that ticks in real time it does nothing, and costs nothing
  *   to leave in.
@@ -209,7 +162,6 @@ export type BuiltIn =
   | Time
   | Frame
   | Commands
-  | Script
   | Ticks
   | Events
   | Actions

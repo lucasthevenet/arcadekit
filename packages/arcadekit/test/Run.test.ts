@@ -23,7 +23,6 @@ import {
   Plugin,
   Query,
   Save,
-  Script,
   Singleton,
   System,
   Time,
@@ -79,17 +78,6 @@ const makeGame = () => {
       log.push("setup");
       commands.spawn(Ball.of({ x: 0, vx: 60 }));
     }),
-    scripts: [
-      Effect.gen(function* () {
-        const script = yield* Script;
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => log.push("script stopped"))
-        );
-        for (;;) {
-          yield* script.nextTick;
-        }
-      }).pipe(Effect.scoped),
-    ],
   });
   return { Game, log };
 };
@@ -135,7 +123,7 @@ describe("App.run", () => {
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
-    expect(log.slice(4).toSorted()).toEqual(["script stopped", "sound closed"]);
+    expect(log.slice(4)).toEqual(["sound closed"]);
     expect(display.frame(1000)).toBe(0);
     expect(made!.time.tick).toBe(3);
   });
@@ -210,7 +198,7 @@ describe("App.run", () => {
       Cause.squash((failed as Exit.Failure<never, NoCanvas>).cause)
     ).toEqual(new NoCanvas());
     expect(log.slice(0, 2)).toEqual(["sound opened", "setup"]);
-    expect(log.slice(2).toSorted()).toEqual(["script stopped", "sound closed"]);
+    expect(log.slice(2)).toEqual(["sound closed"]);
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
 
@@ -322,7 +310,6 @@ describe("App.run", () => {
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
     expect(log.includes("sound closed")).toBe(true);
-    expect(log.includes("script stopped")).toBe(true);
   });
 
   it("runs a game that moves when its player does: drawn every frame, and ticked only while something waits", async () => {

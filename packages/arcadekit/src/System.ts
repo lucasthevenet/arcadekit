@@ -139,8 +139,8 @@ export type GenServices<Eff> = [Eff] extends [never]
  * times a second.
  *
  * A system must finish within its tick: one that waits throws, and the error
- * names it. Work that spans many ticks belongs in a script, started with
- * `Script.spawn`.
+ * names it. Work that spans many ticks keeps its place in the world, in a
+ * component or a state, and a system moves it on each tick.
  *
  * @category Constructors
  */

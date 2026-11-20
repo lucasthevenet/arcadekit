@@ -13,9 +13,9 @@ import {
   Migrate,
   Query,
   Save,
-  Script,
   System,
   Time,
+  World,
 } from "../src/index";
 import type { Entity, EntityColumn } from "../src/index";
 import { expectChecked, makeChecks } from "./checks";
@@ -1295,7 +1295,7 @@ const Count = System.make("Count", function* () {
 const game = (
   options: { checkpointEvery?: number } = {}
 ): Effect.Effect<
-  App.App<never, never, typeof push | typeof spawn | typeof cull>,
+  App.App<never, typeof push | typeof spawn | typeof cull>,
   never,
   Scope.Scope
 > =>
@@ -1392,22 +1392,21 @@ describe("change queries in an app", () => {
           app.world.spawn(Position.of({ x: n, y: 0 }));
         }
         const seen: number[] = [];
-        app.spawnScript(
-          Effect.gen(function* () {
-            const script = yield* Script;
-            for (;;) {
-              seen.push((yield* Moved).entities().length);
-              yield* script.nextTick;
-            }
-          })
-        );
+        // Read between ticks, from the place everything outside the
+        // simulation shares.
+        const peek = Effect.map(Moved, (moved) => {
+          seen.push(moved.entities().length);
+        }).pipe(Effect.provideService(World, app.world));
+        yield* peek;
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(3));
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(0));
         app.dispatch(Push, { slot: 1, refuse: false });
         app.tick(1);
+        yield* peek;
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(1));
         app.tick(1);
-        // The script reads after the system each tick, from its own place.
+        yield* peek;
+        // Each reads from its own place.
         expect(seen).toEqual([3, 1, 0]);
         expect(watched).toEqual([3, 0]);
         // Between ticks nobody in particular is asking.

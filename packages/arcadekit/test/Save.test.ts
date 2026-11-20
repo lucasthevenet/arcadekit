@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Logger, Option, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +14,6 @@ import {
   Query,
   Random,
   Save,
-  Script,
   System,
   Time,
 } from "../src/index";
@@ -129,24 +128,16 @@ const Sound = System.make("Sound", function* () {
 });
 
 let setups = 0;
-let scriptStarts = 0;
-/** A script with nothing of its own to lose: what it does follows from the time. */
-const Pulsing = Effect.gen(function* () {
-  scriptStarts++;
-  const script = yield* Script;
-  const actions = yield* Action.Actions;
-  for (;;) {
-    yield* script.nextTick;
-    if ((yield* Time).tick % 5 === 0) {
-      actions.enqueue(Pulse, {});
-    }
+/** Fires a pulse every fifth tick: what it does follows from the time. */
+const Pulsing = System.make("Pulsing", function* () {
+  if ((yield* Time).tick % 5 === 0) {
+    (yield* Action.Actions).enqueue(Pulse, {});
   }
 });
 
 const Game = Plugin.make("sv/Game", {
-  systems: [Listen, Drift, Bot, Sound],
+  systems: [Listen, Drift, Bot, Sound, Pulsing],
   handlers: [add, double, scatter, pulse],
-  scripts: [Pulsing],
   setup: Effect.gen(function* () {
     setups++;
     const commands = yield* Commands;
@@ -365,19 +356,18 @@ describe("a saved game", () => {
     });
   });
 
-  it("does not run setup again, and starts every plugin's scripts again", () => {
+  it("does not run setup again, and the game goes on", () => {
     setups = 0;
-    scriptStarts = 0;
     const save = withApp(App.make(options), (app) => {
-      expect([setups, scriptStarts]).toEqual([1, 1]);
+      expect(setups).toBe(1);
       app.tick(1);
       return unwrap(app.save());
     });
     withApp(App.load(save, options), (app) => {
-      expect([setups, scriptStarts]).toEqual([1, 2]);
+      expect(setups).toBe(1);
       // One tally and whatever motes the game had: none spawned twice.
       expect(app.world.view(Tallies).count()).toBe(1);
-      // The script is running: on the fifth tick it fires a pulse.
+      // It goes on: on the fifth tick it fires a pulse.
       for (let i = 0; i < 6; i++) {
         app.tick(1);
       }
@@ -600,92 +590,5 @@ describe("a save that cannot be loaded", () => {
     expect(error.message).toBe(
       'The save holds the event "sv/Never", waiting to be read, which this program doesn\'t define: it was renamed or removed since. A migration changes the events of a save in `events`.'
     );
-  });
-});
-
-describe("a plugin's scripts", () => {
-  it("start with the app, after setup, and run like any other script", () => {
-    const order: string[] = [];
-    const Ticker = Effect.gen(function* () {
-      order.push(`script sees ${(yield* Query.all(Tally)).count()} tally`);
-      const script = yield* Script;
-      for (;;) {
-        yield* script.nextTick;
-        order.push(`tick ${(yield* Time).tick}`);
-      }
-    });
-    const WithScript = Plugin.make("sv/WithScript", {
-      scripts: [Ticker],
-      setup: Effect.gen(function* () {
-        order.push("setup");
-        (yield* Commands).spawn(Tally);
-      }),
-    });
-    withApp(App.make({ plugins: [WithScript] }), (app) => {
-      expect(order).toEqual(["setup", "script sees 1 tally"]);
-      app.tick(1);
-      app.tick(1);
-      expect(order.slice(2)).toEqual(["tick 1", "tick 2"]);
-    });
-  });
-
-  it("are the only scripts running when a game is saved: one started by hand refuses the save until it ends", () => {
-    const Forever = Effect.gen(function* () {
-      const script = yield* Script;
-      for (;;) {
-        yield* script.nextTick;
-      }
-    });
-    const Brief = Effect.gen(function* () {
-      yield* (yield* Script).nextTick;
-    });
-    const Listed = Plugin.make("sv/Listed", { scripts: [Forever] });
-    withApp(App.make({ plugins: [Listed] }), (app) => {
-      expect(Exit.isSuccess(app.save())).toBe(true);
-      app.spawnScript(Brief);
-      expect(app.save()).toEqual(
-        Exit.fail(
-          new Save.SaveRefused({
-            message:
-              "A script started with app.spawnScript or Script.spawn is running, and a save can't hold where it is: after a load it would not run. Save once it has ended, or make it one of a plugin's scripts, which start again after a load and keep what they must not lose in the world.",
-          })
-        )
-      );
-      app.tick(1);
-      expect(Exit.isSuccess(app.save())).toBe(true);
-    });
-  });
-
-  it("are watched like any other: a failure is logged, and the scope's end interrupts them", () => {
-    const logged: string[] = [];
-    const logger = Logger.make<unknown, void>((entry) => {
-      logged.push(
-        `${String(entry.message)}: ${String(Cause.squash(entry.cause))}`
-      );
-    });
-    let cleanedUp = false;
-    const Failing = Effect.gen(function* () {
-      yield* (yield* Script).nextTick;
-      return yield* new TooBig();
-    });
-    const Forever = Effect.gen(function* () {
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => void (cleanedUp = true))
-      );
-      return yield* Effect.forever((yield* Script).nextTick);
-    }).pipe(Effect.scoped);
-    const Watched = Plugin.make("sv/Watched", { scripts: [Failing, Forever] });
-    withApp(
-      App.make({ plugins: [Watched] }).pipe(
-        Effect.provide(Logger.layer([logger]))
-      ),
-      (app) => {
-        app.tick(1);
-        expect(logged.length).toBe(1);
-        expect(logged[0]).toMatch(/A script failed at tick 1: .*TooBig/);
-        expect(cleanedUp).toBe(false);
-      }
-    );
-    expect(cleanedUp).toBe(true);
   });
 });

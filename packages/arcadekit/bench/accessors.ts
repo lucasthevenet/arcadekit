@@ -148,7 +148,9 @@ const idling = (power: "on" | "off"): number =>
           }).pipe(System.runIf(State.is(Power, "on")))
         );
         const app = yield* App.make({ systems });
-        app.spawnScript(Effect.map(Power, (held) => held.set(power)));
+        yield* Effect.map(Power, (held) => held.set(power)).pipe(
+          Effect.provideService(WorldService, app.world)
+        );
         return measure(() => app.tick(DT), 50_000, 20_000);
       })
     )

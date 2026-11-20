@@ -4,7 +4,7 @@
  *
  *   const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 })
  *
- *   const turn = yield* Turn          // in a system, a handler or a script
+ *   const turn = yield* Turn          // in a system or a handler
  *   if (turn.player !== mine) return yield* new NotYourTurn()
  *   turn.player = turn.player === 1 ? 2 : 1
  *

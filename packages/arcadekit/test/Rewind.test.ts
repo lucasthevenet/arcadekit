@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Logger, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,10 +9,8 @@ import {
   EcsWorld,
   Event,
   Field,
-  Plugin,
   Query,
   Save,
-  Script,
   System,
   Ticks,
   Time,
@@ -213,71 +211,6 @@ describe("a game that is put back to a moment", () => {
       // Each once, from where it was: 2 was waiting, and 3 is rung again.
       expect(heard).toEqual([[2], [3]]);
     });
-  });
-
-  it("refuses a moment while a script runs, and stops a script started since", () => {
-    const beats: string[] = [];
-    const beat = (name: string, until: number) =>
-      Effect.gen(function* () {
-        const script = yield* Script;
-        while ((yield* Time).tick < until) {
-          yield* script.nextTick;
-          beats.push(`${name} ${(yield* Time).tick}`);
-        }
-      });
-    const Listed = Plugin.make("rw/Listed", { scripts: [beat("listed", 2)] });
-    withApp(App.make({ plugins: [Listed] }), (app) => {
-      app.tick(DELTA);
-      const refused = app.capture();
-      expect(refused).toEqual(
-        Exit.fail(
-          new Save.SaveRefused({
-            message:
-              "A script is running, and a moment can't hold where a script is: a rewind would lose its place. Keep that place in the world, with systems and a state or a singleton, or play the game without predicting ticks, which never rewinds.",
-          })
-        )
-      );
-      app.tick(DELTA);
-      // The plugin's script has ended: nothing is running now.
-      const moment = captured(app);
-      app.spawnScript(beat("by hand", 10));
-      app.tick(DELTA);
-      app.rewind(moment);
-      app.tick(DELTA);
-      app.tick(DELTA);
-      // Neither starts again: the moment held no script.
-      expect(beats).toEqual(["listed 1", "listed 2", "by hand 3"]);
-    });
-  });
-
-  it("lets an app that had stopped on a failed script run again", () => {
-    class Tripped extends Data.TaggedError("Tripped")<{}> {}
-    const Trip = Effect.gen(function* () {
-      const script = yield* Script;
-      while ((yield* Time).tick < 2) {
-        yield* script.nextTick;
-      }
-      return yield* new Tripped();
-    });
-    withApp(
-      App.make({ onScriptFailure: "stop" }).pipe(
-        // The failure is logged, and this test does not want to read it.
-        Effect.provide(Logger.layer([]))
-      ),
-      (app) => {
-        app.tick(DELTA);
-        const moment = captured(app);
-        app.spawnScript(Trip);
-        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
-        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
-        app.rewind(moment);
-        expect(app.time.tick).toBe(1);
-        // It runs, and the script that failed is not there to fail again.
-        app.tick(DELTA);
-        app.tick(DELTA);
-        expect(app.time.tick).toBe(3);
-      }
-    );
   });
 
   it("has what draws start over, and the simulation go on from where it was", () => {

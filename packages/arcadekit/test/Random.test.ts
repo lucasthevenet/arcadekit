@@ -12,7 +12,7 @@ import {
   Field,
   Query,
   Random,
-  Script,
+  Singleton,
   System,
 } from "../src/index";
 
@@ -269,27 +269,32 @@ const Sparks = System.make("Sparks", function* () {
   }
 });
 
-/** A script that draws between waits. */
-const Gambler = Effect.gen(function* () {
+/** The ticks the gambler waits before its next roll. */
+const Wait = Singleton.define("rnd/Wait", { left: Field.u8 }, { left: 0 });
+
+/** A system that draws between waits, and keeps its wait in the world. */
+const Gambler = System.make("Gambler", function* () {
   const random = yield* Random;
-  const script = yield* Script;
-  const actions = yield* Action.Actions;
-  for (;;) {
-    yield* script.sleep(random.pick([1, 2, 3]));
-    actions.enqueue(Roll, { sides: random.pick([6, 20]) });
+  const wait = yield* Wait;
+  if (wait.left > 1) {
+    wait.left -= 1;
+    return;
   }
+  if (wait.left === 1) {
+    (yield* Action.Actions).enqueue(Roll, { sides: random.pick([6, 20]) });
+  }
+  wait.left = random.pick([1, 2, 3]);
 });
 
 const play = (seed: number | undefined, ticks: number) =>
   withApp(
     App.make({
-      systems: [Sparks],
+      systems: [Sparks, Gambler],
       handlers: [roll],
       ...(seed === undefined ? {} : { seed }),
     }),
     (app) => {
       app.world.spawn(Die.of({ face: 1, rolls: 0 }));
-      app.spawnScript(Gambler);
       for (let i = 0; i < ticks; i++) {
         if (i % 7 === 3) {
           app.dispatch(Roll, { sides: 6 });
@@ -340,7 +345,7 @@ describe("the Random service", () => {
     // The game really is random: it rolled, spawned and moved things.
     expect(first.sparks.length).toBeGreaterThan(0);
     expect(first.dice[0]![1]).toBeGreaterThan(20);
-    // The script's rolls are the simulation's own, so only the moves made
+    // The gambler's rolls are the simulation's own, so only the moves made
     // from outside are in the log.
     expect(first.log.length).toBeGreaterThan(15);
 
@@ -354,9 +359,9 @@ describe("the Random service", () => {
   });
 
   it("lets a game that uses it replay identically from its log", () => {
-    // The script's rolls are in the log as actions, so the replay runs the
-    // systems and the handler but not the script, and must still draw the
-    // same numbers in the same order to end in the same state.
+    // The rolls are in the log as actions, so the replay runs the systems
+    // and the handler, and must still draw the same numbers in the same order
+    // to end in the same state.
     const record = (seed: number) =>
       withApp(
         App.make({ systems: [Sparks], handlers: [roll], seed }),
@@ -406,24 +411,24 @@ describe("the Random service", () => {
   });
 
   it("seeds Effect's own Random inside the app too", () => {
-    const run = (seed: number) =>
-      withApp(App.make({ seed }), (app) => {
-        const out: number[] = [];
+    const run = (seed: number) => {
+      const out: number[] = [];
+      const Draw = System.make("Draw", function* () {
+        out.push(yield* EffectRandom.next);
+        out.push(yield* EffectRandom.nextInt);
+        out.push(yield* EffectRandom.nextIntBetween(1, 6));
+        out.push(...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5])));
+        // The two are one generator: this continues the same sequence.
+        out.push((yield* Random).bits());
+      });
+      return withApp(App.make({ seed, systems: [Draw] }), (app) => {
         const before = Array.from(app.world.random.state);
-        app.spawnScript(
-          Effect.gen(function* () {
-            out.push(yield* EffectRandom.next);
-            out.push(yield* EffectRandom.nextInt);
-            out.push(yield* EffectRandom.nextIntBetween(1, 6));
-            out.push(...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5])));
-            // The two are one generator: this continues the same sequence.
-            out.push((yield* Random).bits());
-          })
-        );
+        app.tick(1);
         // It drew from the world's generator, not from one of its own.
         expect(Array.from(app.world.random.state)).not.toEqual(before);
         return out;
       });
+    };
     const first = run(8);
     expect(run(8)).toEqual(first);
     expect(run(9)).not.toEqual(first);
@@ -432,17 +437,16 @@ describe("the Random service", () => {
     expect(first[2]! >= 1 && first[2]! <= 6).toBe(true);
 
     // Its floats use all 53 bits and its integers both signs.
-    withApp(App.make({ seed: 3 }), (app) => {
-      const floats: number[] = [];
-      const ints: number[] = [];
-      app.spawnScript(
-        Effect.gen(function* () {
-          for (let i = 0; i < 2000; i++) {
-            floats.push(yield* EffectRandom.next);
-            ints.push(yield* EffectRandom.nextInt);
-          }
-        })
-      );
+    const floats: number[] = [];
+    const ints: number[] = [];
+    const Many = System.make("Many", function* () {
+      for (let i = 0; i < 2000; i++) {
+        floats.push(yield* EffectRandom.next);
+        ints.push(yield* EffectRandom.nextInt);
+      }
+    });
+    withApp(App.make({ seed: 3, systems: [Many] }), (app) => {
+      app.tick(1);
       expect(floats.every((value) => value >= 0 && value < 1)).toBe(true);
       expect(floats.some((value) => (value * 2 ** 32) % 1 !== 0)).toBe(true);
       const mean = floats.reduce((sum, value) => sum + value, 0) / 2000;

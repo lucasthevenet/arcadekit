@@ -156,7 +156,7 @@ export const without: {
  * - A system that writes what it watches sees its own writes next time.
  * - A refused action's writes aren't changes: they are rolled back with
  *   everything else, as are the visits its handler made.
- * - Outside a system or a handler (in a script, a test, the entry point) there
+ * - Outside a system or a handler (in a test, the entry point) there
  *   is one position per query, shared by every caller there.
  * - With several components, or combined with `Query.added`, an entity is
  *   visited when any one of them fired.

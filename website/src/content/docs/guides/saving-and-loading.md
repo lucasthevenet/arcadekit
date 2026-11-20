@@ -44,10 +44,10 @@ To return to an earlier moment of the same app within the same run, `app.capture
 ## Requirements for saving
 
 - **Give each component one name.** A save names every component, singleton, state and event it holds, and a load finds each by the definition your program has under that name. Nothing lists them. A save that holds a name your program no longer defines fails to load and names it, with `"unknown component"` or `"unknown event"`: rename or remove it in a migration.
-- **Keep script progress in the world.** A save can't capture a running script. A plugin's `scripts` restart from the beginning after a load, so a script resumes from what it finds in the world. While a script started with `app.spawnScript` or `Script.spawn` runs, `app.save()` fails: save once it has ended.
+- **Keep what the game is in the middle of in the world.** Work that takes [many ticks](systems.md#work-that-takes-many-ticks), such as a countdown or a wave of enemies, keeps its place in a component, a singleton or a state, so a save holds it.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.
 
-When one of the last three requirements isn't met, or a field holds a value that can't be saved, `app.save()` fails with `Save.SaveRefused`, whose message names the problem.
+When the last requirement isn't met, or a field holds a value that can't be saved, `app.save()` fails with `Save.SaveRefused`, whose message names the problem.
 
 These aren't saved: `Field.transient` fields, which are `undefined` after a load, and any state held by your game's own services.
 

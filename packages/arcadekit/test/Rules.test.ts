@@ -11,11 +11,11 @@ import {
   Event,
   Field,
   Query,
-  Script,
   System,
   Time,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 const Health = Component.define("ru/Health", { hp: Field.i32 });
 const Energy = Component.define("ru/Energy", { points: Field.i32 });
@@ -118,59 +118,6 @@ describe("events", () => {
       app.tick(1);
       // It looked at ticks 1 and 4 only: events 1 and 2 had been dropped by then.
       expect(seen).toEqual([[], [3]]);
-    });
-  });
-
-  it("wake scripts that wait for them, in the tick they are emitted", () => {
-    const log: string[] = [];
-    const Emitter = System.make("Emitter", function* () {
-      const { tick } = yield* Time;
-      if (tick === 2) {
-        (yield* Ping).emit(7);
-      }
-    });
-    withApp(App.make({ systems: [Emitter] }), (app) => {
-      app.spawnScript(
-        Effect.gen(function* () {
-          const ping = yield* Ping;
-          const died = yield* Died;
-          const batch = yield* ping.wait;
-          log.push(
-            `first got ${batch.join(",")} at tick ${(yield* Time).tick}`
-          );
-          died.emit({ entity: 99 as Entity });
-        })
-      );
-      // A second script woken by the first one's event, still in the same tick.
-      const second = app.spawnScript(
-        Effect.gen(function* () {
-          const died = yield* Died;
-          const batch = yield* died.wait;
-          log.push(
-            `second got ${batch[0]!.entity} at tick ${(yield* Time).tick}`
-          );
-          return "done";
-        })
-      );
-      app.tick(1);
-      expect(log).toEqual([]);
-      app.tick(1);
-      expect(log).toEqual(["first got 7 at tick 2", "second got 99 at tick 2"]);
-      expect(second.pollUnsafe()).toEqual(Exit.succeed("done"));
-    });
-  });
-
-  it("do not make a script wait when unseen events already exist", () => {
-    withApp(App.make({ systems: [] }), (app) => {
-      const fiber = app.spawnScript(
-        Effect.gen(function* () {
-          const ping = yield* Ping;
-          ping.emit(1);
-          ping.emit(2);
-          return yield* ping.wait;
-        })
-      );
-      expect(fiber.pollUnsafe()).toEqual(Exit.succeed([1, 2]));
     });
   });
 });
@@ -287,10 +234,10 @@ const Recharge = System.make("Recharge", function* () {
   });
 });
 
-const duel = () =>
+const duel = (...more: System.System<never, BuiltIn>[]) =>
   Effect.map(
     App.make({
-      systems: [Death, Recharge],
+      systems: [Death, Recharge, ...more],
       handlers: [attack, endTurn, summon],
     }),
     (app) => {
@@ -388,16 +335,11 @@ describe("actions", () => {
   });
 
   it("let systems react through events on the next tick", () => {
-    withApp(duel(), ({ app, one, two }) => {
-      const deaths: Entity[] = [];
-      app.spawnScript(
-        Effect.gen(function* () {
-          const died = yield* Died;
-          while (true) {
-            for (const event of yield* died.wait) deaths.push(event.entity);
-          }
-        })
-      );
+    const deaths: Entity[] = [];
+    const Mourn = System.make("Mourn", function* () {
+      for (const event of (yield* Died).read()) deaths.push(event.entity);
+    });
+    withApp(duel(Mourn), ({ app, one, two }) => {
       app.dispatch(Attack, { attacker: one, target: two });
       app.tick(1);
       expect(app.world.isAlive(two)).toBe(true);
@@ -507,7 +449,7 @@ describe("actions", () => {
     });
 
     const waits = Action.handler(EndTurn, function* () {
-      yield* (yield* Script).nextTick;
+      yield* Effect.sleep("1 second");
     });
     withApp(App.make({ systems: [], handlers: [waits] }), (app) => {
       expect(() => app.dispatch(EndTurn, { player: 1 })).toThrow(

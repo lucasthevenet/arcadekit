@@ -38,7 +38,7 @@ const Dust = System.make("fx/Dust", function* () {
 - Every system sees every event exactly once, whatever order systems run in. A system that runs before the emitter sees the event on the next tick.
 - An event is dropped once every system has had a chance to read it.
 - The frame and input stages also see every event once, however many ticks ran between two frames. That is how sound and UI follow the game.
-- A script waits for an event with `yield* landed.wait`, where `landed` is `yield* Landed`. A system never waits: it reads what is there and finishes within its tick.
+- A system never waits for an event: it reads what is there and finishes within its tick.
 
 An event is a fact: name it in the past tense, prefixed with its feature, such as `"physics/Landed"`. The name identifies the event within an app, and a second, different event with the same name is refused when it is first used.
 
@@ -96,7 +96,7 @@ A refusal changes nothing, even after the handler has written to the world, so a
 
 The same applies to a handler that dies from a bug halfway through. A refused action isn't logged, so a replay never runs it, and anything it left behind would make the replay diverge.
 
-A refusal doesn't roll back anything outside the world: an object held in a field and mutated in place, a call to one of your own services, or a script the handler started. Replace the object instead of mutating it, and make the other two calls after the last check. It also doesn't undo a write forced through a raw column of a component the query [only reads](queries.md#what-a-query-writes).
+A refusal doesn't roll back anything outside the world: an object held in a field and mutated in place, a call to one of your own services, or a fiber the handler forked. Replace the object instead of mutating it, and make the other two calls after the last check. It also doesn't undo a write forced through a raw column of a component the query [only reads](queries.md#what-a-query-writes).
 
 Handlers follow a few rules of their own:
 
@@ -129,7 +129,7 @@ A schema validates a payload's shape. Whether an entity id in it is still alive,
 
 ## Actions issued by the game
 
-A system, script or handler issues actions through the `Actions` service, so bots follow the same rules as players:
+A system or a handler issues actions through the `Actions` service, so bots follow the same rules as players:
 
 ```ts sketch
 (yield * Action.Actions).enqueue(Strike, { attacker, target });
@@ -137,7 +137,7 @@ A system, script or handler issues actions through the `Actions` service, so bot
 
 The action is applied at the start of the next tick. The service's `handles(action)` reports whether the game has a handler for an action; `enqueue` throws without one.
 
-`Actions.enqueue` and `app.enqueue` are the same, and where they are called decides whether the action is logged. From a tick, a handler, a script or a plugin's setup, the action is the simulation's own and isn't logged, because a replay's own systems issue it again. Between ticks, it is input, like a key press or a UI button, and is logged. The frame and input stages count as between ticks: they are outside the simulation, and a replay runs neither.
+`Actions.enqueue` and `app.enqueue` are the same, and where they are called decides whether the action is logged. From a tick, a handler or a plugin's setup, the action is the simulation's own and isn't logged, because a replay's own systems issue it again. Between ticks, it is input, like a key press or a UI button, and is logged. The frame and input stages count as between ticks: they are outside the simulation, and a replay runs neither.
 
 ## Actions as data
 

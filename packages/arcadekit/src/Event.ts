@@ -1,5 +1,5 @@
 /**
- * Events let systems, handlers and scripts signal that something happened,
+ * Events let systems and handlers signal that something happened,
  * without knowing about each other.
  *
  *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
@@ -8,9 +8,6 @@
  *   const collided = yield* Collided
  *   collided.emit({ a, b })                 // plain call, fine inside loops
  *   for (const hit of collided.read()) ...  // everything this system has not seen
- *
- *   // in a script
- *   const hits = yield* collided.wait       // suspend until some arrive
  *
  * Every system sees every event exactly once, whatever order the systems run
  * in. An earlier system sees an event emitted by a later one on the next tick,
@@ -44,11 +41,6 @@ export interface EventHandle<P> {
   emit(payload: P): void;
   /** Returns the events not yet seen through this handle, oldest first. */
   readonly read: () => readonly P[];
-  /**
-   * Suspends until at least one unseen event exists, then returns them all.
-   * Meant for scripts: a system that waits would not finish within its tick.
-   */
-  readonly wait: Effect.Effect<readonly P[]>;
 }
 
 // Every event this program has defined, by name, so that an app can load a
@@ -200,8 +192,6 @@ interface ChannelState {
   readonly end: number;
   /** Number of events the simulation can still read. */
   readonly size: number;
-  /** Suspended `wait`s. Each returns true once it has resumed its fiber. */
-  readonly waiters: Set<() => boolean>;
   /** Forgets the oldest `count` events. */
   dropOldest(count: number): void;
   /** Forgets every event from sequence number `end` on. */
@@ -235,7 +225,6 @@ class Channel<P> implements ChannelState {
   /** The events emitted from the end of the tick before the last to the end of the last. */
   last: readonly P[] = [];
   readonly readers: Map<string, Handle<P>> = new Map();
-  readonly waiters: Set<() => boolean> = new Set();
 
   constructor(def: EventDef<P>, reads: ReadLog) {
     this.def = def;
@@ -312,27 +301,6 @@ class Handle<P> implements EventHandle<P> {
     this.cursor = end;
     return from === end ? EMPTY : channel.buffer.slice(from - channel.offset);
   };
-
-  readonly wait: Effect.Effect<readonly P[]> = Effect.suspend(() => {
-    const ready = this.read();
-    if (ready.length > 0) {
-      return Effect.succeed(ready);
-    }
-    return Effect.callback<readonly P[]>((resume) => {
-      const waiter = (): boolean => {
-        const batch = this.read();
-        if (batch.length === 0) {
-          return false;
-        }
-        resume(Effect.succeed(batch));
-        return true;
-      };
-      this.channel.waiters.add(waiter);
-      return Effect.sync(() => {
-        this.channel.waiters.delete(waiter);
-      });
-    });
-  });
 }
 
 /**
@@ -377,7 +345,7 @@ export class EventBus {
   /**
    * Who is asking for handles right now. The app sets this before each
    * system and handler runs, which is what gives each of them its own
-   * read position. Undefined means a script or outside code.
+   * read position. Undefined means outside code.
    * @internal
    */
   reader: string | undefined;
@@ -581,24 +549,6 @@ export class EventBus {
       }
     }
     return false;
-  }
-
-  /**
-   * Resumes scripts whose `wait` now has events. Returns whether any did.
-   * @internal
-   */
-  resumeWaiters(): boolean {
-    let resumed = false;
-    for (const channel of this.order) {
-      // Copied first: a resumed script may start or cancel other waits.
-      for (const waiter of Array.from(channel.waiters)) {
-        if (channel.waiters.has(waiter) && waiter()) {
-          channel.waiters.delete(waiter);
-          resumed = true;
-        }
-      }
-    }
-    return resumed;
   }
 
   /**

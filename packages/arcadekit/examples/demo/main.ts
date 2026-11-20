@@ -5,7 +5,7 @@
  *   pnpm --filter arcadekit demo
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Console, Effect, Exit } from "effect";
+import { Console, Effect } from "effect";
 
 import {
   App,
@@ -16,7 +16,9 @@ import {
   Plugin,
   Random,
   Resource,
-  Script,
+  Singleton,
+  System,
+  Time,
 } from "../../src/index";
 import * as Lifetime from "./lifetime/index";
 import * as Physics from "./physics/index";
@@ -24,30 +26,44 @@ import * as Sketch from "./sketch/index";
 
 const { Frozen, Gravity, Position, Velocity } = Physics;
 
-// The demo itself is a plugin too: the ones it is made of, and the one
-// component no plugin of its has.
-const Name = Component.define("demo/Name", { value: Field.json<string>() });
-const Demo = Plugin.make("Demo", {
-  plugins: [Physics.plugin, Lifetime.plugin, Sketch.plugin],
-});
-
-// --- a script: sequential game logic spread over many ticks --------------------
-const Fountain = Effect.gen(function* () {
-  const script = yield* Script;
+// --- game logic spread over many ticks ------------------------------------------
+// What the fountain is in the middle of is in the world, so a save holds it
+// and a replay or a rewind picks it up where it was.
+const Spray = Singleton.define(
+  "demo/Spray",
+  { wave: Field.u8, wait: Field.f32 },
+  { wave: 0, wait: 0 }
+);
+const WAVES = 5;
+const Fountain = System.make("Fountain", function* () {
+  const spray = yield* Spray;
+  if (spray.wave >= WAVES) {
+    return;
+  }
+  spray.wait -= (yield* Time).delta;
+  if (spray.wait > 0) {
+    return;
+  }
+  spray.wave += 1;
+  spray.wait = 0.5;
   const commands = yield* Commands;
   // Seeded: the same seed sprays the same fountain on every run and machine.
   const random = yield* Random;
-  for (let wave = 1; wave <= 5; wave++) {
-    for (let i = 0; i < 100; i++) {
-      commands.spawn(
-        Position.of({ x: 0, y: 0 }),
-        Velocity.of({ x: random.next() * 10 - 5, y: 8 + wave }),
-        Lifetime.Lifetime.of({ seconds: 1 + random.next() })
-      );
-    }
-    yield* script.sleep(0.5);
+  for (let i = 0; i < 100; i++) {
+    commands.spawn(
+      Position.of({ x: 0, y: 0 }),
+      Velocity.of({ x: random.next() * 10 - 5, y: 8 + spray.wave }),
+      Lifetime.Lifetime.of({ seconds: 1 + random.next() })
+    );
   }
-  return "fountain finished";
+});
+
+// The demo itself is a plugin too: the ones it is made of, and what no
+// plugin of its has.
+const Name = Component.define("demo/Name", { value: Field.json<string>() });
+const Demo = Plugin.make("Demo", {
+  plugins: [Physics.plugin, Lifetime.plugin, Sketch.plugin],
+  systems: [Fountain],
 });
 
 // --- the entry point -------------------------------------------------------------
@@ -75,7 +91,6 @@ const program = Effect.gen(function* () {
           app.world.add(rock, Frozen);
 
           // 1. As fast as possible: three seconds of game time at a fixed 60 Hz.
-          const fountain = app.spawnScript(Fountain);
           const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
           const started = performance.now();
           for (let second = 1; second <= 3; second++) {
@@ -88,9 +103,9 @@ const program = Effect.gen(function* () {
               app.world.remove(rock, Frozen);
             } // the rock starts falling
           }
-          const sprayed = fountain.pollUnsafe();
+          const { wave } = app.world.singleton(Spray);
           yield* Console.log(
-            `180 ticks took ${(performance.now() - started).toFixed(1)} ms; script: ${sprayed !== undefined && Exit.isSuccess(sprayed) ? sprayed.value : "not finished"}`
+            `180 ticks took ${(performance.now() - started).toFixed(1)} ms; fountain: ${wave} of ${WAVES} waves`
           );
 
           // 2. Turn-based: nothing happens until a player acts, then exactly one tick.

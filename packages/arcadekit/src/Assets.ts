@@ -50,15 +50,7 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 import * as Action from "./Action";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
-import {
-  Commands,
-  Events,
-  Frame,
-  Random,
-  Script,
-  Time,
-  World,
-} from "./Services";
+import { Commands, Events, Frame, Random, Time, World } from "./Services";
 import * as System from "./System";
 
 /**
@@ -363,9 +355,8 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
  *
  * **Gotchas**
  *
- * Don't use it in a system or a script, though nothing prevents it: a script
- * that loads resumes in whatever tick the file arrives in, and a replay fetches
- * the file again.
+ * Don't use it in a system, though nothing prevents it: a system that waits
+ * for a file doesn't finish within its tick, and the tick throws.
  *
  * @category Running
  */
@@ -462,7 +453,6 @@ const storeLayer = Layer.effect(
       Time,
       Frame,
       Commands,
-      Script,
       Events,
       Random,
       Action.Actions,

@@ -12,7 +12,6 @@ import {
   Field,
   Plugin,
   Query,
-  Script,
   System,
   Time,
   World,
@@ -370,9 +369,7 @@ describe("plugins", () => {
     ).toEqual(Exit.fail(new NoSaveFile({ path: "slot1" })));
 
     const Slow = Plugin.make("Slow", {
-      setup: Effect.gen(function* () {
-        yield* (yield* Script).nextTick;
-      }),
+      setup: Effect.sleep("1 second"),
     });
     const exit = Effect.runSyncExit(
       Effect.scoped(App.make({ plugins: [Slow] }))
@@ -381,6 +378,13 @@ describe("plugins", () => {
     expect(String(exit)).toMatch(
       /setup of plugin \\?"Slow\\?" did not finish synchronously/
     );
+  });
+
+  it("take no scripts: what runs across ticks keeps its place in the world, and a system moves it", () => {
+    // @ts-expect-error a plugin has no scripts
+    void Plugin.make("Scripted", { scripts: [] });
+    const app = Effect.runSync(Effect.scoped(App.make({})));
+    expect("spawnScript" in app).toBe(false);
   });
 
   it("reject clashing names", () => {

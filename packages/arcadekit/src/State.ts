@@ -11,7 +11,7 @@
  *     State.onEnter(Phase, "playing")
  *   )
  *
- *   const phase = yield* Phase      // in a system, a handler or a script
+ *   const phase = yield* Phase      // in a system or a handler
  *   phase.value                     // "menu"
  *   phase.set("playing")            // entered at the start of the next tick
  *

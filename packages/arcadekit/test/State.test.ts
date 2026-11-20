@@ -56,16 +56,12 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ handlers: [go] });
-        const read = app.spawnScript(
-          Effect.gen(function* () {
-            const phase = yield* Phase;
-            const weather = yield* Weather;
-            return [phase.value, phase.next, weather.value, weather.is("wet")];
-          })
-        );
-        expect(read.pollUnsafe()).toEqual(
-          Exit.succeed(["menu", undefined, "wet", true])
-        );
+        const read = yield* Effect.gen(function* () {
+          const phase = yield* Phase;
+          const weather = yield* Weather;
+          return [phase.value, phase.next, weather.value, weather.is("wet")];
+        }).pipe(Effect.provideService(World, app.world));
+        expect(read).toEqual(["menu", undefined, "wet", true]);
         expect(Phase.values).toEqual(["menu", "playing", "paused"]);
         expect(Phase.name).toBe("st/Phase");
       })
@@ -842,22 +838,19 @@ describe("a state in a save", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({});
-        app.spawnScript(
-          Effect.gen(function* () {
-            (yield* Before).set("ajar");
-          })
+        (yield* Effect.provideService(Before.asEffect(), World, app.world)).set(
+          "ajar"
         );
         app.tick(1);
         const save = app.save();
         assert(Exit.isSuccess(save));
         const loaded = yield* App.load(save.value, {});
-        const read = loaded.spawnScript(
-          Effect.gen(function* () {
-            return (yield* After).value;
-          })
+        const exit = yield* Effect.exit(
+          Effect.map(After, (door) => door.value).pipe(
+            Effect.provideService(World, loaded.world)
+          )
         );
-        const exit = read.pollUnsafe();
-        assert(exit !== undefined && Exit.isFailure(exit));
+        assert(Exit.isFailure(exit));
         expect(String(Cause.squash(exit.cause))).toContain(
           'The state "st/Door" holds "ajar", which is not one of its values: open, shut.'
         );

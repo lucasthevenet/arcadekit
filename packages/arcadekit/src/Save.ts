@@ -10,9 +10,8 @@
  *
  * A save is taken between two ticks. It holds the world, the game time, the
  * actions queued for the next tick, the events waiting to be read, and what
- * change queries haven't visited yet. It doesn't hold scripts: the scripts a
- * plugin lists restart when the app is loaded, and scripts started by hand
- * don't.
+ * change queries haven't visited yet. Everything a game is in the middle of is
+ * in the world, so the save holds all of it.
  *
  * Everything logged after a save is the game's tail. A game that keeps its last
  * save and the log since can return to the present by loading the save and

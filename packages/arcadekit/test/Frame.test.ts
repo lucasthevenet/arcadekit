@@ -1,12 +1,4 @@
-import {
-  Cause,
-  Data,
-  Effect,
-  Random as EffectRandom,
-  Exit,
-  Logger,
-  Schema,
-} from "effect";
+import { Cause, Effect, Random as EffectRandom, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -24,7 +16,6 @@ import {
   Query,
   Random,
   Save,
-  Script,
   Singleton,
   State,
   System,
@@ -51,9 +42,6 @@ const Moved = Query.all(Ball).pipe(Query.changed(Ball), Query.writes(Ball));
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
-
-/** No logger: a test that makes a script fail on purpose says nothing. */
-const quiet = Logger.layer([]);
 
 const Roll = System.make("Roll", function* () {
   const { delta } = yield* Time;
@@ -238,7 +226,9 @@ describe("the frame stage", () => {
         app.tick(1);
         expect(ran).toEqual(["Clear", "Draw", "Tick", "Tick"]);
         ran.length = 0;
-        app.spawnScript(Effect.map(Phase, (phase) => phase.set("paused")));
+        yield* Effect.map(Phase, (phase) => phase.set("paused")).pipe(
+          Effect.provideService(World, app.world)
+        );
         app.frame(0.5);
         // A state is entered by a tick, not by a frame.
         expect(ran).toEqual(["Clear", "Draw"]);
@@ -491,14 +481,6 @@ describe("the frame stage", () => {
         Pinged,
         (pinged) => pinged.emit({})
       ),
-      "Script.spawn was used in the frame stage": Effect.flatMap(
-        Script,
-        (script) => script.spawn(Effect.void)
-      ),
-      "Script.nextTick was used in the frame stage": Effect.flatMap(
-        Script,
-        (script) => script.nextTick
-      ),
     };
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
@@ -713,27 +695,6 @@ describe("the frame stage", () => {
         })
       )
     ).toThrow(/System "Splash" is a hook and is in the frame stage/);
-  });
-
-  it("stops with the app when a script has failed and the app was told to stop", () => {
-    class Boom extends Data.TaggedError("Boom")<{}> {}
-    run(
-      Effect.gen(function* () {
-        const Draw = System.make("Draw", function* () {}).pipe(
-          System.inStage("frame")
-        );
-        const app = yield* App.make({
-          systems: [Draw],
-          onScriptFailure: "stop",
-        });
-        app.frame(0);
-        app.spawnScript(Effect.fail(new Boom()));
-        const exit = app.frameExit(0);
-        expect(
-          Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
-        ).toBeInstanceOf(App.ScriptFailed);
-      }).pipe(Effect.provide(quiet))
-    );
   });
 });
 

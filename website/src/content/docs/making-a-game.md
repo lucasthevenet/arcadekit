@@ -5,7 +5,7 @@ description: "Build a small game from scratch: coins fall, a basket catches them
 
 In this walkthrough you build a small game from scratch: coins fall, a basket catches them, and three missed coins end the game. You run it in a test first, then in a page.
 
-Along the way you use most of arcadekit: components, a singleton, systems, an action and its refusal, an event, a script, a plugin, a replay, input, and a frame stage that draws. Each has its own guide, linked at the end.
+Along the way you use most of arcadekit: components, a singleton, systems, an action and its refusal, an event, a plugin, a replay, input, and a frame stage that draws. Each has its own guide, linked at the end.
 
 ## Install
 
@@ -32,7 +32,6 @@ import {
   Plugin,
   Query,
   Random,
-  Script,
   Singleton,
   System,
   Time,
@@ -130,32 +129,34 @@ const move = Action.handler(Move, function* ({ dx }) {
 
 ## Coins that keep coming
 
-A script is code that runs across many ticks. This one drops a coin at a random position every second. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
+A coin falls every second. A system runs to the end of its tick and waits for nothing, so the time until the next coin is kept in the world, in a singleton, and a system counts it down. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
 
 ```ts title="rules.ts"
-const Rain = Effect.gen(function* () {
-  const script = yield* Script;
-  const commands = yield* Commands;
-  const random = yield* Random;
-  while (true) {
-    commands.spawn(
-      Position.of({ x: random.next() * 8 - 4, y: 10 }),
-      Fall.of({ speed: 2 + random.next() * 3 })
-    );
-    yield* script.sleep(1);
+const Cloud = Singleton.define("catch/Cloud", { wait: Field.f32 }, { wait: 0 });
+
+const Rain = System.make("catch/Rain", function* () {
+  const cloud = yield* Cloud;
+  cloud.wait -= (yield* Time).delta;
+  if (cloud.wait > 0) {
+    return;
   }
+  cloud.wait += 1;
+  const random = yield* Random;
+  (yield* Commands).spawn(
+    Position.of({ x: random.next() * 8 - 4, y: 10 }),
+    Fall.of({ speed: 2 + random.next() * 3 })
+  );
 });
 ```
 
-`script.sleep(1)` waits one second of game time, which only advances as the game ticks.
+The wait is one second of game time, which only advances as the game ticks. Because it is in the world, a save holds it, and a replay counts it down the same way.
 
 ## The plugin
 
 ```ts title="rules.ts"
 export const Rules = Plugin.make("catch/Rules", {
-  systems: [Steer, Drop, Land],
+  systems: [Steer, Drop, Land, Rain],
   handlers: [move],
-  scripts: [Rain],
 });
 ```
 

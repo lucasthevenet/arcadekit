@@ -20,12 +20,12 @@
  *
  * Components, events and actions are plain values, which a plugin's module
  * exports like anything else. A save finds its components and events by their
- * names, so a plugin doesn't list them. It does say what a fresh start and a
- * load each do:
+ * names, so a plugin doesn't list them. What it spawns when a game starts
+ * fresh is its `setup`, which a load doesn't run, since the save already holds
+ * what it spawned:
  *
  *   const Weather = Plugin.make("Weather", {
- *     scripts: [Storms],                  // started with the app, and again after a load
- *     setup: spawnTheFirstClouds          // a fresh start only: a load already has them
+ *     setup: spawnTheFirstClouds
  *   })
  */
 import type { Effect, Layer } from "effect";
@@ -72,7 +72,6 @@ export interface Plugin<
   readonly handlers: readonly AnyHandler[];
   readonly layer: Layer.Layer<never, unknown, unknown> | undefined;
   readonly setup: Effect.Effect<void, unknown, unknown> | undefined;
-  readonly scripts: readonly Effect.Effect<unknown, unknown, unknown>[];
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
   /** Type-only. */
@@ -167,8 +166,8 @@ type EffectNeeds<T> =
 
 /**
  * Makes a plugin: a feature of a game, with the plugins it depends on, its
- * systems and action handlers, the services its layer provides, what it does
- * at startup, and its scripts.
+ * systems and action handlers, the services its layer provides, and what it
+ * does at startup.
  *
  *   const Combat = Plugin.make("game/Combat", {
  *     plugins: [Physics],
@@ -188,7 +187,6 @@ export const make = <
   L extends Layer.Layer<never, unknown, unknown> = Layer.Layer<never>,
   SU extends Effect.Effect<void, unknown, unknown> = Effect.Effect<void>,
   P extends readonly Any[] = readonly [],
-  SC extends readonly Effect.Effect<unknown, unknown, unknown>[] = readonly [],
 >(
   name: string,
   options: {
@@ -208,14 +206,6 @@ export const make = <
      * app is loaded from a save, which already holds those entities.
      */
     readonly setup?: SU;
-    /**
-     * Long-running scripts, started with the app: after `setup` on a fresh
-     * start, and again from the beginning when the app is loaded from a save. A
-     * save can't hold a script mid-flight, so a script listed here keeps
-     * whatever it must not lose in the world, and resumes from what it finds
-     * there. It runs and is supervised like any other script.
-     */
-    readonly scripts?: readonly [...SC];
   }
 ): Plugin<
   SystemError<S[number]> | TickErrorOf<P[number]>,
@@ -227,7 +217,6 @@ export const make = <
   | SystemNeeds<S[number]>
   | HandlerNeeds<H[number]>
   | EffectNeeds<SU>
-  | EffectNeeds<SC[number]>
   | NeedsOf<P[number]>
 > => ({
   name,
@@ -235,7 +224,6 @@ export const make = <
   handlers: options.handlers ?? [],
   layer: options.layer,
   setup: options.setup,
-  scripts: options.scripts ?? [],
   plugins: options.plugins ?? [],
 });
 

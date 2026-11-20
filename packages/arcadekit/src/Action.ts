@@ -30,7 +30,7 @@
  * Every action from outside the simulation goes into `app.actionLog`, except a
  * dispatched action that was refused, which changed nothing, along with a
  * checkpoint of the world's hash at a regular interval of ticks. An action a
- * system or a script issues itself, with the `Actions` service, isn't logged: a
+ * system or a handler issues itself, with the `Actions` service, isn't logged: a
  * replay's own simulation issues it again. Replaying the log into a fresh app
  * reproduces the game, and stops at the first checkpoint that doesn't match.
  */
@@ -179,7 +179,7 @@ export interface AnyHandler {
  *   `Actions.enqueue` instead, and a refusal rolls that back too.
  * - A refusal rolls back what the handler did to the world, and nothing outside
  *   it: not an object held in a field and mutated in place, not a call to your
- *   game's own service, and not a script it started.
+ *   game's own service, and not a fiber it forked.
  *
  * @category Constructors
  */
@@ -336,12 +336,12 @@ export const Rejected = Event.define(
 );
 
 /**
- * Lets systems, scripts and handlers issue actions, so AI plays by the same
+ * Lets systems and handlers issue actions, so AI plays by the same
  * rules as players. The action is applied at the start of the next tick.
  * `enqueue` is `app.enqueue`, for code that has no app at hand.
  *
  * Where it is called decides whether it is logged, as for `app.enqueue`. From
- * a tick, a handler, a plugin's setup or a script, it is the simulation's own
+ * a tick, a handler or a plugin's setup, it is the simulation's own
  * doing and isn't logged, since a replay does it again. From a frame-stage or
  * input-stage system, which a replay runs neither of, it is input, and is
  * logged.

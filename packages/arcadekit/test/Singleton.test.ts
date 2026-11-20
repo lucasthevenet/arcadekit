@@ -13,7 +13,6 @@ import {
   Plugin,
   Query,
   Save,
-  Script,
   Singleton,
   SnapshotError,
   System,
@@ -530,20 +529,18 @@ const Rules = Plugin.make("sg/Rules", {
 });
 
 describe("a singleton in an app", () => {
-  it("is what `yield*` gives a handler, a system and a script, to read and to write", () => {
+  it("is what `yield*` gives a handler and a system, to read and to write", () => {
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
         const rounds: number[] = [];
-        app.spawnScript(
-          Effect.gen(function* () {
-            const script = yield* Script;
-            for (;;) {
-              rounds.push((yield* Turn).round);
-              yield* script.nextTick;
-            }
-          })
-        );
+        const Watch = System.make("Watch", function* () {
+          rounds.push((yield* Turn).round);
+        });
+        const app = yield* App.make({
+          plugins: [Rules],
+          systems: [Watch],
+          checkpointEvery: 1,
+        });
         expect(app.dispatch(EndTurn, { player: 2 })).toEqual(
           Exit.fail(new NotYourTurn({ waitingFor: 1 }))
         );
@@ -559,7 +556,7 @@ describe("a singleton in an app", () => {
           points: 2,
           best: "player 1",
         });
-        expect(rounds).toEqual([0, 1, 2]);
+        expect(rounds).toEqual([1, 2]);
         // No entity was needed for any of it.
         expect(app.world.entityCount).toBe(0);
         expect(app.world.view(Query.all()).count()).toBe(0);

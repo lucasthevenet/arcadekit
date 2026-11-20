@@ -136,7 +136,7 @@ const Track = System.make("game/Track", function* () {
 ```
 
 - Each system tracks its own position in the stream of changes, and sees every change once, whatever order systems run in. A system that [`System.runIf`](systems.md#running-conditionally) turned off sees nothing that changed while it was off, as it hears no event from then: when it runs again, it reads what it needs with an ordinary query.
-- Each action handler has its own position too. Outside systems and handlers (in a script, a test, the entry point) there is one position per query, shared by every caller there.
+- Each action handler has its own position too. Outside systems and handlers (in a test, the entry point) there is one position per query, shared by every caller there.
 - The first run visits every matching entity: to a query that never ran, everything is new. A system that builds something for each `added(Sprite)` therefore also covers entities that existed before it, or that came from a save, with no extra code.
 - An entity is visited once, however many times it was written, in the usual query order. An entity that has since lost the component, or been despawned, isn't visited.
 - With several components, or `changed` and `added` together, an entity is visited when any of them fired.

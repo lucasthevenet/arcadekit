@@ -64,7 +64,6 @@ const program = Effect.gen(function* () {
 | `handlers` | Its action handlers, from which `app.dispatch` is typed |
 | `layer` | Services for the whole app, built once. Resources it acquires are released when the app's scope closes |
 | `setup` | An Effect that runs on a fresh start, but not on a load, since the save already holds what it spawned |
-| `scripts` | Scripts started with the app, after `setup`, and again after a load |
 
 Components, events and actions are plain values, exported from the plugin's module. A plugin doesn't list them: a save finds each by its name, see [saving and loading](/guides/saving-and-loading/#requirements-for-saving).
 

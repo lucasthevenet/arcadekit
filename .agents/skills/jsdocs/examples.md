@@ -11,7 +11,7 @@ An example is a run of lines indented by two spaces under a blank line, with opt
  *
  *   const Phase = State.define("game/Phase", ["menu", "playing", "paused"])
  *
- *   const phase = yield* Phase      // in a system, a handler or a script
+ *   const phase = yield* Phase      // in a system or a handler
  *   phase.value                     // "menu"
  *
  * A state is a singleton of the world.

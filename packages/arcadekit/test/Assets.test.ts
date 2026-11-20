@@ -26,7 +26,6 @@ import {
   Plugin,
   Query,
   Random,
-  Script,
   Singleton,
   State,
   System,
@@ -438,14 +437,15 @@ describe("a level's assets", () => {
             systems: [Draw, Keep],
           });
           expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
-          const go = (to: "menu" | "forest"): void => {
-            app.spawnScript(Effect.map(Level, (level) => level.set(to)));
-            app.tick(1);
-            app.frame(0);
-          };
+          const go = (to: "menu" | "forest") =>
+            Effect.map(Level, (level) => {
+              level.set(to);
+              app.tick(1);
+              app.frame(0);
+            }).pipe(Effect.provideService(World, app.world));
           app.frame(0);
-          go("forest");
-          go("menu");
+          yield* go("forest");
+          yield* go("menu");
           expect(seen).toEqual(["Absent", "Ready", "Absent"]);
           expect(log).toEqual(["open /forest.png", "close /forest.png"]);
         })
@@ -645,7 +645,6 @@ describe("a level's assets", () => {
       Time,
       Frame,
       Commands,
-      Script,
       Events,
       Random,
       Actions: Action.Actions,
@@ -715,13 +714,6 @@ describe("a level's assets", () => {
           expect(() => app.tick(1)).toThrow(
             /The assets "as\/Forest" were asked for in the tick/
           );
-          // A script is the simulation too.
-          const other = yield* App.make({ plugins: [Game] }).pipe(
-            Effect.provide(quiet)
-          );
-          const fiber = other.spawnScript(Forest.asEffect());
-          const exit = fiber.pollUnsafe();
-          expect(exit !== undefined && Exit.isFailure(exit)).toBe(true);
           // The store that keeps them is no way round: it says the same of
           // being asked, and of being told to load or to let go.
           const calls: Record<string, (store: Assets.StoreShape) => unknown> = {
