@@ -526,7 +526,6 @@ const Read = System.make("arcadekit/Input.Read", function* () {
  * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/Input", {
-  components: [Held],
   handlers: [report],
   systems: [Read],
 });

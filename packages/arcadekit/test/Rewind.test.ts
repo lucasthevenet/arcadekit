@@ -293,27 +293,24 @@ describe("a game that is put back to a moment", () => {
     const Grow = System.make("rw/Grow", function* () {
       (yield* Commands).spawn(Dot.of({ x: 1 }));
     });
-    withApp(
-      App.make({ systems: [Count, Draw, Grow], components: [Dot] }),
-      (app) => {
-        for (let i = 0; i < 3; i++) {
-          app.tick(DELTA);
-          app.frame(0);
-        }
-        const moment = captured(app);
+    withApp(App.make({ systems: [Count, Draw, Grow] }), (app) => {
+      for (let i = 0; i < 3; i++) {
         app.tick(DELTA);
         app.frame(0);
-        expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
-        app.rewind(moment);
-        seen.tick.length = 0;
-        seen.frame.length = 0;
-        app.tick(DELTA);
-        app.frame(0);
-        // The system of the tick sees the one dot it had yet to see. What
-        // draws sees every dot again: all four are new to it.
-        expect(seen).toEqual({ tick: [1], frame: [4] });
       }
-    );
+      const moment = captured(app);
+      app.tick(DELTA);
+      app.frame(0);
+      expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
+      app.rewind(moment);
+      seen.tick.length = 0;
+      seen.frame.length = 0;
+      app.tick(DELTA);
+      app.frame(0);
+      // The system of the tick sees the one dot it had yet to see. What
+      // draws sees every dot again: all four are new to it.
+      expect(seen).toEqual({ tick: [1], frame: [4] });
+    });
   });
 
   it("throws away commands that were queued and never applied", () => {
@@ -376,7 +373,7 @@ describe("a game that is put back to a moment", () => {
     const Holder = Component.define("rw/Holder", {
       thing: Field.json<unknown>(),
     });
-    withApp(App.make({ components: [Holder] }), (app) => {
+    withApp(App.make({}), (app) => {
       app.commands.spawn(Holder.of({ thing: 1 }));
       expect(app.capture()).toEqual(
         Exit.fail(

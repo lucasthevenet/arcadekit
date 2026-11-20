@@ -46,6 +46,5 @@ export const Physics = System.make("Physics", function* () {
 });
 
 export const plugin = Plugin.make("Physics", {
-  components: [Position, Velocity, Frozen],
   systems: [Physics],
 });

@@ -127,7 +127,6 @@ const makeGame = () => {
   }).pipe(System.inStage("frame"));
   const Game = Plugin.make("Game", {
     plugins: [Assets.plugin],
-    components: [Level],
     handlers: [go],
     systems: [
       Assets.during(State.is(Level, "forest"), Forest),
@@ -434,7 +433,6 @@ describe("a level's assets", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const app = yield* App.make({
-            components: [Level],
             plugins: [Assets.plugin],
             // Listed after what draws with the bundle.
             systems: [Draw, Keep],
@@ -799,7 +797,6 @@ describe("a level's assets", () => {
       }
     }).pipe(System.inStage("input"));
     const Rules = Plugin.make("Rules", {
-      components: [Wall, Built, Level],
       handlers,
     });
     const Shown = Plugin.make("Shown", {
@@ -992,7 +989,6 @@ describe("a level's assets", () => {
         Effect.gen(function* () {
           const app = yield* App.make({
             plugins: [Assets.plugin],
-            components: [Level],
             systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
           });
           app.frame(0);

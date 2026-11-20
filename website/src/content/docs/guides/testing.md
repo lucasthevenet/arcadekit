@@ -27,7 +27,6 @@ const add = Action.handler(Add, function* ({ points }) {
   (yield* Score).points += points;
 });
 export const Rules = Plugin.make("game/Rules", {
-  components: [Score],
   handlers: [add],
 });
 

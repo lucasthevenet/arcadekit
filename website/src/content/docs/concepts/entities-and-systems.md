@@ -111,7 +111,7 @@ Writing a field in place is always fine. Only changes to the shape of the world 
 
 ## Plugins
 
-Each feature is a **plugin**: its systems, its components, the actions it handles, the services it provides, and its startup logic. A plugin lists the plugins it depends on, and a game is a plugin made of plugins. See [plugins](../guides/plugins.md).
+Each feature is a **plugin**: its systems, the actions it handles, the services it provides, and its startup logic. A plugin lists the plugins it depends on, and a game is a plugin made of plugins. See [plugins](../guides/plugins.md).
 
 ## Naming
 

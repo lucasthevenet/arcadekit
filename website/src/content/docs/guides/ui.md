@@ -49,7 +49,6 @@ const newGame = Action.handler(NewGame, function* () {
 
 export const Game = Plugin.make("game/Game", {
   plugins: [View.plugin],
-  components: [Score],
   systems: [ShowHud],
   handlers: [newGame],
 });
@@ -136,7 +135,6 @@ const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
 ```ts title="game.ts"
 import { State, System } from "arcadekit";
 
-// Listed in a plugin's components, as Score is.
 const Phase = State.define("game/Phase", ["menu", "playing"]);
 
 export const ShowHudWhilePlaying = ShowHud.pipe(

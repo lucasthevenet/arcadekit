@@ -22,8 +22,6 @@ import { Effect } from "effect";
 export const Rock = Component.tag("game/Rock");
 
 export const Rules = Plugin.make("game/Rules", {
-  plugins: [Transform3d.plugin],
-  components: [Rock],
   setup: Effect.gen(function* () {
     const commands = yield* Commands;
     commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }));
@@ -101,7 +99,6 @@ An entity is drawn at its `Transform3d.Position`, in scene units.
 - `Transform3d.Rotation`, a quaternion, and `Transform3d.Scale`, where 1 is the geometry's own size, are for entities that rotate or have a size of their own. An entity without them is drawn upright at the geometry's size, and costs less to draw.
 - A `Rotation` is drawn as the rotation it represents, whatever its length: one your rules let drift from length 1, or never normalised, is neither skewed nor scaled by it. Normalising costs an instance about 3 ns, one division.
 - A `Rotation` whose four fields are 0, which is what one added without a value is, is drawn as no rotation.
-- `Three.plugin` depends on `Transform3d.plugin` and `Transform2d.plugin`, which register the components.
 
 ## Flat games
 

@@ -18,13 +18,12 @@
  * A plugin that several others depend on is installed once: its systems are
  * registered once and its layer is built once.
  *
- * Events and actions are plain values, which a plugin's module exports like
- * anything else. A plugin does list three things that loading a saved game
- * needs:
+ * Components, events and actions are plain values, which a plugin's module
+ * exports like anything else. A save finds its components and events by their
+ * names, so a plugin doesn't list them. It does say what a fresh start and a
+ * load each do:
  *
  *   const Weather = Plugin.make("Weather", {
- *     components: [Cloud, Wind],          // so a save that contains them can be loaded
- *     events: [Thundered],                // so a save can hold them, waiting to be read
  *     scripts: [Storms],                  // started with the app, and again after a load
  *     setup: spawnTheFirstClouds          // a fresh start only: a load already has them
  *   })
@@ -32,8 +31,6 @@
 import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
-import type { Listed } from "./ecs/component";
-import type { EventDef } from "./Event";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
@@ -75,8 +72,6 @@ export interface Plugin<
   readonly handlers: readonly AnyHandler[];
   readonly layer: Layer.Layer<never, unknown, unknown> | undefined;
   readonly setup: Effect.Effect<void, unknown, unknown> | undefined;
-  readonly components: readonly Listed[];
-  readonly events: readonly EventDef<unknown>[];
   readonly scripts: readonly Effect.Effect<unknown, unknown, unknown>[];
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
@@ -172,12 +167,11 @@ type EffectNeeds<T> =
 
 /**
  * Makes a plugin: a feature of a game, with the plugins it depends on, its
- * systems, action handlers and components, the services its layer provides,
- * what it does at startup, and its scripts.
+ * systems and action handlers, the services its layer provides, what it does
+ * at startup, and its scripts.
  *
  *   const Combat = Plugin.make("game/Combat", {
  *     plugins: [Physics],
- *     components: [Health, Damage],
  *     systems: [ApplyDamage, Die],
  *     handlers: [Attack],
  *   })
@@ -215,18 +209,6 @@ export const make = <
      */
     readonly setup?: SU;
     /**
-     * The components, singletons and states this plugin's feature stores. A
-     * world identifies them by name, so loading a save requires every one it
-     * contains to be listed by some plugin, or by the app.
-     */
-    readonly components?: readonly Listed[];
-    /**
-     * The events this plugin's feature emits that a save may hold, waiting to
-     * be read. A save that holds an event no plugin lists is refused, and so
-     * is saving while one is waiting.
-     */
-    readonly events?: readonly EventDef<unknown>[];
-    /**
      * Long-running scripts, started with the app: after `setup` on a fresh
      * start, and again from the beginning when the app is loaded from a save. A
      * save can't hold a script mid-flight, so a script listed here keeps
@@ -253,8 +235,6 @@ export const make = <
   handlers: options.handlers ?? [],
   layer: options.layer,
   setup: options.setup,
-  components: options.components ?? [],
-  events: options.events ?? [],
   scripts: options.scripts ?? [],
   plugins: options.plugins ?? [],
 });

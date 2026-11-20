@@ -234,7 +234,6 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
         });
         const made = App.make({
           plugins: [View.plugin],
-          components: [Stats],
           systems: [Show],
           checkpointEvery: 0,
         });
@@ -307,7 +306,6 @@ const scoring = (): number =>
         });
         const app = yield* App.make({
           plugins: [Sound.plugin],
-          components: [Phase],
           systems: [Score],
           checkpointEvery: 0,
         }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
@@ -334,7 +332,6 @@ const atRest = (): number =>
         const source = Input.makeManualSource();
         const app = yield* App.make({
           plugins: [Input.plugin, View.plugin],
-          components: [Phase],
           systems: [Show],
           checkpointEvery: 0,
         }).pipe(

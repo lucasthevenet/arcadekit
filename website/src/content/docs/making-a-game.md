@@ -153,14 +153,13 @@ const Rain = Effect.gen(function* () {
 
 ```ts title="rules.ts"
 export const Rules = Plugin.make("catch/Rules", {
-  components: [Position, Fall, Basket],
   systems: [Steer, Drop, Land],
   handlers: [move],
   scripts: [Rain],
 });
 ```
 
-Systems run in the order they are listed. `components` lists every component a save may contain, so the game can load it.
+Systems run in the order they are listed.
 
 ## Test it
 

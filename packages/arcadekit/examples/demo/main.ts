@@ -29,7 +29,6 @@ const { Frozen, Gravity, Position, Velocity } = Physics;
 const Name = Component.define("demo/Name", { value: Field.json<string>() });
 const Demo = Plugin.make("Demo", {
   plugins: [Physics.plugin, Lifetime.plugin, Sketch.plugin],
-  components: [Name],
 });
 
 // --- a script: sequential game logic spread over many ticks --------------------

@@ -35,7 +35,6 @@ const SetHush = Action.define(
 const Step = Action.define("mu/Step", Schema.Struct({ hard: Schema.Boolean }));
 
 const Rules = Plugin.make("mu/Rules", {
-  components: [Level, Hush],
   handlers: [
     Action.handler(Go, function* ({ to }) {
       (yield* Level).set(to);

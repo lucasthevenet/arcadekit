@@ -308,7 +308,6 @@ describe("the frame stage", () => {
   it("is the frame stage in all three as far as what a system may do goes: none changes the game, and none is a hook", () => {
     for (const stage of ["preFrame", "postFrame"] as const) {
       const made = App.make({
-        components: [Score],
         systems: [
           System.make("Vandal", function* () {
             (yield* Score).points = 1;
@@ -325,7 +324,6 @@ describe("the frame stage", () => {
         () =>
           run(
             App.make({
-              components: [Phase],
               systems: [
                 System.make("Splash", function* () {}).pipe(
                   System.inStage(stage),
@@ -509,7 +507,6 @@ describe("the frame stage", () => {
             yield* attempt;
           }).pipe(System.inStage("frame"));
           const app = yield* App.make({
-            components: [Ball, Score, Phase],
             systems: [Roll, Vandal],
             checkpointEvery: 1,
           });
@@ -780,7 +777,6 @@ describe("what the frame stage reads", () => {
         // have heard with no frame stage at all.
         const headless = yield* App.make({
           systems: [Late, Emit],
-          events: [Bounced],
         });
         const without: number[] = [];
         late.length = 0;
@@ -792,7 +788,6 @@ describe("what the frame stage reads", () => {
         late.length = 0;
         const again = yield* App.make({
           systems: [Late, Emit, Listen],
-          events: [Bounced],
         });
         again.tick(1);
         again.frame(0);
@@ -910,7 +905,6 @@ describe("what the frame stage reads", () => {
           });
         });
         const options = {
-          components: [Ball],
           systems: [Count, Nudge, Draw],
           checkpointEvery: 1,
         };
@@ -982,7 +976,6 @@ describe("what the frame stage reads", () => {
         const make = (systems: readonly System.System<never, BuiltIn>[]) =>
           Effect.gen(function* () {
             const app = yield* App.make({
-              components: [Ball, Score, Phase],
               systems,
               checkpointEvery: 1,
               seed: 3,

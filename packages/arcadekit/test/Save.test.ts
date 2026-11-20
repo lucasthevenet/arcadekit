@@ -144,8 +144,6 @@ const Pulsing = Effect.gen(function* () {
 });
 
 const Game = Plugin.make("sv/Game", {
-  components: [Tally, Mote],
-  events: [Sounded],
   systems: [Listen, Drift, Bot, Sound],
   handlers: [add, double, scatter, pulse],
   scripts: [Pulsing],
@@ -430,17 +428,6 @@ describe("a saved game", () => {
       recorded.save
     );
   });
-
-  it("knows the components its plugins list, from the start", () => {
-    withApp(App.make(options), (app) => {
-      expect(app.world.component("sv/Tally")).toBe(Tally);
-      expect(app.world.component("sv/Mote")).toBe(Mote);
-    });
-    const Loose = Component.define("sv/Loose", { n: Field.u8 });
-    withApp(App.make({ components: [Loose] }), (app) => {
-      expect(app.world.component("sv/Loose")).toBe(Loose);
-    });
-  });
 });
 
 describe("a game that cannot be saved as it stands", () => {
@@ -465,27 +452,8 @@ describe("a game that cannot be saved as it stands", () => {
     });
   });
 
-  it("says which event is waiting that no plugin lists", () => {
-    const Loud = Event.define("sv/Loud", Schema.Number);
-    const Shout = System.make("Shout", function* () {
-      (yield* Loud).emit(1);
-    });
-    withApp(App.make({ systems: [Shout] }), (app) => {
-      app.tick(1);
-      const error = refusal(app.save());
-      expect(error).toBeInstanceOf(Save.SaveRefused);
-      expect(error.message).toBe(
-        "The event \"sv/Loud\" is waiting to be read, and no plugin lists it, so a save that holds it could not be loaded. List it in a plugin's `events`, or in the app's."
-      );
-    });
-    withApp(App.make({ systems: [Shout], events: [Loud] }), (app) => {
-      app.tick(1);
-      expect(Exit.isSuccess(app.save())).toBe(true);
-    });
-  });
-
   it("says which field holds what cannot be saved, and that commands are queued", () => {
-    withApp(App.make({ components: [Blob] }), (app) => {
+    withApp(App.make({}), (app) => {
       const entity = app.world.spawn(Blob.of({ v: () => 1 }));
       expect(refusal(app.save()).message).toContain('"sv/Blob.v"');
       app.world.set(entity, Blob, { v: "fine" });
@@ -523,38 +491,15 @@ describe("a save that cannot be loaded", () => {
       Effect.scoped(Effect.exit(App.load(save, given as typeof options)))
     );
 
-  it("names a component that no plugin lists, and says where to list it", () => {
-    const { save } = record(10, 5);
-    const Partial = Plugin.make("sv/Partial", {
-      components: [Tally],
-      events: [Sounded],
-      systems: [Listen, Drift, Bot, Sound],
-      handlers: [add, double, scatter, pulse],
-    });
-    const error = refusal(load(save, { plugins: [Partial] }));
-    expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("unknown component");
-    expect(error.message).toMatch(
-      /"sv\/Mote".*List it in a plugin's `components`, or in the app's\./
-    );
-    // The app's own list will do as well as a plugin's.
-    expect(
-      Exit.isSuccess(load(save, { plugins: [Partial], components: [Mote] }))
-    ).toBe(true);
-  });
-
   it("says how a component has changed since the save was taken", () => {
-    const { save } = record(10, 5);
-    const Changed = Plugin.make("sv/Changed", {
-      components: [
-        Tally,
-        Component.define("sv/Mote", {
-          x: Field.f64,
-          name: Field.json<string>(),
-        }),
-      ],
+    // The game as it was, and as a later build of it defines the component.
+    const Before = Component.define("sv/Shifting", { x: Field.f32 });
+    const save = withApp(App.make({}), (app) => {
+      app.world.spawn(Before.of({ x: 1 }));
+      return unwrap(app.save());
     });
-    const error = refusal(load(save, { plugins: [Changed] }));
+    Component.define("sv/Shifting", { x: Field.f64 });
+    const error = refusal(load(save, {}));
     expect(error.problem).toBe("component changed");
     expect(error.message).toContain("x: f32");
     expect(error.message).toContain("x: f64");
@@ -635,23 +580,26 @@ describe("a save that cannot be loaded", () => {
     );
   });
 
-  it("names a waiting event that no plugin lists, and says where to list it", () => {
+  it("finds what it holds by definition, and names an event this program doesn't define", () => {
     const { save } = record(10, 5);
-    const Unlisted = Plugin.make("sv/Unlisted", {
-      components: [Tally, Mote],
+    // No plugin lists the components or the waiting events.
+    const Bare = Plugin.make("sv/Bare", {
       systems: [Listen, Drift, Bot, Sound],
       handlers: [add, double, scatter, pulse],
     });
-    const error = refusal(load(save, { plugins: [Unlisted] }));
+    expect(save.events.map((events) => events.name)).toContain("sv/Sounded");
+    expect(Exit.isSuccess(load(save, { plugins: [Bare] }))).toBe(true);
+
+    const renamed = {
+      ...save,
+      events: [{ name: "sv/Never", payloads: [1], read: {} }],
+    };
+    const error = refusal(load(renamed, { plugins: [Bare] }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("unknown event");
     expect(error.message).toBe(
-      "The save holds the event \"sv/Sounded\", waiting to be read, which no plugin lists. List it in a plugin's `events`, or in the app's."
+      'The save holds the event "sv/Never", waiting to be read, which this program doesn\'t define: it was renamed or removed since. A migration changes the events of a save in `events`.'
     );
-    // The app's own list will do as well as a plugin's.
-    expect(
-      Exit.isSuccess(load(save, { plugins: [Unlisted], events: [Sounded] }))
-    ).toBe(true);
   });
 });
 
@@ -667,7 +615,6 @@ describe("a plugin's scripts", () => {
       }
     });
     const WithScript = Plugin.make("sv/WithScript", {
-      components: [Tally],
       scripts: [Ticker],
       setup: Effect.gen(function* () {
         order.push("setup");

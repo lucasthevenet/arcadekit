@@ -50,6 +50,12 @@ export interface EventHandle<P> {
   readonly wait: Effect.Effect<readonly P[]>;
 }
 
+// Every event this program has defined, by name, so that an app can load a
+// save that holds one it hasn't met yet. Of two definitions with one name, as
+// a module that is loaded again under hot reload makes, it is the newer. An
+// app that meets both refuses the second.
+const defined = new Map<string, EventDef<unknown>>();
+
 /**
  * An event type. It is an Effect, so `yield*` returns a handle to its channel
  * in the current app.
@@ -70,6 +76,7 @@ export class EventDef<P> extends Effectable.Class<
     super();
     this.name = name;
     this.codec = codec;
+    defined.set(name, this as EventDef<unknown>);
   }
 
   asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
@@ -380,8 +387,6 @@ export class EventBus {
   private readonly channels: Map<object, ChannelState> = new Map();
   private readonly order: Channel<unknown>[] = [];
   private readonly names: Map<string, EventDef<unknown>> = new Map();
-  /** The names of the events a plugin or the app listed, which a save may hold. */
-  private readonly listed: Set<string> = new Set();
   private readonly reads: ReadLog = { open: false, moved: [] };
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
@@ -410,7 +415,7 @@ export class EventBus {
     const known = this.names.get(def.name);
     if (known !== undefined && known !== def) {
       throw new Error(
-        `Two different events are both named "${def.name}". An event's name identifies it in an app, so give each its own, prefixed with the feature it belongs to.`
+        `Two different events are both named "${def.name}". An event's name identifies it in an app and in a save, so give each its own, prefixed with the feature it belongs to.`
       );
     }
     this.names.set(def.name, def);
@@ -421,19 +426,9 @@ export class EventBus {
   }
 
   /**
-   * Lists an event that a plugin or the app named, so that a save may hold
-   * it. Before the app is loaded from a save.
-   * @internal
-   */
-  list(def: EventDef<unknown>): void {
-    this.channel(def);
-    this.listed.add(def.name);
-  }
-
-  /**
    * The events waiting to be read, in their JSON form, with how far each
-   * system and handler had read. Fails on one that no plugin lists, or whose
-   * payload its schema does not take.
+   * system and handler had read. Fails on one whose payload its schema does
+   * not take.
    * @internal
    */
   save(): Exit.Exit<SavedEvents[], InvalidEvent> {
@@ -454,14 +449,6 @@ export class EventBus {
         }
         payloads.push(data.value);
       }
-      if (payloads.length > 0 && !this.listed.has(channel.def.name)) {
-        return Exit.fail(
-          new InvalidEvent({
-            event: channel.def.name,
-            message: `The event "${channel.def.name}" is waiting to be read, and no plugin lists it, so a save that holds it could not be loaded. List it in a plugin's \`events\`, or in the app's.`,
-          })
-        );
-      }
       const read: Record<string, number> = {};
       for (const [reader, handle] of channel.readers) {
         const count = handle.position - channel.tickOffset;
@@ -480,8 +467,8 @@ export class EventBus {
   /**
    * Takes the events of a save, each decoded with its event's schema, and
    * every reader's place in them. Returns why the save cannot be loaded: it
-   * holds an event that is not listed, or one whose payload its schema no
-   * longer takes. Into an empty bus, before anything has read.
+   * holds an event this program doesn't define, or one whose payload its
+   * schema no longer takes. Into an empty bus, before anything has read.
    * @internal
    */
   restore(saved: readonly SavedEvents[]):
@@ -492,16 +479,14 @@ export class EventBus {
     | undefined {
     const decoded: [Channel<unknown>, SavedEvents, unknown[]][] = [];
     for (const events of saved) {
-      const def = this.listed.has(events.name)
-        ? this.names.get(events.name)
-        : undefined;
+      const def = this.names.get(events.name) ?? defined.get(events.name);
       if (def === undefined) {
         if (events.payloads.length === 0) {
           continue;
         }
         return {
           problem: "unknown event",
-          message: `The save holds the event "${events.name}", waiting to be read, which no plugin lists. List it in a plugin's \`events\`, or in the app's.`,
+          message: `The save holds the event "${events.name}", waiting to be read, which this program doesn't define: it was renamed or removed since. A migration changes the events of a save in \`events\`.`,
         };
       }
       const payloads: unknown[] = [];

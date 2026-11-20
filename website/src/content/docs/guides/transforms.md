@@ -32,8 +32,6 @@ const Drift = System.make("game/Drift", function* () {
 });
 
 const Rules = Plugin.make("game/Rules", {
-  plugins: [Transform3d.plugin], // lists the three, so saves containing them load
-  components: [Rock],
   systems: [Drift],
   setup: Effect.gen(function* () {
     (yield* Commands).spawn(
@@ -54,7 +52,6 @@ const Rules = Plugin.make("game/Rules", {
 
 - They are ordinary components: 32-bit floats in columns, written by your systems, saved, hashed and replayed. arcadekit itself draws nothing.
 - Give an entity only the ones it needs. An entity that only has a location has a `Position`; `Rotation` and `Scale` are for entities that rotate or have a size of their own.
-- `Transform3d.plugin` registers them. A plugin that stores them depends on it, as does a renderer plugin that reads them.
 - Systems move entities with a loop over the columns, as `Drift` does. `Transform3d.axisAngle(x, y, z, angle)` returns the `Rotation` value for a rotation of `angle` radians about an axis, given as a direction of any length. It allocates an object, so use it for a spawn or `world.set`, not inside such a loop.
 - A `Rotation` represents its rotation, not its length. A quaternion of any length stands for the rotation of the unit quaternion in its direction, and readers normalise it: one that drifts from length 1 in your rules is still drawn as the same rotation.
 
@@ -69,8 +66,6 @@ import { Effect } from "effect";
 const Card = Component.tag("game/Card");
 
 const Rules = Plugin.make("game/Rules", {
-  plugins: [Transform2d.plugin],
-  components: [Card],
   setup: Effect.gen(function* () {
     (yield* Commands).spawn(
       Card,

@@ -32,6 +32,5 @@ const Expiry = System.make("Expiry", function* () {
 
 export const plugin = Plugin.make("Lifetime", {
   plugins: [Physics.plugin],
-  components: [Lifetime],
   systems: [Expiry],
 });

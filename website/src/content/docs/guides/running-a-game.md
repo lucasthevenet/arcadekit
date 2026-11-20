@@ -98,7 +98,6 @@ const Countdown = System.make("chess/Countdown", function* () {
 });
 
 const Chess = Plugin.make("chess/Chess", {
-  components: [Clock],
   systems: [Countdown],
 });
 

@@ -68,7 +68,6 @@ const Steer = System.make("Steer", function* () {
 });
 const Flying = Plugin.make("Flying", {
   plugins: [Input.plugin],
-  components: [Ship],
   systems: [Steer],
   setup: Effect.map(Commands, (commands) => {
     commands.spawn(Ship.of({ x: 0, shots: 0 }));
@@ -104,7 +103,6 @@ describe("the input stage", () => {
           System.runIf(State.is(Phase, "paused"))
         );
         const app = yield* App.make({
-          components: [Phase],
           systems: [
             Second,
             note("Tick", "update"),
@@ -334,7 +332,6 @@ describe("the input stage", () => {
             yield* attempt;
           }).pipe(System.inStage("input"));
           const app = yield* App.make({
-            components: [Ship, Score, Phase],
             handlers: [bump],
             systems: [Vandal],
             checkpointEvery: 1,
@@ -363,7 +360,6 @@ describe("the input stage", () => {
           reach();
         }).pipe(System.inStage("input"));
         app = yield* App.make({
-          components: [Score],
           handlers: [bump],
           systems: [Reach],
         });
@@ -473,7 +469,6 @@ describe("the input stage", () => {
           seen.push((yield* Score).points);
         });
         const app = yield* App.make({
-          components: [Score],
           handlers: [bump],
           systems: [Press, Look],
           checkpointEvery: 0,
@@ -560,9 +555,8 @@ describe("the input stage", () => {
             hear("Hear", heard, "input"),
             hear("Also", also, "input"),
           ],
-          events: [Landed],
         });
-        const plain = yield* App.make({ systems: [Land], events: [Landed] });
+        const plain = yield* App.make({ systems: [Land] });
         for (let i = 0; i < 3; i++) {
           app.input();
           app.tick(1);
@@ -934,9 +928,7 @@ describe("the input stage", () => {
           System.inStage("input"),
           State.onEnter(Phase, "paused")
         );
-        const exit = yield* Effect.exit(
-          App.make({ components: [Phase], systems: [Hook] })
-        );
+        const exit = yield* Effect.exit(App.make({ systems: [Hook] }));
         expect(Exit.isFailure(exit)).toBe(true);
         expect(
           (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
@@ -1267,7 +1259,6 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
         const Bare = Plugin.make("Bare", {
-          components: [Ship],
           setup: Effect.map(Commands, (commands) => {
             commands.spawn(Ship.of({ x: 0, shots: 0 }));
           }),
@@ -1665,7 +1656,6 @@ describe("the picture of the devices in the world", () => {
         }).pipe(System.inStage("frame"));
         const app = yield* App.make({
           plugins: [Input.plugin],
-          components: [Score],
           handlers: [shoot],
           systems: [Draw],
         });

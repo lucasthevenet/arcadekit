@@ -268,7 +268,6 @@ describe("a run condition", () => {
             ran.push(what);
           });
         const app = yield* App.make({
-          components: [Ball],
           systems: [
             noting("Hud", ran).pipe(
               System.runIf(State.is(Phase, "playing")),
@@ -354,7 +353,7 @@ describe("a run condition", () => {
       System.runIf(Effect.succeed(false)),
       System.otherwise(Effect.map(Phase, (phase) => phase.set("paused")))
     );
-    const app = run(App.make({ components: [Phase], systems: [Vandal] }));
+    const app = run(App.make({ systems: [Vandal] }));
     expect(() => app.frame(0)).toThrow('singleton "st/Phase"');
     // And what it needs and can fail with are the system's.
     class Lamp extends Context.Service<Lamp, { lit: boolean }>()("st/Lamp") {}
@@ -431,7 +430,6 @@ describe("a run condition", () => {
           );
         }).pipe(System.runIf(State.is(Phase, "playing")));
         const app = yield* App.make({
-          components: [Phase, Ball],
           systems: [Listen, Emit],
           handlers: [go],
         });
@@ -461,7 +459,6 @@ describe("a run condition", () => {
 describe("hooks", () => {
   const game = (ran: string[], extra: System.System<never, World>[] = []) =>
     App.make({
-      components: [Phase, Weather, Ball],
       systems: [
         noting("Tick", ran),
         noting("EnterMenu", ran).pipe(State.onEnter(Phase, "menu")),
@@ -646,25 +643,38 @@ describe("hooks", () => {
     );
   });
 
-  it("enter a listed state on the first tick, whenever it is first looked at", () => {
+  it("leave a state alone that no hook waits for, wherever it is looked at from, until a value is asked for", () => {
     run(
       Effect.gen(function* () {
         const Late = System.make("Late", function* () {
-          if ((yield* Time).tick >= 3) {
-            void (yield* Phase).value;
+          const phase = yield* Phase;
+          if ((yield* Time).tick === 3) {
+            phase.set("playing");
           }
         });
-        const looked = yield* App.make({
-          components: [Phase],
-          systems: [Late],
-        });
-        const unseen = yield* App.make({ components: [Phase] });
-        for (let tick = 0; tick < 5; tick++) {
+        const Draw = System.make("Draw", function* () {
+          void (yield* Phase).value;
+        }).pipe(System.inStage("frame"));
+        const looked = yield* App.make({ systems: [Late] });
+        const drawn = yield* App.make({ systems: [Draw] });
+        const unseen = yield* App.make({ systems: [] });
+        for (let tick = 1; tick <= 5; tick++) {
           looked.tick(1);
+          drawn.tick(1);
+          drawn.frame(0);
           unseen.tick(1);
-          // A plugin that only looks does not change the game it looks at.
-          expect(looked.world.hash()).toBe(unseen.world.hash());
+          // A look changes nothing from the frame, which a replay doesn't
+          // run.
+          expect(drawn.world.hash()).toBe(unseen.world.hash());
+          // And from the tick, until a value is asked for in tick 3.
+          expect(looked.world.hash() === unseen.world.hash()).toBe(tick < 3);
         }
+        // Asked for in tick 3: entered, and moved, at the start of tick 4.
+        expect({ ...looked.world.singleton(Phase) }).toEqual({
+          value: "playing",
+          next: null,
+          entered: 1,
+        });
       })
     );
   });
@@ -739,7 +749,6 @@ describe("a state in a save", () => {
       (yield* Commands).spawn(Built.of({ level }));
     }).pipe(State.onEnter(Level, level));
   const Rules = Plugin.make("st/Rules", {
-    components: [Level, Built, Ball],
     systems: [
       build("one"),
       build("two"),
@@ -816,7 +825,7 @@ describe("a state in a save", () => {
     const After = State.define("st/Door", ["open", "shut"]);
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ components: [Before] });
+        const app = yield* App.make({});
         app.spawnScript(
           Effect.gen(function* () {
             (yield* Before).set("ajar");
@@ -825,7 +834,7 @@ describe("a state in a save", () => {
         app.tick(1);
         const save = app.save();
         assert(Exit.isSuccess(save));
-        const loaded = yield* App.load(save.value, { components: [After] });
+        const loaded = yield* App.load(save.value, {});
         const read = loaded.spawnScript(
           Effect.gen(function* () {
             return (yield* After).value;
@@ -840,24 +849,23 @@ describe("a state in a save", () => {
     );
   });
 
-  it("has to be listed, like any singleton, to be loaded", () => {
+  it("goes on after a load into a game that never looks at it, with what was asked for", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Rules] });
         app.tick(1);
+        expect(Exit.isSuccess(app.dispatch(Next, {}))).toBe(true);
         const save = app.save();
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
-        const refused = yield* Effect.exit(
-          App.load(save.value, { components: [Built, Ball], handlers: [next] })
-        );
-        expect(
-          Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined
-        ).toMatchObject({
-          _tag: "LoadRefused",
-          problem: "unknown component",
-          message: expect.stringContaining('"st/Level"'),
+        // Nothing in this game looks at the level, and no list names it.
+        const loaded = yield* App.load(save.value, { handlers: [] });
+        loaded.tick(1);
+        expect({ ...loaded.world.singleton(Level) }).toEqual({
+          value: "two",
+          next: null,
+          entered: 1,
         });
       })
     );

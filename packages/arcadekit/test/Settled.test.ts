@@ -58,7 +58,6 @@ const Opening = System.make("st/Opening", function* () {
 }).pipe(State.onEnter(Phase, "playing"));
 
 const Rules = Plugin.make("st/Rules", {
-  components: [Piece, Score, Phase],
   systems: [Tally, Land, Opening],
   handlers: [
     Action.handler(Begin, function* () {
@@ -75,7 +74,7 @@ const Rules = Plugin.make("st/Rules", {
 
 describe("app.settled", () => {
   it("is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked", () => {
-    const app = run(App.make({ components: [Piece], checkpointEvery: 0 }));
+    const app = run(App.make({ checkpointEvery: 0 }));
     // A game that has not ticked yet has not been asked whether it has
     // anything to do.
     expect(app.settled).toBe(false);
@@ -204,7 +203,7 @@ describe("app.settled", () => {
   });
 
   it("is false while a fiber is due to run at the next tick", () => {
-    const app = run(App.make({ components: [Piece] }));
+    const app = run(App.make({}));
     app.tick(1);
     expect(app.settled).toBe(true);
     const ran: string[] = [];
@@ -409,7 +408,7 @@ const RunDownSilently = System.make("st/RunDown", function* () {
 });
 
 describe("a system that has more to do", () => {
-  const options = { components: [Clock], handlers: [wind] };
+  const options = { handlers: [wind] };
 
   it("says so with Ticks.more, each tick it has: the app is not settled until a tick in which nobody did", () => {
     const app = run(App.make({ ...options, systems: [RunDown] }));
@@ -476,9 +475,7 @@ describe("a system that has more to do", () => {
   });
 
   it("is heard from a handler and from a script, and changes nothing of a game that ticks in real time", () => {
-    const app = run(
-      App.make({ components: [Clock], handlers: [windAndSay], systems: [] })
-    );
+    const app = run(App.make({ handlers: [windAndSay], systems: [] }));
     app.tick(1);
     expect(app.settled).toBe(true);
     // Dispatched between two ticks, the handler has run: the game is

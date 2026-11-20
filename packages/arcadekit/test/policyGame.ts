@@ -173,7 +173,6 @@ const tax = Action.handler(Tax, function* ({ amount }) {
 const options = {
   systems: [Movement, Ageing, Fire, Following, Watching, Draw],
   handlers: [tax],
-  components: [Position, Velocity, Sheet, Burning, Follows, Stats],
   seed: 7,
   checkpointEvery: 1,
 };

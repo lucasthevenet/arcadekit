@@ -181,8 +181,7 @@ describe("the entries of @arcadekit/three", () => {
   });
 
   it("is built on the game's own arcadekit, not on a copy of it", () => {
-    // The components it draws from are the ones the game's world knows,
-    // and their plugin the one the game's app installs.
+    // The components it draws from are the ones the game's world knows.
     const world = new Arcadekit.EcsWorld();
     const entity = world.spawn(
       Arcadekit.Transform3d.Position.of({ x: 1, y: 2, z: 3 })
@@ -195,10 +194,6 @@ describe("the entries of @arcadekit/three", () => {
       y: 2,
       z: 3,
     });
-    expect(Main.Three.plugin.plugins).toEqual([
-      Arcadekit.Transform3d.plugin,
-      Arcadekit.Transform2d.plugin,
-    ]);
     // After everything a frame draws, whatever order it is listed in.
     expect(Main.Three.Render.stage).toBe("postFrame");
   });

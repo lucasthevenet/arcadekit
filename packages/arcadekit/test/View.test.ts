@@ -62,7 +62,6 @@ const Earn = System.make("vw/Earn", function* () {
 let pings = 0;
 const Game = Plugin.make("vw/Game", {
   plugins: [View.plugin],
-  components: [Coin, Purse, Phase],
   systems: [Earn, ShowHud, ShowMenu],
   handlers: [
     Action.handler(Start, function* () {
@@ -316,7 +315,6 @@ describe("a view", () => {
     }).pipe(System.runIf(State.is(Phase, "playing")));
     const Rules = Plugin.make("vw/Gated", {
       plugins: [View.plugin],
-      components: [Purse, Phase],
       systems: [Shown],
       handlers: [
         Action.handler(Start, function* () {
@@ -351,7 +349,6 @@ describe("a view", () => {
     );
     const Rules = Plugin.make("vw/Reset", {
       plugins: [View.plugin],
-      components: [Purse, Phase],
       systems: [Shown],
       handlers: [
         Action.handler(Start, function* () {
@@ -742,14 +739,13 @@ describe("the bridge", () => {
 
   it("is what a plugin's systems need: a game that publishes and leaves out View.plugin does not compile", () => {
     // View.Port is still needed: View.plugin provides it.
-    expectTypeOf(
-      App.make({ systems: [ShowHud], components: [Purse] })
-    ).not.toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
+    expectTypeOf(App.make({ systems: [ShowHud] })).not.toExtend<
+      Effect.Effect<unknown, never, Scope.Scope>
+    >();
     expectTypeOf(
       App.make({
         plugins: [View.plugin],
         systems: [ShowHud],
-        components: [Purse],
       })
     ).toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
   });

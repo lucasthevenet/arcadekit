@@ -94,7 +94,6 @@ const handlers = [
 const game = () =>
   Effect.gen(function* () {
     const app = yield* App.make({
-      components: [Count, Phase],
       systems: [Grow, Roll, Asleep, Opening, Draw, Read],
       handlers,
       seed: 7,

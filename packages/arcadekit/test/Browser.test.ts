@@ -67,7 +67,6 @@ const Steer = System.make("Steer", function* () {
 });
 const Flying = Plugin.make("Flying", {
   plugins: [Input.plugin],
-  components: [Ship],
   systems: [Steer],
   setup: Effect.map(Commands, (commands) => {
     commands.spawn(Ship.of({ x: 0, shots: 0 }));

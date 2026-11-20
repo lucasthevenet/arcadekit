@@ -53,7 +53,6 @@ const heal0 = Action.handler(Heal0, function* ({ amount }) {
   });
 });
 const Game0 = Plugin.make("mg/Game", {
-  components: [Hp0, Pos0, Name0, Old0, Buff0],
   handlers: [heal0],
 });
 
@@ -105,7 +104,6 @@ const mend2 = Action.handler(Mend2, function* ({ by }) {
   });
 });
 const Game2 = Plugin.make("mg/Game", {
-  components: [Health2, Pos2, Name2, Buff2],
   handlers: [mend2],
 });
 

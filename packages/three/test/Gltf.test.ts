@@ -570,7 +570,6 @@ describe("a level's models", () => {
     const app = Effect.runSync(
       App.make({
         plugins: [Three.plugin, Assets.plugin],
-        components: [Ship, Rock, Level],
         systems: [Assets.during(State.is(Level, "space"), Fleet), Ships, Rocks],
       }).pipe(
         Effect.provide(

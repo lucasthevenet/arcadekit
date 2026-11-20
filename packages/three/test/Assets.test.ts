@@ -120,7 +120,6 @@ const play = (
   const scope = Scope.makeUnsafe();
   const made = App.make({
     plugins: [Three.plugin, Assets.plugin],
-    components: [Tree, Deer, Paint, Level],
     handlers: [go],
     systems,
   });
@@ -582,7 +581,6 @@ describe("instances whose look is made of assets", () => {
     const app = Effect.runSync(
       App.make({
         plugins: [Three.plugin],
-        components: [Tree],
         systems: [
           Three.instances("ta/Plain", { of: Tree, geometry, material }),
           Three.objects("ta/Things", { of: Deer, make: () => new Object3D() }),

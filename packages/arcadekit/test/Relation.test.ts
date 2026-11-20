@@ -592,7 +592,6 @@ const Grow = System.make("Grow", function* () {
 
 const orchard = Effect.gen(function* () {
   const app = yield* App.make({
-    components: [Body, ChildOf],
     systems: [Grow],
     handlers: [fell, graft],
     checkpointEvery: 1,
@@ -649,7 +648,6 @@ describe("relations in an app", () => {
           throw new Error("the save did not decode");
         }
         const loaded = yield* App.load(read.value, {
-          components: [Body, ChildOf],
           systems: [Grow],
           handlers: [fell, graft],
           checkpointEvery: 1,

@@ -192,7 +192,6 @@ export const DELTA = 1 / 30;
 export const gameOptions = (seed = 5, checkpointEvery = 1) => ({
   systems: [Tally, Drift, Bot, Fault, Controls, Hear] as const,
   handlers: [drop, take, tip, fire, mint, whisper] as const,
-  components: [Coin, Purse],
   seed,
   checkpointEvery,
 });

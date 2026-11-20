@@ -105,7 +105,8 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  * - `"no migration"`: an earlier version wrote it, and the game has no
  *   migration from that version;
  * - `"migration failed"`: a migration threw;
- * - `"unknown event"`: an event waiting to be read is listed by no plugin;
+ * - `"unknown event"`: an event waiting to be read is one this program
+ *   doesn't define;
  * - `"event changed"`: an event waiting to be read is in a form its schema no
  *   longer takes.
  *

@@ -65,14 +65,13 @@ import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
-import { isSingletonSpec } from "./ecs/component";
-import type { Entity, Listed } from "./ecs/component";
+import type { Entity } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventDef, EventsMoment } from "./Event";
+import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -624,18 +623,6 @@ export interface Options<
 > {
   readonly plugins?: readonly [...P];
   /**
-   * Components and singletons that belong to the app itself, not to a plugin. A
-   * world identifies them by name, so loading a save requires every one it
-   * contains to be listed here or by a plugin.
-   */
-  readonly components?: readonly Listed[];
-  /**
-   * Events that belong to the app itself, not to a plugin, that a save may
-   * hold waiting to be read. A save that holds an event listed neither here
-   * nor by a plugin is refused, and so is saving while one is waiting.
-   */
-  readonly events?: readonly EventDef<unknown>[];
-  /**
    * The game's version: an integer you increment when the game changes its
    * components or what its saves contain. Defaults to 0. A save records it.
    * `App.load` loads a save of this version as is, migrates an older one with
@@ -921,23 +908,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
-    const components = [
-      ...plugins.flatMap((plugin) => plugin.components),
-      ...(options.components ?? []),
-    ];
-    for (const listed of components) {
-      if (isSingletonSpec(listed)) {
-        world.singleton(listed);
-      } else {
-        world.register(listed);
-      }
-    }
-    for (const listed of [
-      ...plugins.flatMap((plugin) => plugin.events),
-      ...(options.events ?? []),
-    ]) {
-      events.list(listed);
-    }
     const version = options.version ?? 0;
     if (!Number.isSafeInteger(version) || version < 0) {
       throw new Error(
@@ -969,7 +939,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           problem: error.problem,
           message:
             error.problem === "unknown component"
-              ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
+              ? `${error.message} A migration renames or removes a component in a save.`
               : error.message,
         });
       }
@@ -1345,9 +1315,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const inputTurns = inputSystems.map((system) => new Turn(system, trace));
     const hookGroups = new Map<string, Plugin.AnySystem[]>();
     const states = State.registryOf(world);
-    for (const listed of components) {
-      if (listed instanceof State.State) {
-        State.handleOf(world, listed);
+    // A state the save holds goes on from where it was, transitions included,
+    // whether or not anything has looked at it yet.
+    if (save !== undefined) {
+      for (const state of State.defined()) {
+        if (world.component(state.name) === state.component) {
+          State.handleOf(world, state);
+        }
       }
     }
     for (const system of allSystems) {
@@ -1371,6 +1345,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         );
       }
       State.handleOf(world, state);
+      states.hooked.add(state);
       const key = hookKey(system.trigger);
       hookGroups.set(key, [...(hookGroups.get(key) ?? []), system]);
     }

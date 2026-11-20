@@ -67,7 +67,6 @@ const makeGame = () => {
     }
   }).pipe(System.inStage("frame"));
   const Game = Plugin.make("Game", {
-    components: [Ball, Score],
     handlers: [add],
     systems: [Roll, Draw],
     layer: Layer.effectDiscard(
@@ -336,7 +335,7 @@ describe("App.run", () => {
     let ask = (_by: number): void => {};
     const fiber = Effect.runFork(
       App.run(
-        { handlers: [add], components: [Score], systems: [Count] },
+        { handlers: [add], systems: [Count] },
         {
           hz: 60,
           ticks: "whenNeeded",

@@ -29,7 +29,6 @@ const Draw = System.make("game/Draw", function* () {
 
 const Game = Plugin.make("game/Game", {
   plugins: [Assets.plugin],
-  components: [Level],
   systems: [Assets.during(State.is(Level, "forest"), Forest), Draw],
 });
 ```

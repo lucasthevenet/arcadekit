@@ -165,8 +165,7 @@ const Steer = System.make("Steer", function* () {
 });
 
 const Rules = Plugin.make("page/Rules", {
-  plugins: [Input.plugin, Transform3d.plugin, Transform2d.plugin],
-  components: [Mote, Card, Ship, Velocity, Spin, Tint],
+  plugins: [Input.plugin],
   systems: [Steer, Drift, Turn, Wheel],
   setup: Effect.gen(function* () {
     const commands = yield* Commands;

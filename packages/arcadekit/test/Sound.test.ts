@@ -83,7 +83,6 @@ const Cues = Sound.cues(
 );
 
 const Rules = Plugin.make("sd/Rules", {
-  components: [Ball, Bounces, Phase],
   systems: [Fall],
   handlers: [
     Action.handler(Drop, function* ({ height }) {

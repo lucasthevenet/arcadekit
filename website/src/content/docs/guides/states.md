@@ -33,7 +33,6 @@ const resume = Action.handler(Resume, function* () {
 });
 
 const Rules = Plugin.make("game/Rules", {
-  components: [Phase], // states are listed with the components
   systems: [Movement, StartLevel],
   handlers: [resume],
 });

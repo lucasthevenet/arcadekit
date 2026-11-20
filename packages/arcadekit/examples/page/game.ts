@@ -286,8 +286,6 @@ const ShowHud = View.publish(Hud, function* () {
 
 export const Game = Plugin.make("Game", {
   plugins: [Input.plugin, Assets.plugin, View.plugin, Sound.plugin],
-  components: [Star, Basket, Phase],
-  events: [Caught, Started],
   handlers,
   systems: [
     Steer,

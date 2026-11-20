@@ -1231,7 +1231,6 @@ const game = (
 > =>
   Effect.gen(function* () {
     const app = yield* App.make({
-      components: [Position, Sprite, Tally, Health],
       systems: [Early, Drift, Count],
       handlers: [push, spawn, cull],
       checkpointEvery: options.checkpointEvery ?? 1,
@@ -1287,7 +1286,6 @@ describe("change queries in an app", () => {
         const quiet = yield* App.make({
           systems: [Count],
           handlers: [push],
-          components: [Position, Sprite, Tally],
         });
         quiet.world.spawn(Tally);
         quiet.world.spawn(Position.of({ x: 0, y: 0 }));
@@ -1382,7 +1380,6 @@ describe("change queries in an app", () => {
           }
           expect(read.value.changes).toEqual(save.value.changes);
           const loaded = yield* App.load(read.value, {
-            components: [Position, Sprite, Tally, Health],
             systems: [Early, Drift, Count],
             handlers: [push, spawn, cull],
             checkpointEvery: 1,
@@ -1414,7 +1411,6 @@ describe("change queries in an app", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({
-          components: [Position, Health],
           handlers: [before],
         });
         const { entities } = (() => {
@@ -1436,7 +1432,6 @@ describe("change queries in an app", () => {
           throw new Error("the save was refused");
         }
         const loaded = yield* App.load(save.value, {
-          components: [Place, Health],
           handlers: [after],
           version: 1,
           migrations: [
@@ -1483,11 +1478,7 @@ describe("change queries in an app", () => {
             },
           ],
         };
-        const exit = yield* Effect.exit(
-          App.load(damaged, {
-            components: [Position, Sprite, Tally, Health],
-          })
-        );
+        const exit = yield* Effect.exit(App.load(damaged, {}));
         expect(
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
         ).toMatchObject({

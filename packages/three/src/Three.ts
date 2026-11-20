@@ -414,13 +414,12 @@ export const Render = System.make("arcadekit/three/Render", function* () {
  * The app then needs a `Three.Renderer` from outside:
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  *
- * It depends on `Transform3d.plugin` and `Transform2d.plugin`, which register
- * the transform components. This package defines no components of its own.
+ * It draws from the transform components of `Transform3d` and `Transform2d`.
+ * This package defines no components of its own.
  *
  * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/three", {
-  plugins: [Transform3d.plugin, Transform2d.plugin],
   layer: sceneLayer,
   systems: [Render],
 });

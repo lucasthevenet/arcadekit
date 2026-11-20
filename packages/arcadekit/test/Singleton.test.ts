@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -132,9 +132,12 @@ describe("a singleton", () => {
     expect(world.spawn(Body)).toBe(entity + 1);
     world.singleton(Turn);
     expect(world.component("sg/Turn")).toBe(Turn.component);
-    const clash = Component.define("sg/Turn", { player: Field.u8 });
+    // A singleton and a component of one name, defined here alone, so that
+    // this program's "sg/Turn" stays the one a load finds.
+    world.singleton(Singleton.define("sg/Clash", { n: Field.u8 }, { n: 0 }));
+    const clash = Component.define("sg/Clash", { player: Field.u8 });
     expect(() => world.spawn(clash)).toThrow(
-      /Two different components are both named "sg\/Turn"/
+      /Two different components are both named "sg\/Clash"/
     );
     expect(() =>
       world.singleton({ component: Body, initial: { x: 0 } })
@@ -253,18 +256,14 @@ describe("a singleton in a snapshot", () => {
 
   it("leaves one that was never written to the game that loads it", () => {
     const bytes = written().snapshot();
-    // The same name and fields, another first value: a newer build.
-    const Rescored = Singleton.define(
-      "sg/Score",
-      { points: Field.f64, best: Field.json<string>() },
-      { points: 100, best: "the house" }
-    );
+    // Only read, so not saved: the game that loads it starts it at its own
+    // first value, whatever that is in its build.
+    expect(
+      readSnapshot(bytes).singletons.map((single) => single.component)
+    ).not.toContain("sg/Score");
     const copy = new EcsWorld();
     copy.load(bytes, [Body, Turn.component, Everything.component]);
-    expect({ ...copy.singleton(Rescored) }).toEqual({
-      points: 100,
-      best: "the house",
-    });
+    expect({ ...copy.singleton(Score) }).toEqual(Score.initial);
     // And a world that only read a singleton before loading is still empty.
     const reader = new EcsWorld();
     expect(reader.singleton(Turn).round).toBe(0);
@@ -279,18 +278,24 @@ describe("a singleton in a snapshot", () => {
     expect(problemOf(() => wrote.load(bytes, listed)).problem).toBe(
       "world not empty"
     );
-    const unknown = problemOf(() =>
-      new EcsWorld().load(bytes, [Body, Turn.component])
-    );
-    expect(unknown.problem).toBe("unknown component");
-    expect(unknown.component).toBe("sg/Everything");
+    // One the world hasn't met is found by its definition.
+    const found = new EcsWorld();
+    found.load(bytes, [Body, Turn.component]);
+    expect(found.singleton(Everything).double).toBe(Math.PI);
+    // Another build's definitions, under names of their own, so that this
+    // program's "sg/Turn" stays the one a load finds.
+    const renamed = (to: string): Uint8Array => {
+      const contents = readSnapshot(bytes);
+      Migrate.renameComponent(contents, "sg/Turn", to);
+      return writeSnapshot(contents);
+    };
     const Shorter = Singleton.define(
-      "sg/Turn",
+      "sg/ShorterTurn",
       { player: Field.u8 },
       { player: 1 }
     );
     const changed = problemOf(() =>
-      new EcsWorld().load(bytes, [
+      new EcsWorld().load(renamed("sg/ShorterTurn"), [
         Body,
         Shorter.component,
         Everything.component,
@@ -301,12 +306,16 @@ describe("a singleton in a snapshot", () => {
       /Then: singleton \{ player: u8, round: u32 \}\. Now: singleton \{ player: u8 \}/
     );
     // A component of the same name and fields is not a singleton.
-    const AsComponent = Component.define("sg/Turn", {
+    const AsComponent = Component.define("sg/TurnAsComponent", {
       player: Field.u8,
       round: Field.u32,
     });
     const kind = problemOf(() =>
-      new EcsWorld().load(bytes, [Body, AsComponent, Everything.component])
+      new EcsWorld().load(renamed("sg/TurnAsComponent"), [
+        Body,
+        AsComponent,
+        Everything.component,
+      ])
     );
     expect(kind.problem).toBe("component changed");
     expect(kind.message).toMatch(/Then: singleton .* Now: table/);
@@ -516,7 +525,6 @@ const Reward = System.make("Reward", function* () {
   }
 });
 const Rules = Plugin.make("sg/Rules", {
-  components: [Turn, Score],
   systems: [Reward],
   handlers: [endTurn, cheat],
 });
@@ -588,7 +596,7 @@ describe("a singleton in an app", () => {
     );
   });
 
-  it("is saved with the game, and loaded by a game that lists it", () => {
+  it("is saved with the game, and loaded by a game with no list of its components", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
@@ -596,6 +604,7 @@ describe("a singleton in an app", () => {
           app.dispatch(EndTurn, { player: (move % 2) + 1 });
           app.tick(1);
         }
+        const savedHash = app.world.hash();
         const save = app.save();
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
@@ -622,19 +631,13 @@ describe("a singleton in an app", () => {
         expect(loaded.world.hash()).toBe(app.world.hash());
         expect(loaded.world.singleton(Score).points).toBe(12);
 
-        // A game that does not list it cannot read the save, and says why.
-        const refused = yield* Effect.exit(
-          App.load(read.value, { handlers: [endTurn], systems: [Reward] })
-        );
-        expect(
-          Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined
-        ).toMatchObject({
-          _tag: "LoadRefused",
-          problem: "unknown component",
-          message: expect.stringMatching(
-            /"sg\/Score".*List it in a plugin's `components`/
-          ),
+        // A game whose plugins name no components reads it as well: the
+        // save finds them by their definitions.
+        const bare = yield* App.load(read.value, {
+          handlers: [endTurn],
+          systems: [Reward],
         });
+        expect(bare.world.hash()).toBe(savedHash);
       })
     );
   });

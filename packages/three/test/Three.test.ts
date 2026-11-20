@@ -1091,7 +1091,6 @@ describe("a flat game's Transform2d", () => {
   it("is listed by Three.plugin, so that a flat game that is drawn saves and loads", () => {
     const Flatland = Plugin.make("th/Flatland", {
       plugins: [Three.plugin],
-      components: [Rock],
       systems: [Rocks],
     });
     const first = start(App.make({ plugins: [Flatland] }), makeRenderer());
@@ -1141,7 +1140,6 @@ describe("an entity drawn between two ticks", () => {
     const { app } = start(
       App.make({
         plugins: [Three.plugin],
-        components: [Rock, Hidden],
         systems: [Slide, ...systems],
       }),
       renderer
@@ -1714,7 +1712,6 @@ describe("an entity drawn between two ticks", () => {
       const made = start(
         App.make({
           plugins: [Three.plugin],
-          components: [Rock],
           systems: [Smoothed],
           handlers: [
             Action.handler(Go, function* () {
@@ -1773,8 +1770,6 @@ describe("an entity drawn between two ticks", () => {
 
   it("keeps the place before to itself: a game drawn between its ticks is the same game", () => {
     const Rules = Plugin.make("th/SlideRules", {
-      plugins: [Transform3d.plugin, Transform2d.plugin],
-      components: [Rock, Ship, Hidden],
       systems: [Slide],
     });
     const Ships = Three.objects("th/SmoothShips", {
@@ -1835,7 +1830,6 @@ describe("a colour per instance", () => {
     const { app, close } = start(
       App.make({
         plugins: [Three.plugin],
-        components: [Rock, Hidden, Paint],
         systems: [system],
       }),
       renderer
@@ -2127,7 +2121,6 @@ describe("a colour per instance", () => {
       const { app } = start(
         App.make({
           plugins: [Three.plugin],
-          components: [Rock, Bytes],
           systems: [
             Three.instances("th/Painted", {
               of: Rock,
@@ -2221,7 +2214,6 @@ describe("a colour per instance", () => {
     const { app } = start(
       App.make({
         plugins: [Three.plugin],
-        components: [Rock, Wide],
         systems: [
           Three.instances("th/Painted", {
             of: Rock,
@@ -2400,7 +2392,6 @@ describe("Three.objects", () => {
   });
   const Fleet = Plugin.make("th/Fleet", {
     plugins: [Three.plugin],
-    components: [Ship, Rock, Hidden],
     systems: [Ships],
   });
   const fresh = () => {
@@ -2816,8 +2807,6 @@ describe("Three.plugin", () => {
       }
     });
     const Rules = Plugin.make("th/SpinRules", {
-      plugins: [Transform3d.plugin],
-      components: [Rock, Ship],
       systems: [Spin],
     });
     const Flagships = Three.objects("th/Flagships", {

@@ -29,6 +29,7 @@
 import {
   GENERATIONS,
   INDEX_MASK,
+  definedComponent,
   entityIndex,
   frozenWrite,
   growColumn,
@@ -2725,6 +2726,15 @@ export class World {
     return single.value as ValueOf<S>;
   }
 
+  /**
+   * Whether the world holds a singleton as its own: written since the world
+   * began, or loaded. Until then it is its initial value, and is in neither
+   * the snapshot nor the hash.
+   */
+  holds<S extends Schema>(spec: SingletonSpec<S>): boolean {
+    return this.singles[spec.component.id]?.written === true;
+  }
+
   /** Returns a singleton's instance, creating it if needed with every field zero. */
   private single(def: ComponentDef): Single {
     let single = this.singles[def.id];
@@ -3006,7 +3016,7 @@ export class World {
     const known = this.componentsByName.get(def.name);
     if (known !== undefined) {
       throw new Error(
-        `Two different components are both named "${def.name}". A component's name identifies it in a world, so give each its own, prefixed with the feature it belongs to.`
+        `Two different components are both named "${def.name}". A component's name identifies it in a world and in a save, so give each its own, prefixed with the feature it belongs to.`
       );
     }
     this.componentsByName.set(def.name, def);
@@ -3449,11 +3459,12 @@ export class World {
    * Fills this world from a snapshot. The world must be empty: one that has
    * never held an entity.
    *
-   * `components` are the components the snapshot may contain. A world
-   * identifies components by name, and an empty world knows none, so pass them
-   * here (already registered ones can be omitted). A snapshot that contains a
-   * component not among them, or one whose fields differ from when it was
-   * taken, is refused.
+   * A snapshot names its components, and each is found by its definition: the
+   * one this world has met with that name, or else the one this program
+   * defined last with it. `components` are met first, for a tool that reads a
+   * snapshot with definitions other than the program's latest, such as those
+   * of an older build. A snapshot that holds a component the program doesn't
+   * define, or one whose fields differ from when it was taken, is refused.
    *
    * Every failure is a `SnapshotError`, whose `problem` identifies the kind:
    * the bytes aren't a snapshot, are truncated or corrupt, or use a newer
@@ -3556,11 +3567,11 @@ export class World {
         fields.push(reader.text());
         kinds.push(KIND_CODES[reader.u8()]);
       }
-      const def = this.componentsByName.get(name);
+      const def = this.componentsByName.get(name) ?? definedComponent(name);
       if (def === undefined) {
         throw new SnapshotError(
           "unknown component",
-          `The snapshot holds a component named "${name}", which is not among the components it was loaded with.`,
+          `The snapshot holds a component named "${name}", which this program doesn't define: it was renamed or removed since.`,
           name
         );
       }
@@ -3575,6 +3586,7 @@ export class World {
           name
         );
       }
+      this.register(def);
       named.push(def);
     }
     const componentAt = (): ComponentDef => {

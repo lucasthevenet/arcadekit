@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import {
   App,
   Component,
-  Plugin,
   Query,
   Save,
   System,
@@ -36,7 +35,7 @@ describe("Transform3d", () => {
     }
     // Added bare, it is where it was made, turned by nothing, and of its
     // own size: a Scale of zeros would be drawn as nothing.
-    const { world } = run(App.make({ plugins: [Transform3d.plugin] }));
+    const { world } = run(App.make({}));
     const bare = world.spawn(Position, Rotation, Scale);
     expect(world.get(bare, Scale)).toEqual({ x: 1, y: 1, z: 1 });
     expect(new Set(Object.values(world.get(bare, Position)!))).toEqual(
@@ -44,7 +43,6 @@ describe("Transform3d", () => {
     );
     // One module, whichever entry it is reached through.
     expect(Entry.Position).toBe(Position);
-    expect(Entry.plugin).toBe(Transform3d.plugin);
   });
 
   it("is moved by a system with a loop over its columns, like any component", () => {
@@ -57,9 +55,7 @@ describe("Transform3d", () => {
         }
       });
     });
-    const app = run(
-      App.make({ plugins: [Transform3d.plugin], systems: [Drift] })
-    );
+    const app = run(App.make({ systems: [Drift] }));
     const rock = app.world.spawn(Position.of({ x: 1, y: 2, z: 3 }));
     // Added with no value, it is at the origin.
     const flat = app.world.spawn(Position);
@@ -114,19 +110,13 @@ describe("Transform3d", () => {
       w: 1,
     });
     // It is what a Rotation is given.
-    const world = run(App.make({ plugins: [Transform3d.plugin] })).world;
+    const world = run(App.make({})).world;
     const turned = world.spawn(Rotation.of(quarter));
     expect(world.get(turned, Rotation)!.w).toBe(Math.fround(quarter.w));
   });
 
-  it("lists its components, so that a game saves and loads them with no renderer anywhere", () => {
-    const Rules = Plugin.make("tf/Rules", {
-      plugins: [Transform3d.plugin],
-      components: [Rock],
-    });
-    expect(Transform3d.plugin.name).toBe("arcadekit/Transform3d");
-    expect(Transform3d.plugin.components).toEqual([Position, Rotation, Scale]);
-    const made = run(App.make({ plugins: [Rules] }));
+  it("is saved and loaded by a game that names none of its components, with no renderer anywhere", () => {
+    const made = run(App.make({}));
     const rock = made.world.spawn(
       Rock,
       Position.of({ x: 1, y: 2, z: 3 }),
@@ -141,21 +131,12 @@ describe("Transform3d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(App.load(read.value, { plugins: [Rules] }));
+    const loaded = run(App.load(read.value, {}));
     expect(loaded.world.hash()).toBe(made.world.hash());
     expect(loaded.world.get(rock, Position)).toEqual({ x: 1, y: 2, z: 3 });
     expect(loaded.world.get(rock, Rotation)).toEqual(
       made.world.get(rock, Rotation)
     );
     expect(loaded.world.get(rock, Scale)).toEqual({ x: 2, y: 3, z: 4 });
-    // A game that does not list them cannot read the save: they are named in it.
-    const without = Effect.runSyncExit(
-      Effect.scoped(
-        App.load(read.value, {
-          plugins: [Plugin.make("tf/Bare", { components: [Rock] })],
-        })
-      )
-    );
-    expect(Exit.isFailure(without)).toBe(true);
   });
 });
