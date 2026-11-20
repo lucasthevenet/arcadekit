@@ -65,7 +65,7 @@ import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { SavedChanges } from "./ecs/world";
-import { EventBus, FRAME_READER } from "./Event";
+import { EventBus, FRAME_READER, define as defineEvent } from "./Event";
 import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
@@ -296,10 +296,12 @@ export interface Any {
    * its length at that time. Only between ticks, and only with a moment of this
    * app.
    *
-   * A moment holds what a save holds, and no more. State held by your game's own services is left as is. A
-   * `transient` field is undefined afterwards. And what runs between ticks
-   * starts over: frame-stage and input-stage change queries visit everything
-   * again.
+   * A moment holds what a save holds, and no more. State held by your game's
+   * own services is left as is: the app then announces `App.Rewound`, which a
+   * system of the frame or input stage reads to put a service back in line
+   * with the world. A `transient` field is undefined afterwards. And what runs
+   * between ticks starts over: frame-stage and input-stage change queries
+   * visit everything again.
    */
   readonly rewind: (moment: Moment) => void;
   /**
@@ -377,6 +379,32 @@ export interface Moment {
   /** The number of ticks run when it was captured. */
   readonly tick: number;
 }
+
+/**
+ * Announced by the app after `app.rewind`, for what lives outside the world
+ * and must follow the game back: a service of the game's own, what is drawn,
+ * the sounds playing. `from` is the tick the game was at, and `to` the tick
+ * it went back to.
+ *
+ *   const Resync = System.make("Resync", function* () {
+ *     if ((yield* App.Rewound).read().length > 0) {
+ *       (yield* Particles).clear()
+ *     }
+ *   }).pipe(System.inStage("frame"))
+ *
+ * The frame and input stages hear it, each once. A system of the tick or a
+ * handler that reads it throws: only the peer that went back
+ * hears it, and a tick that heard it would run differently there. So a
+ * session's resimulated ticks run before anything hears it, and what a tick
+ * reads belongs in the world, which the rewind puts back. Only the app
+ * announces it, and a moment doesn't hold it.
+ *
+ * @category Events
+ */
+export const Rewound = defineEvent(
+  "App.Rewound",
+  Schema.Struct({ from: Schema.Number, to: Schema.Number })
+);
 
 /**
  * Options for running a tick.
@@ -791,6 +819,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const { random } = world;
     const commands = new CommandBuffer(world);
     const events = new EventBus();
+    events.announcesBetweenTicks(Rewound);
     const time: TimeState = { delta: 0, elapsed: 0, tick: 0 };
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
@@ -2090,6 +2119,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
         const was = moment as Captured;
+        const from = time.tick;
         dispatcher.flush();
         // What is queued on the buffer was never part of the world.
         commands.rollback(0);
@@ -2112,6 +2142,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         wanted = was.wanted;
         heard = false;
         commands.apply();
+        events.announce(Rewound, { from, to: was.tick });
       },
       inspect() {
         if (ticking || between !== undefined) {

@@ -345,3 +345,116 @@ describe("a game that is put back to a moment", () => {
     });
   });
 });
+
+describe("App.Rewound", () => {
+  /** A frame-stage and an input-stage system that note what they hear of it. */
+  const listeners = () => {
+    const heard = { frame: [] as unknown[], input: [] as unknown[] };
+    const Draw = System.make("rw/Draw", function* () {
+      heard.frame.push(...(yield* App.Rewound).read());
+    }).pipe(System.inStage("frame"));
+    const Keys = System.make("rw/Keys", function* () {
+      heard.input.push(...(yield* App.Rewound).read());
+    }).pipe(System.inStage("input"));
+    return { heard, systems: [Draw, Keys] as const };
+  };
+  const Dot = Component.define("rw/Dot", { x: Field.f32 });
+  const Grow = System.make("rw/Grow", function* () {
+    (yield* Commands).spawn(Dot.of({ x: (yield* Time).tick }));
+  });
+
+  it("tells the stages between ticks, once each, where the game went back from and to", () => {
+    const { heard, systems } = listeners();
+    withApp(App.make({ systems: [Grow, ...systems] }), (app) => {
+      app.tick(DELTA);
+      app.frame(0);
+      const moment = captured(app);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      app.frame(0);
+      app.rewind(moment);
+      // A session resimulates before anything hears it.
+      app.tick(DELTA);
+      app.tick(DELTA);
+      app.frame(0);
+      app.tick(DELTA);
+      app.frame(0);
+      expect(heard).toEqual({
+        frame: [{ from: 3, to: 1 }],
+        input: [{ from: 3, to: 1 }],
+      });
+    });
+  });
+
+  it("leaves the game as one that never went back: its save, its hash and its log", () => {
+    const one = listeners();
+    const other = listeners();
+    withApp(App.make({ systems: [Grow, ...one.systems] }), (back) =>
+      withApp(App.make({ systems: [Grow, ...other.systems] }), (straight) => {
+        back.tick(DELTA);
+        const moment = captured(back);
+        back.tick(DELTA);
+        back.rewind(moment);
+        straight.tick(DELTA);
+        // Just after the rewind, and after the tick that follows it.
+        for (let i = 0; i < 2; i++) {
+          expect(back.world.hash()).toBe(straight.world.hash());
+          expect(back.save()).toEqual(straight.save());
+          expect(back.actionLog).toEqual(straight.actionLog);
+          expect(back.settled).toBe(straight.settled);
+          back.tick(DELTA);
+          straight.tick(DELTA);
+        }
+      })
+    );
+  });
+
+  it("isn't held by a moment, so going back again doesn't tell of an earlier rewind twice", () => {
+    const { heard, systems } = listeners();
+    withApp(App.make({ systems: [Grow, ...systems] }), (app) => {
+      app.tick(DELTA);
+      const first = captured(app);
+      app.tick(DELTA);
+      app.rewind(first);
+      // Taken while the rewind is still to be heard.
+      const second = captured(app);
+      app.frame(0);
+      app.tick(DELTA);
+      app.rewind(second);
+      app.frame(0);
+      expect(heard.frame).toEqual([
+        { from: 2, to: 1 },
+        { from: 2, to: 1 },
+      ]);
+    });
+  });
+
+  it("is refused to a system of the tick and to a handler, and to whoever emits it", () => {
+    const Peek = System.make("rw/Peek", function* () {
+      (yield* App.Rewound).read();
+    });
+    withApp(App.make({ systems: [Peek] }), (app) => {
+      expect(() => app.tick(DELTA)).toThrow(
+        /The event "App\.Rewound" was read by "rw\/Peek", which runs in the tick\..*System\.inStage\("frame"\)/u
+      );
+    });
+
+    const Ask = Action.define("rw/Ask", Schema.Struct({}));
+    const ask = Action.handler(Ask, function* () {
+      (yield* App.Rewound).read();
+    });
+    withApp(App.make({ handlers: [ask] }), (app) => {
+      const exit = app.dispatch(Ask, {});
+      expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
+        /The event "App\.Rewound" was read by "action:rw\/Ask"/u
+      );
+
+      expect(() => app.events.emit(App.Rewound, { from: 1, to: 0 })).toThrow(
+        /The event "App\.Rewound" was emitted\. The app announces it/u
+      );
+      expect(() =>
+        app.events.handle(App.Rewound).emit({ from: 1, to: 0 })
+      ).toThrow(/The event "App\.Rewound" was emitted/u);
+    });
+  });
+});

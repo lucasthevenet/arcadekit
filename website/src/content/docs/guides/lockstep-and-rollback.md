@@ -91,9 +91,10 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 
 - **Check `from`, not the payload.** A handler receives the peer that issued an action. Check permissions against `from`, never against a name in the payload. See [who issued an action](events-and-actions.md#who-issued-an-action).
 - **Keep everything the simulation reads in the world.** A rewind restores the world and the app's pending work, and nothing else.
-  - State held by your game's own services isn't restored, and nothing tells a service the game rewound: a counter kept in a layer continues from the discarded future.
+  - State held by your game's own services isn't restored: a counter kept in a layer continues from the discarded future.
+  - After a rewind, the app announces the event `App.Rewound`, with the tick the game was at and the tick it went back to. A system of the frame or input stage reads it to bring what lives outside the world back in line with it: a cache built from the world, the particles on screen, a sound that is playing. A system of the tick or a handler that reads it throws, since only the peer that went back hears it, and the session resimulates before anything does.
   - A `Field.transient` field is `undefined` afterwards, as in a loaded game.
-- **Expect the frame stage to repeat.** A rollback game is drawn and heard as predicted. The frame stage sees a resimulated tick's events again, and its change queries visit everything after each rewind: a sound may play twice, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final.
+- **Expect the frame stage to repeat.** A rollback game is drawn and heard as predicted. The frame stage sees a resimulated tick's events again, and its change queries visit everything after each rewind: a sound may play twice, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final, and `App.Rewound` when what it showed was given up.
 
 ## Capturing and rewinding
 
@@ -117,7 +118,7 @@ const program = Effect.gen(function* () {
 
 - A moment holds what a [save](saving-and-loading.md) does: the world, the game time, the actions queued for the next tick, the events waiting to be read with every reader's position, what change queries haven't visited, and the log's length. `rewind` restores all of it in place and truncates the log. The app, its world and its services are the same objects as before.
 - It lives in memory and belongs to one app in one run of the program. Pending actions and events don't need schemas, so a game with schema-less actions or events can be captured even when it can't be saved.
-- A game is captured and rewound between ticks. What a rewind doesn't restore is what the requirements above keep out of the simulation's way.
+- A game is captured and rewound between ticks. What a rewind doesn't restore is what the requirements above keep out of the simulation's way, and `App.Rewound` tells the frame and input stages that it happened. A moment doesn't hold that event, so going back again doesn't repeat an earlier one.
 
 ## When peers drift apart
 

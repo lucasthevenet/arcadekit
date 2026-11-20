@@ -172,6 +172,10 @@ export const FRAME_READER = "frame:";
  */
 const FRAME_PATIENCE = 600;
 
+/** Why an event the app announces between ticks can't be emitted. */
+const announcedOnly = (def: EventDef<unknown>): string =>
+  `The event "${def.name}" was emitted. The app announces it, after what it is about has happened, and nothing else may emit it.`;
+
 /** The part of a channel that does not depend on its payload type. */
 interface ChannelState {
   /** Sequence number of the oldest event still kept. Sequence numbers never repeat. */
@@ -264,24 +268,37 @@ class Handle<P> implements EventHandle<P> {
     this.cursor = cursor;
   }
 
-  /** Whether this is a handle of the frame stage: it reads, and cannot emit. */
+  /**
+   * Whether this handle reads what is kept for the stages between ticks: one
+   * of the frame or input stage, or of an event announced between ticks.
+   */
   private readonly forFrame: boolean;
   readonly emit: EventHandle<P>["emit"];
 
-  constructor(channel: Channel<P>, cursor: number, forFrame = false) {
+  constructor(
+    channel: Channel<P>,
+    cursor: number,
+    forFrame = false,
+    refusal?: string
+  ) {
     this.channel = channel;
     this.cursor = cursor;
     this.forFrame = forFrame;
     // Decided once, so that emitting stays one call with no check in it.
-    this.emit = forFrame
-      ? () => {
-          throw new Error(
-            `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
-          );
-        }
-      : (payload) => {
-          channel.buffer.push(payload);
-        };
+    this.emit =
+      refusal !== undefined
+        ? () => {
+            throw new Error(refusal);
+          }
+        : forFrame
+          ? () => {
+              throw new Error(
+                `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
+              );
+            }
+          : (payload) => {
+              channel.buffer.push(payload);
+            };
   }
 
   readonly read = (): readonly P[] => {
@@ -357,6 +374,12 @@ export class EventBus {
   private readonly order: Channel<unknown>[] = [];
   private readonly names: Map<string, EventDef<unknown>> = new Map();
   private readonly reads: ReadLog = { open: false, moved: [] };
+  /**
+   * The events the app announces between ticks, such as `App.Rewound`: the
+   * stages between ticks and code outside the game hear them, and the
+   * simulation never does.
+   */
+  private readonly announced: Set<object> = new Set();
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
   private ticksSinceFrame = 0;
@@ -373,6 +396,29 @@ export class EventBus {
   keepFor(stages: { readonly frame: boolean; readonly input: boolean }): void {
     this.frames = stages.frame;
     this.inputs = stages.input;
+  }
+
+  /**
+   * Makes `def` an event the app announces between ticks, with `announce`:
+   * no system of the tick or handler may read it, nobody emits it, and a
+   * moment neither captures nor restores it. Before anything reads it.
+   * @internal
+   */
+  announcesBetweenTicks(def: EventDef<unknown>): void {
+    this.announced.add(def);
+  }
+
+  /**
+   * Announces an event made with `announcesBetweenTicks`, between ticks: it is
+   * kept for the frame and input stages until each has run, and the
+   * simulation can't read it.
+   * @internal
+   */
+  announce<P>(def: EventDef<P>, payload: P): void {
+    const channel = this.channel(def);
+    channel.buffer.push(payload);
+    channel.tickOffset = channel.end;
+    channel.tickStart = channel.end;
   }
 
   private channel<P>(def: EventDef<P>): Channel<P> {
@@ -494,6 +540,16 @@ export class EventBus {
   handle<P>(def: EventDef<P>): EventHandle<P> {
     const channel = this.channel(def);
     const { reader } = this;
+    if (this.announced.has(def)) {
+      if (reader !== undefined && !reader.startsWith(FRAME_READER)) {
+        throw new Error(
+          `The event "${def.name}" was read by "${reader}", which runs in the tick. The app announces it between ticks, and only one peer may have heard it: a tick that read it would run differently there, and the peers would no longer be playing the same game. Read it in a system made with System.inStage("frame") or System.inStage("input"), or from code outside the game.`
+        );
+      }
+      if (reader === undefined) {
+        return new Handle(channel, channel.end, true, announcedOnly(def));
+      }
+    }
     if (reader === undefined) {
       return new Handle(channel, channel.end);
     }
@@ -513,6 +569,9 @@ export class EventBus {
 
   /** Emits from outside any system, for example from UI or network code. */
   emit<P>(def: EventDef<P>, payload: P): void {
+    if (this.announced.has(def)) {
+      throw new Error(announcedOnly(def));
+    }
     this.channel(def).buffer.push(payload);
   }
 
@@ -641,22 +700,26 @@ export class EventBus {
       ticksSinceFrame: this.ticksSinceFrame,
       inputs: this.inputs,
       ticksSinceInput: this.ticksSinceInput,
-      channels: this.order.map((channel) => {
-        const cursors = new Map<string, number>();
-        for (const [reader, handle] of channel.readers) {
-          cursors.set(reader, handle.position);
-        }
-        return {
-          channel,
-          buffer: channel.buffer.slice(),
-          offset: channel.offset,
-          tickOffset: channel.tickOffset,
-          frameSeen: channel.frameSeen,
-          inputSeen: channel.inputSeen,
-          tickStart: channel.tickStart,
-          cursors,
-        };
-      }),
+      // An announced event is about the app, not the game: going back
+      // doesn't take it back.
+      channels: this.order
+        .filter((channel) => !this.announced.has(channel.def))
+        .map((channel) => {
+          const cursors = new Map<string, number>();
+          for (const [reader, handle] of channel.readers) {
+            cursors.set(reader, handle.position);
+          }
+          return {
+            channel,
+            buffer: channel.buffer.slice(),
+            offset: channel.offset,
+            tickOffset: channel.tickOffset,
+            frameSeen: channel.frameSeen,
+            inputSeen: channel.inputSeen,
+            tickStart: channel.tickStart,
+            cursors,
+          };
+        }),
     };
   }
 
@@ -676,6 +739,9 @@ export class EventBus {
       moment.channels.map((entry) => [entry.channel, entry])
     );
     for (const channel of this.order) {
+      if (this.announced.has(channel.def)) {
+        continue;
+      }
       const was = captured.get(channel);
       channel.last = [];
       if (was === undefined) {
