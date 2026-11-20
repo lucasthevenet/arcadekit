@@ -91,14 +91,13 @@ const handlers = [
   }),
 ];
 
-const game = (trace?: boolean) =>
+const game = () =>
   Effect.gen(function* () {
     const app = yield* App.make({
       components: [Count, Phase],
       systems: [Grow, Roll, Asleep, Opening, Draw, Read],
       handlers,
       seed: 7,
-      ...(trace === undefined ? {} : { trace }),
     });
     app.world.spawn(Count.of({ n: 0 }));
     return app;
@@ -210,7 +209,7 @@ describe("tracing an app", () => {
   it("plays the same game as an app that doesn't trace", () => {
     const { spans, tracer } = recorder();
     const tracing = traced(tracer, game());
-    const quiet = traced(recorder().tracer, game(false));
+    const quiet = Effect.runSync(Effect.scoped(game()));
     for (let tick = 0; tick < 30; tick++) {
       for (const app of [tracing, quiet]) {
         app.enqueue(Add, { by: tick });
@@ -221,28 +220,25 @@ describe("tracing an app", () => {
     }
     expect(spans.length).toBeGreaterThan(0);
   });
-
-  it("makes no span with trace: false, even with a tracer provided", () => {
-    const { spans, tracer } = recorder();
-    const app = traced(tracer, game(false));
-    app.enqueue(Begin, {});
-    app.tick(1 / 60);
-    app.frame(0.5);
-    expect(spans).toEqual([]);
-  });
 });
 
 describe("whether an app traces", () => {
-  /** Whether a system of an app made so runs inside a span. */
-  const inSpan = (
-    options: { readonly trace?: boolean },
-    tracer?: Tracer.Tracer
+  /**
+   * Whether a system of an app runs inside a span, and the names of the
+   * spans the tracer was given, when the program provides `tracer`, if
+   * any, and runs `wrap` around making the app.
+   */
+  const look = (
+    tracer: Tracer.Tracer | undefined,
+    wrap: <A, E, R>(
+      effect: Effect.Effect<A, E, R>
+    ) => Effect.Effect<A, E, R> = (effect) => effect
   ): boolean => {
     let seen: boolean | undefined;
     const Look = System.make("tr/Look", function* () {
       seen = Option.isSome(yield* Effect.option(Effect.currentSpan));
     });
-    const made = App.make({ systems: [Look], ...options });
+    const made = wrap(App.make({ systems: [Look] }));
     const app =
       tracer === undefined
         ? Effect.runSync(Effect.scoped(made))
@@ -251,23 +247,38 @@ describe("whether an app traces", () => {
     return seen!;
   };
 
-  it("traces when the program provides a tracer", () => {
+  it("traces when the program provides a tracer, at the Debug level", () => {
     const { spans, tracer } = recorder();
-    expect(inSpan({}, tracer)).toBe(true);
+    expect(look(tracer)).toBe(true);
     expect(spans.map((span) => span.name)).toEqual([
       "arcadekit/tick",
       "tr/Look",
     ]);
+    expect(spans.every((span) => span.sampled)).toBe(true);
   });
 
-  it("doesn't trace when the program provides none", () => {
-    expect(inSpan({})).toBe(false);
+  it("doesn't trace when the program provides no tracer", () => {
+    expect(look(undefined)).toBe(false);
   });
 
-  it("traces with trace: true and no tracer, and not with trace: false and one", () => {
-    expect(inSpan({ trace: true })).toBe(true);
+  it("doesn't trace when the minimum level leaves Debug out, and the program's own spans still go", () => {
     const { spans, tracer } = recorder();
-    expect(inSpan({ trace: false }, tracer)).toBe(false);
+    const atInfo = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(
+        Effect.tap(() => Effect.void.pipe(Effect.withSpan("own"))),
+        Effect.provideService(Tracer.MinimumTraceLevel, "Info")
+      );
+    expect(look(tracer, atInfo)).toBe(false);
+    expect(spans.map((span) => [span.name, span.sampled])).toEqual([
+      ["own", true],
+    ]);
+  });
+
+  it("doesn't trace under Effect.withTracerEnabled(false)", () => {
+    const { spans, tracer } = recorder();
+    const off = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(Effect.withTracerEnabled(false));
+    expect(look(tracer, off)).toBe(false);
     expect(spans).toEqual([]);
   });
 });

@@ -79,7 +79,7 @@ Browser.runMain(
 
 `OtlpTracer.layer`, from Effect, sends spans to an [OpenTelemetry](https://opentelemetry.io) collector, such as a local [Jaeger](https://www.jaegertracing.io) or Grafana. The spans are Effect's, so any tracer you provide to the program receives them.
 
-An app made where a tracer is provided makes these spans:
+An app made where a tracer is provided makes these spans, at the "Debug" level:
 
 | Span | When | Inside it |
 | --- | --- | --- |
@@ -95,19 +95,26 @@ An app made where a tracer is provided makes these spans:
 
 Tracing doesn't change what the game does. A span reads the real clock, and its ids are drawn from `Math.random`, never from the game's `Random`. A traced game plays the same as one that isn't, and its replays and peers agree with it.
 
-## Turning tracing off and on
+## Turning tracing off
 
-The `trace` option of `App.make` and `App.run` defaults to whether the program provides a tracer. Without one, the app makes no span and runs exactly what it would otherwise.
+An app makes its spans at the "Debug" level, and makes none, costing nothing, when:
 
-A span costs about 3 µs, so a traced tick of 10 systems takes about 30 µs more, and a tracer receives a span for every system on every tick. A program that provides a tracer for spans of its own, such as a game's server, and doesn't want the game's, sets `trace: false`:
+- the program provides no tracer,
+- it runs under `Effect.withTracerEnabled(false)`, which turns off every span, the program's own too,
+- or the program's `Tracer.MinimumTraceLevel` is above "Debug".
+
+A span costs about 3 µs, so a traced tick of 10 systems takes about 30 µs more, and a tracer receives a span for every system on every tick. A program that provides a tracer for spans of its own, such as a game's server, and doesn't want the game's, raises the minimum level. Its own spans are at "Info" unless it says otherwise, so they still go:
 
 ```ts sketch
-App.run({ plugins: [Game], trace: false }, { hz: 60 }).pipe(
+import { Tracer } from "effect";
+
+App.run({ plugins: [Game] }, { hz: 60 }).pipe(
+  Effect.provideService(Tracer.MinimumTraceLevel, "Info"),
   Effect.provide(Tracing)
 );
 ```
 
-`trace: true` makes the spans even with no tracer provided, and sends them nowhere.
+The app chooses once, when it is made, from what the program provides there.
 
 ## Read more
 

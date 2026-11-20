@@ -28,6 +28,19 @@
  * which receive the devices' state and turn it into actions, also with the
  * world frozen.
  *
+ * An app made where the program provides a tracer, such as `OtlpTracer.layer`
+ * of `effect/observability`, sends what it does as spans at the "Debug" level:
+ * one for each tick, `arcadekit/tick`, holding a span for each action applied
+ * in it, `action:<name>`, and for each system's turn, named after the system;
+ * and one for each run of the frame stage, `arcadekit/frame`, and of the input
+ * stage, `arcadekit/input`, holding their systems'. Each starts a trace of its
+ * own. A span costs about 3 µs. An app makes none, and costs nothing, when no
+ * tracer is provided, under `Effect.withTracerEnabled(false)`, or when
+ * `Tracer.MinimumTraceLevel` is above "Debug": a program that sends spans of
+ * its own and not the game's provides it as "Info". A span reads the real
+ * clock and draws its ids from `Math.random`, so tracing doesn't change the
+ * game.
+ *
  * A failed script is logged with its cause. An app created with
  * `onScriptFailure: "stop"` also stops: that tick and every later one fail with
  * `ScriptFailed`.
@@ -41,6 +54,7 @@ import {
   Random as EffectRandom,
   Exit,
   Layer,
+  LogLevel,
   References,
   Result,
   Schema,
@@ -532,7 +546,8 @@ class Turn {
             this.ran = holds;
             return holds ? run : (idle ?? Effect.void);
           }),
-      system.name
+      system.name,
+      { level: System.spanLevel }
     );
   }
 }
@@ -653,26 +668,6 @@ export interface Options<
    * frame system per frame, so use it in development and tests.
    */
   readonly verifyFrames?: boolean;
-  /**
-   * Whether the app sends what it does to the program's tracer, as spans: one
-   * for each tick, `arcadekit/tick`, holding a span for each action applied in
-   * it, `action:<name>`, and one for each system that had its turn, named
-   * after the system; and one for each run of the frame stage,
-   * `arcadekit/frame`, and of the input stage, `arcadekit/input`, holding their
-   * systems' spans. Each of the three is the root of a trace of its own.
-   *
-   * Defaults to whether the program provides a tracer, such as `OtlpTracer.layer`
-   * of `effect/observability`: an app made without one makes no span and costs
-   * nothing. What the game does is the same either way: a span reads the real
-   * clock and draws its ids from `Math.random`, never from the game's `Random`.
-   *
-   * **Gotchas**
-   *
-   * - A span costs about 3 µs, so a traced tick of 10 systems takes about 30 µs
-   *   more. A program that provides a tracer for its own spans, such as a
-   *   game's server, and doesn't want the game's, sets `trace: false`.
-   */
-  readonly trace?: boolean;
 }
 
 /**
@@ -1261,7 +1256,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       attributes: Record<string, unknown>
     ): Tracer.Span => {
       const made = runFork(
-        Effect.makeSpan(name, { root: true, attributes })
+        Effect.makeSpan(name, {
+          root: true,
+          attributes,
+          level: System.spanLevel,
+        })
       ).pollUnsafe();
       if (made === undefined || Exit.isFailure(made)) {
         throw new Error(`The span "${name}" could not be made.`);
@@ -1312,10 +1311,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
     // Chosen once, so an app that doesn't trace runs what it would without.
     // The default tracer makes spans and sends them nowhere: Effect compares
-    // with it to tell that no tracer is installed.
+    // with it to tell that no tracer is installed. A span the minimum level
+    // leaves out would be made and not sent, so none is made.
     const trace =
-      options.trace ??
-      Context.get(context, Tracer.Tracer) !== Tracer.nativeTracer;
+      Context.get(context, Tracer.Tracer) !== Tracer.nativeTracer &&
+      Context.get(context, References.TracerEnabled) &&
+      !LogLevel.isGreaterThan(
+        Context.get(context, Tracer.MinimumTraceLevel),
+        System.spanLevel
+      );
     const tickTurns = ordered.map((system) => new Turn(system, trace));
     const frameTurns = frameSystems.map((system) => new Turn(system, trace));
     const inputTurns = inputSystems.map((system) => new Turn(system, trace));
@@ -1582,11 +1586,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           Effect.withSpan(drawn, "arcadekit/frame", {
             root: true,
             attributes: { "arcadekit.frame": frame.count },
+            level: System.spanLevel,
           })
         )
       : drawn;
     const inputEffect = trace
-      ? Effect.withSpan(heardEffect, "arcadekit/input", { root: true })
+      ? Effect.withSpan(heardEffect, "arcadekit/input", {
+          root: true,
+          level: System.spanLevel,
+        })
       : heardEffect;
 
     yield* Effect.addFinalizer(() =>
@@ -1696,7 +1704,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             ? Effect.withSpan(
                 handled,
                 `action:${name}`,
-                tickSpan === undefined ? { root: true } : { parent: tickSpan }
+                tickSpan === undefined
+                  ? { root: true, level: System.spanLevel }
+                  : { parent: tickSpan, level: System.spanLevel }
               )
             : handled
         );

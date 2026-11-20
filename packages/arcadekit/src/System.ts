@@ -361,6 +361,13 @@ export const otherwise: {
 );
 
 /**
+ * The level of the spans an app makes, as a program's
+ * `Tracer.MinimumTraceLevel` sees them.
+ * @internal
+ */
+export const spanLevel = "Debug";
+
+/**
  * A system's name is its place in events and in what changed, so two
  * systems cannot share one.
  * @internal

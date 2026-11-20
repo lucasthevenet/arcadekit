@@ -1,4 +1,4 @@
-import { Data, Effect, Schema } from "effect";
+import { Data, Effect, Option, Schema, Tracer } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -198,13 +198,26 @@ describe("app.inspect", () => {
   });
 
   it("says the same of an app that traces", () => {
+    // A tracer that makes spans and keeps none, as one that sends them does.
+    const tracer = Tracer.make({
+      span: (options) => new Tracer.NativeSpan(options),
+    });
+    let traced = false;
+    const Look = System.make("in/Look", function* () {
+      traced = Option.isSome(yield* Effect.option(Effect.currentSpan));
+    });
     const app = run(
-      App.make({ components: [Position], systems: [Move, Asleep], trace: true })
+      App.make({
+        components: [Position],
+        systems: [Move, Asleep, Look],
+      }).pipe(Effect.provideService(Tracer.Tracer, tracer))
     );
     app.tick(1 / 60);
+    expect(traced).toBe(true);
     expect(app.inspect().systems.map(({ name, ran }) => [name, ran])).toEqual([
       ["in/Move", true],
       ["in/Asleep", false],
+      ["in/Look", true],
     ]);
   });
 
