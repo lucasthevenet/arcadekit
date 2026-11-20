@@ -1,4 +1,8 @@
-# Learning from other engines
+# Design
+
+When creating or changing an API, avoid nuanced solutions that require deep knowledge of the library's internals to use correctly. If a game's author cannot use it right from its name, its types and its doc comment, make the design simpler.
+
+## Learning from other engines
 
 Before designing a complex feature (change detection, hierarchies, scheduling, relations, states, physics, networking), find out how established engines and ECS frameworks solved it. [Bevy](https://bevy.org/) is the first place to look: it is an ECS built around systems, queries, commands, events, resources and plugins, as this package is, and its design discussions and [examples](https://github.com/bevyengine/bevy/tree/main/examples) say why each part works the way it does and what was tried before. Other engines and ECS libraries are worth reading for the same reason.
 
