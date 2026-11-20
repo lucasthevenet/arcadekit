@@ -43,8 +43,8 @@ In a game that [ticks only when needed](running-a-game.md), a script that sleeps
 ## Starting a script
 
 - `app.spawnScript(Fountain)` starts it from outside the simulation: it runs immediately, up to its first wait.
-- `(yield* Script).spawn(Fountain)` starts it from a system, a handler or another script: it first runs when the tick flushes, after the systems. One started by a plugin's code is interrupted when [the plugin stops](plugins.md#stopping-and-starting-a-plugin).
-- A plugin's `scripts` start with the app, after its `setup`, and are interrupted when the plugin stops.
+- `(yield* Script).spawn(Fountain)` starts it from a system, a handler or another script: it first runs when the tick flushes, after the systems.
+- A plugin's `scripts` start with the app, after its `setup`.
 
 ## Failures
 

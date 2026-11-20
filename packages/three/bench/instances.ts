@@ -61,7 +61,7 @@ const variant = (
   parts: () => ComponentInput[],
   system: System.System<
     never,
-    Frame | Three.Scene | Time | World | Assets.Store | Scope.Scope
+    Frame | Three.Scene | Time | World | Assets.Store
   >,
   // What else the frame runs, for a variant that needs it.
   also: readonly System.System<never, Assets.Store>[] = []

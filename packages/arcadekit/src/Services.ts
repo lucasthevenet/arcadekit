@@ -2,7 +2,7 @@
  * The services every system and script can access with `yield*`.
  */
 import { Context } from "effect";
-import type { Effect, Fiber, Scope } from "effect";
+import type { Effect, Fiber } from "effect";
 
 import type { Actions } from "./Action";
 import type { Rng } from "./ecs/random";
@@ -116,10 +116,8 @@ export class Script extends Context.Service<
      * when the tick flushes its scheduler, after the systems.
      *
      * The app supervises it like a script started with `app.spawnScript`: a
-     * failure is reported, and it is interrupted when the scope it was started
-     * in closes. That is its plugin's, which closes when the plugin stops, for
-     * a script started by a plugin's code, and otherwise the app's. A fiber
-     * started with `Effect.forkDetach` isn't supervised.
+     * failure is reported, and it is interrupted when the app's scope closes. A
+     * fiber started with `Effect.forkDetach` isn't supervised.
      */
     readonly spawn: <A, E, R>(
       effect: Effect.Effect<A, E, R>
@@ -202,14 +200,11 @@ export class Random extends Context.Service<Random, Rng>()(
 ) {}
 
 /**
- * The services the app provides itself. Among them is `Scope.Scope`: for a
- * plugin's systems, handlers, setup and scripts, the plugin's scope, which
- * closes when it stops; for the app's own, the app's.
+ * The services the app provides itself.
  *
  * @category Type-level
  */
 export type BuiltIn =
-  | Scope.Scope
   | World
   | Time
   | Frame

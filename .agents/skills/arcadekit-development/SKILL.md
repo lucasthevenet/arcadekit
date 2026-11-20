@@ -23,7 +23,7 @@ When this guide and Effect's own guidance disagree, this guide wins inside the s
    - `src/ecs/` or a loop that runs once per entity: [storage-core.md](storage-core.md);
    - the types of an export: [types.md](types.md);
    - a new rule, or a correction that could be a check: [checks.md](checks.md);
-   - a complex feature that an engine has solved before: [design.md](design.md);
+   - a new export, a new option, or a complex feature that an engine has solved before: [design.md](design.md);
    - an Effect API remembered from Effect 3: [effect-3.md](effect-3.md).
 4. Read what the code will not stop in the area the change is in, and no other area: the open issues labelled `silent-failure` that the roadmap, issue [#173](https://github.com/lucasthevenet/arcadekit/issues/173), lists under the order systems run in, ticks, frames and real time, several peers, what a save and the hash do not hold, values that are not checked, or who lets go of what.
 5. Look up each Effect API the change uses, where [effects.md](effects.md) says to, and read nearby source and tests for what this guide does not say.

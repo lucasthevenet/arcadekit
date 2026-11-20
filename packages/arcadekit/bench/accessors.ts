@@ -25,7 +25,6 @@ import {
   Event,
   Field,
   Input,
-  Plugin,
   Query,
   Singleton,
   Sound,
@@ -557,27 +556,6 @@ const variants: Record<string, Variant> = {
               })
             );
             const app = yield* App.make({ systems });
-            return measure(() => app.tick(DT), 50_000, 20_000);
-          })
-        )
-      ),
-  },
-  idlePlugin: {
-    // The same ten systems in a plugin, each run with the plugin's scope.
-    label: "app.tick: the same, in a plugin",
-    run: () =>
-      Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const systems = Array.from({ length: 10 }, (_, i) =>
-              System.make(`Idle${i}`, function* () {
-                yield* Moving;
-                yield* Time;
-              })
-            );
-            const app = yield* App.make({
-              plugins: [Plugin.make("bench/Idle", { systems })],
-            });
             return measure(() => app.tick(DT), 50_000, 20_000);
           })
         )

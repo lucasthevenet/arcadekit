@@ -62,7 +62,6 @@ import * as System from "arcadekit/System";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
 import { Context, Effect, Layer } from "effect";
-import type { Scope } from "effect";
 import {
   BufferGeometry,
   DynamicDrawUsage,
@@ -83,7 +82,7 @@ import type {
 
 // --- the scene -------------------------------------------------------------------
 
-/** What a system of this module has created, released with its scope. */
+/** What a system of this module has created, released with the app. */
 interface Kept {
   readonly dispose: () => void;
   /**
@@ -99,9 +98,9 @@ type Owned = BufferGeometry | Material;
 
 /**
  * The geometries and materials one system draws with. One that several
- * systems draw with is disposed of when the last of them lets go: when its
- * plugin stops, or the app closes. Three.js uploads a disposed one again if
- * it is drawn again.
+ * systems draw with is disposed of when the last of them lets go: when the
+ * bundle it was made from is released, or the app closes. Three.js uploads a
+ * disposed one again if it is drawn again.
  */
 class Holdings {
   private readonly mine = new Set<Owned>();
@@ -170,18 +169,6 @@ class Holdings {
   }
 }
 
-/** Lets go of what a system keeps when its scope closes: its plugin stops, or the app closes. */
-const keptUntilClosed = (
-  kept: SceneShape,
-  name: string
-): Effect.Effect<void, never, Scope.Scope> =>
-  Effect.addFinalizer(() =>
-    Effect.sync(() => {
-      kept._kept.get(name)?.dispose();
-      kept._kept.delete(name);
-    })
-  );
-
 /**
  * The scene and its camera, as a system gets them from `yield* Three.Scene`.
  *
@@ -243,8 +230,8 @@ const sceneLayer = Layer.effect(
         _owned: new Map(),
       };
     }),
-    // What the systems made goes with the app, if their scopes have not
-    // let go of it already.
+    // What the systems made goes with the app, and the geometries and
+    // materials they drew with once no system holds them.
     (kept) =>
       Effect.sync(() => {
         for (const one of kept._kept.values()) {
@@ -1143,8 +1130,7 @@ export interface InstancesFromOptions<
    */
   readonly look: (assets: Assets.Loaded<B>) => L;
   /**
-   * Called when the assets are released, its plugin stops or the app's scope
-   * closes, after the mesh is removed from the scene: to dispose of anything
+   * Called when the assets are released, or the app's scope closes, after the mesh is removed from the scene: to dispose of anything
    * `look` created besides the geometry and the material, which are disposed
    * of for you. Releasing the assets themselves is the bundle's job.
    */
@@ -1801,7 +1787,7 @@ interface Sourced extends Kept {
  * What a system of this module requires from an app, and what one that draws
  * from a bundle requires in addition.
  */
-type Needs = Frame | Scene | Time | World | Scope.Scope;
+type Needs = Frame | Scene | Time | World;
 
 /**
  * Makes a frame-stage system that draws every entity of a kind as one instance
@@ -1829,9 +1815,9 @@ type Needs = Frame | Scene | Time | World | Scope.Scope;
  *   when added without a value, means no rotation.
  * - Entities are drawn where the last tick left them, unless `smooth` is set.
  * - The mesh is created on the first frame, named after the system, and added
- *   to the scene. It is removed and disposed of when its plugin stops or the
- *   app's scope closes, and so are the geometry and the material, once no
- *   other system draws with them. Share them between systems freely.
+ *   to the scene. It is removed and disposed of when the app's scope closes,
+ *   and so are the geometry and the material, once no other system draws with
+ *   them. Share them between systems freely.
  * - It requires `Three.plugin`, and its name must be unique among the app's
  *   systems.
  *
@@ -1872,8 +1858,8 @@ type Needs = Frame | Scene | Time | World | Scope.Scope;
  *   `Assets.during` or your own system manages, and not before or after: no
  *   mesh is in the scene then.
  * - `look` is called once each time the bundle loads. What it returned is
- *   disposed of, and `free` called with it, when the bundle is released, the
- *   plugin stops or the app's scope closes. A mesh built from a reloaded bundle
+ *   disposed of, and `free` called with it, when the bundle is released or the
+ *   app's scope closes. A mesh built from a reloaded bundle
  *   starts with the capacity the previous one had grown to.
  * - It also requires `Assets.plugin`, as the system's type reflects.
  *
@@ -1994,7 +1980,6 @@ export function instances(
           new Holdings(kept._owned)
         );
         kept._kept.set(name, drawn);
-        yield* keptUntilClosed(kept, name);
       }
     } else {
       let sourced = kept._kept.get(name) as FromAssets<Sourced> | undefined;
@@ -2030,7 +2015,6 @@ export function instances(
           }
         );
         kept._kept.set(name, sourced);
-        yield* keptUntilClosed(kept, name);
       }
       drawn = sourced.now()?.instances;
       // Its assets are not there: nothing of it is in the scene.
@@ -2062,12 +2046,12 @@ export function instances(
  */
 export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
   /**
-   * Called when the entity stops matching, its plugin stops or the app's scope
-   * closes, after the object is removed from the scene: to dispose of what
-   * `make` created for this object alone, such as its own material, as soon as
-   * it goes. The geometries and materials of every object are disposed of when
-   * the plugin stops or the app's scope closes, once no other system draws
-   * with them.
+   * Called when the entity stops matching, or the app's scope closes, after
+   * the object is removed from the scene: to dispose of what `make` created for
+   * this object alone, such as its own material, as soon as it goes. The
+   * geometries and materials of every object are disposed of when the bundle
+   * they were made from is released or the app's scope closes, once no other
+   * system draws with them.
    */
   readonly free?: (object: O, entity: Entity) => void;
 }
@@ -2411,9 +2395,9 @@ class Objects<O extends Object3D> implements Kept {
  *   position, tilt and depth scale are left as `make` set them, which is how
  *   you layer one kind in front of another.
  * - An entity that reuses a despawned entity's slot gets its own object.
- * - When its plugin stops, or the app's scope closes, every object is removed
- *   and freed, and the geometries and materials the objects were made with are
- *   disposed of, once no other system draws with them.
+ * - When the app's scope closes, or the bundle is released, every object is
+ *   removed and freed, and the geometries and materials the objects were made
+ *   with are disposed of, once no other system draws with them.
  * - Nothing is kept in the world. A game loaded from a save, or an app that
  *   starts with entities, has its objects created on the first frame.
  * - With `smooth: true`, an object is interpolated between its entity's last
@@ -2509,7 +2493,6 @@ export function objects<O extends Object3D>(
           new Holdings(kept._owned)
         );
         kept._kept.set(name, held);
-        yield* keptUntilClosed(kept, name);
       }
     } else {
       let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
@@ -2521,7 +2504,6 @@ export function objects<O extends Object3D>(
           (assets) => new Objects(scene, options, assets, new Holdings(_owned))
         );
         kept._kept.set(name, sourced);
-        yield* keptUntilClosed(kept, name);
       }
       held = sourced.now();
       // Its assets are not there: there is nothing to make an object of.

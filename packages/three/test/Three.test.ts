@@ -3017,7 +3017,7 @@ describe("Three.layerRenderer", () => {
   });
 });
 
-describe("what a plugin draws with", () => {
+describe("the geometries and materials a system draws with", () => {
   const disposals = (
     ...things: readonly {
       addEventListener: (type: "dispose", listener: () => void) => void;
@@ -3030,11 +3030,11 @@ describe("what a plugin draws with", () => {
     return seen;
   };
 
-  it("leaves the scene when the plugin stops, and is disposed of once no system draws with it", () => {
+  it("is disposed of once, when the last system that draws with it lets go", () => {
     const shared = new BoxGeometry(1, 1, 1);
     const own = new MeshBasicMaterial();
     const other = new MeshBasicMaterial();
-    const Boulders = Plugin.make("th/Boulders", {
+    const Rocks = Plugin.make("th/Rocks", {
       plugins: [Three.plugin],
       systems: [
         Three.instances("th/Boulders", {
@@ -3042,11 +3042,6 @@ describe("what a plugin draws with", () => {
           geometry: shared,
           material: own,
         }),
-      ],
-    });
-    const Pebbles = Plugin.make("th/Pebbles", {
-      plugins: [Three.plugin],
-      systems: [
         Three.instances("th/Pebbles", {
           of: Rock,
           geometry: shared,
@@ -3055,30 +3050,11 @@ describe("what a plugin draws with", () => {
       ],
     });
     const renderer = makeRenderer();
-    const { app, close } = start(
-      App.make({ plugins: [Boulders, Pebbles] }),
-      renderer
-    );
+    const { app, close } = start(App.make({ plugins: [Rocks] }), renderer);
     app.world.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
     app.frame(0);
     const seen = disposals(shared, own, other);
-    app.stop(Boulders);
-    app.tick(1);
-    // The geometry is drawn by the other plugin still.
-    expect(seen).toEqual([1]);
-    app.frame(0);
-    expect(renderer.scene?.children.map((child) => child.name)).toEqual([
-      "th/Pebbles",
-    ]);
-    app.start(Boulders);
-    app.tick(1);
-    app.frame(0);
-    expect(
-      renderer.scene?.children.map((child) => child.name).toSorted()
-    ).toEqual(["th/Boulders", "th/Pebbles"]);
-    seen.length = 0;
     close();
-    // Each once, when the last system that draws with it lets go.
     expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);
   });
 
@@ -3109,7 +3085,7 @@ describe("what a plugin draws with", () => {
       ],
     });
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Ships] }), renderer);
+    const { app, close } = start(App.make({ plugins: [Ships] }), renderer);
     const first = app.world.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
     app.world.spawn(Ship, Position.of({ x: 1, y: 0, z: 0 }));
     app.frame(0);
@@ -3117,8 +3093,7 @@ describe("what a plugin draws with", () => {
     app.world.despawn(first);
     app.frame(0);
     expect(seen).toEqual([1]);
-    app.stop(Ships);
-    app.tick(1);
+    close();
     expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);
   });
 });
