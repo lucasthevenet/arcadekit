@@ -248,8 +248,8 @@ export interface Any {
     from?: string
   ) => Exit.Exit<unknown, unknown>;
   /**
-   * Like `enqueue`, for actions that arrive as data. Problems become
-   * `Action.Rejected` events.
+   * Like `enqueue`, for actions that arrive as data, and logged as `enqueue`
+   * is, by where it is called. Problems become `Action.Rejected` events.
    *
    * `from` names the issuer, for code that brings actions in on someone else's
    * behalf, such as a server for its clients: the handler receives it, and the
@@ -265,9 +265,8 @@ export interface Any {
    * Everything that entered the game from outside, in arrival order,
    * interleaved with checkpoints of the world's hash: every dispatched action
    * that was accepted, and every action enqueued through the app, whatever its
-   * outcome. Actions a system, a script or a handler issued with
-   * `Actions.enqueue` aren't here, because a replay's own simulation issues
-   * them again. It is enough to replay the game, and to verify the replay.
+   * outcome. Actions a system, a script, a handler or a plugin's setup
+   * enqueued aren't here, because a replay's own simulation issues them again. It is enough to replay the game, and to verify the replay.
    */
   readonly actionLog: readonly Action.LogEntry[];
   /**
@@ -492,19 +491,20 @@ export interface App<E = never, R = never, HU = never> extends Any {
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
   /**
-   * Queues an action for the start of the next tick, and logs it. Use it for
-   * real-time input. A refusal when it is applied becomes an `Action.Rejected`
-   * event, and is marked on the action's log entry.
+   * Queues an action for the start of the next tick. A refusal when it is
+   * applied becomes an `Action.Rejected` event. It is the same as
+   * `Actions.enqueue`, and works from anywhere.
+   *
+   * Where it is called decides whether it is logged. From outside the
+   * simulation, between ticks, the action is input: it is logged, a refusal is
+   * marked on its log entry, and on an app a session has taken over it goes to
+   * every peer, where one without a schema throws. From a system, a handler, a
+   * script, or a plugin's setup, it is the simulation's own move: it isn't
+   * logged, since a replay's own simulation makes it again.
    *
    * Fails with `Action.InvalidPayload`, and queues nothing, when the action's
-   * schema does not take the payload: it could not be logged or sent to the
-   * other peers.
-   *
-   * For code outside the simulation. A system, a script or a handler issues an
-   * action with `Actions.enqueue`, which doesn't log it: if logged, it would be
-   * applied twice on replay, once from the log and once by the replay's own
-   * simulation. On an app a session has taken over, the action goes to every
-   * peer, and one without a schema throws.
+   * schema does not take the payload of input: it could not be logged or sent
+   * to the other peers.
    */
   readonly enqueue: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
@@ -1209,7 +1209,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Events, events),
-      Context.add(Action.Actions, { enqueue: enqueueFromInside, handles }),
+      Context.add(Action.Actions, {
+        enqueue: (action, payload) => issue(action, payload),
+        handles,
+      }),
       Context.add(Random, random),
       // Effect's own Random draws from the same generator, so `Random.next`
       // from "effect", or anything built on it, is seeded and replayed too.
@@ -1483,14 +1486,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Action.Actions, {
-        enqueue: (action, payload) => {
-          const queuedExit = enqueue(action, payload);
-          if (Exit.isFailure(queuedExit)) {
-            throw new Error(
-              `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${describe(Cause.squash(queuedExit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
-            );
-          }
-        },
+        enqueue: (action, payload) => issue(action, payload),
         handles,
       }),
       Context.add(Script, {
@@ -1608,6 +1604,17 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     );
 
     let ticking = false;
+    // How deep the app is in running the game's own code between ticks: a
+    // plugin's setup, or a script up to its first wait.
+    let ownCode = 0;
+    const runOwn = <A>(run: () => A): A => {
+      ownCode++;
+      try {
+        return run();
+      } finally {
+        ownCode--;
+      }
+    };
     // The stage that is running between two ticks, if one is.
     let between: "frame" | "input" | undefined;
     // Whether the input stage has run since the last tick.
@@ -1635,6 +1642,54 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       commands.rollback(commandMark);
       events.rollback(eventMark);
       queued.length = queuedMark;
+    };
+
+    /**
+     * Whether the code running now is the simulation's: a tick, an action's
+     * handler, a plugin's setup, or a script up to its first wait. What it
+     * issues isn't logged, since a replay runs it again and issues it again.
+     * Anything else is input from outside.
+     */
+    const simulating = (): boolean =>
+      ticking || applying !== undefined || ownCode > 0;
+    /** Issues an action from anywhere: `app.enqueue` and `Actions.enqueue`. */
+    const enqueueAnywhere = (
+      action: Action.AnyActionDef,
+      payload: unknown
+    ): Exit.Exit<void, Action.InvalidPayload> => {
+      if (simulating()) {
+        enqueueFromInside(action, payload);
+        return Exit.void;
+      }
+      return enqueue(action, payload);
+    };
+    /**
+     * `Actions.enqueue`, whose payload the compiler has checked. Outside the
+     * simulation, that is only the frame and input stages.
+     */
+    const issue = (action: Action.AnyActionDef, payload: unknown): void => {
+      const exit = enqueueAnywhere(action, payload);
+      if (Exit.isFailure(exit)) {
+        throw new Error(
+          `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${describe(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
+        );
+      }
+    };
+    const enqueueByNameAnywhere = (
+      name: string,
+      payload: unknown,
+      from?: string
+    ): void => {
+      if (!simulating()) {
+        enqueueByName(name, payload, from);
+        return;
+      }
+      if (from !== undefined) {
+        throw new Error(
+          `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
+        );
+      }
+      queued.push({ name, payload, encoded: true, entry: undefined, from });
     };
 
     /**
@@ -1751,7 +1806,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       if (ticking) {
         throw new Error(
-          `dispatch("${name}") was called during a tick. Use enqueue from systems and scripts.`
+          `dispatch("${name}") was called during a tick. Use enqueue: it applies the action at the start of the next tick.`
         );
       }
       if (between !== undefined) {
@@ -2229,7 +2284,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       },
       spawnScript(effect) {
-        return effect.pipe(runFork, watch);
+        return runOwn(() => effect.pipe(runFork, watch));
       },
       dispatch(action, payload) {
         assertBetweenTicks(action.name);
@@ -2243,12 +2298,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           never
         >;
       },
-      enqueue,
+      enqueue: enqueueAnywhere,
       dispatchByName(name, payload, from) {
         assertBetweenTicks(name);
         return apply(name, payload, true, true, from);
       },
-      enqueueByName,
+      enqueueByName: enqueueByNameAnywhere,
       divert(take) {
         if (diverted !== undefined) {
           throw new Error(
@@ -2268,7 +2323,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       events.reader = `setup:${plugin.name}`;
       world.reader = events.reader;
-      const fiber = runFork(plugin.setup);
+      const { setup } = plugin;
+      const fiber = runOwn(() => runFork(setup));
       events.reader = undefined;
       world.reader = undefined;
       const exit = fiber.pollUnsafe();
@@ -2289,7 +2345,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // a script runs up to its first wait, and from then on during ticks.
     for (const plugin of plugins) {
       for (const script of plugin.scripts) {
-        listed.add(script.pipe(runFork, watch));
+        listed.add(runOwn(() => script.pipe(runFork, watch)));
       }
     }
     commands.apply();

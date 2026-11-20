@@ -338,16 +338,19 @@ export const Rejected = Event.define<{
 
 /**
  * Lets systems, scripts and handlers issue actions, so AI plays by the same
- * rules as players. The action is applied at the start of the next tick. It
- * isn't logged, since it is the simulation's own doing and a replay does it
- * again. Code outside the simulation uses `app.dispatch` or `app.enqueue`.
+ * rules as players. The action is applied at the start of the next tick.
+ * `enqueue` is `app.enqueue`, for code that has no app at hand.
+ *
+ * Where it is called decides whether it is logged, as for `app.enqueue`. From
+ * a tick, a handler, a plugin's setup or a script, it is the simulation's own
+ * doing and isn't logged, since a replay does it again. From a frame-stage or
+ * input-stage system, which a replay runs neither of, it is input, and is
+ * logged.
  *
  * **Gotchas**
  *
- * A frame-stage or input-stage system is outside the simulation, and a replay
- * runs neither stage, so what it issues here is logged, as `app.enqueue` logs
- * it. A payload its schema does not take throws there, where `app.enqueue`
- * returns the failure.
+ * A payload its schema does not take throws in the frame or input stage, where
+ * `app.enqueue` returns the failure.
  *
  * @category Services
  */

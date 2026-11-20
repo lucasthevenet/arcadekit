@@ -137,9 +137,7 @@ A system, script or handler issues actions through the `Actions` service, so bot
 
 The action is applied at the start of the next tick. The service's `handles(action)` reports whether the game has a handler for an action; `enqueue` throws without one.
 
-Actions the simulation issues itself aren't logged, because a replay's own systems issue them again. That's why a system never calls `app.enqueue`: the action would be logged, and a replay would apply it twice.
-
-The frame and input stages work the other way round. They are outside the simulation and a replay runs neither, so what their systems issue with `Actions.enqueue` is logged, like a key press or a UI button.
+`Actions.enqueue` and `app.enqueue` are the same, and where they are called decides whether the action is logged. From a tick, a handler, a script or a plugin's setup, the action is the simulation's own and isn't logged, because a replay's own systems issue it again. Between ticks, it is input, like a key press or a UI button, and is logged. The frame and input stages count as between ticks: they are outside the simulation, and a replay runs neither.
 
 ## Actions as data
 
