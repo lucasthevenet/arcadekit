@@ -463,6 +463,47 @@ const MovementRaw = System.make("MovementRaw", function* () {
   });
 });
 
+// The same two systems, set up once: the query is acquired in the setup,
+// and the tick reaches it through a handle.
+const MovementSetUp = System.setup("Movement", function* () {
+  const moving = yield* Moving;
+  return Effect.gen(function* () {
+    const { delta } = yield* Time;
+    moving.each((pos, vel) => {
+      pos.x += vel.x * delta;
+      pos.y += vel.y * delta;
+    });
+  });
+});
+
+const MovementRawSetUp = System.setup("MovementRaw", function* () {
+  const moving = yield* Moving;
+  return Effect.gen(function* () {
+    const { delta } = yield* Time;
+    moving.eachChunk((start, end, pos, vel) => {
+      const px = pos.x;
+      const py = pos.y;
+      const vx = vel.x;
+      const vy = vel.y;
+      for (let i = start; i < end; i++) {
+        px[i]! += vx[i]! * delta;
+        py[i]! += vy[i]! * delta;
+      }
+    });
+  });
+});
+
+const ticking = (system: typeof MovementSetUp) =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const app = yield* App.make({ systems: [system] });
+        populate(app.world);
+        return measure(() => app.tick(DT));
+      })
+    )
+  );
+
 const variants: Record<string, Variant> = {
   // The storage core's own, which `bench/core.ts` holds and CI compares.
   ...coreVariants,
@@ -541,6 +582,16 @@ const variants: Record<string, Variant> = {
       ),
   },
 
+  tickSetUp: {
+    label: "app.tick: the same, set up once (System.setup)",
+    run: () => ticking(MovementSetUp),
+  },
+
+  tickRawSetUp: {
+    label: "app.tick: raw columns, set up once (System.setup)",
+    run: () => ticking(MovementRawSetUp),
+  },
+
   idle: {
     // The fixed cost Effect adds: ten systems that each fetch a query and the
     // time, then do nothing. Reported per tick, not per entity.
@@ -574,6 +625,26 @@ const variants: Record<string, Variant> = {
                 yield* Moving;
                 yield* Time;
               }).pipe(System.access({ queries: [Moving] }))
+            );
+            const app = yield* App.make({ systems });
+            return measure(() => app.tick(DT), 50_000, 20_000);
+          })
+        )
+      ),
+  },
+  idleSetUp: {
+    // The same ten systems, each acquiring its query once in a setup: what
+    // they touch is known, and held, with nothing declared.
+    label: "app.tick: the same, each set up once (System.setup)",
+    run: () =>
+      Effect.runSync(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const systems = Array.from({ length: 10 }, (_, i) =>
+              System.setup(`Idle${i}`, function* () {
+                yield* Moving;
+                return Effect.asVoid(Effect.service(Time));
+              })
             );
             const app = yield* App.make({ systems });
             return measure(() => app.tick(DT), 50_000, 20_000);

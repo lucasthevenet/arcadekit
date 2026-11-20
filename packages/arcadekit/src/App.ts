@@ -50,10 +50,11 @@ import * as Action from "./Action";
 import * as Driver from "./Driver";
 import { isSingletonSpec } from "./ecs/component";
 import type { Listed } from "./ecs/component";
+import type { SingletonSpec } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import type { Guard, SavedChanges } from "./ecs/world";
+import type { Guard, QuerySpec, SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
 import type { EventDef, EventGuard, EventsMoment } from "./Event";
 import * as Input from "./Input";
@@ -474,6 +475,112 @@ const ADVICE =
   " A system that says what it reads and writes says all of it: add this to its System.access, or leave the system without one.";
 
 /** Summarizes an error in a few words, for a log entry or a message. */
+/**
+ * Stands for something a system acquired in its setup. It refuses to be used
+ * until the setup is over, and from then on reaches what `current` gives each
+ * time it is used, so that it outlives a restore of the world.
+ */
+const handle = <T extends object>(
+  what: string,
+  current: () => T,
+  ready: { done: boolean }
+): T =>
+  new Proxy({} as T, {
+    get: (_, key) => {
+      if (!ready.done) {
+        throw new Error(
+          `${what} was used in a system's setup. The setup runs once, before the first tick, and only acquires what the system touches: use it in the tick it returns.`
+        );
+      }
+      const target = current();
+      const value: unknown = Reflect.get(target, key);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+    set: (_, key, value) => {
+      if (!ready.done) {
+        throw new Error(
+          `${what} was written in a system's setup. The setup runs once, before the first tick, and only acquires what the system touches: write it in the tick it returns.`
+        );
+      }
+      return Reflect.set(current(), key, value);
+    },
+  });
+
+/**
+ * Runs a system's setup once, and gives back the system with the tick it
+ * returned as its run and what it acquired as its access.
+ */
+const setUp = (
+  system: Plugin.AnySystem,
+  world: EcsWorld,
+  events: EventBus,
+  context: Context.Context<unknown>
+): Effect.Effect<Plugin.AnySystem> => {
+  const setup = system.setup;
+  if (setup === undefined) {
+    return Effect.succeed(system);
+  }
+  const ready = { done: false };
+  const queries: QuerySpec[] = [];
+  const writes: System.Touched[] = [];
+  const who = `System "${system.name}"`;
+  const outside = (key: PropertyKey): never => {
+    throw new Error(
+      `${who} called world.${String(key)} in its setup. The setup runs once, before the first tick, and only acquires what the system touches, with yield*: a query, a singleton or an event.`
+    );
+  };
+  const recordingWorld = new Proxy({} as EcsWorld, {
+    get: (_, key) => {
+      if (key === "view") {
+        return (spec: QuerySpec) => {
+          queries.push(spec);
+          return handle(`A query of ${who}`, () => world.view(spec), ready);
+        };
+      }
+      if (key === "singleton") {
+        return (spec: SingletonSpec) => {
+          writes.push(spec);
+          return handle(
+            `The singleton "${spec.component.name}" of ${who}`,
+            () => world.singleton(spec),
+            ready
+          );
+        };
+      }
+      return outside(key);
+    },
+  });
+  const recordingEvents = new Proxy({} as EventBus, {
+    get: (_, key) => {
+      if (key === "handle") {
+        return (def: EventDef<unknown>) => {
+          writes.push(def);
+          return handle(
+            `The event "${def.name}" of ${who}`,
+            () => events.handle(def),
+            ready
+          );
+        };
+      }
+      return outside(key);
+    },
+  });
+  const recording = context.pipe(
+    Context.add(World, recordingWorld),
+    Context.add(Events, recordingEvents)
+  );
+  return Effect.map(
+    Effect.orDie(Effect.provideContext(setup, recording)),
+    (tick) => {
+      ready.done = true;
+      return System.access(
+        { ...system, run: tick, setup: undefined } as Plugin.AnySystem,
+        { queries, writes }
+      );
+    }
+  );
+};
+
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
 
@@ -1187,6 +1294,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     ) as Context.Context<unknown>;
     const runFork = Effect.runForkWith(context);
     reportContext = context;
+
+    // A system made with System.setup acquires what it touches once, here,
+    // and that is its access from the first tick on.
+    for (let at = 0; at < allSystems.length; at++) {
+      allSystems[at] = yield* setUp(allSystems[at]!, world, events, context);
+    }
 
     // A hook runs when its state is entered or left, not with the rest.
     System.unique(allSystems);
