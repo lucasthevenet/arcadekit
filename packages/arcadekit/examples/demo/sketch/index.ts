@@ -24,7 +24,7 @@ const Draw = System.make("Draw", function* () {
   });
   sketch.frames++;
   sketch.highest = highest;
-}).pipe(System.inStage("frame"), System.access({ queries: [Drawn] }));
+}).pipe(System.inStage("frame"));
 
 export const plugin = Plugin.make("Sketch", {
   plugins: [Physics.plugin],

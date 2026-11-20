@@ -7,8 +7,7 @@ The repository already works this way, and a new rule joins these:
 - `tooling/lint/entries.ts` says what each entry may import, and the Oxlint rule `arcadekit/entry-imports` holds it in the sources, file by file, and so in the build, which writes each source file to its own file;
 - the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, and `arcadekit/no-code-from-text`;
 - `test/Policy.test.ts` plays a game where making code from text is forbidden;
-- the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts`, `test/Access.test.ts` and `test/Frame.test.ts`, which every new way to write joins;
-- the world's guard, which refuses what a system did not say with `System.access`;
+- the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts` and `test/Frame.test.ts`, which every new way to write joins;
 - a frozen world, which refuses a change from the frame and input stages;
 - `Lockstep.Drifted`, which stops peers whose worlds have come apart;
 - `bench:compare`, which fails on a storage core that got slower;

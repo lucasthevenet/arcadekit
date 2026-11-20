@@ -100,14 +100,9 @@ export class State<V extends string>
   }
 
   asEffect(): Effect.Effect<StateHandle<V>, never, World> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) => {
-      // The handle is kept, so it is here that a system which said what it
-      // reads is held to it: the world refuses a singleton it did not say.
-      if (world.guard !== undefined) {
-        world.singleton(this);
-      }
-      return handleOf(world, this);
-    }));
+    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
+      handleOf(world, this)
+    ));
   }
 }
 
@@ -278,12 +273,7 @@ export const is = <V extends string>(
   state: State<V>,
   ...values: readonly [NoInfer<V>, ...NoInfer<V>[]]
 ): Effect.Effect<boolean, never, World> =>
-  // What it reads is known, so a system that says what it reads and writes
-  // need not say it of its condition.
-  System.reading(
-    Effect.map(state, (handle) => handle.is(...values)),
-    [state]
-  );
+  Effect.map(state, (handle) => handle.is(...values));
 
 /**
  * Turns a system into an enter hook: it runs once when the game enters a state,
