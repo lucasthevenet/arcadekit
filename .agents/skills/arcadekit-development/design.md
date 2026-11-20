@@ -9,7 +9,7 @@ An API costs a game's author what they must learn to use it right, not the numbe
 - **No new way to fail for code that did not change.** A feature that gives existing calls a new error costs every game, not only those that use it.
 - **Built when something needs it.** A feature with only an imagined use waits until a game, an example or another feature needs it. That use shows which of its rules are worth having.
 
-When the list is long beside what the feature gives, cut the feature back, or show the owner the design and its list before building it. No check can weigh this, so the pull request lists the rules a reviewer weighs. Stopping a plugin at run time was cut from #217 this way: a state covered its uses, and it came with five rules.
+When the list is long beside what the feature gives, cut the feature back, or show the owner the design and its list before building it. No check can weigh this, so the pull request lists the rules a reviewer weighs.
 
 ## Learning from other engines
 
