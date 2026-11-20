@@ -318,6 +318,7 @@ const snapshot = (app: App.Any) => {
     sparks,
     dice,
     log: app.actionLog,
+    recording: app.record(),
     generator: Array.from(app.world.random.state),
   };
 };
@@ -383,11 +384,13 @@ describe("the Random service", () => {
         (app) => {
           app.world.spawn(Die.of({ face: 1, rolls: 0 }));
           // Through text and back, as a save file would be.
-          const loaded = Action.decodeLog(Action.encodeLog(recorded.log));
+          const loaded = App.decodeRecording(
+            App.encodeRecording(recorded.recording)
+          );
           if (Exit.isFailure(loaded)) {
             throw new Error("the log did not survive being written down");
           }
-          App.replay(app, loaded.value, { delta: 1 / 60, ticks: 150 });
+          App.replay(app, loaded.value);
           return snapshot(app);
         }
       );

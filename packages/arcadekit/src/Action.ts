@@ -35,7 +35,6 @@
  * reproduces the game, and stops at the first checkpoint that doesn't match.
  */
 import { Context, Data, Effect, Schema } from "effect";
-import type { Exit } from "effect";
 
 import * as Event from "./Event";
 
@@ -268,49 +267,6 @@ export type LogEntry = Logged | Checkpoint;
  */
 export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
   "hash" in entry;
-
-const Tick = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-
-const LogSchema = Schema.fromJsonString(
-  Schema.Array(
-    Schema.Union([
-      Schema.Struct({
-        tick: Tick,
-        name: Schema.String,
-        payload: Schema.Unknown,
-        from: Schema.optionalKey(Schema.String),
-        queued: Schema.optionalKey(Schema.Literal(true)),
-        refused: Schema.optionalKey(Schema.String),
-      }),
-      Schema.Struct({
-        tick: Tick,
-        hash: Schema.Int.check(
-          Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
-        ),
-      }),
-    ])
-  )
-);
-
-/**
- * Encodes an action log as text, for a save file or the network.
- *
- * @category Codecs
- */
-export const encodeLog = (log: readonly LogEntry[]): string =>
-  JSON.stringify(log);
-
-/**
- * Decodes an action log from text. It checks the log's own structure; each
- * payload is validated against its action's schema, and each checkpoint against
- * the world, when the log is replayed.
- *
- * @category Codecs
- */
-export const decodeLog = (
-  text: string
-): Exit.Exit<readonly LogEntry[], Schema.SchemaError> =>
-  Schema.decodeExit(LogSchema)(text);
 
 /**
  * Emitted when a queued action is refused. A directly dispatched action returns

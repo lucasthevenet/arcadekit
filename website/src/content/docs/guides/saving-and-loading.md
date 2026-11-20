@@ -53,14 +53,15 @@ These aren't saved: `Field.transient` fields, which are `undefined` after a load
 
 ## Saves and the action log
 
-A save records the log's length at the time, `save.logLength`. A game that keeps its last save and the actions logged since can return to the present by loading the save and replaying only that tail, which costs the same however long the game has been running:
+A save records the log's length at the time, `save.logLength`. A game that keeps its last save and what it recorded since can return to the present by loading the save and replaying only that tail, which costs the same however long the game has been running:
 
 ```ts sketch
+const tail = game.record(save); // from the save's tick to now
 const app = yield * App.load(save, { plugins: [Rules] });
-App.replay(app, log.slice(save.logLength), { delta: 1 / 60, ticks });
+App.replay(app, tail);
 ```
 
-`ticks` is the number of ticks the game ran after the save: its current tick minus `save.tick`. The loaded app's own log starts empty.
+`app.record(save)` takes a save the app made itself, and throws for one whose tick its log doesn't reach. The loaded app's own log starts empty.
 
 The [replay](replays.md) verifies itself against the tail's checkpoints, so a save that didn't restore the game faithfully is caught at the next checkpoint.
 

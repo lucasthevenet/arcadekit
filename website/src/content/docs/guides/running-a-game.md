@@ -114,7 +114,7 @@ Browser.runMain(
 - `app.settled` reports whether anything is pending: an action to apply, a state to enter, a tick some system asked for, a fiber that is due, or an event some system hasn't read.
 - A newly created or loaded app isn't settled. It runs one tick, in which every system can request more, plus the following one, before it rests.
 - The frame stage runs every frame, including at rest, with a `Frame.alpha` of 1, so interpolated rendering draws the game where it is.
-- Resting isn't part of the game. The log holds the actions and their ticks, and a replay given the number of ticks the game ran, `app.time.tick`, runs them back to back and ends on the same hash.
+- Resting isn't part of the game. A recording holds the actions, their ticks and the tick the game had reached, and a replay runs them back to back and ends on the same hash.
 - A frame of a game at rest costs about 5 µs with device input, a state and a view: reading the devices, checking the app, and the frame stage.
 
 Some pending work is invisible to the app, so you declare it:

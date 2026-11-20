@@ -587,7 +587,7 @@ describe("a singleton in an app", () => {
           plugins: [Rules],
           checkpointEvery: 1,
         });
-        App.replay(again, app.actionLog, { delta: 1, ticks: 12 });
+        App.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

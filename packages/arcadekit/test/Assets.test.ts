@@ -628,7 +628,7 @@ describe("a level's assets", () => {
             plugins: [bare.Game],
             checkpointEvery: 1,
           }).pipe(Effect.provideService(Assets.Loader, counting));
-          App.replay(again, seen.actionLog, { delta: 1, ticks: 3 });
+          App.replay(again, seen.record());
           expect(again.world.hash()).toBe(seen.world.hash());
           expect(asked).toBe(0);
         })
@@ -796,7 +796,7 @@ describe("a level's assets", () => {
       systems: [Assets.during(State.is(Level, "forest"), Forest), Begin],
     });
     const slow = makeSlowLoader();
-    const { hash, log, ticks } = await Effect.runPromise(
+    const { hash, recording } = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const app = yield* App.make({ plugins: [Shown], checkpointEvery: 1 });
@@ -830,8 +830,7 @@ describe("a level's assets", () => {
           ]);
           return {
             hash: app.world.hash(),
-            log: app.actionLog,
-            ticks: app.time.tick,
+            recording: app.record(),
           };
         })
       ).pipe(Effect.provideService(Assets.Loader, slow.loader))
@@ -844,7 +843,7 @@ describe("a level's assets", () => {
             plugins: [Rules],
             checkpointEvery: 1,
           });
-          App.replay(again, log, { delta: 0.1, ticks });
+          App.replay(again, recording);
           expect(again.world.hash()).toBe(hash);
           expect(again.world.view(Query.all(Wall)).count()).toBe(4);
         })

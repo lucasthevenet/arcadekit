@@ -628,7 +628,7 @@ describe("relations in an app", () => {
         expect(app.world.entityCount).toBe(5);
 
         const { app: again } = yield* orchard;
-        App.replay(again, app.actionLog, { delta: 1, ticks: 3 });
+        App.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

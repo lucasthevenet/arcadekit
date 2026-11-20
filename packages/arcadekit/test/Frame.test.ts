@@ -616,7 +616,7 @@ describe("the frame stage", () => {
         ]);
         // The replay has no button and draws no frame.
         const headless = yield* make([Roll]);
-        App.replay(headless, app.actionLog, { delta: 1, ticks: 5 });
+        App.replay(headless, app.record());
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.
         let own: App.Any | undefined;

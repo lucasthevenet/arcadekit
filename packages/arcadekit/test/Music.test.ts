@@ -285,7 +285,7 @@ describe("Sound.music", () => {
     // And a replay, which runs no frame, is silent.
     const replayed = Sound.makeRecorder();
     const other = play([Score], replayed);
-    App.replay(other.app, heard.app.actionLog, { delta: 0.1, ticks: 1 });
+    App.replay(other.app, heard.app.record());
     expect(other.app.world.hash()).toBe(heard.app.world.hash());
     expect(replayed.scored).toEqual([]);
   });

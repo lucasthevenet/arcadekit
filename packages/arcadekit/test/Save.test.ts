@@ -209,7 +209,7 @@ const record = (ticks: number, saveAt: number) =>
     return {
       save: save!,
       hashes,
-      log: [...app.actionLog],
+      tail: app.record(save!),
       tally: app.world
         .view(Tallies)
         .entities()
@@ -234,10 +234,7 @@ describe("a saved game", () => {
         // The log starts again, and what the game logged after the save is
         // replayed against the checkpoints it took after every tick.
         expect(app.actionLog).toEqual([]);
-        App.replay(app, recorded.log.slice(save.logLength), {
-          delta: 1 / 60,
-          ticks: 90 - saveAt,
-        });
+        App.replay(app, recorded.tail);
         return {
           hash: app.world.hash(),
           tally: app.world
@@ -384,10 +381,7 @@ describe("a saved game", () => {
       const recorded = record(ticks, saveAt);
       ticksRun = 0;
       withApp(App.load(recorded.save, options), (app) => {
-        App.replay(app, recorded.log.slice(recorded.save.logLength), {
-          delta: 1 / 60,
-          ticks: ticks - saveAt,
-        });
+        App.replay(app, recorded.tail);
         expect(app.world.hash()).toBe(recorded.hashes.at(-1));
       });
       return ticksRun;
@@ -405,10 +399,7 @@ describe("a saved game", () => {
     // It is the world's snapshot and a little text.
     expect(bytes.length).toBeLessThan(recorded.save.world.length + 600);
     withApp(App.load(decoded, options), (app) => {
-      App.replay(app, recorded.log.slice(decoded.logLength), {
-        delta: 1 / 60,
-        ticks: 20,
-      });
+      App.replay(app, recorded.tail);
       expect(app.world.hash()).toBe(recorded.hashes.at(-1));
     });
     // A view into a larger buffer reads as itself.

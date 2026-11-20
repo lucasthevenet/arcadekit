@@ -826,7 +826,7 @@ describe("a state in a save", () => {
 
         // And the whole game replays, hooks and conditions with it.
         const again = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
-        App.replay(again, app.actionLog, { delta: 1, ticks: 4 });
+        App.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

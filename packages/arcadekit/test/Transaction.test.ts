@@ -816,7 +816,7 @@ describe("an action that is refused", () => {
   });
 
   it("replays when the refused action had read events, as if it had not", () => {
-    const { hash, log } = withApp(game(), ({ app, entities }) => {
+    const { hash, recording } = withApp(game(), ({ app, entities }) => {
       const target = entities[0]!;
       app.tick(1);
       app.dispatch(Act, { target, steps: ["read"], refuse: true });
@@ -826,10 +826,10 @@ describe("an action that is refused", () => {
       app.enqueue(Act, { target, steps: ["read"], refuse: true });
       app.enqueue(Act, { target, steps: ["read"], refuse: false });
       app.tick(1);
-      return { log: [...app.actionLog], hash: app.world.hash() };
+      return { recording: app.record(), hash: app.world.hash() };
     });
     const replayed = withApp(game(), ({ app }) => {
-      App.replay(app, log, { delta: 1, ticks: 3 });
+      App.replay(app, recording);
       return app.world.hash();
     });
     expect(replayed).toBe(hash);
@@ -970,7 +970,7 @@ describe("a game full of refused actions", () => {
           app.tick(1 / 60);
         }
         return {
-          log: [...app.actionLog],
+          recording: app.record(),
           refusedCount,
           hash: app.world.hash(),
         };
@@ -978,7 +978,7 @@ describe("a game full of refused actions", () => {
       expect(recorded.refusedCount).toBeGreaterThan(20);
 
       const replayed = withApp(game(), ({ app }) => {
-        App.replay(app, recorded.log, { delta: 1 / 60, ticks: 60 });
+        App.replay(app, recorded.recording);
         return app.world.hash();
       });
       expect(replayed).toBe(recorded.hash);
