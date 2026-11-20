@@ -361,26 +361,6 @@ export const otherwise: {
 );
 
 /**
- * The system as an app made with `trace` runs it: one span, named after the
- * system, around its condition and whichever of its run or idle follows.
- * @internal
- */
-export const traced = <E, R>(self: System<E, R>): System<E, R> =>
-  build({
-    ...self,
-    run: Effect.withSpan(
-      self.condition === undefined
-        ? self.run
-        : Effect.flatMap(self.condition, (holds) =>
-            holds ? self.run : (self.idle ?? Effect.void)
-          ),
-      self.name
-    ) as Effect.Effect<void, E, R>,
-    condition: undefined,
-    idle: undefined,
-  });
-
-/**
  * A system's name is its place in events and in what changed, so two
  * systems cannot share one.
  * @internal

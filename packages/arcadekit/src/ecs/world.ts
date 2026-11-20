@@ -2517,6 +2517,60 @@ export class World {
   }
 
   /**
+   * Copies what the world holds, as plain objects: every live entity, in
+   * order of index, with each of its components by name, and every singleton
+   * the world holds, by name. It reads every component of every entity, so it
+   * is for tooling, and not for a system.
+   */
+  contents(): {
+    readonly entities: readonly {
+      readonly id: Entity;
+      readonly components: Readonly<Record<string, object>>;
+    }[];
+    readonly singletons: Readonly<Record<string, object>>;
+  } {
+    const sparse = [...this.sparseById.values()].toSorted((a, b) =>
+      byName(a.def, b.def)
+    );
+    const entities: { id: Entity; components: Record<string, object> }[] = [];
+    for (let index = 0; index < this.nextIndex; index++) {
+      const id = makeEntity(index, this.gens[index]!);
+      if (!this.isAlive(id)) {
+        continue;
+      }
+      const components: Record<string, object> = {};
+      const tableIndex = this.recTable[index]!;
+      if (tableIndex !== NOT_PLACED) {
+        const table = this.tables[tableIndex]!;
+        for (const def of table.defsByName) {
+          components[def.name] = readRow(
+            def,
+            table.columns[def.id]!,
+            this.recRow[index]!
+          );
+        }
+      }
+      for (const set of sparse) {
+        if (set.has(index)) {
+          components[set.def.name] = readRow(
+            set.def,
+            set.columns,
+            set.sparse[index]!
+          );
+        }
+      }
+      entities.push({ id, components });
+    }
+    const singletons: Record<string, object> = {};
+    for (const single of this.singles
+      .filter((found) => found !== undefined)
+      .toSorted((a, b) => byName(a.def, b.def))) {
+      singletons[single.def.name] = readRow(single.def, single.columns, 0);
+    }
+    return { entities, singletons };
+  }
+
+  /**
    * Writes some or all fields of a component the entity already has. A
    * relation's `target` can't be written this way, and throws: add the relation
    * again.

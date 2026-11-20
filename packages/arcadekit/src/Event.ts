@@ -246,6 +246,10 @@ class Channel<P> implements ChannelState {
   frameSeen = 0;
   inputSeen = 0;
   tickStart = 0;
+  /** Sequence number of the first event emitted since the last tick ended. */
+  since = 0;
+  /** The events emitted from the end of the tick before the last to the end of the last. */
+  last: readonly P[] = [];
   readonly readers: Map<string, Handle<P>> = new Map();
   readonly waiters: Set<() => boolean> = new Set();
 
@@ -545,6 +549,7 @@ export class EventBus {
     }
     for (const [channel, events, payloads] of decoded) {
       channel.buffer.push(...payloads);
+      channel.since = channel.end;
       // Whoever had read some of them goes on from where it was.
       for (const [reader, count] of Object.entries(events.read)) {
         channel.readers.set(
@@ -589,6 +594,21 @@ export class EventBus {
   /** Returns the number of events of a type currently kept. For tests and tooling. */
   pending<P>(def: EventDef<P>): number {
     return this.channel(def).size;
+  }
+
+  /**
+   * The events emitted in the last tick, and between it and the one before,
+   * by event name, in the order they were emitted: copies, for `app.inspect`.
+   * @internal
+   */
+  lastTick(): Record<string, readonly unknown[]> {
+    const out: Record<string, readonly unknown[]> = {};
+    for (const channel of this.order) {
+      if (channel.last.length > 0) {
+        out[channel.def.name] = channel.last;
+      }
+    }
+    return out;
   }
 
   /**
@@ -638,6 +658,12 @@ export class EventBus {
       this.inputs = false;
     }
     for (const channel of this.order) {
+      // Copied before they are dropped, for `app.inspect`.
+      channel.last =
+        channel.end > channel.since
+          ? channel.buffer.slice(Math.max(0, channel.since - channel.offset))
+          : [];
+      channel.since = channel.end;
       if (channel.tickStart > channel.tickOffset) {
         channel.tickOffset = channel.tickStart;
       }
@@ -744,12 +770,14 @@ export class EventBus {
     );
     for (const channel of this.order) {
       const was = captured.get(channel);
+      channel.last = [];
       if (was === undefined) {
         channel.buffer = [];
         channel.tickOffset = channel.offset;
         channel.frameSeen = channel.offset;
         channel.inputSeen = channel.offset;
         channel.tickStart = channel.offset;
+        channel.since = channel.offset;
         channel.readers.clear();
         continue;
       }
@@ -759,6 +787,7 @@ export class EventBus {
       channel.frameSeen = was.frameSeen;
       channel.inputSeen = was.inputSeen;
       channel.tickStart = was.tickStart;
+      channel.since = channel.end;
       for (const [reader, handle] of channel.readers) {
         const at = was.cursors.get(reader);
         if (at === undefined) {

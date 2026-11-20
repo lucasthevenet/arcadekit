@@ -1,9 +1,51 @@
 ---
 title: "Debugging"
-description: "See what a game does as it runs. Learn how to trace every tick, frame and system of an app, and send the spans to any OpenTelemetry collector."
+description: "See what a game does as it runs. Learn how to inspect an app's entities, systems and events, and trace every tick, frame and system to any OpenTelemetry collector."
 ---
 
-**Tracing** records what a game does as it runs, as spans: one for each tick and each frame, with a span inside for each system and each action. A tracing tool shows them on a timeline, so you can see which system ran when, how long it took, and which one failed. This guide covers turning tracing on for an app and sending its spans somewhere you can read them.
+You can look at what a game does in two ways. **Inspecting** an app copies what it holds now and what it did in its last tick: its entities and their components, its systems and how long each took, and the events of the last tick. **Tracing** records what it does as it runs, as spans that a tracing tool shows on a timeline. This guide covers both.
+
+## Inspecting an app
+
+`app.inspect()` returns what the game holds and what it did last, as plain data. In a page, keep the app where the browser's console can reach it:
+
+```ts
+import { App, Plugin } from "arcadekit";
+import * as Browser from "arcadekit/Browser";
+import { Effect } from "effect";
+
+const Game = Plugin.make("game/Game", {});
+
+Browser.runMain(
+  App.run(
+    { plugins: [Game] },
+    {
+      hz: 60,
+      ready: (app) =>
+        Effect.sync(() => {
+          Object.assign(globalThis, { app });
+        }),
+    }
+  ),
+  { target: document.querySelector("canvas")! }
+);
+```
+
+Then type `app.inspect()` in the console, or `console.table(app.inspect().systems)` for the systems. A game's own UI can show the same data, and a test can check it.
+
+| Field | What it holds |
+| --- | --- |
+| `tick` | The number of ticks run |
+| `entities` | Every live entity in order of id, as `{ id, components }`, with each component's fields by component name |
+| `singletons` | Each singleton the world holds, by name |
+| `systems` | Every system, as `{ name, stage, ran, ms }`: the tick's in the order they run, then the hooks, the input stage's and the frame stages'. `ran` is whether its last turn ran it, and `ms` how long that turn took |
+| `events` | The events emitted in the last tick, by event name, each in the order it was emitted |
+
+- Every value is a copy. Writing to one changes nothing in the game.
+- `ran` is false for a system whose `System.runIf` condition didn't hold, and for one that hasn't had a turn yet, such as a hook whose state was never entered.
+- `ms` includes the system's condition and applying its commands. It is measured on every turn, whether or not you inspect.
+- `events` holds what the last tick's actions, hooks and systems emitted, including an `Action.Rejected` for each refusal, and what was emitted since the tick before it ended. An event a refused handler emitted is not there: a refusal takes it back.
+- `inspect` copies the whole world, so call it when you look rather than every frame. It throws if called from inside a tick or a frame.
 
 ## Tracing an app
 
