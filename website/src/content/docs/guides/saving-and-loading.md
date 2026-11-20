@@ -44,7 +44,7 @@ To return to an earlier moment of the same app within the same run, `app.capture
 ## Requirements for saving
 
 - **List every component.** A world identifies components by name, so every component, singleton and state a save contains must be in some plugin's `components`. Loading a save with an unlisted one fails and names it.
-- **Keep script progress in the world.** A save can't capture a running script. A plugin's `scripts` restart from the beginning after a load, so a script resumes from what it finds in the world. A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't restarted: whoever loads the game starts it.
+- **Keep script progress in the world.** A save can't capture a running script. A plugin's `scripts` restart from the beginning after a load, so a script resumes from what it finds in the world. While a script started with `app.spawnScript` or `Script.spawn` runs, `app.save()` fails: save once it has ended.
 - **Give pending actions and events a schema.** A queued action or unread event is saved in its JSON form, so one defined without a schema can't be saved. A game that emits such an event every tick can't be saved.
 - **List every event a save may hold.** An event waiting to be read is decoded with its schema as the save is loaded, so it must be in some plugin's `events`, or the app's. Saving while an unlisted one is waiting fails, and so does loading a save that holds one, with `"unknown event"`.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.

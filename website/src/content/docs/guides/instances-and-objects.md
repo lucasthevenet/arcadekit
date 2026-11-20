@@ -40,7 +40,7 @@ const Rocks = Three.instances("game/Rocks", {
 - Entities are drawn where the last tick left them or, with `smooth: true`, [interpolated between their last two positions](between-two-ticks.md).
 - A geometry and material passed this way exist when the system is created. A level's are [built from its assets](textures-and-models.md) while its bundle is loaded.
 
-When the app's scope closes, the mesh is removed from the scene and disposed. The geometry and material are yours: share them between kinds, and dispose of them yourself. Nothing here disposes of them, or warns when you forget.
+When the app's scope closes, the mesh is removed from the scene and disposed. So are its geometry and material, once no other system draws with them: share them between kinds freely.
 
 ## Per-instance colour
 
@@ -101,7 +101,7 @@ const Ships = Three.objects("game/Ships", {
 - None of this is stored in the world. A game loaded from a save, or an app that starts with entities, creates its objects on the first frame.
 - It finds new and removed entities by visiting every entity of the kind each frame, which it does anyway to place them. It watches no component for changes, so it adds nothing to the cost of a tick.
 
-What `make` creates is yours to dispose of, through `free`. Nothing here disposes of it, or warns when you forget.
+The geometries and materials of what `make` creates are disposed of when the app's scope closes, or the bundle they were made from is released, once no other system draws with them. Use `free` to dispose of what one entity's object alone uses as soon as the entity goes, such as a material made for it, and of anything else `make` created, such as a texture.
 
 Objects built from a level's assets, such as a model, name the bundle they come `from`: see [textures and models](textures-and-models.md).
 

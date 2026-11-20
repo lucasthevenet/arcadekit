@@ -26,10 +26,6 @@ const Trees = Three.instances("game/Trees", {
     geometry: new CylinderGeometry(1, 1, 8),
     material: new MeshStandardMaterial({ map: bark }),
   }),
-  free: ({ geometry, material }) => {
-    geometry.dispose();
-    material.dispose();
-  },
 });
 
 const Look = Plugin.make("game/Look", {
@@ -41,7 +37,7 @@ const Look = Plugin.make("game/Look", {
 
 - The entities are drawn while the app has the bundle loaded, and at no other time: before it loads, while it is loading, and after it fails, none of their meshes are in the scene. Keeping it loaded is another system's job, usually `Assets.during`.
 - `look` is called once each time the bundle loads, with its assets under their names and with their types, and returns the geometry and material. Everything else works as for any instances: `color`, `smooth`, `capacity`, and `prepare`, which receives each mesh created.
-- When the bundle is released, the mesh is removed from the scene and disposed, then `free` receives everything `look` returned, including anything beyond the geometry and material, so you can dispose of what you created. The assets themselves are released by the bundle. The same happens when the app's scope closes.
+- When the bundle is released, the mesh is removed from the scene and disposed, with the geometry and material once no other system draws with them. Then `free`, if given, receives everything `look` returned, so you can dispose of anything else you created. The assets themselves are released by the bundle. The same happens when the app's scope closes.
 - When the level is entered again, the bundle loads again and the look is rebuilt from the new assets. The new mesh starts with the capacity the previous one had grown to.
 - It requires `Assets.plugin`, as the system's type shows: without it, the app requires the asset store from outside, and a program that doesn't provide one doesn't compile. A kind whose look exists from the start has no such requirement.
 - Nothing of the kind is drawn while its bundle is loading.

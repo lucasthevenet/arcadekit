@@ -257,11 +257,13 @@ export interface Any {
    * Saves the game as it is, to load later with `App.load`: the world, the
    * time, the actions queued for the next tick, the events waiting to be read,
    * what change queries haven't visited yet, and the length of the log. It
-   * holds no scripts. Only between ticks.
+   * holds no scripts: a plugin's scripts start again after a load. Only between
+   * ticks.
    *
    * Fails with `SaveRefused`, which names what is in the way: a queued action
    * or a waiting event without a schema, a field holding a value that can't be
-   * saved, or commands queued but not applied.
+   * saved, commands queued but not applied, or a script started with
+   * `spawnScript` or `Script.spawn` that hasn't ended.
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
@@ -276,7 +278,9 @@ export interface Any {
    * resimulating it: `Rollback` captures before each uncertain tick.
    *
    * Fails with `SaveRefused` when the world can't be snapshotted: a field holds
-   * a value that can't be saved, or commands are queued but not applied.
+   * a value that can't be saved, or commands are queued but not applied. It
+   * also fails while a script is running, a plugin's included: a moment can't
+   * hold where a script is, and a rewind would lose its place.
    */
   readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
   /**
@@ -285,10 +289,9 @@ export interface Any {
    * its length at that time. Only between ticks, and only with a moment of this
    * app.
    *
-   * A moment holds what a save holds, and no more. Every script the app
-   * supervises is interrupted, and each plugin's scripts restart from the
-   * beginning, as after a load, so a script keeps whatever it must not lose in
-   * the world. State held by your game's own services is left as is. A
+   * A moment holds what a save holds, and no more. No script was running when
+   * it was captured, so every script running now is interrupted, and none
+   * starts again. State held by your game's own services is left as is. A
    * `transient` field is undefined afterwards. And what runs between ticks
    * starts over: frame-stage and input-stage change queries visit everything
    * again.
@@ -597,8 +600,6 @@ export const make = <
  *
  * **Gotchas**
  *
- * - A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't
- *   restarted: whoever loads the game starts it.
  * - State held by your game's own services isn't in the save, and a `transient`
  *   field is undefined afterwards.
  *
@@ -754,6 +755,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     // Scripts the app watches: started with `app.spawnScript` or `Script.spawn`.
     const scripts = new Set<Fiber.Fiber<unknown, unknown>>();
+    // A plugin's own scripts, which start again when a save is loaded.
+    const listed = new WeakSet<Fiber.Fiber<unknown, unknown>>();
     const stopOnFailure = options.onScriptFailure === "stop";
     let stopped: ScriptFailed | undefined;
     // Reports are logged with the app's context once it is built, so they
@@ -1772,6 +1775,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: save after one.`
           );
         }
+        for (const fiber of scripts) {
+          if (!listed.has(fiber)) {
+            return refused(
+              "A script started with app.spawnScript or Script.spawn is running, and a save can't hold where it is: after a load it would not run. Save once it has ended, or make it one of a plugin's scripts, which start again after a load and keep what they must not lose in the world."
+            );
+          }
+        }
         const waiting: { name: string; payload: unknown; from?: string }[] = [];
         for (const { encoded, from, name, payload } of queued) {
           const issuer = from === undefined ? {} : { from };
@@ -1852,6 +1862,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
           );
         }
+        if (scripts.size > 0) {
+          return refused(
+            `${scripts.size === 1 ? "A script is" : `${scripts.size} scripts are`} running, and a moment can't hold where a script is: a rewind would lose its place. Keep that place in the world, with systems and a state or a singleton, or play the game without predicting ticks, which never rewinds.`
+          );
+        }
         let bytes: Uint8Array;
         try {
           bytes = world.snapshot();
@@ -1923,12 +1938,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         wanted = was.wanted;
         heard = false;
         stopped = undefined;
-        // As after a load: each plugin's scripts, from their beginning.
-        for (const plugin of plugins) {
-          for (const script of plugin.scripts) {
-            script.pipe(runFork, watch);
-          }
-        }
+        // No script was running when the moment was captured, and none
+        // starts again.
         commands.apply();
       },
       checkpoint() {
@@ -2021,7 +2032,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // a script runs up to its first wait, and from then on during ticks.
     for (const plugin of plugins) {
       for (const script of plugin.scripts) {
-        script.pipe(runFork, watch);
+        listed.add(script.pipe(runFork, watch));
       }
     }
     commands.apply();

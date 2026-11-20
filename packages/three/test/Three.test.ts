@@ -23,6 +23,7 @@ import {
   Group,
   InstancedMesh,
   Matrix4,
+  Mesh,
   MeshBasicMaterial,
   Object3D,
   OrthographicCamera,
@@ -771,7 +772,7 @@ describe("Three.instances", () => {
     }
   );
 
-  it("takes its mesh out of the scene and disposes of it when the app's scope closes, and leaves the geometry and the material alone", () => {
+  it("takes its mesh out of the scene and disposes of it, with its geometry and material, when the app's scope closes", () => {
     const renderer = makeRenderer();
     const { app, close } = start(App.make({ plugins: [Look] }), renderer);
     app.world.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
@@ -782,7 +783,7 @@ describe("Three.instances", () => {
     geometry.addEventListener("dispose", () => disposed.push("geometry"));
     material.addEventListener("dispose", () => disposed.push("material"));
     close();
-    expect(disposed).toEqual(["mesh"]);
+    expect(disposed).toEqual(["mesh", "geometry", "material"]);
     expect(mesh.parent).toBeNull();
     expect(renderer.scene?.children).toEqual([]);
   });
@@ -3013,5 +3014,86 @@ describe("Three.layerRenderer", () => {
     close();
     expect(standIn.asked.at(-1)).toBe("dispose");
     expect(standIn.asked.filter((one) => one === "dispose").length).toBe(1);
+  });
+});
+
+describe("the geometries and materials a system draws with", () => {
+  const disposals = (
+    ...things: readonly {
+      addEventListener: (type: "dispose", listener: () => void) => void;
+    }[]
+  ) => {
+    const seen: number[] = [];
+    things.forEach((thing, i) =>
+      thing.addEventListener("dispose", () => seen.push(i))
+    );
+    return seen;
+  };
+
+  it("is disposed of once, when the last system that draws with it lets go", () => {
+    const shared = new BoxGeometry(1, 1, 1);
+    const own = new MeshBasicMaterial();
+    const other = new MeshBasicMaterial();
+    const Rocks = Plugin.make("th/Rocks", {
+      plugins: [Three.plugin],
+      systems: [
+        Three.instances("th/Boulders", {
+          of: Rock,
+          geometry: shared,
+          material: own,
+        }),
+        Three.instances("th/Pebbles", {
+          of: Rock,
+          geometry: shared,
+          material: other,
+        }),
+      ],
+    });
+    const renderer = makeRenderer();
+    const { app, close } = start(App.make({ plugins: [Rocks] }), renderer);
+    app.world.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
+    app.frame(0);
+    const seen = disposals(shared, own, other);
+    close();
+    expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);
+  });
+
+  it("is, for Three.objects, whatever make built, unless free disposed of it already", () => {
+    const hull = new BoxGeometry(1, 1, 1);
+    const paints: MeshBasicMaterial[] = [];
+    const Ships = Plugin.make("th/Fleet", {
+      plugins: [Three.plugin],
+      systems: [
+        Three.objects("th/Fleet", {
+          of: Ship,
+          make: () => {
+            const paint = new MeshBasicMaterial();
+            paints.push(paint);
+            const group = new Group();
+            group.add(new Mesh(hull, paint));
+            return group;
+          },
+          // Each ship's own paint goes with it; the hull is shared.
+          free: (group) => {
+            for (const part of group.children) {
+              if (part instanceof Mesh) {
+                (part.material as MeshBasicMaterial).dispose();
+              }
+            }
+          },
+        }),
+      ],
+    });
+    const renderer = makeRenderer();
+    const { app, close } = start(App.make({ plugins: [Ships] }), renderer);
+    const first = app.world.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
+    app.world.spawn(Ship, Position.of({ x: 1, y: 0, z: 0 }));
+    app.frame(0);
+    const seen = disposals(hull, ...paints);
+    app.world.despawn(first);
+    app.frame(0);
+    expect(seen).toEqual([1]);
+    close();
+    expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);
   });
 });

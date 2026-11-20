@@ -720,6 +720,33 @@ describe("a plugin's scripts", () => {
     });
   });
 
+  it("are the only scripts running when a game is saved: one started by hand refuses the save until it ends", () => {
+    const Forever = Effect.gen(function* () {
+      const script = yield* Script;
+      for (;;) {
+        yield* script.nextTick;
+      }
+    });
+    const Brief = Effect.gen(function* () {
+      yield* (yield* Script).nextTick;
+    });
+    const Listed = Plugin.make("sv/Listed", { scripts: [Forever] });
+    withApp(App.make({ plugins: [Listed] }), (app) => {
+      expect(Exit.isSuccess(app.save())).toBe(true);
+      app.spawnScript(Brief);
+      expect(app.save()).toEqual(
+        Exit.fail(
+          new Save.SaveRefused({
+            message:
+              "A script started with app.spawnScript or Script.spawn is running, and a save can't hold where it is: after a load it would not run. Save once it has ended, or make it one of a plugin's scripts, which start again after a load and keep what they must not lose in the world.",
+          })
+        )
+      );
+      app.tick(1);
+      expect(Exit.isSuccess(app.save())).toBe(true);
+    });
+  });
+
   it("are watched like any other: a failure is logged, and the scope's end interrupts them", () => {
     const logged: string[] = [];
     const logger = Logger.make<unknown, void>((entry) => {
