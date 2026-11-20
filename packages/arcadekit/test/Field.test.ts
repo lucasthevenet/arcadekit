@@ -186,7 +186,7 @@ describe("a field that is not a number", () => {
     const handle = world.get(entities[0]!, Card)!.handle;
     world.begin();
     world.set(entities[0]!, Card, { handle: { id: 7 } });
-    world.view(Query.all(Card)).each((row) => {
+    world.view(Query.all(Card).pipe(Query.writes(Card))).each((row) => {
       row.handle = undefined;
       row.data = "gone";
     });

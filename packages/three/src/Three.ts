@@ -414,13 +414,12 @@ export const Render = System.make("arcadekit/three/Render", function* () {
  * The app then needs a `Three.Renderer` from outside:
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  *
- * It depends on `Transform3d.plugin` and `Transform2d.plugin`, which register
- * the transform components. This package defines no components of its own.
+ * It draws from the transform components of `Transform3d` and `Transform2d`.
+ * This package defines no components of its own.
  *
  * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/three", {
-  plugins: [Transform3d.plugin, Transform2d.plugin],
   layer: sceneLayer,
   systems: [Render],
 });
@@ -1058,8 +1057,9 @@ export interface Look {
 export interface InstancesShared extends Which {
   /**
    * A game component that gives each instance its own colour: its `r`, `g` and
-   * `b`, from 0 to 1, which multiply the material's own colour. An entity is
-   * then only drawn while it has that component too.
+   * `b`, from 0 to 1, which multiply the material's own colour. An entity
+   * without it is drawn in the material's own colour, as if its colour were
+   * white.
    *
    *   const Paint = Component.define("game/Paint", { r: Field.f32, g: Field.f32, b: Field.f32 })
    *   Three.instances("game/Rocks", { of: Rock, geometry, material, color: Paint })
@@ -1180,6 +1180,11 @@ class Instances implements Kept {
    * kind with a colour, each followed by the colours of its rows.
    */
   readonly loops: Record<Loop, Columns>;
+  /**
+   * For a kind with a colour, the eight loops for the entities that have none:
+   * each followed by white for its rows.
+   */
+  readonly plain: Record<Loop, Columns>;
 
   constructor(
     scene: ThreeScene,
@@ -1199,18 +1204,30 @@ class Instances implements Kept {
       options.color !== undefined && isWhole(options.color.schema.r.kind)
         ? 1 / 255
         : 1;
+    const uncoloured: Record<Loop, Columns> = {
+      placed: this.placed,
+      sized: this.sized,
+      turned: this.turned,
+      whole: this.whole,
+      placedFlat: this.placedFlat,
+      sizedFlat: this.sizedFlat,
+      turnedFlat: this.turnedFlat,
+      wholeFlat: this.wholeFlat,
+    };
     if (options.color === undefined) {
-      this.loops = {
-        placed: this.placed,
-        sized: this.sized,
-        turned: this.turned,
-        whole: this.whole,
-        placedFlat: this.placedFlat,
-        sizedFlat: this.sizedFlat,
-        turnedFlat: this.turnedFlat,
-        wholeFlat: this.wholeFlat,
-      };
+      this.loops = uncoloured;
+      this.plain = uncoloured;
     } else {
+      this.plain = {
+        placed: this.whitened(this.placed),
+        sized: this.whitened(this.sized),
+        turned: this.whitened(this.turned),
+        whole: this.whitened(this.whole),
+        placedFlat: this.whitened(this.placedFlat),
+        sizedFlat: this.whitened(this.sizedFlat),
+        turnedFlat: this.whitened(this.turnedFlat),
+        wholeFlat: this.whitened(this.wholeFlat),
+      };
       this.colors = new Float32Array(this.capacity * 3);
       this.loops = {
         placed: this.painted1(this.placed),
@@ -1309,6 +1326,16 @@ class Instances implements Kept {
       const from = this.count;
       loop(start, end, a, b, c, entities);
       this.paint(from, start, end, color, entities);
+    };
+  }
+
+  /** A loop of a kind with a colour, for entities that have none: white. */
+  private whitened(loop: Columns): Columns {
+    return (...columns: unknown[]): void => {
+      const from = this.count;
+      loop(...columns);
+      // Read after the loop, which may have made more room.
+      this.colors!.fill(1, from * 3, this.count * 3);
     };
   }
 
@@ -1916,55 +1943,78 @@ export function instances(
   ): Query.Query<readonly ComponentDef[]> =>
     Query.all(...own, ...(color === undefined ? [] : [color])).pipe(
       Query.with(...marked),
-      Query.without(...excluded, ...absent),
-      Query.reads()
+      Query.without(...excluded, ...absent)
     );
+  // With a colour, the same kinds once more for the entities without one,
+  // which are drawn white: a colour on some changes how those look, and
+  // hides nothing.
+  const plain = (
+    own: readonly ComponentDef[],
+    absent: readonly ComponentDef[]
+  ): Query.Query<readonly ComponentDef[]> | undefined =>
+    color === undefined
+      ? undefined
+      : Query.all(...own).pipe(
+          Query.with(...marked),
+          Query.without(...excluded, ...absent, color)
+        );
   // An entity's table has a rotation or it does not, and a scale or not:
-  // four queries, each handed exactly the columns its entities have.
-  const Placed = kind(
-    [Transform3d.Position],
-    [Transform3d.Rotation, Transform3d.Scale]
-  );
-  const Sized = kind(
-    [Transform3d.Position, Transform3d.Scale],
-    [Transform3d.Rotation]
-  );
-  const Turned = kind(
-    [Transform3d.Position, Transform3d.Rotation],
-    [Transform3d.Scale]
-  );
-  const Whole = kind(
-    [Transform3d.Position, Transform3d.Rotation, Transform3d.Scale],
-    []
-  );
-  // And the same four for a flat game's components, but for the entities
-  // that are placed in three dimensions as well, which are drawn above.
-  const PlacedFlat = kind(
-    [Transform2d.Position],
-    [Transform3d.Position, Transform2d.Rotation, Transform2d.Scale]
-  );
-  const SizedFlat = kind(
-    [Transform2d.Position, Transform2d.Scale],
-    [Transform3d.Position, Transform2d.Rotation]
-  );
-  const TurnedFlat = kind(
-    [Transform2d.Position, Transform2d.Rotation],
-    [Transform3d.Position, Transform2d.Scale]
-  );
-  const WholeFlat = kind(
-    [Transform2d.Position, Transform2d.Rotation, Transform2d.Scale],
-    [Transform3d.Position]
-  );
+  // four queries, each handed exactly the columns its entities have. And
+  // the same four for a flat game's components, but for the entities that
+  // are placed in three dimensions as well, which are drawn above.
+  const shapes: readonly (readonly [
+    Loop,
+    readonly ComponentDef[],
+    readonly ComponentDef[],
+  ])[] = [
+    [
+      "placed",
+      [Transform3d.Position],
+      [Transform3d.Rotation, Transform3d.Scale],
+    ],
+    [
+      "sized",
+      [Transform3d.Position, Transform3d.Scale],
+      [Transform3d.Rotation],
+    ],
+    [
+      "turned",
+      [Transform3d.Position, Transform3d.Rotation],
+      [Transform3d.Scale],
+    ],
+    [
+      "whole",
+      [Transform3d.Position, Transform3d.Rotation, Transform3d.Scale],
+      [],
+    ],
+    [
+      "placedFlat",
+      [Transform2d.Position],
+      [Transform3d.Position, Transform2d.Rotation, Transform2d.Scale],
+    ],
+    [
+      "sizedFlat",
+      [Transform2d.Position, Transform2d.Scale],
+      [Transform3d.Position, Transform2d.Rotation],
+    ],
+    [
+      "turnedFlat",
+      [Transform2d.Position, Transform2d.Rotation],
+      [Transform3d.Position, Transform2d.Scale],
+    ],
+    [
+      "wholeFlat",
+      [Transform2d.Position, Transform2d.Rotation, Transform2d.Scale],
+      [Transform3d.Position],
+    ],
+  ];
+  const kinds = shapes.map(([loop, own, absent]) => ({
+    loop,
+    query: kind(own, absent),
+    plain: plain(own, absent),
+  }));
   return System.make(name, function* () {
     const kept = yield* Scene;
-    const placed = yield* Placed;
-    const sized = yield* Sized;
-    const turned = yield* Turned;
-    const whole = yield* Whole;
-    const placedFlat = yield* PlacedFlat;
-    const sizedFlat = yield* SizedFlat;
-    const turnedFlat = yield* TurnedFlat;
-    const wholeFlat = yield* WholeFlat;
     // Which tick the game is at and how far towards the next the frame is:
     // asked only by a system that draws between the two.
     const tick = smooth ? (yield* Time).tick : 0;
@@ -2024,15 +2074,13 @@ export function instances(
     }
     // Plain loops from here on: one pass over the columns of each kind.
     drawn.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
-    const { loops } = drawn;
-    placed.eachChunk(loops.placed);
-    sized.eachChunk(loops.sized);
-    turned.eachChunk(loops.turned);
-    whole.eachChunk(loops.whole);
-    placedFlat.eachChunk(loops.placedFlat);
-    sizedFlat.eachChunk(loops.sizedFlat);
-    turnedFlat.eachChunk(loops.turnedFlat);
-    wholeFlat.eachChunk(loops.wholeFlat);
+    const { loops, plain: white } = drawn;
+    for (const each of kinds) {
+      (yield* each.query).eachChunk(loops[each.loop]);
+      if (each.plain !== undefined) {
+        (yield* each.plain).eachChunk(white[each.loop]);
+      }
+    }
     drawn.finish();
   }).pipe(System.inStage("frame"));
 }
@@ -2442,35 +2490,29 @@ export function objects<O extends Object3D>(
   const excluded = options.without ?? [];
   const Placed = Query.all(Transform3d.Position).pipe(
     Query.with(...marked),
-    Query.without(...excluded),
-    Query.reads()
+    Query.without(...excluded)
   );
   const Turned = Query.all(Transform3d.Rotation).pipe(
     Query.with(Transform3d.Position, ...marked),
-    Query.without(...excluded),
-    Query.reads()
+    Query.without(...excluded)
   );
   const Sized = Query.all(Transform3d.Scale).pipe(
     Query.with(Transform3d.Position, ...marked),
-    Query.without(...excluded),
-    Query.reads()
+    Query.without(...excluded)
   );
   // A flat game's, but for the entities placed in three dimensions too.
   const flat = [...excluded, Transform3d.Position];
   const PlacedFlat = Query.all(Transform2d.Position).pipe(
     Query.with(...marked),
-    Query.without(...flat),
-    Query.reads()
+    Query.without(...flat)
   );
   const TurnedFlat = Query.all(Transform2d.Rotation).pipe(
     Query.with(Transform2d.Position, ...marked),
-    Query.without(...flat),
-    Query.reads()
+    Query.without(...flat)
   );
   const SizedFlat = Query.all(Transform2d.Scale).pipe(
     Query.with(Transform2d.Position, ...marked),
-    Query.without(...flat),
-    Query.reads()
+    Query.without(...flat)
   );
   return System.make(name, function* () {
     const kept = yield* Scene;

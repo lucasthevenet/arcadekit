@@ -10,9 +10,8 @@
  *
  * A save is taken between two ticks. It holds the world, the game time, the
  * actions queued for the next tick, the events waiting to be read, and what
- * change queries haven't visited yet. It doesn't hold scripts: the scripts a
- * plugin lists restart when the app is loaded, and scripts started by hand
- * don't.
+ * change queries haven't visited yet. Everything a game is in the middle of is
+ * in the world, so the save holds all of it.
  *
  * Everything logged after a save is the game's tail. A game that keeps its last
  * save and the log since can return to the present by loading the save and
@@ -86,8 +85,8 @@ export interface Save {
 
 /**
  * The game can't be saved in its current state. The message names what is in
- * the way: a queued action or a waiting event without a schema, a field holding
- * a value that can't be saved, or a command still queued.
+ * the way: a queued action or a waiting event whose payload its schema doesn't
+ * take, a field holding a value that can't be saved, or a command still queued.
  *
  * @category Errors
  */
@@ -104,7 +103,8 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  * - `"no migration"`: an earlier version wrote it, and the game has no
  *   migration from that version;
  * - `"migration failed"`: a migration threw;
- * - `"unknown event"`: an event waiting to be read is listed by no plugin;
+ * - `"unknown event"`: an event waiting to be read is one this program
+ *   doesn't define;
  * - `"event changed"`: an event waiting to be read is in a form its schema no
  *   longer takes.
  *

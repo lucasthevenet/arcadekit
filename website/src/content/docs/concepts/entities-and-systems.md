@@ -25,7 +25,7 @@ const Velocity = Component.define("game/Velocity", {
   y: Field.f32,
 });
 
-const Moving = Query.all(Position, Velocity);
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.make("game/Movement", function* () {
   const { delta } = yield* Time;
@@ -35,6 +35,8 @@ const Movement = System.make("game/Movement", function* () {
   });
 });
 ```
+
+A query only reads its components, unless it names the ones it writes with `Query.writes`: here `Moving` writes `Position` and reads `Velocity`, and the compiler refuses an assignment to `velocity.x`. See [queries](../guides/queries.md#what-a-query-writes).
 
 ## How the world stores data
 
@@ -93,7 +95,7 @@ The world throws if anything spawns, despawns, adds or removes a component while
 import { Commands, Component, Field, Query, System, Time } from "arcadekit";
 
 const Lifetime = Component.define("game/Lifetime", { seconds: Field.f32 });
-const Mortal = Query.all(Lifetime);
+const Mortal = Query.all(Lifetime).pipe(Query.writes(Lifetime));
 
 const Expiry = System.make("game/Expiry", function* () {
   const commands = yield* Commands;
@@ -111,7 +113,7 @@ Writing a field in place is always fine. Only changes to the shape of the world 
 
 ## Plugins
 
-Each feature is a **plugin**: its systems, its components, the actions it handles, the services it provides, and its startup logic. A plugin lists the plugins it depends on, and a game is a plugin made of plugins. See [plugins](../guides/plugins.md).
+Each feature is a **plugin**: its systems, the actions it handles, the services it provides, and its startup logic. A plugin lists the plugins it depends on, and a game is a plugin made of plugins. See [plugins](../guides/plugins.md).
 
 ## Naming
 

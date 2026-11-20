@@ -65,7 +65,6 @@ export {
   Events,
   Frame,
   Random,
-  Script,
   Ticks,
   Time,
   World,

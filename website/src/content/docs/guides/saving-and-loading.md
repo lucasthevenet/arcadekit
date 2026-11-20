@@ -12,7 +12,7 @@ import { App, Component, Field, Plugin, Save } from "arcadekit";
 import { Effect, Exit } from "effect";
 
 const Position = Component.define("game/Position", { x: Field.f32 });
-const Rules = Plugin.make("game/Rules", { components: [Position] });
+const Rules = Plugin.make("game/Rules", {});
 
 const program = Effect.gen(function* () {
   const app = yield* App.make({ plugins: [Rules] });
@@ -43,13 +43,11 @@ To return to an earlier moment of the same app within the same run, `app.capture
 
 ## Requirements for saving
 
-- **List every component.** A world identifies components by name, so every component, singleton and state a save contains must be in some plugin's `components`. Loading a save with an unlisted one fails and names it.
-- **Keep script progress in the world.** A save can't capture a running script. A plugin's `scripts` restart from the beginning after a load, so a script resumes from what it finds in the world. While a script started with `app.spawnScript` or `Script.spawn` runs, `app.save()` fails: save once it has ended.
-- **Give pending actions and events a schema.** A queued action or unread event is saved in its JSON form, so one defined without a schema can't be saved. A game that emits such an event every tick can't be saved.
-- **List every event a save may hold.** An event waiting to be read is decoded with its schema as the save is loaded, so it must be in some plugin's `events`, or the app's. Saving while an unlisted one is waiting fails, and so does loading a save that holds one, with `"unknown event"`.
+- **Give each component one name.** A save names every component, singleton, state and event it holds, and a load finds each by the definition your program has under that name. Nothing lists them. A save that holds a name your program no longer defines fails to load and names it, with `"unknown component"` or `"unknown event"`: rename or remove it in a migration.
+- **Keep what the game is in the middle of in the world.** Work that takes [many ticks](systems.md#work-that-takes-many-ticks), such as a countdown or a wave of enemies, keeps its place in a component, a singleton or a state, so a save holds it.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.
 
-When one of the last three requirements isn't met, or a field holds a value that can't be saved, `app.save()` fails with `Save.SaveRefused`, whose message names the problem.
+When the last requirement isn't met, or a field holds a value that can't be saved, `app.save()` fails with `Save.SaveRefused`, whose message names the problem.
 
 These aren't saved: `Field.transient` fields, which are `undefined` after a load, and any state held by your game's own services.
 
@@ -115,7 +113,8 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 | `"newer version"` | Was written by a later version of the game |
 | `"no migration"` | Is older, and there is no migration from its version, or from a version on the way |
 | `"migration failed"` | Is older, and a migration threw: the message says which, and what it threw |
-| `"unknown component"` | Contains a component no plugin lists |
+| `"unknown component"` | Contains a component this program doesn't define, or no longer by that name |
+| `"unknown event"` | Holds an event waiting to be read that this program doesn't define |
 | `"component changed"` | Has a component whose fields differ from the game's: the message lists both. After migrations, they didn't bring the save fully up to date |
 
 ## Snapshots
@@ -133,14 +132,14 @@ world.spawn(Position.of({ x: 1, y: 2 }));
 const bytes = world.snapshot(); // a Uint8Array
 
 const copy = new EcsWorld();
-copy.load(bytes, [Position]); // the components it may contain
+copy.load(bytes);
 copy.hash() === world.hash(); // true
 ```
 
 `world.snapshot()` serializes the whole world to bytes: every table and sparse set, the singletons that have been written, the upcoming entity ids, and the random generator's state. A world that loads the bytes hashes the same and continues the same way: the same iteration order, the same ids for new entities, the same random numbers. Saves are built on snapshots.
 
 - **Its size is close to the data's.** A numeric column is written as its raw bytes, so an entity with two `f32` fields takes 20 bytes: 8 for the id, 8 for the floats and 4 for the generation. With four float fields, taking a snapshot costs 7 ns per entity and loading it 21 ns.
-- **Components are stored by name**, with their field names and types, so a snapshot doesn't depend on the order a program defines its components in. An empty world knows no components, so `load` takes the ones the snapshot may contain.
+- **Components are stored by name**, with their field names and types, so a snapshot doesn't depend on the order a program defines its components in. `load` finds each one by its name among the components the program defines, and refuses a snapshot that holds one it doesn't.
 - **Non-numeric fields are saved as [their type specifies](components.md#field-types).** In a `json` field, strings, numbers, booleans, bigints, `null` and `undefined` round-trip exactly, `-0` and `NaN` included, while arrays and objects go through JSON text. A `schema` or `ref` field is saved in its encoded form, and a `transient` field not at all.
 - **`load` fills an empty world**: one that has never held an entity or written a singleton.
 - **`world.restore(bytes)` replaces everything in a world in use with a snapshot**, for 16 ns per entity. It is for snapshots the world took itself. Afterwards, the world is what a new world loaded from the snapshot would be. Singleton values keep their object identity, and `world.random` stays the same generator. A view or `removed` reader obtained before throws when used, asking to be obtained again, as a system does every tick. Pending changes for change queries are dropped: `world.restoreChanges` restores what `world.saveChanges` returned.

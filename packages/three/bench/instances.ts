@@ -14,7 +14,6 @@ import {
   Assets,
   Component,
   Field,
-  Plugin,
   Transform2d,
   Transform3d,
 } from "arcadekit";
@@ -235,11 +234,7 @@ variant(
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
   const scope = Scope.makeUnsafe();
-  const app = Effect.runSync(
-    App.make({
-      plugins: [Plugin.make("bench/Bare", { plugins: [Transform3d.plugin] })],
-    }).pipe(Scope.provide(scope))
-  );
+  const app = Effect.runSync(App.make({}).pipe(Scope.provide(scope)));
   const entities = Array.from({ length: N }, () =>
     app.world.spawn(Thing, place(), turn(), size())
   );

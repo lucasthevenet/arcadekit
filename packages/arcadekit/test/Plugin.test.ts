@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit, Layer } from "effect";
+import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -7,11 +7,11 @@ import {
   App,
   Commands,
   Component,
+  EntityId,
   Event,
   Field,
   Plugin,
   Query,
-  Script,
   System,
   Time,
   World,
@@ -28,7 +28,7 @@ const Velocity = Component.define("pl/Velocity", {
 });
 const Health = Component.define("pl/Health", { hp: Field.i32 });
 
-const Bumped = Event.define<{ readonly entity: Entity }>("pl/Bumped");
+const Bumped = Event.define("pl/Bumped", Schema.Struct({ entity: EntityId }));
 
 /** Builds an app, hands it to `use`, then closes its scope. */
 const withApp = <A, E, T>(
@@ -47,7 +47,9 @@ class Bounds extends Context.Service<
 >()("pl/Bounds") {}
 
 const Movement = System.make("Movement", function* () {
-  const moving = yield* Query.all(Position, Velocity);
+  const moving = yield* Query.all(Position, Velocity).pipe(
+    Query.writes(Position)
+  );
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
     pos.x += vel.x * delta;
@@ -57,7 +59,9 @@ const Movement = System.make("Movement", function* () {
 const Walls = System.make("Walls", function* () {
   const { clamp, width } = yield* Bounds;
   const bumped = yield* Bumped;
-  const moving = yield* Query.all(Position, Velocity);
+  const moving = yield* Query.all(Position, Velocity).pipe(
+    Query.writes(Position, Velocity)
+  );
   moving.each((pos, vel, entity) => {
     if (pos.x > width) {
       pos.x = clamp(pos.x);
@@ -85,10 +89,10 @@ class Fragile extends Data.TaggedError("Fragile")<{
 }> {}
 class NothingToHeal extends Data.TaggedError("NothingToHeal")<{}> {}
 
-const Heal = Action.define<{ readonly amount: number }>()("Heal");
+const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }));
 
 const heal = Action.handler(Heal, function* ({ amount }) {
-  const wounded = yield* Query.all(Health);
+  const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
   if (wounded.count() === 0) {
     return yield* new NothingToHeal();
   }
@@ -135,9 +139,10 @@ describe("plugins", () => {
       expect(app.world.get(ball!, Health)).toEqual({ hp: 2 });
 
       // The handler came with the plugin, and dispatch is typed from it.
-      const healed: Exit.Exit<number, NothingToHeal> = app.dispatch(Heal, {
-        amount: 5,
-      });
+      const healed: Exit.Exit<number, NothingToHeal | Action.InvalidPayload> =
+        app.dispatch(Heal, {
+          amount: 5,
+        });
       expect(healed).toEqual(Exit.succeed(7));
 
       // So is the tick's failure type.
@@ -147,7 +152,7 @@ describe("plugins", () => {
   });
 
   it("can be combined with systems and handlers the app defines itself", () => {
-    const Ping = Action.define<{}>()("Ping");
+    const Ping = Action.define("Ping", Schema.Struct({}));
     const ping = Action.handler(Ping, function* () {
       return "pong";
     });
@@ -364,9 +369,7 @@ describe("plugins", () => {
     ).toEqual(Exit.fail(new NoSaveFile({ path: "slot1" })));
 
     const Slow = Plugin.make("Slow", {
-      setup: Effect.gen(function* () {
-        yield* (yield* Script).nextTick;
-      }),
+      setup: Effect.sleep("1 second"),
     });
     const exit = Effect.runSyncExit(
       Effect.scoped(App.make({ plugins: [Slow] }))
@@ -375,6 +378,13 @@ describe("plugins", () => {
     expect(String(exit)).toMatch(
       /setup of plugin \\?"Slow\\?" did not finish synchronously/
     );
+  });
+
+  it("take no scripts: what runs across ticks keeps its place in the world, and a system moves it", () => {
+    // @ts-expect-error a plugin has no scripts
+    void Plugin.make("Scripted", { scripts: [] });
+    const app = Effect.runSync(Effect.scoped(App.make({})));
+    expect("spawnScript" in app).toBe(false);
   });
 
   it("reject clashing names", () => {

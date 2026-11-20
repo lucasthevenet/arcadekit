@@ -125,7 +125,7 @@ export interface Bridge {
    * known yet, it throws in the game's first input stage.
    */
   readonly send: <N extends string, P>(
-    action: Action.ActionDef<N, P, unknown>,
+    action: Action.ActionDef<N, P>,
     ...payload: PayloadArgument<P>
   ) => void;
   /**

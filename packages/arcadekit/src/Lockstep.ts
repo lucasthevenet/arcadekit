@@ -143,7 +143,7 @@ export class Drifted extends Data.TaggedError("Drifted")<{
     const since =
       this.agreedAt === undefined
         ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same plugins and the same seed, and spawned the same things before its first tick"
-        : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system, a handler or a script that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta)`;
+        : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta)`;
     return `The peers are no longer playing the same game. At tick ${this.tick} the hashes of their worlds are: ${hashes} (found by "${this.peer}"). ${since}.`;
   }
 }
@@ -274,8 +274,6 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  * - It throws when the options can't describe a game: a peer not among `peers`,
  *   two peers with the same name, a `delay` that isn't a whole number of ticks,
  *   or a `delta` that isn't greater than 0.
- * - An action that must reach the other peers needs a schema. Enqueuing one
- *   defined with only a type throws.
  * - A payload its schema rejects has no JSON form to send: it is refused on the
  *   issuing peer only, and the others never see it.
  * - Each peer is configured with its own plugins, seed, `delta` and names, and

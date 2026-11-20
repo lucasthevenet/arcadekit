@@ -1,8 +1,9 @@
-import { Cause, Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
+import { Cause, Data, Effect, Exit, Fiber, Layer, Schema, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import {
+  Action,
   App,
   Component,
   Driver,
@@ -10,13 +11,14 @@ import {
   Frame,
   Plugin,
   Query,
-  Script,
+  Singleton,
   System,
+  Ticks,
   Time,
 } from "../src/index";
 
 const Ball = Component.define("dr/Ball", { x: Field.f32, vx: Field.f32 });
-const Balls = Query.all(Ball);
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 
 const Roll = System.make("Roll", function* () {
   const { delta } = yield* Time;
@@ -305,17 +307,6 @@ describe("the frame loop", () => {
         )
       ),
       systems: [Roll],
-      scripts: [
-        Effect.gen(function* () {
-          const script = yield* Script;
-          yield* Effect.addFinalizer(() =>
-            Effect.sync(() => log.push("script stopped"))
-          );
-          for (;;) {
-            yield* script.nextTick;
-          }
-        }).pipe(Effect.scoped),
-      ],
     });
     const scope = Scope.makeUnsafe();
     const { app, fiber } = await Effect.runPromise(
@@ -346,12 +337,8 @@ describe("the frame loop", () => {
     ).toBe(true);
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
-    // The script was stopped and what the plugin held was let go.
-    expect(log.toSorted()).toEqual([
-      "script stopped",
-      "sound closed",
-      "sound opened",
-    ]);
+    // What the plugin held was let go.
+    expect(log.toSorted()).toEqual(["sound closed", "sound opened"]);
     // And no frame runs a tick any more.
     expect(display.frame(5000)).toBe(0);
     expect(app.time.tick).toBe(3);
@@ -666,9 +653,24 @@ describe("ticking when needed", () => {
     const Draw = System.make("Draw", function* () {
       alphas.push((yield* Frame).alpha);
     }).pipe(System.inStage("frame"));
+    // A fuse that burns for six ticks once it is lit.
+    const Fuse = Singleton.define("dr/Fuse", { left: Field.u8 }, { left: 0 });
+    const Light = Action.define("dr/Light", Schema.Struct({}));
+    const light = Action.handler(Light, function* () {
+      (yield* Fuse).left = 6;
+    });
+    const Burn = System.make("Burn", function* () {
+      const fuse = yield* Fuse;
+      if (fuse.left > 0) {
+        fuse.left -= 1;
+        (yield* Ticks).more();
+      }
+    });
     const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
-      App.make({ systems: [Roll, Draw] }).pipe(Scope.provide(scope))
+      App.make({ systems: [Roll, Burn, Draw], handlers: [light] }).pipe(
+        Scope.provide(scope)
+      )
     );
     app.world.spawn(Ball.of({ x: 0, vx: 60 }));
     const fiber = Effect.runFork(
@@ -685,17 +687,17 @@ describe("ticking when needed", () => {
     expect(alphas.at(-1)).toBe(1);
     expect(display.pending).toBe(1);
     expect(display.watching).toBe(1);
-    // A script that waits out a tenth of a second of the game's time:
-    // six ticks, and one more.
-    app.spawnScript(Effect.flatMap(Script, (script) => script.sleep(0.1)));
+    // A fuse lit from outside: the six ticks it burns, the one that finds it
+    // out, and one more.
+    app.enqueue(Light, {});
     now = turn(display, 60, now);
-    expect(app.time.tick).toBe(9);
+    expect(app.time.tick).toBe(10);
     // Hidden, it asks for nothing; shown, it is at rest as it was.
     display.hide();
     expect(display.pending).toBe(0);
     display.show();
     now = turn(display, 30, now + 5000);
-    expect(app.time.tick).toBe(9);
+    expect(app.time.tick).toBe(10);
     expect(display.pending).toBe(1);
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(display.pending).toBe(0);

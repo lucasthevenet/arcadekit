@@ -120,7 +120,6 @@ const play = (
   const scope = Scope.makeUnsafe();
   const made = App.make({
     plugins: [Three.plugin, Assets.plugin],
-    components: [Tree, Deer, Paint, Level],
     handlers: [go],
     systems,
   });
@@ -515,17 +514,17 @@ describe("instances whose look is made of assets", () => {
       at(0),
       Paint.of({ r: 0.25, g: 0.5, b: 0.75 })
     );
-    // Not painted: not one of these.
+    // Not painted: drawn white, after the painted ones.
     app.world.spawn(Tree, at(99));
     enter("forest");
-    expect(xs(mesh()!)).toEqual([0]);
-    expect(Array.from(mesh()!.instanceColor!.array.subarray(0, 3))).toEqual([
-      0.25, 0.5, 0.75,
+    expect(xs(mesh()!)).toEqual([0, 99]);
+    expect(Array.from(mesh()!.instanceColor!.array.subarray(0, 6))).toEqual([
+      0.25, 0.5, 0.75, 1, 1, 1,
     ]);
     app.world.set(tree, Position, { x: 10 });
     app.tick(1);
     app.frame(0.5);
-    expect(xs(mesh()!)).toEqual([5]);
+    expect(xs(mesh()!)).toEqual([5, 99]);
 
     // Away, it moves on; back, it is drawn where it is, and not on the way
     // from where it was last seen.
@@ -536,7 +535,7 @@ describe("instances whose look is made of assets", () => {
     app.dispatch(Go, { to: "forest" });
     app.tick(1);
     app.frame(0.5);
-    expect(xs(mesh()!)).toEqual([30]);
+    expect(xs(mesh()!)).toEqual([30, 99]);
   });
 
   it("say in their types what the look is made of, and that they need the app's assets", () => {
@@ -582,7 +581,6 @@ describe("instances whose look is made of assets", () => {
     const app = Effect.runSync(
       App.make({
         plugins: [Three.plugin],
-        components: [Tree],
         systems: [
           Three.instances("ta/Plain", { of: Tree, geometry, material }),
           Three.objects("ta/Things", { of: Deer, make: () => new Object3D() }),

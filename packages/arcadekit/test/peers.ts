@@ -32,7 +32,7 @@ export const Coin = Component.define("ls/Coin", {
   value: Field.i32,
   x: Field.f32,
 });
-export const Coins = Query.all(Coin);
+export const Coins = Query.all(Coin).pipe(Query.writes(Coin));
 export const Purse = Singleton.define(
   "ls/Purse",
   {
@@ -73,7 +73,10 @@ export const Mint = Action.define(
   "ls/Mint",
   Schema.Struct({ on: Schema.Date })
 );
-export const Whisper = Action.define<{ readonly to: string }>()("ls/Whisper");
+export const Whisper = Action.define(
+  "ls/Whisper",
+  Schema.Struct({ to: Schema.String })
+);
 
 export class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
   readonly coin: Entity;
@@ -189,7 +192,6 @@ export const DELTA = 1 / 30;
 export const gameOptions = (seed = 5, checkpointEvery = 1) => ({
   systems: [Tally, Drift, Bot, Fault, Controls, Hear] as const,
   handlers: [drop, take, tip, fire, mint, whisper] as const,
-  components: [Coin, Purse],
   seed,
   checkpointEvery,
 });

@@ -1,32 +1,26 @@
 /**
- * Events let systems, handlers and scripts signal that something happened,
+ * Events let systems and handlers signal that something happened,
  * without knowing about each other.
  *
- *   const Collided = Event.define<{ a: Entity; b: Entity }>("Collided")
+ *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
  *
  *   // in a system
  *   const collided = yield* Collided
  *   collided.emit({ a, b })                 // plain call, fine inside loops
  *   for (const hit of collided.read()) ...  // everything this system has not seen
  *
- *   // in a script
- *   const hits = yield* collided.wait       // suspend until some arrive
- *
  * Every system sees every event exactly once, whatever order the systems run
  * in. An earlier system sees an event emitted by a later one on the next tick,
  * so an event emitted while systems are running is kept until the end of the
  * following tick. An event emitted between ticks is dropped at the end of the
  * next tick. Events aren't kept for a system that `System.runIf` has disabled:
- * when it runs again, the events from the ticks it skipped are gone.
+ * when it runs again, the events from the ticks it skipped are gone, as are
+ * the changes its change queries would have seen in them.
  *
- * Give an event a schema to make it serializable, for a save, a tool or another
- * machine:
- *
- *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
- *
- * The payload type is inferred from the schema. Emitting is still a plain call
- * with no validation: the schema is only used when the event leaves the
- * program, by `Event.encode` and `Event.decode`.
+ * The payload type is inferred from the event's schema. Emitting is a plain
+ * call with no validation: the schema is only used when the event leaves the
+ * program, for a save, a tool or another machine, by `Event.encode` and
+ * `Event.decode`.
  */
 import { Cause, Data, Effect, Effectable, Exit, Option, Schema } from "effect";
 
@@ -47,12 +41,13 @@ export interface EventHandle<P> {
   emit(payload: P): void;
   /** Returns the events not yet seen through this handle, oldest first. */
   readonly read: () => readonly P[];
-  /**
-   * Suspends until at least one unseen event exists, then returns them all.
-   * Meant for scripts: a system that waits would not finish within its tick.
-   */
-  readonly wait: Effect.Effect<readonly P[]>;
 }
+
+// Every event this program has defined, by name, so that an app can load a
+// save that holds one it hasn't met yet. Of two definitions with one name, as
+// a module that is loaded again under hot reload makes, it is the newer. An
+// app that meets both refuses the second.
+const defined = new Map<string, EventDef<unknown>>();
 
 /**
  * An event type. It is an Effect, so `yield*` returns a handle to its channel
@@ -66,17 +61,15 @@ export class EventDef<P> extends Effectable.Class<
   Events
 > {
   readonly name: string;
-  /**
-   * Converts a payload to and from JSON. Derived from the event's schema;
-   * undefined for an event defined with only a type.
-   */
-  readonly codec: Schema.Codec<P, unknown> | undefined;
+  /** Converts a payload to and from JSON. Derived from the event's schema. */
+  readonly codec: Schema.Codec<P, unknown>;
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
 
-  constructor(name: string, codec?: Schema.Codec<P, unknown>) {
+  constructor(name: string, codec: Schema.Codec<P, unknown>) {
     super();
     this.name = name;
     this.codec = codec;
+    defined.set(name, this as EventDef<unknown>);
   }
 
   asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
@@ -87,33 +80,26 @@ export class EventDef<P> extends Effectable.Class<
 }
 
 /**
- * Defines an event type.
- *
- * With a schema, the payload type is inferred from it and the event is
- * serializable: `Event.define("Collided", Schema.Struct({ ... }))`.
- *
- * Without one, pass the payload type: `Event.define<Payload>("Collided")`. Such
- * an event stays inside the program, and a game can't be saved while one is
- * waiting to be read.
+ * Defines an event type, with the schema of its payload. The payload type is
+ * inferred from the schema: `Event.define("Collided", Schema.Struct({ ... }))`.
+ * An event with no payload takes only its name, `Event.define("Started")`,
+ * and is emitted with `undefined`.
  *
  * An event's name is its identity within an app: when two different events
  * share a name, the second is refused the first time it is used.
  *
  * @category Constructors
  */
-export function define<P = void>(name: string): EventDef<P>;
+export function define(name: string): EventDef<void>;
 export function define<S extends Schema.Codec<unknown, unknown>>(
   name: string,
   payload: S
 ): EventDef<S["Type"]>;
 export function define(
   name: string,
-  payload?: Schema.Codec<unknown, unknown>
+  payload: Schema.Codec<unknown, unknown> = Schema.Void
 ): EventDef<unknown> {
-  return new EventDef<unknown>(
-    name,
-    payload === undefined ? undefined : Schema.toCodecJson(payload)
-  );
+  return new EventDef<unknown>(name, Schema.toCodecJson(payload));
 }
 
 /**
@@ -123,7 +109,7 @@ export function define(
  */
 export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
   readonly event: string;
-  /** What was wrong: the schema's report, or that the event has no schema. */
+  /** What was wrong, as the schema reported it. */
   readonly message: string;
 }> {}
 
@@ -131,14 +117,6 @@ const convert = <P, A>(
   def: EventDef<P>,
   run: (codec: Schema.Codec<P, unknown>) => Exit.Exit<A, unknown>
 ): Exit.Exit<A, InvalidEvent> => {
-  if (def.codec === undefined) {
-    return Exit.fail(
-      new InvalidEvent({
-        event: def.name,
-        message: `The event "${def.name}" was defined with a type and no schema, so it cannot be written down. Give Event.define a schema.`,
-      })
-    );
-  }
   const exit = run(def.codec);
   if (Exit.isSuccess(exit)) {
     return Exit.succeed(exit.value);
@@ -154,8 +132,7 @@ const convert = <P, A>(
 
 /**
  * Encodes an event's payload to its JSON form, for a save, a tool or the
- * network. Fails with `InvalidEvent` when the event has no schema, or its
- * schema rejects the payload.
+ * network. Fails with `InvalidEvent` when its schema rejects the payload.
  *
  * @category Codecs
  */
@@ -167,8 +144,7 @@ export const encode = <P>(
 
 /**
  * Decodes an event's payload from its JSON form, validated against its schema.
- * Fails with `InvalidEvent` when the event has no schema, or the data doesn't
- * match it.
+ * Fails with `InvalidEvent` when the data doesn't match it.
  *
  * @category Codecs
  */
@@ -216,8 +192,6 @@ interface ChannelState {
   readonly end: number;
   /** Number of events the simulation can still read. */
   readonly size: number;
-  /** Suspended `wait`s. Each returns true once it has resumed its fiber. */
-  readonly waiters: Set<() => boolean>;
   /** Forgets the oldest `count` events. */
   dropOldest(count: number): void;
   /** Forgets every event from sequence number `end` on. */
@@ -251,7 +225,6 @@ class Channel<P> implements ChannelState {
   /** The events emitted from the end of the tick before the last to the end of the last. */
   last: readonly P[] = [];
   readonly readers: Map<string, Handle<P>> = new Map();
-  readonly waiters: Set<() => boolean> = new Set();
 
   constructor(def: EventDef<P>, reads: ReadLog) {
     this.def = def;
@@ -328,27 +301,6 @@ class Handle<P> implements EventHandle<P> {
     this.cursor = end;
     return from === end ? EMPTY : channel.buffer.slice(from - channel.offset);
   };
-
-  readonly wait: Effect.Effect<readonly P[]> = Effect.suspend(() => {
-    const ready = this.read();
-    if (ready.length > 0) {
-      return Effect.succeed(ready);
-    }
-    return Effect.callback<readonly P[]>((resume) => {
-      const waiter = (): boolean => {
-        const batch = this.read();
-        if (batch.length === 0) {
-          return false;
-        }
-        resume(Effect.succeed(batch));
-        return true;
-      };
-      this.channel.waiters.add(waiter);
-      return Effect.sync(() => {
-        this.channel.waiters.delete(waiter);
-      });
-    });
-  });
 }
 
 /**
@@ -393,7 +345,7 @@ export class EventBus {
   /**
    * Who is asking for handles right now. The app sets this before each
    * system and handler runs, which is what gives each of them its own
-   * read position. Undefined means a script or outside code.
+   * read position. Undefined means outside code.
    * @internal
    */
   reader: string | undefined;
@@ -404,8 +356,6 @@ export class EventBus {
   private readonly channels: Map<object, ChannelState> = new Map();
   private readonly order: Channel<unknown>[] = [];
   private readonly names: Map<string, EventDef<unknown>> = new Map();
-  /** The names of the events a plugin or the app listed, which a save may hold. */
-  private readonly listed: Set<string> = new Set();
   private readonly reads: ReadLog = { open: false, moved: [] };
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
@@ -434,7 +384,7 @@ export class EventBus {
     const known = this.names.get(def.name);
     if (known !== undefined && known !== def) {
       throw new Error(
-        `Two different events are both named "${def.name}". An event's name identifies it in an app, so give each its own, prefixed with the feature it belongs to.`
+        `Two different events are both named "${def.name}". An event's name identifies it in an app and in a save, so give each its own, prefixed with the feature it belongs to.`
       );
     }
     this.names.set(def.name, def);
@@ -445,24 +395,9 @@ export class EventBus {
   }
 
   /**
-   * Lists an event that a plugin or the app named, so that a save may hold
-   * it. Before the app is loaded from a save.
-   * @internal
-   */
-  list(def: EventDef<unknown>): void {
-    if (def.codec === undefined) {
-      throw new Error(
-        `The event "${def.name}" is listed so that a save can hold it, and was defined with a type and no schema, so it cannot be written down. Give Event.define a schema, or leave it out of \`events\`.`
-      );
-    }
-    this.channel(def);
-    this.listed.add(def.name);
-  }
-
-  /**
    * The events waiting to be read, in their JSON form, with how far each
-   * system and handler had read. Fails on one that has no schema, or whose
-   * payload its schema does not take.
+   * system and handler had read. Fails on one whose payload its schema does
+   * not take.
    * @internal
    */
   save(): Exit.Exit<SavedEvents[], InvalidEvent> {
@@ -483,14 +418,6 @@ export class EventBus {
         }
         payloads.push(data.value);
       }
-      if (payloads.length > 0 && !this.listed.has(channel.def.name)) {
-        return Exit.fail(
-          new InvalidEvent({
-            event: channel.def.name,
-            message: `The event "${channel.def.name}" is waiting to be read, and no plugin lists it, so a save that holds it could not be loaded. List it in a plugin's \`events\`, or in the app's.`,
-          })
-        );
-      }
       const read: Record<string, number> = {};
       for (const [reader, handle] of channel.readers) {
         const count = handle.position - channel.tickOffset;
@@ -509,8 +436,8 @@ export class EventBus {
   /**
    * Takes the events of a save, each decoded with its event's schema, and
    * every reader's place in them. Returns why the save cannot be loaded: it
-   * holds an event that is not listed, or one whose payload its schema no
-   * longer takes. Into an empty bus, before anything has read.
+   * holds an event this program doesn't define, or one whose payload its
+   * schema no longer takes. Into an empty bus, before anything has read.
    * @internal
    */
   restore(saved: readonly SavedEvents[]):
@@ -521,16 +448,14 @@ export class EventBus {
     | undefined {
     const decoded: [Channel<unknown>, SavedEvents, unknown[]][] = [];
     for (const events of saved) {
-      const def = this.listed.has(events.name)
-        ? this.names.get(events.name)
-        : undefined;
+      const def = this.names.get(events.name) ?? defined.get(events.name);
       if (def === undefined) {
         if (events.payloads.length === 0) {
           continue;
         }
         return {
           problem: "unknown event",
-          message: `The save holds the event "${events.name}", waiting to be read, which no plugin lists. List it in a plugin's \`events\`, or in the app's.`,
+          message: `The save holds the event "${events.name}", waiting to be read, which this program doesn't define: it was renamed or removed since. A migration changes the events of a save in \`events\`.`,
         };
       }
       const payloads: unknown[] = [];
@@ -624,24 +549,6 @@ export class EventBus {
       }
     }
     return false;
-  }
-
-  /**
-   * Resumes scripts whose `wait` now has events. Returns whether any did.
-   * @internal
-   */
-  resumeWaiters(): boolean {
-    let resumed = false;
-    for (const channel of this.order) {
-      // Copied first: a resumed script may start or cancel other waits.
-      for (const waiter of Array.from(channel.waiters)) {
-        if (channel.waiters.has(waiter) && waiter()) {
-          channel.waiters.delete(waiter);
-          resumed = true;
-        }
-      }
-    }
-    return resumed;
   }
 
   /**

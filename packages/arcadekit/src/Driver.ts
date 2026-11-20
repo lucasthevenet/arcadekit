@@ -53,8 +53,8 @@ export interface StepOptions {
    * `"whenNeeded"`: only while something is waiting for a tick, for a game that
    * moves only when its player does. The input stage runs every frame, so a key
    * press, a UI button or a message is handled immediately. While the app isn't
-   * settled (an action is queued, a state transition is pending, a script is
-   * waiting for a tick, or an event hasn't been read by every system) it ticks
+   * settled (an action is queued, a state transition is pending, a system asked
+   * for one with `Ticks`, or an event hasn't been read by every system) it ticks
    * at `hz` like any game, plus one more tick for systems that react a tick
    * late to what a later system did. Then it rests: no tick runs, game time
    * stands still, and the frame stage keeps drawing, with the frame at the last

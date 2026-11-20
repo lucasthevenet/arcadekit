@@ -56,10 +56,13 @@ const Mood = Component.singleton(
   { level: 3, word: "calm" }
 );
 
-const Bodies = Query.all(Body);
-const Sheets = Query.all(Sheet);
-const Auras = Query.all(Aura);
-const Both = Query.all(Body, Aura).pipe(Query.without(Chilled));
+const Bodies = Query.all(Body).pipe(Query.writes(Body));
+const Sheets = Query.all(Sheet).pipe(Query.writes(Sheet));
+const Auras = Query.all(Aura).pipe(Query.writes(Aura));
+const Both = Query.all(Body, Aura).pipe(
+  Query.writes(Body, Aura),
+  Query.without(Chilled)
+);
 
 /** A world with a few tables, some sparse members and some freed slots. */
 const populated = (): { world: EcsWorld; entities: Entity[] } => {
@@ -438,7 +441,7 @@ describe("commands that are rolled back", () => {
 // --- through an app: an action that is refused leaves nothing behind ------------
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
-const Noted = Event.define<{ readonly step: string }>("tx/Noted");
+const Noted = Event.define("tx/Noted", Schema.Struct({ step: Schema.String }));
 /** Emitted by a system every tick, for a handler to read. */
 const Rung = Event.define("tx/Rung", Schema.Struct({ at: Schema.Int }));
 

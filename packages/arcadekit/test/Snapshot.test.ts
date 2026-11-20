@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { readSnapshot, writeSnapshot } from "../src/ecs/index";
 import {
   CommandBuffer,
   Component,
   EcsWorld,
   Field,
+  Migrate,
   Query,
   SnapshotError,
 } from "../src/index";
@@ -415,16 +417,22 @@ describe("a snapshot that cannot be loaded", () => {
     expect(asked.entityCount).toBeGreaterThan(0);
   });
 
-  it("names a component it holds that the program does not have", () => {
-    const error = problemOf(() =>
-      loaded(
-        sample(),
-        all.filter((def) => def !== C.Aura)
-      )
+  it("finds a component by its definition, and names one the program doesn't define", () => {
+    // Not met by the world it loads into: found by the program's definition.
+    const found = loaded(
+      sample(),
+      all.filter((def) => def !== C.Aura)
     );
+    expect(found.component("snap/Aura")?.name).toBe("snap/Aura");
+
+    const contents = readSnapshot(sample());
+    Migrate.renameComponent(contents, "snap/Aura", "snap/Undefined");
+    const error = problemOf(() => loaded(writeSnapshot(contents)));
     expect(error.problem).toBe("unknown component");
-    expect(error.component).toBe("snap/Aura");
-    expect(error.message).toContain('"snap/Aura"');
+    expect(error.component).toBe("snap/Undefined");
+    expect(error.message).toBe(
+      'The snapshot holds a component named "snap/Undefined", which this program doesn\'t define: it was renamed or removed since.'
+    );
   });
 
   it("names a component whose fields are not what they were, and says how", () => {

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { readSnapshot, writeSnapshot } from "../src/ecs/index";
 import {
   CommandBuffer,
   Component,
   EcsWorld,
   Field,
+  Migrate,
   Query,
   SnapshotError,
 } from "../src/index";
@@ -33,7 +35,7 @@ const Level = Component.singleton(
 );
 
 const optional: ComponentDef[] = [Body, Marked, Aura, Chilled];
-const Bodies = Query.all(Body);
+const Bodies = Query.all(Body).pipe(Query.writes(Body));
 const Warm = Query.all(Aura).pipe(Query.without(Chilled));
 const Moved = Query.all(Body).pipe(Query.changed(Body));
 const Born = Query.all(Body).pipe(Query.added(Body));
@@ -394,9 +396,11 @@ describe("a world that is restored from a snapshot", () => {
     );
     const other = new EcsWorld();
     other.spawn(Component.tag("rs/Stranger"));
+    const contents = readSnapshot(other.snapshot());
+    Migrate.renameComponent(contents, "rs/Stranger", "rs/Undefined");
     let refused: unknown;
     try {
-      world.restore(other.snapshot());
+      world.restore(writeSnapshot(contents));
     } catch (error) {
       refused = error;
     }

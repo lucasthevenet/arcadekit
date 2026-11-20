@@ -12,7 +12,7 @@ import { Component, EntityId, Event, Field, Query, System } from "arcadekit";
 import { Schema } from "effect";
 
 const Body = Component.define("physics/Body", { y: Field.f32 });
-const Bodies = Query.all(Body).pipe(Query.reads());
+const Bodies = Query.all(Body);
 
 const Landed = Event.define(
   "physics/Landed",
@@ -38,13 +38,13 @@ const Dust = System.make("fx/Dust", function* () {
 - Every system sees every event exactly once, whatever order systems run in. A system that runs before the emitter sees the event on the next tick.
 - An event is dropped once every system has had a chance to read it.
 - The frame and input stages also see every event once, however many ticks ran between two frames. That is how sound and UI follow the game.
-- A script waits for an event with `yield* landed.wait`, where `landed` is `yield* Landed`. A system never waits: it reads what is there and finishes within its tick.
+- A system never waits for an event: it reads what is there and finishes within its tick.
 
 An event is a fact: name it in the past tense, prefixed with its feature, such as `"physics/Landed"`. The name identifies the event within an app, and a second, different event with the same name is refused when it is first used.
 
-A system that `System.runIf` can switch off shouldn't rely on events for anything it must not miss: the events from the ticks it skipped are gone when it runs again. Have it watch the game's state instead, with a [change query](queries.md) or a singleton.
+A system that `System.runIf` can switch off hears no event from the ticks it skipped, and its [change queries](queries.md) see nothing that changed in them either. Have it read the state it needs when it runs again, with an ordinary query or a singleton.
 
-The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. `Event.define<Payload>("Name")` defines an event with a type and no schema, for events that never need to be serialized. A game can't be saved while such an event is waiting to be read, nor while one that no plugin lists in its `events` is.
+The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. An event with no payload takes only its name, `Event.define("Started")`.
 
 ## Actions
 
@@ -79,7 +79,7 @@ Dispatching an action that has no handler, or with the wrong payload, is a compi
 
 Both are for code outside the simulation: the entry point, the network, a test. Once a game has started, they are the only way such code should change it: anything written into `app.world` directly isn't logged, so a [replay](replays.md) can't reproduce it. `dispatch` only works between ticks, and throws during a tick or a frame. In a multiplayer game, use `enqueue` only: `dispatch` would change one machine's game, and throws. See [lockstep and rollback](lockstep-and-rollback.md).
 
-The payload's type comes from the schema, and its JSON encoding is what the log and saves store and what other peers receive. Bigints and dates in a payload are converted along the way. `Action.define<Payload>()("Name")` defines an action with a type and no schema. Only the compiler checks it, it can't be saved while queued, and it can't be sent to other peers, so reserve it for actions that never leave the program.
+The payload's type comes from the schema, and its JSON encoding is what the log and saves store and what other peers receive. Bigints and dates in a payload are converted along the way. An action with no payload takes only its name, `Action.define("Pass")`, is issued with `undefined`, and is logged with `null`.
 
 ## Checking and refusing
 
@@ -96,7 +96,7 @@ A refusal changes nothing, even after the handler has written to the world, so a
 
 The same applies to a handler that dies from a bug halfway through. A refused action isn't logged, so a replay never runs it, and anything it left behind would make the replay diverge.
 
-A refusal doesn't roll back anything outside the world: an object held in a field and mutated in place, a call to one of your own services, or a script the handler started. Replace the object instead of mutating it, and make the other two calls after the last check. It also doesn't undo a write forced through a raw column the query declared [read-only](queries.md#read-only-access).
+A refusal doesn't roll back anything outside the world: an object held in a field and mutated in place, a call to one of your own services, or a fiber the handler forked. Replace the object instead of mutating it, and make the other two calls after the last check. It also doesn't undo a write forced through a raw column of a component the query [only reads](queries.md#what-a-query-writes).
 
 Handlers follow a few rules of their own:
 
@@ -123,13 +123,13 @@ const pass = Action.handler(Pass, function* (_, { from }) {
 
 In a multiplayer game, `from` is the name of the peer that issued the action, identical on every peer. In a single-player game it is `undefined`, as it is for actions the simulation issues itself. Check permissions against `from`, never against a name in the payload, which the sender controls.
 
-`from` is kept in the log and in a save for queued actions. `Action.Rejected` carries it too, alongside the action's name, payload and error, so a UI can show players their own refusals.
+`from` is kept in the log and in a save for queued actions. `Action.Rejected` carries it too, alongside the action's name, its payload in JSON form, and the error as its `_tag` and `message`, so a UI can show players their own refusals.
 
 A schema validates a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 
 ## Actions issued by the game
 
-A system, script or handler issues actions through the `Actions` service, so bots follow the same rules as players:
+A system or a handler issues actions through the `Actions` service, so bots follow the same rules as players:
 
 ```ts sketch
 (yield * Action.Actions).enqueue(Strike, { attacker, target });
@@ -137,9 +137,7 @@ A system, script or handler issues actions through the `Actions` service, so bot
 
 The action is applied at the start of the next tick. The service's `handles(action)` reports whether the game has a handler for an action; `enqueue` throws without one.
 
-Actions the simulation issues itself aren't logged, because a replay's own systems issue them again. That's why a system never calls `app.enqueue`: the action would be logged, and a replay would apply it twice.
-
-The frame and input stages work the other way round. They are outside the simulation and a replay runs neither, so what their systems issue with `Actions.enqueue` is logged, like a key press or a UI button.
+`Actions.enqueue` and `app.enqueue` are the same, and where they are called decides whether the action is logged. From a tick, a handler or a plugin's setup, the action is the simulation's own and isn't logged, because a replay's own systems issue it again. Between ticks, it is input, like a key press or a UI button, and is logged. The frame and input stages count as between ticks: they are outside the simulation, and a replay runs neither.
 
 ## Actions as data
 

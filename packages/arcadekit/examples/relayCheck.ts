@@ -82,7 +82,6 @@ const check = Effect.gen(function* () {
   for (const peer of ["ada", "grace"]) {
     const app = yield* App.make({
       handlers: [tip],
-      components: [Purse],
       checkpointEvery: 1,
     });
     const session = Rollback.make(app, {

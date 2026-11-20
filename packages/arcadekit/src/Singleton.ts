@@ -4,7 +4,7 @@
  *
  *   const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 })
  *
- *   const turn = yield* Turn          // in a system, a handler or a script
+ *   const turn = yield* Turn          // in a system or a handler
  *   if (turn.player !== mine) return yield* new NotYourTurn()
  *   turn.player = turn.player === 1 ? 2 : 1
  *
@@ -62,8 +62,7 @@ export class Singleton<S extends Schema>
  * - The fields are a component's: typed numeric fields, and `Field.json`,
  *   `Field.schema` or `Field.transient` for anything else.
  * - The name is one of the world's component names, prefixed with the feature
- *   it belongs to. List the singleton in a plugin's `components`, so a save
- *   that contains it can be loaded.
+ *   it belongs to. A save that holds the singleton finds it by that name.
  * - Until it is written, it holds `initial` and behaves as if absent: it isn't
  *   saved, and a world that has only read it hashes the same as one that never
  *   did. A game loaded from a save where it was never written starts it at the

@@ -94,7 +94,7 @@ const Card = Component.define("game/Card", {
   left: Field.f32,
   right: Field.f32,
 });
-const Cards = Query.all(Card).pipe(Query.reads());
+const Cards = Query.all(Card);
 const PlayCard = Action.define(
   "game/PlayCard",
   Schema.Struct({ card: EntityId })

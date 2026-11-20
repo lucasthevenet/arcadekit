@@ -21,7 +21,6 @@
  * world does: `"arcadekit/Transform3d.Position"`.
  */
 import { Component, Field } from "./ecs/component";
-import * as Plugin from "./Plugin";
 
 /**
  * An entity's position, in the game's units. Added without a value, it is at
@@ -92,14 +91,3 @@ export const axisAngle = (
   const sin = Math.sin(angle / 2) / length;
   return { x: x * sin, y: y * sin, z: z * sin, w: Math.cos(angle / 2) };
 };
-
-/**
- * Registers the three components, so a save that contains them can be loaded.
- * The plugin that holds a game's rules depends on it, as does any plugin that
- * draws from them, such as `Three.plugin` from `@arcadekit/three`.
- *
- * @category Plugins
- */
-export const plugin = Plugin.make("arcadekit/Transform3d", {
-  components: [Position, Rotation, Scale],
-});

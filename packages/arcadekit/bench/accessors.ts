@@ -54,7 +54,7 @@ if (N !== sizes.entities || DT !== sizes.step) {
   throw new Error("bench/accessors.ts and bench/core.ts differ on N or DT.");
 }
 
-const Moving = Query.all(Position, Velocity);
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
 
@@ -88,20 +88,23 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
   }
 });
 
-// A handler that looks at every entity and writes none. Without the word
-// that it only reads, its transaction copies the columns it is handed.
+// A handler that looks at every entity and writes none. Through a query
+// that says it writes them, its transaction copies the columns it is handed.
 const Scan = Action.define("bench/Scan", Schema.Struct({}));
+const Written = Query.all(Position, Velocity).pipe(
+  Query.writes(Position, Velocity)
+);
 const scanPlain = Action.handler(Scan, function* () {
   let sum = 0;
-  (yield* Moving).each((pos, vel) => {
+  (yield* Written).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
   return sum;
 });
-const MovingRead = Moving.pipe(Query.reads());
+const Looked = Query.all(Position, Velocity);
 const scanReads = Action.handler(Scan, function* () {
   let sum = 0;
-  (yield* MovingRead).each((pos, vel) => {
+  (yield* Looked).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
   return sum;
@@ -109,7 +112,7 @@ const scanReads = Action.handler(Scan, function* () {
 
 /** Median milliseconds of one dispatch, in an app whose world holds N entities. */
 const dispatching = <P>(
-  action: Action.ActionDef<string, P, unknown>,
+  action: Action.ActionDef<string, P>,
   payload: (target: Entity) => P,
   runs = 20_000,
   warmup = 5000
@@ -145,7 +148,9 @@ const idling = (power: "on" | "off"): number =>
           }).pipe(System.runIf(State.is(Power, "on")))
         );
         const app = yield* App.make({ systems });
-        app.spawnScript(Effect.map(Power, (held) => held.set(power)));
+        yield* Effect.map(Power, (held) => held.set(power)).pipe(
+          Effect.provideService(WorldService, app.world)
+        );
         return measure(() => app.tick(DT), 50_000, 20_000);
       })
     )
@@ -234,7 +239,6 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
         });
         const made = App.make({
           plugins: [View.plugin],
-          components: [Stats],
           systems: [Show],
           checkpointEvery: 0,
         });
@@ -307,7 +311,6 @@ const scoring = (): number =>
         });
         const app = yield* App.make({
           plugins: [Sound.plugin],
-          components: [Phase],
           systems: [Score],
           checkpointEvery: 0,
         }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
@@ -334,7 +337,6 @@ const atRest = (): number =>
         const source = Input.makeManualSource();
         const app = yield* App.make({
           plugins: [Input.plugin, View.plugin],
-          components: [Phase],
           systems: [Show],
           checkpointEvery: 0,
         }).pipe(
@@ -494,8 +496,8 @@ const variants: Record<string, Variant> = {
       const perEntity = Effect.gen(function* () {
         let px!: Float32Array;
         let py!: Float32Array;
-        let vx!: Float32Array;
-        let vy!: Float32Array;
+        let vx!: ArrayLike<number>;
+        let vy!: ArrayLike<number>;
         view.eachChunk((_start, _end, pos, vel) => {
           px = pos.x;
           py = pos.y;
@@ -682,7 +684,8 @@ const variants: Record<string, Variant> = {
   },
   dispatchScan: {
     unit: "dispatch",
-    label: "dispatch: handler only looks at all 100,000",
+    label:
+      "dispatch: handler only looks at all 100,000, through a query that writes them",
     run: () => scanned(scanPlain),
   },
   dispatchScanReads: {

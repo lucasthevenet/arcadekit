@@ -68,7 +68,7 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
           this.buckets = [];
           throw new Error(
             `TickDispatcher: still busy after ${this.maxRounds} rounds in one tick. ` +
-              `A fiber is probably looping on Effect.yieldNow; wait with Script.nextTick instead.`
+              `A fiber is probably looping on Effect.yieldNow; keep the work in a component or a state that a system moves on each tick instead.`
           );
         }
         const { buckets } = this;

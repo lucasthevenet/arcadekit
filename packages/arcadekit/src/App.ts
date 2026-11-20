@@ -15,9 +15,7 @@
  *   3. inside ONE fiber: enter any requested states, running their exit and
  *      enter hooks; then run every system in order, except those whose
  *      condition doesn't hold, applying queued commands after each
- *   4. resume scripts that were waiting for this tick or for an event
- *   5. flush the scheduler, so every fiber that became runnable runs now
- *   6. apply commands queued by scripts, and drop events everyone has seen
+ *   4. drop events everyone has seen
  *
  * The world's hash is recorded in the action log before the first action or
  * tick, and at the end of every `checkpointEvery`th tick.
@@ -40,10 +38,6 @@
  * its own and not the game's provides it as "Info". A span reads the real
  * clock and draws its ids from `Math.random`, so tracing doesn't change the
  * game.
- *
- * A failed script is logged with its cause. An app created with
- * `onScriptFailure: "stop"` also stops: that tick and every later one fail with
- * `ScriptFailed`.
  */
 import {
   Cause,
@@ -65,14 +59,13 @@ import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
-import { isSingletonSpec } from "./ecs/component";
-import type { Entity, Listed } from "./ecs/component";
+import type { Entity } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventDef, EventsMoment } from "./Event";
+import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -81,7 +74,6 @@ import {
   Events,
   Frame,
   Random,
-  Script,
   Ticks,
   Time,
   World,
@@ -185,7 +177,7 @@ export interface Any {
   /** The names of the input-stage systems, in the order they run. */
   readonly inputOrder: readonly string[];
   /**
-   * Runs one tick. Throws if a system fails, or if the app has stopped.
+   * Runs one tick. Throws if a system fails.
    *
    * A tick reads the devices first: if the input stage hasn't run since the
    * previous tick, it runs now, as a driver would have run it, so a game that
@@ -196,9 +188,8 @@ export interface Any {
   readonly tick: (delta: number, options?: TickOptions) => void;
   /**
    * Whether the game is at rest: a tick now would find no pending work. It is
-   * false while an action is queued, a state transition is pending, a script is
-   * waiting for the next tick or sleeping, a fiber is due, or an event is
-   * waiting that some system hasn't had a chance to read. Reading it changes
+   * false while an action is queued, a state transition is pending, a fiber is
+   * due, or an event is waiting that some system hasn't had a chance to read. Reading it changes
    * nothing.
    *
    * A driver set to tick only when needed checks it, so a game that moves only
@@ -218,8 +209,7 @@ export interface Any {
    * ticks.
    *
    * The world is frozen while it runs, and anything that would change the game
-   * throws. Throws if a system fails, or if the app has stopped. Only between
-   * ticks.
+   * throws. Throws if a system fails. Only between ticks.
    */
   readonly frame: (alpha: number, delta?: number) => void;
   /**
@@ -232,7 +222,7 @@ export interface Any {
    * neither, since the actions are in its log.
    *
    * The world is frozen while it runs, as for `frame`. Throws if a system
-   * fails, or if the app has stopped. Only between ticks.
+   * fails. Only between ticks.
    */
   readonly input: () => void;
   /**
@@ -248,8 +238,8 @@ export interface Any {
     from?: string
   ) => Exit.Exit<unknown, unknown>;
   /**
-   * Like `enqueue`, for actions that arrive as data. Problems become
-   * `Action.Rejected` events.
+   * Like `enqueue`, for actions that arrive as data, and logged as `enqueue`
+   * is, by where it is called. Problems become `Action.Rejected` events.
    *
    * `from` names the issuer, for code that brings actions in on someone else's
    * behalf, such as a server for its clients: the handler receives it, and the
@@ -265,22 +255,19 @@ export interface Any {
    * Everything that entered the game from outside, in arrival order,
    * interleaved with checkpoints of the world's hash: every dispatched action
    * that was accepted, and every action enqueued through the app, whatever its
-   * outcome. Actions a system, a script or a handler issued with
-   * `Actions.enqueue` aren't here, because a replay's own simulation issues
-   * them again. It is enough to replay the game, and to verify the replay.
+   * outcome. Actions a system, a handler or a plugin's setup
+   * enqueued aren't here, because a replay's own simulation issues them again. It is enough to replay the game, and to verify the replay.
    */
   readonly actionLog: readonly Action.LogEntry[];
   /**
    * Saves the game as it is, to load later with `App.load`: the world, the
    * time, the actions queued for the next tick, the events waiting to be read,
-   * what change queries haven't visited yet, and the length of the log. It
-   * holds no scripts: a plugin's scripts start again after a load. Only between
-   * ticks.
+   * what change queries haven't visited yet, and the length of the log. Only
+   * between ticks.
    *
    * Fails with `SaveRefused`, which names what is in the way: a queued action
-   * or a waiting event without a schema, a field holding a value that can't be
-   * saved, commands queued but not applied, or a script started with
-   * `spawnScript` or `Script.spawn` that hasn't ended.
+   * or a waiting event whose payload its schema doesn't take, a field holding a
+   * value that can't be saved, or commands queued but not applied.
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
@@ -295,9 +282,7 @@ export interface Any {
    * resimulating it: `Rollback` captures before each uncertain tick.
    *
    * Fails with `SaveRefused` when the world can't be snapshotted: a field holds
-   * a value that can't be saved, or commands are queued but not applied. It
-   * also fails while a script is running, a plugin's included: a moment can't
-   * hold where a script is, and a rewind would lose its place.
+   * a value that can't be saved, or commands are queued but not applied.
    */
   readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
   /**
@@ -306,9 +291,7 @@ export interface Any {
    * its length at that time. Only between ticks, and only with a moment of this
    * app.
    *
-   * A moment holds what a save holds, and no more. No script was running when
-   * it was captured, so every script running now is interrupted, and none
-   * starts again. State held by your game's own services is left as is. A
+   * A moment holds what a save holds, and no more. State held by your game's own services is left as is. A
    * `transient` field is undefined afterwards. And what runs between ticks
    * starts over: frame-stage and input-stage change queries visit everything
    * again.
@@ -377,11 +360,6 @@ export interface Inspection {
   readonly events: Readonly<Record<string, readonly unknown[]>>;
 }
 
-/**
- * @param E  what a tick can fail with
- * @param R  services available to scripts, beyond the built-in ones
- * @param HU a union of the app's action handlers
- */
 const NO_INPUT: TickOptions = { input: false };
 
 /**
@@ -430,12 +408,11 @@ export interface Diverted<E = never> {
  * and what runs a tick and a frame. Made with `App.make`, `App.load` or, in a
  * page, `App.run`.
  *
- * `E` is what a tick can fail with, `R` what its systems need, and `HU` the
- * actions its handlers accept.
+ * `E` is what a tick can fail with, and `HU` the actions its handlers accept.
  *
  * @category Models
  */
-export interface App<E = never, R = never, HU = never> extends Any {
+export interface App<E = never, HU = never> extends Any {
   /**
    * Takes over the app, for code that decides on which tick an action is
    * applied and when a tick runs: a multiplayer session, where every peer must
@@ -458,8 +435,7 @@ export interface App<E = never, R = never, HU = never> extends Any {
   ) => Diverted<E>;
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
-   * `Exit`. An app stopped by a failed script runs nothing and returns a
-   * defect, `ScriptFailed`.
+   * `Exit`.
    */
   readonly tickExit: (
     delta: number,
@@ -469,14 +445,6 @@ export interface App<E = never, R = never, HU = never> extends Any {
   readonly frameExit: (alpha: number, delta?: number) => Exit.Exit<void, E>;
   /** Like `input`, but returns the outcome, with a system's failure typed. */
   readonly inputExit: () => Exit.Exit<void, E>;
-  /**
-   * Starts a long-running fiber (a coroutine). It runs immediately up to its
-   * first wait, and from then on only advances during ticks. If it fails, the
-   * failure is logged with its cause; see `onScriptFailure`.
-   */
-  readonly spawnScript: <A, E2>(
-    effect: Effect.Effect<A, E2, R | BuiltIn>
-  ) => Fiber.Fiber<A, E2>;
   /**
    * Applies an action now and returns the outcome. A refusal comes back as a
    * typed failure and leaves the game unchanged. An accepted action is logged;
@@ -488,26 +456,27 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * game alone: use `enqueue` instead.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
+    action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
   /**
-   * Queues an action for the start of the next tick, and logs it. Use it for
-   * real-time input. A refusal when it is applied becomes an `Action.Rejected`
-   * event, and is marked on the action's log entry.
+   * Queues an action for the start of the next tick. A refusal when it is
+   * applied becomes an `Action.Rejected` event. It is the same as
+   * `Actions.enqueue`, and works from anywhere.
+   *
+   * Where it is called decides whether it is logged. From outside the
+   * simulation, between ticks, the action is input: it is logged, a refusal is
+   * marked on its log entry, and on an app a session has taken over it goes to
+   * every peer. From a system, a handler or a
+   * plugin's setup, it is the simulation's own move: it isn't
+   * logged, since a replay's own simulation makes it again.
    *
    * Fails with `Action.InvalidPayload`, and queues nothing, when the action's
-   * schema does not take the payload: it could not be logged or sent to the
-   * other peers.
-   *
-   * For code outside the simulation. A system, a script or a handler issues an
-   * action with `Actions.enqueue`, which doesn't log it: if logged, it would be
-   * applied twice on replay, once from the log and once by the replay's own
-   * simulation. On an app a session has taken over, the action goes to every
-   * peer, and one without a schema throws.
+   * schema does not take the payload of input: it could not be logged or sent
+   * to the other peers.
    */
   readonly enqueue: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>, unknown>,
+    action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<void, Action.InvalidPayload>;
 }
@@ -556,22 +525,22 @@ class Turn {
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
 
-/**
- * A script failed in an app configured to stop on script failure. Every later
- * tick of that app fails with this defect.
- *
- * @category Errors
- */
-export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
-  /** Why the script failed. */
-  readonly cause: Cause.Cause<unknown>;
-  /** The number of ticks run when it failed. */
-  readonly tick: number;
-}> {
-  override get message(): string {
-    return `A script failed at tick ${this.tick}, and the app was told to stop on one: ${Cause.pretty(this.cause)}`;
-  }
-}
+/** Why an action was refused, as `Action.Rejected` carries it. */
+const refusal = (error: unknown): { _tag: string; message: string } => {
+  const tag =
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    typeof error._tag === "string"
+      ? error._tag
+      : error instanceof Error
+        ? error.name
+        : "Error";
+  return {
+    _tag: tag,
+    message: error instanceof Error ? error.message : String(error),
+  };
+};
 
 /**
  * A frame-stage or input-stage system changed the world, which it must not do,
@@ -607,18 +576,6 @@ export interface Options<
 > {
   readonly plugins?: readonly [...P];
   /**
-   * Components and singletons that belong to the app itself, not to a plugin. A
-   * world identifies them by name, so loading a save requires every one it
-   * contains to be listed here or by a plugin.
-   */
-  readonly components?: readonly Listed[];
-  /**
-   * Events that belong to the app itself, not to a plugin, that a save may
-   * hold waiting to be read. A save that holds an event listed neither here
-   * nor by a plugin is refused, and so is saving while one is waiting.
-   */
-  readonly events?: readonly EventDef<unknown>[];
-  /**
    * The game's version: an integer you increment when the game changes its
    * components or what its saves contain. Defaults to 0. A save records it.
    * `App.load` loads a save of this version as is, migrates an older one with
@@ -650,14 +607,6 @@ export interface Options<
    */
   readonly checkpointEvery?: number;
   /**
-   * What a script failure does, beyond being logged with its cause through
-   * Effect's logger. `"log"`, the default, lets the game continue without the
-   * script. `"stop"` stops the app: the tick the script failed in, and every
-   * tick after it, fails with `ScriptFailed`, which stops a driver. An
-   * interrupted script hasn't failed.
-   */
-  readonly onScriptFailure?: "log" | "stop";
-  /**
    * Verifies that the frame and input stages leave the world unchanged: the
    * world's hash is taken before the stage and after each of its systems, and
    * `frame` dies with `FrameChangedWorld`, naming the system, if they differ.
@@ -671,7 +620,7 @@ export interface Options<
 }
 
 /**
- * Starts a fresh game: every plugin's `setup` runs, then its scripts start.
+ * Starts a fresh game: every plugin's `setup` runs.
  *
  * @category Constructors
  */
@@ -682,12 +631,12 @@ export const make = <
 >(
   options: Options<S, H, P>
 ): Effect.Effect<
-  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+  App<TickError<S, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]>,
   Scope.Scope | External<S, H, P>
 > =>
   build(options, undefined) as Effect.Effect<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    App<TickError<S, P>, AllHandlers<H, P>>,
     Plugin.ErrorOf<P[number]>,
     Scope.Scope | External<S, H, P>
   >;
@@ -697,16 +646,14 @@ export const make = <
  * next tick and the events waiting to be read. Pass the plugins and options the
  * game was created with.
  *
- * No plugin's `setup` runs, since the save holds what setup spawned. Every
- * plugin's scripts restart from the beginning, since a save can't hold a script
- * mid-flight.
+ * No plugin's `setup` runs, since the save holds what setup spawned.
  *
  * The app's action log starts empty. Replay what the game logged after the save
  * (`log.slice(save.logLength)`) with `App.replay`, which verifies it against
  * the log's checkpoints as it goes.
  *
  * Fails with `LoadRefused` when the save's world can't be loaded: it contains a
- * component no plugin lists, or one whose fields have changed, or its bytes are
+ * component this program doesn't define, or one whose fields have changed, or its bytes are
  * damaged. It also fails when the save is from another version of the game and
  * `migrations` don't bring it up to this one: see `Save.migrate`.
  *
@@ -725,7 +672,7 @@ export const load = <
   save: Save.Save,
   options: Options<S, H, P>
 ): Effect.Effect<
-  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+  App<TickError<S, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | Save.LoadRefused,
   Scope.Scope | External<S, H, P>
 > => build(options, save);
@@ -776,7 +723,7 @@ export interface RunOptions<
  * repaint. It never ends on its own.
  *
  * Interrupting it stops the loop and closes that scope, so nothing is left
- * running: no pending frame, no script, and everything the plugins' layers and
+ * running: no pending frame, and everything the plugins' layers and
  * `ready` acquired is released. The platform's `runMain` interrupts it when the
  * page closes or the process is told to stop.
  *
@@ -799,12 +746,7 @@ export const run = <
   SV extends Save.Save | undefined = undefined,
 >(
   options: Options<S, H, P>,
-  drive: RunOptions<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    E2,
-    R2,
-    SV
-  >
+  drive: RunOptions<App<TickError<S, P>, AllHandlers<H, P>>, E2, R2, SV>
 ): Effect.Effect<
   never,
   | Plugin.ErrorOf<P[number]>
@@ -832,7 +774,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   options: Options<S, H, P>,
   given: Save.Save | undefined
 ): Effect.Effect<
-  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+  App<TickError<S, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | Save.LoadRefused,
   Scope.Scope | External<S, H, P>
 > =>
@@ -847,80 +789,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
-    // Fibers waiting for the next tick, in the order they started waiting.
-    const waiters = new Set<() => void>();
-    const nextTick: Effect.Effect<void> = Effect.callback<void>((resume) => {
-      const waiter = () => resume(Effect.void);
-      waiters.add(waiter);
-      return Effect.sync(() => {
-        waiters.delete(waiter);
-      });
-    });
-    const sleep = (seconds: number): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        const until = time.elapsed + seconds;
-        // The epsilon absorbs float error from summing deltas like 1/60.
-        while (time.elapsed + 1e-9 < until) {
-          yield* nextTick;
-        }
-      });
-
-    // Scripts the app watches: started with `app.spawnScript` or `Script.spawn`.
-    const scripts = new Set<Fiber.Fiber<unknown, unknown>>();
-    // A plugin's own scripts, which start again when a save is loaded.
-    const listed = new WeakSet<Fiber.Fiber<unknown, unknown>>();
-    const stopOnFailure = options.onScriptFailure === "stop";
-    let stopped: ScriptFailed | undefined;
-    // Reports are logged with the app's context once it is built, so they
-    // reach the loggers the caller provided.
-    let reportContext: Context.Context<never> = Context.empty();
-    const watch = <A, E>(fiber: Fiber.Fiber<A, E>): Fiber.Fiber<A, E> => {
-      const ended = (exit: Exit.Exit<A, E>): void => {
-        scripts.delete(fiber);
-        // Interrupted is not failed: that is how a script is stopped.
-        if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) {
-          return;
-        }
-        Effect.runForkWith(reportContext)(
-          Effect.logError(`A script failed at tick ${time.tick}`, exit.cause)
-        );
-        if (stopOnFailure) {
-          stopped ??= new ScriptFailed({ cause: exit.cause, tick: time.tick });
-        }
-      };
-      const exit = fiber.pollUnsafe();
-      if (exit === undefined) {
-        scripts.add(fiber);
-        fiber.addObserver(ended);
-      } else {
-        ended(exit);
-      }
-      return fiber;
-    };
-    const spawn = <A, E, R>(
-      effect: Effect.Effect<A, E, R>
-    ): Effect.Effect<Fiber.Fiber<A, E>, never, R> =>
-      Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
-
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
-    const components = [
-      ...plugins.flatMap((plugin) => plugin.components),
-      ...(options.components ?? []),
-    ];
-    for (const listed of components) {
-      if (isSingletonSpec(listed)) {
-        world.singleton(listed);
-      } else {
-        world.register(listed);
-      }
-    }
-    for (const listed of [
-      ...plugins.flatMap((plugin) => plugin.events),
-      ...(options.events ?? []),
-    ]) {
-      events.list(listed);
-    }
     const version = options.version ?? 0;
     if (!Number.isSafeInteger(version) || version < 0) {
       throw new Error(
@@ -952,7 +822,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           problem: error.problem,
           message:
             error.problem === "unknown component"
-              ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
+              ? `${error.message} A migration renames or removes a component in a save.`
               : error.message,
         });
       }
@@ -983,7 +853,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // `encoded` says which form the payload is in: the JSON form that arrives
     // from outside, or the value a handler works with. `entry` is the log
     // entry of an action that was enqueued from outside the simulation; one
-    // that a system, a script or a handler issued has none.
+    // that a system or a handler issued has none.
     const queued: {
       readonly name: string;
       readonly payload: unknown;
@@ -1068,6 +938,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     const handles = (action: Action.AnyActionDef): boolean =>
       handlers.has(action.name);
+    /** A payload's JSON form, or `null` when its action's schema doesn't take it. */
+    const jsonOf = (name: string, payload: unknown): unknown => {
+      const codec = handlers.get(name)?.action.codec;
+      if (codec === undefined) {
+        return null;
+      }
+      const json = Schema.encodeUnknownExit(codec)(payload);
+      return Exit.isSuccess(json) ? json.value : null;
+    };
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** Enqueues from outside the simulation: `app.enqueue`. */
@@ -1079,19 +958,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (handler === undefined) {
         throw new Error(`No handler for action "${action.name}"`);
       }
-      const { codec } = handler.action;
-      if (diverted !== undefined && codec === undefined) {
-        throw new Error(
-          `The action "${action.name}" was defined with a type and no schema, so it cannot be sent to the other peers of this game. Give Action.define a schema.`
-        );
-      }
       // The log holds the JSON form, and the other peers are sent it. A
       // payload that has none is refused here, in a game of one too: queued,
       // it would be refused on this machine alone.
-      const json =
-        codec === undefined
-          ? Exit.succeed(payload)
-          : Schema.encodeUnknownExit(codec)(payload);
+      const json = Schema.encodeUnknownExit(handler.action.codec)(payload);
       if (Exit.isFailure(json)) {
         return Exit.fail(
           new Action.InvalidPayload({
@@ -1141,7 +1011,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     /**
      * Enqueues from inside the simulation: the `Actions` service. Not logged,
-     * because a replay's own systems, scripts and handlers issue it again.
+     * because a replay's own systems and handlers issue it again.
      */
     const enqueueFromInside = (
       action: Action.AnyActionDef,
@@ -1202,14 +1072,16 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Commands, commands),
-      Context.add(Script, { nextTick, sleep, spawn }),
       Context.add(Ticks, {
         more() {
           wanted = true;
         },
       }),
       Context.add(Events, events),
-      Context.add(Action.Actions, { enqueue: enqueueFromInside, handles }),
+      Context.add(Action.Actions, {
+        enqueue: (action, payload) => issue(action, payload),
+        handles,
+      }),
       Context.add(Random, random),
       // Effect's own Random draws from the same generator, so `Random.next`
       // from "effect", or anything built on it, is seeded and replayed too.
@@ -1238,15 +1110,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     }
     const built = yield* Layer.build(layer);
     // Everything the caller provided (their services, resource overrides, the
-    // scope) is captured once here and handed to every system and script.
+    // scope) is captured once here and handed to every system and handler.
     const provided = yield* Effect.context<External<S, H, P>>();
     // Putting our scheduler in the context makes every fiber started from it
-    // (systems, handlers, scripts, and anything they fork) use the tick dispatcher.
+    // (systems, handlers, and anything they fork) use the tick dispatcher.
     const context = Context.merge(provided, built).pipe(
       Context.add(Scheduler.Scheduler, scheduler)
     ) as Context.Context<unknown>;
     const runFork = Effect.runForkWith(context);
-    reportContext = context;
 
     // A tick's span is opened by hand, before its actions are applied each in
     // a fiber of its own, so that their spans and the systems' are its own.
@@ -1325,9 +1196,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const inputTurns = inputSystems.map((system) => new Turn(system, trace));
     const hookGroups = new Map<string, Plugin.AnySystem[]>();
     const states = State.registryOf(world);
-    for (const listed of components) {
-      if (listed instanceof State.State) {
-        State.handleOf(world, listed);
+    // A state the save holds goes on from where it was, transitions included,
+    // whether or not anything has looked at it yet.
+    if (save !== undefined) {
+      for (const state of State.defined()) {
+        if (world.component(state.name) === state.component) {
+          State.handleOf(world, state);
+        }
       }
     }
     for (const system of allSystems) {
@@ -1351,6 +1226,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         );
       }
       State.handleOf(world, state);
+      states.hooked.add(state);
       const key = hookKey(system.trigger);
       hookGroups.set(key, [...(hookGroups.get(key) ?? []), system]);
     }
@@ -1379,6 +1255,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (turn.idle !== undefined) {
           yield* turn.idle;
         }
+        // It sees nothing that changed while it was off, as no event.
+        world.skip(running);
       } else {
         yield* turn.run;
       }
@@ -1445,6 +1323,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             yield* turn.idle;
             commands.apply();
           }
+          // It sees nothing that changed while it was off, as no event.
+          world.skip(running);
         } else {
           yield* turn.run;
           commands.apply();
@@ -1458,16 +1338,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // --- the stages between ticks: frame and input -------------------------------
     // Their systems get the world to read and nothing to change it with.
     // What is random there comes from a generator of its own, which is not
-    // part of the world; an action issued there is input from outside, and
-    // is logged as such; and a script, which would run in the tick, cannot
-    // be started from there.
+    // part of the world; and an action issued there is input from outside,
+    // and is logged as such.
     const verifyFrames = options.verifyFrames === true;
     const frameRandom = new Rng(options.seed ?? 0);
-    const notInFrame = (what: string) => (): never => {
-      throw new Error(
-        `${what} was used in the frame stage or the input stage. A script runs in the tick and is part of the simulation; those stages run between ticks and finish at once.`
-      );
-    };
     const frameContext = context.pipe(
       Context.add(Frame, frame),
       Context.add(Random, frameRandom),
@@ -1483,20 +1357,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Action.Actions, {
-        enqueue: (action, payload) => {
-          const queuedExit = enqueue(action, payload);
-          if (Exit.isFailure(queuedExit)) {
-            throw new Error(
-              `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${describe(Cause.squash(queuedExit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
-            );
-          }
-        },
+        enqueue: (action, payload) => issue(action, payload),
         handles,
-      }),
-      Context.add(Script, {
-        nextTick: Effect.sync(notInFrame("Script.nextTick")),
-        sleep: notInFrame("Script.sleep"),
-        spawn: notInFrame("Script.spawn"),
       }),
       Context.add(Ticks, {
         more() {
@@ -1558,6 +1420,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             if (turn.idle !== undefined) {
               yield* turn.idle;
             }
+            world.skip(world.reader);
           } else {
             yield* turn.run;
           }
@@ -1597,17 +1460,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         })
       : heardEffect;
 
-    yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        // Copied first: interrupting a fiber removes it from the set.
-        for (const fiber of Array.from(scripts)) {
-          fiber.interruptUnsafe();
-        }
-        dispatcher.flush();
-      })
-    );
+    yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
 
     let ticking = false;
+    // How deep the app is in running the game's own code between ticks: a
+    // plugin's setup.
+    let ownCode = 0;
+    const runOwn = <A>(run: () => A): A => {
+      ownCode++;
+      try {
+        return run();
+      } finally {
+        ownCode--;
+      }
+    };
     // The stage that is running between two ticks, if one is.
     let between: "frame" | "input" | undefined;
     // Whether the input stage has run since the last tick.
@@ -1638,6 +1504,54 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     /**
+     * Whether the code running now is the simulation's: a tick, an action's
+     * handler, or a plugin's setup. What it
+     * issues isn't logged, since a replay runs it again and issues it again.
+     * Anything else is input from outside.
+     */
+    const simulating = (): boolean =>
+      ticking || applying !== undefined || ownCode > 0;
+    /** Issues an action from anywhere: `app.enqueue` and `Actions.enqueue`. */
+    const enqueueAnywhere = (
+      action: Action.AnyActionDef,
+      payload: unknown
+    ): Exit.Exit<void, Action.InvalidPayload> => {
+      if (simulating()) {
+        enqueueFromInside(action, payload);
+        return Exit.void;
+      }
+      return enqueue(action, payload);
+    };
+    /**
+     * `Actions.enqueue`, whose payload the compiler has checked. Outside the
+     * simulation, that is only the frame and input stages.
+     */
+    const issue = (action: Action.AnyActionDef, payload: unknown): void => {
+      const exit = enqueueAnywhere(action, payload);
+      if (Exit.isFailure(exit)) {
+        throw new Error(
+          `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${describe(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
+        );
+      }
+    };
+    const enqueueByNameAnywhere = (
+      name: string,
+      payload: unknown,
+      from?: string
+    ): void => {
+      if (!simulating()) {
+        enqueueByName(name, payload, from);
+        return;
+      }
+      if (from !== undefined) {
+        throw new Error(
+          `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
+        );
+      }
+      queued.push({ name, payload, encoded: true, entry: undefined, from });
+    };
+
+    /**
      * Validates a payload and runs its handler to completion. The handler runs
      * in a world transaction: a refusal rolls back its component writes, the
      * random numbers it drew, what it read of events and changes, and what it
@@ -1662,24 +1576,22 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       let value = payload;
       let logged = payload;
       const { codec } = handler.action;
-      if (codec !== undefined) {
-        const converted = encoded
-          ? Schema.decodeUnknownExit(codec)(payload)
-          : Schema.encodeUnknownExit(codec)(payload);
-        if (Exit.isFailure(converted)) {
-          const error = Cause.squash(converted.cause);
-          return Exit.fail(
-            new Action.InvalidPayload({
-              action: name,
-              message: error instanceof Error ? error.message : String(error),
-            })
-          );
-        }
-        if (encoded) {
-          value = converted.value;
-        } else {
-          logged = converted.value;
-        }
+      const converted = encoded
+        ? Schema.decodeUnknownExit(codec)(payload)
+        : Schema.encodeUnknownExit(codec)(payload);
+      if (Exit.isFailure(converted)) {
+        const error = Cause.squash(converted.cause);
+        return Exit.fail(
+          new Action.InvalidPayload({
+            action: name,
+            message: error instanceof Error ? error.message : String(error),
+          })
+        );
+      }
+      if (encoded) {
+        value = converted.value;
+      } else {
+        logged = converted.value;
       }
 
       if (applying !== undefined) {
@@ -1751,7 +1663,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       if (ticking) {
         throw new Error(
-          `dispatch("${name}") was called during a tick. Use enqueue from systems and scripts.`
+          `dispatch("${name}") was called during a tick. Use enqueue: it applies the action at the start of the next tick.`
         );
       }
       if (between !== undefined) {
@@ -1815,9 +1727,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `App.frame was called from inside a ${busy()}. The frame stage runs between ticks.`
         );
       }
-      if (stopped !== undefined) {
-        return Exit.die(stopped);
-      }
       if (frameSystems.length === 0) {
         return Exit.void;
       }
@@ -1832,9 +1741,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         throw new Error(
           `App.input was called from inside a ${busy()}. The input stage runs between ticks, before one.`
         );
-      }
-      if (stopped !== undefined) {
-        return Exit.die(stopped);
       }
       if (inputSystems.length === 0) {
         return Exit.void;
@@ -1862,9 +1768,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     ): Exit.Exit<void, TickError<S, P>> => {
       if (ticking || between !== undefined) {
         throw new Error(`App.tick was called from inside a ${busy()}`);
-      }
-      if (stopped !== undefined) {
-        return Exit.die(stopped);
       }
       // A tick hears the devices first. Whoever steps the app may have
       // seen to it, as a driver does; if not, it is seen to here.
@@ -1915,8 +1818,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               }
               events.emit(Action.Rejected, {
                 action: name,
-                payload,
-                error,
+                payload: encoded ? payload : jsonOf(name, payload),
+                error: refusal(error),
                 from,
               });
             }
@@ -1940,39 +1843,16 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           fiber.interruptUnsafe();
           dispatcher.flush();
           throw new Error(
-            `System "${running}" did not finish within the tick. Systems must be synchronous; ` +
-              `start long-running work with Script.spawn.`
+            `System "${running}" did not finish within the tick. Systems must be synchronous: ` +
+              `what takes longer than a tick keeps its place in the world, in a component or a state that a system moves on each tick.`
           );
         }
 
-        if (waiters.size > 0) {
-          // Copied first: a resumed script usually starts waiting again.
-          const batch = Array.from(waiters);
-          waiters.clear();
-          for (const resume of batch) {
-            resume();
-          }
-        }
         dispatcher.flush();
-        // A script woken by an event may emit one that wakes another script.
-        let rounds = 0;
-        while (events.resumeWaiters()) {
-          dispatcher.flush();
-          if (++rounds > dispatcher.maxRounds) {
-            throw new Error(
-              "Scripts kept waking each other with events for too long in one tick"
-            );
-          }
-        }
         commands.apply();
         events.endTick();
         if (checkpointEvery > 0 && time.tick % checkpointEvery === 0) {
           checkpoint();
-        }
-        // A script failed during this tick (or since the last one) and the
-        // app stops on that. The tick itself ran to its end first.
-        if (stopped !== undefined && Exit.isSuccess(exit)) {
-          return Exit.die(stopped);
         }
         return exit as Exit.Exit<void, TickError<S, P>>;
       } finally {
@@ -1980,11 +1860,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     };
 
-    const app: App<
-      TickError<S, P>,
-      Provided<P> | External<S, H, P>,
-      AllHandlers<H, P>
-    > = {
+    const app: App<TickError<S, P>, AllHandlers<H, P>> = {
       world,
       commands,
       events,
@@ -2008,13 +1884,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: save after one.`
           );
         }
-        for (const fiber of scripts) {
-          if (!listed.has(fiber)) {
-            return refused(
-              "A script started with app.spawnScript or Script.spawn is running, and a save can't hold where it is: after a load it would not run. Save once it has ended, or make it one of a plugin's scripts, which start again after a load and keep what they must not lose in the world."
-            );
-          }
-        }
         const waiting: { name: string; payload: unknown; from?: string }[] = [];
         for (const { encoded, from, name, payload } of queued) {
           const issuer = from === undefined ? {} : { from };
@@ -2025,7 +1894,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           const codec = handlers.get(name)?.action.codec;
           if (codec === undefined) {
             return refused(
-              `The action "${name}" is waiting for the next tick, and it was defined with a type and no schema, so it cannot be saved. Give Action.define a schema, or save after the tick that applies it.`
+              `The action "${name}" is waiting for the next tick, and the app has no handler for it.`
             );
           }
           const json = Schema.encodeUnknownExit(codec)(payload);
@@ -2069,7 +1938,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (
           wanted ||
           queued.length > 0 ||
-          waiters.size > 0 ||
           dispatcher.pending > 0 ||
           events.waiting()
         ) {
@@ -2093,11 +1961,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (commands.size > 0) {
           return refused(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
-          );
-        }
-        if (scripts.size > 0) {
-          return refused(
-            `${scripts.size === 1 ? "A script is" : `${scripts.size} scripts are`} running, and a moment can't hold where a script is: a rewind would lose its place. Keep that place in the world, with systems and a state or a singleton, or play the game without predicting ticks, which never rewinds.`
           );
         }
         let bytes: Uint8Array;
@@ -2144,12 +2007,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
         const was = moment as Captured;
-        // The scripts first: none of them is part of what was captured.
-        for (const fiber of Array.from(scripts)) {
-          fiber.interruptUnsafe();
-        }
         dispatcher.flush();
-        waiters.clear();
         // What is queued on the buffer was never part of the world.
         commands.rollback(0);
         world.restore(was.world);
@@ -2170,9 +2028,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         started = was.started;
         wanted = was.wanted;
         heard = false;
-        stopped = undefined;
-        // No script was running when the moment was captured, and none
-        // starts again.
         commands.apply();
       },
       inspect() {
@@ -2228,9 +2083,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw Cause.squash(exit.cause);
         }
       },
-      spawnScript(effect) {
-        return effect.pipe(runFork, watch);
-      },
       dispatch(action, payload) {
         assertBetweenTicks(action.name);
         // A typed dispatch of an action nobody handles is a programming error.
@@ -2243,12 +2095,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           never
         >;
       },
-      enqueue,
+      enqueue: enqueueAnywhere,
       dispatchByName(name, payload, from) {
         assertBetweenTicks(name);
         return apply(name, payload, true, true, from);
       },
-      enqueueByName,
+      enqueueByName: enqueueByNameAnywhere,
       divert(take) {
         if (diverted !== undefined) {
           throw new Error(
@@ -2268,7 +2120,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       events.reader = `setup:${plugin.name}`;
       world.reader = events.reader;
-      const fiber = runFork(plugin.setup);
+      const { setup } = plugin;
+      const fiber = runOwn(() => runFork(setup));
       events.reader = undefined;
       world.reader = undefined;
       const exit = fiber.pollUnsafe();
@@ -2285,17 +2138,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       commands.apply();
     }
-    // Then every plugin's scripts, on a fresh start and after a load alike:
-    // a script runs up to its first wait, and from then on during ticks.
-    for (const plugin of plugins) {
-      for (const script of plugin.scripts) {
-        listed.add(script.pipe(runFork, watch));
-      }
-    }
     commands.apply();
     return app;
   }) as Effect.Effect<
-    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    App<TickError<S, P>, AllHandlers<H, P>>,
     Plugin.ErrorOf<P[number]> | Save.LoadRefused,
     Scope.Scope | External<S, H, P>
   >;
@@ -2381,13 +2227,13 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
  *   enqueued again at the point it arrived, and the replay stops after the tick
  *   that applied it.
  *
- * Actions the game's systems, scripts and handlers issued aren't in the log:
+ * Actions the game's systems and handlers issued aren't in the log:
  * the replay's own simulation issues them again.
  *
  * **Gotchas**
  *
- * - The log doesn't record the delta or the number of ticks, nor when a script
- *   was started by hand with `app.spawnScript`: whoever replays supplies them.
+ * - The log doesn't record the delta or the number of ticks: whoever replays
+ *   supplies them.
  * - It runs neither the frame stage nor the input stage: every tick runs with
  *   `{ input: false }`.
  * - A log without checkpoints, from an app created with `checkpointEvery: 0`,

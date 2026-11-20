@@ -30,7 +30,6 @@ const Trees = Three.instances("game/Trees", {
 
 const Look = Plugin.make("game/Look", {
   plugins: [Three.plugin, Assets.plugin],
-  components: [Tree, Level],
   systems: [Assets.during(State.is(Level, "forest"), Forest), Trees],
 });
 ```

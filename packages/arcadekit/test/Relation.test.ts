@@ -221,7 +221,7 @@ describe("a relation", () => {
 
     // Its other fields are written like any field.
     world.set(debtor, Owes, { amount: 3 });
-    world.view(Query.all(Owes)).each((owes) => {
+    world.view(Query.all(Owes).pipe(Query.writes(Owes))).each((owes) => {
       owes.amount += 1;
     });
     expect(world.get(debtor, Owes)).toEqual({ target: b, amount: 4 });
@@ -230,7 +230,7 @@ describe("a relation", () => {
       /"rl\/Owes" is a relation.*add\(entity, .*\.of\(\{ target \}\)\)/
     );
     expect(() =>
-      world.view(Query.all(Owes)).each((owes) => {
+      world.view(Query.all(Owes).pipe(Query.writes(Owes))).each((owes) => {
         owes.target = a;
       })
     ).toThrow(/is a relation/);
@@ -592,7 +592,6 @@ const Grow = System.make("Grow", function* () {
 
 const orchard = Effect.gen(function* () {
   const app = yield* App.make({
-    components: [Body, ChildOf],
     systems: [Grow],
     handlers: [fell, graft],
     checkpointEvery: 1,
@@ -649,7 +648,6 @@ describe("relations in an app", () => {
           throw new Error("the save did not decode");
         }
         const loaded = yield* App.load(read.value, {
-          components: [Body, ChildOf],
           systems: [Grow],
           handlers: [fell, graft],
           checkpointEvery: 1,

@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Logger, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,10 +9,8 @@ import {
   EcsWorld,
   Event,
   Field,
-  Plugin,
   Query,
   Save,
-  Script,
   System,
   Ticks,
   Time,
@@ -150,12 +148,10 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
-  it("needs no schema for what is waiting, where a save does", () => {
+  it("keeps an action that is waiting for the next tick", () => {
     withApp(game(), (app) => {
       app.dispatch(Drop, { by: "ada", value: 1 });
-      // An action with a type and no schema, waiting for the next tick.
       app.enqueue(Whisper, { to: "grace" });
-      expect(Exit.isFailure(app.save())).toBe(true);
       const moment = captured(app);
       app.tick(DELTA);
       expect(moves(app.actionLog).map((entry) => entry.name)).toEqual([
@@ -217,71 +213,6 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
-  it("refuses a moment while a script runs, and stops a script started since", () => {
-    const beats: string[] = [];
-    const beat = (name: string, until: number) =>
-      Effect.gen(function* () {
-        const script = yield* Script;
-        while ((yield* Time).tick < until) {
-          yield* script.nextTick;
-          beats.push(`${name} ${(yield* Time).tick}`);
-        }
-      });
-    const Listed = Plugin.make("rw/Listed", { scripts: [beat("listed", 2)] });
-    withApp(App.make({ plugins: [Listed] }), (app) => {
-      app.tick(DELTA);
-      const refused = app.capture();
-      expect(refused).toEqual(
-        Exit.fail(
-          new Save.SaveRefused({
-            message:
-              "A script is running, and a moment can't hold where a script is: a rewind would lose its place. Keep that place in the world, with systems and a state or a singleton, or play the game without predicting ticks, which never rewinds.",
-          })
-        )
-      );
-      app.tick(DELTA);
-      // The plugin's script has ended: nothing is running now.
-      const moment = captured(app);
-      app.spawnScript(beat("by hand", 10));
-      app.tick(DELTA);
-      app.rewind(moment);
-      app.tick(DELTA);
-      app.tick(DELTA);
-      // Neither starts again: the moment held no script.
-      expect(beats).toEqual(["listed 1", "listed 2", "by hand 3"]);
-    });
-  });
-
-  it("lets an app that had stopped on a failed script run again", () => {
-    class Tripped extends Data.TaggedError("Tripped")<{}> {}
-    const Trip = Effect.gen(function* () {
-      const script = yield* Script;
-      while ((yield* Time).tick < 2) {
-        yield* script.nextTick;
-      }
-      return yield* new Tripped();
-    });
-    withApp(
-      App.make({ onScriptFailure: "stop" }).pipe(
-        // The failure is logged, and this test does not want to read it.
-        Effect.provide(Logger.layer([]))
-      ),
-      (app) => {
-        app.tick(DELTA);
-        const moment = captured(app);
-        app.spawnScript(Trip);
-        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
-        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
-        app.rewind(moment);
-        expect(app.time.tick).toBe(1);
-        // It runs, and the script that failed is not there to fail again.
-        app.tick(DELTA);
-        app.tick(DELTA);
-        expect(app.time.tick).toBe(3);
-      }
-    );
-  });
-
   it("has what draws start over, and the simulation go on from where it was", () => {
     const Dot = Component.define("rw/Dot", { x: Field.f32 });
     const NewDots = Query.all(Dot).pipe(Query.added(Dot));
@@ -295,27 +226,24 @@ describe("a game that is put back to a moment", () => {
     const Grow = System.make("rw/Grow", function* () {
       (yield* Commands).spawn(Dot.of({ x: 1 }));
     });
-    withApp(
-      App.make({ systems: [Count, Draw, Grow], components: [Dot] }),
-      (app) => {
-        for (let i = 0; i < 3; i++) {
-          app.tick(DELTA);
-          app.frame(0);
-        }
-        const moment = captured(app);
+    withApp(App.make({ systems: [Count, Draw, Grow] }), (app) => {
+      for (let i = 0; i < 3; i++) {
         app.tick(DELTA);
         app.frame(0);
-        expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
-        app.rewind(moment);
-        seen.tick.length = 0;
-        seen.frame.length = 0;
-        app.tick(DELTA);
-        app.frame(0);
-        // The system of the tick sees the one dot it had yet to see. What
-        // draws sees every dot again: all four are new to it.
-        expect(seen).toEqual({ tick: [1], frame: [4] });
       }
-    );
+      const moment = captured(app);
+      app.tick(DELTA);
+      app.frame(0);
+      expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
+      app.rewind(moment);
+      seen.tick.length = 0;
+      seen.frame.length = 0;
+      app.tick(DELTA);
+      app.frame(0);
+      // The system of the tick sees the one dot it had yet to see. What
+      // draws sees every dot again: all four are new to it.
+      expect(seen).toEqual({ tick: [1], frame: [4] });
+    });
   });
 
   it("throws away commands that were queued and never applied", () => {
@@ -378,7 +306,7 @@ describe("a game that is put back to a moment", () => {
     const Holder = Component.define("rw/Holder", {
       thing: Field.json<unknown>(),
     });
-    withApp(App.make({ components: [Holder] }), (app) => {
+    withApp(App.make({}), (app) => {
       app.commands.spawn(Holder.of({ thing: 1 }));
       expect(app.capture()).toEqual(
         Exit.fail(

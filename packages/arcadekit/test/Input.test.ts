@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
@@ -15,7 +15,6 @@ import {
   Plugin,
   Query,
   Random,
-  Script,
   Singleton,
   State,
   System,
@@ -25,7 +24,7 @@ import {
 import type { BuiltIn } from "../src/Services";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
-const Ships = Query.all(Ship);
+const Ships = Query.all(Ship).pipe(Query.writes(Ship));
 const Score = Singleton.define(
   "in/Score",
   { points: Field.i32 },
@@ -68,7 +67,6 @@ const Steer = System.make("Steer", function* () {
 });
 const Flying = Plugin.make("Flying", {
   plugins: [Input.plugin],
-  components: [Ship],
   systems: [Steer],
   setup: Effect.map(Commands, (commands) => {
     commands.spawn(Ship.of({ x: 0, shots: 0 }));
@@ -104,7 +102,6 @@ describe("the input stage", () => {
           System.runIf(State.is(Phase, "paused"))
         );
         const app = yield* App.make({
-          components: [Phase],
           systems: [
             Second,
             note("Tick", "update"),
@@ -321,8 +318,6 @@ describe("the input stage", () => {
       'singleton "in/Phase"': Effect.map(Phase, (phase) => phase.set("paused")),
       'event "in/Pinged" was emitted in the frame stage or the input stage':
         Effect.map(Pinged, (pinged) => pinged.emit({})),
-      "Script.spawn was used in the frame stage or the input stage":
-        Effect.flatMap(Script, (script) => script.spawn(Effect.void)),
       "A draw from world.random": Effect.map(World, (world) =>
         world.random.next()
       ),
@@ -334,7 +329,6 @@ describe("the input stage", () => {
             yield* attempt;
           }).pipe(System.inStage("input"));
           const app = yield* App.make({
-            components: [Ship, Score, Phase],
             handlers: [bump],
             systems: [Vandal],
             checkpointEvery: 1,
@@ -357,13 +351,12 @@ describe("the input stage", () => {
     // Nor can it be reached around: the app says where it is.
     run(
       Effect.gen(function* () {
-        let app: App.App<never, never, typeof bump> | undefined;
+        let app: App.App<never, typeof bump> | undefined;
         let reach: () => unknown = () => undefined;
         const Reach = System.make("Reach", function* () {
           reach();
         }).pipe(System.inStage("input"));
         app = yield* App.make({
-          components: [Score],
           handlers: [bump],
           systems: [Reach],
         });
@@ -473,7 +466,6 @@ describe("the input stage", () => {
           seen.push((yield* Score).points);
         });
         const app = yield* App.make({
-          components: [Score],
           handlers: [bump],
           systems: [Press, Look],
           checkpointEvery: 0,
@@ -560,9 +552,8 @@ describe("the input stage", () => {
             hear("Hear", heard, "input"),
             hear("Also", also, "input"),
           ],
-          events: [Landed],
         });
-        const plain = yield* App.make({ systems: [Land], events: [Landed] });
+        const plain = yield* App.make({ systems: [Land] });
         for (let i = 0; i < 3; i++) {
           app.input();
           app.tick(1);
@@ -887,33 +878,6 @@ describe("the input stage", () => {
         ).toEqual(new NoKeyboard());
         expect(() => app.input()).toThrow(NoKeyboard);
         expect(app.world.frozen).toBe(false);
-        // An app that has stopped on a failed script reads no devices.
-        let samples = 0;
-        const stopping = yield* App.make({
-          systems: [
-            System.make("Listen", function* () {
-              yield* Input.Devices;
-            }).pipe(System.inStage("input")),
-          ],
-          onScriptFailure: "stop",
-        }).pipe(
-          Effect.provide(Logger.layer([])),
-          withSource({
-            sample() {
-              samples++;
-              return Input.makeManualSource().sample();
-            },
-          })
-        );
-        stopping.input();
-        expect(samples).toBe(1);
-        stopping.spawnScript(Effect.fail("broken"));
-        const stopped = stopping.inputExit();
-        expect(Exit.isFailure(stopped)).toBe(true);
-        expect(
-          Cause.squash((stopped as Exit.Failure<void, never>).cause)
-        ).toBeInstanceOf(App.ScriptFailed);
-        expect(samples).toBe(1);
         // A system that waits has not finished within the stage.
         const Wait = System.make("Wait", function* () {
           yield* Effect.never;
@@ -934,9 +898,7 @@ describe("the input stage", () => {
           System.inStage("input"),
           State.onEnter(Phase, "paused")
         );
-        const exit = yield* Effect.exit(
-          App.make({ components: [Phase], systems: [Hook] })
-        );
+        const exit = yield* Effect.exit(App.make({ systems: [Hook] }));
         expect(Exit.isFailure(exit)).toBe(true);
         expect(
           (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
@@ -1267,7 +1229,6 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
         const Bare = Plugin.make("Bare", {
-          components: [Ship],
           setup: Effect.map(Commands, (commands) => {
             commands.spawn(Ship.of({ x: 0, shots: 0 }));
           }),
@@ -1665,7 +1626,6 @@ describe("the picture of the devices in the world", () => {
         }).pipe(System.inStage("frame"));
         const app = yield* App.make({
           plugins: [Input.plugin],
-          components: [Score],
           handlers: [shoot],
           systems: [Draw],
         });
@@ -1694,7 +1654,7 @@ describe("the picture of the devices in the world", () => {
 });
 
 describe("bindings", () => {
-  const Jump = Action.define()("in/Jump");
+  const Jump = Action.define("in/Jump");
   const Land = Action.define("in/Land", Schema.Struct({}));
   const Fire = Action.define(
     "in/Fire",
@@ -1828,7 +1788,7 @@ describe("bindings", () => {
     const played = [...done];
     expect(played).toEqual(["jump at 0", "aim 7", "fire 7,0"]);
     expect(log.filter((entry) => !Action.isCheckpoint(entry))).toEqual([
-      { tick: 0, name: "in/Jump", payload: undefined, queued: true },
+      { tick: 0, name: "in/Jump", payload: null, queued: true },
       { tick: 0, name: "in/Aim", payload: { x: 7 }, queued: true },
       { tick: 1, name: "in/Fire", payload: { x: 7, y: 0 }, queued: true },
     ]);

@@ -14,7 +14,6 @@ import {
   Input,
   Plugin,
   Query,
-  Script,
   Singleton,
   State,
   System,
@@ -26,10 +25,10 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
 // --- a game that moves when its player does ----------------------------------------
-// A board of pieces. A move slides one; a slide takes three tenths of a
-// second of the game's time, which a script waits out before it says so.
+// A board of pieces. A move slides them, and a piece lands a tick after it
+// was moved.
 const Piece = Component.define("st/Piece", { x: Field.i32 });
-const Pieces = Query.all(Piece);
+const Pieces = Query.all(Piece).pipe(Query.writes(Piece));
 const Score = Singleton.define("st/Score", { moves: Field.i32 }, { moves: 0 });
 const Phase = State.define("st/Phase", ["title", "playing"]);
 
@@ -58,7 +57,6 @@ const Opening = System.make("st/Opening", function* () {
 }).pipe(State.onEnter(Phase, "playing"));
 
 const Rules = Plugin.make("st/Rules", {
-  components: [Piece, Score, Phase],
   systems: [Tally, Land, Opening],
   handlers: [
     Action.handler(Begin, function* () {
@@ -75,7 +73,7 @@ const Rules = Plugin.make("st/Rules", {
 
 describe("app.settled", () => {
   it("is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked", () => {
-    const app = run(App.make({ components: [Piece], checkpointEvery: 0 }));
+    const app = run(App.make({ checkpointEvery: 0 }));
     // A game that has not ticked yet has not been asked whether it has
     // anything to do.
     expect(app.settled).toBe(false);
@@ -169,53 +167,15 @@ describe("app.settled", () => {
     expect(app.settled).toBe(true);
   });
 
-  it("is false while a script waits for a tick or sleeps, and true while it waits for an event", () => {
-    const app = run(App.make({ plugins: [Rules] }));
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    const done: string[] = [];
-    app.spawnScript(
-      Effect.gen(function* () {
-        const script = yield* Script;
-        yield* script.sleep(0.25);
-        done.push("slept");
-        yield* script.nextTick;
-        done.push("ticked");
-        // From here on it waits for something to happen, not for time.
-        yield* (yield* Landed).wait;
-        done.push("heard");
-      })
-    );
-    expect(app.settled).toBe(false);
-    app.tick(0.1);
-    app.tick(0.1);
-    expect(app.settled).toBe(false);
-    app.tick(0.1);
-    expect(done).toEqual(["slept"]);
-    expect(app.settled).toBe(false);
-    app.tick(0.1);
-    expect(done).toEqual(["slept", "ticked"]);
-    expect(app.settled).toBe(true);
-    for (let i = 0; i < 5; i++) {
-      app.tick(0.1);
-    }
-    expect(app.settled).toBe(true);
-    expect(done.length).toBe(2);
-  });
-
-  it("is false while a fiber is due to run at the next tick", () => {
-    const app = run(App.make({ components: [Piece] }));
+  it("is false while work is queued for the next tick", () => {
+    const app = run(App.make({}));
     app.tick(1);
     expect(app.settled).toBe(true);
     const ran: string[] = [];
-    // Started between two ticks, it gives way at once: the rest of it runs
-    // when the next tick lets fibers run.
-    app.spawnScript(
-      Effect.andThen(
-        Effect.yieldNow,
-        Effect.sync(() => ran.push("ran"))
-      )
-    );
+    // As a fiber a system forked leaves the rest of itself, when what it
+    // waited for arrives between two ticks: it runs when the next tick lets
+    // fibers run.
+    app.dispatcher.scheduleTask(() => ran.push("ran"), 0);
     expect(ran).toEqual([]);
     expect(app.settled).toBe(false);
     app.tick(1);
@@ -332,27 +292,6 @@ describe("a game that ticks when its player moves", () => {
     expect(app.time.tick).toBe(rested + 6);
   });
 
-  it("ticks at its own rate while a script waits out the game's time, and no longer", () => {
-    const { app, frame } = play();
-    frame(10);
-    const before = app.time.tick;
-    const said: number[] = [];
-    app.spawnScript(
-      Effect.gen(function* () {
-        yield* (yield* Script).sleep(0.5);
-        said.push(app.time.tick);
-      })
-    );
-    // Half a second of the game's time is thirty ticks at sixty a second.
-    expect(frame(29)).toBe(29);
-    expect(said).toEqual([]);
-    expect(frame(1)).toBe(1);
-    expect(said).toEqual([before + 30]);
-    // And once more, and then rest.
-    expect(frame(50)).toBe(1);
-    expect(app.time.tick).toBe(before + 31);
-  });
-
   it("replays from its log, given how many ticks it ran: resting is no part of the game", () => {
     const { app, frame, source, ui } = play();
     frame(30);
@@ -380,7 +319,7 @@ describe("a game that ticks when its player moves", () => {
 // --- a system with work of its own -------------------------------------------------
 // A clock that is wound by an action and runs down a tenth of a second a
 // tick. Nothing an app can see is waiting while it runs: no action, no
-// state, no script, no event. The system says so itself.
+// state, no event. The system says so itself.
 const Clock = Singleton.define("st/Clock", { left: Field.i32 }, { left: 0 });
 const Wind = Action.define("st/Wind", Schema.Struct({ ticks: Schema.Int }));
 const wind = Action.handler(Wind, function* ({ ticks }) {
@@ -409,7 +348,7 @@ const RunDownSilently = System.make("st/RunDown", function* () {
 });
 
 describe("a system that has more to do", () => {
-  const options = { components: [Clock], handlers: [wind] };
+  const options = { handlers: [wind] };
 
   it("says so with Ticks.more, each tick it has: the app is not settled until a tick in which nobody did", () => {
     const app = run(App.make({ ...options, systems: [RunDown] }));
@@ -475,29 +414,13 @@ describe("a system that has more to do", () => {
     expect(silent.world.singleton(Clock).left).toBe(18);
   });
 
-  it("is heard from a handler and from a script, and changes nothing of a game that ticks in real time", () => {
-    const app = run(
-      App.make({ components: [Clock], handlers: [windAndSay], systems: [] })
-    );
+  it("is heard from a handler, and changes nothing of a game that ticks in real time", () => {
+    const app = run(App.make({ handlers: [windAndSay], systems: [] }));
     app.tick(1);
     expect(app.settled).toBe(true);
     // Dispatched between two ticks, the handler has run: the game is
     // asked for a tick though nothing waits.
     app.dispatch(Wind, { ticks: 1 });
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    // A script: asked in the tick it runs in.
-    app.spawnScript(
-      Effect.gen(function* () {
-        yield* (yield* Script).nextTick;
-        (yield* Ticks).more();
-      })
-    );
-    // It waits for the next tick, which is itself a thing to tick for.
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    // Woken in that tick, it asked: one more.
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(true);

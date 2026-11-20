@@ -2,8 +2,8 @@
  * A turn-based duel on the same framework as the real-time demo.
  *
  * Players act through actions. A handler checks each action against the
- * rules and either applies it or refuses it with a typed error. Systems and
- * a script react to the events that come out. Nothing runs until someone
+ * rules and either applies it or refuses it with a typed error. Systems
+ * react to the events that come out. Nothing runs until someone
  * acts: one tick per move.
  *
  * The game is two plugins: the rules, and commentary that depends on them.
@@ -40,7 +40,8 @@ const Name = Component.define("duel/Name", { value: Field.json<string>() });
 // One per game, not one per entity: whose turn it is.
 const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 });
 
-const Fighters = Query.all(Fighter);
+const Fighters = Query.all(Fighter).pipe(Query.writes(Fighter));
+const Standing = Query.all(Name, Fighter);
 
 // --- what can happen -------------------------------------------------------------
 // Defined with schemas too, so that an event can be written down.
@@ -138,8 +139,6 @@ const Rest = System.make("Rest", function* () {
 /** The rules of the game, with nothing that talks to the outside world. */
 const Rules = Plugin.make("Rules", {
   // Listed so that a saved game, which names them, can be loaded.
-  components: [Fighter, Name, Turn],
-  events: [Struck, Fell, TurnEnded],
   systems: [Casualties, Rest],
   handlers: [strike, pass],
 });
@@ -164,10 +163,13 @@ const Commentary = Plugin.make("Commentary", {
         narrator.say(`${world.get(target, Name)?.value} takes ${amount}!`);
       }
     }).pipe(System.before(Casualties)),
+    // After the rules' own system, when the fighter that fell is gone.
     System.make("CallEnd", function* () {
       const narrator = yield* Narrator;
       for (const _ of (yield* Fell).read()) {
-        narrator.say("And that is the end of the fight.");
+        (yield* Standing).each((name) => {
+          narrator.say(`And that is the end of the fight: ${name.value} wins.`);
+        });
       }
     }).pipe(System.after(Casualties)),
   ],
@@ -187,7 +189,7 @@ const seat = (app: App.Any) => ({
 
 const standing = (app: App.Any): string => {
   const out: string[] = [];
-  app.world.view(Query.all(Name, Fighter)).each((name, fighter) => {
+  app.world.view(Standing).each((name, fighter) => {
     out.push(`${name.value} hp=${fighter.hp} energy=${fighter.energy}`);
   });
   return out.join(", ");
@@ -198,20 +200,6 @@ const program = Effect.gen(function* () {
   // costs nothing and lets a replay say exactly where it went another way.
   const app = yield* App.make({ plugins: [Commentary], checkpointEvery: 1 });
   const { knight, rogue } = seat(app);
-
-  // A script: ordinary sequential code that waits for something to happen.
-  const referee = app.spawnScript(
-    Effect.gen(function* () {
-      const fell = yield* Fell;
-      const world = yield* World;
-      yield* fell.wait;
-      let winner = "";
-      world.view(Query.all(Name, Fighter)).each((name) => {
-        winner = name.value;
-      });
-      return `${winner} wins`;
-    })
-  );
 
   // One move: dispatch, report, then let the world react for one tick.
   const strikeWith = Effect.fnUntraced(function* (
@@ -263,10 +251,7 @@ const program = Effect.gen(function* () {
   passTurn(2);
   yield* strikeWith("Knight", knight, rogue); // the Rogue falls
   yield* strikeWith("Knight", knight, rogue); // nobody left to hit
-  const verdict = referee.pollUnsafe();
-  yield* Console.log(
-    `end -> ${standing(app)}; referee: ${verdict !== undefined && Exit.isSuccess(verdict) ? verdict.value : "no verdict"}`
-  );
+  yield* Console.log(`end -> ${standing(app)}`);
 
   // The log holds the moves that were accepted, and the world's hash after
   // every tick. Written out as text and read back, it reproduces this game in

@@ -1,4 +1,4 @@
-import { Cause, Context, Data, Effect, Exit, Logger } from "effect";
+import { Context, Data, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -13,7 +13,6 @@ import {
   Query,
   Random,
   Resource,
-  Script,
   System,
   TickScheduler,
   Time,
@@ -31,7 +30,10 @@ const Velocity = Component.define("rt/Velocity", {
 const Lifetime = Component.define("rt/Lifetime", { seconds: Field.f32 });
 const Stunned = Component.tag("rt/Stunned", { storage: "sparse" });
 
-const Moving = Query.all(Position, Velocity).pipe(Query.without(Stunned));
+const Moving = Query.all(Position, Velocity).pipe(
+  Query.writes(Position, Velocity),
+  Query.without(Stunned)
+);
 
 const Movement = System.make("Movement", function* () {
   const moving = yield* Moving;
@@ -135,7 +137,7 @@ describe("systems", () => {
     const Reaper = System.make("Reaper", function* () {
       const commands = yield* Commands;
       const { delta } = yield* Time;
-      const mortal = yield* Query.all(Lifetime);
+      const mortal = yield* Query.all(Lifetime).pipe(Query.writes(Lifetime));
       counts.push(mortal.count());
       mortal.each((life, entity) => {
         life.seconds -= delta;
@@ -163,7 +165,9 @@ describe("systems", () => {
       { seconds: Field.f32, dps: Field.f32 },
       { storage: "sparse" }
     );
-    const OnFire = Query.all(Health, Burning);
+    const OnFire = Query.all(Health, Burning).pipe(
+      Query.writes(Health, Burning)
+    );
 
     const Burn = System.make("Burn", function* () {
       const onFire = yield* OnFire;
@@ -220,6 +224,44 @@ describe("systems", () => {
       (app) => app.tick(1)
     );
     expect(seen).toEqual([9.81, 1.62]);
+  });
+
+  it("read a resource's value as read-only, so that no app changes another's", () => {
+    const Config = Resource.make("rt/Config", {
+      defaultValue: () => ({ difficulty: 1, levels: [{ name: "start" }] }),
+    });
+    const Harden = System.make("rt/Harden", function* () {
+      const config = yield* Config;
+      // @ts-expect-error: a resource's value is read-only.
+      config.difficulty = 2;
+    });
+    const Rename = System.make("rt/Rename", function* () {
+      const config = yield* Config;
+      // @ts-expect-error: all the way down.
+      config.levels[0]!.name = "end";
+    });
+    for (const system of [Harden, Rename]) {
+      withApp(App.make({ systems: [system] }), (app) => {
+        expect(() => app.tick(1)).toThrow(TypeError);
+      });
+    }
+    const seen: unknown[] = [];
+    const Read = System.make("rt/Read", function* () {
+      seen.push(yield* Config);
+    });
+    withApp(App.make({ systems: [Read] }), (app) => app.tick(1));
+    expect(seen).toEqual([{ difficulty: 1, levels: [{ name: "start" }] }]);
+    // A layer's value is frozen too.
+    const given = { difficulty: 3, levels: [] };
+    withApp(
+      App.make({ systems: [Harden] }).pipe(
+        Effect.provide(Resource.layer(Config, given))
+      ),
+      (app) => {
+        expect(() => app.tick(1)).toThrow(TypeError);
+      }
+    );
+    expect(given.difficulty).toBe(3);
   });
 
   it("get their services the usual Effect way, and a missing one does not compile", () => {
@@ -280,12 +322,12 @@ describe("systems", () => {
 
   it("must finish within the tick", () => {
     const Lazy = System.make("Lazy", function* () {
-      const script = yield* Script;
-      yield* script.nextTick;
+      yield* Effect.sleep("1 second");
     });
     withApp(App.make({ systems: [Lazy] }), (app) => {
+      // The message says where work that takes longer goes instead.
       expect(() => app.tick(1)).toThrow(
-        /"Lazy" did not finish within the tick/
+        /"Lazy" did not finish within the tick\. Systems must be synchronous: what takes longer than a tick keeps its place in the world/
       );
       // The app is still usable afterwards.
       expect(() => app.tick(1)).toThrow(/did not finish/);
@@ -297,20 +339,13 @@ describe("the built-in services", () => {
   it("are keyed under arcadekit/, each with its own key", () => {
     // A key is a service's identity: two services with one key silently
     // become one, and a game's own "World" must not collide with these.
-    const keys = [
-      World,
-      Time,
-      Commands,
-      Script,
-      Events,
-      Random,
-      Action.Actions,
-    ].map((service) => service.key);
+    const keys = [World, Time, Commands, Events, Random, Action.Actions].map(
+      (service) => service.key
+    );
     expect(keys).toEqual([
       "arcadekit/World",
       "arcadekit/Time",
       "arcadekit/Commands",
-      "arcadekit/Script",
       "arcadekit/Events",
       "arcadekit/Random",
       "arcadekit/Actions",
@@ -376,460 +411,33 @@ describe("the tick scheduler", () => {
   });
 
   it("only resumes yielded fibers when the tick flushes", async () => {
+    const scheduler = new TickScheduler();
     const log: string[] = [];
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const app = yield* App.make({ systems: [] });
-          app.spawnScript(
-            Effect.gen(function* () {
-              log.push("start");
-              yield* Effect.yieldNow;
-              log.push("after yieldNow");
-            })
-          );
-          expect(log).toEqual(["start"]);
-          expect(app.dispatcher.pending).toBe(1);
-          // Give timers and microtasks every chance to run it behind our back.
-          yield* Effect.promise(
-            () => new Promise((resolve) => setTimeout(resolve, 20))
-          );
-          expect(log).toEqual(["start"]);
-          app.tick(1);
-          expect(log).toEqual(["start", "after yieldNow"]);
-          expect(app.dispatcher.pending).toBe(0);
-        })
-      )
+    Effect.runFork(
+      Effect.gen(function* () {
+        log.push("start");
+        yield* Effect.yieldNow;
+        log.push("after yieldNow");
+      }),
+      { scheduler }
     );
+    expect(log).toEqual(["start"]);
+    expect(scheduler.dispatcher.pending).toBe(1);
+    // Give timers and microtasks every chance to run it behind our back.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(log).toEqual(["start"]);
+    scheduler.dispatcher.flush();
+    expect(log).toEqual(["start", "after yieldNow"]);
+    expect(scheduler.dispatcher.pending).toBe(0);
   });
 
   it("stops a fiber that spins on yieldNow instead of hanging the tick", () => {
-    withApp(App.make({ systems: [] }), (app) => {
-      app.dispatcher.maxRounds = 50;
-      app.spawnScript(Effect.forever(Effect.yieldNow));
-      expect(() => app.tick(1)).toThrow(/still busy after 50 rounds/);
-    });
-  });
-});
-
-describe("scripts", () => {
-  it("advance only during ticks, in a fixed order", () => {
-    const log: string[] = [];
-    const script = (name: string, waits: number) =>
-      Effect.gen(function* () {
-        const { nextTick } = yield* Script;
-        for (let i = 0; i < waits; i++) {
-          yield* nextTick;
-          log.push(`${name}@${(yield* Time).tick}`);
-        }
-        return name;
-      });
-    withApp(App.make({ systems: [] }), (app) => {
-      const a = app.spawnScript(script("a", 2));
-      const b = app.spawnScript(script("b", 1));
-      expect(log).toEqual([]);
-      app.tick(1);
-      expect(log).toEqual(["a@1", "b@1"]);
-      expect(b.pollUnsafe()).toEqual(Exit.succeed("b"));
-      expect(a.pollUnsafe()).toBeUndefined();
-      app.tick(1);
-      expect(log).toEqual(["a@1", "b@1", "a@2"]);
-      expect(a.pollUnsafe()).toEqual(Exit.succeed("a"));
-    });
-  });
-
-  it("sleep in game time, and can change the world through commands", () => {
-    const Bomb = Effect.gen(function* () {
-      const script = yield* Script;
-      const commands = yield* Commands;
-      const bomb = commands.spawn(Position.of({ x: 3, y: 3 }));
-      yield* script.sleep(1);
-      commands.despawn(bomb);
-      return (yield* Time).tick;
-    });
-    withApp(App.make({ systems: [Movement] }), (app) => {
-      const fiber = app.spawnScript(Bomb);
-      const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
-      step(0.5);
-      expect(app.world.entityCount).toBe(1);
-      step(0.6);
-      expect(app.world.entityCount).toBe(0);
-      // 60 ticks of 1/60 s is one second of game time, however long it really took.
-      expect(fiber.pollUnsafe()).toEqual(Exit.succeed(60));
-    });
-  });
-
-  it("can be started from a system with forkDetach", () => {
-    const log: string[] = [];
-    const Starter = System.make("Starter", function* () {
-      const { tick } = yield* Time;
-      if (tick !== 1) {
-        return;
-      }
-      yield* Effect.forkDetach(
-        Effect.gen(function* () {
-          const { nextTick } = yield* Script;
-          log.push(`started@${(yield* Time).tick}`);
-          yield* nextTick;
-          log.push(`resumed@${(yield* Time).tick}`);
-        })
-      );
-    });
-    withApp(App.make({ systems: [Starter] }), (app) => {
-      app.tick(1);
-      expect(log).toEqual(["started@1"]);
-      app.tick(1);
-      expect(log).toEqual(["started@1", "resumed@2"]);
-    });
-  });
-
-  it("are interrupted when the app's scope closes", () => {
-    let cleanedUp = false;
-    const fiber = withApp(App.make({ systems: [] }), (app) =>
-      app.spawnScript(
-        Effect.gen(function* () {
-          const { nextTick } = yield* Script;
-          yield* Effect.addFinalizer(() =>
-            Effect.sync(() => void (cleanedUp = true))
-          );
-          return yield* Effect.forever(nextTick);
-        }).pipe(Effect.scoped)
-      )
+    const scheduler = new TickScheduler();
+    scheduler.dispatcher.maxRounds = 50;
+    Effect.runFork(Effect.forever(Effect.yieldNow), { scheduler });
+    expect(() => scheduler.dispatcher.flush()).toThrow(
+      /still busy after 50 rounds/
     );
-    expect(cleanedUp).toBe(true);
-    const exit = fiber.pollUnsafe();
-    expect(exit !== undefined && Exit.isFailure(exit)).toBe(true);
-  });
-});
-
-/** A logger that keeps what it is given, as a layer for `App.make`. */
-const capturedLogs = () => {
-  const entries: {
-    readonly level: string;
-    readonly message: string;
-    readonly cause: Cause.Cause<unknown>;
-  }[] = [];
-  const logger = Logger.make<unknown, void>((options) => {
-    entries.push({
-      level: options.logLevel,
-      message: String(options.message),
-      cause: options.cause,
-    });
-  });
-  return { entries, layer: Logger.layer([logger]) };
-};
-
-class Tripped extends Data.TaggedError("Tripped")<{
-  readonly on: string;
-}> {}
-
-describe("a script that fails", () => {
-  /** Waits `ticks` ticks, then fails. */
-  const trips = (ticks: number, on = "a wire") =>
-    Effect.gen(function* () {
-      const { nextTick } = yield* Script;
-      for (let i = 0; i < ticks; i++) {
-        yield* nextTick;
-      }
-      return yield* new Tripped({ on });
-    });
-
-  it("is logged with its cause, once, and the game goes on without it", () => {
-    const logs = capturedLogs();
-    withApp(
-      App.make({ systems: [Movement] }).pipe(Effect.provide(logs.layer)),
-      (app) => {
-        const fiber = app.spawnScript(trips(2));
-        app.tick(1);
-        expect(logs.entries).toEqual([]);
-        app.tick(1);
-        expect(logs.entries.length).toBe(1);
-        const [entry] = logs.entries;
-        expect(entry!.level).toBe("Error");
-        expect(entry!.message).toBe("A script failed at tick 2");
-        expect(Cause.squash(entry!.cause)).toEqual(
-          new Tripped({ on: "a wire" })
-        );
-        // The same cause the fiber ended with, for whoever observes it.
-        const exit = fiber.pollUnsafe();
-        expect(exit !== undefined && Exit.isFailure(exit) && exit.cause).toBe(
-          entry!.cause
-        );
-
-        app.tick(1);
-        app.tick(1);
-        expect(app.time.tick).toBe(4);
-        expect(logs.entries.length).toBe(1);
-      }
-    );
-  });
-
-  it("is logged whether it fails with an error or dies of a defect, even before its first wait", () => {
-    const logs = capturedLogs();
-    withApp(
-      App.make({ systems: [] }).pipe(Effect.provide(logs.layer)),
-      (app) => {
-        app.spawnScript(Effect.die(new Error("a bug")));
-        expect(logs.entries.map((entry) => entry.message)).toEqual([
-          "A script failed at tick 0",
-        ]);
-        expect(Cause.squash(logs.entries[0]!.cause)).toEqual(
-          new Error("a bug")
-        );
-        app.spawnScript(trips(0, "the doorstep"));
-        expect(logs.entries.length).toBe(2);
-        expect(Cause.squash(logs.entries[1]!.cause)).toEqual(
-          new Tripped({ on: "the doorstep" })
-        );
-        // Each of two scripts that fail in one tick is reported.
-        app.spawnScript(trips(1, "one"));
-        app.spawnScript(trips(1, "two"));
-        app.tick(1);
-        expect(
-          logs.entries.slice(2).map((entry) => Cause.squash(entry.cause))
-        ).toEqual([new Tripped({ on: "one" }), new Tripped({ on: "two" })]);
-      }
-    );
-  });
-
-  it("is not reported when it finishes, or is interrupted, or the app's scope closes", () => {
-    const logs = capturedLogs();
-    withApp(
-      App.make({ systems: [], onScriptFailure: "stop" }).pipe(
-        Effect.provide(logs.layer)
-      ),
-      (app) => {
-        const forever = Effect.gen(function* () {
-          return yield* Effect.forever((yield* Script).nextTick);
-        });
-        app.spawnScript(Effect.succeed("done at once"));
-        app.spawnScript(
-          Effect.gen(function* () {
-            yield* (yield* Script).nextTick;
-            return "done later";
-          })
-        );
-        const interrupted = app.spawnScript(forever);
-        app.spawnScript(forever);
-        app.tick(1);
-        interrupted.interruptUnsafe();
-        app.tick(1);
-        app.tick(1);
-        // Stopping on a failed script, and none of these failed.
-        expect(app.time.tick).toBe(3);
-      }
-    );
-    expect(logs.entries).toEqual([]);
-  });
-
-  it("is watched the same way when a system starts it with Script.spawn", () => {
-    const logs = capturedLogs();
-    const order: string[] = [];
-    let cleanedUp = false;
-    const Starter = System.make("Starter", function* () {
-      const script = yield* Script;
-      if ((yield* Time).tick !== 1) {
-        return;
-      }
-      const fiber = yield* script.spawn(
-        Effect.gen(function* () {
-          order.push("script started");
-          yield* script.nextTick;
-          return yield* new Tripped({ on: "a system's script" });
-        })
-      );
-      // It has not run yet: it starts when the tick flushes, after the systems.
-      order.push(`spawned, running: ${fiber.pollUnsafe() === undefined}`);
-      yield* script.spawn(
-        Effect.gen(function* () {
-          yield* Effect.addFinalizer(() =>
-            Effect.sync(() => void (cleanedUp = true))
-          );
-          return yield* Effect.forever(script.nextTick);
-        }).pipe(Effect.scoped)
-      );
-    });
-    const After = System.make("After", function* () {
-      order.push(`After@${(yield* Time).tick}`);
-    });
-    withApp(
-      App.make({ systems: [Starter, After] }).pipe(Effect.provide(logs.layer)),
-      (app) => {
-        app.tick(1);
-        expect(order).toEqual([
-          "spawned, running: true",
-          "After@1",
-          "script started",
-        ]);
-        expect(logs.entries).toEqual([]);
-        app.tick(1);
-        expect(logs.entries.map((entry) => entry.message)).toEqual([
-          "A script failed at tick 2",
-        ]);
-        expect(Cause.squash(logs.entries[0]!.cause)).toEqual(
-          new Tripped({ on: "a system's script" })
-        );
-        expect(cleanedUp).toBe(false);
-      }
-    );
-    // The other script was still running, and the scope's end interrupted it.
-    expect(cleanedUp).toBe(true);
-    expect(logs.entries.length).toBe(1);
-  });
-
-  it("is not watched when it was started with forkDetach, which is the caller's fiber", () => {
-    const logs = capturedLogs();
-    const Starter = System.make("Starter", function* () {
-      if ((yield* Time).tick === 1) {
-        yield* Effect.forkDetach(trips(1));
-      }
-    });
-    withApp(
-      App.make({ systems: [Starter], onScriptFailure: "stop" }).pipe(
-        Effect.provide(logs.layer)
-      ),
-      (app) => {
-        app.tick(1);
-        app.tick(1);
-        app.tick(1);
-        expect(app.time.tick).toBe(3);
-      }
-    );
-    expect(logs.entries).toEqual([]);
-  });
-
-  it("stops the app when it was told to: the tick ends, fails with ScriptFailed, and no later tick runs", () => {
-    const logs = capturedLogs();
-    let ran = 0;
-    const Counter = System.make("Counter", function* () {
-      ran++;
-    });
-    withApp(
-      App.make({ systems: [Counter], onScriptFailure: "stop" }).pipe(
-        Effect.provide(logs.layer)
-      ),
-      (app) => {
-        const fiber = app.spawnScript(
-          Effect.gen(function* () {
-            const commands = yield* Commands;
-            yield* (yield* Script).nextTick;
-            yield* (yield* Script).nextTick;
-            commands.spawn(Lifetime.of({ seconds: 1 }));
-            return yield* new Tripped({ on: "tick two" });
-          })
-        );
-        expect(app.tickExit(1)).toEqual(Exit.void);
-
-        const exit = app.tickExit(1);
-        const failure = Exit.isFailure(exit)
-          ? Cause.squash(exit.cause)
-          : undefined;
-        expect(failure).toBeInstanceOf(App.ScriptFailed);
-        const stopped = failure as App.ScriptFailed;
-        expect(stopped.tick).toBe(2);
-        expect(Cause.squash(stopped.cause)).toEqual(
-          new Tripped({ on: "tick two" })
-        );
-        const ended = fiber.pollUnsafe();
-        expect(
-          ended !== undefined && Exit.isFailure(ended) && ended.cause
-        ).toBe(stopped.cause);
-        expect(stopped.message).toMatch(/A script failed at tick 2/);
-        expect(stopped.message).toMatch(/Tripped/);
-        // A defect, not a typed failure: nothing is expected to recover from it.
-        expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
-        // The tick the script failed in ran to its end first.
-        expect(ran).toBe(2);
-        expect(app.time.tick).toBe(2);
-        expect(app.world.entityCount).toBe(1);
-
-        // From here on a tick runs nothing and fails the same way.
-        expect(() => app.tick(1)).toThrow(stopped);
-        expect(app.tickExit(1)).toEqual(Exit.die(stopped));
-        const step = Driver.fixedStep(app, { hz: 60 });
-        expect(() => step(1)).toThrow(App.ScriptFailed);
-        expect(ran).toBe(2);
-        expect(app.time).toEqual({ delta: 1, elapsed: 2, tick: 2 });
-        // It is logged as well, once.
-        expect(logs.entries.map((entry) => entry.message)).toEqual([
-          "A script failed at tick 2",
-        ]);
-      }
-    );
-  });
-
-  it("stops the app before its next tick when it fails between ticks, and keeps the first failure", () => {
-    let ran = 0;
-    const Counter = System.make("Counter", function* () {
-      ran++;
-    });
-    const logs = capturedLogs();
-    withApp(
-      App.make({ systems: [Counter], onScriptFailure: "stop" }).pipe(
-        Effect.provide(logs.layer)
-      ),
-      (app) => {
-        app.tick(1);
-        app.spawnScript(trips(0, "first"));
-        app.spawnScript(trips(0, "second"));
-        const exit = app.tickExit(1);
-        const stopped = (
-          Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
-        ) as App.ScriptFailed;
-        expect(stopped).toBeInstanceOf(App.ScriptFailed);
-        expect(stopped.tick).toBe(1);
-        expect(Cause.squash(stopped.cause)).toEqual(
-          new Tripped({ on: "first" })
-        );
-        expect(ran).toBe(1);
-        expect(app.time.tick).toBe(1);
-        expect(logs.entries.length).toBe(2);
-      }
-    );
-  });
-
-  it("does not hide a system's failure in the tick they both fail in", () => {
-    class Jammed extends Data.TaggedError("Jammed")<{}> {}
-    const Jam = System.make("Jam", function* () {
-      if ((yield* Time).tick === 2) {
-        return yield* new Jammed();
-      }
-    });
-    withApp(
-      App.make({ systems: [Jam], onScriptFailure: "stop" }).pipe(
-        Effect.provide(capturedLogs().layer)
-      ),
-      (app) => {
-        app.spawnScript(trips(2));
-        app.tick(1);
-        expect(app.tickExit(1)).toEqual(Exit.fail(new Jammed()));
-        const next = app.tickExit(1);
-        expect(Exit.isFailure(next) && Cause.squash(next.cause)).toBeInstanceOf(
-          App.ScriptFailed
-        );
-        expect(app.time.tick).toBe(2);
-      }
-    );
-  });
-
-  it("goes to the default logger when no other is provided", () => {
-    const seen: unknown[][] = [];
-    const original = console.error;
-    const originalLog = console.log;
-    console.error = (...args: unknown[]) => void seen.push(args);
-    console.log = (...args: unknown[]) => void seen.push(args);
-    try {
-      withApp(App.make({ systems: [] }), (app) => {
-        app.spawnScript(trips(1, "the default logger"));
-        app.tick(1);
-      });
-    } finally {
-      console.error = original;
-      console.log = originalLog;
-    }
-    const text = seen.flat().join(" ");
-    expect(text).toMatch(/A script failed at tick 1/);
-    expect(text).toMatch(/Tripped/);
   });
 });
 
@@ -845,26 +453,24 @@ describe("determinism", () => {
           }
         });
       }).pipe(System.after(Movement));
-      withApp(App.make({ systems: [Movement, Bounce] }), (app) => {
+      // Spawns one more every sixth tick, twenty in all.
+      const Spawner = System.make("Spawner", function* () {
+        const { tick } = yield* Time;
+        const i = tick / 6 - 1;
+        if (Number.isInteger(i) && i < 20) {
+          (yield* Commands).spawn(
+            Position.of({ x: 5, y: i }),
+            Velocity.of({ x: i, y: 0 })
+          );
+        }
+      });
+      withApp(App.make({ systems: [Movement, Bounce, Spawner] }), (app) => {
         for (let i = 0; i < 50; i++) {
           app.world.spawn(
             Position.of({ x: i % 10, y: 0 }),
             Velocity.of({ x: (i % 7) - 3, y: 0 })
           );
         }
-        app.spawnScript(
-          Effect.gen(function* () {
-            const script = yield* Script;
-            const commands = yield* Commands;
-            for (let i = 0; i < 20; i++) {
-              yield* script.sleep(0.1);
-              commands.spawn(
-                Position.of({ x: 5, y: i }),
-                Velocity.of({ x: i, y: 0 })
-              );
-            }
-          })
-        );
         const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 10_000 });
         step(5);
         const all = app.world.view(Moving);

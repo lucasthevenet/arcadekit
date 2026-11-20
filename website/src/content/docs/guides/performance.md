@@ -64,11 +64,11 @@ With a query that watches `Position`:
 | Visiting all 100,000, every one written | 22.4 ns/entity |
 | `each` writing the watched component: every row noted | 17.2 ns/entity |
 | The same, when every row is noted already | 13.8 ns/entity |
-| `eachChunk` handed the watched component: every row noted | 6.3 ns/entity |
-| The same through a query that only reads it (`Query.reads`) | 2.6 ns/entity |
+| `eachChunk` handed the watched component to write (`Query.writes`): every row noted | 6.3 ns/entity |
+| The same through a query that only reads it | 2.6 ns/entity |
 
 - Writes are tracked per row, and only for components some query watches. A component no query watches costs a loop what the first table shows.
-- For a watched component, an assignment in `each` costs about 5 ns more the first time a row is written since the last visit, and about 3 ns after that, while `eachChunk` costs 2.8 ns per row it passes. A loop that declares the component read-only with [`Query.reads`](queries.md) pays nothing.
+- For a watched component, an assignment in `each` costs about 5 ns more the first time a row is written since the last visit, and about 3 ns after that, while `eachChunk` costs 2.8 ns per row it passes. A loop through a query that only reads the component, one that leaves it out of [`Query.writes`](queries.md#what-a-query-writes), pays nothing.
 - Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the change log. A system that needs every entity every tick should use an ordinary query.
 
 ## Idle ticks and frames
@@ -117,7 +117,7 @@ One action, in the world of 100,000 entities:
 | The same, refused after its loop                     | 0.94 ms |
 
 - A handler runs in a transaction, so that a [refusal leaves no trace](events-and-actions.md). A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to restore them on refusal.
-- Read-only columns aren't copied: a handler that reads all 100,000 entities takes 0.78 ms through a plain query and 0.67 ms through one made with `Query.reads()`.
+- Columns a query only reads aren't copied: a handler that reads all 100,000 entities takes 0.78 ms through a query that names them in `Query.writes` and 0.67 ms through one that doesn't.
 - A refusal itself costs about 9 µs, which is Effect constructing the failure.
 
 ## Drawing with Three.js

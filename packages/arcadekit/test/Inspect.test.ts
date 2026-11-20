@@ -48,7 +48,7 @@ const Refuse = Action.define("in/Refuse", Schema.Struct({}));
 
 class NotNow extends Data.TaggedError("in/NotNow") {}
 
-const Moved = Query.all(Position);
+const Moved = Query.all(Position).pipe(Query.writes(Position));
 const Move = System.make("in/Move", function* () {
   (yield* Moved).each((position) => {
     position.x += 1;
@@ -87,8 +87,6 @@ const handlers = [
 ];
 
 const game = App.make({
-  components: [Position, Heat, Boss, Name, ChildOf, Score, Phase],
-  events: [Hit, Spawned],
   systems: [Draw, Read, Move, Scorer, Asleep, Opening],
   handlers,
 });
@@ -208,7 +206,6 @@ describe("app.inspect", () => {
     });
     const app = run(
       App.make({
-        components: [Position],
         systems: [Move, Asleep, Look],
       }).pipe(Effect.provideService(Tracer.Tracer, tracer))
     );
@@ -259,7 +256,7 @@ describe("app.inspect", () => {
       {
         action: "in/Refuse",
         payload: {},
-        error: new NotNow(),
+        error: { _tag: "in/NotNow", message: "" },
         from: undefined,
       },
     ]);
@@ -300,7 +297,7 @@ describe("app.inspect", () => {
     const Spawner = System.make("in/Spawner", function* () {
       (yield* Commands).spawn(Position.of({ x: 5, y: 5 }));
     });
-    const app = run(App.make({ components: [Position], systems: [Spawner] }));
+    const app = run(App.make({ systems: [Spawner] }));
     app.tick(1 / 60);
     expect(app.inspect().entities.map((e) => e.components)).toEqual([
       { "in/Position": { x: 5, y: 5 } },

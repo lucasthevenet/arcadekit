@@ -46,7 +46,7 @@ Browser.runMain(
 | `sounds` | The page's sounds by name, available for the page's lifetime. See [sound](sound.md) |
 | `volume` | The master volume |
 
-When the page is closed, the game is interrupted: the loop stops requesting frames, the app's scope closes, scripts are interrupted, and the plugins' resources are released.
+When the page is closed, the game is interrupted: the loop stops requesting frames, the app's scope closes, and the plugins' resources are released.
 
 - The first frame draws the game as it is and runs no tick. Time is counted from it.
 - While the tab is hidden, the loop requests no frames, and that time doesn't count. When the tab returns, the game resumes where it was.
@@ -98,7 +98,6 @@ const Countdown = System.make("chess/Countdown", function* () {
 });
 
 const Chess = Plugin.make("chess/Chess", {
-  components: [Clock],
   systems: [Countdown],
 });
 
@@ -112,7 +111,7 @@ Browser.runMain(
 
 - The input stage runs every frame, so a key press, a UI button or a network message is received in the frame it arrives, and the tick it requests runs then.
 - The app ticks at `hz` while it isn't settled, plus one more tick for systems that react a tick late to a system listed after them. Then it rests: no tick runs and game time stands still.
-- `app.settled` reports whether anything is pending: an action to apply, a state to enter, a script waiting for the next tick or sleeping, a fiber that is due, or an event some system hasn't read.
+- `app.settled` reports whether anything is pending: an action to apply, a state to enter, a tick some system asked for, a fiber that is due, or an event some system hasn't read.
 - A newly created or loaded app isn't settled. It runs one tick, in which every system can request more, plus the following one, before it rests.
 - The frame stage runs every frame, including at rest, with a `Frame.alpha` of 1, so interpolated rendering draws the game where it is.
 - Resting isn't part of the game. The log holds the actions and their ticks, and a replay given the number of ticks the game ran, `app.time.tick`, runs them back to back and ends on the same hash.
@@ -121,8 +120,7 @@ Browser.runMain(
 Some pending work is invisible to the app, so you declare it:
 
 - A system with work to do every tick while a condition of its own holds, such as a countdown or a body in flight, requests the next tick itself with `(yield* Ticks).more()` on every tick it has more to do, as `Countdown` does. The game rests after the first tick in which nobody requests one. A system that never requests stops with the game, and nothing distinguishes it from one with nothing to do.
-- Handlers and scripts can request ticks too. Between ticks, `more` throws, since rendering doesn't decide when the game ticks. Under a driver that ticks in real time it does nothing, so call it in any system that might run in a game that rests. Requests aren't saved.
-- A sleeping script keeps the game ticking for as long as it sleeps, so anything that takes game time, such as a piece sliding for three tenths of a second, takes it. A script that should let the game rest waits for an event instead.
+- Handlers can request ticks too. Between ticks, `more` throws, since rendering doesn't decide when the game ticks. Under a driver that ticks in real time it does nothing, so call it in any system that might run in a game that rests. Requests aren't saved.
 - A system that reacts through a change query to a system listed after it reacts a tick late, and gets only the one extra tick after the last: two such systems in a row fall a tick short. Order them with `System.after`, or have the system that made the change request a tick.
 
 ## Stepping by hand

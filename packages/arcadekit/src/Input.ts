@@ -526,7 +526,6 @@ const Read = System.make("arcadekit/Input.Read", function* () {
  * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/Input", {
-  components: [Held],
   handlers: [report],
   systems: [Read],
 });
@@ -680,7 +679,7 @@ export const Gamepad = (index = 0): View<GamepadView> =>
 // --- bindings: from the devices to the game's own actions -------------------------
 
 type Enqueue = <N extends string, P>(
-  action: Action.ActionDef<N, P, unknown>,
+  action: Action.ActionDef<N, P>,
   payload: P
 ) => void;
 
@@ -712,7 +711,7 @@ const binding =
   (among: (devices: Sample) => readonly string[]) =>
   <N extends string, P>(
     codes: string | readonly string[],
-    action: Action.ActionDef<N, P, unknown>,
+    action: Action.ActionDef<N, P>,
     ...payload: PayloadArgument<P>
   ): Binding => {
     const watched = typeof codes === "string" ? [codes] : codes;

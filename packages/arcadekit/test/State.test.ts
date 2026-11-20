@@ -22,7 +22,7 @@ const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
 
 const Ball = Component.define("st/Ball", { x: Field.f32 });
-const Balls = Query.all(Ball);
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -56,16 +56,12 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ handlers: [go] });
-        const read = app.spawnScript(
-          Effect.gen(function* () {
-            const phase = yield* Phase;
-            const weather = yield* Weather;
-            return [phase.value, phase.next, weather.value, weather.is("wet")];
-          })
-        );
-        expect(read.pollUnsafe()).toEqual(
-          Exit.succeed(["menu", undefined, "wet", true])
-        );
+        const read = yield* Effect.gen(function* () {
+          const phase = yield* Phase;
+          const weather = yield* Weather;
+          return [phase.value, phase.next, weather.value, weather.is("wet")];
+        }).pipe(Effect.provideService(World, app.world));
+        expect(read).toEqual(["menu", undefined, "wet", true]);
         expect(Phase.values).toEqual(["menu", "playing", "paused"]);
         expect(Phase.name).toBe("st/Phase");
       })
@@ -268,7 +264,6 @@ describe("a run condition", () => {
             ran.push(what);
           });
         const app = yield* App.make({
-          components: [Ball],
           systems: [
             noting("Hud", ran).pipe(
               System.runIf(State.is(Phase, "playing")),
@@ -354,7 +349,7 @@ describe("a run condition", () => {
       System.runIf(Effect.succeed(false)),
       System.otherwise(Effect.map(Phase, (phase) => phase.set("paused")))
     );
-    const app = run(App.make({ components: [Phase], systems: [Vandal] }));
+    const app = run(App.make({ systems: [Vandal] }));
     expect(() => app.frame(0)).toThrow('singleton "st/Phase"');
     // And what it needs and can fail with are the system's.
     class Lamp extends Context.Service<Lamp, { lit: boolean }>()("st/Lamp") {}
@@ -404,7 +399,7 @@ describe("a run condition", () => {
     );
   });
 
-  it("keeps a system that did not run out of events, and not out of changes", () => {
+  it("keeps a system that did not run out of what happened while it was off, events and changes alike", () => {
     const Bounced = Event.define(
       "st/Bounced",
       Schema.Struct({ at: Schema.Int })
@@ -430,29 +425,44 @@ describe("a run condition", () => {
             (yield* Balls.pipe(Query.changed(Ball))).entities().length
           );
         }).pipe(System.runIf(State.is(Phase, "playing")));
+        // The same, drawn between ticks.
+        const drawn: number[] = [];
+        const Look = System.make("Look", function* () {
+          drawn.push(
+            (yield* Balls.pipe(Query.changed(Ball))).entities().length
+          );
+        }).pipe(
+          System.inStage("frame"),
+          System.runIf(State.is(Phase, "playing"))
+        );
         const app = yield* App.make({
-          components: [Phase, Ball],
-          systems: [Listen, Emit],
+          systems: [Listen, Emit, Look],
           handlers: [go],
         });
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: 0 }));
         }
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        app.tick(1);
-        app.dispatch(Go, { to: "paused", refuse: false });
-        for (let tick = 0; tick < 6; tick++) {
+        const tick = () => {
           app.tick(1);
+          app.frame(0);
+        };
+        app.dispatch(Go, { to: "playing", refuse: false });
+        tick();
+        tick();
+        app.dispatch(Go, { to: "paused", refuse: false });
+        for (let n = 0; n < 6; n++) {
+          tick();
         }
         app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        // It hears the event of the tick before it came back, and none of
-        // the six it sat out before that.
+        tick();
+        // It hears the event of the tick before it came back, which came
+        // after its turn, and none of the six it sat out before that.
         expect(heard).toEqual([1, 8]);
-        // But every ball that moved while it was away is there to visit:
-        // all three, each once.
-        expect(moved).toEqual([3, 1, 3]);
+        // And of the balls, only the one that moved after its turn in that
+        // tick: all three moved while it was away.
+        expect(moved).toEqual([3, 1, 1]);
+        // Drawn after each tick: the one ball the tick it came back moved.
+        expect(drawn).toEqual([3, 1, 1]);
       })
     );
   });
@@ -461,7 +471,6 @@ describe("a run condition", () => {
 describe("hooks", () => {
   const game = (ran: string[], extra: System.System<never, World>[] = []) =>
     App.make({
-      components: [Phase, Weather, Ball],
       systems: [
         noting("Tick", ran),
         noting("EnterMenu", ran).pipe(State.onEnter(Phase, "menu")),
@@ -646,25 +655,38 @@ describe("hooks", () => {
     );
   });
 
-  it("enter a listed state on the first tick, whenever it is first looked at", () => {
+  it("leave a state alone that no hook waits for, wherever it is looked at from, until a value is asked for", () => {
     run(
       Effect.gen(function* () {
         const Late = System.make("Late", function* () {
-          if ((yield* Time).tick >= 3) {
-            void (yield* Phase).value;
+          const phase = yield* Phase;
+          if ((yield* Time).tick === 3) {
+            phase.set("playing");
           }
         });
-        const looked = yield* App.make({
-          components: [Phase],
-          systems: [Late],
-        });
-        const unseen = yield* App.make({ components: [Phase] });
-        for (let tick = 0; tick < 5; tick++) {
+        const Draw = System.make("Draw", function* () {
+          void (yield* Phase).value;
+        }).pipe(System.inStage("frame"));
+        const looked = yield* App.make({ systems: [Late] });
+        const drawn = yield* App.make({ systems: [Draw] });
+        const unseen = yield* App.make({ systems: [] });
+        for (let tick = 1; tick <= 5; tick++) {
           looked.tick(1);
+          drawn.tick(1);
+          drawn.frame(0);
           unseen.tick(1);
-          // A plugin that only looks does not change the game it looks at.
-          expect(looked.world.hash()).toBe(unseen.world.hash());
+          // A look changes nothing from the frame, which a replay doesn't
+          // run.
+          expect(drawn.world.hash()).toBe(unseen.world.hash());
+          // And from the tick, until a value is asked for in tick 3.
+          expect(looked.world.hash() === unseen.world.hash()).toBe(tick < 3);
         }
+        // Asked for in tick 3: entered, and moved, at the start of tick 4.
+        expect({ ...looked.world.singleton(Phase) }).toEqual({
+          value: "playing",
+          next: null,
+          entered: 1,
+        });
       })
     );
   });
@@ -739,7 +761,6 @@ describe("a state in a save", () => {
       (yield* Commands).spawn(Built.of({ level }));
     }).pipe(State.onEnter(Level, level));
   const Rules = Plugin.make("st/Rules", {
-    components: [Level, Built, Ball],
     systems: [
       build("one"),
       build("two"),
@@ -816,23 +837,20 @@ describe("a state in a save", () => {
     const After = State.define("st/Door", ["open", "shut"]);
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ components: [Before] });
-        app.spawnScript(
-          Effect.gen(function* () {
-            (yield* Before).set("ajar");
-          })
+        const app = yield* App.make({});
+        (yield* Effect.provideService(Before.asEffect(), World, app.world)).set(
+          "ajar"
         );
         app.tick(1);
         const save = app.save();
         assert(Exit.isSuccess(save));
-        const loaded = yield* App.load(save.value, { components: [After] });
-        const read = loaded.spawnScript(
-          Effect.gen(function* () {
-            return (yield* After).value;
-          })
+        const loaded = yield* App.load(save.value, {});
+        const exit = yield* Effect.exit(
+          Effect.map(After, (door) => door.value).pipe(
+            Effect.provideService(World, loaded.world)
+          )
         );
-        const exit = read.pollUnsafe();
-        assert(exit !== undefined && Exit.isFailure(exit));
+        assert(Exit.isFailure(exit));
         expect(String(Cause.squash(exit.cause))).toContain(
           'The state "st/Door" holds "ajar", which is not one of its values: open, shut.'
         );
@@ -840,24 +858,23 @@ describe("a state in a save", () => {
     );
   });
 
-  it("has to be listed, like any singleton, to be loaded", () => {
+  it("goes on after a load into a game that never looks at it, with what was asked for", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Rules] });
         app.tick(1);
+        expect(Exit.isSuccess(app.dispatch(Next, {}))).toBe(true);
         const save = app.save();
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
-        const refused = yield* Effect.exit(
-          App.load(save.value, { components: [Built, Ball], handlers: [next] })
-        );
-        expect(
-          Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined
-        ).toMatchObject({
-          _tag: "LoadRefused",
-          problem: "unknown component",
-          message: expect.stringContaining('"st/Level"'),
+        // Nothing in this game looks at the level, and no list names it.
+        const loaded = yield* App.load(save.value, { handlers: [] });
+        loaded.tick(1);
+        expect({ ...loaded.world.singleton(Level) }).toEqual({
+          value: "two",
+          next: null,
+          entered: 1,
         });
       })
     );

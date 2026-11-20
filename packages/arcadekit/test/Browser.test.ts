@@ -31,7 +31,7 @@ import {
 } from "../src/index";
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
-const Ships = Query.all(Ship);
+const Ships = Query.all(Ship).pipe(Query.writes(Ship));
 
 const run = <A, E>(effect: Effect.Effect<A, E, ScopeType.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -67,7 +67,6 @@ const Steer = System.make("Steer", function* () {
 });
 const Flying = Plugin.make("Flying", {
   plugins: [Input.plugin],
-  components: [Ship],
   systems: [Steer],
   setup: Effect.map(Commands, (commands) => {
     commands.spawn(Ship.of({ x: 0, shots: 0 }));

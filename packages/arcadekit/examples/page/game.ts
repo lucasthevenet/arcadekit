@@ -43,6 +43,7 @@ const Star = Component.define("page/Star", {
   speed: Field.f32,
 });
 const Stars = Query.all(Star);
+const Falling = Query.all(Star).pipe(Query.writes(Star));
 // One of each per game: where the basket is, and how many stars it caught.
 const Basket = Singleton.define(
   "page/Basket",
@@ -87,7 +88,7 @@ const Fall = System.make("Fall", function* () {
   const random = yield* Random;
   const basket = yield* Basket;
   let caught = 0;
-  (yield* Stars).each((star) => {
+  (yield* Falling).each((star) => {
     const before = star.y;
     star.y += star.speed * delta;
     // Caught if it crossed the basket's line this tick, over the basket.
@@ -231,7 +232,7 @@ const Draw = System.make("Draw", function* () {
     const picture = level.assets.star;
     // Each star is drawn where it is by now: `alpha` of a tick further on.
     const ahead = phase.is("paused") ? 0 : (yield* Frame).alpha * delta;
-    (yield* Stars.pipe(Query.reads())).eachChunk((start, end, star) => {
+    (yield* Stars).eachChunk((start, end, star) => {
       for (let i = start; i < end; i++) {
         const y = star.y[i]! + star.speed[i]! * ahead;
         canvas.drawImage(picture, star.x[i]! - 4, y - 4);
@@ -286,8 +287,6 @@ const ShowHud = View.publish(Hud, function* () {
 
 export const Game = Plugin.make("Game", {
   plugins: [Input.plugin, Assets.plugin, View.plugin, Sound.plugin],
-  components: [Star, Basket, Phase],
-  events: [Caught, Started],
   handlers,
   systems: [
     Steer,

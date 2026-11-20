@@ -10,9 +10,10 @@ import {
   EcsWorld,
   EntityId,
   Field,
+  Plugin,
   Query,
   Random,
-  Script,
+  Singleton,
   System,
   Time,
   World,
@@ -22,7 +23,7 @@ import type { Entity } from "../src/index";
 // --- a small game: coins are dropped, drift about at random, and are taken ------
 
 const Coin = Component.define("rp/Coin", { value: Field.i32, x: Field.f32 });
-const Coins = Query.all(Coin);
+const Coins = Query.all(Coin).pipe(Query.writes(Coin));
 
 const Drop = Action.define("rp/Drop", Schema.Struct({ value: Schema.Int }));
 const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }));
@@ -195,19 +196,12 @@ describe("checkpoints", () => {
     expect(moves(recorded.log).length).toBeGreaterThan(3);
   });
 
-  it("are taken when a tick is over, after the commands its scripts queued are applied", () => {
-    withApp(game({ checkpointEvery: 1 }), (app) => {
-      // A script's commands are the last thing a tick applies.
-      app.spawnScript(
-        Effect.gen(function* () {
-          const script = yield* Script;
-          const commands = yield* Commands;
-          for (;;) {
-            yield* script.nextTick;
-            commands.spawn(Coin.of({ value: 1, x: 0 }));
-          }
-        })
-      );
+  it("are taken when a tick is over, after the commands its systems queued are applied", () => {
+    // The last system's commands are the last thing a tick applies.
+    const Mint = System.make("Mint", function* () {
+      (yield* Commands).spawn(Coin.of({ value: 1, x: 0 }));
+    });
+    withApp(game({ checkpointEvery: 1, faulty: Mint }), (app) => {
       for (let tick = 1; tick <= 5; tick++) {
         app.tick(1 / 60);
         expect(app.world.entityCount).toBe(tick);
@@ -606,7 +600,7 @@ const Tally = Component.define("rp/Tally", {
   value: Field.f64,
   rejections: Field.u32,
 });
-const Tallies = Query.all(Tally);
+const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
 
 const Double = Action.define("rp/Double", Schema.Struct({}));
 const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));
@@ -653,28 +647,36 @@ const Referee = System.make("Referee", function* () {
     tally.rejections += refused;
   });
 });
-/** A script that makes a move of its own now and then. */
-const Heckler = Effect.gen(function* () {
-  const script = yield* Script;
-  const actions = yield* Action.Actions;
+/** The ticks the heckler waits before its next move. */
+const Patience = Singleton.define(
+  "rp/Patience",
+  { left: Field.u8 },
+  { left: 0 }
+);
+/** A system that makes a move of its own now and then. */
+const Heckler = System.make("Heckler", function* () {
   const random = yield* Random;
-  for (;;) {
-    yield* script.sleep(random.int(1, 3));
-    actions.enqueue(Add, { by: random.int(1, 9) });
+  const patience = yield* Patience;
+  if (patience.left > 1) {
+    patience.left -= 1;
+    return;
   }
+  if (patience.left === 1) {
+    (yield* Action.Actions).enqueue(Add, { by: random.int(1, 9) });
+  }
+  patience.left = random.int(1, 3);
 });
 
 const busy = (checkpointEvery = 1) =>
   Effect.map(
     App.make({
-      systems: [Bot, Referee],
+      systems: [Bot, Referee, Heckler],
       handlers: [double, add, chain],
       seed: 4,
       checkpointEvery,
     }),
     (app) => {
       const tally = app.world.spawn(Tally.of({ value: 1, rejections: 0 }));
-      app.spawnScript(Heckler);
       return { app, tally };
     }
   );
@@ -696,7 +698,7 @@ describe("the action log", () => {
       // 1 + 1000 at once, then (+1, +100, doubled) when the tick starts.
       app.tick(1);
       expect(app.world.get(tally, Tally)!.value).toBe((1001 + 1 + 100) * 2);
-      // The tick ran the bot and the script, and none of their moves is logged.
+      // The tick ran the bot and the heckler, and none of their moves is logged.
       for (let i = 0; i < 12; i++) {
         app.tick(1);
       }
@@ -749,8 +751,102 @@ describe("the action log", () => {
   });
 });
 
+describe("app.enqueue from inside the simulation", () => {
+  /**
+   * A game whose system and handler hold the app and enqueue through it, as
+   * game code that keeps the app in a variable does. `Relay` adds through the
+   * app when it is applied.
+   */
+  const Relay = Action.define("rp/Relay", Schema.Struct({ by: Schema.Int }));
+  const holding = Effect.gen(function* () {
+    let enqueue: ((by: number) => void) | undefined;
+    const relay = Action.handler(Relay, function* ({ by }) {
+      enqueue?.(by);
+    });
+    const Clock = System.make("Clock", function* () {
+      enqueue?.(1);
+    });
+    const app = yield* App.make({
+      systems: [Clock],
+      handlers: [add, relay],
+      checkpointEvery: 1,
+    });
+    enqueue = (by) => {
+      app.enqueue(Add, { by });
+    };
+    const tally = app.world.spawn(Tally.of({ value: 0, rejections: 0 }));
+    return { app, tally };
+  });
+  const replayed = (log: readonly Action.LogEntry[], ticks: number) =>
+    withApp(holding, ({ app, tally }) => {
+      App.replay(app, log, { delta: 1, ticks });
+      return {
+        value: app.world.get(tally, Tally)!.value,
+        hash: app.world.hash(),
+      };
+    });
+
+  it("is the simulation's own move from a system, so a replay makes it once", () => {
+    const recorded = withApp(holding, ({ app, tally }) => {
+      for (let i = 0; i < 3; i++) {
+        app.tick(1);
+      }
+      return {
+        log: [...app.actionLog],
+        value: app.world.get(tally, Tally)!.value,
+        hash: app.world.hash(),
+      };
+    });
+    // The first tick's move is applied on the second, and so on.
+    expect(recorded.value).toBe(2);
+    expect(moves(recorded.log)).toEqual([]);
+    expect(replayed(recorded.log, 3)).toEqual({
+      value: recorded.value,
+      hash: recorded.hash,
+    });
+  });
+
+  it("is the simulation's own move from a handler: only the dispatched action is logged", () => {
+    const recorded = withApp(holding, ({ app, tally }) => {
+      expect(Exit.isSuccess(app.dispatch(Relay, { by: 100 }))).toBe(true);
+      app.tick(1);
+      return {
+        log: [...app.actionLog],
+        value: app.world.get(tally, Tally)!.value,
+        hash: app.world.hash(),
+      };
+    });
+    expect(recorded.value).toBe(100);
+    expect(moves(recorded.log)).toEqual([
+      { tick: 0, name: "rp/Relay", payload: { by: 100 } },
+    ]);
+    expect(replayed(recorded.log, 1)).toEqual({
+      value: recorded.value,
+      hash: recorded.hash,
+    });
+  });
+
+  it("is the game's own move from a plugin's setup, and isn't logged", () => {
+    const Opening = Plugin.make("Opening", {
+      handlers: [add],
+      setup: Effect.gen(function* () {
+        (yield* Action.Actions).enqueue(Add, { by: 10 });
+      }),
+    });
+    withApp(App.make({ plugins: [Opening], checkpointEvery: 0 }), (app) => {
+      const tally = app.world.spawn(Tally.of({ value: 0, rejections: 0 }));
+      app.enqueue(Add, { by: 4000 });
+      app.tick(1);
+      expect(app.world.get(tally, Tally)!.value).toBe(4010);
+      expect(app.actionLog).toEqual([
+        { tick: 0, name: "rp/Add", payload: { by: 4000 }, queued: true },
+      ]);
+    });
+  });
+});
+
 describe("a game whose simulation issues actions itself", () => {
-  /** Outside moves mixed in with the bot's, the script's and a handler's. */
+  /** Outside moves mixed in with the bot's, the heckler's and a handler's. */
   const play = (app: Effect.Success<ReturnType<typeof busy>>["app"]) => {
     const dice = new EcsWorld({ seed: 77 }).random;
     for (let tick = 0; tick < 90; tick++) {

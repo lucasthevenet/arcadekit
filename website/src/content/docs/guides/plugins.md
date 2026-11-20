@@ -1,9 +1,9 @@
 ---
 title: "Plugins"
-description: "A plugin bundles a feature into one value: its systems, action handlers, components, services and startup logic. A game is a plugin made of plugins."
+description: "A plugin bundles a feature into one value: its systems, action handlers, services and startup logic. A game is a plugin made of plugins."
 ---
 
-A **plugin** bundles a feature into one value: its systems, its action handlers, its components, the services it provides, and its startup logic. A game is a plugin made of plugins.
+A **plugin** bundles a feature into one value: its systems, its action handlers, the services it provides, and its startup logic. A game is a plugin made of plugins.
 
 ## Creating a plugin
 
@@ -27,7 +27,7 @@ class Bounds extends Context.Service<Bounds, { readonly width: number }>()(
   "physics/Bounds"
 ) {}
 
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.make("physics/Movement", function* () {
   const { width } = yield* Bounds;
@@ -38,7 +38,7 @@ const Movement = System.make("physics/Movement", function* () {
 });
 
 export const Physics = Plugin.make("physics/Physics", {
-  components: [Position, Velocity], // so saves containing them load
+  // so saves containing them load
   systems: [Movement],
   layer: Layer.succeed(Bounds, { width: 10 }), // services for the whole app
   setup: Effect.gen(function* () {
@@ -62,13 +62,10 @@ const program = Effect.gen(function* () {
 | `plugins` | The plugins this one depends on. Each is installed once, however many plugins depend on it |
 | `systems` | Its systems, registered after its dependencies' |
 | `handlers` | Its action handlers, from which `app.dispatch` is typed |
-| `components` | Its components, singletons and states, so saves containing them can load |
-| `events` | Its events that a save may hold waiting to be read, each with a schema, so such a save can load |
 | `layer` | Services for the whole app, built once. Resources it acquires are released when the app's scope closes |
 | `setup` | An Effect that runs on a fresh start, but not on a load, since the save already holds what it spawned |
-| `scripts` | Scripts started with the app, after `setup`, and again after a load |
 
-Events and actions are plain values, exported from the plugin's module. A plugin lists the events it emits only so that a save can hold them: see [saving and loading](/guides/saving-and-loading/#requirements-for-saving).
+Components, events and actions are plain values, exported from the plugin's module. A plugin doesn't list them: a save finds each by its name, see [saving and loading](/guides/saving-and-loading/#requirements-for-saving).
 
 ## Services
 
@@ -97,7 +94,7 @@ const OnTheMoon = Resource.layer(Gravity, -1.62);
 
 A system reads it with `yield* Gravity`. It is configuration, not game state, and isn't saved. Game state that exists once belongs in a [singleton](components.md#singletons), which lives in the world and is therefore saved, hashed, and restored when an action is refused.
 
-A resource's default is created once and shared by every app in the process, so never mutate it.
+A resource's default is created once and shared by every app in the process, so its value is read-only: its type says so all the way down, and a plain object or array is frozen, so that a write throws. To change it for an app, provide another value with `Resource.layer`.
 
 ## Project layout
 
@@ -141,7 +138,7 @@ import { fall } from "./loops";
 export const Position = Component.define("physics/Position", { y: Field.f32 });
 export const Velocity = Component.define("physics/Velocity", { y: Field.f32 });
 export const Falling = Query.all(Position, Velocity).pipe(
-  Query.reads(Velocity)
+  Query.writes(Position)
 );
 
 export const Fall = System.make("physics/Fall", function* () {
@@ -152,7 +149,6 @@ export const Fall = System.make("physics/Fall", function* () {
 });
 
 export const plugin = Plugin.make("physics/Physics", {
-  components: [Position, Velocity],
   systems: [Fall],
 });
 ```

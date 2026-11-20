@@ -139,8 +139,8 @@ export type GenServices<Eff> = [Eff] extends [never]
  * times a second.
  *
  * A system must finish within its tick: one that waits throws, and the error
- * names it. Work that spans many ticks belongs in a script, started with
- * `Script.spawn`.
+ * names it. Work that spans many ticks keeps its place in the world, in a
+ * component or a state, and a system moves it on each tick.
  *
  * @category Constructors
  */
@@ -271,10 +271,11 @@ export const before: {
  * all of them hold, and they are checked in order until one fails.
  *
  * - A system without a condition checks nothing, and costs nothing extra.
- * - A system that doesn't run doesn't read. The events from the ticks it
- *   skipped are gone when it runs again, as for any system that falls behind an
- *   event; what its change queries haven't visited is kept, however long it was
- *   disabled.
+ * - A system that doesn't run doesn't read, and sees nothing of what happened
+ *   while it was off. The events from the ticks it skipped are gone when it
+ *   runs again, and its change queries and `Query.removed` readers skip what
+ *   changed in them: they see what changed after its last skipped turn. A
+ *   change query it has never visited still visits everything that matches.
  * - The condition's requirements and errors become the system's.
  *
  * @category Combinators

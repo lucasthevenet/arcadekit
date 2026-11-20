@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import {
   App,
   Component,
-  Plugin,
   Query,
   Save,
   System,
@@ -37,7 +36,7 @@ describe("Transform2d", () => {
     }
     // Added bare, it is where it was made, turned by nothing, and of its
     // own size: a Scale of zeros would be drawn as nothing.
-    const { world } = run(App.make({ plugins: [Transform2d.plugin] }));
+    const { world } = run(App.make({}));
     const bare = world.spawn(Position, Rotation, Scale);
     expect(world.get(bare, Scale)).toEqual({ x: 1, y: 1 });
     expect(new Set(Object.values(world.get(bare, Position)!))).toEqual(
@@ -45,16 +44,13 @@ describe("Transform2d", () => {
     );
     // One module, whichever entry it is reached through.
     expect(Entry.Position).toBe(Position);
-    expect(Entry.plugin).toBe(Transform2d.plugin);
   });
 
   it("is not Transform3d: an entity can have either, and nothing keeps one in step with the other", () => {
     expect(Position).not.toBe(Transform3d.Position);
     expect(Rotation).not.toBe(Transform3d.Rotation);
     expect(Scale).not.toBe(Transform3d.Scale);
-    const { world } = run(
-      App.make({ plugins: [Transform3d.plugin, Transform2d.plugin] })
-    );
+    const { world } = run(App.make({}));
     const both = world.spawn(
       Position.of({ x: 1, y: 2 }),
       Transform3d.Position.of({ x: 7, y: 8, z: 9 })
@@ -68,7 +64,9 @@ describe("Transform2d", () => {
   });
 
   it("is moved and turned by a system with a loop over its columns", () => {
-    const Moving = Query.all(Position, Rotation);
+    const Moving = Query.all(Position, Rotation).pipe(
+      Query.writes(Position, Rotation)
+    );
     const Drift = System.make("t2/Drift", function* () {
       const { delta } = yield* Time;
       (yield* Moving).eachChunk((start, end, position, rotation) => {
@@ -79,9 +77,7 @@ describe("Transform2d", () => {
         }
       });
     });
-    const app = run(
-      App.make({ plugins: [Transform2d.plugin], systems: [Drift] })
-    );
+    const app = run(App.make({ systems: [Drift] }));
     const card = app.world.spawn(
       Position.of({ x: 1, y: 2 }),
       Rotation.of({ angle: 0.25 })
@@ -95,14 +91,8 @@ describe("Transform2d", () => {
     expect(app.world.get(fresh, Rotation)).toEqual({ angle: 0.5 });
   });
 
-  it("lists its components, so that a flat game saves and loads them", () => {
-    const Rules = Plugin.make("t2/Rules", {
-      plugins: [Transform2d.plugin],
-      components: [Card],
-    });
-    expect(Transform2d.plugin.name).toBe("arcadekit/Transform2d");
-    expect(Transform2d.plugin.components).toEqual([Position, Rotation, Scale]);
-    const made = run(App.make({ plugins: [Rules] }));
+  it("is saved and loaded by a flat game, which names none of its components", () => {
+    const made = run(App.make({}));
     const card = made.world.spawn(
       Card,
       Position.of({ x: 1, y: 2 }),
@@ -117,24 +107,10 @@ describe("Transform2d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(App.load(read.value, { plugins: [Rules] }));
+    const loaded = run(App.load(read.value, {}));
     expect(loaded.world.hash()).toBe(made.world.hash());
     expect(loaded.world.get(card, Position)).toEqual({ x: 1, y: 2 });
     expect(loaded.world.get(card, Rotation)).toEqual({ angle: 1.5 });
     expect(loaded.world.get(card, Scale)).toEqual({ x: 2, y: 3 });
-    // The other transform's plugin does not list them: each its own.
-    const without = Effect.runSyncExit(
-      Effect.scoped(
-        App.load(read.value, {
-          plugins: [
-            Plugin.make("t2/Other", {
-              plugins: [Transform3d.plugin],
-              components: [Card],
-            }),
-          ],
-        })
-      )
-    );
-    expect(Exit.isFailure(without)).toBe(true);
   });
 });

@@ -68,7 +68,7 @@ Before each tick it isn't sure of, the session captures the game with `app.captu
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one, so for a very large world each uncertain tick pays that cost.
-- When the game can't be captured, because a field holds a value no snapshot can store or a script is running, the tick doesn't run and `session.tickExit()` fails with `Save.SaveRefused`.
+- When the game can't be captured, because a field holds a value no snapshot can store, the tick doesn't run and `session.tickExit()` fails with `Save.SaveRefused`.
 
 ## Driving a session
 
@@ -90,9 +90,7 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 ## Requirements for online play
 
 - **Check `from`, not the payload.** A handler receives the peer that issued an action. Check permissions against `from`, never against a name in the payload. See [who issued an action](events-and-actions.md#who-issued-an-action).
-- **Give every action a schema.** An action defined with only a type can't be sent to other peers, and enqueuing one throws.
 - **Keep everything the simulation reads in the world.** A rewind restores the world and the app's pending work, and nothing else.
-  - Use systems and states, not scripts. A moment can't hold where a script is, so the game can't be captured while one runs, and the session stops with `Save.SaveRefused`.
   - State held by your game's own services isn't restored, and nothing tells a service the game rewound: a counter kept in a layer continues from the discarded future.
   - A `Field.transient` field is `undefined` afterwards, as in a loaded game.
 - **Expect the frame stage to repeat.** A rollback game is drawn and heard as predicted. The frame stage sees a resimulated tick's events again, and its change queries visit everything after each rewind: a sound may play twice, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final.

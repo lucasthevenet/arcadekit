@@ -29,9 +29,11 @@ export const Gravity = Resource.make("demo/Gravity", {
   defaultValue: () => -9.81,
 });
 
-export const Falling = Query.all(Position, Velocity).pipe(
-  Query.without(Frozen)
-);
+/** What falls, to read. */
+export const Bodies = Query.all(Position, Velocity).pipe(Query.without(Frozen));
+
+/** What falls, to move. */
+export const Falling = Bodies.pipe(Query.writes(Position, Velocity));
 
 // The system reads what the loop needs, and the loop does the rest. The
 // query excludes Frozen, a sparse tag, so each table arrives as runs of
@@ -46,6 +48,5 @@ export const Physics = System.make("Physics", function* () {
 });
 
 export const plugin = Plugin.make("Physics", {
-  components: [Position, Velocity, Frozen],
   systems: [Physics],
 });

@@ -1,9 +1,9 @@
 ---
 title: "Queries"
-description: "A query finds the entities that have certain components and passes their data to a loop. Learn the two ways to loop, filters, sparse components, read-only access, and change detection."
+description: "A query finds the entities that have certain components and passes their data to a loop. Learn the two ways to loop, filters, sparse components, what a query writes, and change detection."
 ---
 
-A **query** finds the entities that have certain components and passes their data to a loop. This guide covers the two ways to loop, filters, sparse components, declaring read-only access, and queries for what changed.
+A **query** finds the entities that have certain components and passes their data to a loop. This guide covers the two ways to loop, filters, sparse components, what a query writes, and queries for what changed.
 
 ## Querying entities
 
@@ -20,7 +20,10 @@ const Velocity = Component.define("game/Velocity", {
 });
 const Frozen = Component.tag("game/Frozen", { storage: "sparse" });
 
-const Moving = Query.all(Position, Velocity).pipe(Query.without(Frozen));
+const Moving = Query.all(Position, Velocity).pipe(
+  Query.without(Frozen),
+  Query.writes(Position)
+);
 
 const Movement = System.make("game/Movement", function* () {
   const { delta } = yield* Time;
@@ -51,7 +54,7 @@ const Velocity = Component.define("game/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.make("game/Movement", function* () {
   const { delta } = yield* Time;
@@ -81,7 +84,7 @@ const Burning = Component.define(
   { seconds: Field.f32 },
   { storage: "sparse" }
 );
-const OnFire = Query.all(Position, Burning).pipe(Query.reads(Position));
+const OnFire = Query.all(Position, Burning).pipe(Query.writes(Burning));
 
 const Burn = System.make("game/Burn", function* () {
   const { delta } = yield* Time;
@@ -95,17 +98,17 @@ const Burn = System.make("game/Burn", function* () {
 
 Used as a filter, with `Query.with` or `Query.without`, a sparse component adds no per-row cost to a raw loop: the table arrives as runs of consecutive matching rows.
 
-## Read-only access
+## What a query writes
 
-`Query.reads(Velocity)` declares that the loop reads `Velocity` and never writes it. `Query.reads()` with no arguments declares that for every term.
+A query only reads its terms. `Query.writes(Position)` names the ones it writes, as in `Moving` above:
 
-- `each` passes an accessor whose fields can't be assigned: the compiler rejects an assignment, and at run time it throws and names the field.
-- `eachChunk` types the columns as read-only and doesn't mark their rows as written.
-- A change query watching that component isn't triggered by the loop, and a change query can read, raw, the component it watches.
-- In an action handler, those columns aren't copied for rollback.
+- `each` passes an accessor whose fields can't be assigned for a term the query doesn't write: the compiler rejects an assignment, and at run time it throws and names the field.
+- `eachChunk` types the columns of such a term as read-only, and doesn't mark their rows as written. The rows of a term it writes all count as written, since raw columns can't tell a read from a write.
+- A change query watching a component isn't triggered by a loop that only reads it, and a change query can read, raw, the component it watches. One that also writes it can't use `eachChunk`, and throws: it would see its own visit as a change.
+- In an action handler, only the columns of what the query writes are copied for rollback.
 - The compiler tells apart two components with the same fields by their names, which are part of their types: above, `position.x` is writable and `velocity.x` is not, although both are `{ x, y }`.
 
-Declare it wherever it's true: it's cheaper, and the compiler then rejects a write. Omitting it is never wrong, only slower. Declaring it and then writing a raw column anyway is a bug nothing catches: no change query sees the write, and no refusal undoes it.
+Writing a raw column of a term the query doesn't name, past the compiler, is a bug nothing catches: no change query sees the write, and no refusal undoes it.
 
 ## Change detection
 
@@ -132,8 +135,8 @@ const Track = System.make("game/Track", function* () {
 });
 ```
 
-- Each system tracks its own position in the stream of changes, and sees every change once, whatever order systems run in. A system that didn't run misses nothing: the changes are waiting the next time it runs.
-- Each action handler has its own position too. Outside systems and handlers (in a script, a test, the entry point) there is one position per query, shared by every caller there.
+- Each system tracks its own position in the stream of changes, and sees every change once, whatever order systems run in. A system that [`System.runIf`](systems.md#running-conditionally) turned off sees nothing that changed while it was off, as it hears no event from then: when it runs again, it reads what it needs with an ordinary query.
+- Each action handler has its own position too. Outside systems and handlers (in a test, the entry point) there is one position per query, shared by every caller there.
 - The first run visits every matching entity: to a query that never ran, everything is new. A system that builds something for each `added(Sprite)` therefore also covers entities that existed before it, or that came from a save, with no extra code.
 - An entity is visited once, however many times it was written, in the usual query order. An entity that has since lost the component, or been despawned, isn't visited.
 - With several components, or `changed` and `added` together, an entity is visited when any of them fired.
@@ -145,9 +148,9 @@ Change queries are for data that changes occasionally. A system that processes e
 ## What counts as a write
 
 - Writes are tracked per entity: by `world.set`, by adding a component with a value, and by assigning a field in `each`. A newly added component counts as written. Reading tracks nothing.
-- `eachChunk` passes raw columns and can't tell reads from writes, so every row it passes counts as written, unless the query declares that component read-only.
-- A write through a raw column the query declared read-only still happens: the compiler doesn't see it, nothing refuses it, and no change query sees it.
-- For the same reason, a change query can't `eachChunk` over a component it watches unless it declares it read-only: that throws, because the query would count its own visit as a change.
+- `eachChunk` passes raw columns and can't tell reads from writes, so every row it passes of a component the query writes counts as written.
+- A write through a raw column of a component the query only reads still happens: the compiler doesn't see it, nothing refuses it, and no change query sees it.
+- For the same reason, a change query can't `eachChunk` over a component it watches and writes: that throws, because the query would count its own visit as a change.
 - Only watched components are tracked. Writing a component no query watches costs nothing extra.
 - A system that writes what it watches sees its own writes the next time it runs.
 - A refused action's writes aren't changes: they are rolled back with everything else, along with the visits its handler made.

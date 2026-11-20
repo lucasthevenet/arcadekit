@@ -33,7 +33,6 @@ const resume = Action.handler(Resume, function* () {
 });
 
 const Rules = Plugin.make("game/Rules", {
-  components: [Phase], // states are listed with the components
   systems: [Movement, StartLevel],
   handlers: [resume],
 });
@@ -68,7 +67,7 @@ A transition requested by a hook waits for the next tick.
 
 A system without conditions is never asked. A condition costs about 0.35 µs per tick, and a system that doesn't run costs that and nothing more.
 
-A system that doesn't run doesn't read. The events from the ticks it skipped are gone when it runs again, so a system that can be switched off shouldn't rely on events for anything it must not miss: it should watch the game's state, with a change query or a singleton. Its change queries keep their pending changes, however long it was inactive.
+A system that doesn't run doesn't read, and sees nothing of what happened while it was off: the events from the ticks it skipped are gone when it runs again, and its change queries skip what changed in them. So a system that can be switched off reads the state it needs when it runs again, with an ordinary query or a singleton, rather than counting on hearing of every change.
 
 `System.otherwise(effect)` gives a system something to do instead of running, on each tick its condition fails. A system that keeps something outside itself up to date leaves it as it last was when it doesn't run, and `otherwise` declares what it should be instead. Music uses it so that unrequested music stops, and a view uses it to return to its initial value. It runs as the system, in its stage: in a tick its commands are applied, and in a frame it can change nothing.
 

@@ -30,9 +30,9 @@ const Heat = Component.define(
 const Boss = Component.tag("rd/Boss");
 
 /** Moves by a velocity it only reads. */
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
-/** Reads everything it is handed. */
-const Looking = Query.all(Position, Velocity, Heat).pipe(Query.reads());
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
+/** Reads everything it is handed, as a query does that names nothing. */
+const Looking = Query.all(Position, Velocity, Heat);
 const Moved = Query.all(Position).pipe(Query.changed(Position));
 const Turned = Query.all(Velocity).pipe(Query.changed(Velocity));
 
@@ -55,8 +55,8 @@ const populated = (count = 6): { world: EcsWorld; entities: Entity[] } => {
   return { world, entities };
 };
 
-describe("a query that says what it only reads", () => {
-  it("reads it as ever, and refuses to write it through each", () => {
+describe("a query, which writes only what it names", () => {
+  it("reads every term, and refuses to write one it does not name through each", () => {
     const { entities, world } = populated();
     world.view(Moving).each((pos, vel) => {
       pos.x += vel.x;
@@ -70,13 +70,18 @@ describe("a query that says what it only reads", () => {
         vel.x = 9;
       })
     ).toThrow(
-      /"rd\/Velocity\.x" was assigned to through a query that only reads "rd\/Velocity".*Query\.reads/
+      /"rd\/Velocity\.x" was assigned to through a query that only reads "rd\/Velocity".*Query\.writes/
     );
     expect(world.get(entities[0]!, Velocity)).toEqual({ x: 1, y: 2 });
-    // The same components through a query that does not say so are written.
-    world.view(Query.all(Position, Velocity)).each((pos, vel) => {
-      vel.x = pos.x;
-    });
+    // The same components through a query that names both are written.
+    world
+      .view(
+        Query.all(Position, Velocity).pipe(Query.writes(Position, Velocity))
+      )
+      .each((pos, vel) => {
+        vel.x = pos.x;
+        pos.y = 0;
+      });
     expect(world.get(entities[3]!, Velocity)!.x).toBe(4);
     // A sparse component, and all of a query's terms at once.
     let sum = 0;
@@ -150,8 +155,11 @@ describe("a query that says what it only reads", () => {
     world.view(Looking).eachChunk(() => {});
     expect(moved.entities()).toEqual([]);
     expect(turned.entities()).toEqual([]);
-    // Without the word, every row that is handed out counts.
-    world.view(Query.all(Position, Velocity)).eachChunk(() => {});
+    // What it names, every row that is handed out counts.
+    world
+      .view(Query.all(Position, Velocity).pipe(Query.writes(Velocity)))
+      .eachChunk(() => {});
+    expect(moved.entities()).toEqual([]);
     expect(turned.entities()).toEqual(entities);
   });
 
@@ -159,7 +167,7 @@ describe("a query that says what it only reads", () => {
     const { entities, world } = populated();
     const Drawn = Query.all(Position, Velocity).pipe(
       Query.changed(Position),
-      Query.reads(Position)
+      Query.writes(Velocity)
     );
     const drawn = world.view(Drawn);
     const visit = (): number[] => {
@@ -177,15 +185,16 @@ describe("a query that says what it only reads", () => {
     world.set(entities[4]!, Position, { x: 40 });
     expect(visit()).toEqual([40]);
     expect(visit()).toEqual([]);
-    // But what it is handed and does not only read counts for others.
+    // But what it is handed and writes counts for others.
     expect(world.view(Turned).entities()).toEqual(entities);
     visit();
     world.set(entities[1]!, Position, { x: 10 });
     visit();
     expect(world.view(Turned).entities()).toEqual([entities[1]]);
-    // One that hands out what it watches without the word is still refused.
-    expect(() => world.view(Moved).eachChunk(() => {})).toThrow(
-      /watches "rd\/Position" for changes and also hands it out.*Query\.reads/
+    // One that hands out what it watches, to be written, is refused.
+    const Rewritten = Moved.pipe(Query.writes(Position));
+    expect(() => world.view(Rewritten).eachChunk(() => {})).toThrow(
+      /watches "rd\/Position" for changes and also hands it out.*Query\.writes/
     );
   });
 
@@ -203,7 +212,7 @@ describe("a query that says what it only reads", () => {
     });
     world.rollback();
     expect(world.hash()).toBe(before);
-    // Having said it only reads, a loop that writes all the same, past the
+    // Having named nothing, a loop that writes all the same, past the
     // compiler, is on its own: there is no copy to put back.
     world.begin();
     world.view(Looking).eachChunk((start, end, pos, _, heat) => {
@@ -219,13 +228,16 @@ describe("a query that says what it only reads", () => {
   });
 
   it("names components of the query, and keeps its word however the query is put together", () => {
-    expect(() => Query.all(Position).pipe(Query.reads(Velocity))).toThrow(
-      /Query\.reads was given "rd\/Velocity", which is not one of the query's terms: rd\/Position/
+    expect(() => Query.all(Position).pipe(Query.writes(Velocity))).toThrow(
+      /Query\.writes was given "rd\/Velocity", which is not one of the query's terms: rd\/Position/
     );
+    // It names at least one: a query that writes nothing names nothing.
+    // @ts-expect-error Query.writes is given at least one component
+    void (() => Query.writes());
     const { world } = populated();
     const built = [
       Query.all(Position, Velocity).pipe(
-        Query.reads(Velocity),
+        Query.writes(Position),
         Query.with(Heat),
         Query.without(Boss),
         Query.changed(Position),
@@ -236,16 +248,16 @@ describe("a query that says what it only reads", () => {
         Query.changed(Position),
         Query.without(Boss),
         Query.with(Heat),
-        Query.reads(Velocity)
+        Query.writes(Position)
       ),
-      Query.reads(
+      Query.writes(
         Query.all(Position, Velocity).pipe(
           Query.with(Heat),
           Query.without(Boss),
           Query.changed(Position),
           Query.added(Heat)
         ),
-        Velocity
+        Position
       ),
     ];
     for (const query of built) {
@@ -259,7 +271,7 @@ describe("a query that says what it only reads", () => {
       ).toThrow(/only reads "rd\/Velocity"/);
     }
     // To one reader, the three are one query, and not the query that
-    // reads nothing, or everything.
+    // writes nothing, or everything.
     expect(world.view(built[0]!, "reader")).toBe(
       world.view(built[1]!, "reader")
     );
@@ -275,17 +287,20 @@ describe("a query that says what it only reads", () => {
     expect(world.view(plain, "reader")).not.toBe(
       world.view(built[0]!, "reader")
     );
-    expect(world.view(plain.pipe(Query.reads()), "reader")).not.toBe(
-      world.view(built[0]!, "reader")
-    );
-    // Said in two steps, it reads both; and a description that is not a
+    expect(
+      world.view(plain.pipe(Query.writes(Velocity, Position)), "reader")
+    ).not.toBe(world.view(built[0]!, "reader"));
+    // Said in two steps, it writes both; and a description that is not a
     // Query, with the same components in another order, is the same query.
     const twice = Query.all(Position, Velocity).pipe(
       Query.changed(Position),
-      Query.reads(Velocity),
-      Query.reads(Position)
+      Query.writes(Velocity),
+      Query.writes(Position)
     );
-    expect(twice.readDefs).toEqual([Position, Velocity]);
+    expect(twice.writeDefs).toEqual([Position, Velocity]);
+    expect(twice.readDefs).toEqual([]);
+    const reading = Query.all(Position, Velocity).pipe(Query.changed(Position));
+    expect(reading.readDefs).toEqual([Position, Velocity]);
     const byHand = {
       terms: [Position, Velocity] as const,
       withDefs: [],
@@ -293,7 +308,7 @@ describe("a query that says what it only reads", () => {
       changedDefs: [Position],
       readDefs: [Velocity, Position],
     };
-    expect(world.view(byHand, "reader")).toBe(world.view(twice, "reader"));
+    expect(world.view(byHand, "reader")).toBe(world.view(reading, "reader"));
     expect(() =>
       world.view({
         terms: [Position] as const,
@@ -351,7 +366,7 @@ const survey = Action.handler(Survey, function* ({ limit }) {
   return fastest;
 });
 
-describe("a query that says what it only reads, in an app", () => {
+describe("a query, which writes only what it names, in an app", () => {
   it("is what a system and a handler ask for, and a refusal still leaves nothing", () => {
     run(
       Effect.gen(function* () {

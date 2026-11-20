@@ -11,7 +11,7 @@
  *     State.onEnter(Phase, "playing")
  *   )
  *
- *   const phase = yield* Phase      // in a system, a handler or a script
+ *   const phase = yield* Phase      // in a system or a handler
  *   phase.value                     // "menu"
  *   phase.set("playing")            // entered at the start of the next tick
  *
@@ -65,10 +65,16 @@ export interface StateHandle<V extends string> {
   set(value: V): void;
 }
 
+// Every state this program has defined, by name, the newest of each: an app
+// loaded from a save goes on with the states it holds.
+const definitions = new Map<string, State<string>>();
+
+/** @internal The states this program has defined, the newest of each name. */
+export const defined = (): Iterable<State<string>> => definitions.values();
+
 /**
  * A state's definition. It is an Effect, so `yield*` returns a handle to the
- * world's value. It is also the singleton that holds that value, so you list it
- * in a plugin's `components` like one.
+ * world's value. It is also the singleton that holds that value.
  *
  * @category Models
  */
@@ -97,6 +103,7 @@ export class State<V extends string>
     );
     this.component = spec.component;
     this.initial = spec.initial;
+    definitions.set(name, this as unknown as State<string>);
   }
 
   asEffect(): Effect.Effect<StateHandle<V>, never, World> {
@@ -110,8 +117,8 @@ export class State<V extends string>
  * Defines a state: its name, its possible values, and the one a game starts in,
  * which defaults to the first.
  *
- * The name is one of the world's component names. List the state in a plugin's
- * `components`, so a save that contains it can be loaded.
+ * The name is one of the world's component names, and a save that holds the
+ * state finds it by that name.
  *
  * @category Constructors
  */
@@ -138,13 +145,15 @@ export interface Registry {
   /** Sorted by name, so transitions happen in the same order everywhere. */
   states: State<string>[];
   readonly handles: Map<State<string>, StateHandle<string>>;
+  /** The states a hook waits for, which are entered on the first tick. */
+  readonly hooked: Set<State<string>>;
 }
 
 /** @internal The states of a world that anyone has asked for. */
 export const registryOf = (world: EcsWorld): Registry => {
   let registry = known.get(world);
   if (registry === undefined) {
-    registry = { states: [], handles: new Map() };
+    registry = { states: [], handles: new Map(), hooked: new Set() };
     known.set(world, registry);
   }
   return registry;
@@ -224,12 +233,20 @@ export interface Move {
  * What the start of a tick has to do with one state: nothing, or a move.
  * On a game's first tick that is entering the state it starts in, and then
  * the move that was asked for before it, if one was.
+ *
+ * A state moves once the world holds it, written or loaded, or once a hook
+ * waits for it. Until then it is the value it starts in and nothing has to
+ * happen: so a look at it from anywhere, the frame stage included, which a
+ * replay doesn't run, changes nothing.
  * @internal
  */
 export const pending = (
   world: EcsWorld,
   state: State<string>
 ): Move | undefined => {
+  if (!world.holds(state) && !registryOf(world).hooked.has(state)) {
+    return undefined;
+  }
   const held = world.singleton(state);
   if (held.entered === 0) {
     return held.next === null

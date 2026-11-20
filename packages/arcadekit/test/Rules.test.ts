@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit } from "effect";
+import { Context, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -7,14 +7,15 @@ import {
   App,
   Commands,
   Component,
+  EntityId,
   Event,
   Field,
   Query,
-  Script,
   System,
   Time,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 const Health = Component.define("ru/Health", { hp: Field.i32 });
 const Energy = Component.define("ru/Energy", { points: Field.i32 });
@@ -24,12 +25,12 @@ const Turn = Component.define("ru/Turn", {
   number: Field.i32,
 });
 
-const Damaged = Event.define<{
-  readonly target: Entity;
-  readonly amount: number;
-}>("ru/Damaged");
-const Died = Event.define<{ readonly entity: Entity }>("ru/Died");
-const Ping = Event.define<number>("ru/Ping");
+const Damaged = Event.define(
+  "ru/Damaged",
+  Schema.Struct({ target: EntityId, amount: Schema.Number })
+);
+const Died = Event.define("ru/Died", Schema.Struct({ entity: EntityId }));
+const Ping = Event.define("ru/Ping", Schema.Number);
 
 /** Builds an app, hands it to `use`, then closes its scope. */
 const withApp = <A, T>(
@@ -78,7 +79,7 @@ describe("events", () => {
   it("can be emitted from inside a query loop and are read in order", () => {
     const Hit = System.make("Hit", function* () {
       const damaged = yield* Damaged;
-      const wounded = yield* Query.all(Health);
+      const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
       wounded.each((health, entity) => {
         health.hp -= 3;
         damaged.emit({ target: entity, amount: 3 });
@@ -119,59 +120,6 @@ describe("events", () => {
       expect(seen).toEqual([[], [3]]);
     });
   });
-
-  it("wake scripts that wait for them, in the tick they are emitted", () => {
-    const log: string[] = [];
-    const Emitter = System.make("Emitter", function* () {
-      const { tick } = yield* Time;
-      if (tick === 2) {
-        (yield* Ping).emit(7);
-      }
-    });
-    withApp(App.make({ systems: [Emitter] }), (app) => {
-      app.spawnScript(
-        Effect.gen(function* () {
-          const ping = yield* Ping;
-          const died = yield* Died;
-          const batch = yield* ping.wait;
-          log.push(
-            `first got ${batch.join(",")} at tick ${(yield* Time).tick}`
-          );
-          died.emit({ entity: 99 as Entity });
-        })
-      );
-      // A second script woken by the first one's event, still in the same tick.
-      const second = app.spawnScript(
-        Effect.gen(function* () {
-          const died = yield* Died;
-          const batch = yield* died.wait;
-          log.push(
-            `second got ${batch[0]!.entity} at tick ${(yield* Time).tick}`
-          );
-          return "done";
-        })
-      );
-      app.tick(1);
-      expect(log).toEqual([]);
-      app.tick(1);
-      expect(log).toEqual(["first got 7 at tick 2", "second got 99 at tick 2"]);
-      expect(second.pollUnsafe()).toEqual(Exit.succeed("done"));
-    });
-  });
-
-  it("do not make a script wait when unseen events already exist", () => {
-    withApp(App.make({ systems: [] }), (app) => {
-      const fiber = app.spawnScript(
-        Effect.gen(function* () {
-          const ping = yield* Ping;
-          ping.emit(1);
-          ping.emit(2);
-          return yield* ping.wait;
-        })
-      );
-      expect(fiber.pollUnsafe()).toEqual(Exit.succeed([1, 2]));
-    });
-  });
 });
 
 // --- a tiny turn-based duel, used by the action tests -------------------------
@@ -185,18 +133,21 @@ class NotEnoughEnergy extends Data.TaggedError("NotEnoughEnergy")<{
 }> {}
 class NoSuchTarget extends Data.TaggedError("NoSuchTarget")<{}> {}
 
-const Attack = Action.define<{
-  readonly attacker: Entity;
-  readonly target: Entity;
-}>()("Attack");
-const EndTurn = Action.define<{ readonly player: number }>()("EndTurn");
-const Summon = Action.define<{
-  readonly player: number;
-  readonly hp: number;
-}>()("Summon");
-const Unhandled = Action.define<{}>()("Unhandled");
+const Attack = Action.define(
+  "Attack",
+  Schema.Struct({ attacker: EntityId, target: EntityId })
+);
+const EndTurn = Action.define(
+  "EndTurn",
+  Schema.Struct({ player: Schema.Number })
+);
+const Summon = Action.define(
+  "Summon",
+  Schema.Struct({ player: Schema.Number, hp: Schema.Number })
+);
+const Unhandled = Action.define("Unhandled", Schema.Struct({}));
 
-const TurnQuery = Query.all(Turn);
+const TurnQuery = Query.all(Turn).pipe(Query.writes(Turn));
 const currentTurn = Effect.gen(function* () {
   const turns = yield* TurnQuery;
   let player = 0;
@@ -277,16 +228,16 @@ const Death = System.make("Death", function* () {
 });
 
 const Recharge = System.make("Recharge", function* () {
-  const fighters = yield* Query.all(Energy);
+  const fighters = yield* Query.all(Energy).pipe(Query.writes(Energy));
   fighters.each((energy) => {
     energy.points += 1;
   });
 });
 
-const duel = () =>
+const duel = (...more: System.System<never, BuiltIn>[]) =>
   Effect.map(
     App.make({
-      systems: [Death, Recharge],
+      systems: [Death, Recharge, ...more],
       handlers: [attack, endTurn, summon],
     }),
     (app) => {
@@ -333,12 +284,13 @@ describe("actions", () => {
       // The result and the failure are typed per action.
       const typed: Exit.Exit<
         number,
-        NotYourTurn | NotEnoughEnergy | NoSuchTarget
+        NotYourTurn | NotEnoughEnergy | NoSuchTarget | Action.InvalidPayload
       > = exit;
       void typed;
-      const ended: Exit.Exit<void, NotYourTurn> = app.dispatch(EndTurn, {
-        player: 1,
-      });
+      const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> =
+        app.dispatch(EndTurn, {
+          player: 1,
+        });
       expect(Exit.isSuccess(ended)).toBe(true);
     });
   });
@@ -383,16 +335,11 @@ describe("actions", () => {
   });
 
   it("let systems react through events on the next tick", () => {
-    withApp(duel(), ({ app, one, two }) => {
-      const deaths: Entity[] = [];
-      app.spawnScript(
-        Effect.gen(function* () {
-          const died = yield* Died;
-          while (true) {
-            for (const event of yield* died.wait) deaths.push(event.entity);
-          }
-        })
-      );
+    const deaths: Entity[] = [];
+    const Mourn = System.make("Mourn", function* () {
+      for (const event of (yield* Died).read()) deaths.push(event.entity);
+    });
+    withApp(duel(Mourn), ({ app, one, two }) => {
       app.dispatch(Attack, { attacker: one, target: two });
       app.tick(1);
       expect(app.world.isAlive(two)).toBe(true);
@@ -502,7 +449,7 @@ describe("actions", () => {
     });
 
     const waits = Action.handler(EndTurn, function* () {
-      yield* (yield* Script).nextTick;
+      yield* Effect.sleep("1 second");
     });
     withApp(App.make({ systems: [], handlers: [waits] }), (app) => {
       expect(() => app.dispatch(EndTurn, { player: 1 })).toThrow(

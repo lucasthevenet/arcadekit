@@ -12,7 +12,7 @@ import { Component, Field, Query, System, Time } from "arcadekit";
 
 const Position = Component.define("game/Position", { x: Field.f32 });
 const Velocity = Component.define("game/Velocity", { x: Field.f32 });
-const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.make("game/Movement", function* () {
   const { delta } = yield* Time;
@@ -24,7 +24,38 @@ const Movement = System.make("game/Movement", function* () {
 
 The body gets what it needs with `yield*`: queries, singletons, events, `Time`, `Random`, `Commands`, `World`, and any service of your own. Anything it needs that no plugin provides becomes a requirement of the app, and a missing one is a compile error.
 
-A system finishes within its tick: a system that waits throws, and the error names it. Work that spans many ticks belongs in a [script](scripts.md). A system changes which entities exist only through `Commands`, and reacts to changes with a [change query](queries.md) rather than by comparing against a copy it keeps. It issues actions with the [`Actions` service](events-and-actions.md), never with `app.enqueue`, which would log the action and make a replay apply it twice.
+A system finishes within its tick: a system that waits throws, and the error names it. Work that spans many ticks keeps its place in the world, and a system moves it on each tick, as the next section shows. A system changes which entities exist only through `Commands`, and reacts to changes with a [change query](queries.md) rather than by comparing against a copy it keeps. It issues actions with the [`Actions` service](events-and-actions.md), which isn't logged from a tick, since a replay's own systems issue the action again.
+
+## Work that takes many ticks
+
+A wave of enemies, a cutscene or a tutorial step takes many ticks. A system doesn't wait through them: it keeps where the work is in the world, in a component, a singleton or a [state](states.md), and moves it on each tick. This fountain sprays five waves, half a second of game time apart:
+
+```ts
+import { Commands, Component, Field, Singleton, System, Time } from "arcadekit";
+
+const Velocity = Component.define("game/Velocity", { y: Field.f32 });
+const Spray = Singleton.define(
+  "game/Spray",
+  { wave: Field.u8, wait: Field.f32 },
+  { wave: 0, wait: 0 }
+);
+
+const Fountain = System.make("game/Fountain", function* () {
+  const spray = yield* Spray;
+  if (spray.wave >= 5) {
+    return;
+  }
+  spray.wait -= (yield* Time).delta;
+  if (spray.wait > 0) {
+    return;
+  }
+  spray.wave += 1;
+  spray.wait = 0.5;
+  (yield* Commands).spawn(Velocity.of({ y: spray.wave }));
+});
+```
+
+Since the fountain's place is in the world, a [save](saving-and-loading.md) holds it, a replay or a rewind picks it up where it was, and the world's hash covers it. A game that [ticks only when needed](#requesting-ticks) needs the fountain to ask for its next tick while it waits.
 
 ## Ordering
 
@@ -68,11 +99,13 @@ const Movement = System.make("game/Movement", function* () {
 }).pipe(System.runIf(State.is(Phase, "playing")));
 ```
 
+A system that doesn't run sees nothing of what happened while it was off: no event from the ticks it skipped, and none of what its change queries would have visited in them. When it runs again, it reads the state it needs.
+
 A system that keeps something outside itself up to date, such as music or a view, can declare what to do while it doesn't run with `System.otherwise(effect)`. See [states](states.md).
 
 ## Requesting ticks
 
-A game that [ticks only when needed](running-a-game.md) rests when nothing is pending, and the app sees actions, states, scripts and events as pending work. A system with work to do on every tick for a while, such as a countdown or a body in flight, is none of those, so it requests the next tick itself on every tick it has more to do:
+A game that [ticks only when needed](running-a-game.md) rests when nothing is pending, and the app sees actions, states and events as pending work. A system with work to do on every tick for a while, such as a countdown or a body in flight, is none of those, so it requests the next tick itself on every tick it has more to do:
 
 ```ts
 import { Field, Singleton, System, Ticks, Time } from "arcadekit";
@@ -88,7 +121,7 @@ const Countdown = System.make("game/Countdown", function* () {
 });
 ```
 
-Nothing distinguishes a countdown system that never requests a tick from one with nothing to do: it stops when the game rests, with no error. In a game that ticks in real time, `more` does nothing, so call it in any system that might run in a game that rests. Handlers and scripts request ticks the same way.
+Nothing distinguishes a countdown system that never requests a tick from one with nothing to do: it stops when the game rests, with no error. In a game that ticks in real time, `more` does nothing, so call it in any system that might run in a game that rests. Handlers request ticks the same way.
 
 ## Random numbers
 
@@ -99,7 +132,7 @@ import { App, Component, Field, Query, Random, System } from "arcadekit";
 import { Effect } from "effect";
 
 const Spark = Component.define("game/Spark", { x: Field.f32 });
-const Sparks = Query.all(Spark);
+const Sparks = Query.all(Spark).pipe(Query.writes(Spark));
 
 const Scatter = System.make("game/Scatter", function* () {
   const random = yield* Random;

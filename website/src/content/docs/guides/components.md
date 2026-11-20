@@ -63,7 +63,6 @@ const Position = Component.define("game/Position", {
 });
 
 const Rules = Plugin.make("game/Rules", {
-  components: [Position],
   setup: Effect.gen(function* () {
     (yield* Commands).spawn(Position.of({ x: 0, y: 0 }));
   }),
@@ -81,7 +80,7 @@ const program = Effect.gen(function* () {
 
 An id kept after its entity is despawned [refers to no entity](../concepts/entities-and-systems.md#entity-ids), even once its slot is reused.
 
-Once a game is running, make changes from the simulation (a system, a handler or a script) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
+Once a game is running, make changes from the simulation (a system or a handler) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
 
 A component added without a value is all zeros, unless it says otherwise, and a number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. A component whose zeros are wrong, a size say, gives `initial`, the value it has when added bare:
 
@@ -128,7 +127,6 @@ const Bonus = System.make("game/Bonus", function* () {
 });
 
 const Rules = Plugin.make("game/Rules", {
-  components: [Coin, Score], // singletons are listed with the components
   systems: [Bonus],
 });
 ```
@@ -137,7 +135,7 @@ A singleton lives in the world, so it is saved, hashed, and restored when an act
 
 - Until it is first written, it holds its initial value and is neither saved nor hashed. Reading it changes nothing, so a plugin that only reads a singleton doesn't change the hash of the game it observes.
 - Loading a save in which a singleton was never written gives it the initial value of the build that loads it.
-- Its name is one of the world's component names. List it in a plugin's `components` so that saves containing it can load, and rename or change it in a [migration](saving-and-loading.md) with `Migrate`, as you would a component.
+- Its name is one of the world's component names, by which a save finds it. Rename or change it in a [migration](saving-and-loading.md) with `Migrate`, as you would a component.
 - No entity can have it and no query visits it: spawning or adding it throws.
 
 A `Resource` is the other kind of single value: configuration with a default that a layer can override, such as gravity. It isn't game state and isn't saved.
@@ -163,9 +161,7 @@ const Targets = Component.relation("ai/Targets", {
   fields: { since: Field.f32 }, // fields of its own, beside the target
 });
 
-const Rules = Plugin.make("game/Rules", {
-  components: [Position, ChildOf, Targets],
-});
+const Rules = Plugin.make("game/Rules", {});
 
 const program = Effect.gen(function* () {
   const { world } = yield* App.make({ plugins: [Rules] });

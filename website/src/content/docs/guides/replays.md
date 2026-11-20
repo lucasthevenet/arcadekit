@@ -21,7 +21,6 @@ const add = Action.handler(Add, function* ({ points }) {
   (yield* Score).points += points;
 });
 const Rules = Plugin.make("game/Rules", {
-  components: [Score],
   handlers: [add],
 });
 
@@ -84,14 +83,14 @@ It doesn't depend on anything a simulation can't observe: a table's capacity, le
 - A non-numeric field counts as it is [saved](saving-and-loading.md#snapshots): a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all.
 - It uses 32-bit integer arithmetic on each field's bits, so it is identical on every machine and in every JavaScript engine.
 - It reads and changes nothing, so you can call it at any time. It costs about 8 ns per entity with four float fields.
-- It covers only the world: not the events waiting to be read, what change queries haven't visited, queued actions, or how far a script has got. Two games with the same hash can still diverge. A [save](saving-and-loading.md) holds all of these except scripts.
+- It covers only the world: not the events waiting to be read, what change queries haven't visited, or queued actions. Two games with the same hash can still diverge. A [save](saving-and-loading.md) holds all of these.
 
 ## What a replay doesn't do
 
 - It runs no frame or input stage: it reads no device and draws nothing. `App.replay` ticks with `{ input: false }`, and a tool that replays by hand with `tick` must do the same, or the machine's own keys leak into the game.
 - Actions the simulation issues itself, such as a bot's move, aren't in the log: the replay's own systems issue them again.
-- Once a game has started, every change to its world must be in the log or come from the simulation: an action, a system, a script. A coin spawned into `app.world` by hand between two ticks is in neither, so the replay can't reproduce it, and stops at the next checkpoint.
-- A script started by hand with `app.spawnScript` isn't in the log, and the log doesn't record the game's `delta` or number of ticks. Whoever replays starts the script again, at the same tick, and passes `delta` and `ticks`. A plugin's `scripts` start with the replay's app as they did with the game's.
+- Once a game has started, every change to its world must be in the log or come from the simulation: an action, a system, a handler. A coin spawned into `app.world` by hand between two ticks is in neither, so the replay can't reproduce it, and stops at the next checkpoint.
+- The log doesn't record the game's `delta` or number of ticks. Whoever replays passes `delta` and `ticks`.
 - A write through a raw column in the frame or input stage changes the game without an error, unless the app was created with `verifyFrames`. A replay runs neither stage, so it diverges. See [testing](testing.md).
 
 ## Read more

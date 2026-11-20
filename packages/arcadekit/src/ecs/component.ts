@@ -340,7 +340,7 @@ export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
 /**
  * @param S  the component's fields
  * @param St where its data is stored
- * @param N  its name. Two components can have the same fields, and the compiler distinguishes them by name: for example, to know which of a query's terms `Query.reads` was given. A name built at run time is just `string`, and such a component is indistinguishable from others.
+ * @param N  its name. Two components can have the same fields, and the compiler distinguishes them by name: for example, to know which of a query's terms `Query.writes` was given. A name built at run time is just `string`, and such a component is indistinguishable from others.
  *
  * @category Models
  */
@@ -420,18 +420,24 @@ export interface SingletonSpec<S extends Schema = Schema> {
   readonly initial: ValueOf<S>;
 }
 
-/** What an app is told about, so a save that contains it can be loaded. */
-export type Listed = ComponentDef | SingletonSpec;
-
-export const isSingletonSpec = (u: Listed): u is SingletonSpec =>
-  "component" in u;
-
 // A component's name is its identity in a save, on the network and in a tool.
 // A world keeps the names of the components it stores and refuses two with one
-// name (see `World.register`), so nothing here is shared between worlds. The
-// id is only a number that tells definitions apart; it is never saved or
-// compared between processes.
+// name (see `World.register`). The id is only a number that tells definitions
+// apart; it is never saved or compared between processes.
 let nextId = 0;
+
+// Every component this program has defined, by name, so that a world can load
+// a save that holds one it hasn't met yet. Of two definitions with one name, as
+// a module that is loaded again under hot reload makes, it is the newer. A
+// world that meets both refuses the second (see `World.register`).
+const defined = new Map<string, ComponentDef>();
+
+/**
+ * Returns the component this program defined last with this name, or undefined
+ * if it defined none.
+ */
+export const definedComponent = (name: string): ComponentDef | undefined =>
+  defined.get(name);
 
 /** Explains a failed attempt to change a frozen world. */
 export const frozenWrite = (what: string): string =>
@@ -716,7 +722,7 @@ export const makeAccessor = (
       row,
       noting,
       mode === "reads"
-        ? `"${name}.${field}" was assigned to through a query that only reads "${name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`
+        ? `"${name}.${field}" was assigned to through a query that only reads "${name}". A query only reads its terms unless it names them with Query.writes: name "${name}" there to write it.`
         : mode === "frozen"
           ? frozenWrite(`An assignment to "${name}.${field}"`)
           : // A relation's target is the world's to change.
@@ -768,6 +774,7 @@ const define = <
     initial: options?.initial,
     of: (value) => ({ def, value }),
   };
+  defined.set(name, def as ComponentDef);
   return def;
 };
 

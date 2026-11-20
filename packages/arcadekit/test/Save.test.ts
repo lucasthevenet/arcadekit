@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Logger, Option, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +14,6 @@ import {
   Query,
   Random,
   Save,
-  Script,
   System,
   Time,
 } from "../src/index";
@@ -32,8 +31,8 @@ const Mote = Component.define("sv/Mote", {
   x: Field.f32,
   name: Field.json<string>(),
 });
-const Tallies = Query.all(Tally);
-const Motes = Query.all(Mote);
+const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
+const Motes = Query.all(Mote).pipe(Query.writes(Mote));
 
 const Add = Action.define("sv/Add", Schema.Struct({ by: Schema.Int }));
 const Double = Action.define("sv/Double", Schema.Struct({}));
@@ -129,26 +128,16 @@ const Sound = System.make("Sound", function* () {
 });
 
 let setups = 0;
-let scriptStarts = 0;
-/** A script with nothing of its own to lose: what it does follows from the time. */
-const Pulsing = Effect.gen(function* () {
-  scriptStarts++;
-  const script = yield* Script;
-  const actions = yield* Action.Actions;
-  for (;;) {
-    yield* script.nextTick;
-    if ((yield* Time).tick % 5 === 0) {
-      actions.enqueue(Pulse, {});
-    }
+/** Fires a pulse every fifth tick: what it does follows from the time. */
+const Pulsing = System.make("Pulsing", function* () {
+  if ((yield* Time).tick % 5 === 0) {
+    (yield* Action.Actions).enqueue(Pulse, {});
   }
 });
 
 const Game = Plugin.make("sv/Game", {
-  components: [Tally, Mote],
-  events: [Sounded],
-  systems: [Listen, Drift, Bot, Sound],
+  systems: [Listen, Drift, Bot, Sound, Pulsing],
   handlers: [add, double, scatter, pulse],
-  scripts: [Pulsing],
   setup: Effect.gen(function* () {
     setups++;
     const commands = yield* Commands;
@@ -367,19 +356,18 @@ describe("a saved game", () => {
     });
   });
 
-  it("does not run setup again, and starts every plugin's scripts again", () => {
+  it("does not run setup again, and the game goes on", () => {
     setups = 0;
-    scriptStarts = 0;
     const save = withApp(App.make(options), (app) => {
-      expect([setups, scriptStarts]).toEqual([1, 1]);
+      expect(setups).toBe(1);
       app.tick(1);
       return unwrap(app.save());
     });
     withApp(App.load(save, options), (app) => {
-      expect([setups, scriptStarts]).toEqual([1, 2]);
+      expect(setups).toBe(1);
       // One tally and whatever motes the game had: none spawned twice.
       expect(app.world.view(Tallies).count()).toBe(1);
-      // The script is running: on the fifth tick it fires a pulse.
+      // It goes on: on the fifth tick it fires a pulse.
       for (let i = 0; i < 6; i++) {
         app.tick(1);
       }
@@ -430,41 +418,10 @@ describe("a saved game", () => {
       recorded.save
     );
   });
-
-  it("knows the components its plugins list, from the start", () => {
-    withApp(App.make(options), (app) => {
-      expect(app.world.component("sv/Tally")).toBe(Tally);
-      expect(app.world.component("sv/Mote")).toBe(Mote);
-    });
-    const Loose = Component.define("sv/Loose", { n: Field.u8 });
-    withApp(App.make({ components: [Loose] }), (app) => {
-      expect(app.world.component("sv/Loose")).toBe(Loose);
-    });
-  });
 });
 
 describe("a game that cannot be saved as it stands", () => {
-  const Typed = Action.define<{ readonly n: number }>()("sv/Typed");
-  const typed = Action.handler(Typed, function* () {});
-  const Quiet = Event.define<number>("sv/Quiet");
-  const Hum = System.make("Hum", function* () {
-    (yield* Quiet).emit(1);
-  });
   const Blob = Component.define("sv/Blob", { v: Field.json<unknown>() });
-
-  it("says which action is waiting with no schema to save it by", () => {
-    withApp(App.make({ handlers: [typed] }), (app) => {
-      app.enqueue(Typed, { n: 1 });
-      const error = refusal(app.save());
-      expect(error).toBeInstanceOf(Save.SaveRefused);
-      expect(error.message).toMatch(
-        /The action "sv\/Typed" is waiting for the next tick.*no schema/
-      );
-      // Once it has been applied there is nothing in the way.
-      app.tick(1);
-      expect(Exit.isSuccess(app.save())).toBe(true);
-    });
-  });
 
   it("says which action is waiting with a payload its schema does not take", () => {
     const Small = Action.define(
@@ -485,45 +442,8 @@ describe("a game that cannot be saved as it stands", () => {
     });
   });
 
-  it("says which event is waiting that no plugin lists", () => {
-    const Loud = Event.define("sv/Loud", Schema.Number);
-    const Shout = System.make("Shout", function* () {
-      (yield* Loud).emit(1);
-    });
-    withApp(App.make({ systems: [Shout] }), (app) => {
-      app.tick(1);
-      const error = refusal(app.save());
-      expect(error).toBeInstanceOf(Save.SaveRefused);
-      expect(error.message).toBe(
-        "The event \"sv/Loud\" is waiting to be read, and no plugin lists it, so a save that holds it could not be loaded. List it in a plugin's `events`, or in the app's."
-      );
-    });
-    withApp(App.make({ systems: [Shout], events: [Loud] }), (app) => {
-      app.tick(1);
-      expect(Exit.isSuccess(app.save())).toBe(true);
-    });
-  });
-
-  it("refuses to list an event with no schema to save it by", () => {
-    expect(() =>
-      withApp(App.make({ systems: [Hum], events: [Quiet] }), () => {})
-    ).toThrow(
-      'The event "sv/Quiet" is listed so that a save can hold it, and was defined with a type and no schema'
-    );
-  });
-
-  it("says which event is waiting with no schema to save it by", () => {
-    withApp(App.make({ systems: [Hum] }), (app) => {
-      expect(Exit.isSuccess(app.save())).toBe(true);
-      app.tick(1);
-      const error = refusal(app.save());
-      expect(error).toBeInstanceOf(Save.SaveRefused);
-      expect(error.message).toMatch(/The event "sv\/Quiet".*no schema/);
-    });
-  });
-
   it("says which field holds what cannot be saved, and that commands are queued", () => {
-    withApp(App.make({ components: [Blob] }), (app) => {
+    withApp(App.make({}), (app) => {
       const entity = app.world.spawn(Blob.of({ v: () => 1 }));
       expect(refusal(app.save()).message).toContain('"sv/Blob.v"');
       app.world.set(entity, Blob, { v: "fine" });
@@ -561,38 +481,15 @@ describe("a save that cannot be loaded", () => {
       Effect.scoped(Effect.exit(App.load(save, given as typeof options)))
     );
 
-  it("names a component that no plugin lists, and says where to list it", () => {
-    const { save } = record(10, 5);
-    const Partial = Plugin.make("sv/Partial", {
-      components: [Tally],
-      events: [Sounded],
-      systems: [Listen, Drift, Bot, Sound],
-      handlers: [add, double, scatter, pulse],
-    });
-    const error = refusal(load(save, { plugins: [Partial] }));
-    expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("unknown component");
-    expect(error.message).toMatch(
-      /"sv\/Mote".*List it in a plugin's `components`, or in the app's\./
-    );
-    // The app's own list will do as well as a plugin's.
-    expect(
-      Exit.isSuccess(load(save, { plugins: [Partial], components: [Mote] }))
-    ).toBe(true);
-  });
-
   it("says how a component has changed since the save was taken", () => {
-    const { save } = record(10, 5);
-    const Changed = Plugin.make("sv/Changed", {
-      components: [
-        Tally,
-        Component.define("sv/Mote", {
-          x: Field.f64,
-          name: Field.json<string>(),
-        }),
-      ],
+    // The game as it was, and as a later build of it defines the component.
+    const Before = Component.define("sv/Shifting", { x: Field.f32 });
+    const save = withApp(App.make({}), (app) => {
+      app.world.spawn(Before.of({ x: 1 }));
+      return unwrap(app.save());
     });
-    const error = refusal(load(save, { plugins: [Changed] }));
+    Component.define("sv/Shifting", { x: Field.f64 });
+    const error = refusal(load(save, {}));
     expect(error.problem).toBe("component changed");
     expect(error.message).toContain("x: f32");
     expect(error.message).toContain("x: f64");
@@ -673,110 +570,25 @@ describe("a save that cannot be loaded", () => {
     );
   });
 
-  it("names a waiting event that no plugin lists, and says where to list it", () => {
+  it("finds what it holds by definition, and names an event this program doesn't define", () => {
     const { save } = record(10, 5);
-    const Unlisted = Plugin.make("sv/Unlisted", {
-      components: [Tally, Mote],
+    // No plugin lists the components or the waiting events.
+    const Bare = Plugin.make("sv/Bare", {
       systems: [Listen, Drift, Bot, Sound],
       handlers: [add, double, scatter, pulse],
     });
-    const error = refusal(load(save, { plugins: [Unlisted] }));
+    expect(save.events.map((events) => events.name)).toContain("sv/Sounded");
+    expect(Exit.isSuccess(load(save, { plugins: [Bare] }))).toBe(true);
+
+    const renamed = {
+      ...save,
+      events: [{ name: "sv/Never", payloads: [1], read: {} }],
+    };
+    const error = refusal(load(renamed, { plugins: [Bare] }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("unknown event");
     expect(error.message).toBe(
-      "The save holds the event \"sv/Sounded\", waiting to be read, which no plugin lists. List it in a plugin's `events`, or in the app's."
+      'The save holds the event "sv/Never", waiting to be read, which this program doesn\'t define: it was renamed or removed since. A migration changes the events of a save in `events`.'
     );
-    // The app's own list will do as well as a plugin's.
-    expect(
-      Exit.isSuccess(load(save, { plugins: [Unlisted], events: [Sounded] }))
-    ).toBe(true);
-  });
-});
-
-describe("a plugin's scripts", () => {
-  it("start with the app, after setup, and run like any other script", () => {
-    const order: string[] = [];
-    const Ticker = Effect.gen(function* () {
-      order.push(`script sees ${(yield* Query.all(Tally)).count()} tally`);
-      const script = yield* Script;
-      for (;;) {
-        yield* script.nextTick;
-        order.push(`tick ${(yield* Time).tick}`);
-      }
-    });
-    const WithScript = Plugin.make("sv/WithScript", {
-      components: [Tally],
-      scripts: [Ticker],
-      setup: Effect.gen(function* () {
-        order.push("setup");
-        (yield* Commands).spawn(Tally);
-      }),
-    });
-    withApp(App.make({ plugins: [WithScript] }), (app) => {
-      expect(order).toEqual(["setup", "script sees 1 tally"]);
-      app.tick(1);
-      app.tick(1);
-      expect(order.slice(2)).toEqual(["tick 1", "tick 2"]);
-    });
-  });
-
-  it("are the only scripts running when a game is saved: one started by hand refuses the save until it ends", () => {
-    const Forever = Effect.gen(function* () {
-      const script = yield* Script;
-      for (;;) {
-        yield* script.nextTick;
-      }
-    });
-    const Brief = Effect.gen(function* () {
-      yield* (yield* Script).nextTick;
-    });
-    const Listed = Plugin.make("sv/Listed", { scripts: [Forever] });
-    withApp(App.make({ plugins: [Listed] }), (app) => {
-      expect(Exit.isSuccess(app.save())).toBe(true);
-      app.spawnScript(Brief);
-      expect(app.save()).toEqual(
-        Exit.fail(
-          new Save.SaveRefused({
-            message:
-              "A script started with app.spawnScript or Script.spawn is running, and a save can't hold where it is: after a load it would not run. Save once it has ended, or make it one of a plugin's scripts, which start again after a load and keep what they must not lose in the world.",
-          })
-        )
-      );
-      app.tick(1);
-      expect(Exit.isSuccess(app.save())).toBe(true);
-    });
-  });
-
-  it("are watched like any other: a failure is logged, and the scope's end interrupts them", () => {
-    const logged: string[] = [];
-    const logger = Logger.make<unknown, void>((entry) => {
-      logged.push(
-        `${String(entry.message)}: ${String(Cause.squash(entry.cause))}`
-      );
-    });
-    let cleanedUp = false;
-    const Failing = Effect.gen(function* () {
-      yield* (yield* Script).nextTick;
-      return yield* new TooBig();
-    });
-    const Forever = Effect.gen(function* () {
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => void (cleanedUp = true))
-      );
-      return yield* Effect.forever((yield* Script).nextTick);
-    }).pipe(Effect.scoped);
-    const Watched = Plugin.make("sv/Watched", { scripts: [Failing, Forever] });
-    withApp(
-      App.make({ plugins: [Watched] }).pipe(
-        Effect.provide(Logger.layer([logger]))
-      ),
-      (app) => {
-        app.tick(1);
-        expect(logged.length).toBe(1);
-        expect(logged[0]).toMatch(/A script failed at tick 1: .*TooBig/);
-        expect(cleanedUp).toBe(false);
-      }
-    );
-    expect(cleanedUp).toBe(true);
   });
 });
