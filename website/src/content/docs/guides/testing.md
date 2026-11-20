@@ -41,12 +41,11 @@ it("adds points", () =>
       app.enqueue(Add, { points: 3 });
       app.tick(1 / 60);
       expect(app.world.singleton(Score).points).toBe(3);
-      expect(app.conflicts).toEqual([]);
     })
   ));
 ```
 
-`app.dispatch` returns an action's outcome immediately, for testing a rule and its refusals. `app.conflicts` lists systems with no declared order; asserting that it is empty catches an order that only works by accident. See [systems](systems.md#declaring-what-a-system-touches).
+`app.dispatch` returns an action's outcome immediately, for testing a rule and its refusals.
 
 - Game time is `Time`, and a test advances it by ticking: `app.tick(1 / 60)` is a sixtieth of a second of game time, however long the test takes. Effect's `TestClock` doesn't affect it.
 - Vitest's `toEqual` treats two `Data.TaggedError` errors that differ only in their `message` as equal, since `message` isn't enumerable. When a test compares a failure, it compares the `message` too.

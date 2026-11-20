@@ -88,7 +88,6 @@ export const OUTLINE: readonly (Group & {
       "guides/transforms",
       "guides/queries",
       "guides/systems",
-      "guides/system-access",
       "guides/events-and-actions",
       "guides/states",
       "guides/scripts",

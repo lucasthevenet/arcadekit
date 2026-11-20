@@ -105,7 +105,7 @@ Used as a filter, with `Query.with` or `Query.without`, a sparse component adds 
 - In an action handler, those columns aren't copied for rollback.
 - The compiler tells apart two components with the same fields by their names, which are part of their types: above, `position.x` is writable and `velocity.x` is not, although both are `{ x, y }`.
 
-Declare it wherever it's true: it's cheaper, and it tells the app more. Omitting it is never wrong, only slower. Declaring it and then writing a raw column anyway is a bug nothing catches: no change query sees the write, and no refusal undoes it.
+Declare it wherever it's true: it's cheaper, and the compiler then rejects a write. Omitting it is never wrong, only slower. Declaring it and then writing a raw column anyway is a bug nothing catches: no change query sees the write, and no refusal undoes it.
 
 ## Change detection
 

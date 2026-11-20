@@ -40,7 +40,7 @@ const Expiry = System.make("game/Expiry", function* () {
 
 These order systems within a stage. Declaring an order that already holds changes nothing, so declare it wherever it matters.
 
-Each system keeps its place in the list unless another system must run before it, in which case that one moves to just ahead of it. The system that moved now runs ahead of everything listed between the two, which declared nothing, so it may now run before a system it reads from, with no error. [Checking the order](system-access.md#checking-the-order) finds such a pair when both systems declare what they touch.
+Each system keeps its place in the list unless another system must run before it, in which case that one moves to just ahead of it. The system that moved now runs ahead of everything listed between the two, so it may now run before a system it reads from, with no error. Declare that order too.
 
 ## Stages
 
@@ -123,18 +123,6 @@ const program = Effect.gen(function* () {
 - Inside an app, Effect's own `Random` module is seeded from the same generator, so `Random.next` from `"effect"`, and anything built on it, replays too. It costs an Effect per draw, so don't use it in loops.
 - In the frame and input stages, `Random` is a separate generator that isn't part of the world, so rendering can be random without changing the game.
 - It isn't suitable for secrets: a few outputs reveal the rest.
-
-## Declaring what a system touches
-
-A system can declare what it reads and writes with `System.access`: its queries, plus anything it touches some other way.
-
-```ts sketch
-const Movement = System.make("game/Movement", function* () {
-  /* … */
-}).pipe(System.access({ queries: [Moving] }));
-```
-
-The app holds the system to its declaration and can then check the order: `app.conflicts` lists the pairs of systems that touch the same data, at least one of them writing it, with no declared order. Declare access in a plugin's systems, so that any game installing the plugin can check its order. See [what a system reads and writes](system-access.md).
 
 ## Read more
 

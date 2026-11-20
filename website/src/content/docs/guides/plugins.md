@@ -149,7 +149,7 @@ export const Fall = System.make("physics/Fall", function* () {
   (yield* Falling).eachChunk((start, end, position, velocity) =>
     fall(start, end, position.y, velocity.y, delta)
   );
-}).pipe(System.access({ queries: [Falling] }));
+});
 
 export const plugin = Plugin.make("physics/Physics", {
   components: [Position, Velocity],
