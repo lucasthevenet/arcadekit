@@ -217,38 +217,38 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
-  it("starts each plugin's scripts again, and stops the ones that were started by hand", () => {
-    const starts: string[] = [];
-    const beat = (name: string) =>
+  it("refuses a moment while a script runs, and stops a script started since", () => {
+    const beats: string[] = [];
+    const beat = (name: string, until: number) =>
       Effect.gen(function* () {
         const script = yield* Script;
-        starts.push(`${name} starts`);
-        for (;;) {
+        while ((yield* Time).tick < until) {
           yield* script.nextTick;
-          starts.push(`${name} ${(yield* Time).tick}`);
+          beats.push(`${name} ${(yield* Time).tick}`);
         }
       });
-    const Listed = Plugin.make("rw/Listed", { scripts: [beat("listed")] });
+    const Listed = Plugin.make("rw/Listed", { scripts: [beat("listed", 2)] });
     withApp(App.make({ plugins: [Listed] }), (app) => {
-      app.spawnScript(beat("by hand"));
       app.tick(DELTA);
+      const refused = app.capture();
+      expect(refused).toEqual(
+        Exit.fail(
+          new Save.SaveRefused({
+            message:
+              "A script is running, and a moment can't hold where a script is: a rewind would lose its place. Keep that place in the world, with systems and a state or a singleton, or play the game without predicting ticks, which never rewinds.",
+          })
+        )
+      );
+      app.tick(DELTA);
+      // The plugin's script has ended: nothing is running now.
       const moment = captured(app);
+      app.spawnScript(beat("by hand", 10));
       app.tick(DELTA);
-      expect(starts).toEqual([
-        "listed starts",
-        "by hand starts",
-        "listed 1",
-        "by hand 1",
-        "listed 2",
-        "by hand 2",
-      ]);
-      starts.length = 0;
       app.rewind(moment);
       app.tick(DELTA);
       app.tick(DELTA);
-      // The listed one from its beginning, as after a load. The other is
-      // gone: nothing says it was ever started.
-      expect(starts).toEqual(["listed starts", "listed 2", "listed 3"]);
+      // Neither starts again: the moment held no script.
+      expect(beats).toEqual(["listed 1", "listed 2", "by hand 3"]);
     });
   });
 
@@ -261,22 +261,23 @@ describe("a game that is put back to a moment", () => {
       }
       return yield* new Tripped();
     });
-    const Fragile = Plugin.make("rw/Fragile", { scripts: [Trip] });
     withApp(
-      App.make({ plugins: [Fragile], onScriptFailure: "stop" }).pipe(
+      App.make({ onScriptFailure: "stop" }).pipe(
         // The failure is logged, and this test does not want to read it.
         Effect.provide(Logger.layer([]))
       ),
       (app) => {
         app.tick(DELTA);
         const moment = captured(app);
+        app.spawnScript(Trip);
         expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
         expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
         app.rewind(moment);
         expect(app.time.tick).toBe(1);
-        // It runs, up to where the script fails again.
-        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
-        expect(app.time.tick).toBe(2);
+        // It runs, and the script that failed is not there to fail again.
+        app.tick(DELTA);
+        app.tick(DELTA);
+        expect(app.time.tick).toBe(3);
       }
     );
   });

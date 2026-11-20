@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit, Layer } from "effect";
+import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -396,5 +396,177 @@ describe("plugins", () => {
     expect(() =>
       Effect.runSync(Effect.scoped(App.make({ plugins: [Combat, healAgain] })))
     ).toThrow(/Two handlers for action "Heal"/);
+  });
+});
+
+describe("a plugin that is stopped", () => {
+  const ran: string[] = [];
+  const Count = Action.define("lc/Count", Schema.Struct({}));
+  const Lights = Plugin.make("lc/Lights", {
+    systems: [
+      System.make("lc/Shine", function* () {
+        ran.push(`shine ${(yield* Time).tick}`);
+      }),
+      System.make("lc/Draw", function* () {
+        ran.push("draw");
+      }).pipe(System.inStage("frame")),
+    ],
+    handlers: [
+      Action.handler(Count, function* () {
+        ran.push("count");
+      }),
+    ],
+  });
+  const Show = Plugin.make("lc/Show", {
+    plugins: [Lights],
+    systems: [
+      System.make("lc/Play", function* () {
+        ran.push(`play ${(yield* Time).tick}`);
+      }),
+    ],
+  });
+
+  it("runs none of its systems or handlers until it is started again", () => {
+    ran.length = 0;
+    withApp(App.make({ plugins: [Lights] }), (app) => {
+      app.tick(1);
+      app.stop(Lights);
+      // As an action is: from the start of the next tick.
+      expect(app.running).toEqual(["lc/Lights"]);
+      app.tick(1);
+      app.frame(1);
+      expect(app.running).toEqual([]);
+      expect(app.dispatch(Count, {})).toEqual(
+        Exit.fail(
+          new Plugin.Stopped({ plugin: "lc/Lights", action: "lc/Count" })
+        )
+      );
+      app.start(Lights);
+      app.tick(1);
+      app.frame(1);
+      expect(app.dispatch(Count, {})).toEqual(Exit.void);
+      expect(ran).toEqual(["shine 1", "shine 3", "draw", "count"]);
+    });
+  });
+
+  it("stops what depends on it, and starting one starts what it depends on", () => {
+    ran.length = 0;
+    withApp(App.make({ plugins: [Show] }), (app) => {
+      app.stop(Lights);
+      app.tick(1);
+      expect(app.running).toEqual([]);
+      app.start(Lights);
+      app.tick(1);
+      // Show was not stopped itself, and runs again with what it needs.
+      expect(app.running).toEqual(["lc/Lights", "lc/Show"]);
+      app.stop(Show);
+      app.stop(Lights);
+      app.tick(1);
+      app.start(Show);
+      app.tick(1);
+      expect(app.running).toEqual(["lc/Lights", "lc/Show"]);
+      expect(ran).toEqual(["shine 2", "play 2", "shine 4", "play 4"]);
+    });
+  });
+
+  it("closes its scope: its scripts are interrupted, and what it acquired is released", () => {
+    const seen: string[] = [];
+    let held = false;
+    const Hold = System.make("lc/Hold", function* () {
+      if (!held) {
+        held = true;
+        yield* Effect.acquireRelease(
+          Effect.sync(() => seen.push("acquired")),
+          () =>
+            Effect.sync(() => {
+              held = false;
+              seen.push("released");
+            })
+        );
+      }
+    });
+    const Beat = Effect.gen(function* () {
+      seen.push("script starts");
+      return yield* Effect.onInterrupt(
+        Effect.forever((yield* Script).nextTick),
+        () => Effect.sync(() => seen.push("script interrupted"))
+      );
+    });
+    const Spawns = System.make("lc/Spawns", function* () {
+      if ((yield* Time).tick === 1) {
+        yield* (yield* Script).spawn(
+          Effect.onInterrupt(Effect.never, () =>
+            Effect.sync(() => seen.push("spawned interrupted"))
+          )
+        );
+      }
+    });
+    const Holding = Plugin.make("lc/Holding", {
+      systems: [Hold, Spawns],
+      scripts: [Beat],
+    });
+    withApp(App.make({ plugins: [Holding] }), (app) => {
+      app.tick(1);
+      app.stop(Holding);
+      app.tick(1);
+      // In the reverse of the order they were started and acquired in.
+      expect(seen).toEqual([
+        "script starts",
+        "acquired",
+        "spawned interrupted",
+        "released",
+        "script interrupted",
+      ]);
+      seen.length = 0;
+      app.start(Holding);
+      app.tick(1);
+      expect(seen).toEqual(["script starts", "acquired"]);
+      seen.length = 0;
+    });
+    // And again when the app closes.
+    expect(seen).toEqual(["released", "script interrupted"]);
+  });
+
+  it("is part of the game: logged and replayed, saved, and put back by a rewind", () => {
+    ran.length = 0;
+    const options = { plugins: [Show] };
+    const { log, hash, save } = withApp(App.make(options), (app) => {
+      app.tick(1);
+      const moment = app.capture();
+      app.stop(Show);
+      app.tick(1);
+      const stoppedHash = app.world.hash();
+      if (Exit.isSuccess(moment)) {
+        app.rewind(moment.value);
+      }
+      expect(app.running).toEqual(["lc/Lights", "lc/Show"]);
+      app.stop(Show);
+      app.tick(1);
+      expect(app.world.hash()).toBe(stoppedHash);
+      const saved = app.save();
+      if (Exit.isFailure(saved)) {
+        throw new Error("the game could not be saved");
+      }
+      return { log: app.actionLog, hash: app.world.hash(), save: saved.value };
+    });
+    withApp(App.make(options), (app) => {
+      App.replay(app, log, { delta: 1, ticks: 2 });
+      expect(app.running).toEqual(["lc/Lights"]);
+      expect(app.world.hash()).toBe(hash);
+    });
+    withApp(App.load(save, options), (app) => {
+      expect(app.running).toEqual(["lc/Lights"]);
+    });
+  });
+
+  it("is refused by a name the app has no plugin for", () => {
+    withApp(App.make({ plugins: [Lights] }), (app) => {
+      expect(
+        app.dispatchByName("arcadekit/StopPlugin", { plugin: "lc/Show" })
+      ).toEqual(Exit.fail(new Plugin.Unknown({ plugin: "lc/Show" })));
+      expect(() => app.stop(Show)).toThrow(
+        'app.stop was given the plugin "lc/Show", which this app doesn\'t have. Pass one of the plugins given to App.make, or one they depend on.'
+      );
+    });
   });
 });

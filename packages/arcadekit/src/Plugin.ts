@@ -25,16 +25,25 @@
  *   const Weather = Plugin.make("Weather", {
  *     components: [Cloud, Wind],          // so a save that contains them can be loaded
  *     events: [Thundered],                // so a save can hold them, waiting to be read
- *     scripts: [Storms],                  // started with the app, and again after a load
+ *     scripts: [Storms],                  // started with the plugin, and again after a load
  *     setup: spawnTheFirstClouds          // a fresh start only: a load already has them
  *   })
+ *
+ * A plugin runs from when the app starts until `app.stop` stops it, and
+ * `app.start` starts it again. While it runs it has a scope of its own, which
+ * its systems, handlers, setup and scripts get as `Scope.Scope`: stopping it
+ * interrupts its scripts and releases what they acquired. Its layer lasts as
+ * long as the app.
  */
+import { Data, Schema } from "effect";
 import type { Effect, Layer } from "effect";
 
-import type * as Action from "./Action";
+import * as Action from "./Action";
 import type { Listed } from "./ecs/component";
 import type { EventDef } from "./Event";
+import * as Field from "./Field";
 import type { BuiltIn } from "./Services";
+import * as Singleton from "./Singleton";
 import type * as System from "./System";
 
 /**
@@ -205,7 +214,7 @@ export const make = <
     /**
      * Services for the whole app. While it builds, it can use the built-in
      * services and anything the plugins listed above provide. What it acquires
-     * is released when the app's scope closes.
+     * is released when the app's scope closes, not when the plugin stops.
      */
     readonly layer?: L;
     /**
@@ -227,11 +236,12 @@ export const make = <
      */
     readonly events?: readonly EventDef<unknown>[];
     /**
-     * Long-running scripts, started with the app: after `setup` on a fresh
-     * start, and again from the beginning when the app is loaded from a save. A
-     * save can't hold a script mid-flight, so a script listed here keeps
-     * whatever it must not lose in the world, and resumes from what it finds
-     * there. It runs and is supervised like any other script.
+     * Long-running scripts, started with the plugin: after `setup` on a fresh
+     * start, from the beginning when the app is loaded from a save, and again
+     * when a stopped plugin starts. Stopping the plugin interrupts them. A save
+     * can't hold a script mid-flight, so a script listed here keeps whatever it
+     * must not lose in the world, and resumes from what it finds there. It runs
+     * and is supervised like any other script.
      */
     readonly scripts?: readonly [...SC];
   }
@@ -288,3 +298,60 @@ export const flatten = (plugins: readonly Any[]): Any[] => {
   }
   return out;
 };
+
+/**
+ * An action was refused because the plugin whose handler applies it is
+ * stopped: see `app.stop`.
+ *
+ * @category Errors
+ */
+export class Stopped extends Data.TaggedError("PluginStopped")<{
+  /** The stopped plugin. */
+  readonly plugin: string;
+  /** The action it would have applied. */
+  readonly action: string;
+}> {
+  override get message(): string {
+    return `The action "${this.action}" was refused: the plugin "${this.plugin}" that handles it is stopped.`;
+  }
+}
+
+/**
+ * A plugin was started or stopped by a name that no plugin of the app has, as
+ * when a log recorded by another build of the game is replayed.
+ *
+ * @category Errors
+ */
+export class Unknown extends Data.TaggedError("UnknownPlugin")<{
+  readonly plugin: string;
+}> {
+  override get message(): string {
+    return `No plugin of this app is named "${this.plugin}".`;
+  }
+}
+
+/**
+ * The plugins stopped with `app.stop`, by name. It is in the world, so a save,
+ * a moment and the hash hold it.
+ * @internal
+ */
+export const StoppedPlugins = Singleton.define(
+  "arcadekit/StoppedPlugins",
+  { names: Field.json<readonly string[]>() },
+  { names: [] }
+);
+
+const Named = Schema.Struct({ plugin: Schema.String });
+
+/**
+ * Stops a plugin, and every plugin that depends on it: what `app.stop`
+ * enqueues.
+ * @internal
+ */
+export const Stop = Action.define("arcadekit/StopPlugin", Named);
+
+/**
+ * Starts a plugin, and every plugin it depends on: what `app.start` enqueues.
+ * @internal
+ */
+export const Start = Action.define("arcadekit/StartPlugin", Named);

@@ -66,7 +66,7 @@ const program = Effect.gen(function* () {
 | `events` | Its events that a save may hold waiting to be read, each with a schema, so such a save can load |
 | `layer` | Services for the whole app, built once. Resources it acquires are released when the app's scope closes |
 | `setup` | An Effect that runs on a fresh start, but not on a load, since the save already holds what it spawned |
-| `scripts` | Scripts started with the app, after `setup`, and again after a load |
+| `scripts` | Scripts started with the plugin, after `setup`, and again after a load. Stopping the plugin interrupts them |
 
 Events and actions are plain values, exported from the plugin's module. A plugin lists the events it emits only so that a save can hold them: see [saving and loading](/guides/saving-and-loading/#requirements-for-saving).
 
@@ -83,6 +83,32 @@ App.make({ plugins: [Sfx] }).pipe(Effect.provide(AudioLive));
 ```
 
 If a layer or setup fails, `App.make` fails with that error.
+
+## Stopping and starting a plugin
+
+A plugin runs from when the app starts until you stop it. `app.stop` switches a plugin off while the game runs, for a tool or a test, and `app.start` switches it back on:
+
+```ts sketch
+app.stop(Weather); // Weather, and every plugin that depends on it
+app.tick(1 / 60);
+app.start(Weather); // Weather, and every plugin it depends on
+```
+
+- A stop or a start applies at the start of the next tick, as an enqueued action does. It is logged, replayed and sent to the other peers of a session like one, and a save and a moment hold which plugins are stopped.
+- A stopped plugin runs none of its systems or state hooks, in any stage. An action it handles is refused with `Plugin.Stopped`.
+- `app.running` lists the plugins running now.
+
+While a plugin runs, it has a scope of its own. Its systems, handlers, `setup` and scripts get that scope as `Scope.Scope`, so `Effect.acquireRelease` in a system acquires a resource for as long as the plugin runs:
+
+```ts sketch
+const Listen = System.make("game/Listen", function* () {
+  if (listening === undefined) {
+    listening = yield* Effect.acquireRelease(subscribe(), unsubscribe);
+  }
+});
+```
+
+When the plugin stops, its scope closes: its scripts, and any script its systems started with `Script.spawn`, are interrupted, and what they acquired is released, in reverse order. Its `layer` is not part of that scope. Its services stay until the app's scope closes, so the plugins that use them keep working. A started plugin gets a new scope, and its `scripts` start again from the beginning. Its `setup` doesn't run again.
 
 ## Configuration
 

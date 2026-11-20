@@ -924,7 +924,6 @@ describe("a texture", () => {
         geometry,
         material: new MeshBasicMaterial({ map: bark }),
       }),
-      free: ({ material }) => material.dispose(),
     });
     const { app, enter, mesh, renderer } = play([
       Trees,

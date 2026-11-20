@@ -43,8 +43,8 @@ In a game that [ticks only when needed](running-a-game.md), a script that sleeps
 ## Starting a script
 
 - `app.spawnScript(Fountain)` starts it from outside the simulation: it runs immediately, up to its first wait.
-- `(yield* Script).spawn(Fountain)` starts it from a system, a handler or another script: it first runs when the tick flushes, after the systems.
-- A plugin's `scripts` start with the app, after its `setup`.
+- `(yield* Script).spawn(Fountain)` starts it from a system, a handler or another script: it first runs when the tick flushes, after the systems. One started by a plugin's code is interrupted when [the plugin stops](plugins.md#stopping-and-starting-a-plugin).
+- A plugin's `scripts` start with the app, after its `setup`, and are interrupted when the plugin stops.
 
 ## Failures
 
@@ -56,9 +56,11 @@ A fiber started with `Effect.forkDetach` is the caller's to observe. The app doe
 
 ## Scripts and saves
 
-A save can't capture a script mid-run. A plugin's `scripts` restart from the beginning when a game is loaded, so a script keeps anything it must not lose in the world, and resumes from what it finds there. The same applies after a rollback rewind.
+A save can't hold where a script is. A plugin's `scripts` restart from the beginning when a game is loaded, so a script keeps anything it must not lose in the world, and resumes from what it finds there.
 
-A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't restarted by a load, and a rewind stops it: your game starts it again, from what it finds in the world.
+A script started with `app.spawnScript` or `Script.spawn` would not run after a load, so `app.save()` fails with `Save.SaveRefused` while one is running. Save once it has ended.
+
+A moment can't hold a script either, so `app.capture()` fails while any script is running. A rollback session captures the game before each tick it isn't sure of, so a game played with rollback does with systems and states what a script would do.
 
 ## Read more
 

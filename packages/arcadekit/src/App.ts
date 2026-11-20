@@ -42,8 +42,9 @@ import {
   Layer,
   Result,
   Schema,
+  Scope,
 } from "effect";
-import type { Fiber, Scope } from "effect";
+import type { Fiber } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
@@ -167,6 +168,31 @@ export interface Any {
   readonly frameOrder: readonly string[];
   /** The names of the input-stage systems, in the order they run. */
   readonly inputOrder: readonly string[];
+  /** The names of the plugins running now, dependencies first. */
+  readonly running: readonly string[];
+  /**
+   * Stops a plugin, and every plugin that depends on it, at the start of the
+   * next tick, as an action enqueued now would be applied. A plugin that is
+   * stopped runs none of its systems and hooks, refuses its actions with
+   * `Plugin.Stopped`, and closes its scope: its scripts are interrupted, and
+   * what its systems acquired is released. Its layer's services stay, for as
+   * long as the app.
+   *
+   *   app.stop(Weather)
+   *   app.tick(dt)        // Weather has stopped before its systems would run
+   *
+   * Whether a plugin runs is part of the game: it is logged, replayed and sent
+   * to the other peers of a session like any action, and a save and a moment
+   * hold it. Throws for a plugin the app doesn't have.
+   */
+  readonly stop: (plugin: Plugin.Any) => void;
+  /**
+   * Starts a stopped plugin, and every plugin it depends on, at the start of
+   * the next tick. Each gets a new scope, and its scripts start again from the
+   * beginning. Its `setup` doesn't run again. A plugin that depends on it runs
+   * again too, unless it was stopped itself.
+   */
+  readonly start: (plugin: Plugin.Any) => void;
   /**
    * Runs one tick. Throws if a system fails, or if the app has stopped.
    *
@@ -256,12 +282,14 @@ export interface Any {
   /**
    * Saves the game as it is, to load later with `App.load`: the world, the
    * time, the actions queued for the next tick, the events waiting to be read,
-   * what change queries haven't visited yet, and the length of the log. It
-   * holds no scripts. Only between ticks.
+   * what change queries haven't visited yet, which plugins are stopped, and the
+   * length of the log. It holds no scripts: a plugin's scripts start again
+   * after a load. Only between ticks.
    *
    * Fails with `SaveRefused`, which names what is in the way: a queued action
    * or a waiting event without a schema, a field holding a value that can't be
-   * saved, or commands queued but not applied.
+   * saved, commands queued but not applied, or a script started with
+   * `spawnScript` or `Script.spawn` that hasn't ended.
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
@@ -276,7 +304,9 @@ export interface Any {
    * resimulating it: `Rollback` captures before each uncertain tick.
    *
    * Fails with `SaveRefused` when the world can't be snapshotted: a field holds
-   * a value that can't be saved, or commands are queued but not applied.
+   * a value that can't be saved, or commands are queued but not applied. It
+   * also fails while a script is running, a plugin's included: a moment can't
+   * hold where a script is, and a rewind would lose its place.
    */
   readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
   /**
@@ -285,13 +315,12 @@ export interface Any {
    * its length at that time. Only between ticks, and only with a moment of this
    * app.
    *
-   * A moment holds what a save holds, and no more. Every script the app
-   * supervises is interrupted, and each plugin's scripts restart from the
-   * beginning, as after a load, so a script keeps whatever it must not lose in
-   * the world. State held by your game's own services is left as is. A
-   * `transient` field is undefined afterwards. And what runs between ticks
-   * starts over: frame-stage and input-stage change queries visit everything
-   * again.
+   * A moment holds what a save holds, and no more. No script was running when
+   * it was captured, so every script running now is interrupted. The plugins
+   * that were running then run, and the others stop. State held by your game's
+   * own services is left as is. A `transient` field is undefined afterwards.
+   * And what runs between ticks starts over: frame-stage and input-stage change
+   * queries visit everything again.
    */
   readonly rewind: (moment: Moment) => void;
   /**
@@ -579,12 +608,12 @@ export const make = <
 
 /**
  * Restores a game from a save: its world, its time, the actions queued for the
- * next tick and the events waiting to be read. Pass the plugins and options the
- * game was created with.
+ * next tick, the events waiting to be read and which plugins are stopped. Pass
+ * the plugins and options the game was created with.
  *
- * No plugin's `setup` runs, since the save holds what setup spawned. Every
- * plugin's scripts restart from the beginning, since a save can't hold a script
- * mid-flight.
+ * No plugin's `setup` runs, since the save holds what setup spawned. The
+ * scripts of every plugin that runs restart from the beginning, since a save
+ * can't hold a script mid-flight.
  *
  * The app's action log starts empty. Replay what the game logged after the save
  * (`log.slice(save.logLength)`) with `App.replay`, which verifies it against
@@ -597,8 +626,6 @@ export const make = <
  *
  * **Gotchas**
  *
- * - A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't
- *   restarted: whoever loads the game starts it.
  * - State held by your game's own services isn't in the save, and a `transient`
  *   field is undefined afterwards.
  *
@@ -752,8 +779,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       });
 
-    // Scripts the app watches: started with `app.spawnScript` or `Script.spawn`.
+    // Scripts the app watches: a plugin's, and those started with
+    // `app.spawnScript` or `Script.spawn`.
     const scripts = new Set<Fiber.Fiber<unknown, unknown>>();
+    // A plugin's own scripts, which start again when a save is loaded.
+    const listed = new WeakSet<Fiber.Fiber<unknown, unknown>>();
     const stopOnFailure = options.onScriptFailure === "stop";
     let stopped: ScriptFailed | undefined;
     // Reports are logged with the app's context once it is built, so they
@@ -782,14 +812,22 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       return fiber;
     };
+    // Forked into the scope of whatever starts it: a plugin's system or
+    // script, so that stopping the plugin interrupts it, or else the app's.
     const spawn = <A, E, R>(
       effect: Effect.Effect<A, E, R>
     ): Effect.Effect<Fiber.Fiber<A, E>, never, R> =>
-      Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
+      Effect.withFiber((parent) =>
+        Effect.map(
+          Effect.forkIn(effect, Context.getUnsafe(parent.context, Scope.Scope)),
+          (fiber) => watch(fiber)
+        )
+      );
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
     const components = [
+      Plugin.StoppedPlugins,
       ...plugins.flatMap((plugin) => plugin.components),
       ...(options.components ?? []),
     ];
@@ -858,8 +896,35 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ...(options.handlers ?? []),
     ];
 
+    // Starting and stopping a plugin are actions of the app's own, so that
+    // the log, a replay and the other peers of a session see them too.
+    const pluginNamed = new Map(plugins.map((plugin) => [plugin.name, plugin]));
+    const stopPlugin = Action.handler(Plugin.Stop, function* ({ plugin }) {
+      if (!pluginNamed.has(plugin)) {
+        return yield* new Plugin.Unknown({ plugin });
+      }
+      const stopped = yield* Plugin.StoppedPlugins;
+      if (!stopped.names.includes(plugin)) {
+        stopped.names = [...stopped.names, plugin];
+      }
+    });
+    const startPlugin = Action.handler(Plugin.Start, function* ({ plugin }) {
+      const found = pluginNamed.get(plugin);
+      if (found === undefined) {
+        return yield* new Plugin.Unknown({ plugin });
+      }
+      // With every plugin it depends on.
+      const needed = new Set(
+        Plugin.flatten([found]).map((dependency) => dependency.name)
+      );
+      const stopped = yield* Plugin.StoppedPlugins;
+      if (stopped.names.some((name) => needed.has(name))) {
+        stopped.names = stopped.names.filter((name) => !needed.has(name));
+      }
+    });
+
     const handlers = new Map<string, Action.AnyHandler>();
-    for (const handler of allHandlers) {
+    for (const handler of [stopPlugin, startPlugin, ...allHandlers]) {
       if (handlers.has(handler.action.name)) {
         throw new Error(`Two handlers for action "${handler.action.name}"`);
       }
@@ -1133,6 +1198,78 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const runFork = Effect.runForkWith(context);
     reportContext = context;
 
+    /**
+     * A plugin as the app runs it: whether it is running, and while it is, the
+     * scope its systems, handlers and scripts are given as `Scope.Scope`, which
+     * closes when it stops. Its contexts are the app's with that scope.
+     */
+    interface Installed {
+      readonly plugin: Plugin.Any;
+      readonly needs: readonly Installed[];
+      running: boolean;
+      scope: Scope.Closeable | undefined;
+      tick: Context.Context<unknown>;
+      frame: Context.Context<unknown>;
+      input: Context.Context<unknown>;
+    }
+    const installed = new Map<Plugin.Any, Installed>();
+    for (const plugin of plugins) {
+      installed.set(plugin, {
+        plugin,
+        // `flatten` puts every dependency first.
+        needs: plugin.plugins.flatMap((dependency) => {
+          const found = installed.get(dependency);
+          return found === undefined ? [] : [found];
+        }),
+        running: false,
+        scope: undefined,
+        tick: context,
+        frame: context,
+        input: context,
+      });
+    }
+    const ownerOf = new Map<Plugin.AnySystem, Installed>();
+    const handledBy = new Map<string, Installed>();
+    for (const entry of installed.values()) {
+      for (const system of entry.plugin.systems) {
+        ownerOf.set(system, entry);
+      }
+      for (const handler of entry.plugin.handlers) {
+        handledBy.set(handler.action.name, entry);
+      }
+    }
+    type Stage = "tick" | "frame" | "input";
+    /** A system, and the plugin it belongs to, if any. */
+    interface Scheduled {
+      readonly system: Plugin.AnySystem;
+      readonly owner: Installed | undefined;
+    }
+    const scheduled = (system: Plugin.AnySystem): Scheduled => ({
+      system,
+      owner: ownerOf.get(system),
+    });
+    /** Whether a system runs now: one whose plugin is stopped doesn't. */
+    const runs = ({ owner }: Scheduled): boolean =>
+      owner === undefined || owner.running;
+    /**
+     * Gives the fiber that runs a stage the context of the system about to
+     * run: its plugin's, with its scope, or the app's. Set on the fiber
+     * directly, and only when it changes, since `Effect.provideContext`
+     * around every system measured 15% slower on a tick of idle systems.
+     */
+    const enter = (
+      fiber: Fiber.Fiber<unknown, unknown>,
+      { owner }: Scheduled,
+      stage: Stage,
+      base: Context.Context<unknown>
+    ): void => {
+      const wanted = owner === undefined ? base : owner[stage];
+      if (fiber.context !== wanted) {
+        fiber.setContext(wanted);
+      }
+    };
+    const currentFiber = Effect.withFiber((fiber) => Effect.succeed(fiber));
+
     // A hook runs when its state is entered or left, not with the rest.
     System.unique(allSystems);
     const ordered = System.order(
@@ -1142,19 +1279,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           !System.isFrameStage(system.stage) &&
           system.stage !== "input"
       )
-    );
+    ).map(scheduled);
     // A frame's three stages, one after the other, are one list.
     const frameSystems = System.order(
       allSystems.filter(
         (system) =>
           system.trigger === undefined && System.isFrameStage(system.stage)
       )
-    );
+    ).map(scheduled);
     const inputSystems = System.order(
       allSystems.filter(
         (system) => system.trigger === undefined && system.stage === "input"
       )
-    );
+    ).map(scheduled);
     // What runs between ticks hears the events of every tick, the first
     // among them: they are kept for it from the start.
     events.keepFor({
@@ -1163,7 +1300,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     });
     const hookKey = (trigger: System.Trigger): string =>
       `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
-    const hooks = new Map<string, Plugin.AnySystem[]>();
+    const hooks = new Map<string, Scheduled[]>();
     const states = State.registryOf(world);
     for (const listed of components) {
       if (listed instanceof State.State) {
@@ -1192,22 +1329,33 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       State.handleOf(world, state);
       const key = hookKey(system.trigger);
-      hooks.set(key, [...(hooks.get(key) ?? []), system]);
+      hooks.set(key, [...(hooks.get(key) ?? []), scheduled(system)]);
     }
     for (const [key, group] of hooks) {
       // `after` and `before` order the hooks of one moment among themselves.
-      hooks.set(key, System.order(group));
+      const order = System.order(group.map(({ system }) => system));
+      hooks.set(
+        key,
+        order.flatMap((system) =>
+          group.filter((hook) => hook.system === system)
+        )
+      );
     }
 
     let running = "";
     /** Runs one system as itself, with its own positions in events and changes. */
     const runSystem = (
-      system: Plugin.AnySystem
+      hook: Scheduled
     ): Effect.Effect<void, unknown, unknown> =>
-      Effect.suspend(() => {
+      Effect.withFiber((fiber) => {
+        if (!runs(hook)) {
+          return Effect.void;
+        }
+        const { system } = hook;
         running = system.name;
         events.reader = running;
         world.reader = running;
+        enter(fiber, hook, "tick", context);
         return system.condition === undefined
           ? system.run
           : Effect.flatMap(system.condition, (holds) =>
@@ -1258,8 +1406,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (states.states.length > 0) {
         yield* enterStates;
       }
+      const fiber = yield* currentFiber;
       for (let at = 0; at < ordered.length; at++) {
-        const system = ordered[at]!;
+        const step = ordered[at]!;
+        if (!runs(step)) {
+          continue;
+        }
+        enter(fiber, step, "tick", context);
+        const { system } = step;
         running = system.name;
         // Each system reads events, and what changed, from its own position.
         events.reader = running;
@@ -1362,13 +1516,106 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       })
     ) as Context.Context<unknown>;
     const runInputFork = Effect.runForkWith(inputContext);
+
+    // --- plugins starting and stopping ---------------------------------------
+    const appScope = yield* Effect.scope;
+    /** Closes a scope now: what it holds is let go of before this returns. */
+    const close = (scope: Scope.Closeable): void => {
+      const finalizers = Scope.closeUnsafe(scope, Exit.void);
+      if (finalizers !== undefined) {
+        runFork(Effect.uninterruptible(finalizers));
+      }
+      dispatcher.flush();
+    };
+    /** Gives a plugin a new scope, and runs its systems and handlers again. */
+    const launch = (entry: Installed): void => {
+      const scope = Scope.forkUnsafe(appScope);
+      entry.scope = scope;
+      entry.tick = Context.add(context, Scope.Scope, scope);
+      entry.frame = Context.add(frameContext, Scope.Scope, scope);
+      entry.input = Context.add(inputContext, Scope.Scope, scope);
+      entry.running = true;
+    };
+    /** Starts a plugin's scripts in its scope, each up to its first wait. */
+    const startScripts = (entry: Installed): void => {
+      const { scope } = entry;
+      if (scope === undefined) {
+        return;
+      }
+      for (const script of entry.plugin.scripts) {
+        const forked = Effect.runForkWith(entry.tick)(
+          Effect.forkIn(script, scope, { startImmediately: true })
+        ).pollUnsafe();
+        if (forked !== undefined && Exit.isSuccess(forked)) {
+          listed.add(forked.value);
+          watch(forked.value);
+        }
+      }
+    };
+    /** Stops a plugin: its scope closes, which interrupts its scripts. */
+    const halt = (entry: Installed): void => {
+      entry.running = false;
+      const { scope } = entry;
+      entry.scope = undefined;
+      if (scope !== undefined) {
+        close(scope);
+      }
+    };
+    /**
+     * Which plugins are to run, from what the world says is stopped: one that
+     * isn't, and whose dependencies all run.
+     */
+    const toRun = (): Set<Installed> => {
+      const { names } = world.singleton(Plugin.StoppedPlugins);
+      const runningNow = new Set<Installed>();
+      for (const entry of installed.values()) {
+        if (
+          !names.includes(entry.plugin.name) &&
+          entry.needs.every((need) => runningNow.has(need))
+        ) {
+          runningNow.add(entry);
+        }
+      }
+      return runningNow;
+    };
+    let settledOn: readonly string[] | undefined;
+    /** Starts and stops plugins until they match what the world says. */
+    const reconcile = (): void => {
+      const { names } = world.singleton(Plugin.StoppedPlugins);
+      if (names === settledOn) {
+        return;
+      }
+      settledOn = names;
+      const want = toRun();
+      const entries = Array.from(installed.values());
+      // Those that depend on others stop first, and start last.
+      for (let at = entries.length - 1; at >= 0; at--) {
+        const entry = entries[at];
+        if (entry !== undefined && entry.running && !want.has(entry)) {
+          halt(entry);
+        }
+      }
+      for (const entry of entries) {
+        if (!entry.running && want.has(entry)) {
+          launch(entry);
+          startScripts(entry);
+        }
+      }
+    };
     let frameHash = 0;
     const stageEffect = (
       stage: "frame" | "input",
-      systems: readonly Plugin.AnySystem[]
+      systems: readonly Scheduled[]
     ): Effect.Effect<void, unknown, unknown> =>
       Effect.gen(function* () {
-        for (const system of systems) {
+        const fiber = yield* currentFiber;
+        const base = stage === "frame" ? frameContext : inputContext;
+        for (const step of systems) {
+          if (!runs(step)) {
+            continue;
+          }
+          enter(fiber, step, stage, base);
+          const { system } = step;
           running = system.name;
           // A place of its own in events and in what changed, apart from
           // the simulation's and never saved.
@@ -1486,6 +1733,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `dispatch("${name}") was called from the handler of "${applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`
         );
       }
+      const owner = handledBy.get(name);
+      if (owner !== undefined && !owner.running) {
+        return Exit.fail(
+          new Plugin.Stopped({ plugin: owner.plugin.name, action: name })
+        );
+      }
       const commandMark = commands.mark();
       const eventMark = events.mark();
       const queuedMark = queued.length;
@@ -1497,7 +1750,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       try {
         // The payload is the action's: its schema decoded it, or the
         // compiler checked it in a typed dispatch.
-        fiber = runFork(handler.handle(value as never, { from }));
+        const handle = handler.handle(value as never, { from });
+        fiber =
+          owner === undefined
+            ? runFork(handle)
+            : Effect.runForkWith(owner.tick)(handle);
       } finally {
         events.reader = undefined;
         world.reader = undefined;
@@ -1519,6 +1776,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         world.commit();
         events.commit();
         commands.apply();
+        // It may have started or stopped a plugin.
+        reconcile();
         if (dispatched) {
           actionLog.push({
             tick: time.tick,
@@ -1744,6 +2003,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     };
 
+    /** Enqueues the action that starts or stops a plugin. */
+    const toggle = (
+      action: Action.AnyActionDef,
+      plugin: Plugin.Any,
+      verb: "start" | "stop"
+    ): void => {
+      if (!installed.has(plugin)) {
+        throw new Error(
+          `app.${verb} was given the plugin "${plugin.name}", which this app doesn't have. Pass one of the plugins given to App.make, or one they depend on.`
+        );
+      }
+      enqueue(action, { plugin: plugin.name });
+    };
+
     const app: App<
       TickError<S, P>,
       Provided<P> | External<S, H, P>,
@@ -1755,9 +2028,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       time,
       dispatcher,
       plugins: plugins.map((plugin) => plugin.name),
-      systemOrder: ordered.map((s) => s.name),
-      frameOrder: frameSystems.map((s) => s.name),
-      inputOrder: inputSystems.map((s) => s.name),
+      systemOrder: ordered.map((s) => s.system.name),
+      frameOrder: frameSystems.map((s) => s.system.name),
+      inputOrder: inputSystems.map((s) => s.system.name),
+      get running() {
+        return Array.from(installed.values())
+          .filter((entry) => entry.running)
+          .map((entry) => entry.plugin.name);
+      },
+      stop(plugin) {
+        toggle(Plugin.Stop, plugin, "stop");
+      },
+      start(plugin) {
+        toggle(Plugin.Start, plugin, "start");
+      },
       actionLog,
       save() {
         if (ticking || between !== undefined) {
@@ -1771,6 +2055,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           return refused(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: save after one.`
           );
+        }
+        for (const fiber of scripts) {
+          if (!listed.has(fiber)) {
+            return refused(
+              "A script started with app.spawnScript or Script.spawn is running, and a save can't hold where it is: after a load it would not run. Save once it has ended, or make it one of a plugin's scripts, which start again after a load and keep what they must not lose in the world."
+            );
+          }
         }
         const waiting: { name: string; payload: unknown; from?: string }[] = [];
         for (const { encoded, from, name, payload } of queued) {
@@ -1852,6 +2143,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
           );
         }
+        if (scripts.size > 0) {
+          return refused(
+            `${scripts.size === 1 ? "A script is" : `${scripts.size} scripts are`} running, and a moment can't hold where a script is: a rewind would lose its place. Keep that place in the world, with systems and a state or a singleton, or play the game without predicting ticks, which never rewinds.`
+          );
+        }
         let bytes: Uint8Array;
         try {
           bytes = world.snapshot();
@@ -1923,12 +2219,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         wanted = was.wanted;
         heard = false;
         stopped = undefined;
-        // As after a load: each plugin's scripts, from their beginning.
-        for (const plugin of plugins) {
-          for (const script of plugin.scripts) {
-            script.pipe(runFork, watch);
-          }
-        }
+        // The plugins that were running then, and no others.
+        reconcile();
         commands.apply();
       },
       checkpoint() {
@@ -1992,15 +2284,23 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       },
     };
 
+    // The plugins start: on a fresh start all of them, and after a load
+    // those that were running when the game was saved.
+    settledOn = world.singleton(Plugin.StoppedPlugins).names;
+    const starting = toRun();
+    for (const entry of starting) {
+      launch(entry);
+    }
     // Each plugin's setup runs once, in the same order, with everything in
     // place. Not when loading: the save holds what setup made.
-    for (const plugin of plugins) {
+    for (const entry of starting) {
+      const { plugin } = entry;
       if (plugin.setup === undefined || save !== undefined) {
         continue;
       }
       events.reader = `setup:${plugin.name}`;
       world.reader = events.reader;
-      const fiber = runFork(plugin.setup);
+      const fiber = Effect.runForkWith(entry.tick)(plugin.setup);
       events.reader = undefined;
       world.reader = undefined;
       const exit = fiber.pollUnsafe();
@@ -2019,10 +2319,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     }
     // Then every plugin's scripts, on a fresh start and after a load alike:
     // a script runs up to its first wait, and from then on during ticks.
-    for (const plugin of plugins) {
-      for (const script of plugin.scripts) {
-        script.pipe(runFork, watch);
-      }
+    for (const entry of starting) {
+      startScripts(entry);
     }
     commands.apply();
     return app;
