@@ -1854,7 +1854,7 @@ describe("a colour per instance", () => {
     throw new Error(`Nothing is drawn at height ${y}`);
   };
 
-  it("is the colour its entity has, for every kind of entity, beside the matrix of the same entity", () => {
+  it("is the colour its entity has, or white, for every kind of entity, beside the matrix of the same entity", () => {
     const { app, mesh } = play();
     const { world } = app;
     const turn = Rotation.of(Transform3d.axisAngle(0, 1, 0, 1));
@@ -1874,21 +1874,30 @@ describe("a colour per instance", () => {
       world.spawn(Rock, flat(7), flatTurn, paint(0, 0.375, 0.75)),
       world.spawn(Rock, flat(8), flatTurn, flatSize, paint(0, 0.5, 0.75)),
     ];
-    // Not painted, of every kind: a kind with a colour draws what has one.
-    world.spawn(Rock, at(9));
-    world.spawn(Rock, at(9), turn, size);
-    world.spawn(Rock, flat(9));
-    world.spawn(Rock, flat(9), flatTurn, flatSize);
+    // Not painted, of every kind: drawn in the material's own colour.
+    const bare = [
+      world.spawn(Rock, at(9)),
+      world.spawn(Rock, at(10), size),
+      world.spawn(Rock, at(11), turn),
+      world.spawn(Rock, at(12), turn, size),
+      world.spawn(Rock, flat(13)),
+      world.spawn(Rock, flat(14), flatSize),
+      world.spawn(Rock, flat(15), flatTurn),
+      world.spawn(Rock, flat(16), flatTurn, flatSize),
+    ];
     // Painted and not a rock; and hidden.
-    world.spawn(Ship, at(9), paint(1, 1, 1));
-    world.spawn(Rock, Hidden, at(9), paint(1, 1, 1));
+    world.spawn(Ship, at(20), paint(1, 1, 1));
+    world.spawn(Rock, Hidden, at(20), paint(1, 1, 1));
     app.frame(0);
-    expectDrawn(mesh(), app, rocks);
+    expectDrawn(mesh(), app, [...rocks, ...bare]);
     for (let y = 1; y <= 4; y++) {
       expect(colorAt(mesh(), y)).toEqual([y / 8, 0, 0]);
     }
     for (let y = 5; y <= 8; y++) {
       expect(colorAt(mesh(), y)).toEqual([0, (y - 4) / 8, 0.75]);
+    }
+    for (let y = 9; y <= 16; y++) {
+      expect(colorAt(mesh(), y)).toEqual([1, 1, 1]);
     }
     // Three numbers an instance, in a buffer of its own that changes often.
     const colors = mesh().instanceColor!;
@@ -1897,10 +1906,14 @@ describe("a colour per instance", () => {
     // It follows the entity: repainted, and gone.
     world.set(rocks[0]!, Paint, { r: 0, g: 1, b: 0.5 });
     world.despawn(rocks[1]!);
+    // Painted, and no longer.
+    world.add(bare[0]!, paint(0.5, 0.5, 0.5));
+    world.remove(rocks[2]!, Paint);
     app.frame(0);
-    expect(mesh().count).toBe(7);
+    expect(mesh().count).toBe(15);
     expect(colorAt(mesh(), 1)).toEqual([0, 1, 0.5]);
-    expect(colorAt(mesh(), 3)).toEqual([0.375, 0, 0]);
+    expect(colorAt(mesh(), 3)).toEqual([1, 1, 1]);
+    expect(colorAt(mesh(), 9)).toEqual([0.5, 0.5, 0.5]);
   });
 
   it("keeps each colour with its instance while they come, go and change, and the room for them grows", () => {
@@ -1948,10 +1961,14 @@ describe("a colour per instance", () => {
           dropped++;
         });
       }
-      const shown = alive.filter((one) => world.has(one.entity, Paint));
-      expect(mesh().count).toBe(shown.length);
-      for (const one of shown) {
-        const { b, g, r } = world.get(one.entity, Paint)!;
+      // Each in its colour, or white while it has none.
+      expect(mesh().count).toBe(alive.length);
+      for (const one of alive) {
+        const { b, g, r } = world.get(one.entity, Paint) ?? {
+          r: 1,
+          g: 1,
+          b: 1,
+        };
         expect(colorAt(mesh(), one.y), `frame ${frame}`).toEqual([r, g, b]);
       }
     }

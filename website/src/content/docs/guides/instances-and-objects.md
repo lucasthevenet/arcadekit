@@ -64,7 +64,7 @@ const Painted = Three.instances("game/Painted", {
 `color` names one of your game's components to give each instance its own colour. `@arcadekit/three` defines none: what colour an entity is, such as its team's or how damaged it is, is up to your game, whose rules write it as they write a position.
 
 - Any table-stored component with `r`, `g` and `b` fields is a colour, whatever else it has. Anything else passed as one throws when the system is created, and is a type error before that.
-- An entity then belongs to the kind only while it has the colour too. One without a colour isn't drawn by this system.
+- An entity without the colour is drawn in the material's own colour, as if its colour were white. Giving some entities a colour changes how those look, and hides none.
 - The material's colour is multiplied by it, so a white material is drawn in exactly the instance's colour.
 - The numbers are a colour as a hex code writes it: `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`, from 0 to 1 in float fields. A component with integer fields, `Field.u8`, holds the bytes themselves, 0 to 255. The three fields must all be floats or all integers, which is checked when the system is created.
 - Renderers work in linear colour, so each value is converted: a byte exactly, and a float to within a sixteenth of a byte.
