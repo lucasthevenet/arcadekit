@@ -103,6 +103,10 @@ export interface Session<E = never> extends Lockstep.Session<
  * Makes a rollback session for an app, as `Lockstep.make` does, but one that
  * runs ahead of the network and rewinds when a prediction was wrong.
  *
+ * A rewind can't put a script back where it was, so a game played with
+ * rollback runs none. It throws when a script is running, a plugin's
+ * included, and from then on `app.spawnScript` and `Script.spawn` throw.
+ *
  * @category Constructors
  */
 export const make = <E>(

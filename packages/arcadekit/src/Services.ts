@@ -118,6 +118,8 @@ export class Script extends Context.Service<
      * The app supervises it like a script started with `app.spawnScript`: a
      * failure is reported, and it is interrupted when the app's scope closes. A
      * fiber started with `Effect.forkDetach` isn't supervised.
+     *
+     * Dies once a session that rewinds, such as `Rollback`'s, has the app.
      */
     readonly spawn: <A, E, R>(
       effect: Effect.Effect<A, E, R>

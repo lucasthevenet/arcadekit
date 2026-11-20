@@ -365,9 +365,12 @@ export const build = <E>(
 
   // What this peer issued and has not put in a message yet.
   let issued: Issued[] = [];
-  const reins = app.divert((name, payload) => {
-    issued.push({ name, payload });
-  });
+  const reins = app.divert(
+    (name, payload) => {
+      issued.push({ name, payload });
+    },
+    { rewinds: ahead > 0 }
+  );
 
   const start = app.time.tick;
   // Per peer, the actions of each tick that may still have to be run.

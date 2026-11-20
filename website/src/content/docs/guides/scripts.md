@@ -60,7 +60,7 @@ A save can't hold where a script is. A plugin's `scripts` restart from the begin
 
 A script started with `app.spawnScript` or `Script.spawn` would not run after a load, so `app.save()` fails with `Save.SaveRefused` while one is running. Save once it has ended.
 
-A moment can't hold a script either, so `app.capture()` fails while any script is running. A rollback session captures the game before each tick it isn't sure of, so a game played with rollback does with systems and states what a script would do.
+A moment can't hold a script either, so `app.capture()` fails while any script is running. A rollback session rewinds to such moments, so it refuses a game with scripts: `Rollback.make` throws when one is running, a plugin's included, and starting one throws once the session has the app. A game played with rollback does with systems and states what a script would do.
 
 ## Read more
 

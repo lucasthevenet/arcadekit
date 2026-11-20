@@ -426,6 +426,21 @@ export interface Diverted<E = never> {
 }
 
 /**
+ * Options for `app.divert`.
+ *
+ * @category Options
+ */
+export interface DivertOptions {
+  /**
+   * Whether the code that takes over rewinds the app, as a rollback session
+   * does. Defaults to false. A rewind can't put a script back where it was, so
+   * an app that rewinds runs no script: `divert` throws if one is running, and
+   * `spawnScript` and `Script.spawn` throw from then on.
+   */
+  readonly rewinds?: boolean;
+}
+
+/**
  * A running game: its world, its time, the actions queued for the next tick,
  * and what runs a tick and a frame. Made with `App.make`, `App.load` or, in a
  * page, `App.run`.
@@ -454,7 +469,8 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * can be taken over once.
    */
   readonly divert: (
-    take: (name: string, payload: unknown) => void
+    take: (name: string, payload: unknown) => void,
+    options?: DivertOptions
   ) => Diverted<E>;
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
@@ -473,6 +489,8 @@ export interface App<E = never, R = never, HU = never> extends Any {
    * Starts a long-running fiber (a coroutine). It runs immediately up to its
    * first wait, and from then on only advances during ticks. If it fails, the
    * failure is logged with its cause; see `onScriptFailure`.
+   *
+   * Throws once a session that rewinds, such as `Rollback`'s, has the app.
    */
   readonly spawnScript: <A, E2>(
     effect: Effect.Effect<A, E2, R | BuiltIn>
@@ -897,10 +915,22 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       return fiber;
     };
+    // Whether a session that rewinds has taken the app over: `divert`.
+    let rewinds = false;
+    const noScripts = (what: string): string =>
+      `${what}, and a rewind can't put a script back where it was. Keep that place in the world, with systems and a state or a singleton, or play the game with Lockstep, which never rewinds.`;
+    const refuseScript = (where: string): Error =>
+      new Error(
+        noScripts(
+          `${where} was called on an app that a session which rewinds, such as Rollback's, has taken over`
+        )
+      );
     const spawn = <A, E, R>(
       effect: Effect.Effect<A, E, R>
     ): Effect.Effect<Fiber.Fiber<A, E>, never, R> =>
-      Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
+      rewinds
+        ? Effect.die(refuseScript("Script.spawn"))
+        : Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
@@ -2229,6 +2259,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       },
       spawnScript(effect) {
+        if (rewinds) {
+          throw refuseScript("spawnScript()");
+        }
         return effect.pipe(runFork, watch);
       },
       dispatch(action, payload) {
@@ -2249,12 +2282,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return apply(name, payload, true, true, from);
       },
       enqueueByName,
-      divert(take) {
+      divert(take, divertOptions) {
         if (diverted !== undefined) {
           throw new Error(
             "divert() was called on an app that has been taken over already. An app is in one session at a time."
           );
         }
+        if (divertOptions?.rewinds === true && scripts.size > 0) {
+          throw new Error(
+            noScripts(
+              `A session which rewinds, such as Rollback's, was given an app with ${scripts.size === 1 ? "a script" : `${scripts.size} scripts`} running`
+            )
+          );
+        }
+        rewinds = divertOptions?.rewinds === true;
         diverted = take;
         return { deliver, tickExit: (delta) => runTick(delta, NO_INPUT) };
       },

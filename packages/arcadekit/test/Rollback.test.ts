@@ -6,9 +6,11 @@ import {
   Component,
   Field,
   Lockstep,
+  Plugin,
   Query,
   Rollback,
   Save,
+  Script,
   System,
   Time,
 } from "../src/index";
@@ -494,6 +496,73 @@ describe("a rollback session", () => {
       expect(() => session.tick()).toThrow(Save.SaveRefused);
       // The tick did not run.
       expect(app.time.tick).toBe(2);
+    });
+  });
+
+  describe("and scripts", () => {
+    const options = { peer: "ada", peers: ["ada", "grace"], delta: DELTA };
+    const ticks = (until: number) =>
+      Effect.gen(function* () {
+        const script = yield* Script;
+        while ((yield* Time).tick < until) {
+          yield* script.nextTick;
+        }
+      });
+    const advice =
+      "a rewind can't put a script back where it was. Keep that place in the world, with systems and a state or a singleton, or play the game with Lockstep, which never rewinds.";
+
+    it("refuses an app with a script running, a plugin's included, when it is made", () => {
+      const Waves = Plugin.make("rb/Waves", { scripts: [ticks(5)] });
+      withApp(App.make({ plugins: [Waves] }), (app) => {
+        expect(() => Rollback.make(app, options)).toThrow(
+          new Error(
+            `A session which rewinds, such as Rollback's, was given an app with a script running, and ${advice}`
+          )
+        );
+      });
+      withApp(App.make({}), (app) => {
+        app.spawnScript(ticks(5));
+        app.spawnScript(ticks(5));
+        expect(() => Rollback.make(app, options)).toThrow(
+          /was given an app with 2 scripts running/u
+        );
+      });
+      // Lockstep never rewinds, and plays the same game.
+      withApp(App.make({ plugins: [Waves] }), (app) => {
+        const session = Lockstep.make(app, { ...options, peers: ["ada"] });
+        expect(session.tickExit()).toEqual(Exit.succeed(true));
+      });
+    });
+
+    it("takes an app whose scripts have all ended", () => {
+      const Intro = Plugin.make("rb/Intro", { scripts: [ticks(1)] });
+      withApp(App.make({ plugins: [Intro] }), (app) => {
+        app.tick(DELTA);
+        const session = Rollback.make(app, options);
+        expect(session.tickExit()).toEqual(Exit.succeed(true));
+        expect(session.kept).toBe(1);
+      });
+    });
+
+    it("refuses to start a script once it has the app", () => {
+      const Starter = System.make("rb/Starter", function* () {
+        yield* (yield* Script).spawn(ticks(5));
+      });
+      withApp(App.make({ systems: [Starter] }), (app) => {
+        const session = Rollback.make(app, options);
+        expect(() => app.spawnScript(ticks(5))).toThrow(
+          new Error(
+            `spawnScript() was called on an app that a session which rewinds, such as Rollback's, has taken over, and ${advice}`
+          )
+        );
+        expect(session.tickExit()).toEqual(
+          Exit.die(
+            new Error(
+              `Script.spawn was called on an app that a session which rewinds, such as Rollback's, has taken over, and ${advice}`
+            )
+          )
+        );
+      });
     });
   });
 });
