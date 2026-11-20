@@ -13,7 +13,7 @@
  *   const hits = yield* collided.wait       // suspend until some arrive
  *
  * Every system sees every event exactly once, whatever order the systems run
- * in. An earlier system sees an event emitted by a later one on the next tick,
+ * in, and so does every script, from its own place, for as long as it runs. An earlier system sees an event emitted by a later one on the next tick,
  * so an event emitted while systems are running is kept until the end of the
  * following tick. An event emitted between ticks is dropped at the end of the
  * next tick. Events aren't kept for a system that `System.runIf` has disabled:
@@ -28,10 +28,19 @@
  * with no validation: the schema is only used when the event leaves the
  * program, by `Event.encode` and `Event.decode`.
  */
-import { Cause, Data, Effect, Effectable, Exit, Option, Schema } from "effect";
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Effectable,
+  Exit,
+  Option,
+  Schema,
+} from "effect";
 
 import type { SavedEvents } from "./Save";
-import { Events } from "./Services";
+import { Events, ScriptReader } from "./Services";
 
 /**
  * A system's handle to one event type, from `yield* SomeEvent`: it emits
@@ -80,8 +89,12 @@ export class EventDef<P> extends Effectable.Class<
   }
 
   asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
-    return (this.effect ??= Effect.map(Effect.service(Events), (bus) =>
-      bus.handle(this)
+    // A system's and a handler's reader is the bus's; a script's is its own.
+    return (this.effect ??= Effect.withFiberSucceed<EventHandle<P>, Events>(
+      (fiber) => {
+        const bus = Context.getUnsafe(fiber.context, Events);
+        return bus.handle(this, bus.reader ?? fiber.getRef(ScriptReader));
+      }
     ));
   }
 }
@@ -188,6 +201,13 @@ const EMPTY: readonly never[] = Object.freeze([]);
  * @category Constants
  */
 export const FRAME_READER = "frame:";
+
+/**
+ * The prefix of a script's reader. Such a reader lasts as long as its script,
+ * and isn't saved: a save holds no script.
+ * @internal
+ */
+export const SCRIPT_READER = "script:";
 
 /**
  * How many ticks events are kept for a between-ticks stage that has stopped
@@ -393,7 +413,8 @@ export class EventBus {
   /**
    * Who is asking for handles right now. The app sets this before each
    * system and handler runs, which is what gives each of them its own
-   * read position. Undefined means a script or outside code.
+   * read position. Undefined means a script, which has a reader of its own,
+   * or outside code.
    * @internal
    */
   reader: string | undefined;
@@ -494,7 +515,11 @@ export class EventBus {
       const read: Record<string, number> = {};
       for (const [reader, handle] of channel.readers) {
         const count = handle.position - channel.tickOffset;
-        if (count > 0 && !reader.startsWith(FRAME_READER)) {
+        if (
+          count > 0 &&
+          !reader.startsWith(FRAME_READER) &&
+          !reader.startsWith(SCRIPT_READER)
+        ) {
           read[reader] = Math.min(count, channel.size);
         }
       }
@@ -562,13 +587,13 @@ export class EventBus {
   }
 
   /**
-   * Returns a handle for the current reader. Systems and handlers get the same
-   * handle every tick, starting from the oldest event still kept. Any other
-   * caller gets a new handle that starts from now.
+   * Returns a handle for a reader, the current one by default. Systems,
+   * handlers and scripts get the same handle every time, starting from the
+   * oldest event still kept. Any other caller gets a new handle that starts
+   * from now.
    */
-  handle<P>(def: EventDef<P>): EventHandle<P> {
+  handle<P>(def: EventDef<P>, reader = this.reader): EventHandle<P> {
     const channel = this.channel(def);
-    const { reader } = this;
     if (reader === undefined) {
       return new Handle(channel, channel.end);
     }
@@ -584,6 +609,16 @@ export class EventBus {
       channel.readers.set(reader, handle);
     }
     return handle;
+  }
+
+  /**
+   * Forgets a reader that is gone for good, such as a script that ended.
+   * @internal
+   */
+  forget(reader: string): void {
+    for (const channel of this.order) {
+      channel.readers.delete(reader);
+    }
   }
 
   /** Emits from outside any system, for example from UI or network code. */

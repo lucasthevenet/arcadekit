@@ -39,6 +39,7 @@ const Dust = System.make("fx/Dust", function* () {
 - An event is dropped once every system has had a chance to read it.
 - The frame and input stages also see every event once, however many ticks ran between two frames. That is how sound and UI follow the game.
 - A script waits for an event with `yield* landed.wait`, where `landed` is `yield* Landed`. A system never waits: it reads what is there and finishes within its tick.
+- A script reads from a place of its own, as a system does, for as long as it runs: `(yield* Landed).read()` gives it every event it hasn't seen, however often it is written.
 
 An event is a fact: name it in the past tense, prefixed with its feature, such as `"physics/Landed"`. The name identifies the event within an app, and a second, different event with the same name is refused when it is first used.
 

@@ -766,6 +766,14 @@ describe("changes against a simple model", () => {
           });
         } else {
           for (const reader of readers) {
+            if (dice.next() < 0.02) {
+              // Gone for good, as a script that ends, and asked for again
+              // by the same name: it starts afresh, and no other moves.
+              world.forget(reader.label);
+              reader.view = world.view(reader.spec.query, reader.label);
+              reader.pending.clear();
+              reader.fresh = true;
+            }
             if (dice.next() < (reader.lazy ? 0.05 : 0.5)) {
               reader.view._path = dice.pick(["auto", "sorted", "mask"]);
               const matching = world.view(reader.spec.plain).entities();

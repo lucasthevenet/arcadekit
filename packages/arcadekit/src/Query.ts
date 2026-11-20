@@ -13,15 +13,15 @@
  *   (yield* Moved).each((pos, sprite) => { ... })   // written since this system last looked
  *   for (const entity of (yield* Gone).read()) { ... }
  *
- * Each system tracks its own position in what changed, so every system sees
- * every change once, however often it runs.
+ * Each system and each script tracks its own position in what changed, so
+ * every one of them sees every change once, however often it runs.
  */
-import { Effect, Effectable } from "effect";
+import { Context, Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
 
 import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
 import type { QuerySpec, QueryView, RemovedReader, Terms } from "./ecs/world";
-import { World } from "./Services";
+import { ScriptReader, World } from "./Services";
 
 /**
  * An immutable query description, independent of any world.
@@ -52,9 +52,15 @@ export class Query<D extends Terms>
   asEffect(): Effect.Effect<QueryView<D>, never, World> {
     // Built once and reused: the world caches the view per query, so after
     // the first tick this is a service lookup plus a Map hit. A change
-    // query's view is the one of whoever is running: `world.reader`.
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      world.view(this)
+    // query's view is the one of whoever is running: `world.reader` for a
+    // system or a handler, and a script's own reader in a script.
+    return (this.effect ??= Effect.withFiberSucceed<QueryView<D>, World>(
+      (fiber) => {
+        const world = Context.getUnsafe(fiber.context, World);
+        return world.reader === undefined
+          ? world.view(this, fiber.getRef(ScriptReader))
+          : world.view(this);
+      }
     ));
   }
 }
@@ -131,8 +137,8 @@ export const without: {
  * reader last visited. A component an entity has just gained counts as written.
  * The components are required, as with `Query.with`.
  *
- * - Each system, and each action's handler, tracks its own position, and sees
- *   every change once. On its first visit, it sees every matching entity. A
+ * - Each system, each action's handler and each script tracks its own
+ *   position, and sees every change once. On its first visit, it sees every matching entity. A
  *   system that was skipped misses nothing: what changed in the meantime is
  *   there when it runs again.
  * - `each`, `eachChunk` and `entities` count as visits. `count` only peeks.
@@ -298,8 +304,8 @@ export const reads: {
  * The entities that lost a component since the reader last read: `(yield*
  * Query.removed(Sprite)).read()` returns their ids, oldest first, once per
  * removal. A despawned entity lost everything it had, and its id is no longer
- * alive. Removals are tracked from the reader's first read, and each system and
- * handler tracks its own position.
+ * alive. Removals are tracked from the reader's first read, and each system,
+ * handler and script tracks its own position.
  *
  * @category Models
  */
@@ -311,8 +317,13 @@ export class Removed extends Effectable.Class<RemovedReader, never, World> {
   }
 
   asEffect(): Effect.Effect<RemovedReader, never, World> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      world.removed(this.component)
+    return (this.effect ??= Effect.withFiberSucceed<RemovedReader, World>(
+      (fiber) => {
+        const world = Context.getUnsafe(fiber.context, World);
+        return world.reader === undefined
+          ? world.removed(this.component, fiber.getRef(ScriptReader))
+          : world.removed(this.component);
+      }
     ));
   }
 }

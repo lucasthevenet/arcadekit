@@ -71,7 +71,7 @@ import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { SavedChanges } from "./ecs/world";
-import { EventBus, FRAME_READER } from "./Event";
+import { EventBus, FRAME_READER, SCRIPT_READER } from "./Event";
 import type { EventDef, EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
@@ -82,6 +82,7 @@ import {
   Frame,
   Random,
   Script,
+  ScriptReader,
   Ticks,
   Time,
   World,
@@ -927,12 +928,33 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `${where} was called on an app that a session which rewinds, such as Rollback's, has taken over`
         )
       );
+    let scriptCount = 0;
+    /**
+     * Gives a script a reader of its own, as a system has, so that what it
+     * reads of events and changes is its own. It is let go of at the end.
+     */
+    const asScript = <A, E, R>(
+      effect: Effect.Effect<A, E, R>
+    ): Effect.Effect<A, E, R> => {
+      const reader = `${SCRIPT_READER}${++scriptCount}`;
+      return effect.pipe(
+        Effect.provideService(ScriptReader, reader),
+        Effect.ensuring(
+          Effect.sync(() => {
+            events.forget(reader);
+            world.forget(reader);
+          })
+        )
+      );
+    };
     const spawn = <A, E, R>(
       effect: Effect.Effect<A, E, R>
     ): Effect.Effect<Fiber.Fiber<A, E>, never, R> =>
       rewinds
         ? Effect.die(refuseScript("Script.spawn"))
-        : Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
+        : Effect.map(Effect.forkDetach(asScript(effect)), (fiber) =>
+            watch(fiber)
+          );
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
@@ -2109,7 +2131,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           // The frame stage's readers are not the game's: a loaded game
           // has everything still to draw.
           changes: world.saveChanges(
-            (reader) => !reader.startsWith(FRAME_READER)
+            (reader) =>
+              !reader.startsWith(FRAME_READER) &&
+              !reader.startsWith(SCRIPT_READER)
           ),
           logLength: actionLog.length,
         });
@@ -2165,7 +2189,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           world: bytes,
           // What runs between ticks has everything still to draw.
           changes: world.saveChanges(
-            (reader) => !reader.startsWith(FRAME_READER)
+            (reader) =>
+              !reader.startsWith(FRAME_READER) &&
+              !reader.startsWith(SCRIPT_READER)
           ),
           events: events.capture(),
           queued: queued.slice(),
@@ -2281,7 +2307,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (rewinds) {
           throw refuseScript("spawnScript()");
         }
-        return effect.pipe(runFork, watch);
+        return asScript(effect).pipe(runFork, watch);
       },
       dispatch(action, payload) {
         assertBetweenTicks(action.name);
@@ -2355,7 +2381,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // a script runs up to its first wait, and from then on during ticks.
     for (const plugin of plugins) {
       for (const script of plugin.scripts) {
-        listed.add(script.pipe(runFork, watch));
+        listed.add(asScript(script).pipe(runFork, watch));
       }
     }
     commands.apply();

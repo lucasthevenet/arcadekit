@@ -725,6 +725,21 @@ export class ChangeLog {
     this.moved();
   }
 
+  /** Lets go of the readers `gone` names, and of what only they had yet to visit. */
+  forget(gone: (key: string) => boolean): void {
+    const { cursors } = this;
+    let kept = 0;
+    for (const cursor of cursors) {
+      if (!gone(cursor.key)) {
+        cursors[kept++] = cursor;
+      }
+    }
+    if (kept < cursors.length) {
+      cursors.length = kept;
+      this.moved();
+    }
+  }
+
   /** Drops the entries every reader has visited. */
   moved(): void {
     // Not in a transaction: a rollback puts readers back where they were,
@@ -843,6 +858,11 @@ export class RemovedReader {
     private readonly cursor: ChangeCursor
   ) {
     this.restored = world._restored;
+  }
+
+  /** @internal The reader it belongs to. */
+  get _reader(): string {
+    return this.cursor.key;
   }
 
   /**
@@ -3102,6 +3122,31 @@ export class World {
     }
     byReader.set(who, view);
     return view as QueryView<D>;
+  }
+
+  /**
+   * Forgets a reader that is gone for good: its change queries, its `removed`
+   * readers, and its places in the change logs, which stop keeping what only it
+   * had yet to visit. A reader of that name asked for later starts afresh.
+   */
+  forget(reader: string): void {
+    const prefix = `${reader}\n`;
+    for (const byReader of this.watchViews.values()) {
+      byReader.delete(reader);
+    }
+    for (const key of Array.from(this.watchViewsByKey.keys())) {
+      if (key.startsWith(prefix)) {
+        this.watchViewsByKey.delete(key);
+      }
+    }
+    for (const [key, found] of Array.from(this.removedReaders)) {
+      if (found._reader === reader) {
+        this.removedReaders.delete(key);
+      }
+    }
+    for (const log of this.logs) {
+      log.forget((key) => key === reader || key.startsWith(prefix));
+    }
   }
 
   // --- changes ---------------------------------------------------------------

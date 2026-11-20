@@ -217,3 +217,14 @@ export type BuiltIn =
   | Actions
   | Random
   | Devices;
+
+/**
+ * The reader a script reads events and changes as: one of its own, from when
+ * it starts to when it ends, as a system has one. The app gives it to each
+ * script it starts.
+ * @internal
+ */
+export const ScriptReader: Context.Reference<string | undefined> =
+  Context.Reference<string | undefined>("arcadekit/ScriptReader", {
+    defaultValue: () => undefined,
+  });

@@ -1,4 +1,4 @@
-import { Cause, Context, Data, Effect, Exit, Logger } from "effect";
+import { Cause, Context, Data, Effect, Exit, Logger, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -8,6 +8,7 @@ import {
   Commands,
   Component,
   Driver,
+  Event,
   Events,
   Field,
   Query,
@@ -456,6 +457,56 @@ describe("scripts", () => {
       expect(app.world.entityCount).toBe(0);
       // 60 ticks of 1/60 s is one second of game time, however long it really took.
       expect(fiber.pollUnsafe()).toEqual(Exit.succeed(60));
+    });
+  });
+
+  it("read events and changes from a place of their own, as systems do", () => {
+    const Ping = Event.define("rt/Ping", Schema.Struct({ n: Schema.Number }));
+    const Health = Component.define("rt/Health", { hp: Field.i32 });
+    const Hurt = Query.all(Health).pipe(Query.changed(Health));
+    const Ring = System.make("rt/Ring", function* () {
+      (yield* Ping).emit({ n: 1 });
+      (yield* Query.all(Health)).each((health) => {
+        health.hp -= 1;
+      });
+    });
+    const heard: Record<string, number[][]> = { system: [], a: [], b: [] };
+    const hurt: Record<string, number[]> = { system: [], a: [], b: [] };
+    const Listen = System.make("rt/Listen", function* () {
+      heard.system!.push((yield* Ping).read().map(({ n }) => n));
+      hurt.system!.push((yield* Hurt).entities().length);
+    });
+    const listener = (name: "a" | "b") =>
+      Effect.gen(function* () {
+        const script = yield* Script;
+        for (let n = 0; n < 3; n++) {
+          yield* script.nextTick;
+          // Yielded again each tick, as a system does.
+          heard[name]!.push((yield* Ping).read().map(({ n }) => n));
+          hurt[name]!.push((yield* Hurt).entities().length);
+        }
+      });
+    withApp(App.make({ systems: [Ring, Listen] }), (app) => {
+      app.world.spawn(Health.of({ hp: 10 }));
+      app.spawnScript(listener("a"));
+      app.spawnScript(listener("b"));
+      for (let n = 0; n < 3; n++) {
+        app.tick(1 / 60);
+      }
+      expect(heard).toEqual({
+        system: [[1], [1], [1]],
+        a: [[1], [1], [1]],
+        b: [[1], [1], [1]],
+      });
+      // Neither script takes the other's changes.
+      expect(hurt).toEqual({ system: [1, 1, 1], a: [1, 1, 1], b: [1, 1, 1] });
+      // Once they have ended, nothing is kept for them.
+      const readers = app.world
+        .saveChanges()
+        .flatMap((changes) => Object.keys(changes.readers));
+      expect(readers.map((key) => key.split("\n", 1)[0])).toEqual([
+        "rt/Listen",
+      ]);
     });
   });
 
