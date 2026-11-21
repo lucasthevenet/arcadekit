@@ -4,8 +4,9 @@
 import { Context } from "effect";
 
 import type { Actions } from "./Action";
+import type { CommandBuffer } from "./ecs/commands";
 import type { Rng } from "./ecs/random";
-import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
+import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
 

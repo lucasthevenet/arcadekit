@@ -569,7 +569,8 @@ const columnOf = (kind: FieldKind, count: number): Column => {
   }
 };
 
-const damaged = (how: string): SnapshotError =>
+/** A snapshot whose bytes are not what a writer makes. @internal */
+export const corrupt = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
 
 /** Reads a snapshot up to its tables, which in format 4 come after its singletons. */
@@ -612,14 +613,14 @@ const readHead = (bytes: Uint8Array) => {
     const name = reader.text();
     const storage = STORAGES[reader.u8()];
     if (storage === undefined) {
-      throw damaged("a component is kept in a way this version does not know");
+      throw corrupt("a component is kept in a way this version does not know");
     }
     const fields: SnapshotComponent["fields"] = [];
     for (let f = reader.count(5); f > 0; f--) {
       const field = reader.text();
       const kind = KIND_CODES[reader.u8()];
       if (kind === undefined) {
-        throw damaged("a field is of a kind this version does not know");
+        throw corrupt("a field is of a kind this version does not know");
       }
       fields.push({ name: field, kind });
     }
@@ -628,7 +629,7 @@ const readHead = (bytes: Uint8Array) => {
   const componentAt = (): SnapshotComponent => {
     const component = components[reader.u32()];
     if (component === undefined) {
-      throw damaged("it refers to a component it does not list");
+      throw corrupt("it refers to a component it does not list");
     }
     return component;
   };
@@ -742,7 +743,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   }
   const singletons = head.early ?? head.readSingletons();
   if (reader.left !== 4 || reader.u32() !== END) {
-    throw damaged("it does not end where it should");
+    throw corrupt("it does not end where it should");
   }
   return {
     random: head.random,
@@ -788,14 +789,14 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   const indexOf = new Map<string, number>();
   for (const [index, component] of components.entries()) {
     if (indexOf.has(component.name)) {
-      throw damaged(`it lists the component "${component.name}" twice`);
+      throw corrupt(`it lists the component "${component.name}" twice`);
     }
     indexOf.set(component.name, index);
   }
   const named = (name: string): SnapshotComponent => {
     const index = indexOf.get(name);
     if (index === undefined) {
-      throw damaged(`it holds data for "${name}", which it does not list`);
+      throw corrupt(`it holds data for "${name}", which it does not list`);
     }
     return components[index]!;
   };
@@ -833,7 +834,7 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
       }
       const column = columns?.[name];
       if (column === undefined || column.length !== count) {
-        throw damaged(
+        throw corrupt(
           `"${component.name}.${name}" has no column of ${count} values`
         );
       }
@@ -867,7 +868,7 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   writer.u32(lists.length);
   for (const [i, list] of lists.entries()) {
     if (lists[i + 1]?.name === list.name) {
-      throw damaged(`it holds the list "${list.name}" twice`);
+      throw corrupt(`it holds the list "${list.name}" twice`);
     }
     writer.text(list.name);
     writer.u32(list.values.length);

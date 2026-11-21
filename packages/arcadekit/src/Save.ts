@@ -23,9 +23,9 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
+import type { SavedChanges } from "./ecs/changes";
 import { SnapshotError, readSnapshot, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
-import type { SavedChanges } from "./ecs/world";
 
 /**
  * How far each system and handler had read the events of one type that were

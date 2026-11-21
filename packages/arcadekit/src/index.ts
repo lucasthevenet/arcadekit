@@ -37,14 +37,16 @@ export {
 } from "./ecs/snapshot";
 export {
   type ChangeKind,
-  CommandBuffer,
-  type EntityColumn,
-  type QueryView,
   type RemovedReader,
   type SavedChanges,
+} from "./ecs/changes";
+export { CommandBuffer } from "./ecs/commands";
+export {
+  type EntityColumn,
+  type QueryView,
   type SparseColumns,
-  World as EcsWorld,
-} from "./ecs/world";
+} from "./ecs/query";
+export { World as EcsWorld } from "./ecs/world";
 export * as Event from "./Event";
 export * as Field from "./Field";
 export * as Input from "./Input";

@@ -2,7 +2,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { Terms } from "../src/ecs/world";
+import type { Terms } from "../src/ecs/query";
 import {
   Action,
   App,
