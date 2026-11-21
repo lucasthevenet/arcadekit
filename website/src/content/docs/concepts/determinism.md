@@ -30,7 +30,7 @@ The simulation must not read anything a replay won't have.
 
 - **Randomness.** `const random = yield* Random` gives you the world's generator, whose methods are plain calls, such as `random.next()`. Its state is part of the world, so a replay draws the same numbers. Inside an app, Effect's own `Random` is seeded from it too, at the cost of an Effect per draw. Pass the seed at the entry point, `App.run({ plugins, seed: Date.now() }, ...)`, and everything inside the rules stays reproducible.
 - **Waiting.** A timer, a promise, `Effect.sleep` and a `Schedule` all resume outside the tick, at a moment no replay can reproduce. A system that waits throws. Work that takes [many ticks](../guides/systems.md#work-that-takes-many-ticks) keeps its place in the world instead, where a save, a replay and the hash see it.
-- **Fibers.** A fiber started with `Effect.forkChild` in a system is interrupted when the tick's fiber ends.
+- **Fibers.** A fiber a system starts ends with the tick: one started with `Effect.forkChild` is interrupted when the tick's fiber ends. One that would outlive it, started with `Effect.forkDetach`, `Effect.forkIn` or into a scope of its own, throws once the tick is over, naming the system that started it, because it would change the game at a moment no replay repeats. The same holds for a handler, the frame and input stages, and a plugin's `setup`.
 - **Ordering.** Don't let the simulation depend on the iteration order of a `Map` or `Set` unless you filled it in a fixed order. Systems run in a fixed order, so the same game runs the same way every time. Two systems that touch the same data produce a different game in a different order, so declare the order that matters with `System.after` or `System.before`. See [systems](../guides/systems.md#ordering).
 - **Devices, files, sound and rendering** follow real time, so they live outside the tick, in the input and frame stages. A tick can't tell whether a file was loaded, a sound was heard or a frame was drawn. See [ticks and frames](ticks-and-frames.md).
 
@@ -58,7 +58,6 @@ The frame stage draws and plays sound while the world is read-only. A drawn game
 
 Some ways to break determinism aren't caught by the type checker or at run time:
 
-- A fiber started with `Effect.forkDetach` outlives the tick and isn't supervised by the app. A real-time wait in it, `Effect.sleep` or a promise, resumes outside the tick, and its failure is silent unless whoever started it observes it. Nothing refuses it.
 - A write through a raw column during the frame or input stage is only detected by an app created with `verifyFrames`.
 - A tick reads the devices unless told not to. A tool that re-runs a game from its log by hand passes `app.tick(delta, { input: false })`, as `App.replay` does, or the keys of the machine it runs on leak into the game.
 - The hash covers only the world: not the events waiting to be read, what change queries haven't visited, or queued actions. Two games with the same hash can still diverge.

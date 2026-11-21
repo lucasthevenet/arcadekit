@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit } from "effect";
+import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -10,6 +10,7 @@ import {
   Driver,
   Events,
   Field,
+  Plugin,
   Query,
   Random,
   Resource,
@@ -369,6 +370,85 @@ describe("the built-in services", () => {
       (app) => {
         app.tick(1);
         expect(app.world.entityCount).toBe(1);
+      }
+    );
+  });
+});
+
+describe("a fiber the game starts", () => {
+  /** A fiber that never ends, left behind by whoever starts it. */
+  const leave = Effect.forkDetach(Effect.never);
+  const Ping = Action.define("rt/Ping", Schema.Struct({}));
+
+  it("may be a child of the system that starts it, ended with the tick", () => {
+    let ran = 0;
+    const Busy = System.make("Busy", function* () {
+      ran++;
+      // A child of the tick's fiber, interrupted when the tick ends.
+      yield* Effect.forkChild(Effect.never);
+    });
+    withApp(App.make({ systems: [Busy] }), (app) => {
+      app.tick(1);
+      app.tick(1);
+      expect(ran).toBe(2);
+    });
+  });
+
+  it("is refused when it outlives the tick, the handler, the frame or the setup that started it", () => {
+    const Leaky = System.make("Leaky", function* () {
+      yield* leave;
+    });
+    withApp(App.make({ systems: [Leaky] }), (app) => {
+      expect(() => app.tick(1)).toThrow(
+        /Tick 1 left a fiber running \(started while "Leaky" ran\), with Effect\.forkDetach.*keep work that takes longer than a tick in the world/
+      );
+    });
+
+    const ping = Action.handler(Ping, function* () {
+      (yield* Commands).spawn(Lifetime.of({ seconds: 1 }));
+      yield* leave;
+    });
+    withApp(App.make({ handlers: [ping] }), (app) => {
+      expect(() => app.dispatch(Ping, {})).toThrow(
+        /The handler for "rt\/Ping" left a fiber running/
+      );
+      // Its writes are undone, as a refusal's are.
+      expect(app.world.entityCount).toBe(0);
+    });
+
+    const Look = System.make("Look", function* () {
+      yield* leave;
+    }).pipe(System.inStage("frame"));
+    withApp(App.make({ systems: [Look] }), (app) => {
+      expect(() => app.frame(0)).toThrow(
+        /The frame left a fiber running \(started while "Look" ran\)/
+      );
+    });
+
+    const Setup = Plugin.make("rt/Setup", { setup: leave });
+    expect(() => withApp(App.make({ plugins: [Setup] }), () => 0)).toThrow(
+      /The setup of plugin "rt\/Setup" left a fiber running/
+    );
+  });
+
+  it("is still counted by the fiber metrics a game provides", () => {
+    let started = 0;
+    const Busy = System.make("Busy", function* () {
+      yield* Effect.forkChild(Effect.void);
+      yield* Effect.forkChild(Effect.void);
+    });
+    withApp(
+      App.make({ systems: [Busy] }).pipe(
+        Effect.provideService(Metric.FiberRuntimeMetrics, {
+          recordFiberStart: () => void started++,
+          recordFiberEnd: () => undefined,
+        })
+      ),
+      (app) => {
+        started = 0;
+        app.tick(1);
+        // The tick's own fiber and the two the system forked.
+        expect(started).toBe(3);
       }
     );
   });
