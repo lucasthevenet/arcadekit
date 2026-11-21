@@ -7,8 +7,7 @@
  * as they are in memory, which is the same on every machine JavaScript runs on
  * today. A `json` field's value, or a `ref` field's value once its codec has
  * encoded it, is a tag byte followed by the value; an array or an object is its
- * JSON text. A `list` field is an array of its values, each as its codec
- * encoded it. A `transient` field isn't written.
+ * JSON text. A `transient` field isn't written.
  *
  * No Effect dependency.
  */
@@ -27,6 +26,8 @@ export type SnapshotProblem =
   | "corrupt"
   | "unknown component"
   | "component changed"
+  | "unknown list"
+  | "list changed"
   | "world not empty"
   | "cannot be saved";
 
@@ -56,9 +57,9 @@ export const MAGIC = 0x53574b41;
  * Format 2 added singletons. Format 3 widened entity ids: a slot's generation
  * is four bytes instead of two, and an id is eight bytes instead of four, both
  * in a table's entity list and in an `entity` field. An older id is the same
- * number stored in fewer bytes. Format 4 added `list` fields, and puts the
- * singletons before the tables, so that a reader looking for a singleton
- * stops short of the entities. Formats 1 to 3 are still read.
+ * number stored in fewer bytes. Format 4 added the world's lists, and puts the
+ * singletons and the lists before the tables, so that a reader looking for a
+ * singleton stops short of the entities. Formats 1 to 3 are still read.
  */
 export const FORMAT = 4;
 /** The last four bytes, so a snapshot truncated at a boundary is still detected. */
@@ -68,7 +69,7 @@ const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
 /** Bytes per element of a numeric column. */
 export const WIDTH: Record<
-  Exclude<FieldKind, "json" | "ref" | "transient" | "list">,
+  Exclude<FieldKind, "json" | "ref" | "transient">,
   number
 > = {
   f32: 4,
@@ -94,7 +95,6 @@ export const KIND_CODES: readonly FieldKind[] = [
   "json",
   "ref",
   "transient",
-  "list",
 ];
 
 const TAG_UNDEFINED = 0;
@@ -402,14 +402,6 @@ export const writeColumn = (
       } catch {
         return row;
       }
-    } else if (kind === "list") {
-      try {
-        value = (value as readonly unknown[]).map((item) =>
-          codec!.encode(item)
-        );
-      } catch {
-        return row;
-      }
     }
     if (!writer.value(value)) {
       return row;
@@ -447,17 +439,7 @@ export const readColumn = (
   const values = column as unknown[];
   for (let row = 0; row < count; row++) {
     const value = reader.value();
-    if (kind === "list") {
-      if (!Array.isArray(value)) {
-        throw new SnapshotError(
-          "corrupt",
-          "The snapshot is damaged: a list field holds no array."
-        );
-      }
-      values[row] = value.map((item) => codec!.decode(item));
-    } else {
-      values[row] = kind === "ref" ? codec!.decode(value) : value;
-    }
+    values[row] = kind === "ref" ? codec!.decode(value) : value;
   }
 };
 
@@ -517,16 +499,23 @@ export interface SnapshotSingleton {
 }
 
 /**
+ * One list of a snapshot: its values, oldest first.
+ *
+ * @category Models
+ */
+export interface SnapshotList {
+  name: string;
+  /** Each value as the list's codec encoded it. */
+  values: unknown[];
+}
+
+/**
  * Everything a snapshot holds, read without the program's component
  * definitions, since a snapshot describes its own. Migrations work on this
  * form, to make an old save match the game's current components.
  *
  * A `json` field's column holds the plain data itself. A `ref` field's column
- * holds each value as its codec encoded it, and a `list` field's an array of
- * those, oldest first: in an app's world, the actions queued for the next
- * tick are the singleton `arcadekit/Queued`, field `actions`, and the events
- * waiting to be read are `arcadekit/events/<the event's name>`, field
- * `waiting`. A `transient` field has no column.
+ * holds each value as its codec encoded it. A `transient` field has no column.
  *
  * @category Models
  */
@@ -541,8 +530,14 @@ export interface SnapshotContents {
   /** In the order queries visit them. */
   tables: SnapshotTable[];
   sparse: SnapshotSparse[];
-  /** The singletons that had been written and are saved. */
+  /** The singletons that had been written. */
   singletons: SnapshotSingleton[];
+  /**
+   * The lists the world keeps beside its components, the ones that hold
+   * anything: in an app's world, the actions queued for the next tick and the
+   * events waiting to be read, under each event's name.
+   */
+  lists: SnapshotList[];
 }
 
 const columnOf = (kind: FieldKind, count: number): Column => {
@@ -647,10 +642,10 @@ const readHead = (bytes: Uint8Array) => {
         continue;
       }
       const column = columnOf(kind, count);
-      // A ref or list field stays in its encoded form: there is no codec here.
+      // A ref field stays in its encoded form: there is no codec here.
       readColumn(
         reader,
-        kind === "ref" || kind === "list" ? "json" : kind,
+        kind === "ref" ? "json" : kind,
         column,
         count,
         undefined,
@@ -671,8 +666,21 @@ const readHead = (bytes: Uint8Array) => {
     }
     return singletons;
   };
+  const readLists = (): SnapshotList[] => {
+    const lists: SnapshotList[] = [];
+    for (let l = format >= 4 ? reader.count(8) : 0; l > 0; l--) {
+      const name = reader.text();
+      const values: unknown[] = [];
+      for (let v = reader.count(1); v > 0; v--) {
+        values.push(reader.value());
+      }
+      lists.push({ name, values });
+    }
+    return lists;
+  };
   // Format 4 holds them before the tables, and earlier formats after.
   const early = format >= 4 ? readSingletons() : undefined;
+  const lists = readLists();
   return {
     reader,
     format,
@@ -685,6 +693,7 @@ const readHead = (bytes: Uint8Array) => {
     readFields,
     readSingletons,
     early,
+    lists,
   };
 };
 
@@ -743,6 +752,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     tables,
     sparse,
     singletons,
+    lists: head.lists,
   };
 };
 
@@ -829,7 +839,7 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
       }
       const row = writeColumn(
         writer,
-        kind === "ref" || kind === "list" ? "json" : kind,
+        kind === "ref" ? "json" : kind,
         column,
         count
       );
@@ -850,6 +860,25 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   for (const single of singletons) {
     writer.u32(indexOf.get(named(single.component).name)!);
     writeFields(named(single.component), single.columns, 1);
+  }
+  const lists = contents.lists
+    .filter((list) => list.values.length > 0)
+    .toSorted(byName);
+  writer.u32(lists.length);
+  for (const [i, list] of lists.entries()) {
+    if (lists[i + 1]?.name === list.name) {
+      throw damaged(`it holds the list "${list.name}" twice`);
+    }
+    writer.text(list.name);
+    writer.u32(list.values.length);
+    for (const value of list.values) {
+      if (!writer.value(value)) {
+        throw new SnapshotError(
+          "cannot be saved",
+          `The list "${list.name}" holds a value that is not plain data.`
+        );
+      }
+    }
   }
   writer.u32(contents.tables.length);
   for (const table of contents.tables) {

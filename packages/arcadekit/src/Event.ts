@@ -24,9 +24,9 @@
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
-import { defineSingleton, listField } from "./ecs/component";
-import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
-import type { World, WorldList } from "./ecs/world";
+import { defineList } from "./ecs/list";
+import type { ListDef } from "./ecs/list";
+import type { World } from "./ecs/world";
 import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
@@ -51,14 +51,9 @@ export interface EventHandle<P> {
 // a module that is loaded again under hot reload makes, it is the newer. An
 // app that meets both refuses the second.
 const defined = new Map<string, EventDef<unknown>>();
-// The event whose waiting list each singleton holds, for a bus to find the
-// events a loaded or restored world holds.
-const ofWaiting = new WeakMap<ComponentDef, EventDef<unknown>>();
-
-/** The singleton that holds an event's waiting list. */
-type Waiting<P> = SingletonSpec<{
-  readonly waiting: FieldDef<readonly P[], (readonly P[])[]>;
-}>;
+// The event each event's list in a world is of, for a bus to find the events
+// a loaded or restored world holds.
+const ofList = new WeakMap<ListDef, EventDef<unknown>>();
 
 /**
  * An event type. It is an Effect, so `yield*` returns a handle to its channel
@@ -75,46 +70,39 @@ export class EventDef<P> extends Effectable.Class<
   /** Converts a payload to and from JSON. Derived from the event's schema. */
   readonly codec: Schema.Codec<P, unknown>;
   /**
-   * The singleton whose `waiting` field holds the events the simulation has
-   * yet to read, `arcadekit/events/<name>`, each in its JSON form in a
-   * snapshot and the hash.
+   * The world's list of these events that the simulation has yet to read,
+   * under the event's name, each in its JSON form in a snapshot and the hash.
    * @internal
    */
-  readonly waiting: Waiting<P>;
+  readonly list: ListDef<P>;
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
 
   constructor(name: string, codec: Schema.Codec<P, unknown>) {
     super();
     this.name = name;
     this.codec = codec;
-    this.waiting = defineSingleton(
-      `arcadekit/events/${name}`,
+    this.list = defineList<P>(
+      name,
       {
-        waiting: listField<P>(
-          {
-            encode: (payload) => {
-              const data = encode(this, payload);
-              if (Exit.isFailure(data)) {
-                throw new Error(describeFailure(data.cause));
-              }
-              return data.value;
-            },
-            decode: (data) => {
-              const payload = decode(this, data);
-              if (Exit.isFailure(payload)) {
-                throw new Error(describeFailure(payload.cause));
-              }
-              return payload.value;
-            },
-          },
-          `the "${name}" events waiting to be read`
-        ),
+        encode: (payload) => {
+          const data = encode(this, payload);
+          if (Exit.isFailure(data)) {
+            throw new Error(describeFailure(data.cause));
+          }
+          return data.value;
+        },
+        decode: (data) => {
+          const payload = decode(this, data);
+          if (Exit.isFailure(payload)) {
+            throw new Error(describeFailure(payload.cause));
+          }
+          return payload.value;
+        },
       },
-      { waiting: [] },
-      { saved: true, hashed: true, betweenTicks: false }
+      { label: `the "${name}" events waiting to be read` }
     );
     defined.set(name, this as EventDef<unknown>);
-    ofWaiting.set(this.waiting.component, this as EventDef<unknown>);
+    ofList.set(this.list as ListDef, this as EventDef<unknown>);
   }
 
   asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
@@ -264,9 +252,9 @@ class Channel<P> implements ChannelState {
   /**
    * The events the simulation can still read, from `tickOffset` on: the
    * world's list of them, which is the game's, and which the world saves,
-   * hashes and puts back, and takes out again when an action is refused.
+   * hashes and puts back.
    */
-  readonly list: WorldList<P>;
+  readonly list: P[];
   /**
    * The events before those, from `offset` on, kept only for the stages
    * between ticks, which are not the game's.
@@ -295,7 +283,7 @@ class Channel<P> implements ChannelState {
    */
   echoEnd = Number.POSITIVE_INFINITY;
 
-  constructor(def: EventDef<P>, reads: ReadLog, list: WorldList<P>) {
+  constructor(def: EventDef<P>, reads: ReadLog, list: P[]) {
     this.def = def;
     this.reads = reads;
     this.list = list;
@@ -303,27 +291,30 @@ class Channel<P> implements ChannelState {
   }
 
   get end(): number {
-    return this.tickOffset + this.list.values.length;
+    return this.tickOffset + this.list.length;
   }
 
   /** How many events the simulation can still read. */
   get size(): number {
-    return this.list.values.length;
+    return this.list.length;
   }
 
   /** The events kept from sequence number `from` on, oldest first: copies. */
   from(from: number): P[] {
     return from >= this.tickOffset
-      ? this.list.values.slice(from - this.tickOffset)
-      : this.kept
-          .slice(Math.max(0, from - this.offset))
-          .concat(this.list.values);
+      ? this.list.slice(from - this.tickOffset)
+      : this.kept.slice(Math.max(0, from - this.offset)).concat(this.list);
   }
 
   /** Forgets the oldest `count` events of those kept, and returns them. */
   dropOldest(count: number): P[] {
     this.offset += count;
     return this.kept.splice(0, count);
+  }
+
+  /** Forgets every event from sequence number `end` on. */
+  truncate(end: number): void {
+    this.list.length = Math.max(0, end - this.tickOffset);
   }
 
   /**
@@ -336,7 +327,7 @@ class Channel<P> implements ChannelState {
     if (count <= 0) {
       return;
     }
-    for (const event of this.list.take(count)) {
+    for (const event of this.list.splice(0, count)) {
       this.kept.push(event);
     }
     this.tickOffset = until;
@@ -472,6 +463,13 @@ const same = (a: unknown, b: unknown): boolean => {
 };
 
 /**
+ * A record of how many events each channel held, for rolling back.
+ *
+ * @category Models
+ */
+export type EventMark = Map<object, number>;
+
+/**
  * Everything a bus holds at one moment, kept in memory to return to: the events
  * as they are, without needing a schema, and every reader's position. Opaque:
  * `capture` creates it and `rewind` consumes it.
@@ -583,11 +581,7 @@ export class EventBus {
       );
     }
     this.names.set(def.name, def);
-    const channel = new Channel<P>(
-      def,
-      this.reads,
-      this.world._listOf(def.waiting, "waiting")
-    );
+    const channel = new Channel<P>(def, this.reads, this.world._list(def.list));
     this.channels.set(def, channel);
     this.order.push(channel);
     return channel;
@@ -650,8 +644,8 @@ export class EventBus {
 
   /** A channel for each event the world holds, so that none waits unseen. */
   private adopt(): void {
-    for (const held of this.world._written()) {
-      const def = ofWaiting.get(held);
+    for (const list of this.world._lists()) {
+      const def = ofList.get(list);
       if (def !== undefined) {
         this.channel(def);
       }
@@ -889,8 +883,8 @@ export class EventBus {
    * had run, an event it heard is taken out of what it reads, once.
    *
    * The events the simulation had yet to read are the world's, and come back
-   * with it: this runs just before the world is rewound, while it still
-   * holds the future the rewind gives up.
+   * with it: this runs just before the world is rewound, while its lists
+   * still hold the future the rewind gives up.
    * @internal
    */
   rewind(moment: EventsMoment, from: number, to: number): void {
@@ -930,7 +924,7 @@ export class EventBus {
       // sequence number `first` on: what a reader between ticks heard of it
       // is in there.
       const dropped = since.get(channel) ?? [];
-      const told = [...dropped, ...channel.kept, ...channel.list.values];
+      const told = [...dropped, ...channel.kept, ...channel.list];
       const first = channel.offset - dropped.length;
       channel.echoes.clear();
       channel.echoEnd = Number.POSITIVE_INFINITY;
@@ -989,20 +983,28 @@ export class EventBus {
   }
 
   /**
-   * Remembers the reads made from here, before an action's handler runs,
-   * until `rollback` or `commit`. The events it emits are the world's, whose
-   * own rollback takes them out.
+   * Marks where the channels end, before an action's handler runs. Until
+   * `rollback` or `commit`, the reads made are remembered as well.
    * @internal
    */
-  mark(): void {
+  mark(): EventMark {
+    const mark: EventMark = new Map();
+    for (const channel of this.order) {
+      mark.set(channel, channel.end);
+    }
     this.reads.open = true;
+    return mark;
   }
 
   /**
-   * Takes back the reads made since `mark`: every event read is unread.
+   * Takes back what happened since `mark`: every event emitted is removed,
+   * and every event read is unread.
    * @internal
    */
-  rollback(): void {
+  rollback(mark: EventMark): void {
+    for (const channel of this.order) {
+      channel.truncate(mark.get(channel) ?? channel.tickOffset);
+    }
     // Newest first, so that a handle that read twice ends where it began.
     const { moved } = this.reads;
     for (let i = moved.length - 1; i >= 0; i--) {

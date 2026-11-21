@@ -138,23 +138,6 @@ describe("app.inspect", () => {
     expect(app.inspect().singletons["in/Score"]).toEqual({ points: 7 });
   });
 
-  it("copies the queued actions and the waiting events as plain data, which change nothing when written", () => {
-    const app = run(game);
-    app.enqueue(Strike, { by: 2 });
-    app.events.emit(Hit, { by: 5 });
-    const hash = app.world.hash();
-    const { singletons } = app.inspect();
-    expect(singletons["arcadekit/Queued"]).toEqual({
-      actions: [{ name: "in/Strike", payload: { by: 2 } }],
-    });
-    expect(singletons["arcadekit/events/in/Hit"]).toEqual({
-      waiting: [{ by: 5 }],
-    });
-    (singletons["arcadekit/Queued"] as { actions: unknown[] }).actions.length =
-      0;
-    expect(app.world.hash()).toBe(hash);
-  });
-
   it("hands out copies, which change nothing of the game when written", () => {
     const app = run(game);
     app.world.spawn(Position.of({ x: 1, y: 2 }));

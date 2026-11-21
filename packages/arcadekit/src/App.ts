@@ -60,8 +60,9 @@ import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
-import { Component, Field, defineSingleton, listField } from "./ecs/component";
+import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
+import { defineList } from "./ecs/list";
 import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
@@ -743,44 +744,41 @@ const QueuedData = Schema.Struct({
  * restore cover them. Each is saved as `{ name, payload, from? }`, its payload
  * in JSON form.
  */
-const Queued = defineSingleton(
-  "arcadekit/Queued",
+const Queued = defineList<QueuedAction>(
+  "arcadekit/queued",
   {
-    actions: listField<QueuedAction>(
-      {
-        encode: (action) => {
-          const { codec, from, name, payload } = action;
-          let json = payload;
-          if (codec !== undefined) {
-            const exit = Schema.encodeUnknownExit(codec)(payload);
-            if (Exit.isFailure(exit)) {
-              throw new Error(
-                `the action "${name}" has a payload its schema does not take: ${describe(Cause.squash(exit.cause))}`
-              );
-            }
-            json = exit.value;
-          }
-          return from === undefined
-            ? { name, payload: json }
-            : { name, payload: json, from };
-        },
-        decode: (data) => {
-          const action = Schema.decodeUnknownExit(QueuedData)(data);
-          if (Exit.isFailure(action)) {
-            throw new Error(
-              `an action is not { name, payload, from? }: ${describe(Cause.squash(action.cause))}`
-            );
-          }
-          const { from, name, payload } = action.value;
-          return { name, payload, codec: undefined, entry: undefined, from };
-        },
-      },
-      "the actions queued for the next tick"
-    ),
+    encode: (action) => {
+      const { codec, from, name, payload } = action;
+      let json = payload;
+      if (codec !== undefined) {
+        const exit = Schema.encodeUnknownExit(codec)(payload);
+        if (Exit.isFailure(exit)) {
+          throw new Error(
+            `the action "${name}" has a payload its schema does not take: ${describe(Cause.squash(exit.cause))}`
+          );
+        }
+        json = exit.value;
+      }
+      return from === undefined
+        ? { name, payload: json }
+        : { name, payload: json, from };
+    },
+    decode: (data) => {
+      const action = Schema.decodeUnknownExit(QueuedData)(data);
+      if (Exit.isFailure(action)) {
+        throw new Error(
+          `an action is not { name, payload, from? }: ${describe(Cause.squash(action.cause))}`
+        );
+      }
+      const { from, name, payload } = action.value;
+      return { name, payload, codec: undefined, entry: undefined, from };
+    },
   },
-  { actions: [] },
-  // The stages between ticks are there to issue them.
-  { saved: true, hashed: true, betweenTicks: true }
+  {
+    label: "the actions queued for the next tick",
+    // The stages between ticks are there to issue them.
+    betweenTicks: true,
+  }
 );
 
 /** Why an action was refused, as `Action.Rejected` carries it. */
@@ -1080,11 +1078,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return yield* new Save.LoadRefused({
           problem: error.problem,
           message:
-            error.component?.startsWith("arcadekit/events/") === true ||
-            error.component === Queued.component.name
-              ? `${error.message} A migration changes the events and the queued actions of a save in \`world.singletons\`.`
-              : error.problem === "unknown component"
-                ? `${error.message} A migration renames or removes a component in a save.`
+            error.problem === "unknown component"
+              ? `${error.message} A migration renames or removes a component in a save.`
+              : error.problem === "unknown list" ||
+                  error.problem === "list changed"
+                ? `${error.message} A migration changes the events and the queued actions of a save in \`world.lists\`.`
                 : error.message,
         });
       }
@@ -1110,7 +1108,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     }
     // Loaded with the world, in the JSON form they were saved in, checked
     // again when applied.
-    const queued = world._listOf(Queued, "actions");
+    const queued = world._list(Queued);
     const actionLog: Action.LogEntry[] = [];
     // Where this app began, and the delta of every tick it has run since, in
     // runs: for a recording.
@@ -1791,15 +1789,16 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           : now;
     };
 
-    /**
-     * Rolls back everything a handler did since the command buffer's mark
-     * was taken: the world's rollback takes out the events it emitted and the
-     * actions it queued too.
-     */
-    const undo = (commandMark: number): void => {
+    /** Rolls back everything a handler did since the three marks were taken. */
+    const undo = (
+      commandMark: number,
+      eventMark: ReturnType<EventBus["mark"]>,
+      queuedMark: number
+    ): void => {
       world.rollback();
       commands.rollback(commandMark);
-      events.rollback();
+      events.rollback(eventMark);
+      queued.length = queuedMark;
     };
 
     /**
@@ -1899,7 +1898,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         );
       }
       const commandMark = commands.mark();
-      events.mark();
+      const eventMark = events.mark();
+      const queuedMark = queued.length;
       world.begin();
       applying = name;
       events.reader = `action:${name}`;
@@ -1931,20 +1931,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       const exit = fiber.pollUnsafe();
       if (exit === undefined) {
         fiber.interruptUnsafe();
-        undo(commandMark);
+        undo(commandMark, eventMark, queuedMark);
         throw new Error(
           `The handler for "${name}" did not finish synchronously. Handlers must not wait.`
         );
       }
       const left = leftFibers(fibersBefore, `The handler for "${name}"`);
       if (left !== undefined) {
-        undo(commandMark);
+        undo(commandMark, eventMark, queuedMark);
         throw left;
       }
       // A refusal, and a handler that died of a bug half-way, both leave the
       // game as it was.
       if (Exit.isFailure(exit)) {
-        undo(commandMark);
+        undo(commandMark, eventMark, queuedMark);
       } else {
         world.commit();
         events.commit();
@@ -2124,11 +2124,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       dispatcher.flush();
       // What is queued on the buffer was never part of the world.
       commands.rollback(0);
-      // Before the world: the bus reads what the world still holds of the
+      // Before the world: the bus reads what the world's lists hold of the
       // future it gives up, and `time` is still where the game was.
       events.rewind(was.events, time.tick, was.tick);
       world._rewind(was.world);
-      for (const action of queued.values) {
+      for (const action of queued) {
         // It is waiting again: what became of it has not happened.
         if (action.entry !== undefined) {
           delete action.entry.refused;
@@ -2188,8 +2188,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       try {
         // Queued actions are applied before time advances, so they land at the
         // same point in the timeline as an action dispatched between ticks.
-        if (queued.values.length > 0) {
-          const batch = queued.take(queued.values.length);
+        if (queued.length > 0) {
+          const batch = queued.splice(0);
           for (const action of batch) {
             const { codec, entry, from, name, payload } = action;
             const exit = apply(name, payload, codec === undefined, false, from);
@@ -2341,7 +2341,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       get settled() {
         if (
           wanted ||
-          queued.values.length > 0 ||
+          queued.length > 0 ||
           dispatcher.pending > 0 ||
           events.waiting()
         ) {

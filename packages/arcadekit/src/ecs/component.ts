@@ -85,8 +85,7 @@ export type FieldKind =
   | "entity"
   | "json"
   | "ref"
-  | "transient"
-  | "list";
+  | "transient";
 
 /**
  * Returns whether a field type holds non-numeric values. Such values are stored
@@ -96,11 +95,9 @@ export type FieldKind =
  * - `json`: plain data, saved and hashed as is.
  * - `ref`: any value, saved and hashed through a codec.
  * - `transient`: neither saved nor hashed.
- * - `list`: values in order, each saved and hashed through a codec. Only an
- *   app's own singletons have one.
  */
 export const isBoxed = (kind: FieldKind): boolean =>
-  kind === "json" || kind === "ref" || kind === "transient" || kind === "list";
+  kind === "json" || kind === "ref" || kind === "transient";
 
 /**
  * Converts the values of a `ref` field to plain data and back. `encode` returns
@@ -125,42 +122,11 @@ export interface FieldDef<T, C> {
   readonly kind: FieldKind;
   /** Present on a `ref` field. */
   readonly codec?: RefCodec<T>;
-  /** Present on a `list` field. @internal */
-  readonly list?: ListField;
   readonly _T?: T;
   readonly _C?: C;
 }
 
 const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
-
-/**
- * What a `list` field holds: each value through `codec`, as a `ref` field's.
- *
- * @internal
- */
-export interface ListField {
-  readonly codec: RefCodec<unknown>;
-  /**
-   * What it holds, to a person reading a message that begins "Can't save":
-   * `the "Hit" events waiting to be read`.
-   */
-  readonly label: string;
-}
-
-/**
- * Defines a `list` field: values in order, which a world saves, hashes and
- * puts back each through `codec`, and which its owner adds to and takes from
- * through `World._listOf`, never by assigning to it.
- *
- * @internal
- */
-export const listField = <T>(
-  codec: RefCodec<T>,
-  label: string
-): FieldDef<readonly T[], (readonly T[])[]> => ({
-  kind: "list",
-  list: { codec: codec as RefCodec<unknown>, label },
-});
 
 /**
  * The field types a component is made of. Numbers go in typed arrays; any other
@@ -234,8 +200,7 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
     }
     case "json":
     case "ref":
-    case "transient":
-    case "list": {
+    case "transient": {
       return Array.from({ length: capacity }, () => undefined);
     }
   }
@@ -420,10 +385,7 @@ export interface ComponentDef<
   readonly schema: S;
   readonly fields: readonly string[];
   readonly kinds: readonly FieldKind[];
-  /**
-   * For each field, the codec of a `ref` field or of each value of a `list`
-   * field, or undefined for any other.
-   */
+  /** For each field, the codec of a `ref` field, or undefined for any other. */
   readonly codecs: readonly (RefCodec<unknown> | undefined)[];
   /** Tracked in the type, so queries know which terms have row-aligned columns. */
   readonly storage: St;
@@ -764,7 +726,6 @@ const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
   json: defineBoxed,
   ref: defineBoxed,
   transient: defineBoxed,
-  list: defineBoxed,
 };
 
 /**
@@ -831,23 +792,13 @@ const define = <
   }
 ): ComponentDef<S, St, N> => {
   const fields = Object.keys(schema);
-  if (
-    options?.single === undefined &&
-    Object.values(schema).some((fieldDef) => fieldDef.kind === "list")
-  ) {
-    throw new Error(
-      `"${name}" has a list field, which only a singleton of the app's own has. Give an entity a json or ref field that holds an array.`
-    );
-  }
   const def: ComponentDef<S, St, N> = {
     id: nextId++,
     name,
     schema,
     fields,
     kinds: Object.values(schema).map((fieldDef) => fieldDef.kind),
-    codecs: Object.values(schema).map(
-      (fieldDef) => fieldDef.codec ?? fieldDef.list?.codec
-    ),
+    codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
     single: options?.single,
