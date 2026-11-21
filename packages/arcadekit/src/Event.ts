@@ -22,8 +22,11 @@
  * program, for a save, a tool or another machine, by `Event.encode` and
  * `Event.decode`.
  */
-import { Cause, Data, Effect, Effectable, Exit, Option, Schema } from "effect";
+import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
+import { defineList } from "./ecs/list";
+import type { ListDef } from "./ecs/list";
+import type { World } from "./ecs/world";
 import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
@@ -48,6 +51,9 @@ export interface EventHandle<P> {
 // a module that is loaded again under hot reload makes, it is the newer. An
 // app that meets both refuses the second.
 const defined = new Map<string, EventDef<unknown>>();
+// The event each event's list in a world is of, for a bus to find the events
+// a loaded or restored world holds.
+const ofList = new WeakMap<ListDef, EventDef<unknown>>();
 
 /**
  * An event type. It is an Effect, so `yield*` returns a handle to its channel
@@ -63,13 +69,40 @@ export class EventDef<P> extends Effectable.Class<
   readonly name: string;
   /** Converts a payload to and from JSON. Derived from the event's schema. */
   readonly codec: Schema.Codec<P, unknown>;
+  /**
+   * The world's list of these events that the simulation has yet to read,
+   * under the event's name, each in its JSON form in a snapshot and the hash.
+   * @internal
+   */
+  readonly list: ListDef<P>;
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
 
   constructor(name: string, codec: Schema.Codec<P, unknown>) {
     super();
     this.name = name;
     this.codec = codec;
+    this.list = defineList<P>(
+      name,
+      {
+        encode: (payload) => {
+          const data = encode(this, payload);
+          if (Exit.isFailure(data)) {
+            throw new Error(describeFailure(data.cause));
+          }
+          return data.value;
+        },
+        decode: (data) => {
+          const payload = decode(this, data);
+          if (Exit.isFailure(payload)) {
+            throw new Error(describeFailure(payload.cause));
+          }
+          return payload.value;
+        },
+      },
+      { label: `the "${name}" events waiting to be read` }
+    );
     defined.set(name, this as EventDef<unknown>);
+    ofList.set(this.list as ListDef, this as EventDef<unknown>);
   }
 
   asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
@@ -112,6 +145,12 @@ export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
   /** What was wrong, as the schema reported it. */
   readonly message: string;
 }> {}
+
+/** What an `InvalidEvent` says was wrong. */
+const describeFailure = (cause: Cause.Cause<InvalidEvent>): string => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error.message : String(error);
+};
 
 const convert = <P, A>(
   def: EventDef<P>,
@@ -192,10 +231,6 @@ interface ChannelState {
   readonly end: number;
   /** Number of events the simulation can still read. */
   readonly size: number;
-  /** Forgets the oldest `count` events, and returns them. */
-  dropOldest(count: number): unknown[];
-  /** Forgets every event from sequence number `end` on. */
-  truncate(end: number): void;
 }
 
 /**
@@ -214,7 +249,17 @@ interface ReadLog {
 class Channel<P> implements ChannelState {
   readonly def: EventDef<P>;
   readonly reads: ReadLog;
-  buffer: P[] = [];
+  /**
+   * The events the simulation can still read, from `tickOffset` on: the
+   * world's list of them, which is the game's, and which the world saves,
+   * hashes and puts back.
+   */
+  readonly list: P[];
+  /**
+   * The events before those, from `offset` on, kept only for the stages
+   * between ticks, which are not the game's.
+   */
+  kept: P[] = [];
   offset = 0;
   tickOffset = 0;
   frameSeen = 0;
@@ -238,27 +283,54 @@ class Channel<P> implements ChannelState {
    */
   echoEnd = Number.POSITIVE_INFINITY;
 
-  constructor(def: EventDef<P>, reads: ReadLog) {
+  constructor(def: EventDef<P>, reads: ReadLog, list: P[]) {
     this.def = def;
     this.reads = reads;
+    this.list = list;
+    this.since = this.end;
   }
 
   get end(): number {
-    return this.offset + this.buffer.length;
+    return this.tickOffset + this.list.length;
   }
 
   /** How many events the simulation can still read. */
   get size(): number {
-    return this.end - this.tickOffset;
+    return this.list.length;
   }
 
+  /** The events kept from sequence number `from` on, oldest first: copies. */
+  from(from: number): P[] {
+    return from >= this.tickOffset
+      ? this.list.slice(from - this.tickOffset)
+      : this.kept.slice(Math.max(0, from - this.offset)).concat(this.list);
+  }
+
+  /** Forgets the oldest `count` events of those kept, and returns them. */
   dropOldest(count: number): P[] {
     this.offset += count;
-    return this.buffer.splice(0, count);
+    return this.kept.splice(0, count);
   }
 
+  /** Forgets every event from sequence number `end` on. */
   truncate(end: number): void {
-    this.buffer.length = Math.max(0, end - this.offset);
+    this.list.length = Math.max(0, end - this.tickOffset);
+  }
+
+  /**
+   * The simulation can no longer read the events before sequence number
+   * `until`: they leave the world's list, and are kept for the stages between
+   * ticks until `dropOldest`.
+   */
+  pass(until: number): void {
+    const count = until - this.tickOffset;
+    if (count <= 0) {
+      return;
+    }
+    for (const event of this.list.splice(0, count)) {
+      this.kept.push(event);
+    }
+    this.tickOffset = until;
   }
 }
 
@@ -304,7 +376,7 @@ class Handle<P> implements EventHandle<P> {
           );
         }
       : (payload) => {
-          channel.buffer.push(payload);
+          channel.list.push(payload);
         };
   }
 
@@ -326,7 +398,7 @@ class Handle<P> implements EventHandle<P> {
     if (from === end) {
       return EMPTY;
     }
-    const events = channel.buffer.slice(from - channel.offset);
+    const events = channel.from(from);
     const { echo } = this;
     if (echo === undefined) {
       return events;
@@ -411,7 +483,9 @@ export interface EventsMoment {
   readonly ticksSinceInput: number;
   readonly channels: readonly {
     readonly channel: object;
-    readonly buffer: readonly unknown[];
+    /** What was kept for the stages between ticks: the world holds the rest. */
+    readonly kept: readonly unknown[];
+    readonly end: number;
     readonly offset: number;
     readonly tickOffset: number;
     readonly frameSeen: number;
@@ -433,7 +507,6 @@ interface Dropped {
   next: Dropped | undefined;
 }
 
-/** All of an app's event channels. Provided as the `Events` service. */
 /**
  * Where an app's events wait to be read, with each reader's position. The app
  * holds one; a game reads and emits through an `EventHandle`.
@@ -474,6 +547,15 @@ export class EventBus {
    * once it has run as many again, events are new to the stages between ticks.
    */
   private echoUntil: number | undefined;
+  private readonly world: World;
+
+  /** Keeps the events the simulation has yet to read in `world`'s lists. */
+  constructor(world: World) {
+    this.world = world;
+    world._onRestore(() => {
+      this.restored();
+    });
+  }
 
   /**
    * Told once, by the app, which of the two stages between ticks it has
@@ -499,102 +581,100 @@ export class EventBus {
       );
     }
     this.names.set(def.name, def);
-    const channel = new Channel<P>(def, this.reads);
+    const channel = new Channel<P>(def, this.reads, this.world._list(def.list));
     this.channels.set(def, channel);
     this.order.push(channel);
     return channel;
   }
 
   /**
-   * The events waiting to be read, in their JSON form, with how far each
-   * system and handler had read. Fails on one whose payload its schema does
-   * not take.
+   * How far each system and handler had read the events waiting to be read,
+   * which the world holds, by event in order of name.
    * @internal
    */
-  save(): Exit.Exit<SavedEvents[], InvalidEvent> {
+  save(): SavedEvents[] {
     const out: SavedEvents[] = [];
     for (const channel of this.order) {
-      if (channel.size === 0) {
-        continue;
-      }
-      const payloads: unknown[] = [];
-      // What the simulation can read: not what is only kept for the frame
-      // stage, whose readers are not saved either.
-      for (const payload of channel.buffer.slice(
-        channel.tickOffset - channel.offset
-      )) {
-        const data = encode(channel.def, payload);
-        if (Exit.isFailure(data)) {
-          return Exit.fail(Cause.squash(data.cause) as InvalidEvent);
-        }
-        payloads.push(data.value);
-      }
       const read: Record<string, number> = {};
+      let readers = 0;
       for (const [reader, handle] of channel.readers) {
         const count = handle.position - channel.tickOffset;
+        // Not a stage between ticks: those are not the game's.
         if (count > 0 && !reader.startsWith(FRAME_READER)) {
           read[reader] = Math.min(count, channel.size);
+          readers++;
         }
       }
-      out.push({ name: channel.def.name, payloads, read });
+      if (readers > 0) {
+        out.push({ name: channel.def.name, read });
+      }
     }
     // In order of name, so that the same game always saves the same bytes.
-    return Exit.succeed(
-      out.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    return out.toSorted((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0
     );
   }
 
   /**
-   * Takes the events of a save, each decoded with its event's schema, and
-   * every reader's place in them. Returns why the save cannot be loaded: it
-   * holds an event this program doesn't define, or one whose payload its
-   * schema no longer takes. Into an empty bus, before anything has read.
+   * Takes every reader's place in the events a loaded world holds, as a save
+   * holds them. Before anything has read. A place in an event this program
+   * doesn't define, of which the world holds none, is dropped.
    * @internal
    */
-  restore(saved: readonly SavedEvents[]):
-    | {
-        readonly problem: "unknown event" | "event changed";
-        readonly message: string;
-      }
-    | undefined {
-    const decoded: [Channel<unknown>, SavedEvents, unknown[]][] = [];
+  restore(saved: readonly SavedEvents[]): void {
+    this.adopt();
     for (const events of saved) {
       const def = this.names.get(events.name) ?? defined.get(events.name);
       if (def === undefined) {
-        if (events.payloads.length === 0) {
-          continue;
-        }
-        return {
-          problem: "unknown event",
-          message: `The save holds the event "${events.name}", waiting to be read, which this program doesn't define: it was renamed or removed since. A migration changes the events of a save in \`events\`.`,
-        };
+        continue;
       }
-      const payloads: unknown[] = [];
-      for (const data of events.payloads) {
-        const payload = decode(def, data);
-        if (Exit.isFailure(payload)) {
-          const why = Cause.findErrorOption(payload.cause);
-          return {
-            problem: "event changed",
-            message: `The save holds the event "${events.name}" in a form its schema no longer takes${Option.isSome(why) ? `: ${why.value.message}` : ""}. A migration changes the events of a save in \`events\`.`,
-          };
-        }
-        payloads.push(payload.value);
-      }
-      decoded.push([this.channel(def), events, payloads]);
-    }
-    for (const [channel, events, payloads] of decoded) {
-      channel.buffer.push(...payloads);
-      channel.since = channel.end;
+      const channel = this.channel(def);
       // Whoever had read some of them goes on from where it was.
       for (const [reader, count] of Object.entries(events.read)) {
         channel.readers.set(
           reader,
-          new Handle(channel, channel.offset + Math.min(count, channel.size))
+          new Handle(
+            channel,
+            channel.tickOffset + Math.min(count, channel.size)
+          )
         );
       }
     }
-    return undefined;
+  }
+
+  /** A channel for each event the world holds, so that none waits unseen. */
+  private adopt(): void {
+    for (const list of this.world._lists()) {
+      const def = ofList.get(list);
+      if (def !== undefined) {
+        this.channel(def);
+      }
+    }
+  }
+
+  /**
+   * After `world.restore`, which put back the events of a snapshot: every
+   * reader reads them as if it had read none, as in a loaded game, and what
+   * was kept for the stages between ticks is gone.
+   */
+  private restored(): void {
+    this.echoUntil = undefined;
+    for (const channel of this.order) {
+      channel.kept = [];
+      channel.offset = channel.tickOffset;
+      channel.frameSeen = channel.tickOffset;
+      channel.inputSeen = channel.tickOffset;
+      channel.tickStart = channel.tickOffset;
+      channel.since = channel.end;
+      channel.last = [];
+      channel.echoes.clear();
+      channel.echoEnd = Number.POSITIVE_INFINITY;
+      for (const handle of channel.readers.values()) {
+        handle.rewind(channel.tickOffset);
+        handle.echo = undefined;
+      }
+    }
+    this.adopt();
   }
 
   /**
@@ -629,7 +709,7 @@ export class EventBus {
 
   /** Emits from outside any system, for example from UI or network code. */
   emit<P>(def: EventDef<P>, payload: P): void {
-    this.channel(def).buffer.push(payload);
+    this.channel(def).list.push(payload);
   }
 
   /** Returns the number of events of a type currently kept. For tests and tooling. */
@@ -687,13 +767,9 @@ export class EventBus {
     for (const channel of this.order) {
       // Copied before they are dropped, for `app.inspect`.
       channel.last =
-        channel.end > channel.since
-          ? channel.buffer.slice(Math.max(0, channel.since - channel.offset))
-          : [];
+        channel.end > channel.since ? channel.from(channel.since) : [];
       channel.since = channel.end;
-      if (channel.tickStart > channel.tickOffset) {
-        channel.tickOffset = channel.tickStart;
-      }
+      channel.pass(channel.tickStart);
       // Kept a little longer for the stages between ticks: for the frame
       // stage, if several ticks ran since it last did, and for the input
       // stage, which runs before a tick and would otherwise never hear
@@ -781,7 +857,8 @@ export class EventBus {
         }
         return {
           channel,
-          buffer: channel.buffer.slice(),
+          kept: channel.kept.slice(),
+          end: channel.end,
           offset: channel.offset,
           tickOffset: channel.tickOffset,
           frameSeen: channel.frameSeen,
@@ -804,6 +881,10 @@ export class EventBus {
    * A reader between ticks goes back too, but doesn't hear twice what it
    * heard before the rewind: until the game has run again the `from` ticks it
    * had run, an event it heard is taken out of what it reads, once.
+   *
+   * The events the simulation had yet to read are the world's, and come back
+   * with it: this runs just before the world is rewound, while its lists
+   * still hold the future the rewind gives up.
    * @internal
    */
   rewind(moment: EventsMoment, from: number, to: number): void {
@@ -843,7 +924,7 @@ export class EventBus {
       // sequence number `first` on: what a reader between ticks heard of it
       // is in there.
       const dropped = since.get(channel) ?? [];
-      const told = [...dropped, ...channel.buffer];
+      const told = [...dropped, ...channel.kept, ...channel.list];
       const first = channel.offset - dropped.length;
       channel.echoes.clear();
       channel.echoEnd = Number.POSITIVE_INFINITY;
@@ -862,7 +943,7 @@ export class EventBus {
             channel.echoes.set(reader, echo);
           }
         }
-        channel.buffer = [];
+        channel.kept = [];
         channel.tickOffset = channel.offset;
         channel.frameSeen = channel.offset;
         channel.inputSeen = channel.offset;
@@ -879,13 +960,13 @@ export class EventBus {
           channel.echoes.set(reader, echo);
         }
       }
-      channel.buffer = was.buffer.slice();
+      channel.kept = was.kept.slice();
       channel.offset = was.offset;
       channel.tickOffset = was.tickOffset;
       channel.frameSeen = was.frameSeen;
       channel.inputSeen = was.inputSeen;
       channel.tickStart = was.tickStart;
-      channel.since = channel.end;
+      channel.since = was.end;
       for (const [reader, handle] of channel.readers) {
         const at = was.cursors.get(reader);
         if (at === undefined) {

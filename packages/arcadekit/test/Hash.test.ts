@@ -1,13 +1,15 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  Action,
   App,
   CommandBuffer,
   Commands,
   Component,
   EcsWorld,
+  Event,
   Field,
   Query,
   Random,
@@ -721,5 +723,136 @@ describe("the hash of an app's world", () => {
     const firstDifference = honest.findIndex((hash, i) => hash !== faulty[i]);
     expect(firstDifference).toBe(39);
     expect(faulty.slice(0, 39)).toEqual(honest.slice(0, 39));
+  });
+
+  it("covers the game's time, which the world holds", () => {
+    const after = (deltas: readonly number[]) =>
+      withApp(App.make({ seed: 5 }), (app) => {
+        for (const delta of deltas) {
+          app.tick(delta);
+        }
+        return app.world.hash();
+      });
+    const twice = after([1 / 60, 1 / 60]);
+    expect(after([1 / 60, 1 / 60])).toBe(twice);
+    // Nothing in the game moves, and only the time tells these apart.
+    expect(after([1 / 60])).not.toBe(twice);
+    expect(after([1 / 60, 1 / 30])).not.toBe(twice);
+    expect(after([1 / 30, 1 / 60])).not.toBe(twice);
+  });
+
+  describe("covers what waits for the next tick", () => {
+    const Rang = Event.define("hash/Rang", Schema.Struct({ n: Schema.Int }));
+    const Push = Action.define("hash/Push", Schema.Struct({ by: Schema.Int }));
+    const push = Action.handler(Push, function* () {});
+    // A number the world doesn't keep: only the event tells it apart.
+    let ringing: number | undefined;
+    const Ring = System.make("hash/Ring", function* () {
+      if (ringing !== undefined) {
+        (yield* Rang).emit({ n: ringing });
+      }
+    });
+    const Watch = System.make("hash/Watch", function* () {
+      (yield* Rang).read();
+    }).pipe(System.inStage("frame"));
+    const make = () =>
+      App.make({
+        systems: [Ring, Watch],
+        handlers: [push],
+        seed: 5,
+        checkpointEvery: 0,
+      });
+    const after = (
+      ring: number | undefined,
+      act: (app: Effect.Success<ReturnType<typeof make>>) => void = () => {}
+    ) =>
+      withApp(make(), (app) => {
+        ringing = ring;
+        app.tick(1 / 60);
+        act(app);
+        return app.world.hash();
+      });
+
+    it("the events the simulation has yet to read", () => {
+      const one = after(1);
+      expect(after(1)).toBe(one);
+      expect(after(2)).not.toBe(one);
+      expect(after(undefined)).not.toBe(one);
+    });
+
+    it("the actions queued for the next tick, and who issued them", () => {
+      const idle = after(undefined);
+      const one = after(undefined, (app) => app.enqueue(Push, { by: 1 }));
+      expect(one).not.toBe(idle);
+      expect(after(undefined, (app) => app.enqueue(Push, { by: 1 }))).toBe(one);
+      expect(after(undefined, (app) => app.enqueue(Push, { by: 2 }))).not.toBe(
+        one
+      );
+      expect(
+        after(undefined, (app) =>
+          app.enqueueByName("hash/Push", { by: 1 }, "ada")
+        )
+      ).not.toBe(one);
+    });
+
+    it("but not where a reader between ticks is, so that watching changes nothing", () => {
+      expect(after(1, (app) => app.frame(0))).toBe(after(1));
+    });
+  });
+
+  it("is put back with the actions queued and the events waiting by the world alone, which every system then reads afresh", () => {
+    const Rang = Event.define("hash/Rang2", Schema.Struct({ n: Schema.Int }));
+    const Push = Action.define("hash/Push2", Schema.Struct({ by: Schema.Int }));
+    const heard: number[] = [];
+    const pushed: number[] = [];
+    const push = Action.handler(Push, function* ({ by }) {
+      pushed.push(by);
+    });
+    let ringing = true;
+    // Before the system that rings: it hears a ring on the tick after.
+    const Hear = System.make("hash/Hear", function* () {
+      for (const { n } of (yield* Rang).read()) {
+        heard.push(n);
+      }
+    });
+    const Ring = System.make("hash/Ring2", function* () {
+      if (ringing) {
+        (yield* Rang).emit({ n: 1 });
+      }
+    });
+    withApp(
+      App.make({ systems: [Hear, Ring], handlers: [push], seed: 5 }),
+      (app) => {
+        app.tick(1 / 60);
+        ringing = false;
+        app.enqueue(Push, { by: 7 });
+        const hash = app.world.hash();
+        const bytes = app.world.snapshot();
+        app.tick(1 / 60);
+        expect([heard, pushed]).toEqual([[1], [7]]);
+        app.world.restore(bytes);
+        expect(app.world.hash()).toBe(hash);
+        expect(app.events.pending(Rang)).toBe(1);
+        app.tick(1 / 60);
+        expect([heard, pushed]).toEqual([
+          [1, 1],
+          [7, 7],
+        ]);
+      }
+    );
+  });
+
+  it("is put back with the game's time by the world alone", () => {
+    withApp(App.make({ systems: [Drift], seed: 5 }), (app) => {
+      app.tick(1 / 60);
+      app.tick(1 / 30);
+      const time = { ...app.time };
+      const hash = app.world.hash();
+      const bytes = app.world.snapshot();
+      app.tick(1 / 60);
+      app.world.restore(bytes);
+      expect(app.time).toEqual(time);
+      expect(app.world.hash()).toBe(hash);
+    });
   });
 });

@@ -48,7 +48,7 @@ Every variant does the same work, `pos += vel * dt`:
 | `app.capture()`: a game of those entities, kept to go back to | 6.9       |
 | `app.rewind()`: the game put back to that moment              | 16.2      |
 
-- Hashing a world costs about three raw passes over it: 1.4 ns per 32-bit field per entity, with an entity's id counting as two. A sparse component's field costs about four times that, since its members are hashed individually so that their order doesn't matter.
+- Hashing a world costs about three raw passes over it: 1.4 ns per 32-bit field per entity, with an entity's id counting as two. A sparse component's field costs about four times that, since its members are hashed individually so that their order doesn't matter. An app's hash also encodes each action queued and each event waiting through its schema, about 0.6 µs apiece for a payload of four fields: 0.15 ms for 256 events, at every checkpoint.
 - A [checkpoint](replays.md) is one hash every `checkpointEvery` ticks, 60 by default: 14 µs per tick on average here.
 - A [rollback session](lockstep-and-rollback.md) pays one capture per uncertain tick, 0.69 ms for 100,000 entities and 7 µs for a thousand. A misprediction costs a rewind, 1.6 ms for 100,000, plus resimulating the ticks since.
 

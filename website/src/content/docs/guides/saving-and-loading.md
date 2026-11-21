@@ -33,7 +33,7 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 ```
 
-A save is taken between two ticks. It contains the world as a [snapshot](#snapshots), the game time, the actions queued for the next tick (including the simulation's own), the events waiting to be read and each system's position in them, and what change queries haven't visited.
+A save is taken between two ticks. It contains the world as a [snapshot](#snapshots), which holds the game's time, the actions queued for the next tick (including the simulation's own) and the events waiting to be read, and beside it each system's position in those events and what change queries haven't visited.
 
 It is essentially the snapshot plus a little text: for 100,000 entities with four float fields, 2.8 MB, taking about 0.7 ms.
 
@@ -94,12 +94,12 @@ const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
   App.load(save, { plugins, version: 2, migrations });
 ```
 
-A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. Its `queued` and `events` are the pending actions and events, in JSON form.
+A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The world's `lists` hold the pending actions, under `arcadekit/queued`, each as `{ name, payload, from? }`, and the pending events, under each event's name, in JSON form. The game's time is one of the world's singletons, `arcadekit/Time`. The contents' `events` say how far each system had read, by event name.
 
 `Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. `addField` and `mapField` also fail for a value that a field of a number type cannot hold, such as a string, a fraction in an `i32`, or 300 in a `u8`, where the typed array would have stored something else; the compiler refuses a value that is not a number. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
 
 - `Save.Contents` also holds what change queries haven't visited, under each component's name. For a component a migration renames, the queries watching it start over after the load: every entity counts as changed.
-- When a migration accompanies a schema change, it must also update the payloads in `queued` and `events`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"event changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
+- When a migration accompanies a schema change, it must also update the payloads in `world.lists`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"list changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
 - A migration turns an old save into a new game, so the log recorded before it doesn't replay against the migrated save.
 
 ## When a load is refused
@@ -115,7 +115,8 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 | `"no migration"` | Is older, and there is no migration from its version, or from a version on the way |
 | `"migration failed"` | Is older, and a migration threw: the message says which, and what it threw |
 | `"unknown component"` | Contains a component this program doesn't define, or no longer by that name |
-| `"unknown event"` | Holds an event waiting to be read that this program doesn't define |
+| `"unknown list"` | Holds an event waiting to be read that this program doesn't define |
+| `"list changed"` | Holds an event waiting to be read in a form its schema no longer takes |
 | `"component changed"` | Has a component whose fields differ from the game's: the message lists both. After migrations, they didn't bring the save fully up to date |
 
 ## Snapshots
@@ -137,16 +138,16 @@ copy.load(bytes);
 copy.hash() === world.hash(); // true
 ```
 
-`world.snapshot()` serializes the whole world to bytes: every table and sparse set, the singletons that have been written, the upcoming entity ids, and the random generator's state. A world that loads the bytes hashes the same and continues the same way: the same iteration order, the same ids for new entities, the same random numbers. Saves are built on snapshots.
+`world.snapshot()` serializes the whole world to bytes: every table and sparse set, the singletons that have been written, the upcoming entity ids, the random generator's state, and in an app's world the actions queued for the next tick and the events waiting to be read. A world that loads the bytes hashes the same and continues the same way: the same iteration order, the same ids for new entities, the same random numbers. Saves are built on snapshots.
 
 - **Its size is close to the data's.** A numeric column is written as its raw bytes, so an entity with two `f32` fields takes 20 bytes: 8 for the id, 8 for the floats and 4 for the generation. With four float fields, taking a snapshot costs 7 ns per entity and loading it 21 ns.
 - **Components are stored by name**, with their field names and types, so a snapshot doesn't depend on the order a program defines its components in. `load` finds each one by its name among the components the program defines, and refuses a snapshot that holds one it doesn't.
 - **Non-numeric fields are saved as [their type specifies](components.md#field-types).** In a `json` field, strings, numbers, booleans, bigints, `null` and `undefined` round-trip exactly, `-0` and `NaN` included, while arrays and objects go through JSON text. A `schema` or `ref` field is saved in its encoded form, and a `transient` field not at all.
-- **`load` fills an empty world**: one that has never held an entity or written a singleton.
-- **`world.restore(bytes)` replaces everything in a world in use with a snapshot**, for 16 ns per entity. It is for snapshots the world took itself. Afterwards, the world is what a new world loaded from the snapshot would be. Singleton values keep their object identity, and `world.random` stays the same generator. A view or `removed` reader obtained before throws when used, asking to be obtained again, as a system does every tick. Pending changes for change queries are dropped: `world.restoreChanges` restores what `world.saveChanges` returned.
-- **The format is versioned.** This version writes format 3, and also reads formats 1 and 2.
+- **`load` fills an empty world**: one that has never held an entity or written a singleton, and holds no queued action or waiting event.
+- **`world.restore(bytes)` replaces everything in a world in use with a snapshot**, for 16 ns per entity. It is for snapshots the world took itself. Afterwards, the world is what a new world loaded from the snapshot would be: in an app's world, with the game's time, the queued actions and the waiting events of the snapshot, which every system then reads as if it had read none of them, as in a loaded game. Singleton values keep their object identity, and `world.random` stays the same generator. A view or `removed` reader obtained before throws when used, asking to be obtained again, as a system does every tick. Pending changes for change queries are dropped: `world.restoreChanges` restores what `world.saveChanges` returned.
+- **The format is versioned.** This version writes format 4, and also reads formats 1 to 3.
 
-Every failure is a `SnapshotError`, whose `problem` is one of the values in the table above, or one of two more: `"world not empty"`, and `"cannot be saved"`, for a field holding a value with no saved form, or a spawn queued on a `CommandBuffer` and not applied.
+Every failure is a `SnapshotError`, whose `problem` is one of the values in the table above, or one of two more: `"world not empty"`, and `"cannot be saved"`, for a field, a queued action or a waiting event holding a value with no saved form, or a spawn queued on a `CommandBuffer` and not applied.
 
 Damaged bytes are refused, not trusted: every count is checked against the available bytes before anything is allocated for it, an entity can't occupy two rows or a freed slot, and text must be valid text. A damaged number inside a column is indistinguishable from any other number, and loads as that number.
 

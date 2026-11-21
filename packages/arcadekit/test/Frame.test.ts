@@ -21,6 +21,7 @@ import {
   System,
   Time,
   World,
+  readSnapshot,
 } from "../src/index";
 import type { Entity } from "../src/index";
 import type { BuiltIn } from "../src/Services";
@@ -790,12 +791,18 @@ describe("what the frame stage reads", () => {
         // nothing that was only kept for the frame stage, or of its readers.
         const saves = [again, headless].map((each) => {
           const save = each.save();
-          return Exit.isSuccess(save) ? save.value.events : undefined;
+          return Exit.isSuccess(save)
+            ? {
+                waiting: readSnapshot(save.value.world).lists,
+                read: save.value.events,
+              }
+            : undefined;
         });
         expect(saves[0]).toEqual(saves[1]);
-        expect(saves[0]).toEqual([
-          { name: "fr/Bounced", payloads: [{ at: 5 }], read: {} },
-        ]);
+        expect(saves[0]).toEqual({
+          waiting: [{ name: "fr/Bounced", values: [{ at: 5 }] }],
+          read: [],
+        });
       })
     );
   });

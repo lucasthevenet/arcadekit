@@ -16,7 +16,15 @@ import {
   Save,
   System,
   Time,
+  readSnapshot,
+  writeSnapshot,
 } from "../src/index";
+
+/** The actions a save's world holds, queued for the next tick. */
+const queuedIn = (save: Save.Save): unknown[] =>
+  readSnapshot(save.world).lists.find(
+    (list) => list.name === "arcadekit/queued"
+  )?.values ?? [];
 
 // --- a game with everything a save has to carry -----------------------------------
 
@@ -194,12 +202,14 @@ const refusal = <E>(exit: Exit.Exit<unknown, E>): E => {
 const record = (ticks: number, saveAt: number) =>
   withApp(App.make(options), (app) => {
     let save: Save.Save | undefined;
+    let saved: { tick: number; elapsed: number; delta: number } | undefined;
     const hashes: number[] = [];
     for (let tick = 0; tick < ticks; tick++) {
       if (tick === saveAt) {
         // After this tick's moves have arrived, so that some are waiting.
         move(app, tick);
         save = unwrap(app.save());
+        saved = { ...app.time };
       } else {
         move(app, tick);
       }
@@ -208,6 +218,7 @@ const record = (ticks: number, saveAt: number) =>
     }
     return {
       save: save!,
+      saved: saved!,
       hashes,
       tail: app.record(save!),
       tally: app.world
@@ -222,15 +233,12 @@ describe("a saved game", () => {
   it("loads into a game that goes on exactly as the saved one did", () => {
     for (const saveAt of [0, 1, 7, 30, 59]) {
       const recorded = record(90, saveAt);
-      const { save } = recorded;
-      expect(save.tick).toBe(saveAt);
-      expect(save.delta).toBe(saveAt === 0 ? 0 : 1 / 60);
+      const { save, saved } = recorded;
+      expect(saved.tick).toBe(saveAt);
+      expect(saved.delta).toBe(saveAt === 0 ? 0 : 1 / 60);
       const resumed = withApp(App.load(save, options), (app) => {
-        expect(app.time).toEqual({
-          tick: saveAt,
-          elapsed: save.elapsed,
-          delta: save.delta,
-        });
+        // The world holds the game's time, so the save brings it back.
+        expect(app.time).toEqual(saved);
         // The log starts again, and what the game logged after the save is
         // replayed against the checkpoints it took after every tick.
         expect(app.actionLog).toEqual([]);
@@ -270,7 +278,7 @@ describe("a saved game", () => {
       app.enqueue(Add, { by: 100 });
       app.enqueueByName("sv/Double", {});
       const save = unwrap(app.save());
-      expect(save.queued).toEqual([
+      expect(queuedIn(save)).toEqual([
         { name: "sv/Add", payload: { by: 7 } },
         { name: "sv/Double", payload: {} },
         { name: "sv/Add", payload: { by: 100 } },
@@ -305,7 +313,7 @@ describe("a saved game", () => {
     const save = withApp(App.make(given), (app) => {
       app.tick(1);
       const taken = unwrap(app.save());
-      expect(taken.queued).toEqual([
+      expect(queuedIn(taken)).toEqual([
         {
           name: "sv/Stamp",
           payload: { at: "1970-01-02T00:00:00.000Z", big: "5" },
@@ -326,14 +334,19 @@ describe("a saved game", () => {
         app.tick(1);
       }
       const save = unwrap(app.save());
-      // The event of tick 4 is waiting: Sound has read it, Listen has not.
-      expect(save.events).toEqual([
+      // The event of tick 4 is waiting, in the world: Sound has read it,
+      // Listen has not.
+      expect(
+        readSnapshot(save.world).lists.filter(
+          (list) => list.name !== "arcadekit/queued"
+        )
+      ).toEqual([
         {
           name: "sv/Sounded",
-          payloads: [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
-          read: { Sound: 1 },
+          values: [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
         },
       ]);
+      expect(save.events).toEqual([{ name: "sv/Sounded", read: { Sound: 1 } }]);
       const heard = (of: GameApp) =>
         of.world.get(of.world.view(Tallies).entities()[0]!, Tally)!.heard;
       expect(heard(app)).toBe(1 + 2 + 3);
@@ -428,7 +441,7 @@ describe("a game that cannot be saved as it stands", () => {
     withApp(App.make({ systems: [Issue], handlers: [small] }), (app) => {
       app.tick(1);
       expect(refusal(app.save()).message).toMatch(
-        /The action "sv\/Small" is waiting.*payload its schema does not take/
+        /^Can't save the actions queued for the next tick: the action "sv\/Small" has a payload its schema does not take/
       );
     });
   });
@@ -520,9 +533,9 @@ describe("a save that cannot be loaded", () => {
     expect(problem(broken)).toBe("corrupt");
     const negative = Uint8Array.from(bytes);
     const text = new TextDecoder().decode(bytes.subarray(12, 12 + length));
-    expect(text).toContain('"tick":5');
+    expect(text).toContain('"logLength":1');
     negative.set(
-      new TextEncoder().encode(text.replace('"tick":5', '"tick":-')),
+      new TextEncoder().encode(text.replace('"logLength":1', '"logLength":-1')),
       12
     );
     expect(problem(negative)).toBe("corrupt");
@@ -545,19 +558,15 @@ describe("a save that cannot be loaded", () => {
 
   it("says which waiting event no longer reads, when its schema has changed, as it is loaded", () => {
     const { save } = record(10, 5);
-    const altered = {
-      ...save,
-      events: save.events.map((events) => ({
-        ...events,
-        payloads: [{ tick: "five", at: "x" }],
-      })),
-    };
-    expect(altered.events.length).toBe(1);
-    const error = refusal(load(altered));
+    const world = readSnapshot(save.world);
+    const sounded = world.lists.find((list) => list.name === "sv/Sounded");
+    expect(sounded).toBeDefined();
+    sounded!.values = [{ tick: "five", at: "x" }];
+    const error = refusal(load({ ...save, world: writeSnapshot(world) }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("event changed");
+    expect(error.problem).toBe("list changed");
     expect(error.message).toMatch(
-      /The save holds the event "sv\/Sounded" in a form its schema no longer takes: .*A migration changes the events of a save in `events`\./s
+      /^Can't load the "sv\/Sounded" events waiting to be read: one is in a form that is no longer taken: .*A migration changes the events and the queued actions of a save in `world.lists`\.$/s
     );
   });
 
@@ -571,15 +580,14 @@ describe("a save that cannot be loaded", () => {
     expect(save.events.map((events) => events.name)).toContain("sv/Sounded");
     expect(Exit.isSuccess(load(save, { plugins: [Bare] }))).toBe(true);
 
-    const renamed = {
-      ...save,
-      events: [{ name: "sv/Never", payloads: [1], read: {} }],
-    };
+    const world = readSnapshot(save.world);
+    world.lists.push({ name: "sv/Never", values: [1] });
+    const renamed = { ...save, world: writeSnapshot(world) };
     const error = refusal(load(renamed, { plugins: [Bare] }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("unknown event");
+    expect(error.problem).toBe("unknown list");
     expect(error.message).toBe(
-      'The save holds the event "sv/Never", waiting to be read, which this program doesn\'t define: it was renamed or removed since. A migration changes the events of a save in `events`.'
+      'The snapshot holds a value of a list named "sv/Never", which this program doesn\'t define: it was renamed or removed since. A migration changes the events and the queued actions of a save in `world.lists`.'
     );
   });
 });

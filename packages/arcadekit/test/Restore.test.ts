@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
+import { defineList } from "../src/ecs/list";
 import {
   CommandBuffer,
   Component,
@@ -34,6 +35,16 @@ const Level = Component.singleton(
   { number: 3 }
 );
 
+/** A list the world keeps, whose values its codec saves as objects. */
+const Log = defineList<number>(
+  "rs/Log",
+  {
+    encode: (value) => ({ n: value }),
+    decode: (data) => (data as { n: number }).n,
+  },
+  { label: "the log" }
+);
+
 const optional: ComponentDef[] = [Body, Marked, Aura, Chilled];
 const Bodies = Query.all(Body).pipe(Query.writes(Body));
 const Warm = Query.all(Aura).pipe(Query.without(Chilled));
@@ -62,7 +73,7 @@ const play = (
         : def;
   for (let step = 0; step < steps; step++) {
     const alive = world.view(Query.all()).entities();
-    const choice = alive.length === 0 ? 0 : dice.int(0, 11);
+    const choice = alive.length === 0 ? 0 : dice.int(0, 13);
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
     if (choice <= 1 || entity === undefined) {
       const inputs = optional
@@ -102,6 +113,12 @@ const play = (
       world.view(Bodies).each((body) => {
         body.y += 0.5;
       });
+    } else if (choice === 12) {
+      world._list(Log).push(++serial);
+    } else if (choice === 13) {
+      // Taken from the front, as a reader that is done with them would.
+      const log = world._list(Log);
+      log.splice(0, dice.int(0, log.length));
     } else if (world.has(entity, Body)) {
       world.set(entity, Body, { x: dice.next() });
     } else {
@@ -131,6 +148,7 @@ const contents = (world: EcsWorld) => ({
   score: { ...world.singleton(Score) },
   level: { ...world.singleton(Level) },
   random: Array.from(world.random.state),
+  log: [...world._list(Log)],
 });
 
 /** What a world does from here, step by step, for a seed. */
@@ -139,6 +157,7 @@ const future = (world: EcsWorld, seed: number, steps = 150): unknown[] => {
   play(world, seed, steps, () => {
     seen.push([
       world.hash(),
+      [...world._list(Log)],
       world.view(Bodies).entities(),
       world.view(Warm).entities(),
       world.view(Moved, "watcher").entities(),
