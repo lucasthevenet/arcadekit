@@ -1102,7 +1102,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       readonly events: EventsMoment;
       readonly changes: SavedChanges[];
       readonly logLength: number;
-      readonly started: boolean;
       readonly wanted: boolean;
     }
     const checkpointEvery = options.checkpointEvery ?? 60;
@@ -1119,13 +1118,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // The state the game starts from is whatever the world holds when the
     // first action is applied or the first tick runs: setup and the caller
     // have spawned what they spawn by then. A replay checks it has the same.
-    let started = false;
+    // A game has started once its log holds anything: a checkpoint the game
+    // took by hand before starting already is the first one.
     const start = (): void => {
-      if (started) {
-        return;
-      }
-      started = true;
-      // A checkpoint the game took by hand before starting already is it.
       if (checkpointEvery > 0 && actionLog.length === 0) {
         checkpoint();
       }
@@ -2090,7 +2085,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           unseen ? () => true : (reader) => !reader.startsWith(FRAME_READER)
         ),
         logLength: actionLog.length,
-        started,
         wanted,
       };
       moments.add(moment);
@@ -2116,7 +2110,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
         deltas.pop();
       }
-      started = was.started;
       wanted = was.wanted;
       heard = false;
       commands.apply();
