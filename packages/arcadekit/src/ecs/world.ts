@@ -52,7 +52,6 @@ import type {
   ReadonlyColumnsOf,
   Row,
   Schema,
-  SingletonPolicy,
   SingletonSpec,
   Storage,
   ValueOf,
@@ -97,8 +96,6 @@ const storageOf = (def: ComponentDef): 0 | 1 | 2 =>
 /** The single instance of a singleton that a world holds. */
 interface Single {
   readonly def: ComponentDef;
-  /** How the world treats it. */
-  readonly policy: SingletonPolicy;
   /** One row. */
   readonly columns: Columns;
   /**
@@ -2789,13 +2786,12 @@ export class World {
       }
       return found.value as ValueOf<S>;
     }
-    const policy = spec.component.single;
-    if (policy === undefined) {
+    if (!spec.component.single) {
       throw new Error(
         `"${spec.component.name}" is a component, not a singleton. Define a singleton with Component.singleton.`
       );
     }
-    const single = this.single(spec.component, policy);
+    const single = this.single(spec.component);
     single.initial = spec.initial;
     writeRow(spec.component, single.columns, 0, spec.initial);
     return single.value as ValueOf<S>;
@@ -2811,20 +2807,13 @@ export class World {
   }
 
   /** Returns a singleton's instance, creating it if needed with every field zero. */
-  private single(def: ComponentDef, policy: SingletonPolicy): Single {
+  private single(def: ComponentDef): Single {
     let single = this.singles[def.id];
     if (single === undefined) {
       this.register(def);
       const columns = makeColumns(def, 1);
       const value = {};
-      single = {
-        def,
-        policy,
-        columns,
-        initial: undefined,
-        written: false,
-        value,
-      };
+      single = { def, columns, initial: undefined, written: false, value };
       const made = single;
       for (const field of def.fields) {
         const column = columns[field]!;
@@ -2845,7 +2834,7 @@ export class World {
 
   /** Called before a singleton is written, so a rollback can restore it. */
   private writing(single: Single): void {
-    if (this._frozen && !single.policy.betweenTicks) {
+    if (this._frozen) {
       throw new Error(
         frozenWrite(`A write to the singleton "${single.def.name}"`)
       );
@@ -3330,7 +3319,7 @@ export class World {
 
   /**
    * Serializes the whole world to bytes: every table and sparse set, every
-   * singleton that has been written and is saved, the upcoming ids, the random generator's
+   * singleton that has been written, the upcoming ids, the random generator's
    * state, and, in an app's world, the actions queued for the next tick and the
    * events waiting to be read. A world that loads the bytes hashes the same as this one
    * and behaves the same from then on: the same iteration order, the same ids
@@ -3348,14 +3337,11 @@ export class World {
    * So is a world with a spawn queued on a `CommandBuffer` but not yet applied.
    */
   snapshot(): Uint8Array {
-    return this.snapshotOf(false);
+    return this.snapshotOf(true);
   }
 
-  /**
-   * `snapshot()`, or, `capturing`, the world as `_capture` holds it: every
-   * singleton, saved or not, and no lists, which it holds by reference.
-   */
-  private snapshotOf(capturing: boolean): Uint8Array {
+  /** `snapshot()`, with the lists or without them. */
+  private snapshotOf(withLists: boolean): Uint8Array {
     const { tables } = this;
     let placed = 0;
     let estimate = 256 + this.nextIndex * 4 + this.freeList.length * 4;
@@ -3375,9 +3361,7 @@ export class World {
       );
     }
     const sets = this.sparseSetsByName().filter((set) => set.count > 0);
-    const singles = capturing
-      ? this.writtenSingles()
-      : this.writtenSingles().filter((single) => single.policy.saved);
+    const singles = this.writtenSingles();
 
     // The components that hold anything, or have a table, in order of name.
     const used = new Map<ComponentDef, number>();
@@ -3459,9 +3443,9 @@ export class World {
       writer.u32(used.get(single.def)!);
       writeFields(single.def, single.columns, 1);
     }
-    const lists = capturing
-      ? []
-      : this.heldLists().filter((list) => list.values.length > 0);
+    const lists = withLists
+      ? this.heldLists().filter((list) => list.values.length > 0)
+      : [];
     writer.u32(lists.length);
     for (const { def, values } of lists) {
       writer.text(def.name);
@@ -3752,10 +3736,10 @@ export class World {
       const loaded = new Set<Single>();
       for (let s = 0; s < singleCount; s++) {
         const def = componentAt();
-        if (def.single === undefined) {
+        if (!def.single) {
           throw corrupt("a singleton is of a component that is not one");
         }
-        const single = this.single(def, def.single);
+        const single = this.single(def);
         if (loaded.has(single)) {
           throw corrupt("it holds two values for one singleton");
         }
@@ -3956,7 +3940,7 @@ export class World {
    * - the order queries visit entities in (tables in creation order, rows
    *   ascending);
    * - the ids the next entities will get;
-   * - every singleton that has been written and is hashed, by name;
+   * - every singleton that has been written, by name;
    * - the state of the random number generator;
    * - the values of every list the world keeps beside its components, each
    *   through its codec: in an app's world, the actions queued for the next
@@ -4072,10 +4056,7 @@ export class World {
     // only been read holds its initial value, which no simulation can tell
     // from its not being there.
     if (this.singles.length > 0) {
-      for (const { columns, def, policy } of this.writtenSingles()) {
-        if (!policy.hashed || (!betweenTicks && policy.betweenTicks)) {
-          continue;
-        }
+      for (const { columns, def } of this.writtenSingles()) {
         h = add(add(h, SINGLETON), shapes[def.id]!);
         for (let f = 0; f < def.fields.length; f++) {
           h = addColumn(
@@ -4185,7 +4166,7 @@ export class World {
    */
   _capture(): Moment {
     const moment: Moment = {
-      world: this.snapshotOf(true),
+      world: this.snapshotOf(false),
       lists: this.heldLists()
         .filter((list) => list.values.length > 0)
         .map((list) => [list.def, list.values.slice()] as const),

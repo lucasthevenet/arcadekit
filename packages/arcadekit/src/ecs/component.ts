@@ -338,37 +338,6 @@ export interface Accessor {
 export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
 
 /**
- * How a world treats a singleton. A game's own singletons are saved and hashed,
- * and the stages between ticks may not write them; an app's own state may
- * differ, and says so where it is defined.
- *
- * @internal
- */
-export interface SingletonPolicy {
-  /**
-   * Whether a snapshot, and so a save, holds it. One that isn't saved is
-   * still captured and rewound, and starts at its initial value in a world
-   * that loads a snapshot.
-   */
-  readonly saved: boolean;
-  /** Whether `World.hash` covers it. */
-  readonly hashed: boolean;
-  /**
-   * Whether the stages between ticks may write it, while the world is frozen.
-   * `World._frameHash`, which those stages must leave as it was, leaves it
-   * out.
-   */
-  readonly betweenTicks: boolean;
-}
-
-/** The policy of a game's singleton. */
-const GAME_STATE: SingletonPolicy = {
-  saved: true,
-  hashed: true,
-  betweenTicks: false,
-};
-
-/**
  * @param S  the component's fields
  * @param St where its data is stored
  * @param N  its name. Two components can have the same fields, and the compiler distinguishes them by name: for example, to know which of a query's terms `Query.writes` was given. A name built at run time is just `string`, and such a component is indistinguishable from others.
@@ -391,11 +360,10 @@ export interface ComponentDef<
   readonly storage: St;
   readonly isTag: boolean;
   /**
-   * For the fields of a singleton, which the world holds once and no entity
-   * has, how the world treats them: see `Component.singleton`. Undefined for
-   * any other component.
+   * True for the fields of a singleton, which the world holds once and no
+   * entity has: see `Component.singleton`.
    */
-  readonly single: SingletonPolicy | undefined;
+  readonly single: boolean;
   /**
    * For a relation, what happens to it when its target is despawned; undefined
    * for any other component. See `Component.relation`.
@@ -786,7 +754,7 @@ const define = <
   schema: S,
   options?: {
     readonly storage?: St;
-    readonly single?: SingletonPolicy;
+    readonly single?: boolean;
     readonly relation?: OnTargetDespawn;
     readonly initial?: ValueOf<S>;
   }
@@ -801,34 +769,13 @@ const define = <
     codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
-    single: options?.single,
+    single: options?.single === true,
     relation: options?.relation,
     initial: options?.initial,
     of: (value) => ({ def, value }),
   };
   defined.set(name, def as ComponentDef);
   return def;
-};
-
-/**
- * Defines a singleton that a world treats as `policy` says, for an app's own
- * state. Refuses one that is hashed and not saved: a world that loaded a
- * snapshot would hash differently from the world it was taken from.
- *
- * @internal
- */
-export const defineSingleton = <S extends Schema>(
-  name: string,
-  schema: S,
-  initial: ValueOf<S>,
-  policy: SingletonPolicy
-): SingletonSpec<S> => {
-  if (policy.hashed && !policy.saved) {
-    throw new Error(
-      `The singleton "${name}" is hashed and not saved: a world that loaded a snapshot would hash differently from the world it was taken from. Save it, or leave it out of the hash.`
-    );
-  }
-  return { component: define(name, schema, { single: policy }), initial };
 };
 
 /**
@@ -868,7 +815,10 @@ export const Component = {
     name: string,
     schema: S,
     initial: ValueOf<S>
-  ): SingletonSpec<S> => defineSingleton(name, schema, initial, GAME_STATE),
+  ): SingletonSpec<S> => ({
+    component: define(name, schema, { single: true }),
+    initial,
+  }),
   /**
    * Defines a relation: a component that points at another entity, its
    * `target`, and stays correct when that entity is despawned.
