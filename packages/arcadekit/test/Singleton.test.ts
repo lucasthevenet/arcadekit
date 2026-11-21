@@ -2,6 +2,7 @@ import { Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { defineSingleton } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -526,6 +527,86 @@ const Reward = System.make("Reward", function* () {
 const Rules = Plugin.make("sg/Rules", {
   systems: [Reward],
   handlers: [endTurn, cheat],
+});
+
+describe("a singleton of the app's own", () => {
+  const Asked = defineSingleton(
+    "sg/Asked",
+    { count: Field.u32 },
+    { count: 0 },
+    { saved: true, hashed: true, betweenTicks: true }
+  );
+  const Seen = defineSingleton(
+    "sg/Seen",
+    { count: Field.u32 },
+    { count: 0 },
+    { saved: true, hashed: false, betweenTicks: false }
+  );
+  const Told = defineSingleton(
+    "sg/Told",
+    { count: Field.u32 },
+    { count: 0 },
+    { saved: false, hashed: false, betweenTicks: false }
+  );
+
+  it("is written by the stages between ticks if they may, and left out of what they must keep", () => {
+    const world = new EcsWorld();
+    world.singleton(Turn).round = 1;
+    const frame = world._frameHash();
+    const whole = world.hash();
+    world.freeze();
+    world.singleton(Asked).count = 2;
+    expect(() => (world.singleton(Seen).count = 2)).toThrow(
+      /while the world is frozen/
+    );
+    world.thaw();
+    expect(world.singleton(Asked).count).toBe(2);
+    expect(world._frameHash()).toBe(frame);
+    expect(world.hash()).not.toBe(whole);
+  });
+
+  it("is left out of the hash if it is not hashed, and still saved", () => {
+    const world = new EcsWorld();
+    world.singleton(Turn).round = 1;
+    const before = world.hash();
+    world.singleton(Seen).count = 3;
+    expect(world.hash()).toBe(before);
+
+    const loaded = new EcsWorld();
+    loaded.load(world.snapshot());
+    expect(loaded.singleton(Seen).count).toBe(3);
+    expect(loaded.hash()).toBe(before);
+  });
+
+  it("is left out of a snapshot if it is not saved, and still goes back with a rewind", () => {
+    const world = new EcsWorld();
+    world.singleton(Told).count = 4;
+    const moment = world._capture();
+    const snapshot = world.snapshot();
+    world.singleton(Told).count = 5;
+
+    world._rewind(moment);
+    expect(world.singleton(Told).count).toBe(4);
+    world.restore(snapshot);
+    expect(world.singleton(Told).count).toBe(0);
+    expect(world.holds(Told)).toBe(false);
+    const loaded = new EcsWorld();
+    loaded.load(snapshot);
+    expect(loaded.singleton(Told).count).toBe(0);
+  });
+
+  it("is refused if it is hashed and not saved", () => {
+    expect(() =>
+      defineSingleton(
+        "sg/Lost",
+        { count: Field.u32 },
+        { count: 0 },
+        { saved: false, hashed: true, betweenTicks: false }
+      )
+    ).toThrow(
+      'The singleton "sg/Lost" is hashed and not saved: a world that loaded a snapshot would hash differently from the world it was taken from. Save it, or leave it out of the hash.'
+    );
+  });
 });
 
 describe("a singleton in an app", () => {
