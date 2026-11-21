@@ -781,6 +781,33 @@ const Queued = defineList<QueuedAction>(
   }
 );
 
+/**
+ * Whether the input stage has run since the last tick: one `true` if it has,
+ * nothing if not. A tick that finds nothing runs the stage first. It is the
+ * game's between two ticks, as the actions the stage queued are: kept in the
+ * world, it goes back with a rewind and is in a save, so the stage that issued
+ * those actions isn't run again for the same tick.
+ */
+const Heard = defineList<true>(
+  "arcadekit/heard",
+  {
+    encode: (value) => value,
+    decode: (data) => {
+      if (data !== true) {
+        throw new Error(`whether the input stage has run is not true`);
+      }
+      return true;
+    },
+  },
+  {
+    label: "whether the input stage has run since the last tick",
+    betweenTicks: true,
+    // How the app is being stepped, not what the game holds: the input
+    // stage changes nothing a hash sees.
+    hashed: false,
+  }
+);
+
 /** Why an action was refused, as `Action.Rejected` carries it. */
 const refusal = (error: unknown): { _tag: string; message: string } => {
   const tag =
@@ -1109,6 +1136,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Loaded with the world, in the JSON form they were saved in, checked
     // again when applied.
     const queued = world._list(Queued);
+    const heard = world._list(Heard);
     const actionLog: Action.LogEntry[] = [];
     // Where this app began, and the delta of every tick it has run since, in
     // runs: for a recording.
@@ -1766,8 +1794,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     // The stage that is running between two ticks, if one is.
     let between: "frame" | "input" | undefined;
-    // Whether the input stage has run since the last tick.
-    let heard = false;
     // Whether the game asked for its next tick: `Ticks.more`. An app that
     // has not ticked yet has not been asked, and is taken to want one.
     let wanted = true;
@@ -2065,7 +2091,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       // One picture of the devices for the whole stage.
       Object.assign(devices, source.sample());
-      heard = true;
+      if (heard.length === 0) {
+        heard.push(true);
+      }
       return runBetween("input");
     };
 
@@ -2140,7 +2168,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         deltas.pop();
       }
       wanted = was.wanted;
-      heard = false;
       commands.apply();
     };
     const runTick = (
@@ -2152,15 +2179,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       // A tick hears the devices first. Whoever steps the app may have
       // seen to it, as a driver does; if not, it is seen to here.
-      if (!heard && inputSystems.length > 0 && options?.input !== false) {
+      if (
+        heard.length === 0 &&
+        inputSystems.length > 0 &&
+        options?.input !== false
+      ) {
         const exit = inputExit();
         if (Exit.isFailure(exit)) {
           // The tick did not run, and the next one is to hear first too.
-          heard = false;
+          heard.length = 0;
           return exit;
         }
       }
-      heard = false;
+      heard.length = 0;
       // Each tick is asked afresh: one in which nobody asks is the last.
       wanted = false;
       start();

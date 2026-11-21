@@ -34,6 +34,13 @@ export interface ListDef<T = unknown> {
    * for the next tick. `World._frameHash` leaves such a list out.
    */
   readonly betweenTicks: boolean;
+  /**
+   * Whether `World.hash` covers it. A list that says how the app is being
+   * stepped, not what the game holds, is kept, snapshotted and restored, and
+   * left out of the hash, so that two worlds that differ only in it hash the
+   * same.
+   */
+  readonly hashed: boolean;
 }
 
 // Every list this program has defined, by name, so that a world can load a
@@ -49,13 +56,18 @@ const defined = new Map<string, ListDef>();
 export const defineList = <T>(
   name: string,
   codec: RefCodec<T>,
-  options: { readonly label: string; readonly betweenTicks?: boolean }
+  options: {
+    readonly label: string;
+    readonly betweenTicks?: boolean;
+    readonly hashed?: boolean;
+  }
 ): ListDef<T> => {
   const def: ListDef<T> = {
     name,
     codec,
     label: options.label,
     betweenTicks: options.betweenTicks === true,
+    hashed: options.hashed !== false,
   };
   defined.set(name, def as ListDef);
   return def;

@@ -4076,16 +4076,18 @@ export class World {
     // The lists that hold anything, so that a world whose lists are all
     // empty hashes as one that has none.
     const lists = this.heldLists();
+    const counted = (def: ListDef): boolean =>
+      def.hashed && (betweenTicks || !def.betweenTicks);
     let held = 0;
     for (const { def, values } of lists) {
-      if (values.length > 0 && (betweenTicks || !def.betweenTicks)) {
+      if (values.length > 0 && counted(def)) {
         held++;
       }
     }
     if (held > 0) {
       h = add(h, held);
       for (const { def, values } of lists) {
-        if (values.length === 0 || (!betweenTicks && def.betweenTicks)) {
+        if (values.length === 0 || !counted(def)) {
           continue;
         }
         h = add(addString(h, def.name), values.length);

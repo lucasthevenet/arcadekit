@@ -347,6 +347,67 @@ describe("a game that is put back to a moment", () => {
   });
 });
 
+describe("the input stage across a rewind and a save", () => {
+  // The stage issues one shot each time it runs, and the tick applies it.
+  const Fire = Action.define("rw/Fire", Schema.Struct({}));
+  const pressing = () => {
+    const fired: number[] = [];
+    const fire = Action.handler(Fire, function* () {
+      yield* Effect.sync(() => fired.push(1));
+    });
+    const Press = System.make("rw/Press", function* () {
+      (yield* Action.Actions).enqueue(Fire, {});
+    }).pipe(System.inStage("input"));
+    return { fired, options: { systems: [Press], handlers: [fire] } };
+  };
+
+  it("runs again for a tick it ran for after the moment", () => {
+    const { fired, options } = pressing();
+    withApp(App.make(options), (app) => {
+      app.tick(DELTA);
+      fired.length = 0;
+      const moment = captured(app);
+      // What the stage issues now is taken back with the rest.
+      app.input();
+      app.rewind(moment);
+      app.tick(DELTA);
+      expect(fired).toEqual([1]);
+    });
+  });
+
+  it("does not run again for a tick it ran for before the moment", () => {
+    const { fired, options } = pressing();
+    withApp(App.make(options), (app) => {
+      app.tick(DELTA);
+      fired.length = 0;
+      // The moment holds what the stage issued, and that it ran.
+      app.input();
+      const moment = captured(app);
+      app.rewind(moment);
+      app.tick(DELTA);
+      expect(fired).toEqual([1]);
+    });
+  });
+
+  it("does not run again in a game loaded from a save taken after it ran", () => {
+    const { fired, options } = pressing();
+    const saved = withApp(App.make(options), (app) => {
+      app.tick(DELTA);
+      app.input();
+      const save = app.save();
+      if (Exit.isFailure(save)) {
+        throw new Error("the game could not be saved");
+      }
+      return save.value;
+    });
+    fired.length = 0;
+    withApp(Effect.orDie(App.load(saved, options)), (app) => {
+      app.tick(DELTA);
+      expect(fired).toEqual([1]);
+    });
+  });
+});
+
 describe("what the stages between ticks hear across a rewind", () => {
   const Rang = Event.define("rw/Rang", Schema.Struct({ n: Schema.Int }));
   const Bell = Component.define("rw/Bell", { extra: Field.i32 });
