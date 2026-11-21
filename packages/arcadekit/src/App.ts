@@ -205,16 +205,17 @@ export interface Any {
   readonly plugins: readonly string[];
   /** System names in the order they run. */
   readonly systemOrder: readonly string[];
-  /**
-   * What the app is running right now. A game is saved, recorded, inspected
-   * and stepped in `"idle"`, and in `"handler"` except for being put back:
-   * each of those throws during a tick, a frame or the input stage.
-   */
-  readonly phase: Phase;
   /** The names of the frame-stage systems, in the order they run. */
   readonly frameOrder: readonly string[];
   /** The names of the input-stage systems, in the order they run. */
   readonly inputOrder: readonly string[];
+  /**
+   * What the app is running right now. A game is stepped, saved, captured,
+   * put back, recorded, checkpointed and inspected in `"idle"` alone: each of
+   * those throws in any other phase, a handler that `dispatch` runs included,
+   * whose work is taken back if it is refused.
+   */
+  readonly phase: Phase;
   /**
    * Runs one tick. Throws if a system fails, or if a fiber started during the
    * tick is still running when it ends: one forked with `Effect.forkDetach`,
@@ -1777,14 +1778,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ticking
         ? "tick"
         : (between ?? (applying !== undefined ? "handler" : "idle"));
-    /** Whether nothing is running but, at most, a handler `dispatch` runs. */
-    const betweenTicks = (): boolean => {
-      const now = phase();
-      return now === "idle" || now === "handler";
-    };
+    /** Whether the app is between ticks with nothing running. */
+    const betweenTicks = (): boolean => phase() === "idle";
     const busy = (): string => {
       const now = phase();
-      return now === "input" ? "run of the input stage" : now;
+      return now === "input"
+        ? "run of the input stage"
+        : now === "handler"
+          ? `handler of "${applying}"`
+          : now;
     };
 
     /** Rolls back everything a handler did since the three marks were taken. */
@@ -1890,7 +1892,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         logged = converted.value;
       }
 
-      if (applying !== undefined) {
+      if (phase() === "handler") {
         throw new Error(
           `dispatch("${name}") was called from the handler of "${applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`
         );
@@ -1965,14 +1967,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `dispatch("${name}") was called on an app that a session has taken over. It would apply the action on this machine alone, and the peers would no longer be playing the same game. Use enqueue: the session has every peer apply it on the same tick.`
         );
       }
-      if (ticking) {
+      const now = phase();
+      if (now === "tick") {
         throw new Error(
           `dispatch("${name}") was called during a tick. Use enqueue: it applies the action at the start of the next tick.`
         );
       }
-      if (between !== undefined) {
+      if (now === "frame" || now === "input") {
         throw new Error(
-          `dispatch("${name}") was called during the ${between} stage, which must not change the game. Issue it with Actions.enqueue: it is applied at the start of the next tick.`
+          `dispatch("${name}") was called during the ${now} stage, which must not change the game. Issue it with Actions.enqueue: it is applied at the start of the next tick.`
         );
       }
     };
@@ -2304,7 +2307,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       save() {
         if (!betweenTicks()) {
           throw new Error(
-            "save() was called during a tick or a frame. A game is saved between ticks."
+            `save() was called during a ${busy()}. A game is saved between ticks.`
           );
         }
         const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
@@ -2365,11 +2368,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `rewind() was called during a ${busy()}. A game is put back between ticks.`
           );
         }
-        if (phase() === "handler") {
-          throw new Error(
-            `rewind() was called from the handler of "${applying}". A game is put back between ticks.`
-          );
-        }
         if (!moments.has(moment)) {
           throw new Error(
             "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
@@ -2402,9 +2400,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         };
       },
       checkpoint() {
-        if (ticking) {
+        if (!betweenTicks()) {
           throw new Error(
-            "checkpoint() was called during a tick. A checkpoint is taken between ticks, where a replay can compare it."
+            `checkpoint() was called during a ${busy()}. A checkpoint is taken between ticks, where a replay can compare it.`
           );
         }
         return checkpoint();

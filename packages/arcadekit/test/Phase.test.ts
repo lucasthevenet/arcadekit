@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { Action, App, System } from "../src/index";
@@ -44,5 +44,44 @@ describe("what an app is running", () => {
       ["tick", "tick"],
       ["frame", "frame"],
     ]);
+  });
+
+  it("refuses, from a handler that dispatch runs, what is for between ticks", () => {
+    // Each would act on a game halfway through an action, which the action
+    // may yet take back.
+    const calls: [string, (app: App.App<never, never>) => unknown][] = [
+      ["App.tick", (app) => app.tick(1)],
+      ["App.frame", (app) => app.frame(0)],
+      ["App.input", (app) => app.input()],
+      ["save()", (app) => app.save()],
+      ["capture()", (app) => app.capture()],
+      ["record()", (app) => app.record()],
+      ["checkpoint()", (app) => app.checkpoint()],
+      ["inspect()", (app) => app.inspect()],
+    ];
+    for (const [name, call] of calls) {
+      let app: App.App<never, never> | undefined;
+      const Call = Action.define("ph/Call", Schema.Struct({}));
+      const calling = Action.handler(Call, function* () {
+        yield* Effect.sync(() => call(app!));
+      });
+      withApp(App.make({ handlers: [calling] }), (made) => {
+        app = made as unknown as App.App<never, never>;
+        made.tick(1);
+        const log = made.actionLog.length;
+        const exit = made.dispatch(Call, {});
+        expect(Exit.isFailure(exit), name).toBe(true);
+        expect(String(Exit.isFailure(exit) ? exit.cause : ""), name).toMatch(
+          new RegExp(
+            `Error: ${name.replace(/[.()]/gu, "\\$&")} was called (?:during|from inside) a handler of "ph/Call"`,
+            "u"
+          )
+        );
+        // Nothing of what it was asked to do was left behind.
+        expect(made.time.tick, name).toBe(1);
+        expect(made.actionLog.length, name).toBe(log);
+        expect(made.phase, name).toBe("idle");
+      });
+    }
   });
 });

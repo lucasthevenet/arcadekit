@@ -341,7 +341,7 @@ describe("a game that is put back to a moment", () => {
       const exit = app.dispatch(Back, {});
       expect(Exit.isFailure(exit)).toBe(true);
       expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
-        /rewind\(\) was called from the handler of "rw\/Back"/u
+        /rewind\(\) was called during a handler of "rw\/Back"/u
       );
     });
   });
