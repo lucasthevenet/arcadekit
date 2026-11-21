@@ -10,6 +10,7 @@ import {
   Event,
   Field,
   Query,
+  Rollback,
   Save,
   System,
   Ticks,
@@ -23,7 +24,6 @@ import {
   Take,
   Whisper,
   game,
-  gameOptions,
   moves,
   withApp,
 } from "./peers";
@@ -494,7 +494,7 @@ describe("what the stages between ticks hear across a rewind", () => {
   });
 });
 
-describe("verifyRewinds", () => {
+describe("Rollback.syncTest", () => {
   const Mark = Component.define("vr/Mark", { n: Field.i32 });
   const Marks = Query.all(Mark);
   const Steady = System.make("vr/Steady", function* () {
@@ -518,17 +518,15 @@ describe("verifyRewinds", () => {
     const After = System.make("vr/After", function* () {
       (yield* Commands).spawn(Mark.of({ n: 0 }));
     });
-    withApp(
-      App.make({ systems: [Steady, Leaky, After], verifyRewinds: true }),
-      (app) => {
-        const error = failure(() => app.tick(DELTA));
-        expect(error).toBeInstanceOf(App.RewindDiverged);
-        expect(error).toMatchObject({ tick: 1, system: "vr/Leaky" });
-        expect(String((error as Error).message)).toContain(
-          'after system "vr/Leaky" ran'
-        );
-      }
-    );
+    withApp(App.make({ systems: [Steady, Leaky, After] }), (app) => {
+      const test = Rollback.syncTest(app);
+      const error = failure(() => test.tick(DELTA));
+      expect(error).toBeInstanceOf(Rollback.RewindDiverged);
+      expect(error).toMatchObject({ tick: 1, system: "vr/Leaky" });
+      expect(String((error as Error).message)).toContain(
+        'after system "vr/Leaky" ran'
+      );
+    });
   });
 
   it("finds it before the first system, in a handler", () => {
@@ -538,35 +536,61 @@ describe("verifyRewinds", () => {
       outside++;
       (yield* Commands).spawn(Mark.of({ n: outside }));
     });
-    withApp(
-      App.make({ systems: [Steady], handlers: [bump], verifyRewinds: true }),
-      (app) => {
-        app.tick(DELTA);
-        app.enqueue(Bump, {});
-        const error = failure(() => app.tick(DELTA));
-        expect(error).toMatchObject({ tick: 2, system: undefined });
+    withApp(App.make({ systems: [Steady], handlers: [bump] }), (app) => {
+      const test = Rollback.syncTest(app);
+      test.tick(DELTA);
+      app.enqueue(Bump, {});
+      const error = failure(() => test.tick(DELTA));
+      expect(error).toMatchObject({ tick: 2, system: undefined });
+    });
+  });
+
+  it("names the system that fails on one run and not the other", () => {
+    let runs = 0;
+    const Once = System.make("vr/Once", function* () {
+      runs++;
+      if (runs === 2) {
+        return yield* Effect.fail("the second time");
       }
-    );
+    });
+    withApp(App.make({ systems: [Steady, Once] }), (app) => {
+      const error = failure(() => Rollback.syncTest(app).tick(DELTA));
+      expect(error).toMatchObject({ tick: 1, system: "vr/Once" });
+    });
   });
 
   it("leaves a game that keeps everything in the world as it would be", () => {
-    const options = { ...gameOptions(5, 1), seed: 5 };
-    const played = (verifyRewinds: boolean) =>
-      withApp(App.make({ ...options, verifyRewinds }), (app) => {
-        const hashes = stretch(app, 11, 40);
+    const played = (checked: boolean) =>
+      withApp(game(5, 1), (app) => {
+        const test = checked
+          ? Rollback.syncTest(app)
+          : { tick: (delta: number) => app.tick(delta), checked: 0 };
+        const dice = new EcsWorld({ seed: 11 }).random;
+        const hashes: number[] = [];
+        for (let i = 0; i < 40; i++) {
+          if (dice.int(1, 3) === 1) {
+            app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
+          }
+          test.tick(DELTA);
+          hashes.push(app.world.hash());
+        }
         return {
           hashes,
           recording: App.encodeRecording(app.record()),
-          count: app.world.view(Marks).entities().length,
+          checked: test.checked,
         };
       });
-    expect(played(true)).toEqual(played(false));
+    const checked = played(true);
+    const plain = played(false);
+    expect(checked.checked).toBe(40);
+    expect({ ...checked, checked: 0 }).toEqual(plain);
   });
 
   it("has the stages between ticks see each tick once", () => {
     const Rang = Event.define("vr/Rang", Schema.Struct({ n: Schema.Int }));
     const New = Query.all(Mark).pipe(Query.added(Mark));
     const seen = { heard: [] as number[], added: [] as number[] };
+    const keys: number[] = [];
     const Ring = System.make("vr/Ring", function* () {
       (yield* Rang).emit({ n: (yield* Time).tick });
     });
@@ -574,31 +598,39 @@ describe("verifyRewinds", () => {
       seen.heard.push(...(yield* Rang).read().map((rang) => rang.n));
       seen.added.push((yield* New).entities().length);
     }).pipe(System.inStage("frame"));
-    withApp(
-      App.make({ systems: [Steady, Ring, Draw], verifyRewinds: true }),
-      (app) => {
-        for (let i = 0; i < 3; i++) {
-          app.tick(DELTA);
-          app.frame(0);
-        }
-        expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
-        expect(app.world.view(Marks).entities().length).toBe(3);
+    const Keys = System.make("vr/Keys", function* () {
+      keys.push(...(yield* Rang).read().map((rang) => rang.n));
+    }).pipe(System.inStage("input"));
+    withApp(App.make({ systems: [Steady, Ring, Draw, Keys] }), (app) => {
+      const test = Rollback.syncTest(app);
+      for (let i = 0; i < 3; i++) {
+        test.tick(DELTA);
+        test.frame(0);
       }
-    );
+      expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
+      // The input stage runs before each tick: it has heard the first two.
+      expect(keys).toEqual([1, 2]);
+      expect(app.world.view(Marks).entities().length).toBe(3);
+    });
   });
 
-  it("throws the refusal of a game it can't capture", () => {
+  it("fails with the refusal of a game it can't capture, and takes the app over", () => {
     const Held = Component.define("vr/Held", {
       thing: Field.json<unknown>(),
     });
     const Hold = System.make("vr/Hold", function* () {
       (yield* Commands).spawn(Held.of({ thing: () => 1 }));
     });
-    withApp(App.make({ systems: [Hold], verifyRewinds: true }), (app) => {
-      app.tick(DELTA);
-      expect(() => app.tick(DELTA)).toThrow(
-        /verifyRewinds could not capture the game before tick 2/
+    withApp(App.make({ systems: [Hold] }), (app) => {
+      const test = Rollback.syncTest(app);
+      expect(() => app.tick(DELTA)).toThrow(/taken over/u);
+      test.tick(DELTA);
+      const exit = test.tickExit(DELTA);
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
+        /vr\/Held/u
       );
+      expect(app.time.tick).toBe(1);
     });
   });
 });

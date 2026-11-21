@@ -31,7 +31,13 @@
  *
  * Rewinding uses `app.rewind`, to a moment `app.capture` took before each
  * uncertain tick. A rewind restores only what a save holds: see `App.rewind`.
+ * A tick that reads anything else runs differently when it is resimulated,
+ * and the peers drift apart. `Rollback.syncTest` finds such a tick in a test,
+ * with no second peer.
  */
+import { Cause, Data, Exit } from "effect";
+
+import type * as App from "./App";
 import type * as Lockstep from "./Lockstep";
 import { build } from "./Lockstep";
 import type * as Save from "./Save";
@@ -114,3 +120,154 @@ export const make = <E>(
     delay: options.delay ?? 0,
     ahead: options.ahead ?? 8,
   });
+
+/**
+ * A tick did not run the same twice from the same moment, as found by
+ * `Rollback.syncTest`. It is a defect: the tick read something a rewind doesn't
+ * put back, so a rollback session would resimulate it differently from how its
+ * peers ran it.
+ *
+ * @category Errors
+ */
+export class RewindDiverged extends Data.TaggedError("RewindDiverged")<{
+  /** The tick that ran differently. */
+  readonly tick: number;
+  /**
+   * The system after which the world's hash first differed. Undefined when it
+   * differed before the first system ran: in the handler of an action queued
+   * for the tick, or in a hook of a state.
+   */
+  readonly system: string | undefined;
+}> {
+  override get message(): string {
+    const where =
+      this.system === undefined
+        ? "before its first system ran, in the handler of an action queued for it or in a hook of a state"
+        : `after system "${this.system}" ran`;
+    return `Tick ${this.tick} ran differently the second time from the same moment: the world's hash was not the same ${where}. It read something a rewind doesn't put back, so a rollback session would run it again differently from its peers. Look for state kept outside the world, in a service, a plugin's own variable or a module, or for a value from outside the game, such as Date.now() or Math.random(). Keep it in the world: in a component, a singleton or a state.`;
+  }
+}
+
+/**
+ * What a sync test needs from its app. Every app provides it.
+ *
+ * @category Type-level
+ */
+export type SyncTestApp<E> = Pick<
+  App.App<E>,
+  "divert" | "frame" | "inputExit" | "rewind" | "time" | "world"
+>;
+
+/**
+ * An app taken over by `Rollback.syncTest`, stepped in its place, by hand or by
+ * a driver.
+ *
+ * @param E what a tick of its app can fail with
+ *
+ * @category Models
+ */
+export interface SyncTest<E = never> {
+  /**
+   * Runs the input stage, then the tick twice from the same moment, and fails
+   * with `Save.SaveRefused` when the game can't be captured before it, in which
+   * case the tick doesn't run. Throws `RewindDiverged` when the two runs differ.
+   */
+  readonly tickExit: (delta: number) => Exit.Exit<void, E | Save.SaveRefused>;
+  /** Like `tickExit`, but throws what it fails with. */
+  readonly tick: (delta: number) => void;
+  /** The app's frame stage. */
+  readonly frame: (alpha: number, delta?: number) => void;
+  /** How many ticks it has run twice. */
+  readonly checked: number;
+}
+
+/**
+ * Takes over an app to check that each of its ticks runs the same when a
+ * rewind runs it again, as a rollback session does. Each tick is run, rewound
+ * and run again from the same moment, and the world's hash is compared before
+ * the first system and after each one. `tick` throws `RewindDiverged`, naming
+ * the first system after which they differ.
+ *
+ * This finds, in one app, what a tick reads that a rewind doesn't put back:
+ * state kept in a service, a plugin or a module, or a value from outside the
+ * game. In a real session it shows only once two peers drift apart.
+ *
+ * The rest of the game sees each tick once: the frame and input stages hear
+ * each event once and see each change once, and the action log and the
+ * recording hold the tick once. An action enqueued from outside is queued for
+ * the next tick, as in an app no one took over.
+ *
+ * It costs a capture of the game, a rewind, a second run of the tick and a
+ * world hash per system, each tick, so use it in tests. Like a session, it
+ * takes the app over: `app.tick` throws from then on.
+ *
+ *   const test = Rollback.syncTest(app)
+ *   for (let i = 0; i < 600; i++) test.tick(1 / 60)
+ *
+ * @category Constructors
+ */
+export const syncTest = <E>(app: SyncTestApp<E>): SyncTest<E> => {
+  let checked = 0;
+  // What is enqueued from outside is queued for the next tick, as it was.
+  const reins: App.Diverted<E> = app.divert((name, payload) => {
+    reins.deliver(name, payload);
+  });
+  const tickExit = (delta: number): Exit.Exit<void, E | Save.SaveRefused> => {
+    const heard = app.inputExit();
+    if (Exit.isFailure(heard)) {
+      return heard;
+    }
+    const moment = reins.capture();
+    if (Exit.isFailure(moment)) {
+      return Exit.failCause(moment.cause);
+    }
+    // The world's hash before the first system, and after each one, by
+    // where it was taken. A run that failed has none from there on.
+    const run = (): {
+      readonly exit: Exit.Exit<void, E>;
+      readonly hashes: number[];
+      readonly systems: (string | undefined)[];
+    } => {
+      const hashes: number[] = [];
+      const systems: (string | undefined)[] = [];
+      const exit = reins.tickExit(delta, (system) => {
+        hashes.push(app.world.hash());
+        systems.push(system);
+      });
+      return { exit, hashes, systems };
+    };
+    const first = run();
+    app.rewind(moment.value);
+    const second = run();
+    const once = first.hashes;
+    const twice = second.hashes;
+    const length = Math.min(once.length, twice.length);
+    let at = 0;
+    while (at < length && once[at] === twice[at]) {
+      at++;
+    }
+    if (at < length || once.length !== twice.length) {
+      throw new RewindDiverged({
+        tick: app.time.tick,
+        // Where the two first differ, or where the run that went further
+        // went on to and the other did not.
+        system: (once.length > twice.length ? first : second).systems[at],
+      });
+    }
+    checked++;
+    return second.exit;
+  };
+  return {
+    tickExit,
+    tick(delta) {
+      const exit = tickExit(delta);
+      if (Exit.isFailure(exit)) {
+        throw Cause.squash(exit.cause);
+      }
+    },
+    frame: app.frame,
+    get checked() {
+      return checked;
+    },
+  };
+};

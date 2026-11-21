@@ -304,7 +304,7 @@ export interface Any {
    * its length at that time. Only between ticks, and only with a moment of this
    * app.
    *
-   * A moment holds what a save holds, and no more. State held by your game's own services is left as is: an app made with `verifyRewinds` finds a tick that reads it. A
+   * A moment holds what a save holds, and no more. State held by your game's own services is left as is: `Rollback.syncTest` finds a tick that reads it. A
    * `transient` field is undefined afterwards. And what runs between ticks
    * starts over: frame-stage and input-stage change queries visit everything
    * again.
@@ -522,8 +522,23 @@ export interface Diverted<E = never> {
    * name, with its payload in JSON form, and with its issuer.
    */
   readonly deliver: (name: string, payload: unknown, from?: string) => void;
-  /** Runs one tick, as `tickExit` did. It reads no device. */
-  readonly tickExit: (delta: number) => Exit.Exit<void, E>;
+  /**
+   * Runs one tick, as `tickExit` did. It reads no device. `observe` is told
+   * when the tick's systems are about to run, with no name, and after each
+   * system has run and its commands are applied, with the system's name.
+   */
+  readonly tickExit: (
+    delta: number,
+    observe?: (system: string | undefined) => void
+  ) => Exit.Exit<void, E>;
+  /**
+   * Captures the game, as `capture` does, for a rewind that comes before the
+   * frame and input stages run again. It keeps their place in what changed
+   * too, so the rewind puts them back exactly, where `capture`'s moment has
+   * them see everything again. A stage that runs between the two sees again
+   * what changed since.
+   */
+  readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
 }
 
 /**
@@ -688,33 +703,6 @@ export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
 }
 
 /**
- * A tick did not run the same twice from the same moment, as detected by an
- * app created with `verifyRewinds`. It is a defect: the tick read something a
- * rewind doesn't put back, so a rollback session would resimulate it
- * differently from how its peers ran it.
- *
- * @category Errors
- */
-export class RewindDiverged extends Data.TaggedError("RewindDiverged")<{
-  /** The tick that ran differently. */
-  readonly tick: number;
-  /**
-   * The system after which the world's hash first differed. Undefined when it
-   * differed before the first system ran: in the handler of an action queued
-   * for the tick, or in a hook of a state.
-   */
-  readonly system: string | undefined;
-}> {
-  override get message(): string {
-    const where =
-      this.system === undefined
-        ? "before its first system ran, in the handler of an action queued for it or in a hook of a state"
-        : `after system "${this.system}" ran`;
-    return `Tick ${this.tick} ran differently the second time from the same moment: the world's hash was not the same ${where}. It read something a rewind doesn't put back, so a rollback session would run it again differently from its peers. Look for state kept outside the world, in a service, a plugin's own variable or a module, or for a value from outside the game, such as Date.now() or Math.random(). Keep it in the world: in a component, a singleton or a state.`;
-  }
-}
-
-/**
  * Options for creating an app, as `App.make` and `App.load` take them: its
  * plugins, its own systems, handlers and components, and its version.
  *
@@ -768,21 +756,6 @@ export interface Options<
    * frame system per frame, so use it in development and tests.
    */
   readonly verifyFrames?: boolean;
-  /**
-   * Verifies that a tick runs the same when a rewind runs it again, as a
-   * rollback session does: each tick is run, rewound and run again from the
-   * same moment, and the world's hash is compared before the first system and
-   * after each one. `tick` throws `RewindDiverged`, naming the first system
-   * after which they differ. This finds what the tick reads that a rewind
-   * doesn't put back: state kept in a service, a plugin or a module, or a value
-   * from outside the game. Everything else sees the tick run once: the frame
-   * and input stages hear it once and see each change once, and the action
-   * log records it once. It costs a capture of the game, a second run of the
-   * tick and a world hash per system, so use it in development and tests. A
-   * game whose moments can't be captured can't use it: `tick` throws the
-   * refusal.
-   */
-  readonly verifyRewinds?: boolean;
 }
 
 /**
@@ -1285,11 +1258,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // The system running now, or the last one that ran.
     let running = "";
     /**
-     * With `verifyRewinds`, while a tick runs: the world's hash before its first
-     * system and after each one.
+     * While a tick runs for whoever took the app over and asked: told before
+     * the tick's first system and after each one, with its name.
      */
-    let tickHashes: number[] | undefined;
-    const verifyRewinds = options.verifyRewinds === true;
+    let observer: ((system: string | undefined) => void) | undefined;
     // Every fiber started with the app's services is counted when it starts
     // and when it ends, so that one still running after the code that
     // started it has finished is refused: it would change the game at a
@@ -1532,7 +1504,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (states.states.length > 0) {
         yield* enterStates;
       }
-      tickHashes?.push(world.hash());
+      observer?.(undefined);
       // Written out rather than calling `takeTurn`, which costs a generator
       // per system per tick. One reading of the clock ends a turn and
       // begins the next, which halves what timing them costs.
@@ -1560,9 +1532,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         const now = performance.now();
         turn.ms = now - clock;
         clock = now;
-        if (tickHashes !== undefined) {
-          tickHashes.push(world.hash());
-          // The hash is not the next system's to pay for.
+        if (observer !== undefined) {
+          observer(turn.system.name);
+          // What it does is not the next system's to pay for.
           clock = performance.now();
         }
       }
@@ -2108,14 +2080,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       wanted = false;
       start();
       if (!trace) {
-        return stepped(delta);
+        return ticked(delta);
       }
       tickSpan = openSpan("arcadekit/tick", {
         "arcadekit.tick": time.tick + 1,
       });
       let exit: Exit.Exit<void, TickError<S, P>> | undefined;
       try {
-        exit = stepped(delta);
+        exit = ticked(delta);
         return exit;
       } catch (error) {
         exit = Exit.die(error);
@@ -2193,49 +2165,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         ticking = false;
       }
     };
-
-    /**
-     * Runs one tick twice from the same moment, for `verifyRewinds`, and
-     * throws if the world's hash differs between the two at any point.
-     */
-    const verified = (delta: number): Exit.Exit<void, TickError<S, P>> => {
-      // The stages between ticks don't run between the two: the rewind puts
-      // them back exactly, and they see the tick once.
-      const moment = captured(true);
-      if (Exit.isFailure(moment)) {
-        const refusal = Cause.squash(moment.cause);
-        throw new Error(
-          `verifyRewinds could not capture the game before tick ${time.tick + 1}, which it runs twice from there: ${refusal instanceof Error ? refusal.message : String(refusal)}`
-        );
-      }
-      const once: number[] = [];
-      const twice: number[] = [];
-      let again: Exit.Exit<void, TickError<S, P>>;
-      try {
-        tickHashes = once;
-        ticked(delta);
-        rewound(moment.value);
-        tickHashes = twice;
-        again = ticked(delta);
-      } finally {
-        tickHashes = undefined;
-      }
-      // The first hash is from before the first system, and each one after
-      // it from after a system. A run that failed has none from there on.
-      const length = Math.min(once.length, twice.length);
-      let at = 0;
-      while (at < length && once[at] === twice[at]) {
-        at++;
-      }
-      if (at < length || once.length !== twice.length) {
-        throw new RewindDiverged({
-          tick: time.tick,
-          system: at === 0 ? undefined : tickTurns[at - 1]!.system.name,
-        });
-      }
-      return again;
-    };
-    const stepped = verifyRewinds ? verified : ticked;
 
     const app: App<TickError<S, P>, AllHandlers<H, P>> = {
       world,
@@ -2469,7 +2398,25 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
         diverted = take;
-        return { deliver, tickExit: (delta) => runTick(delta, NO_INPUT) };
+        return {
+          deliver,
+          tickExit: (delta, observe) => {
+            observer = observe;
+            try {
+              return runTick(delta, NO_INPUT);
+            } finally {
+              observer = undefined;
+            }
+          },
+          capture: () => {
+            if (ticking || between !== undefined) {
+              throw new Error(
+                `capture() was called during a ${busy()}. A game is captured between ticks.`
+              );
+            }
+            return captured(true);
+          },
+        };
       },
     };
 
