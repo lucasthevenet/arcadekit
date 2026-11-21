@@ -66,9 +66,7 @@ import { defineList } from "./ecs/list";
 import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import type { SavedChanges, Moment as WorldMoment } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -85,7 +83,7 @@ import type { BuiltIn, FrameState, TimeState } from "./Services";
 import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
-import type { Moment } from "./Timeline";
+import * as Timeline from "./Timeline";
 
 /**
  * A game's time, held by its world so that a snapshot, a restore and the
@@ -194,14 +192,11 @@ export interface Any {
   /** System names in the order they run. */
   readonly systemOrder: readonly string[];
   /**
-   * What `Timeline.capture` and `Timeline.rewind` capture and rewind the app
-   * with.
+   * What the app keeps of its run beside its world, which `Timeline.capture`
+   * captures and `Timeline.rewind` puts back.
    * @internal
    */
-  readonly _timeline: {
-    readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
-    readonly rewind: (moment: Moment) => void;
-  };
+  readonly _run: Timeline.Run;
   /** The names of the frame-stage systems, in the order they run. */
   readonly frameOrder: readonly string[];
   /** The names of the input-stage systems, in the order they run. */
@@ -524,7 +519,7 @@ export interface Diverted<E = never> {
    * `Timeline.capture`'s moment has them see everything again. A stage that
    * runs between the two sees again what changed since.
    */
-  readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
+  readonly capture: () => Exit.Exit<Timeline.Moment, Save.SaveRefused>;
 }
 
 /**
@@ -1061,17 +1056,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // runs: for a recording.
     const began = time.tick;
     const deltas: { tick: number; delta: number }[] = [];
-    // The moments this app has captured: `rewind` takes no other.
-    const moments = new WeakSet<Moment>();
-    /** What a moment holds beyond its tick. */
-    interface Captured extends Moment {
-      readonly world: WorldMoment;
-      readonly events: EventsMoment;
-      readonly changes: SavedChanges[];
-      readonly logLength: number;
-      readonly started: boolean;
-      readonly wanted: boolean;
-    }
     const checkpointEvery = options.checkpointEvery ?? 60;
     if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
       throw new Error(
@@ -2023,71 +2007,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       return runTick(delta, options);
     };
-    /**
-     * Captures the game. `unseen` is for a moment the stages between ticks
-     * will not run after before it is rewound to: their place in what changed
-     * is kept too.
-     */
-    const captured = (
-      unseen: boolean
-    ): Exit.Exit<Captured, Save.SaveRefused> => {
-      const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
-        Exit.fail(new Save.SaveRefused({ message }));
-      if (commands.size > 0) {
-        return refused(
-          `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
-        );
-      }
-      let held: WorldMoment;
-      try {
-        held = world._capture();
-      } catch (error) {
-        if (error instanceof SnapshotError) {
-          return refused(error.message);
-        }
-        throw error;
-      }
-      const moment: Captured = {
-        tick: time.tick,
-        world: held,
-        events: events.capture(),
-        // What runs between ticks has everything still to draw, unless it
-        // has drawn nothing since.
-        changes: world.saveChanges(
-          unseen ? () => true : (reader) => !reader.startsWith(FRAME_READER)
-        ),
-        logLength: actionLog.length,
-        started,
-        wanted,
-      };
-      moments.add(moment);
-      return Exit.succeed(moment);
-    };
-    /** Puts the game back to a moment of this app. */
-    const rewound = (was: Captured): void => {
-      dispatcher.flush();
-      // What is queued on the buffer was never part of the world.
-      commands.rollback(0);
-      // Before the world: the bus reads what the world's lists hold of the
-      // future it gives up, and `time` is still where the game was.
-      events.rewind(was.events, time.tick, was.tick);
-      world._rewind(was.world);
-      for (const action of queued) {
-        // It is waiting again: what became of it has not happened.
-        if (action.entry !== undefined) {
-          delete action.entry.refused;
-        }
-      }
-      world.restoreChanges(was.changes);
-      actionLog.length = was.logLength;
-      while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
-        deltas.pop();
-      }
-      started = was.started;
-      wanted = was.wanted;
-      heard = false;
-      commands.apply();
-    };
     const runTick = (
       delta: number,
       options?: TickOptions
@@ -2296,32 +2215,39 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
         return true;
       },
-      _timeline: {
-        capture: () => {
-          if (ticking || between !== undefined) {
-            throw new Error(
-              `Timeline.capture() was called during a ${busy()}. A game is captured between ticks.`
-            );
-          }
-          return captured(false);
+      _run: {
+        log: actionLog,
+        deltas,
+        queued,
+        get started() {
+          return started;
         },
-        rewind: (moment) => {
+        set started(value) {
+          started = value;
+        },
+        get wanted() {
+          return wanted;
+        },
+        set wanted(value) {
+          wanted = value;
+        },
+        get heard() {
+          return heard;
+        },
+        set heard(value) {
+          heard = value;
+        },
+        between: (call, handler) => {
           if (ticking || between !== undefined) {
             throw new Error(
-              `Timeline.rewind() was called during a ${busy()}. A game is put back between ticks.`
+              `${call} was called during a ${busy()}. It runs between ticks.`
             );
           }
-          if (applying !== undefined) {
+          if (handler && applying !== undefined) {
             throw new Error(
-              `Timeline.rewind() was called from the handler of "${applying}". A game is put back between ticks.`
+              `${call} was called from the handler of "${applying}". It runs between ticks.`
             );
           }
-          if (!moments.has(moment)) {
-            throw new Error(
-              "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
-            );
-          }
-          rewound(moment as Captured);
         },
       },
       inspect() {
@@ -2413,12 +2339,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             }
           },
           capture: () => {
-            if (ticking || between !== undefined) {
-              throw new Error(
-                `The diverted app's capture() was called during a ${busy()}. A game is captured between ticks.`
-              );
-            }
-            return captured(true);
+            app._run.between("The diverted app's capture()", false);
+            return Timeline.take(app, true);
           },
         };
       },
