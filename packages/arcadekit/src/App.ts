@@ -177,6 +177,19 @@ type FailureFor<HU, N extends string> =
     : never;
 
 /**
+ * What an app is running: `app.phase`.
+ *
+ * - `"idle"`: nothing. The app is between ticks.
+ * - `"tick"`: a tick, the handlers of the actions it applies included.
+ * - `"frame"`: the frame stage.
+ * - `"input"`: the input stage.
+ * - `"handler"`: an action's handler that `dispatch` runs, between ticks.
+ *
+ * @category Models
+ */
+export type Phase = "idle" | "tick" | "frame" | "input" | "handler";
+
+/**
  * The part of an app that doesn't depend on its systems or handlers. Every app
  * satisfies it, so use it for code that works with any app.
  *
@@ -192,6 +205,12 @@ export interface Any {
   readonly plugins: readonly string[];
   /** System names in the order they run. */
   readonly systemOrder: readonly string[];
+  /**
+   * What the app is running right now. A game is saved, recorded, inspected
+   * and stepped in `"idle"`, and in `"handler"` except for being put back:
+   * each of those throws during a tick, a frame or the input stage.
+   */
+  readonly phase: Phase;
   /** The names of the frame-stage systems, in the order they run. */
   readonly frameOrder: readonly string[];
   /** The names of the input-stage systems, in the order they run. */
@@ -1751,15 +1770,22 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Whether the game asked for its next tick: `Ticks.more`. An app that
     // has not ticked yet has not been asked, and is taken to want one.
     let wanted = true;
-    const busy = (): string =>
-      ticking
-        ? "tick"
-        : between === "input"
-          ? "run of the input stage"
-          : "frame";
-
     // The action whose handler is running, if one is.
     let applying: string | undefined;
+    // A handler a tick runs is part of the tick: the stage wins.
+    const phase = (): Phase =>
+      ticking
+        ? "tick"
+        : (between ?? (applying !== undefined ? "handler" : "idle"));
+    /** Whether nothing is running but, at most, a handler `dispatch` runs. */
+    const betweenTicks = (): boolean => {
+      const now = phase();
+      return now === "idle" || now === "handler";
+    };
+    const busy = (): string => {
+      const now = phase();
+      return now === "input" ? "run of the input stage" : now;
+    };
 
     /** Rolls back everything a handler did since the three marks were taken. */
     const undo = (
@@ -2011,7 +2037,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       alpha: number,
       delta = 0
     ): Exit.Exit<void, TickError<S, P>> => {
-      if (ticking || between !== undefined) {
+      if (!betweenTicks()) {
         throw new Error(
           `App.frame was called from inside a ${busy()}. The frame stage runs between ticks.`
         );
@@ -2026,7 +2052,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const inputExit = (): Exit.Exit<void, TickError<S, P>> => {
-      if (ticking || between !== undefined) {
+      if (!betweenTicks()) {
         throw new Error(
           `App.input was called from inside a ${busy()}. The input stage runs between ticks, before one.`
         );
@@ -2118,7 +2144,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       delta: number,
       options?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
-      if (ticking || between !== undefined) {
+      if (!betweenTicks()) {
         throw new Error(`App.tick was called from inside a ${busy()}`);
       }
       // A tick hears the devices first. Whoever steps the app may have
@@ -2231,11 +2257,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       dispatcher,
       plugins: plugins.map((plugin) => plugin.name),
       systemOrder: ordered.map((s) => s.name),
+      get phase() {
+        return phase();
+      },
       frameOrder: frameSystems.map((s) => s.name),
       inputOrder: inputSystems.map((s) => s.name),
       actionLog,
       record(since) {
-        if (ticking || between !== undefined) {
+        if (!betweenTicks()) {
           throw new Error(
             `record() was called during a ${busy()}. A game is recorded between ticks.`
           );
@@ -2273,7 +2302,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         };
       },
       save() {
-        if (ticking || between !== undefined) {
+        if (!betweenTicks()) {
           throw new Error(
             "save() was called during a tick or a frame. A game is saved between ticks."
           );
@@ -2323,7 +2352,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return true;
       },
       capture() {
-        if (ticking || between !== undefined) {
+        if (!betweenTicks()) {
           throw new Error(
             `capture() was called during a ${busy()}. A game is captured between ticks.`
           );
@@ -2331,12 +2360,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return captured(false);
       },
       rewind(moment) {
-        if (ticking || between !== undefined) {
+        if (!betweenTicks()) {
           throw new Error(
             `rewind() was called during a ${busy()}. A game is put back between ticks.`
           );
         }
-        if (applying !== undefined) {
+        if (phase() === "handler") {
           throw new Error(
             `rewind() was called from the handler of "${applying}". A game is put back between ticks.`
           );
@@ -2349,7 +2378,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         rewound(moment as Captured);
       },
       inspect() {
-        if (ticking || between !== undefined) {
+        if (!betweenTicks()) {
           throw new Error(
             `inspect() was called from inside a ${busy()}. A game is inspected between ticks.`
           );
@@ -2437,7 +2466,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             }
           },
           capture: () => {
-            if (ticking || between !== undefined) {
+            if (!betweenTicks()) {
               throw new Error(
                 `capture() was called during a ${busy()}. A game is captured between ticks.`
               );
