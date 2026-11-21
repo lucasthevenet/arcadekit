@@ -91,7 +91,7 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 
 - **Check `from`, not the payload.** A handler receives the peer that issued an action. Check permissions against `from`, never against a name in the payload. See [who issued an action](events-and-actions.md#who-issued-an-action).
 - **Keep everything the simulation reads in the world.** A rewind restores the world and the app's pending work, and nothing else.
-  - State held by your game's own services isn't restored, and nothing tells a service the game rewound: a counter kept in a layer continues from the discarded future.
+  - State held by your game's own services isn't restored, and nothing tells a service the game rewound: a counter kept in a layer continues from the discarded future. `Rollback.syncTest` runs each tick twice from the same moment, and names the first system that ran differently. See [testing](testing.md#rewinds).
   - A `Field.transient` field is `undefined` afterwards, as in a loaded game.
 - **Expect the frame stage to show a prediction.** A rollback game is drawn and heard as predicted. The frame and input stages hear each event once across a rewind: an event a resimulated tick emits again, with the same payload, isn't heard twice, and only what the tick now does otherwise is. Their change queries visit everything after each rewind. A sound for a prediction that is rolled back has already played, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final.
 
