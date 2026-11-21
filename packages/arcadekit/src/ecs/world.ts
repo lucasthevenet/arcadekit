@@ -65,6 +65,8 @@ import {
   finish,
   shapeOf,
 } from "./hash";
+import { definedList } from "./list";
+import type { ListDef } from "./list";
 import { Rng } from "./random";
 import {
   END,
@@ -2004,42 +2006,19 @@ export class QueryView<D extends Terms = Terms> {
 
 /**
  * @internal
- * State its owner keeps beside a world's components that is part of the game,
- * attached with `_attach`: the hash covers it, and `_capture` and `_rewind`
- * take it with the world. A snapshot doesn't hold it: its owner saves it.
- */
-export interface Part<M = unknown> {
-  /** Unique among a world's parts. The hash takes parts in order of name. */
-  readonly name: string;
-  // Methods, so that a part of any moment is a `Part<unknown>`.
-  /**
-   * What a simulation can tell apart of it, as plain data, which the hash
-   * covers as it does a `json` field's value.
-   */
-  observed(): unknown;
-  /** Its state now, for `rewind`. */
-  capture(): M;
-  /**
-   * Puts back what `capture` returned. It runs before the world's own data is
-   * put back, so it still reads the world as it was before the rewind.
-   */
-  rewind(moment: M): void;
-  /**
-   * Whether the stages between ticks may change it, as they change the
-   * actions queued for the next tick. `_frameHash` leaves it out.
-   */
-  readonly betweenTicks?: boolean;
-}
-
-/**
- * @internal
- * A world at one moment, with its parts, held in memory: what `_capture`
- * returns and `_rewind` takes.
+ * A world at one moment, held in memory: what `_capture` returns and `_rewind`
+ * takes. Its lists hold their values as they were, by reference.
  */
 export interface Moment {
+  /** A snapshot without the lists. */
   readonly world: Uint8Array;
-  /** Each part with what its `capture` returned, in order of name. */
-  readonly parts: readonly (readonly [Part, unknown])[];
+  readonly lists: readonly (readonly [ListDef, readonly unknown[]])[];
+}
+
+/** One of a world's lists. */
+interface HeldList {
+  readonly def: ListDef;
+  readonly values: unknown[];
 }
 
 /**
@@ -2157,7 +2136,12 @@ export class World {
   private readonly spare = new WeakMap<Columns, unknown[]>();
   private readonly savedRandom = new Uint32Array(4);
   /** What its owner attached, in order of name. */
-  private readonly parts: Part[] = [];
+  /** The lists, by name. */
+  private readonly lists = new Map<string, HeldList>();
+  /** The lists in order of name, until another is made. */
+  private listOrder: HeldList[] | undefined;
+  /** Told when `restore` has put a snapshot back: `_onRestore`. */
+  private restoreListeners: (() => void)[] = [];
   /** The moments this world captured: `_rewind` takes no other. */
   private readonly moments = new WeakSet<Moment>();
   /** The random generator's state when the world was frozen. */
@@ -3335,8 +3319,9 @@ export class World {
 
   /**
    * Serializes the whole world to bytes: every table and sparse set, every
-   * singleton that has been written, the upcoming ids, and the random
-   * generator's state. A world that loads the bytes hashes the same as this one
+   * singleton that has been written, the upcoming ids, the random generator's
+   * state, and, in an app's world, the actions queued for the next tick and the
+   * events waiting to be read. A world that loads the bytes hashes the same as this one
    * and behaves the same from then on: the same iteration order, the same ids
    * for new entities, the same random numbers.
    *
@@ -3352,6 +3337,11 @@ export class World {
    * So is a world with a spawn queued on a `CommandBuffer` but not yet applied.
    */
   snapshot(): Uint8Array {
+    return this.snapshotOf(true);
+  }
+
+  /** `snapshot()`, with the lists or without them. */
+  private snapshotOf(withLists: boolean): Uint8Array {
     const { tables } = this;
     let placed = 0;
     let estimate = 256 + this.nextIndex * 4 + this.freeList.length * 4;
@@ -3445,6 +3435,40 @@ export class World {
       }
     };
 
+    // The singletons that have been written, each one row, and the lists
+    // that hold anything: before the tables, so that a reader looking for one
+    // stops short of the entities.
+    writer.u32(singles.length);
+    for (const single of singles) {
+      writer.u32(used.get(single.def)!);
+      writeFields(single.def, single.columns, 1);
+    }
+    const lists = withLists
+      ? this.heldLists().filter((list) => list.values.length > 0)
+      : [];
+    writer.u32(lists.length);
+    for (const { def, values } of lists) {
+      writer.text(def.name);
+      writer.u32(values.length);
+      for (const value of values) {
+        let data: unknown;
+        try {
+          data = def.codec.encode(value);
+        } catch (error) {
+          throw new SnapshotError(
+            "cannot be saved",
+            `Can't save ${def.label}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+        if (!writer.value(data)) {
+          throw new SnapshotError(
+            "cannot be saved",
+            `Can't save ${def.label}: the codec did not turn one into plain data (${describeValue(value)}).`
+          );
+        }
+      }
+    }
+
     // Tables in creation order, the empty ones too: where a table stands
     // decides where its entities are visited.
     writer.u32(tables.length);
@@ -3468,12 +3492,6 @@ export class World {
       writer.numbers(set.dense, set.count, 4);
       writeFields(set.def, set.columns, set.count);
     }
-    // The singletons that have been written, each one row.
-    writer.u32(singles.length);
-    for (const single of singles) {
-      writer.u32(used.get(single.def)!);
-      writeFields(single.def, single.columns, 1);
-    }
     writer.u32(END);
     return writer.finish();
   }
@@ -3488,7 +3506,9 @@ export class World {
    * would: the same hash, the same iteration order, the same upcoming ids, the
    * same random numbers. A singleton's value stays the same object, holding the
    * snapshot's value, or its initial value if the snapshot doesn't hold it.
-   * `world.random` stays the same generator.
+   * `world.random` stays the same generator. In an app's world, the queued
+   * actions and waiting events are the snapshot's too, and every system reads
+   * the waiting events as if it had read none of them, as in a loaded game.
    *
    * Anything derived from the old tables doesn't survive it. A view or a
    * `removed` reader obtained before throws when used: obtain it again, as a
@@ -3501,6 +3521,14 @@ export class World {
    * world whose restore failed partway is unusable.
    */
   restore(bytes: Uint8Array): void {
+    this.restoring(bytes);
+    for (const listener of this.restoreListeners) {
+      listener();
+    }
+  }
+
+  /** `restore`, without telling the owners of lists. */
+  private restoring(bytes: Uint8Array): void {
     if (this._recording) {
       throw new Error(
         "World.restore() was called between begin() and commit() or rollback(). A transaction puts back what it wrote itself; restore a snapshot outside one."
@@ -3545,12 +3573,16 @@ export class World {
     this.writeLogs.length = 0;
     this._watched = 0;
     this.lateLogs = [];
-    // The singletons stay the objects they are, as if never written.
+    // The singletons stay the objects they are, as if never written, and the
+    // lists the arrays they are, empty.
     for (const single of this.singles) {
       if (single !== undefined) {
         single.written = false;
         writeRow(single.def, single.columns, 0, single.initial);
       }
+    }
+    for (const list of this.lists.values()) {
+      list.values.length = 0;
     }
     this.load(bytes);
   }
@@ -3578,11 +3610,12 @@ export class World {
       this.nextIndex !== 0 ||
       this.tables.length > 0 ||
       this._recording ||
-      this.singles.some((single) => single?.written === true)
+      this.singles.some((single) => single?.written === true) ||
+      this._lists().length > 0
     ) {
       throw new SnapshotError(
         "world not empty",
-        "World.load() fills an empty world, and this one has held entities or has written a singleton. Load into a new World."
+        "World.load() fills an empty world, and this one has held entities, has written a singleton or holds a list. Load into a new World."
       );
     }
     for (const def of components) {
@@ -3697,6 +3730,32 @@ export class World {
       return def;
     };
 
+    const readSingletons = (): void => {
+      // Format 1 had no singletons.
+      const singleCount = format >= 2 ? reader.count(4) : 0;
+      const loaded = new Set<Single>();
+      for (let s = 0; s < singleCount; s++) {
+        const def = componentAt();
+        if (!def.single) {
+          throw corrupt("a singleton is of a component that is not one");
+        }
+        const single = this.single(def);
+        if (loaded.has(single)) {
+          throw corrupt("it holds two values for one singleton");
+        }
+        loaded.add(single);
+        for (let f = 0; f < def.fields.length; f++) {
+          this.readField(reader, def, f, single.columns, 1, narrow);
+        }
+        single.written = true;
+      }
+    };
+    // Format 4 holds the singletons and the lists before the tables.
+    if (format >= 4) {
+      readSingletons();
+      this.readLists(reader);
+    }
+
     const tableCount = reader.count(8);
     for (let t = 0; t < tableCount; t++) {
       const defs: ComponentDef[] = [];
@@ -3788,28 +3847,48 @@ export class World {
         this.readField(reader, def, f, set.columns, count, narrow);
       }
     }
-    // Format 1 had no singletons.
-    const singleCount = format >= 2 ? reader.count(4) : 0;
-    const loaded = new Set<Single>();
-    for (let s = 0; s < singleCount; s++) {
-      const def = componentAt();
-      if (!def.single) {
-        throw corrupt("a singleton is of a component that is not one");
-      }
-      const single = this.single(def);
-      if (loaded.has(single)) {
-        throw corrupt("it holds two values for one singleton");
-      }
-      loaded.add(single);
-      for (let f = 0; f < def.fields.length; f++) {
-        this.readField(reader, def, f, single.columns, 1, narrow);
-      }
-      single.written = true;
+    if (format < 4) {
+      readSingletons();
     }
     if (reader.left !== 4 || reader.u32() !== END) {
       throw corrupt("it does not end where it should");
     }
     this.indexRelations();
+  }
+
+  /** Reads the lists of a snapshot, each found by its definition. */
+  private readLists(reader: Reader): void {
+    const listCount = reader.count(8);
+    let last = "";
+    for (let l = 0; l < listCount; l++) {
+      const name = reader.text();
+      if (l > 0 && name <= last) {
+        throw corrupt(
+          "its lists are not in order of name, or one is there twice"
+        );
+      }
+      last = name;
+      const count = reader.count(1);
+      const def = this.lists.get(name)?.def ?? definedList(name);
+      if (def === undefined) {
+        throw new SnapshotError(
+          "unknown list",
+          `The snapshot holds ${count === 1 ? "a value" : `${count} values`} of a list named "${name}", which this program doesn't define: it was renamed or removed since.`
+        );
+      }
+      const list = this._list(def);
+      for (let v = 0; v < count; v++) {
+        const data = reader.value();
+        try {
+          list.push(def.codec.decode(data));
+        } catch (error) {
+          throw new SnapshotError(
+            "list changed",
+            `Can't load ${def.label}: one is in a form that is no longer taken: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+    }
   }
 
   /** Reads one field's column, naming the field if its codec rejects a value. */
@@ -3863,9 +3942,10 @@ export class World {
    * - the ids the next entities will get;
    * - every singleton that has been written, by name;
    * - the state of the random number generator;
-   * - in an app's world, the actions queued for the next tick and the events
-   *   the simulation has yet to read, in their JSON form, but not where anyone
-   *   has read to.
+   * - the values of every list the world keeps beside its components, each
+   *   through its codec: in an app's world, the actions queued for the next
+   *   tick and the events the simulation has yet to read, but not where anyone
+   *   has read to, which is the reader's.
    *
    * Two worlds built by the same operations in the same order hash equal, on
    * any machine. Changing one field of one entity always changes the hash. Two
@@ -3878,8 +3958,7 @@ export class World {
    * bits are the one thing engines don't agree on; 0 and -0 differ. A `json`
    * field counts as the plain data it holds, a `ref` field as its codec's
    * encoding of each value, and a `transient` field not at all: the hash covers
-   * exactly what a snapshot saves, and the queued actions and waiting events
-   * of an app as its save holds them.
+   * exactly what a snapshot saves.
    *
    * Measured, it costs about 1.4 ns per 32-bit field per entity in a table,
    * with an entity's id counting as two: 0.8 ms for 100,000 entities with four
@@ -3891,7 +3970,7 @@ export class World {
 
   /**
    * @internal
-   * `hash()` without the parts the stages between ticks may change: what
+   * `hash()` without the lists the stages between ticks may add to: what
    * those stages must leave as it was.
    */
   _frameHash(): number {
@@ -3994,42 +4073,103 @@ export class World {
     const random = this.random.state;
     h = add(add(add(add(h, random[0]!), random[1]!), random[2]!), random[3]!);
 
-    // A world with nothing attached hashes as it did before parts were.
-    const { parts } = this;
-    if (parts.length > 0) {
-      h = add(h, parts.length);
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i]!;
-        if (betweenTicks || part.betweenTicks !== true) {
-          h = addData(addString(h, part.name), part.observed());
+    // The lists that hold anything, so that a world whose lists are all
+    // empty hashes as one that has none.
+    const lists = this.heldLists();
+    let held = 0;
+    for (const { def, values } of lists) {
+      if (values.length > 0 && (betweenTicks || !def.betweenTicks)) {
+        held++;
+      }
+    }
+    if (held > 0) {
+      h = add(h, held);
+      for (const { def, values } of lists) {
+        if (values.length === 0 || (!betweenTicks && def.betweenTicks)) {
+          continue;
+        }
+        h = add(addString(h, def.name), values.length);
+        for (let i = 0; i < values.length; i++) {
+          // A value its codec refuses counts as null, on every machine alike:
+          // nothing checks what a list is given, and a hash doesn't fail.
+          let data: unknown;
+          try {
+            data = def.codec.encode(values[i]);
+          } catch {
+            data = null;
+          }
+          h = addData(h, data);
         }
       }
     }
     return finish(h);
   }
 
+  // --- lists ---------------------------------------------------------------
+
   /**
    * @internal
-   * Attaches state its owner keeps beside the components, for the hash and
-   * for `_capture` and `_rewind` to cover. Two parts can't share a name.
+   * The world's list of a kind, made empty the first time it is asked for:
+   * always the same array, which its owner adds to and takes from as it
+   * likes. `snapshot`, `load`, `restore` and `hash` cover it, each value
+   * through the list's codec. Two different lists can't share a name.
    */
-  _attach<M>(part: Part<M>): void {
-    if (this.parts.some((other) => other.name === part.name)) {
-      throw new Error(`The world has a part named "${part.name}" already.`);
+  _list<T>(def: ListDef<T>): T[] {
+    const held = this.lists.get(def.name);
+    if (held !== undefined) {
+      if (held.def !== def) {
+        throw new Error(
+          `Two different lists are both named "${def.name}": ${held.def.label}, and ${def.label}. A list's name identifies it in a world and in a snapshot.`
+        );
+      }
+      return held.values as T[];
     }
-    this.parts.push(part);
-    this.parts.sort(byName);
+    const values: T[] = [];
+    this.lists.set(def.name, { def, values });
+    this.listOrder = undefined;
+    return values;
+  }
+
+  /** The lists in order of name. */
+  private heldLists(): HeldList[] {
+    return (this.listOrder ??= Array.from(this.lists.values()).toSorted(
+      (a, b) => byName(a.def, b.def)
+    ));
   }
 
   /**
    * @internal
-   * The world as it is, with its parts, in memory: `snapshot()` and each
-   * part's `capture`. Fails as `snapshot()` does.
+   * The lists that hold anything, in order of name.
+   */
+  _lists(): ListDef[] {
+    return this.heldLists()
+      .filter((list) => list.values.length > 0)
+      .map((list) => list.def);
+  }
+
+  /**
+   * @internal
+   * Calls `listener` each time `restore` has put a snapshot back, for the
+   * owner of a list to forget where its readers were, as a world forgets what
+   * change queries had yet to visit. `_rewind` doesn't call it: whoever rewinds
+   * a world puts its readers back themselves.
+   */
+  _onRestore(listener: () => void): void {
+    this.restoreListeners.push(listener);
+  }
+
+  /**
+   * @internal
+   * The world as it is, in memory: `snapshot()` without the lists, and each
+   * list's values as they are, so that capturing encodes none of them. Fails
+   * as `snapshot()` does.
    */
   _capture(): Moment {
     const moment: Moment = {
-      world: this.snapshot(),
-      parts: this.parts.map((part) => [part, part.capture()] as const),
+      world: this.snapshotOf(false),
+      lists: this.heldLists()
+        .filter((list) => list.values.length > 0)
+        .map((list) => [list.def, list.values.slice()] as const),
     };
     this.moments.add(moment);
     return moment;
@@ -4037,8 +4177,8 @@ export class World {
 
   /**
    * @internal
-   * Puts the world and its parts back to a moment it captured: each part's
-   * `rewind`, then `restore`.
+   * Puts the world back to a moment it captured, as `restore` does, with the
+   * lists' values the moment held.
    */
   _rewind(moment: Moment): void {
     if (!this.moments.has(moment)) {
@@ -4046,10 +4186,13 @@ export class World {
         "World._rewind() was given a moment that this world did not capture."
       );
     }
-    for (const [part, state] of moment.parts) {
-      part.rewind(state);
+    this.restoring(moment.world);
+    for (const [def, values] of moment.lists) {
+      const list = this._list(def);
+      for (const value of values) {
+        list.push(value);
+      }
     }
-    this.restore(moment.world);
   }
 
   // --- internals -----------------------------------------------------------

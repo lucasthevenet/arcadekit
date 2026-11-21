@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
+import { defineList } from "../src/ecs/list";
+import { readSingleton } from "../src/ecs/snapshot";
 import {
   CommandBuffer,
   Component,
@@ -477,11 +479,11 @@ describe("a snapshot that cannot be loaded", () => {
       expect(problemOf(() => loaded(bytes)).problem).toBe("not a snapshot");
     }
     const newer = sample();
-    new DataView(newer.buffer).setUint32(4, 4, true);
+    new DataView(newer.buffer).setUint32(4, 5, true);
     const error = problemOf(() => loaded(newer));
     expect(error.problem).toBe("newer format");
     expect(error.message).toMatch(
-      /format 4, and this version reads formats 1 to 3/
+      /format 5, and this version reads formats 1 to 4/
     );
   });
 
@@ -573,11 +575,10 @@ describe("a snapshot that cannot be loaded", () => {
       throw new Error("not found");
     };
     const rows = find(a!, d!);
-    // The sparse set comes last but for the singletons: its one member,
-    // the index of entity a, then that member's eight fields (36 bytes, the
-    // note being an empty string), the number of singletons, which is none,
-    // and the four bytes that end a snapshot.
-    const member = bytes.length - 4 - 4 - 36 - 4;
+    // The sparse set comes last: its one member, the index of entity a,
+    // then that member's eight fields (36 bytes, the note being an empty
+    // string), and the four bytes that end a snapshot.
+    const member = bytes.length - 4 - 36 - 4;
     expect(view.getUint32(member - 4, true)).toBe(1);
     expect(view.getUint32(member, true)).toBe(0);
     const damaged = (change: (view: DataView) => void): SnapshotError => {
@@ -688,5 +689,195 @@ describe("a snapshot that cannot be loaded", () => {
     const started = performance.now();
     expect(problemOf(() => loaded(bytes)).problem).toBe("truncated");
     expect(performance.now() - started).toBeLessThan(50);
+  });
+});
+
+// Two lists, the second named before the first, and one the stages between
+// ticks may add to. Each codec saves a value as something other than itself.
+const Shouts = defineList<string>(
+  "snap/Shouts",
+  {
+    encode: (value) => {
+      if (value === "unsayable") {
+        throw new Error("that is not said");
+      }
+      return { said: value };
+    },
+    decode: (data) => {
+      const { said } = data as { said: unknown };
+      if (typeof said !== "string") {
+        throw new Error("a shout is a string");
+      }
+      return said;
+    },
+  },
+  { label: "the shouts" }
+);
+const Asks = defineList<{ readonly n: number }>(
+  "snap/Asks",
+  { encode: ({ n }) => n, decode: (data) => ({ n: data as number }) },
+  { label: "the asks", betweenTicks: true }
+);
+
+describe("the lists a world keeps", () => {
+  it("are saved, loaded and hashed through their codecs, in order of name", () => {
+    const world = new EcsWorld({ seed: 3 });
+    world.spawn(C.Body.of({ x: 1, y: 2 }));
+    world._list(Shouts).push("hey", "ho");
+    world._list(Asks).push({ n: 4 });
+    const bytes = world.snapshot();
+    expect(readSnapshot(bytes).lists).toEqual([
+      { name: "snap/Asks", values: [4] },
+      { name: "snap/Shouts", values: [{ said: "hey" }, { said: "ho" }] },
+    ]);
+    // Written again from its contents, byte for byte.
+    expect(writeSnapshot(readSnapshot(bytes))).toEqual(bytes);
+    const copy = new EcsWorld();
+    copy.load(bytes, all);
+    expect(copy._list(Shouts)).toEqual(["hey", "ho"]);
+    expect(copy._list(Asks)).toEqual([{ n: 4 }]);
+    expect(copy.hash()).toBe(world.hash());
+    expect(copy.snapshot()).toEqual(bytes);
+  });
+
+  it("count in the hash by what they hold, and as nothing when they are empty", () => {
+    const bare = new EcsWorld({ seed: 3 });
+    const world = new EcsWorld({ seed: 3 });
+    const shouts = world._list(Shouts);
+    expect(world.hash()).toBe(bare.hash());
+    expect(world.snapshot()).toEqual(bare.snapshot());
+    shouts.push("hey");
+    const one = world.hash();
+    expect(one).not.toBe(bare.hash());
+    shouts.push("ho");
+    expect(world.hash()).not.toBe(one);
+    shouts.length = 1;
+    expect(world.hash()).toBe(one);
+    // The same values in another list are another world.
+    const other = new EcsWorld({ seed: 3 });
+    other._list(Asks).push({ n: 1 });
+    expect(other.hash()).not.toBe(one);
+    // A value the codec refuses counts as null, and the hash doesn't fail.
+    shouts[0] = "unsayable";
+    expect(() => world.hash()).not.toThrow();
+  });
+
+  it("leave out of the frame's hash only what the stages between ticks may add", () => {
+    const world = new EcsWorld({ seed: 3 });
+    const before = world._frameHash();
+    world._list(Asks).push({ n: 1 });
+    expect(world._frameHash()).toBe(before);
+    expect(world.hash()).not.toBe(before);
+    world._list(Shouts).push("hey");
+    expect(world._frameHash()).not.toBe(before);
+  });
+
+  it("are put back by a capture as they were, by reference, without their codec", () => {
+    const world = new EcsWorld({ seed: 3 });
+    const asks = world._list(Asks);
+    const ask = { n: 1 };
+    asks.push(ask);
+    // A value the codec can't save is no reason a moment can't hold it.
+    world._list(Shouts).push("unsayable");
+    expect(() => world.snapshot()).toThrow(SnapshotError);
+    const moment = world._capture();
+    asks.length = 0;
+    asks.push({ n: 2 }, { n: 3 });
+    world._list(Shouts).length = 0;
+    world._rewind(moment);
+    expect(world._list(Asks)).toBe(asks);
+    expect(asks).toEqual([ask]);
+    expect(asks[0]).toBe(ask);
+    expect(world._list(Shouts)).toEqual(["unsayable"]);
+  });
+
+  it("refuse a value their codec can't save, with what it said", () => {
+    const world = new EcsWorld();
+    world._list(Shouts).push("unsayable");
+    let error: unknown;
+    try {
+      world.snapshot();
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect((error as SnapshotError).problem).toBe("cannot be saved");
+    expect((error as SnapshotError).message).toBe(
+      "Can't save the shouts: that is not said"
+    );
+  });
+
+  it("refuse a snapshot that holds a list this program doesn't define, or a value it no longer takes", () => {
+    const world = new EcsWorld();
+    world._list(Shouts).push("hey");
+    const contents = readSnapshot(world.snapshot());
+    contents.lists.push({ name: "snap/Never", values: [1, 2] });
+    const unknown = writeSnapshot(contents);
+    const refusal = (bytes: Uint8Array): SnapshotError => {
+      try {
+        new EcsWorld().load(bytes);
+      } catch (error) {
+        if (error instanceof SnapshotError) {
+          return error;
+        }
+        throw error;
+      }
+      throw new Error("expected a SnapshotError");
+    };
+    expect(refusal(unknown).problem).toBe("unknown list");
+    expect(refusal(unknown).message).toBe(
+      'The snapshot holds 2 values of a list named "snap/Never", which this program doesn\'t define: it was renamed or removed since.'
+    );
+    contents.lists = [{ name: "snap/Shouts", values: [{ said: 5 }] }];
+    const changed = refusal(writeSnapshot(contents));
+    expect(changed.problem).toBe("list changed");
+    expect(changed.message).toBe(
+      "Can't load the shouts: one is in a form that is no longer taken: a shout is a string"
+    );
+  });
+
+  it("make a world that holds anything in one no world to load into", () => {
+    const source = new EcsWorld();
+    source._list(Shouts).push("hey");
+    const world = new EcsWorld();
+    world._list(Asks).push({ n: 1 });
+    expect(() => world.load(source.snapshot())).toThrow(/an empty world/);
+  });
+
+  it("can't be two different lists under one name", () => {
+    const world = new EcsWorld();
+    world._list(Shouts);
+    const Again = defineList<string>(
+      "snap/Shouts",
+      { encode: (value) => value, decode: (data) => data as string },
+      { label: "the other shouts" }
+    );
+    expect(() => world._list(Again)).toThrow(
+      'Two different lists are both named "snap/Shouts": the shouts, and the other shouts.'
+    );
+  });
+});
+
+describe("a singleton read from a snapshot on its own", () => {
+  const Clock = Component.singleton(
+    "snap/Clock",
+    { tick: Field.f64 },
+    { tick: 0 }
+  );
+
+  it("is found without reading the entities", () => {
+    const world = new EcsWorld();
+    world.singleton(Clock).tick = 42;
+    for (let i = 0; i < 100; i++) {
+      world.spawn(C.Body.of({ x: i, y: i }));
+    }
+    const bytes = world.snapshot();
+    // Cut inside the entities, which come after the singletons.
+    const cut = bytes.subarray(0, bytes.length - 200);
+    expect(() => readSnapshot(cut)).toThrow(SnapshotError);
+    expect(readSingleton(cut, "snap/Clock")?.columns.tick).toEqual(
+      new Float64Array([42])
+    );
+    expect(readSingleton(bytes, "snap/Missing")).toBeUndefined();
   });
 });

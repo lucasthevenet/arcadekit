@@ -403,7 +403,7 @@ describe("a snapshot from before ids were widened", () => {
     const world = new World();
     world.load(old, all);
     const today = world.snapshot();
-    expect(new DataView(today.buffer).getUint32(4, true)).toBe(3);
+    expect(new DataView(today.buffer).getUint32(4, true)).toBe(4);
     expect(today.length).toBeGreaterThan(old.length);
     expect(writeSnapshot(readSnapshot(old))).toEqual(today);
     const copy = new World();

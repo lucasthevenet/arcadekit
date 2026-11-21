@@ -8,8 +8,9 @@
  *   const loaded = Save.decode(bytes)              // Exit<Save, LoadRefused>
  *   const app = yield* App.load(save, { plugins }) // the game, where it was
  *
- * A save is taken between two ticks. It holds the world, the game time, the
- * actions queued for the next tick, the events waiting to be read, and what
+ * A save is taken between two ticks. It holds the world, which holds the game
+ * time, the actions queued for the next tick and the events waiting to be read,
+ * and beside it where each system had read to, in the events and in what
  * change queries haven't visited yet. Everything a game is in the middle of is
  * in the world, so the save holds all of it.
  *
@@ -27,22 +28,21 @@ import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 import type { SavedChanges } from "./ecs/world";
 
 /**
- * The events of one type that were waiting to be read when the game was saved.
+ * How far each system and handler had read the events of one type that were
+ * waiting to be read when the game was saved. The world holds the events.
  *
  * @category Models
  */
 export interface SavedEvents {
   readonly name: string;
-  /** Each event's payload in its JSON form, oldest first. */
-  readonly payloads: readonly unknown[];
   /** For each system or handler that had read some, how many it had read. */
   readonly read: Readonly<Record<string, number>>;
 }
 
 /**
  * A game captured between two ticks, made by `app.save()`: its world as a
- * snapshot, time included, what was queued for the next tick, and the length
- * of its log. `Save.encode` turns it into bytes, and `App.load` continues from it.
+ * snapshot, with its time, what was queued for the next tick and the events
+ * waiting to be read, each reader's place, and the length of its log. `Save.encode` turns it into bytes, and `App.load` continues from it.
  *
  * @category Models
  */
@@ -53,17 +53,12 @@ export interface Save {
    * components, and give `App.load` a migration from each older version.
    */
   readonly version: number;
-  /** `world.snapshot()`, which holds the game's time with the rest of it. */
-  readonly world: Uint8Array;
   /**
-   * The actions queued for the next tick, in order, with payloads in JSON form,
-   * each with the peer that issued it if it has one.
+   * `world.snapshot()`, which holds the game's time, the actions queued for
+   * the next tick and the events waiting to be read with the rest of it.
    */
-  readonly queued: readonly {
-    readonly name: string;
-    readonly payload: unknown;
-    readonly from?: string;
-  }[];
+  readonly world: Uint8Array;
+  /** How far each system and handler had read the waiting events. */
   readonly events: readonly SavedEvents[];
   /**
    * What change queries haven't visited yet, with each system's and handler's
@@ -96,11 +91,11 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  * - `"newer version"`: a later version of the game wrote the save;
  * - `"no migration"`: an earlier version wrote it, and the game has no
  *   migration from that version;
- * - `"migration failed"`: a migration threw;
- * - `"unknown event"`: an event waiting to be read is one this program
- *   doesn't define;
- * - `"event changed"`: an event waiting to be read is in a form its schema no
- *   longer takes.
+ * - `"migration failed"`: a migration threw.
+ *
+ * An event waiting to be read that this program doesn't define is the
+ * snapshot's `"unknown list"`, and one in a form its schema no longer takes is
+ * its `"list changed"`.
  *
  * @category Errors
  */
@@ -110,9 +105,7 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
     | "not a save"
     | "newer version"
     | "no migration"
-    | "migration failed"
-    | "unknown event"
-    | "event changed";
+    | "migration failed";
   readonly message: string;
 }> {}
 
@@ -125,15 +118,18 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
  * @category Models
  */
 export interface Contents {
+  /**
+   * The world, whose `lists` hold the actions that were queued, under
+   * `"arcadekit/queued"`, each `{ name, payload, from? }` with its payload in
+   * JSON form, and the events that were waiting, under each event's name, in
+   * JSON form.
+   */
   world: SnapshotContents;
-  /** The actions that were queued, with payloads in JSON form. */
-  queued: { name: string; payload: unknown; from?: string }[];
-  /** The events that were waiting, with payloads in JSON form. */
-  events: {
-    name: string;
-    payloads: unknown[];
-    read: Record<string, number>;
-  }[];
+  /**
+   * How far each system and handler had read the waiting events. A migration
+   * that renames an event renames it here too.
+   */
+  events: { name: string; read: Record<string, number> }[];
   /**
    * What change queries haven't visited yet, by component name. A component a
    * migration renames or removes keeps its old name here, and entries under a
@@ -157,10 +153,10 @@ export interface Contents {
  *
  * - A migration turns an old save into a new game: the log recorded before it
  *   no longer replays against it.
- * - A migration that accompanies a schema change updates the payloads of
- *   `queued` and `events` too. A waiting event that its schema no longer takes
- *   refuses the save as it is loaded; a queued action is refused when it is
- *   applied, as an `Action.Rejected` event.
+ * - A migration that accompanies a schema change updates the payloads in
+ *   `world.lists` too. A waiting event that its schema no longer takes refuses
+ *   the save as it is loaded; a queued action is refused when it is applied,
+ *   as an `Action.Rejected` event.
  *
  * @category Models
  */
@@ -197,10 +193,8 @@ export const migrate = (
   try {
     const contents: Contents = {
       world: readSnapshot(save.world),
-      queued: save.queued.map((action) => ({ ...action })),
       events: save.events.map((events) => ({
         name: events.name,
-        payloads: [...events.payloads],
         read: { ...events.read },
       })),
       changes: save.changes.map((changes) => ({
@@ -230,7 +224,6 @@ export const migrate = (
     return Exit.succeed({
       version,
       world: writeSnapshot(contents.world),
-      queued: contents.queued,
       events: contents.events,
       changes: contents.changes,
       logLength: save.logLength,
@@ -245,24 +238,17 @@ export const migrate = (
 
 /** "AKSV": arcadekit save. */
 const MAGIC = 0x56534b41;
-// 2: the game's time is in the world, not beside it.
+// 2: the game's time, its queued actions and its waiting events are in the
+// world, not beside it.
 const FORMAT = 2;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Header = Schema.fromJsonString(
   Schema.Struct({
     version: Count,
-    queued: Schema.Array(
-      Schema.Struct({
-        name: Schema.String,
-        payload: Schema.Unknown,
-        from: Schema.optionalKey(Schema.String),
-      })
-    ),
     events: Schema.Array(
       Schema.Struct({
         name: Schema.String,
-        payloads: Schema.Array(Schema.Unknown),
         read: Schema.Record(Schema.String, Count),
       })
     ),

@@ -26,6 +26,8 @@ export type SnapshotProblem =
   | "corrupt"
   | "unknown component"
   | "component changed"
+  | "unknown list"
+  | "list changed"
   | "world not empty"
   | "cannot be saved";
 
@@ -55,9 +57,11 @@ export const MAGIC = 0x53574b41;
  * Format 2 added singletons. Format 3 widened entity ids: a slot's generation
  * is four bytes instead of two, and an id is eight bytes instead of four, both
  * in a table's entity list and in an `entity` field. An older id is the same
- * number stored in fewer bytes, and formats 1 and 2 are still read.
+ * number stored in fewer bytes. Format 4 added the world's lists, and puts the
+ * singletons and the lists before the tables, so that a reader looking for a
+ * singleton stops short of the entities. Formats 1 to 3 are still read.
  */
-export const FORMAT = 3;
+export const FORMAT = 4;
 /** The last four bytes, so a snapshot truncated at a boundary is still detected. */
 export const END = 0x21444e45;
 
@@ -495,6 +499,17 @@ export interface SnapshotSingleton {
 }
 
 /**
+ * One list of a snapshot: its values, oldest first.
+ *
+ * @category Models
+ */
+export interface SnapshotList {
+  name: string;
+  /** Each value as the list's codec encoded it. */
+  values: unknown[];
+}
+
+/**
  * Everything a snapshot holds, read without the program's component
  * definitions, since a snapshot describes its own. Migrations work on this
  * form, to make an old save match the game's current components.
@@ -517,6 +532,12 @@ export interface SnapshotContents {
   sparse: SnapshotSparse[];
   /** The singletons that had been written. */
   singletons: SnapshotSingleton[];
+  /**
+   * The lists the world keeps beside its components, the ones that hold
+   * anything: in an app's world, the actions queued for the next tick and the
+   * events waiting to be read, under each event's name.
+   */
+  lists: SnapshotList[];
 }
 
 const columnOf = (kind: FieldKind, count: number): Column => {
@@ -551,12 +572,8 @@ const columnOf = (kind: FieldKind, count: number): Column => {
 const damaged = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
 
-/**
- * Reads a snapshot into its contents, without needing component definitions.
- *
- * @category Codecs
- */
-export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
+/** Reads a snapshot up to its tables, which in format 4 come after its singletons. */
+const readHead = (bytes: Uint8Array) => {
   const reader = new Reader(bytes);
   if (reader.left < 8 || reader.u32() !== MAGIC) {
     throw new SnapshotError(
@@ -638,7 +655,56 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     }
     return columns;
   };
+  const readSingletons = (): SnapshotSingleton[] => {
+    const singletons: SnapshotSingleton[] = [];
+    for (let s = format >= 2 ? reader.count(4) : 0; s > 0; s--) {
+      const component = componentAt();
+      singletons.push({
+        component: component.name,
+        columns: readFields(component, 1),
+      });
+    }
+    return singletons;
+  };
+  const readLists = (): SnapshotList[] => {
+    const lists: SnapshotList[] = [];
+    for (let l = format >= 4 ? reader.count(8) : 0; l > 0; l--) {
+      const name = reader.text();
+      const values: unknown[] = [];
+      for (let v = reader.count(1); v > 0; v--) {
+        values.push(reader.value());
+      }
+      lists.push({ name, values });
+    }
+    return lists;
+  };
+  // Format 4 holds them before the tables, and earlier formats after.
+  const early = format >= 4 ? readSingletons() : undefined;
+  const lists = readLists();
+  return {
+    reader,
+    format,
+    narrow,
+    random,
+    generations,
+    freed,
+    components,
+    componentAt,
+    readFields,
+    readSingletons,
+    early,
+    lists,
+  };
+};
 
+/**
+ * Reads a snapshot into its contents, without needing component definitions.
+ *
+ * @category Codecs
+ */
+export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
+  const head = readHead(bytes);
+  const { componentAt, narrow, reader, readFields } = head;
   const tables: SnapshotTable[] = [];
   for (let t = reader.count(8); t > 0; t--) {
     const of: SnapshotComponent[] = [];
@@ -674,26 +740,36 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
       columns: readFields(component, members.length),
     });
   }
-  const singletons: SnapshotSingleton[] = [];
-  for (let s = format >= 2 ? reader.count(4) : 0; s > 0; s--) {
-    const component = componentAt();
-    singletons.push({
-      component: component.name,
-      columns: readFields(component, 1),
-    });
-  }
+  const singletons = head.early ?? head.readSingletons();
   if (reader.left !== 4 || reader.u32() !== END) {
     throw damaged("it does not end where it should");
   }
   return {
-    random,
-    generations,
-    freed,
-    components,
+    random: head.random,
+    generations: head.generations,
+    freed: head.freed,
+    components: head.components,
     tables,
     sparse,
     singletons,
+    lists: head.lists,
   };
+};
+
+/**
+ * Reads one singleton of a snapshot, as `readSnapshot` would, or undefined if
+ * the snapshot doesn't hold it. From a snapshot of format 4, it reads none of
+ * the entities.
+ *
+ * @internal
+ */
+export const readSingleton = (
+  bytes: Uint8Array,
+  component: string
+): SnapshotSingleton | undefined => {
+  const head = readHead(bytes);
+  const singletons = head.early ?? readSnapshot(bytes).singletons;
+  return singletons.find((single) => single.component === component);
 };
 
 const byName = (a: { name: string }, b: { name: string }): number =>
@@ -777,6 +853,33 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
     }
   };
 
+  const singletons = contents.singletons.toSorted((a, b) =>
+    byName({ name: a.component }, { name: b.component })
+  );
+  writer.u32(singletons.length);
+  for (const single of singletons) {
+    writer.u32(indexOf.get(named(single.component).name)!);
+    writeFields(named(single.component), single.columns, 1);
+  }
+  const lists = contents.lists
+    .filter((list) => list.values.length > 0)
+    .toSorted(byName);
+  writer.u32(lists.length);
+  for (const [i, list] of lists.entries()) {
+    if (lists[i + 1]?.name === list.name) {
+      throw damaged(`it holds the list "${list.name}" twice`);
+    }
+    writer.text(list.name);
+    writer.u32(list.values.length);
+    for (const value of list.values) {
+      if (!writer.value(value)) {
+        throw new SnapshotError(
+          "cannot be saved",
+          `The list "${list.name}" holds a value that is not plain data.`
+        );
+      }
+    }
+  }
   writer.u32(contents.tables.length);
   for (const table of contents.tables) {
     const of = table.components.map((name) => named(name)).toSorted(byName);
@@ -803,14 +906,6 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
     writer.u32(set.members.length);
     writer.numbers(set.members, set.members.length, 4);
     writeFields(named(set.component), set.columns, set.members.length);
-  }
-  const singletons = contents.singletons.toSorted((a, b) =>
-    byName({ name: a.component }, { name: b.component })
-  );
-  writer.u32(singletons.length);
-  for (const single of singletons) {
-    writer.u32(indexOf.get(named(single.component).name)!);
-    writeFields(named(single.component), single.columns, 1);
   }
   writer.u32(END);
   return writer.finish();

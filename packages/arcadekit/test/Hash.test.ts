@@ -800,6 +800,48 @@ describe("the hash of an app's world", () => {
     });
   });
 
+  it("is put back with the actions queued and the events waiting by the world alone, which every system then reads afresh", () => {
+    const Rang = Event.define("hash/Rang2", Schema.Struct({ n: Schema.Int }));
+    const Push = Action.define("hash/Push2", Schema.Struct({ by: Schema.Int }));
+    const heard: number[] = [];
+    const pushed: number[] = [];
+    const push = Action.handler(Push, function* ({ by }) {
+      pushed.push(by);
+    });
+    let ringing = true;
+    // Before the system that rings: it hears a ring on the tick after.
+    const Hear = System.make("hash/Hear", function* () {
+      for (const { n } of (yield* Rang).read()) {
+        heard.push(n);
+      }
+    });
+    const Ring = System.make("hash/Ring2", function* () {
+      if (ringing) {
+        (yield* Rang).emit({ n: 1 });
+      }
+    });
+    withApp(
+      App.make({ systems: [Hear, Ring], handlers: [push], seed: 5 }),
+      (app) => {
+        app.tick(1 / 60);
+        ringing = false;
+        app.enqueue(Push, { by: 7 });
+        const hash = app.world.hash();
+        const bytes = app.world.snapshot();
+        app.tick(1 / 60);
+        expect([heard, pushed]).toEqual([[1], [7]]);
+        app.world.restore(bytes);
+        expect(app.world.hash()).toBe(hash);
+        expect(app.events.pending(Rang)).toBe(1);
+        app.tick(1 / 60);
+        expect([heard, pushed]).toEqual([
+          [1, 1],
+          [7, 7],
+        ]);
+      }
+    );
+  });
+
   it("is put back with the game's time by the world alone", () => {
     withApp(App.make({ systems: [Drift], seed: 5 }), (app) => {
       app.tick(1 / 60);

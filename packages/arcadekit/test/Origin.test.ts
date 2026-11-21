@@ -1,7 +1,7 @@
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { Action, App, Save, System, Time } from "../src/index";
+import { Action, App, Save, System, Time, readSnapshot } from "../src/index";
 import {
   DELTA,
   Purse,
@@ -135,9 +135,11 @@ describe("who issued an action", () => {
       if (Exit.isFailure(save)) {
         throw new Error("the game could not be saved");
       }
-      expect(save.value.queued).toEqual([
-        { name: "ls/Tip", payload: { amount: 6 }, from: "grace" },
-      ]);
+      expect(
+        readSnapshot(save.value.world).lists.find(
+          (list) => list.name === "arcadekit/queued"
+        )?.values
+      ).toEqual([{ name: "ls/Tip", payload: { amount: 6 }, from: "grace" }]);
       // And where a game goes back to: the tip is waiting again, hers still.
       const moment = app.capture();
       app.tick(DELTA);

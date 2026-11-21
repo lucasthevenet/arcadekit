@@ -138,7 +138,13 @@ const migrations: Save.Migration[] = [
       );
       Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
       // The action that was waiting has another name and payload now.
-      for (const action of contents.queued) {
+      const queued = contents.world.lists.find(
+        (list) => list.name === "arcadekit/queued"
+      );
+      for (const action of (queued?.values ?? []) as {
+        name: string;
+        payload: unknown;
+      }[]) {
         if (action.name === "mg/Heal") {
           action.name = "mg/Mend";
           action.payload = {

@@ -62,11 +62,13 @@ import * as Action from "./Action";
 import * as Driver from "./Driver";
 import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
+import { defineList } from "./ecs/list";
 import { Rng } from "./ecs/random";
-import { SnapshotError, readSnapshot } from "./ecs/snapshot";
+import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { SavedChanges, Moment as WorldMoment } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
+import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -96,10 +98,8 @@ const GameTime = Component.singleton(
 
 /** The tick a save was made at, which its world holds. */
 const tickOf = (save: Save.Save): number => {
-  const held = readSnapshot(save.world).singletons.find(
-    (single) => single.component === GameTime.component.name
-  );
-  const tick = held?.columns.tick?.[0];
+  const tick = readSingleton(save.world, GameTime.component.name)?.columns
+    .tick?.[0];
   return typeof tick === "number" ? tick : 0;
 };
 
@@ -683,6 +683,84 @@ class Turn {
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
 
+/** An action waiting for the next tick. */
+interface QueuedAction {
+  readonly name: string;
+  readonly payload: unknown;
+  /**
+   * The action's codec, while the payload is the value a handler works with.
+   * Undefined for one in the JSON form that arrives from outside, which is
+   * checked when it is applied.
+   */
+  readonly codec: Schema.Codec<unknown, unknown> | undefined;
+  /**
+   * The log entry of an action enqueued from outside the simulation, told
+   * its fate when it is applied. One that a system or a handler issued has
+   * none.
+   */
+  readonly entry: { refused?: string } | undefined;
+  /** The issuer, if it came with a name. */
+  readonly from: string | undefined;
+}
+
+/** A payload's JSON form, or `null` when its action's schema doesn't take it. */
+const jsonOf = ({ codec, payload }: QueuedAction): unknown => {
+  if (codec === undefined) {
+    return payload;
+  }
+  const json = Schema.encodeUnknownExit(codec)(payload);
+  return Exit.isSuccess(json) ? json.value : null;
+};
+
+const QueuedData = Schema.Struct({
+  name: Schema.String,
+  payload: Schema.Unknown,
+  from: Schema.optionalKey(Schema.String),
+});
+
+/**
+ * The actions queued for the next tick, which are the game's as much as its
+ * components are: the world keeps them, so that its snapshot, its hash and a
+ * restore cover them. Each is saved as `{ name, payload, from? }`, its payload
+ * in JSON form.
+ */
+const Queued = defineList<QueuedAction>(
+  "arcadekit/queued",
+  {
+    encode: (action) => {
+      const { codec, from, name, payload } = action;
+      let json = payload;
+      if (codec !== undefined) {
+        const exit = Schema.encodeUnknownExit(codec)(payload);
+        if (Exit.isFailure(exit)) {
+          throw new Error(
+            `the action "${name}" has a payload its schema does not take: ${describe(Cause.squash(exit.cause))}`
+          );
+        }
+        json = exit.value;
+      }
+      return from === undefined
+        ? { name, payload: json }
+        : { name, payload: json, from };
+    },
+    decode: (data) => {
+      const action = Schema.decodeUnknownExit(QueuedData)(data);
+      if (Exit.isFailure(action)) {
+        throw new Error(
+          `an action is not { name, payload, from? }: ${describe(Cause.squash(action.cause))}`
+        );
+      }
+      const { from, name, payload } = action.value;
+      return { name, payload, codec: undefined, entry: undefined, from };
+    },
+  },
+  {
+    label: "the actions queued for the next tick",
+    // The stages between ticks are there to issue them.
+    betweenTicks: true,
+  }
+);
+
 /** Why an action was refused, as `Action.Rejected` carries it. */
 const refusal = (error: unknown): { _tag: string; message: string } => {
   const tag =
@@ -944,7 +1022,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     );
     const { random } = world;
     const commands = new CommandBuffer(world);
-    const events = new EventBus();
+    const events = new EventBus(world);
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
@@ -982,13 +1060,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           message:
             error.problem === "unknown component"
               ? `${error.message} A migration renames or removes a component in a save.`
-              : error.message,
+              : error.problem === "unknown list" ||
+                  error.problem === "list changed"
+                ? `${error.message} A migration changes the events and the queued actions of a save in \`world.lists\`.`
+                : error.message,
         });
       }
-      const restored = events.restore(save.events);
-      if (restored !== undefined) {
-        return yield* new Save.LoadRefused(restored);
-      }
+      events.restore(save.events);
     }
     // Loaded with the world, or written by the first tick.
     const time: TimeState = world.singleton(GameTime);
@@ -1008,24 +1086,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       handlers.set(handler.action.name, handler);
     }
-    // `encoded` says which form the payload is in: the JSON form that arrives
-    // from outside, or the value a handler works with. `entry` is the log
-    // entry of an action that was enqueued from outside the simulation; one
-    // that a system or a handler issued has none.
-    const queued: {
-      readonly name: string;
-      readonly payload: unknown;
-      readonly encoded: boolean;
-      readonly entry: { refused?: string } | undefined;
-      /** The issuer, if it came with a name. */
-      readonly from: string | undefined;
-    }[] = [];
-    if (save !== undefined) {
-      // In the JSON form they were saved in, checked again when applied.
-      for (const { from, name, payload } of save.queued) {
-        queued.push({ name, payload, encoded: true, entry: undefined, from });
-      }
-    }
+    // Loaded with the world, in the JSON form they were saved in, checked
+    // again when applied.
+    const queued = world._list(Queued);
     const actionLog: Action.LogEntry[] = [];
     // Where this app began, and the delta of every tick it has run since, in
     // runs: for a recording.
@@ -1036,6 +1099,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
       readonly world: WorldMoment;
+      readonly events: EventsMoment;
       readonly changes: SavedChanges[];
       readonly logLength: number;
       readonly started: boolean;
@@ -1096,48 +1160,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     const handles = (action: Action.AnyActionDef): boolean =>
       handlers.has(action.name);
-    /** A payload's JSON form, or `null` when its action's schema doesn't take it. */
-    const jsonOf = (name: string, payload: unknown): unknown => {
-      const codec = handlers.get(name)?.action.codec;
-      if (codec === undefined) {
-        return null;
-      }
-      const json = Schema.encodeUnknownExit(codec)(payload);
-      return Exit.isSuccess(json) ? json.value : null;
-    };
-    // The actions queued for the next tick and the events waiting to be read
-    // are the game's as much as its components are: the world's hash covers
-    // them, and a rewind of the world puts them back.
-    world._attach({
-      name: "arcadekit/queued",
-      betweenTicks: true,
-      observed: () =>
-        queued.map(({ encoded, from, name, payload }) => [
-          name,
-          from ?? null,
-          encoded ? payload : jsonOf(name, payload),
-        ]),
-      capture: () => queued.slice(),
-      rewind: (was) => {
-        queued.length = 0;
-        for (const action of was) {
-          // It is waiting again: what became of it has not happened.
-          if (action.entry !== undefined) {
-            delete action.entry.refused;
-          }
-          queued.push(action);
-        }
-      },
-    });
-    world._attach({
-      name: "arcadekit/events",
-      observed: () => events.observed(),
-      capture: () => ({ events: events.capture(), tick: time.tick }),
-      // Before the world is put back: `time` is still where the game was.
-      rewind: (was) => {
-        events.rewind(was.events, time.tick, was.tick);
-      },
-    });
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** Enqueues from outside the simulation: `app.enqueue`. */
@@ -1168,7 +1190,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       queued.push({
         name: action.name,
         payload,
-        encoded: false,
+        codec: handler.action.codec,
         entry: arrived(action.name, json.value, undefined),
         from: undefined,
       });
@@ -1179,7 +1201,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       queued.push({
         name,
         payload,
-        encoded: true,
+        codec: undefined,
         entry: arrived(name, payload, from),
         from,
       });
@@ -1214,7 +1236,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       queued.push({
         name: action.name,
         payload,
-        encoded: false,
+        codec: action.codec,
         entry: undefined,
         from: undefined,
       });
@@ -1801,7 +1823,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
         );
       }
-      queued.push({ name, payload, encoded: true, entry: undefined, from });
+      queued.push({ name, payload, codec: undefined, entry: undefined, from });
     };
 
     /**
@@ -2061,6 +2083,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       const moment: Captured = {
         tick: time.tick,
         world: held,
+        events: events.capture(),
         // What runs between ticks has everything still to draw, unless it
         // has drawn nothing since.
         changes: world.saveChanges(
@@ -2078,7 +2101,16 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       dispatcher.flush();
       // What is queued on the buffer was never part of the world.
       commands.rollback(0);
+      // Before the world: the bus reads what the world's lists hold of the
+      // future it gives up, and `time` is still where the game was.
+      events.rewind(was.events, time.tick, was.tick);
       world._rewind(was.world);
+      for (const action of queued) {
+        // It is waiting again: what became of it has not happened.
+        if (action.entry !== undefined) {
+          delete action.entry.refused;
+        }
+      }
       world.restoreChanges(was.changes);
       actionLog.length = was.logLength;
       while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
@@ -2136,8 +2168,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // same point in the timeline as an action dispatched between ticks.
         if (queued.length > 0) {
           const batch = queued.splice(0);
-          for (const { encoded, entry, from, name, payload } of batch) {
-            const exit = apply(name, payload, encoded, false, from);
+          for (const action of batch) {
+            const { codec, entry, from, name, payload } = action;
+            const exit = apply(name, payload, codec === undefined, false, from);
             if (Exit.isFailure(exit)) {
               const error = Cause.squash(exit.cause);
               if (entry !== undefined) {
@@ -2145,7 +2178,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               }
               events.emit(Action.Rejected, {
                 action: name,
-                payload: encoded ? payload : jsonOf(name, payload),
+                payload: jsonOf(action),
                 error: refusal(error),
                 from,
               });
@@ -2259,31 +2292,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: save after one.`
           );
         }
-        const waiting: { name: string; payload: unknown; from?: string }[] = [];
-        for (const { encoded, from, name, payload } of queued) {
-          const issuer = from === undefined ? {} : { from };
-          if (encoded) {
-            waiting.push({ name, payload, ...issuer });
-            continue;
-          }
-          const codec = handlers.get(name)?.action.codec;
-          if (codec === undefined) {
-            return refused(
-              `The action "${name}" is waiting for the next tick, and the app has no handler for it.`
-            );
-          }
-          const json = Schema.encodeUnknownExit(codec)(payload);
-          if (Exit.isFailure(json)) {
-            return refused(
-              `The action "${name}" is waiting for the next tick with a payload its schema does not take: ${describe(Cause.squash(json.cause))}`
-            );
-          }
-          waiting.push({ name, payload: json.value, ...issuer });
-        }
-        const pending = events.save();
-        if (Exit.isFailure(pending)) {
-          return refused(describe(Cause.squash(pending.cause)));
-        }
         let bytes: Uint8Array;
         try {
           bytes = world.snapshot();
@@ -2296,8 +2304,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return Exit.succeed({
           version,
           world: bytes,
-          queued: waiting,
-          events: pending.value,
+          events: events.save(),
           // The frame stage's readers are not the game's: a loaded game
           // has everything still to draw.
           changes: world.saveChanges(
