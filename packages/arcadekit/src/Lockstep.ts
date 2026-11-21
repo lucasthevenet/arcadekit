@@ -48,6 +48,7 @@ import * as Action from "./Action";
 import type * as App from "./App";
 import type { Tickable } from "./Driver";
 import type * as Save from "./Save";
+import * as Timeline from "./Timeline";
 
 /**
  * An action as a peer issued it: its name, and its payload in JSON form.
@@ -297,17 +298,11 @@ export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
  *
  * @category Type-level
  */
-export type SessionApp<E> = Pick<
-  App.App<E>,
-  | "actionLog"
-  | "capture"
-  | "checkpoint"
-  | "divert"
-  | "frame"
-  | "inputExit"
-  | "rewind"
-  | "time"
->;
+export type SessionApp<E> = App.Any &
+  Pick<
+    App.App<E>,
+    "actionLog" | "checkpoint" | "divert" | "frame" | "inputExit" | "time"
+  >;
 
 /**
  * What a predicting session adds, as `Rollback.Session` documents.
@@ -412,7 +407,7 @@ export const build = <E>(
 
   // --- prediction: ticks run before every peer's message was in -------------
   // The game as it was before each such tick, to go back to.
-  const moments = new Map<number, App.Moment>();
+  const moments = new Map<number, Timeline.Moment>();
   // The earliest tick that ran without a message which has come since,
   // with actions in it: the game is wrong from there.
   let wrong: number | undefined;
@@ -514,7 +509,7 @@ export const build = <E>(
     } else {
       // A peer has not said: the tick is run as if it had nothing to say,
       // and the game is kept as it was, to go back to if it had.
-      const moment = app.capture();
+      const moment = Timeline.capture(app);
       if (Exit.isFailure(moment)) {
         return Exit.failCause(moment.cause);
       }
@@ -591,7 +586,7 @@ export const build = <E>(
       // that tick, and forward again with what is known now.
       const from = wrong;
       wrong = undefined;
-      app.rewind(moments.get(from)!);
+      Timeline.rewind(app, moments.get(from)!);
       rewinds++;
       for (let tick = from; tick < now; tick++) {
         const exit = run(tick);

@@ -1,7 +1,15 @@
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { Action, App, Save, System, Time, readSnapshot } from "../src/index";
+import {
+  Action,
+  App,
+  Save,
+  System,
+  Time,
+  Timeline,
+  readSnapshot,
+} from "../src/index";
 import {
   DELTA,
   Purse,
@@ -141,10 +149,13 @@ describe("who issued an action", () => {
         )?.values
       ).toEqual([{ name: "ls/Tip", payload: { amount: 6 }, from: "grace" }]);
       // And where a game goes back to: the tip is waiting again, hers still.
-      const moment = app.capture();
+      const moment = Timeline.capture(app);
       app.tick(DELTA);
       expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });
-      app.rewind(Exit.isSuccess(moment) ? moment.value : { tick: -1 });
+      Timeline.rewind(
+        app,
+        Exit.isSuccess(moment) ? moment.value : { tick: -1 }
+      );
       expect(purseOf(app)).toEqual({ ada: 0, grace: 0 });
       app.tick(DELTA);
       expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });

@@ -77,7 +77,7 @@ describe("a package's page", () => {
       "### Net",
     ]);
     expect(blocks.at(-3)).toBe(
-      "- [Save](/reference/arcadekit/Save)\n- [Migrate](/reference/arcadekit/Migrate)"
+      "- [Timeline](/reference/arcadekit/Timeline)\n- [Save](/reference/arcadekit/Save)\n- [Migrate](/reference/arcadekit/Migrate)"
     );
   });
 });

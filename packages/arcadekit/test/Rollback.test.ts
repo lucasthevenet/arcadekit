@@ -273,9 +273,12 @@ describe("a rollback session", () => {
             const session = Rollback.make(
               {
                 ...app,
-                capture: () => {
-                  count.captures++;
-                  return app.capture();
+                _timeline: {
+                  ...app._timeline,
+                  capture: () => {
+                    count.captures++;
+                    return app._timeline.capture();
+                  },
                 },
               },
               { peer: "ada", peers: ["ada", "grace"], delta: DELTA }

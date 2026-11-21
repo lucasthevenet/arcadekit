@@ -39,7 +39,7 @@ It is essentially the snapshot plus a little text: for 100,000 entities with fou
 
 `App.load` takes the plugins and options the game was created with. No plugin's `setup` runs, since the save already holds its effects. `App.run` also accepts a `save`, to start a page from one.
 
-To return to an earlier moment of the same app within the same run, `app.capture()` and `app.rewind(moment)` work in memory, and pending actions and events don't need schemas. See [`App`](/reference/arcadekit/App).
+To return to an earlier moment of the same app within the same run, `Timeline.capture(app)` and `Timeline.rewind(app, moment)` work in memory, and pending actions and events don't need schemas. See [`Timeline`](/reference/arcadekit/Timeline).
 
 ## Requirements for saving
 

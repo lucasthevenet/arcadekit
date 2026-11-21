@@ -85,6 +85,7 @@ import type { BuiltIn, FrameState, TimeState } from "./Services";
 import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
+import type { Moment } from "./Timeline";
 
 /**
  * A game's time, held by its world so that a snapshot, a restore and the
@@ -192,6 +193,15 @@ export interface Any {
   readonly plugins: readonly string[];
   /** System names in the order they run. */
   readonly systemOrder: readonly string[];
+  /**
+   * What `Timeline.capture` and `Timeline.rewind` capture and rewind the app
+   * with.
+   * @internal
+   */
+  readonly _timeline: {
+    readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
+    readonly rewind: (moment: Moment) => void;
+  };
   /** The names of the frame-stage systems, in the order they run. */
   readonly frameOrder: readonly string[];
   /** The names of the input-stage systems, in the order they run. */
@@ -303,38 +313,6 @@ export interface Any {
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
-   * Captures the game as it is, in memory, to return to with `rewind`: the
-   * world with its time, the actions queued for the next tick, the events waiting
-   * to be read with every reader's position, what change queries haven't
-   * visited yet, and the length of the log. Only between ticks.
-   *
-   * It isn't a save. It holds the queued actions and events as they are, so
-   * none of them needs a schema, and it belongs to this app in this run of the
-   * program only. It is the building block for predicting a tick and
-   * resimulating it: `Rollback` captures before each uncertain tick.
-   *
-   * Fails with `SaveRefused` when the world can't be snapshotted: a field holds
-   * a value that can't be saved, or commands are queued but not applied.
-   */
-  readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
-  /**
-   * Restores the game, in place, to when `moment` was captured: the same app,
-   * world and services, holding what they held then. The log is truncated to
-   * its length at that time. Only between ticks, and only with a moment of this
-   * app.
-   *
-   * A moment holds what a save holds, and no more. State held by your game's own services is left as is: `Rollback.syncTest` finds a tick that reads it. A
-   * `transient` field is undefined afterwards. And what runs between ticks
-   * starts over: frame-stage and input-stage change queries visit everything
-   * again.
-   *
-   * The frame and input stages don't hear an event twice: until the game has
-   * run again the ticks it had run before the rewind, an event of theirs that
-   * a stage heard then, the same payload, is heard once. An event the ticks
-   * run again emit otherwise, or a payload that changed, is heard as new.
-   */
-  readonly rewind: (moment: Moment) => void;
-  /**
    * Records the world's hash in the action log now, and returns it. Use it for
    * points the game wants verified beyond the ones `checkpointEvery` records,
    * such as when it is saved. Only between ticks.
@@ -398,17 +376,6 @@ export interface Inspection {
 }
 
 const NO_INPUT: TickOptions = { input: false };
-
-/**
- * A game at one moment, held in memory: what `app.capture()` returns and
- * `app.rewind()` takes. It exposes its tick; the rest is internal to the app.
- *
- * @category Models
- */
-export interface Moment {
-  /** The number of ticks run when it was captured. */
-  readonly tick: number;
-}
 
 /**
  * A game as it was played, from `app.record()`, for `App.replay` to play
@@ -551,11 +518,11 @@ export interface Diverted<E = never> {
     observe?: (system: string | undefined) => void
   ) => Exit.Exit<void, E>;
   /**
-   * Captures the game, as `capture` does, for a rewind that comes before the
-   * frame and input stages run again. It keeps their place in what changed
-   * too, so the rewind puts them back exactly, where `capture`'s moment has
-   * them see everything again. A stage that runs between the two sees again
-   * what changed since.
+   * Captures the game, as `Timeline.capture` does, for a rewind that comes
+   * before the frame and input stages run again. It keeps their place in what
+   * changed too, so the rewind puts them back exactly, where
+   * `Timeline.capture`'s moment has them see everything again. A stage that
+   * runs between the two sees again what changed since.
    */
   readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
 }
@@ -2329,31 +2296,33 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
         return true;
       },
-      capture() {
-        if (ticking || between !== undefined) {
-          throw new Error(
-            `capture() was called during a ${busy()}. A game is captured between ticks.`
-          );
-        }
-        return captured(false);
-      },
-      rewind(moment) {
-        if (ticking || between !== undefined) {
-          throw new Error(
-            `rewind() was called during a ${busy()}. A game is put back between ticks.`
-          );
-        }
-        if (applying !== undefined) {
-          throw new Error(
-            `rewind() was called from the handler of "${applying}". A game is put back between ticks.`
-          );
-        }
-        if (!moments.has(moment)) {
-          throw new Error(
-            "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
-          );
-        }
-        rewound(moment as Captured);
+      _timeline: {
+        capture: () => {
+          if (ticking || between !== undefined) {
+            throw new Error(
+              `Timeline.capture() was called during a ${busy()}. A game is captured between ticks.`
+            );
+          }
+          return captured(false);
+        },
+        rewind: (moment) => {
+          if (ticking || between !== undefined) {
+            throw new Error(
+              `Timeline.rewind() was called during a ${busy()}. A game is put back between ticks.`
+            );
+          }
+          if (applying !== undefined) {
+            throw new Error(
+              `Timeline.rewind() was called from the handler of "${applying}". A game is put back between ticks.`
+            );
+          }
+          if (!moments.has(moment)) {
+            throw new Error(
+              "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
+            );
+          }
+          rewound(moment as Captured);
+        },
       },
       inspect() {
         if (ticking || between !== undefined) {
@@ -2446,7 +2415,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           capture: () => {
             if (ticking || between !== undefined) {
               throw new Error(
-                `capture() was called during a ${busy()}. A game is captured between ticks.`
+                `The diverted app's capture() was called during a ${busy()}. A game is captured between ticks.`
               );
             }
             return captured(true);

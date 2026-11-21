@@ -29,8 +29,9 @@
  * stamped with, whenever it heard of it. Along the way, a peer may see a move
  * accepted that is later refused, once the message it was missing arrives.
  *
- * Rewinding uses `app.rewind`, to a moment `app.capture` took before each
- * uncertain tick. A rewind restores only what a save holds: see `App.rewind`.
+ * Rewinding uses `Timeline.rewind`, to a moment `Timeline.capture` took before
+ * each uncertain tick. A rewind restores only what a save holds: see
+ * `Timeline.rewind`.
  * A tick that reads anything else runs differently when it is resimulated,
  * and the peers drift apart. `Rollback.syncTest` finds such a tick in a test,
  * with no second peer.
@@ -41,6 +42,7 @@ import type * as App from "./App";
 import type * as Lockstep from "./Lockstep";
 import { build } from "./Lockstep";
 import type * as Save from "./Save";
+import * as Timeline from "./Timeline";
 
 /**
  * Options for a rollback session: this peer, every peer, and how far it may run
@@ -153,10 +155,8 @@ export class RewindDiverged extends Data.TaggedError("RewindDiverged")<{
  *
  * @category Type-level
  */
-export type SyncTestApp<E> = Pick<
-  App.App<E>,
-  "divert" | "frame" | "inputExit" | "rewind" | "time" | "world"
->;
+export type SyncTestApp<E> = App.Any &
+  Pick<App.App<E>, "divert" | "frame" | "inputExit" | "time" | "world">;
 
 /**
  * An app taken over by `Rollback.syncTest`, stepped in its place, by hand or by
@@ -237,7 +237,7 @@ export const syncTest = <E>(app: SyncTestApp<E>): SyncTest<E> => {
       return { exit, hashes, systems };
     };
     const first = run();
-    app.rewind(moment.value);
+    Timeline.rewind(app, moment.value);
     const second = run();
     const once = first.hashes;
     const twice = second.hashes;

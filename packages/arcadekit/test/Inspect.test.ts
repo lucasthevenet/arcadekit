@@ -13,6 +13,7 @@ import {
   Singleton,
   State,
   System,
+  Timeline,
   World,
 } from "../src/index";
 
@@ -273,13 +274,13 @@ describe("app.inspect", () => {
 
   it("forgets the last tick's events when the game is rewound", () => {
     const app = run(game);
-    const moment = app.capture();
+    const moment = Timeline.capture(app);
     if (moment._tag !== "Success") {
       throw new Error("not captured");
     }
     app.enqueue(Strike, { by: 1 });
     app.tick(1 / 60);
-    app.rewind(moment.value);
+    Timeline.rewind(app, moment.value);
     expect(app.inspect().events).toEqual({});
   });
 

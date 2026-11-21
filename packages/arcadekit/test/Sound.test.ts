@@ -17,6 +17,7 @@ import {
   State,
   System,
   Time,
+  Timeline,
 } from "../src/index";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
@@ -121,7 +122,7 @@ describe("Sound.cues", () => {
     const app = play(sound);
     app.tick(0.1);
     app.frame(0);
-    const moment = app.capture();
+    const moment = Timeline.capture(app);
     assert(Exit.isSuccess(moment));
     app.enqueue(Drop, { height: 5 });
     app.tick(0.1);
@@ -129,14 +130,14 @@ describe("Sound.cues", () => {
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
     // A session goes back, and runs the tick again with the same drop: it
     // was heard already, so it isn't played twice.
-    app.rewind(moment.value);
+    Timeline.rewind(app, moment.value);
     app.enqueue(Drop, { height: 5 });
     app.tick(0.1);
     app.frame(0);
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
     // Gone back again, the tick runs without it: nothing to play. Then a drop
     // of its own, past where the game had got to, is heard.
-    app.rewind(moment.value);
+    Timeline.rewind(app, moment.value);
     app.tick(0.1);
     app.frame(0);
     app.enqueue(Drop, { height: 5 });

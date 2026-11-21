@@ -55,7 +55,7 @@ const session = Rollback.make(app, {
 });
 ```
 
-A rollback session runs each tick immediately, predicting that the peers it hasn't heard from did nothing. When a message proves a prediction wrong, it rewinds with `app.rewind` to a moment it captured, and resimulates.
+A rollback session runs each tick immediately, predicting that the peers it hasn't heard from did nothing. When a message proves a prediction wrong, it rewinds with `Timeline.rewind` to a moment it captured, and resimulates.
 
 - A player's own move is applied on the next tick: `delay` defaults to 0. A delay of a tick or two spares the other peers a rewind for every move, at the cost of that much input lag for the local player.
 - `ahead` is how far it may run past what every peer has sent, 8 ticks by default, and also the furthest a rewind goes back. A peer that far ahead waits, and `session.waitingFor` says for whom.
@@ -64,7 +64,7 @@ A rollback session runs each tick immediately, predicting that the peers it hasn
 - Every peer ends on the same game. Each applies every action on the tick it is stamped with, whenever it heard of it, and its log replays into a single-player game that never rewound.
 - A peer may see a move accepted that is later refused. When two players take the same coin on the same tick, each sees themselves take it until the other's message arrives. Then both agree that the player whose name sorts first takes it, and the other's take is refused, in the log and in the world.
 
-Before each tick it isn't sure of, the session captures the game with `app.capture()`, and releases the capture once every peer has sent their actions for that tick: `session.kept` captures at a time, never more than `ahead`.
+Before each tick it isn't sure of, the session captures the game with `Timeline.capture`, and releases the capture once every peer has sent their actions for that tick: `session.kept` captures at a time, never more than `ahead`.
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one, so for a very large world each uncertain tick pays that cost.
@@ -97,25 +97,25 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 
 ## Capturing and rewinding
 
-The mechanism a rollback session uses is available on the app itself, for other kinds of sessions or for tools:
+The mechanism a rollback session uses is the `Timeline` module, for other kinds of sessions, for an undo, or for tools:
 
 ```ts
-import { App, Plugin } from "arcadekit";
+import { App, Plugin, Timeline } from "arcadekit";
 import { Effect, Exit } from "effect";
 
 const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
   const app = yield* App.make({ plugins: [Game] });
-  const moment = app.capture(); // Exit<App.Moment, Save.SaveRefused>
+  const moment = Timeline.capture(app); // Exit<Timeline.Moment, Save.SaveRefused>
   app.tick(1 / 60);
   if (Exit.isSuccess(moment)) {
-    app.rewind(moment.value); // the same app, as it was
+    Timeline.rewind(app, moment.value); // the same app, as it was
   }
 }).pipe(Effect.scoped);
 ```
 
-- A moment holds what a [save](saving-and-loading.md) does: the world, the game time, the actions queued for the next tick, the events waiting to be read with every reader's position, what change queries haven't visited, and the log's length. `rewind` restores all of it in place and truncates the log. The app, its world and its services are the same objects as before.
+- A moment holds what a [save](saving-and-loading.md) does: the world, the game time, the actions queued for the next tick, the events waiting to be read with every reader's position, what change queries haven't visited, and the log's length. `Timeline.rewind` restores all of it in place and truncates the log. The app, its world and its services are the same objects as before.
 - It lives in memory and belongs to one app in one run of the program. Pending actions and events don't need schemas, so a game with schema-less actions or events can be captured even when it can't be saved.
 - A game is captured and rewound between ticks. What a rewind doesn't restore is what the requirements above keep out of the simulation's way.
 
