@@ -246,8 +246,8 @@ describe("App.run", () => {
     const taken = made!.save();
     assert(Exit.isSuccess(taken));
     const save = taken.value;
+    expect(made!.time.tick).toBe(5);
     await Effect.runPromise(Fiber.interrupt(first));
-    expect(save.tick).toBe(5);
 
     log.length = 0;
     const second = Effect.runFork(

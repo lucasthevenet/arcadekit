@@ -545,6 +545,32 @@ export class EventBus {
   }
 
   /**
+   * The events the simulation can still read, in their JSON form, by event
+   * name in order of name, for the world's hash: not what is kept only for the
+   * stages between ticks, and not where anyone has read to, so a plugin that
+   * only watches doesn't change the hash. A payload its schema doesn't take
+   * counts as `null`, on every machine alike.
+   * @internal
+   */
+  observed(): unknown {
+    const out: [string, unknown[]][] = [];
+    for (const channel of this.order) {
+      if (channel.size === 0) {
+        continue;
+      }
+      const payloads: unknown[] = [];
+      for (const payload of channel.buffer.slice(
+        channel.tickOffset - channel.offset
+      )) {
+        const data = encode(channel.def, payload);
+        payloads.push(Exit.isSuccess(data) ? data.value : null);
+      }
+      out.push([channel.def.name, payloads]);
+    }
+    return out.toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  }
+
+  /**
    * Takes the events of a save, each decoded with its event's schema, and
    * every reader's place in them. Returns why the save cannot be loaded: it
    * holds an event this program doesn't define, or one whose payload its

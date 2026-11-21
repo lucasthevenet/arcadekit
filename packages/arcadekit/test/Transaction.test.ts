@@ -622,6 +622,15 @@ const game = (checkpointEvery = 1) =>
     }
   );
 
+/** The hash of the game after `ticks` ticks with no action: the time is in it. */
+const untouched = (ticks: number): number =>
+  withApp(game(), ({ app }) => {
+    for (let tick = 0; tick < ticks; tick++) {
+      app.tick(1);
+    }
+    return app.world.hash();
+  });
+
 type Steps = (typeof Step.Type)[];
 const everyStep: Steps = [
   "set",
@@ -661,7 +670,7 @@ describe("an action that is refused", () => {
         app.tick(1);
         expect(echoes).toEqual([]);
         expect(notes).toEqual([]);
-        expect(app.world.hash()).toBe(before);
+        expect(app.world.hash()).toBe(untouched(2));
 
         // The same steps in an action that is accepted do change the game.
         const accepted = app.dispatch(Act, {
@@ -673,7 +682,9 @@ describe("an action that is refused", () => {
         app.tick(1);
         app.tick(1);
         const changed =
-          app.world.hash() !== before || notes.length > 0 || echoes.length > 0;
+          app.world.hash() !== untouched(4) ||
+          notes.length > 0 ||
+          echoes.length > 0;
         expect(changed).toBe(true);
       });
     });
@@ -721,16 +732,17 @@ describe("an action that is refused", () => {
       expect(after).not.toBe(before);
       app.tick(1);
       expect(echoes).toEqual([2, 3]);
-      expect(app.world.hash()).toBe(after);
 
       // The same two actions with nothing between them give the same world.
       const plain = withApp(game(), (other) => {
         other.app.enqueue(Echo, { by: 2 });
         other.app.enqueue(Echo, { by: 3 });
         other.app.tick(1);
-        return other.app.world.hash();
+        const first = other.app.world.hash();
+        other.app.tick(1);
+        return [first, other.app.world.hash()];
       });
-      expect(after).toBe(plain);
+      expect([after, app.world.hash()]).toEqual(plain);
     });
   });
 

@@ -60,13 +60,13 @@ import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
+import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
 import { Rng } from "./ecs/random";
-import { SnapshotError } from "./ecs/snapshot";
+import { SnapshotError, readSnapshot } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import type { SavedChanges } from "./ecs/world";
+import type { SavedChanges, Moment as WorldMoment } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -83,6 +83,25 @@ import type { BuiltIn, FrameState, TimeState } from "./Services";
 import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
+
+/**
+ * A game's time, held by its world so that a snapshot, a restore and the
+ * world's hash cover it, as Bevy keeps `Time` in its `World`. `Time` reads it.
+ */
+const GameTime = Component.singleton(
+  "arcadekit/Time",
+  { tick: Field.f64, elapsed: Field.f64, delta: Field.f64 },
+  { tick: 0, elapsed: 0, delta: 0 }
+);
+
+/** The tick a save was made at, which its world holds. */
+const tickOf = (save: Save.Save): number => {
+  const held = readSnapshot(save.world).singletons.find(
+    (single) => single.component === GameTime.component.name
+  );
+  const tick = held?.columns.tick?.[0];
+  return typeof tick === "number" ? tick : 0;
+};
 
 type Systems = readonly Plugin.AnySystem[];
 type Handlers = readonly Plugin.AnyHandler[];
@@ -285,7 +304,7 @@ export interface Any {
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
    * Captures the game as it is, in memory, to return to with `rewind`: the
-   * world, the time, the actions queued for the next tick, the events waiting
+   * world with its time, the actions queued for the next tick, the events waiting
    * to be read with every reader's position, what change queries haven't
    * visited yet, and the length of the log. Only between ticks.
    *
@@ -924,7 +943,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const { random } = world;
     const commands = new CommandBuffer(world);
     const events = new EventBus();
-    const time: TimeState = { delta: 0, elapsed: 0, tick: 0 };
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
@@ -965,14 +983,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               : error.message,
         });
       }
-      time.tick = save.tick;
-      time.elapsed = save.elapsed;
-      time.delta = save.delta;
       const restored = events.restore(save.events);
       if (restored !== undefined) {
         return yield* new Save.LoadRefused(restored);
       }
     }
+    // Loaded with the world, or written by the first tick.
+    const time: TimeState = world.singleton(GameTime);
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
       ...(options.systems ?? []),
@@ -1016,12 +1033,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const moments = new WeakSet<Moment>();
     /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
-      readonly elapsed: number;
-      readonly delta: number;
-      readonly world: Uint8Array;
+      readonly world: WorldMoment;
       readonly changes: SavedChanges[];
-      readonly events: EventsMoment;
-      readonly queued: (typeof queued)[number][];
       readonly logLength: number;
       readonly started: boolean;
       readonly wanted: boolean;
@@ -1090,6 +1103,38 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       const json = Schema.encodeUnknownExit(codec)(payload);
       return Exit.isSuccess(json) ? json.value : null;
     };
+    // The actions queued for the next tick and the events waiting to be read
+    // are the game's as much as its components are: the world's hash covers
+    // them, and a rewind of the world puts them back.
+    world._attach({
+      name: "arcadekit/queued",
+      observed: () =>
+        queued.map(({ encoded, from, name, payload }) => [
+          name,
+          from ?? null,
+          encoded ? payload : jsonOf(name, payload),
+        ]),
+      capture: () => queued.slice(),
+      rewind: (was) => {
+        queued.length = 0;
+        for (const action of was) {
+          // It is waiting again: what became of it has not happened.
+          if (action.entry !== undefined) {
+            delete action.entry.refused;
+          }
+          queued.push(action);
+        }
+      },
+    });
+    world._attach({
+      name: "arcadekit/events",
+      observed: () => events.observed(),
+      capture: () => ({ events: events.capture(), tick: time.tick }),
+      // Before the world is put back: `time` is still where the game was.
+      rewind: (was) => {
+        events.rewind(was.events, time.tick, was.tick);
+      },
+    });
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** Enqueues from outside the simulation: `app.enqueue`. */
@@ -2001,9 +2046,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
         );
       }
-      let bytes: Uint8Array;
+      let held: WorldMoment;
       try {
-        bytes = world.snapshot();
+        held = world._capture();
       } catch (error) {
         if (error instanceof SnapshotError) {
           return refused(error.message);
@@ -2012,16 +2057,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       const moment: Captured = {
         tick: time.tick,
-        elapsed: time.elapsed,
-        delta: time.delta,
-        world: bytes,
+        world: held,
         // What runs between ticks has everything still to draw, unless it
         // has drawn nothing since.
         changes: world.saveChanges(
           unseen ? () => true : (reader) => !reader.startsWith(FRAME_READER)
         ),
-        events: events.capture(),
-        queued: queued.slice(),
         logLength: actionLog.length,
         started,
         wanted,
@@ -2031,24 +2072,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     /** Puts the game back to a moment of this app. */
     const rewound = (was: Captured): void => {
-      const from = time.tick;
       dispatcher.flush();
       // What is queued on the buffer was never part of the world.
       commands.rollback(0);
-      world.restore(was.world);
+      world._rewind(was.world);
       world.restoreChanges(was.changes);
-      time.tick = was.tick;
-      time.elapsed = was.elapsed;
-      time.delta = was.delta;
-      events.rewind(was.events, from, was.tick);
-      queued.length = 0;
-      for (const action of was.queued) {
-        // It is waiting again: what became of it has not happened.
-        if (action.entry !== undefined) {
-          delete action.entry.refused;
-        }
-        queued.push(action);
-      }
       actionLog.length = was.logLength;
       while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
         deltas.pop();
@@ -2183,7 +2211,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `record() was called during a ${busy()}. A game is recorded between ticks.`
           );
         }
-        const start = since?.tick ?? began;
+        const start = since === undefined ? began : tickOf(since);
         const from = since?.logLength ?? 0;
         if (
           start < began ||
@@ -2264,9 +2292,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
         return Exit.succeed({
           version,
-          tick: time.tick,
-          elapsed: time.elapsed,
-          delta: time.delta,
           world: bytes,
           queued: waiting,
           events: pending.value,

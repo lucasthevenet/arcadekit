@@ -41,8 +41,8 @@ export interface SavedEvents {
 
 /**
  * A game captured between two ticks, made by `app.save()`: its world as a
- * snapshot, its time, what was queued for the next tick, and the length of its
- * log. `Save.encode` turns it into bytes, and `App.load` continues from it.
+ * snapshot, time included, what was queued for the next tick, and the length
+ * of its log. `Save.encode` turns it into bytes, and `App.load` continues from it.
  *
  * @category Models
  */
@@ -53,13 +53,7 @@ export interface Save {
    * components, and give `App.load` a migration from each older version.
    */
   readonly version: number;
-  /** The number of ticks run. */
-  readonly tick: number;
-  /** The game time, in seconds. */
-  readonly elapsed: number;
-  /** The seconds the last tick simulated. */
-  readonly delta: number;
-  /** `world.snapshot()`. */
+  /** `world.snapshot()`, which holds the game's time with the rest of it. */
   readonly world: Uint8Array;
   /**
    * The actions queued for the next tick, in order, with payloads in JSON form,
@@ -131,9 +125,6 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
  * @category Models
  */
 export interface Contents {
-  tick: number;
-  elapsed: number;
-  delta: number;
   world: SnapshotContents;
   /** The actions that were queued, with payloads in JSON form. */
   queued: { name: string; payload: unknown; from?: string }[];
@@ -205,9 +196,6 @@ export const migrate = (
   }
   try {
     const contents: Contents = {
-      tick: save.tick,
-      elapsed: save.elapsed,
-      delta: save.delta,
       world: readSnapshot(save.world),
       queued: save.queued.map((action) => ({ ...action })),
       events: save.events.map((events) => ({
@@ -241,9 +229,6 @@ export const migrate = (
     }
     return Exit.succeed({
       version,
-      tick: contents.tick,
-      elapsed: contents.elapsed,
-      delta: contents.delta,
       world: writeSnapshot(contents.world),
       queued: contents.queued,
       events: contents.events,
@@ -260,15 +245,13 @@ export const migrate = (
 
 /** "AKSV": arcadekit save. */
 const MAGIC = 0x56534b41;
-const FORMAT = 1;
+// 2: the game's time is in the world, not beside it.
+const FORMAT = 2;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Header = Schema.fromJsonString(
   Schema.Struct({
     version: Count,
-    tick: Count,
-    elapsed: Schema.Finite,
-    delta: Schema.Finite,
     queued: Schema.Array(
       Schema.Struct({
         name: Schema.String,

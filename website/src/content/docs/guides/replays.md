@@ -74,7 +74,9 @@ A replay compares its own world at each checkpoint, and stops at the first misma
 - the order queries visit entities in: tables in creation order, rows ascending;
 - the ids the next entities will get: the freed slots, in reuse order, and their generations;
 - every singleton that has been written, by name;
-- the state of the random number generator.
+- the game's time: the ticks run, the seconds simulated and the last tick's `delta`, which the world holds as the singleton `arcadekit/Time`;
+- the state of the random number generator;
+- the actions queued for the next tick, with who issued them, and the events the simulation has yet to read, each in its JSON form.
 
 Two worlds built by the same operations in the same order hash equal, and changing a single field of a single entity always changes the hash: one change can't cancel out. Two different worlds collide by chance about once in four billion.
 
@@ -83,7 +85,7 @@ It doesn't depend on anything a simulation can't observe: a table's capacity, le
 - A non-numeric field counts as it is [saved](saving-and-loading.md#snapshots): a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all.
 - It uses 32-bit integer arithmetic on each field's bits, so it is identical on every machine and in every JavaScript engine.
 - It reads and changes nothing, so you can call it at any time. It costs about 8 ns per entity with four float fields.
-- It covers only the world: not the events waiting to be read, what change queries haven't visited, or queued actions. Two games with the same hash can still diverge. A [save](saving-and-loading.md) holds all of these.
+- It doesn't cover where each reader is: how far a system has read the events, or what change queries haven't visited. They are the readers', so a plugin that only watches doesn't change the hash of the game it watches. Two games with the same hash can still diverge on these until it reaches the world. A [save](saving-and-loading.md) holds them.
 
 ## What a replay doesn't do
 

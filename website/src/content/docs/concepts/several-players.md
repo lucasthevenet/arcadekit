@@ -44,7 +44,7 @@ A handler receives the peer that issued an action, `{ from }`, alongside the pay
 
 Peers exchange the world's hash at their checkpoints. When every peer has reported its hash for a tick and they differ, every session stops with `Lockstep.Drifted`, which reports the tick, each peer's hash, and when they last agreed. A system that reads the clock, `Math.random` or the order of a `Set` is caught within a few ticks. [Determinism](determinism.md) lists what a game must do to stay in sync.
 
-Only the world's hash is compared. A difference the hash doesn't cover is found when it reaches the world, and the report names that tick, not the one it started on: an event waiting on one peer only, a system's own variables, state held in a service.
+Only the world's hash is compared. It covers the actions queued and the events waiting, but a difference it doesn't cover is found only when it reaches the world, and the report names that tick, not the one it started on: how far a system has read, a system's own variables, state held in a service.
 
 ## Limits of a session
 
