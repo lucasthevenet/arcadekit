@@ -265,6 +265,14 @@ export interface Any {
    */
   readonly actionLog: readonly Action.LogEntry[];
   /**
+   * The game as it was played, to replay with `App.replay`: the action log,
+   * the delta of every tick, and the ticks it begins and ends at. It begins
+   * where this app began, or at `since`, a save this app made, so that loading
+   * that save and replaying the recording returns to the present. Only between
+   * ticks.
+   */
+  readonly record: (since?: Save.Save) => Recording;
+  /**
    * Saves the game as it is, to load later with `App.load`: the world, the
    * time, the actions queued for the next tick, the events waiting to be read,
    * what change queries haven't visited yet, and the length of the log. Only
@@ -377,6 +385,111 @@ export interface Moment {
   /** The number of ticks run when it was captured. */
   readonly tick: number;
 }
+
+/**
+ * A game as it was played, from `app.record()`, for `App.replay` to play
+ * again: everything it needs beside the game's own plugins and options.
+ *
+ * @category Models
+ */
+export interface Recording {
+  /** The number of ticks the game had run where the recording begins. */
+  readonly start: number;
+  /** The number of ticks the game had run where it ends. */
+  readonly end: number;
+  /**
+   * The delta of every tick from `start` to `end`, in runs: from each run's
+   * `tick` on, every tick took its `delta`, until the next run. The first run
+   * begins at `start`.
+   */
+  readonly deltas: readonly {
+    readonly tick: number;
+    readonly delta: number;
+  }[];
+  /** What entered the game from outside, as `app.actionLog` holds it. */
+  readonly log: readonly Action.LogEntry[];
+}
+
+const Tick = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+const RecordingSchema = Schema.fromJsonString(
+  Schema.Struct({
+    start: Tick,
+    end: Tick,
+    deltas: Schema.Array(Schema.Struct({ tick: Tick, delta: Schema.Finite })),
+    log: Schema.Array(
+      Schema.Union([
+        Schema.Struct({
+          tick: Tick,
+          name: Schema.String,
+          payload: Schema.Unknown,
+          from: Schema.optionalKey(Schema.String),
+          queued: Schema.optionalKey(Schema.Literal(true)),
+          refused: Schema.optionalKey(Schema.String),
+        }),
+        Schema.Struct({
+          tick: Tick,
+          hash: Schema.Int.check(
+            Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
+          ),
+        }),
+      ])
+    ),
+  }).check(
+    Schema.makeFilter((recording) => {
+      if (recording.end < recording.start) {
+        return "it ends before it begins";
+      }
+      const { deltas } = recording;
+      if (
+        recording.end > recording.start &&
+        deltas[0]?.tick !== recording.start
+      ) {
+        return "its first run of deltas doesn't begin where it does";
+      }
+      for (let i = 1; i < deltas.length; i++) {
+        if (
+          deltas[i]!.tick <= deltas[i - 1]!.tick ||
+          deltas[i]!.tick >= recording.end
+        ) {
+          return "its runs of deltas are out of order, or past its end";
+        }
+      }
+      for (let i = 0; i < recording.log.length; i++) {
+        const { tick } = recording.log[i]!;
+        if (
+          tick < recording.start ||
+          tick > recording.end ||
+          (i > 0 && tick < recording.log[i - 1]!.tick)
+        ) {
+          return "its log is out of order, or outside it";
+        }
+      }
+      return true;
+    })
+  )
+);
+
+/**
+ * Encodes a recording as text, for a file or the network.
+ *
+ * @category Codecs
+ */
+export const encodeRecording = (recording: Recording): string =>
+  JSON.stringify(recording);
+
+/**
+ * Decodes a recording from text. It checks the recording's own structure:
+ * that its runs of deltas and its log are in order and within it. Each payload
+ * is validated against its action's schema, and each checkpoint against the
+ * world, when it is replayed.
+ *
+ * @category Codecs
+ */
+export const decodeRecording = (
+  text: string
+): Exit.Exit<Recording, Schema.SchemaError> =>
+  Schema.decodeExit(RecordingSchema)(text);
 
 /**
  * Options for running a tick.
@@ -654,9 +767,9 @@ export const make = <
  *
  * No plugin's `setup` runs, since the save holds what setup spawned.
  *
- * The app's action log starts empty. Replay what the game logged after the save
- * (`log.slice(save.logLength)`) with `App.replay`, which verifies it against
- * the log's checkpoints as it goes.
+ * The app's action log starts empty. To return to where the game had got to,
+ * replay what it recorded since the save, `app.record(save)`, with
+ * `App.replay`, which verifies it against the log's checkpoints as it goes.
  *
  * Fails with `LoadRefused` when the save's world can't be loaded: it contains a
  * component this program doesn't define, or one whose fields have changed, or its bytes are
@@ -875,6 +988,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     }
     const actionLog: Action.LogEntry[] = [];
+    // Where this app began, and the delta of every tick it has run since, in
+    // runs: for a recording.
+    const began = time.tick;
+    const deltas: { tick: number; delta: number }[] = [];
     // The moments this app has captured: `rewind` takes no other.
     const moments = new WeakSet<Moment>();
     /** What a moment holds beyond its tick. */
@@ -1902,6 +2019,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           }
         }
 
+        if (deltas.at(-1)?.delta !== delta) {
+          deltas.push({ tick: time.tick, delta });
+        }
         time.delta = delta;
         time.elapsed += delta;
         time.tick++;
@@ -1954,6 +2074,44 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       frameOrder: frameSystems.map((s) => s.name),
       inputOrder: inputSystems.map((s) => s.name),
       actionLog,
+      record(since) {
+        if (ticking || between !== undefined) {
+          throw new Error(
+            `record() was called during a ${busy()}. A game is recorded between ticks.`
+          );
+        }
+        const start = since?.tick ?? began;
+        const from = since?.logLength ?? 0;
+        if (
+          start < began ||
+          start > time.tick ||
+          from > actionLog.length ||
+          (actionLog[from - 1]?.tick ?? start) > start ||
+          (actionLog[from]?.tick ?? start) < start
+        ) {
+          throw new Error(
+            `record() was given a save of tick ${start} that this app didn't make: its log doesn't reach it there. Record since a save of this app, or record all of it.`
+          );
+        }
+        // The run that was under way at the start begins there.
+        let first = 0;
+        while (first + 1 < deltas.length && deltas[first + 1]!.tick <= start) {
+          first++;
+        }
+        return {
+          start,
+          end: time.tick,
+          deltas:
+            start === time.tick
+              ? []
+              : deltas.slice(first).map((run, i) => ({
+                  tick: i === 0 ? start : run.tick,
+                  delta: run.delta,
+                })),
+          // Copies: an enqueued action's entry is told its fate later.
+          log: actionLog.slice(from).map((entry) => ({ ...entry })),
+        };
+      },
       save() {
         if (ticking || between !== undefined) {
           throw new Error(
@@ -2108,6 +2266,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           queued.push(action);
         }
         actionLog.length = was.logLength;
+        while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
+          deltas.pop();
+        }
         started = was.started;
         wanted = was.wanted;
         heard = false;
@@ -2301,9 +2462,12 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
 }
 
 /**
- * Re-applies a recorded action log to a fresh app, ticking with a fixed delta.
- * With the same systems, the same seed and the same starting state, the result
- * is the same game.
+ * Plays a recording again, from `app.record()`, in an app made with the same
+ * plugins and options as the game: a fresh one for a recording of all of it,
+ * or one loaded from the save it was recorded since. Each tick takes the delta
+ * it took when it was recorded, to the recording's end. With the same
+ * systems, the same seed and the same starting state, the result is the same
+ * game.
  *
  * The replay verifies itself against the log, and throws `ReplayDiverged` at
  * the first entry that doesn't match:
@@ -2323,8 +2487,8 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
  *
  * **Gotchas**
  *
- * - The log doesn't record the delta or the number of ticks: whoever replays
- *   supplies them.
+ * - It throws when the app isn't where the recording begins: it has run another
+ *   number of ticks.
  * - It runs neither the frame stage nor the input stage: every tick runs with
  *   `{ input: false }`.
  * - A log without checkpoints, from an app created with `checkpointEvery: 0`,
@@ -2333,11 +2497,13 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
  *
  * @category Running
  */
-export const replay = (
-  app: Any,
-  log: readonly Action.LogEntry[],
-  options: { readonly delta: number; readonly ticks: number }
-): void => {
+export const replay = (app: Any, recording: Recording): void => {
+  const { deltas, end, log, start } = recording;
+  if (app.time.tick !== start) {
+    throw new Error(
+      `App.replay was given a recording that begins at tick ${start}, and the app has run ${app.time.tick} ticks. Replay a recording of a whole game into a fresh app, and one recorded since a save into an app loaded from that save.`
+    );
+  }
   let next = 0;
   let agreedAt: number | undefined;
   // Enqueued entries the next tick will apply, each with the entry the
@@ -2407,10 +2573,20 @@ export const replay = (
     }
     waiting.length = 0;
   };
-  for (let i = 0; i < options.ticks; i++) {
+  let run = 0;
+  for (let tick = start; tick < end; tick++) {
+    while ((deltas[run + 1]?.tick ?? end) <= tick) {
+      run++;
+    }
+    const delta = deltas[run]?.delta;
+    if (delta === undefined || deltas[0]!.tick !== start) {
+      throw new Error(
+        `App.replay was given a recording with no delta for tick ${tick}: a recording's first run of deltas begins where it does. Decode a recording with App.decodeRecording, which checks it.`
+      );
+    }
     applyDue();
     // A replay reads no device: what the devices said is in the log.
-    app.tick(options.delta, NO_INPUT);
+    app.tick(delta, NO_INPUT);
     checkQueued();
   }
   applyDue();
@@ -2419,7 +2595,7 @@ export const replay = (
     throw new ReplayDiverged({
       index: next,
       entry: unreached,
-      reason: `its tick (${unreached.tick}) was never reached; the log is out of order or longer than ${options.ticks} ticks`,
+      reason: `its tick (${unreached.tick}) was never reached; the log is out of order or past the recording's end, tick ${end}`,
     });
   }
 };

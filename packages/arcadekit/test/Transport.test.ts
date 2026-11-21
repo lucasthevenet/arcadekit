@@ -217,10 +217,7 @@ describe("a session joined to a transport", () => {
             // Only a game played with rollback goes back.
             expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
             withApp(game(), (alone) => {
-              App.replay(alone, ada.app.actionLog, {
-                delta: DELTA,
-                ticks: ada.app.time.tick,
-              });
+              App.replay(alone, ada.app.record());
               expect(alone.world.hash()).toBe(ada.app.world.hash());
             });
           })

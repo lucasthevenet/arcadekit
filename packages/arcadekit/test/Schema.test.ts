@@ -472,9 +472,8 @@ describe("saving and replaying", () => {
       app.dispatch(Rename, { name: "x" });
       app.tick(1);
       return {
-        text: Action.encodeLog(app.actionLog),
+        text: App.encodeRecording(app.record()),
         hp: app.world.get(target, Health)!.hp,
-        ticks: app.time.tick,
       };
     });
 
@@ -485,52 +484,104 @@ describe("saving and replaying", () => {
     payload?: Record<string, unknown>;
     hash?: number;
   }
-  const replayInto = (
-    log: readonly (Action.LogEntry | Written)[],
-    ticks: number
-  ) =>
+  /** A recording as its JSON has it, with a log of written entries. */
+  type WrittenRecording = Omit<App.Recording, "log"> & {
+    log: Written[];
+  };
+  const replayInto = (recording: App.Recording | WrittenRecording) =>
     withApp(game, ({ app, target }) => {
       // Whatever the file says: the replay is what checks it.
-      App.replay(app, log as readonly Action.LogEntry[], { delta: 1, ticks });
+      App.replay(app, recording as App.Recording);
       return app.world.get(target, Health)!.hp;
     });
 
-  it("round-trips the log through text and reproduces the game", () => {
+  it("round-trips the recording through text and reproduces the game", () => {
     const saved = record();
     expect(saved.hp).toBe(35);
     expect(saved.text).toBeTypeOf("string");
 
-    const loaded = Action.decodeLog(saved.text);
+    const loaded = App.decodeRecording(saved.text);
     expect(Exit.isSuccess(loaded)).toBe(true);
     if (!Exit.isSuccess(loaded)) {
       return;
     }
     expect(
-      moves(loaded.value).map((entry) => `${entry.tick}:${entry.name}`)
+      moves(loaded.value.log).map((entry) => `${entry.tick}:${entry.name}`)
     ).toEqual(["0:Damage", "1:Damage", "3:Damage", "3:Rename"]);
-    expect(replayInto(loaded.value, saved.ticks)).toBe(saved.hp);
+    expect(loaded.value).toMatchObject({
+      start: 0,
+      end: 4,
+      deltas: [{ tick: 0, delta: 1 }],
+    });
+    expect(replayInto(loaded.value)).toBe(saved.hp);
   });
 
-  it("refuses text that is not a log", () => {
+  it("refuses text that is not a recording", () => {
+    const valid = {
+      start: 1,
+      end: 3,
+      deltas: [{ tick: 1, delta: 1 }],
+      log: [] as unknown[],
+    };
     for (const text of [
       "not json",
       "{}",
       "[1, 2]",
-      JSON.stringify([{ tick: -1, name: "Damage", payload: {} }]),
-      JSON.stringify([{ tick: 0.5, name: "Damage", payload: {} }]),
-      JSON.stringify([{ tick: 0, payload: {} }]),
-      JSON.stringify([{ tick: 0, name: 7, payload: {} }]),
+      JSON.stringify({ ...valid, log: [{ tick: 1.5, hash: 3 }] }),
+      JSON.stringify({ ...valid, log: [{ tick: 1, payload: {} }] }),
+      JSON.stringify({ ...valid, log: [{ tick: 1, name: 7, payload: {} }] }),
+      // A log out of order, or outside the recording.
+      JSON.stringify({ ...valid, log: [{ tick: 0, hash: 1 }] }),
+      JSON.stringify({ ...valid, log: [{ tick: 4, hash: 1 }] }),
+      JSON.stringify({
+        ...valid,
+        log: [
+          { tick: 2, hash: 1 },
+          { tick: 1, hash: 1 },
+        ],
+      }),
+      // A recording that ends before it begins, or at a tick that isn't one.
+      JSON.stringify({ ...valid, start: -1 }),
+      JSON.stringify({ ...valid, end: 0 }),
+      // Runs of deltas that don't cover it, in order.
+      JSON.stringify({ ...valid, deltas: [] }),
+      JSON.stringify({ ...valid, deltas: [{ tick: 2, delta: 1 }] }),
+      JSON.stringify({
+        ...valid,
+        deltas: [
+          { tick: 1, delta: 1 },
+          { tick: 1, delta: 2 },
+        ],
+      }),
+      JSON.stringify({
+        ...valid,
+        deltas: [
+          { tick: 1, delta: 1 },
+          { tick: 3, delta: 2 },
+        ],
+      }),
+      JSON.stringify({ ...valid, deltas: [{ tick: 1, delta: null }] }),
     ]) {
-      expect(Exit.isFailure(Action.decodeLog(text)), text).toBe(true);
+      expect(Exit.isFailure(App.decodeRecording(text)), text).toBe(true);
     }
-    expect(Exit.isSuccess(Action.decodeLog("[]"))).toBe(true);
+    expect(Exit.isSuccess(App.decodeRecording(JSON.stringify(valid)))).toBe(
+      true
+    );
+    expect(
+      Exit.isSuccess(
+        App.decodeRecording(
+          JSON.stringify({ start: 4, end: 4, deltas: [], log: [] })
+        )
+      )
+    ).toBe(true);
   });
 
   it("stops a replay at the first entry that no longer applies", () => {
     const saved = record();
     // Entry 0 is the checkpoint of the state the game started from; the four
     // actions follow it.
-    const log = JSON.parse(saved.text) as Written[];
+    const recording = JSON.parse(saved.text) as WrittenRecording;
+    const { log } = recording;
     expect(log.map((entry) => entry.name)).toEqual([
       undefined,
       "Damage",
@@ -544,7 +595,7 @@ describe("saving and replaying", () => {
     edited[2]!.payload!.amount = 9999;
     let caught: unknown;
     try {
-      replayInto(edited, saved.ticks);
+      replayInto({ ...recording, log: edited });
     } catch (error) {
       caught = error;
     }
@@ -561,19 +612,21 @@ describe("saving and replaying", () => {
     // An action this build of the game does not have.
     const renamed = structuredClone(log);
     renamed[1]!.name = "Smite";
-    expect(() => replayInto(renamed, saved.ticks)).toThrow(
+    expect(() => replayInto({ ...recording, log: renamed })).toThrow(
       /Log entry 1 \("Smite" at tick 0\)/
     );
 
     // Valid entries the rules refuse: the target is not in this game.
     const retargeted = structuredClone(log);
     retargeted[3]!.payload!.target = 4000;
-    expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 3/);
+    expect(() => replayInto({ ...recording, log: retargeted })).toThrow(
+      /Log entry 3/
+    );
 
     // Entries that could never be reached.
     const late = structuredClone(log);
     late[4]!.tick = 99;
-    expect(() => replayInto(late, saved.ticks)).toThrow(
+    expect(() => replayInto({ ...recording, log: late })).toThrow(
       /its tick \(99\) was never reached/
     );
   });

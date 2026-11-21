@@ -253,15 +253,16 @@ const program = Effect.gen(function* () {
   yield* strikeWith("Knight", knight, rogue); // nobody left to hit
   yield* Console.log(`end -> ${standing(app)}`);
 
-  // The log holds the moves that were accepted, and the world's hash after
-  // every tick. Written out as text and read back, it reproduces this game in
-  // a fresh one, which checks itself against those hashes as it goes. The
-  // replay installs only the rules, so it is silent.
-  const saved = Action.encodeLog(app.actionLog);
+  // The recording holds the moves that were accepted, the world's hash after
+  // every tick, and how long each tick was. Written out as text and read
+  // back, it reproduces this game in a fresh one, which checks itself against
+  // those hashes as it goes. The replay installs only the rules, so it is
+  // silent.
+  const saved = App.encodeRecording(app.record());
   yield* Console.log(`saved: ${saved}`);
   // A fresh app in a scope of its own, closed when the replay is over.
   const replay = Effect.fnUntraced(function* (text: string) {
-    const loaded = Action.decodeLog(text);
+    const loaded = App.decodeRecording(text);
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
@@ -270,7 +271,7 @@ const program = Effect.gen(function* () {
     // A replay that goes another way throws, and says where.
     return yield* Effect.try({
       try: () => {
-        App.replay(headless, loaded.value, { delta: 1, ticks: app.time.tick });
+        App.replay(headless, loaded.value);
         return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
       },
       catch: (error) => (error instanceof Error ? error.message : "it threw"),

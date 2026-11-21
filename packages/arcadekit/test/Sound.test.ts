@@ -470,7 +470,7 @@ describe("a game with sound", () => {
     expect(sound.played.length).toBeGreaterThan(1);
     const again = Sound.makeRecorder();
     const replayed = play(again, 3);
-    App.replay(replayed, app.actionLog, { delta: 0.05, ticks: 30 });
+    App.replay(replayed, app.record());
     expect(replayed.world.hash()).toBe(app.world.hash());
     expect(again.played).toEqual([]);
   });

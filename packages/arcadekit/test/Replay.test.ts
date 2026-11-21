@@ -1,6 +1,6 @@
 import { Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -129,6 +129,7 @@ const record = (options: Options & { readonly ticks: number }) =>
       hashes.push(app.world.hash());
     }
     return {
+      recording: app.record(),
       log: [...app.actionLog],
       hashes,
       starting,
@@ -136,6 +137,21 @@ const record = (options: Options & { readonly ticks: number }) =>
       ticks: options.ticks,
     };
   });
+
+/**
+ * A recording of a game from its start, of `ticks` ticks of `delta` seconds
+ * each, that holds `log`: a log as it was recorded, or altered.
+ */
+const recordingOf = (
+  log: readonly Action.LogEntry[],
+  ticks: number,
+  delta: number
+): App.Recording => ({
+  start: 0,
+  end: ticks,
+  deltas: ticks === 0 ? [] : [{ tick: 0, delta }],
+  log,
+});
 
 /** Replays a log into a fresh game and returns what stopped it, if anything did. */
 const replayInto = (
@@ -146,7 +162,7 @@ const replayInto = (
   withApp(game(options), (app) => {
     let stopped: App.ReplayDiverged | undefined;
     try {
-      App.replay(app, log, { delta: 1 / 60, ticks });
+      App.replay(app, recordingOf(log, ticks, 1 / 60));
     } catch (error) {
       if (!(error instanceof App.ReplayDiverged)) {
         throw error;
@@ -308,10 +324,16 @@ describe("checkpoints", () => {
 
   it("survive being written down, and a malformed one is refused", () => {
     const recorded = record({ ticks: 12, checkpointEvery: 4 });
-    const text = Action.encodeLog(recorded.log);
-    const loaded = Action.decodeLog(text);
-    expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recorded.log);
-    expect(JSON.parse(text)[0]).toEqual({ tick: 0, hash: recorded.starting });
+    const text = App.encodeRecording(recorded.recording);
+    const loaded = App.decodeRecording(text);
+    expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recorded.recording);
+    expect(JSON.parse(text).log[0]).toEqual({
+      tick: 0,
+      hash: recorded.starting,
+    });
+    /** A recording of one tick that holds `log`, as text. */
+    const holding = (log: readonly unknown[]): string =>
+      JSON.stringify({ ...recordingOf([], 1, 1), log });
 
     for (const entry of [
       { tick: 0, hash: -1 },
@@ -323,11 +345,11 @@ describe("checkpoints", () => {
       { hash: 12 },
       { tick: 0 },
     ]) {
-      const refused = Action.decodeLog(JSON.stringify([entry]));
+      const refused = App.decodeRecording(holding([entry]));
       expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
     }
-    const largest = Action.decodeLog(
-      JSON.stringify([{ tick: 0, hash: 2 ** 32 - 1 }])
+    const largest = App.decodeRecording(
+      holding([{ tick: 0, hash: 2 ** 32 - 1 }])
     );
     expect(Exit.isSuccess(largest)).toBe(true);
     expect(Action.isCheckpoint({ tick: 1, hash: 0 })).toBe(true);
@@ -464,7 +486,7 @@ describe("a replay that checks itself", () => {
     const crowded = withApp(game({ seed: 5 }), (app) => {
       app.world.spawn(Coin.of({ value: 1, x: 0 }));
       try {
-        App.replay(app, recorded.log, { delta: 1 / 60, ticks: 30 });
+        App.replay(app, recordingOf(recorded.log, 30, 1 / 60));
       } catch (error) {
         return error as App.ReplayDiverged;
       }
@@ -737,15 +759,18 @@ describe("the action log", () => {
       { tick: 0, name: "b", payload: null, queued: true },
       { tick: 1, name: "c", payload: [1], queued: true, refused: "Because" },
     ];
-    const loaded = Action.decodeLog(Action.encodeLog(log));
-    expect(Exit.isSuccess(loaded) && loaded.value).toEqual(log);
+    const recording = recordingOf(log, 2, 1);
+    const loaded = App.decodeRecording(App.encodeRecording(recording));
+    expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recording);
     for (const entry of [
       { tick: 0, name: "a", payload: 1, queued: false },
       { tick: 0, name: "a", payload: 1, queued: "yes" },
       { tick: 0, name: "a", payload: 1, queued: true, refused: true },
       { tick: 0, name: "a", payload: 1, refused: 5 },
     ]) {
-      const refused = Action.decodeLog(JSON.stringify([entry]));
+      const refused = App.decodeRecording(
+        App.encodeRecording({ ...recording, log: [entry as Action.Logged] })
+      );
       expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
     }
   });
@@ -779,7 +804,7 @@ describe("app.enqueue from inside the simulation", () => {
   });
   const replayed = (log: readonly Action.LogEntry[], ticks: number) =>
     withApp(holding, ({ app, tally }) => {
-      App.replay(app, log, { delta: 1, ticks });
+      App.replay(app, recordingOf(log, ticks, 1));
       return {
         value: app.world.get(tally, Tally)!.value,
         hash: app.world.hash(),
@@ -875,6 +900,7 @@ describe("a game whose simulation issues actions itself", () => {
     const recorded = withApp(busy(), ({ app, tally }) => {
       play(app);
       return {
+        recording: app.record(),
         log: [...app.actionLog],
         hash: app.world.hash(),
         tally: app.world.get(tally, Tally)!,
@@ -891,7 +917,7 @@ describe("a game whose simulation issues actions itself", () => {
     ).toBe(true);
 
     const replayed = withApp(busy(), ({ app, tally }) => {
-      App.replay(app, recorded.log, { delta: 1, ticks: 90 });
+      App.replay(app, recorded.recording);
       return {
         log: [...app.actionLog],
         hash: app.world.hash(),
@@ -926,7 +952,7 @@ describe("a game whose simulation issues actions itself", () => {
     });
     const stopped = withApp(busy(), ({ app }) => {
       try {
-        App.replay(app, withBotMoves, { delta: 1, ticks: 9 });
+        App.replay(app, recordingOf(withBotMoves, 9, 1));
       } catch (error) {
         return error as App.ReplayDiverged;
       }
@@ -935,7 +961,7 @@ describe("a game whose simulation issues actions itself", () => {
     expect(stopped!.tick).toBe(4);
     // And as it is recorded, it replays.
     withApp(busy(), ({ app }) => {
-      App.replay(app, recorded, { delta: 1, ticks: 9 });
+      App.replay(app, recordingOf(recorded, 9, 1));
     });
   });
 
@@ -968,7 +994,7 @@ describe("a game whose simulation issues actions itself", () => {
       });
     const replay = (log: readonly Action.LogEntry[]) =>
       withApp(make, ({ app, tally }) => {
-        App.replay(app, log, { delta: 1, ticks: 1 });
+        App.replay(app, recordingOf(log, 1, 1));
         return app.world.get(tally, Tally)!.value;
       });
 
@@ -986,5 +1012,119 @@ describe("a game whose simulation issues actions itself", () => {
     ]);
     expect(replay(doubledFirst.log)).toBe(doubledFirst.value);
     expect(replay(addedFirst.log)).toBe(addedFirst.value);
+  });
+});
+
+describe("a recording", () => {
+  // A walker whose stride is the tick's delta: a tick of another length
+  // leaves it somewhere else.
+  const Walker = Component.define("rp/Walker", { x: Field.f64 });
+  const Walk = System.make("rp/Walk", function* () {
+    const { delta } = yield* Time;
+    (yield* World)
+      .view(Query.all(Walker).pipe(Query.writes(Walker)))
+      .each((walker) => {
+        walker.x += delta;
+      });
+  });
+  const walking = Effect.map(
+    App.make({ systems: [Walk], handlers: [drop], checkpointEvery: 1 }),
+    (app) => {
+      app.world.spawn(Walker.of({ x: 0 }));
+      return app;
+    }
+  );
+  const steps = [1 / 60, 1 / 60, 1 / 60, 1 / 30, 1 / 30, 1 / 60];
+
+  it("holds how long each tick was, so a replay takes the same steps to the same end", () => {
+    const recorded = withApp(walking, (app) => {
+      for (const delta of steps) {
+        app.dispatch(Drop, { value: 1 });
+        app.tick(delta);
+      }
+      return { recording: app.record(), hash: app.world.hash() };
+    });
+    expect(recorded.recording).toMatchObject({
+      start: 0,
+      end: 6,
+      deltas: [
+        { tick: 0, delta: 1 / 60 },
+        { tick: 3, delta: 1 / 30 },
+        { tick: 5, delta: 1 / 60 },
+      ],
+    });
+    const decoded = App.decodeRecording(
+      App.encodeRecording(recorded.recording)
+    );
+    expect(decoded).toEqual(Exit.succeed(recorded.recording));
+    withApp(walking, (app) => {
+      App.replay(app, recorded.recording);
+      expect(app.time.tick).toBe(6);
+      expect(app.time.elapsed).toBeCloseTo(steps.reduce((a, b) => a + b));
+      expect(app.world.hash()).toBe(recorded.hash);
+    });
+  });
+
+  it("begins at a save of the app, with the run of deltas under way there", () => {
+    withApp(walking, (app) => {
+      app.tick(1 / 30);
+      app.tick(1 / 30);
+      app.tick(1 / 30);
+      app.dispatch(Drop, { value: 2 });
+      const save = app.save();
+      assert(Exit.isSuccess(save));
+      app.tick(1 / 30);
+      app.tick(1 / 60);
+      const tail = app.record(save.value);
+      expect(tail).toMatchObject({
+        start: 3,
+        end: 5,
+        deltas: [
+          { tick: 3, delta: 1 / 30 },
+          { tick: 4, delta: 1 / 60 },
+        ],
+      });
+      expect(tail.log.every((entry) => entry.tick >= 3)).toBe(true);
+    });
+  });
+
+  it("forgets the ticks a rewind gave up", () => {
+    withApp(walking, (app) => {
+      app.tick(1 / 60);
+      const moment = app.capture();
+      assert(Exit.isSuccess(moment));
+      app.tick(1 / 30);
+      app.tick(1 / 30);
+      app.rewind(moment.value);
+      app.tick(1 / 60);
+      expect(app.record()).toMatchObject({
+        end: 2,
+        deltas: [{ tick: 0, delta: 1 / 60 }],
+      });
+    });
+  });
+
+  it("is refused into an app that isn't where it begins, and records only a save of its own app", () => {
+    const recording = withApp(walking, (app) => {
+      app.tick(1 / 60);
+      return app.record();
+    });
+    withApp(walking, (app) => {
+      app.tick(1 / 60);
+      expect(() => App.replay(app, recording)).toThrow(
+        "App.replay was given a recording that begins at tick 0, and the app has run 1 ticks."
+      );
+      // Not a save of this app: it is of a tick this one hasn't reached.
+      const ahead = withApp(walking, (other) => {
+        for (let i = 0; i < 5; i++) {
+          other.tick(1 / 60);
+        }
+        return other.save();
+      });
+      assert(Exit.isSuccess(ahead));
+      expect(() => app.record(ahead.value)).toThrow(
+        /record\(\) was given a save of tick 5 that this app didn't make/
+      );
+    });
   });
 });

@@ -34,15 +34,15 @@ const program = Effect.gen(function* () {
   for (let i = 0; i < 10; i++) {
     game.tick(1 / 60);
   }
-  const text = Action.encodeLog(game.actionLog); // for a file
+  const text = App.encodeRecording(game.record()); // for a file
 
-  const log = yield* Action.decodeLog(text); // fails on text that isn't a log
+  const recording = yield* App.decodeRecording(text); // fails on text that isn't one
   const again = yield* App.make({
     plugins: [Rules],
     seed: 42,
     checkpointEvery: 1,
   });
-  App.replay(again, log, { delta: 1 / 60, ticks: 10 }); // throws App.ReplayDiverged
+  App.replay(again, recording); // throws App.ReplayDiverged
 }).pipe(Effect.scoped);
 ```
 
@@ -52,7 +52,7 @@ const program = Effect.gen(function* () {
 - every action enqueued through the app, marked `queued`, and also marked `refused`, with a short reason, if it was refused when its turn came;
 - checkpoints, the world's hash at a given tick. `Action.isCheckpoint(entry)` distinguishes the two kinds of entry.
 
-`App.replay(app, log, { delta, ticks })` plays the log into a fresh app created with the same plugins and seed, and started from the same state: whatever was spawned into `app.world` before the first action or tick. You pass the tick length and the number of ticks the game ran, since the log doesn't record them.
+`app.record()` returns a recording: that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. `App.replay(app, recording)` plays it into a fresh app created with the same plugins and seed, and started from the same state: whatever was spawned into `app.world` before the first action or tick. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay into an app that isn't at the recording's first tick throws. `App.encodeRecording` and `App.decodeRecording` turn a recording into text and back, and decoding refuses one whose log or runs of deltas are out of order or outside it.
 
 ## Checkpoints
 
@@ -90,7 +90,6 @@ It doesn't depend on anything a simulation can't observe: a table's capacity, le
 - It runs no frame or input stage: it reads no device and draws nothing. `App.replay` ticks with `{ input: false }`, and a tool that replays by hand with `tick` must do the same, or the machine's own keys leak into the game.
 - Actions the simulation issues itself, such as a bot's move, aren't in the log: the replay's own systems issue them again.
 - Once a game has started, every change to its world must be in the log or come from the simulation: an action, a system, a handler. A coin spawned into `app.world` by hand between two ticks is in neither, so the replay can't reproduce it, and stops at the next checkpoint.
-- The log doesn't record the game's `delta` or number of ticks. Whoever replays passes `delta` and `ticks`.
 - A write through a raw column in the frame or input stage changes the game without an error, unless the app was created with `verifyFrames`. A replay runs neither stage, so it diverges. See [testing](testing.md).
 
 ## Read more

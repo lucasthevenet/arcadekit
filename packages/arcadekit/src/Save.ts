@@ -17,8 +17,8 @@
  * save and the log since can return to the present by loading the save and
  * replaying only that tail, however long it has been running:
  *
- *   const tail = app.actionLog.slice(save.logLength)
- *   App.replay(loaded, tail, { delta, ticks: app.time.tick - save.tick })
+ *   const tail = app.record(save)
+ *   App.replay(loaded, tail)
  */
 import { Cause, Data, Exit, Schema } from "effect";
 

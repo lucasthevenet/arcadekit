@@ -1,5 +1,5 @@
 import { Effect, Exit, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import { Action, App, Save, System, Time } from "../src/index";
 import {
@@ -70,9 +70,10 @@ describe("who issued an action", () => {
       app.enqueueByName("ls/Tip", { amount: 5 }, "grace");
       app.enqueueByName("ls/Tip", { amount: 9 }, "mallory");
       app.tick(DELTA);
-      return { log: [...app.actionLog], hash: app.world.hash() };
+      return { recording: app.record(), hash: app.world.hash() };
     });
-    expect(moves(recorded.log)).toEqual([
+    const { log } = recorded.recording;
+    expect(moves(log)).toEqual([
       { tick: 0, name: "ls/Tip", payload: { amount: 2 }, from: "ada" },
       {
         tick: 0,
@@ -91,19 +92,17 @@ describe("who issued an action", () => {
       },
     ]);
     // As text and back, as a log that is kept would be.
-    const text = Action.encodeLog(recorded.log);
-    const read = Action.decodeLog(text);
-    expect(read).toEqual(Exit.succeed(recorded.log));
+    const text = App.encodeRecording(recorded.recording);
+    const read = App.decodeRecording(text);
+    expect(read).toEqual(Exit.succeed(recorded.recording));
     withApp(game(), (app) => {
-      App.replay(app, Exit.isSuccess(read) ? read.value : [], {
-        delta: DELTA,
-        ticks: 1,
-      });
+      assert(Exit.isSuccess(read));
+      App.replay(app, read.value);
       expect(app.world.hash()).toBe(recorded.hash);
       expect(purseOf(app)).toEqual({ ada: 2, grace: 5 });
     });
     // A log that had lost who issued each is another game, and says so.
-    const anonymous = recorded.log.map((entry) => {
+    const anonymous = log.map((entry) => {
       if (Action.isCheckpoint(entry)) {
         return entry;
       }
@@ -112,14 +111,17 @@ describe("who issued an action", () => {
     });
     withApp(game(), (app) => {
       expect(() =>
-        App.replay(app, anonymous, { delta: DELTA, ticks: 1 })
+        App.replay(app, { ...recorded.recording, log: anonymous })
       ).toThrow(App.ReplayDiverged);
     });
     // A name is text.
     expect(
       Exit.isFailure(
-        Action.decodeLog(
-          JSON.stringify([{ tick: 0, name: "ls/Tip", payload: {}, from: 7 }])
+        App.decodeRecording(
+          JSON.stringify({
+            ...recorded.recording,
+            log: [{ tick: 0, name: "ls/Tip", payload: {}, from: 7 }],
+          })
         )
       )
     ).toBe(true);

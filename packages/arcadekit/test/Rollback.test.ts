@@ -144,7 +144,7 @@ describe("a rollback session", () => {
         // on those ticks and never goes back: the replay holds every
         // tick's hash against the log's, and ends on the same one.
         withApp(game(), (alone) => {
-          App.replay(alone, ada.app.actionLog, { delta: DELTA, ticks });
+          App.replay(alone, ada.app.record());
           expect(alone.world.hash(), where).toBe(ada.app.world.hash());
           expect({ ...alone.world.singleton(Purse) }, where).toEqual({
             ...purse,
@@ -171,8 +171,10 @@ describe("a rollback session", () => {
         expect(other.session.drifted).toBeUndefined();
       }
       expect(first.session.rewinds).toBeGreaterThan(5);
+      const recording = first.app.record();
+      expect(recording.end).toBe(ticks);
       withApp(game(), (alone) => {
-        App.replay(alone, first.app.actionLog, { delta: DELTA, ticks });
+        App.replay(alone, recording);
         expect(alone.world.hash()).toBe(first.app.world.hash());
       });
     });

@@ -829,7 +829,7 @@ describe("the input stage", () => {
 
   it("is not run by a replay, whatever the devices of the machine it is replayed on say", () => {
     const source = Input.makeManualSource();
-    let log: readonly Action.LogEntry[] = [];
+    let recording: App.Recording | undefined;
     let hash = 0;
     run(
       Effect.gen(function* () {
@@ -837,7 +837,7 @@ describe("the input stage", () => {
         source.press("ArrowRight");
         app.tick(1);
         app.tick(1);
-        log = app.actionLog.slice();
+        recording = app.record();
         hash = app.world.hash();
         expect(ship(app).x).toBe(20);
       }).pipe(withSource(source))
@@ -852,7 +852,7 @@ describe("the input stage", () => {
           plugins: [Flying],
           checkpointEvery: 1,
         });
-        App.replay(again, log, { delta: 1, ticks: 2 });
+        App.replay(again, recording!);
         expect(again.world.hash()).toBe(hash);
         expect(ship(again)).toEqual({ x: 20, shots: 0 });
         expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
@@ -1136,7 +1136,7 @@ describe("the picture of the devices in the world", () => {
 
   it("goes through the action log, so a replay needs no devices at all", () => {
     const source = Input.makeManualSource();
-    const { hashes, log, played, ticks } = run(
+    const { hashes, played, text, ticks } = run(
       Effect.gen(function* () {
         const app = yield* App.make({
           plugins: [Flying],
@@ -1175,7 +1175,7 @@ describe("the picture of the devices in the world", () => {
         ]);
         return {
           hashes: tickHashes,
-          log: Action.encodeLog(app.actionLog),
+          text: App.encodeRecording(app.record()),
           played: ship(app),
           ticks: app.time.tick,
         };
@@ -1189,15 +1189,16 @@ describe("the picture of the devices in the world", () => {
     // The replay is given no source, and its input stage is never run.
     run(
       Effect.gen(function* () {
-        const decoded = Action.decodeLog(log);
+        const decoded = App.decodeRecording(text);
         assert(Exit.isSuccess(decoded));
-        const entries = decoded.value;
+        const recording = decoded.value;
+        const entries = recording.log;
         const again = yield* App.make({
           plugins: [Flying],
           checkpointEvery: 1,
           seed: 9,
         });
-        App.replay(again, entries, { delta: 0.1, ticks });
+        App.replay(again, recording);
         expect(ship(again)).toEqual(played);
         expect(again.world.hash()).toBe(hashes.at(-1));
         // Checked against every tick's checkpoint on the way.
@@ -1216,7 +1217,7 @@ describe("the picture of the devices in the world", () => {
             ? { ...entry, payload: { down: ["ArrowLeft"] } }
             : entry
         );
-        expect(() => App.replay(other, altered, { delta: 0.1, ticks })).toThrow(
+        expect(() => App.replay(other, { ...recording, log: altered })).toThrow(
           App.ReplayDiverged
         );
       })
@@ -1771,7 +1772,7 @@ describe("bindings", () => {
 
   it("are in the log as those actions, so a replay has them and reads no device", () => {
     const source = Input.makeManualSource();
-    const log = run(
+    const recording = run(
       Effect.gen(function* () {
         done.length = 0;
         const app = yield* App.make({ plugins: [Game], checkpointEvery: 1 });
@@ -1782,9 +1783,10 @@ describe("bindings", () => {
         source.tap(Input.pointerButton());
         app.input();
         app.tick(1);
-        return app.actionLog;
+        return app.record();
       }).pipe(withSource(source))
     );
+    const { log } = recording;
     const played = [...done];
     expect(played).toEqual(["jump at 0", "aim 7", "fire 7,0"]);
     expect(log.filter((entry) => !Action.isCheckpoint(entry))).toEqual([
@@ -1798,7 +1800,7 @@ describe("bindings", () => {
         // The same handlers, and nothing that listens to a device.
         const again = yield* App.make({ handlers, checkpointEvery: 1 });
         expect(again.inputOrder).toEqual([]);
-        App.replay(again, log, { delta: 1, ticks: 2 });
+        App.replay(again, recording);
         expect(done).toEqual(played);
       })
     );

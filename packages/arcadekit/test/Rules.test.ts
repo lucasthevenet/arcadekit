@@ -520,9 +520,8 @@ describe("replay", () => {
         app.tick(1);
         app.tick(1);
         return {
-          log: [...app.actionLog],
+          recording: app.record(),
           state: snapshot(app),
-          ticks: app.time.tick,
         };
       });
 
@@ -532,7 +531,7 @@ describe("replay", () => {
         (entry) =>
           `${entry.tick}:${entry.name}${entry.queued === true ? " queued" : ""}${entry.refused === undefined ? "" : ` refused (${entry.refused})`}`
       );
-    expect(listed(original.log)).toEqual([
+    expect(listed(original.recording.log)).toEqual([
       "0:Attack",
       "1:EndTurn queued",
       "2:Summon",
@@ -547,10 +546,10 @@ describe("replay", () => {
     expect(original.state[0]).toBe("tick=7 entities=3");
 
     const replayed = withApp(duel(), ({ app }) => {
-      App.replay(app, original.log, { delta: 1, ticks: original.ticks });
+      App.replay(app, original.recording);
       return { log: [...app.actionLog], state: snapshot(app) };
     });
     expect(replayed.state).toEqual(original.state);
-    expect(replayed.log).toEqual(original.log);
+    expect(replayed.log).toEqual(original.recording.log);
   });
 });

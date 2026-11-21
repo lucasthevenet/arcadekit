@@ -89,8 +89,10 @@ describe("a lockstep session", () => {
       }
       const ticks = catchUp(peers, net);
       const [ada] = peers as [Peer];
+      const recording = ada.app.record();
+      expect(recording.end).toBe(ticks);
       withApp(game(), (alone) => {
-        App.replay(alone, ada.app.actionLog, { delta: DELTA, ticks });
+        App.replay(alone, recording);
         expect(alone.world.hash()).toBe(ada.app.world.hash());
       });
     });
