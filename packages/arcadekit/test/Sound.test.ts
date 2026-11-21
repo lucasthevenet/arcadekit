@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   Action,
@@ -116,6 +116,35 @@ const about = (app: App.Any, speed: number): void => {
 };
 
 describe("Sound.cues", () => {
+  it("plays a cue once when a rewind runs its tick again, and what the tick now does", () => {
+    const sound = Sound.makeRecorder();
+    const app = play(sound);
+    app.tick(0.1);
+    app.frame(0);
+    const moment = app.capture();
+    assert(Exit.isSuccess(moment));
+    app.enqueue(Drop, { height: 5 });
+    app.tick(0.1);
+    app.frame(0);
+    expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
+    // A session goes back, and runs the tick again with the same drop: it
+    // was heard already, so it isn't played twice.
+    app.rewind(moment.value);
+    app.enqueue(Drop, { height: 5 });
+    app.tick(0.1);
+    app.frame(0);
+    expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
+    // Gone back again, the tick runs without it: nothing to play. Then a drop
+    // of its own, past where the game had got to, is heard.
+    app.rewind(moment.value);
+    app.tick(0.1);
+    app.frame(0);
+    app.enqueue(Drop, { height: 5 });
+    app.tick(0.1);
+    app.frame(0);
+    expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "whoosh"]);
+  });
+
   it("plays what each event sounds like, once, in the frame after it happened", () => {
     const sound = Sound.makeRecorder();
     const app = play(sound);

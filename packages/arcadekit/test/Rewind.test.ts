@@ -345,3 +345,150 @@ describe("a game that is put back to a moment", () => {
     });
   });
 });
+
+describe("what the stages between ticks hear across a rewind", () => {
+  const Rang = Event.define("rw/Rang", Schema.Struct({ n: Schema.Int }));
+  const Bell = Component.define("rw/Bell", { extra: Field.i32 });
+  const Bells = Query.all(Bell);
+  const Louder = Action.define("rw/Louder", Schema.Struct({ by: Schema.Int }));
+  const louder = Action.handler(Louder, function* ({ by }) {
+    (yield* Commands).spawn(Bell.of({ extra: by }));
+  });
+  // Each tick rings its number twice, and once more for each bell.
+  const Ring = System.make("rw/Ring", function* () {
+    const rang = yield* Rang;
+    const { tick } = yield* Time;
+    rang.emit({ n: tick });
+    rang.emit({ n: tick });
+    (yield* Bells).each((bell) => rang.emit({ n: tick * 100 + bell.extra }));
+  });
+  const listening = () => {
+    const heard = { frame: [] as number[], input: [] as number[] };
+    const Draw = System.make("rw/Draw", function* () {
+      heard.frame.push(...(yield* Rang).read().map((rang) => rang.n));
+    }).pipe(System.inStage("frame"));
+    const Keys = System.make("rw/Keys", function* () {
+      heard.input.push(...(yield* Rang).read().map((rang) => rang.n));
+    }).pipe(System.inStage("input"));
+    return {
+      heard,
+      make: App.make({ systems: [Ring, Draw, Keys], handlers: [louder] }),
+    };
+  };
+  const moment = (app: App.Any): App.Moment => captured(app);
+
+  it("hear each event once, and what the ticks run again do otherwise", () => {
+    const { heard, make } = listening();
+    withApp(make, (app) => {
+      app.tick(DELTA);
+      app.frame(0);
+      const back = moment(app);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      app.frame(0);
+      expect(heard.frame).toEqual([1, 1, 2, 2, 3, 3]);
+      heard.frame.length = 0;
+      heard.input.length = 0;
+      // Run again with a bell that rings on tick 3: only that is new.
+      app.rewind(back);
+      app.tick(DELTA);
+      app.enqueue(Louder, { by: 7 });
+      app.tick(DELTA);
+      app.frame(0);
+      expect(heard.frame).toEqual([307]);
+      // Past where the game had got to, every event is new again. The input
+      // stage runs before each tick, so it had not heard the third tick's
+      // events before the rewind, and hears them now, before the fourth.
+      app.tick(DELTA);
+      app.frame(0);
+      expect(heard).toEqual({ frame: [307, 4, 4, 407], input: [3, 3, 307] });
+    });
+  });
+
+  it("hear once what they heard of ticks whose events were dropped since", () => {
+    const { heard, make } = listening();
+    withApp(make, (app) => {
+      app.tick(DELTA);
+      app.frame(0);
+      const back = moment(app);
+      // Every stage hears each tick, so each tick drops the one before.
+      for (let i = 0; i < 4; i++) {
+        app.tick(DELTA);
+        app.frame(0);
+      }
+      expect(app.events.pending(Rang)).toBe(2);
+      heard.frame.length = 0;
+      app.rewind(back);
+      for (let i = 0; i < 4; i++) {
+        app.tick(DELTA);
+        app.frame(0);
+      }
+      expect(heard.frame).toEqual([]);
+    });
+  });
+
+  it("hear again none of what they heard before a moment was taken", () => {
+    const { heard, make } = listening();
+    withApp(make, (app) => {
+      // Taken before anything between ticks has run: their readers are made
+      // after it, and the rewind drops them.
+      const back = moment(app);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      app.frame(0);
+      const first = [...heard.frame];
+      app.rewind(back);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      app.frame(0);
+      expect(first).toEqual([1, 1, 2, 2]);
+      expect(heard.frame).toEqual([1, 1, 2, 2]);
+      // The input stage runs before each tick, and heard what came before the
+      // second, once.
+      expect(heard.input).toEqual([1, 1]);
+    });
+  });
+
+  it("hear the events of ticks they never heard, after a rewind further back", () => {
+    const { heard, make } = listening();
+    withApp(make, (app) => {
+      app.tick(DELTA);
+      app.frame(0);
+      const back = moment(app);
+      // Ticks run with no frame: the frame stage heard none of them.
+      app.tick(DELTA);
+      app.tick(DELTA);
+      app.rewind(back);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      app.frame(0);
+      expect(heard.frame).toEqual([1, 1, 2, 2, 3, 3]);
+    });
+  });
+
+  it("leave the game as one that never went back", () => {
+    const one = listening();
+    const other = listening();
+    withApp(one.make, (back) =>
+      withApp(other.make, (straight) => {
+        back.tick(DELTA);
+        back.frame(0);
+        const at = moment(back);
+        back.tick(DELTA);
+        back.frame(0);
+        back.rewind(at);
+        for (const app of [back, straight]) {
+          if (app === straight) {
+            app.tick(DELTA);
+            app.frame(0);
+          }
+          app.tick(DELTA);
+          app.frame(0);
+        }
+        expect(back.world.hash()).toBe(straight.world.hash());
+        expect(back.save()).toEqual(straight.save());
+        expect(one.heard.frame).toEqual(other.heard.frame);
+      })
+    );
+  });
+});

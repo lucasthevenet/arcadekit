@@ -166,7 +166,7 @@ What a failed frame set for a channel stays in place until a frame completes. Sy
 
 ## With rollback
 
-In a multiplayer game played with [rollback](lockstep-and-rollback.md), a tick can run again, and the frame stage repeats what it did for it: the tick's events are heard again, and a sound plays twice. A sound for something that is then rolled back has already played. A game that must not play sounds early checks its session's `session.confirmed`.
+In a multiplayer game played with [rollback](lockstep-and-rollback.md), a tick can run again. A cue it plays again with the same payload plays once: the frame stage hears each event once across a rewind. A cue the tick now plays otherwise, or with another payload, plays then. A sound for something that is then rolled back has already played, and keeps playing. A game that must not play sounds early checks its session's `session.confirmed`.
 
 ## Read more
 

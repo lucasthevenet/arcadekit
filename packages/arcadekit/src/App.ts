@@ -308,6 +308,11 @@ export interface Any {
    * `transient` field is undefined afterwards. And what runs between ticks
    * starts over: frame-stage and input-stage change queries visit everything
    * again.
+   *
+   * The frame and input stages don't hear an event twice: until the game has
+   * run again the ticks it had run before the rewind, an event of theirs that
+   * a stage heard then, the same payload, is heard once. An event the ticks
+   * run again emit otherwise, or a payload that changed, is heard as new.
    */
   readonly rewind: (moment: Moment) => void;
   /**
@@ -2053,7 +2058,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw left;
         }
         commands.apply();
-        events.endTick();
+        events.endTick(time.tick);
         if (checkpointEvery > 0 && time.tick % checkpointEvery === 0) {
           checkpoint();
         }
@@ -2248,6 +2253,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
         const was = moment as Captured;
+        const from = time.tick;
         dispatcher.flush();
         // What is queued on the buffer was never part of the world.
         commands.rollback(0);
@@ -2256,7 +2262,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.tick = was.tick;
         time.elapsed = was.elapsed;
         time.delta = was.delta;
-        events.rewind(was.events);
+        events.rewind(was.events, from, was.tick);
         queued.length = 0;
         for (const action of was.queued) {
           // It is waiting again: what became of it has not happened.
