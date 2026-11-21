@@ -156,6 +156,16 @@ describe("a snapshot read without the program's components", () => {
     const { save } = savedByVersion0();
     const contents = readSnapshot(save.world);
     expect(contents.components).toEqual([
+      // The game's time, which the world holds as a singleton.
+      {
+        name: "arcadekit/Time",
+        storage: "singleton",
+        fields: [
+          { name: "tick", kind: "f64" },
+          { name: "elapsed", kind: "f64" },
+          { name: "delta", kind: "f64" },
+        ],
+      },
       {
         name: "mg/Buff",
         storage: "sparse",
@@ -425,7 +435,7 @@ describe("a save from another version of the game", () => {
     const cases: [(world: Save.Contents["world"]) => void, RegExp][] = [
       [
         (world) => Migrate.renameComponent(world, "mg/Nope", "mg/Else"),
-        /holds no component named "mg\/Nope"\. It holds: mg\/Buff, mg\/Hp/,
+        /holds no component named "mg\/Nope"\. It holds: arcadekit\/Time, mg\/Buff, mg\/Hp/,
       ],
       [
         (world) => Migrate.renameComponent(world, "mg/Hp", "mg/Pos"),

@@ -194,12 +194,14 @@ const refusal = <E>(exit: Exit.Exit<unknown, E>): E => {
 const record = (ticks: number, saveAt: number) =>
   withApp(App.make(options), (app) => {
     let save: Save.Save | undefined;
+    let saved: { tick: number; elapsed: number; delta: number } | undefined;
     const hashes: number[] = [];
     for (let tick = 0; tick < ticks; tick++) {
       if (tick === saveAt) {
         // After this tick's moves have arrived, so that some are waiting.
         move(app, tick);
         save = unwrap(app.save());
+        saved = { ...app.time };
       } else {
         move(app, tick);
       }
@@ -208,6 +210,7 @@ const record = (ticks: number, saveAt: number) =>
     }
     return {
       save: save!,
+      saved: saved!,
       hashes,
       tail: app.record(save!),
       tally: app.world
@@ -222,15 +225,12 @@ describe("a saved game", () => {
   it("loads into a game that goes on exactly as the saved one did", () => {
     for (const saveAt of [0, 1, 7, 30, 59]) {
       const recorded = record(90, saveAt);
-      const { save } = recorded;
-      expect(save.tick).toBe(saveAt);
-      expect(save.delta).toBe(saveAt === 0 ? 0 : 1 / 60);
+      const { save, saved } = recorded;
+      expect(saved.tick).toBe(saveAt);
+      expect(saved.delta).toBe(saveAt === 0 ? 0 : 1 / 60);
       const resumed = withApp(App.load(save, options), (app) => {
-        expect(app.time).toEqual({
-          tick: saveAt,
-          elapsed: save.elapsed,
-          delta: save.delta,
-        });
+        // The world holds the game's time, so the save brings it back.
+        expect(app.time).toEqual(saved);
         // The log starts again, and what the game logged after the save is
         // replayed against the checkpoints it took after every tick.
         expect(app.actionLog).toEqual([]);

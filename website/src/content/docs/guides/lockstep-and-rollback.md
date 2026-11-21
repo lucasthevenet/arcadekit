@@ -130,7 +130,7 @@ Each peer sends the others the [checkpoints](replays.md#checkpoints) its log rec
 - A peer that stops sends its hash first, so the others stop with the same report instead of waiting for it.
 - A checkpoint adds about 30 bytes to a message. The hash is the one the app already computes for its log.
 
-Not every difference between peers is compared directly. A different `delta`, a system one peer lacks, or a different list of names is only detected once it has changed a world, at the next checkpoint. A list of names that leaves a peer out is never detected, since that peer isn't heard. And what the hash doesn't cover is only detected once it [reaches the world](../concepts/several-players.md#when-peers-drift-apart).
+Not every difference between peers is compared directly. A different `delta` is in the world's time, so the next checkpoint finds it. A system one peer lacks, or a different list of names, is only detected once it has changed a world, at the next checkpoint. A list of names that leaves a peer out is never detected, since that peer isn't heard. And what the hash doesn't cover is only detected once it [reaches the world](../concepts/several-players.md#when-peers-drift-apart).
 
 Peers that drift apart stay stopped. To continue, every peer loads one peer's save and creates its sessions again.
 

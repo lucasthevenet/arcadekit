@@ -33,7 +33,7 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 ```
 
-A save is taken between two ticks. It contains the world as a [snapshot](#snapshots), the game time, the actions queued for the next tick (including the simulation's own), the events waiting to be read and each system's position in them, and what change queries haven't visited.
+A save is taken between two ticks. It contains the world as a [snapshot](#snapshots), which holds the game's time, the actions queued for the next tick (including the simulation's own), the events waiting to be read and each system's position in them, and what change queries haven't visited.
 
 It is essentially the snapshot plus a little text: for 100,000 entities with four float fields, 2.8 MB, taking about 0.7 ms.
 
@@ -94,7 +94,7 @@ const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
   App.load(save, { plugins, version: 2, migrations });
 ```
 
-A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. Its `queued` and `events` are the pending actions and events, in JSON form.
+A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. Its `queued` and `events` are the pending actions and events, in JSON form. The game's time is one of the world's singletons, `arcadekit/Time`.
 
 `Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. `addField` and `mapField` also fail for a value that a field of a number type cannot hold, such as a string, a fraction in an `i32`, or 300 in a `u8`, where the typed array would have stored something else; the compiler refuses a value that is not a number. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
 

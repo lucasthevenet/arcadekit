@@ -74,6 +74,7 @@ A replay compares its own world at each checkpoint, and stops at the first misma
 - the order queries visit entities in: tables in creation order, rows ascending;
 - the ids the next entities will get: the freed slots, in reuse order, and their generations;
 - every singleton that has been written, by name;
+- the game's time: the ticks run, the seconds simulated and the last tick's `delta`, which the world holds as the singleton `arcadekit/Time`;
 - the state of the random number generator.
 
 Two worlds built by the same operations in the same order hash equal, and changing a single field of a single entity always changes the hash: one change can't cancel out. Two different worlds collide by chance about once in four billion.

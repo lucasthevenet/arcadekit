@@ -722,4 +722,34 @@ describe("the hash of an app's world", () => {
     expect(firstDifference).toBe(39);
     expect(faulty.slice(0, 39)).toEqual(honest.slice(0, 39));
   });
+
+  it("covers the game's time, which the world holds", () => {
+    const after = (deltas: readonly number[]) =>
+      withApp(App.make({ seed: 5 }), (app) => {
+        for (const delta of deltas) {
+          app.tick(delta);
+        }
+        return app.world.hash();
+      });
+    const twice = after([1 / 60, 1 / 60]);
+    expect(after([1 / 60, 1 / 60])).toBe(twice);
+    // Nothing in the game moves, and only the time tells these apart.
+    expect(after([1 / 60])).not.toBe(twice);
+    expect(after([1 / 60, 1 / 30])).not.toBe(twice);
+    expect(after([1 / 30, 1 / 60])).not.toBe(twice);
+  });
+
+  it("is put back with the game's time by the world alone", () => {
+    withApp(App.make({ systems: [Drift], seed: 5 }), (app) => {
+      app.tick(1 / 60);
+      app.tick(1 / 30);
+      const time = { ...app.time };
+      const hash = app.world.hash();
+      const bytes = app.world.snapshot();
+      app.tick(1 / 60);
+      app.world.restore(bytes);
+      expect(app.time).toEqual(time);
+      expect(app.world.hash()).toBe(hash);
+    });
+  });
 });

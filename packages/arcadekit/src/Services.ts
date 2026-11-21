@@ -34,6 +34,8 @@ export interface TimeState {
 
 /**
  * Game time. The tick drives it, not the wall clock, so it is deterministic.
+ * The world holds it, as the singleton `arcadekit/Time`, so its snapshot, a
+ * save and its hash cover it.
  *
  * @category Services
  */

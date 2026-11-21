@@ -60,9 +60,10 @@ import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
+import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
 import { Rng } from "./ecs/random";
-import { SnapshotError } from "./ecs/snapshot";
+import { SnapshotError, readSnapshot } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
@@ -83,6 +84,25 @@ import type { BuiltIn, FrameState, TimeState } from "./Services";
 import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
+
+/**
+ * A game's time, held by its world so that a snapshot, a restore and the
+ * world's hash cover it, as Bevy keeps `Time` in its `World`. `Time` reads it.
+ */
+const GameTime = Component.singleton(
+  "arcadekit/Time",
+  { tick: Field.f64, elapsed: Field.f64, delta: Field.f64 },
+  { tick: 0, elapsed: 0, delta: 0 }
+);
+
+/** The tick a save was made at, which its world holds. */
+const tickOf = (save: Save.Save): number => {
+  const held = readSnapshot(save.world).singletons.find(
+    (single) => single.component === GameTime.component.name
+  );
+  const tick = held?.columns.tick?.[0];
+  return typeof tick === "number" ? tick : 0;
+};
 
 type Systems = readonly Plugin.AnySystem[];
 type Handlers = readonly Plugin.AnyHandler[];
@@ -285,7 +305,7 @@ export interface Any {
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
    * Captures the game as it is, in memory, to return to with `rewind`: the
-   * world, the time, the actions queued for the next tick, the events waiting
+   * world with its time, the actions queued for the next tick, the events waiting
    * to be read with every reader's position, what change queries haven't
    * visited yet, and the length of the log. Only between ticks.
    *
@@ -924,7 +944,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const { random } = world;
     const commands = new CommandBuffer(world);
     const events = new EventBus();
-    const time: TimeState = { delta: 0, elapsed: 0, tick: 0 };
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
@@ -965,14 +984,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               : error.message,
         });
       }
-      time.tick = save.tick;
-      time.elapsed = save.elapsed;
-      time.delta = save.delta;
       const restored = events.restore(save.events);
       if (restored !== undefined) {
         return yield* new Save.LoadRefused(restored);
       }
     }
+    // Loaded with the world, or written by the first tick.
+    const time: TimeState = world.singleton(GameTime);
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
       ...(options.systems ?? []),
@@ -1016,8 +1034,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const moments = new WeakSet<Moment>();
     /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
-      readonly elapsed: number;
-      readonly delta: number;
       readonly world: Uint8Array;
       readonly changes: SavedChanges[];
       readonly events: EventsMoment;
@@ -2012,8 +2028,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       const moment: Captured = {
         tick: time.tick,
-        elapsed: time.elapsed,
-        delta: time.delta,
         world: bytes,
         // What runs between ticks has everything still to draw, unless it
         // has drawn nothing since.
@@ -2037,9 +2051,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       commands.rollback(0);
       world.restore(was.world);
       world.restoreChanges(was.changes);
-      time.tick = was.tick;
-      time.elapsed = was.elapsed;
-      time.delta = was.delta;
       events.rewind(was.events, from, was.tick);
       queued.length = 0;
       for (const action of was.queued) {
@@ -2183,7 +2194,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `record() was called during a ${busy()}. A game is recorded between ticks.`
           );
         }
-        const start = since?.tick ?? began;
+        const start = since === undefined ? began : tickOf(since);
         const from = since?.logLength ?? 0;
         if (
           start < began ||
@@ -2264,9 +2275,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
         return Exit.succeed({
           version,
-          tick: time.tick,
-          elapsed: time.elapsed,
-          delta: time.delta,
           world: bytes,
           queued: waiting,
           events: pending.value,
