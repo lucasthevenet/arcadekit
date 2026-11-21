@@ -49,7 +49,7 @@ describe("what an app is running", () => {
   it("refuses, from a handler that dispatch runs, what is for between ticks", () => {
     // Each would act on a game halfway through an action, which the action
     // may yet take back.
-    const calls: [string, (app: App.App<never, never>) => unknown][] = [
+    const calls: [string, (app: App.Any) => unknown][] = [
       ["App.tick", (app) => app.tick(1)],
       ["App.frame", (app) => app.frame(0)],
       ["App.input", (app) => app.input()],
@@ -60,13 +60,13 @@ describe("what an app is running", () => {
       ["inspect()", (app) => app.inspect()],
     ];
     for (const [name, call] of calls) {
-      let app: App.App<never, never> | undefined;
+      let app: App.Any | undefined;
       const Call = Action.define("ph/Call", Schema.Struct({}));
       const calling = Action.handler(Call, function* () {
         yield* Effect.sync(() => call(app!));
       });
       withApp(App.make({ handlers: [calling] }), (made) => {
-        app = made as unknown as App.App<never, never>;
+        app = made;
         made.tick(1);
         const log = made.actionLog.length;
         const exit = made.dispatch(Call, {});
