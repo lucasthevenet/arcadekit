@@ -1,13 +1,15 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  Action,
   App,
   CommandBuffer,
   Commands,
   Component,
   EcsWorld,
+  Event,
   Field,
   Query,
   Random,
@@ -737,6 +739,65 @@ describe("the hash of an app's world", () => {
     expect(after([1 / 60])).not.toBe(twice);
     expect(after([1 / 60, 1 / 30])).not.toBe(twice);
     expect(after([1 / 30, 1 / 60])).not.toBe(twice);
+  });
+
+  describe("covers what waits for the next tick", () => {
+    const Rang = Event.define("hash/Rang", Schema.Struct({ n: Schema.Int }));
+    const Push = Action.define("hash/Push", Schema.Struct({ by: Schema.Int }));
+    const push = Action.handler(Push, function* () {});
+    // A number the world doesn't keep: only the event tells it apart.
+    let ringing: number | undefined;
+    const Ring = System.make("hash/Ring", function* () {
+      if (ringing !== undefined) {
+        (yield* Rang).emit({ n: ringing });
+      }
+    });
+    const Watch = System.make("hash/Watch", function* () {
+      (yield* Rang).read();
+    }).pipe(System.inStage("frame"));
+    const make = () =>
+      App.make({
+        systems: [Ring, Watch],
+        handlers: [push],
+        seed: 5,
+        checkpointEvery: 0,
+      });
+    const after = (
+      ring: number | undefined,
+      act: (app: Effect.Success<ReturnType<typeof make>>) => void = () => {}
+    ) =>
+      withApp(make(), (app) => {
+        ringing = ring;
+        app.tick(1 / 60);
+        act(app);
+        return app.world.hash();
+      });
+
+    it("the events the simulation has yet to read", () => {
+      const one = after(1);
+      expect(after(1)).toBe(one);
+      expect(after(2)).not.toBe(one);
+      expect(after(undefined)).not.toBe(one);
+    });
+
+    it("the actions queued for the next tick, and who issued them", () => {
+      const idle = after(undefined);
+      const one = after(undefined, (app) => app.enqueue(Push, { by: 1 }));
+      expect(one).not.toBe(idle);
+      expect(after(undefined, (app) => app.enqueue(Push, { by: 1 }))).toBe(one);
+      expect(after(undefined, (app) => app.enqueue(Push, { by: 2 }))).not.toBe(
+        one
+      );
+      expect(
+        after(undefined, (app) =>
+          app.enqueueByName("hash/Push", { by: 1 }, "ada")
+        )
+      ).not.toBe(one);
+    });
+
+    it("but not where a reader between ticks is, so that watching changes nothing", () => {
+      expect(after(1, (app) => app.frame(0))).toBe(after(1));
+    });
   });
 
   it("is put back with the game's time by the world alone", () => {

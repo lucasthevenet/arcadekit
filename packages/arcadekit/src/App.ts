@@ -65,9 +65,8 @@ import type { Entity } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError, readSnapshot } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import type { SavedChanges } from "./ecs/world";
+import type { SavedChanges, Moment as WorldMoment } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -1034,10 +1033,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const moments = new WeakSet<Moment>();
     /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
-      readonly world: Uint8Array;
+      readonly world: WorldMoment;
       readonly changes: SavedChanges[];
-      readonly events: EventsMoment;
-      readonly queued: (typeof queued)[number][];
       readonly logLength: number;
       readonly started: boolean;
       readonly wanted: boolean;
@@ -1106,6 +1103,38 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       const json = Schema.encodeUnknownExit(codec)(payload);
       return Exit.isSuccess(json) ? json.value : null;
     };
+    // The actions queued for the next tick and the events waiting to be read
+    // are the game's as much as its components are: the world's hash covers
+    // them, and a rewind of the world puts them back.
+    world._attach({
+      name: "arcadekit/queued",
+      observed: () =>
+        queued.map(({ encoded, from, name, payload }) => [
+          name,
+          from ?? null,
+          encoded ? payload : jsonOf(name, payload),
+        ]),
+      capture: () => queued.slice(),
+      rewind: (was) => {
+        queued.length = 0;
+        for (const action of was) {
+          // It is waiting again: what became of it has not happened.
+          if (action.entry !== undefined) {
+            delete action.entry.refused;
+          }
+          queued.push(action);
+        }
+      },
+    });
+    world._attach({
+      name: "arcadekit/events",
+      observed: () => events.observed(),
+      capture: () => ({ events: events.capture(), tick: time.tick }),
+      // Before the world is put back: `time` is still where the game was.
+      rewind: (was) => {
+        events.rewind(was.events, time.tick, was.tick);
+      },
+    });
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** Enqueues from outside the simulation: `app.enqueue`. */
@@ -2017,9 +2046,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
         );
       }
-      let bytes: Uint8Array;
+      let held: WorldMoment;
       try {
-        bytes = world.snapshot();
+        held = world._capture();
       } catch (error) {
         if (error instanceof SnapshotError) {
           return refused(error.message);
@@ -2028,14 +2057,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       const moment: Captured = {
         tick: time.tick,
-        world: bytes,
+        world: held,
         // What runs between ticks has everything still to draw, unless it
         // has drawn nothing since.
         changes: world.saveChanges(
           unseen ? () => true : (reader) => !reader.startsWith(FRAME_READER)
         ),
-        events: events.capture(),
-        queued: queued.slice(),
         logLength: actionLog.length,
         started,
         wanted,
@@ -2045,21 +2072,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     /** Puts the game back to a moment of this app. */
     const rewound = (was: Captured): void => {
-      const from = time.tick;
       dispatcher.flush();
       // What is queued on the buffer was never part of the world.
       commands.rollback(0);
-      world.restore(was.world);
+      world._rewind(was.world);
       world.restoreChanges(was.changes);
-      events.rewind(was.events, from, was.tick);
-      queued.length = 0;
-      for (const action of was.queued) {
-        // It is waiting again: what became of it has not happened.
-        if (action.entry !== undefined) {
-          delete action.entry.refused;
-        }
-        queued.push(action);
-      }
       actionLog.length = was.logLength;
       while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
         deltas.pop();

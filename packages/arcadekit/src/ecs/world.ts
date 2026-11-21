@@ -56,7 +56,15 @@ import type {
   Storage,
   ValueOf,
 } from "./component";
-import { add, addColumn, addColumnPerRow, finish, shapeOf } from "./hash";
+import {
+  add,
+  addColumn,
+  addColumnPerRow,
+  addData,
+  addString,
+  finish,
+  shapeOf,
+} from "./hash";
 import { Rng } from "./random";
 import {
   END,
@@ -2001,6 +2009,41 @@ export class QueryView<D extends Terms = Terms> {
  *
  * @category Models
  */
+/**
+ * @internal
+ * State its owner keeps beside a world's components that is part of the game,
+ * attached with `_attach`: the hash covers it, and `_capture` and `_rewind`
+ * take it with the world. A snapshot doesn't hold it: its owner saves it.
+ */
+export interface Part<M = unknown> {
+  /** Unique among a world's parts. The hash takes parts in order of name. */
+  readonly name: string;
+  // Methods, so that a part of any moment is a `Part<unknown>`.
+  /**
+   * What a simulation can tell apart of it, as plain data, which the hash
+   * covers as it does a `json` field's value.
+   */
+  observed(): unknown;
+  /** Its state now, for `rewind`. */
+  capture(): M;
+  /**
+   * Puts back what `capture` returned. It runs before the world's own data is
+   * put back, so it still reads the world as it was before the rewind.
+   */
+  rewind(moment: M): void;
+}
+
+/**
+ * @internal
+ * A world at one moment, with its parts, held in memory: what `_capture`
+ * returns and `_rewind` takes.
+ */
+export interface Moment {
+  readonly world: Uint8Array;
+  /** Each part with what its `capture` returned, in order of name. */
+  readonly parts: readonly (readonly [Part, unknown])[];
+}
+
 export class World {
   private recTable = new Int32Array(1024).fill(FREE);
   private recRow = new Int32Array(1024);
@@ -2108,6 +2151,10 @@ export class World {
    */
   private readonly spare = new WeakMap<Columns, unknown[]>();
   private readonly savedRandom = new Uint32Array(4);
+  /** What its owner attached, in order of name. */
+  private readonly parts: Part[] = [];
+  /** The moments this world captured: `_rewind` takes no other. */
+  private readonly moments = new WeakSet<Moment>();
   /** The random generator's state when the world was frozen. */
   private readonly frozenRandom = new Uint32Array(4);
 
@@ -3810,7 +3857,10 @@ export class World {
    *   ascending);
    * - the ids the next entities will get;
    * - every singleton that has been written, by name;
-   * - the state of the random number generator.
+   * - the state of the random number generator;
+   * - in an app's world, the actions queued for the next tick and the events
+   *   the simulation has yet to read, in their JSON form, but not where anyone
+   *   has read to.
    *
    * Two worlds built by the same operations in the same order hash equal, on
    * any machine. Changing one field of one entity always changes the hash. Two
@@ -3823,7 +3873,8 @@ export class World {
    * bits are the one thing engines don't agree on; 0 and -0 differ. A `json`
    * field counts as the plain data it holds, a `ref` field as its codec's
    * encoding of each value, and a `transient` field not at all: the hash covers
-   * exactly what a snapshot saves.
+   * exactly what a snapshot saves, and the queued actions and waiting events
+   * of an app as its save holds them.
    *
    * Measured, it costs about 1.4 ns per 32-bit field per entity in a table,
    * with an entity's id counting as two: 0.8 ms for 100,000 entities with four
@@ -3924,7 +3975,61 @@ export class World {
 
     const random = this.random.state;
     h = add(add(add(add(h, random[0]!), random[1]!), random[2]!), random[3]!);
+
+    // A world with nothing attached hashes as it did before parts were.
+    const { parts } = this;
+    if (parts.length > 0) {
+      h = add(h, parts.length);
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i]!;
+        h = addData(addString(h, part.name), part.observed());
+      }
+    }
     return finish(h);
+  }
+
+  /**
+   * @internal
+   * Attaches state its owner keeps beside the components, for the hash and
+   * for `_capture` and `_rewind` to cover. Two parts can't share a name.
+   */
+  _attach<M>(part: Part<M>): void {
+    if (this.parts.some((other) => other.name === part.name)) {
+      throw new Error(`The world has a part named "${part.name}" already.`);
+    }
+    this.parts.push(part);
+    this.parts.sort(byName);
+  }
+
+  /**
+   * @internal
+   * The world as it is, with its parts, in memory: `snapshot()` and each
+   * part's `capture`. Fails as `snapshot()` does.
+   */
+  _capture(): Moment {
+    const moment: Moment = {
+      world: this.snapshot(),
+      parts: this.parts.map((part) => [part, part.capture()] as const),
+    };
+    this.moments.add(moment);
+    return moment;
+  }
+
+  /**
+   * @internal
+   * Puts the world and its parts back to a moment it captured: each part's
+   * `rewind`, then `restore`.
+   */
+  _rewind(moment: Moment): void {
+    if (!this.moments.has(moment)) {
+      throw new Error(
+        "World._rewind() was given a moment that this world did not capture."
+      );
+    }
+    for (const [part, state] of moment.parts) {
+      part.rewind(state);
+    }
+    this.restore(moment.world);
   }
 
   // --- internals -----------------------------------------------------------
