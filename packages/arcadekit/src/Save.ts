@@ -93,9 +93,10 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  *   migration from that version;
  * - `"migration failed"`: a migration threw.
  *
- * An event waiting to be read that this program doesn't define is the
- * snapshot's `"unknown list"`, and one in a form its schema no longer takes is
- * its `"list changed"`.
+ * The events waiting to be read and the queued actions are singletons of the
+ * world: an event this program doesn't define is the snapshot's `"unknown
+ * component"`, and one in a form its schema no longer takes is its
+ * `"component changed"`.
  *
  * @category Errors
  */
@@ -119,10 +120,10 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
  */
 export interface Contents {
   /**
-   * The world, whose `lists` hold the actions that were queued, under
-   * `"arcadekit/queued"`, each `{ name, payload, from? }` with its payload in
-   * JSON form, and the events that were waiting, under each event's name, in
-   * JSON form.
+   * The world. Its singletons hold the actions that were queued, in the
+   * `actions` field of `"arcadekit/Queued"`, each `{ name, payload, from? }`
+   * with its payload in JSON form, and the events that were waiting, in the
+   * `waiting` field of `"arcadekit/events/<the event's name>"`, in JSON form.
    */
   world: SnapshotContents;
   /**
@@ -154,7 +155,7 @@ export interface Contents {
  * - A migration turns an old save into a new game: the log recorded before it
  *   no longer replays against it.
  * - A migration that accompanies a schema change updates the payloads in
- *   `world.lists` too. A waiting event that its schema no longer takes refuses
+ *   `world.singletons` too, of the queued actions and the waiting events. A waiting event that its schema no longer takes refuses
  *   the save as it is loaded; a queued action is refused when it is applied,
  *   as an `Action.Rejected` event.
  *

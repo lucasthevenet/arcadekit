@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { defineSingleton, listField } from "../src/ecs/component";
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
-import { defineList } from "../src/ecs/list";
 import { readSingleton } from "../src/ecs/snapshot";
 import {
   CommandBuffer,
@@ -692,58 +692,77 @@ describe("a snapshot that cannot be loaded", () => {
   });
 });
 
-// Two lists, the second named before the first, and one the stages between
-// ticks may add to. Each codec saves a value as something other than itself.
-const Shouts = defineList<string>(
+// Two singletons with a list field, the second named before the first, and
+// one the stages between ticks may write. Each codec saves a value as
+// something other than itself.
+const Shouts = defineSingleton(
   "snap/Shouts",
   {
-    encode: (value) => {
-      if (value === "unsayable") {
-        throw new Error("that is not said");
-      }
-      return { said: value };
-    },
-    decode: (data) => {
-      const { said } = data as { said: unknown };
-      if (typeof said !== "string") {
-        throw new Error("a shout is a string");
-      }
-      return said;
-    },
+    said: listField<string>(
+      {
+        encode: (value) => {
+          if (value === "unsayable") {
+            throw new Error("that is not said");
+          }
+          return { said: value };
+        },
+        decode: (data) => {
+          const { said } = data as { said: unknown };
+          if (typeof said !== "string") {
+            throw new Error("a shout is a string");
+          }
+          return said;
+        },
+      },
+      "the shouts"
+    ),
   },
-  { label: "the shouts" }
+  { said: [] },
+  { saved: true, hashed: true, betweenTicks: false }
 );
-const Asks = defineList<{ readonly n: number }>(
+const Asks = defineSingleton(
   "snap/Asks",
-  { encode: ({ n }) => n, decode: (data) => ({ n: data as number }) },
-  { label: "the asks", betweenTicks: true }
+  {
+    asked: listField<{ readonly n: number }>(
+      { encode: ({ n }) => n, decode: (data) => ({ n: data as number }) },
+      "the asks"
+    ),
+  },
+  { asked: [] },
+  { saved: true, hashed: true, betweenTicks: true }
 );
+const shoutsOf = (world: EcsWorld) => world._listOf(Shouts, "said");
+const asksOf = (world: EcsWorld) => world._listOf(Asks, "asked");
 
-describe("the lists a world keeps", () => {
-  it("are saved, loaded and hashed through their codecs, in order of name", () => {
+describe("a list field of a singleton", () => {
+  it("is saved, loaded and hashed through its codec", () => {
     const world = new EcsWorld({ seed: 3 });
     world.spawn(C.Body.of({ x: 1, y: 2 }));
-    world._list(Shouts).push("hey", "ho");
-    world._list(Asks).push({ n: 4 });
+    shoutsOf(world).push("hey");
+    shoutsOf(world).push("ho");
+    asksOf(world).push({ n: 4 });
     const bytes = world.snapshot();
-    expect(readSnapshot(bytes).lists).toEqual([
-      { name: "snap/Asks", values: [4] },
-      { name: "snap/Shouts", values: [{ said: "hey" }, { said: "ho" }] },
+    expect(readSnapshot(bytes).singletons).toEqual([
+      { component: "snap/Asks", columns: { asked: [[4]] } },
+      {
+        component: "snap/Shouts",
+        columns: { said: [[{ said: "hey" }, { said: "ho" }]] },
+      },
     ]);
     // Written again from its contents, byte for byte.
     expect(writeSnapshot(readSnapshot(bytes))).toEqual(bytes);
     const copy = new EcsWorld();
     copy.load(bytes, all);
-    expect(copy._list(Shouts)).toEqual(["hey", "ho"]);
-    expect(copy._list(Asks)).toEqual([{ n: 4 }]);
+    expect(shoutsOf(copy).values).toEqual(["hey", "ho"]);
+    expect(asksOf(copy).values).toEqual([{ n: 4 }]);
     expect(copy.hash()).toBe(world.hash());
     expect(copy.snapshot()).toEqual(bytes);
   });
 
-  it("count in the hash by what they hold, and as nothing when they are empty", () => {
+  it("counts in the hash by what it holds, and as nothing when it is empty", () => {
     const bare = new EcsWorld({ seed: 3 });
     const world = new EcsWorld({ seed: 3 });
-    const shouts = world._list(Shouts);
+    const shouts = shoutsOf(world);
     expect(world.hash()).toBe(bare.hash());
     expect(world.snapshot()).toEqual(bare.snapshot());
     shouts.push("hey");
@@ -751,49 +770,95 @@ describe("the lists a world keeps", () => {
     expect(one).not.toBe(bare.hash());
     shouts.push("ho");
     expect(world.hash()).not.toBe(one);
-    shouts.length = 1;
-    expect(world.hash()).toBe(one);
+    shouts.take(1);
+    expect(world.hash()).not.toBe(one);
+    shouts.take(1);
+    expect(world.hash()).toBe(bare.hash());
+    expect(world.snapshot()).toEqual(bare.snapshot());
+    expect(world.holds(Shouts)).toBe(false);
     // The same values in another list are another world.
     const other = new EcsWorld({ seed: 3 });
-    other._list(Asks).push({ n: 1 });
-    expect(other.hash()).not.toBe(one);
+    asksOf(other).push({ n: 1 });
+    shouts.push("hey");
+    expect(other.hash()).not.toBe(world.hash());
     // A value the codec refuses counts as null, and the hash doesn't fail.
-    shouts[0] = "unsayable";
+    shouts.push("unsayable");
     expect(() => world.hash()).not.toThrow();
   });
 
-  it("leave out of the frame's hash only what the stages between ticks may add", () => {
+  it("is left out of the frame's hash only if the stages between ticks may write it", () => {
     const world = new EcsWorld({ seed: 3 });
     const before = world._frameHash();
-    world._list(Asks).push({ n: 1 });
+    world.freeze();
+    asksOf(world).push({ n: 1 });
+    expect(() => shoutsOf(world).push("hey")).toThrow(
+      /An addition to the list "snap\/Shouts\.said" was made while the world is frozen/
+    );
+    world.thaw();
     expect(world._frameHash()).toBe(before);
     expect(world.hash()).not.toBe(before);
-    world._list(Shouts).push("hey");
+    shoutsOf(world).push("hey");
     expect(world._frameHash()).not.toBe(before);
   });
 
-  it("are put back by a capture as they were, by reference, without their codec", () => {
+  it("is added to in a transaction, which a rollback takes out, and not taken from", () => {
+    const world = new EcsWorld();
+    const shouts = shoutsOf(world);
+    const empty = world.hash();
+    world.begin();
+    shouts.push("hey");
+    expect(shouts.values).toEqual(["hey"]);
+    world.rollback();
+    expect(shouts.values).toEqual([]);
+    expect(world.holds(Shouts)).toBe(false);
+    expect(world.hash()).toBe(empty);
+
+    shouts.push("ho");
+    world.begin();
+    shouts.push("hey");
+    shouts.push("hi");
+    world.rollback();
+    expect(shouts.values).toEqual(["ho"]);
+    world.begin();
+    shouts.push("hey");
+    world.commit();
+    expect(shouts.values).toEqual(["ho", "hey"]);
+
+    world.begin();
+    expect(() => shouts.take(1)).toThrow(
+      'Values were taken from the list "snap/Shouts.said" in a transaction, which only adds to it: a rollback could not put them back.'
+    );
+    world.rollback();
+    expect(shouts.take(1)).toEqual(["ho"]);
+  });
+
+  it("is put back by a capture as it was, by reference, without its codec", () => {
     const world = new EcsWorld({ seed: 3 });
-    const asks = world._list(Asks);
+    const asks = asksOf(world);
     const ask = { n: 1 };
     asks.push(ask);
     // A value the codec can't save is no reason a moment can't hold it.
-    world._list(Shouts).push("unsayable");
+    shoutsOf(world).push("unsayable");
     expect(() => world.snapshot()).toThrow(SnapshotError);
     const moment = world._capture();
-    asks.length = 0;
-    asks.push({ n: 2 }, { n: 3 });
-    world._list(Shouts).length = 0;
+    asks.take(1);
+    asks.push({ n: 2 });
+    asks.push({ n: 3 });
+    shoutsOf(world).take(1);
     world._rewind(moment);
-    expect(world._list(Asks)).toBe(asks);
-    expect(asks).toEqual([ask]);
-    expect(asks[0]).toBe(ask);
-    expect(world._list(Shouts)).toEqual(["unsayable"]);
+    expect(asksOf(world)).toBe(asks);
+    expect(asks.values).toEqual([ask]);
+    expect(asks.values[0]).toBe(ask);
+    expect(shoutsOf(world).values).toEqual(["unsayable"]);
+    // And again, from the same moment.
+    asks.push({ n: 4 });
+    world._rewind(moment);
+    expect(asks.values).toEqual([ask]);
   });
 
-  it("refuse a value their codec can't save, with what it said", () => {
+  it("refuses a value its codec can't save, with what it said", () => {
     const world = new EcsWorld();
-    world._list(Shouts).push("unsayable");
+    shoutsOf(world).push("unsayable");
     let error: unknown;
     try {
       world.snapshot();
@@ -807,53 +872,50 @@ describe("the lists a world keeps", () => {
     );
   });
 
-  it("refuse a snapshot that holds a list this program doesn't define, or a value it no longer takes", () => {
+  it("refuses a snapshot that holds a value it no longer takes", () => {
     const world = new EcsWorld();
-    world._list(Shouts).push("hey");
+    shoutsOf(world).push("hey");
     const contents = readSnapshot(world.snapshot());
-    contents.lists.push({ name: "snap/Never", values: [1, 2] });
-    const unknown = writeSnapshot(contents);
-    const refusal = (bytes: Uint8Array): SnapshotError => {
-      try {
-        new EcsWorld().load(bytes);
-      } catch (error) {
-        if (error instanceof SnapshotError) {
-          return error;
-        }
-        throw error;
-      }
-      throw new Error("expected a SnapshotError");
-    };
-    expect(refusal(unknown).problem).toBe("unknown list");
-    expect(refusal(unknown).message).toBe(
-      'The snapshot holds 2 values of a list named "snap/Never", which this program doesn\'t define: it was renamed or removed since.'
-    );
-    contents.lists = [{ name: "snap/Shouts", values: [{ said: 5 }] }];
-    const changed = refusal(writeSnapshot(contents));
-    expect(changed.problem).toBe("list changed");
-    expect(changed.message).toBe(
+    contents.singletons = [
+      { component: "snap/Shouts", columns: { said: [[{ said: 5 }]] } },
+    ];
+    let changed: unknown;
+    try {
+      new EcsWorld().load(writeSnapshot(contents));
+    } catch (error) {
+      changed = error;
+    }
+    expect(changed).toBeInstanceOf(SnapshotError);
+    expect((changed as SnapshotError).problem).toBe("component changed");
+    expect((changed as SnapshotError).message).toBe(
       "Can't load the shouts: one is in a form that is no longer taken: a shout is a string"
     );
   });
 
-  it("make a world that holds anything in one no world to load into", () => {
+  it("makes a world that holds anything in one no world to load into", () => {
     const source = new EcsWorld();
-    source._list(Shouts).push("hey");
+    shoutsOf(source).push("hey");
     const world = new EcsWorld();
-    world._list(Asks).push({ n: 1 });
+    asksOf(world).push({ n: 1 });
     expect(() => world.load(source.snapshot())).toThrow(/an empty world/);
   });
 
-  it("can't be two different lists under one name", () => {
+  it("is changed only through the world's handle, and only a singleton has one", () => {
     const world = new EcsWorld();
-    world._list(Shouts);
-    const Again = defineList<string>(
-      "snap/Shouts",
-      { encode: (value) => value, decode: (data) => data as string },
-      { label: "the other shouts" }
+    expect(() => {
+      (world.singleton(Shouts) as { said: readonly string[] }).said = [];
+    }).toThrow(
+      '"snap/Shouts.said" is a list field: add to it and take from it with World._listOf().'
     );
-    expect(() => world._list(Again)).toThrow(
-      'Two different lists are both named "snap/Shouts": the shouts, and the other shouts.'
+    expect(() =>
+      Component.define("snap/Crowd", {
+        said: listField<string>(
+          { encode: (value) => value, decode: (data) => data as string },
+          "the crowd"
+        ),
+      })
+    ).toThrow(
+      '"snap/Crowd" has a list field, which only a singleton of the app\'s own has. Give an entity a json or ref field that holds an array.'
     );
   });
 });

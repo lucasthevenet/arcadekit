@@ -22,9 +22,9 @@ import {
 
 /** The actions a save's world holds, queued for the next tick. */
 const queuedIn = (save: Save.Save): unknown[] =>
-  readSnapshot(save.world).lists.find(
-    (list) => list.name === "arcadekit/queued"
-  )?.values ?? [];
+  (readSnapshot(save.world).singletons.find(
+    ({ component }) => component === "arcadekit/Queued"
+  )?.columns["actions"]?.[0] as unknown[] | undefined) ?? [];
 
 // --- a game with everything a save has to carry -----------------------------------
 
@@ -337,13 +337,15 @@ describe("a saved game", () => {
       // The event of tick 4 is waiting, in the world: Sound has read it,
       // Listen has not.
       expect(
-        readSnapshot(save.world).lists.filter(
-          (list) => list.name !== "arcadekit/queued"
+        readSnapshot(save.world).singletons.filter(({ component }) =>
+          component.startsWith("arcadekit/events/")
         )
       ).toEqual([
         {
-          name: "sv/Sounded",
-          values: [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
+          component: "arcadekit/events/sv/Sounded",
+          columns: {
+            waiting: [[{ tick: 4, at: "1970-01-01T00:00:04.000Z" }]],
+          },
         },
       ]);
       expect(save.events).toEqual([{ name: "sv/Sounded", read: { Sound: 1 } }]);
@@ -559,14 +561,16 @@ describe("a save that cannot be loaded", () => {
   it("says which waiting event no longer reads, when its schema has changed, as it is loaded", () => {
     const { save } = record(10, 5);
     const world = readSnapshot(save.world);
-    const sounded = world.lists.find((list) => list.name === "sv/Sounded");
+    const sounded = world.singletons.find(
+      ({ component }) => component === "arcadekit/events/sv/Sounded"
+    );
     expect(sounded).toBeDefined();
-    sounded!.values = [{ tick: "five", at: "x" }];
+    sounded!.columns["waiting"] = [[{ tick: "five", at: "x" }]];
     const error = refusal(load({ ...save, world: writeSnapshot(world) }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("list changed");
+    expect(error.problem).toBe("component changed");
     expect(error.message).toMatch(
-      /^Can't load the "sv\/Sounded" events waiting to be read: one is in a form that is no longer taken: .*A migration changes the events and the queued actions of a save in `world.lists`\.$/s
+      /^Can't load the "sv\/Sounded" events waiting to be read: one is in a form that is no longer taken: .*A migration changes the events and the queued actions of a save in `world.singletons`\.$/s
     );
   });
 
@@ -581,13 +585,21 @@ describe("a save that cannot be loaded", () => {
     expect(Exit.isSuccess(load(save, { plugins: [Bare] }))).toBe(true);
 
     const world = readSnapshot(save.world);
-    world.lists.push({ name: "sv/Never", values: [1] });
+    world.components.push({
+      name: "arcadekit/events/sv/Never",
+      storage: "singleton",
+      fields: [{ name: "waiting", kind: "list" }],
+    });
+    world.singletons.push({
+      component: "arcadekit/events/sv/Never",
+      columns: { waiting: [[1]] },
+    });
     const renamed = { ...save, world: writeSnapshot(world) };
     const error = refusal(load(renamed, { plugins: [Bare] }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("unknown list");
+    expect(error.problem).toBe("unknown component");
     expect(error.message).toBe(
-      'The snapshot holds a value of a list named "sv/Never", which this program doesn\'t define: it was renamed or removed since. A migration changes the events and the queued actions of a save in `world.lists`.'
+      'The snapshot holds a component named "arcadekit/events/sv/Never", which this program doesn\'t define: it was renamed or removed since. A migration changes the events and the queued actions of a save in `world.singletons`.'
     );
   });
 });

@@ -255,6 +255,13 @@ export const addColumn = (
       }
       return h;
     }
+    case "list": {
+      const lists = column as (readonly unknown[])[];
+      for (let i = 0; i < count; i++) {
+        h = addList(h, lists[i]!, codec!);
+      }
+      return h;
+    }
     case "transient": {
       // Not part of the game's state: not saved, so not hashed.
       return h;
@@ -305,6 +312,13 @@ export const addColumnPerRow = (
       }
       return;
     }
+    case "list": {
+      const lists = column as (readonly unknown[])[];
+      for (let i = 0; i < count; i++) {
+        states[i] = addList(states[i]!, lists[i]!, codec!);
+      }
+      return;
+    }
     case "transient": {
       return;
     }
@@ -315,6 +329,29 @@ export const addColumnPerRow = (
       }
     }
   }
+};
+
+/**
+ * Folds in a `list` field's values, each through its codec. A value the codec
+ * refuses counts as null, on every machine alike: nothing checks what a list
+ * is given, and a hash doesn't fail.
+ */
+const addList = (
+  h: number,
+  values: readonly unknown[],
+  codec: RefCodec<unknown>
+): number => {
+  let out = add(h, values.length);
+  for (let i = 0; i < values.length; i++) {
+    let data: unknown;
+    try {
+      data = codec.encode(values[i]);
+    } catch {
+      data = null;
+    }
+    out = addData(out, data);
+  }
+  return out;
 };
 
 const KIND_CODE: Record<FieldKind, number> = {
@@ -328,6 +365,7 @@ const KIND_CODE: Record<FieldKind, number> = {
   json: 8,
   ref: 9,
   transient: 10,
+  list: 11,
 };
 
 /**

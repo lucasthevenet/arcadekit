@@ -2,6 +2,7 @@ import { Cause, Effect, Random as EffectRandom, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { defineSingleton, listField } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -52,6 +53,17 @@ const Roll = System.make("Roll", function* () {
 });
 
 describe("a frozen world", () => {
+  const Log = defineSingleton(
+    "fr/Log",
+    {
+      values: listField<number>(
+        { encode: (value) => value, decode: (data) => data as number },
+        "the log"
+      ),
+    },
+    { values: [] },
+    { saved: true, hashed: true, betweenTicks: false }
+  );
   const populated = (): { world: EcsWorld; ball: Entity } => {
     const world = new EcsWorld({ seed: 1 });
     const ball = world.spawn(Ball.of({ x: 1, vx: 2 }), Glow.of({ level: 3 }));
@@ -89,6 +101,14 @@ describe("a frozen world", () => {
       ["World.remove()", () => world.remove(ball, Glow)],
       ["World.set()", () => world.set(ball, Ball, { x: 9 })],
       ['singleton "fr/Score"', () => (world.singleton(Score).points = 1)],
+      [
+        'An addition to the list "fr/Log.values"',
+        () => world._listOf(Log, "values").push(1),
+      ],
+      [
+        'A take from the list "fr/Log.values"',
+        () => world._listOf(Log, "values").take(1),
+      ],
       ["A spawn", () => commands.spawn(Ball)],
       ["Commands.despawn()", () => commands.despawn(ball)],
       ["Commands.add()", () => commands.add(ball, Glow)],
@@ -294,6 +314,19 @@ describe("the frame stage", () => {
         ).toEqual([false, false, false, false]);
       })
     );
+  });
+
+  it("refuses an event emitted from outside the systems while it runs, as one no replay could repeat", () => {
+    const Shouted = Event.define("fr/Shouted");
+    let app: App.Any | undefined;
+    const Outside = System.make("Outside", function* () {
+      app?.events.emit(Shouted, undefined);
+    }).pipe(System.inStage("frame"));
+    app = run(App.make({ systems: [Outside] }));
+    expect(() => app.frame(0)).toThrow(
+      /An addition to the list "arcadekit\/events\/fr\/Shouted\.waiting" was made while the world is frozen/
+    );
+    expect(app.events.pending(Shouted)).toBe(0);
   });
 
   it("is the frame stage in all three as far as what a system may do goes: none changes the game, and none is a hook", () => {
@@ -793,14 +826,21 @@ describe("what the frame stage reads", () => {
           const save = each.save();
           return Exit.isSuccess(save)
             ? {
-                waiting: readSnapshot(save.value.world).lists,
+                waiting: readSnapshot(save.value.world).singletons.filter(
+                  ({ component }) => component.startsWith("arcadekit/events/")
+                ),
                 read: save.value.events,
               }
             : undefined;
         });
         expect(saves[0]).toEqual(saves[1]);
         expect(saves[0]).toEqual({
-          waiting: [{ name: "fr/Bounced", values: [{ at: 5 }] }],
+          waiting: [
+            {
+              component: "arcadekit/events/fr/Bounced",
+              columns: { waiting: [[{ at: 5 }]] },
+            },
+          ],
           read: [],
         });
       })

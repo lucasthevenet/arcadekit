@@ -94,12 +94,12 @@ const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
   App.load(save, { plugins, version: 2, migrations });
 ```
 
-A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The world's `lists` hold the pending actions, under `arcadekit/queued`, each as `{ name, payload, from? }`, and the pending events, under each event's name, in JSON form. The game's time is one of the world's singletons, `arcadekit/Time`. The contents' `events` say how far each system had read, by event name.
+A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. Two kinds of its singletons are the app's: `arcadekit/Queued` holds the pending actions in its `actions` field, each as `{ name, payload, from? }`, and `arcadekit/events/<name>` holds an event's pending payloads in its `waiting` field, in JSON form. A list field such as these has one value, an array. The game's time is one of the world's singletons, `arcadekit/Time`. The contents' `events` say how far each system had read, by event name.
 
 `Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. `addField` and `mapField` also fail for a value that a field of a number type cannot hold, such as a string, a fraction in an `i32`, or 300 in a `u8`, where the typed array would have stored something else; the compiler refuses a value that is not a number. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
 
 - `Save.Contents` also holds what change queries haven't visited, under each component's name. For a component a migration renames, the queries watching it start over after the load: every entity counts as changed.
-- When a migration accompanies a schema change, it must also update the payloads in `world.lists`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"list changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
+- When a migration accompanies a schema change, it must also update the payloads of the queued actions and waiting events in `world.singletons`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"component changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
 - A migration turns an old save into a new game, so the log recorded before it doesn't replay against the migrated save.
 
 ## When a load is refused
@@ -114,10 +114,8 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 | `"newer version"` | Was written by a later version of the game |
 | `"no migration"` | Is older, and there is no migration from its version, or from a version on the way |
 | `"migration failed"` | Is older, and a migration threw: the message says which, and what it threw |
-| `"unknown component"` | Contains a component this program doesn't define, or no longer by that name |
-| `"unknown list"` | Holds an event waiting to be read that this program doesn't define |
-| `"list changed"` | Holds an event waiting to be read in a form its schema no longer takes |
-| `"component changed"` | Has a component whose fields differ from the game's: the message lists both. After migrations, they didn't bring the save fully up to date |
+| `"unknown component"` | Contains a component this program doesn't define, or no longer by that name, or an event waiting to be read that it doesn't define |
+| `"component changed"` | Has a component whose fields differ from the game's: the message lists both. After migrations, they didn't bring the save fully up to date. Or holds an event waiting to be read in a form its schema no longer takes |
 
 ## Snapshots
 
