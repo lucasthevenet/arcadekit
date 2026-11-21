@@ -444,6 +444,37 @@ describe("the input stage", () => {
     );
   });
 
+  it("is not tripped by verifyFrames when a system between ticks issues an action, which the world's hash still covers", () => {
+    run(
+      Effect.gen(function* () {
+        const Bump = Action.define(
+          "in/VerifiedBump",
+          Schema.Struct({ by: Schema.Int })
+        );
+        const bump = Action.handler(Bump, function* ({ by }) {
+          (yield* Score).points += by;
+        });
+        const Press = System.make("Press", function* () {
+          (yield* Action.Actions).enqueue(Bump, { by: 2 });
+        }).pipe(System.inStage("input"));
+        const Point = System.make("Point", function* () {
+          (yield* Action.Actions).enqueue(Bump, { by: 3 });
+        }).pipe(System.inStage("frame"));
+        const app = yield* App.make({
+          handlers: [bump],
+          systems: [Press, Point],
+          verifyFrames: true,
+        });
+        const before = app.world.hash();
+        expect(Exit.isSuccess(app.inputExit())).toBe(true);
+        expect(Exit.isSuccess(app.frameExit(0))).toBe(true);
+        expect(app.world.hash()).not.toBe(before);
+        app.tick(1);
+        expect(app.world.singleton(Score).points).toBe(5);
+      })
+    );
+  });
+
   it("issues actions that are logged as input from outside and applied at the start of the next tick", () => {
     const source = Input.makeManualSource();
     run(

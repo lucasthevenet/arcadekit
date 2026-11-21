@@ -2003,13 +2003,6 @@ export class QueryView<D extends Terms = Terms> {
 // ---------------------------------------------------------------------------
 
 /**
- * The storage core: entities, the tables of their components, sparse sets,
- * singletons and change logs. Plain synchronous code with no Effect; an app
- * holds one and provides it to systems as the `World` service.
- *
- * @category Models
- */
-/**
  * @internal
  * State its owner keeps beside a world's components that is part of the game,
  * attached with `_attach`: the hash covers it, and `_capture` and `_rewind`
@@ -2031,6 +2024,11 @@ export interface Part<M = unknown> {
    * put back, so it still reads the world as it was before the rewind.
    */
   rewind(moment: M): void;
+  /**
+   * Whether the stages between ticks may change it, as they change the
+   * actions queued for the next tick. `_frameHash` leaves it out.
+   */
+  readonly betweenTicks?: boolean;
 }
 
 /**
@@ -2044,6 +2042,13 @@ export interface Moment {
   readonly parts: readonly (readonly [Part, unknown])[];
 }
 
+/**
+ * The storage core: entities, the tables of their components, sparse sets,
+ * singletons and change logs. Plain synchronous code with no Effect; an app
+ * holds one and provides it to systems as the `World` service.
+ *
+ * @category Models
+ */
 export class World {
   private recTable = new Int32Array(1024).fill(FREE);
   private recRow = new Int32Array(1024);
@@ -3881,6 +3886,19 @@ export class World {
    * float fields, and about four times that per field of a sparse component.
    */
   hash(): number {
+    return this.hashing(true);
+  }
+
+  /**
+   * @internal
+   * `hash()` without the parts the stages between ticks may change: what
+   * those stages must leave as it was.
+   */
+  _frameHash(): number {
+    return this.hashing(false);
+  }
+
+  private hashing(betweenTicks: boolean): number {
     const { shapes } = this;
     // The ids to come: the next unused index, then the freed slots in the
     // order they will be reused, each with the generation it will get.
@@ -3982,7 +4000,9 @@ export class World {
       h = add(h, parts.length);
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i]!;
-        h = addData(addString(h, part.name), part.observed());
+        if (betweenTicks || part.betweenTicks !== true) {
+          h = addData(addString(h, part.name), part.observed());
+        }
       }
     }
     return finish(h);

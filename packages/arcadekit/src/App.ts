@@ -766,7 +766,9 @@ export interface Options<
   readonly checkpointEvery?: number;
   /**
    * Verifies that the frame and input stages leave the world unchanged: the
-   * world's hash is taken before the stage and after each of its systems, and
+   * world's hash, without the actions queued for the next tick, which those
+   * stages are there to issue, is taken before the stage and after each of its
+   * systems, and
    * `frame` dies with `FrameChangedWorld`, naming the system, if they differ.
    * Most ways to change the world from those stages already throw where they
    * happen, and a draw from `world.random` is detected at the end of the frame
@@ -1108,6 +1110,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // them, and a rewind of the world puts them back.
     world._attach({
       name: "arcadekit/queued",
+      betweenTicks: true,
       observed: () =>
         queued.map(({ encoded, from, name, payload }) => [
           name,
@@ -1678,7 +1681,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           turn.ms = now - clock;
           clock = now;
           if (verifyFrames) {
-            if (world.hash() !== frameHash) {
+            if (world._frameHash() !== frameHash) {
               return yield* Effect.die(
                 new FrameChangedWorld({
                   stage,
@@ -1941,7 +1944,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       let drew: unknown;
       try {
         if (verifyFrames) {
-          frameHash = world.hash();
+          frameHash = world._frameHash();
         }
         const fibersBefore = fibers;
         notingStarters = true;
