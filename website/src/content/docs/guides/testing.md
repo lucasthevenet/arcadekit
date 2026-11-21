@@ -183,6 +183,16 @@ expect(adaApp.actionLog).toEqual(graceApp.actionLog);
 
 Compare peers once the game has settled and both are at the same tick: stop issuing input, step a while longer, then tick only the peer that is behind. A single-player game replaying the same log with `App.replay` must end on the same hash. You can provide `hub.layer(peer)` to `Transport.connect` alone, but not a layer that listens, such as `Transport.layerBroadcastChannel` or `Transport.layerWebSocket`, which would be released with that line.
 
+## Rewinds
+
+A rollback session runs a tick again after a rewind, and a game that keeps something it reads outside the world runs it differently. `App.make({ verifyRewinds: true })` finds that in a single app, with no second peer:
+
+- Each tick is run, rewound and run again from the same moment.
+- The world's hash is compared before the first system and after each one.
+- `tick` throws `App.RewindDiverged`, which names the first system after which the hashes differ. A difference before any system is in a handler of an action queued for the tick, or in a state's hook.
+
+The rest of the game sees each tick once: the frame and input stages, the action log and the recording. Each tick costs a capture of the game, a second run and a hash per system, so use it in tests.
+
 ## Replays as tests
 
 Play a game in a test, replay it into a fresh app with `App.replay`, and assert that both end on the same hash. This catches a system that reads the clock or `Math.random`, at the tick it does so. See [replays](replays.md).

@@ -94,6 +94,7 @@ The overhead of arcadekit's own plugins, each with little to do:
 - **Sound**, with one system playing cues for two kinds of event, or one keeping a channel's music, to an output that does nothing. It costs a frame two reads of empty event queues, 0.7 µs over an empty frame, plus 0.2 µs per cue played. When sound has no output, the system checks for one and stops.
 - **A game at rest** is one that [ticks only when needed](running-a-game.md), with device state, a state and a view.
 - Verifying frames with `verifyFrames` costs a hash of the world before the stage and after each of its systems, 1.7 ms more for one system over 100,000 entities. Use it in [tests](testing.md#the-frame-stage).
+- Verifying rewinds with `verifyRewinds` costs a capture of the game, a rewind, a second run and a world hash per system, every tick: about 100 µs a tick for a game of 1,000 entities and two systems, against 7 to 20 µs without. Use it in [tests](testing.md#rewinds).
 
 ## Spawning and despawning
 

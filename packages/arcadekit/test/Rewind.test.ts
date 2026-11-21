@@ -23,6 +23,7 @@ import {
   Take,
   Whisper,
   game,
+  gameOptions,
   moves,
   withApp,
 } from "./peers";
@@ -490,5 +491,114 @@ describe("what the stages between ticks hear across a rewind", () => {
         expect(one.heard.frame).toEqual(other.heard.frame);
       })
     );
+  });
+});
+
+describe("verifyRewinds", () => {
+  const Mark = Component.define("vr/Mark", { n: Field.i32 });
+  const Marks = Query.all(Mark);
+  const Steady = System.make("vr/Steady", function* () {
+    (yield* Commands).spawn(Mark.of({ n: (yield* Time).tick }));
+  });
+  const failure = (run: () => void): unknown => {
+    try {
+      run();
+    } catch (error) {
+      return error;
+    }
+    throw new Error("it did not throw");
+  };
+
+  it("names the system that keeps what it reads outside the world", () => {
+    let outside = 0;
+    const Leaky = System.make("vr/Leaky", function* () {
+      outside++;
+      (yield* Commands).spawn(Mark.of({ n: outside }));
+    });
+    const After = System.make("vr/After", function* () {
+      (yield* Commands).spawn(Mark.of({ n: 0 }));
+    });
+    withApp(
+      App.make({ systems: [Steady, Leaky, After], verifyRewinds: true }),
+      (app) => {
+        const error = failure(() => app.tick(DELTA));
+        expect(error).toBeInstanceOf(App.RewindDiverged);
+        expect(error).toMatchObject({ tick: 1, system: "vr/Leaky" });
+        expect(String((error as Error).message)).toContain(
+          'after system "vr/Leaky" ran'
+        );
+      }
+    );
+  });
+
+  it("finds it before the first system, in a handler", () => {
+    let outside = 0;
+    const Bump = Action.define("vr/Bump", Schema.Struct({}));
+    const bump = Action.handler(Bump, function* () {
+      outside++;
+      (yield* Commands).spawn(Mark.of({ n: outside }));
+    });
+    withApp(
+      App.make({ systems: [Steady], handlers: [bump], verifyRewinds: true }),
+      (app) => {
+        app.tick(DELTA);
+        app.enqueue(Bump, {});
+        const error = failure(() => app.tick(DELTA));
+        expect(error).toMatchObject({ tick: 2, system: undefined });
+      }
+    );
+  });
+
+  it("leaves a game that keeps everything in the world as it would be", () => {
+    const options = { ...gameOptions(5, 1), seed: 5 };
+    const played = (verifyRewinds: boolean) =>
+      withApp(App.make({ ...options, verifyRewinds }), (app) => {
+        const hashes = stretch(app, 11, 40);
+        return {
+          hashes,
+          recording: App.encodeRecording(app.record()),
+          count: app.world.view(Marks).entities().length,
+        };
+      });
+    expect(played(true)).toEqual(played(false));
+  });
+
+  it("has the stages between ticks see each tick once", () => {
+    const Rang = Event.define("vr/Rang", Schema.Struct({ n: Schema.Int }));
+    const New = Query.all(Mark).pipe(Query.added(Mark));
+    const seen = { heard: [] as number[], added: [] as number[] };
+    const Ring = System.make("vr/Ring", function* () {
+      (yield* Rang).emit({ n: (yield* Time).tick });
+    });
+    const Draw = System.make("vr/Draw", function* () {
+      seen.heard.push(...(yield* Rang).read().map((rang) => rang.n));
+      seen.added.push((yield* New).entities().length);
+    }).pipe(System.inStage("frame"));
+    withApp(
+      App.make({ systems: [Steady, Ring, Draw], verifyRewinds: true }),
+      (app) => {
+        for (let i = 0; i < 3; i++) {
+          app.tick(DELTA);
+          app.frame(0);
+        }
+        expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
+        expect(app.world.view(Marks).entities().length).toBe(3);
+      }
+    );
+  });
+
+  it("throws the refusal of a game it can't capture", () => {
+    const Held = Component.define("vr/Held", {
+      thing: Field.json<unknown>(),
+    });
+    const Hold = System.make("vr/Hold", function* () {
+      (yield* Commands).spawn(Held.of({ thing: () => 1 }));
+    });
+    withApp(App.make({ systems: [Hold], verifyRewinds: true }), (app) => {
+      app.tick(DELTA);
+      expect(() => app.tick(DELTA)).toThrow(
+        /verifyRewinds could not capture the game before tick 2/
+      );
+    });
   });
 });
