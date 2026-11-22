@@ -39,16 +39,14 @@
  * clock and draws its ids from `Math.random`, so tracing doesn't change the
  * game.
  */
-import { Cause, Context, Effect, Exit, Layer, Metric, Result } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Metric } from "effect";
 import type { Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
 import { CommandBuffer } from "./ecs/commands";
-import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
-import { SnapshotError } from "./ecs/snapshot";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Inbox from "./Inbox";
@@ -64,19 +62,9 @@ import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
 
-/**
- * A game's time, held by its world so that a snapshot, a restore and the
- * world's hash cover it, as Bevy keeps `Time` in its `World`. `Time` reads it.
- */
-const GameTime = Component.singleton(
-  "arcadekit/Time",
-  { tick: Field.f64, elapsed: Field.f64, delta: Field.f64 },
-  { tick: 0, elapsed: 0, delta: 0 }
-);
-
 /** The tick a save was made at, which its world holds. */
 const tickOf = (save: Save.Save): number => {
-  const tick = Save.singleton(save, GameTime.component.name, "tick");
+  const tick = Save.singleton(save, Stage.GameTime.component.name, "tick");
   return typeof tick === "number" ? tick : 0;
 };
 
@@ -722,45 +710,18 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
-    const version = options.version ?? 0;
-    if (!Number.isSafeInteger(version) || version < 0) {
-      throw new Error(
-        `A game's version must be a whole number from 0 up, and this one is ${version}.`
-      );
-    }
+    const version = Save.versionOf(options.version);
     let save: Save.Save | undefined;
     if (given !== undefined) {
-      // An older save is brought up to this version of the game first.
-      const current = Save.migrate(given, version, options.migrations ?? []);
-      if (Exit.isFailure(current)) {
-        return yield* current;
-      }
-      save = current.value;
-    }
-    if (save !== undefined) {
       // Before anything else can touch the world: a load fills an empty one.
-      const loaded = Result.try(() => {
-        world.load(save.world);
-      });
-      if (Result.isFailure(loaded)) {
-        const error = loaded.failure;
-        if (!(error instanceof SnapshotError)) {
-          return yield* Effect.die(error);
-        }
-        return yield* new Save.LoadRefused({
-          problem: error.problem,
-          message:
-            error.problem === "unknown component"
-              ? `${error.message} A migration renames or removes a component in a save.`
-              : error.problem === "unknown store" ||
-                  error.problem === "store changed"
-                ? `${error.message} A migration changes the events and the queued actions of a save in \`world.stores\`.`
-                : error.message,
-        });
+      const loaded = Save.into(world, given, version, options.migrations ?? []);
+      if (Exit.isFailure(loaded)) {
+        return yield* loaded;
       }
+      save = loaded.value;
     }
     // Loaded with the world, or written by the first tick.
-    const time: TimeState = world.singleton(GameTime);
+    const time: TimeState = world.singleton(Stage.GameTime);
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
       ...(options.systems ?? []),
@@ -770,13 +731,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ...(options.handlers ?? []),
     ];
 
-    const handlers = new Map<string, Action.AnyHandler>();
-    for (const handler of allHandlers) {
-      if (handlers.has(handler.action.name)) {
-        throw new Error(`Two handlers for action "${handler.action.name}"`);
-      }
-      handlers.set(handler.action.name, handler);
-    }
+    const handlers = Inbox.handlersOf(allHandlers);
     const log = new Journal.Log(world, time, options.checkpointEvery ?? 60);
     world._attach(log);
     // What systems and handlers issue goes through the inbox, made below
@@ -847,20 +802,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     if (schedule.input.length > 0) {
       events.expect("input", time.tick);
     }
-    const states = State.registryOf(world);
-    // A state the save holds goes on from where it was, transitions included,
-    // whether or not anything has looked at it yet.
-    if (save !== undefined) {
-      for (const state of State.defined()) {
-        if (world.component(state.name) === state.component) {
-          State.handleOf(world, state);
-        }
-      }
-    }
-    for (const state of schedule.hooked) {
-      State.handleOf(world, state);
-      states.hooked.add(state);
-    }
+    State.prepare(world, schedule.hooked, save !== undefined);
 
     const loop = Loop.make({
       world,
@@ -881,6 +823,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // What a run ends with is what the game's systems fail with: the loop
     // runs them as systems of any game, and their types are claimed back.
     type Ran = Exit.Exit<void, TickError<S, P>>;
+    const orThrow = (exit: Ran): void => {
+      if (Exit.isFailure(exit)) {
+        throw Cause.squash(exit.cause);
+      }
+    };
     const frameExit = (alpha: number, delta?: number): Ran =>
       loop.frame(alpha, delta) as Ran;
     const inputExit = (): Ran => loop.input() as Ran;
@@ -925,43 +872,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           (busy) =>
             `save() was called during a ${busy}. A game is saved between ticks.`
         );
-        const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
-          Exit.fail(new Save.SaveRefused({ message }));
-        if (commands.size > 0) {
-          return refused(
-            `${commands.size} commands are queued and not applied. They are applied at the end of a tick: save after one.`
-          );
-        }
-        let bytes: Uint8Array;
-        try {
-          bytes = world.snapshot();
-        } catch (error) {
-          if (error instanceof SnapshotError) {
-            return refused(error.message);
-          }
-          throw error;
-        }
-        return Exit.succeed({
-          version,
-          world: bytes,
-          logLength: log.entries.length,
-        });
+        return Save.take(world, commands, version, log.entries.length);
       },
       get settled() {
-        if (
-          intake.wanted ||
-          intake.queued.length > 0 ||
-          dispatcher.pending > 0 ||
-          !events.settled()
-        ) {
-          return false;
-        }
-        for (const state of states.states) {
-          if (State.pending(world, state) !== undefined) {
-            return false;
-          }
-        }
-        return true;
+        return loop.settled();
       },
       inspect() {
         runner.whileIdle(
@@ -988,25 +902,16 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return log.checkpoint();
       },
       tickExit,
-      tick(delta, options) {
-        const exit = tickExit(delta, options);
-        if (Exit.isFailure(exit)) {
-          throw Cause.squash(exit.cause);
-        }
+      tick: (delta, options) => {
+        orThrow(tickExit(delta, options));
       },
       frameExit,
-      frame(alpha, delta) {
-        const exit = frameExit(alpha, delta);
-        if (Exit.isFailure(exit)) {
-          throw Cause.squash(exit.cause);
-        }
+      frame: (alpha, delta) => {
+        orThrow(frameExit(alpha, delta));
       },
       inputExit,
-      input() {
-        const exit = inputExit();
-        if (Exit.isFailure(exit)) {
-          throw Cause.squash(exit.cause);
-        }
+      input: () => {
+        orThrow(inputExit());
       },
       dispatch: (action, payload) =>
         // What the action's handler returns or fails with.
@@ -1036,34 +941,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     // Each plugin's setup runs once, in the same order, with everything in
     // place. Not when loading: the save holds what setup made.
-    for (const plugin of plugins) {
-      if (plugin.setup === undefined || save !== undefined) {
-        continue;
+    for (const { name, setup } of save === undefined ? plugins : []) {
+      if (setup !== undefined) {
+        const ran = loop.setup(name, setup);
+        if (Exit.isFailure(ran)) {
+          return yield* ran as Exit.Exit<never, Plugin.ErrorOf<P[number]>>;
+        }
       }
-      events.reader = `setup:${plugin.name}`;
-      world.reader = events.reader;
-      const { name, setup } = plugin;
-      const ran = Result.try(() =>
-        runner.asOwn(() =>
-          runner.finish(
-            () => runFork(setup),
-            `The setup of plugin "${name}"`,
-            () =>
-              `The setup of plugin "${name}" did not finish synchronously. Setup must not wait.`,
-            false
-          )
-        )
-      );
-      if (Result.isFailure(ran)) {
-        return yield* Effect.die(ran.failure);
-      }
-      if (Exit.isFailure(ran.success)) {
-        return yield* ran.success as Exit.Exit<
-          never,
-          Plugin.ErrorOf<P[number]>
-        >;
-      }
-      commands.apply();
     }
     commands.apply();
     // What the setups emitted is of the tick to come.

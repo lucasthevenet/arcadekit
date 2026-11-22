@@ -15,6 +15,7 @@ import { Context, Data, Random as EffectRandom } from "effect";
 
 import * as Action from "./Action";
 import type { CommandBuffer } from "./ecs/commands";
+import { Component, Field } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
@@ -59,6 +60,18 @@ export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
     return `The ${this.stage} stage changed the world: its hash was not the same after system "${this.system}" ran${this.stage === "frame" ? ` in frame ${this.frame}` : ""} as before. ${this.stage === "frame" ? "The frame stage draws the game between two ticks" : "The input stage reads the devices before a tick"} and must leave the world as it found it. Look for a write through the raw columns of eachChunk, which nothing stops where it is made, or a draw from world.random, which is otherwise only found when the stage ends.`;
   }
 }
+
+/**
+ * A game's time, held by its world so that a snapshot, a restore and the
+ * world's hash cover it, as Bevy keeps `Time` in its `World`. `Time` reads it.
+ *
+ * @internal
+ */
+export const GameTime = Component.singleton(
+  "arcadekit/Time",
+  { tick: Field.f64, elapsed: Field.f64, delta: Field.f64 },
+  { tick: 0, elapsed: 0, delta: 0 }
+);
 
 /**
  * What the `Actions` service is.

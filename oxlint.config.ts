@@ -269,7 +269,6 @@ export default defineConfig({
       },
     },
     ...Object.entries({
-      "packages/arcadekit/src/App.ts": 603,
       "packages/three/src/Three.ts": 1760,
       "packages/arcadekit/src/ecs/world.ts": 1590,
       "packages/arcadekit/src/ecs/query.ts": 808,

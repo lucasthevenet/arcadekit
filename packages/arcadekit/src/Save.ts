@@ -23,6 +23,7 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
+import type { CommandBuffer } from "./ecs/commands";
 import { readSingleton, readSnapshot, writeSnapshot } from "./ecs/contents";
 import type { SnapshotContents } from "./ecs/contents";
 import { SnapshotError } from "./ecs/snapshot";
@@ -292,6 +293,106 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
 const describeCause = (cause: Cause.Cause<unknown>): string => {
   const error = Cause.squash(cause);
   return error instanceof Error ? error.message : String(error);
+};
+
+/**
+ * Takes a world as it is, with `take`, to `save` or to `capture`: refused
+ * while commands are queued and not applied, and when the world holds what
+ * has no saved form.
+ *
+ * @internal
+ */
+export const taking = <A>(
+  commands: CommandBuffer,
+  to: "save" | "capture",
+  take: () => A
+): Exit.Exit<A, SaveRefused> => {
+  if (commands.size > 0) {
+    return Exit.fail(
+      new SaveRefused({
+        message: `${commands.size} commands are queued and not applied. They are applied at the end of a tick: ${to} after one.`,
+      })
+    );
+  }
+  try {
+    return Exit.succeed(take());
+  } catch (error) {
+    if (error instanceof SnapshotError) {
+      return Exit.fail(new SaveRefused({ message: error.message }));
+    }
+    throw error;
+  }
+};
+
+/**
+ * `app.save()`: a save of a world, for a game of a version whose log has a
+ * length.
+ *
+ * @internal
+ */
+export const take = (
+  world: World,
+  commands: CommandBuffer,
+  version: number,
+  logLength: number
+): Exit.Exit<Save, SaveRefused> =>
+  Exit.map(
+    taking(commands, "save", () => world.snapshot()),
+    (bytes) => ({ version, world: bytes, logLength })
+  );
+
+/**
+ * The version a game is made with: a whole number from 0 up, and 0 when it
+ * gives none.
+ *
+ * @internal
+ */
+export const versionOf = (given: number | undefined): number => {
+  const version = given ?? 0;
+  if (!Number.isSafeInteger(version) || version < 0) {
+    throw new Error(
+      `A game's version must be a whole number from 0 up, and this one is ${version}.`
+    );
+  }
+  return version;
+};
+
+/**
+ * Fills an empty world from a save, brought up to a version of the game
+ * first, and returns the save as it was loaded.
+ *
+ * @internal
+ */
+export const into = (
+  world: World,
+  save: Save,
+  version: number,
+  migrations: readonly Migration[]
+): Exit.Exit<Save, LoadRefused> => {
+  const current = migrate(save, version, migrations);
+  if (Exit.isFailure(current)) {
+    return current;
+  }
+  try {
+    world.load(current.value.world);
+  } catch (error) {
+    if (!(error instanceof SnapshotError)) {
+      throw error;
+    }
+    return Exit.fail(
+      new LoadRefused({
+        problem: error.problem,
+        message:
+          error.problem === "unknown component"
+            ? `${error.message} A migration renames or removes a component in a save.`
+            : error.problem === "unknown store" ||
+                error.problem === "store changed"
+              ? `${error.message} A migration changes the events and the queued actions of a save in \`world.stores\`.`
+              : error.message,
+      })
+    );
+  }
+  return current;
 };
 
 /**

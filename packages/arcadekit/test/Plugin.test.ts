@@ -347,6 +347,24 @@ describe("plugins", () => {
     expect(limits).toEqual([20, 6]);
   });
 
+  it("have what a setup spawned in the world when the next plugin's setup runs", () => {
+    let seen = -1;
+    const First = Plugin.make("pl/First", {
+      setup: Effect.gen(function* () {
+        (yield* Commands).spawn(Health.of({ hp: 1 }));
+      }),
+    });
+    const Second = Plugin.make("pl/Second", {
+      plugins: [First],
+      setup: Effect.gen(function* () {
+        seen = (yield* World).view(Query.all(Health)).entities().length;
+      }),
+    });
+    withApp(App.make({ plugins: [Second] }), () => {
+      expect(seen).toBe(1);
+    });
+  });
+
   it("fail the app with a typed error when a layer or a setup fails", () => {
     class NoSaveFile extends Data.TaggedError("NoSaveFile")<{
       readonly path: string;
