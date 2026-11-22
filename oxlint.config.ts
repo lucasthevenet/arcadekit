@@ -269,7 +269,7 @@ export default defineConfig({
       },
     },
     ...Object.entries({
-      "packages/arcadekit/src/App.ts": 1509,
+      "packages/arcadekit/src/App.ts": 1360,
       "packages/three/src/Three.ts": 1760,
       "packages/arcadekit/src/ecs/world.ts": 1735,
       "packages/arcadekit/src/ecs/query.ts": 808,
@@ -293,6 +293,8 @@ export default defineConfig({
       files: [
         "packages/arcadekit/src/App.ts",
         "packages/arcadekit/src/Plugin.ts",
+        // The turns of those systems, which were in App.ts.
+        "packages/arcadekit/src/Schedule.ts",
       ],
       rules: {
         "effecttsgo/any-unknown-in-error-context": "off",

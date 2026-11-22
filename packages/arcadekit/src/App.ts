@@ -55,7 +55,7 @@ import {
   Schema,
   Tracer,
 } from "effect";
-import type { Fiber, Scope } from "effect";
+import type { Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
@@ -73,7 +73,9 @@ import type { Told } from "./Event";
 import * as Input from "./Input";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
+import * as Runner from "./Runner";
 import * as Save from "./Save";
+import * as Schedule from "./Schedule";
 import {
   Commands,
   Events,
@@ -582,46 +584,6 @@ export interface App<E = never, HU = never> extends Any {
 }
 
 /**
- * A system as the app runs it: its condition, then its run or what it
- * does in place of running, in a span of its own when the app traces.
- * Made once, so an app that doesn't trace runs what it would without.
- * What its last turn was is kept for `inspect`.
- */
-class Turn {
-  /** Asked before `run`, unless the span holds it. */
-  readonly condition: Effect.Effect<boolean, unknown, unknown> | undefined;
-  readonly idle: Effect.Effect<void, unknown, unknown> | undefined;
-  readonly run: Effect.Effect<void, unknown, unknown>;
-  ran = false;
-  ms = 0;
-  constructor(
-    readonly system: Plugin.AnySystem,
-    trace: boolean
-  ) {
-    const { condition, idle, run } = system;
-    if (!trace) {
-      // Asked in the loop, which is cheaper than a flatMap each tick.
-      this.condition = condition;
-      this.idle = idle;
-      this.run = run;
-      return;
-    }
-    this.condition = undefined;
-    this.idle = undefined;
-    this.run = Effect.withSpan(
-      condition === undefined
-        ? run
-        : Effect.flatMap(condition, (holds) => {
-            this.ran = holds;
-            return holds ? run : (idle ?? Effect.void);
-          }),
-      system.name,
-      { level: System.spanLevel }
-    );
-  }
-}
-
-/**
  * The prefix of a reader's name in the world's change logs when it is a
  * system of the frame stage or the input stage. Such a reader isn't part of
  * the simulation: its place in what changed isn't saved.
@@ -1058,102 +1020,25 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Everything the caller provided (their services, resource overrides, the
     // scope) is captured once here and handed to every system and handler.
     const provided = yield* Effect.context<External<S, H, P>>();
-    // The system running now, or the last one that ran.
-    let running = "";
     /**
      * While a tick runs for whoever took the app over and asked: told before
      * the tick's first system and after each one, with its name.
      */
     let observer: ((system: string | undefined) => void) | undefined;
-    // Every fiber started with the app's services is counted when it starts
-    // and when it ends, so that one still running after the code that
-    // started it has finished is refused: it would change the game at a
-    // moment no replay repeats. While a stage runs, the systems that start
-    // fibers are noted, for the message.
-    let fibers = 0;
-    let notingStarters = false;
-    let fiberStarters: Set<string> | undefined;
-    const outerMetrics = Context.get(
-      Context.merge(provided, built),
-      Metric.FiberRuntimeMetrics
-    );
-    const fiberCount: Metric.FiberRuntimeMetricsService = {
-      recordFiberStart(started) {
-        fibers++;
-        if (notingStarters && running !== "") {
-          (fiberStarters ??= new Set()).add(running);
-        }
-        outerMetrics?.recordFiberStart(started);
-      },
-      recordFiberEnd(ended, exit) {
-        fibers--;
-        outerMetrics?.recordFiberEnd(ended, exit);
-      },
-    };
-    /**
-     * The error to throw when more fibers are running than `before`, once what
-     * the dispatcher holds has run: `what` started a fiber and left it
-     * running. The systems noted as starting fibers are forgotten.
-     */
-    const leftFibers = (before: number, what: string): Error | undefined => {
-      dispatcher.flush();
-      const left = fibers - before;
-      const noted = fiberStarters;
-      notingStarters = false;
-      fiberStarters = undefined;
-      if (left > 0) {
-        const starters =
-          noted === undefined
-            ? ""
-            : ` (started while ${[...noted].map((name) => `"${name}"`).join(", ")} ran)`;
-        return new Error(
-          `${what} left ${left === 1 ? "a fiber" : `${left} fibers`} running${starters}, with Effect.forkDetach, Effect.forkIn or another fork that outlives it. ` +
-            `It would change the game later, at a moment no replay repeats. Wait for a fiber within the code that started it, ` +
-            `or keep work that takes longer than a tick in the world, in a component or a state that a system moves on each tick.`
-        );
-      }
-      return undefined;
-    };
-    /**
-     * Runs the game's code to its end, now: `fork` starts it, and it has to
-     * have ended by the time `fork` returns. Throws when it has not, with
-     * what `waited` says, and when it left a fiber running, as `what` did.
-     * With `noting`, the systems that start fibers while it runs are noted,
-     * for that message. Nobody is reading once it has run.
-     */
-    const finish = <A, E>(
-      fork: () => Fiber.Fiber<A, E>,
-      what: string,
-      waited: () => string,
-      noting: boolean
-    ): Exit.Exit<A, E> => {
-      const before = fibers;
-      notingStarters = noting;
-      fiberStarters = undefined;
-      let fiber: Fiber.Fiber<A, E>;
-      try {
-        fiber = fork();
-      } finally {
+    const runner = new Runner.Runner(
+      dispatcher,
+      Context.get(Context.merge(provided, built), Metric.FiberRuntimeMetrics),
+      () => {
+        // Nobody is reading once the game's code has run.
         events.reader = undefined;
         world.reader = undefined;
       }
-      const exit = fiber.pollUnsafe();
-      if (exit === undefined) {
-        fiber.interruptUnsafe();
-        dispatcher.flush();
-        throw new Error(waited());
-      }
-      const left = leftFibers(before, what);
-      if (left !== undefined) {
-        throw left;
-      }
-      return exit;
-    };
+    );
     // Putting our scheduler in the context makes every fiber started from it
     // (systems, handlers, and anything they fork) use the tick dispatcher.
     const context = Context.merge(provided, built).pipe(
       Context.add(Scheduler.Scheduler, scheduler),
-      Context.add(Metric.FiberRuntimeMetrics, fiberCount)
+      Context.add(Metric.FiberRuntimeMetrics, runner.metrics)
     ) as Context.Context<unknown>;
     const runFork = Effect.runForkWith(context);
 
@@ -1188,38 +1073,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       );
     };
 
-    System.unique(allSystems);
-    // A hook runs when its state is entered or left, not with the rest.
-    const ordered = System.order(
-      allSystems.filter(
-        (system) =>
-          system.trigger === undefined &&
-          !System.isFrameStage(system.stage) &&
-          system.stage !== "input"
-      )
-    );
-    // A frame's three stages, one after the other, are one list.
-    const frameSystems = System.order(
-      allSystems.filter(
-        (system) =>
-          system.trigger === undefined && System.isFrameStage(system.stage)
-      )
-    );
-    const inputSystems = System.order(
-      allSystems.filter(
-        (system) => system.trigger === undefined && system.stage === "input"
-      )
-    );
-    // What runs between ticks hears the events of every tick, the first
-    // among them: they are kept for it from the start.
-    if (frameSystems.length > 0) {
-      events.expect("frame", time.tick);
-    }
-    if (inputSystems.length > 0) {
-      events.expect("input", time.tick);
-    }
-    const hookKey = (trigger: System.Trigger): string =>
-      `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
     // Chosen once, so an app that doesn't trace runs what it would without.
     // The default tracer makes spans and sends them nowhere: Effect compares
     // with it to tell that no tracer is installed. A span the minimum level
@@ -1231,10 +1084,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         Context.get(context, Tracer.MinimumTraceLevel),
         System.spanLevel
       );
-    const tickTurns = ordered.map((system) => new Turn(system, trace));
-    const frameTurns = frameSystems.map((system) => new Turn(system, trace));
-    const inputTurns = inputSystems.map((system) => new Turn(system, trace));
-    const hookGroups = new Map<string, Plugin.AnySystem[]>();
+    const schedule = Schedule.make(allSystems, trace);
+    // What runs between ticks hears the events of every tick, the first
+    // among them: they are kept for it from the start.
+    if (schedule.frame.length > 0) {
+      events.expect("frame", time.tick);
+    }
+    if (schedule.input.length > 0) {
+      events.expect("input", time.tick);
+    }
     const states = State.registryOf(world);
     // A state the save holds goes on from where it was, transitions included,
     // whether or not anything has looked at it yet.
@@ -1245,38 +1103,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       }
     }
-    for (const system of allSystems) {
-      if (system.trigger === undefined) {
-        continue;
-      }
-      const state = system.trigger.state as State.State<string>;
-      if (System.isFrameStage(system.stage)) {
-        throw new Error(
-          `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
-        );
-      }
-      if (system.stage === "input") {
-        throw new Error(
-          `System "${system.name}" is a hook and is in the input stage. A hook runs at the start of a tick, when the game enters or leaves a state; the input stage runs before the tick. Read the devices only in some states with System.runIf(State.is(...)).`
-        );
-      }
-      if (!state.values.includes(system.trigger.value)) {
-        throw new Error(
-          `System "${system.name}" is a hook for "${system.trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
-        );
-      }
+    for (const state of schedule.hooked) {
       State.handleOf(world, state);
       states.hooked.add(state);
-      const key = hookKey(system.trigger);
-      hookGroups.set(key, [...(hookGroups.get(key) ?? []), system]);
-    }
-    const hooks = new Map<string, Turn[]>();
-    for (const [key, group] of hookGroups) {
-      // `after` and `before` order the hooks of one moment among themselves.
-      hooks.set(
-        key,
-        System.order(group).map((system) => new Turn(system, trace))
-      );
     }
 
     const verifyFrames = options.verifyFrames === true;
@@ -1296,14 +1125,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
      * them costs.
      */
     const takeTurns = function* (
-      turns: readonly Turn[],
+      turns: readonly Schedule.Turn[],
       stage: "tick" | "frame" | "input",
       observed: boolean
     ) {
       const inTick = stage === "tick";
       let clock = performance.now();
       for (const turn of turns) {
-        running = turn.system.name;
+        const running = turn.system.name;
+        runner.running = running;
         const reader = inTick ? running : `${FRAME_READER}${running}`;
         events.reader = reader;
         world.reader = reader;
@@ -1354,17 +1184,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     ) {
       if (move.from !== undefined) {
         yield* takeTurns(
-          hooks.get(hookKey({ state, on: "exit", value: move.from })) ?? [],
+          schedule.hooks(state, "exit", move.from),
           "tick",
           false
         );
       }
       State.enter(world, state, move);
-      yield* takeTurns(
-        hooks.get(hookKey({ state, on: "enter", value: move.to })) ?? [],
-        "tick",
-        false
-      );
+      yield* takeTurns(schedule.hooks(state, "enter", move.to), "tick", false);
     });
     /** Enters the requested states, and runs their hooks. */
     const enterStates = Effect.gen(function* () {
@@ -1390,7 +1216,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         yield* enterStates;
       }
       observer?.(undefined);
-      yield* takeTurns(tickTurns, "tick", true);
+      yield* takeTurns(schedule.tick, "tick", true);
     });
 
     // --- the stages between ticks: frame and input -------------------------------
@@ -1458,8 +1284,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       })
     ) as Context.Context<unknown>;
     const runInputFork = Effect.runForkWith(inputContext);
-    const drawn = Effect.gen(() => takeTurns(frameTurns, "frame", false));
-    const heardEffect = Effect.gen(() => takeTurns(inputTurns, "input", false));
+    const drawn = Effect.gen(() => takeTurns(schedule.frame, "frame", false));
+    const heardEffect = Effect.gen(() =>
+      takeTurns(schedule.input, "input", false)
+    );
     const frameEffect = trace
       ? Effect.suspend(() =>
           Effect.withSpan(drawn, "arcadekit/frame", {
@@ -1700,7 +1528,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       world.reader = events.reader;
       let exit: Exit.Exit<unknown, unknown>;
       try {
-        exit = finish(
+        exit = runner.finish(
           () => {
             // The payload is the action's: its schema decoded it, or the
             // compiler checked it in a typed dispatch.
@@ -1779,15 +1607,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (verifyFrames) {
           frameHash = world._frameHash();
         }
-        running = "";
-        exit = finish(
+        runner.running = "";
+        exit = runner.finish(
           () =>
             stage === "frame"
               ? runFrameFork(frameEffect)
               : runInputFork(inputEffect),
           stage === "frame" ? "The frame" : "The input stage",
           () =>
-            `System "${running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`,
+            `System "${runner.running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`,
           true
         ) as Exit.Exit<void, TickError<S, P>>;
         // Its systems have had their chance at every event there is.
@@ -1814,7 +1642,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         (busy) =>
           `App.frame was called from inside a ${busy}. The frame stage runs between ticks.`
       );
-      if (frameSystems.length === 0) {
+      if (schedule.frame.length === 0) {
         return Exit.void;
       }
       frame.alpha = alpha;
@@ -1828,7 +1656,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         (busy) =>
           `App.input was called from inside a ${busy}. The input stage runs between ticks, before one.`
       );
-      if (inputSystems.length === 0) {
+      if (schedule.input.length === 0) {
         return Exit.void;
       }
       // One picture of the devices for the whole stage.
@@ -1910,7 +1738,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // seen to it, as a driver does; if not, it is seen to here.
       if (
         !intake.heard &&
-        inputSystems.length > 0 &&
+        schedule.input.length > 0 &&
         options?.input !== false
       ) {
         const exit = inputExit();
@@ -1973,8 +1801,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.tick++;
 
         events.open();
-        running = "";
-        const exit = finish(
+        runner.running = "";
+        const exit = runner.finish(
           () =>
             runFork(
               tickSpan === undefined
@@ -1983,7 +1811,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             ),
           `Tick ${time.tick}`,
           () =>
-            `System "${running}" did not finish within the tick. Systems must be synchronous: ` +
+            `System "${runner.running}" did not finish within the tick. Systems must be synchronous: ` +
             `what takes longer than a tick keeps its place in the world, in a component or a state that a system moves on each tick.`,
           true
         );
@@ -2003,12 +1831,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       time,
       dispatcher,
       plugins: plugins.map((plugin) => plugin.name),
-      systemOrder: ordered.map((s) => s.name),
+      systemOrder: schedule.tick.map((turn) => turn.system.name),
       get phase() {
         return phase();
       },
-      frameOrder: frameSystems.map((s) => s.name),
-      inputOrder: inputSystems.map((s) => s.name),
+      frameOrder: schedule.frame.map((turn) => turn.system.name),
+      inputOrder: schedule.input.map((turn) => turn.system.name),
       actionLog: log.entries,
       record(since) {
         whileIdle(
@@ -2088,16 +1916,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           (busy) =>
             `inspect() was called from inside a ${busy}. A game is inspected between ticks.`
         );
-        const turns = [
-          ...tickTurns,
-          ...[...hooks.values()].flat(),
-          ...inputTurns,
-          ...frameTurns,
-        ];
         return {
           tick: time.tick,
           ...world.contents(),
-          systems: turns.map(({ ms, ran, system }) => ({
+          systems: schedule.all.map(({ ms, ran, system }) => ({
             name: system.name,
             stage: system.stage,
             ran,
@@ -2203,7 +2025,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       const { name, setup } = plugin;
       const ran = Result.try(() =>
         runOwn(() =>
-          finish(
+          runner.finish(
             () => runFork(setup),
             `The setup of plugin "${name}"`,
             () =>

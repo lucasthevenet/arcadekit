@@ -54,6 +54,8 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
         "Plugin",
         "Query",
         "Resource",
+        "Runner",
+        "Schedule",
         "Schemas",
         "Services",
         "Singleton",

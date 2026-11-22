@@ -112,10 +112,20 @@
       "types": "./dist/Rollback.d.ts",
       "default": "./dist/Rollback.js"
     },
+    "./Runner": {
+      "source": "./src/Runner.ts",
+      "types": "./dist/Runner.d.ts",
+      "default": "./dist/Runner.js"
+    },
     "./Save": {
       "source": "./src/Save.ts",
       "types": "./dist/Save.d.ts",
       "default": "./dist/Save.js"
+    },
+    "./Schedule": {
+      "source": "./src/Schedule.ts",
+      "types": "./dist/Schedule.d.ts",
+      "default": "./dist/Schedule.js"
     },
     "./Schemas": {
       "source": "./src/Schemas.ts",
