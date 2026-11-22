@@ -39,21 +39,7 @@
  * clock and draws its ids from `Math.random`, so tracing doesn't change the
  * game.
  */
-import {
-  Cause,
-  Clock,
-  Context,
-  Data,
-  Effect,
-  Random as EffectRandom,
-  Exit,
-  Layer,
-  LogLevel,
-  Metric,
-  References,
-  Result,
-  Tracer,
-} from "effect";
+import { Cause, Context, Effect, Exit, Layer, Metric, Result } from "effect";
 import type { Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
@@ -62,27 +48,18 @@ import * as Driver from "./Driver";
 import { CommandBuffer } from "./ecs/commands";
 import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
-import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Inbox from "./Inbox";
-import * as Input from "./Input";
 import * as Journal from "./Journal";
+import * as Loop from "./Loop";
 import * as Plugin from "./Plugin";
 import * as Runner from "./Runner";
 import * as Save from "./Save";
 import * as Schedule from "./Schedule";
-import {
-  Commands,
-  Events,
-  Frame,
-  Random,
-  Ticks,
-  Time,
-  World,
-} from "./Services";
-import type { BuiltIn, FrameState, TimeState } from "./Services";
+import type { BuiltIn, TimeState } from "./Services";
+import * as Stage from "./Stage";
 import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
@@ -513,36 +490,6 @@ export interface App<E = never, HU = never> extends Any {
 }
 
 /**
- * The prefix of a reader's name in the world's change logs when it is a
- * system of the frame stage or the input stage. Such a reader isn't part of
- * the simulation: its place in what changed isn't saved.
- *
- * @internal
- */
-export const STAGE_READER = "frame:";
-
-/**
- * A frame-stage or input-stage system changed the world, which it must not do,
- * as detected by an app created with `verifyFrames`. It is a defect, not a
- * failure to handle: those stages run between ticks, and a game that depends on
- * having been drawn, or on its devices having been read, doesn't replay.
- *
- * @category Errors
- */
-export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
-  /** The stage the system belongs to. */
-  readonly stage: "frame" | "input";
-  /** The system after which the world had changed. */
-  readonly system: string;
-  /** The frame number, counted from 1: for the input stage, the last frame drawn. */
-  readonly frame: number;
-}> {
-  override get message(): string {
-    return `The ${this.stage} stage changed the world: its hash was not the same after system "${this.system}" ran${this.stage === "frame" ? ` in frame ${this.frame}` : ""} as before. ${this.stage === "frame" ? "The frame stage draws the game between two ticks" : "The input stage reads the devices before a tick"} and must leave the world as it found it. Look for a write through the raw columns of eachChunk, which nothing stops where it is made, or a draw from world.random, which is otherwise only found when the stage ends.`;
-  }
-}
-
-/**
  * Options for creating an app, as `App.make` and `App.load` take them: its
  * plugins, its own systems, handlers and components, and its version.
  *
@@ -590,7 +537,7 @@ export interface Options<
    * world's hash, without the actions queued for the next tick, which those
    * stages are there to issue, is taken before the stage and after each of its
    * systems, and
-   * `frame` dies with `FrameChangedWorld`, naming the system, if they differ.
+   * `frame` dies with `Stage.FrameChangedWorld`, naming the system, if they differ.
    * Most ways to change the world from those stages already throw where they
    * happen, and a draw from `world.random` is detected at the end of the frame
    * either way. This catches the remaining one, a write through raw columns,
@@ -763,14 +710,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const world = new EcsWorld(
       options.seed === undefined ? undefined : { seed: options.seed }
     );
-    const { random } = world;
     const commands = new CommandBuffer(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.
     const intake = new Action.Intake();
     world._attach(intake);
     world._attach(
-      new Save.Visits(world, (reader) => !reader.startsWith(STAGE_READER))
+      new Save.Visits(world, (reader) => !reader.startsWith(Stage.READER))
     );
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
@@ -842,72 +788,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       },
       handles: (action) => inbox.handles(action),
     };
-    const frame: FrameState = { alpha: 0, delta: 0, count: 0 };
-    const notInTick = (): never => {
-      throw new Error(
-        'Frame was read by a system that runs in the tick. It tells the frame stage how far a frame is between two ticks, in real time, which a simulation must not depend on: read Time instead, or move the system to the frame stage with System.inStage("frame").'
-      );
-    };
-    const notInInput = (): never => {
-      throw new Error(
-        'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").'
-      );
-    };
-    const builtIns = Context.empty().pipe(
-      Context.add(World, world),
-      Context.add(Time, time),
-      Context.add(Input.Devices, {
-        get down() {
-          return notInInput();
-        },
-        get pressed() {
-          return notInInput();
-        },
-        get released() {
-          return notInInput();
-        },
-        get axes() {
-          return notInInput();
-        },
-        get moved() {
-          return notInInput();
-        },
-      }),
-      Context.add(Frame, {
-        get alpha() {
-          return notInTick();
-        },
-        get delta() {
-          return notInTick();
-        },
-        get count() {
-          return notInTick();
-        },
-      }),
-      Context.add(Commands, commands),
-      Context.add(Ticks, {
-        more() {
-          intake.wanted = true;
-        },
-      }),
-      Context.add(Events, events),
-      Context.add(Action.Actions, actions),
-      Context.add(Random, random),
-      // Effect's own Random draws from the same generator, so `Random.next`
-      // from "effect", or anything built on it, is seeded and replayed too.
-      Context.add(EffectRandom.Random, {
-        // 53 random bits: the most a number between 0 and 1 can hold.
-        nextDoubleUnsafe: () =>
-          ((random.bits() >>> 5) * 67_108_864 + (random.bits() >>> 6)) /
-          9_007_199_254_740_992,
-        // Any safe integer, negative ones included.
-        nextIntUnsafe: () => {
-          const magnitude =
-            (random.bits() >>> 11) * 4_294_967_296 + random.bits();
-          return (random.bits() & 1) === 0 ? magnitude : -magnitude;
-        },
-      })
-    );
+    const builtIns = Stage.tick({
+      world,
+      time,
+      commands,
+      events,
+      intake,
+      actions,
+    });
     // Plugin layers are chained in dependency order, so each one can use the
     // built-in services and whatever the plugins before it provide. Effect
     // builds a layer that appears more than once only once.
@@ -922,11 +810,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Everything the caller provided (their services, resource overrides, the
     // scope) is captured once here and handed to every system and handler.
     const provided = yield* Effect.context<External<S, H, P>>();
-    /**
-     * While a tick runs for whoever took the app over and asked: told before
-     * the tick's first system and after each one, with its name.
-     */
-    let observer: ((system: string | undefined) => void) | undefined;
     const runner = new Runner.Runner(
       dispatcher,
       Context.get(Context.merge(provided, built), Metric.FiberRuntimeMetrics),
@@ -944,48 +827,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     ) as Context.Context<unknown>;
     const runFork = Effect.runForkWith(context);
 
-    // A tick's span is opened by hand, before its actions are applied each in
-    // a fiber of its own, so that their spans and the systems' are its own.
-    let tickSpan: Tracer.Span | undefined;
-    const openSpan = (
-      name: string,
-      attributes: Record<string, unknown>
-    ): Tracer.Span => {
-      const made = runFork(
-        Effect.makeSpan(name, {
-          root: true,
-          attributes,
-          level: System.spanLevel,
-        })
-      ).pollUnsafe();
-      if (made === undefined || Exit.isFailure(made)) {
-        throw new Error(`The span "${name}" could not be made.`);
-      }
-      return made.value;
-    };
-    const endSpan = (
-      span: Tracer.Span,
-      exit: Exit.Exit<unknown, unknown>
-    ): void => {
-      span.end(
-        Context.get(context, References.TracerTimingEnabled)
-          ? Context.get(context, Clock.Clock).currentTimeNanosUnsafe()
-          : 0n,
-        exit
-      );
-    };
-
-    // Chosen once, so an app that doesn't trace runs what it would without.
-    // The default tracer makes spans and sends them nowhere: Effect compares
-    // with it to tell that no tracer is installed. A span the minimum level
-    // leaves out would be made and not sent, so none is made.
-    const trace =
-      Context.get(context, Tracer.Tracer) !== Tracer.nativeTracer &&
-      Context.get(context, References.TracerEnabled) &&
-      !LogLevel.isGreaterThan(
-        Context.get(context, Tracer.MinimumTraceLevel),
-        System.spanLevel
-      );
+    const spans = new Loop.Spans(context);
     const inbox = new Inbox.Inbox({
       world,
       commands,
@@ -995,20 +837,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       runner,
       time,
       handlers,
-      run: (name, handled) =>
-        runFork(
-          trace
-            ? Effect.withSpan(
-                handled,
-                `action:${name}`,
-                tickSpan === undefined
-                  ? { root: true, level: System.spanLevel }
-                  : { parent: tickSpan, level: System.spanLevel }
-              )
-            : handled
-        ),
+      run: (name, handled) => runFork(spans.action(name, handled)),
     });
-    const schedule = Schedule.make(allSystems, trace);
+    const schedule = Schedule.make(allSystems, spans.enabled);
     // What runs between ticks hears the events of every tick, the first
     // among them: they are kept for it from the start.
     if (schedule.frame.length > 0) {
@@ -1032,360 +863,38 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       states.hooked.add(state);
     }
 
-    const verifyFrames = options.verifyFrames === true;
-    // What the world hashed to when the stage between ticks began.
-    let frameHash = 0;
-    /**
-     * Gives each system of a list its turn, in order. Each runs as itself:
-     * it reads the events, and what changed, from a place of its own, which
-     * for a stage between ticks is apart from the simulation's and never
-     * saved. In a tick, its commands are applied when it has run, and
-     * `observed`, whoever took the app over is told. Between ticks there is
-     * nothing to apply, and the world is checked to be as it was.
-     *
-     * A generator to delegate to, and not an Effect of its own for each
-     * system, which measured a generator per system per tick. One reading of
-     * the clock ends a turn and begins the next, which halves what timing
-     * them costs.
-     */
-    const takeTurns = function* (
-      turns: readonly Schedule.Turn[],
-      stage: "tick" | "frame" | "input",
-      observed: boolean
-    ) {
-      const inTick = stage === "tick";
-      let clock = performance.now();
-      for (const turn of turns) {
-        const running = turn.system.name;
-        runner.running = running;
-        const reader = inTick ? running : `${STAGE_READER}${running}`;
-        events.reader = reader;
-        world.reader = reader;
-        turn.ran = true;
-        // A system with no condition is asked nothing.
-        if (turn.condition !== undefined && !(yield* turn.condition)) {
-          turn.ran = false;
-          // What it does in place of running, if it was given anything.
-          if (turn.idle !== undefined) {
-            yield* turn.idle;
-          }
-          // It sees nothing that changed while it was off, as no event.
-          world.skip(reader);
-        } else {
-          yield* turn.run;
-        }
-        if (inTick) {
-          commands.apply();
-        }
-        const now = performance.now();
-        turn.ms = now - clock;
-        clock = now;
-        if (inTick) {
-          if (observed && observer !== undefined) {
-            observer(running);
-            // What it does is not the next system's to pay for.
-            clock = performance.now();
-          }
-        } else if (verifyFrames) {
-          if (world._frameHash() !== frameHash) {
-            return yield* Effect.die(
-              new FrameChangedWorld({
-                stage,
-                system: running,
-                frame: frame.count,
-              })
-            );
-          }
-          // The hash is not the next system's to pay for.
-          clock = performance.now();
-        }
-      }
-    };
-    /** Makes one state transition: the exit hooks, the transition, then the enter hooks. */
-    const makeMove = Effect.fnUntraced(function* (
-      state: State.State<string>,
-      move: State.Move
-    ) {
-      if (move.from !== undefined) {
-        yield* takeTurns(
-          schedule.hooks(state, "exit", move.from),
-          "tick",
-          false
-        );
-      }
-      State.enter(world, state, move);
-      yield* takeTurns(schedule.hooks(state, "enter", move.to), "tick", false);
+    const loop = Loop.make({
+      world,
+      commands,
+      events,
+      intake,
+      log,
+      inbox,
+      runner,
+      time,
+      schedule,
+      spans,
+      context,
+      actions,
+      seed: options.seed ?? 0,
+      verifyFrames: options.verifyFrames === true,
     });
-    /** Enters the requested states, and runs their hooks. */
-    const enterStates = Effect.gen(function* () {
-      for (const state of states.states) {
-        // One move a tick, but for a game's first: entering the state it
-        // starts in is followed by the move that was asked for before it.
-        const move = State.pending(world, state);
-        if (move === undefined) {
-          continue;
-        }
-        yield* makeMove(state, move);
-        if (move.followedBy !== undefined) {
-          const asked = State.pending(world, state);
-          // Unless a hook has asked for something else since.
-          if (asked !== undefined && asked.to === move.followedBy) {
-            yield* makeMove(state, asked);
-          }
-        }
-      }
-    });
-    const tickEffect = Effect.gen(function* () {
-      if (states.states.length > 0) {
-        yield* enterStates;
-      }
-      observer?.(undefined);
-      yield* takeTurns(schedule.tick, "tick", true);
-    });
-
-    // --- the stages between ticks: frame and input -------------------------------
-    // Their systems get the world to read and nothing to change it with.
-    // What is random there comes from a generator of its own, which is not
-    // part of the world; and an action issued there is input from outside,
-    // and is logged as such.
-    const frameRandom = new Rng(options.seed ?? 0);
-    const frameContext = context.pipe(
-      Context.add(Frame, frame),
-      Context.add(Random, frameRandom),
-      Context.add(EffectRandom.Random, {
-        nextDoubleUnsafe: () =>
-          ((frameRandom.bits() >>> 5) * 67_108_864 +
-            (frameRandom.bits() >>> 6)) /
-          9_007_199_254_740_992,
-        nextIntUnsafe: () => {
-          const magnitude =
-            (frameRandom.bits() >>> 11) * 4_294_967_296 + frameRandom.bits();
-          return (frameRandom.bits() & 1) === 0 ? magnitude : -magnitude;
-        },
-      }),
-      Context.add(Action.Actions, actions),
-      Context.add(Ticks, {
-        more() {
-          throw new Error(
-            "Ticks.more was called in the frame stage or the input stage. Whether the game ticks again is the game's to say, from a system of the tick: what draws it, or reads the devices, runs between ticks and decides nothing of it. A key that should wake the game issues an action."
-          );
-        },
-      })
-    ) as Context.Context<unknown>;
-    const runFrameFork = Effect.runForkWith(frameContext);
-    // The input stage is told what the devices say: one picture of them,
-    // taken when the stage begins. It is not told about the frame.
-    const source = Context.get(context, Input.Source);
-    const devices: {
-      -readonly [K in keyof Input.Sample]: Input.Sample[K];
-    } = {
-      down: new Set(),
-      pressed: [],
-      released: [],
-      axes: new Map(),
-      moved: [],
-    };
-    const noFrame = (): never => {
-      throw new Error(
-        "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
-      );
-    };
-    const inputContext = frameContext.pipe(
-      Context.add(Input.Devices, devices),
-      Context.add(Frame, {
-        get alpha() {
-          return noFrame();
-        },
-        get delta() {
-          return noFrame();
-        },
-        get count() {
-          return noFrame();
-        },
-      })
-    ) as Context.Context<unknown>;
-    const runInputFork = Effect.runForkWith(inputContext);
-    const drawn = Effect.gen(() => takeTurns(schedule.frame, "frame", false));
-    const heardEffect = Effect.gen(() =>
-      takeTurns(schedule.input, "input", false)
-    );
-    const frameEffect = trace
-      ? Effect.suspend(() =>
-          Effect.withSpan(drawn, "arcadekit/frame", {
-            root: true,
-            attributes: { "arcadekit.frame": frame.count },
-            level: System.spanLevel,
-          })
-        )
-      : drawn;
-    const inputEffect = trace
-      ? Effect.withSpan(heardEffect, "arcadekit/input", {
-          root: true,
-          level: System.spanLevel,
-        })
-      : heardEffect;
-
-    yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
-
-    /** Runs one of the two between-ticks stages, with the world frozen. */
-    const runBetween = (
-      stage: "frame" | "input"
-    ): Exit.Exit<void, TickError<S, P>> => {
-      runner.between = stage;
-      events.stage = stage;
-      world.freeze();
-      let exit: Exit.Exit<void, TickError<S, P>>;
-      let drew: unknown;
-      try {
-        if (verifyFrames) {
-          frameHash = world._frameHash();
-        }
-        runner.running = "";
-        exit = runner.finish(
-          () =>
-            stage === "frame"
-              ? runFrameFork(frameEffect)
-              : runInputFork(inputEffect),
-          stage === "frame" ? "The frame" : "The input stage",
-          () =>
-            `System "${runner.running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`,
-          true
-        ) as Exit.Exit<void, TickError<S, P>>;
-        // Its systems have had their chance at every event there is.
-        events.ended(stage, time.tick);
-      } finally {
-        runner.between = undefined;
-        events.stage = undefined;
-        // Thawing finds a draw from the world's generator, and undoes it.
-        try {
-          world.thaw();
-        } catch (error) {
-          drew = error;
-        }
-      }
-      // A defect, unless the stage had failed for a reason of its own.
-      return drew === undefined || Exit.isFailure(exit) ? exit : Exit.die(drew);
-    };
-
-    const frameExit = (
-      alpha: number,
-      delta = 0
-    ): Exit.Exit<void, TickError<S, P>> => {
-      runner.whileIdle(
-        (busy) =>
-          `App.frame was called from inside a ${busy}. The frame stage runs between ticks.`
-      );
-      if (schedule.frame.length === 0) {
-        return Exit.void;
-      }
-      frame.alpha = alpha;
-      frame.delta = delta;
-      frame.count++;
-      return runBetween("frame");
-    };
-
-    const inputExit = (): Exit.Exit<void, TickError<S, P>> => {
-      runner.whileIdle(
-        (busy) =>
-          `App.input was called from inside a ${busy}. The input stage runs between ticks, before one.`
-      );
-      if (schedule.input.length === 0) {
-        return Exit.void;
-      }
-      // One picture of the devices for the whole stage.
-      Object.assign(devices, source.sample());
-      intake.heard = true;
-      return runBetween("input");
-    };
-
-    const tickExit = (
-      delta: number,
-      options?: TickOptions
-    ): Exit.Exit<void, TickError<S, P>> => {
+    // What a run ends with is what the game's systems fail with: the loop
+    // runs them as systems of any game, and their types are claimed back.
+    type Ran = Exit.Exit<void, TickError<S, P>>;
+    const frameExit = (alpha: number, delta?: number): Ran =>
+      loop.frame(alpha, delta) as Ran;
+    const inputExit = (): Ran => loop.input() as Ran;
+    const tickExit = (delta: number, options?: TickOptions): Ran => {
       if (inbox.diverted !== undefined) {
         throw new Error(
           "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
         );
       }
-      return runTick(delta, options);
+      return loop.tick(delta, options) as Ran;
     };
-    const runTick = (
-      delta: number,
-      options?: TickOptions
-    ): Exit.Exit<void, TickError<S, P>> => {
-      runner.whileIdle((busy) => `App.tick was called from inside a ${busy}`);
-      // A tick hears the devices first. Whoever steps the app may have
-      // seen to it, as a driver does; if not, it is seen to here.
-      if (
-        !intake.heard &&
-        schedule.input.length > 0 &&
-        options?.input !== false
-      ) {
-        const exit = inputExit();
-        if (Exit.isFailure(exit)) {
-          // The tick did not run, and the next one is to hear first too.
-          intake.heard = false;
-          return exit;
-        }
-      }
-      intake.heard = false;
-      // Each tick is asked afresh: one in which nobody asks is the last.
-      intake.wanted = false;
-      log.start();
-      if (!trace) {
-        return ticked(delta);
-      }
-      tickSpan = openSpan("arcadekit/tick", {
-        "arcadekit.tick": time.tick + 1,
-      });
-      let exit: Exit.Exit<void, TickError<S, P>> | undefined;
-      try {
-        exit = ticked(delta);
-        return exit;
-      } catch (error) {
-        exit = Exit.die(error);
-        throw error;
-      } finally {
-        endSpan(tickSpan, exit ?? Exit.void);
-        tickSpan = undefined;
-      }
-    };
-    /** Runs one tick, once the input stage has been seen to. */
-    const ticked = (delta: number): Exit.Exit<void, TickError<S, P>> => {
-      runner.ticking = true;
-      try {
-        // Queued actions are applied before time advances, so they land at the
-        // same point in the timeline as an action dispatched between ticks.
-        inbox.drain();
 
-        log.ticking(delta);
-        time.delta = delta;
-        time.elapsed += delta;
-        time.tick++;
-
-        events.open();
-        runner.running = "";
-        const exit = runner.finish(
-          () =>
-            runFork(
-              tickSpan === undefined
-                ? tickEffect
-                : Effect.withParentSpan(tickEffect, tickSpan)
-            ),
-          `Tick ${time.tick}`,
-          () =>
-            `System "${runner.running}" did not finish within the tick. Systems must be synchronous: ` +
-            `what takes longer than a tick keeps its place in the world, in a component or a state that a system moves on each tick.`,
-          true
-        );
-        commands.apply();
-        events.close(time.tick);
-        log.ticked();
-        return exit as Exit.Exit<void, TickError<S, P>>;
-      } finally {
-        runner.ticking = false;
-      }
-    };
+    yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
 
     const app: App<TickError<S, P>, AllHandlers<H, P>> = {
       world,
@@ -1520,14 +1029,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           deliver: (name, payload, from) => {
             inbox.deliver(name, payload, from);
           },
-          tickExit: (delta, observe) => {
-            observer = observe;
-            try {
-              return runTick(delta, NO_INPUT);
-            } finally {
-              observer = undefined;
-            }
-          },
+          tickExit: (delta, observe) =>
+            loop.tick(delta, NO_INPUT, observe) as Ran,
         };
       },
     };

@@ -19,6 +19,7 @@ import {
   Random,
   Save,
   Singleton,
+  Stage,
   State,
   System,
   Time,
@@ -1020,7 +1021,7 @@ describe("a frame stage that is checked", () => {
         const error = Exit.isFailure(exit)
           ? Cause.squash(exit.cause)
           : undefined;
-        expect(error).toBeInstanceOf(App.FrameChangedWorld);
+        expect(error).toBeInstanceOf(Stage.FrameChangedWorld);
         expect(error).toMatchObject({ system: "Honest" });
       })
     );
@@ -1040,7 +1041,7 @@ describe("a frame stage that is checked", () => {
           const error = Exit.isFailure(exit)
             ? Cause.squash(exit.cause)
             : undefined;
-          expect(error).toBeInstanceOf(App.FrameChangedWorld);
+          expect(error).toBeInstanceOf(Stage.FrameChangedWorld);
           expect(error).toMatchObject({ system: "Sneak", frame: 1 });
           expect((error as Error).message).toMatch(
             /after system "Sneak" ran in frame 1.*raw columns of eachChunk.*world\.random/
@@ -1051,7 +1052,7 @@ describe("a frame stage that is checked", () => {
           // of the system that made it, and taken back as ever. A write
           // through a raw column is not taken back: #195.
           const before = app.world.hash();
-          expect(() => app.frame(0)).toThrow(App.FrameChangedWorld);
+          expect(() => app.frame(0)).toThrow(Stage.FrameChangedWorld);
           expect(app.world.hash() === before).toBe(how === "random");
         })
       );

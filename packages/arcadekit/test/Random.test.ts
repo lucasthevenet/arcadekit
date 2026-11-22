@@ -415,19 +415,23 @@ describe("the Random service", () => {
   it("seeds Effect's own Random inside the app too", () => {
     const run = (seed: number) => {
       const out: number[] = [];
+      let drew: number[] = [];
       const Draw = System.make("Draw", function* () {
         out.push(yield* EffectRandom.next);
         out.push(yield* EffectRandom.nextInt);
         out.push(yield* EffectRandom.nextIntBetween(1, 6));
         out.push(...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5])));
+        const random = yield* Random;
+        drew = Array.from(random.state);
         // The two are one generator: this continues the same sequence.
-        out.push((yield* Random).bits());
+        out.push(random.bits());
       });
       return withApp(App.make({ seed, systems: [Draw] }), (app) => {
         const before = Array.from(app.world.random.state);
         app.tick(1);
-        // It drew from the world's generator, not from one of its own.
-        expect(Array.from(app.world.random.state)).not.toEqual(before);
+        // Effect's draws were from the world's generator, not from one of
+        // their own: it had moved before anything drew from it by name.
+        expect(drew).not.toEqual(before);
         return out;
       });
     };

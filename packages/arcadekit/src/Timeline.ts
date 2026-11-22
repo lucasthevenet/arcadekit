@@ -18,13 +18,13 @@
  */
 import { Exit } from "effect";
 
-import { STAGE_READER } from "./App";
 import type * as App from "./App";
 import type { SavedChanges } from "./ecs/changes";
 import { SnapshotError } from "./ecs/snapshot";
 import type { World, Moment as WorldMoment } from "./ecs/world";
 import type { Told } from "./Outbox";
 import * as Save from "./Save";
+import { READER } from "./Stage";
 
 /**
  * A game at one moment, held in memory: what `Timeline.capture` returns and
@@ -119,7 +119,7 @@ export const capture = (
       world.saveChanges(
         options?.stages === true
           ? undefined
-          : (reader) => !reader.startsWith(STAGE_READER)
+          : (reader) => !reader.startsWith(READER)
       )
     )
   );

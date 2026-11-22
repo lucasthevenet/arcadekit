@@ -139,6 +139,15 @@ describe("tracing an app", () => {
     expect(ended._tag === "Ended" && Exit.isSuccess(ended.exit)).toBe(true);
   });
 
+  it("gives an action dispatched between two ticks a span of its own, and not the last tick's", () => {
+    const { spans, tracer } = recorder();
+    const app = traced(tracer, game());
+    app.tick(1 / 60, { input: false });
+    app.dispatch(Add, { by: 2 });
+    const added = spans.find((span) => span.name === "action:tr/Add")!;
+    expect(added.parent).toEqual(Option.none());
+  });
+
   it("makes a span for each run of the frame stage and of the input stage, holding their systems'", () => {
     const { spans, tracer } = recorder();
     const app = traced(tracer, game());
