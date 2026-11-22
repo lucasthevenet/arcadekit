@@ -16,6 +16,8 @@ import {
   Query,
   System,
   Time,
+  Timeline,
+  World,
 } from "../src/index";
 import type { Entity } from "../src/index";
 import type { BuiltIn } from "../src/Services";
@@ -38,6 +40,11 @@ const Ping = Event.define("ru/Ping", Schema.Number);
 const Say = Action.define("ru/Say", Schema.Struct({ n: Schema.Number }));
 const say = Action.handler(Say, function* ({ n }) {
   (yield* Ping).emit(n);
+});
+
+// Says the number of each tick.
+const Teller = System.make("ru/Teller", function* () {
+  (yield* Ping).emit((yield* Time).tick);
 });
 
 /** Builds an app, hands it to `use`, then closes its scope. */
@@ -160,6 +167,177 @@ describe("events", () => {
         expect(app.events.pending(Ping)).toBe(2);
       }
     );
+  });
+
+  it("are heard once each by code outside the simulation, which goes on from where it last read", () => {
+    withApp(
+      App.make(App.define({ systems: [Teller], handlers: [say] })),
+      (app) => {
+        // What a system writes, given the app's events.
+        const hear = Effect.map(Ping, (ping) => [...ping.read()]).pipe(
+          Effect.provideService(Events, app.events)
+        );
+        const heard: Array<number>[] = [];
+        for (let n = 0; n < 3; n++) {
+          app.tick(1);
+          heard.push(Effect.runSync(hear));
+        }
+        expect(heard).toEqual([[1], [2], [3]]);
+        // What a handler emits between two ticks, once it has ended.
+        app.dispatch(Say, { n: 9 });
+        expect(Effect.runSync(hear)).toEqual([9]);
+        expect(Effect.runSync(hear)).toEqual([]);
+        // Asked of the bus, it is the same handle and the same place.
+        app.tick(1);
+        app.tick(1);
+        expect(app.events.handle(Ping)).toBe(app.events.handle(Ping));
+        expect(app.events.handle(Ping).read()).toEqual([4, 5]);
+        expect(Effect.runSync(hear)).toEqual([]);
+      }
+    );
+  });
+
+  it("are heard by code outside the simulation from the last tick on, the first time it asks", () => {
+    withApp(
+      App.make(App.define({ systems: [Teller], handlers: [say] })),
+      (app) => {
+        app.tick(1);
+        app.dispatch(Say, { n: 9 });
+        app.tick(1);
+        app.dispatch(Say, { n: 8 });
+        // The last tick, what was emitted between it and the one before,
+        // and what was emitted since.
+        expect(app.events.handle(Ping).read()).toEqual([9, 2, 8]);
+        // Another event's place is its own.
+        app.tick(1);
+        expect(app.events.handle(Ping).read()).toEqual([3]);
+        expect(app.events.handle(Action.Rejected).read()).toEqual([]);
+      }
+    );
+  });
+
+  it("are kept for code outside the simulation that stays away for 600 ticks, and no longer", () => {
+    withApp(App.make(App.define({ systems: [Teller] })), (app) => {
+      const ping = app.events.handle(Ping);
+      expect(ping.read()).toEqual([]);
+      for (let n = 0; n < 600; n++) {
+        app.tick(1);
+      }
+      expect(ping.read()).toHaveLength(600);
+      for (let n = 0; n < 601; n++) {
+        app.tick(1);
+      }
+      // It is taken to be gone, and asks again as for the first time.
+      expect(ping.read()).toEqual([1201]);
+      app.tick(1);
+      expect(ping.read()).toEqual([1202]);
+    });
+  });
+
+  it("are heard afresh by code outside the simulation when the game goes back to play on", () => {
+    withApp(App.make(App.define({ systems: [Teller] })), (app) => {
+      const ping = app.events.handle(Ping);
+      const moment = Timeline.capture(app);
+      if (!Exit.isSuccess(moment)) {
+        throw new Error("the capture was refused");
+      }
+      app.tick(1);
+      app.tick(1);
+      expect(ping.read()).toEqual([1, 2]);
+      Timeline.rewind(app, moment.value);
+      expect(ping.read()).toEqual([]);
+      app.tick(1);
+      expect(ping.read()).toEqual([1]);
+    });
+  });
+
+  it("are heard once by code outside the simulation when the game goes back to run the same ticks again", () => {
+    withApp(App.make(App.define({ systems: [Teller] })), (app) => {
+      const ping = app.events.handle(Ping);
+      const moment = Timeline.capture(app);
+      if (!Exit.isSuccess(moment)) {
+        throw new Error("the capture was refused");
+      }
+      app.tick(1);
+      app.tick(1);
+      expect(ping.read()).toEqual([1, 2]);
+      Timeline.rewind(app, moment.value, { again: true });
+      app.tick(1);
+      app.tick(1);
+      app.tick(1);
+      // The first two it heard before the rewind; the third is new.
+      expect(ping.read()).toEqual([3]);
+    });
+  });
+});
+
+describe("code outside the simulation", () => {
+  it("is one reader of an event, of a change query and of removals, shared by every caller there", () => {
+    const Hurt = Query.all(Health).pipe(Query.changed(Health));
+    const Tired = Query.removed(Energy);
+    const everything = Effect.gen(function* () {
+      return {
+        pings: [...(yield* Ping).read()],
+        hurt: (yield* Hurt).entities().length,
+        tired: (yield* Tired).read().length,
+      };
+    });
+    const inside: Effect.Success<typeof everything>[] = [];
+    // Each tick says its number, hurts everyone and tires one of them.
+    const Wear = System.make("Wear", function* () {
+      (yield* Ping).emit((yield* Time).tick);
+      const commands = yield* Commands;
+      let tired = false;
+      (yield* Query.all(Health, Energy).pipe(Query.writes(Health))).each(
+        (health, _energy, entity) => {
+          health.hp -= 1;
+          if (!tired) {
+            commands.remove(entity, Energy);
+            tired = true;
+          }
+        }
+      );
+    });
+    const Watch = System.make("Watch", function* () {
+      inside.push(yield* everything);
+    }).pipe(System.before(Wear));
+    withApp(App.make(App.define({ systems: [Watch, Wear] })), (app) => {
+      for (let n = 0; n < 4; n++) {
+        app.world.spawn(Health.of({ hp: 10 }), Energy.of({ points: 1 }));
+      }
+      const outside = everything.pipe(
+        Effect.provideService(Events, app.events),
+        Effect.provideService(World, app.world)
+      );
+      // Its first read of each: a change query visits everything.
+      expect(Effect.runSync(outside)).toEqual({ pings: [], hurt: 4, tired: 0 });
+      const first: unknown[] = [];
+      const second: unknown[] = [];
+      for (let n = 1; n <= 3; n++) {
+        app.tick(1);
+        first.push(Effect.runSync(outside));
+        second.push(Effect.runSync(outside));
+      }
+      // Whoever asks first there has read it for everyone there.
+      expect(first).toEqual([
+        { pings: [1], hurt: 4, tired: 1 },
+        { pings: [2], hurt: 3, tired: 1 },
+        { pings: [3], hurt: 2, tired: 1 },
+      ]);
+      expect(second).toEqual([
+        { pings: [], hurt: 0, tired: 0 },
+        { pings: [], hurt: 0, tired: 0 },
+        { pings: [], hurt: 0, tired: 0 },
+      ]);
+      // And has taken nothing from a system, which has a place of its own.
+      app.tick(1);
+      expect(inside).toEqual([
+        { pings: [], hurt: 4, tired: 0 },
+        { pings: [1], hurt: 4, tired: 1 },
+        { pings: [2], hurt: 3, tired: 1 },
+        { pings: [3], hurt: 2, tired: 1 },
+      ]);
+    });
   });
 });
 

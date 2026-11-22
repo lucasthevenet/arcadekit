@@ -19,6 +19,14 @@
  * when it runs again, the events from the ticks it skipped are gone, as are
  * the changes its change queries would have seen in them.
  *
+ * Outside a system or a handler (in a test, the entry point) there is one
+ * reader, shared by every caller there: asking for an event again goes on
+ * from where the last read stopped, so each event is heard there once. Its
+ * first read hears the last tick, what was emitted between it and the one
+ * before, and what has been emitted since. Outside code that doesn't read an
+ * event for 600 ticks is taken to be gone, and next reads it as for the first
+ * time.
+ *
  * The payload type is inferred from the event's schema. Emitting is a plain
  * call with no validation: the schema is only used when the event leaves the
  * program, for a save, a tool or another machine, by `Event.encode` and
@@ -572,6 +580,8 @@ export class EventBus {
 
   private readonly waiting: Waiting;
   private readonly outbox = new Outbox();
+  /** The handles of outside code, by event: one reader, shared by every caller there. */
+  private readonly outsiders = new Map<object, EventHandle<unknown>>();
   /** The handles of the tick's systems and of handlers, by reader and event. */
   private readonly handles = new Map<
     string,
@@ -589,20 +599,25 @@ export class EventBus {
    * same handle every time. A system of the tick and a handler read from the
    * oldest event still kept; a system of the frame stage or the input stage
    * reads what the ticks emitted since its stage last ran, and can't emit.
-   * Any other caller gets a new handle, which reads what is emitted once
-   * the code that emits it has ended, from now on.
+   * Any other caller is outside code, which is one reader: it gets the same
+   * handle every time, which reads what is emitted once the code that emits
+   * it has ended.
    */
   handle<P>(def: EventDef<P>): EventHandle<P> {
     const channel = this.waiting.channel(def);
     const { reader, stage, waiting } = this;
     if (reader === undefined) {
-      const listener = this.outbox.outside(def);
-      return {
-        emit: (payload) => {
-          this.emit(def, payload);
-        },
-        read: listener.read,
-      };
+      let handle = this.outsiders.get(def) as EventHandle<P> | undefined;
+      if (handle === undefined) {
+        handle = {
+          emit: (payload) => {
+            this.emit(def, payload);
+          },
+          read: this.outbox.outside(def).read,
+        };
+        this.outsiders.set(def, handle as EventHandle<unknown>);
+      }
+      return handle;
     }
     if (stage !== undefined) {
       return this.outbox.listener(reader, def, stage);

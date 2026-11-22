@@ -157,8 +157,8 @@ export const without: {
  * - A system that writes what it watches sees its own writes next time.
  * - A refused action's writes aren't changes: they are rolled back with
  *   everything else, as are the visits its handler made.
- * - Outside a system or a handler (in a test, the entry point) there
- *   is one position per query, shared by every caller there.
+ * - Outside a system or a handler (in a test, the entry point) there is one
+ *   reader, shared by every caller there, as there is of an event.
  * - With several components, or combined with `Query.added`, an entity is
  *   visited when any one of them fired.
  * - `app.save()` saves what a query has yet to visit, with each reader's
@@ -315,7 +315,8 @@ export const writes: {
  * Query.removed(Sprite)).read()` returns their ids, oldest first, once per
  * removal. A despawned entity lost everything it had, and its id is no longer
  * alive. Removals are tracked from the reader's first read, and each system and
- * handler tracks its own position.
+ * handler tracks its own position. Outside a system or a handler there is one
+ * reader, shared by every caller there, as there is of an event.
  *
  * @category Models
  */

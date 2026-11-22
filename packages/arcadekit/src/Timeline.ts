@@ -117,13 +117,13 @@ export const capture = (
  * this app.
  *
  * The game plays on from there, as a new one would. The frame and input
- * stages hear every event it emits from then on, one they heard before the
- * rewind among them, and nothing of the future that was given up before
- * they had read it.
+ * stages, and code outside the simulation, hear every event it emits from
+ * then on, one they heard before the rewind among them, and nothing of the
+ * future that was given up before they had read it.
  *
  * With `again`, the game goes back to run the same ticks again with what is
- * now known of them, as a rollback session does. The two stages then hear
- * each event once: one a tick emits again, with the same payload, isn't heard
+ * now known of them, as a rollback session does. The two stages and outside
+ * code then hear each event once: one a tick emits again, with the same payload, isn't heard
  * twice, and only what the tick now does otherwise is.
  *
  * **Gotchas**

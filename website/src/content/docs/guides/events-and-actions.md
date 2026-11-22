@@ -38,6 +38,7 @@ const Dust = System.make("fx/Dust", function* () {
 - Every system sees every event exactly once, whatever order systems run in. A system that runs before the emitter sees the event on the next tick.
 - An event is dropped once every system has had a chance to read it.
 - The frame and input stages also see every event once, however many ticks ran between two frames. That is how sound and UI follow the game.
+- Outside systems and handlers (in a test, the entry point) there is one reader, shared by every caller there: `(yield* Landed).read()` and `app.events.handle(Landed).read()` go on from where the last read stopped, so each event is heard there once. The first read hears the last tick on, and code there that stops reading for 600 ticks is taken to be gone. Change queries outside are one reader in the same way.
 - A system never waits for an event: it reads what is there and finishes within its tick.
 - Only the simulation emits: a system of the tick, a handler or a plugin's setup. An event is in no log, so emitting from anywhere else throws. Code outside the simulation issues an [action](#actions) whose handler emits the event.
 

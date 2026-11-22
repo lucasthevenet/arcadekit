@@ -67,9 +67,13 @@ export class Listener<P> implements EventHandle<P> {
    * heard twice.
    */
   echo: Map<number, P[]> | undefined;
-
-  /** For outside code: how many times the game had gone back when it last read. */
-  rewinds: number;
+  /** For outside code: the tick it last read after. */
+  readAt = 0;
+  /**
+   * For outside code: true once it has stayed away so long that it is taken
+   * to be gone. It asks again as for the first time.
+   */
+  gone = false;
 
   constructor(
     outbox: Outbox,
@@ -77,7 +81,6 @@ export class Listener<P> implements EventHandle<P> {
     stage: Stage | undefined,
     after: Told
   ) {
-    this.rewinds = outbox.rewinds;
     this.outbox = outbox;
     this.def = def;
     this.stage = stage;
@@ -142,8 +145,8 @@ const same = (a: unknown, b: unknown): boolean => {
  */
 export class Outbox {
   private seq = 0;
-  /** How many times the game went back. */
-  rewinds = 0;
+  /** The last tick that ended. */
+  private tick = 0;
   /** The last that was told. */
   private tail: Told = {
     seq: 0,
@@ -152,6 +155,15 @@ export class Outbox {
     next: undefined,
     dead: false,
   };
+  /** The last told when the last tick ended. */
+  private end = this.tail;
+  /**
+   * The last told when the tick before the last ended: outside code that asks
+   * for an event for the first time hears it from here on.
+   */
+  private from = this.tail;
+  /** Outside code's place in each event it has asked for: one per event. */
+  private readonly outsiders = new Map<object, Listener<unknown>>();
   /**
    * For each stage that has systems: the last it had been told when it last
    * ran, and the tick it ran after. A system of the stage that asks for an
@@ -204,10 +216,25 @@ export class Outbox {
     }
     this.last = last;
     this.since = [];
-    // A stage that has not run for a long time is taken to be gone.
+    this.tick = tick;
+    this.from = this.end;
+    this.end = this.tail;
+    // A stage, or outside code, that has not read for a long time is taken
+    // to be gone: what it holds would be kept for ever.
     for (const [stage, seen] of this.seen) {
       if (tick - seen.tick > PATIENCE && seen.told !== this.tail) {
         this.pass(stage, seen.tick);
+      }
+    }
+    for (const listener of this.outsiders.values()) {
+      if (
+        !listener.gone &&
+        tick - listener.readAt > PATIENCE &&
+        listener.after !== this.tail
+      ) {
+        listener.gone = true;
+        listener.after = this.tail;
+        listener.echo = undefined;
       }
     }
   }
@@ -230,6 +257,7 @@ export class Outbox {
     for (const mine of this.listeners.values()) {
       yield* mine.values();
     }
+    yield* this.outsiders.values();
   }
 
   /** The place of a system of a stage in one event: always the same one. */
@@ -252,17 +280,28 @@ export class Outbox {
     return listener;
   }
 
-  /** A place for outside code, which hears what is told from now on. */
+  /**
+   * The place of outside code in one event: always the same one, which hears
+   * from the start of the last tick on the first time it reads.
+   */
   outside<P>(def: EventDef<P>): Listener<P> {
-    return new Listener(this, def, undefined, this.tail);
+    let listener = this.outsiders.get(def) as Listener<P> | undefined;
+    if (listener === undefined) {
+      listener = new Listener(this, def, undefined, this.from);
+      listener.readAt = this.tick;
+      this.outsiders.set(def, listener as Listener<unknown>);
+    }
+    return listener;
   }
 
   read<P>(listener: Listener<P>): readonly P[] {
-    // Outside code, which nothing keeps track of, hears what is told from a
-    // rewind on. A system of a stage was moved by the rewind.
-    if (listener.stage === undefined && listener.rewinds !== this.rewinds) {
-      listener.rewinds = this.rewinds;
-      listener.after = this.tail;
+    if (listener.stage === undefined) {
+      if (listener.gone) {
+        listener.gone = false;
+        listener.after = this.from;
+        listener.echo = undefined;
+      }
+      listener.readAt = this.tick;
     }
     let told = listener.after;
     if (told.next === undefined) {
@@ -321,9 +360,10 @@ export class Outbox {
    * game goes on from there as a new one would, and every event is new.
    */
   rewound(to: Told, again: boolean): void {
-    this.rewinds++;
     this.since = [];
     this.last = {};
+    this.from = to;
+    this.end = to;
     const first = to.dead ? undefined : to.next;
     for (let told = first; told !== undefined; told = told.next) {
       told.dead = true;
