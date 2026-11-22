@@ -17,7 +17,7 @@
  *   })
  *
  *   // Where it plays: in a page, with the cues' files.
- *   Browser.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }), {
+ *   Browser.runMain(App.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }), {
  *     sounds: { coin: "/coin.wav", thud: "/thud.wav" },
  *   })
  *

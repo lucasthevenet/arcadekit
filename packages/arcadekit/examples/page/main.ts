@@ -43,11 +43,9 @@ mount(document.querySelector("#ui")!, ui);
 // the app's scope closes, what was loaded is let go, and nobody listens any
 // more.
 Browser.runMain(
-  App.run(
-    App.define({ plugins: [Game] }),
-    { seed: Date.now() },
-    { hz: 60 }
-  ).pipe(Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))),
+  App.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+    hz: 60,
+  }).pipe(Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))),
   {
     target: document.querySelector("#game")!,
     preventDefault: ["ArrowLeft", "ArrowRight", "Space"],

@@ -67,18 +67,15 @@ const Demo = Plugin.make("Demo", {
 });
 
 // --- the entry point -------------------------------------------------------------
-// App.run makes the app and runs it until it is interrupted: sixty ticks a
-// second, and the frame stage each time the display is due, which under
-// Node is a timer. Before its first frame it hands the app to `ready`,
-// where this demo steps the same app by hand.
+// App.run runs the app that App.make makes until it is interrupted: sixty
+// ticks a second, and the frame stage each time the display is due, which
+// under Node is a timer. Before its first frame, a step on the effect that
+// makes the app has it, where this demo steps the same app by hand.
 const program = Effect.gen(function* () {
   const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
   yield* App.run(
-    App.define({ plugins: [Demo] }),
-    { seed: 7 },
-    {
-      hz: 60,
-      ready: (app) =>
+    App.make(App.define({ plugins: [Demo] }), { seed: 7 }).pipe(
+      Effect.tap((app) =>
         Effect.gen(function* () {
           yield* Console.log(
             `system order: ${app.systemOrder.join(" -> ")}; each frame: ${app.frameOrder.join(" -> ")}`
@@ -124,8 +121,10 @@ const program = Effect.gen(function* () {
           noted.app = app;
           noted.ticks = app.time.tick;
           noted.frames = Sketch.sketch.frames;
-        }),
-    }
+        })
+      )
+    ),
+    { hz: 60 }
   ).pipe(
     Effect.provide(Resource.layer(Gravity, -20)),
     // A game runs until its page or its process goes away. This one is

@@ -706,15 +706,14 @@ describe("Browser.layer", () => {
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
       App.run(
-        App.define({ plugins: [Flying] }),
-        {},
-        {
-          hz: 60,
-          ready: (app) =>
+        App.make(App.define({ plugins: [Flying] })).pipe(
+          Effect.tap((app) =>
             Effect.sync(() => {
               made = app;
-            }),
-        }
+            })
+          )
+        ),
+        { hz: 60 }
       ).pipe(Effect.provide(Browser.layer({ gamepads: () => [] })))
     );
     // The frame loop asks the page for its frames, and watches its tab.
@@ -816,15 +815,14 @@ describe("Browser.runMain", () => {
     let ended: Exit.Exit<unknown, unknown> | undefined;
     Browser.runMain(
       App.run(
-        App.define({ plugins: [Sound] }),
-        {},
-        {
-          hz: 60,
-          ready: (app) =>
+        App.make(App.define({ plugins: [Sound] })).pipe(
+          Effect.tap((app) =>
             Effect.sync(() => {
               made = app;
-            }),
-        }
+            })
+          )
+        ),
+        { hz: 60 }
       ),
       {
         gamepads: () => [],
@@ -1996,11 +1994,9 @@ describe("a page's sound", () => {
     }).pipe(System.inStage("frame"));
     const start = (options: Browser.Options) =>
       Effect.runFork(
-        App.run(
-          App.define({ plugins: [Game], systems: [Ask] }),
-          {},
-          { hz: 60 }
-        ).pipe(
+        App.run(App.make(App.define({ plugins: [Game], systems: [Ask] })), {
+          hz: 60,
+        }).pipe(
           Effect.provide(
             Browser.layer({ gamepads: () => [], ...options }).pipe(
               Layer.provideMerge(Assets.layerMemory(sounds))

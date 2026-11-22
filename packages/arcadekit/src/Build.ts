@@ -1,8 +1,8 @@
 /**
  * Puts an app together from a game and how one run of it starts: its world
  * and the stores the world holds for it, the save it continues from, its
- * services, its runner, its inbox and its loop. `App.make` and `App.run`
- * make their app here.
+ * services, its runner, its inbox and its loop. `App.make` makes its app
+ * here.
  */
 import { Cause, Context, Effect, Exit, Layer, Metric } from "effect";
 import type { Scope } from "effect";

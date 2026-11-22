@@ -106,7 +106,7 @@ So a replay reads no device: the log already holds what the devices reported, as
 
 ## What drives the stages
 
-- **`App.run`** creates the app and runs it until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`; under Node it uses a timer.
+- **`App.run`** runs the app `App.make` makes until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`; under Node it uses a timer.
 - **`app.tick(delta)`** runs one tick by hand, for a test or a game that steps itself. It runs the input stage first if nothing has since the previous tick. `app.frame(alpha, delta)` runs the frame stage.
 - **`Driver.fixedStep`** runs the ticks that are due for a given amount of real time, each after the input stage, then the frame.
 - **`Driver.frames`** is the loop `App.run` uses, for a program that creates its app itself, and **`Driver.interval`** does the same on a timer.

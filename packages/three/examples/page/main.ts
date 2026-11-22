@@ -307,8 +307,8 @@ const Look = Plugin.make("page/Look", {
 // --- the entry point -------------------------------------------------------------
 const canvas = document.querySelector("#game") as HTMLCanvasElement;
 Browser.runMain(
-  App.run(App.define({ plugins: [Look] }), { seed: 7 }, { hz: 60 }).pipe(
-    Effect.provide(Three.layerWebGL({ canvas, antialias: true }))
-  ),
+  App.run(App.make(App.define({ plugins: [Look] }), { seed: 7 }), {
+    hz: 60,
+  }).pipe(Effect.provide(Three.layerWebGL({ canvas, antialias: true }))),
   { preventDefault: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] }
 );

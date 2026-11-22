@@ -396,8 +396,8 @@ export interface Diverted<E = never> {
 
 /**
  * A running game: its world, its time, the actions queued for the next tick,
- * and what runs a tick and a frame. Made with `App.make` or, in a
- * page, `App.run`.
+ * and what runs a tick and a frame. Made with `App.make`, and run in a page
+ * with `App.run`.
  *
  * `E` is what a tick can fail with, and `HU` the actions its handlers accept.
  *
@@ -506,8 +506,8 @@ export interface Options<
 
 /**
  * A game as a value: what every run of it shares, and nothing that differs
- * between two of them. `App.define` makes one, and whatever runs the game is
- * given it: `App.make`, `App.run`.
+ * between two of them. `App.define` makes one, and `App.make` is given it
+ * to make an app.
  *
  * It holds no world and no services, and making one runs nothing.
  *
@@ -555,7 +555,7 @@ export const define = <
 });
 
 /**
- * One run of a game, as `App.make` and `App.run` take it: where it starts,
+ * One run of a game, as `App.make` takes it: where it starts,
  * and how much it checks of itself as it goes.
  *
  * @category Options
@@ -643,86 +643,41 @@ export const make = <
   >;
 
 /**
- * Options for how `App.run` drives the app it creates.
- *
- * @category Options
- */
-export interface RunOptions<A, E2 = never, R2 = never> {
-  /** The ticks per second the game runs at, whatever the frame rate. */
-  readonly hz: number;
-  /** The maximum ticks one frame runs after a stall. Defaults to 5. */
-  readonly maxStepsPerCall?: number;
-  /**
-   * `"whenNeeded"` for a game that moves only when its player does: it is drawn
-   * every frame, but only ticks while something is waiting for a tick, as
-   * `Driver.frames` describes. Defaults to `"always"`, for a real-time game.
-   */
-  readonly ticks?: "always" | "whenNeeded";
-  /**
-   * Runs once with the app, after it is created and before its first frame: to
-   * connect things outside the game to it (a button that dispatches, a menu
-   * that saves), or to keep a reference to it. Whatever it acquires is released
-   * with the app, and its requirements and errors become `run`'s.
-   */
-  readonly ready?: (app: A) => Effect.Effect<void, E2, R2>;
-}
-
-/**
- * Creates the app and runs it until interrupted. This is the usual entry point.
+ * Runs an app until interrupted, from the effect that makes it. This is the
+ * usual entry point.
  *
  *   const Duel = App.define({ plugins: [Game] })
- *   Browser.runMain(App.run(Duel, { seed: 1 }, { hz: 60 }), { target: canvas })
+ *   Browser.runMain(App.run(App.make(Duel, { seed: 1 }), { hz: 60 }), {
+ *     target: canvas,
+ *   })
  *
- * It is `App.make` and `Driver.frames` in a scope of their own: the app is
- * created, `ready` runs if given, and the frame loop follows the display,
- * running the ticks that are due at `hz`, then the frame stage, once per
- * repaint. It never ends on its own.
+ * It is `Driver.frames` on the app, in a scope of the app's own: the app is
+ * made, and the frame loop follows the display, running the ticks that are
+ * due at `hz`, then the frame stage, once per repaint. It never ends on its
+ * own.
  *
  * Interrupting it stops the loop and closes that scope, so nothing is left
- * running: no pending frame, and everything the plugins' layers and
- * `ready` acquired is released. The platform's `runMain` interrupts it when the
- * page closes or the process is told to stop.
+ * running: no pending frame, and everything the plugins' layers acquired is
+ * released. The platform's `runMain` interrupts it when the page closes or
+ * the process is told to stop.
  *
- * Provide what the game needs from outside as you would to `App.make`; it stays
+ * What is to be connected to the app before its first frame, a button that
+ * dispatches or a menu that saves, is a step of the effect that makes it:
+ * `App.make(Duel).pipe(Effect.tap((app) => ...))`. What that step acquires is
+ * released with the app.
+ *
+ * Provide what the game needs from outside to `App.run` as a whole; it stays
  * provided for as long as the game runs, which is what a listening layer such
- * as `Browser.layer` needs. It fails with what `App.make` and `ready` can fail
- * with, and dies with whatever a tick throws.
+ * as `Browser.layer` needs. It fails with what making the app fails with, and
+ * dies with whatever a tick throws.
  *
  * It runs wherever there is a display, which outside a page is a timer:
  * `NodeRuntime.runMain(App.run(...))` runs the same game under Node.
  *
  * @category Running
  */
-export const run = <
-  S extends Systems = readonly [],
-  H extends Handlers = readonly [],
-  P extends Plugins = readonly [],
-  E2 = never,
-  R2 = never,
-  SV extends Save.Save | undefined = undefined,
->(
-  game: Game<S, H, P>,
-  start: StartOptions<SV>,
-  drive: RunOptions<App<TickError<S, P>, AllHandlers<H, P>>, E2, R2>
-): Effect.Effect<
-  never,
-  | Plugin.ErrorOf<P[number]>
-  | E2
-  | (SV extends Save.Save ? Save.LoadRefused : never),
-  External<S, H, P> | Exclude<R2, Scope.Scope>
-> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const app = yield* build(game, start);
-      if (drive.ready !== undefined) {
-        yield* drive.ready(app);
-      }
-      return yield* Driver.frames(app, drive);
-    })
-  ) as Effect.Effect<
-    never,
-    | Plugin.ErrorOf<P[number]>
-    | E2
-    | (SV extends Save.Save ? Save.LoadRefused : never),
-    External<S, H, P> | Exclude<R2, Scope.Scope>
-  >;
+export const run = <A extends Driver.Tickable, E, R>(
+  app: Effect.Effect<A, E, R>,
+  drive: Driver.StepOptions
+): Effect.Effect<never, E, Exclude<R, Scope.Scope>> =>
+  Effect.scoped(Effect.flatMap(app, (made) => Driver.frames(made, drive)));

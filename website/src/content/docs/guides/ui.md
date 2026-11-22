@@ -105,7 +105,7 @@ const ui = View.makeBridge();
 mount(document.body, ui);
 
 Browser.runMain(
-  App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }).pipe(
+  App.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(
     Effect.provide(View.layer(ui))
   ),
   { target: document.querySelector("canvas")! }

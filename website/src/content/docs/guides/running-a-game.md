@@ -21,27 +21,27 @@ const button = document.querySelector("button")!;
 
 Browser.runMain(
   App.run(
-    App.define({ plugins: [Game] }),
-    { seed: Date.now() },
-    {
-      hz: 60,
-      ready: (app) =>
+    App.make(App.define({ plugins: [Game] }), { seed: Date.now() }).pipe(
+      Effect.tap((app) =>
         Effect.sync(() => {
           button.onclick = () => app.enqueue(NewGame, {});
-        }),
-    }
+        })
+      )
+    ),
+    { hz: 60 }
   ),
   { target: canvas, preventDefault: ["Space", "ArrowUp", "ArrowDown"] }
 );
 ```
 
-`App.run` creates the app and runs it until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame stage. It never completes on its own.
+`App.run` runs the app that `App.make` makes, until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame stage. It never completes on its own.
 
-It takes three things:
+`App.make` takes the game and how this run of it starts:
 
 - the game, from `App.define`: its plugins, systems and handlers, which are the same every time it is played;
-- how this run starts: a `seed` for a new game, or a `save` to continue one;
-- how it is driven: `hz`, and the options below.
+- a `seed` for a new game, or a `save` to continue one.
+
+`App.run` takes the effect `App.make` returns, without yielding it, and how the app is driven: `hz`, and the options below.
 
 `Browser.runMain` starts it in the page. It is the platform's `runMain`, which reports failures and interrupts the program cleanly, and it provides the page's display and devices to the whole program: the loop follows `requestAnimationFrame`, and the input stage receives the keyboard, pointer and gamepads. Its options:
 
@@ -58,9 +58,9 @@ When the page is closed, the game is interrupted: the loop stops requesting fram
 - The first frame draws the game as it is and runs no tick. Time is counted from it.
 - While the tab is hidden, the loop requests no frames, and that time doesn't count. When the tab returns, the game resumes where it was.
 - After a freeze without the tab being hidden, the loop runs at most `maxStepsPerCall` ticks, 5 by default, and drops the rest.
-- `ready` runs once with the app, before the first frame, to connect anything outside the game. Its resources are released with the app. A UI doesn't need the app: it receives [the view bridge](ui.md).
-- Given a `save`, `App.run` resumes from it instead of starting fresh, and can fail with `Save.LoadRefused`. See [saving and loading](saving-and-loading.md).
-- `App.run` fails with whatever creating the app and `ready` can fail with. If a tick or frame throws, the loop stops and the program dies with the thrown error.
+- To connect anything outside the game to the app before its first frame, add a step to the effect that makes it, as `Effect.tap` does above. What the step acquires is released with the app. A UI doesn't need the app: it receives [the view bridge](ui.md).
+- An app made from a `save` resumes from it instead of starting fresh, and making it can fail with `Save.LoadRefused`. See [saving and loading](saving-and-loading.md).
+- `App.run` fails with whatever making the app can fail with. If a tick or frame throws, the loop stops and the program dies with the thrown error.
 
 Provide any services your game needs to `App.run`, as in `App.run(...).pipe(Effect.provide(Screen.layer))`; a missing one is a compile error. Provide them to `App.run` as a whole, not to a part of it, so they last as long as the game: a layer that listens, as `Browser.layer` does, is released with whatever it was provided to.
 
@@ -80,7 +80,9 @@ import { App, Plugin } from "arcadekit";
 
 const Game = Plugin.make("game/Game", {});
 
-NodeRuntime.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }));
+NodeRuntime.runMain(
+  App.run(App.make(App.define({ plugins: [Game] })), { hz: 60 })
+);
 ```
 
 `NodeRuntime.runMain` interrupts the game when the process is asked to stop, and the app's scope closes as it does in a page. A server, a replay or a test never imports `arcadekit/Browser`, so it installs no browser packages.
@@ -111,11 +113,10 @@ const Chess = Plugin.make("chess/Chess", {
 const board = document.querySelector("canvas")!;
 
 Browser.runMain(
-  App.run(
-    App.define({ plugins: [Chess] }),
-    {},
-    { hz: 60, ticks: "whenNeeded" }
-  ),
+  App.run(App.make(App.define({ plugins: [Chess] })), {
+    hz: 60,
+    ticks: "whenNeeded",
+  }),
   { target: board }
 );
 ```

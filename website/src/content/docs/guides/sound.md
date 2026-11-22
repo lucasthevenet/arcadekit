@@ -31,9 +31,12 @@ const Game = Plugin.make("game/Game", {
   systems: [Cues],
 });
 
-Browser.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }), {
-  sounds: { coin: "/coin.wav", thud: "/thud.wav" },
-});
+Browser.runMain(
+  App.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }),
+  {
+    sounds: { coin: "/coin.wav", thud: "/thud.wav" },
+  }
+);
 ```
 
 - `Sound.cues` creates a frame-stage system. Each frame, it plays the cues for the events since the last frame. Like every frame system, it sees each event once, however many ticks ran in between.

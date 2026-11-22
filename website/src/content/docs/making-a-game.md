@@ -280,16 +280,14 @@ const Game = Plugin.make("catch/Game", {
 });
 
 Browser.runMain(
-  App.run(
-    App.define({ plugins: [Game] }),
-    { seed: Date.now() },
-    { hz: 60 }
-  ).pipe(Effect.provide(Screen.layer)),
+  App.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+    hz: 60,
+  }).pipe(Effect.provide(Screen.layer)),
   { target: canvas, preventDefault: ["ArrowLeft", "ArrowRight"] }
 );
 ```
 
-`App.run` creates the app and runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
+`App.make` creates the app, and `App.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
 Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`.
 
