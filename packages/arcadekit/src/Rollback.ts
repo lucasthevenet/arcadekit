@@ -29,10 +29,10 @@
  * stamped with, whenever it heard of it. Along the way, a peer may see a move
  * accepted that is later refused, once the message it was missing arrives.
  *
- * Rewinding goes back to a moment `app.capture` took before each uncertain
- * tick, with the rewind of the app the session took over, so that the frame
- * and input stages hear an event once however often its tick is run. A
- * rewind restores only what a save holds: see `App.rewind`.
+ * Rewinding goes back to a moment `Timeline.capture` took before each
+ * uncertain tick, with the rewind that runs the same ticks again, so that the
+ * frame and input stages hear an event once however often its tick is run. A
+ * rewind restores only what a save holds: see `Timeline.rewind`.
  * A tick that reads anything else runs differently when it is resimulated,
  * and the peers drift apart. `Rollback.syncTest` finds such a tick in a test,
  * with no second peer.
@@ -43,6 +43,7 @@ import type * as App from "./App";
 import type * as Lockstep from "./Lockstep";
 import { build } from "./Lockstep";
 import type * as Save from "./Save";
+import * as Timeline from "./Timeline";
 
 /**
  * Options for a rollback session: this peer, every peer, and how far it may run
@@ -157,8 +158,9 @@ export class RewindDiverged extends Data.TaggedError("RewindDiverged")<{
  */
 export type SyncTestApp<E> = Pick<
   App.App<E>,
-  "divert" | "frame" | "inputExit" | "rewind" | "time" | "world"
->;
+  "divert" | "frame" | "inputExit"
+> &
+  Timeline.Game;
 
 /**
  * An app taken over by `Rollback.syncTest`, stepped in its place, by hand or by
@@ -219,7 +221,7 @@ export const syncTest = <E>(app: SyncTestApp<E>): SyncTest<E> => {
     if (Exit.isFailure(heard)) {
       return heard;
     }
-    const moment = reins.capture();
+    const moment = Timeline.capture(app, { stages: true });
     if (Exit.isFailure(moment)) {
       return Exit.failCause(moment.cause);
     }
@@ -239,7 +241,7 @@ export const syncTest = <E>(app: SyncTestApp<E>): SyncTest<E> => {
       return { exit, hashes, systems };
     };
     const first = run();
-    reins.rewind(moment.value);
+    Timeline.rewind(app, moment.value, { again: true });
     const second = run();
     const once = first.hashes;
     const twice = second.hashes;

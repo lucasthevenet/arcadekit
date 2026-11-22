@@ -37,16 +37,16 @@ Every variant does the same work, `pos += vel * dt`:
 
 ## Hashing, snapshots and rewinding
 
-| Variant                                                       | ns/entity |
-| ------------------------------------------------------------- | --------- |
-| `world.hash()`, one table                                     | 8.3       |
-| `world.hash()`, the same entities spread over 32 tables       | 8.7       |
-| `world.hash()`, with a sparse one-field component on each     | 15.0      |
-| `world.snapshot()`, one table (2.8 MB)                        | 6.7       |
-| `world.load()` of that snapshot, into a new world             | 21.0      |
-| `world.restore()` of it, into the world it came from          | 16.0      |
-| `app.capture()`: a game of those entities, kept to go back to | 6.9       |
-| `app.rewind()`: the game put back to that moment              | 16.2      |
+| Variant | ns/entity |
+| --- | --- |
+| `world.hash()`, one table | 8.3 |
+| `world.hash()`, the same entities spread over 32 tables | 8.7 |
+| `world.hash()`, with a sparse one-field component on each | 15.0 |
+| `world.snapshot()`, one table (2.8 MB) | 6.7 |
+| `world.load()` of that snapshot, into a new world | 21.0 |
+| `world.restore()` of it, into the world it came from | 16.0 |
+| `Timeline.capture()`: a game of those entities, kept to go back to | 6.9 |
+| `Timeline.rewind()`: the game put back to that moment | 16.2 |
 
 - Hashing a world costs about three raw passes over it: 1.4 ns per 32-bit field per entity, with an entity's id counting as two. A sparse component's field costs about four times that, since its members are hashed individually so that their order doesn't matter. An app's hash also encodes each action queued and each event waiting through its schema, about 0.6 µs apiece for a payload of four fields: 0.15 ms for 256 events, at every checkpoint.
 - A [checkpoint](replays.md) is one hash every `checkpointEvery` ticks, 60 by default: 14 µs per tick on average here.

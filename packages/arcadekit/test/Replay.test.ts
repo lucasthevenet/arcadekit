@@ -17,6 +17,7 @@ import {
   Singleton,
   System,
   Time,
+  Timeline,
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
@@ -1088,11 +1089,11 @@ describe("a recording", () => {
   it("forgets the ticks a rewind gave up", () => {
     withApp(walking, (app) => {
       app.tick(1 / 60);
-      const moment = app.capture();
+      const moment = Timeline.capture(app);
       assert(Exit.isSuccess(moment));
       app.tick(1 / 30);
       app.tick(1 / 30);
-      app.rewind(moment.value);
+      Timeline.rewind(app, moment.value);
       app.tick(1 / 60);
       expect(app.record()).toMatchObject({
         end: 2,

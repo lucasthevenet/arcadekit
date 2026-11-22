@@ -31,6 +31,7 @@ import {
   State,
   System,
   Time,
+  Timeline,
   View,
   EcsWorld as World,
   World as WorldService,
@@ -374,18 +375,18 @@ const rewinding = (back: boolean): number =>
         const app = yield* App.make({ systems: [Movement] });
         populate(app.world);
         app.tick(DT);
-        const moment = app.capture();
+        const moment = Timeline.capture(app);
         if (Exit.isFailure(moment)) {
           throw new Error("the game could not be captured");
         }
         let sink = 0;
         const ms = back
           ? measure(() => {
-              app.rewind(moment.value);
+              Timeline.rewind(app, moment.value);
               sink += app.time.tick;
             })
           : measure(() => {
-              sink += Exit.isSuccess(app.capture()) ? 1 : 0;
+              sink += Exit.isSuccess(Timeline.capture(app)) ? 1 : 0;
             });
         void sink;
         return ms;
@@ -576,11 +577,11 @@ const variants: Record<string, Variant> = {
   // What predicting a tick costs: the game is captured before a tick the
   // session is not sure of, and put back when the tick was wrong.
   capture: {
-    label: "app.capture(): a game of those 100,000 entities",
+    label: "Timeline.capture(): a game of those 100,000 entities",
     run: () => rewinding(false),
   },
   rewind: {
-    label: "app.rewind(): back to that moment",
+    label: "Timeline.rewind(): back to that moment",
     run: () => rewinding(true),
   },
 
