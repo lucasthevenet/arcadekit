@@ -97,11 +97,10 @@ const play = (
 ) => {
   asked = 0;
   const { app, close } = start(
-    App.make({
-      plugins: [Rules, Sound.plugin, Assets.plugin],
-      systems,
-      checkpointEvery: 1,
-    }),
+    App.make(
+      App.define({ plugins: [Rules, Sound.plugin, Assets.plugin], systems }),
+      { checkpointEvery: 1 }
+    ),
     output
   );
   return {
@@ -257,7 +256,9 @@ describe("Sound.music", () => {
     const sound = Sound.makeRecorder();
     const heard = play([Score], sound);
     // The rules alone: no output, and no system that plays.
-    const deaf = start(App.make({ plugins: [Rules], checkpointEvery: 1 }));
+    const deaf = start(
+      App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
+    );
     for (const app of [heard.app, deaf.app]) {
       app.dispatch(Go, { to: "cave" });
       app.dispatch(SetHush, { on: true });
@@ -275,7 +276,10 @@ describe("Sound.music", () => {
     // Loaded elsewhere, it is in the cave and hushed, and sounds like it.
     const again = Sound.makeRecorder();
     const loaded = start(
-      App.load(saves[0]!, { plugins: [Rules, Sound.plugin], systems: [Score] }),
+      App.make(
+        App.define({ plugins: [Rules, Sound.plugin], systems: [Score] }),
+        { save: saves[0]! }
+      ),
       again
     );
     expect(again.scored).toEqual([]);
@@ -515,7 +519,7 @@ describe("Sound.music", () => {
       yield* Level;
       return 3;
     });
-    const made = App.make({ plugins: [Rules], systems: [Score] });
+    const made = App.make(App.define({ plugins: [Rules], systems: [Score] }));
     // @ts-expect-error the app still needs the player, which Sound.plugin gives
     void (() => Effect.runSync(Effect.scoped(made)));
     expect(Score.name).toBe("mu/Score");
@@ -530,7 +534,7 @@ describe("Sound.Player.music", () => {
     });
     const sound = Sound.makeRecorder();
     const { app } = start(
-      App.make({ plugins: [Sound.plugin], systems: [Loud] }),
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Loud] })),
       sound
     );
     expect(() => app.tick(0.1)).toThrow(
@@ -540,14 +544,16 @@ describe("Sound.Player.music", () => {
     // Nor by an action's handler, which is the simulation too.
     const Bang = Action.define("mu/Bang", Schema.Struct({}));
     const other = start(
-      App.make({
-        plugins: [Sound.plugin],
-        handlers: [
-          Action.handler(Bang, function* () {
-            (yield* Sound.Player).music("mu/Bang", undefined);
-          }),
-        ],
-      }),
+      App.make(
+        App.define({
+          plugins: [Sound.plugin],
+          handlers: [
+            Action.handler(Bang, function* () {
+              (yield* Sound.Player).music("mu/Bang", undefined);
+            }),
+          ],
+        })
+      ),
       sound
     );
     const exit = other.app.dispatch(Bang, {});
@@ -568,7 +574,7 @@ describe("Sound.Player.music", () => {
       }
     }).pipe(System.inStage("frame"));
     const { app } = start(
-      App.make({ plugins: [Sound.plugin], systems: [Say] }),
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Say] })),
       sound
     );
     const frame = (...said: typeof says) => {
@@ -640,7 +646,7 @@ describe("Sound.Player.music", () => {
       player.music("ui", on ? "hum" : undefined);
     }).pipe(System.inStage("frame"));
     const { app } = start(
-      App.make({ plugins: [Sound.plugin], systems: [Both] }),
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Both] })),
       sound
     );
     // A cue alone, while the channel has never played.
@@ -668,10 +674,12 @@ describe("Sound.Player.music", () => {
       }
     });
     const { app } = start(
-      App.make({
-        plugins: [Sound.plugin],
-        systems: [Hum.pipe(System.inStage("input"))],
-      }),
+      App.make(
+        App.define({
+          plugins: [Sound.plugin],
+          systems: [Hum.pipe(System.inStage("input"))],
+        })
+      ),
       sound
     );
     const say = (
@@ -788,7 +796,7 @@ describe("a clip", () => {
       (yield* Sound.Player).play(Sound.clip("/bang.wav"));
     });
     const { app } = start(
-      App.make({ plugins: [Sound.plugin], systems: [Loud] }),
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Loud] })),
       Sound.makeRecorder()
     );
     expect(() => app.tick(0.1)).toThrow(
@@ -813,11 +821,12 @@ describe("a level's cues", () => {
     });
     asked = 0;
     const { app } = start(
-      App.make({
-        plugins: [Rules, Sound.plugin, Assets.plugin],
-        // Listed after the cues it is for: it is of an earlier stage.
-        systems: [ForestCues, Keep],
-      }).pipe(Effect.provide(files)),
+      App.make(
+        App.define({
+          plugins: [Rules, Sound.plugin, Assets.plugin], // Listed after the cues it is for: it is of an earlier stage.
+          systems: [ForestCues, Keep],
+        })
+      ).pipe(Effect.provide(files)),
       sound
     );
     const step = (action: Action.AnyActionDef, payload: unknown): void => {
@@ -880,10 +889,12 @@ describe("a level's cues", () => {
       store.hold(Forest, "mu/Keep");
     }).pipe(System.inStage("frame"), System.before(ForestCues));
     const { app } = start(
-      App.make({
-        plugins: [Rules, Sound.plugin, Assets.plugin],
-        systems: [Keep, ForestCues],
-      }).pipe(Effect.provide(files)),
+      App.make(
+        App.define({
+          plugins: [Rules, Sound.plugin, Assets.plugin],
+          systems: [Keep, ForestCues],
+        })
+      ).pipe(Effect.provide(files)),
       sound
     );
     app.dispatch(Step, { hard: true });
@@ -919,7 +930,9 @@ describe("a level's cues", () => {
     // An app with cues that are there needs no Assets.plugin.
     const sound = Sound.makeRecorder();
     const { app } = start(
-      App.make({ plugins: [Rules, Sound.plugin], systems: [Plain] }),
+      App.make(
+        App.define({ plugins: [Rules, Sound.plugin], systems: [Plain] })
+      ),
       sound
     );
     app.dispatch(Step, { hard: true });
@@ -940,10 +953,12 @@ describe("a level's music", () => {
         : undefined;
     });
     const { app } = start(
-      App.make({
-        plugins: [Rules, Sound.plugin, Assets.plugin],
-        systems: [Ambience, Keep],
-      }).pipe(Effect.provide(files)),
+      App.make(
+        App.define({
+          plugins: [Rules, Sound.plugin, Assets.plugin],
+          systems: [Ambience, Keep],
+        })
+      ).pipe(Effect.provide(files)),
       sound
     );
     const go = (to: "menu" | "forest" | "cave"): void => {

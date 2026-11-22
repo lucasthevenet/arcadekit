@@ -36,7 +36,7 @@ describe("Transform2d", () => {
     }
     // Added bare, it is where it was made, turned by nothing, and of its
     // own size: a Scale of zeros would be drawn as nothing.
-    const { world } = run(App.make({}));
+    const { world } = run(App.make(App.define({})));
     const bare = world.spawn(Position, Rotation, Scale);
     expect(world.get(bare, Scale)).toEqual({ x: 1, y: 1 });
     expect(new Set(Object.values(world.get(bare, Position)!))).toEqual(
@@ -50,7 +50,7 @@ describe("Transform2d", () => {
     expect(Position).not.toBe(Transform3d.Position);
     expect(Rotation).not.toBe(Transform3d.Rotation);
     expect(Scale).not.toBe(Transform3d.Scale);
-    const { world } = run(App.make({}));
+    const { world } = run(App.make(App.define({})));
     const both = world.spawn(
       Position.of({ x: 1, y: 2 }),
       Transform3d.Position.of({ x: 7, y: 8, z: 9 })
@@ -77,7 +77,7 @@ describe("Transform2d", () => {
         }
       });
     });
-    const app = run(App.make({ systems: [Drift] }));
+    const app = run(App.make(App.define({ systems: [Drift] })));
     const card = app.world.spawn(
       Position.of({ x: 1, y: 2 }),
       Rotation.of({ angle: 0.25 })
@@ -92,7 +92,7 @@ describe("Transform2d", () => {
   });
 
   it("is saved and loaded by a flat game, which names none of its components", () => {
-    const made = run(App.make({}));
+    const made = run(App.make(App.define({})));
     const card = made.world.spawn(
       Card,
       Position.of({ x: 1, y: 2 }),
@@ -107,7 +107,7 @@ describe("Transform2d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(App.load(read.value, {}));
+    const loaded = run(App.make(App.define({}), { save: read.value }));
     expect(loaded.world.hash()).toBe(made.world.hash());
     expect(loaded.world.get(card, Position)).toEqual({ x: 1, y: 2 });
     expect(loaded.world.get(card, Rotation)).toEqual({ angle: 1.5 });

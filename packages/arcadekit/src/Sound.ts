@@ -17,7 +17,7 @@
  *   })
  *
  *   // Where it plays: in a page, with the cues' files.
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
+ *   Browser.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }), {
  *     sounds: { coin: "/coin.wav", thud: "/thud.wav" },
  *   })
  *
@@ -200,7 +200,7 @@ export interface Recorder extends OutputShape {
  * or a tool:
  *
  *   const sound = Sound.makeRecorder()
- *   const app = yield* App.make({ plugins: [Game] }).pipe(
+ *   const app = yield* App.make(App.define({ plugins: [Game] })).pipe(
  *     Effect.provide(Sound.layer(sound))
  *   )
  *   app.tick(1 / 60)

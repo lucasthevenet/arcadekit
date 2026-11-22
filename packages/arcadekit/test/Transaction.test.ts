@@ -595,12 +595,10 @@ const withApp = <T, A>(
 
 const game = (checkpointEvery = 1) =>
   Effect.map(
-    App.make({
-      systems: [Listen, Ring, Hear],
-      handlers: [act, echo],
-      seed: 9,
-      checkpointEvery,
-    }),
+    App.make(
+      App.define({ systems: [Listen, Ring, Hear], handlers: [act, echo] }),
+      { seed: 9, checkpointEvery }
+    ),
     (app) => {
       const entities: Entity[] = [];
       for (let n = 0; n < 12; n++) {
@@ -884,7 +882,7 @@ describe("an action that is accepted", () => {
       });
       return [world.get(target, Body)!.x, total] as const;
     });
-    withApp(App.make({ handlers: [twice] }), (app) => {
+    withApp(App.make(App.define({ handlers: [twice] })), (app) => {
       const target = app.world.spawn(Body.of({ x: 1, y: 5 }));
       app.world.spawn(Body.of({ x: 1, y: 5 }));
       expect(app.dispatch(Twice, { target })).toEqual(Exit.succeed([20, 2]));
@@ -909,7 +907,7 @@ describe("an action that is accepted", () => {
         (yield* Commands).despawn(target);
       }
     });
-    withApp(App.make({ handlers: [direct] }), (app) => {
+    withApp(App.make(App.define({ handlers: [direct] })), (app) => {
       const target = app.world.spawn(Body.of({ x: 1, y: 1 }));
       const before = app.world.hash();
       const exit = app.dispatch(Direct, { target, how: "world" });
@@ -936,7 +934,7 @@ describe("an action that is accepted", () => {
       });
       app!.dispatchByName("tx/Echo", { by: 1 });
     });
-    withApp(App.make({ handlers: [outer, echo] }), (made) => {
+    withApp(App.make(App.define({ handlers: [outer, echo] })), (made) => {
       app = made;
       const entity = made.world.spawn(Body.of({ x: 1, y: 1 }));
       const exit = made.dispatch(Outer, {});

@@ -106,7 +106,10 @@ const Game = Plugin.make("sd/Game", {
 
 const play = (output: Sound.OutputShape | undefined, seed = 1) => {
   asked = 0;
-  const made = App.make({ plugins: [Game], seed, checkpointEvery: 1 });
+  const made = App.make(App.define({ plugins: [Game] }), {
+    seed,
+    checkpointEvery: 1,
+  });
   return run(
     output === undefined ? made : made.pipe(Effect.provide(Sound.layer(output)))
   );
@@ -244,9 +247,9 @@ describe("Sound.cues", () => {
     );
     const sound = Sound.makeRecorder();
     const app = run(
-      App.make({ plugins: [Rules, Sound.plugin], systems: [Quiet] }).pipe(
-        Effect.provide(Sound.layer(sound))
-      )
+      App.make(
+        App.define({ plugins: [Rules, Sound.plugin], systems: [Quiet] })
+      ).pipe(Effect.provide(Sound.layer(sound)))
     );
     app.dispatch(Mute, { on: true });
     app.tick(0.1);
@@ -302,7 +305,7 @@ describe("Sound.Player", () => {
     });
     const sound = Sound.makeRecorder();
     const app = run(
-      App.make({ plugins: [Sound.plugin], systems: [Loud] }).pipe(
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Loud] })).pipe(
         Effect.provide(Sound.layer(sound))
       )
     );
@@ -314,14 +317,16 @@ describe("Sound.Player", () => {
     // Nor by an action's handler, which is the simulation too.
     const Bang = Action.define("sd/Bang", Schema.Struct({}));
     const other = run(
-      App.make({
-        plugins: [Sound.plugin],
-        handlers: [
-          Action.handler(Bang, function* () {
-            (yield* Sound.Player).play("bang");
-          }),
-        ],
-      }).pipe(Effect.provide(Sound.layer(sound)))
+      App.make(
+        App.define({
+          plugins: [Sound.plugin],
+          handlers: [
+            Action.handler(Bang, function* () {
+              (yield* Sound.Player).play("bang");
+            }),
+          ],
+        })
+      ).pipe(Effect.provide(Sound.layer(sound)))
     );
     // It dies of it, as of any bug, and what it did is taken back.
     const exit = other.dispatch(Bang, {});
@@ -350,9 +355,9 @@ describe("Sound.Player", () => {
       }
     }).pipe(System.inStage("input"));
     const app = run(
-      App.make({ plugins: [Sound.plugin], systems: [Click, Beep] }).pipe(
-        Effect.provide(Sound.layer(sound))
-      )
+      App.make(
+        App.define({ plugins: [Sound.plugin], systems: [Click, Beep] })
+      ).pipe(Effect.provide(Sound.layer(sound)))
     );
     const frame = (...asked: (Sound.Options | undefined)[]): Sound.Played[] => {
       clicks = asked;
@@ -405,7 +410,7 @@ describe("Sound.Player", () => {
       (yield* Sound.Player).play("ping");
     }).pipe(System.inStage("frame"));
     const app = run(
-      App.make({ plugins: [Game], systems: [Theirs, Mine] }).pipe(
+      App.make(App.define({ plugins: [Game], systems: [Theirs, Mine] })).pipe(
         Effect.provide(Sound.layer(sound))
       )
     );
@@ -432,20 +437,20 @@ describe("Sound.Player", () => {
       // Playing to nowhere is no mistake.
       (yield* Sound.Player).play("anything");
     }).pipe(System.inStage("frame"));
-    const options = { plugins: [Sound.plugin], systems: [Ask] } as const;
-    run(App.make(options)).frame(0);
+    const Asking = App.define({ plugins: [Sound.plugin], systems: [Ask] });
+    run(App.make(Asking)).frame(0);
     run(
-      App.make(options).pipe(Effect.provide(Sound.layer(Sound.makeRecorder())))
+      App.make(Asking).pipe(Effect.provide(Sound.layer(Sound.makeRecorder())))
     ).frame(0);
     expect(seen).toEqual([false, true]);
   });
 
   it("is what a plugin's systems need: a game with cues that leaves out Sound.plugin does not compile", () => {
     // Sound.Player is still needed: Sound.plugin provides it.
-    expectTypeOf(App.make({ plugins: [Rules], systems: [Cues] })).not.toExtend<
-      Effect.Effect<unknown, never, Scope.Scope>
-    >();
-    expectTypeOf(App.make({ plugins: [Game] })).toExtend<
+    expectTypeOf(
+      App.make(App.define({ plugins: [Rules], systems: [Cues] }))
+    ).not.toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
+    expectTypeOf(App.make(App.define({ plugins: [Game] }))).toExtend<
       Effect.Effect<unknown, never, Scope.Scope>
     >();
   });
@@ -455,8 +460,7 @@ describe("a game with sound", () => {
   it("is the same game as one with none: the same hash, log and save, tick for tick", () => {
     const sound = Sound.makeRecorder();
     const heard = run(
-      App.make({
-        plugins: [Game],
+      App.make(App.define({ plugins: [Game] }), {
         seed: 9,
         checkpointEvery: 1,
         verifyFrames: true,
@@ -464,7 +468,10 @@ describe("a game with sound", () => {
     );
     // No output, and no system that plays: the rules alone.
     const deaf = run(
-      App.make({ plugins: [Rules], seed: 9, checkpointEvery: 1 })
+      App.make(App.define({ plugins: [Rules] }), {
+        seed: 9,
+        checkpointEvery: 1,
+      })
     );
     for (const app of [heard, deaf]) {
       app.dispatch(Drop, { height: 2 });

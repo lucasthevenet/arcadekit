@@ -7,7 +7,7 @@
  *   import { App } from "arcadekit"
  *   import * as Browser from "arcadekit/Browser"
  *
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
+ *   Browser.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }), {
  *     target: canvas,
  *     preventDefault: ["Space", "ArrowUp", "ArrowDown"],
  *   })
@@ -926,7 +926,7 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
  * (`BrowserRuntime.runMain`), with `Browser.layer(options)` provided to the
  * whole program.
  *
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })
+ *   Browser.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }), { target: canvas })
  *
  * - The game must have no remaining requirements: provide your game's own
  *   services to it first, and a missing one is a compile error here.

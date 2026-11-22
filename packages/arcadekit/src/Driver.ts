@@ -301,7 +301,7 @@ export const makeManualDisplay = (): ManualDisplay => {
  * stage, as `fixedStep` does. In a page, with the page's display, a frame is
  * due once per repaint (`requestAnimationFrame`).
  *
- *   const app = yield* App.make({ plugins: [Game] })
+ *   const app = yield* App.make(App.define({ plugins: [Game] }))
  *   yield* Driver.frames(app, { hz: 60 })
  *
  * - The first frame draws the game as it is and runs no tick: time is measured

@@ -164,7 +164,7 @@ Systems run in the order they are listed.
 
 ## Test it
 
-You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page.
+You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page. `App.define` says what the game is, and `App.make` starts one run of it.
 
 ```ts title="rules.test.ts"
 import { App, Journal } from "arcadekit";
@@ -174,13 +174,15 @@ import { expect, it } from "vitest";
 
 import { Basket, Fall, Move, Position, Rules } from "./rules";
 
+const Catch = App.define({ plugins: [Rules] });
+
 const play = <A>(body: Effect.Effect<A, unknown, Scope.Scope>) =>
   Effect.runSync(Effect.scoped(body));
 
 it("catches a coin that lands in the basket", () =>
   play(
     Effect.gen(function* () {
-      const app = yield* App.make({ plugins: [Rules] });
+      const app = yield* App.make(Catch);
       app.world.spawn(Position.of({ x: 0, y: 0.5 }), Fall.of({ speed: 1 }));
       for (let i = 0; i < 60; i++) {
         app.tick(1 / 60);
@@ -192,7 +194,7 @@ it("catches a coin that lands in the basket", () =>
 it("refuses a move once the game is over", () =>
   play(
     Effect.gen(function* () {
-      const app = yield* App.make({ plugins: [Rules] });
+      const app = yield* App.make(Catch);
       app.world.singleton(Basket).lives = 0;
       const moved = app.dispatch(Move, { dx: 1 });
       expect(Exit.isFailure(moved)).toBe(true);
@@ -208,13 +210,13 @@ A game that changes only through its actions, its systems and its seed can be re
 it("plays the same game again from its log", () =>
   play(
     Effect.gen(function* () {
-      const game = yield* App.make({ plugins: [Rules], seed: 7 });
+      const game = yield* App.make(Catch, { seed: 7 });
       game.enqueue(Move, { dx: 1 });
       for (let i = 0; i < 300; i++) {
         game.tick(1 / 60);
       }
 
-      const again = yield* App.make({ plugins: [Rules], seed: 7 });
+      const again = yield* App.make(Catch, { seed: 7 });
       Journal.replay(again, game.record());
       expect(again.world.hash()).toBe(game.world.hash());
     })
@@ -278,9 +280,11 @@ const Game = Plugin.make("catch/Game", {
 });
 
 Browser.runMain(
-  App.run({ plugins: [Game], seed: Date.now() }, { hz: 60 }).pipe(
-    Effect.provide(Screen.layer)
-  ),
+  App.run(
+    App.define({ plugins: [Game] }),
+    { seed: Date.now() },
+    { hz: 60 }
+  ).pipe(Effect.provide(Screen.layer)),
   { target: canvas, preventDefault: ["ArrowLeft", "ArrowRight"] }
 );
 ```

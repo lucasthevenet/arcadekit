@@ -93,11 +93,13 @@ const handlers = [
 
 const game = () =>
   Effect.gen(function* () {
-    const app = yield* App.make({
-      systems: [Grow, Roll, Asleep, Opening, Draw, Read],
-      handlers,
-      seed: 7,
-    });
+    const app = yield* App.make(
+      App.define({
+        systems: [Grow, Roll, Asleep, Opening, Draw, Read],
+        handlers,
+      }),
+      { seed: 7 }
+    );
     app.world.spawn(Count.of({ n: 0 }));
     return app;
   });
@@ -202,7 +204,7 @@ describe("tracing an app", () => {
     const Fails = System.make("tr/Fails", function* () {
       return yield* new NotNow();
     });
-    const app = traced(tracer, App.make({ systems: [Fails] }));
+    const app = traced(tracer, App.make(App.define({ systems: [Fails] })));
     const exit = app.tickExit(1 / 60);
     expect(Exit.isFailure(exit)).toBe(true);
     const [tick, fails] = spans;
@@ -246,7 +248,7 @@ describe("whether an app traces", () => {
     const Look = System.make("tr/Look", function* () {
       seen = Option.isSome(yield* Effect.option(Effect.currentSpan));
     });
-    const made = wrap(App.make({ systems: [Look] }));
+    const made = wrap(App.make(App.define({ systems: [Look] })));
     const app =
       tracer === undefined
         ? Effect.runSync(Effect.scoped(made))

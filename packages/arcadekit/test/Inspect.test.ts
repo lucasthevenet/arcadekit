@@ -87,10 +87,9 @@ const handlers = [
   }),
 ];
 
-const game = App.make({
-  systems: [Draw, Read, Move, Scorer, Asleep, Opening],
-  handlers,
-});
+const game = App.make(
+  App.define({ systems: [Draw, Read, Move, Scorer, Asleep, Opening], handlers })
+);
 
 describe("app.inspect", () => {
   it("copies every live entity, in order, with its components by name, sparse ones and tags included", () => {
@@ -230,9 +229,9 @@ describe("app.inspect", () => {
       traced = Option.isSome(yield* Effect.option(Effect.currentSpan));
     });
     const app = run(
-      App.make({
-        systems: [Move, Asleep, Look],
-      }).pipe(Effect.provideService(Tracer.Tracer, tracer))
+      App.make(App.define({ systems: [Move, Asleep, Look] })).pipe(
+        Effect.provideService(Tracer.Tracer, tracer)
+      )
     );
     app.tick(1 / 60);
     expect(traced).toBe(true);
@@ -250,7 +249,7 @@ describe("app.inspect", () => {
         // Busy, for the clock to see.
       }
     });
-    const app = run(App.make({ systems: [Slow] }));
+    const app = run(App.make(App.define({ systems: [Slow] })));
     app.tick(1 / 60);
     const [slow] = app.inspect().systems;
     expect(slow!.ms).toBeGreaterThanOrEqual(5);
@@ -314,7 +313,7 @@ describe("app.inspect", () => {
       yield* World;
       app!.inspect();
     });
-    app = run(App.make({ systems: [Peek] }));
+    app = run(App.make(App.define({ systems: [Peek] })));
     expect(() => app.tick(1 / 60)).toThrow(/between ticks/);
   });
 
@@ -322,7 +321,7 @@ describe("app.inspect", () => {
     const Spawner = System.make("in/Spawner", function* () {
       (yield* Commands).spawn(Position.of({ x: 5, y: 5 }));
     });
-    const app = run(App.make({ systems: [Spawner] }));
+    const app = run(App.make(App.define({ systems: [Spawner] })));
     app.tick(1 / 60);
     expect(app.inspect().entities.map((e) => e.components)).toEqual([
       { "in/Position": { x: 5, y: 5 } },

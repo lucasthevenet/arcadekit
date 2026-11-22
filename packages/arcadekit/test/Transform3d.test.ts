@@ -35,7 +35,7 @@ describe("Transform3d", () => {
     }
     // Added bare, it is where it was made, turned by nothing, and of its
     // own size: a Scale of zeros would be drawn as nothing.
-    const { world } = run(App.make({}));
+    const { world } = run(App.make(App.define({})));
     const bare = world.spawn(Position, Rotation, Scale);
     expect(world.get(bare, Scale)).toEqual({ x: 1, y: 1, z: 1 });
     expect(new Set(Object.values(world.get(bare, Position)!))).toEqual(
@@ -57,7 +57,7 @@ describe("Transform3d", () => {
         }
       );
     });
-    const app = run(App.make({ systems: [Drift] }));
+    const app = run(App.make(App.define({ systems: [Drift] })));
     const rock = app.world.spawn(Position.of({ x: 1, y: 2, z: 3 }));
     // Added with no value, it is at the origin.
     const flat = app.world.spawn(Position);
@@ -112,13 +112,13 @@ describe("Transform3d", () => {
       w: 1,
     });
     // It is what a Rotation is given.
-    const world = run(App.make({})).world;
+    const world = run(App.make(App.define({}))).world;
     const turned = world.spawn(Rotation.of(quarter));
     expect(world.get(turned, Rotation)!.w).toBe(Math.fround(quarter.w));
   });
 
   it("is saved and loaded by a game that names none of its components, with no renderer anywhere", () => {
-    const made = run(App.make({}));
+    const made = run(App.make(App.define({})));
     const rock = made.world.spawn(
       Rock,
       Position.of({ x: 1, y: 2, z: 3 }),
@@ -133,7 +133,7 @@ describe("Transform3d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(App.load(read.value, {}));
+    const loaded = run(App.make(App.define({}), { save: read.value }));
     expect(loaded.world.hash()).toBe(made.world.hash());
     expect(loaded.world.get(rock, Position)).toEqual({ x: 1, y: 2, z: 3 });
     expect(loaded.world.get(rock, Rotation)).toEqual(

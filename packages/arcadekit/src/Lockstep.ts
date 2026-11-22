@@ -6,7 +6,7 @@
  * tick once it knows what every peer issued for it, so all of them apply the
  * same actions on the same ticks in the same order, and stay in the same game.
  *
- *   const app = yield* App.make({ plugins: [Game], seed })
+ *   const app = yield* App.make(App.define({ plugins: [Game] }), { seed })
  *   const session = Lockstep.make(app, {
  *     peer: "ada",
  *     peers: ["ada", "grace"],

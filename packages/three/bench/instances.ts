@@ -67,10 +67,12 @@ const variant = (
 ): void => {
   const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
-    App.make({
-      plugins: [Three.plugin, Assets.plugin],
-      systems: [...also, system],
-    }).pipe(Effect.provide(noRenderer), Scope.provide(scope))
+    App.make(
+      App.define({
+        plugins: [Three.plugin, Assets.plugin],
+        systems: [...also, system],
+      })
+    ).pipe(Effect.provide(noRenderer), Scope.provide(scope))
   );
   for (let i = 0; i < N; i++) {
     app.world.spawn(Thing, ...parts());
@@ -234,7 +236,9 @@ variant(
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
   const scope = Scope.makeUnsafe();
-  const app = Effect.runSync(App.make({}).pipe(Scope.provide(scope)));
+  const app = Effect.runSync(
+    App.make(App.define({})).pipe(Scope.provide(scope))
+  );
   const entities = Array.from({ length: N }, () =>
     app.world.spawn(Thing, place(), turn(), size())
   );

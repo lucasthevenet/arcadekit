@@ -56,7 +56,7 @@ const reset = Action.handler(Reset, function* (payload) {
 });
 
 const game = Effect.map(
-  App.make({ handlers: [damage, rename, reset] }),
+  App.make(App.define({ handlers: [damage, rename, reset] })),
   (app) => {
     const target = app.world.spawn(Health.of({ hp: 50 }));
     return { app, target };
@@ -200,7 +200,7 @@ describe("actions with a schema", () => {
       }
     });
     const make = Effect.map(
-      App.make({ systems: [Watch], handlers: [damage] }),
+      App.make(App.define({ systems: [Watch], handlers: [damage] })),
       (app) => {
         const target = app.world.spawn(Health.of({ hp: 50 }));
         return { app, target };
@@ -362,7 +362,7 @@ describe("events with a schema", () => {
         seen.push(hit.amount);
       }
     });
-    withApp(App.make({ systems: [Emit, Read] }), (app) => {
+    withApp(App.make(App.define({ systems: [Emit, Read] })), (app) => {
       app.tick(1);
       expect(seen).toEqual([3, "three", 500]);
       expect(app.events.pending(Hit)).toBe(3);
@@ -435,7 +435,7 @@ describe("events with a schema", () => {
       });
       (yield* Twin).emit(1);
     });
-    withApp(App.make({ systems: [Both] }), (app) => {
+    withApp(App.make(App.define({ systems: [Both] })), (app) => {
       expect(() => app.tick(1)).toThrow(
         /Two different events are both named "sc\/Hit"/
       );
@@ -444,11 +444,11 @@ describe("events with a schema", () => {
     const Alone = System.make("Alone", function* () {
       (yield* Twin).emit(2);
     });
-    withApp(App.make({ systems: [Alone] }), (app) => {
+    withApp(App.make(App.define({ systems: [Alone] })), (app) => {
       app.tick(1);
       expect(app.events.pending(Twin)).toBe(1);
     });
-    withApp(App.make({}), (app) => {
+    withApp(App.make(App.define({})), (app) => {
       expect(app.events.pending(Hit)).toBe(0);
       expect(() => app.events.emit(Twin, 1)).toThrow(/both named/);
       expect(() => app.events.pending(Twin)).toThrow(/both named/);

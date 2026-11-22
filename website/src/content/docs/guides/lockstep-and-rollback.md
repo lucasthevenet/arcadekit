@@ -18,7 +18,7 @@ const move = Action.handler(Move, function* ({ dx }, { from }) {
 const Game = Plugin.make("game/Game", { handlers: [move] });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game], seed: 1 });
+  const app = yield* App.make(App.define({ plugins: [Game] }), { seed: 1 });
   const session = Lockstep.make(app, {
     peer: "ada", // this machine's player
     peers: ["ada", "grace"], // everyone: the same names on every machine
@@ -76,7 +76,7 @@ A session takes over its app: from then on, `app.tick` and `app.dispatch` throw,
 
 ```ts sketch
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game], seed });
+  const app = yield* App.make(App.define({ plugins: [Game] }), { seed });
   const session = Rollback.make(app, { peer, peers, delta: 1 / 60 });
   return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 });
 }).pipe(
@@ -106,7 +106,7 @@ import { Effect, Exit } from "effect";
 const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game] });
+  const app = yield* App.make(App.define({ plugins: [Game] }));
   const moment = Timeline.capture(app); // Exit<Timeline.Moment, Save.SaveRefused>
   app.tick(1 / 60);
   if (Exit.isSuccess(moment)) {

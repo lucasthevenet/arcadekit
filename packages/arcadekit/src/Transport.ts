@@ -6,7 +6,7 @@
  * them:
  *
  *   const program = Effect.gen(function* () {
- *     const app = yield* App.make({ plugins: [Game], seed })
+ *     const app = yield* App.make(App.define({ plugins: [Game] }), { seed })
  *     const session = Rollback.make(app, { peer, peers, delta: 1 / 60 })
  *     return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
  *   }).pipe(

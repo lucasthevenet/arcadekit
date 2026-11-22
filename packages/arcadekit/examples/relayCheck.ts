@@ -80,8 +80,7 @@ const check = Effect.gen(function* () {
   // --- two peers play a game through it ------------------------------------
   const seats = [];
   for (const peer of ["ada", "grace"]) {
-    const app = yield* App.make({
-      handlers: [tip],
+    const app = yield* App.make(App.define({ handlers: [tip] }), {
       checkpointEvery: 1,
     });
     const session = Rollback.make(app, {

@@ -1,0 +1,328 @@
+/**
+ * Puts an app together from a game and how one run of it starts: its world
+ * and the stores the world holds for it, the save it continues from, its
+ * services, its runner, its inbox and its loop. `App.make` and `App.run`
+ * make their app here.
+ */
+import { Cause, Context, Effect, Exit, Layer, Metric } from "effect";
+import type { Scope } from "effect";
+import * as Scheduler from "effect/Scheduler";
+
+import * as Action from "./Action";
+import type {
+  AllHandlers,
+  App,
+  External,
+  Game,
+  Handlers,
+  Plugins,
+  StartOptions,
+  Systems,
+  TickError,
+  TickOptions,
+} from "./App";
+import { CommandBuffer } from "./ecs/commands";
+import { World as EcsWorld } from "./ecs/world";
+import { EventBus } from "./Event";
+import * as Inbox from "./Inbox";
+import * as Journal from "./Journal";
+import * as Loop from "./Loop";
+import * as Plugin from "./Plugin";
+import * as Runner from "./Runner";
+import * as Save from "./Save";
+import * as Schedule from "./Schedule";
+import type { TimeState } from "./Services";
+import * as Stage from "./Stage";
+import * as State from "./State";
+import { TickDispatcher, TickScheduler } from "./TickScheduler";
+
+/** The tick a save was made at, which its world holds. */
+const tickOf = (save: Save.Save): number => {
+  const tick = Save.singleton(save, Stage.GameTime.component.name, "tick");
+  return typeof tick === "number" ? tick : 0;
+};
+
+const NO_INPUT: TickOptions = { input: false };
+
+/**
+ * Makes the app of a game, from a seed or from a save.
+ *
+ * @category Constructors
+ */
+export const build = <S extends Systems, H extends Handlers, P extends Plugins>(
+  game: Game<S, H, P>,
+  start: StartOptions<Save.Save | undefined>
+): Effect.Effect<
+  App<TickError<S, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+  Scope.Scope | External<S, H, P>
+> =>
+  Effect.gen(function* () {
+    const { save: given, seed } = start;
+    if (given !== undefined && seed !== undefined) {
+      throw new Error(
+        `App.make was given a save and the seed ${seed}. A save holds where its game's random sequence had got to: give one of the two.`
+      );
+    }
+    const world = new EcsWorld(seed === undefined ? undefined : { seed });
+    const commands = new CommandBuffer(world);
+    const events = new EventBus(world);
+    // Attached before the world loads a save, which may hold some of each.
+    const intake = new Action.Intake();
+    world._attach(intake);
+    world._attach(
+      new Save.Visits(world, (reader) => !reader.startsWith(Stage.READER))
+    );
+    const dispatcher = new TickDispatcher();
+    const scheduler = new TickScheduler(dispatcher);
+
+    // Dependencies first, each plugin once, then the app's own systems.
+    const plugins = Plugin.flatten(game.plugins);
+    const { version } = game;
+    let save: Save.Save | undefined;
+    if (given !== undefined) {
+      // Before anything else can touch the world: a load fills an empty one.
+      const loaded = Save.into(world, given, version, game.migrations);
+      if (Exit.isFailure(loaded)) {
+        return yield* loaded;
+      }
+      save = loaded.value;
+    }
+    // Loaded with the world, or written by the first tick.
+    const time: TimeState = world.singleton(Stage.GameTime);
+    const allSystems = [
+      ...plugins.flatMap((plugin) => plugin.systems),
+      ...game.systems,
+    ];
+    const allHandlers = [
+      ...plugins.flatMap((plugin) => plugin.handlers),
+      ...game.handlers,
+    ];
+
+    const handlers = Inbox.handlersOf(allHandlers);
+    const log = new Journal.Log(world, time, start.checkpointEvery ?? 60);
+    world._attach(log);
+    // What systems and handlers issue goes through the inbox, made below
+    // once the app's services are built.
+    const actions: Context.Service.Shape<typeof Action.Actions> = {
+      enqueue: (action, payload) => {
+        inbox.issue(action, payload);
+      },
+      handles: (action) => inbox.handles(action),
+    };
+    const builtIns = Stage.tick({
+      world,
+      time,
+      commands,
+      events,
+      intake,
+      actions,
+    });
+    // Plugin layers are chained in dependency order, so each one can use the
+    // built-in services and whatever the plugins before it provide. Effect
+    // builds a layer that appears more than once only once.
+    let layer: Layer.Layer<never, unknown, unknown> =
+      Layer.succeedContext(builtIns);
+    for (const plugin of plugins) {
+      if (plugin.layer !== undefined) {
+        layer = Layer.provideMerge(plugin.layer, layer);
+      }
+    }
+    const built = yield* Layer.build(layer);
+    // Everything the caller provided (their services, resource overrides, the
+    // scope) is captured once here and handed to every system and handler.
+    const provided = yield* Effect.context<External<S, H, P>>();
+    const runner = new Runner.Runner(
+      dispatcher,
+      Context.get(Context.merge(provided, built), Metric.FiberRuntimeMetrics),
+      () => {
+        // Nobody is reading once the game's code has run.
+        events.reader = undefined;
+        world.reader = undefined;
+      }
+    );
+    // Putting our scheduler in the context makes every fiber started from it
+    // (systems, handlers, and anything they fork) use the tick dispatcher.
+    const context = Context.merge(provided, built).pipe(
+      Context.add(Scheduler.Scheduler, scheduler),
+      Context.add(Metric.FiberRuntimeMetrics, runner.metrics)
+    ) as Context.Context<unknown>;
+    const runFork = Effect.runForkWith(context);
+
+    const spans = new Loop.Spans(context);
+    const inbox = new Inbox.Inbox({
+      world,
+      commands,
+      events,
+      intake,
+      log,
+      runner,
+      time,
+      handlers,
+      run: (name, handled) => runFork(spans.action(name, handled)),
+    });
+    const schedule = Schedule.make(allSystems, spans.enabled);
+    // What runs between ticks hears the events of every tick, the first
+    // among them: they are kept for it from the start.
+    if (schedule.frame.length > 0) {
+      events.expect("frame", time.tick);
+    }
+    if (schedule.input.length > 0) {
+      events.expect("input", time.tick);
+    }
+    State.prepare(world, schedule.hooked, save !== undefined);
+
+    const loop = Loop.make({
+      world,
+      commands,
+      events,
+      intake,
+      log,
+      inbox,
+      runner,
+      time,
+      schedule,
+      spans,
+      context,
+      actions,
+      seed: seed ?? 0,
+      verifyFrames: start.verifyFrames === true,
+    });
+    // What a run ends with is what the game's systems fail with: the loop
+    // runs them as systems of any game, and their types are claimed back.
+    type Ran = Exit.Exit<void, TickError<S, P>>;
+    const orThrow = (exit: Ran): void => {
+      if (Exit.isFailure(exit)) {
+        throw Cause.squash(exit.cause);
+      }
+    };
+    const frameExit = (alpha: number, delta?: number): Ran =>
+      loop.frame(alpha, delta) as Ran;
+    const inputExit = (): Ran => loop.input() as Ran;
+    const tickExit = (delta: number, options?: TickOptions): Ran => {
+      if (inbox.diverted !== undefined) {
+        throw new Error(
+          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
+        );
+      }
+      return loop.tick(delta, options) as Ran;
+    };
+
+    yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
+
+    const app: App<TickError<S, P>, AllHandlers<H, P>> = {
+      world,
+      commands,
+      events,
+      time,
+      dispatcher,
+      plugins: plugins.map((plugin) => plugin.name),
+      systemOrder: schedule.tick.map((turn) => turn.system.name),
+      get phase() {
+        return runner.phase;
+      },
+      frameOrder: schedule.frame.map((turn) => turn.system.name),
+      inputOrder: schedule.input.map((turn) => turn.system.name),
+      actionLog: log.entries,
+      record(since) {
+        runner.whileIdle(
+          (busy) =>
+            `record() was called during a ${busy}. A game is recorded between ticks.`
+        );
+        return log.record(
+          since === undefined
+            ? undefined
+            : { tick: tickOf(since), logLength: since.logLength }
+        );
+      },
+      save() {
+        runner.whileIdle(
+          (busy) =>
+            `save() was called during a ${busy}. A game is saved between ticks.`
+        );
+        return Save.take(world, commands, version, log.entries.length);
+      },
+      get settled() {
+        return loop.settled();
+      },
+      inspect() {
+        runner.whileIdle(
+          (busy) =>
+            `inspect() was called from inside a ${busy}. A game is inspected between ticks.`
+        );
+        return {
+          tick: time.tick,
+          ...world.contents(),
+          systems: schedule.all.map(({ ms, ran, system }) => ({
+            name: system.name,
+            stage: system.stage,
+            ran,
+            ms,
+          })),
+          events: events.lastTick(),
+        };
+      },
+      checkpoint() {
+        runner.whileIdle(
+          (busy) =>
+            `checkpoint() was called during a ${busy}. A checkpoint is taken between ticks, where a replay can compare it.`
+        );
+        return log.checkpoint();
+      },
+      tickExit,
+      tick: (delta, options) => {
+        orThrow(tickExit(delta, options));
+      },
+      frameExit,
+      frame: (alpha, delta) => {
+        orThrow(frameExit(alpha, delta));
+      },
+      inputExit,
+      input: () => {
+        orThrow(inputExit());
+      },
+      dispatch: (action, payload) =>
+        // What the action's handler returns or fails with.
+        inbox.dispatch(action, payload) as Exit.Exit<never, never>,
+      enqueue: (action, payload) => inbox.enqueue(action, payload),
+      dispatchByName: (name, payload, from) =>
+        inbox.dispatchByName(name, payload, from),
+      enqueueByName: (name, payload, from) => {
+        inbox.enqueueByName(name, payload, from);
+      },
+      divert(take) {
+        if (inbox.diverted !== undefined) {
+          throw new Error(
+            "divert() was called on an app that has been taken over already. An app is in one session at a time."
+          );
+        }
+        inbox.diverted = take;
+        return {
+          deliver: (name, payload, from) => {
+            inbox.deliver(name, payload, from);
+          },
+          tickExit: (delta, observe) =>
+            loop.tick(delta, NO_INPUT, observe) as Ran,
+        };
+      },
+    };
+
+    // Each plugin's setup runs once, in the same order, with everything in
+    // place. Not when loading: the save holds what setup made.
+    for (const { name, setup } of save === undefined ? plugins : []) {
+      if (setup !== undefined) {
+        const ran = loop.setup(name, setup);
+        if (Exit.isFailure(ran)) {
+          return yield* ran as Exit.Exit<never, Plugin.ErrorOf<P[number]>>;
+        }
+      }
+    }
+    commands.apply();
+    // What the setups emitted is of the tick to come.
+    events.told(time.tick + 1);
+    return app;
+  }) as Effect.Effect<
+    App<TickError<S, P>, AllHandlers<H, P>>,
+    Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+    Scope.Scope | External<S, H, P>
+  >;

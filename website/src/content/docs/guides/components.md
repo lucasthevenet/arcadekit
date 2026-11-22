@@ -69,7 +69,7 @@ const Rules = Plugin.make("game/Rules", {
 });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Rules] });
+  const app = yield* App.make(App.define({ plugins: [Rules] }));
   const rock = app.world.spawn(Position.of({ x: 4, y: 2 }));
   app.world.set(rock, Position, { y: 3 });
   app.world.get(rock, Position)?.x; // 4
@@ -164,7 +164,7 @@ const Targets = Component.relation("ai/Targets", {
 const Rules = Plugin.make("game/Rules", {});
 
 const program = Effect.gen(function* () {
-  const { world } = yield* App.make({ plugins: [Rules] });
+  const { world } = yield* App.make(App.define({ plugins: [Rules] }));
   const tank = world.spawn(Position.of({ x: 0, y: 0 }));
   const truck = world.spawn(Position.of({ x: 9, y: 0 }));
   const turret = world.spawn(

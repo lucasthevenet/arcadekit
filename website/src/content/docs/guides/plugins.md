@@ -52,7 +52,7 @@ const Game = Plugin.make("game/Game", {
 });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game] });
+  const app = yield* App.make(App.define({ plugins: [Game] }));
   app.tick(1 / 60);
 });
 ```
@@ -76,7 +76,7 @@ A plugin's `layer` builds its services. While building, it can use the built-in 
 Anything your systems, handlers and setups need that no plugin provides remains a requirement of `App.make`. Provide it the usual Effect way, and a missing one is the usual compile error:
 
 ```ts sketch
-App.make({ plugins: [Sfx] }).pipe(Effect.provide(AudioLive));
+App.make(App.define({ plugins: [Sfx] })).pipe(Effect.provide(AudioLive));
 ```
 
 If a layer or setup fails, `App.make` fails with that error.

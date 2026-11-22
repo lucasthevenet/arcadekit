@@ -52,6 +52,11 @@
       "types": "./dist/Browser.d.ts",
       "default": "./dist/Browser.js"
     },
+    "./Build": {
+      "source": "./src/Build.ts",
+      "types": "./dist/Build.d.ts",
+      "default": "./dist/Build.js"
+    },
     "./Driver": {
       "source": "./src/Driver.ts",
       "types": "./dist/Driver.d.ts",

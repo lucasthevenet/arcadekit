@@ -74,7 +74,8 @@ const Demo = Plugin.make("Demo", {
 const program = Effect.gen(function* () {
   const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
   yield* App.run(
-    { plugins: [Demo], seed: 7 },
+    App.define({ plugins: [Demo] }),
+    { seed: 7 },
     {
       hz: 60,
       ready: (app) =>

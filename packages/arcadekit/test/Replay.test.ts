@@ -85,15 +85,19 @@ interface Options {
 }
 
 const game = (options: Options = {}) =>
-  App.make({
-    // A fault on tick -1 never happens: that is the game as it should be.
-    systems: [Drift, options.faulty ?? fault(-1, "nudge")],
-    handlers: [drop, take],
-    seed: options.seed ?? 1,
-    ...(options.checkpointEvery === undefined
-      ? {}
-      : { checkpointEvery: options.checkpointEvery }),
-  });
+  App.make(
+    App.define({
+      // A fault on tick -1 never happens: that is the game as it should be.
+      systems: [Drift, options.faulty ?? fault(-1, "nudge")],
+      handlers: [drop, take],
+    }),
+    {
+      seed: options.seed ?? 1,
+      ...(options.checkpointEvery === undefined
+        ? {}
+        : { checkpointEvery: options.checkpointEvery }),
+    }
+  );
 
 const withApp = <T, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
@@ -317,7 +321,7 @@ describe("checkpoints", () => {
       }
     });
     let asking: App.Any | undefined;
-    withApp(App.make({ systems: [Asks] }), (app) => {
+    withApp(App.make(App.define({ systems: [Asks] })), (app) => {
       asking = app;
       app.tick(1);
     });
@@ -691,12 +695,13 @@ const Heckler = System.make("Heckler", function* () {
 
 const busy = (checkpointEvery = 1) =>
   Effect.map(
-    App.make({
-      systems: [Bot, Referee, Heckler],
-      handlers: [double, add, chain],
-      seed: 4,
-      checkpointEvery,
-    }),
+    App.make(
+      App.define({
+        systems: [Bot, Referee, Heckler],
+        handlers: [double, add, chain],
+      }),
+      { seed: 4, checkpointEvery }
+    ),
     (app) => {
       const tally = app.world.spawn(Tally.of({ value: 1, rejections: 0 }));
       return { app, tally };
@@ -791,11 +796,10 @@ describe("app.enqueue from inside the simulation", () => {
     const Clock = System.make("Clock", function* () {
       enqueue?.(1);
     });
-    const app = yield* App.make({
-      systems: [Clock],
-      handlers: [add, relay],
-      checkpointEvery: 1,
-    });
+    const app = yield* App.make(
+      App.define({ systems: [Clock], handlers: [add, relay] }),
+      { checkpointEvery: 1 }
+    );
     enqueue = (by) => {
       app.enqueue(Add, { by });
     };
@@ -858,15 +862,18 @@ describe("app.enqueue from inside the simulation", () => {
         (yield* Action.Actions).enqueue(Add, { by: 10 });
       }),
     });
-    withApp(App.make({ plugins: [Opening], checkpointEvery: 0 }), (app) => {
-      const tally = app.world.spawn(Tally.of({ value: 0, rejections: 0 }));
-      app.enqueue(Add, { by: 4000 });
-      app.tick(1);
-      expect(app.world.get(tally, Tally)!.value).toBe(4010);
-      expect(app.actionLog).toEqual([
-        { tick: 0, name: "rp/Add", payload: { by: 4000 }, queued: true },
-      ]);
-    });
+    withApp(
+      App.make(App.define({ plugins: [Opening] }), { checkpointEvery: 0 }),
+      (app) => {
+        const tally = app.world.spawn(Tally.of({ value: 0, rejections: 0 }));
+        app.enqueue(Add, { by: 4000 });
+        app.tick(1);
+        expect(app.world.get(tally, Tally)!.value).toBe(4010);
+        expect(app.actionLog).toEqual([
+          { tick: 0, name: "rp/Add", payload: { by: 4000 }, queued: true },
+        ]);
+      }
+    );
   });
 });
 
@@ -971,7 +978,9 @@ describe("a game whose simulation issues actions itself", () => {
     // not commute, so each order of arrival is its own game, and each has to
     // replay as itself.
     const make = Effect.map(
-      App.make({ handlers: [double, add, chain], checkpointEvery: 1 }),
+      App.make(App.define({ handlers: [double, add, chain] }), {
+        checkpointEvery: 1,
+      }),
       (app) => ({
         app,
         tally: app.world.spawn(Tally.of({ value: 1, rejections: 0 })),
@@ -1028,7 +1037,9 @@ describe("a recording", () => {
       });
   });
   const walking = Effect.map(
-    App.make({ systems: [Walk], handlers: [drop], checkpointEvery: 1 }),
+    App.make(App.define({ systems: [Walk], handlers: [drop] }), {
+      checkpointEvery: 1,
+    }),
     (app) => {
       app.world.spawn(Walker.of({ x: 0 }));
       return app;

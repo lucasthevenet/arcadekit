@@ -196,7 +196,7 @@ export interface ManualSource extends SourceShape {
  * and `move`, using the codes a device would produce.
  *
  *   const source = Input.makeManualSource()
- *   const app = yield* App.make({ plugins: [Game] }).pipe(
+ *   const app = yield* App.make(App.define({ plugins: [Game] })).pipe(
  *     Effect.provideService(Input.Source, source)
  *   )
  *   source.press("Space")

@@ -482,7 +482,7 @@ describe("a rollback session", () => {
         });
       }
     });
-    withApp(App.make({ systems: [Spoil] }), (app) => {
+    withApp(App.make(App.define({ systems: [Spoil] })), (app) => {
       app.world.spawn(Holder.of({ thing: "fine" }));
       const session = Rollback.make(app, {
         peer: "ada",

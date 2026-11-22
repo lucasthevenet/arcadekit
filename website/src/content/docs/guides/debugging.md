@@ -18,7 +18,8 @@ const Game = Plugin.make("game/Game", {});
 
 Browser.runMain(
   App.run(
-    { plugins: [Game] },
+    App.define({ plugins: [Game] }),
+    {},
     {
       hz: 60,
       ready: (app) =>
@@ -73,7 +74,9 @@ const Tracing = OtlpTracer.layer({
 );
 
 Browser.runMain(
-  App.run({ systems: [Move, Draw] }, { hz: 60 }).pipe(Effect.provide(Tracing)),
+  App.run(App.define({ systems: [Move, Draw] }), {}, { hz: 60 }).pipe(
+    Effect.provide(Tracing)
+  ),
   { target: document.querySelector("canvas")! }
 );
 ```
@@ -109,7 +112,7 @@ A span costs about 3 µs, so a traced tick of 10 systems takes about 30 µs more
 ```ts sketch
 import { Tracer } from "effect";
 
-App.run({ plugins: [Game] }, { hz: 60 }).pipe(
+App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }).pipe(
   Effect.provideService(Tracer.MinimumTraceLevel, "Info"),
   Effect.provide(Tracing)
 );

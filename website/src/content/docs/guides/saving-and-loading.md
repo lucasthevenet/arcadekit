@@ -13,9 +13,10 @@ import { Effect, Exit } from "effect";
 
 const Position = Component.define("game/Position", { x: Field.f32 });
 const Rules = Plugin.make("game/Rules", {});
+const Game = App.define({ plugins: [Rules] });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Rules] });
+  const app = yield* App.make(Game);
   app.world.spawn(Position.of({ x: 3 }));
   app.tick(1 / 60);
 
@@ -27,7 +28,7 @@ const program = Effect.gen(function* () {
 
   const read = Save.decode(bytes); // Exit<Save, LoadRefused>
   if (Exit.isSuccess(read)) {
-    const again = yield* App.load(read.value, { plugins: [Rules] });
+    const again = yield* App.make(Game, { save: read.value });
     again.world.hash() === app.world.hash(); // true
   }
 }).pipe(Effect.scoped);
@@ -37,7 +38,7 @@ A save is taken between two ticks. It contains the world as a [snapshot](#snapsh
 
 It is essentially the snapshot plus a little text: for 100,000 entities with four float fields, 2.8 MB, taking about 0.7 ms.
 
-`App.load` takes the plugins and options the game was created with. No plugin's `setup` runs, since the save already holds its effects. `App.run` also accepts a `save`, to start a page from one.
+`App.make(game, { save })` continues a game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds its effects. `App.run` takes a `save` the same way, to start a page from one. A save holds where the game's random sequence had reached, so `save` and `seed` can't both be given.
 
 To return to an earlier moment of the same app within the same run, `Timeline.capture(app)` and `Timeline.rewind(app, moment)` work in memory, and encode none of the pending actions and events. See [capturing and rewinding](lockstep-and-rollback.md#capturing-and-rewinding).
 
@@ -57,7 +58,7 @@ A save records the log's length at the time, `save.logLength`. A game that keeps
 
 ```ts sketch
 const tail = game.record(save); // from the save's tick to now
-const app = yield * App.load(save, { plugins: [Rules] });
+const app = yield * App.make(Game, { save });
 Journal.replay(app, tail);
 ```
 
@@ -91,7 +92,7 @@ const migrations: Save.Migration[] = [
 ];
 
 const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
-  App.load(save, { plugins, version: 2, migrations });
+  App.make(App.define({ plugins, version: 2, migrations }), { save });
 ```
 
 A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The game's time is one of the world's singletons, `arcadekit/Time`. The world's `stores` hold what the app keeps of the game beside its entities, each as plain data under a name:
@@ -110,7 +111,7 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 
 ## When a load is refused
 
-`Save.decode` and `App.load` fail with `Save.LoadRefused`. Its `problem` identifies the kind of failure, and its message names the component, field or version involved:
+`Save.decode` and `App.make` with a `save` fail with `Save.LoadRefused`. Its `problem` identifies the kind of failure, and its message names the component, field or version involved:
 
 | `problem` | The save |
 | --- | --- |

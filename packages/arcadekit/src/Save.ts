@@ -6,7 +6,7 @@
  *   const bytes = Save.encode(save)                // for a file or the network
  *
  *   const loaded = Save.decode(bytes)              // Exit<Save, LoadRefused>
- *   const app = yield* App.load(save, { plugins }) // the game, where it was
+ *   const app = yield* App.make(game, { save }) // the game, where it was
  *
  * A save is taken between two ticks. It holds the world, which holds the game
  * time, the actions queued for the next tick, the events waiting to be read
@@ -36,7 +36,7 @@ import type { World } from "./ecs/world";
  * snapshot, which holds its time, what was queued for the next tick, the
  * events waiting to be read and each system's place in them and in what
  * changed, and the length of its log. `Save.encode` turns it into bytes, and
- * `App.load` continues from it.
+ * `App.make` continues from it.
  *
  * @category Models
  */
@@ -44,7 +44,7 @@ export interface Save {
   /**
    * The version of the game that wrote the save: the `version` its app was
    * created with, defaulting to 0. Increment it when you change the game's
-   * components, and give `App.load` a migration from each older version.
+   * components, and give the game a migration from each older version.
    */
   readonly version: number;
   /**

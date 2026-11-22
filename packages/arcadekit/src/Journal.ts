@@ -6,7 +6,7 @@
  *   const recording = app.record()                 // the game so far
  *   const text = Journal.encode(recording)         // for a file or the network
  *
- *   const again = yield* App.make(sameOptions)
+ *   const again = yield* App.make(game, { seed })  // the same game and seed
  *   Journal.replay(again, recording)               // the same game, checked
  *
  * An app keeps its journal as it plays: every action from outside the

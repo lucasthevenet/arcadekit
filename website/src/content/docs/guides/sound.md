@@ -31,7 +31,7 @@ const Game = Plugin.make("game/Game", {
   systems: [Cues],
 });
 
-Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
+Browser.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }), {
   sounds: { coin: "/coin.wav", thud: "/thud.wav" },
 });
 ```

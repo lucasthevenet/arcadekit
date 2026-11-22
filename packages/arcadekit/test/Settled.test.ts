@@ -88,7 +88,7 @@ const Rules = Plugin.make("st/Rules", {
 
 describe("app.settled", () => {
   it("is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked", () => {
-    const app = run(App.make({ checkpointEvery: 0 }));
+    const app = run(App.make(App.define({}), { checkpointEvery: 0 }));
     // A game that has not ticked yet has not been asked whether it has
     // anything to do.
     expect(app.settled).toBe(false);
@@ -105,7 +105,7 @@ describe("app.settled", () => {
 
   it("is false while a state waits to be entered: the one a game starts in, and one that was asked for", () => {
     entered.length = 0;
-    const app = run(App.make({ plugins: [Rules] }));
+    const app = run(App.make(App.define({ plugins: [Rules] })));
     // The state it starts in is entered by its first tick.
     expect(app.settled).toBe(false);
     app.tick(1);
@@ -119,7 +119,7 @@ describe("app.settled", () => {
   });
 
   it("is false while an action waits to be applied", () => {
-    const app = run(App.make({ plugins: [Rules] }));
+    const app = run(App.make(App.define({ plugins: [Rules] })));
     app.tick(1);
     entered.length = 0;
     app.enqueue(Begin, {});
@@ -132,7 +132,7 @@ describe("app.settled", () => {
   });
 
   it("is false while an event waits that a system has not had its chance at, and no longer", () => {
-    const app = run(App.make({ plugins: [Rules] }));
+    const app = run(App.make(App.define({ plugins: [Rules] })));
     app.dispatch(Begin, {});
     app.tick(1);
     app.tick(1);
@@ -168,7 +168,9 @@ describe("app.settled", () => {
     const Watch = System.make("st/Watch", function* () {
       heard.push((yield* Moved).read().length + (yield* Landed).read().length);
     }).pipe(System.inStage("frame"));
-    const app = run(App.make({ plugins: [Rules], systems: [Watch] }));
+    const app = run(
+      App.make(App.define({ plugins: [Rules], systems: [Watch] }))
+    );
     app.dispatch(Begin, {});
     app.tick(1);
     app.enqueue(Move, { by: 1 });
@@ -183,7 +185,7 @@ describe("app.settled", () => {
   });
 
   it("is false while work is queued for the next tick", () => {
-    const app = run(App.make({}));
+    const app = run(App.make(App.define({})));
     app.tick(1);
     expect(app.settled).toBe(true);
     const ran: string[] = [];
@@ -199,7 +201,9 @@ describe("app.settled", () => {
   });
 
   it("is not changed by looking, nor by the stages between ticks", () => {
-    const app = run(App.make({ plugins: [Rules], checkpointEvery: 1 }));
+    const app = run(
+      App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
+    );
     const before = app.world.hash();
     for (let i = 0; i < 3; i++) {
       expect(app.settled).toBe(false);
@@ -242,7 +246,10 @@ describe("a game that ticks when its player moves", () => {
     const ui = View.makeBridge();
     const source = Input.makeManualSource();
     const app = run(
-      App.make({ plugins: [Game], checkpointEvery: 1, seed: 5 }).pipe(
+      App.make(App.define({ plugins: [Game] }), {
+        checkpointEvery: 1,
+        seed: 5,
+      }).pipe(
         Effect.provide(View.layer(ui)),
         Effect.provideService(Input.Source, source)
       )
@@ -319,7 +326,7 @@ describe("a game that ticks when its player moves", () => {
     expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
     // The same game with no UI, no devices and no rest: tick after tick.
     const again = run(
-      App.make({ plugins: [Game], checkpointEvery: 1, seed: 5 })
+      App.make(App.define({ plugins: [Game] }), { checkpointEvery: 1, seed: 5 })
     );
     Journal.replay(again, app.record());
     expect(again.world.hash()).toBe(app.world.hash());
@@ -363,7 +370,7 @@ describe("a system that has more to do", () => {
   const options = { handlers: [wind] };
 
   it("says so with Ticks.more, each tick it has: the app is not settled until a tick in which nobody did", () => {
-    const app = run(App.make({ ...options, systems: [RunDown] }));
+    const app = run(App.make(App.define({ ...options, systems: [RunDown] })));
     app.tick(1);
     expect(app.settled).toBe(true);
     // The action waits; applied, the clock runs, and each tick asks.
@@ -390,7 +397,7 @@ describe("a system that has more to do", () => {
 
   it("keeps a game that ticks when it is needed going for as long as it asks, and no longer", () => {
     ran = 0;
-    const app = run(App.make({ ...options, systems: [RunDown] }));
+    const app = run(App.make(App.define({ ...options, systems: [RunDown] })));
     const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
     const frames = (count: number): void => {
       for (let i = 0; i < count; i++) {
@@ -415,7 +422,9 @@ describe("a system that has more to do", () => {
     // The same clock kept by a system that does not say: the action is
     // applied, one tick follows it, and the game rests with the clock
     // still wound.
-    const silent = run(App.make({ ...options, systems: [RunDownSilently] }));
+    const silent = run(
+      App.make(App.define({ ...options, systems: [RunDownSilently] }))
+    );
     const step = Driver.fixedStep(silent, { hz: 10, ticks: "whenNeeded" });
     step(0.1);
     step(0.1);
@@ -427,7 +436,9 @@ describe("a system that has more to do", () => {
   });
 
   it("is heard from a handler, and changes nothing of a game that ticks in real time", () => {
-    const app = run(App.make({ handlers: [windAndSay], systems: [] }));
+    const app = run(
+      App.make(App.define({ handlers: [windAndSay], systems: [] }))
+    );
     app.tick(1);
     expect(app.settled).toBe(true);
     // Dispatched between two ticks, the handler has run: the game is
@@ -439,10 +450,14 @@ describe("a system that has more to do", () => {
     // In real time every tick runs whoever asks: the same game, tick for
     // tick, as one whose system says nothing.
     const said = run(
-      App.make({ ...options, systems: [RunDown], checkpointEvery: 1 })
+      App.make(App.define({ ...options, systems: [RunDown] }), {
+        checkpointEvery: 1,
+      })
     );
     const unsaid = run(
-      App.make({ ...options, systems: [RunDownSilently], checkpointEvery: 1 })
+      App.make(App.define({ ...options, systems: [RunDownSilently] }), {
+        checkpointEvery: 1,
+      })
     );
     for (const one of [said, unsaid]) {
       one.enqueue(Wind, { ticks: 4 });
@@ -464,7 +479,7 @@ describe("a system that has more to do", () => {
         return yield* Effect.fail("refused" as const);
       }
     });
-    const app = run(App.make({ handlers: [ask] }));
+    const app = run(App.make(App.define({ handlers: [ask] })));
     app.tick(1);
     expect(app.settled).toBe(true);
     app.dispatch(Ask, { refuse: true });
@@ -474,7 +489,7 @@ describe("a system that has more to do", () => {
   });
 
   it("is asked again of a game that was loaded: the first tick of an app is always run", () => {
-    const made = App.make({ ...options, systems: [RunDown] });
+    const made = App.make(App.define({ ...options, systems: [RunDown] }));
     const app = run(made);
     app.enqueue(Wind, { ticks: 6 });
     app.tick(1);
@@ -488,7 +503,9 @@ describe("a system that has more to do", () => {
     // Loaded in the middle of the clock's run. What the system asked is
     // not in the save; the first tick asks it afresh.
     const loaded = run(
-      App.load(save.value, { ...options, systems: [RunDown] })
+      App.make(App.define({ ...options, systems: [RunDown] }), {
+        save: save.value,
+      })
     );
     expect(loaded.settled).toBe(false);
     const advance = Driver.fixedStep(loaded, { hz: 10, ticks: "whenNeeded" });
@@ -504,7 +521,7 @@ describe("a system that has more to do", () => {
       const Pushy = System.make("st/Pushy", function* () {
         (yield* Ticks).more();
       }).pipe(System.inStage(stage));
-      const app = run(App.make({ systems: [Pushy] }));
+      const app = run(App.make(App.define({ systems: [Pushy] })));
       app.tick(1, { input: false });
       const between = (): void =>
         stage === "input" ? app.input() : app.frame(0);

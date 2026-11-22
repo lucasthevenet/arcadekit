@@ -8,7 +8,7 @@
  * a message arrives for a tick that already ran, and it contains actions, the
  * session rewinds to before that tick and resimulates with what it now knows.
  *
- *   const app = yield* App.make({ plugins: [Game], seed })
+ *   const app = yield* App.make(App.define({ plugins: [Game] }), { seed })
  *   const session = Rollback.make(app, {
  *     peer: "ada",
  *     peers: ["ada", "grace"],

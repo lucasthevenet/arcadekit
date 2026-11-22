@@ -21,7 +21,8 @@ const button = document.querySelector("button")!;
 
 Browser.runMain(
   App.run(
-    { plugins: [Game], seed: Date.now() },
+    App.define({ plugins: [Game] }),
+    { seed: Date.now() },
     {
       hz: 60,
       ready: (app) =>
@@ -35,6 +36,12 @@ Browser.runMain(
 ```
 
 `App.run` creates the app and runs it until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame stage. It never completes on its own.
+
+It takes three things:
+
+- the game, from `App.define`: its plugins, systems and handlers, which are the same every time it is played;
+- how this run starts: a `seed` for a new game, or a `save` to continue one;
+- how it is driven: `hz`, and the options below.
 
 `Browser.runMain` starts it in the page. It is the platform's `runMain`, which reports failures and interrupts the program cleanly, and it provides the page's display and devices to the whole program: the loop follows `requestAnimationFrame`, and the input stage receives the keyboard, pointer and gamepads. Its options:
 
@@ -73,7 +80,7 @@ import { App, Plugin } from "arcadekit";
 
 const Game = Plugin.make("game/Game", {});
 
-NodeRuntime.runMain(App.run({ plugins: [Game] }, { hz: 60 }));
+NodeRuntime.runMain(App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }));
 ```
 
 `NodeRuntime.runMain` interrupts the game when the process is asked to stop, and the app's scope closes as it does in a page. A server, a replay or a test never imports `arcadekit/Browser`, so it installs no browser packages.
@@ -104,7 +111,11 @@ const Chess = Plugin.make("chess/Chess", {
 const board = document.querySelector("canvas")!;
 
 Browser.runMain(
-  App.run({ plugins: [Chess] }, { hz: 60, ticks: "whenNeeded" }),
+  App.run(
+    App.define({ plugins: [Chess] }),
+    {},
+    { hz: 60, ticks: "whenNeeded" }
+  ),
   { target: board }
 );
 ```
@@ -134,7 +145,7 @@ import { Effect } from "effect";
 const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game] });
+  const app = yield* App.make(App.define({ plugins: [Game] }));
   app.tick(1 / 60); // one tick, after its input stage
   app.frame(1, 1 / 60); // the frame stage: alpha, then real seconds
 

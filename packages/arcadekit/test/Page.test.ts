@@ -100,7 +100,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   const sound = Sound.makeRecorder();
   const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
-    App.make({ plugins: [Game], seed: 3 }).pipe(
+    App.make(App.define({ plugins: [Game] }), { seed: 3 }).pipe(
       Effect.provide(
         Layer.mergeAll(
           View.layer(ui),

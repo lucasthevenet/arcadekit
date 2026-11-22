@@ -239,7 +239,7 @@ describe("a page's display", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          app = yield* App.make({ systems: [Roll] });
+          app = yield* App.make(App.define({ systems: [Roll] }));
           return yield* Driver.frames(app, { hz: 60 });
         })
       ).pipe(Effect.provideService(Driver.Display, Browser.display))
@@ -612,7 +612,7 @@ describe("a page's devices", () => {
           yield* Input.Devices;
         }).pipe(System.inStage("input"));
         // The layer is let go as soon as the app is made.
-        const app = yield* App.make({ systems: [Listen] }).pipe(
+        const app = yield* App.make(App.define({ systems: [Listen] })).pipe(
           Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
         );
         expect(page.total).toBe(0);
@@ -628,7 +628,7 @@ describe("a page's devices", () => {
     const page = new Listened();
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ plugins: [Flying] });
+        const app = yield* App.make(App.define({ plugins: [Flying] }));
         const step = Driver.fixedStep(app, { hz: 10 });
         page.send("keydown", { code: "ArrowRight", repeat: false });
         step(0.1);
@@ -706,7 +706,8 @@ describe("Browser.layer", () => {
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
       App.run(
-        { plugins: [Flying] },
+        App.define({ plugins: [Flying] }),
+        {},
         {
           hz: 60,
           ready: (app) =>
@@ -815,7 +816,8 @@ describe("Browser.runMain", () => {
     let ended: Exit.Exit<unknown, unknown> | undefined;
     Browser.runMain(
       App.run(
-        { plugins: [Sound] },
+        App.define({ plugins: [Sound] }),
+        {},
         {
           hz: 60,
           ready: (app) =>
@@ -1994,7 +1996,11 @@ describe("a page's sound", () => {
     }).pipe(System.inStage("frame"));
     const start = (options: Browser.Options) =>
       Effect.runFork(
-        App.run({ plugins: [Game], systems: [Ask] }, { hz: 60 }).pipe(
+        App.run(
+          App.define({ plugins: [Game], systems: [Ask] }),
+          {},
+          { hz: 60 }
+        ).pipe(
           Effect.provide(
             Browser.layer({ gamepads: () => [], ...options }).pipe(
               Layer.provideMerge(Assets.layerMemory(sounds))

@@ -126,7 +126,7 @@ const Combat = Plugin.make("Combat", {
 
 describe("plugins", () => {
   it("bundle systems, handlers, services and setup into one value", () => {
-    withApp(App.make({ plugins: [Combat] }), (app) => {
+    withApp(App.make(App.define({ plugins: [Combat] })), (app) => {
       expect(app.plugins).toEqual(["Physics", "Combat"]);
       expect(app.systemOrder).toEqual(["Movement", "Walls", "BumpDamage"]);
       // Physics' setup spawned the ball.
@@ -161,7 +161,9 @@ describe("plugins", () => {
       seen.push((yield* Bumped).read().length);
     }).pipe(System.after(Walls));
     withApp(
-      App.make({ plugins: [Physics], systems: [Watch], handlers: [ping] }),
+      App.make(
+        App.define({ plugins: [Physics], systems: [Watch], handlers: [ping] })
+      ),
       (app) => {
         app.tick(1);
         expect(seen).toEqual([1]);
@@ -212,7 +214,7 @@ describe("plugins", () => {
     const Right = plugin("Right", [Core]);
     const Top = plugin("Top", [Left, Right]);
 
-    withApp(App.make({ plugins: [Top, Core] }), (app) => {
+    withApp(App.make(App.define({ plugins: [Top, Core] })), (app) => {
       expect(app.plugins).toEqual(["Core", "Left", "Right", "Top"]);
       expect(built).toBe(1);
       expect(order).toEqual([
@@ -260,10 +262,13 @@ describe("plugins", () => {
         `wall ${(yield* World).get(arena.wall, Position)!.x} of ${arena.width}`
       );
     });
-    withApp(App.make({ plugins: [ArenaPlugin], systems: [Look] }), (app) => {
-      app.tick(1);
-      expect(seen).toEqual(["wall 10 of 10"]);
-    });
+    withApp(
+      App.make(App.define({ plugins: [ArenaPlugin], systems: [Look] })),
+      (app) => {
+        app.tick(1);
+        expect(seen).toEqual(["wall 10 of 10"]);
+      }
+    );
   });
 
   it("leave unmet needs as ordinary Effect requirements", () => {
@@ -283,7 +288,7 @@ describe("plugins", () => {
         }).pipe(System.after(Walls)),
       ],
     });
-    const provided = App.make({ plugins: [Sfx] }).pipe(
+    const provided = App.make(App.define({ plugins: [Sfx] })).pipe(
       Effect.provideService(Audio, {
         play: (sound) => void played.push(sound),
       })
@@ -294,7 +299,7 @@ describe("plugins", () => {
     expect(() =>
       withApp(
         // @ts-expect-error nothing provides Audio
-        App.make({ plugins: [Sfx] }),
+        App.make(App.define({ plugins: [Sfx] })),
         (app) => app.tick(1)
       )
     ).toThrow(/Service not found: .*Audio/);
@@ -318,7 +323,9 @@ describe("plugins", () => {
       layer: speedFromBounds,
       systems: [ReadSpeed],
     });
-    withApp(App.make({ plugins: [Declared] }), (app) => app.tick(1));
+    withApp(App.make(App.define({ plugins: [Declared] })), (app) =>
+      app.tick(1)
+    );
     expect(limits).toEqual([20]);
 
     // Installing Physics alongside is not enough: the layer is built from
@@ -331,12 +338,12 @@ describe("plugins", () => {
     expect(() =>
       withApp(
         // @ts-expect-error Bounds is needed by Undeclared's layer and not declared
-        App.make({ plugins: [Undeclared, Physics] }),
+        App.make(App.define({ plugins: [Undeclared, Physics] })),
         (app) => app.tick(1)
       )
     ).toThrow(/Service not found: .*Bounds/);
     withApp(
-      App.make({ plugins: [Undeclared] }).pipe(
+      App.make(App.define({ plugins: [Undeclared] })).pipe(
         Effect.provideService(Bounds, {
           width: 3,
           clamp: (x) => Math.min(x, 3),
@@ -360,7 +367,7 @@ describe("plugins", () => {
         seen = (yield* World).view(Query.all(Health)).entities().length;
       }),
     });
-    withApp(App.make({ plugins: [Second] }), () => {
+    withApp(App.make(App.define({ plugins: [Second] })), () => {
       expect(seen).toBe(1);
     });
   });
@@ -378,19 +385,21 @@ describe("plugins", () => {
     });
 
     const make: Effect.Effect<unknown, NoSaveFile | BadConfig, Scope.Scope> =
-      App.make({ plugins: [Loader, Config] });
+      App.make(App.define({ plugins: [Loader, Config] }));
     expect(Effect.runSyncExit(Effect.scoped(make))).toEqual(
       Exit.fail(new BadConfig())
     );
     expect(
-      Effect.runSyncExit(Effect.scoped(App.make({ plugins: [Loader] })))
+      Effect.runSyncExit(
+        Effect.scoped(App.make(App.define({ plugins: [Loader] })))
+      )
     ).toEqual(Exit.fail(new NoSaveFile({ path: "slot1" })));
 
     const Slow = Plugin.make("Slow", {
       setup: Effect.sleep("1 second"),
     });
     const exit = Effect.runSyncExit(
-      Effect.scoped(App.make({ plugins: [Slow] }))
+      Effect.scoped(App.make(App.define({ plugins: [Slow] })))
     );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(String(exit)).toMatch(
@@ -401,7 +410,7 @@ describe("plugins", () => {
   it("take no scripts: what runs across ticks keeps its place in the world, and a system moves it", () => {
     // @ts-expect-error a plugin has no scripts
     void Plugin.make("Scripted", { scripts: [] });
-    const app = Effect.runSync(Effect.scoped(App.make({})));
+    const app = Effect.runSync(Effect.scoped(App.make(App.define({}))));
     expect("spawnScript" in app).toBe(false);
   });
 
@@ -409,20 +418,26 @@ describe("plugins", () => {
     const one = Plugin.make("Twin", {});
     const two = Plugin.make("Twin", {});
     expect(() =>
-      Effect.runSync(Effect.scoped(App.make({ plugins: [one, two] })))
+      Effect.runSync(
+        Effect.scoped(App.make(App.define({ plugins: [one, two] })))
+      )
     ).toThrow(/both named "Twin"/);
     // The same plugin listed twice is fine.
-    withApp(App.make({ plugins: [one, one] }), (app) =>
+    withApp(App.make(App.define({ plugins: [one, one] })), (app) =>
       expect(app.plugins).toEqual(["Twin"])
     );
 
     const clash = Plugin.make("Clash", { systems: [Movement] });
     expect(() =>
-      Effect.runSync(Effect.scoped(App.make({ plugins: [Physics, clash] })))
+      Effect.runSync(
+        Effect.scoped(App.make(App.define({ plugins: [Physics, clash] })))
+      )
     ).toThrow(/Duplicate system name "Movement"/);
     const healAgain = Plugin.make("HealAgain", { handlers: [heal] });
     expect(() =>
-      Effect.runSync(Effect.scoped(App.make({ plugins: [Combat, healAgain] })))
+      Effect.runSync(
+        Effect.scoped(App.make(App.define({ plugins: [Combat, healAgain] })))
+      )
     ).toThrow(/Two handlers for action "Heal"/);
   });
 });

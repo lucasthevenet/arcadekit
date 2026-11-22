@@ -140,7 +140,7 @@ describe("a game that is put back to a moment", () => {
         (yield* Ticks).more();
       }
     });
-    withApp(App.make({ systems: [Clock] }), (app) => {
+    withApp(App.make(App.define({ systems: [Clock] })), (app) => {
       app.tick(DELTA);
       expect(app.settled).toBe(false);
       const moment = captured(app);
@@ -202,7 +202,7 @@ describe("a game that is put back to a moment", () => {
     const Ring = System.make("rw/Ring", function* () {
       (yield* Rang).emit({ n: (yield* Time).tick });
     });
-    withApp(App.make({ systems: [Listen, Ring] }), (app) => {
+    withApp(App.make(App.define({ systems: [Listen, Ring] })), (app) => {
       app.tick(DELTA);
       app.tick(DELTA);
       const moment = captured(app);
@@ -231,7 +231,7 @@ describe("a game that is put back to a moment", () => {
     const Grow = System.make("rw/Grow", function* () {
       (yield* Commands).spawn(Dot.of({ x: 1 }));
     });
-    withApp(App.make({ systems: [Count, Draw, Grow] }), (app) => {
+    withApp(App.make(App.define({ systems: [Count, Draw, Grow] })), (app) => {
       for (let i = 0; i < 3; i++) {
         app.tick(DELTA);
         app.frame(0);
@@ -301,7 +301,7 @@ describe("a game that is put back to a moment", () => {
         }
       });
     });
-    withApp(App.make({ systems: [Meddle] }), (app) => {
+    withApp(App.make(App.define({ systems: [Meddle] })), (app) => {
       inside = app;
       app.tick(DELTA);
       expect(() => app.tick(DELTA)).toThrow(
@@ -316,7 +316,7 @@ describe("a game that is put back to a moment", () => {
         }
       });
     });
-    withApp(App.make({ systems: [Undo] }), (app) => {
+    withApp(App.make(App.define({ systems: [Undo] })), (app) => {
       inside = app;
       app.tick(DELTA);
       taken.push(captured(app));
@@ -330,7 +330,7 @@ describe("a game that is put back to a moment", () => {
     const Holder = Component.define("rw/Holder", {
       thing: Field.json<unknown>(),
     });
-    withApp(App.make({}), (app) => {
+    withApp(App.make(App.define({})), (app) => {
       app.commands.spawn(Holder.of({ thing: 1 }));
       expect(Timeline.capture(app)).toEqual(
         Exit.fail(
@@ -358,7 +358,7 @@ describe("a game that is put back to a moment", () => {
     const back = Action.handler(Back, function* () {
       yield* Effect.sync(() => Timeline.rewind(inside!, taken[0]!));
     });
-    withApp(App.make({ handlers: [back] }), (app) => {
+    withApp(App.make(App.define({ handlers: [back] })), (app) => {
       inside = app;
       taken.push(captured(app));
       const exit = app.dispatch(Back, {});
@@ -381,12 +381,15 @@ describe("the input stage across a rewind and a save", () => {
     const Press = System.make("rw/Press", function* () {
       (yield* Action.Actions).enqueue(Fire, {});
     }).pipe(System.inStage("input"));
-    return { fired, options: { systems: [Press], handlers: [fire] } };
+    return {
+      fired,
+      game: App.define({ systems: [Press], handlers: [fire] }),
+    };
   };
 
   it("runs again for a tick it ran for after the moment", () => {
-    const { fired, options } = pressing();
-    withApp(App.make(options), (app) => {
+    const { fired, game: Pressed } = pressing();
+    withApp(App.make(Pressed), (app) => {
       app.tick(DELTA);
       fired.length = 0;
       const moment = captured(app);
@@ -399,8 +402,8 @@ describe("the input stage across a rewind and a save", () => {
   });
 
   it("does not run again for a tick it ran for before the moment", () => {
-    const { fired, options } = pressing();
-    withApp(App.make(options), (app) => {
+    const { fired, game: Pressed } = pressing();
+    withApp(App.make(Pressed), (app) => {
       app.tick(DELTA);
       fired.length = 0;
       // The moment holds what the stage issued, and that it ran.
@@ -413,8 +416,8 @@ describe("the input stage across a rewind and a save", () => {
   });
 
   it("does not run again in a game loaded from a save taken after it ran", () => {
-    const { fired, options } = pressing();
-    const saved = withApp(App.make(options), (app) => {
+    const { fired, game: Pressed } = pressing();
+    const saved = withApp(App.make(Pressed), (app) => {
       app.tick(DELTA);
       app.input();
       const save = app.save();
@@ -424,7 +427,7 @@ describe("the input stage across a rewind and a save", () => {
       return save.value;
     });
     fired.length = 0;
-    withApp(Effect.orDie(App.load(saved, options)), (app) => {
+    withApp(Effect.orDie(App.make(Pressed, { save: saved })), (app) => {
       app.tick(DELTA);
       expect(fired).toEqual([1]);
     });
@@ -434,7 +437,7 @@ describe("the input stage across a rewind and a save", () => {
     const Idle = System.make("rw/Idle", function* () {}).pipe(
       System.inStage("input")
     );
-    withApp(App.make({ systems: [Idle] }), (app) => {
+    withApp(App.make(App.define({ systems: [Idle] })), (app) => {
       const before = app.world.hash();
       app.input();
       expect(app.world.hash()).toBe(before);
@@ -483,10 +486,9 @@ describe("what the stages between ticks hear across a rewind", () => {
     }).pipe(System.inStage("input"));
     return {
       heard,
-      make: App.make({
-        systems: [Ring, Draw, Keys],
-        handlers: [louder, chime],
-      }),
+      make: App.make(
+        App.define({ systems: [Ring, Draw, Keys], handlers: [louder, chime] })
+      ),
     };
   };
 
@@ -721,15 +723,18 @@ describe("Rollback.syncTest", () => {
     const After = System.make("vr/After", function* () {
       (yield* Commands).spawn(Mark.of({ n: 0 }));
     });
-    withApp(App.make({ systems: [Steady, Leaky, After] }), (app) => {
-      const test = Rollback.syncTest(app);
-      const error = failure(() => test.tick(DELTA));
-      expect(error).toBeInstanceOf(Rollback.RewindDiverged);
-      expect(error).toMatchObject({ tick: 1, system: "vr/Leaky" });
-      expect(String((error as Error).message)).toContain(
-        'after system "vr/Leaky" ran'
-      );
-    });
+    withApp(
+      App.make(App.define({ systems: [Steady, Leaky, After] })),
+      (app) => {
+        const test = Rollback.syncTest(app);
+        const error = failure(() => test.tick(DELTA));
+        expect(error).toBeInstanceOf(Rollback.RewindDiverged);
+        expect(error).toMatchObject({ tick: 1, system: "vr/Leaky" });
+        expect(String((error as Error).message)).toContain(
+          'after system "vr/Leaky" ran'
+        );
+      }
+    );
   });
 
   it("finds it before the first system, in a handler", () => {
@@ -739,13 +744,16 @@ describe("Rollback.syncTest", () => {
       outside++;
       (yield* Commands).spawn(Mark.of({ n: outside }));
     });
-    withApp(App.make({ systems: [Steady], handlers: [bump] }), (app) => {
-      const test = Rollback.syncTest(app);
-      test.tick(DELTA);
-      app.enqueue(Bump, {});
-      const error = failure(() => test.tick(DELTA));
-      expect(error).toMatchObject({ tick: 2, system: undefined });
-    });
+    withApp(
+      App.make(App.define({ systems: [Steady], handlers: [bump] })),
+      (app) => {
+        const test = Rollback.syncTest(app);
+        test.tick(DELTA);
+        app.enqueue(Bump, {});
+        const error = failure(() => test.tick(DELTA));
+        expect(error).toMatchObject({ tick: 2, system: undefined });
+      }
+    );
   });
 
   it("names the system that fails on one run and not the other", () => {
@@ -756,7 +764,7 @@ describe("Rollback.syncTest", () => {
         return yield* Effect.fail("the second time");
       }
     });
-    withApp(App.make({ systems: [Steady, Once] }), (app) => {
+    withApp(App.make(App.define({ systems: [Steady, Once] })), (app) => {
       const error = failure(() => Rollback.syncTest(app).tick(DELTA));
       expect(error).toMatchObject({ tick: 1, system: "vr/Once" });
     });
@@ -804,17 +812,20 @@ describe("Rollback.syncTest", () => {
     const Keys = System.make("vr/Keys", function* () {
       keys.push(...(yield* Rang).read().map((rang) => rang.n));
     }).pipe(System.inStage("input"));
-    withApp(App.make({ systems: [Steady, Ring, Draw, Keys] }), (app) => {
-      const test = Rollback.syncTest(app);
-      for (let i = 0; i < 3; i++) {
-        test.tick(DELTA);
-        test.frame(0);
+    withApp(
+      App.make(App.define({ systems: [Steady, Ring, Draw, Keys] })),
+      (app) => {
+        const test = Rollback.syncTest(app);
+        for (let i = 0; i < 3; i++) {
+          test.tick(DELTA);
+          test.frame(0);
+        }
+        expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
+        // The input stage runs before each tick: it has heard the first two.
+        expect(keys).toEqual([1, 2]);
+        expect(app.world.view(Marks).entities().length).toBe(3);
       }
-      expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
-      // The input stage runs before each tick: it has heard the first two.
-      expect(keys).toEqual([1, 2]);
-      expect(app.world.view(Marks).entities().length).toBe(3);
-    });
+    );
   });
 
   it("fails with the refusal of a game it can't capture, and takes the app over", () => {
@@ -824,7 +835,7 @@ describe("Rollback.syncTest", () => {
     const Hold = System.make("vr/Hold", function* () {
       (yield* Commands).spawn(Held.of({ thing: () => 1 }));
     });
-    withApp(App.make({ systems: [Hold] }), (app) => {
+    withApp(App.make(App.define({ systems: [Hold] })), (app) => {
       const test = Rollback.syncTest(app);
       expect(() => app.tick(DELTA)).toThrow(/taken over/u);
       test.tick(DELTA);

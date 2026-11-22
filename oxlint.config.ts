@@ -289,6 +289,8 @@ export default defineConfig({
       // typescript/consistent-type-assertions.
       files: [
         "packages/arcadekit/src/App.ts",
+        // Where an app is put together, which was in App.ts.
+        "packages/arcadekit/src/Build.ts",
         "packages/arcadekit/src/Plugin.ts",
         // The turns of those systems, which were in App.ts.
         "packages/arcadekit/src/Schedule.ts",

@@ -13,7 +13,7 @@
  *     handlers: [strike]
  *   })
  *
- *   const app = yield* App.make({ plugins: [Combat, Audio] })
+ *   const app = yield* App.make(App.define({ plugins: [Combat, Audio] }))
  *
  * A plugin that several others depend on is installed once: its systems are
  * registered once and its layer is built once.

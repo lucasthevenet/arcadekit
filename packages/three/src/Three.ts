@@ -19,7 +19,7 @@
  *   })
  *
  *   Browser.runMain(
- *     App.run({ plugins: [Rules, Look] }, { hz: 60 }).pipe(
+ *     App.run(App.define({ plugins: [Rules, Look] }), {}, { hz: 60 }).pipe(
  *       Effect.provide(Three.layerWebGL({ canvas }))
  *     )
  *   )

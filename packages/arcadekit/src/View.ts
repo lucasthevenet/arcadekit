@@ -22,7 +22,7 @@
  *   button.onclick = () => ui.send(NewGame, {})
  *
  *   Browser.runMain(
- *     App.run({ plugins: [Game] }, { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
+ *     App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
  *   )
  *
  * A view is a value the game exposes to the UI. It is published from the frame
@@ -166,7 +166,7 @@ interface Slot {
  *   const ui = View.makeBridge()
  *   mountMenu(document.body, ui)
  *   Browser.runMain(
- *     App.run({ plugins: [Game] }, { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
+ *     App.run(App.define({ plugins: [Game] }), {}, { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
  *   )
  *
  * It holds the views' values, their listeners and the actions waiting to be
