@@ -67,6 +67,11 @@
       "types": "./dist/Field.d.ts",
       "default": "./dist/Field.js"
     },
+    "./Inbox": {
+      "source": "./src/Inbox.ts",
+      "types": "./dist/Inbox.d.ts",
+      "default": "./dist/Inbox.js"
+    },
     "./Input": {
       "source": "./src/Input.ts",
       "types": "./dist/Input.d.ts",

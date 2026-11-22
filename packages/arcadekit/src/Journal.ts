@@ -22,10 +22,6 @@ import type * as App from "./App";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 
-/** Summarizes an error in a few words, for a log entry or a message. */
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
-
 const NO_INPUT = { input: false } as const;
 
 /**
@@ -382,7 +378,7 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
     if (reason instanceof HashMismatch) {
       return `The replay diverged from its log (entry ${this.index}): ${reason.message}`;
     }
-    const text = describe(reason);
+    const text = Action.said(reason);
     const what = Action.isCheckpoint(entry)
       ? `a checkpoint at tick ${entry.tick}`
       : `"${entry.name}" at tick ${entry.tick}`;
