@@ -23,8 +23,10 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import { SnapshotError, readSnapshot, writeSnapshot } from "./ecs/snapshot";
-import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
+import { readSingleton, readSnapshot, writeSnapshot } from "./ecs/contents";
+import type { SnapshotContents } from "./ecs/contents";
+import { SnapshotError } from "./ecs/snapshot";
+import type { SnapshotProblem } from "./ecs/snapshot";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 
@@ -291,6 +293,18 @@ const describeCause = (cause: Cause.Cause<unknown>): string => {
   const error = Cause.squash(cause);
   return error instanceof Error ? error.message : String(error);
 };
+
+/**
+ * The first value a save's world holds of a singleton's field, or undefined
+ * when it holds none. It reads none of the save's entities.
+ *
+ * @internal
+ */
+export const singleton = (
+  save: Save,
+  component: string,
+  field: string
+): unknown => readSingleton(save.world, component)?.columns[field]?.[0];
 
 /**
  * The name of the store that holds what an app's change queries have yet to
