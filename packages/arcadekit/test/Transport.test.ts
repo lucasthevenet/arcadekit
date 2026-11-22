@@ -5,23 +5,22 @@ import {
   App,
   Driver,
   Journal,
-  Lockstep,
-  Rollback,
+  Netcode,
+  Session,
   Transport,
 } from "../src/index";
 import {
   CoinGame,
   DELTA,
   Drop,
-  game,
   moves,
   players,
   setGlitch,
   withApp,
 } from "./peers";
-import type { Game, Peer } from "./peers";
+import type { Peer, SteeredGame } from "./peers";
 
-const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
+const message = (from: string, tick: number, value = 0): Netcode.Message => ({
   from,
   tick,
   actions:
@@ -30,8 +29,8 @@ const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
 
 interface Seat {
   readonly name: string;
-  readonly app: Game;
-  readonly session: Rollback.Session;
+  readonly app: SteeredGame;
+  readonly session: Peer["session"];
   readonly connected: Transport.Connected;
 }
 
@@ -44,12 +43,14 @@ const seated = (
   Effect.gen(function* () {
     const seats: Seat[] = [];
     for (const name of names) {
-      const app = yield* game();
-      const options = { peer: name, peers: names, delta: DELTA };
-      const session =
-        ahead === undefined
-          ? (Lockstep.make(app, options) as Rollback.Session)
-          : Rollback.make(app, { ...options, ahead });
+      const session = yield* Session.make(CoinGame, {
+        seed: 5,
+        checkpointEvery: 1,
+        peer: name,
+        peers: names,
+        delta: DELTA,
+        ahead: ahead ?? 0,
+      });
       // Each peer is a program of its own, with a transport that lasts as
       // long as it does: here they share a scope, so each one's layer is
       // built into it.
@@ -57,7 +58,7 @@ const seated = (
       const connected = yield* Transport.connect(session).pipe(
         Effect.provide(transport)
       );
-      seats.push({ name, app, session, connected });
+      seats.push({ name, app: session.app, session, connected });
     }
     return seats;
   });
@@ -270,10 +271,10 @@ describe("a session joined to a transport", () => {
               }
             }
             // Both, and with the same report.
-            expect(stopped.get("ada")).toBeInstanceOf(Lockstep.Drifted);
-            expect(stopped.get("grace")).toBeInstanceOf(Lockstep.Drifted);
-            expect((stopped.get("ada") as Lockstep.Drifted).hashes).toEqual(
-              (stopped.get("grace") as Lockstep.Drifted).hashes
+            expect(stopped.get("ada")).toBeInstanceOf(Netcode.Drifted);
+            expect(stopped.get("grace")).toBeInstanceOf(Netcode.Drifted);
+            expect((stopped.get("ada") as Netcode.Drifted).hashes).toEqual(
+              (stopped.get("grace") as Netcode.Drifted).hashes
             );
             setGlitch(undefined);
           })
@@ -287,47 +288,55 @@ describe("a session joined to a transport", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* game();
+          const session = yield* Session.make(CoinGame, {
+            seed: 5,
+            checkpointEvery: 1,
+            peer: "ada",
+            peers: ["ada"],
+            delta: DELTA,
+            ahead: 0,
+          });
           let drawn = 0;
           const connected = yield* Transport.connect({
-            ...Lockstep.make(app, {
-              peer: "ada",
-              peers: ["ada"],
-              delta: DELTA,
-            }),
+            ...session,
             frame: () => {
               drawn++;
             },
           }).pipe(Effect.provide(hub.layer("ada")));
           Driver.fixedStep(connected, { hz: 30 })(DELTA);
           expect(drawn).toBe(1);
-          expect(app.time.tick).toBe(1);
+          expect(session.app.time.tick).toBe(1);
         })
       )
     );
   });
 
   it("does not compile without a transport", () => {
-    withApp(game(), (app) => {
-      const session = Lockstep.make(app, {
+    withApp(
+      Session.make(CoinGame, {
+        seed: 5,
+        checkpointEvery: 1,
         peer: "ada",
         peers: ["ada"],
         delta: DELTA,
-      });
-      expect(() =>
-        Effect.runSync(
-          // @ts-expect-error A game of several peers is given a transport.
-          Transport.connect(session)
-        )
-      ).toThrow(/Transport/u);
-      const hub = Transport.makeHub();
-      const made = Effect.runSync(
-        Transport.connect(session).pipe(
-          Effect.provide(Transport.layer(hub.port("ada")))
-        )
-      );
-      expect(made.tick()).toBe(true);
-    });
+        ahead: 0,
+      }),
+      (session) => {
+        expect(() =>
+          Effect.runSync(
+            // @ts-expect-error A game of several peers is given a transport.
+            Transport.connect(session)
+          )
+        ).toThrow(/Transport/u);
+        const hub = Transport.makeHub();
+        const made = Effect.runSync(
+          Transport.connect(session).pipe(
+            Effect.provide(Transport.layer(hub.port("ada")))
+          )
+        );
+        expect(made.tick()).toBe(true);
+      }
+    );
   });
 });
 
@@ -349,11 +358,11 @@ describe("a transport over text", () => {
       },
     });
     transport.send(message("ada", 3, 2));
-    expect(sent).toEqual([Lockstep.encode(message("ada", 3, 2))]);
-    deliver(Lockstep.encode(message("grace", 0)));
+    expect(sent).toEqual([Netcode.encode(message("ada", 3, 2))]);
+    deliver(Netcode.encode(message("grace", 0)));
     deliver("not a message");
     deliver(JSON.stringify({ from: "grace", tick: -1, actions: [] }));
-    deliver(Lockstep.encode(message("grace", 1, 5)));
+    deliver(Netcode.encode(message("grace", 1, 5)));
     // What is not a message is dropped, and counted.
     expect(transport.receive()).toEqual([
       message("grace", 0),
@@ -406,8 +415,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     );
     // As text, as any wire would carry it.
     expect(heard).toEqual([
-      Lockstep.encode(message("ada", 0, 7)),
-      Lockstep.encode(message("grace", 0)),
+      Netcode.encode(message("ada", 0, 7)),
+      Netcode.encode(message("grace", 0)),
     ]);
     stranger.close();
   });
@@ -458,7 +467,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             expect(made[0]!.closed).toBe(false);
             transport.send(message("ada", 0));
             expect(made[0]!.posted).toEqual([
-              Lockstep.encode(message("ada", 0)),
+              Netcode.encode(message("ada", 0)),
             ]);
           })
         )
@@ -479,7 +488,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         Effect.provide(Transport.layerBroadcastChannel(name))
       )
     );
-    outside.postMessage(Lockstep.encode(message("grace", 0)));
+    outside.postMessage(Netcode.encode(message("grace", 0)));
     await later(20);
     // It says so, in place of a game that waits for ever.
     expect(() => kept.receive()).toThrow(

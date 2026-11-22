@@ -147,7 +147,7 @@ export const ShowHudWhilePlaying = ShowHud.pipe(
 
 ## With rollback
 
-In a multiplayer game played with [rollback](lockstep-and-rollback.md), a tick can run again. The frame stage hears its events once, but what it showed of the prediction was shown: the UI can be shown a score that is then rolled back. A view that must only show final results checks the session's `session.confirmed`.
+In a multiplayer game played with [rollback](sessions.md), a tick can run again. The frame stage hears its events once, but what it showed of the prediction was shown: the UI can be shown a score that is then rolled back. A view that must only show final results checks the session's `session.confirmed`.
 
 ## Read more
 

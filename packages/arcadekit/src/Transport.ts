@@ -7,7 +7,7 @@
  *
  *   const program = Effect.gen(function* () {
  *     const app = yield* App.make(App.define({ plugins: [Game] }), { seed })
- *     const session = Rollback.make(app, { peer, peers, delta: 1 / 60 })
+ *     const session = yield* Session.make(Duel, { seed, peer, peers, delta: 1 / 60 })
  *     return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
  *   }).pipe(
  *     Effect.scoped,
@@ -29,7 +29,7 @@ import { Context, Data, Effect, Exit, Layer } from "effect";
 
 import type { Tickable } from "./Driver";
 import { Rng } from "./ecs/random";
-import * as Lockstep from "./Lockstep";
+import * as Netcode from "./Netcode";
 
 /**
  * The operations of a transport. Both are plain calls: nothing here waits, so a
@@ -41,12 +41,12 @@ import * as Lockstep from "./Lockstep";
  */
 export interface Shape {
   /** Sends a message to every other peer. */
-  readonly send: (message: Lockstep.Message) => void;
+  readonly send: (message: Netcode.Message) => void;
   /**
    * Returns the messages that have arrived since the last call, in arrival
    * order, and removes them: the next call returns only newer ones.
    */
-  readonly receive: () => readonly Lockstep.Message[];
+  readonly receive: () => readonly Netcode.Message[];
 }
 
 /**
@@ -92,7 +92,7 @@ export interface Connected extends Tickable {
  */
 export const connect: (
   session: Pick<
-    Lockstep.Session<unknown>,
+    Netcode.Peer<unknown>,
     "frame" | "outgoing" | "receive" | "tick"
   >
 ) => Effect.Effect<Connected, never, Transport> = Effect.fnUntraced(
@@ -149,8 +149,8 @@ export interface TextTransport extends Shape {
 
 /**
  * Makes a transport over anything that carries text. Messages are sent in the
- * format `Lockstep.encode` writes, and arriving text is read with
- * `Lockstep.decode`: text that isn't a message is dropped and counted.
+ * format `Netcode.encode` writes, and arriving text is read with
+ * `Netcode.decode`: text that isn't a message is dropped and counted.
  *
  * The wire must deliver every message, in any order. A WebSocket does; a data
  * channel must be configured to.
@@ -161,10 +161,10 @@ export interface TextTransport extends Shape {
  * @category Constructors
  */
 export const text = (wire: Wire): TextTransport => {
-  let inbox: Lockstep.Message[] = [];
+  let inbox: Netcode.Message[] = [];
   let dropped = 0;
   const close = wire.listen((arrived) => {
-    const message = Lockstep.decode(arrived);
+    const message = Netcode.decode(arrived);
     if (Exit.isSuccess(message)) {
       inbox.push(message.value);
     } else {
@@ -173,7 +173,7 @@ export const text = (wire: Wire): TextTransport => {
   });
   return {
     send(message) {
-      wire.send(Lockstep.encode(message));
+      wire.send(Netcode.encode(message));
     },
     receive() {
       const messages = inbox;
@@ -454,7 +454,7 @@ export const makeHub = (options: HubOptions = {}): Hub => {
       flights.set(peer, mine);
       made = {
         send(message) {
-          const encoded = Lockstep.encode(message);
+          const encoded = Netcode.encode(message);
           for (const [other, theirs] of flights) {
             if (other !== peer) {
               theirs.push({
@@ -475,9 +475,9 @@ export const makeHub = (options: HubOptions = {}): Hub => {
           const left = mine.filter((flight) => flight.at > now);
           mine.length = 0;
           mine.push(...left);
-          const messages: Lockstep.Message[] = [];
+          const messages: Netcode.Message[] = [];
           for (const flight of due) {
-            const message = Lockstep.decode(flight.text);
+            const message = Netcode.decode(flight.text);
             if (Exit.isSuccess(message)) {
               messages.push(message.value);
             }

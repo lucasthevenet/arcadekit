@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   Action,
   App,
+  Build,
   Commands,
   Component,
   EcsWorld,
@@ -11,8 +12,8 @@ import {
   Field,
   Journal,
   Query,
-  Rollback,
   Save,
+  Session,
   System,
   Ticks,
   Time,
@@ -22,6 +23,7 @@ import {
 import type { Entity } from "../src/index";
 import {
   Coin,
+  CoinGame,
   DELTA,
   Drop,
   Take,
@@ -31,7 +33,7 @@ import {
   steered,
   withApp,
 } from "./peers";
-import type { Game } from "./peers";
+import type { Game, SteeredGame } from "./peers";
 
 /** A stretch of a game, played by a seed: the same moves for the same seed. */
 const stretch = (app: Game, seed: number, ticks: number): number[] => {
@@ -484,19 +486,19 @@ describe("what the stages between ticks hear across a rewind", () => {
     const Keys = System.make("rw/Keys", function* () {
       heard.input.push(...(yield* to).read().map((rang) => rang.n));
     }).pipe(System.inStage("input"));
-    return {
-      heard,
-      make: App.make(
-        App.define({ systems: [Ring, Draw, Keys], handlers: [louder, chime] })
-      ),
-    };
+    const game = App.define({
+      systems: [Ring, Draw, Keys],
+      handlers: [louder, chime],
+    });
+    return { heard, game, make: App.make(game) };
   };
 
   describe("to run the same ticks again, as a session does", () => {
     it("hear each event once, and what the ticks run again do otherwise", () => {
-      const { heard, make } = listening();
-      withApp(make, (app) => {
-        const session = steered(app);
+      const { heard, game: Ringing } = listening();
+      withApp(Build.build(Ringing, {}), (built) => {
+        const session = steered(built);
+        const { app } = session;
         session.tick(DELTA);
         app.frame(0);
         const back = session.capture();
@@ -523,9 +525,10 @@ describe("what the stages between ticks hear across a rewind", () => {
     });
 
     it("hear once what they heard of ticks whose events were dropped since", () => {
-      const { heard, make } = listening();
-      withApp(make, (app) => {
-        const session = steered(app);
+      const { heard, game: Ringing } = listening();
+      withApp(Build.build(Ringing, {}), (built) => {
+        const session = steered(built);
+        const { app } = session;
         session.tick(DELTA);
         app.frame(0);
         const back = session.capture();
@@ -546,9 +549,10 @@ describe("what the stages between ticks hear across a rewind", () => {
     });
 
     it("hear again none of what they heard before a moment was taken", () => {
-      const { heard, make } = listening();
-      withApp(make, (app) => {
-        const session = steered(app);
+      const { heard, game: Ringing } = listening();
+      withApp(Build.build(Ringing, {}), (built) => {
+        const session = steered(built);
+        const { app } = session;
         // Taken before anything between ticks has run.
         const back = session.capture();
         session.tick(DELTA);
@@ -568,9 +572,10 @@ describe("what the stages between ticks hear across a rewind", () => {
     });
 
     it("hear the events of ticks they never heard, after a rewind further back", () => {
-      const { heard, make } = listening();
-      withApp(make, (app) => {
-        const session = steered(app);
+      const { heard, game: Ringing } = listening();
+      withApp(Build.build(Ringing, {}), (built) => {
+        const session = steered(built);
+        const { app } = session;
         session.tick(DELTA);
         app.frame(0);
         const back = session.capture();
@@ -586,9 +591,10 @@ describe("what the stages between ticks hear across a rewind", () => {
     });
 
     it("hear an event a later tick now emits, though an earlier one emitted the same", () => {
-      const { heard, make } = listening(Chimed);
-      withApp(make, (app) => {
-        const session = steered(app);
+      const { heard, game: Chiming } = listening(Chimed);
+      withApp(Build.build(Chiming, {}), (built) => {
+        const session = steered(built);
+        const { app } = session;
         session.tick(DELTA);
         const back = session.capture();
         // As predicted: the chime on the second tick.
@@ -608,9 +614,10 @@ describe("what the stages between ticks hear across a rewind", () => {
     });
 
     it("hear an event an earlier tick now emits, though a later one emitted the same", () => {
-      const { heard, make } = listening(Chimed);
-      withApp(make, (app) => {
-        const session = steered(app);
+      const { heard, game: Chiming } = listening(Chimed);
+      withApp(Build.build(Chiming, {}), (built) => {
+        const session = steered(built);
+        const { app } = session;
         session.tick(DELTA);
         const back = session.capture();
         // As predicted: the chime on the third tick.
@@ -632,9 +639,10 @@ describe("what the stages between ticks hear across a rewind", () => {
     it("leave the game as one that never went back", () => {
       const one = listening();
       const other = listening();
-      withApp(one.make, (back) =>
+      withApp(Build.build(one.game, {}), (built) =>
         withApp(other.make, (straight) => {
-          const session = steered(back);
+          const session = steered(built);
+          const back = session.app;
           session.tick(DELTA);
           back.frame(0);
           const at = session.capture();
@@ -699,7 +707,7 @@ describe("what the stages between ticks hear across a rewind", () => {
   });
 });
 
-describe("Rollback.syncTest", () => {
+describe("Session.syncTest", () => {
   const Mark = Component.define("vr/Mark", { n: Field.i32 });
   const Marks = Query.all(Mark);
   const Steady = System.make("vr/Steady", function* () {
@@ -724,11 +732,10 @@ describe("Rollback.syncTest", () => {
       (yield* Commands).spawn(Mark.of({ n: 0 }));
     });
     withApp(
-      App.make(App.define({ systems: [Steady, Leaky, After] })),
-      (app) => {
-        const test = Rollback.syncTest(app);
+      Session.syncTest(App.define({ systems: [Steady, Leaky, After] })),
+      (test) => {
         const error = failure(() => test.tick(DELTA));
-        expect(error).toBeInstanceOf(Rollback.RewindDiverged);
+        expect(error).toBeInstanceOf(Session.RewindDiverged);
         expect(error).toMatchObject({ tick: 1, system: "vr/Leaky" });
         expect(String((error as Error).message)).toContain(
           'after system "vr/Leaky" ran'
@@ -745,11 +752,10 @@ describe("Rollback.syncTest", () => {
       (yield* Commands).spawn(Mark.of({ n: outside }));
     });
     withApp(
-      App.make(App.define({ systems: [Steady], handlers: [bump] })),
-      (app) => {
-        const test = Rollback.syncTest(app);
+      Session.syncTest(App.define({ systems: [Steady], handlers: [bump] })),
+      (test) => {
         test.tick(DELTA);
-        app.enqueue(Bump, {});
+        test.app.enqueue(Bump, {});
         const error = failure(() => test.tick(DELTA));
         expect(error).toMatchObject({ tick: 2, system: undefined });
       }
@@ -764,33 +770,46 @@ describe("Rollback.syncTest", () => {
         return yield* Effect.fail("the second time");
       }
     });
-    withApp(App.make(App.define({ systems: [Steady, Once] })), (app) => {
-      const error = failure(() => Rollback.syncTest(app).tick(DELTA));
-      expect(error).toMatchObject({ tick: 1, system: "vr/Once" });
-    });
+    withApp(
+      Session.syncTest(App.define({ systems: [Steady, Once] })),
+      (test) => {
+        const error = failure(() => test.tick(DELTA));
+        expect(error).toMatchObject({ tick: 1, system: "vr/Once" });
+      }
+    );
   });
 
   it("leaves a game that keeps everything in the world as it would be", () => {
-    const played = (checked: boolean) =>
-      withApp(game(5, 1), (app) => {
-        const test = checked
-          ? Rollback.syncTest(app)
-          : { tick: (delta: number) => app.tick(delta), checked: 0 };
-        const dice = new EcsWorld({ seed: 11 }).random;
-        const hashes: number[] = [];
-        for (let i = 0; i < 40; i++) {
-          if (dice.int(1, 3) === 1) {
-            app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
-          }
-          test.tick(DELTA);
-          hashes.push(app.world.hash());
+    const stepped = (test: {
+      readonly app: SteeredGame;
+      readonly tick: (delta: number) => void;
+      readonly checked: number;
+    }) => {
+      const { app } = test;
+      const dice = new EcsWorld({ seed: 11 }).random;
+      const hashes: number[] = [];
+      for (let i = 0; i < 40; i++) {
+        if (dice.int(1, 3) === 1) {
+          app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
         }
-        return {
-          hashes,
-          recording: Journal.encode(app.record()),
-          checked: test.checked,
-        };
-      });
+        test.tick(DELTA);
+        hashes.push(app.world.hash());
+      }
+      return {
+        hashes,
+        recording: Journal.encode(app.record()),
+        checked: test.checked,
+      };
+    };
+    const played = (checked: boolean) =>
+      checked
+        ? withApp(
+            Session.syncTest(CoinGame, { seed: 5, checkpointEvery: 1 }),
+            stepped
+          )
+        : withApp(game(5, 1), (app) =>
+            stepped({ app, tick: (delta) => app.tick(delta), checked: 0 })
+          );
     const checked = played(true);
     const plain = played(false);
     expect(checked.checked).toBe(40);
@@ -813,9 +832,8 @@ describe("Rollback.syncTest", () => {
       keys.push(...(yield* Rang).read().map((rang) => rang.n));
     }).pipe(System.inStage("input"));
     withApp(
-      App.make(App.define({ systems: [Steady, Ring, Draw, Keys] })),
-      (app) => {
-        const test = Rollback.syncTest(app);
+      Session.syncTest(App.define({ systems: [Steady, Ring, Draw, Keys] })),
+      (test) => {
         for (let i = 0; i < 3; i++) {
           test.tick(DELTA);
           test.frame(0);
@@ -823,7 +841,7 @@ describe("Rollback.syncTest", () => {
         expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
         // The input stage runs before each tick: it has heard the first two.
         expect(keys).toEqual([1, 2]);
-        expect(app.world.view(Marks).entities().length).toBe(3);
+        expect(test.app.world.view(Marks).entities().length).toBe(3);
       }
     );
   });
@@ -835,16 +853,18 @@ describe("Rollback.syncTest", () => {
     const Hold = System.make("vr/Hold", function* () {
       (yield* Commands).spawn(Held.of({ thing: () => 1 }));
     });
-    withApp(App.make(App.define({ systems: [Hold] })), (app) => {
-      const test = Rollback.syncTest(app);
-      expect(() => app.tick(DELTA)).toThrow(/taken over/u);
+    withApp(Session.syncTest(App.define({ systems: [Hold] })), (test) => {
+      expect(() =>
+        // @ts-expect-error the app of a sync test has no tick: the test steps it
+        test.app.tick(DELTA)
+      ).toThrow(/taken over/u);
       test.tick(DELTA);
       const exit = test.tickExit(DELTA);
       expect(Exit.isFailure(exit)).toBe(true);
       expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
         /vr\/Held/u
       );
-      expect(app.time.tick).toBe(1);
+      expect(test.app.time.tick).toBe(1);
     });
   });
 });

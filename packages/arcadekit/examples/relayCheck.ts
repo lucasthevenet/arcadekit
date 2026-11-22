@@ -16,9 +16,9 @@ import {
   Action,
   App,
   Field,
-  Lockstep,
+  Netcode,
   Relay,
-  Rollback,
+  Session,
   Singleton,
   Transport,
 } from "../src/index";
@@ -80,10 +80,8 @@ const check = Effect.gen(function* () {
   // --- two peers play a game through it ------------------------------------
   const seats = [];
   for (const peer of ["ada", "grace"]) {
-    const app = yield* App.make(App.define({ handlers: [tip] }), {
+    const session = yield* Session.make(App.define({ handlers: [tip] }), {
       checkpointEvery: 1,
-    });
-    const session = Rollback.make(app, {
       peer,
       peers: ["ada", "grace"],
       delta: 1 / 30,
@@ -94,7 +92,7 @@ const check = Effect.gen(function* () {
     const connected = yield* Transport.connect(session).pipe(
       Effect.provide(transport)
     );
-    seats.push({ peer, app, session, connected });
+    seats.push({ peer, app: session.app, session, connected });
   }
   const [ada, grace] = seats as [(typeof seats)[0], (typeof seats)[0]];
   for (let round = 0; round < 60; round++) {
@@ -154,7 +152,7 @@ const check = Effect.gen(function* () {
   const honest = yield* open("grace", other);
   const liar = yield* open("ada", other);
   yield* wait(300);
-  const forged: Lockstep.Message = { from: "grace", tick: 0, actions: [] };
+  const forged: Netcode.Message = { from: "grace", tick: 0, actions: [] };
   liar.send(forged);
   const refused = yield* closed(liar);
   yield* wait(100);

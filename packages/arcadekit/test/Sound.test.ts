@@ -5,6 +5,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   Action,
   App,
+  Build,
   Commands,
   Component,
   Driver,
@@ -122,8 +123,13 @@ const about = (app: App.Any, speed: number): void => {
 describe("Sound.cues", () => {
   it("plays a cue once when a rewind runs its tick again, and what the tick now does", () => {
     const sound = Sound.makeRecorder();
-    const app = play(sound);
-    const session = steered(app);
+    const built = run(
+      Build.build(Noisy, { seed: 1, checkpointEvery: 1 }).pipe(
+        Effect.provide(Sound.layer(sound))
+      )
+    );
+    const session = steered(built);
+    const { app } = session;
     session.tick(0.1);
     app.frame(0);
     const moment = session.capture();

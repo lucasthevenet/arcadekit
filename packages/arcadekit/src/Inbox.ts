@@ -88,9 +88,9 @@ const refusal = (error: unknown): { _tag: string; message: string } => {
  */
 export class Inbox {
   /**
-   * Who has taken over what comes from outside, if anyone has: a session,
-   * with `app.divert`. It is handed each action issued from outside, by name
-   * and in its JSON form, in place of the queue.
+   * Who has taken over what comes from outside, if anyone has: a session.
+   * It is handed each action issued from outside, by name and in its JSON
+   * form, in place of the queue.
    */
   diverted: ((name: string, payload: unknown) => void) | undefined;
   private readonly parts: Parts;

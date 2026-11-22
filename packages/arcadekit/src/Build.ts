@@ -39,16 +39,73 @@ import { TickDispatcher, TickScheduler } from "./TickScheduler";
 const NO_INPUT: TickOptions = { input: false };
 
 /**
- * Makes the app of a game, from a seed or from a save.
+ * What the code that took over an app holds: the two operations the app no
+ * longer performs for anyone else.
+ *
+ * @category Models
+ */
+export interface Reins<E = never> {
+  /**
+   * Queues an action for the next tick and logs it, as `enqueueByName` did: by
+   * name, with its payload in JSON form, and with its issuer.
+   */
+  readonly deliver: (name: string, payload: unknown, from?: string) => void;
+  /**
+   * Runs one tick, as `tickExit` did. It reads no device. `observe` is told
+   * when the tick's systems are about to run, with no name, and after each
+   * system has run and its commands are applied, with the system's name.
+   */
+  readonly tickExit: (
+    delta: number,
+    observe?: (system: string | undefined) => void
+  ) => Exit.Exit<void, E>;
+}
+
+/**
+ * An app as it is put together, with the way to take it over: what
+ * `App.make` returns the app of, and what a session takes over.
+ *
+ * @category Models
+ */
+export interface Built<E = never, HU = never> {
+  readonly app: App<E, HU>;
+  /**
+   * Takes over the app, for code that decides on which tick an action is
+   * applied and when a tick runs: a session, where every peer must apply the
+   * same actions on the same ticks.
+   *
+   * From then on, an action enqueued from outside isn't queued for the next
+   * tick. It is passed to `issued`, by name and with its payload in JSON
+   * form: any action given to `enqueue` or `enqueueByName`, and any issued
+   * with `Actions.enqueue` in the input or frame stage, so key bindings and
+   * UI buttons are covered too. What the simulation issues itself isn't
+   * passed on, since every peer's simulation issues it.
+   *
+   * The reins are the only remaining way to queue an action and to run a
+   * tick. The app's `tick`, `tickExit`, `dispatch` and `dispatchByName` throw
+   * from then on, since each would advance this machine's game and no one
+   * else's. An app is taken over once.
+   */
+  readonly take: (issued: (name: string, payload: unknown) => void) => Reins<E>;
+}
+
+/**
+ * Makes the app of a game, from a seed or from a save. It fails with
+ * `LoadRefused` only when it is given a save.
  *
  * @category Constructors
  */
-export const build = <S extends Systems, H extends Handlers, P extends Plugins>(
+export const build = <
+  S extends Systems,
+  H extends Handlers,
+  P extends Plugins,
+  SV extends Save.Save | undefined = undefined,
+>(
   game: Game<S, H, P>,
-  start: StartOptions<Save.Save | undefined>
+  start: StartOptions<SV>
 ): Effect.Effect<
-  App<TickError<S, P>, AllHandlers<H, P>>,
-  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+  Built<TickError<S, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
   Scope.Scope | External<S, H, P>
 > =>
   Effect.gen(function* () {
@@ -285,21 +342,21 @@ export const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       enqueueByName: (name, payload, from) => {
         inbox.enqueueByName(name, payload, from);
       },
-      divert(take) {
-        if (inbox.diverted !== undefined) {
-          throw new Error(
-            "divert() was called on an app that has been taken over already. An app is in one session at a time."
-          );
-        }
-        inbox.diverted = take;
-        return {
-          deliver: (name, payload, from) => {
-            inbox.deliver(name, payload, from);
-          },
-          tickExit: (delta, observe) =>
-            loop.tick(delta, NO_INPUT, observe) as Ran,
-        };
-      },
+    };
+    const take: Built<TickError<S, P>>["take"] = (issued) => {
+      if (inbox.diverted !== undefined) {
+        throw new Error(
+          "An app was taken over that has been taken over already. An app is in one session at a time."
+        );
+      }
+      inbox.diverted = issued;
+      return {
+        deliver: (name, payload, from) => {
+          inbox.deliver(name, payload, from);
+        },
+        tickExit: (delta, observe) =>
+          loop.tick(delta, NO_INPUT, observe) as Ran,
+      };
     };
 
     // Each plugin's setup runs once, in the same order, with everything in
@@ -315,9 +372,10 @@ export const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     commands.apply();
     // What the setups emitted is of the tick to come.
     events.told(time.tick + 1);
-    return app;
+    return { app, take };
   }) as Effect.Effect<
-    App<TickError<S, P>, AllHandlers<H, P>>,
-    Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+    Built<TickError<S, P>, AllHandlers<H, P>>,
+    | Plugin.ErrorOf<P[number]>
+    | (SV extends Save.Save ? Save.LoadRefused : never),
     Scope.Scope | External<S, H, P>
   >;

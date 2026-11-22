@@ -2,17 +2,17 @@ import { Cause, Context, Effect, Exit, Layer, Result } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
-import { Lockstep, Relay, Rollback, Transport } from "../src/index";
-import { DELTA, game, moves, players, purseOf } from "./peers";
-import type { Game, Peer } from "./peers";
+import { Netcode, Relay, Session, Transport } from "../src/index";
+import { CoinGame, DELTA, moves, players, purseOf } from "./peers";
+import type { Peer, SteeredGame } from "./peers";
 
-const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
+const message = (from: string, tick: number, value = 0): Netcode.Message => ({
   from,
   tick,
   actions: value === 0 ? [] : [{ name: "ls/Tip", payload: { amount: value } }],
 });
 const text = (from: string, tick: number, value = 0): string =>
-  Lockstep.encode(message(from, tick, value));
+  Netcode.encode(message(from, tick, value));
 
 const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   if (Exit.isSuccess(exit)) {
@@ -397,7 +397,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           one.send(message("ada", 0, 3));
           one.send(message("ada", 1));
           two.send(message("grace", 0));
-          const heard: Record<string, Lockstep.Message[]> = {
+          const heard: Record<string, Netcode.Message[]> = {
             ada: [],
             grace: [],
             linus: [],
@@ -431,13 +431,14 @@ describe("the transport between machines, a WebSocket to a relay", () => {
         Effect.gen(function* () {
           const seats: {
             name: string;
-            app: Game;
-            session: Rollback.Session;
+            app: SteeredGame;
+            session: Peer["session"];
             connected: Transport.Connected;
           }[] = [];
           for (const name of ["ada", "grace"]) {
-            const app = yield* game();
-            const session = Rollback.make(app, {
+            const session = yield* Session.make(CoinGame, {
+              seed: 5,
+              checkpointEvery: 1,
               peer: name,
               peers: ["ada", "grace"],
               delta: DELTA,
@@ -450,7 +451,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             const connected = yield* Transport.connect(session).pipe(
               Effect.provide(transport)
             );
-            seats.push({ name, app, session, connected });
+            seats.push({ name, app: session.app, session, connected });
           }
           const act = players(31);
           const [one, two] = seats as [(typeof seats)[0], (typeof seats)[0]];

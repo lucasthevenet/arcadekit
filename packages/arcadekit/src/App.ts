@@ -375,29 +375,6 @@ export interface TickOptions {
 }
 
 /**
- * What `divert` returns to the code that took over an app: the two operations
- * the app no longer performs for anyone else.
- *
- * @category Models
- */
-export interface Diverted<E = never> {
-  /**
-   * Queues an action for the next tick and logs it, as `enqueueByName` did: by
-   * name, with its payload in JSON form, and with its issuer.
-   */
-  readonly deliver: (name: string, payload: unknown, from?: string) => void;
-  /**
-   * Runs one tick, as `tickExit` did. It reads no device. `observe` is told
-   * when the tick's systems are about to run, with no name, and after each
-   * system has run and its commands are applied, with the system's name.
-   */
-  readonly tickExit: (
-    delta: number,
-    observe?: (system: string | undefined) => void
-  ) => Exit.Exit<void, E>;
-}
-
-/**
  * A running game: its world, its time, the actions queued for the next tick,
  * and what runs a tick and a frame. Made with `App.make`, and run in a page
  * with `Driver.run`.
@@ -407,26 +384,6 @@ export interface Diverted<E = never> {
  * @category Models
  */
 export interface App<E = never, HU = never> extends Any {
-  /**
-   * Takes over the app, for code that decides on which tick an action is
-   * applied and when a tick runs: a multiplayer session, where every peer must
-   * apply the same actions on the same ticks.
-   *
-   * From then on, an action enqueued from outside isn't queued for the next
-   * tick. It is passed to `take`, by name and with its payload in JSON form:
-   * any action given to `enqueue` or `enqueueByName`, and any issued with
-   * `Actions.enqueue` in the input or frame stage, so key bindings and UI
-   * buttons are covered too. What the simulation issues itself isn't passed on,
-   * since every peer's simulation issues it.
-   *
-   * The returned object is the only remaining way to queue an action and to run
-   * a tick. `tick`, `tickExit`, `dispatch` and `dispatchByName` throw from then
-   * on, since each would advance this machine's game and no one else's. An app
-   * can be taken over once.
-   */
-  readonly divert: (
-    take: (name: string, payload: unknown) => void
-  ) => Diverted<E>;
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
    * `Exit`.
@@ -475,6 +432,23 @@ export interface App<E = never, HU = never> extends Any {
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<void, Action.InvalidPayload>;
 }
+
+/**
+ * An app that something else steps: a session's, which runs a tick when
+ * every peer may, or a sync test's. It is the app without what would move
+ * this machine's game alone: `tick`, `tickExit`, `dispatch` and
+ * `dispatchByName`. Its world, its time, its frame and input stages, its
+ * log, its saves and its recordings are an app's, and an action given to
+ * `enqueue` is applied when the one that steps it says.
+ *
+ * `E` is what a tick can fail with, and `HU` the actions its handlers accept.
+ *
+ * @category Models
+ */
+export type Steered<E = never, HU = never> = Omit<
+  App<E, HU>,
+  "dispatch" | "dispatchByName" | "tick" | "tickExit"
+>;
 
 /**
  * What a game is, as `App.define` takes it: its plugins, its own systems and
@@ -640,10 +614,7 @@ export const make = <
   App<TickError<S, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
   Scope.Scope | External<S, H, P>
-> =>
-  build(game, start ?? {}) as Effect.Effect<
-    App<TickError<S, P>, AllHandlers<H, P>>,
-    | Plugin.ErrorOf<P[number]>
-    | (SV extends Save.Save ? Save.LoadRefused : never),
-    Scope.Scope | External<S, H, P>
-  >;
+> => {
+  const given: StartOptions<SV> = start ?? {};
+  return Effect.map(build(game, given), (built) => built.app);
+};
