@@ -167,7 +167,7 @@ Systems run in the order they are listed.
 You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page.
 
 ```ts title="rules.test.ts"
-import { App } from "arcadekit";
+import { App, Journal } from "arcadekit";
 import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { expect, it } from "vitest";
@@ -202,7 +202,7 @@ it("refuses a move once the game is over", () =>
 
 `app.dispatch` applies an action immediately and returns its outcome. `app.enqueue` queues the action for the start of the next tick instead, which is what a real-time game needs.
 
-A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation, `app.record()` returns that log with how long each tick was, and `App.replay` plays the recording into a new app, verifying the world's hash along the way:
+A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation, `app.record()` returns that log with how long each tick was, and `Journal.replay` plays the recording into a new app, verifying the world's hash along the way:
 
 ```ts title="rules.test.ts"
 it("plays the same game again from its log", () =>
@@ -215,13 +215,13 @@ it("plays the same game again from its log", () =>
       }
 
       const again = yield* App.make({ plugins: [Rules], seed: 7 });
-      App.replay(again, game.record());
+      Journal.replay(again, game.record());
       expect(again.world.hash()).toBe(game.world.hash());
     })
   ));
 ```
 
-If anything in the rules read the clock or called `Math.random`, the replay would stop at the first tick where the two worlds differ, with `App.ReplayDiverged`.
+If anything in the rules read the clock or called `Math.random`, the replay would stop at the first tick where the two worlds differ, with `Journal.ReplayDiverged`.
 
 ## Play it in a page
 

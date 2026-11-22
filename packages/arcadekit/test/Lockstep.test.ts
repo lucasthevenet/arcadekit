@@ -6,6 +6,7 @@ import {
   App,
   Driver,
   Input,
+  Journal,
   Lockstep,
   System,
   Time,
@@ -92,7 +93,7 @@ describe("a lockstep session", () => {
       const recording = ada.app.record();
       expect(recording.end).toBe(ticks);
       withApp(game(), (alone) => {
-        App.replay(alone, recording);
+        Journal.replay(alone, recording);
         expect(alone.world.hash()).toBe(ada.app.world.hash());
       });
     });

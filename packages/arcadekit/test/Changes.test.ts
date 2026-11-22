@@ -10,6 +10,7 @@ import {
   Component,
   EcsWorld,
   Field,
+  Journal,
   Migrate,
   Query,
   Save,
@@ -1437,7 +1438,7 @@ describe("change queries in an app", () => {
         expect(tallyOf(app).moved).toBeGreaterThan(40);
         expect(tallyOf(app).gone).toBeGreaterThan(2);
         const again = yield* game();
-        App.replay(again, app.record());
+        Journal.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
         expect(tallyOf(again)).toEqual(tallyOf(app));
       })
@@ -1472,7 +1473,7 @@ describe("change queries in an app", () => {
           play(app, savedAt, savedAt + 12);
           // The tail of the original's log replays in the loaded game, and
           // every checkpoint of it holds.
-          App.replay(loaded, app.record(save.value));
+          Journal.replay(loaded, app.record(save.value));
           expect(tallyOf(loaded)).toEqual(tallyOf(app));
           expect(loaded.world.hash()).toBe(app.world.hash());
         })

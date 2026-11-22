@@ -72,6 +72,11 @@
       "types": "./dist/Input.d.ts",
       "default": "./dist/Input.js"
     },
+    "./Journal": {
+      "source": "./src/Journal.ts",
+      "types": "./dist/Journal.d.ts",
+      "default": "./dist/Journal.js"
+    },
     "./Lockstep": {
       "source": "./src/Lockstep.ts",
       "types": "./dist/Lockstep.d.ts",

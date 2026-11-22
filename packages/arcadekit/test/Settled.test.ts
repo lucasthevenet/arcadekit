@@ -12,6 +12,7 @@ import {
   Field,
   Frame,
   Input,
+  Journal,
   Plugin,
   Query,
   Singleton,
@@ -306,7 +307,7 @@ describe("a game that ticks when its player moves", () => {
     const again = run(
       App.make({ plugins: [Game], checkpointEvery: 1, seed: 5 })
     );
-    App.replay(again, app.record());
+    Journal.replay(again, app.record());
     expect(again.world.hash()).toBe(app.world.hash());
     expect(again.time.tick).toBe(app.time.tick);
     expect(again.world.singleton(Score).moves).toBe(2);

@@ -1,7 +1,15 @@
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { Action, App, Save, System, Time, readSnapshot } from "../src/index";
+import {
+  Action,
+  App,
+  Journal,
+  Save,
+  System,
+  Time,
+  readSnapshot,
+} from "../src/index";
 import {
   DELTA,
   Purse,
@@ -92,12 +100,12 @@ describe("who issued an action", () => {
       },
     ]);
     // As text and back, as a log that is kept would be.
-    const text = App.encodeRecording(recorded.recording);
-    const read = App.decodeRecording(text);
+    const text = Journal.encode(recorded.recording);
+    const read = Journal.decode(text);
     expect(read).toEqual(Exit.succeed(recorded.recording));
     withApp(game(), (app) => {
       assert(Exit.isSuccess(read));
-      App.replay(app, read.value);
+      Journal.replay(app, read.value);
       expect(app.world.hash()).toBe(recorded.hash);
       expect(purseOf(app)).toEqual({ ada: 2, grace: 5 });
     });
@@ -111,13 +119,13 @@ describe("who issued an action", () => {
     });
     withApp(game(), (app) => {
       expect(() =>
-        App.replay(app, { ...recorded.recording, log: anonymous })
-      ).toThrow(App.ReplayDiverged);
+        Journal.replay(app, { ...recorded.recording, log: anonymous })
+      ).toThrow(Journal.ReplayDiverged);
     });
     // A name is text.
     expect(
       Exit.isFailure(
-        App.decodeRecording(
+        Journal.decode(
           JSON.stringify({
             ...recorded.recording,
             log: [{ tick: 0, name: "ls/Tip", payload: {}, from: 7 }],

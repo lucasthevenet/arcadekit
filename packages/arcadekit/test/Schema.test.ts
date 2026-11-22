@@ -9,6 +9,7 @@ import {
   EntityId,
   Event,
   Field,
+  Journal,
   System,
   World,
 } from "../src/index";
@@ -472,7 +473,7 @@ describe("saving and replaying", () => {
       app.dispatch(Rename, { name: "x" });
       app.tick(1);
       return {
-        text: App.encodeRecording(app.record()),
+        text: Journal.encode(app.record()),
         hp: app.world.get(target, Health)!.hp,
       };
     });
@@ -485,13 +486,13 @@ describe("saving and replaying", () => {
     hash?: number;
   }
   /** A recording as its JSON has it, with a log of written entries. */
-  type WrittenRecording = Omit<App.Recording, "log"> & {
+  type WrittenRecording = Omit<Journal.Recording, "log"> & {
     log: Written[];
   };
-  const replayInto = (recording: App.Recording | WrittenRecording) =>
+  const replayInto = (recording: Journal.Recording | WrittenRecording) =>
     withApp(game, ({ app, target }) => {
       // Whatever the file says: the replay is what checks it.
-      App.replay(app, recording as App.Recording);
+      Journal.replay(app, recording as Journal.Recording);
       return app.world.get(target, Health)!.hp;
     });
 
@@ -500,7 +501,7 @@ describe("saving and replaying", () => {
     expect(saved.hp).toBe(35);
     expect(saved.text).toBeTypeOf("string");
 
-    const loaded = App.decodeRecording(saved.text);
+    const loaded = Journal.decode(saved.text);
     expect(Exit.isSuccess(loaded)).toBe(true);
     if (!Exit.isSuccess(loaded)) {
       return;
@@ -562,14 +563,12 @@ describe("saving and replaying", () => {
       }),
       JSON.stringify({ ...valid, deltas: [{ tick: 1, delta: null }] }),
     ]) {
-      expect(Exit.isFailure(App.decodeRecording(text)), text).toBe(true);
+      expect(Exit.isFailure(Journal.decode(text)), text).toBe(true);
     }
-    expect(Exit.isSuccess(App.decodeRecording(JSON.stringify(valid)))).toBe(
-      true
-    );
+    expect(Exit.isSuccess(Journal.decode(JSON.stringify(valid)))).toBe(true);
     expect(
       Exit.isSuccess(
-        App.decodeRecording(
+        Journal.decode(
           JSON.stringify({ start: 4, end: 4, deltas: [], log: [] })
         )
       )
@@ -599,12 +598,12 @@ describe("saving and replaying", () => {
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(App.ReplayDiverged);
-    expect((caught as App.ReplayDiverged).index).toBe(2);
-    expect((caught as App.ReplayDiverged).tick).toBe(1);
+    expect(caught).toBeInstanceOf(Journal.ReplayDiverged);
+    expect((caught as Journal.ReplayDiverged).index).toBe(2);
+    expect((caught as Journal.ReplayDiverged).tick).toBe(1);
     // It was enqueued, so the replay enqueues it too, and stops after the
     // tick in which its own rules refused what the game had accepted.
-    expect((caught as App.ReplayDiverged).reason).toMatch(/amount/);
+    expect((caught as Journal.ReplayDiverged).reason).toMatch(/amount/);
     expect((caught as Error).message).toMatch(
       /Log entry 2 \("Damage" at tick 1\) was refused on replay/
     );

@@ -10,6 +10,7 @@ import {
   EntityId,
   Event,
   Field,
+  Journal,
   Query,
   System,
   Time,
@@ -546,7 +547,7 @@ describe("replay", () => {
     expect(original.state[0]).toBe("tick=7 entities=3");
 
     const replayed = withApp(duel(), ({ app }) => {
-      App.replay(app, original.recording);
+      Journal.replay(app, original.recording);
       return { log: [...app.actionLog], state: snapshot(app) };
     });
     expect(replayed.state).toEqual(original.state);

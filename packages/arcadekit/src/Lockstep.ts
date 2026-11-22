@@ -40,7 +40,7 @@
  * every peer's log records, and with `checkpointEvery: 0`, nothing more.
  *
  * Every peer's log is an ordinary log, identical entry for entry, and
- * `App.replay` plays it back into a single-player game.
+ * `Journal.replay` plays it back into a single-player game.
  */
 import { Cause, Data, Exit, Schema } from "effect";
 

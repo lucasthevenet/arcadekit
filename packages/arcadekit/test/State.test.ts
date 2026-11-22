@@ -9,6 +9,7 @@ import {
   Component,
   Event,
   Field,
+  Journal,
   Plugin,
   Query,
   Save,
@@ -826,7 +827,7 @@ describe("a state in a save", () => {
 
         // And the whole game replays, hooks and conditions with it.
         const again = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
-        App.replay(again, app.record());
+        Journal.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

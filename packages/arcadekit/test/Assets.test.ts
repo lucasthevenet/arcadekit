@@ -23,6 +23,7 @@ import {
   Field,
   Frame,
   Input,
+  Journal,
   Plugin,
   Query,
   Random,
@@ -628,7 +629,7 @@ describe("a level's assets", () => {
             plugins: [bare.Game],
             checkpointEvery: 1,
           }).pipe(Effect.provideService(Assets.Loader, counting));
-          App.replay(again, seen.record());
+          Journal.replay(again, seen.record());
           expect(again.world.hash()).toBe(seen.world.hash());
           expect(asked).toBe(0);
         })
@@ -843,7 +844,7 @@ describe("a level's assets", () => {
             plugins: [Rules],
             checkpointEvery: 1,
           });
-          App.replay(again, recording);
+          Journal.replay(again, recording);
           expect(again.world.hash()).toBe(hash);
           expect(again.world.view(Query.all(Wall)).count()).toBe(4);
         })

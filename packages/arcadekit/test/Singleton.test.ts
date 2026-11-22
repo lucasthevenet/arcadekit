@@ -9,6 +9,7 @@ import {
   Component,
   EcsWorld,
   Field,
+  Journal,
   Migrate,
   Plugin,
   Query,
@@ -587,7 +588,7 @@ describe("a singleton in an app", () => {
           plugins: [Rules],
           checkpointEvery: 1,
         });
-        App.replay(again, app.record());
+        Journal.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

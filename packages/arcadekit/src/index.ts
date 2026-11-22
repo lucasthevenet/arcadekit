@@ -50,6 +50,7 @@ export { World as EcsWorld } from "./ecs/world";
 export * as Event from "./Event";
 export * as Field from "./Field";
 export * as Input from "./Input";
+export * as Journal from "./Journal";
 export * as Lockstep from "./Lockstep";
 export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";

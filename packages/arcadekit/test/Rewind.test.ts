@@ -9,6 +9,7 @@ import {
   EcsWorld,
   Event,
   Field,
+  Journal,
   Query,
   Rollback,
   Save,
@@ -758,7 +759,7 @@ describe("Rollback.syncTest", () => {
         }
         return {
           hashes,
-          recording: App.encodeRecording(app.record()),
+          recording: Journal.encode(app.record()),
           checked: test.checked,
         };
       });

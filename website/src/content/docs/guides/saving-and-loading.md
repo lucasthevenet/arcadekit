@@ -58,7 +58,7 @@ A save records the log's length at the time, `save.logLength`. A game that keeps
 ```ts sketch
 const tail = game.record(save); // from the save's tick to now
 const app = yield * App.load(save, { plugins: [Rules] });
-App.replay(app, tail);
+Journal.replay(app, tail);
 ```
 
 `app.record(save)` takes a save the app made itself, and throws for one whose tick its log doesn't reach. The loaded app's own log starts empty.

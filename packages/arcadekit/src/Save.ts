@@ -19,7 +19,7 @@
  * replaying only that tail, however long it has been running:
  *
  *   const tail = app.record(save)
- *   App.replay(loaded, tail)
+ *   Journal.replay(loaded, tail)
  */
 import { Cause, Data, Exit, Schema } from "effect";
 

@@ -12,6 +12,7 @@ import {
   EntityId,
   Event,
   Field,
+  Journal,
   Query,
   Random,
   System,
@@ -841,7 +842,7 @@ describe("an action that is refused", () => {
       return { recording: app.record(), hash: app.world.hash() };
     });
     const replayed = withApp(game(), ({ app }) => {
-      App.replay(app, recording);
+      Journal.replay(app, recording);
       return app.world.hash();
     });
     expect(replayed).toBe(hash);
@@ -990,7 +991,7 @@ describe("a game full of refused actions", () => {
       expect(recorded.refusedCount).toBeGreaterThan(20);
 
       const replayed = withApp(game(), ({ app }) => {
-        App.replay(app, recorded.recording);
+        Journal.replay(app, recorded.recording);
         return app.world.hash();
       });
       expect(replayed).toBe(recorded.hash);

@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App, Driver, Lockstep, Rollback, Transport } from "../src/index";
+import { Driver, Journal, Lockstep, Rollback, Transport } from "../src/index";
 import { DELTA, Drop, game, moves, players, setGlitch, withApp } from "./peers";
 import type { Game, Peer } from "./peers";
 
@@ -217,7 +217,7 @@ describe("a session joined to a transport", () => {
             // Only a game played with rollback goes back.
             expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
             withApp(game(), (alone) => {
-              App.replay(alone, ada.app.record());
+              Journal.replay(alone, ada.app.record());
               expect(alone.world.hash()).toBe(ada.app.world.hash());
             });
           })

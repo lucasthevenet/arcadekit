@@ -10,6 +10,7 @@ import {
   Commands,
   Component,
   Field,
+  Journal,
   Query,
   Random,
   Singleton,
@@ -384,13 +385,11 @@ describe("the Random service", () => {
         (app) => {
           app.world.spawn(Die.of({ face: 1, rolls: 0 }));
           // Through text and back, as a save file would be.
-          const loaded = App.decodeRecording(
-            App.encodeRecording(recorded.recording)
-          );
+          const loaded = Journal.decode(Journal.encode(recorded.recording));
           if (Exit.isFailure(loaded)) {
             throw new Error("the log did not survive being written down");
           }
-          App.replay(app, loaded.value);
+          Journal.replay(app, loaded.value);
           return snapshot(app);
         }
       );
@@ -401,7 +400,7 @@ describe("the Random service", () => {
     expect(replayOf(recorded, 31)).toEqual(recorded);
     // With another seed the same moves would be a different game, and the
     // replay says so before its first tick.
-    expect(() => replayOf(recorded, 32)).toThrow(App.ReplayDiverged);
+    expect(() => replayOf(recorded, 32)).toThrow(Journal.ReplayDiverged);
     expect(() => replayOf(recorded, 32)).toThrow(
       /the world's hash at tick 0 .* check the seed/
     );

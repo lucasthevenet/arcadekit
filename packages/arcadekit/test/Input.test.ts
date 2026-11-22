@@ -12,6 +12,7 @@ import {
   Field,
   Frame,
   Input,
+  Journal,
   Plugin,
   Query,
   Random,
@@ -867,7 +868,7 @@ describe("the input stage", () => {
 
   it("is not run by a replay, whatever the devices of the machine it is replayed on say", () => {
     const source = Input.makeManualSource();
-    let recording: App.Recording | undefined;
+    let recording: Journal.Recording | undefined;
     let hash = 0;
     run(
       Effect.gen(function* () {
@@ -890,7 +891,7 @@ describe("the input stage", () => {
           plugins: [Flying],
           checkpointEvery: 1,
         });
-        App.replay(again, recording!);
+        Journal.replay(again, recording!);
         expect(again.world.hash()).toBe(hash);
         expect(ship(again)).toEqual({ x: 20, shots: 0 });
         expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
@@ -1213,7 +1214,7 @@ describe("the picture of the devices in the world", () => {
         ]);
         return {
           hashes: tickHashes,
-          text: App.encodeRecording(app.record()),
+          text: Journal.encode(app.record()),
           played: ship(app),
           ticks: app.time.tick,
         };
@@ -1227,7 +1228,7 @@ describe("the picture of the devices in the world", () => {
     // The replay is given no source, and its input stage is never run.
     run(
       Effect.gen(function* () {
-        const decoded = App.decodeRecording(text);
+        const decoded = Journal.decode(text);
         assert(Exit.isSuccess(decoded));
         const recording = decoded.value;
         const entries = recording.log;
@@ -1236,7 +1237,7 @@ describe("the picture of the devices in the world", () => {
           checkpointEvery: 1,
           seed: 9,
         });
-        App.replay(again, recording);
+        Journal.replay(again, recording);
         expect(ship(again)).toEqual(played);
         expect(again.world.hash()).toBe(hashes.at(-1));
         // Checked against every tick's checkpoint on the way.
@@ -1255,9 +1256,9 @@ describe("the picture of the devices in the world", () => {
             ? { ...entry, payload: { down: ["ArrowLeft"] } }
             : entry
         );
-        expect(() => App.replay(other, { ...recording, log: altered })).toThrow(
-          App.ReplayDiverged
-        );
+        expect(() =>
+          Journal.replay(other, { ...recording, log: altered })
+        ).toThrow(Journal.ReplayDiverged);
       })
     );
   });
@@ -1838,7 +1839,7 @@ describe("bindings", () => {
         // The same handlers, and nothing that listens to a device.
         const again = yield* App.make({ handlers, checkpointEvery: 1 });
         expect(again.inputOrder).toEqual([]);
-        App.replay(again, recording);
+        Journal.replay(again, recording);
         expect(done).toEqual(played);
       })
     );

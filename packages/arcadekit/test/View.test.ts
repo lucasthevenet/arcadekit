@@ -8,6 +8,7 @@ import {
   Component,
   Driver,
   Field,
+  Journal,
   Plugin,
   Query,
   Singleton,
@@ -474,7 +475,7 @@ describe("what the UI sends", () => {
     again.world.singleton(Purse).gold = 5;
     other.send(Buy, { price: 1 });
     other.send(Buy, { price: 1 });
-    App.replay(again, recording);
+    Journal.replay(again, recording);
     expect(again.world.hash()).toBe(app.world.hash());
     expect(again.world.view(Coins).count()).toBe(1);
     expect(
@@ -590,7 +591,7 @@ describe("what the UI sends", () => {
     // No bridge, no input stage and no frame: a server, or a replay.
     const again = play(undefined, 11);
     again.world.spawn(Coin.of({ value: 1 }));
-    App.replay(again, app.record());
+    Journal.replay(again, app.record());
     expect(again.world.hash()).toBe(hashes.at(-1));
     expect(again.world.view(Coins).count()).toBe(2);
     // And the same game with no UI at all, given nothing, differs.

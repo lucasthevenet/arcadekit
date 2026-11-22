@@ -181,7 +181,7 @@ expect(adaApp.world.hash()).toBe(graceApp.world.hash());
 expect(adaApp.actionLog).toEqual(graceApp.actionLog);
 ```
 
-Compare peers once the game has settled and both are at the same tick: stop issuing input, step a while longer, then tick only the peer that is behind. A single-player game replaying the same log with `App.replay` must end on the same hash. You can provide `hub.layer(peer)` to `Transport.connect` alone, but not a layer that listens, such as `Transport.layerBroadcastChannel` or `Transport.layerWebSocket`, which would be released with that line.
+Compare peers once the game has settled and both are at the same tick: stop issuing input, step a while longer, then tick only the peer that is behind. A single-player game replaying the same log with `Journal.replay` must end on the same hash. You can provide `hub.layer(peer)` to `Transport.connect` alone, but not a layer that listens, such as `Transport.layerBroadcastChannel` or `Transport.layerWebSocket`, which would be released with that line.
 
 ## Rewinds
 
@@ -202,7 +202,7 @@ The rest of the game sees each tick once: the frame and input stages, the action
 
 ## Replays as tests
 
-Play a game in a test, replay it into a fresh app with `App.replay`, and assert that both end on the same hash. This catches a system that reads the clock or `Math.random`, at the tick it does so. See [replays](replays.md).
+Play a game in a test, replay it into a fresh app with `Journal.replay`, and assert that both end on the same hash. This catches a system that reads the clock or `Math.random`, at the tick it does so. See [replays](replays.md).
 
 ## Read more
 

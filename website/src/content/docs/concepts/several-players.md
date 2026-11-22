@@ -28,7 +28,7 @@ Once a game joins a session, nothing advances one machine's game alone. `app.enq
 
 Actions the simulation issues itself with `Actions`, such as a bot's move, aren't sent: every peer's simulation issues them on its own.
 
-Every peer's log is an ordinary log, identical entry for entry across peers, and [`App.replay`](../guides/replays.md) plays it back into a single-player game.
+Every peer's log is an ordinary log, identical entry for entry across peers, and [`Journal.replay`](../guides/replays.md) plays it back into a single-player game.
 
 A session holds no socket and no timer. It receives the messages that arrived and returns the ones to send. A `Transport` carries them: between tabs with a `BroadcastChannel`, or between machines through a relay.
 
