@@ -147,9 +147,8 @@ describe("a rollback session", () => {
         // tick's hash against the log's, and ends on the same one.
         const played = ada.app.record();
         withApp(
-          Journal.replay(
-            App.make(CoinGame, { ...played, checkpointEvery: 1 }),
-            played
+          Journal.replay(played, (start) =>
+            App.make(CoinGame, { ...start, checkpointEvery: 1 })
           ),
           (alone) => {
             expect(alone.world.hash(), where).toBe(ada.app.world.hash());
@@ -182,9 +181,8 @@ describe("a rollback session", () => {
       const recording = first.app.record();
       expect(recording.end).toBe(ticks);
       withApp(
-        Journal.replay(
-          App.make(CoinGame, { ...recording, checkpointEvery: 1 }),
-          recording
+        Journal.replay(recording, (start) =>
+          App.make(CoinGame, { ...start, checkpointEvery: 1 })
         ),
         (alone) => {
           expect(alone.world.hash()).toBe(first.app.world.hash());

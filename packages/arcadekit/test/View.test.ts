@@ -493,9 +493,8 @@ describe("what the UI sends", () => {
     other.send(Buy, { price: 1 });
     other.send(Buy, { price: 1 });
     const again = run(
-      Journal.replay(
-        App.make(Funded, { ...recording, checkpointEvery: 1 }),
-        recording
+      Journal.replay(recording, (start) =>
+        App.make(Funded, { ...start, checkpointEvery: 1 })
       ).pipe(Effect.provide(View.layer(other)))
     );
     expect(again.world.hash()).toBe(app.world.hash());
@@ -624,7 +623,9 @@ describe("what the UI sends", () => {
     // No bridge, no input stage and no frame: a server, or a replay.
     const played = app.record();
     const again = run(
-      Journal.replay(App.make(Kept, { ...played, checkpointEvery: 1 }), played)
+      Journal.replay(played, (start) =>
+        App.make(Kept, { ...start, checkpointEvery: 1 })
+      )
     );
     expect(again.world.hash()).toBe(hashes.at(-1));
     expect(again.world.view(Coins).count()).toBe(2);

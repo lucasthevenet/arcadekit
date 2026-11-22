@@ -852,9 +852,8 @@ describe("an action that is refused", () => {
       return { recording: app.record(), hash: app.world.hash() };
     });
     const replayed = withApp(
-      Journal.replay(
-        App.make(Game, { ...recording, checkpointEvery: 1 }),
-        recording
+      Journal.replay(recording, (start) =>
+        App.make(Game, { ...start, checkpointEvery: 1 })
       ),
       (app) => app.world.hash()
     );
@@ -1004,9 +1003,8 @@ describe("a game full of refused actions", () => {
       expect(recorded.refusedCount).toBeGreaterThan(20);
 
       const replayed = withApp(
-        Journal.replay(
-          App.make(Game, { ...recorded.recording, checkpointEvery: 1 }),
-          recorded.recording
+        Journal.replay(recorded.recording, (start) =>
+          App.make(Game, { ...start, checkpointEvery: 1 })
         ),
         (app) => app.world.hash()
       );

@@ -109,9 +109,8 @@ describe("who issued an action", () => {
     expect(read).toEqual(Exit.succeed(recorded.recording));
     assert(Exit.isSuccess(read));
     withApp(
-      Journal.replay(
-        App.make(CoinGame, { ...read.value, checkpointEvery: 1 }),
-        read.value
+      Journal.replay(read.value, (start) =>
+        App.make(CoinGame, { ...start, checkpointEvery: 1 })
       ),
       (app) => {
         expect(app.world.hash()).toBe(recorded.hash);
@@ -129,9 +128,8 @@ describe("who issued an action", () => {
     const alteredRecording = { ...recorded.recording, log: anonymous };
     withApp(
       Effect.flip(
-        Journal.replay(
-          App.make(CoinGame, { ...alteredRecording, checkpointEvery: 1 }),
-          alteredRecording
+        Journal.replay(alteredRecording, (start) =>
+          App.make(CoinGame, { ...start, checkpointEvery: 1 })
         )
       ),
       (diverged) => {

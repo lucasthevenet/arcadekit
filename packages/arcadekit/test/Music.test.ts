@@ -296,9 +296,8 @@ describe("Sound.music", () => {
     const replayed = Sound.makeRecorder();
     const played = heard.app.record();
     const other = start(
-      Journal.replay(
-        App.make(game([Score]), { ...played, checkpointEvery: 1 }),
-        played
+      Journal.replay(played, (start) =>
+        App.make(game([Score]), { ...start, checkpointEvery: 1 })
       ),
       replayed
     );

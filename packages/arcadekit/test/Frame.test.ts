@@ -643,9 +643,8 @@ describe("the frame stage", () => {
         ]);
         // The replay has no button and draws no frame.
         const played = app.record();
-        const headless = yield* Journal.replay(
-          App.make(game([Roll]), { ...played, checkpointEvery: 1 }),
-          played
+        const headless = yield* Journal.replay(played, (start) =>
+          App.make(game([Roll]), { ...start, checkpointEvery: 1 })
         );
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.

@@ -19,7 +19,9 @@
  * that tail, which holds the save, however long it has been running:
  *
  *   const tail = app.record(save)
- *   const present = yield* Journal.replay(App.make(game, tail), tail)
+ *   const present = yield* Journal.replay(tail, (start) =>
+ *     App.make(game, start)
+ *   )
  */
 import { Cause, Data, Exit, Schema } from "effect";
 

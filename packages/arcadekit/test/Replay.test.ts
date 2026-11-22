@@ -110,7 +110,7 @@ const withApp = <T, A>(
  * afterwards, or to make it another way than the recording says.
  */
 const replayIn = (app: App.Any, recording: Journal.Recording): void => {
-  Effect.runSync(Journal.replay(Effect.succeed(app), recording));
+  Effect.runSync(Journal.replay(recording, () => Effect.succeed(app)));
 };
 
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
@@ -188,9 +188,9 @@ const replayInto = (
         // Kept as it is made, to look at where a replay that fails stopped.
         let kept: App.Any | undefined;
         const exit = yield* Effect.exit(
-          Journal.replay(
+          Journal.replay(recording, (start) =>
             App.make(coinGame(options.faulty), {
-              ...recording,
+              ...start,
               ...checkpointing(options),
             }).pipe(
               Effect.tap((made) =>
@@ -198,8 +198,7 @@ const replayInto = (
                   kept = made;
                 })
               )
-            ),
-            recording
+            )
           )
         );
         const app = kept!;
@@ -1162,7 +1161,7 @@ describe("a recording", () => {
     withApp(walking, (app) => {
       app.tick(1 / 60);
       expect(() => replayIn(app, recording)).toThrow(
-        "Journal.replay was given a recording that begins at tick 0, and an app that has run 1 ticks. Make the app from the recording, App.make(game, recording)"
+        "Journal.replay was given a recording that begins at tick 0, and made an app that has run 1 ticks. Make the app from the start it hands over, (start) => App.make(game, start)"
       );
       // Not a save of this app: it is of a tick this one hasn't reached.
       const ahead = withApp(walking, (other) => {
@@ -1198,16 +1197,19 @@ describe("how a recorded game began", () => {
     const recorded = record({ ticks: 40, seed: 5, checkpointEvery: 1 });
     expect(recorded.recording.seed).toBe(5);
     expect(recorded.recording.save).toBeUndefined();
-    // The game and the recording, and no seed said again.
+    // The game and the recording, and no seed said again: the replay hands
+    // over how the game began, and nothing else of the recording.
+    let handed: Journal.Origin | undefined;
     const replayed = withApp(
       Effect.orDie(
-        Journal.replay(
-          App.make(coinGame(), recorded.recording),
-          recorded.recording
-        )
+        Journal.replay(recorded.recording, (start) => {
+          handed = start;
+          return App.make(coinGame(), start);
+        })
       ),
       (app) => ({ tick: app.time.tick, hash: app.world.hash() })
     );
+    expect(handed).toEqual({ seed: 5 });
     expect(replayed).toEqual({ tick: 40, hash: recorded.hashes.at(-1) });
     // A game made with no seed began with seed 0, and its recording says so.
     withApp(App.make(coinGame()), (app) => {
@@ -1244,15 +1246,17 @@ describe("how a recorded game began", () => {
     const read = Journal.decode(Journal.encode(tail));
     assert(Exit.isSuccess(read));
     expect(read.value).toEqual(tail);
+    let handed: Journal.Origin | undefined;
     const present = withApp(
       Effect.orDie(
-        Journal.replay(
-          App.make(coinGame(), { ...read.value, checkpointEvery: 1 }),
-          read.value
-        )
+        Journal.replay(read.value, (start) => {
+          handed = start;
+          return App.make(coinGame(), { ...start, checkpointEvery: 1 });
+        })
       ),
       (app) => ({ tick: app.time.tick, hash: app.world.hash() })
     );
+    expect(handed).toEqual({ save });
     expect(present).toEqual({ tick: 30, hash: played.hash });
 
     // An app made from a save began there, and its recording says so.

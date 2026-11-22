@@ -250,9 +250,8 @@ describe("a saved game", () => {
       // What the game logged after the save is replayed from the save, which
       // the recording holds, against the checkpoints it took after every tick.
       const resumed = withApp(
-        Journal.replay(
-          App.make(Played, { ...recorded.tail, checkpointEvery: 1 }),
-          recorded.tail
+        Journal.replay(recorded.tail, (start) =>
+          App.make(Played, { ...start, checkpointEvery: 1 })
         ),
         (app) => ({
           hash: app.world.hash(),
@@ -414,9 +413,8 @@ describe("a saved game", () => {
       const recorded = record(ticks, saveAt);
       ticksRun = 0;
       withApp(
-        Journal.replay(
-          App.make(Played, { ...recorded.tail, checkpointEvery: 1 }),
-          recorded.tail
+        Journal.replay(recorded.tail, (start) =>
+          App.make(Played, { ...start, checkpointEvery: 1 })
         ),
         (app) => {
           expect(app.world.hash()).toBe(recorded.hashes.at(-1));
@@ -439,9 +437,8 @@ describe("a saved game", () => {
     // The game goes on from the save that was read as it did from the one
     // that was written.
     withApp(
-      Journal.replay(
-        App.make(Played, { save: decoded, checkpointEvery: 1 }),
-        recorded.tail
+      Journal.replay(recorded.tail, () =>
+        App.make(Played, { save: decoded, checkpointEvery: 1 })
       ),
       (app) => {
         expect(app.world.hash()).toBe(recorded.hashes.at(-1));

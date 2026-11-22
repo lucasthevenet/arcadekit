@@ -269,15 +269,15 @@ const program = Effect.gen(function* () {
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
-    const recording = loaded.value;
-    // An app made from the recording begins with the seed the game had, and
-    // is seated as the game was before its first move.
-    const headless = App.make(App.define({ plugins: [Rules] }), {
-      ...recording,
-      checkpointEvery: 1,
-    }).pipe(Effect.tap((made) => Effect.sync(() => seat(made))));
-    // A replay that goes another way fails, and says where.
-    return yield* Journal.replay(headless, recording).pipe(
+    // The replay hands over how the game began, its seed, and the app made
+    // from it is seated as the game was before its first move. A replay that
+    // goes another way fails, and says where.
+    return yield* Journal.replay(loaded.value, (start) =>
+      App.make(App.define({ plugins: [Rules] }), {
+        ...start,
+        checkpointEvery: 1,
+      }).pipe(Effect.tap((made) => Effect.sync(() => seat(made))))
+    ).pipe(
       Effect.map(
         (replayed) =>
           `${standing(replayed)} (${standing(replayed) === standing(app) ? "identical" : "DIFFERENT"})`

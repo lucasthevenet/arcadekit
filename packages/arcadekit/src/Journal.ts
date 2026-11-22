@@ -7,15 +7,16 @@
  *   const text = Journal.encode(recording)         // for a file or the network
  *
  *   // The same game, begun the same way, and checked as it is played.
- *   const again = yield* Journal.replay(App.make(game, recording), recording)
+ *   const again = yield* Journal.replay(recording, (start) =>
+ *     App.make(game, start)
+ *   )
  *
  * An app keeps its journal as it plays: every action from outside the
  * simulation, a checkpoint of the world's hash at a regular interval of
  * ticks, and how long each tick was. A recording holds how its game began
- * beside them, its seed or its save, in the words `App.make` takes, so an app
- * made from the recording begins as the recorded game did. A replay applies
- * the log to that app and stops at the first action or checkpoint that
- * doesn't match.
+ * beside them, its seed or its save, in the words `App.make` takes. A replay
+ * hands that to the function that makes its app, applies the log to the app,
+ * and stops at the first action or checkpoint that doesn't match.
  */
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { Base64 } from "effect/encoding";
@@ -32,7 +33,8 @@ const NO_INPUT = { input: false } as const;
 /**
  * How a recorded game began: the seed of one recorded from its start, or the
  * save of one recorded since. A save holds where its game's random sequence
- * had got to, so a recording has one of the two.
+ * had got to, so a recording has one of the two. It is what `Journal.replay`
+ * hands to the function that makes its app, in the words `App.make` takes.
  *
  * @category Models
  */
@@ -66,8 +68,7 @@ export interface Played {
 /**
  * A game as it was played, from `app.record()`, for `Journal.replay` to play
  * again: how it began, and what was played of it. With the game, it is
- * everything a replay needs, and `App.make(game, recording)` makes the app
- * that begins as it did.
+ * everything a replay needs.
  *
  * @category Models
  */
@@ -492,7 +493,7 @@ const play = (app: App.Any, recording: Recording): void => {
   const { deltas, end, log, start } = recording;
   if (app.time.tick !== start) {
     throw new Error(
-      `Journal.replay was given a recording that begins at tick ${start}, and an app that has run ${app.time.tick} ticks. Make the app from the recording, App.make(game, recording), which begins as the recorded game did: from its seed, or from the save it was recorded since.`
+      `Journal.replay was given a recording that begins at tick ${start}, and made an app that has run ${app.time.tick} ticks. Make the app from the start it hands over, (start) => App.make(game, start), which begins as the recorded game did: from its seed, or from the save it was recorded since.`
     );
   }
   let next = 0;
@@ -592,12 +593,14 @@ const play = (app: App.Any, recording: Recording): void => {
 };
 
 /**
- * Plays a recording again, from `app.record()`, in the app an effect makes,
- * and returns that app where the recording ends. Make the app from the
- * recording, which holds how its game began: a fresh game with its seed, or
- * one loaded from the save it was recorded since.
+ * Plays a recording again, from `app.record()`, in an app made for it, and
+ * returns that app where the recording ends. `make` is handed how the
+ * recorded game began, its seed or the save it was recorded since, and makes
+ * the app from it:
  *
- *   const again = yield* Journal.replay(App.make(Duel, recording), recording)
+ *   const again = yield* Journal.replay(recording, (start) =>
+ *     App.make(Duel, start)
+ *   )
  *
  * Each tick takes the delta it took when it was recorded, to the recording's
  * end. With the same systems and the same beginning, the result is the same
@@ -619,13 +622,19 @@ const play = (app: App.Any, recording: Recording): void => {
  * Actions the game's systems and handlers issued aren't in the log:
  * the replay's own simulation issues them again.
  *
- * To look at the app a replay stopped in, keep it with a step of the effect
- * that makes it, `App.make(Duel, recording).pipe(Effect.tap((app) => ...))`.
+ * `make` is where the app is given its other options, and where it is kept
+ * or prepared before the replay begins, as a step of the effect:
+ *
+ *   Journal.replay(recording, (start) =>
+ *     App.make(Duel, { ...start, checkpointEvery: 1 }).pipe(Effect.tap(keep))
+ *   )
+ *
+ * An app kept that way is the one to look at when a replay has stopped.
  *
  * **Gotchas**
  *
- * - It throws when the app isn't where the recording begins: it has run another
- *   number of ticks. An app made from the recording is.
+ * - It throws when the app `make` returns isn't where the recording begins:
+ *   it has run another number of ticks. An app made from `start` is.
  * - It runs neither the frame stage nor the input stage: every tick runs with
  *   `{ input: false }`.
  * - A log without checkpoints, from an app created with `checkpointEvery: 0`,
@@ -635,19 +644,25 @@ const play = (app: App.Any, recording: Recording): void => {
  * @category Running
  */
 export const replay = <A extends App.Any, E, R>(
-  app: Effect.Effect<A, E, R>,
-  recording: Recording
+  recording: Recording,
+  make: (start: Origin) => Effect.Effect<A, E, R>
 ): Effect.Effect<A, E | ReplayDiverged, R> =>
-  Effect.flatMap(app, (made) =>
-    Effect.suspend(() => {
-      try {
-        play(made, recording);
-      } catch (error) {
-        if (error instanceof ReplayDiverged) {
-          return Effect.fail(error);
+  Effect.flatMap(
+    make(
+      recording.save === undefined
+        ? { seed: recording.seed }
+        : { save: recording.save }
+    ),
+    (made) =>
+      Effect.suspend(() => {
+        try {
+          play(made, recording);
+        } catch (error) {
+          if (error instanceof ReplayDiverged) {
+            return Effect.fail(error);
+          }
+          throw error;
         }
-        throw error;
-      }
-      return Effect.succeed(made);
-    })
+        return Effect.succeed(made);
+      })
   );

@@ -1440,9 +1440,8 @@ describe("change queries in an app", () => {
         expect(tallyOf(app).moved).toBeGreaterThan(40);
         expect(tallyOf(app).gone).toBeGreaterThan(2);
         const played = app.record();
-        const again = yield* Journal.replay(
-          App.make(Game, { ...played, checkpointEvery: 1 }),
-          played
+        const again = yield* Journal.replay(played, (start) =>
+          App.make(Game, { ...start, checkpointEvery: 1 })
         );
         expect(again.world.hash()).toBe(app.world.hash());
         expect(tallyOf(again)).toEqual(tallyOf(app));
@@ -1474,9 +1473,8 @@ describe("change queries in an app", () => {
           // The tail of the original's log replays in a game loaded from the
           // save that was read, and every checkpoint of it holds.
           const played = app.record(read.value);
-          const loaded = yield* Journal.replay(
-            App.make(Game, { ...played, checkpointEvery: 1 }),
-            played
+          const loaded = yield* Journal.replay(played, (start) =>
+            App.make(Game, { ...start, checkpointEvery: 1 })
           );
           expect(tallyOf(loaded)).toEqual(tallyOf(app));
           expect(loaded.world.hash()).toBe(app.world.hash());

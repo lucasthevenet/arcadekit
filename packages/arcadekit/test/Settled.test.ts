@@ -328,9 +328,8 @@ describe("a game that ticks when its player moves", () => {
     // The same game with no UI, no devices and no rest: tick after tick.
     const played = app.record();
     const again = run(
-      Journal.replay(
-        App.make(Played, { ...played, checkpointEvery: 1 }),
-        played
+      Journal.replay(played, (start) =>
+        App.make(Played, { ...start, checkpointEvery: 1 })
       )
     );
     expect(again.world.hash()).toBe(app.world.hash());

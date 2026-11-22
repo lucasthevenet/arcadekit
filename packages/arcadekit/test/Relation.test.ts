@@ -641,9 +641,8 @@ describe("relations in an app", () => {
         expect(app.world.entityCount).toBe(5);
 
         const played = app.record();
-        const again = yield* Journal.replay(
-          App.make(Orchard, { ...played, checkpointEvery: 1 }),
-          played
+        const again = yield* Journal.replay(played, (start) =>
+          App.make(Orchard, { ...start, checkpointEvery: 1 })
         );
         expect(again.world.hash()).toBe(app.world.hash());
       })

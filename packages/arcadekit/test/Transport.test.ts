@@ -233,9 +233,8 @@ describe("a session joined to a transport", () => {
             // Only a game played with rollback goes back.
             expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
             const whole = ada.app.record();
-            const alone = yield* Journal.replay(
-              App.make(CoinGame, { ...whole, checkpointEvery: 1 }),
-              whole
+            const alone = yield* Journal.replay(whole, (start) =>
+              App.make(CoinGame, { ...start, checkpointEvery: 1 })
             );
             expect(alone.world.hash()).toBe(ada.app.world.hash());
           })

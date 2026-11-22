@@ -905,12 +905,11 @@ describe("the input stage", () => {
     here.tap("Space");
     run(
       Effect.gen(function* () {
-        const again = yield* Journal.replay(
+        const again = yield* Journal.replay(recording!, (start) =>
           App.make(App.define({ plugins: [Flying] }), {
-            ...recording!,
+            ...start,
             checkpointEvery: 1,
-          }),
-          recording!
+          })
         );
         expect(again.world.hash()).toBe(hash);
         expect(ship(again)).toEqual({ x: 20, shots: 0 });
@@ -1256,12 +1255,11 @@ describe("the picture of the devices in the world", () => {
         assert(Exit.isSuccess(decoded));
         const recording = decoded.value;
         const entries = recording.log;
-        const again = yield* Journal.replay(
+        const again = yield* Journal.replay(recording, (start) =>
           App.make(App.define({ plugins: [Flying] }), {
-            ...recording,
+            ...start,
             checkpointEvery: 1,
-          }),
-          recording
+          })
         );
         expect(ship(again)).toEqual(played);
         expect(again.world.hash()).toBe(hashes.at(-1));
@@ -1278,12 +1276,11 @@ describe("the picture of the devices in the world", () => {
         );
         const alteredRecording = { ...recording, log: altered };
         const diverged = yield* Effect.flip(
-          Journal.replay(
+          Journal.replay(alteredRecording, (start) =>
             App.make(App.define({ plugins: [Flying] }), {
-              ...alteredRecording,
+              ...start,
               checkpointEvery: 1,
-            }),
-            alteredRecording
+            })
           )
         );
         expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
@@ -1892,12 +1889,11 @@ describe("bindings", () => {
       Effect.gen(function* () {
         done.length = 0;
         // The same handlers, and nothing that listens to a device.
-        const again = yield* Journal.replay(
+        const again = yield* Journal.replay(recording, (start) =>
           App.make(App.define({ handlers }), {
-            ...recording,
+            ...start,
             checkpointEvery: 1,
-          }),
-          recording
+          })
         );
         expect(again.inputOrder).toEqual([]);
         expect(done).toEqual(played);

@@ -562,8 +562,7 @@ export const define = <
  * and how much it checks of itself as it goes.
  *
  * A recording says where its game started in the same words, a `seed` or a
- * `save`, so `App.make(game, recording)` makes an app that begins as the
- * recorded game did.
+ * `save`: `Journal.replay` hands them to the function that makes its app.
  *
  * @category Options
  */
@@ -611,7 +610,6 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
  *
  *   const app = yield* App.make(Duel, { seed: 1 })
  *   const again = yield* App.make(Duel, { save })
- *   const replayed = yield* App.make(Duel, recording) // as it began
  *
  * From a save, the app's action log starts empty. To return to where the game
  * had got to, replay what it recorded since the save, `app.record(save)`, with

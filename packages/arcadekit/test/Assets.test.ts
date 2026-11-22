@@ -628,12 +628,11 @@ describe("a level's assets", () => {
           expect(drawnGame.log.length).toBe(4);
           // The log of one replays in the other, which has no files.
           const played = seen.record();
-          const again = yield* Journal.replay(
+          const again = yield* Journal.replay(played, (start) =>
             App.make(App.define({ plugins: [bare.Game] }), {
-              ...played,
+              ...start,
               checkpointEvery: 1,
-            }),
-            played
+            })
           ).pipe(Effect.provideService(Assets.Loader, counting));
           expect(again.world.hash()).toBe(seen.world.hash());
           expect(asked).toBe(0);
@@ -855,12 +854,11 @@ describe("a level's assets", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const again = yield* Journal.replay(
+          const again = yield* Journal.replay(recording, (start) =>
             App.make(App.define({ plugins: [Rules] }), {
-              ...recording,
+              ...start,
               checkpointEvery: 1,
-            }),
-            recording
+            })
           );
           expect(again.world.hash()).toBe(hash);
           expect(again.world.view(Query.all(Wall)).count()).toBe(4);
