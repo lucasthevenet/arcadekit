@@ -4,8 +4,13 @@
  * A peer sends one message for every tick: everything its player issued for
  * that tick, usually nothing, and the checkpoints its log recorded since its
  * last message. Its first message also says what it was made with, `Made`,
- * which the others compare with their own before anything else. A transport carries messages as the text `encode` writes, and
- * a relay passes them on: neither needs a session, a peer or an app.
+ * which the others compare with their own before anything else. Every message
+ * says how far the peer has heard the others, `heard`, so that each keeps
+ * what it sent until every other peer has it.
+ *
+ * A transport carries messages as the text `encode` writes, and a relay
+ * passes them on: neither needs a session, a peer or an app. A relay also
+ * tells a room who joined it and who left it, with a `Notice`.
  */
 import { Schema } from "effect";
 import type { Exit } from "effect";
@@ -71,7 +76,23 @@ export interface Message {
    * at alone.
    */
   readonly made?: Made;
+  /**
+   * The first tick the peer is missing a message for, from any other peer:
+   * it has every peer's message for each tick before it. A peer keeps what it
+   * sent until every other peer has said it heard that far. Omitted, it says
+   * nothing.
+   */
+  readonly heard?: number;
 }
+
+/**
+ * What a relay tells the members of a room: that a peer joined it, again or
+ * for the first time, or that it left. A peer that joins is told who is
+ * there already, a `joined` for each.
+ *
+ * @category Models
+ */
+export type Notice = { readonly joined: string } | { readonly left: string };
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
@@ -102,7 +123,15 @@ const MessageSchema = Schema.fromJsonString(
         start: Count,
       })
     ),
+    heard: Schema.optionalKey(Count),
   })
+);
+
+const NoticeSchema = Schema.fromJsonString(
+  Schema.Union([
+    Schema.Struct({ joined: Schema.String }),
+    Schema.Struct({ left: Schema.String }),
+  ])
 );
 
 /**
@@ -121,3 +150,20 @@ export const encode = (message: Message): string => JSON.stringify(message);
  */
 export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
   Schema.decodeExit(MessageSchema)(text);
+
+/**
+ * Encodes a relay's notice as text.
+ *
+ * @category Codecs
+ */
+export const encodeNotice = (notice: Notice): string => JSON.stringify(notice);
+
+/**
+ * Decodes a relay's notice from text. A message is not one.
+ *
+ * @category Codecs
+ */
+export const decodeNotice = (
+  text: string
+): Exit.Exit<Notice, Schema.SchemaError> =>
+  Schema.decodeExit(NoticeSchema)(text);

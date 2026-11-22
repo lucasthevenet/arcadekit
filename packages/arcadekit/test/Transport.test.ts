@@ -21,6 +21,12 @@ const message = (from: string, tick: number, value = 0): Message.Message => ({
     value === 0 ? [] : [{ name: "ls/Drop", payload: { by: from, value } }],
 });
 
+/** The messages among what arrived, without a relay's notices. */
+const messagesIn = (
+  arrived: readonly (Message.Message | Message.Notice)[]
+): Message.Message[] =>
+  arrived.filter((one): one is Message.Message => "from" in one);
+
 interface Seat {
   readonly name: string;
   readonly app: SteeredGame;
@@ -77,6 +83,40 @@ describe("a hub, the network in memory", () => {
     expect(hub.port("ada")).toBe(ada);
   });
 
+  it("loses what is on its way to and from a peer it cuts off, and tells the others, until it comes back", () => {
+    const hub = Transport.makeHub({ delay: 1 });
+    const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
+      hub.port(name)
+    ) as [Transport.Listener, Transport.Listener, Transport.Listener];
+    ada.send(message("ada", 0));
+    grace.send(message("grace", 0));
+    hub.disconnect("grace");
+    // Gone: ada's message to grace, and grace's to everyone.
+    expect(hub.inFlight).toBe(3);
+    grace.send(message("grace", 1));
+    ada.send(message("ada", 1));
+    hub.step();
+    expect(grace.receive()).toEqual([]);
+    expect(ada.receive()).toEqual([{ left: "grace" }]);
+    expect(edsger.receive()).toEqual([
+      { left: "grace" },
+      message("ada", 0),
+      message("ada", 1),
+    ]);
+    hub.reconnect("grace");
+    hub.step();
+    expect(grace.receive()).toEqual([{ joined: "ada" }, { joined: "edsger" }]);
+    expect(ada.receive()).toEqual([{ joined: "grace" }]);
+    expect(edsger.receive()).toEqual([{ joined: "grace" }]);
+    grace.send(message("grace", 2));
+    hub.step();
+    expect(ada.receive()).toEqual([message("grace", 2)]);
+    // Twice is once, and a peer without a port is no peer of it.
+    hub.reconnect("grace");
+    expect(ada.receive()).toEqual([]);
+    expect(() => hub.disconnect("linus")).toThrow(/no port for "linus"/u);
+  });
+
   it("reaches a peer only from the moment it has a port", () => {
     const hub = Transport.makeHub();
     const ada = hub.port("ada");
@@ -111,11 +151,11 @@ describe("a hub, the network in memory", () => {
       for (let tick = 0; tick < 40; tick++) {
         ada.send(message("ada", tick));
         hub.step();
-        order.push(...grace.receive().map((arrived) => arrived.tick));
+        order.push(...messagesIn(grace.receive()).map((one) => one.tick));
       }
       for (let i = 0; i < 6; i++) {
         hub.step();
-        order.push(...grace.receive().map((arrived) => arrived.tick));
+        order.push(...messagesIn(grace.receive()).map((one) => one.tick));
       }
       return order;
     };
@@ -157,7 +197,9 @@ describe("a session joined to a transport", () => {
           ada!.app.enqueue(Drop, { by: "ada", value: 4 });
           // It waits for grace, and has said its piece all the same.
           expect(ada!.connected.tick()).toBe(false);
-          expect(grace.receive().map((sent) => sent.tick)).toEqual([0, 1, 2]);
+          expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
+            0, 1, 2,
+          ]);
           for (let tick = 0; tick <= 2; tick++) {
             grace.send(message("grace", tick));
           }
@@ -166,7 +208,9 @@ describe("a session joined to a transport", () => {
           expect(ada!.connected.tick()).toBe(true);
           expect(ada!.app.time.tick).toBe(3);
           expect(moves(ada!.app.actionLog)).toHaveLength(1);
-          expect(grace.receive().map((sent) => sent.tick)).toEqual([3, 4]);
+          expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
+            3, 4,
+          ]);
         })
       )
     );
@@ -230,6 +274,94 @@ describe("a session joined to a transport", () => {
               App.make(CoinGame, { ...start, checkpointEvery: 1 })
             );
             expect(alone.world.hash()).toBe(ada.app.world.hash());
+          })
+        )
+      );
+    }
+  });
+
+  it("plays on to the same game when a peer is cut off and comes back, with what was lost sent again", () => {
+    for (const ahead of [undefined, 8]) {
+      const hub = Transport.makeHub({ delay: { min: 0, max: 3 }, seed: 9 });
+      Effect.runSync(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const seats = yield* seated(
+              ["ada", "edsger", "grace"],
+              (name) => hub.layer(name),
+              ahead
+            );
+            const [ada, edsger, grace] = seats as [Seat, Seat, Seat];
+            const act = players(13);
+            const frame = (acting: boolean): void => {
+              hub.step();
+              for (const seat of seats) {
+                if (acting) {
+                  act(asPeer(seat));
+                }
+                seat.connected.tick();
+              }
+            };
+            for (let i = 0; i < 60; i++) {
+              frame(true);
+            }
+            // Grace's socket drops, with what was on its way to and from it.
+            hub.disconnect("grace");
+            for (let i = 0; i < 40; i++) {
+              frame(true);
+            }
+            expect(ada.connected.away).toEqual(["grace"]);
+            expect(edsger.connected.away).toEqual(["grace"]);
+            expect(grace.connected.away).toEqual([]);
+            // The others went no further than grace's word allows.
+            expect(ada.session.waitingFor).toEqual(["grace"]);
+            hub.reconnect("grace");
+            for (let i = 0; i < 100; i++) {
+              frame(true);
+            }
+            expect(ada.connected.away).toEqual([]);
+            for (let i = 0; i < 30; i++) {
+              frame(false);
+            }
+            for (
+              let i = 0;
+              i < 100 &&
+              new Set(seats.map((seat) => seat.app.time.tick)).size > 1;
+              i++
+            ) {
+              hub.step();
+              const furthest = Math.max(
+                ...seats.map((seat) => seat.app.time.tick)
+              );
+              for (const seat of seats) {
+                if (seat.app.time.tick < furthest) {
+                  seat.connected.tick();
+                }
+              }
+            }
+            expect(edsger.app.time.tick).toBe(ada.app.time.tick);
+            expect(grace.app.time.tick).toBe(ada.app.time.tick);
+            expect(ada.app.time.tick).toBeGreaterThan(100);
+            for (const seat of [edsger, grace]) {
+              expect(seat.app.world.hash()).toBe(ada.app.world.hash());
+              expect(seat.app.actionLog).toEqual(ada.app.actionLog);
+              expect(seat.session.drifted).toBeUndefined();
+            }
+            expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
+            // Grace's moves are in the game from before, during and after.
+            const hers = moves(ada.app.actionLog).filter(
+              (entry) => entry.from === "grace"
+            );
+            expect(hers.length).toBeGreaterThan(10);
+            // Once every peer has heard it, nothing is kept.
+            for (let i = 0; i < 10; i++) {
+              frame(false);
+            }
+            for (const seat of seats) {
+              expect(seat.session.unheard).toBeLessThanOrEqual(
+                seat.session.delay + (ahead ?? 0) + 6
+              );
+            }
           })
         )
       );

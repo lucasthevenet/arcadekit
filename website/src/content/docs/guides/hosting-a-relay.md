@@ -3,7 +3,7 @@ title: "Hosting a relay"
 description: "Peers on different machines meet at a relay. Learn the two functions a relay host calls, how peers are identified, and how to host a relay on Node or Cloudflare."
 ---
 
-Peers on different machines meet at a **relay**: each opens a WebSocket to it, at an address naming a room and the peer, and the relay forwards what one peer sends to the others in the room. This guide covers the two functions a relay host calls, peer identity, and hosting a relay on Node and on Cloudflare. [Transports and relays](transports-and-relays.md) covers the peer's side.
+Peers on different machines meet at a **relay**: each opens a WebSocket to it, at an address naming a room and the peer, and the relay forwards what one peer sends to the others in the room. This guide covers the functions a relay host calls, peer identity, and hosting a relay on Node and on Cloudflare. [Transports and relays](transports-and-relays.md) covers the peer's side.
 
 `arcadekit/net/Relay` implements the relay as a handler, not a server: plain functions that decide what to do with a connection and with what it sends, for whatever accepts the sockets to call. It imports only Effect, so it runs anywhere Effect does.
 
@@ -25,6 +25,13 @@ export const onConnect = (url: string, socket: WebSocket) => {
     socket.close(refused.code, refused.reason);
     return undefined;
   }
+  // The room is told who came in, and the newcomer who is there.
+  for (const { to, text } of Relay.joined(joined.value, [
+    ...present,
+    joined.value,
+  ])) {
+    (to.peer === joined.value.peer ? socket : socketOf(to)).send(text);
+  }
   return joined.value; // { room, peer }, to keep with the connection
 };
 
@@ -40,10 +47,18 @@ export const onMessage = (from: Relay.Member, data: string) => {
     socketOf(to).send(text);
   }
 };
+
+// A member's socket closed, and the member is no longer in `present`.
+export const onClose = (gone: Relay.Member) => {
+  for (const { to, text } of Relay.left(gone, present)) {
+    socketOf(to).send(text);
+  }
+};
 ```
 
 - `Relay.join(url, present, options)` decides whether a peer may join, from the address it requested and who is already in the room. It refuses an address without a room or peer, a name already taken in that room, a full room (`maxPeers`, 8 by default), and a name the room doesn't allow when the room was given its `peers`. Room and peer names are at most 64 characters.
 - `Relay.forward(member, data, present, options)` decides what to forward from a member's message: one text for every other member of its room. The forwarded message is re-serialized from what the relay parsed, so nothing extra rides along. It refuses anything that isn't a message, anything longer than `maxLength` (65,536 characters by default), and a message that claims to be from anyone but the member that sent it.
+- `Relay.joined(member, present)` and `Relay.left(member, present)` return the notices the room is told when a member joins it or leaves it: `{"joined":"ada"}` or `{"left":"ada"}` to every other member, and to the one who joined, a `joined` for each member already there. A peer whose socket dropped and that comes back is sent again what it missed because of them, and `Transport.connect` lists who left in `away`. A member can't send a notice itself: it isn't a message, and `forward` refuses it.
 - `present` is everyone connected, as the host tracks them. The functions keep no state between calls, which is what a host that sleeps between messages needs. `Relay.Member` is the schema for storing a member.
 
 A refusal is a `Relay.Refused`:
@@ -60,26 +75,26 @@ Deciding whether to admit that peer under that name is the host's responsibility
 
 ## An in-memory host
 
-`Relay.make(options)` tracks connections itself. `relay.connect(url, send)` returns a connection, to `receive` what the peer sent and to `close` when it leaves.
+`Relay.make(options)` tracks connections itself, and tells each room who joins and leaves. `relay.connect(url, send)` returns a connection, to `receive` what the peer sent and to `close` when it leaves.
 
 [`examples/relay.ts`](../../../../../packages/arcadekit/examples/relay.ts) wraps it in a WebSocket server on Node, in about forty lines. `pnpm --filter arcadekit relay` runs it on port 8787, or on `PORT` if set: two machines on the same network can play through it as is.
 
 ## A host that sleeps
 
-A host that sleeps between messages calls `join` and `forward` itself, and stores the connected members somewhere durable.
+A host that sleeps between messages calls `join`, `forward`, `joined` and `left` itself, and stores the connected members somewhere durable.
 
 [`examples/relay-cloudflare`](../../../../../packages/arcadekit/examples/relay-cloudflare) implements the relay as a Worker with one Durable Object per room, declared and deployed with [Alchemy](https://alchemy.run): three files, of which `src/room.ts` is the host.
 
-- The room keeps nothing in memory. Cloudflare hibernates a Durable Object between messages while keeping its sockets open. Each socket carries its member as an attachment, read back on every call: that is all `join` and `forward` need.
+- The room keeps nothing in memory. Cloudflare hibernates a Durable Object between messages while keeping its sockets open. Each socket carries its member as an attachment, read back on every call: that is all the four functions need.
 - `pnpm --filter arcadekit relay:cloudflare` runs it locally in workerd with `alchemy dev`, with no Cloudflare account, keeping the stack's state in a folder next to it. `alchemy deploy`, run from `examples/relay-cloudflare`, deploys it to an account.
 - A peer refused there is rejected with the HTTP status before a socket exists, so it only learns that it didn't connect.
 - The example targets Alchemy 2.0.0-beta.87.
 
-Behind an API Gateway on AWS, the same two functions are called from a function per event, with connected members stored in a table: `join` on connect, `forward` on each message, and the row deleted on disconnect.
+Behind an API Gateway on AWS, the same functions are called from a function per event, with connected members stored in a table: `join` and `joined` on connect, `forward` on each message, and `left` with the row deleted on disconnect.
 
 ## Testing a relay
 
-`pnpm --filter arcadekit relay:check <address>` tests a relay wherever it runs. Two peers play a small game through it and must end on the same world, a second peer with a taken name must be refused, and so must a message in another peer's name. Run it against the Node relay at `ws://localhost:8787`, or the Cloudflare one under `alchemy dev` at `ws://localhost:1337/rooms`.
+`pnpm --filter arcadekit relay:check <address>` tests a relay wherever it runs. Two peers play a small game through it and must end on the same world, a second peer with a taken name must be refused, and so must a message in another peer's name, and a room must be told that a peer joined it and left it. Run it against the Node relay at `ws://localhost:8787`, or the Cloudflare one under `alchemy dev` at `ws://localhost:1337/rooms`.
 
 ## Read more
 

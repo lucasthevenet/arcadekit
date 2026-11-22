@@ -6,7 +6,8 @@
  * It keeps nothing in memory. Who is in the room is read back from the
  * sockets themselves each time: every socket carries its member, which
  * Cloudflare holds with the socket while the object sleeps. That is all
- * `Relay.join` and `Relay.forward` ask to be told.
+ * `Relay.join`, `Relay.forward`, `Relay.joined` and `Relay.left` ask to be
+ * told.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import { Cause, Effect, Exit } from "effect";
@@ -38,6 +39,23 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
         return members;
       });
 
+      /** Sends each delivery to the socket of the member it is for. */
+      const deliver = (
+        deliveries: readonly Relay.Delivery[],
+        sockets: readonly {
+          readonly member: Relay.Member;
+          readonly socket: Cloudflare.WebSocket;
+        }[]
+      ) =>
+        Effect.gen(function* () {
+          for (const { text, to } of deliveries) {
+            const peer = sockets.find(({ member }) => member.peer === to.peer);
+            if (peer !== undefined) {
+              yield* peer.socket.send(text);
+            }
+          }
+        });
+
       return {
         fetch: Effect.gen(function* () {
           const request = yield* HttpServerRequest;
@@ -61,6 +79,15 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
           }
           const [response, socket] = yield* Cloudflare.upgrade();
           yield* socket.setAttachment(Relay.Member, joined.value);
+          // The room is told who came in, and the newcomer who is there.
+          const now = [...everyone, { member: joined.value, socket }];
+          yield* deliver(
+            Relay.joined(
+              joined.value,
+              now.map(({ member }) => member)
+            ),
+            now
+          );
           return response;
         }).pipe(Effect.orDie),
 
@@ -85,12 +112,7 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
             yield* socket.close(refused.code, refused.reason);
             return;
           }
-          for (const { text, to } of deliveries.value) {
-            const peer = everyone.find(({ member }) => member.peer === to.peer);
-            if (peer !== undefined) {
-              yield* peer.socket.send(text);
-            }
-          }
+          yield* deliver(deliveries.value, everyone);
         }),
 
         webSocketClose: Effect.fn(function* (
@@ -100,6 +122,22 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
         ) {
           // Nothing to forget: the socket was all there was of the peer.
           yield* socket.close(code, reason);
+          const gone = yield* socket
+            .getAttachment(Relay.Member)
+            .pipe(Effect.option);
+          if (gone._tag === "Some") {
+            // The others, by name: the closing socket may still be listed.
+            const others = (yield* present).filter(
+              ({ member }) => member.peer !== gone.value.peer
+            );
+            yield* deliver(
+              Relay.left(
+                gone.value,
+                others.map(({ member }) => member)
+              ),
+              others
+            );
+          }
         }),
       };
     });

@@ -18,7 +18,7 @@ There is no default transport. A multiplayer game without one doesn't compile: e
 | `Transport.text(wire)` | Anything that carries text: a data channel, a port |
 | `Transport.makeHub(options)` | Peers in one test, in memory. See [testing](testing.md) |
 
-A transport needs little from its channel: every message must arrive, in any order. Duplicates are dropped by the session.
+A transport needs little from its channel: every message must arrive, in any order. Duplicates are dropped by the session. A session keeps what it sent until every other peer has said it heard it, and sends it again when a relay says a peer joined the room, so a socket that drops and connects again loses nothing.
 
 A transport's layer opens nothing. `Transport.connect` listens on the transport in the scope of the program that calls it: the channel or the socket opens then, and closes with that scope, so `Transport.connect` requires a `Scope`. Provide the layer to the whole program or to `Transport.connect` alone: either way, the channel lasts as long as the program that drives the session. A transport used after its scope has closed throws and says so.
 
@@ -61,19 +61,26 @@ const program = Effect.gen(function* () {
 Browser.runMain(program, { target: document.querySelector("canvas")! });
 ```
 
-`Transport.layerWebSocket` opens a WebSocket to a relay, which forwards each message to the room's other peers. The address names the room and the peer. It opens when `Transport.connect` opens the transport. Messages sent before the socket opens are buffered and sent once it does. It uses the standard `WebSocket`, available in pages, workers and Node 22 alike.
+`Transport.layerWebSocket(url, options)` opens a WebSocket to a relay, which forwards each message to the room's other peers. The address names the room and the peer. It opens when `Transport.connect` listens on the transport. Messages sent before the socket opens are buffered and sent once it does. It uses the standard `WebSocket`, available in pages, workers and Node 22 alike.
 
-When the socket closes for any reason other than the scope it was opened in closing, the game ends for that peer:
+| Option | Default | What it does |
+| --- | --- | --- |
+| `reconnectFor` | `30_000` | How long, in milliseconds, it keeps trying to connect again once a socket that was open drops. `0` never does |
 
-- `send` and `receive` throw `Transport.Closed` from then on, so the next tick fails and its driver stops. The error carries the close code and the relay's reason: `"name taken"` when the peer's name is already in the room.
-- It doesn't reconnect: a message lost in transit would be lost for good, and a returning peer would have missed messages nobody resends.
-- The peer whose socket closed is notified. The others aren't, and wait for it.
+When the socket drops, the game goes on:
+
+- It connects again, waiting longer each time, up to two seconds. What the session sends meanwhile is buffered.
+- The relay tells the room the peer joined again, and tells the peer who is there. Every session then sends again what some peer hasn't heard, and the game continues where it was.
+- While a peer is gone, the others wait for it, and `connected.away` lists it: the peers the relay said left the room and that haven't joined it again. Show it to the player.
+
+The game ends for that peer when the socket closes for good: when it never opened, when the relay refused it, or when it could not connect again within `reconnectFor`. `send` and `receive` throw `Transport.Closed` from then on, so the next tick fails and its driver stops. The error carries the close code and the relay's reason: `"name taken"` when the peer's name is already in the room. A taken name is tried again while the transport connects again, since the relay may not have seen the old socket close yet.
 
 ## Relays
 
 A relay forwards what one peer of a room sends to the others. It runs no game and stores nothing about one.
 
 - A room is identified by its address and owned by nobody: the first peer to connect opens it, and it closes when the last peer leaves.
+- The relay tells the room who joins it and who leaves it. `Transport.connect` reads it: a peer that joins is sent again what it missed, and a peer that leaves is in `connected.away` until it joins again.
 - **The relay authenticates the sender.** A peer declares its name once, when it connects, and is held to it: a message in another peer's name is refused and the socket closed. The `from` a handler receives is therefore the peer the relay admitted under that name.
 - Deciding whether that peer may use that name is the relay host's responsibility. A relay whose host doesn't check lets anyone claim any name.
 
@@ -100,12 +107,12 @@ const transport = Transport.text({
 export const layer = Transport.layer(transport);
 ```
 
-- Messages travel in the format `Message.encode` writes. Text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
+- Messages travel in the format `Message.encode` writes, and a relay's notices in the format `Message.encodeNotice` writes. Text that is neither is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
 - The channel must deliver every message. A WebSocket does; a data channel must be configured to.
 - `transport.close()` stops listening. `send` and `receive` throw from then on. A transport passed to `Transport.layer` is listened on already, and your game closes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
 
-A transport that doesn't carry text is a `Transport.Listener` of your own, passed to `Transport.layer`. Neither of its calls waits, so a tick stays one synchronous step: whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
+A transport that doesn't carry text is a `Transport.Listener` of your own, passed to `Transport.layer`. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows. Neither of its calls waits, so a tick stays one synchronous step: whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
 
 ## Read more
 
