@@ -2,6 +2,7 @@ import { Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot";
 import {
   Action,
   App,
@@ -396,6 +397,62 @@ describe("a singleton in a snapshot", () => {
     expect(readSnapshot(old).singletons).toEqual([]);
     // Written again, it is in the format of today.
     expect(writeSnapshot(readSnapshot(old))).toEqual(bytes);
+  });
+
+  it("can still be read from a snapshot of format 3, which held its singletons after its entities", () => {
+    const world = new EcsWorld({ seed: 2 });
+    const body = world.spawn(Body.of({ x: 5 }));
+    world.singleton(Turn).round = 12;
+    // This world as the build that wrote format 3 wrote it: ids of eight
+    // bytes, no stores, and the singletons last.
+    const kind = (name: "f32" | "u8" | "u32"): number =>
+      KIND_CODES.indexOf(name);
+    const writer = new Writer(64);
+    writer.u32(MAGIC);
+    writer.u32(3);
+    for (const word of world.random.state) {
+      writer.u32(word);
+    }
+    // One slot, of generation 0, and none freed.
+    writer.u32(1);
+    writer.u32(0);
+    writer.u32(0);
+    // The components, in order of name.
+    writer.u32(2);
+    writer.text("sg/Body");
+    writer.u8(0);
+    writer.u32(1);
+    writer.text("x");
+    writer.u8(kind("f32"));
+    writer.text("sg/Turn");
+    writer.u8(2);
+    writer.u32(2);
+    writer.text("player");
+    writer.u8(kind("u8"));
+    writer.text("round");
+    writer.u8(kind("u32"));
+    // One table, of sg/Body, with one row.
+    writer.u32(1);
+    writer.u32(1);
+    writer.u32(0);
+    writer.u32(1);
+    writer.f64(body);
+    writer.numbers(new Float32Array([5]), 1, 4);
+    // No sparse set, then the one singleton, sg/Turn.
+    writer.u32(0);
+    writer.u32(1);
+    writer.u32(1);
+    writer.u8(1);
+    writer.u32(12);
+    writer.u32(END);
+    const third = writer.finish();
+
+    const copy = new EcsWorld();
+    copy.load(third, [Body, Turn.component]);
+    expect(copy.hash()).toBe(world.hash());
+    expect(copy.singleton(Turn).round).toBe(12);
+    // Written again, it is in the format of today.
+    expect(writeSnapshot(readSnapshot(third))).toEqual(world.snapshot());
   });
 
   it("describes itself, so a migration can change it by name", () => {

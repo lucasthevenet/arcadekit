@@ -48,7 +48,7 @@ import * as Driver from "./Driver";
 import { CommandBuffer } from "./ecs/commands";
 import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
-import { SnapshotError, readSingleton } from "./ecs/snapshot";
+import { SnapshotError } from "./ecs/snapshot";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Inbox from "./Inbox";
@@ -76,8 +76,7 @@ const GameTime = Component.singleton(
 
 /** The tick a save was made at, which its world holds. */
 const tickOf = (save: Save.Save): number => {
-  const tick = readSingleton(save.world, GameTime.component.name)?.columns
-    .tick?.[0];
+  const tick = Save.singleton(save, GameTime.component.name, "tick");
   return typeof tick === "number" ? tick : 0;
 };
 

@@ -24,7 +24,7 @@ import type {
   SnapshotComponent,
   SnapshotContents,
   SnapshotTable,
-} from "./ecs/snapshot";
+} from "./ecs/contents";
 
 /** The field types that hold numbers, in a typed array. */
 type NumericKind = "f32" | "f64" | "i32" | "u32" | "u16" | "u8" | "entity";

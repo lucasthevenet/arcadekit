@@ -33,16 +33,17 @@ export type {
   ValueOf,
 } from "./component";
 export { Rng } from "./random";
-export { readSnapshot, SnapshotError, writeSnapshot } from "./snapshot";
+export { readSnapshot, writeSnapshot } from "./contents";
 export type {
   SnapshotComponent,
   SnapshotContents,
-  SnapshotProblem,
   SnapshotSingleton,
   SnapshotSparse,
-  SnapshotStore,
   SnapshotTable,
-} from "./snapshot";
+} from "./contents";
+export type { SnapshotStore } from "./format";
+export { SnapshotError } from "./snapshot";
+export type { SnapshotProblem } from "./snapshot";
 export { RemovedReader } from "./changes";
 export type { ChangeKind, SavedChanges } from "./changes";
 export { CommandBuffer } from "./commands";

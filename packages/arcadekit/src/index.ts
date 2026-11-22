@@ -28,13 +28,12 @@ export {
   readSnapshot,
   type SnapshotComponent,
   type SnapshotContents,
-  SnapshotError,
-  type SnapshotProblem,
   type SnapshotSingleton,
   type SnapshotSparse,
   type SnapshotTable,
   writeSnapshot,
-} from "./ecs/snapshot";
+} from "./ecs/contents";
+export { SnapshotError, type SnapshotProblem } from "./ecs/snapshot";
 export {
   type ChangeKind,
   type RemovedReader,

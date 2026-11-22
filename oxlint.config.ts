@@ -271,9 +271,8 @@ export default defineConfig({
     ...Object.entries({
       "packages/arcadekit/src/App.ts": 603,
       "packages/three/src/Three.ts": 1760,
-      "packages/arcadekit/src/ecs/world.ts": 1735,
+      "packages/arcadekit/src/ecs/world.ts": 1590,
       "packages/arcadekit/src/ecs/query.ts": 808,
-      "packages/arcadekit/src/ecs/snapshot.ts": 708,
       "packages/arcadekit/src/Browser.ts": 629,
     }).map(([file, max]) => ({
       files: [file],
@@ -302,6 +301,31 @@ export default defineConfig({
       rules: {
         "effecttsgo/any-unknown-in-error-context": "off",
         "effecttsgo/unsafe-effect-type-assertion": "off",
+      },
+    },
+    {
+      // A snapshot's format is written once and read once, in
+      // src/ecs/format.ts: nothing else puts a byte into a snapshot or takes
+      // one out, so a change to the format is made there alone.
+      files: ["packages/*/src/**"],
+      excludeFiles: [
+        "packages/arcadekit/src/ecs/format.ts",
+        "packages/arcadekit/src/ecs/snapshot.ts",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: ["**/snapshot"],
+                importNames: ["Reader", "Writer", "readColumn", "writeColumn"],
+                message:
+                  "Only src/ecs/format.ts reads and writes the bytes of a snapshot. Give `read` a target or `write` a source, as World.loading and World.snapshotOf do, and change the format there.",
+              },
+            ],
+          },
+        ],
       },
     },
     {

@@ -110,6 +110,11 @@ export class Table {
    */
   readonly defsByName: readonly ComponentDef[];
 
+  /** Its components as a snapshot lists them, in order of name. */
+  get components(): readonly ComponentDef[] {
+    return this.defsByName;
+  }
+
   constructor(
     readonly index: number,
     readonly defs: readonly ComponentDef[],

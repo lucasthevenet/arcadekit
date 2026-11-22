@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { readSingleton } from "../src/ecs/contents";
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
-import { readSingleton } from "../src/ecs/snapshot";
 import {
   CommandBuffer,
   Component,
