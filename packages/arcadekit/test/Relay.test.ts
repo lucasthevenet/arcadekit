@@ -180,6 +180,15 @@ describe("what a member sent", () => {
     expect(Relay.forward(ada, padded, [ada, grace])).toEqual(
       Exit.succeed([{ to: grace, text: text("ada", 1) }])
     );
+    // Every part of one is, what the peer was made with among them.
+    const first = Message.encode({
+      ...message("ada", 0),
+      checkpoints: [{ tick: 0, hash: 7 }],
+      made: { game: 3, delta: DELTA, peers: ["ada", "grace"], start: 0 },
+    });
+    expect(Relay.forward(ada, first, [ada, grace])).toEqual(
+      Exit.succeed([{ to: grace, text: first }])
+    );
   });
 
   it("is refused when it says it is from anyone but the member that sent it", () => {

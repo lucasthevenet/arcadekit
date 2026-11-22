@@ -4,7 +4,39 @@ import { Drift } from "../src/net/index";
 
 /** Ada's side of a game of two, or of three, that begins at a tick. */
 const ada = (peers: readonly string[] = ["ada", "grace"], start = 0) =>
-  Drift.make({ peer: "ada", peers, start });
+  Drift.make({ peer: "ada", made: { game: 1, delta: 1 / 60, peers, start } });
+
+describe("a peer's comparison of what the peers were made with", () => {
+  const made = { game: 1, delta: 1 / 60, peers: ["ada", "grace"], start: 0 };
+
+  it("holds nothing against a peer made the same, nor against its own word", () => {
+    const drift = ada();
+    drift.told("grace", made);
+    drift.told("ada", { ...made, delta: 1 });
+    expect(drift.drifted).toBeUndefined();
+    expect(drift.compare(0, 0)).toBeUndefined();
+  });
+
+  it("stops at the first peer made otherwise, says every way it differs, and compares nothing more", () => {
+    const drift = ada();
+    drift.took(0, 10);
+    drift.told("grace", { ...made, game: 2, start: 4 });
+    const unlike = new Drift.Unlike({
+      peer: "ada",
+      other: "grace",
+      mine: made,
+      theirs: { ...made, game: 2, start: 4 },
+      differ: ["game", "start"],
+    });
+    expect(drift.drifted).toEqual(unlike);
+    drift.told("edsger", { ...made, delta: 1 });
+    drift.heard("grace", 0, [{ tick: 0, hash: 11 }]);
+    expect(drift.compare(0, 0)).toEqual(unlike);
+    expect(unlike.message).toMatch(
+      /^The peers "ada" and "grace" were not made alike: they play another game: .*; "ada" begins at tick 0 and "grace" at tick 4\. Give every peer the same seed or save\.$/u
+    );
+  });
+});
 
 describe("a peer's comparison of checkpoints", () => {
   it("sends each of its own once, and only when its tick is final", () => {

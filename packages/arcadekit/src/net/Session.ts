@@ -61,7 +61,8 @@ import type { Scope } from "effect";
 import type * as App from "../App";
 import { build } from "../Build";
 import type { Reins } from "../Build";
-import type * as Plugin from "../Plugin";
+import { add, addString, finish } from "../ecs/hash";
+import * as Plugin from "../Plugin";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";
 import * as Peer from "./Peer";
@@ -124,6 +125,46 @@ export interface Session<E = never, HU = never> extends Peer.Peer<E> {
   readonly app: App.Steered<E, HU>;
 }
 
+/** Orders text by code unit, which is the same on every machine. */
+const byCode = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Returns a hash of what a game simulates, as `Message.Made`'s `game` says:
+ * the systems of the tick in the order they run, the hooks of its states, the
+ * actions it handles and its version.
+ */
+const simulates = (
+  game: App.Game<App.Systems, App.Handlers, App.Plugins>,
+  systemOrder: readonly string[]
+): number => {
+  const plugins = Plugin.flatten(game.plugins);
+  const systems = [
+    ...plugins.flatMap((plugin) => plugin.systems),
+    ...game.systems,
+  ];
+  const hooks = systems
+    .filter((system) => system.trigger !== undefined)
+    .map(
+      ({ name, trigger }) =>
+        `${name}\n${trigger!.state.name}\n${trigger!.on}\n${trigger!.value}`
+    )
+    .toSorted(byCode);
+  const handled = [
+    ...plugins.flatMap((plugin) => plugin.handlers),
+    ...game.handlers,
+  ]
+    .map((handler) => handler.action.name)
+    .toSorted(byCode);
+  let h = add(0, game.version);
+  for (const list of [systemOrder, hooks, handled]) {
+    h = add(h, list.length);
+    for (const name of list) {
+      h = addString(h, name);
+    }
+  }
+  return finish(h);
+};
+
 /**
  * Makes a session, and the app it steps: a peer of a game that every peer
  * makes alike, with the same game, the same seed or save, the same `delta`
@@ -139,10 +180,13 @@ export interface Session<E = never, HU = never> extends Peer.Peer<E> {
  *   number of ticks, or a `delta` that isn't greater than 0.
  * - A payload its schema rejects has no JSON form to send: it is refused on the
  *   issuing peer only, and the others never see it.
- * - Each peer is given its own game, seed, `delta` and names, and none of
- *   these is compared directly, only the worlds they produce. A different
- *   `delta` or list of names is detected once it has changed a world, and a
- *   list that leaves a peer out is never detected.
+ * - Each peer is given its own game, seed, `delta` and names. Its first
+ *   message says what it was made with, and a peer made otherwise stops every
+ *   peer that hears it with `Drift.Unlike`, before any of them runs a tick it
+ *   is sure of. What is compared of the game is what it simulates: the
+ *   systems of the tick in the order they run, the hooks of its states, the
+ *   actions it handles and its version, by name. Two systems of one name that
+ *   do different things are found only once they have changed a world.
  *
  * @category Constructors
  */
@@ -164,6 +208,7 @@ export const make = <
     ({ app, take }): Session<App.TickError<S, P>, App.AllHandlers<H, P>> => {
       const ahead = options.ahead ?? 8;
       return Peer.build(app, take, {
+        game: simulates(game, app.systemOrder),
         peer: options.peer,
         peers: options.peers,
         delta: options.delta,

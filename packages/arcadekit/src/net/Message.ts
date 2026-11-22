@@ -3,7 +3,8 @@
  *
  * A peer sends one message for every tick: everything its player issued for
  * that tick, usually nothing, and the checkpoints its log recorded since its
- * last message. A transport carries messages as the text `encode` writes, and
+ * last message. Its first message also says what it was made with, `Made`,
+ * which the others compare with their own before anything else. A transport carries messages as the text `encode` writes, and
  * a relay passes them on: neither needs a session, a peer or an app.
  */
 import { Schema } from "effect";
@@ -19,6 +20,28 @@ import type * as Action from "../Action";
 export interface Issued {
   readonly name: string;
   readonly payload: unknown;
+}
+
+/**
+ * What a peer was made with, which every peer of a game is made with alike,
+ * as its first message says it.
+ *
+ * @category Models
+ */
+export interface Made {
+  /**
+   * A hash of what the game simulates: the systems of the tick in the order
+   * they run, the hooks of its states, the actions it handles, and its
+   * version. What only draws, plays sound or reads the devices is left out, so
+   * a peer that draws the game and one that doesn't play it together.
+   */
+  readonly game: number;
+  /** The seconds a tick simulates. */
+  readonly delta: number;
+  /** Every peer of the game, in order of name. */
+  readonly peers: readonly string[];
+  /** The tick the peer's game begins at. */
+  readonly start: number;
 }
 
 /**
@@ -43,9 +66,18 @@ export interface Message {
    * hash, and at which tick. Omitted when there are none.
    */
   readonly checkpoints?: readonly Action.Checkpoint[];
+  /**
+   * What the peer was made with, in the message for the tick its game begins
+   * at alone.
+   */
+  readonly made?: Made;
 }
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+const Hash = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
+);
 
 const MessageSchema = Schema.fromJsonString(
   Schema.Struct({
@@ -58,11 +90,17 @@ const MessageSchema = Schema.fromJsonString(
       Schema.Array(
         Schema.Struct({
           tick: Count,
-          hash: Schema.Int.check(
-            Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
-          ),
+          hash: Hash,
         })
       )
+    ),
+    made: Schema.optionalKey(
+      Schema.Struct({
+        game: Hash,
+        delta: Schema.Finite,
+        peers: Schema.Array(Schema.String),
+        start: Count,
+      })
     ),
   })
 );
