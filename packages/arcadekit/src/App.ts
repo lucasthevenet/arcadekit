@@ -45,7 +45,6 @@ import {
   Context,
   Data,
   Effect,
-  Random as EffectRandom,
   Exit,
   Layer,
   LogLevel,
@@ -62,7 +61,6 @@ import * as Driver from "./Driver";
 import { CommandBuffer } from "./ecs/commands";
 import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
-import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
@@ -73,16 +71,8 @@ import * as Plugin from "./Plugin";
 import * as Runner from "./Runner";
 import * as Save from "./Save";
 import * as Schedule from "./Schedule";
-import {
-  Commands,
-  Events,
-  Frame,
-  Random,
-  Ticks,
-  Time,
-  World,
-} from "./Services";
 import type { BuiltIn, FrameState, TimeState } from "./Services";
+import * as Stage from "./Stage";
 import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
@@ -763,7 +753,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const world = new EcsWorld(
       options.seed === undefined ? undefined : { seed: options.seed }
     );
-    const { random } = world;
     const commands = new CommandBuffer(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.
@@ -843,71 +832,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       handles: (action) => inbox.handles(action),
     };
     const frame: FrameState = { alpha: 0, delta: 0, count: 0 };
-    const notInTick = (): never => {
-      throw new Error(
-        'Frame was read by a system that runs in the tick. It tells the frame stage how far a frame is between two ticks, in real time, which a simulation must not depend on: read Time instead, or move the system to the frame stage with System.inStage("frame").'
-      );
-    };
-    const notInInput = (): never => {
-      throw new Error(
-        'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").'
-      );
-    };
-    const builtIns = Context.empty().pipe(
-      Context.add(World, world),
-      Context.add(Time, time),
-      Context.add(Input.Devices, {
-        get down() {
-          return notInInput();
-        },
-        get pressed() {
-          return notInInput();
-        },
-        get released() {
-          return notInInput();
-        },
-        get axes() {
-          return notInInput();
-        },
-        get moved() {
-          return notInInput();
-        },
-      }),
-      Context.add(Frame, {
-        get alpha() {
-          return notInTick();
-        },
-        get delta() {
-          return notInTick();
-        },
-        get count() {
-          return notInTick();
-        },
-      }),
-      Context.add(Commands, commands),
-      Context.add(Ticks, {
-        more() {
-          intake.wanted = true;
-        },
-      }),
-      Context.add(Events, events),
-      Context.add(Action.Actions, actions),
-      Context.add(Random, random),
-      // Effect's own Random draws from the same generator, so `Random.next`
-      // from "effect", or anything built on it, is seeded and replayed too.
-      Context.add(EffectRandom.Random, {
-        // 53 random bits: the most a number between 0 and 1 can hold.
-        nextDoubleUnsafe: () =>
-          ((random.bits() >>> 5) * 67_108_864 + (random.bits() >>> 6)) /
-          9_007_199_254_740_992,
-        // Any safe integer, negative ones included.
-        nextIntUnsafe: () => {
-          const magnitude =
-            (random.bits() >>> 11) * 4_294_967_296 + random.bits();
-          return (random.bits() & 1) === 0 ? magnitude : -magnitude;
-        },
-      })
-    );
+    const builtIns = Stage.tick({
+      world,
+      time,
+      commands,
+      events,
+      intake,
+      actions,
+    });
     // Plugin layers are chained in dependency order, so each one can use the
     // built-in services and whatever the plugins before it provide. Effect
     // builds a layer that appears more than once only once.
@@ -1148,30 +1080,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // What is random there comes from a generator of its own, which is not
     // part of the world; and an action issued there is input from outside,
     // and is logged as such.
-    const frameRandom = new Rng(options.seed ?? 0);
-    const frameContext = context.pipe(
-      Context.add(Frame, frame),
-      Context.add(Random, frameRandom),
-      Context.add(EffectRandom.Random, {
-        nextDoubleUnsafe: () =>
-          ((frameRandom.bits() >>> 5) * 67_108_864 +
-            (frameRandom.bits() >>> 6)) /
-          9_007_199_254_740_992,
-        nextIntUnsafe: () => {
-          const magnitude =
-            (frameRandom.bits() >>> 11) * 4_294_967_296 + frameRandom.bits();
-          return (frameRandom.bits() & 1) === 0 ? magnitude : -magnitude;
-        },
-      }),
-      Context.add(Action.Actions, actions),
-      Context.add(Ticks, {
-        more() {
-          throw new Error(
-            "Ticks.more was called in the frame stage or the input stage. Whether the game ticks again is the game's to say, from a system of the tick: what draws it, or reads the devices, runs between ticks and decides nothing of it. A key that should wake the game issues an action."
-          );
-        },
-      })
-    ) as Context.Context<unknown>;
+    const frameContext = Stage.frame(context, {
+      frame,
+      actions,
+      seed: options.seed ?? 0,
+    });
     const runFrameFork = Effect.runForkWith(frameContext);
     // The input stage is told what the devices say: one picture of them,
     // taken when the stage begins. It is not told about the frame.
@@ -1185,25 +1098,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       axes: new Map(),
       moved: [],
     };
-    const noFrame = (): never => {
-      throw new Error(
-        "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
-      );
-    };
-    const inputContext = frameContext.pipe(
-      Context.add(Input.Devices, devices),
-      Context.add(Frame, {
-        get alpha() {
-          return noFrame();
-        },
-        get delta() {
-          return noFrame();
-        },
-        get count() {
-          return noFrame();
-        },
-      })
-    ) as Context.Context<unknown>;
+    const inputContext = Stage.input(frameContext, devices);
     const runInputFork = Effect.runForkWith(inputContext);
     const drawn = Effect.gen(() => takeTurns(schedule.frame, "frame", false));
     const heardEffect = Effect.gen(() =>

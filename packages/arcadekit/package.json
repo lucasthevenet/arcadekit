@@ -157,6 +157,11 @@
       "types": "./dist/Sound.d.ts",
       "default": "./dist/Sound.js"
     },
+    "./Stage": {
+      "source": "./src/Stage.ts",
+      "types": "./dist/Stage.d.ts",
+      "default": "./dist/Stage.js"
+    },
     "./State": {
       "source": "./src/State.ts",
       "types": "./dist/State.d.ts",

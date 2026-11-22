@@ -65,6 +65,7 @@ export * as Save from "./Save";
 export * as Schedule from "./Schedule";
 export * as Singleton from "./Singleton";
 export * as Sound from "./Sound";
+export * as Stage from "./Stage";
 export * as State from "./State";
 export { EntityId } from "./Schemas";
 export {
