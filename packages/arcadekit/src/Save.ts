@@ -23,7 +23,6 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import type { SavedChanges } from "./ecs/changes";
 import { SnapshotError, readSnapshot, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 
@@ -46,11 +45,6 @@ export interface Save {
    * the next tick and the events waiting to be read with the rest of it.
    */
   readonly world: Uint8Array;
-  /**
-   * What change queries haven't visited yet, with each system's and handler's
-   * position: `world.saveChanges()`.
-   */
-  readonly changes: readonly SavedChanges[];
   /**
    * The number of entries in the app's action log. Everything logged after that
    * is the tail to replay after loading this save.
@@ -111,19 +105,6 @@ export interface Contents {
    * JSON form.
    */
   world: SnapshotContents;
-  /**
-   * What change queries haven't visited yet, by component name. A component a
-   * migration renames or removes keeps its old name here, and entries under a
-   * name the game no longer has are dropped when the save is loaded: the
-   * queries watching the component then start over, with every entity counting
-   * as changed.
-   */
-  changes: {
-    component: string;
-    kind: "changed" | "added" | "removed";
-    entries: number[];
-    readers: Record<string, number>;
-  }[];
 }
 
 /**
@@ -174,12 +155,6 @@ export const migrate = (
   try {
     const contents: Contents = {
       world: readSnapshot(save.world),
-      changes: save.changes.map((changes) => ({
-        component: changes.component,
-        kind: changes.kind,
-        entries: [...changes.entries],
-        readers: { ...changes.readers },
-      })),
     };
     for (let from = save.version; from < version; from++) {
       const step = migrations.find((migration) => migration.from === from);
@@ -201,7 +176,6 @@ export const migrate = (
     return Exit.succeed({
       version,
       world: writeSnapshot(contents.world),
-      changes: contents.changes,
       logLength: save.logLength,
     });
   } catch (error) {
@@ -215,21 +189,14 @@ export const migrate = (
 /** "AKSV": arcadekit save. */
 const MAGIC = 0x56534b41;
 // 2: the game's time, its queued actions and its waiting events are in the
-// world, not beside it. 3: so is where each system had read the events to.
+// world, not beside it. 3: so is where each system had read the events to,
+// and what its change queries had yet to visit.
 const FORMAT = 3;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Header = Schema.fromJsonString(
   Schema.Struct({
     version: Count,
-    changes: Schema.Array(
-      Schema.Struct({
-        component: Schema.String,
-        kind: Schema.Literals(["changed", "added", "removed"]),
-        entries: Schema.Array(Count),
-        readers: Schema.Record(Schema.String, Count),
-      })
-    ),
     logLength: Count,
   })
 );

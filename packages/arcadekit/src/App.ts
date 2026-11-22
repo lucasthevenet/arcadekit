@@ -771,10 +771,92 @@ const IntakeData = Schema.Struct({
   heard: Schema.Boolean,
 });
 
+/**
+ * The name of the store that holds what an app's change queries have yet to
+ * visit, as a snapshot has it: `readSnapshot(save.world).stores`. It holds
+ * one entry per component and kind of change, `{ component, kind, entries,
+ * readers }`: `world.saveChanges()`, for the systems of the tick and the
+ * handlers.
+ *
+ * @category Constants
+ */
+export const VISITS = "arcadekit/changes";
+
+/** What a snapshot holds of the visits: `world.saveChanges()`. */
+const VisitsData = Schema.Array(
+  Schema.Struct({
+    component: Schema.String,
+    kind: Schema.Literals(["changed", "added", "removed"]),
+    entries: Schema.Array(Schema.Number),
+    readers: Schema.Record(Schema.String, Schema.Number),
+  })
+);
+
+/**
+ * Where each system of the tick and each handler has got to in what changed:
+ * what its change queries have yet to visit. The world keeps the logs; this
+ * puts them in its snapshot, so that a loaded game goes on as the saved one
+ * did. The frame and input stages' own places are not the game's: a loaded
+ * game has everything still to draw.
+ */
+class Visits implements Store<undefined> {
+  readonly name = VISITS;
+  // Not hashed, and the world's own logs refuse what a frozen world refuses.
+  readonly betweenTicks = true;
+  private readonly world: EcsWorld;
+
+  constructor(world: EcsWorld) {
+    this.world = world;
+  }
+
+  save(): unknown {
+    const saved = this.world.saveChanges(
+      (reader) => !reader.startsWith(FRAME_READER)
+    );
+    return saved.length === 0 ? undefined : saved;
+  }
+
+  load(data: unknown): void {
+    const saved = Schema.decodeUnknownExit(VisitsData)(data);
+    if (Exit.isFailure(saved)) {
+      throw new SnapshotError(
+        "corrupt",
+        `The snapshot is damaged: what its change queries had yet to visit is not as a world saves it: ${describe(Cause.squash(saved.cause))}`
+      );
+    }
+    this.world.restoreChanges(saved.value);
+  }
+
+  hashed(): unknown {
+    return undefined;
+  }
+
+  // A moment's are kept by whoever captures it, who says whose it holds.
+  capture(): undefined {
+    return undefined;
+  }
+
+  rewind(): void {}
+
+  // The world empties its own logs.
+  clear(): void {}
+
+  begin(): void {}
+
+  rollback(): void {}
+
+  commit(): void {}
+
+  contents(): unknown {
+    return undefined;
+  }
+}
+
 /** What the intake holds at a moment: the actions as they are, with no schema. */
 interface IntakeMoment {
   readonly queued: readonly QueuedAction[];
   readonly heard: boolean;
+  readonly wanted: boolean;
 }
 
 /**
@@ -789,12 +871,13 @@ interface IntakeMoment {
 export const INTAKE = "arcadekit/actions";
 
 /**
- * What a game has taken in for its next tick: the actions queued for it, and
+ * What a game has taken in for its next tick: the actions queued for it,
  * whether the input stage has run since the last one, so that a game that
  * is saved, loaded or rewound between the two doesn't hear its devices
- * twice. They are the game's as much as its components are, so the world
- * holds them, as a store: its snapshot, its hash and a rewind cover them, and
- * a refused action's own enqueues are taken back with the rest of it.
+ * twice, and whether it asked for the tick. The world holds them, as a
+ * store: a rewind puts them back, a refused action's own enqueues and asking
+ * are taken back with the rest of it, and the actions are in its snapshot
+ * and its hash, as much the game's as its components are.
  */
 class Intake implements Store<IntakeMoment> {
   readonly name = INTAKE;
@@ -802,7 +885,16 @@ class Intake implements Store<IntakeMoment> {
   readonly betweenTicks = true;
   queued: QueuedAction[] = [];
   heard = false;
+  /**
+   * Whether the game asked for its next tick, with `Ticks.more`. A game that
+   * has not ticked yet has not been asked, and is taken to want one. It goes
+   * back with a rewind and with a refused action, and is neither hashed nor
+   * saved: a game that ticks in real time is the same game whether or not
+   * its systems ask, and a loaded game's first tick always runs.
+   */
+  wanted = true;
   private txLength = 0;
+  private txWanted = true;
 
   /** Takes every queued action, for the tick that applies them. */
   take(): QueuedAction[] {
@@ -872,12 +964,17 @@ class Intake implements Store<IntakeMoment> {
   }
 
   capture(): IntakeMoment {
-    return { queued: this.queued.slice(), heard: this.heard };
+    return {
+      queued: this.queued.slice(),
+      heard: this.heard,
+      wanted: this.wanted,
+    };
   }
 
   rewind(moment: IntakeMoment): void {
     this.queued = moment.queued.slice();
     this.heard = moment.heard;
+    this.wanted = moment.wanted;
     for (const action of this.queued) {
       // It is waiting again: what became of it has not happened.
       if (action.entry !== undefined) {
@@ -889,14 +986,17 @@ class Intake implements Store<IntakeMoment> {
   clear(): void {
     this.queued = [];
     this.heard = false;
+    this.wanted = true;
   }
 
   begin(): void {
     this.txLength = this.queued.length;
+    this.txWanted = this.wanted;
   }
 
   rollback(): void {
     this.queued.length = this.txLength;
+    this.wanted = this.txWanted;
   }
 
   commit(): void {}
@@ -1173,6 +1273,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // Attached before the world loads a save, which may hold some of each.
     const intake = new Intake();
     world._attach(intake);
+    world._attach(new Visits(world));
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
@@ -1194,11 +1295,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       save = current.value;
     }
     if (save !== undefined) {
-      const { world: stored, changes } = save;
       // Before anything else can touch the world: a load fills an empty one.
       const loaded = Result.try(() => {
-        world.load(stored);
-        world.restoreChanges(changes);
+        world.load(save.world);
       });
       if (Result.isFailure(loaded)) {
         const error = loaded.failure;
@@ -1249,7 +1348,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       readonly told: Told;
       readonly changes: SavedChanges[];
       readonly logLength: number;
-      readonly wanted: boolean;
     }
     const checkpointEvery = options.checkpointEvery ?? 60;
     if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
@@ -1429,7 +1527,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       Context.add(Commands, commands),
       Context.add(Ticks, {
         more() {
-          wanted = true;
+          intake.wanted = true;
         },
       }),
       Context.add(Events, events),
@@ -1895,9 +1993,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     // The stage that is running between two ticks, if one is.
     let between: "frame" | "input" | undefined;
-    // Whether the game asked for its next tick: `Ticks.more`. An app that
-    // has not ticked yet has not been asked, and is taken to want one.
-    let wanted = true;
     // The action whose handler is running, if one is.
     let applying: string | undefined;
     // A handler a tick runs is part of the tick: the stage wins.
@@ -2245,7 +2340,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           unseen ? () => true : (reader) => !reader.startsWith(FRAME_READER)
         ),
         logLength: actionLog.length,
-        wanted,
       };
       moments.add(moment);
       return Exit.succeed(moment);
@@ -2266,7 +2360,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
         deltas.pop();
       }
-      wanted = was.wanted;
       commands.apply();
     };
     const runTick = (
@@ -2292,7 +2385,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       intake.heard = false;
       // Each tick is asked afresh: one in which nobody asks is the last.
-      wanted = false;
+      intake.wanted = false;
       start();
       if (!trace) {
         return ticked(delta);
@@ -2458,17 +2551,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return Exit.succeed({
           version,
           world: bytes,
-          // The frame stage's readers are not the game's: a loaded game
-          // has everything still to draw.
-          changes: world.saveChanges(
-            (reader) => !reader.startsWith(FRAME_READER)
-          ),
           logLength: actionLog.length,
         });
       },
       get settled() {
         if (
-          wanted ||
+          intake.wanted ||
           intake.queued.length > 0 ||
           dispatcher.pending > 0 ||
           !events.settled()

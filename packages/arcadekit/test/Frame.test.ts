@@ -899,7 +899,10 @@ describe("what the frame stage reads", () => {
           throw new Error("the save was refused");
         }
         // The save knows the simulation's reader and not the frame's.
-        const readers = save.value.changes.flatMap((changes) =>
+        const visits = readSnapshot(save.value.world).stores.find(
+          (store) => store.name === App.VISITS
+        )?.data as { readers: Record<string, number> }[];
+        const readers = visits.flatMap((changes) =>
           Object.keys(changes.readers)
         );
         expect(readers.length).toBe(1);

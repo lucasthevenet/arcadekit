@@ -438,6 +438,26 @@ describe("a system that has more to do", () => {
     expect(said.actionLog).toEqual(unsaid.actionLog);
   });
 
+  it("has not asked when the action that asked is refused", () => {
+    const Ask = Action.define(
+      "st/Ask",
+      Schema.Struct({ refuse: Schema.Boolean })
+    );
+    const ask = Action.handler(Ask, function* ({ refuse }) {
+      (yield* Ticks).more();
+      if (refuse) {
+        return yield* Effect.fail("refused" as const);
+      }
+    });
+    const app = run(App.make({ handlers: [ask] }));
+    app.tick(1);
+    expect(app.settled).toBe(true);
+    app.dispatch(Ask, { refuse: true });
+    expect(app.settled).toBe(true);
+    app.dispatch(Ask, { refuse: false });
+    expect(app.settled).toBe(false);
+  });
+
   it("is asked again of a game that was loaded: the first tick of an app is always run", () => {
     const made = App.make({ ...options, systems: [RunDown] });
     const app = run(made);
