@@ -67,6 +67,11 @@
       "types": "./dist/Field.d.ts",
       "default": "./dist/Field.js"
     },
+    "./Heard": {
+      "source": "./src/Heard.ts",
+      "types": "./dist/Heard.d.ts",
+      "default": "./dist/Heard.js"
+    },
     "./Input": {
       "source": "./src/Input.ts",
       "types": "./dist/Input.d.ts",

@@ -9,6 +9,7 @@ import {
   Component,
   EntityId,
   Event,
+  Events,
   Field,
   Journal,
   Query,
@@ -32,6 +33,11 @@ const Damaged = Event.define(
 );
 const Died = Event.define("ru/Died", Schema.Struct({ entity: EntityId }));
 const Ping = Event.define("ru/Ping", Schema.Number);
+// Says a number: how code outside the simulation has an event emitted.
+const Say = Action.define("ru/Say", Schema.Struct({ n: Schema.Number }));
+const say = Action.handler(Say, function* ({ n }) {
+  (yield* Ping).emit(n);
+});
 
 /** Builds an app, hands it to `use`, then closes its scope. */
 const withApp = <A, T>(
@@ -109,16 +115,43 @@ describe("events", () => {
         seen.push([...(yield* Ping).read()]);
       }
     });
-    withApp(App.make({ systems: [Sometimes] }), (app) => {
+    withApp(App.make({ systems: [Sometimes], handlers: [say] }), (app) => {
       app.tick(1); // creates the reader
-      app.events.emit(Ping, 1);
+      app.dispatch(Say, { n: 1 });
       app.tick(1);
-      app.events.emit(Ping, 2);
+      app.dispatch(Say, { n: 2 });
       app.tick(1);
-      app.events.emit(Ping, 3);
+      app.dispatch(Say, { n: 3 });
       app.tick(1);
       // It looked at ticks 1 and 4 only: events 1 and 2 had been dropped by then.
       expect(seen).toEqual([[], [3]]);
+    });
+  });
+
+  it("are emitted by the simulation alone: outside it, an action emits them", () => {
+    let kept: { emit(n: number): void } | undefined;
+    let bus: { emit(def: typeof Ping, n: number): void } | undefined;
+    const Keeper = System.make("Keeper", function* () {
+      kept = yield* Ping;
+      // A system that has the bus and no handle emits through it.
+      bus = yield* Effect.service(Events);
+      bus.emit(Ping, 7);
+    });
+    withApp(App.make({ systems: [Keeper], handlers: [say] }), (app) => {
+      app.tick(1);
+      expect(app.events.pending(Ping)).toBe(1);
+      const refused =
+        /The event "ru\/Ping" was emitted from outside the simulation\..*Issue an action whose handler emits it/;
+      // Through the bus, through a handle asked for outside, and through one
+      // a system kept.
+      expect(() => app.events.emit(Ping, 1)).toThrow(refused);
+      expect(() => app.events.handle(Ping).emit(1)).toThrow(refused);
+      expect(() => kept!.emit(1)).toThrow(refused);
+      expect(() => bus!.emit(Ping, 1)).toThrow(refused);
+      expect(app.events.pending(Ping)).toBe(1);
+      // An action's handler is the simulation's.
+      app.dispatch(Say, { n: 1 });
+      expect(app.events.pending(Ping)).toBe(2);
     });
   });
 });

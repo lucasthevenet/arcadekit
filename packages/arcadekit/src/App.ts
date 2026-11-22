@@ -69,7 +69,7 @@ import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { World as EcsWorld } from "./ecs/world";
 import type { Moment as WorldMoment } from "./ecs/world";
 import { EventBus } from "./Event";
-import type { Told } from "./Event";
+import type { Told } from "./Heard";
 import * as Input from "./Input";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
@@ -1785,7 +1785,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               if (entry !== undefined) {
                 entry.refused = describe(error);
               }
-              events.emit(Action.Rejected, {
+              events._emit(Action.Rejected, {
                 action: name,
                 payload: Action.jsonOf(action),
                 error: refusal(error),

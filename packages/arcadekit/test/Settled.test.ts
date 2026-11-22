@@ -57,9 +57,23 @@ const Opening = System.make("st/Opening", function* () {
   (yield* Commands).spawn(Piece.of({ x: 0 }));
 }).pipe(State.onEnter(Phase, "playing"));
 
+/** Says that a piece has landed, or has moved, with no piece doing either. */
+const Declare = Action.define(
+  "st/Declare",
+  Schema.Struct({ landed: Schema.Boolean })
+);
+const declare = Action.handler(Declare, function* ({ landed }) {
+  if (landed) {
+    (yield* Landed).emit({});
+  } else {
+    (yield* Moved).emit({ by: 1 });
+  }
+});
+
 const Rules = Plugin.make("st/Rules", {
   systems: [Tally, Land, Opening],
   handlers: [
+    declare,
     Action.handler(Begin, function* () {
       (yield* Phase).set("playing");
     }),
@@ -133,14 +147,14 @@ describe("app.settled", () => {
     app.tick(1);
     expect(app.world.singleton(Score).moves).toBe(1);
     expect(app.settled).toBe(true);
-    // One emitted from outside, between two ticks, waits too.
-    app.events.emit(Landed, {});
+    // One an action emitted between two ticks waits too.
+    app.dispatch(Declare, { landed: true });
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(true);
     expect(app.world.singleton(Score).moves).toBe(2);
     // Of whichever kind: this one, and then the one it sets off.
-    app.events.emit(Moved, { by: 1 });
+    app.dispatch(Declare, { landed: false });
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(false);

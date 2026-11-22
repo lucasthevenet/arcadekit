@@ -449,12 +449,7 @@ describe("events with a schema", () => {
       expect(app.events.pending(Twin)).toBe(1);
     });
     withApp(App.make({}), (app) => {
-      app.events.emit(Hit, {
-        target: 1 as Entity,
-        amount: 1,
-        at: new Date(1),
-        seed: 1n,
-      });
+      expect(app.events.pending(Hit)).toBe(0);
       expect(() => app.events.emit(Twin, 1)).toThrow(/both named/);
       expect(() => app.events.pending(Twin)).toThrow(/both named/);
     });
