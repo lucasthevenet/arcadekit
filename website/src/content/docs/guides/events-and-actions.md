@@ -39,6 +39,7 @@ const Dust = System.make("fx/Dust", function* () {
 - An event is dropped once every system has had a chance to read it.
 - The frame and input stages also see every event once, however many ticks ran between two frames. That is how sound and UI follow the game.
 - A system never waits for an event: it reads what is there and finishes within its tick.
+- Only the simulation emits: a system of the tick, a handler or a plugin's setup. An event is in no log, so emitting from anywhere else throws. Code outside the simulation issues an [action](#actions) whose handler emits the event.
 
 An event is a fact: name it in the past tense, prefixed with its feature, such as `"physics/Landed"`. The name identifies the event within an app, and a second, different event with the same name is refused when it is first used.
 

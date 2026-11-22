@@ -51,6 +51,7 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
         "Driver",
         "Event",
         "Field",
+        "Outbox",
         "Plugin",
         "Query",
         "Resource",

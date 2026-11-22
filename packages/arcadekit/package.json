@@ -87,6 +87,11 @@
       "types": "./dist/Migrate.d.ts",
       "default": "./dist/Migrate.js"
     },
+    "./Outbox": {
+      "source": "./src/Outbox.ts",
+      "types": "./dist/Outbox.d.ts",
+      "default": "./dist/Outbox.js"
+    },
     "./Plugin": {
       "source": "./src/Plugin.ts",
       "types": "./dist/Plugin.d.ts",

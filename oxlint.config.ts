@@ -274,7 +274,6 @@ export default defineConfig({
       "packages/arcadekit/src/ecs/world.ts": 1735,
       "packages/arcadekit/src/ecs/query.ts": 808,
       "packages/arcadekit/src/ecs/snapshot.ts": 708,
-      "packages/arcadekit/src/Event.ts": 678,
       "packages/arcadekit/src/Browser.ts": 629,
     }).map(([file, max]) => ({
       files: [file],
