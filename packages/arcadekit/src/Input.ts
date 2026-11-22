@@ -37,7 +37,7 @@
  * come from the package's other entry point, which only a page imports:
  *
  *   import * as Browser from "arcadekit/Browser"
- *   Browser.runMain(App.run(...), { target: canvas })
+ *   Browser.runMain(Driver.run(...), { target: canvas })
  *
  * Nothing provides a source to a replay or a server, and no devices are read
  * there.

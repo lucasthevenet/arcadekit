@@ -67,13 +67,13 @@ const Demo = Plugin.make("Demo", {
 });
 
 // --- the entry point -------------------------------------------------------------
-// App.run runs the app that App.make makes until it is interrupted: sixty
+// Driver.run runs the app that App.make makes until it is interrupted: sixty
 // ticks a second, and the frame stage each time the display is due, which
 // under Node is a timer. Before its first frame, a step on the effect that
 // makes the app has it, where this demo steps the same app by hand.
 const program = Effect.gen(function* () {
   const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
-  yield* App.run(
+  yield* Driver.run(
     App.make(App.define({ plugins: [Demo] }), { seed: 7 }).pipe(
       Effect.tap((app) =>
         Effect.gen(function* () {
@@ -113,7 +113,7 @@ const program = Effect.gen(function* () {
             `turn-based step: tick ${before} -> ${app.time.tick}`
           );
 
-          // 3. Real time is what App.run does next, from here.
+          // 3. Real time is what Driver.run does next, from here.
           app.world.spawn(
             Position.of({ x: 0, y: 0 }),
             Velocity.of({ x: 0, y: 30 })

@@ -10,14 +10,14 @@ You can look at what a game does in two ways. **Inspecting** an app copies what 
 `app.inspect()` returns what the game holds and what it did last, as plain data. In a page, keep the app where the browser's console can reach it:
 
 ```ts
-import { App, Plugin } from "arcadekit";
+import { App, Driver, Plugin } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect } from "effect";
 
 const Game = Plugin.make("game/Game", {});
 
 Browser.runMain(
-  App.run(
+  Driver.run(
     App.make(App.define({ plugins: [Game] })).pipe(
       Effect.tap((app) =>
         Effect.sync(() => {
@@ -53,7 +53,7 @@ Then type `app.inspect()` in the console, or `console.table(app.inspect().system
 Provide a tracer to the program, and the app traces itself:
 
 ```ts
-import { App, System } from "arcadekit";
+import { App, Driver, System } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
@@ -73,7 +73,7 @@ const Tracing = OtlpTracer.layer({
 );
 
 Browser.runMain(
-  App.run(App.make(App.define({ systems: [Move, Draw] })), { hz: 60 }).pipe(
+  Driver.run(App.make(App.define({ systems: [Move, Draw] })), { hz: 60 }).pipe(
     Effect.provide(Tracing)
   ),
   { target: document.querySelector("canvas")! }
@@ -111,7 +111,7 @@ A span costs about 3 µs, so a traced tick of 10 systems takes about 30 µs more
 ```ts sketch
 import { Tracer } from "effect";
 
-App.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(
+Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(
   Effect.provideService(Tracer.MinimumTraceLevel, "Info"),
   Effect.provide(Tracing)
 );

@@ -8,7 +8,7 @@ A **cue** is a named sound played because something happened: the simulation emi
 ## Cues
 
 ```ts
-import { App, Event, Plugin, Sound } from "arcadekit";
+import { App, Driver, Event, Plugin, Sound } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Schema } from "effect";
 
@@ -32,7 +32,7 @@ const Game = Plugin.make("game/Game", {
 });
 
 Browser.runMain(
-  App.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }),
+  Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }),
   {
     sounds: { coin: "/coin.wav", thud: "/thud.wav" },
   }

@@ -705,7 +705,7 @@ describe("Browser.layer", () => {
     const page = makePage();
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
-      App.run(
+      Driver.run(
         App.make(App.define({ plugins: [Flying] })).pipe(
           Effect.tap((app) =>
             Effect.sync(() => {
@@ -814,7 +814,7 @@ describe("Browser.runMain", () => {
     let made: App.Any | undefined;
     let ended: Exit.Exit<unknown, unknown> | undefined;
     Browser.runMain(
-      App.run(
+      Driver.run(
         App.make(App.define({ plugins: [Sound] })).pipe(
           Effect.tap((app) =>
             Effect.sync(() => {
@@ -1994,7 +1994,7 @@ describe("a page's sound", () => {
     }).pipe(System.inStage("frame"));
     const start = (options: Browser.Options) =>
       Effect.runFork(
-        App.run(App.make(App.define({ plugins: [Game], systems: [Ask] })), {
+        Driver.run(App.make(App.define({ plugins: [Game], systems: [Ask] })), {
           hz: 60,
         }).pipe(
           Effect.provide(

@@ -38,7 +38,7 @@ A save is taken between two ticks. It contains the world as a [snapshot](#snapsh
 
 It is essentially the snapshot plus a little text: for 100,000 entities with four float fields, 2.8 MB, taking about 0.7 ms.
 
-`App.make(game, { save })` continues a game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds its effects. Given to `App.run`, it starts a page from one. A save holds where the game's random sequence had reached, so `save` and `seed` can't both be given.
+`App.make(game, { save })` continues a game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds its effects. Given to `Driver.run`, it starts a page from one. A save holds where the game's random sequence had reached, so `save` and `seed` can't both be given.
 
 To return to an earlier moment of the same app within the same run, `Timeline.capture(app)` and `Timeline.rewind(app, moment)` work in memory, and encode none of the pending actions and events. See [capturing and rewinding](lockstep-and-rollback.md#capturing-and-rewinding).
 

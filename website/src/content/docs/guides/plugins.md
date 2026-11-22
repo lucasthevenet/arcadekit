@@ -102,7 +102,7 @@ Give each plugin its own folder, and make the app in a file at the root:
 
 ```
 game/
-  main.ts           your game's own plugin, and App.run
+  main.ts           your game's own plugin, and Driver.run
   physics/
     index.ts        the plugin, and what other plugins use from it
     loops.ts        its raw loops: plain functions with no imports

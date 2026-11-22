@@ -3,11 +3,13 @@
  * which is what lets the same game run in real time, turn by turn, or as fast
  * as possible in a test.
  *
+ *   Driver.run(App.make(Duel), { hz: 60 })           // the usual entry point
  *   const step = Driver.fixedStep(app, { hz: 60 })   // by hand: step(seconds)
  *   yield* Driver.frames(app, { hz: 60 })            // in a page, once per repaint
  *   yield* Driver.interval(app, { hz: 60 })          // on a timer
  */
 import { Clock, Context, Duration, Effect, Schedule } from "effect";
+import type { Scope } from "effect";
 
 /**
  * Anything with a `tick`, so drivers work with every kind of app.
@@ -384,3 +386,44 @@ export const frames: (
     return Effect.sync(stop);
   });
 });
+
+/**
+ * Runs an app until interrupted, from the effect that makes it. This is the
+ * usual entry point.
+ *
+ *   const Duel = App.define({ plugins: [Game] })
+ *   Browser.runMain(Driver.run(App.make(Duel, { seed: 1 }), { hz: 60 }), {
+ *     target: canvas,
+ *   })
+ *
+ * It is `frames` on the app, in a scope of the app's own: the app is made,
+ * and the frame loop follows the display, running the ticks that are due at
+ * `hz`, then the frame stage, once per repaint. It never ends on its own.
+ * `frames` is the same loop for a program that makes its app itself, and
+ * keeps it in a scope of its own.
+ *
+ * Interrupting it stops the loop and closes that scope, so nothing is left
+ * running: no pending frame, and everything the plugins' layers acquired is
+ * released. The platform's `runMain` interrupts it when the page closes or
+ * the process is told to stop.
+ *
+ * What is to be connected to the app before its first frame, a button that
+ * dispatches or a menu that saves, is a step of the effect that makes it:
+ * `App.make(Duel).pipe(Effect.tap((app) => ...))`. What that step acquires is
+ * released with the app.
+ *
+ * Provide what the game needs from outside to `Driver.run` as a whole; it
+ * stays provided for as long as the game runs, which is what a listening
+ * layer such as `Browser.layer` needs. It fails with what making the app
+ * fails with, and dies with whatever a tick throws.
+ *
+ * It runs wherever there is a display, which outside a page is a timer:
+ * `NodeRuntime.runMain(Driver.run(...))` runs the same game under Node.
+ *
+ * @category Running
+ */
+export const run = <A extends Tickable, E, R>(
+  app: Effect.Effect<A, E, R>,
+  options: StepOptions
+): Effect.Effect<never, E, Exclude<R, Scope.Scope>> =>
+  Effect.scoped(Effect.flatMap(app, (made) => frames(made, options)));

@@ -54,7 +54,7 @@ const Movement = System.make("game/Movement", function* () {
 });
 
 Browser.runMain(
-  App.run(App.make(App.define({ systems: [Movement] })), { hz: 60 }),
+  Driver.run(App.make(App.define({ systems: [Movement] })), { hz: 60 }),
   {
     target: canvas,
   }

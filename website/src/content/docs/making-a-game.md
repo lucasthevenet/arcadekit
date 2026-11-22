@@ -234,7 +234,7 @@ Keys become actions. `Input.bind` creates an input-stage system, which runs befo
 Drawing happens in the frame stage, between ticks, where the world is read-only. A frame system can read anything and change nothing, so drawing never affects the simulation.
 
 ```ts title="main.ts"
-import { App, Input, Plugin, Query, System } from "arcadekit";
+import { App, Driver, Input, Plugin, Query, System } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Context, Effect, Layer } from "effect";
 
@@ -280,14 +280,14 @@ const Game = Plugin.make("catch/Game", {
 });
 
 Browser.runMain(
-  App.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+  Driver.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
     hz: 60,
   }).pipe(Effect.provide(Screen.layer)),
   { target: canvas, preventDefault: ["ArrowLeft", "ArrowRight"] }
 );
 ```
 
-`App.make` creates the app, and `App.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
+`App.make` creates the app, and `Driver.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
 Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`.
 

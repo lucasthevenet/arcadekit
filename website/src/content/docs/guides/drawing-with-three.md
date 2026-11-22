@@ -39,7 +39,7 @@ Only page code imports `@arcadekit/three`: the plugin that defines how each kind
 
 ```ts title="main.ts"
 import { Three } from "@arcadekit/three";
-import { App, Plugin } from "arcadekit";
+import { App, Driver, Plugin } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect, Layer } from "effect";
 import { AmbientLight, IcosahedronGeometry, MeshStandardMaterial } from "three";
@@ -68,7 +68,7 @@ const Look = Plugin.make("game/Look", {
 });
 
 Browser.runMain(
-  App.run(App.make(App.define({ plugins: [Look] })), { hz: 60 }).pipe(
+  Driver.run(App.make(App.define({ plugins: [Look] })), { hz: 60 }).pipe(
     Effect.provide(Three.layerWebGL({ canvas }))
   ),
   { target: canvas }
@@ -137,7 +137,7 @@ const Follow = System.make("game/Follow", function* () {
 - `Three.Scene` is the service: `scene`, a Three.js `Scene`, and `camera`, a perspective camera at (0, 0, 10) until you move or replace it; `camera` is assignable, to an `OrthographicCamera` for example. It belongs to rendering, not to the game: no tick reads it, and none of it is saved.
 - `Three.Render` is the system that renders. It runs in `"postFrame"`, so every frame-stage system has run before it, wherever each is listed and with no ordering needed: `Three.instances`, `Three.objects`, and your own frame systems that move the camera or anything else.
 - `Three.Renderer` draws the scene, and comes from outside the app, since it needs a canvas. A game that installs `Three.plugin` without providing one doesn't compile.
-- `Three.layerWebGL({ canvas, antialias: true })` provides a `WebGLRenderer` for a page, with the parameters Three.js accepts. `Three.layerRenderer(() => new WebGPURenderer({ canvas }))` provides a renderer you create yourself, ready to draw: initialise a `WebGPURenderer` before providing it. Either is disposed when the scope it is provided to closes, so provide it to the whole program, as `App.run` is above.
+- `Three.layerWebGL({ canvas, antialias: true })` provides a `WebGLRenderer` for a page, with the parameters Three.js accepts. `Three.layerRenderer(() => new WebGPURenderer({ canvas }))` provides a renderer you create yourself, ready to draw: initialise a `WebGPURenderer` before providing it. Either is disposed when the scope it is provided to closes, so provide it to the whole program, as `Driver.run` is above.
 - The output follows the canvas's size on the page: when it changes, the renderer is resized without touching the canvas's style, and a perspective camera gets the new aspect ratio. `fit: false` turns this off, and you are responsible for fitting other camera types. `pixelRatio` defaults to the page's own, capped at 2.
 
 ## In a test
