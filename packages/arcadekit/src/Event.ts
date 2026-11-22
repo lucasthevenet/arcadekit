@@ -30,8 +30,8 @@ import { SnapshotError } from "./ecs/snapshot";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
-import { Heard } from "./Heard";
-import type { Stage, Told } from "./Heard";
+import { Outbox } from "./Outbox";
+import type { Stage, Told } from "./Outbox";
 import { Events } from "./Services";
 
 /**
@@ -571,7 +571,7 @@ export class EventBus {
   stage: Stage | undefined;
 
   private readonly waiting: Waiting;
-  private readonly heard = new Heard();
+  private readonly outbox = new Outbox();
   /** The handles of the tick's systems and of handlers, by reader and event. */
   private readonly handles = new Map<
     string,
@@ -596,7 +596,7 @@ export class EventBus {
     const channel = this.waiting.channel(def);
     const { reader, stage, waiting } = this;
     if (reader === undefined) {
-      const listener = this.heard.outside(def);
+      const listener = this.outbox.outside(def);
       return {
         emit: (payload) => {
           this.emit(def, payload);
@@ -605,7 +605,7 @@ export class EventBus {
       };
     }
     if (stage !== undefined) {
-      return this.heard.listener(reader, def, stage);
+      return this.outbox.listener(reader, def, stage);
     }
     let mine = this.handles.get(reader);
     if (mine === undefined) {
@@ -674,7 +674,7 @@ export class EventBus {
    * @internal
    */
   lastTick(): Record<string, readonly unknown[]> {
-    return this.heard.lastTick();
+    return this.outbox.lastTick();
   }
 
   /**
@@ -683,7 +683,7 @@ export class EventBus {
    * @internal
    */
   expect(stage: Stage, tick: number): void {
-    this.heard.expect(stage, tick);
+    this.outbox.expect(stage, tick);
   }
 
   /**
@@ -703,7 +703,7 @@ export class EventBus {
   close(tick: number): void {
     this.waiting.close();
     this.told(tick);
-    this.heard.ticked(tick);
+    this.outbox.ticked(tick);
   }
 
   /**
@@ -713,7 +713,7 @@ export class EventBus {
    * @internal
    */
   told(tick: number): void {
-    this.heard.tell(tick, this.waiting.take());
+    this.outbox.tell(tick, this.waiting.take());
   }
 
   /**
@@ -722,7 +722,7 @@ export class EventBus {
    * @internal
    */
   ended(stage: Stage, tick: number): void {
-    this.heard.ended(stage, tick);
+    this.outbox.ended(stage, tick);
   }
 
   /**
@@ -731,7 +731,7 @@ export class EventBus {
    * @internal
    */
   mark(): Told {
-    return this.heard.mark();
+    return this.outbox.mark();
   }
 
   /**
@@ -741,6 +741,6 @@ export class EventBus {
    * @internal
    */
   rewound(to: Told, again: boolean): void {
-    this.heard.rewound(to, again);
+    this.outbox.rewound(to, again);
   }
 }

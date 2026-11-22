@@ -4,7 +4,7 @@
 
 An event is emitted by the simulation alone: a system of the tick, an action's handler or a plugin's setup. `app.events.emit()` and a handle's `emit` throw from anywhere else, where they added an event that no log held, so that a replay of the game and its other peers went on without it.
 
-What the frame and input stages hear is a module of its own, `arcadekit/Heard`, where it was part of `Event`.
+What the frame and input stages hear is a module of its own, `arcadekit/Outbox`, where it was part of `Event`.
 
 **Breaking**
 

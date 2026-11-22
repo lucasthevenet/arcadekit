@@ -1,10 +1,11 @@
 /**
- * What the frame stage, the input stage and outside code hear of a game: the
- * events its ticks emitted, in the order they were told.
+ * A game's outbox: the events its ticks emitted, sent out in the order they
+ * were emitted, for the frame stage, the input stage and outside code to
+ * read. It is how sound and a UI follow a game.
  *
  * It is the other side of `Event`. The events the simulation has yet to read
- * are the game's, and its world holds them. What a stage has heard is not:
- * no snapshot holds it, the hash doesn't cover it, and a rewind doesn't put
+ * are the game's, and its world holds them. What has been sent out is not:
+ * no snapshot holds it, the hash doesn't cover it, and a rewind doesn't take
  * it back. A game that goes back to play on is heard afresh, and one that a
  * session takes back to run the same ticks again is heard once.
  */
@@ -54,7 +55,7 @@ export type Stage = "frame" | "input";
  * @category Models
  */
 export class Listener<P> implements EventHandle<P> {
-  private readonly heard: Heard;
+  private readonly outbox: Outbox;
   readonly def: EventDef<P>;
   /** The stage it is a system of, or undefined for outside code. */
   readonly stage: Stage | undefined;
@@ -71,13 +72,13 @@ export class Listener<P> implements EventHandle<P> {
   rewinds: number;
 
   constructor(
-    heard: Heard,
+    outbox: Outbox,
     def: EventDef<P>,
     stage: Stage | undefined,
     after: Told
   ) {
-    this.rewinds = heard.rewinds;
-    this.heard = heard;
+    this.rewinds = outbox.rewinds;
+    this.outbox = outbox;
     this.def = def;
     this.stage = stage;
     this.after = after;
@@ -89,7 +90,7 @@ export class Listener<P> implements EventHandle<P> {
     );
   }
 
-  readonly read = (): readonly P[] => this.heard.read(this);
+  readonly read = (): readonly P[] => this.outbox.read(this);
 }
 
 /**
@@ -132,14 +133,14 @@ const same = (a: unknown, b: unknown): boolean => {
 };
 
 /**
- * What the frame stage, the input stage and outside code hear of a game: the
- * events its ticks emitted, in the order they were told. It is not the
+ * What a game's ticks have sent out for the frame stage, the input stage and
+ * outside code to read: the events they emitted, in order. It is not the
  * game's. No snapshot holds it and the hash doesn't cover it, and a rewind
- * doesn't put it back: what a stage heard, it heard.
+ * doesn't take it back: what a stage heard, it heard.
  *
  * @category Models
  */
-export class Heard {
+export class Outbox {
   private seq = 0;
   /** How many times the game went back. */
   rewinds = 0;
