@@ -23,6 +23,7 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
+import { InvalidDefinition } from "./Defect";
 import type { CommandBuffer } from "./ecs/commands";
 import { readSingleton, readSnapshot, writeSnapshot } from "./ecs/contents";
 import type { SnapshotContents } from "./ecs/contents";
@@ -350,9 +351,11 @@ export const take = (
 export const versionOf = (given: number | undefined): number => {
   const version = given ?? 0;
   if (!Number.isSafeInteger(version) || version < 0) {
-    throw new Error(
-      `A game's version must be a whole number from 0 up, and this one is ${version}.`
-    );
+    throw new InvalidDefinition({
+      kind: "option",
+      named: "version",
+      message: `A game's version must be a whole number from 0 up, and this one is ${version}.`,
+    });
   }
   return version;
 };

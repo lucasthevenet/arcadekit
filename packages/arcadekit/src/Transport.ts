@@ -27,6 +27,7 @@
  */
 import { Context, Data, Effect, Exit, Layer } from "effect";
 
+import { InvalidDefinition, ScopeClosed } from "./Defect";
 import type { Tickable } from "./Driver";
 import { Rng } from "./ecs/random";
 import * as Lockstep from "./Lockstep";
@@ -234,9 +235,10 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
       (held): Shape => {
         const use = (): TextTransport => {
           if (!held.open) {
-            throw new Error(
-              `The transport "${name}" was used after its scope had closed, and its channel with it. A layer that listens lasts as long as what it is provided to: provide it to the whole program, the one that makes the session and drives it, and not to Transport.connect alone.`
-            );
+            throw new ScopeClosed({
+              what: name,
+              message: `The transport "${name}" was used after its scope had closed, and its channel with it. A layer that listens lasts as long as what it is provided to: provide it to the whole program, the one that makes the session and drives it, and not to Transport.connect alone.`,
+            });
           }
           return held.over;
         };
@@ -358,9 +360,10 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
       (held): Shape => {
         const use = (): TextTransport => {
           if (!held.open) {
-            throw new Error(
-              `The transport to ${url} was used after its scope had closed, and its socket with it. A layer that listens lasts as long as what it is provided to: provide it to the whole program, the one that makes the session and drives it, and not to Transport.connect alone.`
-            );
+            throw new ScopeClosed({
+              what: url,
+              message: `The transport to ${url} was used after its scope had closed, and its socket with it. A layer that listens lasts as long as what it is provided to: provide it to the whole program, the one that makes the session and drives it, and not to Transport.connect alone.`,
+            });
           }
           if (held.closed !== undefined) {
             throw held.closed;
@@ -435,9 +438,11 @@ export const makeHub = (options: HubOptions = {}): Hub => {
     min < 0 ||
     max < min
   ) {
-    throw new Error(
-      `A hub's delay is a whole number of steps, 0 or more, or a range of them, and this one is ${min} to ${max}.`
-    );
+    throw new InvalidDefinition({
+      kind: "option",
+      named: "delay",
+      message: `A hub's delay is a whole number of steps, 0 or more, or a range of them, and this one is ${min} to ${max}.`,
+    });
   }
   let now = 0;
   let sent = 0;

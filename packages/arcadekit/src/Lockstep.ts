@@ -46,6 +46,7 @@ import { Cause, Data, Exit, Schema } from "effect";
 
 import * as Action from "./Action";
 import type * as App from "./App";
+import { InvalidArgument, InvalidDefinition } from "./Defect";
 import type { Tickable } from "./Driver";
 import type * as Save from "./Save";
 import * as Timeline from "./Timeline";
@@ -330,30 +331,40 @@ export const build = <E>(
 ): Session<E | Save.SaveRefused> & Predicting => {
   const { delay, delta, peer, ahead } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
-    throw new Error(
-      `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`
-    );
+    throw new InvalidDefinition({
+      kind: "option",
+      named: "delay",
+      message: `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`,
+    });
   }
   if (!Number.isSafeInteger(ahead) || ahead < 0) {
-    throw new Error(
-      `How far a session runs ahead is a whole number of ticks, 0 or more, and this one is ${ahead}.`
-    );
+    throw new InvalidDefinition({
+      kind: "option",
+      named: "ahead",
+      message: `How far a session runs ahead is a whole number of ticks, 0 or more, and this one is ${ahead}.`,
+    });
   }
   if (!(delta > 0) || !Number.isFinite(delta)) {
-    throw new Error(
-      `A session's delta is the seconds a tick simulates, more than 0, and this one is ${delta}.`
-    );
+    throw new InvalidDefinition({
+      kind: "option",
+      named: "delta",
+      message: `A session's delta is the seconds a tick simulates, more than 0, and this one is ${delta}.`,
+    });
   }
   const peers = options.peers.toSorted(byName);
   if (new Set(peers).size !== peers.length) {
-    throw new Error(
-      `Two peers of a session have the same name: ${peers.join(", ")}.`
-    );
+    throw new InvalidDefinition({
+      kind: "option",
+      named: "peers",
+      message: `Two peers of a session have the same name: ${peers.join(", ")}.`,
+    });
   }
   if (!peers.includes(peer)) {
-    throw new Error(
-      `The peer "${peer}" is not among the peers of its own session: ${peers.join(", ")}. Every peer is given the names of all of them, its own among them.`
-    );
+    throw new InvalidDefinition({
+      kind: "option",
+      named: "peer",
+      message: `The peer "${peer}" is not among the peers of its own session: ${peers.join(", ")}. Every peer is given the names of all of them, its own among them.`,
+    });
   }
 
   // What this peer issued and has not put in a message yet.
@@ -563,9 +574,10 @@ export const build = <E>(
     given?: number
   ): Exit.Exit<boolean, E | Drifted | Save.SaveRefused> => {
     if (given !== undefined && Math.abs(given - delta) > 1e-9) {
-      throw new Error(
-        `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`
-      );
+      throw new InvalidArgument({
+        call: "session.tick",
+        message: `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`,
+      });
     }
     const now = app.time.tick;
     if (!begun) {

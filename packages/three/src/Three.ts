@@ -47,6 +47,7 @@
  * - `Three.Render` then draws the scene, through `Three.Renderer`.
  */
 import * as Assets from "arcadekit/Assets";
+import * as Defect from "arcadekit/Defect";
 import { entityIndex } from "arcadekit/ecs";
 import type {
   ComponentDef,
@@ -971,9 +972,10 @@ export const texture = (
           options.prepare?.(made);
           if (made.flipY !== flipY) {
             bitmap.close();
-            throw new Error(
-              `flipY was set to ${made.flipY} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("${url}", { flipY: ${made.flipY} }).`
-            );
+            throw new Defect.InvalidArgument({
+              call: "prepare",
+              message: `flipY was set to ${made.flipY} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("${url}", { flipY: ${made.flipY} }).`,
+            });
           }
           made.needsUpdate = true;
           return made;
@@ -981,11 +983,7 @@ export const texture = (
         catch: (error) =>
           new Assets.AssetFailed({
             url: at,
-            message: `It could not be made a texture: ${
-              error instanceof Error
-                ? error.message || error.name
-                : String(error)
-            }`,
+            message: `It could not be made a texture: ${Defect.said(error)}`,
           }),
       }),
       (made) =>
@@ -1390,13 +1388,14 @@ class Instances implements Kept {
 
   private refuse(entity: Entity, r: number, g: number, b: number): never {
     const most = this.gain === 1 ? 1 : 255;
-    throw new Error(
-      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: each of its numbers is from 0 to ${most}${
+    throw new Defect.InvalidArgument({
+      call: "Three.instances",
+      message: `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: each of its numbers is from 0 to ${most}${
         most === 1
           ? ", as a hex code's bytes over 255 are. For the bytes themselves, give the component fields of whole numbers, Field.u8"
           : ""
-      }. A colour that is brighter than white is one of the renderer's own, which colorSpace: "srgb-linear" hands over as it is.`
-    );
+      }. A colour that is brighter than white is one of the renderer's own, which colorSpace: "srgb-linear" hands over as it is.`,
+    });
   }
 
   /** Makes room for `rows` more instances, and returns where the first goes. */
@@ -1911,16 +1910,16 @@ export function instances(
   const marked = required(options);
   const excluded = options.without ?? [];
   const { color } = options;
-  if (
-    color !== undefined &&
-    (color.storage !== "table" ||
-      !["r", "g", "b"].every((field) => color.fields.includes(field)))
-  ) {
-    throw new Error(
-      `Three.instances("${name}") was given "${color.name}" as its colour, which is not one: a colour is a component kept in a table with the fields r, g and b.`
-    );
-  }
   if (color !== undefined) {
+    if (
+      color.storage !== "table" ||
+      !["r", "g", "b"].every((field) => color.fields.includes(field))
+    ) {
+      throw new Defect.InvalidArgument({
+        call: "Three.instances",
+        message: `Three.instances("${name}") was given "${color.name}" as its colour, which is not one: a colour is a component kept in a table with the fields r, g and b.`,
+      });
+    }
     const kinds = [color.schema.r, color.schema.g, color.schema.b].map(
       (field) => field.kind
     );
@@ -1929,9 +1928,10 @@ export function instances(
       !kinds.every((kind) => numbers.includes(kind)) ||
       new Set(kinds.map(isWhole)).size > 1
     ) {
-      throw new Error(
-        `Three.instances("${name}") was given "${color.name}" as its colour, whose r, g and b are fields of ${kinds.join(", ")}: the three are all floats, from 0 to 1, or all whole numbers, the bytes from 0 to 255.`
-      );
+      throw new Defect.InvalidArgument({
+        call: "Three.instances",
+        message: `Three.instances("${name}") was given "${color.name}" as its colour, whose r, g and b are fields of ${kinds.join(", ")}: the three are all floats, from 0 to 1, or all whole numbers, the bytes from 0 to 255.`,
+      });
     }
   }
   // The terms of a query are a tuple in its type, and a kind with a colour

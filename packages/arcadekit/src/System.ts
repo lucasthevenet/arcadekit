@@ -13,6 +13,8 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
+import { InvalidDefinition } from "./Defect";
+
 /**
  * The stages of a tick, in the order they run.
  *
@@ -377,7 +379,11 @@ export const unique = (systems: readonly System<unknown, unknown>[]): void => {
   const names = new Set<string>();
   for (const system of systems) {
     if (names.has(system.name)) {
-      throw new Error(`Duplicate system name "${system.name}"`);
+      throw new InvalidDefinition({
+        kind: "system",
+        named: system.name,
+        message: `Duplicate system name "${system.name}"`,
+      });
     }
     names.add(system.name);
   }
@@ -408,17 +414,21 @@ export const order = (
         if (!stageNames.has(dep)) {
           const other = stageOf.get(dep);
           if (other === undefined) {
-            throw new Error(
-              `System "${system.name}" must run after "${dep}", which is not in the "${stage}" stage`
-            );
+            throw new InvalidDefinition({
+              kind: "system",
+              named: system.name,
+              message: `System "${system.name}" must run after "${dep}", which is not in the "${stage}" stage`,
+            });
           }
           // A stage that runs earlier has run: there is nothing to order.
           if (everyStage.indexOf(other) < everyStage.indexOf(stage)) {
             continue;
           }
-          throw new Error(
-            `System "${system.name}" must run after "${dep}", which is in the "${other}" stage: that stage runs after every system of the "${stage}" stage, this one among them`
-          );
+          throw new InvalidDefinition({
+            kind: "system",
+            named: system.name,
+            message: `System "${system.name}" must run after "${dep}", which is in the "${other}" stage: that stage runs after every system of the "${stage}" stage, this one among them`,
+          });
         }
         mustFollow.get(system.name)!.push(dep);
       }
@@ -426,17 +436,21 @@ export const order = (
         if (!stageNames.has(later)) {
           const other = stageOf.get(later);
           if (other === undefined) {
-            throw new Error(
-              `System "${system.name}" must run before "${later}", which is not in the "${stage}" stage`
-            );
+            throw new InvalidDefinition({
+              kind: "system",
+              named: system.name,
+              message: `System "${system.name}" must run before "${later}", which is not in the "${stage}" stage`,
+            });
           }
           // A stage that runs later has yet to run: there is nothing to order.
           if (everyStage.indexOf(other) > everyStage.indexOf(stage)) {
             continue;
           }
-          throw new Error(
-            `System "${system.name}" must run before "${later}", which is in the "${other}" stage: that stage runs before every system of the "${stage}" stage, this one among them`
-          );
+          throw new InvalidDefinition({
+            kind: "system",
+            named: system.name,
+            message: `System "${system.name}" must run before "${later}", which is in the "${other}" stage: that stage runs before every system of the "${stage}" stage, this one among them`,
+          });
         }
         mustFollow.get(later)!.push(system.name);
       }
@@ -452,9 +466,11 @@ export const order = (
       }
       if (visiting.includes(system.name)) {
         const cycle = visiting.slice(visiting.indexOf(system.name));
-        throw new Error(
-          `Circular ordering constraints among: ${cycle.join(", ")}`
-        );
+        throw new InvalidDefinition({
+          kind: "system",
+          named: system.name,
+          message: `Circular ordering constraints among: ${cycle.join(", ")}`,
+        });
       }
       visiting.push(system.name);
       for (const dep of mustFollow.get(system.name)!) {

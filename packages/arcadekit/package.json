@@ -52,6 +52,11 @@
       "types": "./dist/Browser.d.ts",
       "default": "./dist/Browser.js"
     },
+    "./Defect": {
+      "source": "./src/Defect.ts",
+      "types": "./dist/Defect.d.ts",
+      "default": "./dist/Defect.js"
+    },
     "./Driver": {
       "source": "./src/Driver.ts",
       "types": "./dist/Driver.d.ts",

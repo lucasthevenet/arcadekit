@@ -742,6 +742,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       },
       handles: (action) => inbox.handles(action),
     };
+    // What is running, for a service that refuses to be read: while the
+    // app is still being made, a plugin's layer or its setup.
+    let now: () => Phase | "setup" = () => "setup";
     const builtIns = Stage.tick({
       world,
       time,
@@ -749,6 +752,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       events,
       intake,
       actions,
+      now: () => now(),
     });
     // Plugin layers are chained in dependency order, so each one can use the
     // built-in services and whatever the plugins before it provide. Effect
@@ -773,6 +777,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         world.reader = undefined;
       }
     );
+    now = () => runner.now;
     // Putting our scheduler in the context makes every fiber started from it
     // (systems, handlers, and anything they fork) use the tick dispatcher.
     const context = Context.merge(provided, built).pipe(
@@ -832,11 +837,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       loop.frame(alpha, delta) as Ran;
     const inputExit = (): Ran => loop.input() as Ran;
     const tickExit = (delta: number, options?: TickOptions): Ran => {
-      if (inbox.diverted !== undefined) {
-        throw new Error(
-          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
-        );
-      }
+      inbox.steppedByItsApp();
       return loop.tick(delta, options) as Ran;
     };
 
@@ -858,6 +859,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       actionLog: log.entries,
       record(since) {
         runner.whileIdle(
+          "record",
           (busy) =>
             `record() was called during a ${busy}. A game is recorded between ticks.`
         );
@@ -869,6 +871,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       },
       save() {
         runner.whileIdle(
+          "save",
           (busy) =>
             `save() was called during a ${busy}. A game is saved between ticks.`
         );
@@ -879,6 +882,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       },
       inspect() {
         runner.whileIdle(
+          "inspect",
           (busy) =>
             `inspect() was called from inside a ${busy}. A game is inspected between ticks.`
         );
@@ -896,6 +900,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       },
       checkpoint() {
         runner.whileIdle(
+          "checkpoint",
           (busy) =>
             `checkpoint() was called during a ${busy}. A checkpoint is taken between ticks, where a replay can compare it.`
         );
@@ -923,12 +928,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         inbox.enqueueByName(name, payload, from);
       },
       divert(take) {
-        if (inbox.diverted !== undefined) {
-          throw new Error(
-            "divert() was called on an app that has been taken over already. An app is in one session at a time."
-          );
-        }
-        inbox.diverted = take;
+        inbox.divert(take);
         return {
           deliver: (name, payload, from) => {
             inbox.deliver(name, payload, from);

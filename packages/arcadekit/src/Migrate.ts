@@ -1,3 +1,4 @@
+import { InvalidArgument } from "./Defect";
 /**
  * Functions that update an old save's world to match the game's current
  * components. A migration receives the save in a plain, self-describing form
@@ -45,9 +46,10 @@ const componentOf = (
 ): SnapshotComponent => {
   const component = world.components.find((each) => each.name === name);
   if (component === undefined) {
-    throw new Error(
-      `The save holds no component named "${name}". It holds: ${world.components.map((each) => each.name).join(", ") || "none"}.`
-    );
+    throw new InvalidArgument({
+      call: "Migrate",
+      message: `The save holds no component named "${name}". It holds: ${world.components.map((each) => each.name).join(", ") || "none"}.`,
+    });
   }
   return component;
 };
@@ -75,9 +77,10 @@ const columnsOf = (
 const fieldOf = (component: SnapshotComponent, field: string) => {
   const found = component.fields.find((each) => each.name === field);
   if (found === undefined) {
-    throw new Error(
-      `"${component.name}" has no field named "${field}" in the save. It has: ${component.fields.map((each) => each.name).join(", ") || "none"}.`
-    );
+    throw new InvalidArgument({
+      call: "Migrate",
+      message: `"${component.name}" has no field named "${field}" in the save. It has: ${component.fields.map((each) => each.name).join(", ") || "none"}.`,
+    });
   }
   return found;
 };
@@ -132,9 +135,10 @@ const columnOf = (
       typeof value !== "number" ||
       (whole && (!Number.isInteger(value) || value < min || value > max))
     ) {
-      throw new Error(
-        `The ${kind} field "${field}" of "${component}" cannot hold ${shown(value)}: it holds ${whole ? `whole numbers from ${min} to ${max}` : "numbers"}.`
-      );
+      throw new InvalidArgument({
+        call: "Migrate",
+        message: `The ${kind} field "${field}" of "${component}" cannot hold ${shown(value)}: it holds ${whole ? `whole numbers from ${min} to ${max}` : "numbers"}.`,
+      });
     }
     numbers[row] = value;
   }
@@ -153,7 +157,10 @@ export const renameComponent = (
 ): void => {
   const component = componentOf(world, from);
   if (world.components.some((each) => each.name === to)) {
-    throw new Error(`The save already holds a component named "${to}".`);
+    throw new InvalidArgument({
+      call: "Migrate.renameComponent",
+      message: `The save already holds a component named "${to}".`,
+    });
   }
   component.name = to;
   for (const table of world.tables) {
@@ -185,7 +192,10 @@ export const renameField = (
   const definition = componentOf(world, component);
   const field = fieldOf(definition, from);
   if (definition.fields.some((each) => each.name === to)) {
-    throw new Error(`"${component}" already has a field named "${to}".`);
+    throw new InvalidArgument({
+      call: "Migrate.renameField",
+      message: `"${component}" already has a field named "${to}".`,
+    });
   }
   field.name = to;
   for (const { columns } of columnsOf(world, component)) {
@@ -215,7 +225,10 @@ export const addField = <K extends FieldKind>(
 ): void => {
   const definition = componentOf(world, component);
   if (definition.fields.some((each) => each.name === field)) {
-    throw new Error(`"${component}" already has a field named "${field}".`);
+    throw new InvalidArgument({
+      call: "Migrate",
+      message: `"${component}" already has a field named "${field}".`,
+    });
   }
   const at =
     before === undefined

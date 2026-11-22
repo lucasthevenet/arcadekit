@@ -194,6 +194,35 @@ const noCodeFromText: Rule = {
   },
 };
 
+const noPlainError: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Outside the storage core, a source makes no plain Error: a mistake of the program is a class of arcadekit/Defect.",
+    },
+  },
+  create: (context) => {
+    const source = sourceOf(context.filename);
+    // The storage core imports no package, Effect among them: its errors are its own.
+    if (source === undefined || source.file.startsWith("src/ecs/")) {
+      return {};
+    }
+    const check = (
+      node: NodeOf<"CallExpression"> | NodeOf<"NewExpression">
+    ): void => {
+      if (node.callee.type === "Identifier" && node.callee.name === "Error") {
+        context.report({
+          node,
+          message:
+            "A plain Error says nothing of which mistake it is but its words. Throw a class of arcadekit/Defect (WrongPhase, InvalidDefinition, InvalidArgument, TakenOver, ScopeClosed, NotSynchronous), or Effect.die with one, whose tag and fields a test and a tool can match. A failure a correct program has to expect is a Data.TaggedError of its own, in the error channel.",
+        });
+      }
+    };
+    return { CallExpression: check, NewExpression: check };
+  },
+};
+
 /** A node as far as finding what encloses it needs. */
 interface Enclosing {
   readonly type: string;
@@ -238,6 +267,7 @@ export default {
     "entry-imports": entryImports,
     "no-page": noPage,
     "no-code-from-text": noCodeFromText,
+    "no-plain-error": noPlainError,
     "top-level-classes": topLevelClasses,
   },
 };

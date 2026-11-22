@@ -13,6 +13,7 @@
 export * as Action from "./Action";
 export * as App from "./App";
 export * as Assets from "./Assets";
+export * as Defect from "./Defect";
 export * as Driver from "./Driver";
 export {
   Component,

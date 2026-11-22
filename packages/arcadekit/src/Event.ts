@@ -26,6 +26,7 @@
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
+import { InvalidDefinition, WrongPhase } from "./Defect";
 import { SnapshotError } from "./ecs/snapshot";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
@@ -290,9 +291,11 @@ class Waiting implements Store<WaitingMoment> {
     // The name is how a save, a tool and another machine know the event.
     const known = this.names.get(def.name);
     if (known !== undefined && known !== def) {
-      throw new Error(
-        `Two different events are both named "${def.name}". An event's name identifies it in an app and in a save, so give each its own, prefixed with the feature it belongs to.`
-      );
+      throw new InvalidDefinition({
+        kind: "event",
+        named: def.name,
+        message: `Two different events are both named "${def.name}". An event's name identifies it in an app and in a save, so give each its own, prefixed with the feature it belongs to.`,
+      });
     }
     this.names.set(def.name, def);
     const channel = new Channel<P>(def);
@@ -303,9 +306,11 @@ class Waiting implements Store<WaitingMoment> {
 
   emit<P>(channel: Channel<P>, payload: P): void {
     if (this.world.frozen) {
-      throw new Error(
-        `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
-      );
+      throw new WrongPhase({
+        call: "emit",
+        phase: undefined,
+        message: `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`,
+      });
     }
     channel.values.push(payload);
     this.emitted.push({ def: channel.def, payload });
@@ -540,10 +545,12 @@ class Waiting implements Store<WaitingMoment> {
 }
 
 /** The refusal of an event emitted by code that is not the simulation's. */
-const outside = (def: EventDef<unknown>): Error =>
-  new Error(
-    `The event "${def.name}" was emitted from outside the simulation. No log holds an event, so a replay of the game would not have it, and neither would another peer. Issue an action whose handler emits it, with app.enqueue or app.dispatch.`
-  );
+const outside = (def: EventDef<unknown>): WrongPhase =>
+  new WrongPhase({
+    call: "emit",
+    phase: "idle",
+    message: `The event "${def.name}" was emitted from outside the simulation. No log holds an event, so a replay of the game would not have it, and neither would another peer. Issue an action whose handler emits it, with app.enqueue or app.dispatch.`,
+  });
 
 // ---------------------------------------------------------------------------
 // The bus: what a game and an app are given

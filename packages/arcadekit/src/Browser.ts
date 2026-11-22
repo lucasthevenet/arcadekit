@@ -23,12 +23,10 @@ import { Effect, Layer } from "effect";
 import type { Runtime } from "effect";
 
 import * as Assets from "./Assets";
+import { ScopeClosed, said } from "./Defect";
 import * as Driver from "./Driver";
 import * as Input from "./Input";
 import * as Sound from "./Sound";
-
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
 
 // --- the display ---------------------------------------------------------------
 
@@ -281,9 +279,11 @@ const listen = (
     source: {
       sample() {
         if (stopped) {
-          throw new Error(
-            "The page's devices were read after Browser.layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as Browser.runMain does, or with App.run(...).pipe(Effect.provide(Browser.layer())), not to App.make alone."
-          );
+          throw new ScopeClosed({
+            what: "Browser.layer",
+            message:
+              "The page's devices were read after Browser.layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as Browser.runMain does, or with App.run(...).pipe(Effect.provide(Browser.layer())), not to App.make alone.",
+          });
         }
         readPads();
         return state.sample();
@@ -557,10 +557,11 @@ export const layerSound = (
       let closed = false;
       // Whether it was said that a cue came before the first touch.
       let early = false;
-      const failed = (cue: string, url: string, error: unknown): void => {
+      /** Says that a sound will not be played, `what` being how it is known. */
+      const failed = (what: string, error: unknown): void => {
         report(
           Effect.logWarning(
-            `The sound "${cue}" (${url}) will not be played: ${describe(error)}`
+            `The sound ${what} will not be played: ${said(error)}`
           )
         );
       };
@@ -610,11 +611,7 @@ export const layerSound = (
         element.play().catch((error: unknown) => {
           if (!closed && !missing.has(streamed.url)) {
             missing.add(streamed.url);
-            report(
-              Effect.logWarning(
-                `The sound "${streamed.url}" will not be played: ${describe(error)}`
-              )
-            );
+            failed(`"${streamed.url}"`, error);
           }
         });
         const stop = (): void => {
@@ -725,10 +722,10 @@ export const layerSound = (
                       settleAll();
                     }
                   },
-                  (error: unknown) => failed(cue, url, error)
+                  (error: unknown) => failed(`"${cue}" (${url})`, error)
                 );
               },
-              onFailure: (error) => failed(cue, url, error.message),
+              onFailure: (error) => failed(`"${cue}" (${url})`, error.message),
             }),
           { concurrency: "unbounded", discard: true }
         )
@@ -885,7 +882,7 @@ export const sound = (url: string): Assets.Asset<Sound.Clip> =>
       catch: (error) =>
         new Assets.AssetFailed({
           url: at,
-          message: `It could not be made a sound: ${describe(error)}`,
+          message: `It could not be made a sound: ${said(error)}`,
         }),
     })
   );
@@ -912,7 +909,7 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
         catch: (error) =>
           new Assets.AssetFailed({
             url: at,
-            message: `It could not be made a picture: ${describe(error)}`,
+            message: `It could not be made a picture: ${said(error)}`,
           }),
       }),
       (bitmap) => Effect.sync(() => bitmap.close())

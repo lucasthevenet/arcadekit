@@ -19,6 +19,7 @@ import { Cause, Data, Exit, Schema } from "effect";
 
 import * as Action from "./Action";
 import type * as App from "./App";
+import { InvalidArgument, InvalidDefinition, said } from "./Defect";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 
@@ -170,9 +171,11 @@ export class Log implements Store<Since> {
     checkpointEvery: number
   ) {
     if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
-      throw new Error(
-        `checkpointEvery must be a whole number of ticks, 0 for none, and this one is ${checkpointEvery}.`
-      );
+      throw new InvalidDefinition({
+        kind: "option",
+        named: "checkpointEvery",
+        message: `checkpointEvery must be a whole number of ticks, 0 for none, and this one is ${checkpointEvery}.`,
+      });
     }
     this.world = world;
     this.time = time;
@@ -303,9 +306,10 @@ export class Log implements Store<Since> {
       (entries[from - 1]?.tick ?? start) > start ||
       (entries[from]?.tick ?? start) < start
     ) {
-      throw new Error(
-        `record() was given a save of tick ${start} that this app didn't make: its log doesn't reach it there. Record since a save of this app, or record all of it.`
-      );
+      throw new InvalidArgument({
+        call: "record",
+        message: `record() was given a save of tick ${start} that this app didn't make: its log doesn't reach it there. Record since a save of this app, or record all of it.`,
+      });
     }
     // The run that was under way at the start begins there.
     let first = 0;
@@ -378,7 +382,7 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
     if (reason instanceof HashMismatch) {
       return `The replay diverged from its log (entry ${this.index}): ${reason.message}`;
     }
-    const text = Action.said(reason);
+    const text = said(reason);
     const what = Action.isCheckpoint(entry)
       ? `a checkpoint at tick ${entry.tick}`
       : `"${entry.name}" at tick ${entry.tick}`;
@@ -430,9 +434,10 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
 export const replay = (app: App.Any, recording: Recording): void => {
   const { deltas, end, log, start } = recording;
   if (app.time.tick !== start) {
-    throw new Error(
-      `Journal.replay was given a recording that begins at tick ${start}, and the app has run ${app.time.tick} ticks. Replay a recording of a whole game into a fresh app, and one recorded since a save into an app loaded from that save.`
-    );
+    throw new InvalidArgument({
+      call: "Journal.replay",
+      message: `Journal.replay was given a recording that begins at tick ${start}, and the app has run ${app.time.tick} ticks. Replay a recording of a whole game into a fresh app, and one recorded since a save into an app loaded from that save.`,
+    });
   }
   let next = 0;
   let agreedAt: number | undefined;
@@ -510,9 +515,10 @@ export const replay = (app: App.Any, recording: Recording): void => {
     }
     const delta = deltas[run]?.delta;
     if (delta === undefined || deltas[0]!.tick !== start) {
-      throw new Error(
-        `Journal.replay was given a recording with no delta for tick ${tick}: a recording's first run of deltas begins where it does. Decode a recording with Journal.decode, which checks it.`
-      );
+      throw new InvalidArgument({
+        call: "Journal.replay",
+        message: `Journal.replay was given a recording with no delta for tick ${tick}: a recording's first run of deltas begins where it does. Decode a recording with Journal.decode, which checks it.`,
+      });
     }
     applyDue();
     // A replay reads no device: what the devices said is in the log.

@@ -5,6 +5,7 @@
  * what the systems of each are given.
  */
 import {
+  Cause,
   Clock,
   Context,
   Effect,
@@ -16,6 +17,7 @@ import {
 
 import type * as Action from "./Action";
 import type { TickOptions } from "./App";
+import { NotSynchronous } from "./Defect";
 import type { CommandBuffer } from "./ecs/commands";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
@@ -69,8 +71,15 @@ export class Spans {
         level: System.spanLevel,
       })
     ).pollUnsafe();
-    if (made === undefined || Exit.isFailure(made)) {
-      throw new Error(`The span "${name}" could not be made.`);
+    if (made === undefined) {
+      throw new NotSynchronous({
+        what: `The span "${name}"`,
+        message: `The span "${name}" could not be made: the tracer did not make it at once.`,
+      });
+    }
+    if (Exit.isFailure(made)) {
+      // What the tracer failed with, as it is.
+      throw Cause.squash(made.cause);
     }
     return made.value;
   }
@@ -310,6 +319,7 @@ export const make = (parts: Parts): Loop => {
     frame: drawing,
     actions: parts.actions,
     seed: parts.seed,
+    now: () => runner.now,
   });
   const runFrame = Effect.runForkWith(frameContext);
   const source = Context.get(context, Input.Source);
@@ -382,6 +392,7 @@ export const make = (parts: Parts): Loop => {
     delta = 0
   ): Exit.Exit<void, unknown> => {
     runner.whileIdle(
+      "App.frame",
       (busy) =>
         `App.frame was called from inside a ${busy}. The frame stage runs between ticks.`
     );
@@ -396,6 +407,7 @@ export const make = (parts: Parts): Loop => {
 
   const runInputStage = (): Exit.Exit<void, unknown> => {
     runner.whileIdle(
+      "App.input",
       (busy) =>
         `App.input was called from inside a ${busy}. The input stage runs between ticks, before one.`
     );
@@ -449,7 +461,10 @@ export const make = (parts: Parts): Loop => {
     delta: number,
     options?: TickOptions
   ): Exit.Exit<void, unknown> => {
-    runner.whileIdle((busy) => `App.tick was called from inside a ${busy}`);
+    runner.whileIdle(
+      "App.tick",
+      (busy) => `App.tick was called from inside a ${busy}`
+    );
     // A tick hears the devices first. Whoever steps the app may have
     // seen to it, as a driver does; if not, it is seen to here.
     if (

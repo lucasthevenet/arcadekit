@@ -36,6 +36,7 @@
  */
 import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
 
+import { said } from "./Defect";
 import { SnapshotError } from "./ecs/snapshot";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
@@ -326,14 +327,6 @@ export class Actions extends Context.Service<
     readonly handles: (action: AnyActionDef) => boolean;
   }
 >()("arcadekit/Actions") {}
-
-/**
- * Summarizes an error in a few words, for a log entry or a message.
- *
- * @internal
- */
-export const said = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
 
 /**
  * An action waiting for the next tick.

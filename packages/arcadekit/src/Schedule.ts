@@ -9,6 +9,7 @@
  */
 import { Effect } from "effect";
 
+import { InvalidDefinition } from "./Defect";
 import type * as Plugin from "./Plugin";
 import type * as State from "./State";
 import * as System from "./System";
@@ -126,19 +127,25 @@ export const make = (
     }
     const state = trigger.state as State.State<string>;
     if (System.isFrameStage(system.stage)) {
-      throw new Error(
-        `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
-      );
+      throw new InvalidDefinition({
+        kind: "system",
+        named: system.name,
+        message: `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`,
+      });
     }
     if (system.stage === "input") {
-      throw new Error(
-        `System "${system.name}" is a hook and is in the input stage. A hook runs at the start of a tick, when the game enters or leaves a state; the input stage runs before the tick. Read the devices only in some states with System.runIf(State.is(...)).`
-      );
+      throw new InvalidDefinition({
+        kind: "system",
+        named: system.name,
+        message: `System "${system.name}" is a hook and is in the input stage. A hook runs at the start of a tick, when the game enters or leaves a state; the input stage runs before the tick. Read the devices only in some states with System.runIf(State.is(...)).`,
+      });
     }
     if (!state.values.includes(trigger.value)) {
-      throw new Error(
-        `System "${system.name}" is a hook for "${trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
-      );
+      throw new InvalidDefinition({
+        kind: "system",
+        named: system.name,
+        message: `System "${system.name}" is a hook for "${trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`,
+      });
     }
     hooked.add(state);
     const key = hookKey(state, trigger.on, trigger.value);
