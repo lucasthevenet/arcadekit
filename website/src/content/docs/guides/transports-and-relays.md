@@ -7,7 +7,7 @@ A session holds no socket. Its messages are carried by a service, **`Transport`*
 
 ## Connecting a session to a transport
 
-`Transport.connect(session)` returns what a driver steps in the session's place. Each tick, it passes the session what arrived, runs the tick, and sends what the session produced, whether the tick ran, waited or failed: a session that stops because peers drifted apart tells the others first.
+`Transport.connect(session)` opens the transport and returns what a driver steps in the session's place. Each tick, it passes the session what arrived, runs the tick, and sends what the session produced, whether the tick ran, waited or failed: a session that stops because peers drifted apart tells the others first.
 
 There is no default transport. A multiplayer game without one doesn't compile: every way of reaching the other peers is an explicit choice.
 
@@ -20,7 +20,9 @@ There is no default transport. A multiplayer game without one doesn't compile: e
 
 A transport needs little from its channel: every message must arrive, in any order. Duplicates are dropped by the session.
 
-Provide the transport's layer to the whole program, as below. Provided to `Transport.connect` alone, it closes as soon as the session connects, and the first tick throws with an explanation.
+A transport's layer opens nothing. `Transport.connect` opens the channel or the socket in the scope of the program that calls it, and it closes with that scope, so `Transport.connect` requires a `Scope`. Provide the layer to the whole program or to `Transport.connect` alone: either way, the channel lasts as long as the program that drives the session. A transport used after its scope has closed throws and says so.
+
+`Transport.open` opens the transport the same way, for a program that sends and receives messages itself.
 
 ## Within one browser
 
@@ -59,9 +61,9 @@ const program = Effect.gen(function* () {
 Browser.runMain(program, { target: document.querySelector("canvas")! });
 ```
 
-`Transport.layerWebSocket` opens a WebSocket to a relay, which forwards each message to the room's other peers. The address names the room and the peer. Messages sent before the socket opens are buffered and sent once it does. It uses the standard `WebSocket`, available in pages, workers and Node 22 alike.
+`Transport.layerWebSocket` opens a WebSocket to a relay, which forwards each message to the room's other peers. The address names the room and the peer. It opens when `Transport.connect` opens the transport. Messages sent before the socket opens are buffered and sent once it does. It uses the standard `WebSocket`, available in pages, workers and Node 22 alike.
 
-When the socket closes for any reason other than its layer's scope closing, the game ends for that peer:
+When the socket closes for any reason other than the scope it was opened in closing, the game ends for that peer:
 
 - `send` and `receive` throw `Transport.Closed` from then on, so the next tick fails and its driver stops. The error carries the close code and the relay's reason: `"name taken"` when the peer's name is already in the room.
 - It doesn't reconnect: a message lost in transit would be lost for good, and a returning peer would have missed messages nobody resends.
@@ -100,7 +102,7 @@ export const layer = Transport.layer(transport);
 
 - Messages travel in the format `Message.encode` writes. Text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
 - The channel must deliver every message. A WebSocket does; a data channel must be configured to.
-- `transport.close()` stops listening. Unlike the two layers, a transport created this way doesn't report being used after that, unless your game makes it.
+- `transport.close()` stops listening. `send` and `receive` throw from then on. A transport passed to `Transport.layer` is open already, and your game closes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
 
 A transport that doesn't carry text is a `Transport.Shape` of your own, passed to `Transport.layer`. Neither of its calls waits, so a tick stays one synchronous step: whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.

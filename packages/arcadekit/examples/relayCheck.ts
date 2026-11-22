@@ -10,7 +10,7 @@
  * `examples/relay-cloudflare` with `/rooms` after it, or one of your own.
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Console, Context, Data, Effect, Layer, Result, Schema } from "effect";
+import { Console, Data, Effect, Result, Schema } from "effect";
 
 import { Action, App, Field, Singleton } from "../src/index";
 import { Message, Relay, Session, Transport } from "../src/net/index";
@@ -44,11 +44,10 @@ const wait = (ms: number) =>
 
 /** A peer's own transport, for as long as the scope it is opened in. */
 const open = (peer: string, inRoom = room) =>
-  Effect.map(
-    Layer.build(
+  Transport.open.pipe(
+    Effect.provide(
       Transport.layerWebSocket(Relay.address(base, { room: inRoom, peer }))
-    ),
-    (context) => Context.get(context, Transport.Transport)
+    )
   );
 
 /** Waits until a transport's socket has closed, and gives why. */
@@ -78,11 +77,10 @@ const check = Effect.gen(function* () {
       peers: ["ada", "grace"],
       delta: 1 / 30,
     });
-    const transport = yield* Layer.build(
-      Transport.layerWebSocket(Relay.address(base, { room, peer }))
-    );
     const connected = yield* Transport.connect(session).pipe(
-      Effect.provide(transport)
+      Effect.provide(
+        Transport.layerWebSocket(Relay.address(base, { room, peer }))
+      )
     );
     seats.push({ peer, app: session.app, session, connected });
   }

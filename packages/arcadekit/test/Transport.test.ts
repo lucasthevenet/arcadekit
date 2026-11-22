@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Result } from "effect";
+import { Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App, Driver, Journal } from "../src/index";
@@ -45,12 +45,10 @@ const seated = (
         delta: DELTA,
         ahead: ahead ?? 0,
       });
-      // Each peer is a program of its own, with a transport that lasts as
-      // long as it does: here they share a scope, so each one's layer is
-      // built into it.
-      const transport = yield* Layer.build(layerOf(name));
+      // Provided to the one line that connects: the transport is opened
+      // in the scope of the program, and lasts as long as it does.
       const connected = yield* Transport.connect(session).pipe(
-        Effect.provide(transport)
+        Effect.provide(layerOf(name))
       );
       seats.push({ name, app: session.app, session, connected });
     }
@@ -324,11 +322,21 @@ describe("a session joined to a transport", () => {
         ).toThrow(/Transport/u);
         const hub = Transport.makeHub();
         const made = Effect.runSync(
+          Effect.scoped(
+            Transport.connect(session).pipe(
+              Effect.provide(Transport.layer(hub.port("ada")))
+            )
+          )
+        );
+        expect(made.tick()).toBe(true);
+        // Nor without the scope the transport is opened in. A hand-made
+        // transport is open already, so this one runs all the same.
+        Effect.runSync(
+          // @ts-expect-error A transport is opened in a scope.
           Transport.connect(session).pipe(
             Effect.provide(Transport.layer(hub.port("ada")))
           )
         );
-        expect(made.tick()).toBe(true);
       }
     );
   });
@@ -367,6 +375,16 @@ describe("a transport over text", () => {
     expect(listening).toBe(1);
     transport.close();
     expect(listening).toBe(0);
+    // Closed, it says so, in place of a game that waits for ever.
+    expect(() => transport.receive()).toThrow(
+      /A transport over text was used after it was closed/u
+    );
+    expect(() => transport.send(message("ada", 4))).toThrow(
+      /used after it was closed/u
+    );
+    expect(sent).toHaveLength(1);
+    transport.close();
+    expect(listening).toBe(0);
   });
 });
 
@@ -375,6 +393,17 @@ const later = (ms = 5): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+/** Waits, a few milliseconds at a time, until something holds. */
+const until = async (holds: () => boolean, what: string): Promise<void> => {
+  for (let i = 0; i < 400; i++) {
+    if (holds()) {
+      return;
+    }
+    await later(5);
+  }
+  throw new Error(`timed out waiting until ${what}`);
+};
 
 describe("the transport between tabs, a BroadcastChannel", () => {
   const nextRoom = (): string => `arcadekit-test/${crypto.randomUUID()}`;
@@ -389,9 +418,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const open = Effect.map(
-            Layer.build(Transport.layerBroadcastChannel(name)),
-            (context) => Context.get(context, Transport.Transport)
+          const open = Transport.open.pipe(
+            Effect.provide(Transport.layerBroadcastChannel(name))
           );
           const ada = yield* open;
           const grace = yield* open;
@@ -451,10 +479,11 @@ describe("the transport between tabs, a BroadcastChannel", () => {
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
-            const context = yield* Layer.build(
-              Transport.layerBroadcastChannel("game/room")
-            );
-            const transport = Context.get(context, Transport.Transport);
+            const layer = Transport.layerBroadcastChannel("game/room");
+            // A layer opens nothing: opening the transport does.
+            yield* Layer.build(layer);
+            expect(made).toHaveLength(0);
+            const transport = yield* Transport.open.pipe(Effect.provide(layer));
             expect(made).toHaveLength(1);
             expect(made[0]!.name).toBe("game/room");
             expect(typeof made[0]!.onmessage).toBe("function");
@@ -473,23 +502,55 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     }
   });
 
-  it("stops hearing when its scope has closed", async () => {
+  it("lasts as long as the program that opened it, whatever its layer is provided to", async () => {
     const name = nextRoom();
     const outside = new BroadcastChannel(name);
-    // Provided to the one line that asks for it, and gone with that line.
+    const heard: unknown[] = [];
+    outside.onmessage = (event: MessageEvent<unknown>) => {
+      heard.push(event.data);
+    };
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          // Provided to the one line that connects, and open after it.
+          const session = yield* Session.make(CoinGame, {
+            seed: 5,
+            peer: "ada",
+            peers: ["ada", "grace"],
+            delta: DELTA,
+          });
+          const connected = yield* Transport.connect(session).pipe(
+            Effect.provide(Transport.layerBroadcastChannel(name))
+          );
+          expect(connected.tick()).toBe(true);
+          yield* Effect.promise(() =>
+            until(() => heard.length > 0, "the first message was heard")
+          );
+        })
+      )
+    );
+    outside.close();
+  });
+
+  it("stops hearing when the scope it was opened in has closed, and says so", async () => {
+    const name = nextRoom();
+    const outside = new BroadcastChannel(name);
+    // Opened in a scope that is gone once the line has run.
     const kept = await Effect.runPromise(
-      Transport.Transport.pipe(
-        Effect.provide(Transport.layerBroadcastChannel(name))
+      Effect.scoped(
+        Transport.open.pipe(
+          Effect.provide(Transport.layerBroadcastChannel(name))
+        )
       )
     );
     outside.postMessage(Message.encode(message("grace", 0)));
     await later(20);
     // It says so, in place of a game that waits for ever.
     expect(() => kept.receive()).toThrow(
-      /was used after its scope had closed.*provide it to the whole program/u
+      /was used after the scope it was opened in had closed.*drive the session in that program/u
     );
     expect(() => kept.send(message("ada", 0))).toThrow(
-      /was used after its scope had closed/u
+      /was used after the scope it was opened in had closed/u
     );
     outside.close();
   });

@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Exit, Layer, Result } from "effect";
+import { Cause, Effect, Exit, Result } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
@@ -389,9 +389,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
 
   /** A peer's transport, in a scope the test closes. */
   const open = (url: string) =>
-    Effect.map(Layer.build(Transport.layerWebSocket(url)), (context) =>
-      Context.get(context, Transport.Transport)
-    );
+    Transport.open.pipe(Effect.provide(Transport.layerWebSocket(url)));
 
   it("carries a message to the other peers of the room, and what was sent before it opened", async () => {
     const served = await serve();
@@ -452,13 +450,12 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               peers: ["ada", "grace"],
               delta: DELTA,
             });
-            const transport = yield* Layer.build(
-              Transport.layerWebSocket(
-                Relay.address(served.url, { room: "match", peer: name })
-              )
-            );
             const connected = yield* Transport.connect(session).pipe(
-              Effect.provide(transport)
+              Effect.provide(
+                Transport.layerWebSocket(
+                  Relay.address(served.url, { room: "match", peer: name })
+                )
+              )
             );
             seats.push({ name, app: session.app, session, connected });
           }
@@ -690,12 +687,12 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     const served = await serve();
     stop = served.stop;
     const url = Relay.address(served.url, ada);
-    const kept = await Effect.runPromise(
-      Transport.Transport.pipe(Effect.provide(Transport.layerWebSocket(url)))
-    );
+    const kept = await Effect.runPromise(Effect.scoped(open(url)));
     expect(() => kept.receive()).toThrow(
-      /was used after its scope had closed, and its socket with it.*provide it to the whole program/u
+      /was used after the scope it was opened in had closed, and its socket with it.*drive the session in that program/u
     );
-    expect(() => kept.send(message("ada", 0))).toThrow(/after its scope/u);
+    expect(() => kept.send(message("ada", 0))).toThrow(
+      /after the scope it was opened in/u
+    );
   });
 });
