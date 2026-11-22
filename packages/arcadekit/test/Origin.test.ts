@@ -8,6 +8,7 @@ import {
   Save,
   System,
   Time,
+  Timeline,
   readSnapshot,
 } from "../src/index";
 import {
@@ -152,10 +153,13 @@ describe("who issued an action", () => {
         heard: false,
       });
       // And where a game goes back to: the tip is waiting again, hers still.
-      const moment = app.capture();
+      const moment = Timeline.capture(app);
       app.tick(DELTA);
       expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });
-      app.rewind(Exit.isSuccess(moment) ? moment.value : { tick: -1 });
+      Timeline.rewind(
+        app,
+        Exit.isSuccess(moment) ? moment.value : { tick: -1 }
+      );
       expect(purseOf(app)).toEqual({ ada: 0, grace: 0 });
       app.tick(DELTA);
       expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });

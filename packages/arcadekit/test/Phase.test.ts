@@ -1,7 +1,7 @@
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { Action, App, System } from "../src/index";
+import { Action, App, System, Timeline } from "../src/index";
 import { withApp } from "./peers";
 
 describe("what an app is running", () => {
@@ -49,17 +49,23 @@ describe("what an app is running", () => {
   it("refuses, from a handler that dispatch runs, what is for between ticks", () => {
     // Each would act on a game halfway through an action, which the action
     // may yet take back.
-    const calls: [string, (app: App.Any) => unknown][] = [
-      ["App.tick", (app) => app.tick(1)],
-      ["App.frame", (app) => app.frame(0)],
-      ["App.input", (app) => app.input()],
-      ["save()", (app) => app.save()],
-      ["capture()", (app) => app.capture()],
-      ["record()", (app) => app.record()],
-      ["checkpoint()", (app) => app.checkpoint()],
-      ["inspect()", (app) => app.inspect()],
+    const named = 'a handler of "ph/Call"';
+    const calls: [string, (app: App.Any) => unknown, string][] = [
+      ["App.tick", (app) => app.tick(1), named],
+      ["App.frame", (app) => app.frame(0), named],
+      ["App.input", (app) => app.input(), named],
+      ["save()", (app) => app.save(), named],
+      // Another module's: it knows a handler is running, and not which.
+      [
+        "Timeline.capture()",
+        (app) => Timeline.capture(app),
+        "an action's handler",
+      ],
+      ["record()", (app) => app.record(), named],
+      ["checkpoint()", (app) => app.checkpoint(), named],
+      ["inspect()", (app) => app.inspect(), named],
     ];
-    for (const [name, call] of calls) {
+    for (const [name, call, busy] of calls) {
       let app: App.Any | undefined;
       const Call = Action.define("ph/Call", Schema.Struct({}));
       const calling = Action.handler(Call, function* () {
@@ -73,7 +79,7 @@ describe("what an app is running", () => {
         expect(Exit.isFailure(exit), name).toBe(true);
         expect(String(Exit.isFailure(exit) ? exit.cause : ""), name).toMatch(
           new RegExp(
-            `Error: ${name.replace(/[.()]/gu, "\\$&")} was called (?:during|from inside) a handler of "ph/Call"`,
+            `Error: ${name.replace(/[.()]/gu, "\\$&")} was called (?:during|from inside) ${busy}`,
             "u"
           )
         );

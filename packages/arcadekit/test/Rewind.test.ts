@@ -16,6 +16,7 @@ import {
   System,
   Ticks,
   Time,
+  Timeline,
   readSnapshot,
 } from "../src/index";
 import type { Entity } from "../src/index";
@@ -54,8 +55,8 @@ const stretch = (app: Game, seed: number, ticks: number): number[] => {
   return hashes;
 };
 
-const captured = (app: App.Any): App.Moment => {
-  const moment = app.capture();
+const captured = (app: App.Any): Timeline.Moment => {
+  const moment = Timeline.capture(app);
   if (Exit.isFailure(moment)) {
     throw new Error("the game could not be captured");
   }
@@ -80,10 +81,10 @@ describe("a game that is put back to a moment", () => {
         const first = stretch(app, seed + 10, 30);
         const firstLog = structuredClone(app.actionLog);
         // Another way from the same moment, and back again.
-        app.rewind(moment);
+        Timeline.rewind(app, moment);
         stretch(app, seed + 20, 45);
         expect(app.world.hash()).not.toBe(first.at(-1));
-        app.rewind(moment);
+        Timeline.rewind(app, moment);
         expect({
           save: app.save(),
           log: app.actionLog,
@@ -110,7 +111,7 @@ describe("a game that is put back to a moment", () => {
       const before = stretch(app, 5, 25);
       const moment = captured(app);
       stretch(app, 99, 17);
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       return [...before, ...stretch(app, 6, 25)];
     });
     expect(wandering).toEqual(straight);
@@ -124,7 +125,7 @@ describe("a game that is put back to a moment", () => {
       const log = structuredClone(app.actionLog);
       // The log begins with the hash of the state the game starts from.
       expect(log[0]).toEqual({ tick: 0, hash: expect.any(Number) });
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       expect(app.actionLog).toEqual([]);
       expect(stretch(app, 8, 5)).toEqual(first);
       // It starts again, and says so again.
@@ -146,7 +147,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       app.tick(DELTA);
       expect(app.settled).toBe(true);
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       // The clock had asked for the next tick, and is owed it again.
       expect(app.settled).toBe(false);
     });
@@ -162,7 +163,7 @@ describe("a game that is put back to a moment", () => {
         "ls/Drop",
         "ls/Whisper",
       ]);
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       // It is waiting again, to be applied by the tick that follows.
       expect(app.settled).toBe(false);
       app.tick(DELTA);
@@ -182,7 +183,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       expect(entry().refused).toBeDefined();
       expect(app.actionLog.length).toBeGreaterThan(logged);
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       // Not yet applied, so not yet refused, and the log is as long as it was.
       expect(entry().refused).toBeUndefined();
       expect(app.actionLog.length).toBe(logged);
@@ -208,7 +209,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       app.tick(DELTA);
       expect(heard).toEqual([[], [1], [2], [3]]);
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       heard.length = 0;
       app.tick(DELTA);
       app.tick(DELTA);
@@ -239,7 +240,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       app.frame(0);
       expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       seen.tick.length = 0;
       seen.frame.length = 0;
       app.tick(DELTA);
@@ -250,13 +251,30 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
+  it("runs what was waiting to resume in the game it gives up", () => {
+    withApp(game(), (app) => {
+      app.tick(DELTA);
+      const moment = captured(app);
+      const count = app.world.entityCount;
+      // A fiber's work, queued for the next flush: it is of the game as it
+      // is now, and not of the one the rewind brings back.
+      app.dispatcher.scheduleTask(() => {
+        app.world.spawn(Coin.of({ value: 7, x: 0 }));
+      }, 0);
+      Timeline.rewind(app, moment);
+      expect(app.dispatcher.pending).toBe(0);
+      app.tick(DELTA);
+      expect(app.world.entityCount).toBe(count);
+    });
+  });
+
   it("throws away commands that were queued and never applied", () => {
     withApp(game(), (app) => {
       app.dispatch(Drop, { by: "ada", value: 1 });
       const moment = captured(app);
       const count = app.world.entityCount;
       const queued = app.commands.spawn(Coin.of({ value: 2, x: 0 }));
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       expect(app.commands.size).toBe(0);
       expect(app.world.entityCount).toBe(count);
       expect(app.world.isAlive(queued)).toBe(false);
@@ -268,16 +286,18 @@ describe("a game that is put back to a moment", () => {
   it("is refused with a moment of another app, and in the middle of a tick", () => {
     const moment = withApp(game(), (app) => captured(app));
     withApp(game(), (app) => {
-      expect(() => app.rewind(moment)).toThrow(
+      expect(() => Timeline.rewind(app, moment)).toThrow(
         /a moment that this app did not capture.*save it and load the save/u
       );
-      expect(() => app.rewind({ tick: 0 })).toThrow(/did not capture/u);
+      expect(() => Timeline.rewind(app, { tick: 0 })).toThrow(
+        /did not capture/u
+      );
     });
     let inside: App.Any | undefined;
     const Meddle = System.make("rw/Meddle", function* () {
       yield* Effect.sync(() => {
         if (inside !== undefined && inside.time.tick === 2) {
-          inside.capture();
+          Timeline.capture(inside);
         }
       });
     });
@@ -285,14 +305,14 @@ describe("a game that is put back to a moment", () => {
       inside = app;
       app.tick(DELTA);
       expect(() => app.tick(DELTA)).toThrow(
-        /capture\(\) was called during a tick/u
+        /Timeline\.capture\(\) was called during a tick/u
       );
     });
-    const taken: App.Moment[] = [];
+    const taken: Timeline.Moment[] = [];
     const Undo = System.make("rw/Undo", function* () {
       yield* Effect.sync(() => {
         if (inside !== undefined && taken.length > 0) {
-          inside.rewind(taken[0]!);
+          Timeline.rewind(inside, taken[0]!);
         }
       });
     });
@@ -301,7 +321,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       taken.push(captured(app));
       expect(() => app.tick(DELTA)).toThrow(
-        /rewind\(\) was called during a tick/u
+        /Timeline\.rewind\(\) was called during a tick/u
       );
     });
   });
@@ -312,7 +332,7 @@ describe("a game that is put back to a moment", () => {
     });
     withApp(App.make({}), (app) => {
       app.commands.spawn(Holder.of({ thing: 1 }));
-      expect(app.capture()).toEqual(
+      expect(Timeline.capture(app)).toEqual(
         Exit.fail(
           new Save.SaveRefused({
             message:
@@ -321,9 +341,9 @@ describe("a game that is put back to a moment", () => {
         )
       );
       app.commands.apply();
-      expect(Exit.isSuccess(app.capture())).toBe(true);
+      expect(Exit.isSuccess(Timeline.capture(app))).toBe(true);
       app.world.spawn(Holder.of({ thing: () => 1 }));
-      const refused = app.capture();
+      const refused = Timeline.capture(app);
       expect(Exit.isFailure(refused)).toBe(true);
       expect(String(Exit.isFailure(refused) ? refused.cause : "")).toMatch(
         /rw\/Holder/u
@@ -334,9 +354,9 @@ describe("a game that is put back to a moment", () => {
   it("is not for an action's handler to call", () => {
     let inside: App.Any | undefined;
     const Back = Action.define("rw/Back", Schema.Struct({}));
-    const taken: App.Moment[] = [];
+    const taken: Timeline.Moment[] = [];
     const back = Action.handler(Back, function* () {
-      yield* Effect.sync(() => inside!.rewind(taken[0]!));
+      yield* Effect.sync(() => Timeline.rewind(inside!, taken[0]!));
     });
     withApp(App.make({ handlers: [back] }), (app) => {
       inside = app;
@@ -344,7 +364,7 @@ describe("a game that is put back to a moment", () => {
       const exit = app.dispatch(Back, {});
       expect(Exit.isFailure(exit)).toBe(true);
       expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
-        /rewind\(\) was called during a handler of "rw\/Back"/u
+        /Timeline\.rewind\(\) was called during an action's handler/u
       );
     });
   });
@@ -372,7 +392,7 @@ describe("the input stage across a rewind and a save", () => {
       const moment = captured(app);
       // What the stage issues now is taken back with the rest.
       app.input();
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       app.tick(DELTA);
       expect(fired).toEqual([1]);
     });
@@ -386,7 +406,7 @@ describe("the input stage across a rewind and a save", () => {
       // The moment holds what the stage issued, and that it ran.
       app.input();
       const moment = captured(app);
-      app.rewind(moment);
+      Timeline.rewind(app, moment);
       app.tick(DELTA);
       expect(fired).toEqual([1]);
     });
@@ -644,13 +664,13 @@ describe("what the stages between ticks hear across a rewind", () => {
         app.frame(0);
         expect(heard.frame).toEqual([5]);
         // The move is undone, and made again: it is a new one.
-        app.rewind(back);
+        Timeline.rewind(app, back);
         app.enqueue(Chime, { n: 5 });
         app.tick(DELTA);
         app.frame(0);
         expect(heard.frame).toEqual([5, 5]);
         // Between two ticks as well.
-        app.rewind(back);
+        Timeline.rewind(app, back);
         app.dispatch(Chime, { n: 5 });
         app.frame(0);
         expect(heard.frame).toEqual([5, 5, 5]);
@@ -666,7 +686,7 @@ describe("what the stages between ticks hear across a rewind", () => {
         // Run ahead with no frame, as a search does, and come back.
         app.tick(DELTA);
         app.tick(DELTA);
-        app.rewind(back);
+        Timeline.rewind(app, back);
         app.frame(0);
         expect(heard.frame).toEqual([1, 1]);
         app.tick(DELTA);

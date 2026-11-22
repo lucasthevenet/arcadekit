@@ -64,7 +64,7 @@ A rollback session runs each tick immediately, predicting that the peers it hasn
 - Every peer ends on the same game. Each applies every action on the tick it is stamped with, whenever it heard of it, and its log replays into a single-player game that never rewound.
 - A peer may see a move accepted that is later refused. When two players take the same coin on the same tick, each sees themselves take it until the other's message arrives. Then both agree that the player whose name sorts first takes it, and the other's take is refused, in the log and in the world.
 
-Before each tick it isn't sure of, the session captures the game with `app.capture()`, and releases the capture once every peer has sent their actions for that tick: `session.kept` captures at a time, never more than `ahead`.
+Before each tick it isn't sure of, the session captures the game with `Timeline.capture(app)`, and releases the capture once every peer has sent their actions for that tick: `session.kept` captures at a time, never more than `ahead`.
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one, so for a very large world each uncertain tick pays that cost.
@@ -97,20 +97,20 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 
 ## Capturing and rewinding
 
-An app can capture a moment of its game and return to it, for an undo, a search ahead, a rewind mechanic or a tool:
+`Timeline` captures a moment of an app's game and returns to it, for an undo, a search ahead, a rewind mechanic or a tool:
 
 ```ts
-import { App, Plugin } from "arcadekit";
+import { App, Plugin, Timeline } from "arcadekit";
 import { Effect, Exit } from "effect";
 
 const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
   const app = yield* App.make({ plugins: [Game] });
-  const moment = app.capture(); // Exit<App.Moment, Save.SaveRefused>
+  const moment = Timeline.capture(app); // Exit<Timeline.Moment, Save.SaveRefused>
   app.tick(1 / 60);
   if (Exit.isSuccess(moment)) {
-    app.rewind(moment.value); // the same app, as it was
+    Timeline.rewind(app, moment.value); // the same app, as it was
   }
 }).pipe(Effect.scoped);
 ```
@@ -118,8 +118,9 @@ const program = Effect.gen(function* () {
 - A moment holds what a [save](saving-and-loading.md) does: the world, the game time, the actions queued for the next tick, the events waiting to be read with every reader's position, what change queries haven't visited, and the log's length. `rewind` restores all of it in place and truncates the log. The app, its world and its services are the same objects as before.
 - It lives in memory and belongs to one app in one run of the program. It holds pending actions and events as they are and encodes none of them, so a game can be captured while a payload its schema doesn't take is pending, when it can't be saved.
 - A game is captured and rewound between ticks. What a rewind doesn't restore is what the requirements above keep out of the simulation's way.
-- After `app.rewind`, the game plays on from the moment. The frame and input stages hear every event it emits from then on, including one they heard before the rewind, and their change queries visit everything again. They hear nothing of the future that was given up before they had read it.
-- A session that rewinds to run the same ticks again takes the app over with `app.divert` and rewinds with what it returns, `rewind`. That is the rewind after which the two stages hear each event once.
+- After `Timeline.rewind`, the game plays on from the moment. The frame and input stages hear every event it emits from then on, including one they heard before the rewind, and their change queries visit everything again. They hear nothing of the future that was given up before they had read it.
+- A session that rewinds to run the same ticks again passes `{ again: true }` to `Timeline.rewind`. That is the rewind after which the two stages hear each event once.
+- `Timeline.capture(app, { stages: true })` also keeps the place of the frame and input stages in what changed, for a rewind that comes before they run again: their change queries then go on from where they were.
 
 ## When peers drift apart
 

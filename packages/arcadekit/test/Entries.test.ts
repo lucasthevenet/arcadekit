@@ -143,7 +143,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./Input");
     expect(entries).toContain("./TickScheduler");
     expect(entries).toContain("./Browser");
-    expect(entries.length).toBe(33);
+    expect(entries.length).toBe(34);
     // No module is in a folder of its own: one file, one entry.
     expect(
       Object.keys(sources).filter(
@@ -225,6 +225,7 @@ describe("the package's entries", () => {
       "Sound",
       "State",
       "System",
+      "Timeline",
       "Transform2d",
       "Transform3d",
       "Transport",

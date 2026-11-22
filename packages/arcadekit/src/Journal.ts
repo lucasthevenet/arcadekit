@@ -19,6 +19,7 @@ import { Cause, Data, Exit, Schema } from "effect";
 
 import * as Action from "./Action";
 import type * as App from "./App";
+import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 
 /** Summarizes an error in a few words, for a log entry or a message. */
@@ -133,8 +134,9 @@ export const decode = (
   Schema.decodeExit(RecordingSchema)(text);
 
 /**
- * Where a recording begins when it is made since a save: the tick the save
- * was made at, and the length the log had then.
+ * A place in a log: a tick, and the length the log had then. Where a
+ * recording begins when it is made since a save, and what a moment of a
+ * game holds of its log.
  *
  * @internal
  */
@@ -147,11 +149,15 @@ export interface Since {
  * The log an app keeps of its game: what entered it from outside, the
  * checkpoints of its world's hash, and how long each tick was. It is about
  * the run and not the game, so no snapshot holds it and the hash doesn't
- * cover it; a rewind takes it back to the length it had.
+ * cover it. It is a store of the app's world all the same, for one thing: a
+ * rewind takes it back to the length it had, with the world.
  *
  * @internal
  */
-export class Log {
+export class Log implements Store<Since> {
+  readonly name = "arcadekit/journal";
+  // What comes from outside is logged as it arrives, between ticks too.
+  readonly betweenTicks = true;
   /** What `app.actionLog` is. */
   readonly entries: Action.LogEntry[] = [];
   /** The number of ticks the game had run when its app was made. */
@@ -252,12 +258,41 @@ export class Log {
     }
   }
 
-  /** Takes the log back to the length it had when the game was at `tick`. */
-  rewind(length: number, tick: number): void {
-    this.entries.length = length;
+  // --- what the world asks of a store: only to go back with it -----------------
+
+  save(): unknown {
+    return undefined;
+  }
+
+  load(): void {}
+
+  hashed(): unknown {
+    return undefined;
+  }
+
+  capture(): Since {
+    return { tick: this.time.tick, logLength: this.entries.length };
+  }
+
+  /** Takes the log back to the length it had when the game was at a tick. */
+  rewind({ logLength, tick }: Since): void {
+    this.entries.length = logLength;
     while ((this.deltas.at(-1)?.tick ?? -1) >= tick) {
       this.deltas.pop();
     }
+  }
+
+  // Not the snapshot's to empty: a world that is restored keeps its log.
+  clear(): void {}
+
+  begin(): void {}
+
+  rollback(): void {}
+
+  commit(): void {}
+
+  contents(): unknown {
+    return undefined;
   }
 
   /** The game as it was played: all of it, or what came since a save. */

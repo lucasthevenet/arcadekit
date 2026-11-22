@@ -167,6 +167,11 @@
       "types": "./dist/TickScheduler.d.ts",
       "default": "./dist/TickScheduler.js"
     },
+    "./Timeline": {
+      "source": "./src/Timeline.ts",
+      "types": "./dist/Timeline.d.ts",
+      "default": "./dist/Timeline.js"
+    },
     "./Transform2d": {
       "source": "./src/Transform2d.ts",
       "types": "./dist/Transform2d.d.ts",

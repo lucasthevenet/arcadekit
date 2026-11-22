@@ -60,18 +60,15 @@ import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
 import * as Driver from "./Driver";
-import type { SavedChanges } from "./ecs/changes";
 import { CommandBuffer } from "./ecs/commands";
 import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { World as EcsWorld } from "./ecs/world";
-import type { Moment as WorldMoment } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Input from "./Input";
 import * as Journal from "./Journal";
-import type { Told } from "./Outbox";
 import * as Plugin from "./Plugin";
 import * as Runner from "./Runner";
 import * as Save from "./Save";
@@ -327,45 +324,6 @@ export interface Any {
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
-   * Captures the game as it is, in memory, to return to with `rewind`: the
-   * world with its time, the actions queued for the next tick, the events waiting
-   * to be read with every reader's position, what change queries haven't
-   * visited yet, and the length of the log. Only between ticks.
-   *
-   * It isn't a save. It holds the queued actions and events as they are, so
-   * none of them is put through its schema, and it belongs to this app in
-   * this run of the program only. It is what an undo, a search ahead or a
-   * rewind mechanic keeps, and the building block for predicting a tick and
-   * resimulating it: `Rollback` captures before each uncertain tick.
-   *
-   * Fails with `SaveRefused` when the world can't be snapshotted: a field holds
-   * a value that can't be saved, or commands are queued but not applied.
-   */
-  readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
-  /**
-   * Restores the game, in place, to when `moment` was captured: the same app,
-   * world and services, holding what they held then. The log is truncated to
-   * its length at that time. Only between ticks, and only with a moment of this
-   * app.
-   *
-   * A moment holds what a save holds, and no more. State held by your game's
-   * own services is left as is: `Rollback.syncTest` finds a tick that reads
-   * it. A `transient` field is undefined afterwards.
-   *
-   * The game plays on from there, as a new one would. What runs between
-   * ticks starts over: frame-stage and input-stage change queries visit
-   * everything again, and the two stages hear every event the game emits
-   * from then on, one they heard before the rewind among them. They hear
-   * nothing of the future that was given up before they had read it.
-   *
-   * **Gotchas**
-   *
-   * A session that goes back to run the same ticks again, as rollback does,
-   * rewinds with the app it took over, `Diverted.rewind`: there, the stages
-   * hear an event once however often its tick is run.
-   */
-  readonly rewind: (moment: Moment) => void;
-  /**
    * Records the world's hash in the action log now, and returns it. Use it for
    * points the game wants verified beyond the ones `checkpointEvery` records,
    * such as when it is saved. Only between ticks.
@@ -439,17 +397,6 @@ export interface Inspection {
 const NO_INPUT: TickOptions = { input: false };
 
 /**
- * A game at one moment, held in memory: what `app.capture()` returns and
- * `app.rewind()` takes. It exposes its tick; the rest is internal to the app.
- *
- * @category Models
- */
-export interface Moment {
-  /** The number of ticks run when it was captured. */
-  readonly tick: number;
-}
-
-/**
  * Options for running a tick.
  *
  * @category Options
@@ -465,8 +412,7 @@ export interface TickOptions {
 
 /**
  * What `divert` returns to the code that took over an app: the two operations
- * the app no longer performs for anyone else, and the capture and the rewind
- * of a game that goes back to run its ticks again.
+ * the app no longer performs for anyone else.
  *
  * @category Models
  */
@@ -485,23 +431,6 @@ export interface Diverted<E = never> {
     delta: number,
     observe?: (system: string | undefined) => void
   ) => Exit.Exit<void, E>;
-  /**
-   * Captures the game, as `capture` does, for a rewind that comes before the
-   * frame and input stages run again. It keeps their place in what changed
-   * too, so the rewind puts them back exactly, where `capture`'s moment has
-   * them see everything again. A stage that runs between the two sees again
-   * what changed since.
-   */
-  readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
-  /**
-   * Puts the game back to a moment, as `rewind` does, to run the same ticks
-   * again with what is now known of them. The frame and input stages hear
-   * each event once across it: an event a tick emits again, with the same
-   * payload, isn't heard twice, and only what the tick now does otherwise
-   * is. After `app.rewind`, which goes back to play on from there, every
-   * event is new to them.
-   */
-  readonly rewind: (moment: Moment) => void;
 }
 
 /**
@@ -587,8 +516,10 @@ export interface App<E = never, HU = never> extends Any {
  * The prefix of a reader's name in the world's change logs when it is a
  * system of the frame stage or the input stage. Such a reader isn't part of
  * the simulation: its place in what changed isn't saved.
+ *
+ * @internal
  */
-const FRAME_READER = "frame:";
+export const STAGE_READER = "frame:";
 
 /** Summarizes an error in a few words, for a log entry or a message. */
 const describe = (error: unknown): string =>
@@ -860,7 +791,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const intake = new Action.Intake();
     world._attach(intake);
     world._attach(
-      new Save.Visits(world, (reader) => !reader.startsWith(FRAME_READER))
+      new Save.Visits(world, (reader) => !reader.startsWith(STAGE_READER))
     );
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
@@ -923,16 +854,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       handlers.set(handler.action.name, handler);
     }
     const log = new Journal.Log(world, time, options.checkpointEvery ?? 60);
-    // The moments this app has captured: `rewind` takes no other.
-    const moments = new WeakSet<Moment>();
-    /** What a moment holds beyond its tick. */
-    interface Captured extends Moment {
-      readonly world: WorldMoment;
-      /** Where the game was in what the stages between ticks were told. */
-      readonly told: Told;
-      readonly changes: SavedChanges[];
-      readonly logLength: number;
-    }
+    world._attach(log);
     const handles = (action: Action.AnyActionDef): boolean =>
       handlers.has(action.name);
     // Who has taken over what comes from outside, if anyone has: `divert`.
@@ -1134,7 +1056,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       for (const turn of turns) {
         const running = turn.system.name;
         runner.running = running;
-        const reader = inTick ? running : `${FRAME_READER}${running}`;
+        const reader = inTick ? running : `${STAGE_READER}${running}`;
         events.reader = reader;
         world.reader = reader;
         turn.ran = true;
@@ -1676,59 +1598,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       return runTick(delta, options);
     };
-    /**
-     * Captures the game. `unseen` is for a moment the stages between ticks
-     * will not run after before it is rewound to: their place in what changed
-     * is kept too.
-     */
-    const captured = (
-      unseen: boolean
-    ): Exit.Exit<Captured, Save.SaveRefused> => {
-      const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
-        Exit.fail(new Save.SaveRefused({ message }));
-      if (commands.size > 0) {
-        return refused(
-          `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
-        );
-      }
-      let held: WorldMoment;
-      try {
-        held = world._capture();
-      } catch (error) {
-        if (error instanceof SnapshotError) {
-          return refused(error.message);
-        }
-        throw error;
-      }
-      const moment: Captured = {
-        tick: time.tick,
-        world: held,
-        told: events.mark(),
-        // What runs between ticks has everything still to draw, unless it
-        // has drawn nothing since.
-        changes: world.saveChanges(
-          unseen ? () => true : (reader) => !reader.startsWith(FRAME_READER)
-        ),
-        logLength: log.entries.length,
-      };
-      moments.add(moment);
-      return Exit.succeed(moment);
-    };
-    /**
-     * Puts the game back to a moment of this app. With `again`, to run the
-     * same ticks again, as a session does: the stages between ticks don't
-     * hear twice what they heard of them.
-     */
-    const rewound = (was: Captured, again: boolean): void => {
-      dispatcher.flush();
-      // What is queued on the buffer was never part of the world.
-      commands.rollback(0);
-      world._rewind(was.world);
-      events.rewound(was.told, again);
-      world.restoreChanges(was.changes);
-      log.rewind(was.logLength, was.tick);
-      commands.apply();
-    };
     const runTick = (
       delta: number,
       options?: TickOptions
@@ -1892,25 +1761,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
         return true;
       },
-      capture() {
-        whileIdle(
-          (busy) =>
-            `capture() was called during a ${busy}. A game is captured between ticks.`
-        );
-        return captured(false);
-      },
-      rewind(moment) {
-        whileIdle(
-          (busy) =>
-            `rewind() was called during a ${busy}. A game is put back between ticks.`
-        );
-        if (!moments.has(moment)) {
-          throw new Error(
-            "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
-          );
-        }
-        rewound(moment as Captured, false);
-      },
       inspect() {
         whileIdle(
           (busy) =>
@@ -1990,25 +1840,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             } finally {
               observer = undefined;
             }
-          },
-          capture: () => {
-            whileIdle(
-              (busy) =>
-                `capture() was called during a ${busy}. A game is captured between ticks.`
-            );
-            return captured(true);
-          },
-          rewind: (moment) => {
-            whileIdle(
-              (busy) =>
-                `rewind() was called during a ${busy}. A game is put back between ticks.`
-            );
-            if (!moments.has(moment)) {
-              throw new Error(
-                "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
-              );
-            }
-            rewound(moment as Captured, true);
           },
         };
       },

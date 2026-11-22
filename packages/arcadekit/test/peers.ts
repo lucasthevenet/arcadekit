@@ -22,6 +22,7 @@ import {
   Singleton,
   System,
   Time,
+  Timeline,
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
@@ -264,9 +265,9 @@ export const withPeers = <A>(
 
 /**
  * Takes an app over as a session does, to go back and run the same ticks
- * again: its ticks, each after the input stage, its captures and its
- * rewinds. What is enqueued on the app is queued for the next tick, as it
- * was.
+ * again: its ticks, each after the input stage, with the captures and the
+ * rewinds a session makes. What is enqueued on the app is queued for the
+ * next tick, as it was.
  */
 export const steered = <E, HU>(app: App.App<E, HU>) => {
   const reins: App.Diverted<E> = app.divert((name, payload) => {
@@ -280,14 +281,16 @@ export const steered = <E, HU>(app: App.App<E, HU>) => {
         throw Cause.squash(exit.cause);
       }
     },
-    capture: (): App.Moment => {
-      const moment = reins.capture();
+    capture: (): Timeline.Moment => {
+      const moment = Timeline.capture(app, { stages: true });
       if (Exit.isFailure(moment)) {
         throw new Error("the game could not be captured");
       }
       return moment.value;
     },
-    rewind: reins.rewind,
+    rewind: (moment: Timeline.Moment): void => {
+      Timeline.rewind(app, moment, { again: true });
+    },
   };
 };
 

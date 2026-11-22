@@ -271,16 +271,17 @@ describe("a rollback session", () => {
         Effect.gen(function* () {
           const counted = (app: Effect.Success<ReturnType<typeof game>>) => {
             const count = { captures: 0 };
-            const session = Rollback.make(
-              {
-                ...app,
-                capture: () => {
-                  count.captures++;
-                  return app.capture();
-                },
-              },
-              { peer: "ada", peers: ["ada", "grace"], delta: DELTA }
-            );
+            // A capture of the game is one of its world.
+            const capture = app.world._capture.bind(app.world);
+            app.world._capture = () => {
+              count.captures++;
+              return capture();
+            };
+            const session = Rollback.make(app, {
+              peer: "ada",
+              peers: ["ada", "grace"],
+              delta: DELTA,
+            });
             return { count, session };
           };
           // Grace says everything before ada runs: ada is sure of every tick.
