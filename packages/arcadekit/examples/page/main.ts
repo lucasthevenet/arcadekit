@@ -21,7 +21,7 @@ import { Effect, Layer } from "effect";
 
 // In a game of your own these are "arcadekit/Browser" and "arcadekit".
 import * as Browser from "../../src/Browser";
-import { App, View } from "../../src/index";
+import { App, Driver, View } from "../../src/index";
 import { Game, Screen } from "./game";
 
 // --- the UI ----------------------------------------------------------------------
@@ -36,16 +36,16 @@ const { mount } =
 mount(document.querySelector("#ui")!, ui);
 
 // --- the entry point -------------------------------------------------------------
-// App.run makes the app and runs it, sixty ticks a second, until it is
+// Driver.run makes the app and runs it, sixty ticks a second, until it is
 // interrupted. Browser.runMain starts it in the page: the frame loop follows
 // the page's repaints, the page's devices are listened to, and when the page
 // goes away the game is interrupted: the loop takes its frame request back,
 // the app's scope closes, what was loaded is let go, and nobody listens any
 // more.
 Browser.runMain(
-  App.run({ plugins: [Game], seed: Date.now() }, { hz: 60 }).pipe(
-    Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))
-  ),
+  Driver.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+    hz: 60,
+  }).pipe(Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))),
   {
     target: document.querySelector("#game")!,
     preventDefault: ["ArrowLeft", "ArrowRight", "Space"],

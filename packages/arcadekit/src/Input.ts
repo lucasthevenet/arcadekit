@@ -37,7 +37,7 @@
  * come from the package's other entry point, which only a page imports:
  *
  *   import * as Browser from "arcadekit/Browser"
- *   Browser.runMain(App.run(...), { target: canvas })
+ *   Browser.runMain(Driver.run(...), { target: canvas })
  *
  * Nothing provides a source to a replay or a server, and no devices are read
  * there.
@@ -196,7 +196,7 @@ export interface ManualSource extends SourceShape {
  * and `move`, using the codes a device would produce.
  *
  *   const source = Input.makeManualSource()
- *   const app = yield* App.make({ plugins: [Game] }).pipe(
+ *   const app = yield* App.make(App.define({ plugins: [Game] })).pipe(
  *     Effect.provideService(Input.Source, source)
  *   )
  *   source.press("Space")

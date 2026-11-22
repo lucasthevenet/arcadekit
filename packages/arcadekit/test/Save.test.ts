@@ -159,7 +159,8 @@ const Game = Plugin.make("sv/Game", {
     commands.spawn(Mote.of({ x: 0, name: "first" }));
   }),
 });
-const options = { plugins: [Game], seed: 21, checkpointEvery: 1 } as const;
+const Played = App.define({ plugins: [Game] });
+const start = { seed: 21, checkpointEvery: 1 } as const;
 
 const withApp = <T, E, A>(
   make: Effect.Effect<T, E, Scope.Scope>,
@@ -204,7 +205,7 @@ const refusal = <E>(exit: Exit.Exit<unknown, E>): E => {
 
 /** Plays `ticks` ticks, saving after tick `saveAt`. */
 const record = (ticks: number, saveAt: number) =>
-  withApp(App.make(options), (app) => {
+  withApp(App.make(Played, start), (app) => {
     let save: Save.Save | undefined;
     let saved: { tick: number; elapsed: number; delta: number } | undefined;
     const hashes: number[] = [];
@@ -240,23 +241,26 @@ describe("a saved game", () => {
       const { save, saved } = recorded;
       expect(saved.tick).toBe(saveAt);
       expect(saved.delta).toBe(saveAt === 0 ? 0 : 1 / 60);
-      const resumed = withApp(App.load(save, options), (app) => {
-        // The world holds the game's time, so the save brings it back.
-        expect(app.time).toEqual(saved);
-        // The log starts again, and what the game logged after the save is
-        // replayed against the checkpoints it took after every tick.
-        expect(app.actionLog).toEqual([]);
-        Journal.replay(app, recorded.tail);
-        return {
-          hash: app.world.hash(),
-          tally: app.world
-            .view(Tallies)
-            .entities()
-            .map((e) => app.world.get(e, Tally)),
-          time: { ...app.time },
-          log: [...app.actionLog],
-        };
-      });
+      const resumed = withApp(
+        App.make(Played, { save, checkpointEvery: 1 }),
+        (app) => {
+          // The world holds the game's time, so the save brings it back.
+          expect(app.time).toEqual(saved);
+          // The log starts again, and what the game logged after the save is
+          // replayed against the checkpoints it took after every tick.
+          expect(app.actionLog).toEqual([]);
+          Journal.replay(app, recorded.tail);
+          return {
+            hash: app.world.hash(),
+            tally: app.world
+              .view(Tallies)
+              .entities()
+              .map((e) => app.world.get(e, Tally)),
+            time: { ...app.time },
+            log: [...app.actionLog],
+          };
+        }
+      );
       expect(resumed.hash).toBe(recorded.hashes.at(-1));
       expect(resumed.tally).toEqual(recorded.tally);
       expect(resumed.time.tick).toBe(90);
@@ -272,8 +276,18 @@ describe("a saved game", () => {
     expect(tally!.pulses).toBeGreaterThan(10);
   });
 
+  it("is not given a seed as well: it holds where the random sequence had got to", () => {
+    const { save } = record(3, 1);
+    expect(() =>
+      // @ts-expect-error a save and a seed are not given together
+      withApp(App.make(Played, { save, seed: 4 }), () => 0)
+    ).toThrow(
+      /App\.make was given a save and the seed 4\..* give one of the two/
+    );
+  });
+
   it("holds the actions that were waiting, the simulation's own among them, and applies them in order", () => {
-    withApp(App.make({ ...options, checkpointEvery: 0 }), (app) => {
+    withApp(App.make(Played, { seed: 21, checkpointEvery: 0 }), (app) => {
       for (let i = 0; i < 12; i++) {
         app.tick(1);
       }
@@ -290,10 +304,13 @@ describe("a saved game", () => {
       ]);
       app.tick(1);
       const expected = app.world.hash();
-      const loaded = withApp(App.load(save, options), (other) => {
-        other.tick(1);
-        return other.world.hash();
-      });
+      const loaded = withApp(
+        App.make(Played, { save, checkpointEvery: 1 }),
+        (other) => {
+          other.tick(1);
+          return other.world.hash();
+        }
+      );
       expect(loaded).toBe(expected);
     });
   });
@@ -313,8 +330,8 @@ describe("a saved game", () => {
         big: 5n,
       });
     });
-    const given = { systems: [Issue], handlers: [stamp] } as const;
-    const save = withApp(App.make(given), (app) => {
+    const Stamped = App.define({ systems: [Issue], handlers: [stamp] });
+    const save = withApp(App.make(Stamped), (app) => {
       app.tick(1);
       const taken = unwrap(app.save());
       expect(queuedIn(taken)).toEqual([
@@ -326,14 +343,14 @@ describe("a saved game", () => {
       return taken;
     });
     stamps.length = 0;
-    withApp(App.load(save, given), (app) => {
+    withApp(App.make(Stamped, { save }), (app) => {
       app.tick(1);
     });
     expect(stamps).toEqual([[86_400_000, "bigint", 5n]]);
   });
 
   it("holds the events that were waiting, and how far each system had read them", () => {
-    withApp(App.make({ ...options, checkpointEvery: 0 }), (app) => {
+    withApp(App.make(Played, { seed: 21, checkpointEvery: 0 }), (app) => {
       for (let i = 0; i < 4; i++) {
         app.tick(1);
       }
@@ -355,7 +372,7 @@ describe("a saved game", () => {
       const expected = heard(app);
       expect(expected).toBe(1 + 2 + 3 + 4 + 5);
       // Loaded, Listen hears tick 4 once, on the next tick, and no more.
-      withApp(App.load(save, options), (other) => {
+      withApp(App.make(Played, { save, checkpointEvery: 1 }), (other) => {
         expect(other.events.pending(Sounded)).toBe(1);
         other.tick(1);
         expect(heard(other)).toBe(1 + 2 + 3 + 4);
@@ -368,12 +385,12 @@ describe("a saved game", () => {
 
   it("does not run setup again, and the game goes on", () => {
     setups = 0;
-    const save = withApp(App.make(options), (app) => {
+    const save = withApp(App.make(Played, start), (app) => {
       expect(setups).toBe(1);
       app.tick(1);
       return unwrap(app.save());
     });
-    withApp(App.load(save, options), (app) => {
+    withApp(App.make(Played, { save, checkpointEvery: 1 }), (app) => {
       expect(setups).toBe(1);
       // One tally and whatever motes the game had: none spawned twice.
       expect(app.world.view(Tallies).count()).toBe(1);
@@ -393,10 +410,13 @@ describe("a saved game", () => {
     const ticksToLoad = (ticks: number, saveAt: number): number => {
       const recorded = record(ticks, saveAt);
       ticksRun = 0;
-      withApp(App.load(recorded.save, options), (app) => {
-        Journal.replay(app, recorded.tail);
-        expect(app.world.hash()).toBe(recorded.hashes.at(-1));
-      });
+      withApp(
+        App.make(Played, { save: recorded.save, checkpointEvery: 1 }),
+        (app) => {
+          Journal.replay(app, recorded.tail);
+          expect(app.world.hash()).toBe(recorded.hashes.at(-1));
+        }
+      );
       return ticksRun;
     };
     expect(ticksToLoad(20, 10)).toBe(10);
@@ -411,7 +431,7 @@ describe("a saved game", () => {
     expect(decoded).toEqual(recorded.save);
     // It is the world's snapshot and a little text.
     expect(bytes.length).toBeLessThan(recorded.save.world.length + 600);
-    withApp(App.load(decoded, options), (app) => {
+    withApp(App.make(Played, { save: decoded, checkpointEvery: 1 }), (app) => {
       Journal.replay(app, recorded.tail);
       expect(app.world.hash()).toBe(recorded.hashes.at(-1));
     });
@@ -438,16 +458,19 @@ describe("a game that cannot be saved as it stands", () => {
     const Issue = System.make("Issue", function* () {
       (yield* Action.Actions).enqueue(Small, { n: 9 });
     });
-    withApp(App.make({ systems: [Issue], handlers: [small] }), (app) => {
-      app.tick(1);
-      expect(refusal(app.save()).message).toMatch(
-        /^Can't save the actions queued for the next tick: the action "sv\/Small" has a payload its schema does not take/
-      );
-    });
+    withApp(
+      App.make(App.define({ systems: [Issue], handlers: [small] })),
+      (app) => {
+        app.tick(1);
+        expect(refusal(app.save()).message).toMatch(
+          /^Can't save the actions queued for the next tick: the action "sv\/Small" has a payload its schema does not take/
+        );
+      }
+    );
   });
 
   it("says which field holds what cannot be saved, and that commands are queued", () => {
-    withApp(App.make({}), (app) => {
+    withApp(App.make(App.define({})), (app) => {
       const entity = app.world.spawn(Blob.of({ v: () => 1 }));
       expect(refusal(app.save()).message).toContain('"sv/Blob.v"');
       app.world.set(entity, Blob, { v: "fine" });
@@ -471,7 +494,7 @@ describe("a game that cannot be saved as it stands", () => {
         thrown = error;
       }
     });
-    withApp(App.make({ systems: [Greedy] }), (made) => {
+    withApp(App.make(App.define({ systems: [Greedy] })), (made) => {
       app = made;
       made.tick(1);
     });
@@ -480,20 +503,24 @@ describe("a game that cannot be saved as it stands", () => {
 });
 
 describe("a save that cannot be loaded", () => {
-  const load = (save: Save.Save, given: object = options) =>
+  const load = (save: Save.Save, game: object = Played) =>
     Effect.runSync(
-      Effect.scoped(Effect.exit(App.load(save, given as typeof options)))
+      Effect.scoped(
+        Effect.exit(
+          App.make(game as typeof Played, { save, checkpointEvery: 1 })
+        )
+      )
     );
 
   it("says how a component has changed since the save was taken", () => {
     // The game as it was, and as a later build of it defines the component.
     const Before = Component.define("sv/Shifting", { x: Field.f32 });
-    const save = withApp(App.make({}), (app) => {
+    const save = withApp(App.make(App.define({})), (app) => {
       app.world.spawn(Before.of({ x: 1 }));
       return unwrap(app.save());
     });
     Component.define("sv/Shifting", { x: Field.f64 });
-    const error = refusal(load(save, {}));
+    const error = refusal(load(save, App.define({})));
     expect(error.problem).toBe("component changed");
     expect(error.message).toContain("x: f32");
     expect(error.message).toContain("x: f64");
@@ -596,11 +623,13 @@ describe("a save that cannot be loaded", () => {
     const waiting = world.stores.find((store) => store.name === Event.STORE)
       ?.data as { name: string; waiting: unknown[]; read: object }[];
     expect(waiting.map((events) => events.name)).toContain("sv/Sounded");
-    expect(Exit.isSuccess(load(save, { plugins: [Bare] }))).toBe(true);
+    expect(Exit.isSuccess(load(save, App.define({ plugins: [Bare] })))).toBe(
+      true
+    );
 
     waiting.push({ name: "sv/Never", waiting: [1], read: {} });
     const renamed = { ...save, world: writeSnapshot(world) };
-    const error = refusal(load(renamed, { plugins: [Bare] }));
+    const error = refusal(load(renamed, App.define({ plugins: [Bare] })));
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("store changed");
     expect(error.message).toBe(

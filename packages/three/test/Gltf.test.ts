@@ -568,10 +568,16 @@ describe("a level's models", () => {
     });
     const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
-      App.make({
-        plugins: [Three.plugin, Assets.plugin],
-        systems: [Assets.during(State.is(Level, "space"), Fleet), Ships, Rocks],
-      }).pipe(
+      App.make(
+        App.define({
+          plugins: [Three.plugin, Assets.plugin],
+          systems: [
+            Assets.during(State.is(Level, "space"), Fleet),
+            Ships,
+            Rocks,
+          ],
+        })
+      ).pipe(
         Effect.provide(
           Layer.mergeAll(
             renderer,

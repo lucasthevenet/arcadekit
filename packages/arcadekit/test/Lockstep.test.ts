@@ -396,7 +396,7 @@ describe("a lockstep session", () => {
         return yield* new Blown({ at: tick });
       }
     });
-    withApp(App.make({ systems: [Fuse] }), (app) => {
+    withApp(App.make(App.define({ systems: [Fuse] })), (app) => {
       const session = Lockstep.make(app, {
         peer: "ada",
         peers: ["ada"],
@@ -408,7 +408,7 @@ describe("a lockstep session", () => {
       expect(session.tick()).toBe(true);
       expect(app.time.tick).toBe(3);
     });
-    withApp(App.make({ systems: [Fuse] }), (app) => {
+    withApp(App.make(App.define({ systems: [Fuse] })), (app) => {
       const session = Lockstep.make(app, {
         peer: "ada",
         peers: ["ada"],
@@ -428,7 +428,7 @@ describe("a lockstep session", () => {
         return yield* new Jammed();
       }
     }).pipe(System.inStage("input"));
-    withApp(App.make({ systems: [Keys] }), (app) => {
+    withApp(App.make(App.define({ systems: [Keys] })), (app) => {
       const session = Lockstep.make(app, {
         peer: "ada",
         peers: ["ada"],

@@ -96,7 +96,7 @@ All three are part of the frame stage in every other way, and `app.frameOrder` l
 Two kinds of change aren't refused where they happen:
 
 - A draw from `world.random` is detected when the frame ends: the generator is restored, so the game is unchanged, and `frame` throws.
-- A write through the raw columns of `eachChunk` is only detected when you ask for it. `App.make({ verifyFrames: true })` hashes the world before the stage and after each of its systems, and `frame` dies with `Stage.FrameChangedWorld`, which names the system. This costs one hash of the world per system, so use it in development and tests. It checks the input stage the same way.
+- A write through the raw columns of `eachChunk` is only detected when you ask for it. `App.make(game, { verifyFrames: true })` hashes the world before the stage and after each of its systems, and `frame` dies with `Stage.FrameChangedWorld`, which names the system. This costs one hash of the world per system, so use it in development and tests. It checks the input stage the same way.
 
 ## The input stage
 
@@ -106,12 +106,12 @@ So a replay reads no device: the log already holds what the devices reported, as
 
 ## What drives the stages
 
-- **`App.run`** creates the app and runs it until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`; under Node it uses a timer.
+- **`Driver.run`** runs the app `App.make` makes until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`; under Node it uses a timer.
 - **`app.tick(delta)`** runs one tick by hand, for a test or a game that steps itself. It runs the input stage first if nothing has since the previous tick. `app.frame(alpha, delta)` runs the frame stage.
 - **`Driver.fixedStep`** runs the ticks that are due for a given amount of real time, each after the input stage, then the frame.
-- **`Driver.frames`** is the loop `App.run` uses, for a program that creates its app itself, and **`Driver.interval`** does the same on a timer.
+- **`Driver.frames`** is the loop `Driver.run` uses, for a program that creates its app itself, and **`Driver.interval`** does the same on a timer.
 
-A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `App.run` still draws every frame but only ticks while something is pending: an action, a state change, a system that asked for another tick, an unread event. See [running a game](../guides/running-a-game.md).
+A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `Driver.run` still draws every frame but only ticks while something is pending: an action, a state change, a system that asked for another tick, an unread event. See [running a game](../guides/running-a-game.md).
 
 To draw a moving entity between two ticks in a frame system of your own, compute its position from a velocity or a previous position the simulation keeps, as `Draw` does above. [`@arcadekit/three`](../guides/drawing-with-three.md) does this for what it draws, with `smooth: true`.
 

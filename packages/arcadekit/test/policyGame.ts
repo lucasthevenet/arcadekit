@@ -178,12 +178,10 @@ const tax = Action.handler(Tax, function* ({ amount }) {
   }
 });
 
-const options = {
+const Game = App.define({
   systems: [Movement, Ageing, Fire, Following, Watching, Draw],
   handlers: [tax],
-  seed: 7,
-  checkpointEvery: 1,
-};
+});
 
 /** Whether this process may make code from text. */
 export const generates = (): boolean => {
@@ -203,7 +201,7 @@ export const play = (): Record<string, unknown> =>
         refusals.length = 0;
         noticed = 0;
         drawn = 0;
-        const app = yield* App.make(options);
+        const app = yield* App.make(Game, { seed: 7, checkpointEvery: 1 });
         const { world } = app;
         let leader: Entity | undefined;
         for (let i = 0; i < 40; i++) {
@@ -252,7 +250,10 @@ export const play = (): Record<string, unknown> =>
         if (Exit.isFailure(read)) {
           return { failed: "decode" };
         }
-        const again = yield* App.load(read.value, options);
+        const again = yield* App.make(Game, {
+          save: read.value,
+          checkpointEvery: 1,
+        });
         again.tick(1 / 60);
         app.tick(1 / 60);
         return {

@@ -189,15 +189,13 @@ export const Controls = Input.bind(
 
 export const DELTA = 1 / 30;
 
-/** What the game is made with, and loaded with. */
-export const gameOptions = (seed = 5, checkpointEvery = 1) => ({
+/** The game every peer plays, and every save of it is loaded as. */
+export const CoinGame = App.define({
   systems: [Tally, Drift, Bot, Fault, Controls, Hear] as const,
   handlers: [drop, take, tip, fire, mint, whisper] as const,
-  seed,
-  checkpointEvery,
 });
 export const game = (seed = 5, checkpointEvery = 1) =>
-  App.make(gameOptions(seed, checkpointEvery));
+  App.make(CoinGame, { seed, checkpointEvery });
 export type Game = Effect.Success<ReturnType<typeof game>>;
 
 /** What each of the two players has in the purse. */

@@ -85,7 +85,10 @@ const Game = Plugin.make("vw/Game", {
 const play = (ui: View.Bridge | undefined, seed = 1) => {
   worked.hud = 0;
   worked.menu = 0;
-  const made = App.make({ plugins: [Game], seed, checkpointEvery: 1 });
+  const made = App.make(App.define({ plugins: [Game] }), {
+    seed,
+    checkpointEvery: 1,
+  });
   return run(
     ui === undefined ? made : made.pipe(Effect.provide(View.layer(ui)))
   );
@@ -113,7 +116,7 @@ const keep = (
 ) => {
   const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
-    App.make({ plugins: [Game], handlers, seed: 1 }).pipe(
+    App.make(App.define({ plugins: [Game], handlers }), { seed: 1 }).pipe(
       Effect.provide(View.layer(ui)),
       Scope.provide(scope)
     )
@@ -226,7 +229,7 @@ describe("a view", () => {
       return values[frame]!;
     });
     const app = run(
-      App.make({ plugins: [View.plugin], systems: [Show] }).pipe(
+      App.make(App.define({ plugins: [View.plugin], systems: [Show] })).pipe(
         Effect.provide(View.layer(ui))
       )
     );
@@ -326,7 +329,9 @@ describe("a view", () => {
     const ui = View.makeBridge();
     const { heard } = listen(ui, Hud);
     const app = run(
-      App.make({ plugins: [Rules] }).pipe(Effect.provide(View.layer(ui)))
+      App.make(App.define({ plugins: [Rules] })).pipe(
+        Effect.provide(View.layer(ui))
+      )
     );
     app.world.singleton(Purse).gold = 9;
     app.frame(0);
@@ -362,7 +367,7 @@ describe("a view", () => {
     });
     const ui = View.makeBridge();
     const { heard } = listen(ui, Hud);
-    const made = App.make({ plugins: [Rules] });
+    const made = App.make(App.define({ plugins: [Rules] }));
     const app = run(made.pipe(Effect.provide(View.layer(ui))));
     const step = (action?: typeof Start | typeof Quit): void => {
       if (action !== undefined) {
@@ -410,7 +415,7 @@ describe("a view", () => {
     const ui = View.makeBridge();
     const { heard } = listen(ui, Hud);
     const app = run(
-      App.make({ plugins: [View.plugin], systems: [Own] }).pipe(
+      App.make(App.define({ plugins: [View.plugin], systems: [Own] })).pipe(
         Effect.provide(View.layer(ui))
       )
     );
@@ -427,7 +432,7 @@ describe("a view", () => {
     });
     const other = View.makeBridge();
     const wrong = run(
-      App.make({ plugins: [View.plugin], systems: [InTick] }).pipe(
+      App.make(App.define({ plugins: [View.plugin], systems: [InTick] })).pipe(
         Effect.provide(View.layer(other))
       )
     );
@@ -676,14 +681,16 @@ describe("what the UI sends", () => {
         said.push(handles(Start), handles(Unknown));
       }).pipe(System.inStage(stage));
     const app = run(
-      App.make({
-        plugins: [Game],
-        systems: [
-          Ask("vw/AskInput", "input"),
-          Ask("vw/AskTick", "update"),
-          Ask("vw/AskFrame", "frame"),
-        ],
-      })
+      App.make(
+        App.define({
+          plugins: [Game],
+          systems: [
+            Ask("vw/AskInput", "input"),
+            Ask("vw/AskTick", "update"),
+            Ask("vw/AskFrame", "frame"),
+          ],
+        })
+      )
     );
     app.tick(1);
     app.frame(0);
@@ -695,7 +702,9 @@ describe("what the UI sends", () => {
     const Spy = System.make("vw/Spy", function* () {
       seen.push(yield* View.Bridge);
     }).pipe(System.inStage("frame"));
-    const app = run(App.make({ plugins: [View.plugin], systems: [Spy] }));
+    const app = run(
+      App.make(App.define({ plugins: [View.plugin], systems: [Spy] }))
+    );
     app.frame(0);
     const none = seen[0]!;
     expect(none.get(Hud)).toBe(Hud.initial);
@@ -710,8 +719,7 @@ describe("the bridge", () => {
   it("leaves the game as it found it: with a UI or with none, the game is the same game", () => {
     const ui = View.makeBridge();
     listen(ui, Hud);
-    const seen = App.make({
-      plugins: [Game],
+    const seen = App.make(App.define({ plugins: [Game] }), {
       seed: 4,
       checkpointEvery: 1,
       verifyFrames: true,
@@ -740,14 +748,11 @@ describe("the bridge", () => {
 
   it("is what a plugin's systems need: a game that publishes and leaves out View.plugin does not compile", () => {
     // View.Port is still needed: View.plugin provides it.
-    expectTypeOf(App.make({ systems: [ShowHud] })).not.toExtend<
+    expectTypeOf(App.make(App.define({ systems: [ShowHud] }))).not.toExtend<
       Effect.Effect<unknown, never, Scope.Scope>
     >();
     expectTypeOf(
-      App.make({
-        plugins: [View.plugin],
-        systems: [ShowHud],
-      })
+      App.make(App.define({ plugins: [View.plugin], systems: [ShowHud] }))
     ).toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
   });
 });

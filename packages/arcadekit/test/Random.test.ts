@@ -289,11 +289,10 @@ const Gambler = System.make("Gambler", function* () {
 
 const play = (seed: number | undefined, ticks: number) =>
   withApp(
-    App.make({
-      systems: [Sparks, Gambler],
-      handlers: [roll],
-      ...(seed === undefined ? {} : { seed }),
-    }),
+    App.make(
+      App.define({ systems: [Sparks, Gambler], handlers: [roll] }),
+      seed === undefined ? {} : { seed }
+    ),
     (app) => {
       app.world.spawn(Die.of({ face: 1, rolls: 0 }));
       for (let i = 0; i < ticks; i++) {
@@ -330,7 +329,7 @@ describe("the Random service", () => {
     const Probe = System.make("Probe", function* () {
       seen = yield* Random;
     });
-    withApp(App.make({ systems: [Probe], seed: 5 }), (app) => {
+    withApp(App.make(App.define({ systems: [Probe] }), { seed: 5 }), (app) => {
       app.tick(1);
       expect(seen).toBe(app.world.random);
       expect(Array.from(app.world.random.state)).toEqual(
@@ -366,7 +365,7 @@ describe("the Random service", () => {
     // to end in the same state.
     const record = (seed: number) =>
       withApp(
-        App.make({ systems: [Sparks], handlers: [roll], seed }),
+        App.make(App.define({ systems: [Sparks], handlers: [roll] }), { seed }),
         (app) => {
           app.world.spawn(Die.of({ face: 1, rolls: 0 }));
           const other = new Rng(seed + 1000);
@@ -381,7 +380,7 @@ describe("the Random service", () => {
       );
     const replayOf = (recorded: ReturnType<typeof record>, seed: number) =>
       withApp(
-        App.make({ systems: [Sparks], handlers: [roll], seed }),
+        App.make(App.define({ systems: [Sparks], handlers: [roll] }), { seed }),
         (app) => {
           app.world.spawn(Die.of({ face: 1, rolls: 0 }));
           // Through text and back, as a save file would be.
@@ -407,9 +406,9 @@ describe("the Random service", () => {
   });
 
   it("refuses a bad seed when the app is made", () => {
-    expect(() => withApp(App.make({ seed: 1.5 }), () => 0)).toThrow(
-      /random seed must be a whole number/
-    );
+    expect(() =>
+      withApp(App.make(App.define({}), { seed: 1.5 }), () => 0)
+    ).toThrow(/random seed must be a whole number/);
   });
 
   it("seeds Effect's own Random inside the app too", () => {
@@ -426,14 +425,17 @@ describe("the Random service", () => {
         // The two are one generator: this continues the same sequence.
         out.push(random.bits());
       });
-      return withApp(App.make({ seed, systems: [Draw] }), (app) => {
-        const before = Array.from(app.world.random.state);
-        app.tick(1);
-        // Effect's draws were from the world's generator, not from one of
-        // their own: it had moved before anything drew from it by name.
-        expect(drew).not.toEqual(before);
-        return out;
-      });
+      return withApp(
+        App.make(App.define({ systems: [Draw] }), { seed }),
+        (app) => {
+          const before = Array.from(app.world.random.state);
+          app.tick(1);
+          // Effect's draws were from the world's generator, not from one of
+          // their own: it had moved before anything drew from it by name.
+          expect(drew).not.toEqual(before);
+          return out;
+        }
+      );
     };
     const first = run(8);
     expect(run(8)).toEqual(first);
@@ -451,7 +453,7 @@ describe("the Random service", () => {
         ints.push(yield* EffectRandom.nextInt);
       }
     });
-    withApp(App.make({ seed: 3, systems: [Many] }), (app) => {
+    withApp(App.make(App.define({ systems: [Many] }), { seed: 3 }), (app) => {
       app.tick(1);
       expect(floats.every((value) => value >= 0 && value < 1)).toBe(true);
       expect(floats.some((value) => (value * 2 ** 32) % 1 !== 0)).toBe(true);

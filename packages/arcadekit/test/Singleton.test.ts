@@ -594,11 +594,10 @@ describe("a singleton in an app", () => {
         const Watch = System.make("Watch", function* () {
           rounds.push((yield* Turn).round);
         });
-        const app = yield* App.make({
-          plugins: [Rules],
-          systems: [Watch],
-          checkpointEvery: 1,
-        });
+        const app = yield* App.make(
+          App.define({ plugins: [Rules], systems: [Watch] }),
+          { checkpointEvery: 1 }
+        );
         expect(app.dispatch(EndTurn, { player: 2 })).toEqual(
           Exit.fail(new NotYourTurn({ waitingFor: 1 }))
         );
@@ -625,7 +624,9 @@ describe("a singleton in an app", () => {
   it("is as it was after a refused action, and the game replays", () => {
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
+        const app = yield* App.make(App.define({ plugins: [Rules] }), {
+          checkpointEvery: 1,
+        });
         const before = app.world.hash();
         expect(Exit.isFailure(app.dispatch(Cheat, {}))).toBe(true);
         // Never written, so never there.
@@ -641,8 +642,7 @@ describe("a singleton in an app", () => {
           round: 12,
         });
         expect(app.world.singleton(Score).points).toBe(42);
-        const again = yield* App.make({
-          plugins: [Rules],
+        const again = yield* App.make(App.define({ plugins: [Rules] }), {
           checkpointEvery: 1,
         });
         Journal.replay(again, app.record());
@@ -654,7 +654,9 @@ describe("a singleton in an app", () => {
   it("is saved with the game, and loaded by a game with no list of its components", () => {
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
+        const app = yield* App.make(App.define({ plugins: [Rules] }), {
+          checkpointEvery: 1,
+        });
         for (let move = 0; move < 5; move++) {
           app.dispatch(EndTurn, { player: (move % 2) + 1 });
           app.tick(1);
@@ -668,8 +670,8 @@ describe("a singleton in an app", () => {
         if (Exit.isFailure(read)) {
           throw new Error("the save did not decode");
         }
-        const loaded = yield* App.load(read.value, {
-          plugins: [Rules],
+        const loaded = yield* App.make(App.define({ plugins: [Rules] }), {
+          save: read.value,
           checkpointEvery: 1,
         });
         expect(loaded.world.hash()).toBe(app.world.hash());
@@ -688,10 +690,10 @@ describe("a singleton in an app", () => {
 
         // A game whose plugins name no components reads it as well: the
         // save finds them by their definitions.
-        const bare = yield* App.load(read.value, {
-          handlers: [endTurn],
-          systems: [Reward],
-        });
+        const bare = yield* App.make(
+          App.define({ handlers: [endTurn], systems: [Reward] }),
+          { save: read.value }
+        );
         expect(bare.world.hash()).toBe(savedHash);
       })
     );

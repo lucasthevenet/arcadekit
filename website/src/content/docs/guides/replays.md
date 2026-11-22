@@ -23,13 +23,10 @@ const add = Action.handler(Add, function* ({ points }) {
 const Rules = Plugin.make("game/Rules", {
   handlers: [add],
 });
+const Game = App.define({ plugins: [Rules] });
 
 const program = Effect.gen(function* () {
-  const game = yield* App.make({
-    plugins: [Rules],
-    seed: 42,
-    checkpointEvery: 1,
-  });
+  const game = yield* App.make(Game, { seed: 42, checkpointEvery: 1 });
   game.enqueue(Add, { points: 3 });
   for (let i = 0; i < 10; i++) {
     game.tick(1 / 60);
@@ -37,11 +34,7 @@ const program = Effect.gen(function* () {
   const text = Journal.encode(game.record()); // for a file
 
   const recording = yield* Journal.decode(text); // fails on text that isn't one
-  const again = yield* App.make({
-    plugins: [Rules],
-    seed: 42,
-    checkpointEvery: 1,
-  });
+  const again = yield* App.make(Game, { seed: 42, checkpointEvery: 1 });
   Journal.replay(again, recording); // throws Journal.ReplayDiverged
 }).pipe(Effect.scoped);
 ```

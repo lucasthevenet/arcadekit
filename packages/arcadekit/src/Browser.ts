@@ -7,7 +7,7 @@
  *   import { App } from "arcadekit"
  *   import * as Browser from "arcadekit/Browser"
  *
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
+ *   Browser.runMain(Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }), {
  *     target: canvas,
  *     preventDefault: ["Space", "ArrowUp", "ArrowDown"],
  *   })
@@ -282,7 +282,7 @@ const listen = (
       sample() {
         if (stopped) {
           throw new Error(
-            "The page's devices were read after Browser.layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as Browser.runMain does, or with App.run(...).pipe(Effect.provide(Browser.layer())), not to App.make alone."
+            "The page's devices were read after Browser.layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as Browser.runMain does, or with Driver.run(...).pipe(Effect.provide(Browser.layer())), not to App.make alone."
           );
         }
         readPads();
@@ -926,7 +926,7 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
  * (`BrowserRuntime.runMain`), with `Browser.layer(options)` provided to the
  * whole program.
  *
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })
+ *   Browser.runMain(Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }), { target: canvas })
  *
  * - The game must have no remaining requirements: provide your game's own
  *   services to it first, and a missing one is a compile error here.

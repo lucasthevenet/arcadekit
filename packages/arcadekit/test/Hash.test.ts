@@ -696,10 +696,16 @@ describe("the hash of an app's world", () => {
     });
 
   it("agrees tick by tick between two apps given the same seed, which is how peers know they have not drifted", () => {
-    const first = hashes(App.make({ systems: [Drift], seed: 5 }));
-    expect(hashes(App.make({ systems: [Drift], seed: 5 }))).toEqual(first);
+    const first = hashes(
+      App.make(App.define({ systems: [Drift] }), { seed: 5 })
+    );
+    expect(
+      hashes(App.make(App.define({ systems: [Drift] }), { seed: 5 }))
+    ).toEqual(first);
     expect(new Set(first).size).toBe(100);
-    const other = hashes(App.make({ systems: [Drift], seed: 6 }));
+    const other = hashes(
+      App.make(App.define({ systems: [Drift] }), { seed: 6 })
+    );
     expect(other[0]).not.toBe(first[0]);
   });
 
@@ -718,8 +724,12 @@ describe("the hash of an app's world", () => {
         });
       }
     });
-    const honest = hashes(App.make({ systems: [Drift], seed: 5 }));
-    const faulty = hashes(App.make({ systems: [Drift, Wrong], seed: 5 }));
+    const honest = hashes(
+      App.make(App.define({ systems: [Drift] }), { seed: 5 })
+    );
+    const faulty = hashes(
+      App.make(App.define({ systems: [Drift, Wrong] }), { seed: 5 })
+    );
     const firstDifference = honest.findIndex((hash, i) => hash !== faulty[i]);
     expect(firstDifference).toBe(39);
     expect(faulty.slice(0, 39)).toEqual(honest.slice(0, 39));
@@ -727,7 +737,7 @@ describe("the hash of an app's world", () => {
 
   it("covers the game's time, which the world holds", () => {
     const after = (deltas: readonly number[]) =>
-      withApp(App.make({ seed: 5 }), (app) => {
+      withApp(App.make(App.define({}), { seed: 5 }), (app) => {
         for (const delta of deltas) {
           app.tick(delta);
         }
@@ -756,9 +766,7 @@ describe("the hash of an app's world", () => {
       (yield* Rang).read();
     }).pipe(System.inStage("frame"));
     const make = () =>
-      App.make({
-        systems: [Ring, Watch],
-        handlers: [push],
+      App.make(App.define({ systems: [Ring, Watch], handlers: [push] }), {
         seed: 5,
         checkpointEvery: 0,
       });
@@ -821,7 +829,9 @@ describe("the hash of an app's world", () => {
       }
     });
     withApp(
-      App.make({ systems: [Hear, Ring], handlers: [push], seed: 5 }),
+      App.make(App.define({ systems: [Hear, Ring], handlers: [push] }), {
+        seed: 5,
+      }),
       (app) => {
         app.tick(1 / 60);
         ringing = false;
@@ -843,7 +853,7 @@ describe("the hash of an app's world", () => {
   });
 
   it("is put back with the game's time by the world alone", () => {
-    withApp(App.make({ systems: [Drift], seed: 5 }), (app) => {
+    withApp(App.make(App.define({ systems: [Drift] }), { seed: 5 }), (app) => {
       app.tick(1 / 60);
       app.tick(1 / 30);
       const time = { ...app.time };

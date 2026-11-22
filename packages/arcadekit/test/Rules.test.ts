@@ -70,7 +70,7 @@ describe("events", () => {
       Emitter.pipe(System.after("Before")),
       reader("After").pipe(System.after(Emitter)),
     ];
-    withApp(App.make({ systems }), (app) => {
+    withApp(App.make(App.define({ systems })), (app) => {
       for (let i = 0; i < 4; i++) {
         app.tick(1);
       }
@@ -99,7 +99,7 @@ describe("events", () => {
         log.push(`${event.target}:${event.amount}`);
       }
     }).pipe(System.after(Hit));
-    withApp(App.make({ systems: [Hit, Report] }), (app) => {
+    withApp(App.make(App.define({ systems: [Hit, Report] })), (app) => {
       const a = app.world.spawn(Health.of({ hp: 10 }));
       const b = app.world.spawn(Health.of({ hp: 10 }));
       app.tick(1);
@@ -115,17 +115,20 @@ describe("events", () => {
         seen.push([...(yield* Ping).read()]);
       }
     });
-    withApp(App.make({ systems: [Sometimes], handlers: [say] }), (app) => {
-      app.tick(1); // creates the reader
-      app.dispatch(Say, { n: 1 });
-      app.tick(1);
-      app.dispatch(Say, { n: 2 });
-      app.tick(1);
-      app.dispatch(Say, { n: 3 });
-      app.tick(1);
-      // It looked at ticks 1 and 4 only: events 1 and 2 had been dropped by then.
-      expect(seen).toEqual([[], [3]]);
-    });
+    withApp(
+      App.make(App.define({ systems: [Sometimes], handlers: [say] })),
+      (app) => {
+        app.tick(1); // creates the reader
+        app.dispatch(Say, { n: 1 });
+        app.tick(1);
+        app.dispatch(Say, { n: 2 });
+        app.tick(1);
+        app.dispatch(Say, { n: 3 });
+        app.tick(1);
+        // It looked at ticks 1 and 4 only: events 1 and 2 had been dropped by then.
+        expect(seen).toEqual([[], [3]]);
+      }
+    );
   });
 
   it("are emitted by the simulation alone: outside it, an action emits them", () => {
@@ -137,22 +140,25 @@ describe("events", () => {
       bus = yield* Effect.service(Events);
       bus.emit(Ping, 7);
     });
-    withApp(App.make({ systems: [Keeper], handlers: [say] }), (app) => {
-      app.tick(1);
-      expect(app.events.pending(Ping)).toBe(1);
-      const refused =
-        /The event "ru\/Ping" was emitted from outside the simulation\..*Issue an action whose handler emits it/;
-      // Through the bus, through a handle asked for outside, and through one
-      // a system kept.
-      expect(() => app.events.emit(Ping, 1)).toThrow(refused);
-      expect(() => app.events.handle(Ping).emit(1)).toThrow(refused);
-      expect(() => kept!.emit(1)).toThrow(refused);
-      expect(() => bus!.emit(Ping, 1)).toThrow(refused);
-      expect(app.events.pending(Ping)).toBe(1);
-      // An action's handler is the simulation's.
-      app.dispatch(Say, { n: 1 });
-      expect(app.events.pending(Ping)).toBe(2);
-    });
+    withApp(
+      App.make(App.define({ systems: [Keeper], handlers: [say] })),
+      (app) => {
+        app.tick(1);
+        expect(app.events.pending(Ping)).toBe(1);
+        const refused =
+          /The event "ru\/Ping" was emitted from outside the simulation\..*Issue an action whose handler emits it/;
+        // Through the bus, through a handle asked for outside, and through one
+        // a system kept.
+        expect(() => app.events.emit(Ping, 1)).toThrow(refused);
+        expect(() => app.events.handle(Ping).emit(1)).toThrow(refused);
+        expect(() => kept!.emit(1)).toThrow(refused);
+        expect(() => bus!.emit(Ping, 1)).toThrow(refused);
+        expect(app.events.pending(Ping)).toBe(1);
+        // An action's handler is the simulation's.
+        app.dispatch(Say, { n: 1 });
+        expect(app.events.pending(Ping)).toBe(2);
+      }
+    );
   });
 });
 
@@ -270,10 +276,12 @@ const Recharge = System.make("Recharge", function* () {
 
 const duel = (...more: System.System<never, BuiltIn>[]) =>
   Effect.map(
-    App.make({
-      systems: [Death, Recharge, ...more],
-      handlers: [attack, endTurn, summon],
-    }),
+    App.make(
+      App.define({
+        systems: [Death, Recharge, ...more],
+        handlers: [attack, endTurn, summon],
+      })
+    ),
     (app) => {
       app.world.spawn(Turn.of({ player: 1, number: 1 }));
       const one = app.world.spawn(
@@ -396,7 +404,7 @@ describe("actions", () => {
       }
     });
     const make = Effect.map(
-      App.make({ systems: [Watch], handlers: [attack, endTurn] }),
+      App.make(App.define({ systems: [Watch], handlers: [attack, endTurn] })),
       (app) => {
         app.world.spawn(Turn.of({ player: 1, number: 1 }));
         const one = app.world.spawn(
@@ -449,7 +457,7 @@ describe("actions", () => {
       }
     });
     const make = Effect.map(
-      App.make({ systems: [Bot], handlers: [endTurn] }),
+      App.make(App.define({ systems: [Bot], handlers: [endTurn] })),
       (app) => {
         app.world.spawn(Turn.of({ player: 1, number: 1 }));
         return app;
@@ -485,14 +493,16 @@ describe("actions", () => {
     const waits = Action.handler(EndTurn, function* () {
       yield* Effect.sleep("1 second");
     });
-    withApp(App.make({ systems: [], handlers: [waits] }), (app) => {
+    withApp(App.make(App.define({ systems: [], handlers: [waits] })), (app) => {
       expect(() => app.dispatch(EndTurn, { player: 1 })).toThrow(
         /did not finish synchronously/
       );
     });
     expect(() =>
       Effect.runSync(
-        Effect.scoped(App.make({ systems: [], handlers: [endTurn, endTurn] }))
+        Effect.scoped(
+          App.make(App.define({ systems: [], handlers: [endTurn, endTurn] }))
+        )
       )
     ).toThrow(/Two handlers/);
 
@@ -504,7 +514,7 @@ describe("actions", () => {
     });
     const unprovided = withApp(
       // @ts-expect-error the handler needs Rng and nothing provides it
-      App.make({ systems: [], handlers: [roll] }),
+      App.make(App.define({ systems: [], handlers: [roll] })),
       (app) => app.dispatch(Unhandled, {})
     );
     // Forced past the compiler, it surfaces as a defect rather than a crash.
@@ -512,7 +522,7 @@ describe("actions", () => {
       true
     );
     withApp(
-      App.make({ systems: [], handlers: [roll] }).pipe(
+      App.make(App.define({ systems: [], handlers: [roll] })).pipe(
         Effect.provideService(Rng, { next: () => 4 })
       ),
       (app) => expect(app.dispatch(Unhandled, {})).toEqual(Exit.succeed(4))
@@ -524,10 +534,13 @@ describe("actions", () => {
     const Sneaky = System.make("Sneaky", function* () {
       yield* Effect.sync(() => app.dispatchByName("EndTurn", { player: 1 }));
     });
-    withApp(App.make({ systems: [Sneaky], handlers: [endTurn] }), (made) => {
-      app = made;
-      expect(() => made.tick(1)).toThrow(/Use enqueue/);
-    });
+    withApp(
+      App.make(App.define({ systems: [Sneaky], handlers: [endTurn] })),
+      (made) => {
+        app = made;
+        expect(() => made.tick(1)).toThrow(/Use enqueue/);
+      }
+    );
   });
 });
 

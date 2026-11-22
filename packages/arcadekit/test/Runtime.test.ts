@@ -53,7 +53,7 @@ const withApp = <T, A>(
 
 describe("systems", () => {
   it("run with yieldable queries and game time", () => {
-    withApp(App.make({ systems: [Movement] }), (app) => {
+    withApp(App.make(App.define({ systems: [Movement] })), (app) => {
       const a = app.world.spawn(
         Position.of({ x: 0, y: 0 }),
         Velocity.of({ x: 2, y: 4 })
@@ -84,7 +84,7 @@ describe("systems", () => {
       sys("a").pipe(System.after("b")),
       sys("input").pipe(System.inStage("preUpdate")),
     ];
-    withApp(App.make({ systems }), (app) => {
+    withApp(App.make(App.define({ systems })), (app) => {
       expect(app.systemOrder).toEqual(["input", "b", "a", "c", "render"]);
       app.tick(1);
       expect(log).toEqual(["input", "b", "a", "c", "render"]);
@@ -149,7 +149,7 @@ describe("systems", () => {
       });
     }).pipe(System.after(Spawner));
 
-    withApp(App.make({ systems: [Reaper, Spawner] }), (app) => {
+    withApp(App.make(App.define({ systems: [Reaper, Spawner] })), (app) => {
       app.tick(0.5);
       expect(app.world.entityCount).toBe(1);
       app.tick(0.5);
@@ -194,7 +194,7 @@ describe("systems", () => {
       });
     }).pipe(System.after(Burn));
 
-    withApp(App.make({ systems: [Burn, Extinguish] }), (app) => {
+    withApp(App.make(App.define({ systems: [Burn, Extinguish] })), (app) => {
       const torch = app.world.spawn(
         Health.of({ hp: 100 }),
         Burning.of({ seconds: 2, dps: 10 })
@@ -217,9 +217,11 @@ describe("systems", () => {
     const ReadGravity = System.make("ReadGravity", function* () {
       seen.push(yield* Gravity);
     });
-    withApp(App.make({ systems: [ReadGravity] }), (app) => app.tick(1));
+    withApp(App.make(App.define({ systems: [ReadGravity] })), (app) =>
+      app.tick(1)
+    );
     withApp(
-      App.make({ systems: [ReadGravity] }).pipe(
+      App.make(App.define({ systems: [ReadGravity] })).pipe(
         Effect.provide(Resource.layer(Gravity, 1.62))
       ),
       (app) => app.tick(1)
@@ -242,7 +244,7 @@ describe("systems", () => {
       config.levels[0]!.name = "end";
     });
     for (const system of [Harden, Rename]) {
-      withApp(App.make({ systems: [system] }), (app) => {
+      withApp(App.make(App.define({ systems: [system] })), (app) => {
         expect(() => app.tick(1)).toThrow(TypeError);
       });
     }
@@ -250,12 +252,12 @@ describe("systems", () => {
     const Read = System.make("rt/Read", function* () {
       seen.push(yield* Config);
     });
-    withApp(App.make({ systems: [Read] }), (app) => app.tick(1));
+    withApp(App.make(App.define({ systems: [Read] })), (app) => app.tick(1));
     expect(seen).toEqual([{ difficulty: 1, levels: [{ name: "start" }] }]);
     // A layer's value is frozen too.
     const given = { difficulty: 3, levels: [] };
     withApp(
-      App.make({ systems: [Harden] }).pipe(
+      App.make(App.define({ systems: [Harden] })).pipe(
         Effect.provide(Resource.layer(Config, given))
       ),
       (app) => {
@@ -276,7 +278,7 @@ describe("systems", () => {
       const things = yield* Query.all(Position);
       audio.play(`beep x${things.count()}`);
     });
-    const make = App.make({ systems: [Beep] }).pipe(
+    const make = App.make(App.define({ systems: [Beep] })).pipe(
       Effect.provideService(Audio, {
         play: (sound) => void played.push(sound),
       })
@@ -291,7 +293,7 @@ describe("systems", () => {
     expect(() =>
       withApp(
         // @ts-expect-error Audio is not provided
-        App.make({ systems: [Beep] }),
+        App.make(App.define({ systems: [Beep] })),
         (app) => app.tick(1)
       )
     ).toThrow(/Service not found: .*Audio/);
@@ -311,7 +313,7 @@ describe("systems", () => {
         return yield* new OutOfBounds({ x: worst });
       }
     });
-    withApp(App.make({ systems: [Bounds] }), (app) => {
+    withApp(App.make(App.define({ systems: [Bounds] })), (app) => {
       app.world.spawn(Position.of({ x: 5, y: 0 }));
       expect(Exit.isSuccess(app.tickExit(1))).toBe(true);
       app.world.spawn(Position.of({ x: 500, y: 0 }));
@@ -325,7 +327,7 @@ describe("systems", () => {
     const Lazy = System.make("Lazy", function* () {
       yield* Effect.sleep("1 second");
     });
-    withApp(App.make({ systems: [Lazy] }), (app) => {
+    withApp(App.make(App.define({ systems: [Lazy] })), (app) => {
       // The message says where work that takes longer goes instead.
       expect(() => app.tick(1)).toThrow(
         /"Lazy" did not finish within the tick\. Systems must be synchronous: what takes longer than a tick keeps its place in the world/
@@ -364,7 +366,7 @@ describe("the built-in services", () => {
       world.spawn(Lifetime.of({ seconds: mine.size }));
     });
     withApp(
-      App.make({ systems: [Probe] }).pipe(
+      App.make(App.define({ systems: [Probe] })).pipe(
         Effect.provideService(GameWorld, { size: 7 })
       ),
       (app) => {
@@ -387,7 +389,7 @@ describe("a fiber the game starts", () => {
       // A child of the tick's fiber, interrupted when the tick ends.
       yield* Effect.forkChild(Effect.never);
     });
-    withApp(App.make({ systems: [Busy] }), (app) => {
+    withApp(App.make(App.define({ systems: [Busy] })), (app) => {
       app.tick(1);
       app.tick(1);
       expect(ran).toBe(2);
@@ -398,7 +400,7 @@ describe("a fiber the game starts", () => {
     const Leaky = System.make("Leaky", function* () {
       yield* leave;
     });
-    withApp(App.make({ systems: [Leaky] }), (app) => {
+    withApp(App.make(App.define({ systems: [Leaky] })), (app) => {
       expect(() => app.tick(1)).toThrow(
         /Tick 1 left a fiber running \(started while "Leaky" ran\), with Effect\.forkDetach.*keep work that takes longer than a tick in the world/
       );
@@ -408,7 +410,7 @@ describe("a fiber the game starts", () => {
       (yield* Commands).spawn(Lifetime.of({ seconds: 1 }));
       yield* leave;
     });
-    withApp(App.make({ handlers: [ping] }), (app) => {
+    withApp(App.make(App.define({ handlers: [ping] })), (app) => {
       expect(() => app.dispatch(Ping, {})).toThrow(
         /The handler for "rt\/Ping" left a fiber running/
       );
@@ -419,16 +421,16 @@ describe("a fiber the game starts", () => {
     const Look = System.make("Look", function* () {
       yield* leave;
     }).pipe(System.inStage("frame"));
-    withApp(App.make({ systems: [Look] }), (app) => {
+    withApp(App.make(App.define({ systems: [Look] })), (app) => {
       expect(() => app.frame(0)).toThrow(
         /The frame left a fiber running \(started while "Look" ran\)/
       );
     });
 
     const Setup = Plugin.make("rt/Setup", { setup: leave });
-    expect(() => withApp(App.make({ plugins: [Setup] }), () => 0)).toThrow(
-      /The setup of plugin "rt\/Setup" left a fiber running/
-    );
+    expect(() =>
+      withApp(App.make(App.define({ plugins: [Setup] })), () => 0)
+    ).toThrow(/The setup of plugin "rt\/Setup" left a fiber running/);
   });
 
   it("is still counted by the fiber metrics a game provides", () => {
@@ -438,7 +440,7 @@ describe("a fiber the game starts", () => {
       yield* Effect.forkChild(Effect.void);
     });
     withApp(
-      App.make({ systems: [Busy] }).pipe(
+      App.make(App.define({ systems: [Busy] })).pipe(
         Effect.provideService(Metric.FiberRuntimeMetrics, {
           recordFiberStart: () => void started++,
           recordFiberEnd: () => undefined,
@@ -484,7 +486,7 @@ describe("the tick scheduler", () => {
     const Heavy = System.make("Heavy", function* () {
       total = yield* busy;
     });
-    withApp(App.make({ systems: [Heavy] }), (app) => {
+    withApp(App.make(App.define({ systems: [Heavy] })), (app) => {
       app.tick(1);
       expect(total).toBe(10_000);
     });
@@ -544,21 +546,29 @@ describe("determinism", () => {
           );
         }
       });
-      withApp(App.make({ systems: [Movement, Bounce, Spawner] }), (app) => {
-        for (let i = 0; i < 50; i++) {
-          app.world.spawn(
-            Position.of({ x: i % 10, y: 0 }),
-            Velocity.of({ x: (i % 7) - 3, y: 0 })
+      withApp(
+        App.make(App.define({ systems: [Movement, Bounce, Spawner] })),
+        (app) => {
+          for (let i = 0; i < 50; i++) {
+            app.world.spawn(
+              Position.of({ x: i % 10, y: 0 }),
+              Velocity.of({ x: (i % 7) - 3, y: 0 })
+            );
+          }
+          const step = Driver.fixedStep(app, {
+            hz: 60,
+            maxStepsPerCall: 10_000,
+          });
+          step(5);
+          const all = app.world.view(Moving);
+          all.each((pos, vel, entity) => {
+            trace.push(`${entity}:${pos.x},${pos.y},${vel.x}`);
+          });
+          trace.push(
+            `ticks=${app.time.tick} entities=${app.world.entityCount}`
           );
         }
-        const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 10_000 });
-        step(5);
-        const all = app.world.view(Moving);
-        all.each((pos, vel, entity) => {
-          trace.push(`${entity}:${pos.x},${pos.y},${vel.x}`);
-        });
-        trace.push(`ticks=${app.time.tick} entities=${app.world.entityCount}`);
-      });
+      );
       return trace;
     };
     const first = run();
@@ -569,7 +579,7 @@ describe("determinism", () => {
 
 describe("the fixed-step driver", () => {
   it("runs exactly hz ticks per second of input, however the time is sliced", () => {
-    withApp(App.make({ systems: [] }), (app) => {
+    withApp(App.make(App.define({ systems: [] })), (app) => {
       const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
       expect(step(1)).toBe(60);
       expect(step(1)).toBe(60);
@@ -583,7 +593,7 @@ describe("the fixed-step driver", () => {
   });
 
   it("drops the backlog after a stall instead of spiralling", () => {
-    withApp(App.make({ systems: [] }), (app) => {
+    withApp(App.make(App.define({ systems: [] })), (app) => {
       const step = Driver.fixedStep(app, { hz: 60 });
       expect(step(10)).toBe(5);
       expect(step(1 / 60)).toBe(1);

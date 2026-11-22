@@ -145,7 +145,9 @@ const Scatter = System.make("game/Scatter", function* () {
 });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ systems: [Scatter], seed: 2024 });
+  const app = yield* App.make(App.define({ systems: [Scatter] }), {
+    seed: 2024,
+  });
 });
 ```
 

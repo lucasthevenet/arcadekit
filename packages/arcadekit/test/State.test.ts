@@ -56,7 +56,7 @@ describe("a state", () => {
   it("starts in its first value, or the one it is given, and is asked for by name", () => {
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ handlers: [go] });
+        const app = yield* App.make(App.define({ handlers: [go] }));
         const read = yield* Effect.gen(function* () {
           const phase = yield* Phase;
           const weather = yield* Weather;
@@ -101,7 +101,9 @@ describe("a state", () => {
             asked.push(phase.next);
           }
         });
-        const app = yield* App.make({ systems: [Watch], handlers: [go] });
+        const app = yield* App.make(
+          App.define({ systems: [Watch], handlers: [go] })
+        );
         for (let tick = 0; tick < 5; tick++) {
           app.tick(1);
         }
@@ -130,12 +132,14 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
-        const app = yield* App.make({
-          systems: [
-            noting("Entered", ran).pipe(State.onEnter(Phase, "playing")),
-          ],
-          handlers: [go],
-        });
+        const app = yield* App.make(
+          App.define({
+            systems: [
+              noting("Entered", ran).pipe(State.onEnter(Phase, "playing")),
+            ],
+            handlers: [go],
+          })
+        );
         // Asking for the state a game is in already changes nothing at all.
         const untouched = app.world.hash();
         app.dispatch(Go, { to: "menu", refuse: false });
@@ -164,18 +168,20 @@ describe("a run condition", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
-        const app = yield* App.make({
-          systems: [
-            noting("Always", ran),
-            noting("Playing", ran).pipe(
-              System.runIf(State.is(Phase, "playing"))
-            ),
-            noting("NotMenu", ran).pipe(
-              System.runIf(State.is(Phase, "playing", "paused"))
-            ),
-          ],
-          handlers: [go],
-        });
+        const app = yield* App.make(
+          App.define({
+            systems: [
+              noting("Always", ran),
+              noting("Playing", ran).pipe(
+                System.runIf(State.is(Phase, "playing"))
+              ),
+              noting("NotMenu", ran).pipe(
+                System.runIf(State.is(Phase, "playing", "paused"))
+              ),
+            ],
+            handlers: [go],
+          })
+        );
         const tick = (): string[] => {
           ran.length = 0;
           app.tick(1);
@@ -221,9 +227,9 @@ describe("a run condition", () => {
           System.make("Other", function* () {}),
           switchedOn
         );
-        const app = yield* App.make({ systems: [Both, Either] }).pipe(
-          Effect.provideService(Switch, held)
-        );
+        const app = yield* App.make(
+          App.define({ systems: [Both, Either] })
+        ).pipe(Effect.provideService(Switch, held));
         for (let tick = 0; tick < 6; tick++) {
           app.tick(1);
         }
@@ -247,11 +253,11 @@ describe("a run condition", () => {
     );
     // And what it needs has to be provided, like what a system needs.
     const needs: Effect.Effect<unknown, never, Scope.Scope | Switch> = App.make(
-      {
+      App.define({
         systems: [
           System.make("Needy", function* () {}).pipe(System.runIf(switchedOn)),
         ],
-      }
+      })
     );
     void needs;
   });
@@ -264,44 +270,46 @@ describe("a run condition", () => {
           Effect.sync(() => {
             ran.push(what);
           });
-        const app = yield* App.make({
-          systems: [
-            noting("Hud", ran).pipe(
-              System.runIf(State.is(Phase, "playing")),
-              System.otherwise(say("Hud hidden"))
-            ),
-            // Given twice, both, in the order given; and before its
-            // condition or after it, the same.
-            System.otherwise(noting("Music", ran), say("Music off")).pipe(
-              System.runIf(State.is(Phase, "playing", "paused")),
-              System.otherwise(say("Music gone"))
-            ),
-            // In a tick it is the system in every way: what it asks of
-            // the commands is done when it is.
-            noting("Spawner", ran).pipe(
-              System.runIf(State.is(Phase, "playing")),
-              System.otherwise(
-                Effect.map(Commands, (commands) => {
-                  commands.spawn(Ball.of({ x: 1 }));
-                })
-              )
-            ),
-            System.make("Count", function* () {
-              ran.push(`${(yield* Balls).count()} balls`);
-            }),
-            // With no condition there is no time it is not run, and
-            // nothing is done in its place.
-            noting("Always", ran).pipe(System.otherwise(say("Never"))),
-            // In the frame it is held to what a frame system is: what
-            // would change the game throws.
-            noting("Draw", ran).pipe(
-              System.inStage("frame"),
-              System.runIf(State.is(Phase, "playing")),
-              System.otherwise(say("Draw nothing"))
-            ),
-          ],
-          handlers: [go],
-        });
+        const app = yield* App.make(
+          App.define({
+            systems: [
+              noting("Hud", ran).pipe(
+                System.runIf(State.is(Phase, "playing")),
+                System.otherwise(say("Hud hidden"))
+              ),
+              // Given twice, both, in the order given; and before its
+              // condition or after it, the same.
+              System.otherwise(noting("Music", ran), say("Music off")).pipe(
+                System.runIf(State.is(Phase, "playing", "paused")),
+                System.otherwise(say("Music gone"))
+              ),
+              // In a tick it is the system in every way: what it asks of
+              // the commands is done when it is.
+              noting("Spawner", ran).pipe(
+                System.runIf(State.is(Phase, "playing")),
+                System.otherwise(
+                  Effect.map(Commands, (commands) => {
+                    commands.spawn(Ball.of({ x: 1 }));
+                  })
+                )
+              ),
+              System.make("Count", function* () {
+                ran.push(`${(yield* Balls).count()} balls`);
+              }),
+              // With no condition there is no time it is not run, and
+              // nothing is done in its place.
+              noting("Always", ran).pipe(System.otherwise(say("Never"))),
+              // In the frame it is held to what a frame system is: what
+              // would change the game throws.
+              noting("Draw", ran).pipe(
+                System.inStage("frame"),
+                System.runIf(State.is(Phase, "playing")),
+                System.otherwise(say("Draw nothing"))
+              ),
+            ],
+            handlers: [go],
+          })
+        );
         const tick = (): string[] => {
           ran.length = 0;
           app.tick(1);
@@ -350,7 +358,7 @@ describe("a run condition", () => {
       System.runIf(Effect.succeed(false)),
       System.otherwise(Effect.map(Phase, (phase) => phase.set("paused")))
     );
-    const app = run(App.make({ systems: [Vandal] }));
+    const app = run(App.make(App.define({ systems: [Vandal] })));
     expect(() => app.frame(0)).toThrow('singleton "st/Phase"');
     // And what it needs and can fail with are the system's.
     class Lamp extends Context.Service<Lamp, { lit: boolean }>()("st/Lamp") {}
@@ -375,20 +383,22 @@ describe("a run condition", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
-        const app = yield* App.make({
-          systems: [
-            noting("Fanfare", ran).pipe(
-              State.onEnter(Phase, "playing"),
-              System.runIf(State.is(Weather, "dry")),
-              System.otherwise(
-                Effect.sync(() => {
-                  ran.push("Too wet for a fanfare");
-                })
-              )
-            ),
-          ],
-          handlers: [go],
-        });
+        const app = yield* App.make(
+          App.define({
+            systems: [
+              noting("Fanfare", ran).pipe(
+                State.onEnter(Phase, "playing"),
+                System.runIf(State.is(Weather, "dry")),
+                System.otherwise(
+                  Effect.sync(() => {
+                    ran.push("Too wet for a fanfare");
+                  })
+                )
+              ),
+            ],
+            handlers: [go],
+          })
+        );
         app.tick(1);
         expect(ran).toEqual([]);
         app.dispatch(Go, { to: "playing", refuse: false });
@@ -436,10 +446,9 @@ describe("a run condition", () => {
           System.inStage("frame"),
           System.runIf(State.is(Phase, "playing"))
         );
-        const app = yield* App.make({
-          systems: [Listen, Emit, Look],
-          handlers: [go],
-        });
+        const app = yield* App.make(
+          App.define({ systems: [Listen, Emit, Look], handlers: [go] })
+        );
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: 0 }));
         }
@@ -471,19 +480,21 @@ describe("a run condition", () => {
 
 describe("hooks", () => {
   const game = (ran: string[], extra: System.System<never, World>[] = []) =>
-    App.make({
-      systems: [
-        noting("Tick", ran),
-        noting("EnterMenu", ran).pipe(State.onEnter(Phase, "menu")),
-        noting("ExitMenu", ran).pipe(State.onExit(Phase, "menu")),
-        noting("EnterPlaying", ran).pipe(State.onEnter(Phase, "playing")),
-        noting("ExitPlaying", ran).pipe(State.onExit(Phase, "playing")),
-        noting("EnterPaused", ran).pipe(State.onEnter(Phase, "paused")),
-        ...extra,
-      ],
-      handlers: [go],
-      checkpointEvery: 1,
-    });
+    App.make(
+      App.define({
+        systems: [
+          noting("Tick", ran),
+          noting("EnterMenu", ran).pipe(State.onEnter(Phase, "menu")),
+          noting("ExitMenu", ran).pipe(State.onExit(Phase, "menu")),
+          noting("EnterPlaying", ran).pipe(State.onEnter(Phase, "playing")),
+          noting("ExitPlaying", ran).pipe(State.onExit(Phase, "playing")),
+          noting("EnterPaused", ran).pipe(State.onEnter(Phase, "paused")),
+          ...extra,
+        ],
+        handlers: [go],
+      }),
+      { checkpointEvery: 1 }
+    );
 
   it("run once when a state is left and entered, before the tick's systems", () => {
     run(
@@ -550,10 +561,9 @@ describe("hooks", () => {
         const Count = System.make("Count", function* () {
           seen.push(`tick with ${(yield* Balls).count()}`);
         });
-        const app = yield* App.make({
-          systems: [Count, Entering, Leaving],
-          handlers: [go],
-        });
+        const app = yield* App.make(
+          App.define({ systems: [Count, Entering, Leaving], handlers: [go] })
+        );
         app.tick(1);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
@@ -575,30 +585,32 @@ describe("hooks", () => {
           State.onEnter(Phase, "playing")
         );
         const Last = noting("Last", ran).pipe(State.onEnter(Phase, "playing"));
-        const app = yield* App.make({
-          systems: [
-            noting("Third", ran).pipe(
-              State.onEnter(Phase, "playing"),
-              System.after(Last)
-            ),
-            First,
-            Last,
-            noting("Zeroth", ran).pipe(
-              State.onEnter(Phase, "playing"),
-              System.before(First)
-            ),
-            noting("InTheRain", ran).pipe(
-              State.onEnter(Phase, "playing"),
-              System.runIf(State.is(Weather, "dry"))
-            ),
-            // Given its condition first and made a hook after, the same.
-            noting("InTheDry", ran).pipe(
-              System.runIf(State.is(Weather, "dry")),
-              State.onEnter(Phase, "playing")
-            ),
-          ],
-          handlers: [go],
-        });
+        const app = yield* App.make(
+          App.define({
+            systems: [
+              noting("Third", ran).pipe(
+                State.onEnter(Phase, "playing"),
+                System.after(Last)
+              ),
+              First,
+              Last,
+              noting("Zeroth", ran).pipe(
+                State.onEnter(Phase, "playing"),
+                System.before(First)
+              ),
+              noting("InTheRain", ran).pipe(
+                State.onEnter(Phase, "playing"),
+                System.runIf(State.is(Weather, "dry"))
+              ),
+              // Given its condition first and made a hook after, the same.
+              noting("InTheDry", ran).pipe(
+                System.runIf(State.is(Weather, "dry")),
+                State.onEnter(Phase, "playing")
+              ),
+            ],
+            handlers: [go],
+          })
+        );
         app.tick(1);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
@@ -668,9 +680,9 @@ describe("hooks", () => {
         const Draw = System.make("Draw", function* () {
           void (yield* Phase).value;
         }).pipe(System.inStage("frame"));
-        const looked = yield* App.make({ systems: [Late] });
-        const drawn = yield* App.make({ systems: [Draw] });
-        const unseen = yield* App.make({ systems: [] });
+        const looked = yield* App.make(App.define({ systems: [Late] }));
+        const drawn = yield* App.make(App.define({ systems: [Draw] }));
+        const unseen = yield* App.make(App.define({ systems: [] }));
         for (let tick = 1; tick <= 5; tick++) {
           looked.tick(1);
           drawn.tick(1);
@@ -715,9 +727,11 @@ describe("hooks", () => {
               yield* ask;
             }
           });
-          const app = yield* App.make({
-            systems: [...(weatherFirst ? hooks : hooks.toReversed()), Change],
-          });
+          const app = yield* App.make(
+            App.define({
+              systems: [...(weatherFirst ? hooks : hooks.toReversed()), Change],
+            })
+          );
           app.tick(1);
           app.tick(1);
           // "st/Phase" before "st/Weather".
@@ -733,17 +747,19 @@ describe("hooks", () => {
       on: "enter",
       value: "flying",
     });
-    expect(() => run(App.make({ systems: [Flying] }))).toThrow(
+    expect(() => run(App.make(App.define({ systems: [Flying] })))).toThrow(
       /System "Flying" is a hook for "flying", which is not a value of the state "st\/Phase"/
     );
     expect(() =>
       run(
-        App.make({
-          systems: [
-            noting("Twice", []),
-            noting("Twice", []).pipe(State.onEnter(Phase, "menu")),
-          ],
-        })
+        App.make(
+          App.define({
+            systems: [
+              noting("Twice", []),
+              noting("Twice", []).pipe(State.onEnter(Phase, "menu")),
+            ],
+          })
+        )
       )
     ).toThrow(/Duplicate system name "Twice"/);
   });
@@ -788,9 +804,13 @@ describe("a state in a save", () => {
   it("is saved with what was asked for, and its first hooks do not run again", () => {
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
+        const app = yield* App.make(App.define({ plugins: [Rules] }), {
+          checkpointEvery: 1,
+        });
         // Before the first tick nothing has been entered or written.
-        const fresh = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
+        const fresh = yield* App.make(App.define({ plugins: [Rules] }), {
+          checkpointEvery: 1,
+        });
         expect(fresh.world.hash()).toBe(app.world.hash());
         app.tick(1);
         expect(built(app)).toEqual(["one"]);
@@ -805,8 +825,8 @@ describe("a state in a save", () => {
         if (Exit.isFailure(read)) {
           throw new Error("the save did not decode");
         }
-        const loaded = yield* App.load(read.value, {
-          plugins: [Rules],
+        const loaded = yield* App.make(App.define({ plugins: [Rules] }), {
+          save: read.value,
           checkpointEvery: 1,
         });
         expect(loaded.world.hash()).toBe(app.world.hash());
@@ -826,7 +846,9 @@ describe("a state in a save", () => {
         expect(x).toBe(3);
 
         // And the whole game replays, hooks and conditions with it.
-        const again = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
+        const again = yield* App.make(App.define({ plugins: [Rules] }), {
+          checkpointEvery: 1,
+        });
         Journal.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
       })
@@ -838,14 +860,14 @@ describe("a state in a save", () => {
     const After = State.define("st/Door", ["open", "shut"]);
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({});
+        const app = yield* App.make(App.define({}));
         (yield* Effect.provideService(Before.asEffect(), World, app.world)).set(
           "ajar"
         );
         app.tick(1);
         const save = app.save();
         assert(Exit.isSuccess(save));
-        const loaded = yield* App.load(save.value, {});
+        const loaded = yield* App.make(App.define({}), { save: save.value });
         const exit = yield* Effect.exit(
           Effect.map(After, (door) => door.value).pipe(
             Effect.provideService(World, loaded.world)
@@ -862,7 +884,7 @@ describe("a state in a save", () => {
   it("goes on after a load into a game that never looks at it, with what was asked for", () => {
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({ plugins: [Rules] });
+        const app = yield* App.make(App.define({ plugins: [Rules] }));
         app.tick(1);
         expect(Exit.isSuccess(app.dispatch(Next, {}))).toBe(true);
         const save = app.save();
@@ -870,7 +892,9 @@ describe("a state in a save", () => {
           throw new Error("the save was refused");
         }
         // Nothing in this game looks at the level, and no list names it.
-        const loaded = yield* App.load(save.value, { handlers: [] });
+        const loaded = yield* App.make(App.define({ handlers: [] }), {
+          save: save.value,
+        });
         loaded.tick(1);
         expect({ ...loaded.world.singleton(Level) }).toEqual({
           value: "two",

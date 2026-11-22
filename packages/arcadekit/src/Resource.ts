@@ -4,7 +4,7 @@
  *
  *   const Gravity = Resource.make("game/Gravity", { defaultValue: () => 9.81 })
  *   const g = yield* Gravity                      // 9.81 unless overridden
- *   App.make({ systems }).pipe(Effect.provide(Resource.layer(Gravity, 1.62)))
+ *   App.make(App.define({ systems })).pipe(Effect.provide(Resource.layer(Gravity, 1.62)))
  *
  * A resource lives outside the world, so it is neither saved nor hashed. For
  * game state that exists once, use a singleton instead (`Singleton.define`).

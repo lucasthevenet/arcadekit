@@ -94,7 +94,7 @@ A bridge refuses two different views with the same name.
 ## Connecting them at the entry point
 
 ```ts title="main.ts"
-import { App, View } from "arcadekit";
+import { App, Driver, View } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect } from "effect";
 
@@ -105,7 +105,9 @@ const ui = View.makeBridge();
 mount(document.body, ui);
 
 Browser.runMain(
-  App.run({ plugins: [Game] }, { hz: 60 }).pipe(Effect.provide(View.layer(ui))),
+  Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(
+    Effect.provide(View.layer(ui))
+  ),
   { target: document.querySelector("canvas")! }
 );
 ```

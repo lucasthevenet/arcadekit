@@ -55,7 +55,7 @@ const started = Effect.fnUntraced(function* (
   const Draw = System.make("Draw", function* () {
     drawn.push((yield* Frame).alpha);
   }).pipe(System.inStage("frame"));
-  const app = yield* App.make({ systems: [Roll, Draw] });
+  const app = yield* App.make(App.define({ systems: [Roll, Draw] }));
   const fiber = yield* Effect.forkScoped(
     Driver.frames(app, { hz }).pipe(withDisplay(display)),
     { startImmediately: true }
@@ -120,7 +120,7 @@ describe("the frame loop", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ systems: [Draw] });
+          const app = yield* App.make(App.define({ systems: [Draw] }));
           return yield* Driver.frames(app, { hz: 60 });
         })
       ).pipe(withDisplay(display))
@@ -229,7 +229,7 @@ describe("the frame loop", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          app = yield* App.make({ systems: [Roll] });
+          app = yield* App.make(App.define({ systems: [Roll] }));
           return yield* Driver.frames(app, { hz: 60 });
         })
       ).pipe(withDisplay(display))
@@ -274,7 +274,7 @@ describe("the frame loop", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          app = yield* App.make({ systems: [Roll] });
+          app = yield* App.make(App.define({ systems: [Roll] }));
           return yield* Driver.frames(app, { hz: 60 });
         })
       ).pipe(withDisplay(display))
@@ -312,7 +312,7 @@ describe("the frame loop", () => {
     const { app, fiber } = await Effect.runPromise(
       Scope.provide(
         Effect.gen(function* () {
-          const made = yield* App.make({ plugins: [Engine] });
+          const made = yield* App.make(App.define({ plugins: [Engine] }));
           const loop = yield* Effect.forkScoped(
             Driver.frames(made, { hz: 60 }).pipe(withDisplay(display)),
             { startImmediately: true }
@@ -356,7 +356,7 @@ describe("the frame loop", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ systems: [Jam] });
+          const app = yield* App.make(App.define({ systems: [Jam] }));
           return yield* Driver.frames(app, { hz: 60 });
         })
       ).pipe(withDisplay(display))
@@ -383,7 +383,7 @@ describe("the frame loop", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ systems: [Smear] });
+          const app = yield* App.make(App.define({ systems: [Smear] }));
           return yield* Driver.frames(app, { hz: 60 });
         })
       ).pipe(withDisplay(display))
@@ -405,7 +405,7 @@ describe("the frame loop", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          app = yield* App.make({ systems: [Roll] });
+          app = yield* App.make(App.define({ systems: [Roll] }));
           return yield* Driver.frames(app, { hz: 60, maxStepsPerCall: 3 });
         })
       ).pipe(withDisplay(display))
@@ -445,7 +445,7 @@ describe("the display when none is provided", () => {
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          app = yield* App.make({ systems: [Roll] });
+          app = yield* App.make(App.define({ systems: [Roll] }));
           return yield* Driver.frames(app, { hz: 200 });
         })
       )
@@ -470,7 +470,7 @@ describe("the timer", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ systems: [Roll] });
+          const app = yield* App.make(App.define({ systems: [Roll] }));
           app.world.spawn(Ball.of({ x: 0, vx: 1 }));
           // A beat every eighth of a second, which a float holds exactly.
           const fiber = yield* Effect.forkScoped(
@@ -503,7 +503,7 @@ describe("the timer", () => {
     const exit = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ systems: [Jam] });
+          const app = yield* App.make(App.define({ systems: [Jam] }));
           const fiber = yield* Effect.forkScoped(
             Driver.interval(app, { hz: 8 })
           );
@@ -668,9 +668,9 @@ describe("ticking when needed", () => {
     });
     const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
-      App.make({ systems: [Roll, Burn, Draw], handlers: [light] }).pipe(
-        Scope.provide(scope)
-      )
+      App.make(
+        App.define({ systems: [Roll, Burn, Draw], handlers: [light] })
+      ).pipe(Scope.provide(scope))
     );
     app.world.spawn(Ball.of({ x: 0, vx: 60 }));
     const fiber = Effect.runFork(

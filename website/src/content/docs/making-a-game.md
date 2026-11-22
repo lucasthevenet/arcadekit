@@ -164,7 +164,7 @@ Systems run in the order they are listed.
 
 ## Test it
 
-You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page.
+You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page. `App.define` says what the game is, and `App.make` starts one run of it.
 
 ```ts title="rules.test.ts"
 import { App, Journal } from "arcadekit";
@@ -174,13 +174,15 @@ import { expect, it } from "vitest";
 
 import { Basket, Fall, Move, Position, Rules } from "./rules";
 
+const Catch = App.define({ plugins: [Rules] });
+
 const play = <A>(body: Effect.Effect<A, unknown, Scope.Scope>) =>
   Effect.runSync(Effect.scoped(body));
 
 it("catches a coin that lands in the basket", () =>
   play(
     Effect.gen(function* () {
-      const app = yield* App.make({ plugins: [Rules] });
+      const app = yield* App.make(Catch);
       app.world.spawn(Position.of({ x: 0, y: 0.5 }), Fall.of({ speed: 1 }));
       for (let i = 0; i < 60; i++) {
         app.tick(1 / 60);
@@ -192,7 +194,7 @@ it("catches a coin that lands in the basket", () =>
 it("refuses a move once the game is over", () =>
   play(
     Effect.gen(function* () {
-      const app = yield* App.make({ plugins: [Rules] });
+      const app = yield* App.make(Catch);
       app.world.singleton(Basket).lives = 0;
       const moved = app.dispatch(Move, { dx: 1 });
       expect(Exit.isFailure(moved)).toBe(true);
@@ -208,13 +210,13 @@ A game that changes only through its actions, its systems and its seed can be re
 it("plays the same game again from its log", () =>
   play(
     Effect.gen(function* () {
-      const game = yield* App.make({ plugins: [Rules], seed: 7 });
+      const game = yield* App.make(Catch, { seed: 7 });
       game.enqueue(Move, { dx: 1 });
       for (let i = 0; i < 300; i++) {
         game.tick(1 / 60);
       }
 
-      const again = yield* App.make({ plugins: [Rules], seed: 7 });
+      const again = yield* App.make(Catch, { seed: 7 });
       Journal.replay(again, game.record());
       expect(again.world.hash()).toBe(game.world.hash());
     })
@@ -232,7 +234,7 @@ Keys become actions. `Input.bind` creates an input-stage system, which runs befo
 Drawing happens in the frame stage, between ticks, where the world is read-only. A frame system can read anything and change nothing, so drawing never affects the simulation.
 
 ```ts title="main.ts"
-import { App, Input, Plugin, Query, System } from "arcadekit";
+import { App, Driver, Input, Plugin, Query, System } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Context, Effect, Layer } from "effect";
 
@@ -278,14 +280,14 @@ const Game = Plugin.make("catch/Game", {
 });
 
 Browser.runMain(
-  App.run({ plugins: [Game], seed: Date.now() }, { hz: 60 }).pipe(
-    Effect.provide(Screen.layer)
-  ),
+  Driver.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+    hz: 60,
+  }).pipe(Effect.provide(Screen.layer)),
   { target: canvas, preventDefault: ["ArrowLeft", "ArrowRight"] }
 );
 ```
 
-`App.run` creates the app and runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
+`App.make` creates the app, and `Driver.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
 Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`.
 

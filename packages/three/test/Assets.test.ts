@@ -118,11 +118,13 @@ const play = (
 ) => {
   const renderer = makeRenderer();
   const scope = Scope.makeUnsafe();
-  const made = App.make({
-    plugins: [Three.plugin, Assets.plugin],
-    handlers: [go],
-    systems,
-  });
+  const made = App.make(
+    App.define({
+      plugins: [Three.plugin, Assets.plugin],
+      handlers: [go],
+      systems,
+    })
+  );
   const app = Effect.runSync(
     made.pipe(
       Effect.provide(Layer.mergeAll(renderer.layer, loader, Logger.layer([]))),
@@ -579,13 +581,18 @@ describe("instances whose look is made of assets", () => {
     const scope = Scope.makeUnsafe();
     const material = new MeshBasicMaterial();
     const app = Effect.runSync(
-      App.make({
-        plugins: [Three.plugin],
-        systems: [
-          Three.instances("ta/Plain", { of: Tree, geometry, material }),
-          Three.objects("ta/Things", { of: Deer, make: () => new Object3D() }),
-        ],
-      }).pipe(Effect.provide(renderer.layer), Scope.provide(scope))
+      App.make(
+        App.define({
+          plugins: [Three.plugin],
+          systems: [
+            Three.instances("ta/Plain", { of: Tree, geometry, material }),
+            Three.objects("ta/Things", {
+              of: Deer,
+              make: () => new Object3D(),
+            }),
+          ],
+        })
+      ).pipe(Effect.provide(renderer.layer), Scope.provide(scope))
     );
     app.world.spawn(Tree, at(1));
     app.frame(0);

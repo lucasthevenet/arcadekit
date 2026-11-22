@@ -286,7 +286,7 @@ describe("arcadekit's Transform3d, as Three.js reads it", () => {
 describe("Three.instances", () => {
   it("draws every entity of a kind as one instance of one mesh, where the entity is", () => {
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Look] })), renderer);
     const turn = Transform3d.axisAngle(0, 0, 1, Math.PI / 3);
     const rocks = [
       app.world.spawn(Rock, Position.of({ x: 1, y: 2, z: 3 })),
@@ -330,7 +330,7 @@ describe("Three.instances", () => {
 
   it("draws a rotation left at zero as no turn at all", () => {
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Look] })), renderer);
     app.world.spawn(Rock, Position.of({ x: 1, y: 2, z: 3 }), Rotation);
     app.world.spawn(
       Rock,
@@ -347,7 +347,7 @@ describe("Three.instances", () => {
 
   it("draws a rotation of any length as the turn it stands for, neither skewed nor sized by it", () => {
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Look] })), renderer);
     const quarter = Transform3d.axisAngle(0, 0, 1, Math.PI / 2);
     const rocks = [
       // Three times too long, and a hundredth of what it should be.
@@ -394,7 +394,7 @@ describe("Three.instances", () => {
   it("follows the entities as they move, come and go, and gain and lose a rotation or a scale", () => {
     const random = makeRandom(20_261_116);
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Look] })), renderer);
     const { world } = app;
     const alive: Entity[] = [];
     const place = () =>
@@ -470,7 +470,7 @@ describe("Three.instances", () => {
     });
     const renderer = makeRenderer();
     const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Heavies] }),
+      App.make(App.define({ plugins: [Three.plugin], systems: [Heavies] })),
       renderer
     );
     const { world } = app;
@@ -527,7 +527,7 @@ describe("Three.instances", () => {
     });
     const renderer = makeRenderer();
     const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Shadows] }),
+      App.make(App.define({ plugins: [Three.plugin], systems: [Shadows] })),
       renderer
     );
     app.world.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
@@ -552,7 +552,7 @@ describe("Three.instances", () => {
     });
     const renderer = makeRenderer();
     const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Few] }),
+      App.make(App.define({ plugins: [Three.plugin], systems: [Few] })),
       renderer
     );
     const rocks: Entity[] = [];
@@ -609,7 +609,7 @@ describe("Three.instances", () => {
 
   it("tells the renderer to send what is drawn and no more, each frame something is", () => {
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Look] })), renderer);
     const rocks = [0, 1, 2].map((x) =>
       app.world.spawn(Rock, Position.of({ x, y: 0, z: 0 }))
     );
@@ -676,7 +676,9 @@ describe("Three.instances", () => {
       });
       const renderer = makeRenderer();
       const { app } = start(
-        App.make({ plugins: [Three.plugin], systems: [Move, Crowd] }),
+        App.make(
+          App.define({ plugins: [Three.plugin], systems: [Move, Crowd] })
+        ),
         renderer
       );
       const random = makeRandom(5);
@@ -774,7 +776,10 @@ describe("Three.instances", () => {
 
   it("takes its mesh out of the scene and disposes of it, with its geometry and material, when the app's scope closes", () => {
     const renderer = makeRenderer();
-    const { app, close } = start(App.make({ plugins: [Look] }), renderer);
+    const { app, close } = start(
+      App.make(App.define({ plugins: [Look] })),
+      renderer
+    );
     app.world.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
     app.frame(0);
     const mesh = meshOf(renderer.scene, "th/Rocks");
@@ -795,7 +800,7 @@ describe("a flat game's Transform2d", () => {
 
   it("is drawn by Three.instances in the plane of x and y, turned about the axis that comes out of it", () => {
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Look] })), renderer);
     const rocks = [
       app.world.spawn(Rock, at(3, 4)),
       app.world.spawn(Rock, at(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
@@ -837,7 +842,7 @@ describe("a flat game's Transform2d", () => {
   it("is drawn beside entities placed in three dimensions, and an entity with both positions once, from that one", () => {
     const random = makeRandom(404);
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Look] })), renderer);
     const { world } = app;
     const alive: Entity[] = [];
     const place = () => at(random.next() * 100 - 50, random.next() * 100 - 50);
@@ -926,7 +931,7 @@ describe("a flat game's Transform2d", () => {
     });
     const renderer = makeRenderer();
     const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Heavies] }),
+      App.make(App.define({ plugins: [Three.plugin], systems: [Heavies] })),
       renderer
     );
     const { world } = app;
@@ -985,7 +990,7 @@ describe("a flat game's Transform2d", () => {
     });
     const renderer = makeRenderer();
     const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Cards] }),
+      App.make(App.define({ plugins: [Three.plugin], systems: [Cards] })),
       renderer
     );
     const { world } = app;
@@ -1065,7 +1070,7 @@ describe("a flat game's Transform2d", () => {
       },
     });
     const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Cards] }),
+      App.make(App.define({ plugins: [Three.plugin], systems: [Cards] })),
       makeRenderer()
     );
     const first = app.world.spawn(
@@ -1093,7 +1098,10 @@ describe("a flat game's Transform2d", () => {
       plugins: [Three.plugin],
       systems: [Rocks],
     });
-    const first = start(App.make({ plugins: [Flatland] }), makeRenderer());
+    const first = start(
+      App.make(App.define({ plugins: [Flatland] })),
+      makeRenderer()
+    );
     const rock = first.app.world.spawn(
       Rock,
       at(4, 5),
@@ -1106,7 +1114,7 @@ describe("a flat game's Transform2d", () => {
     }
     const renderer = makeRenderer();
     const { app } = start(
-      App.load(save.value, { plugins: [Flatland] }),
+      App.make(App.define({ plugins: [Flatland] }), { save: save.value }),
       renderer
     );
     expect(app.world.hash()).toBe(first.app.world.hash());
@@ -1142,10 +1150,9 @@ describe("an entity drawn between two ticks", () => {
   ) => {
     const renderer = makeRenderer();
     const { app } = start(
-      App.make({
-        plugins: [Three.plugin],
-        systems: [Slide, ...systems],
-      }),
+      App.make(
+        App.define({ plugins: [Three.plugin], systems: [Slide, ...systems] })
+      ),
       renderer
     );
     return { app, renderer, mesh: () => meshOf(renderer.scene, "th/Smoothed") };
@@ -1714,19 +1721,21 @@ describe("an entity drawn between two ticks", () => {
     const { app, mesh } = (() => {
       const renderer = makeRenderer();
       const made = start(
-        App.make({
-          plugins: [Three.plugin],
-          systems: [Smoothed],
-          handlers: [
-            Action.handler(Go, function* () {
-              (yield* Query.all(Position).pipe(Query.writes(Position))).each(
-                (position) => {
-                  position.x += 10;
-                }
-              );
-            }),
-          ],
-        }),
+        App.make(
+          App.define({
+            plugins: [Three.plugin],
+            systems: [Smoothed],
+            handlers: [
+              Action.handler(Go, function* () {
+                (yield* Query.all(Position).pipe(Query.writes(Position))).each(
+                  (position) => {
+                    position.x += 10;
+                  }
+                );
+              }),
+            ],
+          })
+        ),
         renderer
       );
       return {
@@ -1788,12 +1797,15 @@ describe("an entity drawn between two ticks", () => {
       systems: [Smoothed, Ships],
     });
     const drawnGame = start(
-      App.make({ plugins: [Drawn], checkpointEvery: 1, verifyFrames: true }),
+      App.make(App.define({ plugins: [Drawn] }), {
+        checkpointEvery: 1,
+        verifyFrames: true,
+      }),
       makeRenderer()
     ).app;
     const scope = Scope.makeUnsafe();
     const bare = Effect.runSync(
-      App.make({ plugins: [Rules], checkpointEvery: 1 }).pipe(
+      App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 }).pipe(
         Scope.provide(scope)
       )
     );
@@ -1834,10 +1846,7 @@ describe("a colour per instance", () => {
   const play = (system: ReturnType<typeof Three.instances> = Painted) => {
     const renderer = makeRenderer();
     const { app, close } = start(
-      App.make({
-        plugins: [Three.plugin],
-        systems: [system],
-      }),
+      App.make(App.define({ plugins: [Three.plugin], systems: [system] })),
       renderer
     );
     return { app, close, mesh: () => meshOf(renderer.scene, "th/Painted") };
@@ -2142,18 +2151,20 @@ describe("a colour per instance", () => {
     const made = (space: "srgb" | "srgb-linear" | undefined) => {
       const renderer = makeRenderer();
       const { app } = start(
-        App.make({
-          plugins: [Three.plugin],
-          systems: [
-            Three.instances("th/Painted", {
-              of: Rock,
-              geometry,
-              material,
-              color: Bytes,
-              ...(space === undefined ? {} : { colorSpace: space }),
-            }),
-          ],
-        }),
+        App.make(
+          App.define({
+            plugins: [Three.plugin],
+            systems: [
+              Three.instances("th/Painted", {
+                of: Rock,
+                geometry,
+                material,
+                color: Bytes,
+                ...(space === undefined ? {} : { colorSpace: space }),
+              }),
+            ],
+          })
+        ),
         renderer
       );
       app.world.spawn(
@@ -2235,17 +2246,19 @@ describe("a colour per instance", () => {
     });
     const renderer = makeRenderer();
     const { app } = start(
-      App.make({
-        plugins: [Three.plugin],
-        systems: [
-          Three.instances("th/Painted", {
-            of: Rock,
-            geometry,
-            material,
-            color: Wide,
-          }),
-        ],
-      }),
+      App.make(
+        App.define({
+          plugins: [Three.plugin],
+          systems: [
+            Three.instances("th/Painted", {
+              of: Rock,
+              geometry,
+              material,
+              color: Wide,
+            }),
+          ],
+        })
+      ),
       renderer
     );
     const rock = app.world.spawn(
@@ -2422,7 +2435,10 @@ describe("Three.objects", () => {
     freed.length = 0;
     tilted = false;
     const renderer = makeRenderer();
-    return { renderer, ...start(App.make({ plugins: [Fleet] }), renderer) };
+    return {
+      renderer,
+      ...start(App.make(App.define({ plugins: [Fleet] })), renderer),
+    };
   };
   const objectOf = (entity: Entity): Object3D | undefined =>
     made.findLast((one) => one.entity === entity)?.object;
@@ -2716,7 +2732,10 @@ describe("Three.objects", () => {
     }
     made.length = 0;
     const renderer = makeRenderer();
-    const { app } = start(App.load(save.value, { plugins: [Fleet] }), renderer);
+    const { app } = start(
+      App.make(App.define({ plugins: [Fleet] }), { save: save.value }),
+      renderer
+    );
     expect(app.world.hash()).toBe(hash);
     expect(made).toEqual([]);
     app.frame(0);
@@ -2773,7 +2792,9 @@ describe("Three.plugin", () => {
     });
     // Listed after the plugin that draws, and still drawn before it does.
     const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Rocks, Ships, Aim] }),
+      App.make(
+        App.define({ plugins: [Three.plugin], systems: [Rocks, Ships, Aim] })
+      ),
       { layer }
     );
     expect(app.frameOrder.at(-1)).toBe("arcadekit/three/Render");
@@ -2808,7 +2829,7 @@ describe("Three.plugin", () => {
       ),
     });
     const renderer = makeRenderer();
-    const { app } = start(App.make({ plugins: [Stage] }), renderer);
+    const { app } = start(App.make(App.define({ plugins: [Stage] })), renderer);
     expect(seen?.camera).toBeInstanceOf(PerspectiveCamera);
     expect(seen?.camera.position.toArray()).toEqual([0, 0, 10]);
     app.frame(0);
@@ -2845,8 +2866,7 @@ describe("Three.plugin", () => {
     const renderer = makeRenderer();
     // Checked after every system of every frame.
     const drawnGame = start(
-      App.make({
-        plugins: [Drawn],
+      App.make(App.define({ plugins: [Drawn] }), {
         seed: 3,
         checkpointEvery: 1,
         verifyFrames: true,
@@ -2855,9 +2875,10 @@ describe("Three.plugin", () => {
     ).app;
     const scope = Scope.makeUnsafe();
     const bare = Effect.runSync(
-      App.make({ plugins: [Rules], seed: 3, checkpointEvery: 1 }).pipe(
-        Scope.provide(scope)
-      )
+      App.make(App.define({ plugins: [Rules] }), {
+        seed: 3,
+        checkpointEvery: 1,
+      }).pipe(Scope.provide(scope))
     );
     for (let tick = 0; tick < 60; tick++) {
       drawnGame.tick(1 / 60);
@@ -2872,7 +2893,7 @@ describe("Three.plugin", () => {
   });
 
   it("does not compile without a renderer", () => {
-    const made = App.make({ plugins: [Look] });
+    const made = App.make(App.define({ plugins: [Look] }));
     // Three.Renderer is still needed.
     expectTypeOf(made).not.toExtend<
       Effect.Effect<unknown, never, Scope.Scope>
@@ -3064,7 +3085,10 @@ describe("the geometries and materials a system draws with", () => {
       ],
     });
     const renderer = makeRenderer();
-    const { app, close } = start(App.make({ plugins: [Rocks] }), renderer);
+    const { app, close } = start(
+      App.make(App.define({ plugins: [Rocks] })),
+      renderer
+    );
     app.world.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
     app.frame(0);
     const seen = disposals(shared, own, other);
@@ -3099,7 +3123,10 @@ describe("the geometries and materials a system draws with", () => {
       ],
     });
     const renderer = makeRenderer();
-    const { app, close } = start(App.make({ plugins: [Ships] }), renderer);
+    const { app, close } = start(
+      App.make(App.define({ plugins: [Ships] })),
+      renderer
+    );
     const first = app.world.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
     app.world.spawn(Ship, Position.of({ x: 1, y: 0, z: 0 }));
     app.frame(0);

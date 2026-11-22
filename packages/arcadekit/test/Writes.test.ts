@@ -381,11 +381,10 @@ describe("a query, which writes only what it names, in an app", () => {
         const Watch = System.make("Watch", function* () {
           turned.push((yield* Turned).entities().length);
         });
-        const app = yield* App.make({
-          systems: [Move, Watch],
-          handlers: [survey],
-          checkpointEvery: 1,
-        });
+        const app = yield* App.make(
+          App.define({ systems: [Move, Watch], handlers: [survey] }),
+          { checkpointEvery: 1 }
+        );
         for (let n = 0; n < 4; n++) {
           app.world.spawn(
             Position.of({ x: n, y: 0 }),

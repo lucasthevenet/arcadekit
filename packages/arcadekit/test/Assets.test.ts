@@ -355,7 +355,7 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ plugins: [Game] });
+          const app = yield* App.make(App.define({ plugins: [Game] }));
           const frame = (): string => {
             app.frame(0);
             return drawn.at(-1)!;
@@ -432,11 +432,12 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({
-            plugins: [Assets.plugin],
-            // Listed after what draws with the bundle.
-            systems: [Draw, Keep],
-          });
+          const app = yield* App.make(
+            App.define({
+              plugins: [Assets.plugin], // Listed after what draws with the bundle.
+              systems: [Draw, Keep],
+            })
+          );
           expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
           const go = (to: "menu" | "forest") =>
             Effect.map(Level, (level) => {
@@ -460,7 +461,7 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ plugins: [Game] });
+          const app = yield* App.make(App.define({ plugins: [Game] }));
           const frame = (): string => {
             app.frame(0);
             return drawn.at(-1)!;
@@ -521,7 +522,9 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ plugins: [Game], systems: [Peek] });
+          const app = yield* App.make(
+            App.define({ plugins: [Game], systems: [Peek] })
+          );
           const frame = (): string => {
             app.frame(0);
             return drawn.at(-1)!;
@@ -574,7 +577,7 @@ describe("a level's assets", () => {
     const slow = makeSlowLoader();
     const scope = Scope.makeUnsafe();
     const app = await Effect.runPromise(
-      App.make({ plugins: [Game] }).pipe(
+      App.make(App.define({ plugins: [Game] })).pipe(
         Scope.provide(scope),
         Effect.provideService(Assets.Loader, slow.loader)
       )
@@ -605,12 +608,11 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const seen = yield* App.make({
-            plugins: [drawnGame.Game],
-            checkpointEvery: 1,
-          }).pipe(Effect.provide(Assets.layerMemory(files)));
-          const unseen = yield* App.make({
-            plugins: [bare.Game],
+          const seen = yield* App.make(
+            App.define({ plugins: [drawnGame.Game] }),
+            { checkpointEvery: 1 }
+          ).pipe(Effect.provide(Assets.layerMemory(files)));
+          const unseen = yield* App.make(App.define({ plugins: [bare.Game] }), {
             checkpointEvery: 1,
           }).pipe(Effect.provideService(Assets.Loader, counting));
           for (const to of ["forest", "cave", "menu"] as const) {
@@ -625,8 +627,7 @@ describe("a level's assets", () => {
           expect(bare.log).toEqual([]);
           expect(drawnGame.log.length).toBe(4);
           // The log of one replays in the other, which has no files.
-          const again = yield* App.make({
-            plugins: [bare.Game],
+          const again = yield* App.make(App.define({ plugins: [bare.Game] }), {
             checkpointEvery: 1,
           }).pipe(Effect.provideService(Assets.Loader, counting));
           Journal.replay(again, seen.record());
@@ -673,8 +674,13 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const seen = yield* App.make({ plugins: [drawnGame.Game], seed: 3 });
-          const unseen = yield* App.make({ plugins: [bare.Game], seed: 3 });
+          const seen = yield* App.make(
+            App.define({ plugins: [drawnGame.Game] }),
+            { seed: 3 }
+          );
+          const unseen = yield* App.make(App.define({ plugins: [bare.Game] }), {
+            seed: 3,
+          });
           for (const app of [seen, unseen]) {
             app.dispatch(app === seen ? drawnGame.Go : bare.Go, {
               to: "forest",
@@ -711,7 +717,9 @@ describe("a level's assets", () => {
           const Cheat = System.make("Cheat", function* () {
             yield* Forest;
           });
-          const app = yield* App.make({ plugins: [Game], systems: [Cheat] });
+          const app = yield* App.make(
+            App.define({ plugins: [Game], systems: [Cheat] })
+          );
           expect(() => app.tick(1)).toThrow(
             /The assets "as\/Forest" were asked for in the tick/
           );
@@ -727,10 +735,9 @@ describe("a level's assets", () => {
             const Sneak = System.make("Sneak", function* () {
               call(yield* Assets.Store);
             });
-            const sneaking = yield* App.make({
-              plugins: [Game],
-              systems: [Sneak],
-            }).pipe(
+            const sneaking = yield* App.make(
+              App.define({ plugins: [Game], systems: [Sneak] })
+            ).pipe(
               Effect.provideService(Assets.Loader, {
                 bytes: () => {
                   asked++;
@@ -749,7 +756,9 @@ describe("a level's assets", () => {
           const Ask = System.make("Ask", function* () {
             status = (yield* Forest)._tag;
           }).pipe(System.inStage("input"));
-          const asking = yield* App.make({ plugins: [Game], systems: [Ask] });
+          const asking = yield* App.make(
+            App.define({ plugins: [Game], systems: [Ask] })
+          );
           asking.input();
           expect(status).toBe("Absent");
         })
@@ -800,7 +809,9 @@ describe("a level's assets", () => {
     const { hash, recording } = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ plugins: [Shown], checkpointEvery: 1 });
+          const app = yield* App.make(App.define({ plugins: [Shown] }), {
+            checkpointEvery: 1,
+          });
           const step = Driver.fixedStep(app, { hz: 10 });
           step(0.1);
           app.dispatch(Enter, {});
@@ -840,8 +851,7 @@ describe("a level's assets", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const again = yield* App.make({
-            plugins: [Rules],
+          const again = yield* App.make(App.define({ plugins: [Rules] }), {
             checkpointEvery: 1,
           });
           Journal.replay(again, recording);
@@ -857,13 +867,15 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ plugins: [Game] });
+          const app = yield* App.make(App.define({ plugins: [Game] }));
           app.dispatch(Go, { to: "forest" });
           app.tick(1);
           app.frame(0);
           const save = app.save();
           assert(Exit.isSuccess(save));
-          const loaded = yield* App.load(save.value, { plugins: [Game] });
+          const loaded = yield* App.make(App.define({ plugins: [Game] }), {
+            save: save.value,
+          });
           drawn.length = 0;
           loaded.frame(0);
           expect(drawn).toEqual([
@@ -883,10 +895,12 @@ describe("a level's assets", () => {
         Effect.gen(function* () {
           // A second system for the same bundle is refused by its name.
           const twice = yield* Effect.exit(
-            App.make({
-              plugins: [Game],
-              systems: [Assets.during(State.is(Level, "menu"), Forest)],
-            })
+            App.make(
+              App.define({
+                plugins: [Game],
+                systems: [Assets.during(State.is(Level, "menu"), Forest)],
+              })
+            )
           );
           expect(Exit.isFailure(twice)).toBe(true);
           expect(
@@ -898,10 +912,14 @@ describe("a level's assets", () => {
           const Shared = Assets.bundle("as/Shared", {
             font: tracked("/cave.png", log),
           });
-          const app = yield* App.make({
-            plugins: [Game],
-            systems: [Assets.during(State.is(Level, "forest", "cave"), Shared)],
-          });
+          const app = yield* App.make(
+            App.define({
+              plugins: [Game],
+              systems: [
+                Assets.during(State.is(Level, "forest", "cave"), Shared),
+              ],
+            })
+          );
           for (const to of ["forest", "cave", "forest"] as const) {
             app.dispatch(Go, { to });
             app.tick(1);
@@ -932,7 +950,9 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({ plugins: [Game], systems: [Keep] });
+          const app = yield* App.make(
+            App.define({ plugins: [Game], systems: [Keep] })
+          );
           const frame = (): string => {
             app.frame(0);
             return drawn.at(-1)!;
@@ -979,10 +999,12 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make({
-            plugins: [Assets.plugin],
-            systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
-          });
+          const app = yield* App.make(
+            App.define({
+              plugins: [Assets.plugin],
+              systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
+            })
+          );
           app.frame(0);
           expect(status?._tag).toBe("Failed");
           expectFailed((status as { error: unknown }).error, "", "boom");
@@ -1005,7 +1027,7 @@ describe("a level's assets", () => {
     });
     const scope = Scope.makeUnsafe();
     await Effect.runPromise(
-      App.make({ plugins: [Ui] }).pipe(
+      App.make(App.define({ plugins: [Ui] })).pipe(
         Scope.provide(scope),
         Effect.provide(Assets.layerMemory(files))
       )

@@ -12,13 +12,13 @@ import {
   readSnapshot,
 } from "../src/index";
 import {
+  CoinGame,
   DELTA,
   Purse,
   Stranger,
   Tip,
   catchUp,
   game,
-  gameOptions,
   moves,
   network,
   purseOf,
@@ -66,11 +66,14 @@ describe("who issued an action", () => {
         (yield* Action.Actions).enqueue(Poke, { n: 1 });
       }
     });
-    withApp(App.make({ systems: [Bot], handlers: [poke] }), (app) => {
-      app.tick(DELTA);
-      app.tick(DELTA);
-      expect(told).toEqual([undefined]);
-    });
+    withApp(
+      App.make(App.define({ systems: [Bot], handlers: [poke] })),
+      (app) => {
+        app.tick(DELTA);
+        app.tick(DELTA);
+        expect(told).toEqual([undefined]);
+      }
+    );
   });
 
   it("is in the log, and a replay hands it back", () => {
@@ -172,7 +175,10 @@ describe("who issued an action", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.load(read.value, gameOptions());
+          const app = yield* App.make(CoinGame, {
+            save: read.value,
+            checkpointEvery: 1,
+          });
           app.tick(DELTA);
           const { ada, grace } = app.world.singleton(Purse);
           expect({ ada, grace }).toEqual({ ada: 0, grace: 6 });
@@ -195,14 +201,17 @@ describe("who issued an action", () => {
     const never = Action.handler(Never, function* () {
       return yield* new Stranger({ from: undefined });
     });
-    withApp(App.make({ systems: [Hear], handlers: [never] }), (app) => {
-      app.enqueueByName("or/Never", { n: 1 }, "ada");
-      app.enqueue(Never, { n: 2 });
-      app.enqueueByName("or/Nobody", {}, "grace");
-      app.tick(DELTA);
-      // Whose each was, so that a UI can show a player their own.
-      expect(heard).toEqual(["ada", undefined, "grace"]);
-    });
+    withApp(
+      App.make(App.define({ systems: [Hear], handlers: [never] })),
+      (app) => {
+        app.enqueueByName("or/Never", { n: 1 }, "ada");
+        app.enqueue(Never, { n: 2 });
+        app.enqueueByName("or/Nobody", {}, "grace");
+        app.tick(DELTA);
+        // Whose each was, so that a UI can show a player their own.
+        expect(heard).toEqual(["ada", undefined, "grace"]);
+      }
+    );
   });
 });
 

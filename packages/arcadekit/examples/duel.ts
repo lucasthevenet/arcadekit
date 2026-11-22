@@ -199,7 +199,9 @@ const standing = (app: App.Any): string => {
 const program = Effect.gen(function* () {
   // One tick per move, so a checkpoint of the world's hash after every tick
   // costs nothing and lets a replay say exactly where it went another way.
-  const app = yield* App.make({ plugins: [Commentary], checkpointEvery: 1 });
+  const app = yield* App.make(App.define({ plugins: [Commentary] }), {
+    checkpointEvery: 1,
+  });
   const { knight, rogue } = seat(app);
 
   // One move: dispatch, report, then let the world react for one tick.
@@ -267,7 +269,9 @@ const program = Effect.gen(function* () {
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
-    const headless = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
+    const headless = yield* App.make(App.define({ plugins: [Rules] }), {
+      checkpointEvery: 1,
+    });
     seat(headless);
     // A replay that goes another way throws, and says where.
     return yield* Effect.try({
@@ -297,7 +301,9 @@ const program = Effect.gen(function* () {
     const file = Save.encode(save.value);
     const read = Save.decode(file);
     if (Exit.isSuccess(read)) {
-      const loaded = yield* App.load(read.value, { plugins: [Rules] });
+      const loaded = yield* App.make(App.define({ plugins: [Rules] }), {
+        save: read.value,
+      });
       yield* Console.log(
         `saved (${file.length} bytes) and loaded -> ${standing(loaded)} at tick ${loaded.time.tick} (${standing(loaded) === standing(app) ? "identical" : "DIFFERENT"})`
       );

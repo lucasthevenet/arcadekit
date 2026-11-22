@@ -592,11 +592,10 @@ const Grow = System.make("Grow", function* () {
 });
 
 const orchard = Effect.gen(function* () {
-  const app = yield* App.make({
-    systems: [Grow],
-    handlers: [fell, graft],
-    checkpointEvery: 1,
-  });
+  const app = yield* App.make(
+    App.define({ systems: [Grow], handlers: [fell, graft] }),
+    { checkpointEvery: 1 }
+  );
   const trees = [0, 1, 2].map(() => app.world.spawn(Body));
   for (const tree of trees) {
     app.world.spawn(Body, ChildOf.of({ target: tree }));
@@ -648,11 +647,10 @@ describe("relations in an app", () => {
         if (Exit.isFailure(read)) {
           throw new Error("the save did not decode");
         }
-        const loaded = yield* App.load(read.value, {
-          systems: [Grow],
-          handlers: [fell, graft],
-          checkpointEvery: 1,
-        });
+        const loaded = yield* App.make(
+          App.define({ systems: [Grow], handlers: [fell, graft] }),
+          { save: read.value, checkpointEvery: 1 }
+        );
         for (const each of [app, loaded]) {
           each.dispatch(Fell, { tree: trees[2]! });
           each.tick(1);

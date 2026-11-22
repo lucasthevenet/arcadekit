@@ -1315,11 +1315,13 @@ const game = (
   Scope.Scope
 > =>
   Effect.gen(function* () {
-    const app = yield* App.make({
-      systems: [Early, Drift, Count],
-      handlers: [push, spawn, cull],
-      checkpointEvery: options.checkpointEvery ?? 1,
-    });
+    const app = yield* App.make(
+      App.define({
+        systems: [Early, Drift, Count],
+        handlers: [push, spawn, cull],
+      }),
+      { checkpointEvery: options.checkpointEvery ?? 1 }
+    );
     app.world.spawn(Tally);
     for (let n = 0; n < 6; n++) {
       app.world.spawn(Position.of({ x: n, y: 0 }));
@@ -1368,10 +1370,9 @@ describe("change queries in an app", () => {
   it("do not show a refused action's writes to anyone", () => {
     run(
       Effect.gen(function* () {
-        const quiet = yield* App.make({
-          systems: [Count],
-          handlers: [push],
-        });
+        const quiet = yield* App.make(
+          App.define({ systems: [Count], handlers: [push] })
+        );
         quiet.world.spawn(Tally);
         quiet.world.spawn(Position.of({ x: 0, y: 0 }));
         quiet.tick(1);
@@ -1399,10 +1400,9 @@ describe("change queries in an app", () => {
         const Watch = System.make("Watch", function* () {
           watched.push((yield* Moved).entities().length);
         });
-        const app = yield* App.make({
-          systems: [Watch],
-          handlers: [inspect, push],
-        });
+        const app = yield* App.make(
+          App.define({ systems: [Watch], handlers: [inspect, push] })
+        );
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Position.of({ x: n, y: 0 }));
         }
@@ -1465,11 +1465,13 @@ describe("change queries in an app", () => {
           expect(read.value).toEqual(save.value);
           // Once a tick has run, there is a place to go on from.
           expect(visitsIn(save.value).length > 0).toBe(savedAt > 0);
-          const loaded = yield* App.load(read.value, {
-            systems: [Early, Drift, Count],
-            handlers: [push, spawn, cull],
-            checkpointEvery: 1,
-          });
+          const loaded = yield* App.make(
+            App.define({
+              systems: [Early, Drift, Count],
+              handlers: [push, spawn, cull],
+            }),
+            { save: read.value, checkpointEvery: 1 }
+          );
           play(app, savedAt, savedAt + 12);
           // The tail of the original's log replays in the loaded game, and
           // every checkpoint of it holds.
@@ -1493,9 +1495,7 @@ describe("change queries in an app", () => {
     });
     run(
       Effect.gen(function* () {
-        const app = yield* App.make({
-          handlers: [before],
-        });
+        const app = yield* App.make(App.define({ handlers: [before] }));
         const { entities } = (() => {
           const made: Entity[] = [];
           for (let n = 0; n < 4; n++) {
@@ -1514,26 +1514,29 @@ describe("change queries in an app", () => {
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
-        const loaded = yield* App.load(save.value, {
-          handlers: [after],
-          version: 1,
-          migrations: [
-            {
-              from: 0,
-              migrate: (contents) => {
-                Migrate.renameComponent(
-                  contents.world,
-                  "ch/Position",
-                  "ch/Place"
-                );
-                // A migration is handed the changes too.
-                expect(
-                  visitsOf(contents.world).map((each) => each.component)
-                ).toEqual(["ch/Health", "ch/Position"]);
+        const loaded = yield* App.make(
+          App.define({
+            handlers: [after],
+            version: 1,
+            migrations: [
+              {
+                from: 0,
+                migrate: (contents) => {
+                  Migrate.renameComponent(
+                    contents.world,
+                    "ch/Position",
+                    "ch/Place"
+                  );
+                  // A migration is handed the changes too.
+                  expect(
+                    visitsOf(contents.world).map((each) => each.component)
+                  ).toEqual(["ch/Health", "ch/Position"]);
+                },
               },
-            },
-          ],
-        });
+            ],
+          }),
+          { save: save.value }
+        );
         // Everything placed counts as changed; health goes on from the save.
         expect(loaded.dispatch(Look, {})).toEqual(Exit.succeed([4, 1]));
       })
@@ -1563,7 +1566,9 @@ describe("change queries in an app", () => {
             readers: {},
           },
         ]);
-        const exit = yield* Effect.exit(App.load(damaged, {}));
+        const exit = yield* Effect.exit(
+          App.make(App.define({}), { save: damaged })
+        );
         expect(
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
         ).toMatchObject({
@@ -1575,7 +1580,7 @@ describe("change queries in an app", () => {
         });
         // And changes that are not of the right shape are not loaded either.
         const misshapen = yield* Effect.exit(
-          App.load(withVisits([{ component: 1 }]), {})
+          App.make(App.define({}), { save: withVisits([{ component: 1 }]) })
         );
         expect(
           Exit.isFailure(misshapen) ? Cause.squash(misshapen.cause) : undefined

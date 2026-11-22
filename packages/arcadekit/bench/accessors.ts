@@ -122,8 +122,7 @@ const dispatching = <P>(
     Effect.scoped(
       Effect.gen(function* () {
         // No checkpoints: this measures the action, not the hash.
-        const app = yield* App.make({
-          handlers: [nudge, sweep],
+        const app = yield* App.make(App.define({ handlers: [nudge, sweep] }), {
           checkpointEvery: 0,
         });
         populate(app.world);
@@ -148,7 +147,7 @@ const idling = (power: "on" | "off"): number =>
             yield* Time;
           }).pipe(System.runIf(State.is(Power, "on")))
         );
-        const app = yield* App.make({ systems });
+        const app = yield* App.make(App.define({ systems }));
         yield* Effect.map(Power, (held) => held.set(power)).pipe(
           Effect.provideService(WorldService, app.world)
         );
@@ -168,8 +167,7 @@ const listening = (changing: boolean): number =>
     Effect.scoped(
       Effect.gen(function* () {
         const source = Input.makeManualSource();
-        const app = yield* App.make({
-          plugins: [Input.plugin],
+        const app = yield* App.make(App.define({ plugins: [Input.plugin] }), {
           checkpointEvery: 0,
         }).pipe(Effect.provideService(Input.Source, source));
         for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
@@ -238,11 +236,10 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
         ui.subscribe(Hud, () => {
           heard++;
         });
-        const made = App.make({
-          plugins: [View.plugin],
-          systems: [Show],
-          checkpointEvery: 0,
-        });
+        const made = App.make(
+          App.define({ plugins: [View.plugin], systems: [Show] }),
+          { checkpointEvery: 0 }
+        );
         const app = yield* mode === "nobody"
           ? made
           : made.pipe(Effect.provide(View.layer(ui)));
@@ -280,11 +277,10 @@ const sounding = (happening: boolean): number =>
           Sound.on(Scored, "coin"),
           Sound.on(Bounced, { cue: "thud", volume: 0.5 })
         );
-        const app = yield* App.make({
-          plugins: [Sound.plugin],
-          systems: [Score, Cues],
-          checkpointEvery: 0,
-        }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+        const app = yield* App.make(
+          App.define({ plugins: [Sound.plugin], systems: [Score, Cues] }),
+          { checkpointEvery: 0 }
+        ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
         return measure(
           () => app.frame(0),
           50_000,
@@ -310,11 +306,10 @@ const scoring = (): number =>
             ? { track: "theme", volume: 0.5 }
             : undefined;
         });
-        const app = yield* App.make({
-          plugins: [Sound.plugin],
-          systems: [Score],
-          checkpointEvery: 0,
-        }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+        const app = yield* App.make(
+          App.define({ plugins: [Sound.plugin], systems: [Score] }),
+          { checkpointEvery: 0 }
+        ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
         return measure(() => app.frame(0), 50_000, 20_000);
       })
     )
@@ -336,11 +331,10 @@ const atRest = (): number =>
           return { phase: (yield* Phase).value as string };
         });
         const source = Input.makeManualSource();
-        const app = yield* App.make({
-          plugins: [Input.plugin, View.plugin],
-          systems: [Show],
-          checkpointEvery: 0,
-        }).pipe(
+        const app = yield* App.make(
+          App.define({ plugins: [Input.plugin, View.plugin], systems: [Show] }),
+          { checkpointEvery: 0 }
+        ).pipe(
           Effect.provideService(Input.Source, source),
           Effect.provide(View.layer(View.makeBridge()))
         );
@@ -372,7 +366,7 @@ const rewinding = (back: boolean): number =>
             }
           });
         });
-        const app = yield* App.make({ systems: [Movement] });
+        const app = yield* App.make(App.define({ systems: [Movement] }));
         populate(app.world);
         app.tick(DT);
         const moment = Timeline.capture(app);
@@ -414,7 +408,9 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
             }
           }).pipe(System.inStage("frame"))
         );
-        const app = yield* App.make({ systems, verifyFrames: verify });
+        const app = yield* App.make(App.define({ systems }), {
+          verifyFrames: verify,
+        });
         if (reading) {
           populate(app.world);
         }
@@ -432,8 +428,7 @@ const scanned = (handler: typeof scanPlain): number =>
   Effect.runSync(
     Effect.scoped(
       Effect.gen(function* () {
-        const app = yield* App.make({
-          handlers: [handler],
+        const app = yield* App.make(App.define({ handlers: [handler] }), {
           checkpointEvery: 0,
         });
         populate(app.world);
@@ -522,7 +517,7 @@ const variants: Record<string, Variant> = {
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
-            const app = yield* App.make({ systems: [Movement] });
+            const app = yield* App.make(App.define({ systems: [Movement] }));
             populate(app.world);
             return measure(() => app.tick(DT));
           })
@@ -536,7 +531,7 @@ const variants: Record<string, Variant> = {
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
-            const app = yield* App.make({ systems: [MovementRaw] });
+            const app = yield* App.make(App.define({ systems: [MovementRaw] }));
             populate(app.world);
             return measure(() => app.tick(DT));
           })
@@ -558,7 +553,7 @@ const variants: Record<string, Variant> = {
                 yield* Time;
               })
             );
-            const app = yield* App.make({ systems });
+            const app = yield* App.make(App.define({ systems }));
             return measure(() => app.tick(DT), 50_000, 20_000);
           })
         )

@@ -136,7 +136,7 @@ export class Events extends Context.Service<Events, EventBus>()(
  *   random.shuffle(items)  // in place
  *
  * Its methods are plain calls, cheap enough for a loop. Seed the app with
- * `App.make({ seed })`; the same seed produces the same numbers on every
+ * `App.make(game, { seed })`; the same seed produces the same numbers on every
  * machine. The generator's state is part of the world, so it is included in the
  * world's hash and a replay draws the same numbers.
  *

@@ -36,7 +36,7 @@ export const play = <A>(body: Effect.Effect<A, unknown, Scope.Scope>) =>
 it("adds points", () =>
   play(
     Effect.gen(function* () {
-      const app = yield* App.make({ plugins: [Rules] });
+      const app = yield* App.make(App.define({ plugins: [Rules] }));
       app.enqueue(Add, { points: 3 });
       app.tick(1 / 60);
       expect(app.world.singleton(Score).points).toBe(3);
@@ -60,9 +60,9 @@ it("hears a key", () =>
   play(
     Effect.gen(function* () {
       const source = Input.makeManualSource();
-      const app = yield* App.make({ plugins: [Rules, Input.plugin] }).pipe(
-        Effect.provideService(Input.Source, source)
-      );
+      const app = yield* App.make(
+        App.define({ plugins: [Rules, Input.plugin] })
+      ).pipe(Effect.provideService(Input.Source, source));
       source.press("Space");
       app.tick(1 / 60); // hears the devices first
     })
@@ -84,9 +84,9 @@ it("plays nothing when nothing happens", () =>
   play(
     Effect.gen(function* () {
       const sound = Sound.makeRecorder();
-      const app = yield* App.make({ plugins: [Rules, Sound.plugin] }).pipe(
-        Effect.provide(Sound.layer(sound))
-      );
+      const app = yield* App.make(
+        App.define({ plugins: [Rules, Sound.plugin] })
+      ).pipe(Effect.provide(Sound.layer(sound)));
       app.tick(1 / 60);
       app.frame(1);
       expect(sound.played).toEqual([]);
@@ -98,7 +98,7 @@ In a test, replace a sound a page loads with `Browser.sound(url)` by an asset ma
 
 ## The frame stage
 
-`app.frame(alpha)` runs the frame stage by hand. `App.make({ verifyFrames: true })` hashes the world before the stage and after each of its systems, and fails with `Stage.FrameChangedWorld` if one changed the game through a raw column. It costs a hash per system, so use it in tests.
+`app.frame(alpha)` runs the frame stage by hand. `App.make(game, { verifyFrames: true })` hashes the world before the stage and after each of its systems, and fails with `Stage.FrameChangedWorld` if one changed the game through a raw column. It costs a hash per system, so use it in tests.
 
 To test a program that runs its own frame loop, provide a display you drive by hand, `Driver.makeManualDisplay()`, as `Driver.Display`, instead of real timers. `display.frame(ms)` signals that a frame is due, and `display.hide()` and `display.show()` simulate the tab being hidden and shown again. `display.pending` and `display.watching` count the requested frames and the listeners on the tab, so a test can check that a stopped loop left nothing behind.
 

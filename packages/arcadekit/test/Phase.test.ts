@@ -26,7 +26,7 @@ describe("what an app is running", () => {
       yield* note("input");
     }).pipe(System.inStage("input"));
     withApp(
-      App.make({ systems: [Step, Draw, Hear], handlers: [noted] }),
+      App.make(App.define({ systems: [Step, Draw, Hear], handlers: [noted] })),
       (made) => {
         app = made;
         expect(made.phase).toBe("idle");
@@ -71,7 +71,7 @@ describe("what an app is running", () => {
       const calling = Action.handler(Call, function* () {
         yield* Effect.sync(() => call(app!));
       });
-      withApp(App.make({ handlers: [calling] }), (made) => {
+      withApp(App.make(App.define({ handlers: [calling] })), (made) => {
         app = made;
         made.tick(1);
         const log = made.actionLog.length;

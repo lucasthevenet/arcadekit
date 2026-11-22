@@ -46,7 +46,7 @@ const url = Relay.address("wss://relay.example.com/rooms", {
 // "wss://relay.example.com/rooms/blue?peer=ada"
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game], seed: 1 });
+  const app = yield* App.make(App.define({ plugins: [Game] }), { seed: 1 });
   const session = Rollback.make(app, {
     peer,
     peers: ["ada", "grace"],
