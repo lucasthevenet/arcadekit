@@ -130,13 +130,15 @@ describe("the package's entries", () => {
       };
     };
     entry(".", "../src/index.ts");
-    entry("./ecs", "../src/ecs/index.ts");
-    // A folder of modules is an entry, and so is each module in it.
-    entry("./net", "../src/net/index.ts");
     for (const file of Object.keys(sources)) {
-      const module = /^\.\.\/src\/((?:net\/)?[A-Z]\w*)\.ts$/u.exec(file);
-      if (module !== null) {
-        entry(`./${module[1]}`, file);
+      // A module is PascalCase, as it is imported, wherever its file is,
+      // and a folder is an entry by its index. Any other file is what a
+      // module keeps to itself, and no entry.
+      const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
+      const folder = /^\.\.\/src\/((?:\w+\/)*\w+)\/index\.ts$/u.exec(file);
+      const name = module?.[1] ?? folder?.[1];
+      if (name !== undefined) {
+        entry(`./${name}`, file);
       }
     }
     expect(manifest.exports).toEqual(expected);
@@ -149,16 +151,8 @@ describe("the package's entries", () => {
     expect(entries).toContain("./Browser");
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
+    expect(entries).toContain("./ecs");
     expect(entries.length).toBe(41);
-    // One file, one entry: a module is a file in src/, or in src/net/. No
-    // module is in a folder of its own, and src/ecs is the storage core.
-    expect(
-      Object.keys(sources).filter(
-        (file) =>
-          !/^\.\.\/src\/(?:net\/)?\w+\.ts$/u.test(file) &&
-          !file.startsWith("../src/ecs/")
-      )
-    ).toEqual([]);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)

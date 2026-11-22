@@ -22,7 +22,7 @@ What arcadekit does is documented in two places and no other: the site's pages, 
 
 ## Layout
 
-- `packages/arcadekit/`: `src/<Module>.ts` is the entry `arcadekit/<Module>`, `src/ecs/` the storage core, plain TypeScript with no Effect, and `src/Browser.ts` everything only a page can use. Its `test/`, `examples/` and `bench/` are beside `src/`.
+- `packages/arcadekit/`: `src/<Module>.ts` is the entry `arcadekit/<Module>`, `src/net/` the modules of `arcadekit/net`, what several machines play with, `src/ecs/` the storage core, plain TypeScript with no Effect, and `src/Browser.ts` everything only a page can use. Its `test/`, `examples/` and `bench/` are beside `src/`.
 - `packages/three/`: `@arcadekit/three`, laid out the same way.
 - `website/`: the docs site. Its pages are in `website/src/content/docs/`, and its reference is made from the packages' doc comments.
 - `tooling/`: the workspace's own code. `tooling/lint/` holds the checks: the Oxlint plugin `arcadekit` (`plugin.ts`), which `oxlint.config.ts` turns on, and the checks of the packed packages, `pnpm lint:packages`. `tooling/build/` holds what the build and the tests run. `.changeset/`: pending release notes.
