@@ -554,6 +554,22 @@ describe("a lockstep session", () => {
     );
   });
 
+  it("tells whoever stepped a tick of its systems, and nobody of the next", () => {
+    withApp(game(), (app) => {
+      const reins = app.divert(() => {});
+      const told: (string | undefined)[] = [];
+      expect(
+        reins.tickExit(DELTA, (system) => {
+          told.push(system);
+        })
+      ).toEqual(Exit.void);
+      // Before the first system, then after each.
+      expect(told).toEqual([undefined, ...app.systemOrder]);
+      expect(reins.tickExit(DELTA)).toEqual(Exit.void);
+      expect(told).toHaveLength(1 + app.systemOrder.length);
+    });
+  });
+
   it("refuses options that could not be a game", () => {
     const attempt = (options: Partial<Lockstep.Options>) =>
       withApp(game(), (app) =>

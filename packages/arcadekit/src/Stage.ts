@@ -9,9 +9,9 @@
  * - in the input stage, what the devices say, and no frame.
  *
  * A service a stage may not read is there all the same, and throws when it
- * is read, with what to do instead.
+ * is read, with what to do instead. `Loop` runs the stages.
  */
-import { Context, Random as EffectRandom } from "effect";
+import { Context, Data, Random as EffectRandom } from "effect";
 
 import * as Action from "./Action";
 import type { CommandBuffer } from "./ecs/commands";
@@ -30,8 +30,42 @@ import {
 } from "./Services";
 import type { FrameState, TimeState } from "./Services";
 
-/** What the `Actions` service is. */
-type Actions = Context.Service.Shape<typeof Action.Actions>;
+/**
+ * The prefix of a reader's name in the world's change logs when it is a
+ * system of the frame stage or the input stage. Such a reader isn't part of
+ * the simulation: its place in what changed isn't saved.
+ *
+ * @internal
+ */
+export const READER = "frame:";
+
+/**
+ * A frame-stage or input-stage system changed the world, which it must not do,
+ * as detected by an app created with `verifyFrames`. It is a defect, not a
+ * failure to handle: those stages run between ticks, and a game that depends on
+ * having been drawn, or on its devices having been read, doesn't replay.
+ *
+ * @category Errors
+ */
+export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
+  /** The stage the system belongs to. */
+  readonly stage: "frame" | "input";
+  /** The system after which the world had changed. */
+  readonly system: string;
+  /** The frame number, counted from 1: for the input stage, the last frame drawn. */
+  readonly frame: number;
+}> {
+  override get message(): string {
+    return `The ${this.stage} stage changed the world: its hash was not the same after system "${this.system}" ran${this.stage === "frame" ? ` in frame ${this.frame}` : ""} as before. ${this.stage === "frame" ? "The frame stage draws the game between two ticks" : "The input stage reads the devices before a tick"} and must leave the world as it found it. Look for a write through the raw columns of eachChunk, which nothing stops where it is made, or a draw from world.random, which is otherwise only found when the stage ends.`;
+  }
+}
+
+/**
+ * What the `Actions` service is.
+ *
+ * @category Type-level
+ */
+export type Actions = Context.Service.Shape<typeof Action.Actions>;
 
 /**
  * Effect's own `Random`, drawing from a generator of the package's: so
@@ -171,8 +205,8 @@ export const frame = (
 
 /**
  * What the input stage is given, from what the frame stage is: what the
- * devices say, one picture of them that the app takes when the stage begins,
- * and no frame.
+ * devices say, one picture of them that is taken when the stage begins, and
+ * no frame.
  *
  * @category Constructors
  */

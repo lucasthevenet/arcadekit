@@ -52,6 +52,7 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
         "Event",
         "Field",
         "Inbox",
+        "Loop",
         "Outbox",
         "Plugin",
         "Query",

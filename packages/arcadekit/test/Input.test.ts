@@ -18,6 +18,7 @@ import {
   Random,
   Save,
   Singleton,
+  Stage,
   State,
   System,
   Time,
@@ -422,8 +423,8 @@ describe("the input stage", () => {
         expect(Exit.isFailure(exit)).toBe(true);
         const error = Cause.squash(
           (exit as Exit.Failure<void, never>).cause
-        ) as App.FrameChangedWorld;
-        expect(error).toBeInstanceOf(App.FrameChangedWorld);
+        ) as Stage.FrameChangedWorld;
+        expect(error).toBeInstanceOf(Stage.FrameChangedWorld);
         expect(error.stage).toBe("input");
         expect(error.system).toBe("Scribble");
         expect(error.message).toMatch(/^The input stage changed the world/);
@@ -443,7 +444,7 @@ describe("the input stage", () => {
         drawn.world.spawn(Ship.of({ x: 1, shots: 0 }));
         const smudged = Cause.squash(
           (drawn.frameExit(0) as Exit.Failure<void, never>).cause
-        ) as App.FrameChangedWorld;
+        ) as Stage.FrameChangedWorld;
         expect(smudged.stage).toBe("frame");
         expect(smudged.message).toMatch(
           /^The frame stage changed the world: its hash was not the same after system "Smudge" ran in frame 1 as before/

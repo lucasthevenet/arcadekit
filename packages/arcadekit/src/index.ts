@@ -53,6 +53,7 @@ export * as Inbox from "./Inbox";
 export * as Input from "./Input";
 export * as Journal from "./Journal";
 export * as Lockstep from "./Lockstep";
+export * as Loop from "./Loop";
 export * as Migrate from "./Migrate";
 export * as Outbox from "./Outbox";
 export * as Plugin from "./Plugin";

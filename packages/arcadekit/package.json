@@ -87,6 +87,11 @@
       "types": "./dist/Lockstep.d.ts",
       "default": "./dist/Lockstep.js"
     },
+    "./Loop": {
+      "source": "./src/Loop.ts",
+      "types": "./dist/Loop.d.ts",
+      "default": "./dist/Loop.js"
+    },
     "./Migrate": {
       "source": "./src/Migrate.ts",
       "types": "./dist/Migrate.d.ts",

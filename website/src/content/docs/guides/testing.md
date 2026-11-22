@@ -98,7 +98,7 @@ In a test, replace a sound a page loads with `Browser.sound(url)` by an asset ma
 
 ## The frame stage
 
-`app.frame(alpha)` runs the frame stage by hand. `App.make({ verifyFrames: true })` hashes the world before the stage and after each of its systems, and fails with `App.FrameChangedWorld` if one changed the game through a raw column. It costs a hash per system, so use it in tests.
+`app.frame(alpha)` runs the frame stage by hand. `App.make({ verifyFrames: true })` hashes the world before the stage and after each of its systems, and fails with `Stage.FrameChangedWorld` if one changed the game through a raw column. It costs a hash per system, so use it in tests.
 
 To test a program that runs its own frame loop, provide a display you drive by hand, `Driver.makeManualDisplay()`, as `Driver.Display`, instead of real timers. `display.frame(ms)` signals that a frame is due, and `display.hide()` and `display.show()` simulate the tab being hidden and shown again. `display.pending` and `display.watching` count the requested frames and the listeners on the tab, so a test can check that a stopped loop left nothing behind.
 
