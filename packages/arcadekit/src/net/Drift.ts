@@ -31,9 +31,10 @@ import type * as Action from "../Action";
  * sends a tick's hash once every peer has sent their actions for it, so there
  * the bound is `checkpointEvery - 1 + delay + 2 × ahead` ticks.
  *
- * What is compared is the world's hash. What the hash doesn't cover, such as an
- * event only one peer has waiting or a system's own variables, is only detected
- * once it affects the world.
+ * What is compared is the world's hash, which covers the actions queued for
+ * the next tick and the events waiting to be read. What it doesn't cover, how
+ * far a system has read or a system's own variables, is only detected once it
+ * affects the world, and the report names that tick.
  *
  * @category Errors
  */
