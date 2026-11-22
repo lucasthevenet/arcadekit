@@ -127,6 +127,8 @@ export interface Parts {
   readonly spans: Spans;
   /** What the tick's code runs with: the app's services and the game's own. */
   readonly context: Context.Context<unknown>;
+  /** The devices, listened to in the scope the app is made in. */
+  readonly listener: Input.Listener;
   readonly actions: Stage.Actions;
   /** Where the frame stage's own random sequence starts. */
   readonly seed: number;
@@ -185,6 +187,7 @@ export const make = (parts: Parts): Loop => {
     intake,
     log,
     runner,
+    listener,
     schedule,
     spans,
     time,
@@ -312,7 +315,6 @@ export const make = (parts: Parts): Loop => {
     seed: parts.seed,
   });
   const runFrame = Effect.runForkWith(frameContext);
-  const source = Context.get(context, Input.Source);
   const devices: {
     -readonly [K in keyof Input.Sample]: Input.Sample[K];
   } = {
@@ -403,7 +405,7 @@ export const make = (parts: Parts): Loop => {
       return Exit.void;
     }
     // One picture of the devices for the whole stage.
-    Object.assign(devices, source.sample());
+    Object.assign(devices, listener.sample());
     intake.heard = true;
     return between("input");
   };

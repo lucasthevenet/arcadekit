@@ -62,7 +62,7 @@ it("hears a key", () =>
       const source = Input.makeManualSource();
       const app = yield* App.make(
         App.define({ plugins: [Rules, Input.plugin] })
-      ).pipe(Effect.provideService(Input.Source, source));
+      ).pipe(Effect.provide(Input.layer(source)));
       source.press("Space");
       app.tick(1 / 60); // hears the devices first
     })
@@ -181,7 +181,9 @@ expect(adaApp.world.hash()).toBe(graceApp.world.hash());
 expect(adaApp.actionLog).toEqual(graceApp.actionLog);
 ```
 
-Compare peers once the game has settled and both are at the same tick: stop issuing input, step a while longer, then tick only the peer that is behind. A single-player game replaying the same log with `Journal.replay` must end on the same hash. You can provide `hub.layer(peer)` to `Transport.connect` alone, but not a layer that listens, such as `Transport.layerBroadcastChannel` or `Transport.layerWebSocket`, which would be released with that line.
+`hub.disconnect(peer)` cuts a peer off, as a socket that drops: what is on its way to it or from it is lost, and the others are told it left. `hub.reconnect(peer)` brings it back, and every peer is told, as a relay tells them, so the sessions send again what was lost.
+
+Compare peers once the game has settled and both are at the same tick: stop issuing input, step a while longer, then tick only the peer that is behind. A single-player game replaying the same log with `Journal.replay` must end on the same hash.
 
 ## Rewinds
 

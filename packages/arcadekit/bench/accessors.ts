@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
  *
  *   pnpm --filter arcadekit bench
  */
-import { Data, Effect, Exit, Schema } from "effect";
+import { Data, Effect, Exit, Layer, Schema } from "effect";
 
 import {
   Action,
@@ -169,7 +169,7 @@ const listening = (changing: boolean): number =>
         const source = Input.makeManualSource();
         const app = yield* App.make(App.define({ plugins: [Input.plugin] }), {
           checkpointEvery: 0,
-        }).pipe(Effect.provideService(Input.Source, source));
+        }).pipe(Effect.provide(Input.layer(source)));
         for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
           source.press(code);
         }
@@ -335,8 +335,9 @@ const atRest = (): number =>
           App.define({ plugins: [Input.plugin, View.plugin], systems: [Show] }),
           { checkpointEvery: 0 }
         ).pipe(
-          Effect.provideService(Input.Source, source),
-          Effect.provide(View.layer(View.makeBridge()))
+          Effect.provide(
+            Layer.merge(Input.layer(source), View.layer(View.makeBridge()))
+          )
         );
         const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
         // The first tick enters the state, and one more follows it.

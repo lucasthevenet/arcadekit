@@ -42,7 +42,8 @@
  * Nothing provides a source to a replay or a server, and no devices are read
  * there.
  */
-import { Context, Effect, Effectable, Schema } from "effect";
+import { Context, Effect, Effectable, Layer, Schema } from "effect";
+import type { Scope } from "effect";
 
 import * as Action from "./Action";
 import type { World as EcsWorld } from "./ecs/world";
@@ -121,16 +122,29 @@ export interface Sample {
 }
 
 /**
- * Where samples come from.
+ * Devices being listened to: where samples come from.
  *
- * @category Services
+ * @category Models
  */
-export interface SourceShape {
+export interface Listener {
   /**
    * Returns the devices' current state, and what changed since the last call.
    * An app calls it once per run of its input stage.
    */
   readonly sample: () => Sample;
+}
+
+/**
+ * Where devices come from: how to listen to them, and not a listener.
+ *
+ * @category Services
+ */
+export interface Source {
+  /**
+   * Starts listening to the devices in the current scope, and stops when that
+   * scope closes.
+   */
+  readonly listen: Effect.Effect<Listener, never, Scope.Scope>;
 }
 
 const NOTHING: Sample = {
@@ -142,22 +156,50 @@ const NOTHING: Sample = {
 };
 
 /** No devices at all, which differs from devices with nothing pressed. */
-const noSource: SourceShape = { sample: () => NOTHING };
+const noSource: Source = {
+  listen: Effect.succeed({ sample: () => NOTHING }),
+};
 
 /**
- * Where an app's input stage takes its samples from. Nothing has to provide it:
- * the default has no devices, which suits a replay, a server and most tests.
- * Without devices, the state `Input.plugin` keeps is left unchanged: it holds
- * whatever was last reported to it, from a log or another machine. A page
- * provides its own with `Browser.layer()` from `arcadekit/Browser`, and a test
- * that simulates input provides one it controls, `Input.makeManualSource()`.
+ * Where an app's input stage takes its samples from. Nothing has to provide
+ * it: the default has no devices, which suits a replay, a server and most
+ * tests. Without devices, the state `Input.plugin` keeps is left unchanged: it
+ * holds whatever was last reported to it, from a log or another machine. A
+ * page provides its own with `Browser.layer()` from `arcadekit/Browser`, and a
+ * test that simulates input provides one it controls,
+ * `Input.layer(Input.makeManualSource())`.
+ *
+ * It listens to nothing itself. `App.make` runs `listen` in the scope the app
+ * is made in, and the listening stops when that scope closes, so whatever the
+ * layer is provided to, the devices are heard for as long as the program that
+ * made the app. Each app listens for itself.
  *
  * @category Services
  */
-export const Source: Context.Reference<SourceShape> =
-  Context.Reference<SourceShape>("arcadekit/Input.Source", {
-    defaultValue: () => noSource,
-  });
+export const Source: Context.Reference<Source> = Context.Reference<Source>(
+  "arcadekit/Input.Source",
+  { defaultValue: () => noSource }
+);
+
+/**
+ * Listens to the devices in the current scope, as `App.make` does: for a
+ * program that samples them itself.
+ *
+ * @category Running
+ */
+export const listen: Effect.Effect<Listener, never, Scope.Scope> =
+  Effect.flatMap(Source, (source) => source.listen);
+
+/**
+ * Returns a layer that provides devices made by hand, listened to already,
+ * such as `Input.makeManualSource()`.
+ *
+ *   App.make(game).pipe(Effect.provide(Input.layer(source)))
+ *
+ * @category Layers
+ */
+export const layer = (listener: Listener): Layer.Layer<never> =>
+  Layer.succeed(Source, { listen: Effect.succeed(listener) });
 
 /**
  * The devices' state, for an input-stage system: one sample, taken when the
@@ -178,7 +220,7 @@ export class Devices extends Context.Service<Devices, Sample>()(
  *
  * @category Testing
  */
-export interface ManualSource extends SourceShape {
+export interface ManualSource extends Listener {
   /** Presses a button. Does nothing if it is already down. */
   readonly press: (code: string) => void;
   /** Releases a button. Does nothing if it is already up. */
@@ -197,7 +239,7 @@ export interface ManualSource extends SourceShape {
  *
  *   const source = Input.makeManualSource()
  *   const app = yield* App.make(App.define({ plugins: [Game] })).pipe(
- *     Effect.provideService(Input.Source, source)
+ *     Effect.provide(Input.layer(source))
  *   )
  *   source.press("Space")
  *   app.input()

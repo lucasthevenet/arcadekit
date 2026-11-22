@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -250,10 +250,7 @@ describe("a game that ticks when its player moves", () => {
       App.make(Played, {
         checkpointEvery: 1,
         seed: 5,
-      }).pipe(
-        Effect.provide(View.layer(ui)),
-        Effect.provideService(Input.Source, source)
-      )
+      }).pipe(Effect.provide(Layer.merge(View.layer(ui), Input.layer(source))))
     );
     const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
     /** Frames at the screen's rate, sixty a second. */

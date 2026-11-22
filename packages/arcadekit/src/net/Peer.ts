@@ -15,7 +15,16 @@
  *
  * A peer holds no socket and no timer. It receives the messages that arrived
  * and returns the ones to send, and a transport carries them, as text in the
- * form `Message.encode` writes.
+ * form `Message.encode` writes. Every message says how far its peer has heard
+ * the others, and a peer keeps what it sent until every other peer has heard
+ * it, to send again with `resend` when a peer comes back after its socket
+ * dropped.
+ *
+ * A peer's first message says what it was made with, `Message.Made`: the game
+ * it simulates, its `delta`, the names of every peer and the tick it begins
+ * at. A peer that hears another made otherwise stops, and its tick fails with
+ * `Drift.Unlike`, which says what differs. A name that isn't among its peers
+ * is told apart this way too, since that peer's names are other ones.
  *
  * Peers also exchange the checkpoints their logs record: the world's hash at a
  * tick. A peer that receives a different hash than its own for the same tick
@@ -37,15 +46,17 @@ import type { Tickable } from "../Driver";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";
 import * as Drift from "./Drift";
-import type { Issued, Message } from "./Message";
+import type { Issued, Made, Message } from "./Message";
 
 /**
- * What a peer is told of its game: who it is, who plays, how long a tick is,
- * and how far it sends and runs ahead. `Session.Options` documents each.
+ * What a peer is told of its game: what it simulates, as `Message.Made`'s
+ * `game` hashes it, who it is, who plays, how long a tick is, and how far it
+ * sends and runs ahead. `Session.Options` documents the rest.
  *
  * @internal
  */
 export interface Options {
+  readonly game: number;
   readonly peer: string;
   readonly peers: readonly string[];
   readonly delta: number;
@@ -75,7 +86,8 @@ export interface Peer<E = never> extends Tickable {
   /**
    * Receives a message from another peer. Messages may arrive in any order and
    * more than once: a duplicate, a message for a tick that already ran, or one
-   * from a name that isn't a peer of the game is dropped.
+   * from a name that isn't a peer of the game is dropped. What a first message
+   * says the peer was made with is compared with this one's, whoever sent it.
    */
   readonly receive: (message: Message) => void;
   /**
@@ -83,6 +95,15 @@ export interface Peer<E = never> extends Tickable {
    * next call returns only newer ones. Every message must arrive, in any order.
    */
   readonly outgoing: () => readonly Message[];
+  /**
+   * Returns every message this peer has sent that some other peer hasn't said
+   * it heard, to send again: when a peer joined the room again after its
+   * socket dropped, or this one did. They stay kept until every other peer
+   * has heard them. A message that arrives twice is dropped.
+   */
+  readonly resend: () => readonly Message[];
+  /** How many messages this peer keeps that some other peer hasn't heard. */
+  readonly unheard: number;
   /**
    * Runs the next tick if this peer has every peer's message for it, and
    * returns whether it ran. First it reads the devices, as an app's own tick
@@ -99,19 +120,20 @@ export interface Peer<E = never> extends Tickable {
    */
   readonly tick: (delta?: number) => boolean;
   /**
-   * Like `tick`, but returns a failure, typed: a system's error, `Drifted`
-   * once the peers have drifted apart, or `Save.SaveRefused` when the game
-   * can't be captured before a tick that runs ahead, in which case the tick
-   * doesn't run.
+   * Like `tick`, but returns a failure, typed: a system's error, `Unlike`
+   * once a peer has said it was made otherwise, `Drifted` once the peers have
+   * drifted apart, or `Save.SaveRefused` when the game can't be captured
+   * before a tick that runs ahead, in which case the tick doesn't run.
    */
   readonly tickExit: (
     delta?: number
-  ) => Exit.Exit<boolean, E | Drift.Drifted | Save.SaveRefused>;
+  ) => Exit.Exit<boolean, E | Drift.Unlike | Drift.Drifted | Save.SaveRefused>;
   /**
-   * Why the session stopped, once it has: a peer's world hashed differently
-   * from this one's at the same tick. Every later tick fails with it.
+   * Why the session stopped, once it has: a peer was made otherwise than this
+   * one, or its world hashed differently from this one's at the same tick.
+   * Every later tick fails with it.
    */
-  readonly drifted: Drift.Drifted | undefined;
+  readonly drifted: Drift.Unlike | Drift.Drifted | undefined;
   /** The peers whose message the next tick is still waiting for. */
   readonly waitingFor: readonly string[];
   /**
@@ -172,7 +194,7 @@ export const build = <E, A extends PeerApp<E>>(
   take: (issued: (name: string, payload: unknown) => void) => Reins<E>,
   options: Options
 ): Peer<E> & { readonly app: A } => {
-  const { delay, delta, peer, ahead } = options;
+  const { ahead, delay, delta, game, peer } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
       `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`
@@ -207,6 +229,7 @@ export const build = <E, A extends PeerApp<E>>(
   });
 
   const start = app.time.tick;
+  const made: Made = { game, delta, peers, start };
   // Per peer, the actions of each tick that may still have to be run.
   const held = new Map<string, Map<number, readonly Issued[]>>();
   // Per peer, the first tick its message is missing for: every one before
@@ -218,6 +241,26 @@ export const build = <E, A extends PeerApp<E>>(
   }
   const own = held.get(peer)!;
   let outbox: Message[] = [];
+  // Per other peer, the first tick it has said it is missing a message for.
+  const acked = new Map<string, number>();
+  for (const name of peers) {
+    if (name !== peer) {
+      acked.set(name, start);
+    }
+  }
+  // This peer's messages that some other peer hasn't heard, by tick.
+  const kept = new Map<number, Message>();
+
+  /** Returns the first tick this peer is missing another peer's message for. */
+  const heard = (): number => {
+    let least = Number.POSITIVE_INFINITY;
+    for (const [name, next] of have) {
+      if (name !== peer) {
+        least = Math.min(least, next);
+      }
+    }
+    return least;
+  };
 
   /** Returns how many ticks every peer's messages have arrived for: those ticks are final. */
   const known = (): number => {
@@ -241,11 +284,18 @@ export const build = <E, A extends PeerApp<E>>(
       have.set(peer, tick + 1);
       // The checkpoints go with the first message there is to send.
       const checkpoints = drift.unsent();
-      outbox.push(
-        checkpoints.length === 0
-          ? { from: peer, tick, actions }
-          : { from: peer, tick, actions, checkpoints }
-      );
+      const message: Message = {
+        from: peer,
+        tick,
+        actions,
+        ...(checkpoints.length === 0 ? {} : { checkpoints }),
+        ...(tick === start ? { made } : {}),
+        ...(acked.size === 0 ? {} : { heard: heard() }),
+      };
+      outbox.push(message);
+      if (acked.size > 0) {
+        kept.set(tick, message);
+      }
     }
   };
 
@@ -259,7 +309,7 @@ export const build = <E, A extends PeerApp<E>>(
   let resimulated = 0;
 
   // --- drift: the peers compare the checkpoints their logs record ----------
-  const drift = Drift.make({ peer, peers, start });
+  const drift = Drift.make({ peer, made });
   let begun = false;
 
   /**
@@ -328,15 +378,20 @@ export const build = <E, A extends PeerApp<E>>(
     }
   };
 
-  /** Stops the session, after sending the hash the others are missing. */
-  const stop = (reason: Drift.Drifted): Exit.Exit<never, Drift.Drifted> => {
+  /** Stops the session, after sending what the others are missing. */
+  const stop = <R extends Drift.Unlike | Drift.Drifted>(
+    reason: R
+  ): Exit.Exit<never, R> => {
     say(app.time.tick);
     return Exit.fail(reason);
   };
 
   const tickExit = (
     given?: number
-  ): Exit.Exit<boolean, E | Drift.Drifted | Save.SaveRefused> => {
+  ): Exit.Exit<
+    boolean,
+    E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
+  > => {
     if (given !== undefined && Math.abs(given - delta) > 1e-9) {
       throw new Error(
         `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`
@@ -413,6 +468,25 @@ export const build = <E, A extends PeerApp<E>>(
     delay,
     ahead,
     receive(message) {
+      if (message.made !== undefined) {
+        drift.told(message.from, message.made);
+      }
+      const said = acked.get(message.from);
+      if (
+        message.heard !== undefined &&
+        said !== undefined &&
+        message.heard > said
+      ) {
+        acked.set(message.from, message.heard);
+        // What every other peer has heard is no longer kept.
+        const everyone = Math.min(...acked.values());
+        for (const tick of kept.keys()) {
+          if (tick >= everyone) {
+            break;
+          }
+          kept.delete(tick);
+        }
+      }
       const turns = held.get(message.from);
       if (
         turns === undefined ||
@@ -441,6 +515,17 @@ export const build = <E, A extends PeerApp<E>>(
       const messages = outbox;
       outbox = [];
       return messages;
+    },
+    resend() {
+      // As they were, with how far this peer has heard by now.
+      const now = heard();
+      return Array.from(kept.values(), (message) => ({
+        ...message,
+        heard: now,
+      }));
+    },
+    get unheard() {
+      return kept.size;
     },
     tickExit,
     tick(given) {

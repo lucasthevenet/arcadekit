@@ -134,7 +134,7 @@ const isPointer = (code: string): boolean => code.startsWith("Pointer");
 
 const listen = (
   options: Options
-): { readonly source: Input.SourceShape; readonly stop: () => void } => {
+): { readonly listener: Input.Listener; readonly stop: () => void } => {
   const state = Input.makeManualSource();
   const page: EventTarget = options.window ?? globalThis;
   const target: PointerTarget = options.target ?? page;
@@ -278,11 +278,11 @@ const listen = (
   };
   let stopped = false;
   return {
-    source: {
+    listener: {
       sample() {
         if (stopped) {
           throw new Error(
-            "The page's devices were read after Browser.layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as Browser.runMain does, or with Driver.run(...).pipe(Effect.provide(Browser.layer())), not to App.make alone."
+            "The page's devices were read after the scope they were listened to in had closed: they would say nothing for ever. App.make listens to them in the scope of the program that makes the app: run the app in that program."
           );
         }
         readPads();
@@ -318,10 +318,13 @@ const listen = (
  * - An asset's path is read against the document's base, its `<base href>`,
  *   as `fetch` reads it, unless a loader of the game's own, such as
  *   `Assets.layerMemory`, is provided around this layer.
- * - It listens from when it is built until its scope closes, so provide it to
- *   the whole program, not to `App.make` alone; `Browser.runMain` does.
- *   Provided to `App.make` alone, it is released as soon as the app is created,
- *   and the first device read throws and says so.
+ * - The devices are listened to from when `App.make` starts listening until
+ *   the scope the app was made in closes, wherever the layer is provided. Each
+ *   app listens for itself. Devices read after that scope has closed throw, and
+ *   say so.
+ * - Its sound, unless `sounds: false`, is made when the layer is built and
+ *   closed with the scope the layer is provided to, so provide the layer to
+ *   the whole program, as `Browser.runMain` does.
  *
  * @category Layers
  */
@@ -340,16 +343,15 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
   const page = Layer.mergeAll(
     loader,
     Layer.succeed(Driver.Display, display),
-    Layer.effect(
-      Input.Source,
-      Effect.map(
+    Layer.succeed(Input.Source, {
+      listen: Effect.map(
         Effect.acquireRelease(
           Effect.sync(() => listen(options)),
           (listening) => Effect.sync(listening.stop)
         ),
-        (listening) => listening.source
-      )
-    )
+        (listening) => listening.listener
+      ),
+    })
   ) as Layer.Layer<never>;
   return options.sounds === false
     ? page

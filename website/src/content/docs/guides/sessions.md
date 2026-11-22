@@ -134,6 +134,16 @@ const program = Effect.gen(function* () {
 - A session that rewinds to run the same ticks again passes `{ again: true }` to `Timeline.rewind`. That is the rewind after which the two stages hear each event once.
 - `Timeline.capture(app, { stages: true })` also keeps the place of the frame and input stages in what changed, for a rewind that comes before they run again: their change queries then go on from where they were.
 
+## When peers were not made alike
+
+Every peer is made with its own game, seed or save, `delta` and names, and they have to be alike. A peer's first message says what it was made with: a hash of what its game simulates, its `delta`, the names of every peer, and the tick its game begins at. A peer that hears another made otherwise stops with `Drift.Unlike`, before it runs a tick it is sure of, and so does every peer that hears it. `session.tick()` throws it, `session.tickExit()` fails with it, as does every later tick, and `session.drifted` keeps it.
+
+- The report names both peers, what each was made with, and `differ`, the parts that differ: `"game"`, `"delta"`, `"peers"` or `"start"`. Its message says what to give every peer.
+- What is compared of a game is what it simulates: the systems of the tick in the order they run, the hooks of its states, the actions it handles, and its version, by name. Frame and input systems are left out, so a peer that draws the game plays with one that doesn't.
+- A list of names that leaves a peer out is found too: that peer is heard by the others, whose names are not the same.
+- Peers that begin at different ticks, from different saves, are found, where they would otherwise wait for each other.
+- Two systems with one name that do different things, or a different seed, are not in this comparison. The worlds' hashes find them, as below.
+
 ## When peers drift apart
 
 Each peer sends the others the [checkpoints](replays.md#checkpoints) its log records, the world's hash at a tick, in the messages it sends anyway. When every peer has reported its hash for a tick and they differ, every session stops with `Drift.Drifted`. `session.tick()` throws it, which stops a driver; `session.tickExit()` fails with it, as does every later tick; and `session.drifted` keeps it for a UI to display.
@@ -145,7 +155,7 @@ Each peer sends the others the [checkpoints](replays.md#checkpoints) its log rec
 - A peer that stops sends its hash first, so the others stop with the same report instead of waiting for it.
 - A checkpoint adds about 30 bytes to a message. The hash is the one the app already computes for its log.
 
-Not every difference between peers is compared directly. A different `delta` is in the world's time, so the next checkpoint finds it. A system one peer lacks, or a different list of names, is only detected once it has changed a world, at the next checkpoint. A list of names that leaves a peer out is never detected, since that peer isn't heard. And what the hash doesn't cover is only detected once it [reaches the world](../concepts/several-players.md#when-peers-drift-apart).
+What the hash doesn't cover is only detected once it [reaches the world](../concepts/several-players.md#when-peers-drift-apart).
 
 Peers that drift apart stay stopped. To continue, every peer makes its session again from one peer's save.
 

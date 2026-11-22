@@ -1,14 +1,17 @@
 /**
  * Peers that are no longer playing the same game, and how they find out.
  *
- * Each peer's log records checkpoints, its world's hash at a tick, and the
- * peers send them to each other with the messages they send anyway. A
- * `Comparison` is one peer's side of that: it is told the checkpoints this
- * peer takes and the ones the others sent, says which of its own to send,
- * and compares a tick's once every peer has said and the tick is final. The
- * first tick whose hashes differ is `Drifted`.
+ * Before anything else, each peer says what it was made with, `Message.Made`,
+ * in its first message, and a peer that hears another made otherwise stops
+ * with `Unlike`. After that, each peer's log records checkpoints, its world's
+ * hash at a tick, and the peers send them to each other with the messages
+ * they send anyway. A `Comparison` is one peer's side of that: it is told the
+ * checkpoints this peer takes and the ones the others sent, says which of its
+ * own to send, and compares a tick's once every peer has said and the tick is
+ * final. The first tick whose hashes differ is `Drifted`.
  *
- *   const drift = Drift.make({ peer: "ada", peers: ["ada", "grace"], start: 0 })
+ *   const drift = Drift.make({ peer: "ada", made })
+ *   drift.told("grace", theirs)                  // what grace was made with
  *   drift.took(0, hash)                          // this peer's, at a tick
  *   drift.heard("grace", 0, [{ tick: 0, hash }]) // with grace's message for tick 0
  *   drift.compare(final, now)                    // Drifted, once they differ
@@ -18,6 +21,7 @@
 import { Data } from "effect";
 
 import type * as Action from "../Action";
+import type { Made } from "./Message";
 
 /**
  * The peers are no longer playing the same game: at one tick, their worlds'
@@ -57,9 +61,67 @@ export class Drifted extends Data.TaggedError("Drifted")<{
       .join(", ");
     const since =
       this.agreedAt === undefined
-        ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same plugins and the same seed, and spawned the same things before its first tick"
-        : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta)`;
+        ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same seed, and spawned the same things before its first tick"
+        : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers whose systems of the same name do different things`;
     return `The peers are no longer playing the same game. At tick ${this.tick} the hashes of their worlds are: ${hashes} (found by "${this.peer}"). ${since}.`;
+  }
+}
+
+const parts: readonly (keyof Made)[] = ["game", "delta", "peers", "start"];
+
+/** Returns the parts in which two peers were made differently. */
+const differences = (one: Made, other: Made): (keyof Made)[] =>
+  parts.filter((part) =>
+    part === "peers"
+      ? one.peers.length !== other.peers.length ||
+        one.peers.some((name, at) => name !== other.peers[at])
+      : one[part] !== other[part]
+  );
+
+const list = (names: readonly string[]): string =>
+  names.length === 1
+    ? names[0]!
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)!}`;
+
+/**
+ * The peers were not made alike: another peer's first message says it was
+ * made with another game, another `delta`, other names or another start than
+ * this one. It is found before either runs a tick it is sure of, and every
+ * later tick of the session fails with it.
+ *
+ * @category Errors
+ */
+export class Unlike extends Data.TaggedError("Unlike")<{
+  /** The peer that found it: this one. */
+  readonly peer: string;
+  /** The peer whose first message said otherwise. */
+  readonly other: string;
+  /** What this peer was made with. */
+  readonly mine: Made;
+  /** What the other peer was made with. */
+  readonly theirs: Made;
+  /** What the two were made with differently, one or more of these. */
+  readonly differ: readonly (keyof Made)[];
+}> {
+  override get message(): string {
+    const { mine, other, peer, theirs } = this;
+    const said = this.differ.map((part) => {
+      switch (part) {
+        case "game": {
+          return "they play another game: a system of the tick, a hook of a state or a handler that one has and the other hasn't, systems that run in another order, or another version. Give every peer the same App.define";
+        }
+        case "delta": {
+          return `"${peer}" ticks ${mine.delta} seconds at a time and "${other}" ${theirs.delta}. Give every peer the same delta`;
+        }
+        case "peers": {
+          return `"${peer}" plays with ${list(mine.peers)}, and "${other}" with ${list(theirs.peers)}. Give every peer the same names`;
+        }
+        case "start": {
+          return `"${peer}" begins at tick ${mine.start} and "${other}" at tick ${theirs.start}. Give every peer the same seed or save`;
+        }
+      }
+    });
+    return `The peers "${peer}" and "${other}" were not made alike: ${said.join("; ")}.`;
   }
 }
 
@@ -73,6 +135,12 @@ const UNANSWERED = 600;
  * @category Models
  */
 export interface Comparison {
+  /**
+   * What another peer says it was made with. A peer made otherwise than this
+   * one stops the comparison with `Unlike`, whoever it is, since a name that
+   * isn't a peer of this game is one this peer was made without.
+   */
+  readonly told: (from: string, made: Made) => void;
   /**
    * This peer's own hash at a tick, as its log recorded it. It is neither
    * sent nor compared until the tick is final. A tick that is run again
@@ -97,31 +165,37 @@ export interface Comparison {
    * ticks is let go of. Returns why the peers have drifted, once they have,
    * and from then on compares nothing.
    */
-  readonly compare: (final: number, now: number) => Drifted | undefined;
+  readonly compare: (
+    final: number,
+    now: number
+  ) => Drifted | Unlike | undefined;
   /**
    * This peer's final checkpoints that it has not sent yet, for its next
    * message, and forgets them: the next call returns only newer ones.
    */
   readonly unsent: () => readonly Action.Checkpoint[];
-  /** Why the peers have drifted, once `compare` has found that they have. */
-  readonly drifted: Drifted | undefined;
+  /**
+   * Why the peers have drifted, once `compare` has found that they have, or
+   * why they were never alike, once `told` has.
+   */
+  readonly drifted: Drifted | Unlike | undefined;
   /** How many of this peer's final checkpoints are waiting for a peer's hash. */
   readonly unanswered: number;
 }
 
 /**
- * Makes one peer's comparison of checkpoints: `peer` is this peer, `peers`
- * every peer of the game, and `start` the tick the game begins at, which is
- * the tick of every peer's first message.
+ * Makes one peer's comparison: `peer` is this peer and `made` what it was
+ * made with, among it every peer of the game and the tick the game begins
+ * at, which is the tick of every peer's first message.
  *
  * @category Constructors
  */
 export const make = (options: {
   readonly peer: string;
-  readonly peers: readonly string[];
-  readonly start: number;
+  readonly made: Made;
 }): Comparison => {
-  const { peer, peers, start } = options;
+  const { made, peer } = options;
+  const { peers, start } = made;
   // The hashes this peer's log recorded at ticks that are not final yet.
   const taken = new Map<number, number>();
   // This peer's final hashes, by tick, until every peer has answered them.
@@ -137,10 +211,25 @@ export const make = (options: {
     next.set(name, start);
   }
   let unsent: Action.Checkpoint[] = [];
-  let drifted: Drifted | undefined;
+  let drifted: Drifted | Unlike | undefined;
   let agreedAt: number | undefined;
 
   return {
+    told(from, theirs) {
+      if (
+        drifted === undefined &&
+        from !== peer &&
+        differences(made, theirs).length > 0
+      ) {
+        drifted = new Unlike({
+          peer,
+          other: from,
+          mine: made,
+          theirs,
+          differ: differences(made, theirs),
+        });
+      }
+    },
     took(tick, hash) {
       taken.set(tick, hash);
     },

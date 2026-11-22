@@ -1,4 +1,5 @@
-import { Data, Effect, Exit } from "effect";
+import { Cause, Data, Effect, Exit } from "effect";
+import type { Scope } from "effect";
 import { afterEach, assert, describe, expect, it } from "vitest";
 
 import {
@@ -8,27 +9,40 @@ import {
   Driver,
   Input,
   Journal,
+  Save,
   System,
   Time,
 } from "../src/index";
 import { Drift, Message, Session } from "../src/net/index";
 import {
+  Bot,
   Coin,
   CoinGame,
+  Controls,
   DELTA,
   Drop,
+  Fault,
+  Hear,
   Mint,
   Purse,
+  Tally,
+  Drift as Wander,
   catchUp,
   coinsOf,
+  drop,
+  fire,
   game,
+  mint,
   moves,
   network,
   players,
   refusals,
   round,
   setGlitch,
+  take,
+  tip,
   untilStopped,
+  whisper,
   withApp,
   withPeers,
 } from "./peers";
@@ -173,8 +187,17 @@ describe("a lockstep session", () => {
           actions: [],
           // The state it starts from, for the others to compare.
           checkpoints: [{ tick: 0, hash: ada.app.world.hash() }],
+          // And what it was made with, first of all.
+          made: {
+            game: expect.any(Number),
+            delta: DELTA,
+            peers: ["ada", "grace"],
+            start: 0,
+          },
+          // It has heard nothing of grace yet.
+          heard: 0,
         },
-        { from: "ada", tick: 1, actions: [] },
+        { from: "ada", tick: 1, actions: [], heard: 0 },
         {
           from: "ada",
           tick: 2,
@@ -182,6 +205,7 @@ describe("a lockstep session", () => {
             { name: "ls/Drop", payload: { by: "ada", value: 1 } },
             { name: "ls/Drop", payload: { by: "ada", value: 2 } },
           ],
+          heard: 0,
         },
       ]);
       // Taken: asked again, there is nothing.
@@ -189,6 +213,38 @@ describe("a lockstep session", () => {
       // A tick that waits says nothing twice.
       expect(ada.session.tick()).toBe(false);
       expect(ada.session.outgoing()).toEqual([]);
+    });
+  });
+
+  it("keeps what it sent until every other peer has heard it, to send again", () => {
+    withPeers(["ada", "edsger", "grace"], { delay: 1 }, (peers) => {
+      const [ada] = peers as [Peer];
+      ada.app.enqueue(Drop, { by: "ada", value: 1 });
+      ada.session.tick();
+      const said = ada.session.outgoing();
+      expect(said.map((message) => message.tick)).toEqual([0, 1]);
+      expect(ada.session.unheard).toBe(2);
+      // As they were, with how far it has heard by now.
+      expect(ada.session.resend()).toEqual(said);
+      // Grace has heard ada's message for tick 0; edsger hasn't said.
+      ada.session.receive({ from: "grace", tick: 0, actions: [], heard: 1 });
+      expect(ada.session.unheard).toBe(2);
+      ada.session.receive({ from: "edsger", tick: 0, actions: [], heard: 1 });
+      expect(ada.session.resend()).toEqual([{ ...said[1]!, heard: 1 }]);
+      // A word that goes back, or comes from no peer, changes nothing.
+      ada.session.receive({ from: "grace", tick: 1, actions: [], heard: 0 });
+      ada.session.receive({ from: "linus", tick: 0, actions: [], heard: 9 });
+      expect(ada.session.unheard).toBe(1);
+      ada.session.receive({ from: "edsger", tick: 1, actions: [], heard: 2 });
+      ada.session.receive({ from: "grace", tick: 2, actions: [], heard: 2 });
+      expect(ada.session.unheard).toBe(0);
+      expect(ada.session.resend()).toEqual([]);
+    });
+    // A session of one keeps nothing, and says nothing of what it heard.
+    withPeers(["ada"], {}, ([ada]) => {
+      ada!.session.tick();
+      expect(ada!.session.outgoing()[0]).not.toHaveProperty("heard");
+      expect(ada!.session.unheard).toBe(0);
     });
   });
 
@@ -350,6 +406,8 @@ describe("a lockstep session", () => {
             { name: "ls/Mint", payload: { on: "2026-11-17T00:00:00.000Z" } },
           ],
           checkpoints: [{ tick: 0, hash: ada.app.world.hash() }],
+          made: expect.objectContaining({ start: 0 }),
+          heard: 0,
         },
       ]);
       net.send(["grace"], said);
@@ -551,7 +609,7 @@ describe("a lockstep session", () => {
           const { app, take } = yield* Build.build(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-          }).pipe(Effect.provideService(Input.Source, source));
+          }).pipe(Effect.provide(Input.layer(source)));
           const taken: string[] = [];
           const reins = take((name) => {
             taken.push(name);
@@ -759,7 +817,7 @@ describe("peers that have come apart", () => {
       expect(() => ada.session.tick()).toThrow(Drift.Drifted);
       expect(ada.app.time.tick).toBe(tick);
       expect(drifted.message).toBe(
-        `The peers are no longer playing the same game. At tick 9 the hashes of their worlds are: ada ${drifted.hashes.ada}, grace ${drifted.hashes.grace} (found by "ada"). They last agreed at tick 8, so they came apart in one of the 1 ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta).`
+        `The peers are no longer playing the same game. At tick 9 the hashes of their worlds are: ada ${drifted.hashes.ada}, grace ${drifted.hashes.grace} (found by "ada"). They last agreed at tick 8, so they came apart in one of the 1 ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers whose systems of the same name do different things.`
       );
     });
   });
@@ -839,7 +897,7 @@ describe("peers that have come apart", () => {
           expect(drifted.tick).toBe(0);
           expect(drifted.agreedAt).toBeUndefined();
           expect(drifted.message).toMatch(
-            /did not start from the same state: check that every peer was made with the same plugins and the same seed/u
+            /did not start from the same state: check that every peer was made with the same seed/u
           );
           expect(peer.app.time.tick).toBe(0);
         }
@@ -932,6 +990,243 @@ describe("peers that have come apart", () => {
   });
 });
 
+/** What a test of peers made apart reads of each. */
+interface Seat {
+  readonly receive: (message: Message.Message) => void;
+  readonly outgoing: () => readonly Message.Message[];
+  readonly tickExit: () => Exit.Exit<boolean, unknown>;
+  readonly confirmed: number;
+  readonly app: { readonly time: { readonly tick: number } };
+}
+
+/** Peers each made as it says, over a network that delays and reorders. */
+const madeApart = (
+  makers: readonly (readonly [
+    name: string,
+    make: Effect.Effect<Seat, Save.LoadRefused, Scope.Scope>,
+  ])[],
+  rounds = 60
+) =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const seats = new Map<string, Seat>();
+        for (const [name, make] of makers) {
+          seats.set(name, yield* make);
+        }
+        const net = network(2, { min: 0, max: 3 });
+        const stopped = new Map<string, unknown>();
+        for (let i = 0; i < rounds && stopped.size < seats.size; i++) {
+          net.round();
+          for (const [name, seat] of seats) {
+            for (const message of net.arrivals(name)) {
+              seat.receive(message);
+            }
+            const exit = seat.tickExit();
+            if (Exit.isFailure(exit)) {
+              stopped.set(name, Cause.squash(exit.cause));
+            }
+            net.send(
+              [...seats.keys()].filter((other) => other !== name),
+              seat.outgoing()
+            );
+          }
+        }
+        return {
+          stopped,
+          ticks: Array.from(seats.values(), (seat) => seat.app.time.tick),
+          confirmed: Array.from(seats.values(), (seat) => seat.confirmed),
+        };
+      })
+    )
+  );
+
+/** How each peer of these tests is made, unless it is told otherwise. */
+const alike = {
+  seed: 5,
+  peers: ["ada", "grace"],
+  delta: DELTA,
+  ahead: 0,
+} as const;
+
+const unlike = (failure: unknown): Drift.Unlike => {
+  assert(failure instanceof Drift.Unlike, `${String(failure)} is not Unlike`);
+  return failure;
+};
+
+describe("peers that were not made alike", () => {
+  it("stop before either runs a tick when one ticks another delta, and say which", () => {
+    const { stopped, ticks } = madeApart([
+      ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
+      [
+        "grace",
+        Session.make(CoinGame, { ...alike, peer: "grace", delta: 1 / 60 }),
+      ],
+    ]);
+    const found = unlike(stopped.get("ada"));
+    expect(found).toEqual(
+      new Drift.Unlike({
+        peer: "ada",
+        other: "grace",
+        mine: {
+          game: found.mine.game,
+          delta: DELTA,
+          peers: ["ada", "grace"],
+          start: 0,
+        },
+        theirs: {
+          game: found.mine.game,
+          delta: 1 / 60,
+          peers: ["ada", "grace"],
+          start: 0,
+        },
+        differ: ["delta"],
+      })
+    );
+    expect(found.message).toBe(
+      `The peers "ada" and "grace" were not made alike: "ada" ticks ${DELTA} seconds at a time and "grace" ${1 / 60}. Give every peer the same delta.`
+    );
+    expect(unlike(stopped.get("grace")).other).toBe("ada");
+    expect(ticks).toEqual([0, 0]);
+  });
+
+  it("stop, every one of them, when one was given names that leave a peer out", () => {
+    const three = ["ada", "edsger", "grace"];
+    const { stopped, ticks } = madeApart([
+      ["ada", Session.make(CoinGame, { ...alike, peer: "ada", peers: three })],
+      [
+        "edsger",
+        Session.make(CoinGame, { ...alike, peer: "edsger", peers: three }),
+      ],
+      // Grace never hears edsger, and would wait for nobody.
+      ["grace", Session.make(CoinGame, { ...alike, peer: "grace" })],
+    ]);
+    expect(stopped.size).toBe(3);
+    for (const failure of stopped.values()) {
+      expect(unlike(failure).differ).toEqual(["peers"]);
+    }
+    expect(unlike(stopped.get("grace")).message).toMatch(
+      /"grace" plays with ada and grace, and "(ada|edsger)" with ada, edsger and grace\. Give every peer the same names\./u
+    );
+    expect(ticks).toEqual([0, 0, 0]);
+  });
+
+  it("stop, when a stranger that counts this peer among its own speaks to it", () => {
+    const { stopped } = madeApart(
+      [
+        ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
+        [
+          "mallory",
+          Session.make(CoinGame, {
+            ...alike,
+            peer: "mallory",
+            peers: ["ada", "mallory"],
+          }),
+        ],
+      ],
+      20
+    );
+    const found = unlike(stopped.get("ada"));
+    expect([found.other, found.differ]).toEqual(["mallory", ["peers"]]);
+  });
+
+  it("stop, where they would have waited for each other for ever, when they begin at other ticks", () => {
+    const saved = withApp(game(), (going) => {
+      for (let i = 0; i < 9; i++) {
+        going.tick(DELTA);
+      }
+      const save = going.save();
+      assert(Exit.isSuccess(save));
+      return save.value;
+    });
+    for (const ahead of [0, 8]) {
+      const { stopped, ticks, confirmed } = madeApart([
+        ["ada", Session.make(CoinGame, { ...alike, peer: "ada", ahead })],
+        [
+          "grace",
+          Session.make(CoinGame, {
+            save: saved,
+            peer: "grace",
+            peers: alike.peers,
+            delta: DELTA,
+            ahead,
+          }),
+        ],
+      ]);
+      for (const failure of stopped.values()) {
+        expect(unlike(failure).differ).toEqual(["start"]);
+      }
+      expect(stopped.size).toBe(2);
+      expect(unlike(stopped.get("ada")).message).toMatch(
+        /"ada" begins at tick 0 and "grace" at tick 9\. Give every peer the same seed or save\./u
+      );
+      // No tick either is sure of has run.
+      expect(confirmed).toEqual([0, 9]);
+      expect(ticks[1]! - 9).toBeLessThanOrEqual(ahead);
+    }
+  });
+
+  it("stop when they play another game, and not when one only draws it", () => {
+    const handlers = [drop, take, tip, fire, mint, whisper] as const;
+    const grace = { ...alike, peer: "grace" };
+    const others = [
+      Session.make(
+        App.define({
+          systems: [Tally, Wander, Fault, Controls, Hear] as const,
+          handlers,
+        }),
+        grace
+      ),
+      Session.make(
+        App.define({
+          systems: [Fault, Bot, Wander, Tally, Controls, Hear] as const,
+          handlers,
+        }),
+        grace
+      ),
+      Session.make(
+        App.define({
+          systems: CoinGame.systems,
+          handlers: [take, tip, fire, mint, whisper] as const,
+        }),
+        grace
+      ),
+      Session.make(
+        App.define({ systems: CoinGame.systems, handlers, version: 1 }),
+        grace
+      ),
+    ];
+    for (const other of others) {
+      const { stopped } = madeApart([
+        ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
+        ["grace", other],
+      ]);
+      expect(stopped.size).toBe(2);
+      expect(unlike(stopped.get("ada")).differ).toEqual(["game"]);
+      expect(unlike(stopped.get("grace")).message).toMatch(
+        /they play another game: a system of the tick, a hook of a state or a handler that one has and the other hasn't/u
+      );
+    }
+    // What a peer draws, plays or reads from its devices is its own.
+    const Paint = System.make("ls/Paint", function* () {}).pipe(
+      System.inStage("frame")
+    );
+    const Listen = System.make("ls/Listen", function* () {}).pipe(
+      System.inStage("input")
+    );
+    const drawn = App.define({
+      systems: [...CoinGame.systems, Paint, Listen] as const,
+      handlers,
+    });
+    const { stopped, ticks } = madeApart([
+      ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
+      ["grace", Session.make(drawn, { ...alike, peer: "grace" })],
+    ]);
+    expect(stopped.size).toBe(0);
+    expect(ticks[0]).toBeGreaterThan(20);
+  });
+});
+
 describe("a message between peers", () => {
   it("goes to text and comes back", () => {
     const message: Message.Message = {
@@ -952,6 +1247,11 @@ describe("a message between peers", () => {
     expect(Message.decode(Message.encode(checked))).toEqual(
       Exit.succeed(checked)
     );
+    const first: Message.Message = {
+      ...message,
+      made: { game: 4_294_967_295, delta: 1 / 60, peers: ["ada"], start: 3 },
+    };
+    expect(Message.decode(Message.encode(first))).toEqual(Exit.succeed(first));
   });
 
   it("is refused when it is not one", () => {
@@ -978,6 +1278,13 @@ describe("a message between peers", () => {
         tick: 1,
         actions: [],
         checkpoints: [{ tick: -1, hash: 1 }],
+      }),
+      JSON.stringify({ from: "ada", tick: 0, actions: [], made: 1 }),
+      JSON.stringify({
+        from: "ada",
+        tick: 0,
+        actions: [],
+        made: { game: 1, delta: "1/60", peers: ["ada"], start: 0 },
       }),
     ]) {
       expect(Exit.isFailure(Message.decode(text)), text).toBe(true);

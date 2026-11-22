@@ -17,6 +17,10 @@
  *   const deliveries = Relay.forward(member, data, present) // Exit<Delivery[], Refused>
  *   for (const { to, text } of deliveries.value) socketOf(to).send(text)
  *
+ *   // a member came in, or its socket closed: who is told?
+ *   for (const { to, text } of Relay.joined(member, present)) socketOf(to).send(text)
+ *   for (const { to, text } of Relay.left(member, present)) socketOf(to).send(text)
+ *
  * `present` is everyone connected to that room, as the host tracks them: on
  * Cloudflare, what a Durable Object reads back from its sockets' attachments;
  * behind an API Gateway, the rows of a connections table. `Relay.make()` tracks
@@ -31,7 +35,9 @@
  * using a token in the request, a session, or whatever it has.
  *
  * A room belongs to nobody: the first peer to connect opens it, and it closes
- * when the last one leaves. The relay doesn't announce who joins or leaves.
+ * when the last one leaves. The relay tells the room who joins and who leaves,
+ * with a `Message.Notice`, so that a peer that comes back is sent again what
+ * it missed, and the others know who is gone.
  */
 import { Data, Exit, Schema } from "effect";
 
@@ -270,6 +276,55 @@ export const forward = (
   return Exit.succeed(deliveries);
 };
 
+/** The deliveries of one notice to every member of a room but one. */
+const notify = (
+  member: Member,
+  present: readonly Member[],
+  notice: Message.Notice
+): Delivery[] => {
+  const text = Message.encodeNotice(notice);
+  return present
+    .filter((other) => other.room === member.room && other.peer !== member.peer)
+    .map((to) => ({ to, text }));
+};
+
+/**
+ * Decides who is told that a member has joined its room: every other member
+ * of the room, with a notice that it joined, and the member itself, with a
+ * notice for each of the others, so it knows who is there. The host sends
+ * them once it has let the member in.
+ *
+ * It tells a peer that came back after its socket dropped, and the others,
+ * to send again what may have been lost while it was gone.
+ *
+ * @category Hosting
+ */
+export const joined = (
+  member: Member,
+  present: readonly Member[]
+): readonly Delivery[] => {
+  const deliveries = notify(member, present, { joined: member.peer });
+  for (const { to } of deliveries.slice()) {
+    deliveries.push({
+      to: member,
+      text: Message.encodeNotice({ joined: to.peer }),
+    });
+  }
+  return deliveries;
+};
+
+/**
+ * Decides who is told that a member has left its room: every other member of
+ * the room, with a notice that it left. The host sends them once the member's
+ * socket has closed, unless the name is held by a newer connection by then.
+ *
+ * @category Hosting
+ */
+export const left = (
+  member: Member,
+  present: readonly Member[]
+): readonly Delivery[] => notify(member, present, { left: member.peer });
+
 /**
  * A peer's connection to an in-memory relay.
  *
@@ -284,7 +339,10 @@ export interface Connection {
   readonly receive: (
     data: string | ArrayBuffer | ArrayBufferView
   ) => Exit.Exit<void, Refused>;
-  /** Ends the connection: the peer's name is free again. */
+  /**
+   * Ends the connection: the peer's name is free again, and the others in its
+   * room are told it left.
+   */
   readonly close: () => void;
 }
 
@@ -311,7 +369,8 @@ export interface Server {
 /**
  * Makes a relay for a host that stays in memory, such as a Node server, a
  * Durable Object that doesn't hibernate, or a test. It tracks connected peers,
- * and is told about each socket as it opens and closes.
+ * is told about each socket as it opens and closes, and tells the room who
+ * joined and who left.
  *
  *   const relay = Relay.make()
  *   server.on("connection", (socket, request) => {
@@ -335,11 +394,11 @@ export const make = (options: Options = {}): Server => {
     connect(url, send) {
       // Only that room's members are needed, and the address says which.
       const all = Array.from(rooms.keys()).flatMap((room) => members(room));
-      const joined = join(url, all, options);
-      if (Exit.isFailure(joined)) {
-        return Exit.failCause(joined.cause);
+      const admitted = join(url, all, options);
+      if (Exit.isFailure(admitted)) {
+        return Exit.failCause(admitted.cause);
       }
-      const member = joined.value;
+      const member = admitted.value;
       let room = rooms.get(member.room);
       if (room === undefined) {
         room = new Map();
@@ -349,6 +408,12 @@ export const make = (options: Options = {}): Server => {
       const self = { send };
       room.set(member.peer, self);
       const peers = room;
+      const tell = (deliveries: readonly Delivery[]): void => {
+        for (const { text, to } of deliveries) {
+          peers.get(to.peer)?.send(text);
+        }
+      };
+      tell(joined(member, members(member.room)));
       return Exit.succeed({
         member,
         receive(data) {
@@ -361,9 +426,7 @@ export const make = (options: Options = {}): Server => {
           if (Exit.isFailure(deliveries)) {
             return Exit.failCause(deliveries.cause);
           }
-          for (const { text, to } of deliveries.value) {
-            peers.get(to.peer)?.send(text);
-          }
+          tell(deliveries.value);
           return Exit.void;
         },
         close() {
@@ -373,6 +436,7 @@ export const make = (options: Options = {}): Server => {
             if (peers.size === 0 && rooms.get(member.room) === peers) {
               rooms.delete(member.room);
             }
+            tell(left(member, members(member.room)));
           }
         },
       });

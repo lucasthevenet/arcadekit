@@ -109,7 +109,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
         )
       ),
       Effect.provideService(Screen, { canvas }),
-      Effect.provideService(Input.Source, source),
+      Effect.provide(Input.layer(source)),
       Scope.provide(scope)
     )
   );

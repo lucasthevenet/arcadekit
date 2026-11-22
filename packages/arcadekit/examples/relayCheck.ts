@@ -1,7 +1,8 @@
 /**
  * Checks a relay, wherever it runs: two peers of a small game play through
- * it and have to end on the same world, and the relay has to refuse a name
- * that is taken and a message in another's name.
+ * it and have to end on the same world, the relay has to refuse a name that
+ * is taken and a message in another's name, and it has to tell a room who
+ * joined it and who left.
  *
  *   pnpm --filter arcadekit relay:check ws://localhost:8787
  *
@@ -10,7 +11,7 @@
  * `examples/relay-cloudflare` with `/rooms` after it, or one of your own.
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Console, Context, Data, Effect, Layer, Result, Schema } from "effect";
+import { Console, Data, Effect, Result, Schema } from "effect";
 
 import { Action, App, Field, Singleton } from "../src/index";
 import { Message, Relay, Session, Transport } from "../src/net/index";
@@ -43,16 +44,15 @@ const wait = (ms: number) =>
   Effect.promise(() => new Promise((r) => setTimeout(r, ms)));
 
 /** A peer's own transport, for as long as the scope it is opened in. */
-const open = (peer: string, inRoom = room) =>
-  Effect.map(
-    Layer.build(
+const listenAs = (peer: string, inRoom = room) =>
+  Transport.listen.pipe(
+    Effect.provide(
       Transport.layerWebSocket(Relay.address(base, { room: inRoom, peer }))
-    ),
-    (context) => Context.get(context, Transport.Transport)
+    )
   );
 
 /** Waits until a transport's socket has closed, and gives why. */
-const closed = (transport: Transport.Shape) =>
+const closed = (transport: Transport.Listener) =>
   Effect.gen(function* () {
     for (let i = 0; i < 400; i++) {
       // A transport whose socket has closed throws, and says why.
@@ -78,11 +78,10 @@ const check = Effect.gen(function* () {
       peers: ["ada", "grace"],
       delta: 1 / 30,
     });
-    const transport = yield* Layer.build(
-      Transport.layerWebSocket(Relay.address(base, { room, peer }))
-    );
     const connected = yield* Transport.connect(session).pipe(
-      Effect.provide(transport)
+      Effect.provide(
+        Transport.layerWebSocket(Relay.address(base, { room, peer }))
+      )
     );
     seats.push({ peer, app: session.app, session, connected });
   }
@@ -127,7 +126,7 @@ const check = Effect.gen(function* () {
   // --- a name that is taken ---------------------------------------------------
   // A host either closes the socket and says why, or turns the request
   // away before there is a socket, which a peer sees as no connection.
-  const taken = yield* closed(yield* open("ada"));
+  const taken = yield* closed(yield* listenAs("ada"));
   if (taken.reason !== "name taken" && taken.code !== 1006) {
     return yield* Effect.die(
       new Error(`a second "ada" was closed with: ${taken.message}`)
@@ -141,14 +140,18 @@ const check = Effect.gen(function* () {
 
   // --- a message in another's name --------------------------------------------
   const other = `${room}-liar`;
-  const honest = yield* open("grace", other);
-  const liar = yield* open("ada", other);
+  const honest = yield* listenAs("grace", other);
+  const liar = yield* listenAs("ada", other);
   yield* wait(300);
   const forged: Message.Message = { from: "grace", tick: 0, actions: [] };
   liar.send(forged);
   const refused = yield* closed(liar);
   yield* wait(100);
-  if (refused.reason !== "speaks for another" || honest.receive().length > 0) {
+  const told = honest.receive();
+  if (
+    refused.reason !== "speaks for another" ||
+    told.some((arrived) => "from" in arrived)
+  ) {
     return yield* Effect.die(
       new Error(
         `a message in another's name was not refused: ${refused.message}`
@@ -158,6 +161,17 @@ const check = Effect.gen(function* () {
   yield* Console.log(
     `✓ a message in another's name was refused, and not passed on (${refused.code}: ${refused.reason})`
   );
+
+  // --- who joins the room and who leaves it -----------------------------------
+  const notices = JSON.stringify(told);
+  if (notices !== JSON.stringify([{ joined: "ada" }, { left: "ada" }])) {
+    return yield* Effect.die(
+      new Error(
+        `grace was not told that ada joined the room and left it, but: ${notices}`
+      )
+    );
+  }
+  yield* Console.log("✓ the room was told that a peer joined it and left it");
   yield* Console.log(`The relay at ${base} does what a relay does.`);
 });
 

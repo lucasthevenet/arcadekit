@@ -42,15 +42,18 @@ A handler receives the peer that issued an action, `{ from }`, alongside the pay
 
 ## When peers drift apart
 
-Peers exchange the world's hash at their checkpoints. When every peer has reported its hash for a tick and they differ, every session stops with `Drift.Drifted`, which reports the tick, each peer's hash, and when they last agreed. A system that reads the clock, `Math.random` or the order of a `Set` is caught within a few ticks. [Determinism](determinism.md) lists what a game must do to stay in sync.
+Before anything else, each peer's first message says what it was made with: what its game simulates, its `delta`, the names of every peer, and the tick it begins at. Peers made otherwise stop with `Drift.Unlike` before any of them runs a tick it is sure of.
+
+Then peers exchange the world's hash at their checkpoints. When every peer has reported its hash for a tick and they differ, every session stops with `Drift.Drifted`, which reports the tick, each peer's hash, and when they last agreed. A system that reads the clock, `Math.random` or the order of a `Set` is caught within a few ticks. [Determinism](determinism.md) lists what a game must do to stay in sync.
 
 Only the world's hash is compared. It covers the actions queued and the events waiting, but a difference it doesn't cover is found only when it reaches the world, and the report names that tick, not the one it started on: how far a system has read, a system's own variables, state held in a service.
 
 ## Limits of a session
 
 - A session's peers are fixed when it is created, and a peer that stops is waited for. `session.waitingFor` names the peers a tick is waiting for.
-- Every message must eventually arrive. A lost message stops the game for everyone, and a dropped socket ends the game for that peer.
-- Peers that drift apart stop.
+- Every message must eventually arrive. A session keeps what it sent until every peer has heard it, and sends it again when a relay says a peer joined, so a socket that drops and connects again loses nothing. A message lost any other way stops the game for everyone.
+- A peer that leaves for good is waited for. Through a relay, `connected.away` names it.
+- Peers that were not made alike, or that drift apart, stop.
 - A session ticks continuously: `ticks: "whenNeeded"` is for single-player games.
 
 ## Read more
