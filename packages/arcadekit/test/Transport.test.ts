@@ -1,14 +1,8 @@
 import { Context, Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  App,
-  Driver,
-  Journal,
-  Netcode,
-  Session,
-  Transport,
-} from "../src/index";
+import { App, Driver, Journal } from "../src/index";
+import { Drift, Message, Session, Transport } from "../src/net/index";
 import {
   CoinGame,
   DELTA,
@@ -20,7 +14,7 @@ import {
 } from "./peers";
 import type { Peer, SteeredGame } from "./peers";
 
-const message = (from: string, tick: number, value = 0): Netcode.Message => ({
+const message = (from: string, tick: number, value = 0): Message.Message => ({
   from,
   tick,
   actions:
@@ -271,10 +265,10 @@ describe("a session joined to a transport", () => {
               }
             }
             // Both, and with the same report.
-            expect(stopped.get("ada")).toBeInstanceOf(Netcode.Drifted);
-            expect(stopped.get("grace")).toBeInstanceOf(Netcode.Drifted);
-            expect((stopped.get("ada") as Netcode.Drifted).hashes).toEqual(
-              (stopped.get("grace") as Netcode.Drifted).hashes
+            expect(stopped.get("ada")).toBeInstanceOf(Drift.Drifted);
+            expect(stopped.get("grace")).toBeInstanceOf(Drift.Drifted);
+            expect((stopped.get("ada") as Drift.Drifted).hashes).toEqual(
+              (stopped.get("grace") as Drift.Drifted).hashes
             );
             setGlitch(undefined);
           })
@@ -358,11 +352,11 @@ describe("a transport over text", () => {
       },
     });
     transport.send(message("ada", 3, 2));
-    expect(sent).toEqual([Netcode.encode(message("ada", 3, 2))]);
-    deliver(Netcode.encode(message("grace", 0)));
+    expect(sent).toEqual([Message.encode(message("ada", 3, 2))]);
+    deliver(Message.encode(message("grace", 0)));
     deliver("not a message");
     deliver(JSON.stringify({ from: "grace", tick: -1, actions: [] }));
-    deliver(Netcode.encode(message("grace", 1, 5)));
+    deliver(Message.encode(message("grace", 1, 5)));
     // What is not a message is dropped, and counted.
     expect(transport.receive()).toEqual([
       message("grace", 0),
@@ -415,8 +409,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     );
     // As text, as any wire would carry it.
     expect(heard).toEqual([
-      Netcode.encode(message("ada", 0, 7)),
-      Netcode.encode(message("grace", 0)),
+      Message.encode(message("ada", 0, 7)),
+      Message.encode(message("grace", 0)),
     ]);
     stranger.close();
   });
@@ -467,7 +461,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             expect(made[0]!.closed).toBe(false);
             transport.send(message("ada", 0));
             expect(made[0]!.posted).toEqual([
-              Netcode.encode(message("ada", 0)),
+              Message.encode(message("ada", 0)),
             ]);
           })
         )
@@ -488,7 +482,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         Effect.provide(Transport.layerBroadcastChannel(name))
       )
     );
-    outside.postMessage(Netcode.encode(message("grace", 0)));
+    outside.postMessage(Message.encode(message("grace", 0)));
     await later(20);
     // It says so, in place of a game that waits for ever.
     expect(() => kept.receive()).toThrow(

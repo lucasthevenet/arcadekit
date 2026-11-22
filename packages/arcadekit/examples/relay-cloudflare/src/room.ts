@@ -13,7 +13,7 @@ import { Cause, Effect, Exit } from "effect";
 import { HttpServerRequest } from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
-import * as Relay from "../../../src/Relay";
+import * as Relay from "../../../src/net/Relay";
 
 export default class Room extends Cloudflare.DurableObject<Room>()(
   "Rooms",

@@ -10,7 +10,7 @@
 import { Cause, Exit } from "effect";
 import { WebSocketServer } from "ws";
 
-import { Relay } from "../src/index";
+import { Relay } from "../src/net/index";
 
 const port = Number(process.env.PORT ?? 8787);
 const relay = Relay.make();

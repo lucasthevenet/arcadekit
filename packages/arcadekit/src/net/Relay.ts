@@ -35,7 +35,7 @@
  */
 import { Data, Exit, Schema } from "effect";
 
-import * as Netcode from "./Netcode";
+import * as Message from "./Message";
 
 /**
  * A connection's identity: its room, and the peer it speaks for. A host stores
@@ -243,7 +243,7 @@ export const forward = (
       1009
     );
   }
-  const message = Netcode.decode(text);
+  const message = Message.decode(text);
   if (Exit.isFailure(message)) {
     return refuse(
       "not a message",
@@ -260,7 +260,7 @@ export const forward = (
       1008
     );
   }
-  const passedOn = Netcode.encode(message.value);
+  const passedOn = Message.encode(message.value);
   const deliveries: Delivery[] = [];
   for (const member of present) {
     if (member.room === from.room && member.peer !== from.peer) {

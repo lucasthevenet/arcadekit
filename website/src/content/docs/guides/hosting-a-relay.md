@@ -5,12 +5,12 @@ description: "Peers on different machines meet at a relay. Learn the two functio
 
 Peers on different machines meet at a **relay**: each opens a WebSocket to it, at an address naming a room and the peer, and the relay forwards what one peer sends to the others in the room. This guide covers the two functions a relay host calls, peer identity, and hosting a relay on Node and on Cloudflare. [Transports and relays](transports-and-relays.md) covers the peer's side.
 
-`arcadekit/Relay` implements the relay as a handler, not a server: plain functions that decide what to do with a connection and with what it sends, for whatever accepts the sockets to call. It imports only Effect, so it runs anywhere Effect does.
+`arcadekit/net/Relay` implements the relay as a handler, not a server: plain functions that decide what to do with a connection and with what it sends, for whatever accepts the sockets to call. It imports only Effect, so it runs anywhere Effect does.
 
 ## The host's API
 
 ```ts
-import { Relay } from "arcadekit";
+import * as Relay from "arcadekit/net/Relay";
 import { Cause, Exit } from "effect";
 
 // What the host knows: who is connected, and each member's socket.
@@ -84,4 +84,4 @@ Behind an API Gateway on AWS, the same two functions are called from a function 
 ## Read more
 
 - [Several players](../concepts/several-players.md) explains what peers send each other.
-- [`Relay`](/reference/arcadekit/Relay) and [`Transport`](/reference/arcadekit/Transport) in the API reference.
+- [`Relay`](/reference/arcadekit/net/Relay) and [`Transport`](/reference/arcadekit/net/Transport) in the API reference.

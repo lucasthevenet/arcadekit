@@ -97,11 +97,6 @@
       "types": "./dist/Migrate.d.ts",
       "default": "./dist/Migrate.js"
     },
-    "./Netcode": {
-      "source": "./src/Netcode.ts",
-      "types": "./dist/Netcode.d.ts",
-      "default": "./dist/Netcode.js"
-    },
     "./Outbox": {
       "source": "./src/Outbox.ts",
       "types": "./dist/Outbox.d.ts",
@@ -116,11 +111,6 @@
       "source": "./src/Query.ts",
       "types": "./dist/Query.d.ts",
       "default": "./dist/Query.js"
-    },
-    "./Relay": {
-      "source": "./src/Relay.ts",
-      "types": "./dist/Relay.d.ts",
-      "default": "./dist/Relay.js"
     },
     "./Resource": {
       "source": "./src/Resource.ts",
@@ -151,11 +141,6 @@
       "source": "./src/Services.ts",
       "types": "./dist/Services.d.ts",
       "default": "./dist/Services.js"
-    },
-    "./Session": {
-      "source": "./src/Session.ts",
-      "types": "./dist/Session.d.ts",
-      "default": "./dist/Session.js"
     },
     "./Singleton": {
       "source": "./src/Singleton.ts",
@@ -202,11 +187,6 @@
       "types": "./dist/Transform3d.d.ts",
       "default": "./dist/Transform3d.js"
     },
-    "./Transport": {
-      "source": "./src/Transport.ts",
-      "types": "./dist/Transport.d.ts",
-      "default": "./dist/Transport.js"
-    },
     "./View": {
       "source": "./src/View.ts",
       "types": "./dist/View.d.ts",
@@ -216,6 +196,41 @@
       "source": "./src/ecs/index.ts",
       "types": "./dist/ecs.d.ts",
       "default": "./dist/ecs.js"
+    },
+    "./net": {
+      "source": "./src/net/index.ts",
+      "types": "./dist/net.d.ts",
+      "default": "./dist/net.js"
+    },
+    "./net/Drift": {
+      "source": "./src/net/Drift.ts",
+      "types": "./dist/net/Drift.d.ts",
+      "default": "./dist/net/Drift.js"
+    },
+    "./net/Message": {
+      "source": "./src/net/Message.ts",
+      "types": "./dist/net/Message.d.ts",
+      "default": "./dist/net/Message.js"
+    },
+    "./net/Peer": {
+      "source": "./src/net/Peer.ts",
+      "types": "./dist/net/Peer.d.ts",
+      "default": "./dist/net/Peer.js"
+    },
+    "./net/Relay": {
+      "source": "./src/net/Relay.ts",
+      "types": "./dist/net/Relay.d.ts",
+      "default": "./dist/net/Relay.js"
+    },
+    "./net/Session": {
+      "source": "./src/net/Session.ts",
+      "types": "./dist/net/Session.d.ts",
+      "default": "./dist/net/Session.js"
+    },
+    "./net/Transport": {
+      "source": "./src/net/Transport.ts",
+      "types": "./dist/net/Transport.d.ts",
+      "default": "./dist/net/Transport.js"
     }
   },
   "publishConfig": {

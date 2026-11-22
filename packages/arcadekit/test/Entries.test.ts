@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import * as Ecs from "../src/ecs/index";
 import * as Main from "../src/index";
+import * as Net from "../src/net/index";
 
 // Vite gives a test the text of files, and the modules themselves: the
 // sources of the package, and its manifest. Declared here, since the tests
@@ -31,6 +32,7 @@ const sources = import.meta.glob("../src/**/*.ts", {
   eager: true,
 });
 const modules = import.meta.glob("../src/*.ts", { eager: true });
+const netModules = import.meta.glob("../src/net/*.ts", { eager: true });
 interface Target {
   readonly source: string;
   readonly types: string;
@@ -115,7 +117,7 @@ const isEffect = (name: string): boolean =>
 const entries = Object.keys(manifest.exports);
 
 describe("the package's entries", () => {
-  it("are the package itself, every module, and the storage core", () => {
+  it("are the package itself, every module, the storage core, and the folder of what plays on several machines", () => {
     // What the sources say the entries are: a module's is named as its
     // file is.
     const expected: Record<string, Target> = {};
@@ -129,8 +131,10 @@ describe("the package's entries", () => {
     };
     entry(".", "../src/index.ts");
     entry("./ecs", "../src/ecs/index.ts");
+    // A folder of modules is an entry, and so is each module in it.
+    entry("./net", "../src/net/index.ts");
     for (const file of Object.keys(sources)) {
-      const module = /^\.\.\/src\/([A-Z]\w*)\.ts$/u.exec(file);
+      const module = /^\.\.\/src\/((?:net\/)?[A-Z]\w*)\.ts$/u.exec(file);
       if (module !== null) {
         entry(`./${module[1]}`, file);
       }
@@ -143,12 +147,16 @@ describe("the package's entries", () => {
     expect(entries).toContain("./Input");
     expect(entries).toContain("./TickScheduler");
     expect(entries).toContain("./Browser");
-    expect(entries.length).toBe(38);
-    // No module is in a folder of its own: one file, one entry.
+    expect(entries).toContain("./net");
+    expect(entries).toContain("./net/Session");
+    expect(entries.length).toBe(41);
+    // One file, one entry: a module is a file in src/, or in src/net/. No
+    // module is in a folder of its own, and src/ecs is the storage core.
     expect(
       Object.keys(sources).filter(
         (file) =>
-          !/^\.\.\/src\/\w+\.ts$/u.test(file) && !file.startsWith("../src/ecs/")
+          !/^\.\.\/src\/(?:net\/)?\w+\.ts$/u.test(file) &&
+          !file.startsWith("../src/ecs/")
       )
     ).toEqual([]);
     // Every source file is behind some entry.
@@ -174,13 +182,27 @@ describe("the package's entries", () => {
     );
   });
 
-  it("the package's own entry reaches every source but src/Browser.ts and the storage core's index", () => {
+  it("the package's own entry reaches every source but src/Browser.ts, the storage core's index and src/net", () => {
     const main = reach(sourceOf(".")).files;
     expect(
       Object.keys(sources)
         .filter((file) => !main.includes(file))
         .toSorted()
-    ).toEqual(["../src/Browser.ts", "../src/ecs/index.ts"]);
+    ).toEqual([
+      "../src/Browser.ts",
+      "../src/ecs/index.ts",
+      ...Object.keys(netModules).toSorted(),
+    ]);
+    // A game with one player loads none of what several play with.
+    expect(Object.keys(netModules).toSorted()).toEqual([
+      "../src/net/Drift.ts",
+      "../src/net/Message.ts",
+      "../src/net/Peer.ts",
+      "../src/net/Relay.ts",
+      "../src/net/Session.ts",
+      "../src/net/Transport.ts",
+      "../src/net/index.ts",
+    ]);
   });
 
   it("arcadekit/Browser is the one entry that imports a browser package, which is an optional peer", () => {
@@ -214,16 +236,13 @@ describe("the package's entries", () => {
       "Journal",
       "Loop",
       "Migrate",
-      "Netcode",
       "Outbox",
       "Plugin",
       "Query",
-      "Relay",
       "Resource",
       "Runner",
       "Save",
       "Schedule",
-      "Session",
       "Singleton",
       "Sound",
       "Stage",
@@ -232,7 +251,6 @@ describe("the package's entries", () => {
       "Timeline",
       "Transform2d",
       "Transform3d",
-      "Transport",
       "View",
     ];
     for (const name of namespaces) {
@@ -254,6 +272,35 @@ describe("the package's entries", () => {
         .toSorted()
     ).toEqual(["Browser", "Schemas", "Services", "TickScheduler"]);
     expect("Browser" in main).toBe(false);
+  });
+});
+
+describe("arcadekit/net", () => {
+  it("gives every module of its folder as the module's own entry does, and the package's own entry none of them", () => {
+    const net = Net as Record<string, unknown>;
+    const names = ["Drift", "Message", "Peer", "Relay", "Session", "Transport"];
+    for (const name of names) {
+      expect(net[name], name).toBe(netModules[`../src/net/${name}.ts`]);
+      expect(name in (Main as Record<string, unknown>), name).toBe(false);
+      expect(sourceOf(`./net/${name}`)).toBe(`../src/net/${name}.ts`);
+    }
+    expect(Object.keys(net).toSorted()).toEqual(names);
+  });
+
+  it("passes messages on without a session: a relay reaches no app, no peer and no session", () => {
+    const built = ["../src/Build.ts", "../src/App.ts"];
+    for (const entry of ["./net/Message", "./net/Relay"]) {
+      const { files } = reach(sourceOf(entry));
+      expect(
+        files.filter((file) => built.includes(file)),
+        entry
+      ).toEqual([]);
+      // Nor the session, the peer or what finds they have drifted apart.
+      expect(
+        files.filter((file) => /net\/(?:Session|Peer|Drift)\.ts$/u.test(file)),
+        entry
+      ).toEqual([]);
+    }
   });
 });
 

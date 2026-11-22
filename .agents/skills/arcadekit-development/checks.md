@@ -9,7 +9,7 @@ The repository already works this way, and a new rule joins these:
 - `test/Policy.test.ts` plays a game where making code from text is forbidden;
 - the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts` and `test/Frame.test.ts`, which every new way to write joins;
 - a frozen world, which refuses a change from the frame and input stages;
-- `Netcode.Drifted`, which stops peers whose worlds have come apart;
+- `Drift.Drifted`, which stops peers whose worlds have come apart;
 - `bench:compare`, which fails on a storage core that got slower;
 - the site's typecheck, which compiles the code of every page, and its build, which fails on a dead link.
 

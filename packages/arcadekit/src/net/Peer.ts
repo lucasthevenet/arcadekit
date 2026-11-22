@@ -1,5 +1,6 @@
 /**
- * What the peers of a session say to each other, and the peer that says it.
+ * One peer of a game played on several machines: what it holds of what every
+ * peer said, when it runs a tick, and how it goes back.
  *
  * Every peer runs the same simulation, and peers only exchange the actions
  * their players issue, each stamped with the tick it applies on. Every peer
@@ -14,143 +15,29 @@
  *
  * A peer holds no socket and no timer. It receives the messages that arrived
  * and returns the ones to send, and a transport carries them, as text in the
- * form `encode` writes.
+ * form `Message.encode` writes.
  *
  * Peers also exchange the checkpoints their logs record: the world's hash at a
  * tick. A peer that receives a different hash than its own for the same tick
- * stops, and its tick fails with `Drifted`, which reports the tick, every
- * peer's hash, and when they last agreed. The starting state is compared before
- * anyone's first tick, whatever the app's `checkpointEvery`, since a peer
- * records a checkpoint when it begins. After that, peers compare the ticks
- * every peer's log records, and with `checkpointEvery: 0`, nothing more.
+ * stops, and its tick fails with `Drift.Drifted`, which reports the tick,
+ * every peer's hash, and when they last agreed. The starting state is
+ * compared before anyone's first tick, whatever the app's `checkpointEvery`,
+ * since a peer records a checkpoint when it begins. After that, peers compare
+ * the ticks every peer's log records, and with `checkpointEvery: 0`, nothing
+ * more.
  *
- * `Session.make` makes a peer with its app. This module is what a transport
- * and a relay need of a session, and they need no app.
+ * `Session.make` makes a peer with its app.
  */
-import { Cause, Data, Exit, Schema } from "effect";
+import { Cause, Exit } from "effect";
 
-import * as Action from "./Action";
-import type * as App from "./App";
-import type { Reins } from "./Build";
-import type { Tickable } from "./Driver";
-import type * as Save from "./Save";
-import * as Timeline from "./Timeline";
-
-/**
- * An action as a peer issued it: its name, and its payload in JSON form.
- *
- * @category Models
- */
-export interface Issued {
-  readonly name: string;
-  readonly payload: unknown;
-}
-
-/**
- * What peers send each other: everything one peer issued for one tick. Every
- * peer sends one for every tick, usually with no actions in it: it is also how
- * a peer says it has nothing more for that tick.
- *
- * @category Models
- */
-export interface Message {
-  /** The peer that issued the actions. */
-  readonly from: string;
-  /**
-   * The tick they apply on: the one that runs once this many ticks have
-   * completed, on every peer.
-   */
-  readonly tick: number;
-  /** The actions, in the order the peer issued them. */
-  readonly actions: readonly Issued[];
-  /**
-   * The checkpoints the peer's log recorded since its last message: its world's
-   * hash, and at which tick. Omitted when there are none.
-   */
-  readonly checkpoints?: readonly Action.Checkpoint[];
-}
-
-const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-
-const MessageSchema = Schema.fromJsonString(
-  Schema.Struct({
-    from: Schema.String,
-    tick: Count,
-    actions: Schema.Array(
-      Schema.Struct({ name: Schema.String, payload: Schema.Unknown })
-    ),
-    checkpoints: Schema.optionalKey(
-      Schema.Array(
-        Schema.Struct({
-          tick: Count,
-          hash: Schema.Int.check(
-            Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
-          ),
-        })
-      )
-    ),
-  })
-);
-
-/**
- * The peers are no longer playing the same game: at one tick, their worlds'
- * hashes differed. Every later tick of the session fails with this error.
- *
- * Drift is detected within a bounded number of ticks. A checkpoint is recorded
- * every `checkpointEvery` ticks and travels with the message for the tick
- * `delay` ahead, which no peer can run without. So no peer runs more than
- * `checkpointEvery - 1 + delay` ticks past the first tick whose world differed,
- * where `delay` is the largest any peer uses. A session that runs ahead
- * sends a tick's hash once every peer has sent their actions for it, so there
- * the bound is `checkpointEvery - 1 + delay + 2 × ahead` ticks.
- *
- * What is compared is the world's hash. What the hash doesn't cover, such as an
- * event only one peer has waiting or a system's own variables, is only detected
- * once it affects the world.
- *
- * @category Errors
- */
-export class Drifted extends Data.TaggedError("Drifted")<{
-  /** The tick of the first checkpoint whose hashes differ. */
-  readonly tick: number;
-  /** The peer that detected it: this one. */
-  readonly peer: string;
-  /**
-   * Every peer's world hash at that tick, by name. Look at the peer whose hash
-   * differs from the others.
-   */
-  readonly hashes: Readonly<Record<string, number>>;
-  /** The last tick at which every peer's hash matched, if any. */
-  readonly agreedAt: number | undefined;
-}> {
-  override get message(): string {
-    const hashes = Object.entries(this.hashes)
-      .map(([name, hash]) => `${name} ${hash}`)
-      .join(", ");
-    const since =
-      this.agreedAt === undefined
-        ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same plugins and the same seed, and spawned the same things before its first tick"
-        : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta)`;
-    return `The peers are no longer playing the same game. At tick ${this.tick} the hashes of their worlds are: ${hashes} (found by "${this.peer}"). ${since}.`;
-  }
-}
-
-/**
- * Encodes a message as text, for whatever carries it.
- *
- * @category Codecs
- */
-export const encode = (message: Message): string => JSON.stringify(message);
-
-/**
- * Decodes a message from text. It checks the message's own structure; each
- * payload is validated against its action's schema when the action is applied,
- * and a payload that fails is refused by every peer alike.
- *
- * @category Codecs
- */
-export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
-  Schema.decodeExit(MessageSchema)(text);
+import * as Action from "../Action";
+import type * as App from "../App";
+import type { Reins } from "../Build";
+import type { Tickable } from "../Driver";
+import type * as Save from "../Save";
+import * as Timeline from "../Timeline";
+import { Drifted } from "./Drift";
+import type { Issued, Message } from "./Message";
 
 /**
  * What a peer is told of its game: who it is, who plays, how long a tick is,

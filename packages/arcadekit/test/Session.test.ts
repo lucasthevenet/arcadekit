@@ -2,7 +2,8 @@ import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { App, Build, Save, Session } from "../src/index";
+import { App, Build, Save } from "../src/index";
+import { Session } from "../src/net/index";
 import { CoinGame, DELTA, Drop, game } from "./peers";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>

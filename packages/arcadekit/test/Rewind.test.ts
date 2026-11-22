@@ -13,7 +13,6 @@ import {
   Journal,
   Query,
   Save,
-  Session,
   System,
   Ticks,
   Time,
@@ -21,6 +20,7 @@ import {
   readSnapshot,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { Session } from "../src/net/index";
 import {
   Coin,
   CoinGame,
