@@ -79,14 +79,20 @@ const fault = (onTick: number, kind: "nudge" | "lose") =>
     });
   });
 
+/** The build's second system: the fault, or what a test puts in its place. */
+type Faulty =
+  ReturnType<typeof fault> extends System.System<infer E, infer R>
+    ? System.System<E, R>
+    : never;
+
 interface Options {
   readonly seed?: number;
   readonly checkpointEvery?: number;
-  readonly faulty?: ReturnType<typeof fault>;
+  readonly faulty?: Faulty;
 }
 
 // A fault on tick -1 never happens: that is the game as it should be.
-const coinGame = (faulty = fault(-1, "nudge")) =>
+const coinGame = (faulty: Faulty = fault(-1, "nudge")) =>
   App.define({ systems: [Drift, faulty], handlers: [drop, take] });
 
 const checkpointing = (options: Options) =>

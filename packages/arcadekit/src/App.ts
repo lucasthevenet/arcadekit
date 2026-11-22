@@ -515,6 +515,11 @@ export interface Game<
  * that a game played, a game loaded and the peers of a match are one game by
  * construction.
  *
+ * Its systems run in the order they are listed, its plugins' ahead of its own.
+ * A list in which a system watches a component ahead of one that writes it
+ * doesn't compile, and the error says which goes after which: see
+ * `System.Misordered`.
+ *
  * @category Constructors
  */
 export const define = <
@@ -522,7 +527,8 @@ export const define = <
   H extends Handlers = readonly [],
   P extends Plugins = readonly [],
 >(
-  options: Options<S, H, P>
+  options: Options<S, H, P> &
+    System.Ordered<System.Listing<Plugin.SystemsOf<P>, S>>
 ): Game<S, H, P> => ({
   plugins: options.plugins ?? ([] as unknown as readonly [...P]),
   systems: options.systems ?? ([] as unknown as readonly [...S]),

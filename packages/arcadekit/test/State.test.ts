@@ -18,6 +18,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
@@ -446,9 +447,15 @@ describe("a run condition", () => {
           System.inStage("frame"),
           System.runIf(State.is(Phase, "playing"))
         );
-        const app = yield* App.make(
-          App.define({ systems: [Listen, Emit, Look], handlers: [go] })
-        );
+        // Typed as any systems, which is the one way to list a watcher ahead
+        // of what it watches: the compiler refuses that order where it can see
+        // it.
+        const systems: readonly System.System<never, BuiltIn>[] = [
+          Listen,
+          Emit,
+          Look,
+        ];
+        const app = yield* App.make(App.define({ systems, handlers: [go] }));
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: 0 }));
         }

@@ -17,7 +17,6 @@ import {
   Save,
   System,
   Time,
-  World,
   readSnapshot,
   writeSnapshot,
 } from "../src/index";
@@ -27,6 +26,7 @@ import type {
   SavedChanges,
   SnapshotContents,
 } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 import { expectChecked, makeChecks } from "./checks";
 
 /** What the change queries of a snapshot's world had yet to visit. */
@@ -1317,9 +1317,12 @@ const Begin = Plugin.make("ch/Begin", {
     }
   }),
 });
+// Typed as any systems, which is the one way to list a watcher ahead of what
+// it watches: the compiler refuses that order where it can see it.
+const systems: readonly System.System<never, BuiltIn>[] = [Early, Drift, Count];
 const Game = App.define({
   plugins: [Begin],
-  systems: [Early, Drift, Count],
+  systems,
   handlers: [push, spawn, cull],
 });
 
@@ -1411,18 +1414,18 @@ describe("change queries in an app", () => {
         const seen: number[] = [];
         // Read between ticks, from the place everything outside the
         // simulation shares.
-        const peek = Effect.map(Moved, (moved) => {
-          seen.push(moved.entities().length);
-        }).pipe(Effect.provideService(World, app.world));
-        yield* peek;
+        const peek = () => {
+          seen.push(app.world.view(Moved).entities().length);
+        };
+        peek();
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(3));
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(0));
         app.dispatch(Push, { slot: 1, refuse: false });
         app.tick(1);
-        yield* peek;
+        peek();
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(1));
         app.tick(1);
-        yield* peek;
+        peek();
         // Each reads from its own place.
         expect(seen).toEqual([3, 1, 0]);
         expect(watched).toEqual([3, 0]);

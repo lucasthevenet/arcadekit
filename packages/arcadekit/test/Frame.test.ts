@@ -825,7 +825,7 @@ describe("what the frame stage reads", () => {
             }
           });
         });
-        const BallGame = App.define({ systems: [Count, Nudge, Draw] });
+        const BallGame = App.define({ systems: [Nudge, Count, Draw] });
         const app = yield* App.make(BallGame, { checkpointEvery: 1 });
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: n, vx: 0 }));
@@ -837,7 +837,7 @@ describe("what the frame stage reads", () => {
         app.frame(0);
         // The first frame draws everything; the next, the two that moved.
         expect(drawn).toEqual([3, 2, 0]);
-        // The simulation's own reader saw each change once, a tick late.
+        // The simulation's own reader saw each change once.
         expect(counted).toEqual([3, 1]);
 
         app.tick(1);

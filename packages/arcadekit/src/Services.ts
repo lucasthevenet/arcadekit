@@ -9,6 +9,7 @@ import type { Rng } from "./ecs/random";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
+import type { Access } from "./Query";
 
 /**
  * The ECS world. Most systems use queries and `Commands` instead.
@@ -156,7 +157,8 @@ export class Random extends Context.Service<Random, Rng>()(
 ) {}
 
 /**
- * The services the app provides itself.
+ * The services the app provides itself, and what a query's `yield*` says of
+ * what it writes and watches, which stands for nothing at run time.
  *
  * @category Type-level
  */
@@ -169,4 +171,5 @@ export type BuiltIn =
   | Events
   | Actions
   | Random
-  | Devices;
+  | Devices
+  | Access;

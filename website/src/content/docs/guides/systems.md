@@ -63,6 +63,36 @@ Systems run in the order they are listed. A plugin's systems run before the app'
 
 The list is the only order within a stage, so a system that reads what another writes is listed after it. To run a system ahead of one from a plugin you depend on, place it in an earlier [stage](#stages).
 
+You don't declare what a system reads and writes. The compiler knows what each system's queries write and watch from the queries it yields, and checks the list with it. A system that [watches a component for changes](queries.md#change-detection), listed ahead of a system that writes that component in the same tick, would react a tick late, so that list doesn't compile:
+
+```ts sketch
+const Moving = Query.all(Position).pipe(Query.writes(Position));
+const Moved = Query.all(Position).pipe(Query.changed(Position));
+
+const Move = System.make("game/Move", function* () {
+  (yield* Moving).each((position) => {
+    position.x += 1;
+  });
+});
+const Trail = System.make("game/Trail", function* () {
+  (yield* Moved).each((position) => {});
+});
+
+App.define({ systems: [Move, Trail] }); // Trail sees each move in its tick
+App.define({ systems: [Trail, Move] }); // doesn't compile
+```
+
+The error names both systems and says which to list after the other:
+
+```text
+"game/Trail" watches "game/Position" with Query.changed, and "game/Move" writes it later in the tick, so "game/Trail" would react a tick late. List "game/Trail" after "game/Move", or place it in a later stage.
+```
+
+- The check follows the order a tick runs: stage by stage, a plugin's dependencies before the plugin, and plugins before the app's own systems.
+- Hooks, handlers, and systems of the frame and input stages run at another moment, and are not checked against the tick's systems.
+- Write the list where you give it to `App.define` or `Plugin.make`, and write a system's stage out in `System.inStage`. A list or a stage held in a variable of a wider type has no order the compiler can read, and is refused when the order would matter.
+- The compiler knows a write from the query that makes it. It doesn't know a write made with `world.set`, or a component an entity gained through `Commands`: a watcher listed ahead of such a system reacts a tick late, with no error.
+
 ## Stages
 
 A tick has three stages, `"preUpdate"`, `"update"` and `"postUpdate"`, each run in full before the next. A frame has three too, `"preFrame"`, `"frame"` and `"postFrame"`. The input stage runs before each tick. A system runs in `"update"` unless you place it elsewhere:

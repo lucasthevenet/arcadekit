@@ -308,7 +308,9 @@ export const is = <V extends string>(
  */
 export const onEnter =
   <V extends string>(state: State<V>, value: NoInfer<V>) =>
-  <E, R>(self: System.System<E, R>): System.System<E, R> =>
+  <E, R, N extends string, St extends System.Stage>(
+    self: System.System<E, R, N, St>
+  ): System.System<E, R, N, St, System.Trigger> =>
     System.triggered(self, { state, on: "enter", value });
 
 /**
@@ -320,7 +322,9 @@ export const onEnter =
  */
 export const onExit =
   <V extends string>(state: State<V>, value: NoInfer<V>) =>
-  <E, R>(self: System.System<E, R>): System.System<E, R> =>
+  <E, R, N extends string, St extends System.Stage>(
+    self: System.System<E, R, N, St>
+  ): System.System<E, R, N, St, System.Trigger> =>
     System.triggered(self, { state, on: "exit", value });
 
 /**
