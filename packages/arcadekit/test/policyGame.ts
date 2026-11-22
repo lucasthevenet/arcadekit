@@ -151,7 +151,7 @@ const Watching = System.make("policy/Watching", function* () {
     noticed += 1;
     sheet.hp += position.x > 1000 ? 1 : 0;
   });
-}).pipe(System.after(Following));
+});
 
 let drawn = 0;
 const Draw = System.make("policy/Draw", function* () {

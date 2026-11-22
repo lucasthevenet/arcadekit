@@ -28,7 +28,7 @@ const Expiry = System.make("Expiry", function* () {
       commands.despawn(entity);
     }
   });
-}).pipe(System.after(Physics.Physics));
+});
 
 export const plugin = Plugin.make("Lifetime", {
   plugins: [Physics.plugin],

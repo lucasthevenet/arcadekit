@@ -108,7 +108,7 @@ const Fall = System.make("Fall", function* () {
     basket.caught += caught;
     (yield* Caught).emit({ stars: caught });
   }
-}).pipe(System.after(Steer), playing);
+}).pipe(playing);
 
 // --- what a player can ask for ---------------------------------------------------
 // The game knows nothing of keys: the bindings below turn a key into one of

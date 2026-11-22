@@ -61,17 +61,7 @@ Since the fountain's place is in the world, a [save](saving-and-loading.md) hold
 
 Systems run in the order they are listed. A plugin's systems run before the app's own, and a plugin's dependencies' systems before the plugin's.
 
-`System.after(other)` and `System.before(other)` declare that a system runs after or before another:
-
-```ts sketch
-const Expiry = System.make("game/Expiry", function* () {
-  /* … */
-}).pipe(System.after(Movement));
-```
-
-These order systems within a stage. Declaring an order that already holds changes nothing, so declare it wherever it matters.
-
-Each system keeps its place in the list unless another system must run before it, in which case that one moves to just ahead of it. The system that moved now runs ahead of everything listed between the two, so it may now run before a system it reads from, with no error. Declare that order too.
+The list is the only order within a stage, so a system that reads what another writes is listed after it. To run a system ahead of one from a plugin you depend on, place it in an earlier [stage](#stages).
 
 ## Stages
 

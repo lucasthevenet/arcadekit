@@ -7,6 +7,9 @@
  *     const { delta } = yield* Time
  *     moving.each((pos, vel) => { pos.x += vel.x * delta })
  *   })
+ *
+ * Systems run stage by stage, and within a stage in the order they are listed:
+ * those of a plugin's dependencies, then the plugin's own, then the app's.
  */
 import { Effect } from "effect";
 import { dual } from "effect/Function";
@@ -77,10 +80,6 @@ export interface Trigger {
 export interface System<out E = never, out R = never> extends Pipeable {
   readonly name: string;
   readonly stage: Stage;
-  /** Names of systems in the same stage that must run before this one. */
-  readonly after: readonly string[];
-  /** Names of systems in the same stage that must run after this one. */
-  readonly before: readonly string[];
   readonly run: Effect.Effect<void, E, R>;
   /**
    * Whether the system runs this tick, checked just before it would: every
@@ -151,8 +150,6 @@ export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
   build({
     name,
     stage: "update",
-    after: [],
-    before: [],
     run: Effect.gen(body),
     condition: undefined,
     idle: undefined,
@@ -189,75 +186,6 @@ export const inStage: {
   <E, R>(self: System<E, R>, stage: Stage): System<E, R>;
 } = dual(2, <E, R>(self: System<E, R>, stage: Stage): System<E, R> =>
   build({ ...self, stage })
-);
-
-/**
- * Orders a system after another one in the same stage. Naming a system in an
- * earlier stage, which has already run, isn't an error; naming one in a later
- * stage is.
- *
- * **Gotchas**
- *
- * A system keeps its position in the list unless another must run before it, in
- * which case that one moves forward to just ahead of it, and so ahead of every
- * system listed between the two. It may then run before a system it reads
- * from, with no error: order that pair too.
- *
- * @category Combinators
- */
-export const after: {
-  (
-    other: System<unknown, unknown> | string
-  ): <E, R>(self: System<E, R>) => System<E, R>;
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R>;
-} = dual(
-  2,
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R> =>
-    build({
-      ...self,
-      after: [...self.after, typeof other === "string" ? other : other.name],
-    })
-);
-
-/**
- * Orders a system before another one in the same stage. This is how a plugin
- * inserts a system ahead of one from a plugin it depends on. Naming a system in
- * a later stage, which already runs after it, isn't an error; naming one in an
- * earlier stage is.
- *
- * **Gotchas**
- *
- * A system listed after the other moves forward to just ahead of it, and so
- * ahead of every system listed between the two, and a plugin's systems are
- * listed before the app's own. It may then run before a system it reads from,
- * with no error: order that pair too.
- *
- * @category Combinators
- */
-export const before: {
-  (
-    other: System<unknown, unknown> | string
-  ): <E, R>(self: System<E, R>) => System<E, R>;
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R>;
-} = dual(
-  2,
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R> =>
-    build({
-      ...self,
-      before: [...self.before, typeof other === "string" ? other : other.name],
-    })
 );
 
 /**
@@ -384,89 +312,15 @@ export const unique = (systems: readonly System<unknown, unknown>[]): void => {
 };
 
 /**
- * Sorts systems into run order: by stage, then by `after` and `before`
- * constraints, keeping registration order where nothing else decides.
+ * Sorts systems into run order: by stage, and within a stage in the order they
+ * are listed.
  * @internal
  */
 export const order = (
   systems: readonly System<unknown, unknown>[]
 ): System<unknown, unknown>[] => {
   unique(systems);
-  const out: System<unknown, unknown>[] = [];
-  const stageOf = new Map(systems.map((s) => [s.name, s.stage]));
-  for (const stage of everyStage) {
-    const inStage = systems.filter((s) => s.stage === stage);
-    const stageNames = new Set(inStage.map((s) => s.name));
-    // "A before B" is the same constraint as "B after A", so fold both into
-    // one map of what must already have run.
-    const mustFollow = new Map<string, string[]>();
-    for (const system of inStage) {
-      mustFollow.set(system.name, []);
-    }
-    for (const system of inStage) {
-      for (const dep of system.after) {
-        if (!stageNames.has(dep)) {
-          const other = stageOf.get(dep);
-          if (other === undefined) {
-            throw new Error(
-              `System "${system.name}" must run after "${dep}", which is not in the "${stage}" stage`
-            );
-          }
-          // A stage that runs earlier has run: there is nothing to order.
-          if (everyStage.indexOf(other) < everyStage.indexOf(stage)) {
-            continue;
-          }
-          throw new Error(
-            `System "${system.name}" must run after "${dep}", which is in the "${other}" stage: that stage runs after every system of the "${stage}" stage, this one among them`
-          );
-        }
-        mustFollow.get(system.name)!.push(dep);
-      }
-      for (const later of system.before) {
-        if (!stageNames.has(later)) {
-          const other = stageOf.get(later);
-          if (other === undefined) {
-            throw new Error(
-              `System "${system.name}" must run before "${later}", which is not in the "${stage}" stage`
-            );
-          }
-          // A stage that runs later has yet to run: there is nothing to order.
-          if (everyStage.indexOf(other) > everyStage.indexOf(stage)) {
-            continue;
-          }
-          throw new Error(
-            `System "${system.name}" must run before "${later}", which is in the "${other}" stage: that stage runs before every system of the "${stage}" stage, this one among them`
-          );
-        }
-        mustFollow.get(later)!.push(system.name);
-      }
-    }
-    // Each system keeps its registered position unless something has to run
-    // first, in which case those systems are pulled forward to just before it.
-    const byName = new Map(inStage.map((system) => [system.name, system]));
-    const done = new Set<string>();
-    const visiting: string[] = [];
-    const place = (system: System<unknown, unknown>): void => {
-      if (done.has(system.name)) {
-        return;
-      }
-      if (visiting.includes(system.name)) {
-        const cycle = visiting.slice(visiting.indexOf(system.name));
-        throw new Error(
-          `Circular ordering constraints among: ${cycle.join(", ")}`
-        );
-      }
-      visiting.push(system.name);
-      for (const dep of mustFollow.get(system.name)!) {
-        place(byName.get(dep)!);
-      }
-      visiting.pop();
-      done.add(system.name);
-      out.push(system);
-    };
-    for (const system of inStage) {
-      place(system);
-    }
-  }
-  return out;
+  return everyStage.flatMap((stage) =>
+    systems.filter((system) => system.stage === stage)
+  );
 };

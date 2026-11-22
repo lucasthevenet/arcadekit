@@ -71,7 +71,7 @@ describe("systems", () => {
     });
   });
 
-  it("are ordered by stage, then by `after`, then by registration", () => {
+  it("are ordered by stage, then by the order they are listed", () => {
     const log: string[] = [];
     const sys = (name: string) =>
       System.make(name, function* () {
@@ -79,47 +79,18 @@ describe("systems", () => {
       });
     const systems = [
       sys("render").pipe(System.inStage("postUpdate")),
-      sys("c").pipe(System.after("a")),
       sys("b"),
-      sys("a").pipe(System.after("b")),
+      sys("a"),
       sys("input").pipe(System.inStage("preUpdate")),
+      sys("c"),
     ];
     withApp(App.make(App.define({ systems })), (app) => {
       expect(app.systemOrder).toEqual(["input", "b", "a", "c", "render"]);
       app.tick(1);
       expect(log).toEqual(["input", "b", "a", "c", "render"]);
     });
-    expect(() =>
-      System.order([
-        sys("x").pipe(System.after("y")),
-        sys("y").pipe(System.after("x")),
-      ])
-    ).toThrow(/Circular/);
-    expect(() => System.order([sys("x").pipe(System.after("nope"))])).toThrow(
-      /not in the "update" stage/
-    );
-
-    // `before` slots a system in ahead of one registered earlier.
-    const names = (list: readonly System.System<unknown, unknown>[]) =>
-      System.order(list).map((s) => s.name);
-    expect(
-      names([sys("p"), sys("q"), sys("r").pipe(System.before("p"))])
-    ).toEqual(["r", "p", "q"]);
-    expect(
-      names([
-        sys("p"),
-        sys("q").pipe(System.after("r")),
-        sys("r").pipe(System.before("p")),
-      ])
-    ).toEqual(["r", "p", "q"]);
-    expect(() =>
-      System.order([
-        sys("x").pipe(System.before("y")),
-        sys("y").pipe(System.before("x")),
-      ])
-    ).toThrow(/Circular/);
-    expect(() => System.order([sys("x").pipe(System.before("nope"))])).toThrow(
-      /must run before "nope"/
+    expect(() => System.order([sys("x"), sys("x")])).toThrow(
+      'Duplicate system name "x"'
     );
   });
 
@@ -147,9 +118,9 @@ describe("systems", () => {
           commands.despawn(entity);
         }
       });
-    }).pipe(System.after(Spawner));
+    });
 
-    withApp(App.make(App.define({ systems: [Reaper, Spawner] })), (app) => {
+    withApp(App.make(App.define({ systems: [Spawner, Reaper] })), (app) => {
       app.tick(0.5);
       expect(app.world.entityCount).toBe(1);
       app.tick(0.5);
@@ -192,7 +163,7 @@ describe("systems", () => {
           }
         }
       });
-    }).pipe(System.after(Burn));
+    });
 
     withApp(App.make(App.define({ systems: [Burn, Extinguish] })), (app) => {
       const torch = app.world.spawn(
@@ -534,7 +505,7 @@ describe("determinism", () => {
             vel.x = -vel.x;
           }
         });
-      }).pipe(System.after(Movement));
+      });
       // Spawns one more every sixth tick, twenty in all.
       const Spawner = System.make("Spawner", function* () {
         const { tick } = yield* Time;

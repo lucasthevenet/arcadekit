@@ -301,9 +301,8 @@ export const is = <V extends string>(
  * transition requested ahead of it, which happens in the same tick. They don't
  * run again when a saved game is loaded, since the save holds their effects.
  *
- * Hooks for the same transition run in the order given, or as `System.after`
- * and `System.before` specify, and each hook's commands are applied before the
- * next runs. A state a hook requests with `set` waits for the next tick.
+ * Hooks for the same transition run in the order they are listed, and each
+ * hook's commands are applied before the next runs. A state a hook requests with `set` waits for the next tick.
  *
  * @category Combinators
  */

@@ -158,14 +158,11 @@ const during = (Forest: Forest) =>
 
 /**
  * A system of a game's own that keeps the forest's assets as
- * `Assets.during` would, but late: in the frame's own stage, after the
- * systems that draw with them have looked. The worst way round.
+ * `Assets.during` would, but late: in the frame's own stage, listed after the
+ * systems that draw with them, which have looked by then. The worst way round.
  */
-const keepLate = (
-  Forest: Forest,
-  ...drawing: readonly System.System<never, Drawing>[]
-) => {
-  let keep = System.make("ta/KeepLate", function* () {
+const keepLate = (Forest: Forest) =>
+  System.make("ta/KeepLate", function* () {
     const store = yield* Assets.Store;
     if ((yield* Level).value === "forest") {
       store.hold(Forest, "ta/KeepLate");
@@ -173,11 +170,6 @@ const keepLate = (
       store.drop(Forest, "ta/KeepLate");
     }
   }).pipe(System.inStage("frame"));
-  for (const system of drawing) {
-    keep = keep.pipe(System.after(system));
-  }
-  return keep;
-};
 
 const at = (x: number) => Position.of({ x, y: 0, z: 0 });
 /** Where the instances of a mesh are along x, in order. */
@@ -361,7 +353,7 @@ describe("instances whose look is made of assets", () => {
     // the trees look, then the level lets its assets go, then the scene
     // is drawn.
     log.length = 0;
-    const { app, enter, renderer } = play([Trees, keepLate(Forest, Trees)]);
+    const { app, enter, renderer } = play([Trees, keepLate(Forest)]);
     app.world.spawn(Tree, at(1));
     enter("forest");
     expect(renderer.drew).toEqual([]);
@@ -400,7 +392,7 @@ describe("instances whose look is made of assets", () => {
         store.drop(Forest, "ta/Keep");
       }
       store.hold(Forest, "ta/Keep");
-    }).pipe(System.inStage("frame"), System.before(Trees));
+    }).pipe(System.inStage("frame"));
     const { app, mesh, renderer } = play([Keep, Trees]);
     app.world.spawn(Tree, at(1));
     app.frame(0);
@@ -690,7 +682,7 @@ describe("objects made of assets", () => {
     const { app, close, enter, renderer } = play([
       Trees,
       Herd,
-      keepLate(Forest, Trees, Herd),
+      keepLate(Forest),
     ]);
     const one = app.world.spawn(Deer, at(1));
     app.world.spawn(Tree, at(2));

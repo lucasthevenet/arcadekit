@@ -68,8 +68,7 @@ export interface Schedule {
   readonly input: readonly Turn[];
   /**
    * The hooks that run when the game enters or leaves a value of a state, in
-   * order: `System.after` and `System.before` order the hooks of one moment
-   * among themselves.
+   * the order they are listed.
    */
   readonly hooks: (
     state: State.State<string>,

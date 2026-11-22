@@ -577,7 +577,7 @@ describe("hooks", () => {
     );
   });
 
-  it("run in the order they were given, unless told another, and only if their condition holds", () => {
+  it("run in the order they are listed, and only if their condition holds", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
@@ -588,16 +588,10 @@ describe("hooks", () => {
         const app = yield* App.make(
           App.define({
             systems: [
-              noting("Third", ran).pipe(
-                State.onEnter(Phase, "playing"),
-                System.after(Last)
-              ),
+              noting("Zeroth", ran).pipe(State.onEnter(Phase, "playing")),
               First,
               Last,
-              noting("Zeroth", ran).pipe(
-                State.onEnter(Phase, "playing"),
-                System.before(First)
-              ),
+              noting("Third", ran).pipe(State.onEnter(Phase, "playing")),
               noting("InTheRain", ran).pipe(
                 State.onEnter(Phase, "playing"),
                 System.runIf(State.is(Weather, "dry"))
@@ -614,9 +608,7 @@ describe("hooks", () => {
         app.tick(1);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
-        // As with any systems: each keeps its place, and what has to run
-        // before it is pulled forward to just ahead of it.
-        expect(ran).toEqual(["Last", "Third", "Zeroth", "First"]);
+        expect(ran).toEqual(["Zeroth", "First", "Last", "Third"]);
       })
     );
   });

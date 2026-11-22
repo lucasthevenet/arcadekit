@@ -69,7 +69,7 @@ const Walls = System.make("Walls", function* () {
       bumped.emit({ entity });
     }
   });
-}).pipe(System.after(Movement));
+});
 
 const Physics = Plugin.make("Physics", {
   systems: [Movement, Walls],
@@ -116,7 +116,7 @@ const BumpDamage = System.make("BumpDamage", function* () {
     }
     world.set(entity, Health, { hp: health.hp - 1 });
   }
-}).pipe(System.after("Walls"));
+});
 
 const Combat = Plugin.make("Combat", {
   plugins: [Physics],
@@ -159,7 +159,7 @@ describe("plugins", () => {
     const seen: number[] = [];
     const Watch = System.make("Watch", function* () {
       seen.push((yield* Bumped).read().length);
-    }).pipe(System.after(Walls));
+    });
     withApp(
       App.make(
         App.define({ plugins: [Physics], systems: [Watch], handlers: [ping] })
@@ -285,7 +285,7 @@ describe("plugins", () => {
           for (const _ of (yield* Bumped).read()) {
             audio.play("boing");
           }
-        }).pipe(System.after(Walls)),
+        }),
       ],
     });
     const provided = App.make(App.define({ plugins: [Sfx] })).pipe(

@@ -106,16 +106,16 @@ describe("the input stage", () => {
             ran.push(name);
           }).pipe(System.inStage(stage));
         const Second = note("Second", "input");
-        const First = note("First", "input").pipe(System.before(Second));
+        const First = note("First", "input");
         const Sometimes = note("Sometimes", "input").pipe(
           System.runIf(State.is(Phase, "paused"))
         );
         const app = yield* App.make(
           App.define({
             systems: [
-              Second,
-              note("Tick", "update"),
               First,
+              note("Tick", "update"),
+              Second,
               note("Draw", "frame"),
               Sometimes,
             ],
