@@ -62,7 +62,7 @@ it("hears a key", () =>
       const source = Input.makeManualSource();
       const app = yield* App.make(
         App.define({ plugins: [Rules, Input.plugin] })
-      ).pipe(Effect.provideService(Input.Source, source));
+      ).pipe(Effect.provide(Input.layer(source)));
       source.press("Space");
       app.tick(1 / 60); // hears the devices first
     })

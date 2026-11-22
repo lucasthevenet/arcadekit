@@ -47,7 +47,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 const withSource =
   (source: Input.SourceShape) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    Effect.provideService(effect, Input.Source, source);
+    Effect.provide(effect, Input.layer(source));
 
 /** What a system of the input stage was told, in a form that compares. */
 const told = (devices: Input.Sample) => ({

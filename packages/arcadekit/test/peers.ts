@@ -256,7 +256,7 @@ export const withPeers = <A>(
             delta: DELTA,
             ...(setup.delay === undefined ? {} : { delay: setup.delay }),
             ahead: setup.ahead ?? 0,
-          }).pipe(Effect.provideService(Input.Source, source));
+          }).pipe(Effect.provide(Input.layer(source)));
           peers.push({ name, app: session.app, session, hashes: [], source });
         }
         return use(peers);

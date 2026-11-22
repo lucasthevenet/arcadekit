@@ -279,7 +279,7 @@ describe("a page's devices", () => {
     canvas.box = { left: 100, top: 50 };
     run(
       Effect.gen(function* () {
-        const source = yield* Input.Source;
+        const source = yield* Input.open;
         expect(page.total).toBe(6);
         expect(canvas.listening.get("pointerdown")).toBe(1);
         expect(canvas.total).toBe(1);
@@ -362,7 +362,7 @@ describe("a page's devices", () => {
     const canvas = new Listened();
     run(
       Effect.gen(function* () {
-        const source = yield* Input.Source;
+        const source = yield* Input.open;
         const at = { clientX: 10, clientY: 10 };
         // The main button goes down: the one press a page reports as one.
         canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
@@ -435,7 +435,7 @@ describe("a page's devices", () => {
     const page = new Listened();
     run(
       Effect.gen(function* () {
-        const source = yield* Input.Source;
+        const source = yield* Input.open;
         expect(page.listening.get("pointerdown")).toBe(1);
         page.send("pointerdown", { button: 0, clientX: 12, clientY: 34 });
         expect(told(source.sample())).toEqual({
@@ -455,7 +455,7 @@ describe("a page's devices", () => {
     const bare = new EventTarget();
     run(
       Effect.gen(function* () {
-        const source = yield* Input.Source;
+        const source = yield* Input.open;
         bare.dispatchEvent(
           Object.assign(new globalThis.Event("pointerdown"), {
             button: 0,
@@ -479,7 +479,7 @@ describe("a page's devices", () => {
     const page = new Listened();
     run(
       Effect.gen(function* () {
-        yield* Input.Source;
+        yield* Input.open;
         expect(page.send("keydown", { code: "Space", repeat: false })).toBe(
           true
         );
@@ -503,7 +503,7 @@ describe("a page's devices", () => {
     );
     run(
       Effect.gen(function* () {
-        yield* Input.Source;
+        yield* Input.open;
         expect(page.send("keydown", { code: "Space", repeat: false })).toBe(
           false
         );
@@ -519,7 +519,7 @@ describe("a page's devices", () => {
     let polls = 0;
     run(
       Effect.gen(function* () {
-        const source = yield* Input.Source;
+        const source = yield* Input.open;
         expect(polls).toBe(0);
         pads = [
           null,
@@ -589,7 +589,7 @@ describe("a page's devices", () => {
     pads = [pad(0, [], [0.3, 0.2])];
     run(
       Effect.gen(function* () {
-        expect(told((yield* Input.Source).sample()).axes).toEqual({
+        expect(told((yield* Input.open).sample()).axes).toEqual({
           Pad0Axis0: 0.3,
         });
       }).pipe(
@@ -604,24 +604,73 @@ describe("a page's devices", () => {
     );
   });
 
-  it("says so when it is read after it was let go, as when it was provided to App.make alone", () => {
+  it("lasts as long as the program that made the app, whatever its layer is provided to", () => {
     const page = new Listened();
     run(
       Effect.gen(function* () {
-        const Listen = System.make("Listen", function* () {
-          yield* Input.Devices;
-        }).pipe(System.inStage("input"));
-        // The layer is let go as soon as the app is made.
-        const app = yield* App.make(App.define({ systems: [Listen] })).pipe(
-          Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
+        // Provided to the one line that makes the app, and heard after it.
+        const app = yield* App.make(App.define({ plugins: [Flying] })).pipe(
+          Effect.provide(
+            Browser.layer({ window: page, gamepads: () => [], sounds: false })
+          )
         );
-        expect(page.total).toBe(0);
-        expect(() => app.input()).toThrow(
-          /were read after Browser\.layer was let go/
-        );
-        expect(() => app.input()).toThrow(/Provide it to the whole program/);
+        expect(page.total).toBe(7);
+        page.send("keydown", { code: "Space", repeat: false });
+        page.send("keyup", { code: "Space" });
+        app.tick(0.1);
+        expect(ship(app).shots).toBe(1);
       })
     );
+    // The program's scope has closed, and nobody is listening.
+    expect(page.total).toBe(0);
+  });
+
+  it("opens nothing when its layer is built, and says so when read after the scope it was opened in has closed", () => {
+    const page = new Listened();
+    const layer = Browser.layer({
+      window: page,
+      gamepads: () => [],
+      sounds: false,
+    });
+    const source = run(
+      Effect.gen(function* () {
+        // A layer opens nothing: opening the devices does.
+        yield* Layer.build(layer);
+        expect(page.total).toBe(0);
+        const opened = yield* Input.open.pipe(Effect.provide(layer));
+        expect(page.total).toBe(7);
+        return opened;
+      })
+    );
+    expect(page.total).toBe(0);
+    expect(() => source.sample()).toThrow(
+      /read after the scope they were opened in had closed/u
+    );
+    expect(() => source.sample()).toThrow(
+      /App\.make opens them in the scope of the program that makes the app/u
+    );
+  });
+
+  it("is heard by each app for itself, as two apps of one page are", () => {
+    const page = new Listened();
+    run(
+      Effect.gen(function* () {
+        const one = yield* App.make(App.define({ plugins: [Flying] }));
+        const two = yield* App.make(App.define({ plugins: [Flying] }));
+        expect(page.total).toBe(14);
+        page.send("keydown", { code: "Space", repeat: false });
+        page.send("keyup", { code: "Space" });
+        one.tick(0.1);
+        two.tick(0.1);
+        expect(ship(one).shots).toBe(1);
+        expect(ship(two).shots).toBe(1);
+      }).pipe(
+        Effect.provide(
+          Browser.layer({ window: page, gamepads: () => [], sounds: false })
+        )
+      )
+    );
+    expect(page.total).toBe(0);
   });
 
   it("drives a game through an app, end to end", () => {

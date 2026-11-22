@@ -42,7 +42,8 @@
  * Nothing provides a source to a replay or a server, and no devices are read
  * there.
  */
-import { Context, Effect, Effectable, Schema } from "effect";
+import { Context, Effect, Effectable, Layer, Schema } from "effect";
+import type { Scope } from "effect";
 
 import * as Action from "./Action";
 import type { World as EcsWorld } from "./ecs/world";
@@ -121,9 +122,9 @@ export interface Sample {
 }
 
 /**
- * Where samples come from.
+ * Open devices: where samples come from.
  *
- * @category Services
+ * @category Models
  */
 export interface SourceShape {
   /**
@@ -142,22 +143,51 @@ const NOTHING: Sample = {
 };
 
 /** No devices at all, which differs from devices with nothing pressed. */
-const noSource: SourceShape = { sample: () => NOTHING };
+const noSource: {
+  readonly open: Effect.Effect<SourceShape, never, Scope.Scope>;
+} = { open: Effect.succeed({ sample: () => NOTHING }) };
 
 /**
- * Where an app's input stage takes its samples from. Nothing has to provide it:
- * the default has no devices, which suits a replay, a server and most tests.
- * Without devices, the state `Input.plugin` keeps is left unchanged: it holds
- * whatever was last reported to it, from a log or another machine. A page
- * provides its own with `Browser.layer()` from `arcadekit/Browser`, and a test
- * that simulates input provides one it controls, `Input.makeManualSource()`.
+ * Where an app's input stage takes its samples from: how to open the devices.
+ * Nothing has to provide it: the default has no devices, which suits a replay,
+ * a server and most tests. Without devices, the state `Input.plugin` keeps is
+ * left unchanged: it holds whatever was last reported to it, from a log or
+ * another machine. A page provides its own with `Browser.layer()` from
+ * `arcadekit/Browser`, and a test that simulates input provides one it
+ * controls, `Input.layer(Input.makeManualSource())`.
+ *
+ * It holds no devices. `App.make` runs `open` in the scope the app is made in,
+ * and what was opened is closed with that scope, so whatever the layer is
+ * provided to, the devices are heard for as long as the program that made the
+ * app. Each app opens its own.
  *
  * @category Services
  */
-export const Source: Context.Reference<SourceShape> =
-  Context.Reference<SourceShape>("arcadekit/Input.Source", {
-    defaultValue: () => noSource,
-  });
+export const Source: Context.Reference<{
+  readonly open: Effect.Effect<SourceShape, never, Scope.Scope>;
+}> = Context.Reference("arcadekit/Input.Source", {
+  defaultValue: () => noSource,
+});
+
+/**
+ * Opens the devices in the current scope, as `App.make` does: for a program
+ * that samples them itself.
+ *
+ * @category Running
+ */
+export const open: Effect.Effect<SourceShape, never, Scope.Scope> =
+  Effect.flatMap(Source, (source) => source.open);
+
+/**
+ * Returns a layer that provides devices made by hand, open already, such as
+ * `Input.makeManualSource()`.
+ *
+ *   App.make(game).pipe(Effect.provide(Input.layer(source)))
+ *
+ * @category Layers
+ */
+export const layer = (source: SourceShape): Layer.Layer<never> =>
+  Layer.succeed(Source, { open: Effect.succeed(source) });
 
 /**
  * The devices' state, for an input-stage system: one sample, taken when the
@@ -197,7 +227,7 @@ export interface ManualSource extends SourceShape {
  *
  *   const source = Input.makeManualSource()
  *   const app = yield* App.make(App.define({ plugins: [Game] })).pipe(
- *     Effect.provideService(Input.Source, source)
+ *     Effect.provide(Input.layer(source))
  *   )
  *   source.press("Space")
  *   app.input()

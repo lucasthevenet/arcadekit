@@ -573,7 +573,7 @@ describe("a lockstep session", () => {
           const { app, take } = yield* Build.build(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-          }).pipe(Effect.provideService(Input.Source, source));
+          }).pipe(Effect.provide(Input.layer(source)));
           const taken: string[] = [];
           const reins = take((name) => {
             taken.push(name);
