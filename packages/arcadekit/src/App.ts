@@ -52,7 +52,6 @@ import {
   Metric,
   References,
   Result,
-  Schema,
   Tracer,
 } from "effect";
 import type { Scope } from "effect";
@@ -67,6 +66,7 @@ import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
+import * as Inbox from "./Inbox";
 import * as Input from "./Input";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
@@ -521,27 +521,6 @@ export interface App<E = never, HU = never> extends Any {
  */
 export const STAGE_READER = "frame:";
 
-/** Summarizes an error in a few words, for a log entry or a message. */
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
-
-/** Why an action was refused, as `Action.Rejected` carries it. */
-const refusal = (error: unknown): { _tag: string; message: string } => {
-  const tag =
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    typeof error._tag === "string"
-      ? error._tag
-      : error instanceof Error
-        ? error.name
-        : "Error";
-  return {
-    _tag: tag,
-    message: error instanceof Error ? error.message : String(error),
-  };
-};
-
 /**
  * A frame-stage or input-stage system changed the world, which it must not do,
  * as detected by an app created with `verifyFrames`. It is a defect, not a
@@ -855,10 +834,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     }
     const log = new Journal.Log(world, time, options.checkpointEvery ?? 60);
     world._attach(log);
-    const handles = (action: Action.AnyActionDef): boolean =>
-      handlers.has(action.name);
-    // Who has taken over what comes from outside, if anyone has: `divert`.
-    let diverted: ((name: string, payload: unknown) => void) | undefined;
+    // What systems and handlers issue goes through the inbox, made below
+    // once the app's services are built.
+    const actions: Context.Service.Shape<typeof Action.Actions> = {
+      enqueue: (action, payload) => {
+        inbox.issue(action, payload);
+      },
+      handles: (action) => inbox.handles(action),
+    };
     const frame: FrameState = { alpha: 0, delta: 0, count: 0 };
     const notInTick = (): never => {
       throw new Error(
@@ -908,10 +891,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Events, events),
-      Context.add(Action.Actions, {
-        enqueue: (action, payload) => issue(action, payload),
-        handles,
-      }),
+      Context.add(Action.Actions, actions),
       Context.add(Random, random),
       // Effect's own Random draws from the same generator, so `Random.next`
       // from "effect", or anything built on it, is seeded and replayed too.
@@ -1006,6 +986,28 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         Context.get(context, Tracer.MinimumTraceLevel),
         System.spanLevel
       );
+    const inbox = new Inbox.Inbox({
+      world,
+      commands,
+      events,
+      intake,
+      log,
+      runner,
+      time,
+      handlers,
+      run: (name, handled) =>
+        runFork(
+          trace
+            ? Effect.withSpan(
+                handled,
+                `action:${name}`,
+                tickSpan === undefined
+                  ? { root: true, level: System.spanLevel }
+                  : { parent: tickSpan, level: System.spanLevel }
+              )
+            : handled
+        ),
+    });
     const schedule = Schedule.make(allSystems, trace);
     // What runs between ticks hears the events of every tick, the first
     // among them: they are kept for it from the start.
@@ -1161,10 +1163,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           return (frameRandom.bits() & 1) === 0 ? magnitude : -magnitude;
         },
       }),
-      Context.add(Action.Actions, {
-        enqueue: (action, payload) => issue(action, payload),
-        handles,
-      }),
+      Context.add(Action.Actions, actions),
       Context.add(Ticks, {
         more() {
           throw new Error(
@@ -1228,299 +1227,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
     yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
 
-    let ticking = false;
-    // How deep the app is in running the game's own code between ticks: a
-    // plugin's setup.
-    let ownCode = 0;
-    const runOwn = <A>(run: () => A): A => {
-      ownCode++;
-      try {
-        return run();
-      } finally {
-        ownCode--;
-      }
-    };
-    // The stage that is running between two ticks, if one is.
-    let between: "frame" | "input" | undefined;
-    // The action whose handler is running, if one is.
-    let applying: string | undefined;
-    // A handler a tick runs is part of the tick: the stage wins.
-    const phase = (): Phase =>
-      ticking
-        ? "tick"
-        : (between ?? (applying !== undefined ? "handler" : "idle"));
-    /**
-     * Refuses a call that is for between ticks while the app is running
-     * something. `said` makes the message, given what it is running.
-     */
-    const whileIdle = (said: (busy: string) => string): void => {
-      const now = phase();
-      if (now !== "idle") {
-        throw new Error(
-          said(
-            now === "input"
-              ? "run of the input stage"
-              : now === "handler"
-                ? `handler of "${applying}"`
-                : now
-          )
-        );
-      }
-    };
-
-    /**
-     * Rolls back everything a handler did since the command buffer's mark was
-     * taken: the world's rollback takes back what it wrote, emitted, read and
-     * enqueued.
-     */
-    const undo = (commandMark: number): void => {
-      world.rollback();
-      commands.rollback(commandMark);
-    };
-
-    /**
-     * Whether the code running now is the simulation's: a tick, an action's
-     * handler, or a plugin's setup. What it
-     * issues isn't logged, since a replay runs it again and issues it again.
-     * Anything else is input from outside.
-     */
-    const simulating = (): boolean =>
-      ticking || applying !== undefined || ownCode > 0;
-    /**
-     * Queues an action that arrived as data for the next tick, and logs it:
-     * what came from outside, and what a session hands back.
-     */
-    const deliver = (name: string, payload: unknown, from?: string): void => {
-      intake.queued.push({
-        name,
-        payload,
-        codec: undefined,
-        entry: log.arrived(name, payload, from),
-        from,
-      });
-    };
-    /**
-     * `app.enqueue` and `Actions.enqueue`: an action with its payload as a
-     * value, for the next tick. Where it is called from says what it is.
-     */
-    const enqueue = (
-      action: Action.AnyActionDef,
-      payload: unknown
-    ): Exit.Exit<void, Action.InvalidPayload> => {
-      const handler = handlers.get(action.name);
-      if (handler === undefined) {
-        throw new Error(`No handler for action "${action.name}"`);
-      }
-      const { name } = action;
-      const { codec } = handler.action;
-      // The simulation's own move: not logged, because a replay's own
-      // systems and handlers issue it again.
-      if (simulating()) {
-        intake.queued.push({
-          name,
-          payload,
-          codec,
-          entry: undefined,
-          from: undefined,
-        });
-        return Exit.void;
-      }
-      // Input from outside. The log holds the JSON form, and the other
-      // peers are sent it. A payload that has none is refused here, in a
-      // game of one too: queued, it would be refused on this machine alone.
-      const json = Schema.encodeUnknownExit(codec)(payload);
-      if (Exit.isFailure(json)) {
-        return Exit.fail(
-          new Action.InvalidPayload({
-            action: name,
-            message: describe(Cause.squash(json.cause)),
-          })
-        );
-      }
-      if (diverted !== undefined) {
-        diverted(name, json.value);
-        return Exit.void;
-      }
-      intake.queued.push({
-        name,
-        payload,
-        codec,
-        entry: log.arrived(name, json.value, undefined),
-        from: undefined,
-      });
-      return Exit.void;
-    };
-    /**
-     * `Actions.enqueue`, whose payload the compiler has checked. Outside the
-     * simulation, that is only the frame and input stages.
-     */
-    const issue = (action: Action.AnyActionDef, payload: unknown): void => {
-      const exit = enqueue(action, payload);
-      if (Exit.isFailure(exit)) {
-        throw new Error(
-          `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${describe(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
-        );
-      }
-    };
-    /** `app.enqueueByName`: an action as data, for the next tick. */
-    const enqueueByName = (
-      name: string,
-      payload: unknown,
-      from?: string
-    ): void => {
-      if (simulating()) {
-        if (from !== undefined) {
-          throw new Error(
-            `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
-          );
-        }
-        intake.queued.push({
-          name,
-          payload,
-          codec: undefined,
-          entry: undefined,
-          from,
-        });
-        return;
-      }
-      if (diverted === undefined) {
-        deliver(name, payload, from);
-        return;
-      }
-      if (from !== undefined) {
-        throw new Error(
-          `enqueueByName("${name}") was given who issued it, "${from}", on an app that a session has taken over. What a peer issues is stamped with that peer's own name, by its session, and nobody speaks for another.`
-        );
-      }
-      diverted(name, payload);
-    };
-
-    /**
-     * Validates a payload and runs its handler to completion. The handler runs
-     * in a world transaction: a refusal rolls back its component writes, the
-     * random numbers it drew, what it read of events and changes, and what it
-     * queued, emitted and enqueued. With `dispatched`, an accepted action is
-     * logged; an enqueued one was logged on arrival, if it came from outside.
-     */
-    const apply = (
-      name: string,
-      payload: unknown,
-      encoded: boolean,
-      dispatched: boolean,
-      from: string | undefined
-    ): Exit.Exit<unknown, unknown> => {
-      const handler = handlers.get(name);
-      if (handler === undefined) {
-        return Exit.fail(new Action.UnknownAction({ action: name }));
-      }
-      log.start();
-
-      // Work out both forms of the payload: the value for the handler and the
-      // JSON form for the log. Converting between them is what validates it.
-      let value = payload;
-      let logged = payload;
-      const { codec } = handler.action;
-      const converted = encoded
-        ? Schema.decodeUnknownExit(codec)(payload)
-        : Schema.encodeUnknownExit(codec)(payload);
-      if (Exit.isFailure(converted)) {
-        const error = Cause.squash(converted.cause);
-        return Exit.fail(
-          new Action.InvalidPayload({
-            action: name,
-            message: error instanceof Error ? error.message : String(error),
-          })
-        );
-      }
-      if (encoded) {
-        value = converted.value;
-      } else {
-        logged = converted.value;
-      }
-
-      if (phase() === "handler") {
-        throw new Error(
-          `dispatch("${name}") was called from the handler of "${applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`
-        );
-      }
-      const commandMark = commands.mark();
-      world.begin();
-      applying = name;
-      events.reader = `action:${name}`;
-      world.reader = events.reader;
-      let exit: Exit.Exit<unknown, unknown>;
-      try {
-        exit = runner.finish(
-          () => {
-            // The payload is the action's: its schema decoded it, or the
-            // compiler checked it in a typed dispatch.
-            const handled = handler.handle(value as never, { from });
-            return runFork(
-              trace
-                ? Effect.withSpan(
-                    handled,
-                    `action:${name}`,
-                    tickSpan === undefined
-                      ? { root: true, level: System.spanLevel }
-                      : { parent: tickSpan, level: System.spanLevel }
-                  )
-                : handled
-            );
-          },
-          `The handler for "${name}"`,
-          () =>
-            `The handler for "${name}" did not finish synchronously. Handlers must not wait.`,
-          false
-        );
-      } catch (error) {
-        undo(commandMark);
-        throw error;
-      } finally {
-        applying = undefined;
-      }
-      // A refusal, and a handler that died of a bug half-way, both leave the
-      // game as it was.
-      if (Exit.isFailure(exit)) {
-        undo(commandMark);
-      } else {
-        world.commit();
-        commands.apply();
-        // A tick tells the stages between ticks what it emitted when it
-        // ends; an action applied between two is of the tick to come.
-        if (!ticking) {
-          events.told(time.tick + 1);
-        }
-        if (dispatched) {
-          log.accepted(name, logged, from);
-        }
-      }
-      return exit;
-    };
-
-    const assertBetweenTicks = (name: string): void => {
-      if (diverted !== undefined) {
-        throw new Error(
-          `dispatch("${name}") was called on an app that a session has taken over. It would apply the action on this machine alone, and the peers would no longer be playing the same game. Use enqueue: the session has every peer apply it on the same tick.`
-        );
-      }
-      const now = phase();
-      if (now === "tick") {
-        throw new Error(
-          `dispatch("${name}") was called during a tick. Use enqueue: it applies the action at the start of the next tick.`
-        );
-      }
-      if (now === "frame" || now === "input") {
-        throw new Error(
-          `dispatch("${name}") was called during the ${now} stage, which must not change the game. Issue it with Actions.enqueue: it is applied at the start of the next tick.`
-        );
-      }
-    };
-
     /** Runs one of the two between-ticks stages, with the world frozen. */
     const runBetween = (
       stage: "frame" | "input"
     ): Exit.Exit<void, TickError<S, P>> => {
-      between = stage;
+      runner.between = stage;
       events.stage = stage;
       world.freeze();
       let exit: Exit.Exit<void, TickError<S, P>>;
@@ -1543,7 +1254,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // Its systems have had their chance at every event there is.
         events.ended(stage, time.tick);
       } finally {
-        between = undefined;
+        runner.between = undefined;
         events.stage = undefined;
         // Thawing finds a draw from the world's generator, and undoes it.
         try {
@@ -1560,7 +1271,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       alpha: number,
       delta = 0
     ): Exit.Exit<void, TickError<S, P>> => {
-      whileIdle(
+      runner.whileIdle(
         (busy) =>
           `App.frame was called from inside a ${busy}. The frame stage runs between ticks.`
       );
@@ -1574,7 +1285,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const inputExit = (): Exit.Exit<void, TickError<S, P>> => {
-      whileIdle(
+      runner.whileIdle(
         (busy) =>
           `App.input was called from inside a ${busy}. The input stage runs between ticks, before one.`
       );
@@ -1591,7 +1302,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       delta: number,
       options?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
-      if (diverted !== undefined) {
+      if (inbox.diverted !== undefined) {
         throw new Error(
           "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
         );
@@ -1602,7 +1313,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       delta: number,
       options?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
-      whileIdle((busy) => `App.tick was called from inside a ${busy}`);
+      runner.whileIdle((busy) => `App.tick was called from inside a ${busy}`);
       // A tick hears the devices first. Whoever steps the app may have
       // seen to it, as a driver does; if not, it is seen to here.
       if (
@@ -1641,28 +1352,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     /** Runs one tick, once the input stage has been seen to. */
     const ticked = (delta: number): Exit.Exit<void, TickError<S, P>> => {
-      ticking = true;
+      runner.ticking = true;
       try {
         // Queued actions are applied before time advances, so they land at the
         // same point in the timeline as an action dispatched between ticks.
-        if (intake.queued.length > 0) {
-          for (const action of intake.take()) {
-            const { codec, entry, from, name, payload } = action;
-            const exit = apply(name, payload, codec === undefined, false, from);
-            if (Exit.isFailure(exit)) {
-              const error = Cause.squash(exit.cause);
-              if (entry !== undefined) {
-                entry.refused = describe(error);
-              }
-              events._emit(Action.Rejected, {
-                action: name,
-                payload: Action.jsonOf(action),
-                error: refusal(error),
-                from,
-              });
-            }
-          }
-        }
+        inbox.drain();
 
         log.ticking(delta);
         time.delta = delta;
@@ -1689,7 +1383,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         log.ticked();
         return exit as Exit.Exit<void, TickError<S, P>>;
       } finally {
-        ticking = false;
+        runner.ticking = false;
       }
     };
 
@@ -1702,13 +1396,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       plugins: plugins.map((plugin) => plugin.name),
       systemOrder: schedule.tick.map((turn) => turn.system.name),
       get phase() {
-        return phase();
+        return runner.phase;
       },
       frameOrder: schedule.frame.map((turn) => turn.system.name),
       inputOrder: schedule.input.map((turn) => turn.system.name),
       actionLog: log.entries,
       record(since) {
-        whileIdle(
+        runner.whileIdle(
           (busy) =>
             `record() was called during a ${busy}. A game is recorded between ticks.`
         );
@@ -1719,7 +1413,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         );
       },
       save() {
-        whileIdle(
+        runner.whileIdle(
           (busy) =>
             `save() was called during a ${busy}. A game is saved between ticks.`
         );
@@ -1762,7 +1456,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return true;
       },
       inspect() {
-        whileIdle(
+        runner.whileIdle(
           (busy) =>
             `inspect() was called from inside a ${busy}. A game is inspected between ticks.`
         );
@@ -1779,7 +1473,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         };
       },
       checkpoint() {
-        whileIdle(
+        runner.whileIdle(
           (busy) =>
             `checkpoint() was called during a ${busy}. A checkpoint is taken between ticks, where a replay can compare it.`
         );
@@ -1806,33 +1500,26 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw Cause.squash(exit.cause);
         }
       },
-      dispatch(action, payload) {
-        assertBetweenTicks(action.name);
-        // A typed dispatch of an action nobody handles is a programming error.
-        if (!handlers.has(action.name)) {
-          throw new Error(`No handler for action "${action.name}"`);
-        }
+      dispatch: (action, payload) =>
         // What the action's handler returns or fails with.
-        return apply(action.name, payload, false, true, undefined) as Exit.Exit<
-          never,
-          never
-        >;
+        inbox.dispatch(action, payload) as Exit.Exit<never, never>,
+      enqueue: (action, payload) => inbox.enqueue(action, payload),
+      dispatchByName: (name, payload, from) =>
+        inbox.dispatchByName(name, payload, from),
+      enqueueByName: (name, payload, from) => {
+        inbox.enqueueByName(name, payload, from);
       },
-      enqueue,
-      dispatchByName(name, payload, from) {
-        assertBetweenTicks(name);
-        return apply(name, payload, true, true, from);
-      },
-      enqueueByName,
       divert(take) {
-        if (diverted !== undefined) {
+        if (inbox.diverted !== undefined) {
           throw new Error(
             "divert() was called on an app that has been taken over already. An app is in one session at a time."
           );
         }
-        diverted = take;
+        inbox.diverted = take;
         return {
-          deliver,
+          deliver: (name, payload, from) => {
+            inbox.deliver(name, payload, from);
+          },
           tickExit: (delta, observe) => {
             observer = observe;
             try {
@@ -1855,7 +1542,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       world.reader = events.reader;
       const { name, setup } = plugin;
       const ran = Result.try(() =>
-        runOwn(() =>
+        runner.asOwn(() =>
           runner.finish(
             () => runFork(setup),
             `The setup of plugin "${name}"`,

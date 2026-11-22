@@ -327,8 +327,12 @@ export class Actions extends Context.Service<
   }
 >()("arcadekit/Actions") {}
 
-/** Summarizes an error in a few words, for a message. */
-const said = (error: unknown): string =>
+/**
+ * Summarizes an error in a few words, for a log entry or a message.
+ *
+ * @internal
+ */
+export const said = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
 
 /**
