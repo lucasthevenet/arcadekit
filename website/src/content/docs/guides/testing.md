@@ -185,10 +185,10 @@ Compare peers once the game has settled and both are at the same tick: stop issu
 
 ## Rewinds
 
-A rollback session runs a tick again after a rewind, and a game that keeps something it reads outside the world runs it differently. `Rollback.syncTest(app)` finds that in a single app, with no second peer. It takes the app over, as a session does, and is stepped in its place:
+A session that runs ahead runs a tick again after a rewind, and a game that keeps something it reads outside the world runs it differently. `Session.syncTest(game, { seed })` finds that with one app and no second peer. It makes the app and steps it, as a session does, and `test.app` is that app:
 
 ```ts sketch
-const test = Rollback.syncTest(app);
+const test = yield * Session.syncTest(Duel, { seed: 1 });
 for (let i = 0; i < 600; i++) {
   test.tick(1 / 60);
 }
@@ -196,7 +196,7 @@ for (let i = 0; i < 600; i++) {
 
 - Each tick is run, rewound and run again from the same moment.
 - The world's hash is compared before the first system and after each one.
-- `tick` throws `Rollback.RewindDiverged`, which names the first system after which the hashes differ. A difference before any system is in a handler of an action queued for the tick, or in a state's hook.
+- `tick` throws `Session.RewindDiverged`, which names the first system after which the hashes differ. A difference before any system is in a handler of an action queued for the tick, or in a state's hook.
 
 The rest of the game sees each tick once: the frame and input stages, the action log and the recording. An action enqueued from outside is queued for the next tick, as in an app nobody took over. Each tick costs a capture of the game, a second run and a hash per system, so use it in tests.
 

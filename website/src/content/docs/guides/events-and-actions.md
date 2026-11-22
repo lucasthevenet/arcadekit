@@ -78,7 +78,7 @@ List the handler in a plugin's `handlers`. The app then accepts the action in tw
 
 Dispatching an action that has no handler, or with the wrong payload, is a compile error.
 
-Both are for code outside the simulation: the entry point, the network, a test. Once a game has started, they are the only way such code should change it: anything written into `app.world` directly isn't logged, so a [replay](replays.md) can't reproduce it. `dispatch` only works between ticks, and throws during a tick or a frame. In a multiplayer game, use `enqueue` only: `dispatch` would change one machine's game, and throws. See [lockstep and rollback](lockstep-and-rollback.md).
+Both are for code outside the simulation: the entry point, the network, a test. Once a game has started, they are the only way such code should change it: anything written into `app.world` directly isn't logged, so a [replay](replays.md) can't reproduce it. `dispatch` only works between ticks, and throws during a tick or a frame. In a multiplayer game, use `enqueue` only: `dispatch` would change one machine's game, and a session's app has none. See [sessions](sessions.md).
 
 The payload's type comes from the schema, and its JSON encoding is what the log and saves store and what other peers receive. Bigints and dates in a payload are converted along the way. An action with no payload takes only its name, `Action.define("Pass")`, is issued with `undefined`, and is logged with `null`.
 

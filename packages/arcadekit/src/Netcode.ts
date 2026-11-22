@@ -1,51 +1,37 @@
 /**
- * Lockstep sessions: multiplayer games with each player on their own machine.
+ * What the peers of a session say to each other, and the peer that says it.
  *
  * Every peer runs the same simulation, and peers only exchange the actions
- * their players issue, each stamped with the tick it applies on. A peer runs a
- * tick once it knows what every peer issued for it, so all of them apply the
- * same actions on the same ticks in the same order, and stay in the same game.
+ * their players issue, each stamped with the tick it applies on. Every peer
+ * applies the same actions on the same ticks in the same order, and stays in
+ * the same game. A peer runs a tick once it knows what every peer issued for
+ * it, or up to `ahead` ticks before, predicting that the peers it hasn't
+ * heard from did nothing and going back when one had.
  *
- *   const app = yield* App.make(App.define({ plugins: [Game] }), { seed })
- *   const session = Lockstep.make(app, {
- *     peer: "ada",
- *     peers: ["ada", "grace"],
- *     delta: 1 / 60,
- *   })
- *
- *   app.enqueue(Move, { player: 0, dx: 1 })   // as in single player: applied on every peer
- *
- *   // Carrying messages is not the session's job:
  *   session.receive(message)                  // a message from another peer
  *   session.tick()                            // true if the tick ran, false if it waits
  *   for (const message of session.outgoing()) send(message)
  *
- * A session takes over everything that enters its app from outside
- * (`app.divert`): `app.enqueue`, a key bound to an action, a UI button. Each
- * goes into this peer's message for the tick `delay` ticks ahead, and is
- * applied on that tick by every peer, including this one. Your game therefore
- * issues input exactly as a single-player game does. What the simulation issues
- * itself with `Actions`, such as a bot's move, isn't sent: every peer's
- * simulation issues it.
- *
- * A session holds no socket and no timer. It receives the messages that arrived
- * and returns the ones to send, and a transport carries them.
+ * A peer holds no socket and no timer. It receives the messages that arrived
+ * and returns the ones to send, and a transport carries them, as text in the
+ * form `encode` writes.
  *
  * Peers also exchange the checkpoints their logs record: the world's hash at a
  * tick. A peer that receives a different hash than its own for the same tick
  * stops, and its tick fails with `Drifted`, which reports the tick, every
  * peer's hash, and when they last agreed. The starting state is compared before
- * anyone's first tick, whatever the app's `checkpointEvery`, since a session
+ * anyone's first tick, whatever the app's `checkpointEvery`, since a peer
  * records a checkpoint when it begins. After that, peers compare the ticks
  * every peer's log records, and with `checkpointEvery: 0`, nothing more.
  *
- * Every peer's log is an ordinary log, identical entry for entry, and
- * `Journal.replay` plays it back into a single-player game.
+ * `Session.make` makes a peer with its app. This module is what a transport
+ * and a relay need of a session, and they need no app.
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
 import * as Action from "./Action";
 import type * as App from "./App";
+import type { Reins } from "./Build";
 import type { Tickable } from "./Driver";
 import type * as Save from "./Save";
 import * as Timeline from "./Timeline";
@@ -114,9 +100,9 @@ const MessageSchema = Schema.fromJsonString(
  * every `checkpointEvery` ticks and travels with the message for the tick
  * `delay` ahead, which no peer can run without. So no peer runs more than
  * `checkpointEvery - 1 + delay` ticks past the first tick whose world differed,
- * where `delay` is the largest any peer uses. A session that runs ahead,
- * `Rollback`, sends a tick's hash once every peer has sent their actions for
- * it, so there the bound is `checkpointEvery - 1 + delay + 2 × ahead` ticks.
+ * where `delay` is the largest any peer uses. A session that runs ahead
+ * sends a tick's hash once every peer has sent their actions for it, so there
+ * the bound is `checkpointEvery - 1 + delay + 2 × ahead` ticks.
  *
  * What is compared is the world's hash. What the hash doesn't cover, such as an
  * event only one peer has waiting or a system's own variables, is only detected
@@ -167,38 +153,29 @@ export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
   Schema.decodeExit(MessageSchema)(text);
 
 /**
- * Options for a lockstep session: this peer, every peer, and how many ticks
- * ahead an action is sent.
+ * What a peer is told of its game: who it is, who plays, how long a tick is,
+ * and how far it sends and runs ahead. `Session.Options` documents each.
  *
- * @category Options
+ * @internal
  */
 export interface Options {
-  /** This peer's name. */
   readonly peer: string;
-  /**
-   * Every peer of the game, including this one. Every peer is given the same
-   * names, in any order.
-   */
   readonly peers: readonly string[];
-  /** The seconds a tick simulates, the same on every peer. */
   readonly delta: number;
-  /**
-   * How many ticks pass between issuing an action and applying it. Defaults to
-   * 2. A message has that long to reach the other peers before they have to
-   * wait for it. A non-negative integer, which may differ from peer to peer.
-   */
-  readonly delay?: number;
+  readonly delay: number;
+  readonly ahead: number;
 }
 
 /**
- * One peer of a multiplayer game. A driver steps it as it steps an app:
- * `Driver.frames(session, { hz })`.
+ * One peer of a multiplayer game, without its app: what a driver steps and a
+ * transport carries the messages of. A driver steps it as it steps an app:
+ * `Driver.frames(session, { hz })`. `Session.Session` is a peer with its app.
  *
  * @param E what a tick of its app can fail with
  *
  * @category Models
  */
-export interface Session<E = never> extends Tickable {
+export interface Peer<E = never> extends Tickable {
   readonly peer: string;
   /** Every peer of the game, in the order their actions are applied. */
   readonly peers: readonly string[];
@@ -206,6 +183,8 @@ export interface Session<E = never> extends Tickable {
   readonly delta: number;
   /** How many ticks pass between issuing an action and applying it. */
   readonly delay: number;
+  /** How many ticks the session may run past what every peer has sent. */
+  readonly ahead: number;
   /**
    * Receives a message from another peer. Messages may arrive in any order and
    * more than once: a duplicate, a message for a tick that already ran, or one
@@ -224,15 +203,23 @@ export interface Session<E = never> extends Tickable {
    * ahead. Input issued while the session waits for a peer goes into its next
    * message.
    *
+   * A session that runs ahead runs the tick before every message for it is
+   * in, up to `ahead` ticks past what every peer has sent, and first goes
+   * back over the ticks a message has since arrived for.
+   *
    * Throws if a system fails, or if the peers have drifted apart. When given a
    * number, as a driver does, it must equal the session's `delta`.
    */
   readonly tick: (delta?: number) => boolean;
   /**
-   * Like `tick`, but returns a failure, typed: a system's error, or `Drifted`
-   * once the peers have drifted apart.
+   * Like `tick`, but returns a failure, typed: a system's error, `Drifted`
+   * once the peers have drifted apart, or `Save.SaveRefused` when the game
+   * can't be captured before a tick that runs ahead, in which case the tick
+   * doesn't run.
    */
-  readonly tickExit: (delta?: number) => Exit.Exit<boolean, E | Drifted>;
+  readonly tickExit: (
+    delta?: number
+  ) => Exit.Exit<boolean, E | Drifted | Save.SaveRefused>;
   /**
    * Why the session stopped, once it has: a peer's world hashed differently
    * from this one's at the same tick. Every later tick fails with it.
@@ -251,6 +238,22 @@ export interface Session<E = never> extends Tickable {
    * discarded after 600 ticks.
    */
   readonly unanswered: number;
+  /**
+   * The number of final ticks: every peer's messages for them have arrived, and
+   * the game has run with them. Later ticks are predictions, and may be
+   * resimulated differently.
+   */
+  readonly confirmed: number;
+  /** How many times the session has rewound. */
+  readonly rewinds: number;
+  /** How many ticks the session has resimulated in total. */
+  readonly resimulated: number;
+  /**
+   * How many moments the session holds to rewind to: one for each uncertain
+   * tick it ran, so never more than `ahead`. Each is a snapshot of the whole
+   * world. A tick every peer has already sent actions for isn't captured.
+   */
+  readonly kept: number;
   /** The app's frame stage, for a driver to draw the game with. */
   readonly frame: (alpha: number, delta?: number) => void;
 }
@@ -262,72 +265,29 @@ const UNANSWERED = 600;
 const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * Makes a lockstep session for an app. The app must be created like every other
- * peer's: the same plugins, the same seed, and the same starting state.
+ * What a peer needs from its app. Every app provides it.
  *
- * From then on the session steps the app: the app's own `tick` and `dispatch`
- * throw, since either would advance this peer's game alone. The session begins
- * at whatever tick the app is at, so a game can continue from a save every peer
- * loaded.
- *
- * **Gotchas**
- *
- * - It throws when the options can't describe a game: a peer not among `peers`,
- *   two peers with the same name, a `delay` that isn't a whole number of ticks,
- *   or a `delta` that isn't greater than 0.
- * - A payload its schema rejects has no JSON form to send: it is refused on the
- *   issuing peer only, and the others never see it.
- * - Each peer is configured with its own plugins, seed, `delta` and names, and
- *   none of these is compared directly, only the worlds they produce. A
- *   different `delta` or list of names is detected once it has changed a world,
- *   and a list that leaves a peer out is never detected.
- *
- * @category Constructors
+ * @internal
  */
-export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
-  // A lockstep session predicts nothing, so it captures nothing, and a
-  // capture is all that fails with `SaveRefused`.
-  build(app, {
-    ...options,
-    delay: options.delay ?? 2,
-    ahead: 0,
-  }) as Session<E>;
-
-/**
- * What a session needs from its app. Every app provides it.
- *
- * @category Type-level
- */
-export type SessionApp<E> = Pick<
+export type PeerApp<E> = Pick<
   App.App<E>,
-  "actionLog" | "checkpoint" | "divert" | "frame" | "inputExit"
+  "actionLog" | "checkpoint" | "frame" | "inputExit"
 > &
   Timeline.Game;
 
 /**
- * What a predicting session adds, as `Rollback.Session` documents.
+ * Makes the peer of an app that has been taken over for it: `take` is given
+ * what receives each action issued from outside, and returns the reins of
+ * the app. It is the one session there is: one that predicts no tick has an
+ * `ahead` of 0.
  *
- * @category Models
- */
-export interface Predicting {
-  readonly ahead: number;
-  readonly confirmed: number;
-  readonly rewinds: number;
-  readonly resimulated: number;
-  readonly kept: number;
-}
-
-/**
- * The one session there is. Lockstep is the session that predicts no tick:
- * `ahead` is 0. `Rollback.make` lets it run ahead, and it then runs up to
- * that many ticks past what it knows and goes back when it was
- * wrong.
  * @internal
  */
-export const build = <E>(
-  app: SessionApp<E>,
-  options: Options & { readonly delay: number; readonly ahead: number }
-): Session<E | Save.SaveRefused> & Predicting => {
+export const build = <E, A extends PeerApp<E>>(
+  app: A,
+  take: (issued: (name: string, payload: unknown) => void) => Reins<E>,
+  options: Options
+): Peer<E> & { readonly app: A } => {
   const { delay, delta, peer, ahead } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
@@ -358,7 +318,7 @@ export const build = <E>(
 
   // What this peer issued and has not put in a message yet.
   let issued: Issued[] = [];
-  const reins = app.divert((name, payload) => {
+  const reins = take((name, payload) => {
     issued.push({ name, payload });
   });
 
@@ -631,6 +591,7 @@ export const build = <E>(
   };
 
   return {
+    app,
     peer,
     peers,
     delta,

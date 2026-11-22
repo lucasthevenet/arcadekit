@@ -32,7 +32,7 @@ Every peer that opens `Transport.layerBroadcastChannel` with the same name hears
 ## Between machines
 
 ```ts
-import { App, Driver, Plugin, Relay, Rollback, Transport } from "arcadekit";
+import { App, Driver, Plugin, Relay, Session, Transport } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect } from "effect";
 
@@ -46,8 +46,8 @@ const url = Relay.address("wss://relay.example.com/rooms", {
 // "wss://relay.example.com/rooms/blue?peer=ada"
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make(App.define({ plugins: [Game] }), { seed: 1 });
-  const session = Rollback.make(app, {
+  const session = yield* Session.make(App.define({ plugins: [Game] }), {
+    seed: 1,
     peer,
     peers: ["ada", "grace"],
     delta: 1 / 60,
@@ -97,7 +97,7 @@ const transport = Transport.text({
 export const layer = Transport.layer(transport);
 ```
 
-- Messages travel in the format `Lockstep.encode` writes. Text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
+- Messages travel in the format `Netcode.encode` writes. Text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
 - The channel must deliver every message. A WebSocket does; a data channel must be configured to.
 - `transport.close()` stops listening. Unlike the two layers, a transport created this way doesn't report being used after that, unless your game makes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.

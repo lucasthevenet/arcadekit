@@ -6,10 +6,10 @@ import {
   Component,
   Field,
   Journal,
-  Lockstep,
+  Netcode,
   Query,
-  Rollback,
   Save,
+  Session,
   System,
   Time,
 } from "../src/index";
@@ -22,7 +22,6 @@ import {
   Take,
   catchUp,
   coinsOf,
-  game,
   moves,
   network,
   players,
@@ -279,23 +278,29 @@ describe("a rollback session", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const counted = (app: Effect.Success<ReturnType<typeof game>>) => {
-            const count = { captures: 0 };
-            // A capture of the game is one of its world.
-            const capture = app.world._capture.bind(app.world);
-            app.world._capture = () => {
-              count.captures++;
-              return capture();
-            };
-            const session = Rollback.make(app, {
+          // A session of its own each time it is asked for, no tick run yet.
+          const counted = Effect.map(
+            Session.make(CoinGame, {
+              seed: 5,
+              checkpointEvery: 1,
               peer: "ada",
               peers: ["ada", "grace"],
               delta: DELTA,
-            });
-            return { count, session };
-          };
+            }),
+            (session) => {
+              const count = { captures: 0 };
+              // A capture of the game is one of its world.
+              const { world } = session.app;
+              const capture = world._capture.bind(world);
+              world._capture = () => {
+                count.captures++;
+                return capture();
+              };
+              return { count, session };
+            }
+          );
           // Grace says everything before ada runs: ada is sure of every tick.
-          const sure = counted(yield* game());
+          const sure = yield* counted;
           const start = sure.session.peers.length;
           expect(start).toBe(2);
           for (let tick = 0; tick < 20; tick++) {
@@ -305,7 +310,7 @@ describe("a rollback session", () => {
           expect(sure.count.captures).toBe(0);
           expect(sure.session.confirmed).toBe(20);
           // Grace says nothing: every tick is a guess, and is captured.
-          const unsure = counted(yield* game());
+          const unsure = yield* counted;
           for (let tick = 0; tick < 5; tick++) {
             expect(unsure.session.tick()).toBe(true);
           }
@@ -343,29 +348,36 @@ describe("a rollback session", () => {
   });
 
   it("runs eight ticks ahead unless told, and none with a delay of its own", () => {
-    withApp(game(), (app) => {
-      const session = Rollback.make(app, {
+    withApp(
+      Session.make(CoinGame, {
+        seed: 5,
+        checkpointEvery: 1,
         peer: "ada",
         peers: ["ada", "grace"],
         delta: DELTA,
-      });
-      expect(session.ahead).toBe(8);
-      expect(session.delay).toBe(0);
-      let ran = 0;
-      while (session.tick()) {
-        ran++;
+      }),
+      (session) => {
+        expect(session.ahead).toBe(8);
+        expect(session.delay).toBe(0);
+        let ran = 0;
+        while (session.tick()) {
+          ran++;
+        }
+        expect(ran).toBe(8);
       }
-      expect(ran).toBe(8);
-    });
+    );
     for (const ahead of [-1, 1.5, Number.NaN]) {
       expect(() =>
-        withApp(game(), (app) =>
-          Rollback.make(app, {
+        withApp(
+          Session.make(CoinGame, {
+            seed: 5,
+            checkpointEvery: 1,
             peer: "ada",
             peers: ["ada"],
             delta: DELTA,
             ahead,
-          })
+          }),
+          (session) => session
         )
       ).toThrow(/runs ahead is a whole number of ticks, 0 or more/u);
     }
@@ -466,8 +478,8 @@ describe("a rollback session", () => {
           const stopped = untilStopped(peers, net, 800);
           const checkpoint = Math.ceil(at / every) * every;
           for (const peer of peers) {
-            const drifted = stopped.get(peer.name) as Lockstep.Drifted;
-            expect(drifted, where).toBeInstanceOf(Lockstep.Drifted);
+            const drifted = stopped.get(peer.name) as Netcode.Drifted;
+            expect(drifted, where).toBeInstanceOf(Netcode.Drifted);
             expect(drifted.tick, where).toBe(checkpoint);
             expect(drifted.agreedAt, where).toBe(checkpoint - every);
             expect(drifted.hashes.ada, where).not.toBe(drifted.hashes.grace);
@@ -492,22 +504,25 @@ describe("a rollback session", () => {
         });
       }
     });
-    withApp(App.make(App.define({ systems: [Spoil] })), (app) => {
-      app.world.spawn(Holder.of({ thing: "fine" }));
-      const session = Rollback.make(app, {
+    withApp(
+      Session.make(App.define({ systems: [Spoil] }), {
         peer: "ada",
         peers: ["ada", "grace"],
         delta: DELTA,
-      });
-      expect(session.tickExit()).toEqual(Exit.succeed(true));
-      expect(session.tickExit()).toEqual(Exit.succeed(true));
-      const exit = session.tickExit();
-      expect(Exit.isFailure(exit)).toBe(true);
-      const refused = Exit.isFailure(exit) ? exit.cause : undefined;
-      expect(String(refused)).toMatch(/rb\/Holder/u);
-      expect(() => session.tick()).toThrow(Save.SaveRefused);
-      // The tick did not run.
-      expect(app.time.tick).toBe(2);
-    });
+      }),
+      (session) => {
+        const { app } = session;
+        app.world.spawn(Holder.of({ thing: "fine" }));
+        expect(session.tickExit()).toEqual(Exit.succeed(true));
+        expect(session.tickExit()).toEqual(Exit.succeed(true));
+        const exit = session.tickExit();
+        expect(Exit.isFailure(exit)).toBe(true);
+        const refused = Exit.isFailure(exit) ? exit.cause : undefined;
+        expect(String(refused)).toMatch(/rb\/Holder/u);
+        expect(() => session.tick()).toThrow(Save.SaveRefused);
+        // The tick did not run.
+        expect(app.time.tick).toBe(2);
+      }
+    );
   });
 });

@@ -77,7 +77,7 @@ const between = (app: Game, call: string, rule: string): void => {
  *
  * With `stages`, the moment also holds the place of the frame and input
  * stages in what changed, for a rewind that comes before they run again:
- * `Rollback.syncTest` runs each tick twice that way. Without it, their change
+ * `Session.syncTest` runs each tick twice that way. Without it, their change
  * queries visit everything again after the rewind.
  *
  * Fails with `SaveRefused` when the world can't be captured: a field holds a
@@ -129,7 +129,7 @@ export const capture = (
  * **Gotchas**
  *
  * - State held by your game's own services is left as it is:
- *   `Rollback.syncTest` finds a tick that reads it.
+ *   `Session.syncTest` finds a tick that reads it.
  * - A `transient` field is undefined afterwards.
  *
  * @category Running

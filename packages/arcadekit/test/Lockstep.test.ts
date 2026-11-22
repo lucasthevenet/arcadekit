@@ -1,13 +1,15 @@
 import { Data, Effect, Exit } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, assert, describe, expect, it } from "vitest";
 
 import {
   Action,
   App,
+  Build,
   Driver,
   Input,
   Journal,
-  Lockstep,
+  Netcode,
+  Session,
   System,
   Time,
 } from "../src/index";
@@ -401,25 +403,21 @@ describe("a lockstep session", () => {
         return yield* new Blown({ at: tick });
       }
     });
-    withApp(App.make(App.define({ systems: [Fuse] })), (app) => {
-      const session = Lockstep.make(app, {
-        peer: "ada",
-        peers: ["ada"],
-        delta: DELTA,
-        delay: 0,
-      });
+    const Fused = App.define({ systems: [Fuse] });
+    const alone = {
+      peer: "ada",
+      peers: ["ada"],
+      delta: DELTA,
+      delay: 0,
+      ahead: 0,
+    };
+    withApp(Session.make(Fused, alone), (session) => {
       expect(session.tickExit()).toEqual(Exit.succeed(true));
       expect(session.tickExit()).toEqual(Exit.fail(new Blown({ at: 2 })));
       expect(session.tick()).toBe(true);
-      expect(app.time.tick).toBe(3);
+      expect(session.app.time.tick).toBe(3);
     });
-    withApp(App.make(App.define({ systems: [Fuse] })), (app) => {
-      const session = Lockstep.make(app, {
-        peer: "ada",
-        peers: ["ada"],
-        delta: DELTA,
-        delay: 0,
-      });
+    withApp(Session.make(Fused, alone), (session) => {
       session.tick();
       expect(() => session.tick()).toThrow(Blown);
     });
@@ -433,21 +431,24 @@ describe("a lockstep session", () => {
         return yield* new Jammed();
       }
     }).pipe(System.inStage("input"));
-    withApp(App.make(App.define({ systems: [Keys] })), (app) => {
-      const session = Lockstep.make(app, {
+    withApp(
+      Session.make(App.define({ systems: [Keys] }), {
         peer: "ada",
         peers: ["ada"],
         delta: DELTA,
         delay: 0,
-      });
-      expect(session.tickExit()).toEqual(Exit.fail(new Jammed()));
-      expect(app.time.tick).toBe(0);
-      // It said nothing for a tick it did not get to.
-      expect(session.outgoing()).toEqual([]);
-      jam = false;
-      expect(session.tickExit()).toEqual(Exit.succeed(true));
-      expect(app.time.tick).toBe(1);
-    });
+        ahead: 0,
+      }),
+      (session) => {
+        expect(session.tickExit()).toEqual(Exit.fail(new Jammed()));
+        expect(session.app.time.tick).toBe(0);
+        // It said nothing for a tick it did not get to.
+        expect(session.outgoing()).toEqual([]);
+        jam = false;
+        expect(session.tickExit()).toEqual(Exit.succeed(true));
+        expect(session.app.time.tick).toBe(1);
+      }
+    );
   });
 
   it("runs with no delay at all when messages arrive at once", () => {
@@ -511,23 +512,36 @@ describe("a lockstep session", () => {
   it("refuses what would apply an action on this machine alone", () => {
     withPeers(["ada", "grace"], {}, (peers) => {
       const [ada] = peers as [Peer];
-      expect(() => ada.app.dispatch(Drop, { by: "ada", value: 1 })).toThrow(
-        /on this machine alone.*Use enqueue/u
-      );
+      // A session's app has none of the four in its type, and the app it
+      // is refuses each of them when it is reached all the same.
       expect(() =>
+        // @ts-expect-error a session's app has no dispatch: it would apply the action on this machine alone
+        ada.app.dispatch(Drop, { by: "ada", value: 1 })
+      ).toThrow(/on this machine alone.*Use enqueue/u);
+      expect(() =>
+        // @ts-expect-error a session's app has no dispatchByName: it would apply the action on this machine alone
         ada.app.dispatchByName("ls/Drop", { by: "ada", value: 1 })
       ).toThrow(/on this machine alone/u);
       // Nor is it stepped by anything but its session.
-      expect(() => ada.app.tick(DELTA)).toThrow(
-        /a tick ahead of the other peers.*call the session's tick/u
-      );
-      expect(() => ada.app.tickExit(DELTA)).toThrow(/taken over/u);
-      expect(ada.app.time.tick).toBe(0);
       expect(() =>
-        Lockstep.make(ada.app, { peer: "ada", peers: ["ada"], delta: DELTA })
-      ).toThrow(/taken over already/u);
+        // @ts-expect-error a session's app has no tick: the session steps it
+        ada.app.tick(DELTA)
+      ).toThrow(/a tick ahead of the other peers.*call the session's tick/u);
+      expect(() =>
+        // @ts-expect-error a session's app has no tickExit: the session steps it
+        ada.app.tickExit(DELTA)
+      ).toThrow(/taken over/u);
+      expect(ada.app.time.tick).toBe(0);
       expect(ada.app.actionLog).toEqual([]);
     });
+    // Nor is an app taken over twice.
+    withApp(
+      Build.build(CoinGame, { seed: 5, checkpointEvery: 1 }),
+      ({ take }) => {
+        take(() => {});
+        expect(() => take(() => {})).toThrow(/taken over already/u);
+      }
+    );
   });
 
   it("is handed the reins of its app: a tick that reads no device", () => {
@@ -535,11 +549,12 @@ describe("a lockstep session", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const source = Input.makeManualSource();
-          const app = yield* game().pipe(
-            Effect.provideService(Input.Source, source)
-          );
+          const { app, take } = yield* Build.build(CoinGame, {
+            seed: 5,
+            checkpointEvery: 1,
+          }).pipe(Effect.provideService(Input.Source, source));
           const taken: string[] = [];
-          const reins = app.divert((name) => {
+          const reins = take((name) => {
             taken.push(name);
           });
           source.tap("Space");
@@ -560,30 +575,37 @@ describe("a lockstep session", () => {
   });
 
   it("tells whoever stepped a tick of its systems, and nobody of the next", () => {
-    withApp(game(), (app) => {
-      const reins = app.divert(() => {});
-      const told: (string | undefined)[] = [];
-      expect(
-        reins.tickExit(DELTA, (system) => {
-          told.push(system);
-        })
-      ).toEqual(Exit.void);
-      // Before the first system, then after each.
-      expect(told).toEqual([undefined, ...app.systemOrder]);
-      expect(reins.tickExit(DELTA)).toEqual(Exit.void);
-      expect(told).toHaveLength(1 + app.systemOrder.length);
-    });
+    withApp(
+      Build.build(CoinGame, { seed: 5, checkpointEvery: 1 }),
+      ({ app, take }) => {
+        const reins = take(() => {});
+        const told: (string | undefined)[] = [];
+        expect(
+          reins.tickExit(DELTA, (system) => {
+            told.push(system);
+          })
+        ).toEqual(Exit.void);
+        // Before the first system, then after each.
+        expect(told).toEqual([undefined, ...app.systemOrder]);
+        expect(reins.tickExit(DELTA)).toEqual(Exit.void);
+        expect(told).toHaveLength(1 + app.systemOrder.length);
+      }
+    );
   });
 
   it("refuses options that could not be a game", () => {
-    const attempt = (options: Partial<Lockstep.Options>) =>
-      withApp(game(), (app) =>
-        Lockstep.make(app, {
+    const attempt = (options: Partial<Session.Options>) =>
+      withApp(
+        Session.make(CoinGame, {
+          seed: 5,
+          checkpointEvery: 1,
           peer: "ada",
           peers: ["ada", "grace"],
           delta: DELTA,
           ...options,
-        })
+          ahead: 0,
+        }),
+        (session) => session
       );
     expect(() => attempt({ peer: "linus" })).toThrow(
       /"linus" is not among the peers of its own session: ada, grace/u
@@ -597,42 +619,64 @@ describe("a lockstep session", () => {
     expect(() => attempt({ delta: Number.NaN })).toThrow(/delta.*NaN/u);
   });
 
-  it("starts from wherever its app is", () => {
+  it("starts from wherever its game is: at the save every peer loads", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          // Two copies of a game that has been going for a while.
-          const apps = [yield* game(), yield* game()] as const;
-          for (const app of apps) {
-            app.dispatch(Drop, { by: "ada", value: 2 });
-            for (let i = 0; i < 9; i++) {
-              app.tick(DELTA);
-            }
+          // A game that has been going for a while, saved for every peer.
+          const going = yield* game();
+          going.dispatch(Drop, { by: "ada", value: 2 });
+          for (let i = 0; i < 9; i++) {
+            going.tick(DELTA);
           }
-          const [ada, grace] = apps.map((app, index) =>
-            Lockstep.make(app, {
-              peer: ["ada", "grace"][index]!,
+          const saved = going.save();
+          assert(Exit.isSuccess(saved));
+          const peerOf = (peer: string) =>
+            Session.make(CoinGame, {
+              save: saved.value,
+              checkpointEvery: 1,
+              peer,
               peers: ["ada", "grace"],
               delta: DELTA,
               delay: 1,
-            })
-          ) as [Lockstep.Session, Lockstep.Session];
-          const logged = apps[0].actionLog.length;
+              ahead: 0,
+            });
+          const ada = yield* peerOf("ada");
+          const grace = yield* peerOf("grace");
+          expect(ada.app.time.tick).toBe(9);
+          expect(ada.app.world.hash()).toBe(going.world.hash());
+          // A loaded game's log starts empty.
+          expect(ada.app.actionLog).toEqual([]);
           expect(ada.tick()).toBe(false);
           const said = ada.outgoing();
           expect(said.map((message) => message.tick)).toEqual([9, 10]);
-          // The checkpoint its log ends with is where it starts: it is
-          // sent, and not taken a second time.
-          expect(said[0]!.checkpoints).toEqual([
-            { tick: 9, hash: apps[0].world.hash() },
-          ]);
-          expect(apps[0].actionLog.length).toBe(logged);
+          // Where it starts is the first thing it says: the session takes
+          // the checkpoint, once.
+          const start = { tick: 9, hash: going.world.hash() };
+          expect(said[0]!.checkpoints).toEqual([start]);
+          expect(ada.app.actionLog).toEqual([start]);
           grace.tick();
           for (const message of grace.outgoing()) {
             ada.receive(message);
           }
           expect(ada.tick()).toBe(true);
-          expect(apps[0].time.tick).toBe(10);
+          expect(ada.app.time.tick).toBe(10);
+          // The tick took none for where it started: the log has the one.
+          expect(
+            ada.app.actionLog.filter(
+              (entry) => Action.isCheckpoint(entry) && entry.tick === 9
+            )
+          ).toEqual([start]);
+
+          // A checkpoint the game took itself where it starts is the one
+          // sent, and the session takes no second.
+          const edsger = yield* peerOf("ada");
+          const own = edsger.app.checkpoint();
+          expect(edsger.tick()).toBe(false);
+          expect(edsger.outgoing()[0]!.checkpoints).toEqual([
+            { tick: 9, hash: own },
+          ]);
+          expect(edsger.app.actionLog).toEqual([{ tick: 9, hash: own }]);
         })
       )
     );
@@ -665,8 +709,8 @@ describe("peers that have come apart", () => {
               const checkpoint = Math.ceil(at / every) * every;
               for (const peer of peers) {
                 const reason = stopped.get(peer.name);
-                expect(reason, where).toBeInstanceOf(Lockstep.Drifted);
-                const drifted = reason as Lockstep.Drifted;
+                expect(reason, where).toBeInstanceOf(Netcode.Drifted);
+                const drifted = reason as Netcode.Drifted;
                 expect(drifted.tick, where).toBe(checkpoint);
                 expect(drifted.peer, where).toBe(peer.name);
                 expect(drifted.agreedAt, where).toBe(checkpoint - every);
@@ -690,9 +734,9 @@ describe("peers that have come apart", () => {
               }
               // Both say the same of who had what.
               expect(
-                (stopped.get("ada") as Lockstep.Drifted).hashes,
+                (stopped.get("ada") as Netcode.Drifted).hashes,
                 where
-              ).toEqual((stopped.get("grace") as Lockstep.Drifted).hashes);
+              ).toEqual((stopped.get("grace") as Netcode.Drifted).hashes);
             }
           );
         }
@@ -708,12 +752,12 @@ describe("peers that have come apart", () => {
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       expect(ada.session.drifted).toBeUndefined();
       const stopped = untilStopped(peers, net, 100);
-      const drifted = stopped.get("ada") as Lockstep.Drifted;
+      const drifted = stopped.get("ada") as Netcode.Drifted;
       expect(ada.session.drifted).toBe(drifted);
       const { tick } = ada.app.time;
       // Every tick fails with it from then on, and runs nothing.
       expect(ada.session.tickExit()).toEqual(Exit.fail(drifted));
-      expect(() => ada.session.tick()).toThrow(Lockstep.Drifted);
+      expect(() => ada.session.tick()).toThrow(Netcode.Drifted);
       expect(ada.app.time.tick).toBe(tick);
       expect(drifted.message).toBe(
         `The peers are no longer playing the same game. At tick 9 the hashes of their worlds are: ada ${drifted.hashes.ada}, grace ${drifted.hashes.grace} (found by "ada"). They last agreed at tick 8, so they came apart in one of the 1 ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta).`
@@ -742,7 +786,7 @@ describe("peers that have come apart", () => {
       expect(ada.app.time.tick).toBe(2);
       expect(exit).toEqual(
         Exit.fail(
-          new Lockstep.Drifted({
+          new Netcode.Drifted({
             tick: 2,
             peer: "ada",
             hashes: { ada: ada.app.world.hash(), grace: 12_345 },
@@ -764,18 +808,23 @@ describe("peers that have come apart", () => {
       expect(peers[0]!.app.time.tick).toBeGreaterThan(30);
     });
     // Nobody answers a peer that plays alone.
-    withApp(game(), (app) => {
-      const session = Lockstep.make(app, {
+    withApp(
+      Session.make(CoinGame, {
+        seed: 5,
+        checkpointEvery: 1,
         peer: "ada",
         peers: ["ada"],
         delta: DELTA,
-      });
-      for (let i = 0; i < 700; i++) {
-        session.tick();
+        ahead: 0,
+      }),
+      (session) => {
+        for (let i = 0; i < 700; i++) {
+          session.tick();
+        }
+        expect(session.app.time.tick).toBe(700);
+        expect(session.unanswered).toBe(601);
       }
-      expect(app.time.tick).toBe(700);
-      expect(session.unanswered).toBe(601);
-    });
+    );
   });
 
   it("are caught before their first tick when they do not start from the same state", () => {
@@ -786,8 +835,8 @@ describe("peers that have come apart", () => {
         const net = network(1, { min: 0, max: 3 });
         const stopped = untilStopped(peers, net, 100);
         for (const peer of peers) {
-          const drifted = stopped.get(peer.name) as Lockstep.Drifted;
-          expect(drifted).toBeInstanceOf(Lockstep.Drifted);
+          const drifted = stopped.get(peer.name) as Netcode.Drifted;
+          expect(drifted).toBeInstanceOf(Netcode.Drifted);
           expect(drifted.tick).toBe(0);
           expect(drifted.agreedAt).toBeUndefined();
           expect(drifted.message).toMatch(
@@ -805,8 +854,8 @@ describe("peers that have come apart", () => {
       { seeds: { ada: 1, grace: 2 }, checkpointEvery: { ada: 0, grace: 0 } },
       (peers) => {
         const stopped = untilStopped(peers, network(1, { min: 0, max: 0 }), 50);
-        expect(stopped.get("ada")).toBeInstanceOf(Lockstep.Drifted);
-        expect(stopped.get("grace")).toBeInstanceOf(Lockstep.Drifted);
+        expect(stopped.get("ada")).toBeInstanceOf(Netcode.Drifted);
+        expect(stopped.get("grace")).toBeInstanceOf(Netcode.Drifted);
         expect(peers[0]!.app.time.tick).toBe(0);
       }
     );
@@ -833,10 +882,10 @@ describe("peers that have come apart", () => {
       const stopped = untilStopped(peers, net, 300);
       expect(stopped.size).toBe(3);
       const reports = [ada, grace, edsger].map(
-        (peer) => stopped.get(peer.name) as Lockstep.Drifted
+        (peer) => stopped.get(peer.name) as Netcode.Drifted
       );
       for (const report of reports) {
-        expect(report).toBeInstanceOf(Lockstep.Drifted);
+        expect(report).toBeInstanceOf(Netcode.Drifted);
         expect(report.tick).toBe(12);
         expect(report.agreedAt).toBe(11);
       }
@@ -875,8 +924,8 @@ describe("peers that have come apart", () => {
         setGlitch({ tick: at, worlds: "all" });
         const stopped = untilStopped(peers, net, 100);
         // Caught at the first tick both record: a multiple of 6.
-        const drifted = stopped.get("grace") as Lockstep.Drifted;
-        expect(drifted).toBeInstanceOf(Lockstep.Drifted);
+        const drifted = stopped.get("grace") as Netcode.Drifted;
+        expect(drifted).toBeInstanceOf(Netcode.Drifted);
         expect(drifted.tick).toBe(Math.ceil(at / 6) * 6);
         expect(drifted.agreedAt).toBe(drifted.tick - 6);
       }
@@ -886,22 +935,22 @@ describe("peers that have come apart", () => {
 
 describe("a message between peers", () => {
   it("goes to text and comes back", () => {
-    const message: Lockstep.Message = {
+    const message: Netcode.Message = {
       from: "ada",
       tick: 12,
       actions: [{ name: "ls/Drop", payload: { by: "ada", value: 1 } }],
     };
-    expect(Lockstep.decode(Lockstep.encode(message))).toEqual(
+    expect(Netcode.decode(Netcode.encode(message))).toEqual(
       Exit.succeed(message)
     );
-    const checked: Lockstep.Message = {
+    const checked: Netcode.Message = {
       ...message,
       checkpoints: [
         { tick: 10, hash: 0 },
         { tick: 12, hash: 4_294_967_295 },
       ],
     };
-    expect(Lockstep.decode(Lockstep.encode(checked))).toEqual(
+    expect(Netcode.decode(Netcode.encode(checked))).toEqual(
       Exit.succeed(checked)
     );
   });
@@ -932,7 +981,7 @@ describe("a message between peers", () => {
         checkpoints: [{ tick: -1, hash: 1 }],
       }),
     ]) {
-      expect(Exit.isFailure(Lockstep.decode(text)), text).toBe(true);
+      expect(Exit.isFailure(Netcode.decode(text)), text).toBe(true);
     }
   });
 });

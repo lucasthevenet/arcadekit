@@ -50,7 +50,7 @@ Every variant does the same work, `pos += vel * dt`:
 
 - Hashing a world costs about three raw passes over it: 1.4 ns per 32-bit field per entity, with an entity's id counting as two. A sparse component's field costs about four times that, since its members are hashed individually so that their order doesn't matter. An app's hash also encodes each action queued and each event waiting through its schema, about 0.6 µs apiece for a payload of four fields: 0.15 ms for 256 events, at every checkpoint.
 - A [checkpoint](replays.md) is one hash every `checkpointEvery` ticks, 60 by default: 14 µs per tick on average here.
-- A [rollback session](lockstep-and-rollback.md) pays one capture per uncertain tick, 0.69 ms for 100,000 entities and 7 µs for a thousand. A misprediction costs a rewind, 1.6 ms for 100,000, plus resimulating the ticks since.
+- A [rollback session](sessions.md) pays one capture per uncertain tick, 0.69 ms for 100,000 entities and 7 µs for a thousand. A misprediction costs a rewind, 1.6 ms for 100,000, plus resimulating the ticks since.
 
 ## Change queries
 
@@ -94,7 +94,7 @@ The overhead of arcadekit's own plugins, each with little to do:
 - **Sound**, with one system playing cues for two kinds of event, or one keeping a channel's music, to an output that does nothing. It costs a frame two reads of empty event queues, 0.7 µs over an empty frame, plus 0.2 µs per cue played. When sound has no output, the system checks for one and stops.
 - **A game at rest** is one that [ticks only when needed](running-a-game.md), with device state, a state and a view.
 - Verifying frames with `verifyFrames` costs a hash of the world before the stage and after each of its systems, 1.7 ms more for one system over 100,000 entities. Use it in [tests](testing.md#the-frame-stage).
-- Checking rewinds with `Rollback.syncTest` costs a capture of the game, a rewind, a second run and a world hash per system, every tick: about 100 µs a tick for a game of 1,000 entities and two systems, against 7 to 20 µs without. Use it in [tests](testing.md#rewinds).
+- Checking rewinds with `Session.syncTest` costs a capture of the game, a rewind, a second run and a world hash per system, every tick: about 100 µs a tick for a game of 1,000 entities and two systems, against 7 to 20 µs without. Use it in [tests](testing.md#rewinds).
 
 ## Spawning and despawning
 

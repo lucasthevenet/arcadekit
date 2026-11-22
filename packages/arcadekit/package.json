@@ -87,11 +87,6 @@
       "types": "./dist/Journal.d.ts",
       "default": "./dist/Journal.js"
     },
-    "./Lockstep": {
-      "source": "./src/Lockstep.ts",
-      "types": "./dist/Lockstep.d.ts",
-      "default": "./dist/Lockstep.js"
-    },
     "./Loop": {
       "source": "./src/Loop.ts",
       "types": "./dist/Loop.d.ts",
@@ -101,6 +96,11 @@
       "source": "./src/Migrate.ts",
       "types": "./dist/Migrate.d.ts",
       "default": "./dist/Migrate.js"
+    },
+    "./Netcode": {
+      "source": "./src/Netcode.ts",
+      "types": "./dist/Netcode.d.ts",
+      "default": "./dist/Netcode.js"
     },
     "./Outbox": {
       "source": "./src/Outbox.ts",
@@ -127,11 +127,6 @@
       "types": "./dist/Resource.d.ts",
       "default": "./dist/Resource.js"
     },
-    "./Rollback": {
-      "source": "./src/Rollback.ts",
-      "types": "./dist/Rollback.d.ts",
-      "default": "./dist/Rollback.js"
-    },
     "./Runner": {
       "source": "./src/Runner.ts",
       "types": "./dist/Runner.d.ts",
@@ -156,6 +151,11 @@
       "source": "./src/Services.ts",
       "types": "./dist/Services.d.ts",
       "default": "./dist/Services.js"
+    },
+    "./Session": {
+      "source": "./src/Session.ts",
+      "types": "./dist/Session.d.ts",
+      "default": "./dist/Session.js"
     },
     "./Singleton": {
       "source": "./src/Singleton.ts",

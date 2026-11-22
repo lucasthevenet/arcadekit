@@ -8,6 +8,7 @@ import type { Scope } from "effect";
 import {
   Action,
   App,
+  Build,
   Commands,
   Component,
   EcsWorld,
@@ -15,10 +16,10 @@ import {
   Event,
   Field,
   Input,
-  Lockstep,
+  Netcode,
   Query,
   Random,
-  Rollback,
+  Session,
   Singleton,
   System,
   Time,
@@ -199,16 +200,24 @@ export const game = (seed = 5, checkpointEvery = 1) =>
 export type Game = Effect.Success<ReturnType<typeof game>>;
 
 /** What each of the two players has in the purse. */
-export const purseOf = (app: Game): { ada: number; grace: number } => {
+export const purseOf = (
+  app: Pick<Game, "world">
+): { ada: number; grace: number } => {
   const { ada, grace } = app.world.singleton(Purse);
   return { ada, grace };
 };
 
+/** What a tick of the game fails with, and the actions it takes. */
+type Parts = Game extends App.App<infer E, infer HU> ? { e: E; hu: HU } : never;
+/** The app of a session of the game, which the session steps. */
+export type SteeredGame = App.Steered<Parts["e"], Parts["hu"]>;
+
 export interface Peer {
   readonly name: string;
-  readonly app: Game;
-  /** A session of either kind: the two are one, whether or not it runs ahead. */
-  readonly session: Rollback.Session;
+  /** The session's app. */
+  readonly app: SteeredGame;
+  /** A session, whether or not it runs ahead. */
+  readonly session: Session.Session<Parts["e"], Parts["hu"]>;
   /** The world's hash after each tick this peer ran: `hashes[0]` is after the first. */
   readonly hashes: number[];
   readonly source: Input.ManualSource;
@@ -220,7 +229,7 @@ export interface Setup {
   readonly seeds?: Readonly<Record<string, number>>;
   /** How often each peer's log records a checkpoint, by name: 1 unless told. */
   readonly checkpointEvery?: Readonly<Record<string, number>>;
-  /** How far the sessions run ahead, if they do: they are made with `Rollback.make`. */
+  /** How far the sessions run ahead: not at all unless told. */
   readonly ahead?: number;
   /** Whether each peer is given the names the other way round from the last. */
   readonly shuffled?: boolean;
@@ -237,11 +246,9 @@ export const withPeers = <A>(
         const peers: Peer[] = [];
         for (const name of names) {
           const source = Input.makeManualSource();
-          const app = yield* game(
-            setup.seeds?.[name],
-            setup.checkpointEvery?.[name]
-          ).pipe(Effect.provideService(Input.Source, source));
-          const options = {
+          const session = yield* Session.make(CoinGame, {
+            seed: setup.seeds?.[name] ?? 5,
+            checkpointEvery: setup.checkpointEvery?.[name] ?? 1,
             peer: name,
             peers:
               setup.shuffled === true && peers.length % 2 === 1
@@ -249,12 +256,9 @@ export const withPeers = <A>(
                 : names,
             delta: DELTA,
             ...(setup.delay === undefined ? {} : { delay: setup.delay }),
-          };
-          const session =
-            setup.ahead === undefined
-              ? (Lockstep.make(app, options) as Rollback.Session)
-              : Rollback.make(app, { ...options, ahead: setup.ahead });
-          peers.push({ name, app, session, hashes: [], source });
+            ahead: setup.ahead ?? 0,
+          }).pipe(Effect.provideService(Input.Source, source));
+          peers.push({ name, app: session.app, session, hashes: [], source });
         }
         return use(peers);
       })
@@ -267,11 +271,12 @@ export const withPeers = <A>(
  * rewinds a session makes. What is enqueued on the app is queued for the
  * next tick, as it was.
  */
-export const steered = <E, HU>(app: App.App<E, HU>) => {
-  const reins: App.Diverted<E> = app.divert((name, payload) => {
+export const steered = <E, HU>({ app, take }: Build.Built<E, HU>) => {
+  const reins: Build.Reins<E> = take((name, payload) => {
     reins.deliver(name, payload);
   });
   return {
+    app,
     tick: (delta: number): void => {
       app.input();
       const exit = reins.tickExit(delta);
@@ -314,22 +319,22 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
     round(): void {
       now++;
     },
-    send(to: readonly string[], messages: readonly Lockstep.Message[]): void {
+    send(to: readonly string[], messages: readonly Netcode.Message[]): void {
       for (const message of messages) {
         for (const name of to) {
           inFlight.push({
             at: now + dice.int(lag.min, lag.max),
             to: name,
-            text: Lockstep.encode(message),
+            text: Netcode.encode(message),
           });
         }
       }
     },
-    arrivals(to: string): Lockstep.Message[] {
+    arrivals(to: string): Netcode.Message[] {
       const due = inFlight.filter((m) => m.to === to && m.at <= now);
       inFlight = inFlight.filter((m) => !(m.to === to && m.at <= now));
       return dice.shuffle(due).map((m) => {
-        const message = Lockstep.decode(m.text);
+        const message = Netcode.decode(m.text);
         if (Exit.isFailure(message)) {
           throw new Error("a message did not survive the wire");
         }
