@@ -145,7 +145,7 @@ const program = Effect.gen(function* () {
 
 A program that steps its app runs it in a scope, with `Effect.scoped`, and closing the scope releases everything the app holds.
 
-- A tick reads the devices first. A tool that re-runs a game from its log by hand passes `app.tick(delta, { input: false })`, as `App.replay` does, or the keys of the machine it runs on leak into the game. See [replays](replays.md).
+- A tick reads the devices first. A tool that re-runs a game from its log by hand passes `app.tick(delta, { input: false })`, as `Journal.replay` does, or the keys of the machine it runs on leak into the game. See [replays](replays.md).
 - Nothing ticks a game that steps itself: when its UI sends something, the game runs a tick.
 
 `Driver.frames(app, { hz })` is the loop `App.run` uses, for a program that creates its app itself, and `Driver.interval(app, { hz })` steps the same way on a timer. Each is interrupted with the fiber that runs it, so one started with `Effect.forkScoped` stops when its scope closes, leaving no frame requested.

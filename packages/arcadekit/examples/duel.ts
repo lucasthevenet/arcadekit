@@ -21,6 +21,7 @@ import {
   EntityId,
   Event,
   Field,
+  Journal,
   Plugin,
   Query,
   Save,
@@ -258,11 +259,11 @@ const program = Effect.gen(function* () {
   // back, it reproduces this game in a fresh one, which checks itself against
   // those hashes as it goes. The replay installs only the rules, so it is
   // silent.
-  const saved = App.encodeRecording(app.record());
+  const saved = Journal.encode(app.record());
   yield* Console.log(`saved: ${saved}`);
   // A fresh app in a scope of its own, closed when the replay is over.
   const replay = Effect.fnUntraced(function* (text: string) {
-    const loaded = App.decodeRecording(text);
+    const loaded = Journal.decode(text);
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
@@ -271,7 +272,7 @@ const program = Effect.gen(function* () {
     // A replay that goes another way throws, and says where.
     return yield* Effect.try({
       try: () => {
-        App.replay(headless, loaded.value);
+        Journal.replay(headless, loaded.value);
         return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
       },
       catch: (error) => (error instanceof Error ? error.message : "it threw"),

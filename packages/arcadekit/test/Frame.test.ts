@@ -11,8 +11,10 @@ import {
   Driver,
   EcsWorld,
   Event,
+  Events,
   Field,
   Frame,
+  Journal,
   Query,
   Random,
   Save,
@@ -482,6 +484,9 @@ describe("the frame stage", () => {
         Pinged,
         (pinged) => pinged.emit({})
       ),
+      // Around a system's handle, through the bus an app also hands out.
+      'The event "fr/Pinged" was emitted in the frame stage or the input stage':
+        Effect.map(Effect.service(Events), (events) => events.emit(Pinged, {})),
     };
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
@@ -617,7 +622,7 @@ describe("the frame stage", () => {
         ]);
         // The replay has no button and draws no frame.
         const headless = yield* make([Roll]);
-        App.replay(headless, app.record());
+        Journal.replay(headless, app.record());
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.
         let own: App.Any | undefined;
@@ -792,17 +797,16 @@ describe("what the frame stage reads", () => {
         const saves = [again, headless].map((each) => {
           const save = each.save();
           return Exit.isSuccess(save)
-            ? {
-                waiting: readSnapshot(save.value.world).lists,
-                read: save.value.events,
-              }
+            ? readSnapshot(save.value.world).stores
             : undefined;
         });
         expect(saves[0]).toEqual(saves[1]);
-        expect(saves[0]).toEqual({
-          waiting: [{ name: "fr/Bounced", values: [{ at: 5 }] }],
-          read: [],
-        });
+        expect(saves[0]).toEqual([
+          {
+            name: Event.STORE,
+            data: [{ name: "fr/Bounced", waiting: [{ at: 5 }], read: {} }],
+          },
+        ]);
       })
     );
   });
@@ -896,7 +900,10 @@ describe("what the frame stage reads", () => {
           throw new Error("the save was refused");
         }
         // The save knows the simulation's reader and not the frame's.
-        const readers = save.value.changes.flatMap((changes) =>
+        const visits = readSnapshot(save.value.world).stores.find(
+          (store) => store.name === Save.VISITS
+        )?.data as { readers: Record<string, number> }[];
+        const readers = visits.flatMap((changes) =>
           Object.keys(changes.readers)
         );
         expect(readers.length).toBe(1);

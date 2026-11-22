@@ -2,7 +2,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { Terms } from "../src/ecs/world";
+import type { Terms } from "../src/ecs/query";
 import {
   Action,
   App,
@@ -10,15 +10,30 @@ import {
   Component,
   EcsWorld,
   Field,
+  Journal,
   Migrate,
   Query,
   Save,
   System,
   Time,
   World,
+  readSnapshot,
+  writeSnapshot,
 } from "../src/index";
-import type { Entity, EntityColumn } from "../src/index";
+import type {
+  Entity,
+  EntityColumn,
+  SavedChanges,
+  SnapshotContents,
+} from "../src/index";
 import { expectChecked, makeChecks } from "./checks";
+
+/** What the change queries of a snapshot's world had yet to visit. */
+const visitsOf = (world: SnapshotContents): SavedChanges[] =>
+  (world.stores.find((store) => store.name === Save.VISITS)?.data ??
+    []) as SavedChanges[];
+const visitsIn = (save: Save.Save): SavedChanges[] =>
+  visitsOf(readSnapshot(save.world));
 
 const Position = Component.define("ch/Position", {
   x: Field.f32,
@@ -1423,7 +1438,7 @@ describe("change queries in an app", () => {
         expect(tallyOf(app).moved).toBeGreaterThan(40);
         expect(tallyOf(app).gone).toBeGreaterThan(2);
         const again = yield* game();
-        App.replay(again, app.record());
+        Journal.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
         expect(tallyOf(again)).toEqual(tallyOf(app));
       })
@@ -1447,7 +1462,9 @@ describe("change queries in an app", () => {
           if (Exit.isFailure(read)) {
             throw new Error("the save did not decode");
           }
-          expect(read.value.changes).toEqual(save.value.changes);
+          expect(read.value).toEqual(save.value);
+          // Once a tick has run, there is a place to go on from.
+          expect(visitsIn(save.value).length > 0).toBe(savedAt > 0);
           const loaded = yield* App.load(read.value, {
             systems: [Early, Drift, Count],
             handlers: [push, spawn, cull],
@@ -1456,7 +1473,7 @@ describe("change queries in an app", () => {
           play(app, savedAt, savedAt + 12);
           // The tail of the original's log replays in the loaded game, and
           // every checkpoint of it holds.
-          App.replay(loaded, app.record(save.value));
+          Journal.replay(loaded, app.record(save.value));
           expect(tallyOf(loaded)).toEqual(tallyOf(app));
           expect(loaded.world.hash()).toBe(app.world.hash());
         })
@@ -1510,10 +1527,9 @@ describe("change queries in an app", () => {
                   "ch/Place"
                 );
                 // A migration is handed the changes too.
-                expect(contents.changes.map((each) => each.component)).toEqual([
-                  "ch/Health",
-                  "ch/Position",
-                ]);
+                expect(
+                  visitsOf(contents.world).map((each) => each.component)
+                ).toEqual(["ch/Health", "ch/Position"]);
               },
             },
           ],
@@ -1533,17 +1549,20 @@ describe("change queries in an app", () => {
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
-        const damaged = {
-          ...save.value,
-          changes: [
-            {
-              component: "ch/Position",
-              kind: "changed" as const,
-              entries: [4_000_000],
-              readers: {},
-            },
-          ],
+        /** The save, with what its change queries had yet to visit replaced. */
+        const withVisits = (visits: unknown): Save.Save => {
+          const world = readSnapshot(save.value.world);
+          world.stores = [{ name: Save.VISITS, data: visits }];
+          return { ...save.value, world: writeSnapshot(world) };
         };
+        const damaged = withVisits([
+          {
+            component: "ch/Position",
+            kind: "changed",
+            entries: [4_000_000],
+            readers: {},
+          },
+        ]);
         const exit = yield* Effect.exit(App.load(damaged, {}));
         expect(
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
@@ -1554,12 +1573,9 @@ describe("change queries in an app", () => {
             'the changes it holds for "ch/Position" name an entity that cannot be'
           ),
         });
-        // And bytes whose changes are not of the right shape do not decode.
-        const misshapen = Save.decode(
-          Save.encode({
-            ...save.value,
-            changes: [{ component: 1 }] as unknown as Save.Save["changes"],
-          })
+        // And changes that are not of the right shape are not loaded either.
+        const misshapen = yield* Effect.exit(
+          App.load(withVisits([{ component: 1 }]), {})
         );
         expect(
           Exit.isFailure(misshapen) ? Cause.squash(misshapen.cause) : undefined

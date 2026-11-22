@@ -262,6 +262,35 @@ export const withPeers = <A>(
     )
   );
 
+/**
+ * Takes an app over as a session does, to go back and run the same ticks
+ * again: its ticks, each after the input stage, its captures and its
+ * rewinds. What is enqueued on the app is queued for the next tick, as it
+ * was.
+ */
+export const steered = <E, HU>(app: App.App<E, HU>) => {
+  const reins: App.Diverted<E> = app.divert((name, payload) => {
+    reins.deliver(name, payload);
+  });
+  return {
+    tick: (delta: number): void => {
+      app.input();
+      const exit = reins.tickExit(delta);
+      if (Exit.isFailure(exit)) {
+        throw Cause.squash(exit.cause);
+      }
+    },
+    capture: (): App.Moment => {
+      const moment = reins.capture();
+      if (Exit.isFailure(moment)) {
+        throw new Error("the game could not be captured");
+      }
+      return moment.value;
+    },
+    rewind: reins.rewind,
+  };
+};
+
 export const withApp = <T, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
   use: (app: T) => A

@@ -72,6 +72,11 @@
       "types": "./dist/Input.d.ts",
       "default": "./dist/Input.js"
     },
+    "./Journal": {
+      "source": "./src/Journal.ts",
+      "types": "./dist/Journal.d.ts",
+      "default": "./dist/Journal.js"
+    },
     "./Lockstep": {
       "source": "./src/Lockstep.ts",
       "types": "./dist/Lockstep.d.ts",
@@ -107,10 +112,20 @@
       "types": "./dist/Rollback.d.ts",
       "default": "./dist/Rollback.js"
     },
+    "./Runner": {
+      "source": "./src/Runner.ts",
+      "types": "./dist/Runner.d.ts",
+      "default": "./dist/Runner.js"
+    },
     "./Save": {
       "source": "./src/Save.ts",
       "types": "./dist/Save.d.ts",
       "default": "./dist/Save.js"
+    },
+    "./Schedule": {
+      "source": "./src/Schedule.ts",
+      "types": "./dist/Schedule.d.ts",
+      "default": "./dist/Schedule.js"
     },
     "./Schemas": {
       "source": "./src/Schemas.ts",

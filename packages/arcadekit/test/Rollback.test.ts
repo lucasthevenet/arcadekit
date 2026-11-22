@@ -5,6 +5,7 @@ import {
   App,
   Component,
   Field,
+  Journal,
   Lockstep,
   Query,
   Rollback,
@@ -144,7 +145,7 @@ describe("a rollback session", () => {
         // on those ticks and never goes back: the replay holds every
         // tick's hash against the log's, and ends on the same one.
         withApp(game(), (alone) => {
-          App.replay(alone, ada.app.record());
+          Journal.replay(alone, ada.app.record());
           expect(alone.world.hash(), where).toBe(ada.app.world.hash());
           expect({ ...alone.world.singleton(Purse) }, where).toEqual({
             ...purse,
@@ -174,7 +175,7 @@ describe("a rollback session", () => {
       const recording = first.app.record();
       expect(recording.end).toBe(ticks);
       withApp(game(), (alone) => {
-        App.replay(alone, recording);
+        Journal.replay(alone, recording);
         expect(alone.world.hash()).toBe(first.app.world.hash());
       });
     });

@@ -37,17 +37,20 @@ export {
 } from "./ecs/snapshot";
 export {
   type ChangeKind,
-  CommandBuffer,
-  type EntityColumn,
-  type QueryView,
   type RemovedReader,
   type SavedChanges,
+} from "./ecs/changes";
+export { CommandBuffer } from "./ecs/commands";
+export {
+  type EntityColumn,
+  type QueryView,
   type SparseColumns,
-  World as EcsWorld,
-} from "./ecs/world";
+} from "./ecs/query";
+export { World as EcsWorld } from "./ecs/world";
 export * as Event from "./Event";
 export * as Field from "./Field";
 export * as Input from "./Input";
+export * as Journal from "./Journal";
 export * as Lockstep from "./Lockstep";
 export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";
@@ -55,7 +58,9 @@ export * as Query from "./Query";
 export * as Relay from "./Relay";
 export * as Resource from "./Resource";
 export * as Rollback from "./Rollback";
+export * as Runner from "./Runner";
 export * as Save from "./Save";
+export * as Schedule from "./Schedule";
 export * as Singleton from "./Singleton";
 export * as Sound from "./Sound";
 export * as State from "./State";

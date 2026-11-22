@@ -138,13 +138,10 @@ const migrations: Save.Migration[] = [
       );
       Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
       // The action that was waiting has another name and payload now.
-      const queued = contents.world.lists.find(
-        (list) => list.name === "arcadekit/queued"
-      );
-      for (const action of (queued?.values ?? []) as {
-        name: string;
-        payload: unknown;
-      }[]) {
+      const intake = contents.world.stores.find(
+        (store) => store.name === Action.INTAKE
+      )?.data as { queued: { name: string; payload: unknown }[] } | undefined;
+      for (const action of intake?.queued ?? []) {
         if (action.name === "mg/Heal") {
           action.name = "mg/Mend";
           action.payload = {
@@ -584,6 +581,9 @@ describe("a save from another version of the game", () => {
     Migrate.renameComponent(contents, "mg/Hp", "mg/Zhp");
     Migrate.renameComponent(contents, "mg/Buff", "mg/Boon");
     Migrate.removeComponent(contents, "mg/Old");
+    // A world on its own has none of an app's stores, and refuses what
+    // they held: here it is the components that are looked at.
+    contents.stores = [];
     const bytes = writeSnapshot(contents);
 
     const Apos = Component.define("mg/Apos", { x: Field.f32, y: Field.f32 });

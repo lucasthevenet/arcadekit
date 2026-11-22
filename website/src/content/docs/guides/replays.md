@@ -8,7 +8,7 @@ A game that changes only through its actions, its systems and its seed can be re
 ## Recording and playing back
 
 ```ts
-import { Action, App, Plugin, Singleton, Field } from "arcadekit";
+import { Action, App, Field, Journal, Plugin, Singleton } from "arcadekit";
 import { Effect, Schema } from "effect";
 
 const Score = Singleton.define(
@@ -34,15 +34,15 @@ const program = Effect.gen(function* () {
   for (let i = 0; i < 10; i++) {
     game.tick(1 / 60);
   }
-  const text = App.encodeRecording(game.record()); // for a file
+  const text = Journal.encode(game.record()); // for a file
 
-  const recording = yield* App.decodeRecording(text); // fails on text that isn't one
+  const recording = yield* Journal.decode(text); // fails on text that isn't one
   const again = yield* App.make({
     plugins: [Rules],
     seed: 42,
     checkpointEvery: 1,
   });
-  App.replay(again, recording); // throws App.ReplayDiverged
+  Journal.replay(again, recording); // throws Journal.ReplayDiverged
 }).pipe(Effect.scoped);
 ```
 
@@ -52,13 +52,13 @@ const program = Effect.gen(function* () {
 - every action enqueued through the app, marked `queued`, and also marked `refused`, with a short reason, if it was refused when its turn came;
 - checkpoints, the world's hash at a given tick. `Action.isCheckpoint(entry)` distinguishes the two kinds of entry.
 
-`app.record()` returns a recording: that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. `App.replay(app, recording)` plays it into a fresh app created with the same plugins and seed, and started from the same state: whatever was spawned into `app.world` before the first action or tick. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay into an app that isn't at the recording's first tick throws. `App.encodeRecording` and `App.decodeRecording` turn a recording into text and back, and decoding refuses one whose log or runs of deltas are out of order or outside it.
+`app.record()` returns a recording: that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. `Journal.replay(app, recording)` plays it into a fresh app created with the same plugins and seed, and started from the same state: whatever was spawned into `app.world` before the first action or tick. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay into an app that isn't at the recording's first tick throws. `Journal.encode` and `Journal.decode` turn a recording into text and back, and decoding refuses one whose log or runs of deltas are out of order or outside it.
 
 ## Checkpoints
 
 The app records a checkpoint before the first action or tick, then at the end of every tick whose number is a multiple of `checkpointEvery`. `app.checkpoint()` records an extra one, for a moment the game wants verified, such as when it is saved.
 
-A replay compares its own world at each checkpoint, and stops at the first mismatch, before applying anything recorded after it. It throws `App.ReplayDiverged`, whose `tick` is that checkpoint's tick. Its `reason` is an `App.HashMismatch` with the `expected` hash, the `actual` one, and `agreedAt`, the tick of the last matching checkpoint. With a checkpoint every tick, `tick` is the exact tick the replay diverged on.
+A replay compares its own world at each checkpoint, and stops at the first mismatch, before applying anything recorded after it. It throws `Journal.ReplayDiverged`, whose `tick` is that checkpoint's tick. Its `reason` is an `Journal.HashMismatch` with the `expected` hash, the `actual` one, and `agreedAt`, the tick of the last matching checkpoint. With a checkpoint every tick, `tick` is the exact tick the replay diverged on.
 
 - `checkpointEvery` defaults to 60. A checkpoint costs one hash of the world, 0.8 ms for 100,000 entities, plus one log entry. A smaller value catches divergence closer to where it happened, at that cost. A turn-based game, which ticks once per move, wants 1.
 - With 0, the app records no checkpoints, and a replay can only check itself against its actions. A replay that has gone wrong continues until an action happens to be refused, or, if the fault broke no rule, runs to the end and produces a different game.
@@ -89,12 +89,12 @@ It doesn't depend on anything a simulation can't observe: a table's capacity, le
 
 ## What a replay doesn't do
 
-- It runs no frame or input stage: it reads no device and draws nothing. `App.replay` ticks with `{ input: false }`, and a tool that replays by hand with `tick` must do the same, or the machine's own keys leak into the game.
+- It runs no frame or input stage: it reads no device and draws nothing. `Journal.replay` ticks with `{ input: false }`, and a tool that replays by hand with `tick` must do the same, or the machine's own keys leak into the game.
 - Actions the simulation issues itself, such as a bot's move, aren't in the log: the replay's own systems issue them again.
 - Once a game has started, every change to its world must be in the log or come from the simulation: an action, a system, a handler. A coin spawned into `app.world` by hand between two ticks is in neither, so the replay can't reproduce it, and stops at the next checkpoint.
 - A write through a raw column in the frame or input stage changes the game without an error, unless the app was created with `verifyFrames`. A replay runs neither stage, so it diverges. See [testing](testing.md).
 
 ## Read more
 
-- [`App`](/reference/arcadekit/App) and [`Action`](/reference/arcadekit/Action) in the API reference, and the world's [`hash`](/reference/arcadekit/ecs#world).
+- [`Journal`](/reference/arcadekit/Journal), [`App`](/reference/arcadekit/App) and [`Action`](/reference/arcadekit/Action) in the API reference, and the world's [`hash`](/reference/arcadekit/ecs#world).
 - [Determinism](../concepts/determinism.md), for what your game must avoid.

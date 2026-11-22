@@ -12,6 +12,7 @@ import {
   Field,
   Frame,
   Input,
+  Journal,
   Plugin,
   Query,
   Singleton,
@@ -306,7 +307,7 @@ describe("a game that ticks when its player moves", () => {
     const again = run(
       App.make({ plugins: [Game], checkpointEvery: 1, seed: 5 })
     );
-    App.replay(again, app.record());
+    Journal.replay(again, app.record());
     expect(again.world.hash()).toBe(app.world.hash());
     expect(again.time.tick).toBe(app.time.tick);
     expect(again.world.singleton(Score).moves).toBe(2);
@@ -436,6 +437,26 @@ describe("a system that has more to do", () => {
     expect(said.time.tick).toBe(5);
     expect(said.world.hash()).toBe(unsaid.world.hash());
     expect(said.actionLog).toEqual(unsaid.actionLog);
+  });
+
+  it("has not asked when the action that asked is refused", () => {
+    const Ask = Action.define(
+      "st/Ask",
+      Schema.Struct({ refuse: Schema.Boolean })
+    );
+    const ask = Action.handler(Ask, function* ({ refuse }) {
+      (yield* Ticks).more();
+      if (refuse) {
+        return yield* Effect.fail("refused" as const);
+      }
+    });
+    const app = run(App.make({ handlers: [ask] }));
+    app.tick(1);
+    expect(app.settled).toBe(true);
+    app.dispatch(Ask, { refuse: true });
+    expect(app.settled).toBe(true);
+    app.dispatch(Ask, { refuse: false });
+    expect(app.settled).toBe(false);
   });
 
   it("is asked again of a game that was loaded: the first tick of an app is always run", () => {

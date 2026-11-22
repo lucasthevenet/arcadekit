@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { assert, describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   Action,
@@ -10,6 +10,7 @@ import {
   Driver,
   Event,
   Field,
+  Journal,
   Plugin,
   Query,
   Singleton,
@@ -18,6 +19,7 @@ import {
   System,
   Time,
 } from "../src/index";
+import { steered } from "./peers";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -119,28 +121,28 @@ describe("Sound.cues", () => {
   it("plays a cue once when a rewind runs its tick again, and what the tick now does", () => {
     const sound = Sound.makeRecorder();
     const app = play(sound);
-    app.tick(0.1);
+    const session = steered(app);
+    session.tick(0.1);
     app.frame(0);
-    const moment = app.capture();
-    assert(Exit.isSuccess(moment));
+    const moment = session.capture();
     app.enqueue(Drop, { height: 5 });
-    app.tick(0.1);
+    session.tick(0.1);
     app.frame(0);
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
     // A session goes back, and runs the tick again with the same drop: it
     // was heard already, so it isn't played twice.
-    app.rewind(moment.value);
+    session.rewind(moment);
     app.enqueue(Drop, { height: 5 });
-    app.tick(0.1);
+    session.tick(0.1);
     app.frame(0);
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
     // Gone back again, the tick runs without it: nothing to play. Then a drop
     // of its own, past where the game had got to, is heard.
-    app.rewind(moment.value);
-    app.tick(0.1);
+    session.rewind(moment);
+    session.tick(0.1);
     app.frame(0);
     app.enqueue(Drop, { height: 5 });
-    app.tick(0.1);
+    session.tick(0.1);
     app.frame(0);
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "whoosh"]);
   });
@@ -499,7 +501,7 @@ describe("a game with sound", () => {
     expect(sound.played.length).toBeGreaterThan(1);
     const again = Sound.makeRecorder();
     const replayed = play(again, 3);
-    App.replay(replayed, app.record());
+    Journal.replay(replayed, app.record());
     expect(replayed.world.hash()).toBe(app.world.hash());
     expect(again.played).toEqual([]);
   });

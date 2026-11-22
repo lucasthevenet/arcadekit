@@ -10,6 +10,7 @@ import {
   EcsWorld,
   Event,
   Field,
+  Journal,
   Plugin,
   Query,
   Random,
@@ -20,11 +21,14 @@ import {
   writeSnapshot,
 } from "../src/index";
 
+/** What one store of a save's world held. */
+const stored = (save: Save.Save, name: string): unknown =>
+  readSnapshot(save.world).stores.find((store) => store.name === name)?.data;
+
 /** The actions a save's world holds, queued for the next tick. */
 const queuedIn = (save: Save.Save): unknown[] =>
-  readSnapshot(save.world).lists.find(
-    (list) => list.name === "arcadekit/queued"
-  )?.values ?? [];
+  (stored(save, Action.INTAKE) as { queued: unknown[] } | undefined)?.queued ??
+  [];
 
 // --- a game with everything a save has to carry -----------------------------------
 
@@ -242,7 +246,7 @@ describe("a saved game", () => {
         // The log starts again, and what the game logged after the save is
         // replayed against the checkpoints it took after every tick.
         expect(app.actionLog).toEqual([]);
-        App.replay(app, recorded.tail);
+        Journal.replay(app, recorded.tail);
         return {
           hash: app.world.hash(),
           tally: app.world
@@ -336,17 +340,13 @@ describe("a saved game", () => {
       const save = unwrap(app.save());
       // The event of tick 4 is waiting, in the world: Sound has read it,
       // Listen has not.
-      expect(
-        readSnapshot(save.world).lists.filter(
-          (list) => list.name !== "arcadekit/queued"
-        )
-      ).toEqual([
+      expect(stored(save, Event.STORE)).toEqual([
         {
           name: "sv/Sounded",
-          values: [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
+          waiting: [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
+          read: { Sound: 1 },
         },
       ]);
-      expect(save.events).toEqual([{ name: "sv/Sounded", read: { Sound: 1 } }]);
       const heard = (of: GameApp) =>
         of.world.get(of.world.view(Tallies).entities()[0]!, Tally)!.heard;
       expect(heard(app)).toBe(1 + 2 + 3);
@@ -394,7 +394,7 @@ describe("a saved game", () => {
       const recorded = record(ticks, saveAt);
       ticksRun = 0;
       withApp(App.load(recorded.save, options), (app) => {
-        App.replay(app, recorded.tail);
+        Journal.replay(app, recorded.tail);
         expect(app.world.hash()).toBe(recorded.hashes.at(-1));
       });
       return ticksRun;
@@ -412,7 +412,7 @@ describe("a saved game", () => {
     // It is the world's snapshot and a little text.
     expect(bytes.length).toBeLessThan(recorded.save.world.length + 600);
     withApp(App.load(decoded, options), (app) => {
-      App.replay(app, recorded.tail);
+      Journal.replay(app, recorded.tail);
       expect(app.world.hash()).toBe(recorded.hashes.at(-1));
     });
     // A view into a larger buffer reads as itself.
@@ -524,7 +524,8 @@ describe("a save that cannot be loaded", () => {
     const newer = Uint8Array.from(bytes);
     new DataView(newer.buffer).setUint32(4, 9, true);
     expect(problem(newer)).toBe("newer format");
-    expect(problem(bytes.subarray(0, 40))).toBe("truncated");
+    // Cut inside the text that comes before the world.
+    expect(problem(bytes.subarray(0, 20))).toBe("truncated");
     // The text between the header and the world: no longer JSON, then JSON
     // of another shape, then not text at all.
     const length = new DataView(bytes.buffer).getUint32(8, true);
@@ -559,14 +560,16 @@ describe("a save that cannot be loaded", () => {
   it("says which waiting event no longer reads, when its schema has changed, as it is loaded", () => {
     const { save } = record(10, 5);
     const world = readSnapshot(save.world);
-    const sounded = world.lists.find((list) => list.name === "sv/Sounded");
+    const waiting = world.stores.find((store) => store.name === Event.STORE)
+      ?.data as { name: string; waiting: unknown[] }[];
+    const sounded = waiting.find((events) => events.name === "sv/Sounded");
     expect(sounded).toBeDefined();
-    sounded!.values = [{ tick: "five", at: "x" }];
+    sounded!.waiting = [{ tick: "five", at: "x" }];
     const error = refusal(load({ ...save, world: writeSnapshot(world) }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("list changed");
+    expect(error.problem).toBe("store changed");
     expect(error.message).toMatch(
-      /^Can't load the "sv\/Sounded" events waiting to be read: one is in a form that is no longer taken: .*A migration changes the events and the queued actions of a save in `world.lists`\.$/s
+      /^Can't load the "sv\/Sounded" events waiting to be read: one is in a form that is no longer taken: .*A migration changes the events and the queued actions of a save in `world.stores`\.$/s
     );
   });
 
@@ -577,17 +580,19 @@ describe("a save that cannot be loaded", () => {
       systems: [Listen, Drift, Bot, Sound],
       handlers: [add, double, scatter, pulse],
     });
-    expect(save.events.map((events) => events.name)).toContain("sv/Sounded");
+    const world = readSnapshot(save.world);
+    const waiting = world.stores.find((store) => store.name === Event.STORE)
+      ?.data as { name: string; waiting: unknown[]; read: object }[];
+    expect(waiting.map((events) => events.name)).toContain("sv/Sounded");
     expect(Exit.isSuccess(load(save, { plugins: [Bare] }))).toBe(true);
 
-    const world = readSnapshot(save.world);
-    world.lists.push({ name: "sv/Never", values: [1] });
+    waiting.push({ name: "sv/Never", waiting: [1], read: {} });
     const renamed = { ...save, world: writeSnapshot(world) };
     const error = refusal(load(renamed, { plugins: [Bare] }));
     expect(error).toBeInstanceOf(Save.LoadRefused);
-    expect(error.problem).toBe("unknown list");
+    expect(error.problem).toBe("store changed");
     expect(error.message).toBe(
-      'The snapshot holds a value of a list named "sv/Never", which this program doesn\'t define: it was renamed or removed since. A migration changes the events and the queued actions of a save in `world.lists`.'
+      'The snapshot holds an event named "sv/Never" waiting to be read, which this program doesn\'t define: it was renamed or removed since. A migration changes the events and the queued actions of a save in `world.stores`.'
     );
   });
 });

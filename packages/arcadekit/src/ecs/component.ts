@@ -447,6 +447,12 @@ export const frozenWrite = (what: string): string =>
 export const retarget = (name: string): string =>
   `"${name}" is a relation, and its target is not written like a field: the world keeps track of who points at whom. Give it another target by adding it again, with add(entity, ${name.split("/").pop()}.of({ target })) on Commands or on the world.`;
 
+/** Explains that a relation was given without a value, and so has no target. */
+export const targetless = (def: ComponentDef): Error =>
+  new Error(
+    `"${def.name}" is a relation, and a relation needs a target: give it as ${def.name.split("/").pop()}.of({ target }).`
+  );
+
 // ---------------------------------------------------------------------------
 // Accessors: what `each` hands its callback
 // ---------------------------------------------------------------------------

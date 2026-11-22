@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
-import { defineList } from "../src/ecs/list";
 import { readSingleton } from "../src/ecs/snapshot";
 import {
   CommandBuffer,
@@ -13,6 +12,7 @@ import {
   SnapshotError,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
+import { Shouts } from "./stores";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -692,169 +692,175 @@ describe("a snapshot that cannot be loaded", () => {
   });
 });
 
-// Two lists, the second named before the first, and one the stages between
-// ticks may add to. Each codec saves a value as something other than itself.
-const Shouts = defineList<string>(
-  "snap/Shouts",
-  {
-    encode: (value) => {
-      if (value === "unsayable") {
-        throw new Error("that is not said");
-      }
-      return { said: value };
-    },
-    decode: (data) => {
-      const { said } = data as { said: unknown };
-      if (typeof said !== "string") {
-        throw new Error("a shout is a string");
-      }
-      return said;
-    },
-  },
-  { label: "the shouts" }
-);
-const Asks = defineList<{ readonly n: number }>(
-  "snap/Asks",
-  { encode: ({ n }) => n, decode: (data) => ({ n: data as number }) },
-  { label: "the asks", betweenTicks: true }
-);
+/** A store that gives a snapshot what no snapshot can hold. */
+class Odd extends Shouts {
+  override save(): unknown {
+    return Symbol("odd");
+  }
+}
 
-describe("the lists a world keeps", () => {
-  it("are saved, loaded and hashed through their codecs, in order of name", () => {
-    const world = new EcsWorld({ seed: 3 });
+/** A world with two stores, the second named before the first. */
+const held = (seed?: number) => {
+  const world = new EcsWorld(seed === undefined ? undefined : { seed });
+  const shouts = new Shouts("snap/Shouts");
+  // One the stages between ticks may change.
+  const asks = new Shouts("snap/Asks", true);
+  world._attach(shouts);
+  world._attach(asks);
+  return { world, shouts, asks };
+};
+
+describe("the stores a world holds", () => {
+  it("are saved, loaded and hashed as each says, in order of name", () => {
+    const { asks, shouts, world } = held(3);
     world.spawn(C.Body.of({ x: 1, y: 2 }));
-    world._list(Shouts).push("hey", "ho");
-    world._list(Asks).push({ n: 4 });
+    shouts.values.push("hey", "ho");
+    asks.values.push("who");
     const bytes = world.snapshot();
-    expect(readSnapshot(bytes).lists).toEqual([
-      { name: "snap/Asks", values: [4] },
-      { name: "snap/Shouts", values: [{ said: "hey" }, { said: "ho" }] },
+    expect(readSnapshot(bytes).stores).toEqual([
+      { name: "snap/Asks", data: [{ said: "who" }] },
+      { name: "snap/Shouts", data: [{ said: "hey" }, { said: "ho" }] },
     ]);
     // Written again from its contents, byte for byte.
     expect(writeSnapshot(readSnapshot(bytes))).toEqual(bytes);
-    const copy = new EcsWorld();
-    copy.load(bytes, all);
-    expect(copy._list(Shouts)).toEqual(["hey", "ho"]);
-    expect(copy._list(Asks)).toEqual([{ n: 4 }]);
-    expect(copy.hash()).toBe(world.hash());
-    expect(copy.snapshot()).toEqual(bytes);
+    const copy = held();
+    copy.world.load(bytes, all);
+    expect(copy.shouts.values).toEqual(["hey", "ho"]);
+    expect(copy.asks.values).toEqual(["who"]);
+    expect(copy.world.hash()).toBe(world.hash());
+    expect(copy.world.snapshot()).toEqual(bytes);
+    expect(world.contents().stores).toEqual({
+      "snap/Asks": ["who"],
+      "snap/Shouts": ["hey", "ho"],
+    });
   });
 
   it("count in the hash by what they hold, and as nothing when they are empty", () => {
     const bare = new EcsWorld({ seed: 3 });
-    const world = new EcsWorld({ seed: 3 });
-    const shouts = world._list(Shouts);
+    const { shouts, world } = held(3);
     expect(world.hash()).toBe(bare.hash());
     expect(world.snapshot()).toEqual(bare.snapshot());
-    shouts.push("hey");
+    expect(world.contents().stores).toEqual({});
+    shouts.values.push("hey");
     const one = world.hash();
     expect(one).not.toBe(bare.hash());
-    shouts.push("ho");
+    shouts.values.push("ho");
     expect(world.hash()).not.toBe(one);
-    shouts.length = 1;
+    shouts.values.length = 1;
     expect(world.hash()).toBe(one);
-    // The same values in another list are another world.
-    const other = new EcsWorld({ seed: 3 });
-    other._list(Asks).push({ n: 1 });
-    expect(other.hash()).not.toBe(one);
-    // A value the codec refuses counts as null, and the hash doesn't fail.
-    shouts[0] = "unsayable";
-    expect(() => world.hash()).not.toThrow();
+    // The same in another store is another world.
+    const other = held(3);
+    other.asks.values.push("hey");
+    expect(other.world.hash()).not.toBe(one);
   });
 
-  it("leave out of the frame's hash only what the stages between ticks may add", () => {
-    const world = new EcsWorld({ seed: 3 });
+  it("are left out of the frame's hash when the stages between ticks may change them", () => {
+    const { asks, shouts, world } = held(3);
     const before = world._frameHash();
-    world._list(Asks).push({ n: 1 });
+    asks.values.push("who");
     expect(world._frameHash()).toBe(before);
     expect(world.hash()).not.toBe(before);
-    world._list(Shouts).push("hey");
+    shouts.values.push("hey");
     expect(world._frameHash()).not.toBe(before);
   });
 
-  it("are put back by a capture as they were, by reference, without their codec", () => {
-    const world = new EcsWorld({ seed: 3 });
-    const asks = world._list(Asks);
-    const ask = { n: 1 };
-    asks.push(ask);
-    // A value the codec can't save is no reason a moment can't hold it.
-    world._list(Shouts).push("unsayable");
+  it("are put back by a rewind as they captured themselves, without being saved", () => {
+    const { asks, shouts, world } = held(3);
+    asks.values.push("who");
+    // What a store can't save is no reason a moment can't hold it.
+    shouts.values.push("unsayable");
     expect(() => world.snapshot()).toThrow(SnapshotError);
     const moment = world._capture();
-    asks.length = 0;
-    asks.push({ n: 2 }, { n: 3 });
-    world._list(Shouts).length = 0;
+    asks.values = ["what", "when"];
+    shouts.values = [];
+    // A store attached since the moment holds nothing after the rewind.
+    const late = new Shouts("snap/Late");
+    world._attach(late);
+    late.values.push("new");
     world._rewind(moment);
-    expect(world._list(Asks)).toBe(asks);
-    expect(asks).toEqual([ask]);
-    expect(asks[0]).toBe(ask);
-    expect(world._list(Shouts)).toEqual(["unsayable"]);
+    expect(asks.values).toEqual(["who"]);
+    expect(shouts.values).toEqual(["unsayable"]);
+    expect(late.values).toEqual([]);
   });
 
-  it("refuse a value their codec can't save, with what it said", () => {
-    const world = new EcsWorld();
-    world._list(Shouts).push("unsayable");
-    let error: unknown;
-    try {
-      world.snapshot();
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect(error).toBeInstanceOf(SnapshotError);
-    expect((error as SnapshotError).problem).toBe("cannot be saved");
-    expect((error as SnapshotError).message).toBe(
-      "Can't save the shouts: that is not said"
+  it("are emptied by a restore, and filled with what the snapshot holds", () => {
+    const { asks, shouts, world } = held(3);
+    shouts.values.push("hey");
+    const bytes = world.snapshot();
+    shouts.values.push("ho");
+    asks.values.push("who");
+    world.restore(bytes);
+    expect(shouts.values).toEqual(["hey"]);
+    expect(asks.values).toEqual([]);
+    expect(world.snapshot()).toEqual(bytes);
+  });
+
+  it("have what was done to them in a transaction taken back by its rollback", () => {
+    const { shouts, world } = held(3);
+    shouts.values.push("hey");
+    const before = world.hash();
+    world.begin();
+    shouts.values.push("ho");
+    world.rollback();
+    expect(shouts.values).toEqual(["hey"]);
+    expect(world.hash()).toBe(before);
+    world.begin();
+    shouts.values.push("ho");
+    world.commit();
+    expect(shouts.values).toEqual(["hey", "ho"]);
+  });
+
+  it("refuse a snapshot when one holds what it can't save, with what it said", () => {
+    const { shouts, world } = held();
+    shouts.values.push("unsayable");
+    expect(problemOf(() => world.snapshot())).toEqual(
+      new SnapshotError(
+        "cannot be saved",
+        "Can't save the shouts: that is not said"
+      )
+    );
+    // And when one gives what is not plain data.
+    const odd = new EcsWorld();
+    odd._attach(new Odd("snap/Odd"));
+    expect(problemOf(() => odd.snapshot()).message).toBe(
+      'The store "snap/Odd" gave a snapshot what is not plain data (a symbol).'
     );
   });
 
-  it("refuse a snapshot that holds a list this program doesn't define, or a value it no longer takes", () => {
-    const world = new EcsWorld();
-    world._list(Shouts).push("hey");
+  it("refuse a snapshot of a store the world doesn't have, or what a store no longer takes", () => {
+    const { shouts, world } = held();
+    shouts.values.push("hey");
     const contents = readSnapshot(world.snapshot());
-    contents.lists.push({ name: "snap/Never", values: [1, 2] });
-    const unknown = writeSnapshot(contents);
-    const refusal = (bytes: Uint8Array): SnapshotError => {
-      try {
-        new EcsWorld().load(bytes);
-      } catch (error) {
-        if (error instanceof SnapshotError) {
-          return error;
-        }
-        throw error;
-      }
-      throw new Error("expected a SnapshotError");
-    };
-    expect(refusal(unknown).problem).toBe("unknown list");
-    expect(refusal(unknown).message).toBe(
-      'The snapshot holds 2 values of a list named "snap/Never", which this program doesn\'t define: it was renamed or removed since.'
+    contents.stores.push({ name: "snap/Never", data: [1, 2] });
+    const unknown = problemOf(() => held().world.load(writeSnapshot(contents)));
+    expect(unknown.problem).toBe("unknown store");
+    expect(unknown.message).toBe(
+      'The snapshot holds what a store named "snap/Never" kept, and this world has no such store: the program that made it kept more of a game in its world than this one does.'
     );
-    contents.lists = [{ name: "snap/Shouts", values: [{ said: 5 }] }];
-    const changed = refusal(writeSnapshot(contents));
-    expect(changed.problem).toBe("list changed");
-    expect(changed.message).toBe(
-      "Can't load the shouts: one is in a form that is no longer taken: a shout is a string"
-    );
+    contents.stores = [{ name: "snap/Shouts", data: [{ said: 5 }] }];
+    const changed = problemOf(() => held().world.load(writeSnapshot(contents)));
+    expect(changed.problem).toBe("store changed");
+    expect(changed.message).toBe("Can't load the shouts: a shout is a string");
   });
 
-  it("make a world that holds anything in one no world to load into", () => {
-    const source = new EcsWorld();
-    source._list(Shouts).push("hey");
-    const world = new EcsWorld();
-    world._list(Asks).push({ n: 1 });
-    expect(() => world.load(source.snapshot())).toThrow(/an empty world/);
+  it("make a world in which one holds anything no world to load into", () => {
+    const source = held();
+    source.shouts.values.push("hey");
+    const { asks, world } = held();
+    asks.values.push("who");
+    expect(() => world.load(source.world.snapshot())).toThrow(/an empty world/);
   });
 
-  it("can't be two different lists under one name", () => {
-    const world = new EcsWorld();
-    world._list(Shouts);
-    const Again = defineList<string>(
-      "snap/Shouts",
-      { encode: (value) => value, decode: (data) => data as string },
-      { label: "the other shouts" }
+  it("can't be two under one name, or attached in a transaction", () => {
+    const { world } = held();
+    expect(() => world._attach(new Shouts("snap/Shouts"))).toThrow(
+      'Two stores are both named "snap/Shouts". A store\'s name identifies it in a world and in a snapshot.'
     );
-    expect(() => world._list(Again)).toThrow(
-      'Two different lists are both named "snap/Shouts": the shouts, and the other shouts.'
+    world.begin();
+    expect(() => world._attach(new Shouts("snap/Other"))).toThrow(
+      /was attached in a transaction/
     );
+    world.rollback();
   });
 });
 

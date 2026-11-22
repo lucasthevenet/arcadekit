@@ -40,14 +40,12 @@ export type {
   SnapshotProblem,
   SnapshotSingleton,
   SnapshotSparse,
+  SnapshotStore,
   SnapshotTable,
 } from "./snapshot";
-export { CommandBuffer, QueryView, RemovedReader, World } from "./world";
-export type {
-  ChangeKind,
-  EntityColumn,
-  QuerySpec,
-  SavedChanges,
-  SparseColumns,
-  Terms,
-} from "./world";
+export { RemovedReader } from "./changes";
+export type { ChangeKind, SavedChanges } from "./changes";
+export { CommandBuffer } from "./commands";
+export { QueryView } from "./query";
+export type { EntityColumn, QuerySpec, SparseColumns, Terms } from "./query";
+export { World } from "./world";

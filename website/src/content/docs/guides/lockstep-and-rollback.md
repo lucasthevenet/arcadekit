@@ -55,7 +55,7 @@ const session = Rollback.make(app, {
 });
 ```
 
-A rollback session runs each tick immediately, predicting that the peers it hasn't heard from did nothing. When a message proves a prediction wrong, it rewinds with `app.rewind` to a moment it captured, and resimulates.
+A rollback session runs each tick immediately, predicting that the peers it hasn't heard from did nothing. When a message proves a prediction wrong, it rewinds to a moment it captured, and resimulates.
 
 - A player's own move is applied on the next tick: `delay` defaults to 0. A delay of a tick or two spares the other peers a rewind for every move, at the cost of that much input lag for the local player.
 - `ahead` is how far it may run past what every peer has sent, 8 ticks by default, and also the furthest a rewind goes back. A peer that far ahead waits, and `session.waitingFor` says for whom.
@@ -93,11 +93,11 @@ Key presses, the UI and `app.enqueue` all feed this peer's next message. Your ga
 - **Keep everything the simulation reads in the world.** A rewind restores the world and the app's pending work, and nothing else.
   - State held by your game's own services isn't restored, and nothing tells a service the game rewound: a counter kept in a layer continues from the discarded future. `Rollback.syncTest` runs each tick twice from the same moment, and names the first system that ran differently. See [testing](testing.md#rewinds).
   - A `Field.transient` field is `undefined` afterwards, as in a loaded game.
-- **Expect the frame stage to show a prediction.** A rollback game is drawn and heard as predicted. The frame and input stages hear each event once across a rewind: an event a resimulated tick emits again, with the same payload, isn't heard twice, and only what the tick now does otherwise is. Their change queries visit everything after each rewind. A sound for a prediction that is rolled back has already played, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final.
+- **Expect the frame stage to show a prediction.** A rollback game is drawn and heard as predicted. The frame and input stages hear each event once however often a session runs its tick: an event a resimulated tick emits again, with the same payload, isn't heard twice, and only what the tick now does otherwise is. Their change queries visit everything after each rewind. A sound for a prediction that is rolled back has already played, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final.
 
 ## Capturing and rewinding
 
-The mechanism a rollback session uses is available on the app itself, for other kinds of sessions or for tools:
+An app can capture a moment of its game and return to it, for an undo, a search ahead, a rewind mechanic or a tool:
 
 ```ts
 import { App, Plugin } from "arcadekit";
@@ -116,8 +116,10 @@ const program = Effect.gen(function* () {
 ```
 
 - A moment holds what a [save](saving-and-loading.md) does: the world, the game time, the actions queued for the next tick, the events waiting to be read with every reader's position, what change queries haven't visited, and the log's length. `rewind` restores all of it in place and truncates the log. The app, its world and its services are the same objects as before.
-- It lives in memory and belongs to one app in one run of the program. Pending actions and events don't need schemas, so a game with schema-less actions or events can be captured even when it can't be saved.
+- It lives in memory and belongs to one app in one run of the program. It holds pending actions and events as they are and encodes none of them, so a game can be captured while a payload its schema doesn't take is pending, when it can't be saved.
 - A game is captured and rewound between ticks. What a rewind doesn't restore is what the requirements above keep out of the simulation's way.
+- After `app.rewind`, the game plays on from the moment. The frame and input stages hear every event it emits from then on, including one they heard before the rewind, and their change queries visit everything again. They hear nothing of the future that was given up before they had read it.
+- A session that rewinds to run the same ticks again takes the app over with `app.divert` and rewinds with what it returns, `rewind`. That is the rewind after which the two stages hear each event once.
 
 ## When peers drift apart
 

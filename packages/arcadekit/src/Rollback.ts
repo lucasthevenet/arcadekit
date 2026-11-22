@@ -29,8 +29,10 @@
  * stamped with, whenever it heard of it. Along the way, a peer may see a move
  * accepted that is later refused, once the message it was missing arrives.
  *
- * Rewinding uses `app.rewind`, to a moment `app.capture` took before each
- * uncertain tick. A rewind restores only what a save holds: see `App.rewind`.
+ * Rewinding goes back to a moment `app.capture` took before each uncertain
+ * tick, with the rewind of the app the session took over, so that the frame
+ * and input stages hear an event once however often its tick is run. A
+ * rewind restores only what a save holds: see `App.rewind`.
  * A tick that reads anything else runs differently when it is resimulated,
  * and the peers drift apart. `Rollback.syncTest` finds such a tick in a test,
  * with no second peer.
@@ -237,7 +239,7 @@ export const syncTest = <E>(app: SyncTestApp<E>): SyncTest<E> => {
       return { exit, hashes, systems };
     };
     const first = run();
-    app.rewind(moment.value);
+    reins.rewind(moment.value);
     const second = run();
     const once = first.hashes;
     const twice = second.hashes;

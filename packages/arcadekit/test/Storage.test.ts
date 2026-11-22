@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { CommandBuffer } from "../src/ecs/commands";
 import { Component, Field } from "../src/ecs/component";
 import type { ComponentDef, Entity } from "../src/ecs/component";
-import { CommandBuffer, World } from "../src/ecs/world";
-import type { QuerySpec, Terms } from "../src/ecs/world";
+import type { QuerySpec, Terms } from "../src/ecs/query";
+import { World } from "../src/ecs/world";
 import { expectChecked, makeChecks } from "./checks";
 
 const Position = Component.define("st/Position", {

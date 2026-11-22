@@ -7,6 +7,7 @@ import {
   Assets,
   Event,
   Field,
+  Journal,
   Plugin,
   Singleton,
   Sound,
@@ -285,7 +286,7 @@ describe("Sound.music", () => {
     // And a replay, which runs no frame, is silent.
     const replayed = Sound.makeRecorder();
     const other = play([Score], replayed);
-    App.replay(other.app, heard.app.record());
+    Journal.replay(other.app, heard.app.record());
     expect(other.app.world.hash()).toBe(heard.app.world.hash());
     expect(replayed.scored).toEqual([]);
   });

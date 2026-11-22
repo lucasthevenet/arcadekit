@@ -24,10 +24,10 @@
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
-import { defineList } from "./ecs/list";
-import type { ListDef } from "./ecs/list";
+import { SnapshotError } from "./ecs/snapshot";
+import { isPlain } from "./ecs/store";
+import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
-import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
 /**
@@ -51,9 +51,6 @@ export interface EventHandle<P> {
 // a module that is loaded again under hot reload makes, it is the newer. An
 // app that meets both refuses the second.
 const defined = new Map<string, EventDef<unknown>>();
-// The event each event's list in a world is of, for a bus to find the events
-// a loaded or restored world holds.
-const ofList = new WeakMap<ListDef, EventDef<unknown>>();
 
 /**
  * An event type. It is an Effect, so `yield*` returns a handle to its channel
@@ -69,40 +66,13 @@ export class EventDef<P> extends Effectable.Class<
   readonly name: string;
   /** Converts a payload to and from JSON. Derived from the event's schema. */
   readonly codec: Schema.Codec<P, unknown>;
-  /**
-   * The world's list of these events that the simulation has yet to read,
-   * under the event's name, each in its JSON form in a snapshot and the hash.
-   * @internal
-   */
-  readonly list: ListDef<P>;
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
 
   constructor(name: string, codec: Schema.Codec<P, unknown>) {
     super();
     this.name = name;
     this.codec = codec;
-    this.list = defineList<P>(
-      name,
-      {
-        encode: (payload) => {
-          const data = encode(this, payload);
-          if (Exit.isFailure(data)) {
-            throw new Error(describeFailure(data.cause));
-          }
-          return data.value;
-        },
-        decode: (data) => {
-          const payload = decode(this, data);
-          if (Exit.isFailure(payload)) {
-            throw new Error(describeFailure(payload.cause));
-          }
-          return payload.value;
-        },
-      },
-      { label: `the "${name}" events waiting to be read` }
-    );
     defined.set(name, this as EventDef<unknown>);
-    ofList.set(this.list as ListDef, this as EventDef<unknown>);
   }
 
   asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
@@ -195,232 +165,445 @@ export const decode = <P>(
 
 const EMPTY: readonly never[] = Object.freeze([]);
 
+/** One event as it was emitted, with which event it is. */
+interface Emitted {
+  readonly def: EventDef<unknown>;
+  readonly payload: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// The tick's side: the events the simulation has yet to read
+// ---------------------------------------------------------------------------
+
+/** One event's values waiting in the world, and where each reader of the tick is. */
+class Channel<P> {
+  readonly def: EventDef<P>;
+  /** What the tick can still read, oldest first. */
+  values: P[] = [];
+  /**
+   * The number of the oldest value kept. A value's number is its place among
+   * all that were emitted, so a reader's place outlives what is dropped.
+   */
+  base = 0;
+  /** For each system and handler that has read, the number of the value it reads next. */
+  readonly readers = new Map<string, number>();
+  /** Where it ended when the tick's systems began: `close` drops what came before. */
+  mark = 0;
+  /** Where it ended when the transaction began. */
+  txEnd = 0;
+
+  constructor(def: EventDef<P>) {
+    this.def = def;
+  }
+
+  /** One past the number of the newest value. */
+  get end(): number {
+    return this.base + this.values.length;
+  }
+}
+
+/** What `Waiting` holds of one channel at a moment. */
+interface ChannelMoment {
+  readonly channel: Channel<unknown>;
+  readonly values: readonly unknown[];
+  readonly base: number;
+  readonly readers: ReadonlyMap<string, number>;
+}
+
+/** What `Waiting` holds at a moment: the events by reference, with no schema. */
+interface WaitingMoment {
+  readonly channels: readonly ChannelMoment[];
+  readonly emitted: readonly Emitted[];
+}
+
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+/** What a snapshot holds of the waiting events: `Waiting.save`. */
+const SavedWaiting = Schema.Array(
+  Schema.Struct({
+    name: Schema.String,
+    waiting: Schema.Array(Schema.Unknown),
+    read: Schema.Record(Schema.String, Count),
+  })
+);
+
+/** What goes before a message about the events of one type that are waiting. */
+const labelOf = (name: string): string =>
+  `the "${name}" events waiting to be read`;
+
 /**
- * The prefix of a reader's name when it is a frame-stage or input-stage system.
- * Such a reader isn't part of the simulation: it can't emit, it isn't saved,
- * and events are kept for it until the frame stage next runs.
+ * The name of the store that holds an app's waiting events, as a snapshot has
+ * it: `readSnapshot(save.world).stores`. Each entry is `{ name, waiting, read }`:
+ * the event's name, the events waiting in JSON form, oldest first, and for each
+ * system and handler that has read some, how many.
  *
  * @category Constants
  */
-export const FRAME_READER = "frame:";
+export const STORE = "arcadekit/events";
 
 /**
- * How many ticks events are kept for a between-ticks stage that has stopped
- * running, or never ran, before the app treats it as gone: ten seconds at 60
- * Hz. A replay and a server run neither stage.
+ * The events the simulation has yet to read, and where each system and
+ * handler has read to: the game's, so the world holds them. It saves, hashes,
+ * captures and rewinds them with the rest of the game, and takes back what a
+ * refused action emitted and read.
  */
-const FRAME_PATIENCE = 600;
+class Waiting implements Store<WaitingMoment> {
+  readonly name = STORE;
+  readonly betweenTicks = false;
+  // Keyed by event definition. The value is the `Channel<P>` of that
+  // definition's own `P`, which a Map's type cannot say, so `channel` below
+  // is the one place that restores it.
+  private readonly channels = new Map<object, Channel<unknown>>();
+  private readonly names = new Map<string, EventDef<unknown>>();
+  private readonly order: Channel<unknown>[] = [];
+  /**
+   * Every event emitted since `take`, in order: what the stages between ticks
+   * are told of once the code that emitted them has ended.
+   */
+  private emitted: Emitted[] = [];
+  private recording = false;
+  private emittedMark = 0;
+  /** In a transaction, the readers that moved, and where each was. */
+  private readonly moved: {
+    readonly channel: Channel<unknown>;
+    readonly reader: string;
+    readonly at: number | undefined;
+  }[] = [];
+  private readonly world: World;
 
-/** The part of a channel that does not depend on its payload type. */
-interface ChannelState {
-  /** Sequence number of the oldest event still kept. Sequence numbers never repeat. */
-  offset: number;
-  /**
-   * Sequence number of the oldest event the simulation can still read. It
-   * equals `offset` unless older events are kept for the frame stage, which the
-   * simulation must not be able to observe.
-   */
-  tickOffset: number;
-  /** One past the newest event the frame stage has had its chance to read. */
-  frameSeen: number;
-  /** One past the newest event the input stage has had its chance to read. */
-  inputSeen: number;
-  /** Sequence number of the first event emitted once the current tick's systems began. */
-  tickStart: number;
-  /** One past the sequence number of the newest event. */
-  readonly end: number;
-  /** Number of events the simulation can still read. */
-  readonly size: number;
-}
-
-/**
- * The reads made while an action's handler runs, for a refusal to roll back:
- * each handle that moved, and its previous position. One per bus.
- */
-interface ReadLog {
-  /** True from `mark` until `rollback` or `commit`. */
-  open: boolean;
-  readonly moved: {
-    readonly handle: Handle<unknown>;
-    readonly cursor: number;
-  }[];
-}
-
-class Channel<P> implements ChannelState {
-  readonly def: EventDef<P>;
-  readonly reads: ReadLog;
-  /**
-   * The events the simulation can still read, from `tickOffset` on: the
-   * world's list of them, which is the game's, and which the world saves,
-   * hashes and puts back.
-   */
-  readonly list: P[];
-  /**
-   * The events before those, from `offset` on, kept only for the stages
-   * between ticks, which are not the game's.
-   */
-  kept: P[] = [];
-  offset = 0;
-  tickOffset = 0;
-  frameSeen = 0;
-  inputSeen = 0;
-  tickStart = 0;
-  /** Sequence number of the first event emitted since the last tick ended. */
-  since = 0;
-  /** The events emitted from the end of the tick before the last to the end of the last. */
-  last: readonly P[] = [];
-  readonly readers: Map<string, Handle<P>> = new Map();
-  /**
-   * After a rewind, what each reader between ticks had already heard of the
-   * ticks it goes over again, by reader, for a reader whose handle the rewind
-   * dropped. A handle made for that reader takes it.
-   */
-  readonly echoes: Map<string, P[]> = new Map();
-  /**
-   * After a rewind, the sequence number from which events are of ticks no
-   * reader between ticks has heard: until the ticks run again reach where the
-   * game was, every event is one of them.
-   */
-  echoEnd = Number.POSITIVE_INFINITY;
-
-  constructor(def: EventDef<P>, reads: ReadLog, list: P[]) {
-    this.def = def;
-    this.reads = reads;
-    this.list = list;
-    this.since = this.end;
+  constructor(world: World) {
+    this.world = world;
   }
 
-  get end(): number {
-    return this.tickOffset + this.list.length;
-  }
-
-  /** How many events the simulation can still read. */
-  get size(): number {
-    return this.list.length;
-  }
-
-  /** The events kept from sequence number `from` on, oldest first: copies. */
-  from(from: number): P[] {
-    return from >= this.tickOffset
-      ? this.list.slice(from - this.tickOffset)
-      : this.kept.slice(Math.max(0, from - this.offset)).concat(this.list);
-  }
-
-  /** Forgets the oldest `count` events of those kept, and returns them. */
-  dropOldest(count: number): P[] {
-    this.offset += count;
-    return this.kept.splice(0, count);
-  }
-
-  /** Forgets every event from sequence number `end` on. */
-  truncate(end: number): void {
-    this.list.length = Math.max(0, end - this.tickOffset);
-  }
-
-  /**
-   * The simulation can no longer read the events before sequence number
-   * `until`: they leave the world's list, and are kept for the stages between
-   * ticks until `dropOldest`.
-   */
-  pass(until: number): void {
-    const count = until - this.tickOffset;
-    if (count <= 0) {
-      return;
+  channel<P>(def: EventDef<P>): Channel<P> {
+    const existing = this.channels.get(def);
+    if (existing !== undefined) {
+      return existing as Channel<P>;
     }
-    for (const event of this.list.splice(0, count)) {
-      this.kept.push(event);
+    // The name is how a save, a tool and another machine know the event.
+    const known = this.names.get(def.name);
+    if (known !== undefined && known !== def) {
+      throw new Error(
+        `Two different events are both named "${def.name}". An event's name identifies it in an app and in a save, so give each its own, prefixed with the feature it belongs to.`
+      );
     }
-    this.tickOffset = until;
-  }
-}
-
-class Handle<P> implements EventHandle<P> {
-  private readonly channel: Channel<P>;
-  private cursor: number;
-
-  /** How far this handle has read: the sequence number of its next event. */
-  get position(): number {
-    return this.cursor;
+    this.names.set(def.name, def);
+    const channel = new Channel<P>(def);
+    this.channels.set(def, channel as Channel<unknown>);
+    this.order.push(channel as Channel<unknown>);
+    return channel;
   }
 
-  /** Puts the handle back where it was before a read. */
-  rewind(cursor: number): void {
-    this.cursor = cursor;
-  }
-
-  /** Whether this is a handle of the frame stage: it reads, and cannot emit. */
-  private readonly forFrame: boolean;
-  readonly emit: EventHandle<P>["emit"];
-  /**
-   * After a rewind, the events this handle had already heard of the ticks the
-   * game goes over again. As those ticks emit them again, they are taken out
-   * here and not heard twice.
-   */
-  echo: P[] | undefined;
-
-  constructor(
-    channel: Channel<P>,
-    cursor: number,
-    forFrame = false,
-    echo?: P[]
-  ) {
-    this.channel = channel;
-    this.cursor = cursor;
-    this.forFrame = forFrame;
-    this.echo = echo;
-    // Decided once, so that emitting stays one call with no check in it.
-    this.emit = forFrame
-      ? () => {
-          throw new Error(
-            `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
-          );
-        }
-      : (payload) => {
-          channel.list.push(payload);
-        };
-  }
-
-  readonly read = (): readonly P[] => {
-    const { channel } = this;
-    const { end } = channel;
-    // Clamp: old events may have been dropped, and a failed action's events
-    // may have been rolled back, since this handle last read. The frame
-    // stage reads back to what is kept for it; the simulation no further
-    // than it could if nothing were.
-    const oldest = this.forFrame ? channel.offset : channel.tickOffset;
-    const from = Math.min(Math.max(this.cursor, oldest), end);
-    // In an action's handler, a read is one a refusal takes back: the
-    // events are unread again, as they are in a replay that never ran it.
-    if (channel.reads.open && this.cursor !== end) {
-      channel.reads.moved.push({ handle: this, cursor: this.cursor });
+  emit<P>(channel: Channel<P>, payload: P): void {
+    if (this.world.frozen) {
+      throw new Error(
+        `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
+      );
     }
-    this.cursor = end;
-    if (from === end) {
+    channel.values.push(payload);
+    this.emitted.push({ def: channel.def, payload });
+  }
+
+  /** What `reader` has yet to read, oldest first, which it has then read. */
+  read<P>(channel: Channel<P>, reader: string): readonly P[] {
+    const { base, end, readers } = channel;
+    const at = readers.get(reader);
+    if (at === end) {
       return EMPTY;
     }
-    const events = channel.from(from);
-    const { echo } = this;
-    if (echo === undefined) {
-      return events;
+    // In an action's handler, a read is one a refusal takes back: the
+    // events are unread again, as they are in a replay that never ran it.
+    if (this.recording) {
+      this.moved.push({ channel: channel as Channel<unknown>, reader, at });
     }
-    // Events of the ticks a rewind goes over again: one this handle heard
-    // before the rewind is heard once, and only what is new is read.
-    const heard = Math.min(end, channel.echoEnd) - from;
-    const fresh: P[] = [];
-    for (let i = 0; i < events.length; i++) {
-      const event = events[i]!;
-      const at = i < heard ? echo.findIndex((was) => same(was, event)) : -1;
-      if (at === -1) {
-        fresh.push(event);
-      } else {
-        echo.splice(at, 1);
+    readers.set(reader, end);
+    // No further back than what is kept: what was dropped since it last read
+    // is gone, and so is what a refused action emitted.
+    const from = at === undefined || at < base ? base : Math.min(at, end);
+    return from === end ? EMPTY : channel.values.slice(from - base);
+  }
+
+  /**
+   * Before a tick's systems run. Events that already exist will be seen by
+   * every system this tick; those emitted from here on may not be, so they
+   * are kept for one more tick.
+   */
+  open(): void {
+    for (const channel of this.order) {
+      channel.mark = channel.end;
+    }
+  }
+
+  /**
+   * After a tick's systems have run: drops the events that existed before
+   * they started, which every system has had its chance to read.
+   */
+  close(): void {
+    for (const channel of this.order) {
+      const count = channel.mark - channel.base;
+      if (count > 0) {
+        channel.values.splice(0, count);
+        channel.base = channel.mark;
       }
     }
-    if (end >= channel.echoEnd || echo.length === 0) {
-      this.echo = undefined;
+  }
+
+  /** Whether an event is kept that some system of the tick has not had its chance at. */
+  waiting(): boolean {
+    for (const channel of this.order) {
+      if (channel.values.length > 0) {
+        return true;
+      }
     }
-    return fresh;
-  };
+    return false;
+  }
+
+  /** The events emitted since it was last called, in order. */
+  take(): readonly Emitted[] {
+    const { emitted } = this;
+    if (emitted.length === 0) {
+      return EMPTY;
+    }
+    this.emitted = [];
+    return emitted;
+  }
+
+  // --- what the world asks of a store ----------------------------------------
+
+  /** The channels that hold anything, in order of name. */
+  private held(): Channel<unknown>[] {
+    return this.order
+      .filter((channel) => channel.values.length > 0)
+      .toSorted((a, b) =>
+        a.def.name < b.def.name ? -1 : a.def.name > b.def.name ? 1 : 0
+      );
+  }
+
+  save(): unknown {
+    const out: (typeof SavedWaiting.Type)[number][] = [];
+    for (const { base, def, readers, values } of this.held()) {
+      const waiting = values.map((payload) => {
+        const data = encode(def, payload);
+        if (Exit.isFailure(data)) {
+          throw new SnapshotError(
+            "cannot be saved",
+            `Can't save ${labelOf(def.name)}: ${describeFailure(data.cause)}`
+          );
+        }
+        if (!isPlain(data.value)) {
+          throw new SnapshotError(
+            "cannot be saved",
+            `Can't save ${labelOf(def.name)}: its schema did not turn one into plain data.`
+          );
+        }
+        return data.value;
+      });
+      const read: Record<string, number> = {};
+      for (const [reader, at] of readers) {
+        if (at > base) {
+          read[reader] = Math.min(at - base, values.length);
+        }
+      }
+      out.push({ name: def.name, waiting, read });
+    }
+    return out.length === 0 ? undefined : out;
+  }
+
+  load(data: unknown): void {
+    const saved = Schema.decodeUnknownExit(SavedWaiting)(data);
+    if (Exit.isFailure(saved)) {
+      throw new SnapshotError(
+        "corrupt",
+        `The snapshot is damaged: the events waiting to be read are not each { name, waiting, read }.`
+      );
+    }
+    for (const { name, read, waiting } of saved.value) {
+      const def = this.names.get(name) ?? defined.get(name);
+      if (def === undefined) {
+        throw new SnapshotError(
+          "store changed",
+          `The snapshot holds ${waiting.length === 1 ? "an event" : `${waiting.length} events`} named "${name}" waiting to be read, which this program doesn't define: it was renamed or removed since.`
+        );
+      }
+      const channel = this.channel(def);
+      for (const one of waiting) {
+        const payload = decode(def, one);
+        if (Exit.isFailure(payload)) {
+          throw new SnapshotError(
+            "store changed",
+            `Can't load ${labelOf(name)}: one is in a form that is no longer taken: ${describeFailure(payload.cause)}`
+          );
+        }
+        channel.values.push(payload.value);
+      }
+      // Whoever had read some of them goes on from where it was.
+      for (const [reader, count] of Object.entries(read)) {
+        channel.readers.set(
+          reader,
+          channel.base + Math.min(count, channel.values.length)
+        );
+      }
+    }
+  }
+
+  hashed(): unknown {
+    const held = this.held();
+    if (held.length === 0) {
+      return undefined;
+    }
+    return held.map(({ def, values }) => [
+      def.name,
+      values.map((payload) => {
+        // A payload its schema refuses counts as null, on every machine
+        // alike: nothing checks what is emitted, and a hash doesn't fail.
+        const data = encode(def, payload);
+        return Exit.isFailure(data) ? null : data.value;
+      }),
+    ]);
+  }
+
+  capture(): WaitingMoment {
+    return {
+      channels: this.order.map((channel) => ({
+        channel,
+        values: channel.values.slice(),
+        base: channel.base,
+        readers: new Map(channel.readers),
+      })),
+      emitted: this.emitted.slice(),
+    };
+  }
+
+  rewind(moment: WaitingMoment): void {
+    for (const { base, channel, readers, values } of moment.channels) {
+      channel.values = values.slice();
+      channel.base = base;
+      for (const [reader, at] of readers) {
+        channel.readers.set(reader, at);
+      }
+    }
+    this.emitted = moment.emitted.slice();
+  }
+
+  clear(): void {
+    for (const channel of this.order) {
+      channel.values = [];
+      channel.base = 0;
+      channel.readers.clear();
+    }
+    this.emitted = [];
+  }
+
+  begin(): void {
+    this.recording = true;
+    this.emittedMark = this.emitted.length;
+    for (const channel of this.order) {
+      channel.txEnd = channel.end;
+    }
+  }
+
+  rollback(): void {
+    for (const channel of this.order) {
+      // A channel first used in the transaction held nothing before it.
+      channel.values.length = Math.max(0, channel.txEnd - channel.base);
+    }
+    // Newest first, so that a reader that read twice ends where it began.
+    const { moved } = this;
+    for (let i = moved.length - 1; i >= 0; i--) {
+      const { at, channel, reader } = moved[i]!;
+      if (at === undefined) {
+        channel.readers.delete(reader);
+      } else {
+        channel.readers.set(reader, at);
+      }
+    }
+    this.emitted.length = this.emittedMark;
+    this.commit();
+  }
+
+  commit(): void {
+    this.recording = false;
+    this.moved.length = 0;
+  }
+
+  contents(): unknown {
+    const held = this.hashed() as [string, unknown[]][] | undefined;
+    return held === undefined ? undefined : Object.fromEntries(held);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The other side: what the stages between ticks hear
+// ---------------------------------------------------------------------------
+
+/**
+ * How many ticks events are kept for a stage between ticks that has stopped
+ * running, or never ran, before it is taken to be gone: ten seconds at 60 Hz.
+ * A replay and a server run neither stage.
+ */
+const PATIENCE = 600;
+
+/**
+ * What one run of the game's code emitted: a tick, an action dispatched
+ * between two ticks, a plugin's setup. Each points at the one told after it,
+ * and whoever reads holds the last one it has read: what nobody holds any
+ * more is forgotten with no bookkeeping.
+ *
+ * Opaque: a moment of a game holds the last one told, for a rewind.
+ *
+ * @internal
+ */
+export interface Told {
+  /** Its place among all that were told. No two have the same. */
+  readonly seq: number;
+  /** The tick it is of: an action applied between two ticks is of the next. */
+  readonly tick: number;
+  readonly events: readonly Emitted[];
+  next: Told | undefined;
+  /** True once a rewind has given it up: nothing is told after it any more. */
+  dead: boolean;
+}
+
+/** One of the two stages between ticks. */
+type Stage = "frame" | "input";
+
+/** A place in what was told, of one event: a system of a stage, or outside code. */
+class Listener<P> implements EventHandle<P> {
+  private readonly heard: Heard;
+  readonly def: EventDef<P>;
+  /** The stage it is a system of, or undefined for outside code. */
+  readonly stage: Stage | undefined;
+  /** The last it has read. */
+  after: Told;
+  /**
+   * After a rewind to run ticks again, the events it had heard of them, by
+   * tick: as a tick emits one of them again, it is taken out here and not
+   * heard twice.
+   */
+  echo: Map<number, P[]> | undefined;
+
+  /** For outside code: how many times the game had gone back when it last read. */
+  rewinds: number;
+
+  constructor(
+    heard: Heard,
+    def: EventDef<P>,
+    stage: Stage | undefined,
+    after: Told
+  ) {
+    this.rewinds = heard.rewinds;
+    this.heard = heard;
+    this.def = def;
+    this.stage = stage;
+    this.after = after;
+  }
+
+  emit(): void {
+    throw new Error(
+      `The event "${this.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
+    );
+  }
+
+  readonly read = (): readonly P[] => this.heard.read(this);
 }
 
 /**
@@ -463,53 +646,253 @@ const same = (a: unknown, b: unknown): boolean => {
 };
 
 /**
- * A record of how many events each channel held, for rolling back.
- *
- * @category Models
+ * What the frame stage, the input stage and outside code hear of a game: the
+ * events its ticks emitted, in the order they were told. It is not the
+ * game's. No snapshot holds it and the hash doesn't cover it, and a rewind
+ * doesn't put it back: what a stage heard, it heard.
  */
-export type EventMark = Map<object, number>;
+class Heard {
+  private seq = 0;
+  /** How many times the game went back. */
+  rewinds = 0;
+  /** The last that was told. */
+  private tail: Told = {
+    seq: 0,
+    tick: 0,
+    events: EMPTY,
+    next: undefined,
+    dead: false,
+  };
+  /**
+   * For each stage that has systems: the last it had been told when it last
+   * ran, and the tick it ran after. A system of the stage that asks for an
+   * event for the first time starts from there.
+   */
+  private readonly seen = new Map<Stage, { told: Told; tick: number }>();
+  /** The systems of the stages that listen, by system and event. */
+  private readonly listeners = new Map<
+    string,
+    Map<object, Listener<unknown>>
+  >();
+  /** What was told since the last tick ended. */
+  private since: Emitted[] = [];
+  /** What was told from the end of the tick before the last to the end of the last. */
+  private last: Record<string, readonly unknown[]> = {};
 
-/**
- * Everything a bus holds at one moment, kept in memory to return to: the events
- * as they are, without needing a schema, and every reader's position. Opaque:
- * `capture` creates it and `rewind` consumes it.
- *
- * @category Models
- */
-export interface EventsMoment {
-  readonly frames: boolean;
-  readonly ticksSinceFrame: number;
-  readonly inputs: boolean;
-  readonly ticksSinceInput: number;
-  readonly channels: readonly {
-    readonly channel: object;
-    /** What was kept for the stages between ticks: the world holds the rest. */
-    readonly kept: readonly unknown[];
-    readonly end: number;
-    readonly offset: number;
-    readonly tickOffset: number;
-    readonly frameSeen: number;
-    readonly inputSeen: number;
-    readonly tickStart: number;
-    readonly cursors: ReadonlyMap<string, number>;
-  }[];
-  /** What the bus drops from now on, for a rewind to this moment. */
-  readonly dropped: Dropped;
+  /**
+   * Told once which of the two stages an app has systems in: events are kept
+   * for those from now on, so that such a system hears the events of the
+   * ticks before it first ran.
+   */
+  expect(stage: Stage, tick: number): void {
+    this.seen.set(stage, { told: this.tail, tick });
+  }
+
+  /** Tells what one run of the game's code emitted, for the tick it is of. */
+  tell(tick: number, events: readonly Emitted[]): void {
+    if (events.length === 0) {
+      return;
+    }
+    const told: Told = {
+      seq: ++this.seq,
+      tick,
+      events,
+      next: undefined,
+      dead: false,
+    };
+    this.tail.next = told;
+    this.tail = told;
+    for (const event of events) {
+      this.since.push(event);
+    }
+  }
+
+  /** A tick has ended. */
+  ticked(tick: number): void {
+    const last: Record<string, unknown[]> = {};
+    for (const { def, payload } of this.since) {
+      (last[def.name] ??= []).push(payload);
+    }
+    this.last = last;
+    this.since = [];
+    // A stage that has not run for a long time is taken to be gone.
+    for (const [stage, seen] of this.seen) {
+      if (tick - seen.tick > PATIENCE && seen.told !== this.tail) {
+        this.pass(stage, seen.tick);
+      }
+    }
+  }
+
+  /** A stage has run: its systems have had their chance at everything told. */
+  ended(stage: Stage, tick: number): void {
+    this.pass(stage, tick);
+  }
+
+  private pass(stage: Stage, tick: number): void {
+    this.seen.set(stage, { told: this.tail, tick });
+    for (const listener of this.each()) {
+      if (listener.stage === stage) {
+        listener.after = this.tail;
+      }
+    }
+  }
+
+  private *each(): Generator<Listener<unknown>> {
+    for (const mine of this.listeners.values()) {
+      yield* mine.values();
+    }
+  }
+
+  /** The place of a system of a stage in one event: always the same one. */
+  listener<P>(system: string, def: EventDef<P>, stage: Stage): Listener<P> {
+    let mine = this.listeners.get(system);
+    if (mine === undefined) {
+      mine = new Map();
+      this.listeners.set(system, mine);
+    }
+    let listener = mine.get(def) as Listener<P> | undefined;
+    if (listener === undefined) {
+      listener = new Listener(
+        this,
+        def,
+        stage,
+        this.seen.get(stage)?.told ?? this.tail
+      );
+      mine.set(def, listener as Listener<unknown>);
+    }
+    return listener;
+  }
+
+  /** A place for outside code, which hears what is told from now on. */
+  outside<P>(def: EventDef<P>): Listener<P> {
+    return new Listener(this, def, undefined, this.tail);
+  }
+
+  read<P>(listener: Listener<P>): readonly P[] {
+    // Outside code, which nothing keeps track of, hears what is told from a
+    // rewind on. A system of a stage was moved by the rewind.
+    if (listener.stage === undefined && listener.rewinds !== this.rewinds) {
+      listener.rewinds = this.rewinds;
+      listener.after = this.tail;
+    }
+    let told = listener.after;
+    if (told.next === undefined) {
+      listener.after = told;
+      return EMPTY;
+    }
+    const out: P[] = [];
+    while (told.next !== undefined) {
+      told = told.next;
+      const echo = listener.echo;
+      if (echo !== undefined) {
+        // The ticks run again come in order: what it heard of an earlier
+        // one and was not emitted again will not be.
+        for (const tick of echo.keys()) {
+          if (tick < told.tick) {
+            echo.delete(tick);
+          }
+        }
+        if (echo.size === 0) {
+          listener.echo = undefined;
+        }
+      }
+      for (const { def, payload } of told.events) {
+        if (def !== listener.def) {
+          continue;
+        }
+        const before = listener.echo?.get(told.tick);
+        const at =
+          before === undefined
+            ? -1
+            : before.findIndex((was) => same(was, payload));
+        if (at === -1) {
+          out.push(payload as P);
+        } else {
+          before!.splice(at, 1);
+        }
+      }
+    }
+    listener.after = told;
+    return out.length === 0 ? EMPTY : out;
+  }
+
+  /** The last that was told: where a moment of the game is, in what was told. */
+  mark(): Told {
+    return this.tail;
+  }
+
+  /**
+   * The game went back to where `to` was the last told. What was told after
+   * it is given up.
+   *
+   * With `again`, the game goes back to run the same ticks again, as a
+   * session does when a peer's actions arrive late: what a system of a stage
+   * had heard of those ticks, it doesn't hear a second time when they emit
+   * it again, and only what they now do otherwise is new to it. Without, the
+   * game goes on from there as a new one would, and every event is new.
+   */
+  rewound(to: Told, again: boolean): void {
+    this.rewinds++;
+    this.since = [];
+    this.last = {};
+    const first = to.dead ? undefined : to.next;
+    for (let told = first; told !== undefined; told = told.next) {
+      told.dead = true;
+    }
+    // A moment of a future that was itself given up leads nowhere any more:
+    // everyone starts from it.
+    const moved = (at: Told): boolean => to.dead || at.seq > to.seq;
+    for (const listener of this.each()) {
+      if (!moved(listener.after)) {
+        continue;
+      }
+      if (again) {
+        for (
+          let told = first;
+          told !== undefined && told.seq <= listener.after.seq;
+          told = told.next
+        ) {
+          for (const { def, payload } of told.events) {
+            if (def === listener.def) {
+              listener.echo ??= new Map();
+              const before = listener.echo.get(told.tick);
+              if (before === undefined) {
+                listener.echo.set(told.tick, [payload]);
+              } else {
+                before.push(payload);
+              }
+            }
+          }
+        }
+      }
+      listener.after = to;
+    }
+    for (const seen of this.seen.values()) {
+      if (moved(seen.told)) {
+        seen.told = to;
+      }
+    }
+    to.dead = false;
+    to.next = undefined;
+    this.tail = to;
+  }
+
+  /**
+   * The events told in the last tick, and between it and the one before, by
+   * event name, in the order they were emitted.
+   */
+  lastTick(): Record<string, readonly unknown[]> {
+    return this.last;
+  }
 }
 
-/**
- * The events a bus dropped at the end of one tick, and what it dropped after:
- * a list only moments hold the start of, so what was dropped before the
- * oldest moment still held is forgotten.
- */
-interface Dropped {
-  drops: { readonly channel: object; readonly events: readonly unknown[] }[];
-  next: Dropped | undefined;
-}
+// ---------------------------------------------------------------------------
+// The bus: what a game and an app are given
+// ---------------------------------------------------------------------------
 
 /**
- * Where an app's events wait to be read, with each reader's position. The app
- * holds one; a game reads and emits through an `EventHandle`.
+ * Where an app's events are emitted and read. The app holds one; a game
+ * reads and emits through an `EventHandle`.
  *
  * @category Models
  */
@@ -517,219 +900,83 @@ export class EventBus {
   /**
    * Who is asking for handles right now. The app sets this before each
    * system and handler runs, which is what gives each of them its own
-   * read position. Undefined means outside code.
+   * place in the events. Undefined means outside code.
    * @internal
    */
   reader: string | undefined;
-
-  // Keyed by event definition. The value is the `Channel<P>` of that
-  // definition's own `P`, which a Map's type cannot say, so `channel` below
-  // is the one place that restores it.
-  private readonly channels: Map<object, ChannelState> = new Map();
-  private readonly order: Channel<unknown>[] = [];
-  private readonly names: Map<string, EventDef<unknown>> = new Map();
-  private readonly reads: ReadLog = { open: false, moved: [] };
-  /** True while events are kept for a frame stage that is running. */
-  private frames = false;
-  private ticksSinceFrame = 0;
-  /** True while events are kept for an input stage that is running. */
-  private inputs = false;
-  private ticksSinceInput = 0;
   /**
-   * Where the events dropped from now on go, once a moment has been
-   * captured: a rewind to a moment tells the stages between ticks what they
-   * heard of them already. Only moments hold the list from where they were
-   * captured, so what no moment can go back to is forgotten.
+   * The stage between ticks that is running, if one is. Its systems read
+   * what was told and can't emit.
+   * @internal
    */
-  private dropped: Dropped | undefined;
-  /**
-   * After a rewind, the number of ticks the game had run before it went back:
-   * once it has run as many again, events are new to the stages between ticks.
-   */
-  private echoUntil: number | undefined;
-  private readonly world: World;
+  stage: Stage | undefined;
 
-  /** Keeps the events the simulation has yet to read in `world`'s lists. */
+  private readonly waiting: Waiting;
+  private readonly heard = new Heard();
+  /** The handles of the tick's systems and of handlers, by reader and event. */
+  private readonly handles = new Map<
+    string,
+    Map<object, EventHandle<unknown>>
+  >();
+
+  /** Keeps the events the simulation has yet to read in `world`, as a store. */
   constructor(world: World) {
-    this.world = world;
-    world._onRestore(() => {
-      this.restored();
-    });
+    this.waiting = new Waiting(world);
+    world._attach(this.waiting);
   }
 
   /**
-   * Told once, by the app, which of the two stages between ticks it has
-   * systems in. Events are kept for those from the first tick on, so that
-   * such a system hears the events of the ticks before it first ran.
-   * @internal
-   */
-  keepFor(stages: { readonly frame: boolean; readonly input: boolean }): void {
-    this.frames = stages.frame;
-    this.inputs = stages.input;
-  }
-
-  private channel<P>(def: EventDef<P>): Channel<P> {
-    const existing = this.channels.get(def);
-    if (existing !== undefined) {
-      return existing as Channel<P>;
-    }
-    // The name is how a save, a tool and another machine know the event.
-    const known = this.names.get(def.name);
-    if (known !== undefined && known !== def) {
-      throw new Error(
-        `Two different events are both named "${def.name}". An event's name identifies it in an app and in a save, so give each its own, prefixed with the feature it belongs to.`
-      );
-    }
-    this.names.set(def.name, def);
-    const channel = new Channel<P>(def, this.reads, this.world._list(def.list));
-    this.channels.set(def, channel);
-    this.order.push(channel);
-    return channel;
-  }
-
-  /**
-   * How far each system and handler had read the events waiting to be read,
-   * which the world holds, by event in order of name.
-   * @internal
-   */
-  save(): SavedEvents[] {
-    const out: SavedEvents[] = [];
-    for (const channel of this.order) {
-      const read: Record<string, number> = {};
-      let readers = 0;
-      for (const [reader, handle] of channel.readers) {
-        const count = handle.position - channel.tickOffset;
-        // Not a stage between ticks: those are not the game's.
-        if (count > 0 && !reader.startsWith(FRAME_READER)) {
-          read[reader] = Math.min(count, channel.size);
-          readers++;
-        }
-      }
-      if (readers > 0) {
-        out.push({ name: channel.def.name, read });
-      }
-    }
-    // In order of name, so that the same game always saves the same bytes.
-    return out.toSorted((a, b) =>
-      a.name < b.name ? -1 : a.name > b.name ? 1 : 0
-    );
-  }
-
-  /**
-   * Takes every reader's place in the events a loaded world holds, as a save
-   * holds them. Before anything has read. A place in an event this program
-   * doesn't define, of which the world holds none, is dropped.
-   * @internal
-   */
-  restore(saved: readonly SavedEvents[]): void {
-    this.adopt();
-    for (const events of saved) {
-      const def = this.names.get(events.name) ?? defined.get(events.name);
-      if (def === undefined) {
-        continue;
-      }
-      const channel = this.channel(def);
-      // Whoever had read some of them goes on from where it was.
-      for (const [reader, count] of Object.entries(events.read)) {
-        channel.readers.set(
-          reader,
-          new Handle(
-            channel,
-            channel.tickOffset + Math.min(count, channel.size)
-          )
-        );
-      }
-    }
-  }
-
-  /** A channel for each event the world holds, so that none waits unseen. */
-  private adopt(): void {
-    for (const list of this.world._lists()) {
-      const def = ofList.get(list);
-      if (def !== undefined) {
-        this.channel(def);
-      }
-    }
-  }
-
-  /**
-   * After `world.restore`, which put back the events of a snapshot: every
-   * reader reads them as if it had read none, as in a loaded game, and what
-   * was kept for the stages between ticks is gone.
-   */
-  private restored(): void {
-    this.echoUntil = undefined;
-    for (const channel of this.order) {
-      channel.kept = [];
-      channel.offset = channel.tickOffset;
-      channel.frameSeen = channel.tickOffset;
-      channel.inputSeen = channel.tickOffset;
-      channel.tickStart = channel.tickOffset;
-      channel.since = channel.end;
-      channel.last = [];
-      channel.echoes.clear();
-      channel.echoEnd = Number.POSITIVE_INFINITY;
-      for (const handle of channel.readers.values()) {
-        handle.rewind(channel.tickOffset);
-        handle.echo = undefined;
-      }
-    }
-    this.adopt();
-  }
-
-  /**
-   * Returns a handle for the current reader. Systems and handlers get the same
-   * handle every tick, starting from the oldest event still kept. Any other
-   * caller gets a new handle that starts from now.
+   * Returns a handle for whoever is running. A system and a handler get the
+   * same handle every time. A system of the tick and a handler read from the
+   * oldest event still kept; a system of the frame stage or the input stage
+   * reads what the ticks emitted since its stage last ran, and can't emit.
+   * Any other caller gets a new handle, which reads what is emitted once
+   * the code that emits it has ended, from now on.
    */
   handle<P>(def: EventDef<P>): EventHandle<P> {
-    const channel = this.channel(def);
-    const { reader } = this;
+    const channel = this.waiting.channel(def);
+    const { reader, stage, waiting } = this;
     if (reader === undefined) {
-      return new Handle(channel, channel.end);
+      const listener = this.heard.outside(def);
+      return {
+        emit: (payload) => {
+          waiting.emit(channel, payload);
+        },
+        read: listener.read,
+      };
     }
-    let handle = channel.readers.get(reader);
+    if (stage !== undefined) {
+      return this.heard.listener(reader, def, stage);
+    }
+    let mine = this.handles.get(reader);
+    if (mine === undefined) {
+      mine = new Map();
+      this.handles.set(reader, mine);
+    }
+    let handle = mine.get(def) as EventHandle<P> | undefined;
     if (handle === undefined) {
-      // From the oldest event kept: `read` goes no further back than its
-      // reader may, which for the simulation is `tickOffset`.
-      // A reader between ticks that a rewind dropped still doesn't hear
-      // twice what it heard before it.
-      const echo = channel.echoes.get(reader);
-      channel.echoes.delete(reader);
-      handle = new Handle(
-        channel,
-        channel.offset,
-        reader.startsWith(FRAME_READER),
-        echo
-      );
-      channel.readers.set(reader, handle);
+      handle = {
+        emit: (payload) => {
+          waiting.emit(channel, payload);
+        },
+        read: () => waiting.read(channel, reader),
+      };
+      mine.set(def, handle as EventHandle<unknown>);
     }
     return handle;
   }
 
-  /** Emits from outside any system, for example from UI or network code. */
-  emit<P>(def: EventDef<P>, payload: P): void {
-    this.channel(def).list.push(payload);
-  }
-
-  /** Returns the number of events of a type currently kept. For tests and tooling. */
-  pending<P>(def: EventDef<P>): number {
-    return this.channel(def).size;
-  }
-
   /**
-   * The events emitted in the last tick, and between it and the one before,
-   * by event name, in the order they were emitted: copies, for `app.inspect`.
-   * @internal
+   * Emits from outside any system, between ticks, for example from a test.
+   * It throws while the frame stage or the input stage runs.
    */
-  lastTick(): Record<string, readonly unknown[]> {
-    const out: Record<string, readonly unknown[]> = {};
-    for (const channel of this.order) {
-      if (channel.last.length > 0) {
-        out[channel.def.name] = channel.last;
-      }
-    }
-    return out;
+  emit<P>(def: EventDef<P>, payload: P): void {
+    this.waiting.emit(this.waiting.channel(def), payload);
+  }
+
+  /** Returns the number of events of a type the tick can still read. For tests and tooling. */
+  pending<P>(def: EventDef<P>): number {
+    return this.waiting.channel(def).values.length;
   }
 
   /**
@@ -738,284 +985,83 @@ export class EventBus {
    * in the tick that follows, or one emitted between ticks.
    * @internal
    */
-  waiting(): boolean {
-    for (const channel of this.order) {
-      if (channel.size > 0) {
-        return true;
-      }
-    }
-    return false;
+  settled(): boolean {
+    return !this.waiting.waiting();
   }
 
   /**
-   * Drops events that existed before the systems of the tick that just ended
-   * started running: by now every system has had a chance to read them.
+   * The events emitted in the last tick, and between it and the one before,
+   * by event name, in the order they were emitted: for `app.inspect`.
    * @internal
    */
-  endTick(tick: number): void {
-    if (this.echoUntil !== undefined && tick >= this.echoUntil) {
-      this.closeEchoes();
-    }
-    const dropped = this.dropped;
-    // A stage that has not run for a long time is taken to be gone.
-    if (this.frames && ++this.ticksSinceFrame > FRAME_PATIENCE) {
-      this.frames = false;
-    }
-    if (this.inputs && ++this.ticksSinceInput > FRAME_PATIENCE) {
-      this.inputs = false;
-    }
-    for (const channel of this.order) {
-      // Copied before they are dropped, for `app.inspect`.
-      channel.last =
-        channel.end > channel.since ? channel.from(channel.since) : [];
-      channel.since = channel.end;
-      channel.pass(channel.tickStart);
-      // Kept a little longer for the stages between ticks: for the frame
-      // stage, if several ticks ran since it last did, and for the input
-      // stage, which runs before a tick and would otherwise never hear
-      // what that tick's actions emitted. The simulation reads from
-      // `tickOffset` either way.
-      let keep = channel.tickOffset;
-      if (this.frames) {
-        keep = Math.min(keep, channel.frameSeen);
-      }
-      if (this.inputs) {
-        keep = Math.min(keep, channel.inputSeen);
-      }
-      const drop = keep - channel.offset;
-      if (drop > 0) {
-        const events = channel.dropOldest(drop);
-        dropped?.drops.push({ channel, events });
-      }
-    }
-    if (dropped !== undefined && dropped.drops.length > 0) {
-      dropped.next = { drops: [], next: undefined };
-      this.dropped = dropped.next;
-    }
-  }
-
-  /** From here on, every event is new to the stages between ticks. */
-  private closeEchoes(): void {
-    this.echoUntil = undefined;
-    for (const channel of this.order) {
-      channel.echoEnd = channel.end;
-    }
+  lastTick(): Record<string, readonly unknown[]> {
+    return this.heard.lastTick();
   }
 
   /**
-   * Called when the frame stage has run: its systems have had their chance
-   * at every event there is.
+   * Told once, by the app, that it has systems in a stage between ticks:
+   * events are kept for them from the first tick on.
    * @internal
    */
-  endFrame(): void {
-    this.frames = true;
-    this.ticksSinceFrame = 0;
-    for (const channel of this.order) {
-      channel.frameSeen = channel.end;
-    }
+  expect(stage: Stage, tick: number): void {
+    this.heard.expect(stage, tick);
   }
 
   /**
-   * Called when the input stage has run: its systems have had their chance
-   * at every event there is.
+   * Called just before a tick's systems run: what is emitted from here on is
+   * kept until the end of the tick after this one.
    * @internal
    */
-  endInput(): void {
-    this.inputs = true;
-    this.ticksSinceInput = 0;
-    for (const channel of this.order) {
-      channel.inputSeen = channel.end;
-    }
+  open(): void {
+    this.waiting.open();
   }
 
   /**
-   * Called just before a tick's systems run. Events that already exist will
-   * be seen by every system this tick; events emitted from here on may not
-   * be, so they are kept for one more tick.
+   * Called when tick `tick` has run: drops the events every system has had
+   * its chance to read, and tells the stages between ticks what it emitted.
    * @internal
    */
-  beginTick(): void {
-    for (const channel of this.order) {
-      channel.tickStart = channel.end;
-    }
+  close(tick: number): void {
+    this.waiting.close();
+    this.told(tick);
+    this.heard.ticked(tick);
   }
 
   /**
-   * The bus as it stands, to come back to with `rewind`. Between ticks.
+   * Called when the game's code has run between two ticks, an action's
+   * handler or a plugin's setup: tells the stages what it emitted, as of the
+   * tick to come, `tick`.
    * @internal
    */
-  capture(): EventsMoment {
-    const moment: EventsMoment = {
-      frames: this.frames,
-      ticksSinceFrame: this.ticksSinceFrame,
-      inputs: this.inputs,
-      ticksSinceInput: this.ticksSinceInput,
-      channels: this.order.map((channel) => {
-        const cursors = new Map<string, number>();
-        for (const [reader, handle] of channel.readers) {
-          cursors.set(reader, handle.position);
-        }
-        return {
-          channel,
-          kept: channel.kept.slice(),
-          end: channel.end,
-          offset: channel.offset,
-          tickOffset: channel.tickOffset,
-          frameSeen: channel.frameSeen,
-          inputSeen: channel.inputSeen,
-          tickStart: channel.tickStart,
-          cursors,
-        };
-      }),
-      dropped: (this.dropped ??= { drops: [], next: undefined }),
-    };
-    return moment;
+  told(tick: number): void {
+    this.heard.tell(tick, this.waiting.take());
   }
 
   /**
-   * Puts the bus back as it was when `moment` was captured: the events
-   * that were waiting then, and everyone's place in them. A reader that
-   * has come since starts over, and a kind of event that was first used
-   * since has none waiting.
-   *
-   * A reader between ticks goes back too, but doesn't hear twice what it
-   * heard before the rewind: until the game has run again the `from` ticks it
-   * had run, an event it heard is taken out of what it reads, once.
-   *
-   * The events the simulation had yet to read are the world's, and come back
-   * with it: this runs just before the world is rewound, while its lists
-   * still hold the future the rewind gives up.
+   * Called when a stage between ticks has run, after tick `tick`: its
+   * systems have had their chance at every event there is.
    * @internal
    */
-  rewind(moment: EventsMoment, from: number, to: number): void {
-    this.frames = moment.frames;
-    this.ticksSinceFrame = moment.ticksSinceFrame;
-    this.inputs = moment.inputs;
-    this.ticksSinceInput = moment.ticksSinceInput;
-    const captured = new Map(
-      moment.channels.map((entry) => [entry.channel, entry])
-    );
-    // What was dropped since the moment, by channel, which the future given
-    // up is all of: it is forgotten, and what is dropped from now on goes
-    // where the moment holds. A moment captured in that future finds nothing
-    // dropped after it.
-    const since = new Map<object, unknown[]>();
-    for (
-      let node: Dropped | undefined = moment.dropped;
-      node !== undefined;
-      node = node.next
-    ) {
-      for (const { channel, events } of node.drops) {
-        const kept = since.get(channel);
-        if (kept === undefined) {
-          since.set(channel, [...events]);
-        } else {
-          kept.push(...events);
-        }
-      }
-      node.drops = [];
-    }
-    moment.dropped.next = undefined;
-    this.dropped = moment.dropped;
-    for (const channel of this.order) {
-      const was = captured.get(channel);
-      channel.last = [];
-      // Everything this channel holds of the future it gives up, from the
-      // sequence number `first` on: what a reader between ticks heard of it
-      // is in there.
-      const dropped = since.get(channel) ?? [];
-      const told = [...dropped, ...channel.kept, ...channel.list];
-      const first = channel.offset - dropped.length;
-      channel.echoes.clear();
-      channel.echoEnd = Number.POSITIVE_INFINITY;
-      const heard = (reader: string, at: number): unknown[] | undefined => {
-        const handle = channel.readers.get(reader)!;
-        const start = Math.max(at, first) - first;
-        const end = handle.position - first;
-        return reader.startsWith(FRAME_READER) && end > start
-          ? told.slice(start, end)
-          : undefined;
-      };
-      if (was === undefined) {
-        for (const reader of channel.readers.keys()) {
-          const echo = heard(reader, 0);
-          if (echo !== undefined) {
-            channel.echoes.set(reader, echo);
-          }
-        }
-        channel.kept = [];
-        channel.tickOffset = channel.offset;
-        channel.frameSeen = channel.offset;
-        channel.inputSeen = channel.offset;
-        channel.tickStart = channel.offset;
-        channel.since = channel.offset;
-        channel.readers.clear();
-        continue;
-      }
-      for (const [reader, handle] of channel.readers) {
-        const echo = heard(reader, was.cursors.get(reader) ?? was.offset);
-        if (was.cursors.has(reader)) {
-          handle.echo = echo;
-        } else if (echo !== undefined) {
-          channel.echoes.set(reader, echo);
-        }
-      }
-      channel.kept = was.kept.slice();
-      channel.offset = was.offset;
-      channel.tickOffset = was.tickOffset;
-      channel.frameSeen = was.frameSeen;
-      channel.inputSeen = was.inputSeen;
-      channel.tickStart = was.tickStart;
-      channel.since = was.end;
-      for (const [reader, handle] of channel.readers) {
-        const at = was.cursors.get(reader);
-        if (at === undefined) {
-          channel.readers.delete(reader);
-        } else {
-          handle.rewind(at);
-        }
-      }
-    }
-    this.echoUntil = from;
-    if (from <= to) {
-      this.closeEchoes();
-    }
+  ended(stage: Stage, tick: number): void {
+    this.heard.ended(stage, tick);
   }
 
   /**
-   * Marks where the channels end, before an action's handler runs. Until
-   * `rollback` or `commit`, the reads made are remembered as well.
+   * Where the game is in what the stages between ticks were told, for a
+   * moment of it to hold.
    * @internal
    */
-  mark(): EventMark {
-    const mark: EventMark = new Map();
-    for (const channel of this.order) {
-      mark.set(channel, channel.end);
-    }
-    this.reads.open = true;
-    return mark;
+  mark(): Told {
+    return this.heard.mark();
   }
 
   /**
-   * Takes back what happened since `mark`: every event emitted is removed,
-   * and every event read is unread.
+   * Called when the game has gone back to a moment, with what `mark` gave
+   * for it. With `again`, it went back to run the same ticks again, and the
+   * stages don't hear twice what they heard of them.
    * @internal
    */
-  rollback(mark: EventMark): void {
-    for (const channel of this.order) {
-      channel.truncate(mark.get(channel) ?? channel.tickOffset);
-    }
-    // Newest first, so that a handle that read twice ends where it began.
-    const { moved } = this.reads;
-    for (let i = moved.length - 1; i >= 0; i--) {
-      moved[i]!.handle.rewind(moved[i]!.cursor);
-    }
-    this.commit();
-  }
-
-  /** Keeps what happened since `mark`. @internal */
-  commit(): void {
-    this.reads.open = false;
-    this.reads.moved.length = 0;
+  rewound(to: Told, again: boolean): void {
+    this.heard.rewound(to, again);
   }
 }

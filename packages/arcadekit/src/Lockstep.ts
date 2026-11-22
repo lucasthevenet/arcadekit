@@ -40,7 +40,7 @@
  * every peer's log records, and with `checkpointEvery: 0`, nothing more.
  *
  * Every peer's log is an ordinary log, identical entry for entry, and
- * `App.replay` plays it back into a single-player game.
+ * `Journal.replay` plays it back into a single-player game.
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
@@ -591,7 +591,7 @@ export const build = <E>(
       // that tick, and forward again with what is known now.
       const from = wrong;
       wrong = undefined;
-      app.rewind(moments.get(from)!);
+      reins.rewind(moments.get(from)!);
       rewinds++;
       for (let tick = from; tick < now; tick++) {
         const exit = run(tick);

@@ -9,40 +9,31 @@
  *   const app = yield* App.load(save, { plugins }) // the game, where it was
  *
  * A save is taken between two ticks. It holds the world, which holds the game
- * time, the actions queued for the next tick and the events waiting to be read,
- * and beside it where each system had read to, in the events and in what
- * change queries haven't visited yet. Everything a game is in the middle of is
- * in the world, so the save holds all of it.
+ * time, the actions queued for the next tick, the events waiting to be read
+ * with where each system had read to, and what change queries haven't visited
+ * yet. Everything a game is in the middle of is in the world, so the save
+ * holds all of it.
  *
  * Everything logged after a save is the game's tail. A game that keeps its last
  * save and the log since can return to the present by loading the save and
  * replaying only that tail, however long it has been running:
  *
  *   const tail = app.record(save)
- *   App.replay(loaded, tail)
+ *   Journal.replay(loaded, tail)
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
 import { SnapshotError, readSnapshot, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
-import type { SavedChanges } from "./ecs/world";
-
-/**
- * How far each system and handler had read the events of one type that were
- * waiting to be read when the game was saved. The world holds the events.
- *
- * @category Models
- */
-export interface SavedEvents {
-  readonly name: string;
-  /** For each system or handler that had read some, how many it had read. */
-  readonly read: Readonly<Record<string, number>>;
-}
+import type { Store } from "./ecs/store";
+import type { World } from "./ecs/world";
 
 /**
  * A game captured between two ticks, made by `app.save()`: its world as a
- * snapshot, with its time, what was queued for the next tick and the events
- * waiting to be read, each reader's place, and the length of its log. `Save.encode` turns it into bytes, and `App.load` continues from it.
+ * snapshot, which holds its time, what was queued for the next tick, the
+ * events waiting to be read and each system's place in them and in what
+ * changed, and the length of its log. `Save.encode` turns it into bytes, and
+ * `App.load` continues from it.
  *
  * @category Models
  */
@@ -55,16 +46,10 @@ export interface Save {
   readonly version: number;
   /**
    * `world.snapshot()`, which holds the game's time, the actions queued for
-   * the next tick and the events waiting to be read with the rest of it.
+   * the next tick, the events waiting to be read and what change queries
+   * haven't visited yet with the rest of it.
    */
   readonly world: Uint8Array;
-  /** How far each system and handler had read the waiting events. */
-  readonly events: readonly SavedEvents[];
-  /**
-   * What change queries haven't visited yet, with each system's and handler's
-   * position: `world.saveChanges()`.
-   */
-  readonly changes: readonly SavedChanges[];
   /**
    * The number of entries in the app's action log. Everything logged after that
    * is the tail to replay after loading this save.
@@ -93,9 +78,8 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  *   migration from that version;
  * - `"migration failed"`: a migration threw.
  *
- * An event waiting to be read that this program doesn't define is the
- * snapshot's `"unknown list"`, and one in a form its schema no longer takes is
- * its `"list changed"`.
+ * An event waiting to be read that this program doesn't define, or one in a
+ * form its schema no longer takes, is the snapshot's `"store changed"`.
  *
  * @category Errors
  */
@@ -119,30 +103,20 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
  */
 export interface Contents {
   /**
-   * The world, whose `lists` hold the actions that were queued, under
-   * `"arcadekit/queued"`, each `{ name, payload, from? }` with its payload in
-   * JSON form, and the events that were waiting, under each event's name, in
-   * JSON form.
+   * The world. Its `stores` hold, each under its name, what an app keeps of a
+   * game beside its entities:
+   *
+   * - `Action.INTAKE`: `{ queued, heard }`, the actions that were queued,
+   *   each `{ name, payload, from? }` with its payload in JSON form, and
+   *   whether the input stage had run since the last tick;
+   * - `Event.STORE`: for each event that was waiting, `{ name, waiting,
+   *   read }`, its events in JSON form and how many each system had read;
+   * - `Save.VISITS`: what change queries hadn't visited yet, by component
+   *   name. Entries under a name the game no longer has are dropped when the
+   *   save is loaded: the queries watching the component then start over,
+   *   with every entity counting as changed.
    */
   world: SnapshotContents;
-  /**
-   * How far each system and handler had read the waiting events. A migration
-   * that renames an event renames it here too.
-   */
-  events: { name: string; read: Record<string, number> }[];
-  /**
-   * What change queries haven't visited yet, by component name. A component a
-   * migration renames or removes keeps its old name here, and entries under a
-   * name the game no longer has are dropped when the save is loaded: the
-   * queries watching the component then start over, with every entity counting
-   * as changed.
-   */
-  changes: {
-    component: string;
-    kind: "changed" | "added" | "removed";
-    entries: number[];
-    readers: Record<string, number>;
-  }[];
 }
 
 /**
@@ -154,7 +128,7 @@ export interface Contents {
  * - A migration turns an old save into a new game: the log recorded before it
  *   no longer replays against it.
  * - A migration that accompanies a schema change updates the payloads in
- *   `world.lists` too. A waiting event that its schema no longer takes refuses
+ *   `world.stores` too. A waiting event that its schema no longer takes refuses
  *   the save as it is loaded; a queued action is refused when it is applied,
  *   as an `Action.Rejected` event.
  *
@@ -193,16 +167,6 @@ export const migrate = (
   try {
     const contents: Contents = {
       world: readSnapshot(save.world),
-      events: save.events.map((events) => ({
-        name: events.name,
-        read: { ...events.read },
-      })),
-      changes: save.changes.map((changes) => ({
-        component: changes.component,
-        kind: changes.kind,
-        entries: [...changes.entries],
-        readers: { ...changes.readers },
-      })),
     };
     for (let from = save.version; from < version; from++) {
       const step = migrations.find((migration) => migration.from === from);
@@ -224,8 +188,6 @@ export const migrate = (
     return Exit.succeed({
       version,
       world: writeSnapshot(contents.world),
-      events: contents.events,
-      changes: contents.changes,
       logLength: save.logLength,
     });
   } catch (error) {
@@ -239,27 +201,14 @@ export const migrate = (
 /** "AKSV": arcadekit save. */
 const MAGIC = 0x56534b41;
 // 2: the game's time, its queued actions and its waiting events are in the
-// world, not beside it.
-const FORMAT = 2;
+// world, not beside it. 3: so is where each system had read the events to,
+// and what its change queries had yet to visit.
+const FORMAT = 3;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Header = Schema.fromJsonString(
   Schema.Struct({
     version: Count,
-    events: Schema.Array(
-      Schema.Struct({
-        name: Schema.String,
-        read: Schema.Record(Schema.String, Count),
-      })
-    ),
-    changes: Schema.Array(
-      Schema.Struct({
-        component: Schema.String,
-        kind: Schema.Literals(["changed", "added", "removed"]),
-        entries: Schema.Array(Count),
-        readers: Schema.Record(Schema.String, Count),
-      })
-    ),
     logLength: Count,
   })
 );
@@ -336,3 +285,93 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
     world: bytes.slice(12 + length),
   });
 };
+
+/** Says what a failed decoding found wrong. */
+const describeCause = (cause: Cause.Cause<unknown>): string => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error.message : String(error);
+};
+
+/**
+ * The name of the store that holds what an app's change queries have yet to
+ * visit, as a snapshot has it: `readSnapshot(save.world).stores`. It holds
+ * one entry per component and kind of change, `{ component, kind, entries,
+ * readers }`: `world.saveChanges()`, for the systems of the tick and the
+ * handlers.
+ *
+ * @category Constants
+ */
+export const VISITS = "arcadekit/changes";
+
+/** What a snapshot holds of the visits: `world.saveChanges()`. */
+const VisitsData = Schema.Array(
+  Schema.Struct({
+    component: Schema.String,
+    kind: Schema.Literals(["changed", "added", "removed"]),
+    entries: Schema.Array(Schema.Number),
+    readers: Schema.Record(Schema.String, Schema.Number),
+  })
+);
+
+/**
+ * Where each system of the tick and each handler has got to in what changed:
+ * what its change queries have yet to visit. The world keeps the logs; this
+ * puts them in its snapshot, so that a loaded game goes on as the saved one
+ * did. The frame and input stages' own places are not the game's: a loaded
+ * game has everything still to draw.
+ *
+ * @internal
+ */
+export class Visits implements Store<undefined> {
+  readonly name = VISITS;
+  // Not hashed, and the world's own logs refuse what a frozen world refuses.
+  readonly betweenTicks = true;
+  private readonly world: World;
+  private readonly saved: (reader: string) => boolean;
+
+  /** `saved` says whose place a snapshot holds, by reader. */
+  constructor(world: World, saved: (reader: string) => boolean) {
+    this.world = world;
+    this.saved = saved;
+  }
+
+  save(): unknown {
+    const saved = this.world.saveChanges(this.saved);
+    return saved.length === 0 ? undefined : saved;
+  }
+
+  load(data: unknown): void {
+    const saved = Schema.decodeUnknownExit(VisitsData)(data);
+    if (Exit.isFailure(saved)) {
+      throw new SnapshotError(
+        "corrupt",
+        `The snapshot is damaged: what its change queries had yet to visit is not as a world saves it: ${describeCause(saved.cause)}`
+      );
+    }
+    this.world.restoreChanges(saved.value);
+  }
+
+  hashed(): unknown {
+    return undefined;
+  }
+
+  // A moment's are kept by whoever captures it, who says whose it holds.
+  capture(): undefined {
+    return undefined;
+  }
+
+  rewind(): void {}
+
+  // The world empties its own logs.
+  clear(): void {}
+
+  begin(): void {}
+
+  rollback(): void {}
+
+  commit(): void {}
+
+  contents(): unknown {
+    return undefined;
+  }
+}

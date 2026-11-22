@@ -11,6 +11,7 @@ import {
   EcsWorld,
   EntityId,
   Field,
+  Journal,
   Query,
   Save,
   SnapshotError,
@@ -628,7 +629,7 @@ describe("relations in an app", () => {
         expect(app.world.entityCount).toBe(5);
 
         const { app: again } = yield* orchard;
-        App.replay(again, app.record());
+        Journal.replay(again, app.record());
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

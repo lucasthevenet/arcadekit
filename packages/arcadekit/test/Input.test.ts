@@ -12,14 +12,17 @@ import {
   Field,
   Frame,
   Input,
+  Journal,
   Plugin,
   Query,
   Random,
+  Save,
   Singleton,
   State,
   System,
   Time,
   World,
+  readSnapshot,
 } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 
@@ -31,6 +34,11 @@ const Score = Singleton.define(
   { points: 0 }
 );
 const Phase = State.define("in/Phase", ["playing", "paused"]);
+
+/** The events a save holds waiting, with how far each system had read. */
+const waitingIn = (save: Save.Save): unknown =>
+  readSnapshot(save.world).stores.find((store) => store.name === Event.STORE)
+    ?.data;
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -611,7 +619,7 @@ describe("the input stage", () => {
         const save = app.save();
         const bare = plain.save();
         assert(Exit.isSuccess(save) && Exit.isSuccess(bare));
-        expect(save.value.events).toEqual(bare.value.events);
+        expect(waitingIn(save.value)).toEqual(waitingIn(bare.value));
       })
     );
   });
@@ -691,7 +699,7 @@ describe("the input stage", () => {
         const saves = [alone, together, bare].map((app) => app.save());
         const events = saves.map((save) => {
           assert(Exit.isSuccess(save));
-          return save.value.events;
+          return waitingIn(save.value);
         });
         expect(events[0]).toEqual(events[2]);
         expect(events[1]).toEqual(events[2]);
@@ -860,7 +868,7 @@ describe("the input stage", () => {
 
   it("is not run by a replay, whatever the devices of the machine it is replayed on say", () => {
     const source = Input.makeManualSource();
-    let recording: App.Recording | undefined;
+    let recording: Journal.Recording | undefined;
     let hash = 0;
     run(
       Effect.gen(function* () {
@@ -883,7 +891,7 @@ describe("the input stage", () => {
           plugins: [Flying],
           checkpointEvery: 1,
         });
-        App.replay(again, recording!);
+        Journal.replay(again, recording!);
         expect(again.world.hash()).toBe(hash);
         expect(ship(again)).toEqual({ x: 20, shots: 0 });
         expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
@@ -1206,7 +1214,7 @@ describe("the picture of the devices in the world", () => {
         ]);
         return {
           hashes: tickHashes,
-          text: App.encodeRecording(app.record()),
+          text: Journal.encode(app.record()),
           played: ship(app),
           ticks: app.time.tick,
         };
@@ -1220,7 +1228,7 @@ describe("the picture of the devices in the world", () => {
     // The replay is given no source, and its input stage is never run.
     run(
       Effect.gen(function* () {
-        const decoded = App.decodeRecording(text);
+        const decoded = Journal.decode(text);
         assert(Exit.isSuccess(decoded));
         const recording = decoded.value;
         const entries = recording.log;
@@ -1229,7 +1237,7 @@ describe("the picture of the devices in the world", () => {
           checkpointEvery: 1,
           seed: 9,
         });
-        App.replay(again, recording);
+        Journal.replay(again, recording);
         expect(ship(again)).toEqual(played);
         expect(again.world.hash()).toBe(hashes.at(-1));
         // Checked against every tick's checkpoint on the way.
@@ -1248,9 +1256,9 @@ describe("the picture of the devices in the world", () => {
             ? { ...entry, payload: { down: ["ArrowLeft"] } }
             : entry
         );
-        expect(() => App.replay(other, { ...recording, log: altered })).toThrow(
-          App.ReplayDiverged
-        );
+        expect(() =>
+          Journal.replay(other, { ...recording, log: altered })
+        ).toThrow(Journal.ReplayDiverged);
       })
     );
   });
@@ -1831,7 +1839,7 @@ describe("bindings", () => {
         // The same handlers, and nothing that listens to a device.
         const again = yield* App.make({ handlers, checkpointEvery: 1 });
         expect(again.inputOrder).toEqual([]);
-        App.replay(again, recording);
+        Journal.replay(again, recording);
         expect(done).toEqual(played);
       })
     );
