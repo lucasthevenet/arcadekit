@@ -39,11 +39,11 @@ It is essentially the snapshot plus a little text: for 100,000 entities with fou
 
 `App.load` takes the plugins and options the game was created with. No plugin's `setup` runs, since the save already holds its effects. `App.run` also accepts a `save`, to start a page from one.
 
-To return to an earlier moment of the same app within the same run, `app.capture()` and `app.rewind(moment)` work in memory, and pending actions and events don't need schemas. See [`App`](/reference/arcadekit/App).
+To return to an earlier moment of the same app within the same run, `app.capture()` and `app.rewind(moment)` work in memory, and encode none of the pending actions and events. See [capturing and rewinding](lockstep-and-rollback.md#capturing-and-rewinding).
 
 ## Requirements for saving
 
-- **Give each component one name.** A save names every component, singleton, state and event it holds, and a load finds each by the definition your program has under that name. Nothing lists them. A save that holds a name your program no longer defines fails to load and names it, with `"unknown component"` or `"unknown event"`: rename or remove it in a migration.
+- **Give each component one name.** A save names every component, singleton, state and event it holds, and a load finds each by the definition your program has under that name. Nothing lists them. A save that holds a name your program no longer defines fails to load and names it, with `"unknown component"`, or `"store changed"` for an event: rename or remove it in a migration.
 - **Keep what the game is in the middle of in the world.** Work that takes [many ticks](systems.md#work-that-takes-many-ticks), such as a countdown or a wave of enemies, keeps its place in a component, a singleton or a state, so a save holds it.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.
 
@@ -94,12 +94,18 @@ const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
   App.load(save, { plugins, version: 2, migrations });
 ```
 
-A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The world's `lists` hold the pending actions, under `arcadekit/queued`, each as `{ name, payload, from? }`, and the pending events, under each event's name, in JSON form. The game's time is one of the world's singletons, `arcadekit/Time`. The contents' `events` say how far each system had read, by event name.
+A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The game's time is one of the world's singletons, `arcadekit/Time`. The world's `stores` hold what the app keeps of the game beside its entities, each as plain data under a name:
+
+| Store | Holds |
+| --- | --- |
+| `Action.INTAKE` | `{ queued, heard }`: the pending actions, each as `{ name, payload, from? }` with its payload in JSON form, and whether the input stage had run since the last tick |
+| `Event.STORE` | One `{ name, waiting, read }` per event with events pending: the events in JSON form, and how many of them each system had read |
+| `Save.VISITS` | What change queries haven't visited, one entry per component and kind of change |
 
 `Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. `addField` and `mapField` also fail for a value that a field of a number type cannot hold, such as a string, a fraction in an `i32`, or 300 in a `u8`, where the typed array would have stored something else; the compiler refuses a value that is not a number. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
 
-- `Save.Contents` also holds what change queries haven't visited, under each component's name. For a component a migration renames, the queries watching it start over after the load: every entity counts as changed.
-- When a migration accompanies a schema change, it must also update the payloads in `world.lists`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"list changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
+- For a component a migration renames, the change queries watching it start over after the load: every entity counts as changed.
+- When a migration accompanies a schema change, it must also update the payloads in `world.stores`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"store changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
 - A migration turns an old save into a new game, so the log recorded before it doesn't replay against the migrated save.
 
 ## When a load is refused
@@ -115,8 +121,8 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 | `"no migration"` | Is older, and there is no migration from its version, or from a version on the way |
 | `"migration failed"` | Is older, and a migration threw: the message says which, and what it threw |
 | `"unknown component"` | Contains a component this program doesn't define, or no longer by that name |
-| `"unknown list"` | Holds an event waiting to be read that this program doesn't define |
-| `"list changed"` | Holds an event waiting to be read in a form its schema no longer takes |
+| `"store changed"` | Holds an event waiting to be read that this program doesn't define, or one in a form its schema no longer takes |
+| `"unknown store"` | Has a world that holds what this program's world has no store for: it was loaded into a world of its own, with no app |
 | `"component changed"` | Has a component whose fields differ from the game's: the message lists both. After migrations, they didn't bring the save fully up to date |
 
 ## Snapshots
@@ -143,8 +149,8 @@ copy.hash() === world.hash(); // true
 - **Its size is close to the data's.** A numeric column is written as its raw bytes, so an entity with two `f32` fields takes 20 bytes: 8 for the id, 8 for the floats and 4 for the generation. With four float fields, taking a snapshot costs 7 ns per entity and loading it 21 ns.
 - **Components are stored by name**, with their field names and types, so a snapshot doesn't depend on the order a program defines its components in. `load` finds each one by its name among the components the program defines, and refuses a snapshot that holds one it doesn't.
 - **Non-numeric fields are saved as [their type specifies](components.md#field-types).** In a `json` field, strings, numbers, booleans, bigints, `null` and `undefined` round-trip exactly, `-0` and `NaN` included, while arrays and objects go through JSON text. A `schema` or `ref` field is saved in its encoded form, and a `transient` field not at all.
-- **`load` fills an empty world**: one that has never held an entity or written a singleton, and holds no queued action or waiting event.
-- **`world.restore(bytes)` replaces everything in a world in use with a snapshot**, for 16 ns per entity. It is for snapshots the world took itself. Afterwards, the world is what a new world loaded from the snapshot would be: in an app's world, with the game's time, the queued actions and the waiting events of the snapshot, which every system then reads as if it had read none of them, as in a loaded game. Singleton values keep their object identity, and `world.random` stays the same generator. A view or `removed` reader obtained before throws when used, asking to be obtained again, as a system does every tick. Pending changes for change queries are dropped: `world.restoreChanges` restores what `world.saveChanges` returned.
+- **`load` fills an empty world**: one that has never held an entity or written a singleton, and holds no queued action or waiting event. A world loads what an app's stores held only when it is that app's: a world made with `new EcsWorld()` refuses a snapshot that holds queued actions or waiting events, with `"unknown store"`.
+- **`world.restore(bytes)` replaces everything in a world in use with a snapshot**, for 16 ns per entity. It is for snapshots the world took itself. Afterwards, the world is what a new world loaded from the snapshot would be: in an app's world, with the game's time, the queued actions, the waiting events and each system's place in them and in what changed, as the snapshot has them. Singleton values keep their object identity, and `world.random` stays the same generator. A view or `removed` reader obtained before throws when used, asking to be obtained again, as a system does every tick. In a world with no app, pending changes for change queries are dropped: `world.restoreChanges` restores what `world.saveChanges` returned.
 - **The format is versioned.** This version writes format 4, and also reads formats 1 to 3.
 
 Every failure is a `SnapshotError`, whose `problem` is one of the values in the table above, or one of two more: `"world not empty"`, and `"cannot be saved"`, for a field, a queued action or a waiting event holding a value with no saved form, or a spawn queued on a `CommandBuffer` and not applied.

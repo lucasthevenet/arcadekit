@@ -313,10 +313,10 @@ export interface Any {
    */
   readonly record: (since?: Save.Save) => Recording;
   /**
-   * Saves the game as it is, to load later with `App.load`: the world, the
-   * time, the actions queued for the next tick, the events waiting to be read,
-   * what change queries haven't visited yet, and the length of the log. Only
-   * between ticks.
+   * Saves the game as it is, to load later with `App.load`: the world, which
+   * holds the time, the actions queued for the next tick, the events waiting
+   * to be read and what change queries haven't visited yet, and the length
+   * of the log. Only between ticks.
    *
    * Fails with `SaveRefused`, which names what is in the way: a queued action
    * or a waiting event whose payload its schema doesn't take, a field holding a
@@ -330,8 +330,9 @@ export interface Any {
    * visited yet, and the length of the log. Only between ticks.
    *
    * It isn't a save. It holds the queued actions and events as they are, so
-   * none of them needs a schema, and it belongs to this app in this run of the
-   * program only. It is the building block for predicting a tick and
+   * none of them is put through its schema, and it belongs to this app in
+   * this run of the program only. It is what an undo, a search ahead or a
+   * rewind mechanic keeps, and the building block for predicting a tick and
    * resimulating it: `Rollback` captures before each uncertain tick.
    *
    * Fails with `SaveRefused` when the world can't be snapshotted: a field holds
@@ -344,15 +345,21 @@ export interface Any {
    * its length at that time. Only between ticks, and only with a moment of this
    * app.
    *
-   * A moment holds what a save holds, and no more. State held by your game's own services is left as is: `Rollback.syncTest` finds a tick that reads it. A
-   * `transient` field is undefined afterwards. And what runs between ticks
-   * starts over: frame-stage and input-stage change queries visit everything
-   * again.
+   * A moment holds what a save holds, and no more. State held by your game's
+   * own services is left as is: `Rollback.syncTest` finds a tick that reads
+   * it. A `transient` field is undefined afterwards.
    *
-   * The frame and input stages don't hear an event twice: until the game has
-   * run again the ticks it had run before the rewind, an event of theirs that
-   * a stage heard then, the same payload, is heard once. An event the ticks
-   * run again emit otherwise, or a payload that changed, is heard as new.
+   * The game plays on from there, as a new one would. What runs between
+   * ticks starts over: frame-stage and input-stage change queries visit
+   * everything again, and the two stages hear every event the game emits
+   * from then on, one they heard before the rewind among them. They hear
+   * nothing of the future that was given up before they had read it.
+   *
+   * **Gotchas**
+   *
+   * A session that goes back to run the same ticks again, as rollback does,
+   * rewinds with the app it took over, `Diverted.rewind`: there, the stages
+   * hear an event once however often its tick is run.
    */
   readonly rewind: (moment: Moment) => void;
   /**
@@ -560,7 +567,8 @@ export interface TickOptions {
 
 /**
  * What `divert` returns to the code that took over an app: the two operations
- * the app no longer performs for anyone else.
+ * the app no longer performs for anyone else, and the capture and the rewind
+ * of a game that goes back to run its ticks again.
  *
  * @category Models
  */

@@ -9,10 +9,10 @@
  *   const app = yield* App.load(save, { plugins }) // the game, where it was
  *
  * A save is taken between two ticks. It holds the world, which holds the game
- * time, the actions queued for the next tick and the events waiting to be read,
- * and beside it where each system had read to, in the events and in what
- * change queries haven't visited yet. Everything a game is in the middle of is
- * in the world, so the save holds all of it.
+ * time, the actions queued for the next tick, the events waiting to be read
+ * with where each system had read to, and what change queries haven't visited
+ * yet. Everything a game is in the middle of is in the world, so the save
+ * holds all of it.
  *
  * Everything logged after a save is the game's tail. A game that keeps its last
  * save and the log since can return to the present by loading the save and
@@ -30,8 +30,10 @@ import type { World } from "./ecs/world";
 
 /**
  * A game captured between two ticks, made by `app.save()`: its world as a
- * snapshot, with its time, what was queued for the next tick and the events
- * waiting to be read, each reader's place, and the length of its log. `Save.encode` turns it into bytes, and `App.load` continues from it.
+ * snapshot, which holds its time, what was queued for the next tick, the
+ * events waiting to be read and each system's place in them and in what
+ * changed, and the length of its log. `Save.encode` turns it into bytes, and
+ * `App.load` continues from it.
  *
  * @category Models
  */
@@ -44,7 +46,8 @@ export interface Save {
   readonly version: number;
   /**
    * `world.snapshot()`, which holds the game's time, the actions queued for
-   * the next tick and the events waiting to be read with the rest of it.
+   * the next tick, the events waiting to be read and what change queries
+   * haven't visited yet with the rest of it.
    */
   readonly world: Uint8Array;
   /**
@@ -75,9 +78,8 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  *   migration from that version;
  * - `"migration failed"`: a migration threw.
  *
- * An event waiting to be read that this program doesn't define is the
- * snapshot's `"unknown list"`, and one in a form its schema no longer takes is
- * its `"list changed"`.
+ * An event waiting to be read that this program doesn't define, or one in a
+ * form its schema no longer takes, is the snapshot's `"store changed"`.
  *
  * @category Errors
  */
@@ -101,10 +103,18 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
  */
 export interface Contents {
   /**
-   * The world, whose `lists` hold the actions that were queued, under
-   * `"arcadekit/queued"`, each `{ name, payload, from? }` with its payload in
-   * JSON form, and the events that were waiting, under each event's name, in
-   * JSON form.
+   * The world. Its `stores` hold, each under its name, what an app keeps of a
+   * game beside its entities:
+   *
+   * - `Action.INTAKE`: `{ queued, heard }`, the actions that were queued,
+   *   each `{ name, payload, from? }` with its payload in JSON form, and
+   *   whether the input stage had run since the last tick;
+   * - `Event.STORE`: for each event that was waiting, `{ name, waiting,
+   *   read }`, its events in JSON form and how many each system had read;
+   * - `Save.VISITS`: what change queries hadn't visited yet, by component
+   *   name. Entries under a name the game no longer has are dropped when the
+   *   save is loaded: the queries watching the component then start over,
+   *   with every entity counting as changed.
    */
   world: SnapshotContents;
 }
@@ -118,7 +128,7 @@ export interface Contents {
  * - A migration turns an old save into a new game: the log recorded before it
  *   no longer replays against it.
  * - A migration that accompanies a schema change updates the payloads in
- *   `world.lists` too. A waiting event that its schema no longer takes refuses
+ *   `world.stores` too. A waiting event that its schema no longer takes refuses
  *   the save as it is loaded; a queued action is refused when it is applied,
  *   as an `Action.Rejected` event.
  *
