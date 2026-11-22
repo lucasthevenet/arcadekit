@@ -16,10 +16,8 @@ import {
   Event,
   Field,
   Input,
-  Netcode,
   Query,
   Random,
-  Session,
   Singleton,
   System,
   Time,
@@ -27,6 +25,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { Message, Session } from "../src/net/index";
 
 // --- a small game: players drop coins, which drift about, and take them --------
 
@@ -319,22 +318,22 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
     round(): void {
       now++;
     },
-    send(to: readonly string[], messages: readonly Netcode.Message[]): void {
+    send(to: readonly string[], messages: readonly Message.Message[]): void {
       for (const message of messages) {
         for (const name of to) {
           inFlight.push({
             at: now + dice.int(lag.min, lag.max),
             to: name,
-            text: Netcode.encode(message),
+            text: Message.encode(message),
           });
         }
       }
     },
-    arrivals(to: string): Netcode.Message[] {
+    arrivals(to: string): Message.Message[] {
       const due = inFlight.filter((m) => m.to === to && m.at <= now);
       inFlight = inFlight.filter((m) => !(m.to === to && m.at <= now));
       return dice.shuffle(due).map((m) => {
-        const message = Netcode.decode(m.text);
+        const message = Message.decode(m.text);
         if (Exit.isFailure(message)) {
           throw new Error("a message did not survive the wire");
         }

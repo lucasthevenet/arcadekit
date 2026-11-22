@@ -12,16 +12,8 @@
 import { NodeRuntime } from "@effect/platform-node";
 import { Console, Context, Data, Effect, Layer, Result, Schema } from "effect";
 
-import {
-  Action,
-  App,
-  Field,
-  Netcode,
-  Relay,
-  Session,
-  Singleton,
-  Transport,
-} from "../src/index";
+import { Action, App, Field, Singleton } from "../src/index";
+import { Message, Relay, Session, Transport } from "../src/net/index";
 
 const base = process.argv[2];
 if (base === undefined) {
@@ -152,7 +144,7 @@ const check = Effect.gen(function* () {
   const honest = yield* open("grace", other);
   const liar = yield* open("ada", other);
   yield* wait(300);
-  const forged: Netcode.Message = { from: "grace", tick: 0, actions: [] };
+  const forged: Message.Message = { from: "grace", tick: 0, actions: [] };
   liar.send(forged);
   const refused = yield* closed(liar);
   yield* wait(100);

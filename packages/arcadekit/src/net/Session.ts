@@ -52,19 +52,19 @@
  * drift apart. `Session.syncTest` finds such a tick in a test, with no
  * second peer.
  *
- * `Netcode` has what the peers say to each other, and how they find that
- * they have drifted apart.
+ * `Peer` is the session without its app, `Message` what the peers say to
+ * each other, and `Drift` how they find that they have drifted apart.
  */
 import { Cause, Data, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
-import type * as App from "./App";
-import { build } from "./Build";
-import type { Reins } from "./Build";
-import * as Netcode from "./Netcode";
-import type * as Plugin from "./Plugin";
-import type * as Save from "./Save";
-import * as Timeline from "./Timeline";
+import type * as App from "../App";
+import { build } from "../Build";
+import type { Reins } from "../Build";
+import type * as Plugin from "../Plugin";
+import type * as Save from "../Save";
+import * as Timeline from "../Timeline";
+import * as Peer from "./Peer";
 
 /**
  * Options for a session: how its game starts, as `App.make` takes it, this
@@ -108,7 +108,7 @@ export interface Options<
 
 /**
  * One peer of a multiplayer game, with its app. A driver steps it as it steps
- * an app: `Driver.frames(session, { hz })`. `Netcode.Peer` documents what it
+ * an app: `Driver.frames(session, { hz })`. `Peer.Peer` documents what it
  * receives, sends and reports.
  *
  * `E` is what a tick of its app can fail with, and `HU` the actions its
@@ -116,7 +116,7 @@ export interface Options<
  *
  * @category Models
  */
-export interface Session<E = never, HU = never> extends Netcode.Peer<E> {
+export interface Session<E = never, HU = never> extends Peer.Peer<E> {
   /**
    * The session's app, which the session steps: its world to read, its
    * `enqueue` for what this peer's player does, its saves and its recordings.
@@ -163,7 +163,7 @@ export const make = <
     build(game, options),
     ({ app, take }): Session<App.TickError<S, P>, App.AllHandlers<H, P>> => {
       const ahead = options.ahead ?? 8;
-      return Netcode.build(app, take, {
+      return Peer.build(app, take, {
         peer: options.peer,
         peers: options.peers,
         delta: options.delta,

@@ -1,5 +1,6 @@
 /**
- * What the peers of a session say to each other, and the peer that says it.
+ * One peer of a game played on several machines: what it holds of what every
+ * peer said, when it runs a tick, and how it goes back.
  *
  * Every peer runs the same simulation, and peers only exchange the actions
  * their players issue, each stamped with the tick it applies on. Every peer
@@ -14,143 +15,29 @@
  *
  * A peer holds no socket and no timer. It receives the messages that arrived
  * and returns the ones to send, and a transport carries them, as text in the
- * form `encode` writes.
+ * form `Message.encode` writes.
  *
  * Peers also exchange the checkpoints their logs record: the world's hash at a
  * tick. A peer that receives a different hash than its own for the same tick
- * stops, and its tick fails with `Drifted`, which reports the tick, every
- * peer's hash, and when they last agreed. The starting state is compared before
- * anyone's first tick, whatever the app's `checkpointEvery`, since a peer
- * records a checkpoint when it begins. After that, peers compare the ticks
- * every peer's log records, and with `checkpointEvery: 0`, nothing more.
+ * stops, and its tick fails with `Drift.Drifted`, which reports the tick,
+ * every peer's hash, and when they last agreed. The starting state is
+ * compared before anyone's first tick, whatever the app's `checkpointEvery`,
+ * since a peer records a checkpoint when it begins. After that, peers compare
+ * the ticks every peer's log records, and with `checkpointEvery: 0`, nothing
+ * more.
  *
- * `Session.make` makes a peer with its app. This module is what a transport
- * and a relay need of a session, and they need no app.
+ * `Session.make` makes a peer with its app.
  */
-import { Cause, Data, Exit, Schema } from "effect";
+import { Cause, Exit } from "effect";
 
-import * as Action from "./Action";
-import type * as App from "./App";
-import type { Reins } from "./Build";
-import type { Tickable } from "./Driver";
-import type * as Save from "./Save";
-import * as Timeline from "./Timeline";
-
-/**
- * An action as a peer issued it: its name, and its payload in JSON form.
- *
- * @category Models
- */
-export interface Issued {
-  readonly name: string;
-  readonly payload: unknown;
-}
-
-/**
- * What peers send each other: everything one peer issued for one tick. Every
- * peer sends one for every tick, usually with no actions in it: it is also how
- * a peer says it has nothing more for that tick.
- *
- * @category Models
- */
-export interface Message {
-  /** The peer that issued the actions. */
-  readonly from: string;
-  /**
-   * The tick they apply on: the one that runs once this many ticks have
-   * completed, on every peer.
-   */
-  readonly tick: number;
-  /** The actions, in the order the peer issued them. */
-  readonly actions: readonly Issued[];
-  /**
-   * The checkpoints the peer's log recorded since its last message: its world's
-   * hash, and at which tick. Omitted when there are none.
-   */
-  readonly checkpoints?: readonly Action.Checkpoint[];
-}
-
-const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-
-const MessageSchema = Schema.fromJsonString(
-  Schema.Struct({
-    from: Schema.String,
-    tick: Count,
-    actions: Schema.Array(
-      Schema.Struct({ name: Schema.String, payload: Schema.Unknown })
-    ),
-    checkpoints: Schema.optionalKey(
-      Schema.Array(
-        Schema.Struct({
-          tick: Count,
-          hash: Schema.Int.check(
-            Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
-          ),
-        })
-      )
-    ),
-  })
-);
-
-/**
- * The peers are no longer playing the same game: at one tick, their worlds'
- * hashes differed. Every later tick of the session fails with this error.
- *
- * Drift is detected within a bounded number of ticks. A checkpoint is recorded
- * every `checkpointEvery` ticks and travels with the message for the tick
- * `delay` ahead, which no peer can run without. So no peer runs more than
- * `checkpointEvery - 1 + delay` ticks past the first tick whose world differed,
- * where `delay` is the largest any peer uses. A session that runs ahead
- * sends a tick's hash once every peer has sent their actions for it, so there
- * the bound is `checkpointEvery - 1 + delay + 2 × ahead` ticks.
- *
- * What is compared is the world's hash. What the hash doesn't cover, such as an
- * event only one peer has waiting or a system's own variables, is only detected
- * once it affects the world.
- *
- * @category Errors
- */
-export class Drifted extends Data.TaggedError("Drifted")<{
-  /** The tick of the first checkpoint whose hashes differ. */
-  readonly tick: number;
-  /** The peer that detected it: this one. */
-  readonly peer: string;
-  /**
-   * Every peer's world hash at that tick, by name. Look at the peer whose hash
-   * differs from the others.
-   */
-  readonly hashes: Readonly<Record<string, number>>;
-  /** The last tick at which every peer's hash matched, if any. */
-  readonly agreedAt: number | undefined;
-}> {
-  override get message(): string {
-    const hashes = Object.entries(this.hashes)
-      .map(([name, hash]) => `${name} ${hash}`)
-      .join(", ");
-    const since =
-      this.agreedAt === undefined
-        ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same plugins and the same seed, and spawned the same things before its first tick"
-        : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta)`;
-    return `The peers are no longer playing the same game. At tick ${this.tick} the hashes of their worlds are: ${hashes} (found by "${this.peer}"). ${since}.`;
-  }
-}
-
-/**
- * Encodes a message as text, for whatever carries it.
- *
- * @category Codecs
- */
-export const encode = (message: Message): string => JSON.stringify(message);
-
-/**
- * Decodes a message from text. It checks the message's own structure; each
- * payload is validated against its action's schema when the action is applied,
- * and a payload that fails is refused by every peer alike.
- *
- * @category Codecs
- */
-export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
-  Schema.decodeExit(MessageSchema)(text);
+import * as Action from "../Action";
+import type * as App from "../App";
+import type { Reins } from "../Build";
+import type { Tickable } from "../Driver";
+import type * as Save from "../Save";
+import * as Timeline from "../Timeline";
+import * as Drift from "./Drift";
+import type { Issued, Message } from "./Message";
 
 /**
  * What a peer is told of its game: who it is, who plays, how long a tick is,
@@ -219,12 +106,12 @@ export interface Peer<E = never> extends Tickable {
    */
   readonly tickExit: (
     delta?: number
-  ) => Exit.Exit<boolean, E | Drifted | Save.SaveRefused>;
+  ) => Exit.Exit<boolean, E | Drift.Drifted | Save.SaveRefused>;
   /**
    * Why the session stopped, once it has: a peer's world hashed differently
    * from this one's at the same tick. Every later tick fails with it.
    */
-  readonly drifted: Drifted | undefined;
+  readonly drifted: Drift.Drifted | undefined;
   /** The peers whose message the next tick is still waiting for. */
   readonly waitingFor: readonly string[];
   /**
@@ -257,9 +144,6 @@ export interface Peer<E = never> extends Tickable {
   /** The app's frame stage, for a driver to draw the game with. */
   readonly frame: (alpha: number, delta?: number) => void;
 }
-
-/** How many ticks an unanswered checkpoint is kept. */
-const UNANSWERED = 600;
 
 /** Orders names by code unit, which is the same on every machine. */
 const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -356,12 +240,12 @@ export const build = <E, A extends PeerApp<E>>(
       own.set(tick, actions);
       have.set(peer, tick + 1);
       // The checkpoints go with the first message there is to send.
-      if (unsent.length === 0) {
-        outbox.push({ from: peer, tick, actions });
-      } else {
-        outbox.push({ from: peer, tick, actions, checkpoints: unsent });
-        unsent = [];
-      }
+      const checkpoints = drift.unsent();
+      outbox.push(
+        checkpoints.length === 0
+          ? { from: peer, tick, actions }
+          : { from: peer, tick, actions, checkpoints }
+      );
     }
   };
 
@@ -375,86 +259,17 @@ export const build = <E, A extends PeerApp<E>>(
   let resimulated = 0;
 
   // --- drift: the peers compare the checkpoints their logs record ----------
-  // The hashes this peer's log recorded at ticks that are not final yet.
-  const taken = new Map<number, number>();
-  // This peer's final hashes, by tick, until every peer has answered them.
-  const mine = new Map<number, number>();
-  // The other peers' hashes, by tick and then by name.
-  const theirs = new Map<number, Map<string, number>>();
-  // Per peer, the checkpoints of messages that came ahead of an earlier
-  // one, and the tick of the next message to take checkpoints from. A
-  // peer's checkpoints are taken in the order it sent them, so that the
-  // last tick the peers agreed at is known when the next one differs.
-  const early = new Map<string, Map<number, readonly Action.Checkpoint[]>>();
-  const next = new Map<string, number>();
-  for (const name of peers) {
-    early.set(name, new Map());
-    next.set(name, start);
-  }
-  let unsent: Action.Checkpoint[] = [];
-  let drifted: Drifted | undefined;
-  let agreedAt: number | undefined;
+  const drift = Drift.make({ peer, peers, start });
   let begun = false;
 
   /**
-   * Finalizes the hashes of final ticks, and compares every checkpoint that
-   * this peer and all the others have.
+   * Compares every checkpoint that this peer and all the others have, up
+   * to the last final tick. Not while a tick is known to be wrong: its hash
+   * is of a game that is about to be run again.
    */
   const compare = (): void => {
-    if (drifted !== undefined || wrong !== undefined) {
-      return;
-    }
-    const final = Math.min(known(), app.time.tick);
-    for (const tick of Array.from(taken.keys()).toSorted((a, b) => a - b)) {
-      if (tick > final) {
-        break;
-      }
-      const hash = taken.get(tick)!;
-      taken.delete(tick);
-      mine.set(tick, hash);
-      unsent.push({ tick, hash });
-    }
-    // One that no peer has answered in all that time is let go of.
-    for (const tick of mine.keys()) {
-      if (tick >= app.time.tick - UNANSWERED) {
-        break;
-      }
-      mine.delete(tick);
-      theirs.delete(tick);
-    }
-    for (const tick of Array.from(theirs.keys()).toSorted((a, b) => a - b)) {
-      if (tick > final) {
-        // This peer is not sure of that tick yet.
-        break;
-      }
-      const said = theirs.get(tick)!;
-      const hash = mine.get(tick);
-      if (hash === undefined) {
-        // Nothing to hold it against: a checkpoint the other peer took by
-        // hand, or one of a schedule that is not this peer's.
-        theirs.delete(tick);
-        continue;
-      }
-      if (said.size < peers.length - 1) {
-        // Once every peer has said, so that the report is whole. No tick
-        // is lost by it: their words for this tick come with messages
-        // that this peer cannot run far past.
-        continue;
-      }
-      mine.delete(tick);
-      theirs.delete(tick);
-      const hashes: Record<string, number> = {};
-      let same = true;
-      for (const name of peers) {
-        const other: number = name === peer ? hash : said.get(name)!;
-        hashes[name] = other;
-        same &&= other === hash;
-      }
-      if (!same) {
-        drifted = new Drifted({ tick, peer, hashes, agreedAt });
-        return;
-      }
-      agreedAt = tick;
+    if (wrong === undefined) {
+      drift.compare(Math.min(known(), app.time.tick), app.time.tick);
     }
   };
 
@@ -490,7 +305,7 @@ export const build = <E, A extends PeerApp<E>>(
       Action.isCheckpoint(last) &&
       last.tick === app.time.tick
     ) {
-      taken.set(last.tick, last.hash);
+      drift.took(last.tick, last.hash);
     }
     return exit;
   };
@@ -514,14 +329,14 @@ export const build = <E, A extends PeerApp<E>>(
   };
 
   /** Stops the session, after sending the hash the others are missing. */
-  const stop = (reason: Drifted): Exit.Exit<never, Drifted> => {
+  const stop = (reason: Drift.Drifted): Exit.Exit<never, Drift.Drifted> => {
     say(app.time.tick);
     return Exit.fail(reason);
   };
 
   const tickExit = (
     given?: number
-  ): Exit.Exit<boolean, E | Drifted | Save.SaveRefused> => {
+  ): Exit.Exit<boolean, E | Drift.Drifted | Save.SaveRefused> => {
     if (given !== undefined && Math.abs(given - delta) > 1e-9) {
       throw new Error(
         `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`
@@ -533,7 +348,7 @@ export const build = <E, A extends PeerApp<E>>(
       // The state the peers start from is the first thing they compare,
       // whatever the app's `checkpointEvery`: no tick runs before it.
       const last = app.actionLog.at(-1);
-      taken.set(
+      drift.took(
         now,
         last !== undefined && Action.isCheckpoint(last) && last.tick === now
           ? last.hash
@@ -562,8 +377,8 @@ export const build = <E, A extends PeerApp<E>>(
     }
     compare();
     prune();
-    if (drifted !== undefined) {
-      return stop(drifted);
+    if (drift.drifted !== undefined) {
+      return stop(drift.drifted);
     }
     if (failed !== undefined) {
       return failed;
@@ -584,8 +399,8 @@ export const build = <E, A extends PeerApp<E>>(
     }
     // The checkpoint this tick recorded, against what the others said of it.
     compare();
-    if (drifted !== undefined && Exit.isSuccess(exit)) {
-      return stop(drifted);
+    if (drift.drifted !== undefined && Exit.isSuccess(exit)) {
+      return stop(drift.drifted);
     }
     return Exit.map(exit, () => true);
   };
@@ -617,26 +432,7 @@ export const build = <E, A extends PeerApp<E>>(
       if (message.tick < app.time.tick && message.actions.length > 0) {
         wrong = Math.min(wrong ?? message.tick, message.tick);
       }
-      // Its checkpoints, once every message it sent before this one is in.
-      const waiting = early.get(message.from)!;
-      waiting.set(message.tick, message.checkpoints ?? []);
-      let expected = next.get(message.from)!;
-      for (
-        let checkpoints = waiting.get(expected);
-        checkpoints !== undefined;
-        checkpoints = waiting.get(expected)
-      ) {
-        waiting.delete(expected++);
-        for (const { hash, tick } of checkpoints) {
-          let said = theirs.get(tick);
-          if (said === undefined) {
-            said = new Map();
-            theirs.set(tick, said);
-          }
-          said.set(message.from, hash);
-        }
-      }
-      next.set(message.from, expected);
+      drift.heard(message.from, message.tick, message.checkpoints ?? []);
       if (begun) {
         compare();
       }
@@ -655,7 +451,7 @@ export const build = <E, A extends PeerApp<E>>(
       return exit.value;
     },
     get drifted() {
-      return drifted;
+      return drift.drifted;
     },
     get waitingFor() {
       // The tick that has to be whole before the next one may run.
@@ -670,7 +466,7 @@ export const build = <E, A extends PeerApp<E>>(
       return count;
     },
     get unanswered() {
-      return mine.size;
+      return drift.unanswered;
     },
     get confirmed() {
       return wrong === undefined

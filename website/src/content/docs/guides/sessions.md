@@ -8,7 +8,8 @@ A **session** is one peer of a game played on several machines: it makes its app
 ## Making a session
 
 ```ts
-import { Action, App, Netcode, Plugin, Session } from "arcadekit";
+import { Action, App, Plugin } from "arcadekit";
+import { Message, Session } from "arcadekit/net";
 import { Effect, Schema } from "effect";
 
 const Move = Action.define("game/Move", Schema.Struct({ dx: Schema.Int }));
@@ -28,7 +29,7 @@ const program = Effect.gen(function* () {
 
   session.app.enqueue(Move, { dx: 1 }); // as in a single-player game
 
-  const send = (message: Netcode.Message) => {};
+  const send = (message: Message.Message) => {};
   session.tick(); // true if the tick ran, false if it is waiting for a peer
   for (const message of session.outgoing()) {
     send(message); // to every other peer
@@ -36,9 +37,9 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 ```
 
-`Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` is that app without what would move this machine's game alone: it has no `tick` and no `dispatch`, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's.
+What a game played on several machines needs is in `arcadekit/net`, and none of it is in `arcadekit` itself, so a game with one player loads none of it. `Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` is that app without what would move this machine's game alone: it has no `tick` and no `dispatch`, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's.
 
-Messages from other peers go to `session.receive(message)`. Usually a [transport](transports-and-relays.md) handles both directions and a driver steps the session, so your game never calls these itself. If you carry messages some other way, `Netcode.encode` and `Netcode.decode` convert them to text and back, the latter returning an `Exit` that rejects anything that isn't a message.
+Messages from other peers go to `session.receive(message)`. Usually a [transport](transports-and-relays.md) handles both directions and a driver steps the session, so your game never calls these itself. If you carry messages some other way, `Message.encode` and `Message.decode` convert them to text and back, the latter returning an `Exit` that rejects anything that isn't a message.
 
 - Every peer must be made identically: the same game, the same seed or save, the same `delta`, the same peer names, the same starting state. A session begins at whatever tick its app does, so a game can start from a save every peer loaded.
 - Every peer sends one message per tick, usually empty: it is also how a peer says it has nothing more for that tick.
@@ -135,7 +136,7 @@ const program = Effect.gen(function* () {
 
 ## When peers drift apart
 
-Each peer sends the others the [checkpoints](replays.md#checkpoints) its log records, the world's hash at a tick, in the messages it sends anyway. When every peer has reported its hash for a tick and they differ, every session stops with `Netcode.Drifted`. `session.tick()` throws it, which stops a driver; `session.tickExit()` fails with it, as does every later tick; and `session.drifted` keeps it for a UI to display.
+Each peer sends the others the [checkpoints](replays.md#checkpoints) its log records, the world's hash at a tick, in the messages it sends anyway. When every peer has reported its hash for a tick and they differ, every session stops with `Drift.Drifted`. `session.tick()` throws it, which stops a driver; `session.tickExit()` fails with it, as does every later tick; and `session.drifted` keeps it for a UI to display.
 
 - The report includes the tick, every peer's hash by name, so that with three or more peers the odd one out stands out, and `agreedAt`, the last tick they matched. With a checkpoint every tick, that is the tick before they diverged.
 - Drift is detected within a bounded number of ticks, however slow the network. No peer whose `ahead` is 0 runs more than `checkpointEvery - 1 + delay` ticks past the first tick whose world differed, where `delay` is the largest any peer uses: with a checkpoint every tick and a delay of 2, two ticks. A peer that runs ahead runs at most `2 × ahead` ticks more, since a tick's hash is sent once every peer has sent their actions for it.
@@ -150,4 +151,4 @@ Peers that drift apart stay stopped. To continue, every peer makes its session a
 
 ## Read more
 
-- [`Session`](/reference/arcadekit/Session) and [`Netcode`](/reference/arcadekit/Netcode) in the API reference.
+- [`arcadekit/net`](/reference/arcadekit/net) in the API reference: [`Session`](/reference/arcadekit/net/Session), [`Message`](/reference/arcadekit/net/Message) and [`Drift`](/reference/arcadekit/net/Drift).

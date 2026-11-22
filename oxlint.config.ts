@@ -217,10 +217,12 @@ export default defineConfig({
   },
   overrides: [
     // Files are named as Effect names its own. A module, which an entry is,
-    // is PascalCase, as it is imported: arcadekit/Query. So is the test of
-    // one, test/Query.test.ts. Everything else is camelCase: the storage
-    // core behind arcadekit/ecs, a test's helpers, the benchmarks and the
-    // examples. index.ts and the files a tool names keep their names.
+    // is PascalCase, as it is imported: arcadekit/Query, and
+    // arcadekit/net/Session in a folder. So is the test of one,
+    // test/Query.test.ts. Everything else is camelCase: what a module keeps
+    // to itself in a folder, as the storage core behind arcadekit/ecs is, a
+    // test's helpers, the benchmarks and the examples. index.ts and the
+    // files a tool names keep their names.
     {
       files: ["packages/**"],
       rules: {
@@ -243,6 +245,21 @@ export default defineConfig({
         "unicorn/filename-case": [
           "error",
           { case: "pascalCase", ignore: [String.raw`^index\.ts$`] },
+        ],
+      },
+    },
+    // A folder of src/ holds either: modules, and what a module keeps to
+    // itself. test/Entries.test.ts holds that each module is an entry and
+    // that every other file is behind one.
+    {
+      files: ["packages/*/src/*/**/*.ts"],
+      rules: {
+        "unicorn/filename-case": [
+          "error",
+          {
+            cases: { camelCase: true, pascalCase: true },
+            ignore: [String.raw`^index\.ts$`],
+          },
         ],
       },
     },

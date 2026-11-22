@@ -6,13 +6,12 @@ import {
   Component,
   Field,
   Journal,
-  Netcode,
   Query,
   Save,
-  Session,
   System,
   Time,
 } from "../src/index";
+import { Drift, Session } from "../src/net/index";
 import {
   Coin,
   CoinGame,
@@ -478,8 +477,8 @@ describe("a rollback session", () => {
           const stopped = untilStopped(peers, net, 800);
           const checkpoint = Math.ceil(at / every) * every;
           for (const peer of peers) {
-            const drifted = stopped.get(peer.name) as Netcode.Drifted;
-            expect(drifted, where).toBeInstanceOf(Netcode.Drifted);
+            const drifted = stopped.get(peer.name) as Drift.Drifted;
+            expect(drifted, where).toBeInstanceOf(Drift.Drifted);
             expect(drifted.tick, where).toBe(checkpoint);
             expect(drifted.agreedAt, where).toBe(checkpoint - every);
             expect(drifted.hashes.ada, where).not.toBe(drifted.hashes.grace);

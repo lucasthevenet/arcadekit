@@ -8,11 +8,10 @@ import {
   Driver,
   Input,
   Journal,
-  Netcode,
-  Session,
   System,
   Time,
 } from "../src/index";
+import { Drift, Message, Session } from "../src/net/index";
 import {
   Coin,
   CoinGame,
@@ -709,8 +708,8 @@ describe("peers that have come apart", () => {
               const checkpoint = Math.ceil(at / every) * every;
               for (const peer of peers) {
                 const reason = stopped.get(peer.name);
-                expect(reason, where).toBeInstanceOf(Netcode.Drifted);
-                const drifted = reason as Netcode.Drifted;
+                expect(reason, where).toBeInstanceOf(Drift.Drifted);
+                const drifted = reason as Drift.Drifted;
                 expect(drifted.tick, where).toBe(checkpoint);
                 expect(drifted.peer, where).toBe(peer.name);
                 expect(drifted.agreedAt, where).toBe(checkpoint - every);
@@ -734,9 +733,9 @@ describe("peers that have come apart", () => {
               }
               // Both say the same of who had what.
               expect(
-                (stopped.get("ada") as Netcode.Drifted).hashes,
+                (stopped.get("ada") as Drift.Drifted).hashes,
                 where
-              ).toEqual((stopped.get("grace") as Netcode.Drifted).hashes);
+              ).toEqual((stopped.get("grace") as Drift.Drifted).hashes);
             }
           );
         }
@@ -752,12 +751,12 @@ describe("peers that have come apart", () => {
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       expect(ada.session.drifted).toBeUndefined();
       const stopped = untilStopped(peers, net, 100);
-      const drifted = stopped.get("ada") as Netcode.Drifted;
+      const drifted = stopped.get("ada") as Drift.Drifted;
       expect(ada.session.drifted).toBe(drifted);
       const { tick } = ada.app.time;
       // Every tick fails with it from then on, and runs nothing.
       expect(ada.session.tickExit()).toEqual(Exit.fail(drifted));
-      expect(() => ada.session.tick()).toThrow(Netcode.Drifted);
+      expect(() => ada.session.tick()).toThrow(Drift.Drifted);
       expect(ada.app.time.tick).toBe(tick);
       expect(drifted.message).toBe(
         `The peers are no longer playing the same game. At tick 9 the hashes of their worlds are: ada ${drifted.hashes.ada}, grace ${drifted.hashes.grace} (found by "ada"). They last agreed at tick 8, so they came apart in one of the 1 ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta).`
@@ -786,7 +785,7 @@ describe("peers that have come apart", () => {
       expect(ada.app.time.tick).toBe(2);
       expect(exit).toEqual(
         Exit.fail(
-          new Netcode.Drifted({
+          new Drift.Drifted({
             tick: 2,
             peer: "ada",
             hashes: { ada: ada.app.world.hash(), grace: 12_345 },
@@ -835,8 +834,8 @@ describe("peers that have come apart", () => {
         const net = network(1, { min: 0, max: 3 });
         const stopped = untilStopped(peers, net, 100);
         for (const peer of peers) {
-          const drifted = stopped.get(peer.name) as Netcode.Drifted;
-          expect(drifted).toBeInstanceOf(Netcode.Drifted);
+          const drifted = stopped.get(peer.name) as Drift.Drifted;
+          expect(drifted).toBeInstanceOf(Drift.Drifted);
           expect(drifted.tick).toBe(0);
           expect(drifted.agreedAt).toBeUndefined();
           expect(drifted.message).toMatch(
@@ -854,8 +853,8 @@ describe("peers that have come apart", () => {
       { seeds: { ada: 1, grace: 2 }, checkpointEvery: { ada: 0, grace: 0 } },
       (peers) => {
         const stopped = untilStopped(peers, network(1, { min: 0, max: 0 }), 50);
-        expect(stopped.get("ada")).toBeInstanceOf(Netcode.Drifted);
-        expect(stopped.get("grace")).toBeInstanceOf(Netcode.Drifted);
+        expect(stopped.get("ada")).toBeInstanceOf(Drift.Drifted);
+        expect(stopped.get("grace")).toBeInstanceOf(Drift.Drifted);
         expect(peers[0]!.app.time.tick).toBe(0);
       }
     );
@@ -882,10 +881,10 @@ describe("peers that have come apart", () => {
       const stopped = untilStopped(peers, net, 300);
       expect(stopped.size).toBe(3);
       const reports = [ada, grace, edsger].map(
-        (peer) => stopped.get(peer.name) as Netcode.Drifted
+        (peer) => stopped.get(peer.name) as Drift.Drifted
       );
       for (const report of reports) {
-        expect(report).toBeInstanceOf(Netcode.Drifted);
+        expect(report).toBeInstanceOf(Drift.Drifted);
         expect(report.tick).toBe(12);
         expect(report.agreedAt).toBe(11);
       }
@@ -924,8 +923,8 @@ describe("peers that have come apart", () => {
         setGlitch({ tick: at, worlds: "all" });
         const stopped = untilStopped(peers, net, 100);
         // Caught at the first tick both record: a multiple of 6.
-        const drifted = stopped.get("grace") as Netcode.Drifted;
-        expect(drifted).toBeInstanceOf(Netcode.Drifted);
+        const drifted = stopped.get("grace") as Drift.Drifted;
+        expect(drifted).toBeInstanceOf(Drift.Drifted);
         expect(drifted.tick).toBe(Math.ceil(at / 6) * 6);
         expect(drifted.agreedAt).toBe(drifted.tick - 6);
       }
@@ -935,22 +934,22 @@ describe("peers that have come apart", () => {
 
 describe("a message between peers", () => {
   it("goes to text and comes back", () => {
-    const message: Netcode.Message = {
+    const message: Message.Message = {
       from: "ada",
       tick: 12,
       actions: [{ name: "ls/Drop", payload: { by: "ada", value: 1 } }],
     };
-    expect(Netcode.decode(Netcode.encode(message))).toEqual(
+    expect(Message.decode(Message.encode(message))).toEqual(
       Exit.succeed(message)
     );
-    const checked: Netcode.Message = {
+    const checked: Message.Message = {
       ...message,
       checkpoints: [
         { tick: 10, hash: 0 },
         { tick: 12, hash: 4_294_967_295 },
       ],
     };
-    expect(Netcode.decode(Netcode.encode(checked))).toEqual(
+    expect(Message.decode(Message.encode(checked))).toEqual(
       Exit.succeed(checked)
     );
   });
@@ -981,7 +980,7 @@ describe("a message between peers", () => {
         checkpoints: [{ tick: -1, hash: 1 }],
       }),
     ]) {
-      expect(Exit.isFailure(Netcode.decode(text)), text).toBe(true);
+      expect(Exit.isFailure(Message.decode(text)), text).toBe(true);
     }
   });
 });

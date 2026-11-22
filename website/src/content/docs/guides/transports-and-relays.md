@@ -32,8 +32,9 @@ Every peer that opens `Transport.layerBroadcastChannel` with the same name hears
 ## Between machines
 
 ```ts
-import { App, Driver, Plugin, Relay, Session, Transport } from "arcadekit";
+import { App, Driver, Plugin } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
+import { Relay, Session, Transport } from "arcadekit/net";
 import { Effect } from "effect";
 
 const Game = Plugin.make("game/Game", {});
@@ -74,14 +75,14 @@ A relay forwards what one peer of a room sends to the others. It runs no game an
 - **The relay authenticates the sender.** A peer declares its name once, when it connects, and is held to it: a message in another peer's name is refused and the socket closed. The `from` a handler receives is therefore the peer the relay admitted under that name.
 - Deciding whether that peer may use that name is the relay host's responsibility. A relay whose host doesn't check lets anyone claim any name.
 
-`arcadekit/Relay` implements the relay as plain functions, which whatever accepts the sockets calls. You host it yourself; see [hosting a relay](hosting-a-relay.md).
+`arcadekit/net/Relay` implements the relay as plain functions, which whatever accepts the sockets calls. You host it yourself; see [hosting a relay](hosting-a-relay.md).
 
 ## Custom transports
 
 `Transport.text(wire)` creates a transport over anything else that carries text:
 
 ```ts
-import { Transport } from "arcadekit";
+import { Transport } from "arcadekit/net";
 
 declare const channel: RTCDataChannel;
 
@@ -97,7 +98,7 @@ const transport = Transport.text({
 export const layer = Transport.layer(transport);
 ```
 
-- Messages travel in the format `Netcode.encode` writes. Text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
+- Messages travel in the format `Message.encode` writes. Text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
 - The channel must deliver every message. A WebSocket does; a data channel must be configured to.
 - `transport.close()` stops listening. Unlike the two layers, a transport created this way doesn't report being used after that, unless your game makes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
@@ -107,4 +108,4 @@ A transport that doesn't carry text is a `Transport.Shape` of your own, passed t
 ## Read more
 
 - [Hosting a relay](hosting-a-relay.md).
-- [`Transport`](/reference/arcadekit/Transport) and [`Relay`](/reference/arcadekit/Relay) in the API reference.
+- [`Transport`](/reference/arcadekit/net/Transport) and [`Relay`](/reference/arcadekit/net/Relay) in the API reference.

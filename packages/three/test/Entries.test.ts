@@ -65,6 +65,25 @@ const imported = (text: string): string[] => {
   return found;
 };
 
+/** The source file a relative specifier leads to, from a file. */
+const resolve = (from: string, specifier: string): string => {
+  const parts = from.split("/").slice(0, -1);
+  for (const part of specifier.split("/")) {
+    if (part === "..") {
+      parts.pop();
+    } else if (part !== ".") {
+      parts.push(part);
+    }
+  }
+  const path = parts.join("/");
+  for (const candidate of [`${path}.ts`, `${path}/index.ts`]) {
+    if (candidate in sources) {
+      return candidate;
+    }
+  }
+  throw new Error(`${from} imports ${specifier}, which is not a source file`);
+};
+
 /** Every file an entry reaches, and every package it imports. */
 const reach = (
   entry: string
@@ -77,8 +96,8 @@ const reach = (
     }
     files.add(file);
     for (const specifier of imported(sources[file]!)) {
-      if (specifier.startsWith("./")) {
-        visit(`../src/${specifier.slice("./".length)}.ts`);
+      if (specifier.startsWith(".")) {
+        visit(resolve(file, specifier));
       } else {
         packages.add(specifier);
       }
@@ -110,7 +129,9 @@ describe("the entries of @arcadekit/three", () => {
       },
     };
     for (const file of Object.keys(sources)) {
-      const module = /^\.\.\/src\/([A-Z]\w*)\.ts$/u.exec(file);
+      // A module is PascalCase, as it is imported, wherever its file is.
+      // Any other file is what a module keeps to itself, and no entry.
+      const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
       if (module !== null) {
         expected[`./${module[1]}`] = {
           source: `./src/${module[1]}.ts`,
@@ -121,12 +142,15 @@ describe("the entries of @arcadekit/three", () => {
     }
     expect(manifest.exports).toEqual(expected);
     expect(Object.keys(manifest.exports)).toEqual([".", "./Gltf", "./Three"]);
-    // Every source file is a module or the entry that gives them all.
-    expect(Object.keys(sources).toSorted()).toEqual([
-      "../src/Gltf.ts",
-      "../src/Three.ts",
-      "../src/index.ts",
-    ]);
+    // Every source file is behind some entry.
+    const reached = new Set(
+      Object.keys(manifest.exports).flatMap(
+        (name) => reach(sourceOf(name)).files
+      )
+    );
+    expect(Object.keys(sources).filter((file) => !reached.has(file))).toEqual(
+      []
+    );
   });
 
   it("has no components of its own: where a thing is drawn is arcadekit's Transform3d, which it imports by its entry", () => {

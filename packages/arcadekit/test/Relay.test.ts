@@ -2,17 +2,17 @@ import { Cause, Context, Effect, Exit, Layer, Result } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
-import { Netcode, Relay, Session, Transport } from "../src/index";
+import { Message, Relay, Session, Transport } from "../src/net/index";
 import { CoinGame, DELTA, moves, players, purseOf } from "./peers";
 import type { Peer, SteeredGame } from "./peers";
 
-const message = (from: string, tick: number, value = 0): Netcode.Message => ({
+const message = (from: string, tick: number, value = 0): Message.Message => ({
   from,
   tick,
   actions: value === 0 ? [] : [{ name: "ls/Tip", payload: { amount: value } }],
 });
 const text = (from: string, tick: number, value = 0): string =>
-  Netcode.encode(message(from, tick, value));
+  Message.encode(message(from, tick, value));
 
 const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   if (Exit.isSuccess(exit)) {
@@ -397,7 +397,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           one.send(message("ada", 0, 3));
           one.send(message("ada", 1));
           two.send(message("grace", 0));
-          const heard: Record<string, Netcode.Message[]> = {
+          const heard: Record<string, Message.Message[]> = {
             ada: [],
             grace: [],
             linus: [],
