@@ -155,6 +155,20 @@ export interface Loop {
   readonly frame: (alpha: number, delta?: number) => Exit.Exit<void, unknown>;
   /** Runs the input stage, with one picture of the devices. */
   readonly input: () => Exit.Exit<void, unknown>;
+  /**
+   * Runs a plugin's setup, as the game's own code between ticks, and applies
+   * the commands it queued if it did not fail.
+   */
+  readonly setup: (
+    plugin: string,
+    setup: Effect.Effect<unknown, unknown, unknown>
+  ) => Exit.Exit<unknown, unknown>;
+  /**
+   * Whether the game has come to rest, `app.settled`: nobody asked for a
+   * tick, no action is queued, no fiber waits, every event has been read and
+   * no state has a move to make.
+   */
+  readonly settled: () => boolean;
 }
 
 /**
@@ -482,5 +496,38 @@ export const make = (parts: Parts): Loop => {
     },
     frame: runFrameStage,
     input: runInputStage,
+    setup: (plugin, setup) => {
+      events.reader = `setup:${plugin}`;
+      world.reader = events.reader;
+      const exit = runner.asOwn(() =>
+        runner.finish(
+          () => runTick(setup),
+          `The setup of plugin "${plugin}"`,
+          () =>
+            `The setup of plugin "${plugin}" did not finish synchronously. Setup must not wait.`,
+          false
+        )
+      );
+      if (Exit.isSuccess(exit)) {
+        commands.apply();
+      }
+      return exit;
+    },
+    settled: () => {
+      if (
+        intake.wanted ||
+        intake.queued.length > 0 ||
+        runner.pending > 0 ||
+        !events.settled()
+      ) {
+        return false;
+      }
+      for (const state of states.states) {
+        if (State.pending(world, state) !== undefined) {
+          return false;
+        }
+      }
+      return true;
+    },
   };
 };

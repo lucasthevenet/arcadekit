@@ -44,6 +44,25 @@ export interface Parts {
   ) => Fiber.Fiber<unknown, unknown>;
 }
 
+/**
+ * A game's handlers by the name of their action, which is what an inbox
+ * finds them by. Two for one action is a mistake of the program.
+ *
+ * @category Constructors
+ */
+export const handlersOf = (
+  handlers: readonly Action.AnyHandler[]
+): Map<string, Action.AnyHandler> => {
+  const named = new Map<string, Action.AnyHandler>();
+  for (const handler of handlers) {
+    if (named.has(handler.action.name)) {
+      throw new Error(`Two handlers for action "${handler.action.name}"`);
+    }
+    named.set(handler.action.name, handler);
+  }
+  return named;
+};
+
 /** Why an action was refused, as `Action.Rejected` carries it. */
 const refusal = (error: unknown): { _tag: string; message: string } => {
   const tag =

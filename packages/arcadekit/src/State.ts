@@ -323,3 +323,29 @@ export const onExit =
   <V extends string>(state: State<V>, value: NoInfer<V>) =>
   <E, R>(self: System.System<E, R>): System.System<E, R> =>
     System.triggered(self, { state, on: "exit", value });
+
+/**
+ * Has a world hold the states its app runs with: those a hook waits for,
+ * which are entered on the first tick, and, in a world a save filled, those
+ * the save holds, which go on from where they were, transitions included,
+ * whether or not anything has looked at them yet.
+ * @internal
+ */
+export const prepare = (
+  world: EcsWorld,
+  hooked: readonly State<string>[],
+  loaded: boolean
+): void => {
+  const registry = registryOf(world);
+  if (loaded) {
+    for (const state of defined()) {
+      if (world.component(state.name) === state.component) {
+        handleOf(world, state);
+      }
+    }
+  }
+  for (const state of hooked) {
+    handleOf(world, state);
+    registry.hooked.add(state);
+  }
+};

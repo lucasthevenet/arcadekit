@@ -573,6 +573,18 @@ describe("a save that cannot be loaded", () => {
     );
   });
 
+  it("says a migration is what brings a save with a component this program doesn't define up to it", () => {
+    const { save } = record(10, 5);
+    const world = readSnapshot(save.world);
+    world.components.push({ name: "sv/Gone", storage: "table", fields: [] });
+    const error = refusal(load({ ...save, world: writeSnapshot(world) }));
+    expect(error).toBeInstanceOf(Save.LoadRefused);
+    expect(error.problem).toBe("unknown component");
+    expect(error.message).toMatch(
+      /"sv\/Gone", which this program doesn't define.* A migration renames or removes a component in a save\.$/su
+    );
+  });
+
   it("finds what it holds by definition, and names an event this program doesn't define", () => {
     const { save } = record(10, 5);
     // No plugin lists the components or the waiting events.

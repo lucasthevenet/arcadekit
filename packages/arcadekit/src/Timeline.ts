@@ -20,7 +20,6 @@ import { Exit } from "effect";
 
 import type * as App from "./App";
 import type { SavedChanges } from "./ecs/changes";
-import { SnapshotError } from "./ecs/snapshot";
 import type { World, Moment as WorldMoment } from "./ecs/world";
 import type { Told } from "./Outbox";
 import * as Save from "./Save";
@@ -92,36 +91,22 @@ export const capture = (
 ): Exit.Exit<Moment, Save.SaveRefused> => {
   between(app, "capture", "A game is captured between ticks.");
   const { commands, events, time, world } = app;
-  const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
-    Exit.fail(new Save.SaveRefused({ message }));
-  if (commands.size > 0) {
-    return refused(
-      `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
-    );
-  }
-  let of: WorldMoment;
-  try {
-    of = world._capture();
-  } catch (error) {
-    if (error instanceof SnapshotError) {
-      return refused(error.message);
-    }
-    throw error;
-  }
-  return Exit.succeed(
-    new Held(
-      time.tick,
-      world,
-      of,
-      events.mark(),
-      // What runs between ticks has everything still to draw, unless it is
-      // to draw nothing before the game comes back here.
-      world.saveChanges(
-        options?.stages === true
-          ? undefined
-          : (reader) => !reader.startsWith(READER)
+  return Exit.map(
+    Save.taking(commands, "capture", () => world._capture()),
+    (of) =>
+      new Held(
+        time.tick,
+        world,
+        of,
+        events.mark(),
+        // What runs between ticks has everything still to draw, unless it is
+        // to draw nothing before the game comes back here.
+        world.saveChanges(
+          options?.stages === true
+            ? undefined
+            : (reader) => !reader.startsWith(READER)
+        )
       )
-    )
   );
 };
 

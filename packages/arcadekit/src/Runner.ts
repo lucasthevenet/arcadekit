@@ -64,6 +64,11 @@ export class Runner {
     };
   }
 
+  /** How much work fibers have queued for the next flush. */
+  get pending(): number {
+    return this.dispatcher.pending;
+  }
+
   /**
    * What the app is running: `app.phase`. A handler a tick runs is part of
    * the tick: the stage wins.
