@@ -12,6 +12,7 @@ import {
   EntityId,
   Field,
   Journal,
+  Plugin,
   Query,
   Save,
   SnapshotError,
@@ -591,15 +592,27 @@ const Grow = System.make("Grow", function* () {
   });
 });
 
+/** How the orchard begins: three trees, each with a first branch. */
+const Planted = Plugin.make("rl/Planted", {
+  setup: Effect.map(Commands, (commands) => {
+    const trees = [0, 1, 2].map(() => commands.spawn(Body));
+    for (const tree of trees) {
+      commands.spawn(Body, ChildOf.of({ target: tree }));
+    }
+  }),
+});
+const Orchard = App.define({
+  plugins: [Planted],
+  systems: [Grow],
+  handlers: [fell, graft],
+});
+
 const orchard = Effect.gen(function* () {
-  const app = yield* App.make(
-    App.define({ systems: [Grow], handlers: [fell, graft] }),
-    { checkpointEvery: 1 }
-  );
-  const trees = [0, 1, 2].map(() => app.world.spawn(Body));
-  for (const tree of trees) {
-    app.world.spawn(Body, ChildOf.of({ target: tree }));
-  }
+  const app = yield* App.make(Orchard, { checkpointEvery: 1 });
+  // The trees are the bodies that are nobody's branch, in the order planted.
+  const trees = app.world
+    .view(Query.all(Body).pipe(Query.without(ChildOf)))
+    .entities();
   return { app, trees };
 });
 
@@ -627,8 +640,10 @@ describe("relations in an app", () => {
         // One tree is left, with the branches of three ticks and its first.
         expect(app.world.entityCount).toBe(5);
 
-        const { app: again } = yield* orchard;
-        Journal.replay(again, app.record());
+        const played = app.record();
+        const again = yield* Journal.replay(played, (start) =>
+          App.make(Orchard, { ...start, checkpointEvery: 1 })
+        );
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

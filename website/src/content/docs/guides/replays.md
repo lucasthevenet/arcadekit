@@ -34,8 +34,10 @@ const program = Effect.gen(function* () {
   const text = Journal.encode(game.record()); // for a file
 
   const recording = yield* Journal.decode(text); // fails on text that isn't one
-  const again = yield* App.make(Game, { seed: 42, checkpointEvery: 1 });
-  Journal.replay(again, recording); // throws Journal.ReplayDiverged
+  // The replay hands over how the recorded game began: here, its seed.
+  const again = yield* Journal.replay(recording, (start) =>
+    App.make(Game, { ...start, checkpointEvery: 1 })
+  ); // fails with Journal.ReplayDiverged
 }).pipe(Effect.scoped);
 ```
 
@@ -45,7 +47,13 @@ const program = Effect.gen(function* () {
 - every action enqueued through the app, marked `queued`, and also marked `refused`, with a short reason, if it was refused when its turn came;
 - checkpoints, the world's hash at a given tick. `Action.isCheckpoint(entry)` distinguishes the two kinds of entry.
 
-`app.record()` returns a recording: that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. `Journal.replay(app, recording)` plays it into a fresh app created with the same plugins and seed, and started from the same state: whatever was spawned into `app.world` before the first action or tick. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay into an app that isn't at the recording's first tick throws. `Journal.encode` and `Journal.decode` turn a recording into text and back, and decoding refuses one whose log or runs of deltas are out of order or outside it.
+`app.record()` returns a recording: how the game began, that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes.
+
+`Journal.replay(recording, (start) => App.make(game, start))` hands that start to the function that makes the app, plays the recording in the app, and returns it where the recording ends. An app made from `start` begins as the recorded game did, so a replay can't be given the wrong seed. The app must also start from the same state: whatever was spawned into `app.world` before the first action or tick. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay in an app that isn't at the recording's first tick throws.
+
+The function is also where the app gets its other options, `App.make(game, { ...start, checkpointEvery: 1 })`, and where you keep or prepare it before the replay begins, with `.pipe(Effect.tap((app) => ...))`. An app kept that way is the one to look at when a replay has stopped.
+
+`Journal.encode` and `Journal.decode` turn a recording into text and back. Decoding refuses one that doesn't say how its game began, whose save doesn't read or is of another tick than it begins at, or whose log or runs of deltas are out of order or outside it. A recording made since a save holds the save, which is most of its text.
 
 ## Checkpoints
 

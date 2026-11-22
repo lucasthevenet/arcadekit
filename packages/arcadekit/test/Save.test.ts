@@ -241,25 +241,27 @@ describe("a saved game", () => {
       const { save, saved } = recorded;
       expect(saved.tick).toBe(saveAt);
       expect(saved.delta).toBe(saveAt === 0 ? 0 : 1 / 60);
+      withApp(App.make(Played, { save, checkpointEvery: 1 }), (app) => {
+        // The world holds the game's time, so the save brings it back.
+        expect(app.time).toEqual(saved);
+        // The log starts again.
+        expect(app.actionLog).toEqual([]);
+      });
+      // What the game logged after the save is replayed from the save, which
+      // the recording holds, against the checkpoints it took after every tick.
       const resumed = withApp(
-        App.make(Played, { save, checkpointEvery: 1 }),
-        (app) => {
-          // The world holds the game's time, so the save brings it back.
-          expect(app.time).toEqual(saved);
-          // The log starts again, and what the game logged after the save is
-          // replayed against the checkpoints it took after every tick.
-          expect(app.actionLog).toEqual([]);
-          Journal.replay(app, recorded.tail);
-          return {
-            hash: app.world.hash(),
-            tally: app.world
-              .view(Tallies)
-              .entities()
-              .map((e) => app.world.get(e, Tally)),
-            time: { ...app.time },
-            log: [...app.actionLog],
-          };
-        }
+        Journal.replay(recorded.tail, (start) =>
+          App.make(Played, { ...start, checkpointEvery: 1 })
+        ),
+        (app) => ({
+          hash: app.world.hash(),
+          tally: app.world
+            .view(Tallies)
+            .entities()
+            .map((e) => app.world.get(e, Tally)),
+          time: { ...app.time },
+          log: [...app.actionLog],
+        })
       );
       expect(resumed.hash).toBe(recorded.hashes.at(-1));
       expect(resumed.tally).toEqual(recorded.tally);
@@ -411,9 +413,10 @@ describe("a saved game", () => {
       const recorded = record(ticks, saveAt);
       ticksRun = 0;
       withApp(
-        App.make(Played, { save: recorded.save, checkpointEvery: 1 }),
+        Journal.replay(recorded.tail, (start) =>
+          App.make(Played, { ...start, checkpointEvery: 1 })
+        ),
         (app) => {
-          Journal.replay(app, recorded.tail);
           expect(app.world.hash()).toBe(recorded.hashes.at(-1));
         }
       );
@@ -431,10 +434,16 @@ describe("a saved game", () => {
     expect(decoded).toEqual(recorded.save);
     // It is the world's snapshot and a little text.
     expect(bytes.length).toBeLessThan(recorded.save.world.length + 600);
-    withApp(App.make(Played, { save: decoded, checkpointEvery: 1 }), (app) => {
-      Journal.replay(app, recorded.tail);
-      expect(app.world.hash()).toBe(recorded.hashes.at(-1));
-    });
+    // The game goes on from the save that was read as it did from the one
+    // that was written.
+    withApp(
+      Journal.replay(recorded.tail, () =>
+        App.make(Played, { save: decoded, checkpointEvery: 1 })
+      ),
+      (app) => {
+        expect(app.world.hash()).toBe(recorded.hashes.at(-1));
+      }
+    );
     // A view into a larger buffer reads as itself.
     const padded = new Uint8Array(bytes.length + 9);
     padded.set(bytes, 5);

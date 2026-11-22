@@ -627,10 +627,13 @@ describe("a level's assets", () => {
           expect(bare.log).toEqual([]);
           expect(drawnGame.log.length).toBe(4);
           // The log of one replays in the other, which has no files.
-          const again = yield* App.make(App.define({ plugins: [bare.Game] }), {
-            checkpointEvery: 1,
-          }).pipe(Effect.provideService(Assets.Loader, counting));
-          Journal.replay(again, seen.record());
+          const played = seen.record();
+          const again = yield* Journal.replay(played, (start) =>
+            App.make(App.define({ plugins: [bare.Game] }), {
+              ...start,
+              checkpointEvery: 1,
+            })
+          ).pipe(Effect.provideService(Assets.Loader, counting));
           expect(again.world.hash()).toBe(seen.world.hash());
           expect(asked).toBe(0);
         })
@@ -851,10 +854,12 @@ describe("a level's assets", () => {
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const again = yield* App.make(App.define({ plugins: [Rules] }), {
-            checkpointEvery: 1,
-          });
-          Journal.replay(again, recording);
+          const again = yield* Journal.replay(recording, (start) =>
+            App.make(App.define({ plugins: [Rules] }), {
+              ...start,
+              checkpointEvery: 1,
+            })
+          );
           expect(again.world.hash()).toBe(hash);
           expect(again.world.view(Query.all(Wall)).count()).toBe(4);
         })

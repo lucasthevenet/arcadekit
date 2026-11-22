@@ -5,11 +5,14 @@ import { assert, describe, expect, it } from "vitest";
 import {
   Action,
   App,
+  Commands,
   Component,
   EntityId,
   Event,
   Field,
   Journal,
+  Plugin,
+  Query,
   System,
   World,
 } from "../src/index";
@@ -55,16 +58,27 @@ const reset = Action.handler(Reset, function* (payload) {
   resets.push(payload);
 });
 
-const game = Effect.map(
-  App.make(App.define({ handlers: [damage, rename, reset] })),
-  (app) => {
-    const target = app.world.spawn(Health.of({ hp: 50 }));
-    return { app, target };
-  }
-);
+/** How the game begins: with one thing to damage. */
+const Target = Plugin.make("sc/Target", {
+  setup: Effect.map(Commands, (commands) => {
+    commands.spawn(Health.of({ hp: 50 }));
+  }),
+});
+const Game = App.define({
+  plugins: [Target],
+  handlers: [damage, rename, reset],
+});
+/** The thing to damage, which the game begins with. */
+const targetOf = (app: App.Any): Entity =>
+  app.world.view(Query.all(Health)).entities()[0]!;
 
-const withApp = <A, T>(
-  make: Effect.Effect<A, never, Scope.Scope>,
+const game = Effect.map(App.make(Game), (app) => ({
+  app,
+  target: targetOf(app),
+}));
+
+const withApp = <A, T, E = never>(
+  make: Effect.Effect<A, E, Scope.Scope>,
   use: (made: A) => T
 ): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
@@ -484,12 +498,14 @@ describe("saving and replaying", () => {
   type WrittenRecording = Omit<Journal.Recording, "log"> & {
     log: Written[];
   };
-  const replayInto = (recording: Journal.Recording | WrittenRecording) =>
-    withApp(game, ({ app, target }) => {
-      // Whatever the file says: the replay is what checks it.
-      Journal.replay(app, recording as Journal.Recording);
-      return app.world.get(target, Health)!.hp;
-    });
+  const replayInto = (recording: Journal.Recording | WrittenRecording) => {
+    // Whatever the file says: the replay is what checks it.
+    const written = recording as Journal.Recording;
+    return withApp(
+      Journal.replay(written, (start) => App.make(Game, start)),
+      (app) => app.world.get(targetOf(app), Health)!.hp
+    );
+  };
 
   it("round-trips the recording through text and reproduces the game", () => {
     const saved = record();
@@ -513,7 +529,27 @@ describe("saving and replaying", () => {
   });
 
   it("refuses text that is not a recording", () => {
+    /**
+     * A recording of nothing, as text, that begins after `ticks` ticks: it
+     * holds the save its game was at then.
+     */
+    const since = (ticks: number): string =>
+      withApp(game, ({ app }) => {
+        for (let tick = 0; tick < ticks; tick++) {
+          app.tick(1);
+        }
+        const save = app.save();
+        assert(Exit.isSuccess(save));
+        return Journal.encode({
+          save: save.value,
+          start: ticks,
+          end: ticks,
+          deltas: [],
+          log: [],
+        });
+      });
     const valid = {
+      ...(JSON.parse(since(1)) as { save: string }),
       start: 1,
       end: 3,
       deltas: [{ tick: 1, delta: 1 }],
@@ -561,13 +597,13 @@ describe("saving and replaying", () => {
       expect(Exit.isFailure(Journal.decode(text)), text).toBe(true);
     }
     expect(Exit.isSuccess(Journal.decode(JSON.stringify(valid)))).toBe(true);
-    expect(
-      Exit.isSuccess(
-        Journal.decode(
-          JSON.stringify({ start: 4, end: 4, deltas: [], log: [] })
-        )
-      )
-    ).toBe(true);
+    expect(JSON.parse(since(4))).toMatchObject({
+      start: 4,
+      end: 4,
+      deltas: [],
+      log: [],
+    });
+    expect(Exit.isSuccess(Journal.decode(since(4)))).toBe(true);
   });
 
   it("stops a replay at the first entry that no longer applies", () => {

@@ -13,6 +13,7 @@ import {
   Event,
   Field,
   Journal,
+  Plugin,
   Query,
   Random,
   System,
@@ -588,38 +589,49 @@ const Hear = System.make("Hear", function* () {
   }
 });
 
-const withApp = <T, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+const withApp = <T, A, E = never>(
+  make: Effect.Effect<T, E, Scope.Scope>,
   use: (app: T) => A
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
-const game = (checkpointEvery = 1) =>
-  Effect.map(
-    App.make(
-      App.define({ systems: [Listen, Ring, Hear], handlers: [act, echo] }),
-      { seed: 9, checkpointEvery }
-    ),
-    (app) => {
-      const entities: Entity[] = [];
-      for (let n = 0; n < 12; n++) {
-        const entity = app.world.spawn(
-          Body.of({ x: n, y: n }),
-          Sheet.of(sheet(n))
-        );
-        if (n % 2 === 0) {
-          app.world.add(entity, Aura.of(sheet(n)));
-        }
-        if (n % 3 === 0) {
-          app.world.add(entity, Chilled);
-        }
-        entities.push(entity);
+/** What the game begins with: bodies of every shape, and two freed slots. */
+const Scene = Plugin.make("tx/Scene", {
+  setup: Effect.map(Commands, (commands) => {
+    const entities: Entity[] = [];
+    for (let n = 0; n < 12; n++) {
+      const entity = commands.spawn(
+        Body.of({ x: n, y: n }),
+        Sheet.of(sheet(n))
+      );
+      if (n % 2 === 0) {
+        commands.add(entity, Aura.of(sheet(n)));
       }
-      // Two freed slots, so a spawn reuses one before it takes a fresh index.
-      app.world.despawn(entities.splice(7, 1)[0]!);
-      app.world.despawn(entities.splice(2, 1)[0]!);
-      return { app, entities };
+      if (n % 3 === 0) {
+        commands.add(entity, Chilled);
+      }
+      entities.push(entity);
     }
-  );
+    // Two freed slots, so a spawn reuses one before it takes a fresh index.
+    commands.despawn(entities[7]!);
+    commands.despawn(entities[2]!);
+  }),
+});
+const Game = App.define({
+  plugins: [Scene],
+  systems: [Listen, Ring, Hear],
+  handlers: [act, echo],
+});
+
+const game = (checkpointEvery = 1) =>
+  Effect.map(App.make(Game, { seed: 9, checkpointEvery }), (app) => {
+    // In the order they were spawned in: each begins at an x of its own.
+    const began = (entity: Entity): number => app.world.get(entity, Body)!.x;
+    const entities = app.world
+      .view(Query.all(Body))
+      .entities()
+      .toSorted((a, b) => began(a) - began(b));
+    return { app, entities };
+  });
 
 /** The hash of the game after `ticks` ticks with no action: the time is in it. */
 const untouched = (ticks: number): number =>
@@ -839,10 +851,12 @@ describe("an action that is refused", () => {
       app.tick(1);
       return { recording: app.record(), hash: app.world.hash() };
     });
-    const replayed = withApp(game(), ({ app }) => {
-      Journal.replay(app, recording);
-      return app.world.hash();
-    });
+    const replayed = withApp(
+      Journal.replay(recording, (start) =>
+        App.make(Game, { ...start, checkpointEvery: 1 })
+      ),
+      (app) => app.world.hash()
+    );
     expect(replayed).toBe(hash);
   });
 
@@ -988,10 +1002,12 @@ describe("a game full of refused actions", () => {
       });
       expect(recorded.refusedCount).toBeGreaterThan(20);
 
-      const replayed = withApp(game(), ({ app }) => {
-        Journal.replay(app, recorded.recording);
-        return app.world.hash();
-      });
+      const replayed = withApp(
+        Journal.replay(recorded.recording, (start) =>
+          App.make(Game, { ...start, checkpointEvery: 1 })
+        ),
+        (app) => app.world.hash()
+      );
       expect(replayed).toBe(recorded.hash);
     }
   });

@@ -1,8 +1,24 @@
 import { Context, Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Driver, Journal, Lockstep, Rollback, Transport } from "../src/index";
-import { DELTA, Drop, game, moves, players, setGlitch, withApp } from "./peers";
+import {
+  App,
+  Driver,
+  Journal,
+  Lockstep,
+  Rollback,
+  Transport,
+} from "../src/index";
+import {
+  CoinGame,
+  DELTA,
+  Drop,
+  game,
+  moves,
+  players,
+  setGlitch,
+  withApp,
+} from "./peers";
 import type { Game, Peer } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
@@ -216,10 +232,11 @@ describe("a session joined to a transport", () => {
             expect(ada.session.drifted).toBeUndefined();
             // Only a game played with rollback goes back.
             expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
-            withApp(game(), (alone) => {
-              Journal.replay(alone, ada.app.record());
-              expect(alone.world.hash()).toBe(ada.app.world.hash());
-            });
+            const whole = ada.app.record();
+            const alone = yield* Journal.replay(whole, (start) =>
+              App.make(CoinGame, { ...start, checkpointEvery: 1 })
+            );
+            expect(alone.world.hash()).toBe(ada.app.world.hash());
           })
         )
       );

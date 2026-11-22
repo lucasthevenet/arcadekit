@@ -269,18 +269,21 @@ const program = Effect.gen(function* () {
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
-    const headless = yield* App.make(App.define({ plugins: [Rules] }), {
-      checkpointEvery: 1,
-    });
-    seat(headless);
-    // A replay that goes another way throws, and says where.
-    return yield* Effect.try({
-      try: () => {
-        Journal.replay(headless, loaded.value);
-        return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
-      },
-      catch: (error) => (error instanceof Error ? error.message : "it threw"),
-    }).pipe(Effect.catch((why) => Effect.succeed(`stopped: ${why}`)));
+    // The replay hands over how the game began, its seed, and the app made
+    // from it is seated as the game was before its first move. A replay that
+    // goes another way fails, and says where.
+    return yield* Journal.replay(loaded.value, (start) =>
+      App.make(App.define({ plugins: [Rules] }), {
+        ...start,
+        checkpointEvery: 1,
+      }).pipe(Effect.tap((made) => Effect.sync(() => seat(made))))
+    ).pipe(
+      Effect.map(
+        (replayed) =>
+          `${standing(replayed)} (${standing(replayed) === standing(app) ? "identical" : "DIFFERENT"})`
+      ),
+      Effect.catch((why) => Effect.succeed(`stopped: ${why.message}`))
+    );
   }, Effect.scoped);
   yield* Console.log(`replayed -> ${yield* replay(saved)}`);
   // Someone edits the save so that a player who does not exist passes.

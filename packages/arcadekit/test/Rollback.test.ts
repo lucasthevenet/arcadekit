@@ -15,6 +15,7 @@ import {
 } from "../src/index";
 import {
   Coin,
+  CoinGame,
   DELTA,
   Drop,
   Purse,
@@ -144,13 +145,18 @@ describe("a rollback session", () => {
         // And the game a single app plays when it is given those actions
         // on those ticks and never goes back: the replay holds every
         // tick's hash against the log's, and ends on the same one.
-        withApp(game(), (alone) => {
-          Journal.replay(alone, ada.app.record());
-          expect(alone.world.hash(), where).toBe(ada.app.world.hash());
-          expect({ ...alone.world.singleton(Purse) }, where).toEqual({
-            ...purse,
-          });
-        });
+        const played = ada.app.record();
+        withApp(
+          Journal.replay(played, (start) =>
+            App.make(CoinGame, { ...start, checkpointEvery: 1 })
+          ),
+          (alone) => {
+            expect(alone.world.hash(), where).toBe(ada.app.world.hash());
+            expect({ ...alone.world.singleton(Purse) }, where).toEqual({
+              ...purse,
+            });
+          }
+        );
       });
     }
   });
@@ -174,10 +180,14 @@ describe("a rollback session", () => {
       expect(first.session.rewinds).toBeGreaterThan(5);
       const recording = first.app.record();
       expect(recording.end).toBe(ticks);
-      withApp(game(), (alone) => {
-        Journal.replay(alone, recording);
-        expect(alone.world.hash()).toBe(first.app.world.hash());
-      });
+      withApp(
+        Journal.replay(recording, (start) =>
+          App.make(CoinGame, { ...start, checkpointEvery: 1 })
+        ),
+        (alone) => {
+          expect(alone.world.hash()).toBe(first.app.world.hash());
+        }
+      );
     });
   });
 

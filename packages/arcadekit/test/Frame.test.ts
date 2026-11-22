@@ -15,6 +15,7 @@ import {
   Field,
   Frame,
   Journal,
+  Plugin,
   Query,
   Random,
   Save,
@@ -618,15 +619,15 @@ describe("the frame stage", () => {
             (yield* Action.Actions).enqueue(Kick, { by: 4 });
           }
         }).pipe(System.inStage("frame"));
+        const Begin = Plugin.make("fr/Begin", {
+          setup: Effect.map(Commands, (commands) => {
+            commands.spawn(Ball.of({ x: 0, vx: 1 }));
+          }),
+        });
+        const game = (systems: readonly System.System<never, BuiltIn>[]) =>
+          App.define({ plugins: [Begin], systems, handlers: [kick] });
         const make = (systems: readonly System.System<never, BuiltIn>[]) =>
-          Effect.gen(function* () {
-            const app = yield* App.make(
-              App.define({ systems, handlers: [kick] }),
-              { checkpointEvery: 1 }
-            );
-            app.world.spawn(Ball.of({ x: 0, vx: 1 }));
-            return app;
-          });
+          App.make(game(systems), { checkpointEvery: 1 });
         const app = yield* make([Roll, Button]);
         for (let n = 0; n < 5; n++) {
           app.tick(1);
@@ -641,8 +642,10 @@ describe("the frame stage", () => {
           { tick: 3, name: "fr/Kick", payload: { by: 4 }, queued: true },
         ]);
         // The replay has no button and draws no frame.
-        const headless = yield* make([Roll]);
-        Journal.replay(headless, app.record());
+        const played = app.record();
+        const headless = yield* Journal.replay(played, (start) =>
+          App.make(game([Roll]), { ...start, checkpointEvery: 1 })
+        );
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.
         let own: App.Any | undefined;

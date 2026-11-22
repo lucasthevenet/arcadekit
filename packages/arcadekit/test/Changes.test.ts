@@ -12,6 +12,7 @@ import {
   Field,
   Journal,
   Migrate,
+  Plugin,
   Query,
   Save,
   System,
@@ -1307,27 +1308,28 @@ const Count = System.make("Count", function* () {
   });
 });
 
+/** How the game begins: its tally, and six entities with a position. */
+const Begin = Plugin.make("ch/Begin", {
+  setup: Effect.map(Commands, (commands) => {
+    commands.spawn(Tally);
+    for (let n = 0; n < 6; n++) {
+      commands.spawn(Position.of({ x: n, y: 0 }));
+    }
+  }),
+});
+const Game = App.define({
+  plugins: [Begin],
+  systems: [Early, Drift, Count],
+  handlers: [push, spawn, cull],
+});
+
 const game = (
   options: { checkpointEvery?: number } = {}
 ): Effect.Effect<
   App.App<never, typeof push | typeof spawn | typeof cull>,
   never,
   Scope.Scope
-> =>
-  Effect.gen(function* () {
-    const app = yield* App.make(
-      App.define({
-        systems: [Early, Drift, Count],
-        handlers: [push, spawn, cull],
-      }),
-      { checkpointEvery: options.checkpointEvery ?? 1 }
-    );
-    app.world.spawn(Tally);
-    for (let n = 0; n < 6; n++) {
-      app.world.spawn(Position.of({ x: n, y: 0 }));
-    }
-    return app;
-  });
+> => App.make(Game, { checkpointEvery: options.checkpointEvery ?? 1 });
 
 /** A game with a move every tick, some of them refused. */
 const play = (app: App.Any, from: number, to: number): void => {
@@ -1437,8 +1439,10 @@ describe("change queries in an app", () => {
         play(app, 0, 40);
         expect(tallyOf(app).moved).toBeGreaterThan(40);
         expect(tallyOf(app).gone).toBeGreaterThan(2);
-        const again = yield* game();
-        Journal.replay(again, app.record());
+        const played = app.record();
+        const again = yield* Journal.replay(played, (start) =>
+          App.make(Game, { ...start, checkpointEvery: 1 })
+        );
         expect(again.world.hash()).toBe(app.world.hash());
         expect(tallyOf(again)).toEqual(tallyOf(app));
       })
@@ -1465,17 +1469,13 @@ describe("change queries in an app", () => {
           expect(read.value).toEqual(save.value);
           // Once a tick has run, there is a place to go on from.
           expect(visitsIn(save.value).length > 0).toBe(savedAt > 0);
-          const loaded = yield* App.make(
-            App.define({
-              systems: [Early, Drift, Count],
-              handlers: [push, spawn, cull],
-            }),
-            { save: read.value, checkpointEvery: 1 }
-          );
           play(app, savedAt, savedAt + 12);
-          // The tail of the original's log replays in the loaded game, and
-          // every checkpoint of it holds.
-          Journal.replay(loaded, app.record(save.value));
+          // The tail of the original's log replays in a game loaded from the
+          // save that was read, and every checkpoint of it holds.
+          const played = app.record(read.value);
+          const loaded = yield* Journal.replay(played, (start) =>
+            App.make(Game, { ...start, checkpointEvery: 1 })
+          );
           expect(tallyOf(loaded)).toEqual(tallyOf(app));
           expect(loaded.world.hash()).toBe(app.world.hash());
         })

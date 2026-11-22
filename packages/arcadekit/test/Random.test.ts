@@ -1,6 +1,6 @@
 import { Data, Effect, Random as EffectRandom, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import { Rng } from "../src/ecs/random";
 import { World as EcsWorld } from "../src/ecs/world";
@@ -11,14 +11,15 @@ import {
   Component,
   Field,
   Journal,
+  Plugin,
   Query,
   Random,
   Singleton,
   System,
 } from "../src/index";
 
-const withApp = <T, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+const withApp = <T, A, E = never>(
+  make: Effect.Effect<T, E, Scope.Scope>,
   use: (app: T) => A
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
@@ -363,44 +364,50 @@ describe("the Random service", () => {
     // The rolls are in the log as actions, so the replay runs the systems
     // and the handler, and must still draw the same numbers in the same order
     // to end in the same state.
+    const Begin = Plugin.make("rnd/Begin", {
+      setup: Effect.map(Commands, (commands) => {
+        commands.spawn(Die.of({ face: 1, rolls: 0 }));
+      }),
+    });
+    const Game = App.define({
+      plugins: [Begin],
+      systems: [Sparks],
+      handlers: [roll],
+    });
     const record = (seed: number) =>
-      withApp(
-        App.make(App.define({ systems: [Sparks], handlers: [roll] }), { seed }),
-        (app) => {
-          app.world.spawn(Die.of({ face: 1, rolls: 0 }));
-          const other = new Rng(seed + 1000);
-          for (let i = 0; i < 150; i++) {
-            if (other.int(1, 4) === 1) {
-              app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
-            }
-            app.tick(1 / 60);
+      withApp(App.make(Game, { seed }), (app) => {
+        const other = new Rng(seed + 1000);
+        for (let i = 0; i < 150; i++) {
+          if (other.int(1, 4) === 1) {
+            app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
           }
-          return snapshot(app);
+          app.tick(1 / 60);
         }
-      );
-    const replayOf = (recorded: ReturnType<typeof record>, seed: number) =>
-      withApp(
-        App.make(App.define({ systems: [Sparks], handlers: [roll] }), { seed }),
-        (app) => {
-          app.world.spawn(Die.of({ face: 1, rolls: 0 }));
-          // Through text and back, as a save file would be.
-          const loaded = Journal.decode(Journal.encode(recorded.recording));
-          if (Exit.isFailure(loaded)) {
-            throw new Error("the log did not survive being written down");
-          }
-          Journal.replay(app, loaded.value);
-          return snapshot(app);
-        }
-      );
+        return snapshot(app);
+      });
+    const replayOf = (recording: Journal.Recording) => {
+      // Through text and back, as a save file would be.
+      const loaded = Journal.decode(Journal.encode(recording));
+      if (Exit.isFailure(loaded)) {
+        throw new Error("the log did not survive being written down");
+      }
+      return Journal.replay(loaded.value, (start) => App.make(Game, start));
+    };
 
     const recorded = record(31);
+    const { recording } = recorded;
     expect(recorded.dice[0]![1]).toBeGreaterThan(10);
     expect(recorded.sparks.length).toBeGreaterThan(0);
-    expect(replayOf(recorded, 31)).toEqual(recorded);
+    expect(withApp(replayOf(recording), snapshot)).toEqual(recorded);
     // With another seed the same moves would be a different game, and the
     // replay says so before its first tick.
-    expect(() => replayOf(recorded, 32)).toThrow(Journal.ReplayDiverged);
-    expect(() => replayOf(recorded, 32)).toThrow(
+    assert(recording.seed === 31);
+    const diverged = withApp(
+      Effect.flip(replayOf({ ...recording, seed: 32 })),
+      (error) => error
+    );
+    expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
+    expect(diverged.message).toMatch(
       /the world's hash at tick 0 .* check the seed/
     );
   });

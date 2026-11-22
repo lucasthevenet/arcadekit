@@ -905,10 +905,12 @@ describe("the input stage", () => {
     here.tap("Space");
     run(
       Effect.gen(function* () {
-        const again = yield* App.make(App.define({ plugins: [Flying] }), {
-          checkpointEvery: 1,
-        });
-        Journal.replay(again, recording!);
+        const again = yield* Journal.replay(recording!, (start) =>
+          App.make(App.define({ plugins: [Flying] }), {
+            ...start,
+            checkpointEvery: 1,
+          })
+        );
         expect(again.world.hash()).toBe(hash);
         expect(ship(again)).toEqual({ x: 20, shots: 0 });
         expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
@@ -1253,11 +1255,12 @@ describe("the picture of the devices in the world", () => {
         assert(Exit.isSuccess(decoded));
         const recording = decoded.value;
         const entries = recording.log;
-        const again = yield* App.make(App.define({ plugins: [Flying] }), {
-          checkpointEvery: 1,
-          seed: 9,
-        });
-        Journal.replay(again, recording);
+        const again = yield* Journal.replay(recording, (start) =>
+          App.make(App.define({ plugins: [Flying] }), {
+            ...start,
+            checkpointEvery: 1,
+          })
+        );
         expect(ship(again)).toEqual(played);
         expect(again.world.hash()).toBe(hashes.at(-1));
         // Checked against every tick's checkpoint on the way.
@@ -1265,19 +1268,22 @@ describe("the picture of the devices in the world", () => {
           entries.filter((entry) => Action.isCheckpoint(entry)).length
         ).toBe(ticks + 1);
         // A log that says another key was held is another game.
-        const other = yield* App.make(App.define({ plugins: [Flying] }), {
-          checkpointEvery: 1,
-          seed: 9,
-        });
         const altered = entries.map((entry) =>
           !Action.isCheckpoint(entry) &&
           JSON.stringify(entry.payload) === '{"down":["ArrowRight"]}'
             ? { ...entry, payload: { down: ["ArrowLeft"] } }
             : entry
         );
-        expect(() =>
-          Journal.replay(other, { ...recording, log: altered })
-        ).toThrow(Journal.ReplayDiverged);
+        const alteredRecording = { ...recording, log: altered };
+        const diverged = yield* Effect.flip(
+          Journal.replay(alteredRecording, (start) =>
+            App.make(App.define({ plugins: [Flying] }), {
+              ...start,
+              checkpointEvery: 1,
+            })
+          )
+        );
+        expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
       })
     );
   });
@@ -1883,11 +1889,13 @@ describe("bindings", () => {
       Effect.gen(function* () {
         done.length = 0;
         // The same handlers, and nothing that listens to a device.
-        const again = yield* App.make(App.define({ handlers }), {
-          checkpointEvery: 1,
-        });
+        const again = yield* Journal.replay(recording, (start) =>
+          App.make(App.define({ handlers }), {
+            ...start,
+            checkpointEvery: 1,
+          })
+        );
         expect(again.inputOrder).toEqual([]);
-        Journal.replay(again, recording);
         expect(done).toEqual(played);
       })
     );

@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
@@ -14,6 +14,7 @@ import {
   Plugin,
   Query,
   Random,
+  Save,
   Singleton,
   System,
   Time,
@@ -84,25 +85,33 @@ interface Options {
   readonly faulty?: ReturnType<typeof fault>;
 }
 
+// A fault on tick -1 never happens: that is the game as it should be.
+const coinGame = (faulty = fault(-1, "nudge")) =>
+  App.define({ systems: [Drift, faulty], handlers: [drop, take] });
+
+const checkpointing = (options: Options) =>
+  options.checkpointEvery === undefined
+    ? {}
+    : { checkpointEvery: options.checkpointEvery };
+
 const game = (options: Options = {}) =>
-  App.make(
-    App.define({
-      // A fault on tick -1 never happens: that is the game as it should be.
-      systems: [Drift, options.faulty ?? fault(-1, "nudge")],
-      handlers: [drop, take],
-    }),
-    {
-      seed: options.seed ?? 1,
-      ...(options.checkpointEvery === undefined
-        ? {}
-        : { checkpointEvery: options.checkpointEvery }),
-    }
-  );
+  App.make(coinGame(options.faulty), {
+    seed: options.seed ?? 1,
+    ...checkpointing(options),
+  });
 
 const withApp = <T, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
   use: (app: T) => A
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+
+/**
+ * Replays a recording in an app the test has made already, to look at the app
+ * afterwards, or to make it another way than the recording says.
+ */
+const replayIn = (app: App.Any, recording: Journal.Recording): void => {
+  Effect.runSync(Journal.replay(recording, () => Effect.succeed(app)));
+};
 
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
   log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
@@ -146,42 +155,73 @@ const record = (options: Options & { readonly ticks: number }) =>
 
 /**
  * A recording of a game from its start, of `ticks` ticks of `delta` seconds
- * each, that holds `log`: a log as it was recorded, or altered.
+ * each, that holds `log`: a log as it was recorded, or altered. `seed` is the
+ * seed of the game that wrote the log.
  */
 const recordingOf = (
   log: readonly Action.LogEntry[],
   ticks: number,
-  delta: number
+  delta: number,
+  seed = 1
 ): Journal.Recording => ({
+  seed,
   start: 0,
   end: ticks,
   deltas: ticks === 0 ? [] : [{ tick: 0, delta }],
   log,
 });
 
-/** Replays a log into a fresh game and returns what stopped it, if anything did. */
+/**
+ * Replays a log into a game made from its recording, and returns what stopped
+ * it, if anything did, with the app as the replay left it. The recording
+ * says its game began with `options.seed`, whatever seed wrote the log.
+ */
 const replayInto = (
   options: Options,
   log: readonly Action.LogEntry[],
   ticks: number
 ) =>
-  withApp(game(options), (app) => {
-    let stopped: Journal.ReplayDiverged | undefined;
-    try {
-      Journal.replay(app, recordingOf(log, ticks, 1 / 60));
-    } catch (error) {
-      if (!(error instanceof Journal.ReplayDiverged)) {
-        throw error;
-      }
-      stopped = error;
-    }
-    return {
-      stopped,
-      tick: app.time.tick,
-      hash: app.world.hash(),
-      log: [...app.actionLog],
-    };
-  });
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const recording = recordingOf(log, ticks, 1 / 60, options.seed ?? 1);
+        // Kept as it is made, to look at where a replay that fails stopped.
+        let kept: App.Any | undefined;
+        const exit = yield* Effect.exit(
+          Journal.replay(recording, (start) =>
+            App.make(coinGame(options.faulty), {
+              ...start,
+              ...checkpointing(options),
+            }).pipe(
+              Effect.tap((made) =>
+                Effect.sync(() => {
+                  kept = made;
+                })
+              )
+            )
+          )
+        );
+        const app = kept!;
+        let stopped: Journal.ReplayDiverged | undefined;
+        if (Exit.isFailure(exit)) {
+          const error = Cause.squash(exit.cause);
+          if (!(error instanceof Journal.ReplayDiverged)) {
+            throw error;
+          }
+          stopped = error;
+        } else {
+          // It succeeds with the app it was given the making of.
+          expect(exit.value).toBe(app);
+        }
+        return {
+          stopped,
+          tick: app.time.tick,
+          hash: app.world.hash(),
+          log: [...app.actionLog],
+        };
+      })
+    )
+  );
 
 describe("checkpoints", () => {
   it("are recorded before the first action or tick, and after every tick the interval divides", () => {
@@ -490,7 +530,7 @@ describe("a replay that checks itself", () => {
     const crowded = withApp(game({ seed: 5 }), (app) => {
       app.world.spawn(Coin.of({ value: 1, x: 0 }));
       try {
-        Journal.replay(app, recordingOf(recorded.log, 30, 1 / 60));
+        replayIn(app, recordingOf(recorded.log, 30, 1 / 60));
       } catch (error) {
         return error as Journal.ReplayDiverged;
       }
@@ -808,7 +848,7 @@ describe("app.enqueue from inside the simulation", () => {
   });
   const replayed = (log: readonly Action.LogEntry[], ticks: number) =>
     withApp(holding, ({ app, tally }) => {
-      Journal.replay(app, recordingOf(log, ticks, 1));
+      replayIn(app, recordingOf(log, ticks, 1));
       return {
         value: app.world.get(tally, Tally)!.value,
         hash: app.world.hash(),
@@ -924,7 +964,7 @@ describe("a game whose simulation issues actions itself", () => {
     ).toBe(true);
 
     const replayed = withApp(busy(), ({ app, tally }) => {
-      Journal.replay(app, recorded.recording);
+      replayIn(app, recorded.recording);
       return {
         log: [...app.actionLog],
         hash: app.world.hash(),
@@ -959,7 +999,7 @@ describe("a game whose simulation issues actions itself", () => {
     });
     const stopped = withApp(busy(), ({ app }) => {
       try {
-        Journal.replay(app, recordingOf(withBotMoves, 9, 1));
+        replayIn(app, recordingOf(withBotMoves, 9, 1));
       } catch (error) {
         return error as Journal.ReplayDiverged;
       }
@@ -968,7 +1008,7 @@ describe("a game whose simulation issues actions itself", () => {
     expect(stopped!.tick).toBe(4);
     // And as it is recorded, it replays.
     withApp(busy(), ({ app }) => {
-      Journal.replay(app, recordingOf(recorded, 9, 1));
+      replayIn(app, recordingOf(recorded, 9, 1));
     });
   });
 
@@ -1003,7 +1043,7 @@ describe("a game whose simulation issues actions itself", () => {
       });
     const replay = (log: readonly Action.LogEntry[]) =>
       withApp(make, ({ app, tally }) => {
-        Journal.replay(app, recordingOf(log, 1, 1));
+        replayIn(app, recordingOf(log, 1, 1));
         return app.world.get(tally, Tally)!.value;
       });
 
@@ -1067,7 +1107,7 @@ describe("a recording", () => {
     const decoded = Journal.decode(Journal.encode(recorded.recording));
     expect(decoded).toEqual(Exit.succeed(recorded.recording));
     withApp(walking, (app) => {
-      Journal.replay(app, recorded.recording);
+      replayIn(app, recorded.recording);
       expect(app.time.tick).toBe(6);
       expect(app.time.elapsed).toBeCloseTo(steps.reduce((a, b) => a + b));
       expect(app.world.hash()).toBe(recorded.hash);
@@ -1120,8 +1160,8 @@ describe("a recording", () => {
     });
     withApp(walking, (app) => {
       app.tick(1 / 60);
-      expect(() => Journal.replay(app, recording)).toThrow(
-        "Journal.replay was given a recording that begins at tick 0, and the app has run 1 ticks."
+      expect(() => replayIn(app, recording)).toThrow(
+        "Journal.replay was given a recording that begins at tick 0, and made an app that has run 1 ticks. Make the app from the start it hands over, (start) => App.make(game, start)"
       );
       // Not a save of this app: it is of a tick this one hasn't reached.
       const ahead = withApp(walking, (other) => {
@@ -1135,5 +1175,159 @@ describe("a recording", () => {
         /record\(\) was given a save of tick 5 that this app didn't make/
       );
     });
+  });
+});
+
+describe("how a recorded game began", () => {
+  /** What the schema said was wrong with a recording's text. */
+  const refusal = (text: string): string => {
+    const read = Journal.decode(text);
+    assert(Exit.isFailure(read));
+    return String(Cause.squash(read.cause));
+  };
+  /** Plays `ticks` ticks of a seeded game, dropping a coin on each. */
+  const drops = (app: App.Any, ticks: number): void => {
+    for (let i = 0; i < ticks; i++) {
+      app.dispatchByName("rp/Drop", { value: i + 1 });
+      app.tick(1 / 60);
+    }
+  };
+
+  it("is its seed for a game recorded from its start: an app made from the recording begins the same way", () => {
+    const recorded = record({ ticks: 40, seed: 5, checkpointEvery: 1 });
+    expect(recorded.recording.seed).toBe(5);
+    expect(recorded.recording.save).toBeUndefined();
+    // The game and the recording, and no seed said again: the replay hands
+    // over how the game began, and nothing else of the recording.
+    let handed: Journal.Origin | undefined;
+    const replayed = withApp(
+      Effect.orDie(
+        Journal.replay(recorded.recording, (start) => {
+          handed = start;
+          return App.make(coinGame(), start);
+        })
+      ),
+      (app) => ({ tick: app.time.tick, hash: app.world.hash() })
+    );
+    expect(handed).toEqual({ seed: 5 });
+    expect(replayed).toEqual({ tick: 40, hash: recorded.hashes.at(-1) });
+    // A game made with no seed began with seed 0, and its recording says so.
+    withApp(App.make(coinGame()), (app) => {
+      expect(app.record().seed).toBe(0);
+    });
+    // Through text and back.
+    expect(Journal.decode(Journal.encode(recorded.recording))).toEqual(
+      Exit.succeed(recorded.recording)
+    );
+  });
+
+  it("is the save for a game recorded since one, which a replay goes on from to the present", () => {
+    const played = withApp(game({ seed: 3, checkpointEvery: 1 }), (app) => {
+      drops(app, 10);
+      const saved = app.save();
+      assert(Exit.isSuccess(saved));
+      drops(app, 20);
+      return {
+        save: saved.value,
+        tail: app.record(saved.value),
+        whole: app.record(),
+        hash: app.world.hash(),
+      };
+    });
+    const { save, tail } = played;
+    expect(tail.save).toBe(save);
+    expect(tail.seed).toBeUndefined();
+    expect(tail).toMatchObject({ start: 10, end: 30 });
+    // All of the same game is still from its seed.
+    expect(played.whole.seed).toBe(3);
+    expect(played.whole.save).toBeUndefined();
+
+    // As text, the recording holds the save, and reads back as it was.
+    const read = Journal.decode(Journal.encode(tail));
+    assert(Exit.isSuccess(read));
+    expect(read.value).toEqual(tail);
+    let handed: Journal.Origin | undefined;
+    const present = withApp(
+      Effect.orDie(
+        Journal.replay(read.value, (start) => {
+          handed = start;
+          return App.make(coinGame(), { ...start, checkpointEvery: 1 });
+        })
+      ),
+      (app) => ({ tick: app.time.tick, hash: app.world.hash() })
+    );
+    expect(handed).toEqual({ save });
+    expect(present).toEqual({ tick: 30, hash: played.hash });
+
+    // An app made from a save began there, and its recording says so.
+    withApp(Effect.orDie(App.make(coinGame(), { save })), (app) => {
+      drops(app, 2);
+      const recording = app.record();
+      expect(recording.save).toEqual(save);
+      expect(recording).toMatchObject({ start: 10, end: 12 });
+    });
+  });
+
+  it("is checked when a recording is read from text", () => {
+    const { save, tail, whole } = withApp(game({ seed: 3 }), (app) => {
+      drops(app, 4);
+      const saved = app.save();
+      assert(Exit.isSuccess(saved));
+      drops(app, 2);
+      return {
+        save: saved.value,
+        tail: app.record(saved.value),
+        whole: app.record(),
+      };
+    });
+    const fromSeed = JSON.parse(Journal.encode(whole)) as Record<
+      string,
+      unknown
+    >;
+    const fromSave = JSON.parse(Journal.encode(tail)) as Record<
+      string,
+      unknown
+    >;
+    expect(typeof fromSave["save"]).toBe("string");
+    const text = (recording: Record<string, unknown>): string =>
+      JSON.stringify(recording);
+
+    const { seed: _, ...neither } = fromSeed;
+    expect(refusal(text(neither))).toMatch(
+      /how its game began as a seed or as a save, one of the two/
+    );
+    expect(refusal(text({ ...fromSave, seed: 3 }))).toMatch(
+      /how its game began as a seed or as a save, one of the two/
+    );
+    // A game from a seed begins at tick 0.
+    expect(
+      refusal(
+        text({
+          ...fromSeed,
+          start: 2,
+          deltas: [{ tick: 2, delta: 1 / 60 }],
+          log: [],
+        })
+      )
+    ).toMatch(/begins at tick 2 with a seed, and a game begins at tick 0/);
+    // A save is of the tick its recording begins at.
+    expect(
+      refusal(
+        text({
+          ...fromSave,
+          start: 5,
+          deltas: [{ tick: 5, delta: 1 / 60 }],
+          log: [],
+        })
+      )
+    ).toMatch(/begins at tick 5, and its save was made at tick 4/);
+    // And it reads as a save.
+    expect(refusal(text({ ...fromSave, save: "bm90IGEgc2F2ZQ==" }))).toMatch(
+      /its save can't be read: These bytes are not a saved game/
+    );
+    const cut = Save.encode(save).slice(0, 40);
+    expect(
+      refusal(text({ ...fromSave, save: Buffer.from(cut).toString("base64") }))
+    ).toMatch(/its save can't be read/);
   });
 });

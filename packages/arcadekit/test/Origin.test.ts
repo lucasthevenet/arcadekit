@@ -107,12 +107,16 @@ describe("who issued an action", () => {
     const text = Journal.encode(recorded.recording);
     const read = Journal.decode(text);
     expect(read).toEqual(Exit.succeed(recorded.recording));
-    withApp(game(), (app) => {
-      assert(Exit.isSuccess(read));
-      Journal.replay(app, read.value);
-      expect(app.world.hash()).toBe(recorded.hash);
-      expect(purseOf(app)).toEqual({ ada: 2, grace: 5 });
-    });
+    assert(Exit.isSuccess(read));
+    withApp(
+      Journal.replay(read.value, (start) =>
+        App.make(CoinGame, { ...start, checkpointEvery: 1 })
+      ),
+      (app) => {
+        expect(app.world.hash()).toBe(recorded.hash);
+        expect(purseOf(app)).toEqual({ ada: 2, grace: 5 });
+      }
+    );
     // A log that had lost who issued each is another game, and says so.
     const anonymous = log.map((entry) => {
       if (Action.isCheckpoint(entry)) {
@@ -121,11 +125,17 @@ describe("who issued an action", () => {
       const { from: _, ...rest } = entry;
       return rest;
     });
-    withApp(game(), (app) => {
-      expect(() =>
-        Journal.replay(app, { ...recorded.recording, log: anonymous })
-      ).toThrow(Journal.ReplayDiverged);
-    });
+    const alteredRecording = { ...recorded.recording, log: anonymous };
+    withApp(
+      Effect.flip(
+        Journal.replay(alteredRecording, (start) =>
+          App.make(CoinGame, { ...start, checkpointEvery: 1 })
+        )
+      ),
+      (diverged) => {
+        expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
+      }
+    );
     // A name is text.
     expect(
       Exit.isFailure(

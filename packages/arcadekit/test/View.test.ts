@@ -457,9 +457,23 @@ describe("a view", () => {
 
 describe("what the UI sends", () => {
   it("is heard by a game that is stepped by hand with a tick and nothing else, and by a replay not at all", () => {
+    // The game, begun with gold to spend.
+    const Funded = App.define({
+      plugins: [
+        Game,
+        Plugin.make("vw/Funded", {
+          setup: Effect.gen(function* () {
+            (yield* Purse).gold = 5;
+          }),
+        }),
+      ],
+    });
     const ui = View.makeBridge();
-    const app = play(ui);
-    app.world.singleton(Purse).gold = 5;
+    const app = run(
+      App.make(Funded, { seed: 1, checkpointEvery: 1 }).pipe(
+        Effect.provide(View.layer(ui))
+      )
+    );
     ui.send(Buy, { price: 3 });
     ui.send(Start, {});
     // No `app.input()`: the tick hears what was sent before it runs, and
@@ -476,11 +490,13 @@ describe("what the UI sends", () => {
     // A replay with a UI of its own that is sending things is told what
     // the log says and nothing else.
     const other = View.makeBridge();
-    const again = play(other);
-    again.world.singleton(Purse).gold = 5;
     other.send(Buy, { price: 1 });
     other.send(Buy, { price: 1 });
-    Journal.replay(again, recording);
+    const again = run(
+      Journal.replay(recording, (start) =>
+        App.make(Funded, { ...start, checkpointEvery: 1 })
+      ).pipe(Effect.provide(View.layer(other)))
+    );
     expect(again.world.hash()).toBe(app.world.hash());
     expect(again.world.view(Coins).count()).toBe(1);
     expect(
@@ -573,9 +589,20 @@ describe("what the UI sends", () => {
   });
 
   it("replays with no UI: the log holds what it sent, and the game goes the same way", () => {
+    // The game, begun with a coin.
+    const Kept = App.define({
+      plugins: [
+        Game,
+        Plugin.make("vw/Kept", {
+          setup: Effect.map(Commands, (commands) => {
+            commands.spawn(Coin.of({ value: 1 }));
+          }),
+        }),
+      ],
+    });
+    const start = { seed: 11, checkpointEvery: 1 } as const;
     const ui = View.makeBridge();
-    const app = play(ui, 11);
-    app.world.spawn(Coin.of({ value: 1 }));
+    const app = run(App.make(Kept, start).pipe(Effect.provide(View.layer(ui))));
     const hashes: number[] = [];
     const step = (): void => {
       app.input();
@@ -594,14 +621,16 @@ describe("what the UI sends", () => {
     expect(app.world.view(Coins).count()).toBe(2);
 
     // No bridge, no input stage and no frame: a server, or a replay.
-    const again = play(undefined, 11);
-    again.world.spawn(Coin.of({ value: 1 }));
-    Journal.replay(again, app.record());
+    const played = app.record();
+    const again = run(
+      Journal.replay(played, (start) =>
+        App.make(Kept, { ...start, checkpointEvery: 1 })
+      )
+    );
     expect(again.world.hash()).toBe(hashes.at(-1));
     expect(again.world.view(Coins).count()).toBe(2);
     // And the same game with no UI at all, given nothing, differs.
-    const idle = play(undefined, 11);
-    idle.world.spawn(Coin.of({ value: 1 }));
+    const idle = run(App.make(Kept, start));
     for (let i = 0; i < 5; i++) {
       idle.input();
       idle.tick(1);
