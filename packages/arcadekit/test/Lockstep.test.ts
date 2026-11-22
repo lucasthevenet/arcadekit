@@ -194,8 +194,10 @@ describe("a lockstep session", () => {
             peers: ["ada", "grace"],
             start: 0,
           },
+          // It has heard nothing of grace yet.
+          heard: 0,
         },
-        { from: "ada", tick: 1, actions: [] },
+        { from: "ada", tick: 1, actions: [], heard: 0 },
         {
           from: "ada",
           tick: 2,
@@ -203,6 +205,7 @@ describe("a lockstep session", () => {
             { name: "ls/Drop", payload: { by: "ada", value: 1 } },
             { name: "ls/Drop", payload: { by: "ada", value: 2 } },
           ],
+          heard: 0,
         },
       ]);
       // Taken: asked again, there is nothing.
@@ -210,6 +213,38 @@ describe("a lockstep session", () => {
       // A tick that waits says nothing twice.
       expect(ada.session.tick()).toBe(false);
       expect(ada.session.outgoing()).toEqual([]);
+    });
+  });
+
+  it("keeps what it sent until every other peer has heard it, to send again", () => {
+    withPeers(["ada", "edsger", "grace"], { delay: 1 }, (peers) => {
+      const [ada] = peers as [Peer];
+      ada.app.enqueue(Drop, { by: "ada", value: 1 });
+      ada.session.tick();
+      const said = ada.session.outgoing();
+      expect(said.map((message) => message.tick)).toEqual([0, 1]);
+      expect(ada.session.unheard).toBe(2);
+      // As they were, with how far it has heard by now.
+      expect(ada.session.resend()).toEqual(said);
+      // Grace has heard ada's message for tick 0; edsger hasn't said.
+      ada.session.receive({ from: "grace", tick: 0, actions: [], heard: 1 });
+      expect(ada.session.unheard).toBe(2);
+      ada.session.receive({ from: "edsger", tick: 0, actions: [], heard: 1 });
+      expect(ada.session.resend()).toEqual([{ ...said[1]!, heard: 1 }]);
+      // A word that goes back, or comes from no peer, changes nothing.
+      ada.session.receive({ from: "grace", tick: 1, actions: [], heard: 0 });
+      ada.session.receive({ from: "linus", tick: 0, actions: [], heard: 9 });
+      expect(ada.session.unheard).toBe(1);
+      ada.session.receive({ from: "edsger", tick: 1, actions: [], heard: 2 });
+      ada.session.receive({ from: "grace", tick: 2, actions: [], heard: 2 });
+      expect(ada.session.unheard).toBe(0);
+      expect(ada.session.resend()).toEqual([]);
+    });
+    // A session of one keeps nothing, and says nothing of what it heard.
+    withPeers(["ada"], {}, ([ada]) => {
+      ada!.session.tick();
+      expect(ada!.session.outgoing()[0]).not.toHaveProperty("heard");
+      expect(ada!.session.unheard).toBe(0);
     });
   });
 
@@ -372,6 +407,7 @@ describe("a lockstep session", () => {
           ],
           checkpoints: [{ tick: 0, hash: ada.app.world.hash() }],
           made: expect.objectContaining({ start: 0 }),
+          heard: 0,
         },
       ]);
       net.send(["grace"], said);

@@ -51,7 +51,8 @@ Only the world's hash is compared. It covers the actions queued and the events w
 ## Limits of a session
 
 - A session's peers are fixed when it is created, and a peer that stops is waited for. `session.waitingFor` names the peers a tick is waiting for.
-- Every message must eventually arrive. A lost message stops the game for everyone, and a dropped socket ends the game for that peer.
+- Every message must eventually arrive. A session keeps what it sent until every peer has heard it, and sends it again when a relay says a peer joined, so a socket that drops and connects again loses nothing. A message lost any other way stops the game for everyone.
+- A peer that leaves for good is waited for. Through a relay, `connected.away` names it.
 - Peers that were not made alike, or that drift apart, stop.
 - A session ticks continuously: `ticks: "whenNeeded"` is for single-player games.
 

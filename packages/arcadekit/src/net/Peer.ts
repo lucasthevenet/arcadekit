@@ -15,7 +15,10 @@
  *
  * A peer holds no socket and no timer. It receives the messages that arrived
  * and returns the ones to send, and a transport carries them, as text in the
- * form `Message.encode` writes.
+ * form `Message.encode` writes. Every message says how far its peer has heard
+ * the others, and a peer keeps what it sent until every other peer has heard
+ * it, to send again with `resend` when a peer comes back after its socket
+ * dropped.
  *
  * A peer's first message says what it was made with, `Message.Made`: the game
  * it simulates, its `delta`, the names of every peer and the tick it begins
@@ -92,6 +95,15 @@ export interface Peer<E = never> extends Tickable {
    * next call returns only newer ones. Every message must arrive, in any order.
    */
   readonly outgoing: () => readonly Message[];
+  /**
+   * Returns every message this peer has sent that some other peer hasn't said
+   * it heard, to send again: when a peer joined the room again after its
+   * socket dropped, or this one did. They stay kept until every other peer
+   * has heard them. A message that arrives twice is dropped.
+   */
+  readonly resend: () => readonly Message[];
+  /** How many messages this peer keeps that some other peer hasn't heard. */
+  readonly unheard: number;
   /**
    * Runs the next tick if this peer has every peer's message for it, and
    * returns whether it ran. First it reads the devices, as an app's own tick
@@ -229,6 +241,26 @@ export const build = <E, A extends PeerApp<E>>(
   }
   const own = held.get(peer)!;
   let outbox: Message[] = [];
+  // Per other peer, the first tick it has said it is missing a message for.
+  const acked = new Map<string, number>();
+  for (const name of peers) {
+    if (name !== peer) {
+      acked.set(name, start);
+    }
+  }
+  // This peer's messages that some other peer hasn't heard, by tick.
+  const kept = new Map<number, Message>();
+
+  /** Returns the first tick this peer is missing another peer's message for. */
+  const heard = (): number => {
+    let least = Number.POSITIVE_INFINITY;
+    for (const [name, next] of have) {
+      if (name !== peer) {
+        least = Math.min(least, next);
+      }
+    }
+    return least;
+  };
 
   /** Returns how many ticks every peer's messages have arrived for: those ticks are final. */
   const known = (): number => {
@@ -252,13 +284,18 @@ export const build = <E, A extends PeerApp<E>>(
       have.set(peer, tick + 1);
       // The checkpoints go with the first message there is to send.
       const checkpoints = drift.unsent();
-      outbox.push({
+      const message: Message = {
         from: peer,
         tick,
         actions,
         ...(checkpoints.length === 0 ? {} : { checkpoints }),
         ...(tick === start ? { made } : {}),
-      });
+        ...(acked.size === 0 ? {} : { heard: heard() }),
+      };
+      outbox.push(message);
+      if (acked.size > 0) {
+        kept.set(tick, message);
+      }
     }
   };
 
@@ -434,6 +471,22 @@ export const build = <E, A extends PeerApp<E>>(
       if (message.made !== undefined) {
         drift.told(message.from, message.made);
       }
+      const said = acked.get(message.from);
+      if (
+        message.heard !== undefined &&
+        said !== undefined &&
+        message.heard > said
+      ) {
+        acked.set(message.from, message.heard);
+        // What every other peer has heard is no longer kept.
+        const everyone = Math.min(...acked.values());
+        for (const tick of kept.keys()) {
+          if (tick >= everyone) {
+            break;
+          }
+          kept.delete(tick);
+        }
+      }
       const turns = held.get(message.from);
       if (
         turns === undefined ||
@@ -462,6 +515,17 @@ export const build = <E, A extends PeerApp<E>>(
       const messages = outbox;
       outbox = [];
       return messages;
+    },
+    resend() {
+      // As they were, with how far this peer has heard by now.
+      const now = heard();
+      return Array.from(kept.values(), (message) => ({
+        ...message,
+        heard: now,
+      }));
+    },
+    get unheard() {
+      return kept.size;
     },
     tickExit,
     tick(given) {

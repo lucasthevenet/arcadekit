@@ -13,6 +13,13 @@ const message = (from: string, tick: number, value = 0): Message.Message => ({
 });
 const text = (from: string, tick: number, value = 0): string =>
   Message.encode(message(from, tick, value));
+const notice = (told: Message.Notice): string => Message.encodeNotice(told);
+
+/** The messages among what arrived, without the relay's notices. */
+const messagesIn = (
+  arrived: readonly (Message.Message | Message.Notice)[]
+): Message.Message[] =>
+  arrived.filter((one): one is Message.Message => "from" in one);
 
 const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   if (Exit.isSuccess(exit)) {
@@ -236,6 +243,47 @@ describe("what a member sent", () => {
   });
 });
 
+describe("who joins a room and who leaves it", () => {
+  it("is told to every other member of the room, and the one who joins is told who is there", () => {
+    expect(Relay.joined(edsger, [ada, grace, linus, edsger])).toEqual([
+      { to: ada, text: notice({ joined: "edsger" }) },
+      { to: grace, text: notice({ joined: "edsger" }) },
+      { to: edsger, text: notice({ joined: "ada" }) },
+      { to: edsger, text: notice({ joined: "grace" }) },
+    ]);
+    expect(Relay.left(edsger, [ada, grace, linus])).toEqual([
+      { to: ada, text: notice({ left: "edsger" }) },
+      { to: grace, text: notice({ left: "edsger" }) },
+    ]);
+    // Alone in the room, nobody is told anything.
+    expect(Relay.joined(linus, [ada, linus])).toEqual([]);
+    expect(Relay.left(linus, [ada])).toEqual([]);
+  });
+
+  it("can't be said by a member: a notice is not a message", () => {
+    expect(
+      refusal(Relay.forward(ada, notice({ left: "grace" }), [ada, grace]))
+        .reason
+    ).toBe("not a message");
+  });
+
+  it("goes to text and comes back, and a message is not one", () => {
+    for (const told of [{ joined: "ada" }, { left: "grace" }] as const) {
+      expect(Message.decodeNotice(Message.encodeNotice(told))).toEqual(
+        Exit.succeed(told)
+      );
+    }
+    for (const text of [
+      Message.encode(message("ada", 0)),
+      "{}",
+      JSON.stringify({ joined: 1 }),
+      "nothing",
+    ]) {
+      expect(Exit.isFailure(Message.decodeNotice(text)), text).toBe(true);
+    }
+  });
+});
+
 describe("a relay that keeps its rooms itself", () => {
   it("sends what a peer sent to the others in its room", () => {
     const relay = Relay.make();
@@ -252,15 +300,41 @@ describe("a relay that keeps its rooms itself", () => {
     expect(second.receive(text("grace", 0))).toEqual(Exit.void);
     expect(third.receive(text("linus", 0))).toEqual(Exit.void);
     expect(got).toEqual({
-      ada: [text("grace", 0)],
-      grace: [text("ada", 0, 4)],
+      ada: [notice({ joined: "grace" }), text("grace", 0)],
+      grace: [notice({ joined: "ada" }), text("ada", 0, 4)],
       linus: [],
     });
     // A refusal is the host's to act on: nothing is sent.
     expect(refusal(first.receive(text("grace", 1))).reason).toBe(
       "speaks for another"
     );
-    expect(got.grace).toHaveLength(1);
+    expect(got.grace).toHaveLength(2);
+  });
+
+  it("tells the room who joins it and who leaves it, and nobody else", () => {
+    const relay = Relay.make();
+    const got: Record<string, string[]> = { ada: [], grace: [], linus: [] };
+    const connect = (url: string, name: string) =>
+      joined(relay.connect(url, (sent) => got[name]!.push(sent)));
+    const first = connect("/blue?peer=ada", "ada");
+    connect("/red?peer=linus", "linus");
+    connect("/blue?peer=grace", "grace");
+    first.close();
+    // Ada comes back: grace is told, and ada is told who is there.
+    const again = connect("/blue?peer=ada", "ada");
+    // The old connection's close, come late, says nothing of the new one.
+    first.close();
+    expect(got).toEqual({
+      ada: [notice({ joined: "grace" }), notice({ joined: "grace" })],
+      grace: [
+        notice({ joined: "ada" }),
+        notice({ left: "ada" }),
+        notice({ joined: "ada" }),
+      ],
+      linus: [],
+    });
+    again.close();
+    expect(got.grace!.at(-1)).toBe(notice({ left: "ada" }));
   });
 
   it("refuses a name that is taken, and frees it when its peer has gone", () => {
@@ -297,7 +371,7 @@ describe("a relay that keeps its rooms itself", () => {
     expect(refusal(first.receive(text("ada", 1, 123_456))).reason).toBe(
       "too long"
     );
-    expect(sent).toEqual([text("ada", 0)]);
+    expect(sent).toEqual([notice({ joined: "ada" }), text("ada", 0)]);
   });
 
   it("forgets a room when the last peer has left it", () => {
@@ -323,6 +397,8 @@ const serve = async (options?: Relay.Options) => {
     server.on("listening", () => resolve());
   });
   const closes: { peer: string; code: number }[] = [];
+  // Each peer's socket, as the server holds it, to cut.
+  const sockets = new Map<string, { terminate: () => void }>();
   server.on("connection", (socket, request) => {
     const connection = relay.connect(request.url ?? "", (sent) =>
       socket.send(sent)
@@ -333,6 +409,7 @@ const serve = async (options?: Relay.Options) => {
       return;
     }
     const { member } = connection.value;
+    sockets.set(member.peer, socket);
     socket.on("message", (data, isBinary) => {
       // What ws hands over: a buffer, an ArrayBuffer, or its fragments.
       const bytes = Array.isArray(data)
@@ -353,6 +430,10 @@ const serve = async (options?: Relay.Options) => {
   return {
     relay,
     closes,
+    /** Cuts a peer's socket, as a network that fails does, with no close frame. */
+    drop: (peer: string): void => {
+      sockets.get(peer)?.terminate();
+    },
     url: `ws://127.0.0.1:${port}/rooms`,
     stop: () =>
       new Promise<void>((resolve) => {
@@ -388,8 +469,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
   });
 
   /** A peer's transport, in a scope the test closes. */
-  const open = (url: string) =>
-    Transport.open.pipe(Effect.provide(Transport.layerWebSocket(url)));
+  const open = (url: string, options?: Transport.WebSocketOptions) =>
+    Transport.open.pipe(Effect.provide(Transport.layerWebSocket(url, options)));
 
   it("carries a message to the other peers of the room, and what was sent before it opened", async () => {
     const served = await serve();
@@ -411,9 +492,9 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           };
           yield* Effect.promise(() =>
             until(() => {
-              heard.ada!.push(...one.receive());
-              heard.grace!.push(...two.receive());
-              heard.linus!.push(...elsewhere.receive());
+              heard.ada!.push(...messagesIn(one.receive()));
+              heard.grace!.push(...messagesIn(two.receive()));
+              heard.linus!.push(...messagesIn(elsewhere.receive()));
               return heard.grace!.length === 2 && heard.ada!.length === 1;
             }, "the messages arrived")
           );
@@ -512,6 +593,189 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     );
   });
 
+  it("connects again when its socket drops, and the peers play on to the same game", async () => {
+    const served = await serve();
+    stop = served.stop;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const seats: {
+            name: string;
+            app: SteeredGame;
+            session: Peer["session"];
+            connected: Transport.Connected;
+          }[] = [];
+          for (const name of ["ada", "grace"]) {
+            const session = yield* Session.make(CoinGame, {
+              seed: 5,
+              checkpointEvery: 1,
+              peer: name,
+              peers: ["ada", "grace"],
+              delta: DELTA,
+            });
+            const connected = yield* Transport.connect(session).pipe(
+              Effect.provide(
+                Transport.layerWebSocket(
+                  Relay.address(served.url, { room: "match", peer: name })
+                )
+              )
+            );
+            seats.push({ name, app: session.app, session, connected });
+          }
+          const act = players(41);
+          const [one, two] = seats as [(typeof seats)[0], (typeof seats)[0]];
+          const play = (rounds: number) =>
+            Effect.gen(function* () {
+              for (let i = 0; i < rounds; i++) {
+                for (const seat of seats) {
+                  act(seat as unknown as Peer);
+                  seat.connected.tick();
+                  yield* Effect.promise(() => later(1));
+                }
+              }
+            });
+          yield* play(30);
+          // Grace's socket goes, with whatever was on its way, then ada's.
+          served.drop("grace");
+          yield* play(30);
+          served.drop("ada");
+          yield* play(30);
+          for (
+            let i = 0;
+            i < 400 &&
+            (one.app.time.tick !== two.app.time.tick ||
+              one.session.confirmed < one.app.time.tick - 1 ||
+              one.app.time.tick < 80);
+            i++
+          ) {
+            yield* Effect.promise(() => later(2));
+            (one.app.time.tick <= two.app.time.tick
+              ? one
+              : two
+            ).connected.tick();
+          }
+          expect(one.app.time.tick).toBe(two.app.time.tick);
+          expect(one.app.time.tick).toBeGreaterThanOrEqual(80);
+          expect(one.app.world.hash()).toBe(two.app.world.hash());
+          expect(one.app.actionLog).toEqual(two.app.actionLog);
+          expect(moves(one.app.actionLog).length).toBeGreaterThan(20);
+          expect(one.session.drifted).toBeUndefined();
+          expect(one.connected.away).toEqual([]);
+          expect(two.connected.away).toEqual([]);
+          // What both have heard is let go of.
+          expect(one.session.unheard).toBeLessThan(20);
+        })
+      )
+    );
+  });
+
+  it("tries a taken name again while it connects again, since the relay may not have seen its old socket close", async () => {
+    // A relay that is slow to see a socket close: it refuses the name once.
+    const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+    await new Promise<void>((resolve) => {
+      server.on("listening", () => resolve());
+    });
+    let connections = 0;
+    const open: { terminate: () => void }[] = [];
+    server.on("connection", (socket) => {
+      connections++;
+      if (connections === 2) {
+        socket.close(1008, "name taken");
+        return;
+      }
+      open.push(socket);
+      socket.send(Message.encodeNotice({ joined: "grace" }));
+    });
+    stop = () =>
+      new Promise<void>((resolve) => {
+        for (const client of server.clients) {
+          client.terminate();
+        }
+        server.close(() => resolve());
+      });
+    const { port } = server.address() as { port: number };
+    const url = Relay.address(`ws://127.0.0.1:${port}/rooms`, ada);
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const transport = yield* Transport.open.pipe(
+            Effect.provide(Transport.layerWebSocket(url))
+          );
+          const heard: unknown[] = [];
+          yield* Effect.promise(() =>
+            until(() => {
+              heard.push(...transport.receive());
+              return heard.length === 1;
+            }, "it was let in")
+          );
+          open[0]!.terminate();
+          yield* Effect.promise(() =>
+            until(() => {
+              heard.push(...transport.receive());
+              return heard.length === 2;
+            }, "it was let in again")
+          );
+          expect(connections).toBe(3);
+          expect(heard).toEqual([{ joined: "grace" }, { joined: "grace" }]);
+        })
+      )
+    );
+  });
+
+  it("tells the others when a peer has left for good, and keeps what it sent for when it comes back", async () => {
+    const served = await serve();
+    stop = served.stop;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* Session.make(CoinGame, {
+            seed: 5,
+            peer: "ada",
+            peers: ["ada", "grace"],
+            delta: DELTA,
+            ahead: 0,
+          });
+          const connected = yield* Transport.connect(session).pipe(
+            Effect.provide(
+              Transport.layerWebSocket(Relay.address(served.url, ada))
+            )
+          );
+          // Grace comes, and goes for good: her transport gives up at once.
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const visitor = yield* open(Relay.address(served.url, grace), {
+                reconnectFor: 0,
+              });
+              yield* Effect.promise(() =>
+                until(() => {
+                  connected.tick();
+                  return served.relay.members("blue").length === 2;
+                }, "grace is in")
+              );
+              served.drop("grace");
+              yield* Effect.promise(() =>
+                until(
+                  () => Result.isFailure(Result.try(() => visitor.receive())),
+                  "grace gave up"
+                )
+              );
+            })
+          );
+          yield* Effect.promise(() =>
+            until(() => {
+              connected.tick();
+              return connected.away.length === 1;
+            }, "ada was told")
+          );
+          expect(connected.away).toEqual(["grace"]);
+          // Ada waits for her, with what she has to say kept.
+          expect(session.waitingFor).toEqual(["grace"]);
+          expect(session.unheard).toBeGreaterThan(0);
+        })
+      )
+    );
+  });
+
   it("has the relay close a peer that speaks for another, and pass nothing on", async () => {
     const served = await serve();
     stop = served.stop;
@@ -528,8 +792,13 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           );
           expect(served.closes).toEqual([{ peer: "ada", code: 1008 }]);
           yield* Effect.promise(() => later(20));
-          // The message it sent as itself came through, and the other did not.
-          expect(honest.receive()).toEqual([message("ada", 0)]);
+          // The message it sent as itself came through, and the other did
+          // not. Once the relay closed it, it is gone from the room.
+          expect(honest.receive()).toEqual([
+            { joined: "ada" },
+            message("ada", 0),
+            { left: "ada" },
+          ]);
           // Its own transport says what became of it.
           const received = Result.try(() => liar.receive());
           expect(
@@ -638,13 +907,13 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     );
   });
 
-  it("says so when the relay is not there, or goes away", async () => {
+  it("says so when the relay is not there, or goes away for longer than it tries to connect again", async () => {
     const served = await serve();
     const gone = Relay.address(served.url, ada);
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const transport = yield* open(gone);
+          const transport = yield* open(gone, { reconnectFor: 200 });
           yield* Effect.promise(() =>
             until(() => served.relay.rooms === 1, "it connected")
           );

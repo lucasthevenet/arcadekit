@@ -48,9 +48,11 @@ export interface Shape {
   readonly send: (message: Message.Message) => void;
   /**
    * Returns the messages that have arrived since the last call, in arrival
-   * order, and removes them: the next call returns only newer ones.
+   * order, and removes them: the next call returns only newer ones. A
+   * transport through a relay also returns the relay's notices of who joined
+   * the room and who left it.
    */
-  readonly receive: () => readonly Message.Message[];
+  readonly receive: () => readonly (Message.Message | Message.Notice)[];
 }
 
 /**
@@ -96,6 +98,13 @@ export interface Connected extends Tickable {
   readonly tick: (delta?: number) => boolean;
   /** The session's frame stage, for a driver to draw the game with. */
   readonly frame: (alpha: number, delta?: number) => void;
+  /**
+   * The peers a relay has said left the room, and that haven't joined it
+   * again, in order of name. The session waits for them: say so to the
+   * player. A transport that isn't a relay's says nothing of it, and this is
+   * empty.
+   */
+  readonly away: readonly string[];
 }
 
 /**
@@ -105,6 +114,11 @@ export interface Connected extends Tickable {
  * ran, waited or failed: a session that stops because the peers drifted apart
  * tells the others first.
  *
+ * When a relay says a peer joined the room, as it does when a peer comes back
+ * after its socket dropped, and to that peer of each one there, the session
+ * sends again what some peer hasn't heard. When it says a peer left, the peer
+ * is in `away` until it joins again.
+ *
  *   yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
  *
  * The transport closes with the scope, so drive the session in the program
@@ -113,14 +127,33 @@ export interface Connected extends Tickable {
  * @category Running
  */
 export const connect: (
-  session: Pick<Peer<unknown>, "frame" | "outgoing" | "receive" | "tick">
+  session: Pick<
+    Peer<unknown>,
+    "frame" | "outgoing" | "receive" | "resend" | "tick"
+  >
 ) => Effect.Effect<Connected, never, Transport | Scope.Scope> =
   Effect.fnUntraced(function* (session) {
     const transport = yield* open;
+    const away = new Set<string>();
     return {
       tick(delta) {
-        for (const message of transport.receive()) {
-          session.receive(message);
+        let again = false;
+        for (const arrived of transport.receive()) {
+          if ("from" in arrived) {
+            // Whoever speaks is there, whatever the relay said before.
+            away.delete(arrived.from);
+            session.receive(arrived);
+          } else if ("joined" in arrived) {
+            away.delete(arrived.joined);
+            again = true;
+          } else {
+            away.add(arrived.left);
+          }
+        }
+        if (again) {
+          for (const message of session.resend()) {
+            transport.send(message);
+          }
         }
         try {
           return session.tick(delta);
@@ -131,6 +164,11 @@ export const connect: (
         }
       },
       frame: session.frame,
+      get away() {
+        return Array.from(away).toSorted((a, b) =>
+          a < b ? -1 : a > b ? 1 : 0
+        );
+      },
     };
   });
 
@@ -171,7 +209,8 @@ export interface TextTransport extends Shape {
 /**
  * Makes a transport over anything that carries text. Messages are sent in the
  * format `Message.encode` writes, and arriving text is read with
- * `Message.decode`: text that isn't a message is dropped and counted.
+ * `Message.decode`, or as a relay's notice with `Message.decodeNotice`: text
+ * that is neither is dropped and counted.
  *
  * The wire must deliver every message, in any order. A WebSocket does; a data
  * channel must be configured to.
@@ -182,7 +221,7 @@ export interface TextTransport extends Shape {
  * @category Constructors
  */
 export const text = (wire: Wire): TextTransport => {
-  let inbox: Message.Message[] = [];
+  let inbox: (Message.Message | Message.Notice)[] = [];
   let dropped = 0;
   let open = true;
   const use = (): void => {
@@ -196,6 +235,11 @@ export const text = (wire: Wire): TextTransport => {
     const message = Message.decode(arrived);
     if (Exit.isSuccess(message)) {
       inbox.push(message.value);
+      return;
+    }
+    const notice = Message.decodeNotice(arrived);
+    if (Exit.isSuccess(notice)) {
+      inbox.push(notice.value);
     } else {
       dropped++;
     }
@@ -284,11 +328,11 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
   });
 
 /**
- * A transport's socket is no longer open: the relay or the network closed it.
- * `send` and `receive` throw this error from then on, so the tick that uses the
- * transport fails with it and its driver stops, instead of the game waiting for
- * messages that can never arrive. Only the peer whose socket closed is
- * notified: the others wait.
+ * A transport's socket is closed for good: the relay refused it, or the
+ * network was gone for longer than it tries to connect again. `send` and
+ * `receive` throw this error from then on, so the tick that uses the transport
+ * fails with it and its driver stops, instead of the game waiting for messages
+ * that can never arrive. The relay tells the other peers that this one left.
  *
  * @category Errors
  */
@@ -306,6 +350,34 @@ export class Closed extends Data.TaggedError("TransportClosed")<{
 }
 
 /**
+ * Options for a transport over a WebSocket.
+ *
+ * @category Options
+ */
+export interface WebSocketOptions {
+  /**
+   * How long it keeps trying to connect again once its socket has dropped, in
+   * milliseconds. Defaults to 30,000. With 0 it never does, and a socket that
+   * drops ends the game for this peer.
+   */
+  readonly reconnectFor?: number;
+}
+
+/** How long it waits before it connects again, at first and at most. */
+const FIRST_WAIT = 50;
+const LONGEST_WAIT = 2000;
+
+/**
+ * Whether a relay refused a socket for a reason a new one would meet too. A
+ * name that is taken is not, for a socket that connects again: the relay may
+ * not have seen the old one close yet.
+ */
+const refused = (code: number, reason: string, again: boolean): boolean =>
+  code === 1007 ||
+  code === 1009 ||
+  (code === 1008 && !(again && reason === "name taken"));
+
+/**
  * The transport between machines: a WebSocket to a relay, which forwards each
  * message to the other peers of the room. `url` is the relay's address for this
  * peer in its room, as `Relay.address` writes it:
@@ -318,75 +390,135 @@ export class Closed extends Data.TaggedError("TransportClosed")<{
  *   sent before it opens are buffered and sent once it does.
  * - It closes with the scope it was opened in; a transport used after that
  *   says so.
- * - Once the socket closes for any other reason, `send` and `receive` throw
- *   `Transport.Closed`, with the close code and the relay's reason. It doesn't
- *   reconnect: a message lost in transit would be lost for good, and nothing
- *   requests it again.
+ * - When a socket that was open drops, it connects again, waiting longer each
+ *   time, up to two seconds, for as long as `reconnectFor` says. What is sent
+ *   meanwhile is buffered. The relay tells the room it joined again, and the
+ *   sessions send each other again what was lost: see `Transport.connect`.
+ * - A name that is taken is tried again too, since the relay may not have
+ *   seen the old socket close yet.
+ * - `send` and `receive` throw `Transport.Closed`, with the close code and the
+ *   relay's reason, once the socket closes for good: when it never opened,
+ *   when the relay refused it for any other reason, or when it could not
+ *   connect again in time.
  *
  * It uses the standard `WebSocket`, available in pages, workers and Node 22.
  *
  * @category Layers
  */
-export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
-  Layer.succeed(Transport, {
+export const layerWebSocket = (
+  url: string,
+  options: WebSocketOptions = {}
+): Layer.Layer<Transport> => {
+  const reconnectFor = options.reconnectFor ?? 30_000;
+  return Layer.succeed(Transport, {
     open: Effect.map(
       Effect.acquireRelease(
         Effect.sync(() => {
-          const socket = new WebSocket(url);
           const held: {
-            readonly socket: WebSocket;
+            socket: WebSocket | undefined;
             over: TextTransport | undefined;
             open: boolean;
             closed: Closed | undefined;
-          } = { socket, over: undefined, open: true, closed: undefined };
-          // What was sent before the socket opened.
+            timer: ReturnType<typeof setTimeout> | undefined;
+          } = {
+            socket: undefined,
+            over: undefined,
+            open: true,
+            closed: undefined,
+            timer: undefined,
+          };
+          // What was sent while no socket was open.
           let waiting: string[] | undefined = [];
-          socket.onopen = () => {
-            const kept = waiting ?? [];
-            waiting = undefined;
-            for (const sent of kept) {
-              socket.send(sent);
-            }
+          let hear: (text: string) => void = () => {};
+          let opened = false;
+          // When it stops trying to connect again, while it tries.
+          let until: number | undefined;
+          let tries = 0;
+
+          // `again` for a socket that connects again after one dropped.
+          const dial = (again: boolean): void => {
+            held.timer = undefined;
+            const socket = new WebSocket(url);
+            held.socket = socket;
+            const dropped = (code: number, reason: string): void => {
+              socket.onopen = null;
+              socket.onclose = null;
+              socket.onerror = null;
+              socket.onmessage = null;
+              waiting ??= [];
+              if (!held.open) {
+                return;
+              }
+              until ??= Date.now() + reconnectFor;
+              if (
+                !opened ||
+                refused(code, reason, again) ||
+                Date.now() >= until
+              ) {
+                held.closed = new Closed({ url, code, reason });
+                return;
+              }
+              held.timer = setTimeout(
+                () => dial(true),
+                Math.min(FIRST_WAIT * 2 ** tries++, LONGEST_WAIT)
+              );
+            };
+            socket.onopen = () => {
+              opened = true;
+              const kept = waiting ?? [];
+              waiting = undefined;
+              for (const sent of kept) {
+                socket.send(sent);
+              }
+            };
+            socket.onmessage = (event: MessageEvent<unknown>) => {
+              // Heard from: the relay let it in, and it is connected again.
+              until = undefined;
+              tries = 0;
+              // A frame that is not text is dropped as what is not a message.
+              hear(event.data as string);
+            };
+            socket.onclose = (event: CloseEvent) => {
+              dropped(event.code, event.reason);
+            };
+            // A connection that could not be made, or was cut, may say so
+            // here alone: not every platform follows it with a close.
+            socket.onerror = () => {
+              dropped(1006, "");
+            };
           };
-          socket.onclose = (event: CloseEvent) => {
-            held.closed ??= new Closed({
-              url,
-              code: event.code,
-              reason: event.reason,
-            });
-          };
-          // A connection that could not be made, or was cut, may say so
-          // here alone: not every platform follows it with a close.
-          socket.onerror = () => {
-            held.closed ??= new Closed({ url, code: 1006, reason: "" });
-          };
+
           held.over = text({
             send(sent) {
               if (waiting === undefined) {
-                socket.send(sent);
+                held.socket!.send(sent);
               } else {
                 waiting.push(sent);
               }
             },
             listen(onText) {
-              socket.onmessage = (event: MessageEvent<unknown>) => {
-                // A frame that is not text is dropped as what is not a message.
-                onText(event.data as string);
-              };
+              hear = onText;
               return () => {
-                socket.onmessage = null;
+                hear = () => {};
               };
             },
           });
+          dial(false);
           return held;
         }),
         (held) =>
           Effect.sync(() => {
             held.open = false;
             held.over?.close();
-            held.socket.onclose = null;
-            held.socket.onerror = null;
-            held.socket.close(1000);
+            clearTimeout(held.timer);
+            const { socket } = held;
+            if (socket !== undefined) {
+              socket.onopen = null;
+              socket.onclose = null;
+              socket.onerror = null;
+              socket.onmessage = null;
+              socket.close(1000);
+            }
           })
       ),
       (held): Shape => {
@@ -408,6 +540,7 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
       }
     ),
   });
+};
 
 /**
  * Options for how a hub treats the messages sent through it.
@@ -441,14 +574,27 @@ export interface Hub {
   readonly layer: (peer: string) => Layer.Layer<Transport>;
   /** Advances time by one step: every message in transit is one step closer. */
   readonly step: () => void;
+  /**
+   * Cuts a peer off, as a socket that drops: what is on its way to it or from
+   * it is lost, and until it reconnects it hears nothing and what it sends is
+   * lost. The other peers are told it left, as a relay tells them.
+   */
+  readonly disconnect: (peer: string) => void;
+  /**
+   * Connects a peer that was cut off again. The others are told it joined,
+   * and it is told of each of them, as a relay tells them, so that each sends
+   * again what was lost.
+   */
+  readonly reconnect: (peer: string) => void;
   /** The number of messages in transit or not yet received. */
   readonly inFlight: number;
 }
 
 /**
- * Makes an in-memory network. Nothing is lost, and nothing happens until the
- * test says so: a message is in transit for as many steps as its delay, and
- * time advances when `step` is called. Messages travel as text, so a message
+ * Makes an in-memory network. Nothing is lost unless a peer is cut off with
+ * `disconnect`, and nothing happens until the test says so: a message is in
+ * transit for as many steps as its delay, and time advances when `step` is
+ * called. Messages travel as text, so a message
  * that wouldn't survive a wire doesn't survive this either.
  *
  *   const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 })
@@ -475,25 +621,50 @@ export const makeHub = (options: HubOptions = {}): Hub => {
   }
   let now = 0;
   let sent = 0;
+  interface Flight {
+    readonly at: number;
+    readonly order: number;
+    readonly from: string | undefined;
+    readonly text: string;
+  }
   // Per peer, what is on its way to it.
-  const flights = new Map<
-    string,
-    { readonly at: number; readonly order: number; readonly text: string }[]
-  >();
+  const flights = new Map<string, Flight[]>();
+  // The peers cut off from the network.
+  const cut = new Set<string>();
   const ports = new Map<string, Shape>();
+  /** What the hub says of a peer, at once, as a relay does. */
+  const tell = (to: string, notice: Message.Notice): void => {
+    flights.get(to)?.push({
+      at: now,
+      order: sent++,
+      from: undefined,
+      text: Message.encodeNotice(notice),
+    });
+  };
+  const known = (peer: string): void => {
+    if (!flights.has(peer)) {
+      throw new Error(
+        `The hub has no port for "${peer}": a peer is on the network from the moment it has one.`
+      );
+    }
+  };
   const port = (peer: string): Shape => {
     let made = ports.get(peer);
     if (made === undefined) {
-      const mine: { at: number; order: number; text: string }[] = [];
+      const mine: Flight[] = [];
       flights.set(peer, mine);
       made = {
         send(message) {
+          if (cut.has(peer)) {
+            return;
+          }
           const encoded = Message.encode(message);
           for (const [other, theirs] of flights) {
-            if (other !== peer) {
+            if (other !== peer && !cut.has(other)) {
               theirs.push({
                 at: now + (min === max ? min : dice.int(min, max)),
                 order: sent++,
+                from: peer,
                 text: encoded,
               });
             }
@@ -509,14 +680,19 @@ export const makeHub = (options: HubOptions = {}): Hub => {
           const left = mine.filter((flight) => flight.at > now);
           mine.length = 0;
           mine.push(...left);
-          const messages: Message.Message[] = [];
+          const arrived: (Message.Message | Message.Notice)[] = [];
           for (const flight of due) {
             const message = Message.decode(flight.text);
             if (Exit.isSuccess(message)) {
-              messages.push(message.value);
+              arrived.push(message.value);
+              continue;
+            }
+            const notice = Message.decodeNotice(flight.text);
+            if (Exit.isSuccess(notice)) {
+              arrived.push(notice.value);
             }
           }
-          return messages;
+          return arrived;
         },
       };
       ports.set(peer, made);
@@ -528,6 +704,35 @@ export const makeHub = (options: HubOptions = {}): Hub => {
     layer: (peer) => layer(port(peer)),
     step() {
       now++;
+    },
+    disconnect(peer) {
+      known(peer);
+      if (cut.has(peer)) {
+        return;
+      }
+      cut.add(peer);
+      // What was on its way to it, and from it, is lost.
+      flights.get(peer)!.length = 0;
+      for (const [other, theirs] of flights) {
+        const kept = theirs.filter((flight) => flight.from !== peer);
+        theirs.length = 0;
+        theirs.push(...kept);
+        if (other !== peer && !cut.has(other)) {
+          tell(other, { left: peer });
+        }
+      }
+    },
+    reconnect(peer) {
+      known(peer);
+      if (!cut.delete(peer)) {
+        return;
+      }
+      for (const other of flights.keys()) {
+        if (other !== peer && !cut.has(other)) {
+          tell(other, { joined: peer });
+          tell(peer, { joined: other });
+        }
+      }
     },
     get inFlight() {
       let count = 0;

@@ -1,7 +1,8 @@
 /**
  * Checks a relay, wherever it runs: two peers of a small game play through
- * it and have to end on the same world, and the relay has to refuse a name
- * that is taken and a message in another's name.
+ * it and have to end on the same world, the relay has to refuse a name that
+ * is taken and a message in another's name, and it has to tell a room who
+ * joined it and who left.
  *
  *   pnpm --filter arcadekit relay:check ws://localhost:8787
  *
@@ -146,7 +147,11 @@ const check = Effect.gen(function* () {
   liar.send(forged);
   const refused = yield* closed(liar);
   yield* wait(100);
-  if (refused.reason !== "speaks for another" || honest.receive().length > 0) {
+  const told = honest.receive();
+  if (
+    refused.reason !== "speaks for another" ||
+    told.some((arrived) => "from" in arrived)
+  ) {
     return yield* Effect.die(
       new Error(
         `a message in another's name was not refused: ${refused.message}`
@@ -156,6 +161,17 @@ const check = Effect.gen(function* () {
   yield* Console.log(
     `✓ a message in another's name was refused, and not passed on (${refused.code}: ${refused.reason})`
   );
+
+  // --- who joins the room and who leaves it -----------------------------------
+  const notices = JSON.stringify(told);
+  if (notices !== JSON.stringify([{ joined: "ada" }, { left: "ada" }])) {
+    return yield* Effect.die(
+      new Error(
+        `grace was not told that ada joined the room and left it, but: ${notices}`
+      )
+    );
+  }
+  yield* Console.log("✓ the room was told that a peer joined it and left it");
   yield* Console.log(`The relay at ${base} does what a relay does.`);
 });
 

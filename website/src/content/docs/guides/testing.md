@@ -181,6 +181,8 @@ expect(adaApp.world.hash()).toBe(graceApp.world.hash());
 expect(adaApp.actionLog).toEqual(graceApp.actionLog);
 ```
 
+`hub.disconnect(peer)` cuts a peer off, as a socket that drops: what is on its way to it or from it is lost, and the others are told it left. `hub.reconnect(peer)` brings it back, and every peer is told, as a relay tells them, so the sessions send again what was lost.
+
 Compare peers once the game has settled and both are at the same tick: stop issuing input, step a while longer, then tick only the peer that is behind. A single-player game replaying the same log with `Journal.replay` must end on the same hash.
 
 ## Rewinds
