@@ -7,11 +7,21 @@
  *     const { delta } = yield* Time
  *     moving.each((pos, vel) => { pos.x += vel.x * delta })
  *   })
+ *
+ * Systems run stage by stage, and within a stage in the order they are listed:
+ * those of a plugin's dependencies, then the plugin's own, then the app's.
+ *
+ * A system declares nothing of what it reads and writes. What its queries write
+ * and watch is in its requirements, from each query it yields, and `App.define`
+ * and `Plugin.make` read it there: a list in which a system would react a tick
+ * late to another doesn't compile. See `System.Misordered`.
  */
 import { Effect } from "effect";
 import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
+
+import type { Access, Watches, Writes } from "./Query";
 
 /**
  * The stages of a tick, in the order they run.
@@ -53,6 +63,8 @@ export const isFrameStage = (
   (frameStages as readonly string[]).includes(stage);
 
 /** Every stage, in the order they run when several run together. */
+type FrameStage = (typeof frameStages)[number];
+
 const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
 
 /**
@@ -72,15 +84,21 @@ export interface Trigger {
  * A system: one Effect that runs once per tick, or once per frame, in its
  * stage. Made with `System.make`; `E` is its error and `R` its requirements.
  *
+ * `N` is its name, `St` its stage and `Tr` what triggers it if it is a hook,
+ * each as the compiler knows it, so that the order of a list of systems can be
+ * checked: see `System.Misordered`.
+ *
  * @category Models
  */
-export interface System<out E = never, out R = never> extends Pipeable {
-  readonly name: string;
-  readonly stage: Stage;
-  /** Names of systems in the same stage that must run before this one. */
-  readonly after: readonly string[];
-  /** Names of systems in the same stage that must run after this one. */
-  readonly before: readonly string[];
+export interface System<
+  out E = never,
+  out R = never,
+  out N extends string = string,
+  out St extends Stage = Stage,
+  out Tr extends Trigger | undefined = Trigger | undefined,
+> extends Pipeable {
+  readonly name: N;
+  readonly stage: St;
   readonly run: Effect.Effect<void, E, R>;
   /**
    * Whether the system runs this tick, checked just before it would: every
@@ -98,10 +116,18 @@ export interface System<out E = never, out R = never> extends Pipeable {
    * For a hook, what triggers it. A hook runs when that happens, at the start
    * of a tick, separately from the tick's other systems.
    */
-  readonly trigger: Trigger | undefined;
+  readonly trigger: Tr;
 }
 
-const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
+const build = <
+  E,
+  R,
+  N extends string,
+  St extends Stage,
+  Tr extends Trigger | undefined,
+>(
+  parts: Omit<System<E, R, N, St, Tr>, "pipe">
+): System<E, R, N, St, Tr> => ({
   ...parts,
   pipe() {
     return pipeArguments(this, arguments);
@@ -144,15 +170,16 @@ export type GenServices<Eff> = [Eff] extends [never]
  *
  * @category Constructors
  */
-export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
-  name: string,
+export const make = <
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  name: N,
   body: () => Generator<Eff, void, never>
-): System<GenError<Eff>, GenServices<Eff>> =>
+): System<GenError<Eff>, GenServices<Eff>, N, "update", undefined> =>
   build({
     name,
     stage: "update",
-    after: [],
-    before: [],
     run: Effect.gen(body),
     condition: undefined,
     idle: undefined,
@@ -182,82 +209,41 @@ export const make = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
  * start of the tick. A replay runs no input stage, since the actions are in its
  * log.
  *
+ * Write the stage out, `System.inStage("postUpdate")`. The stage is part of the
+ * system's type, which is how the order of a list is checked, and a system
+ * whose stage the compiler can't read is refused beside one that writes what
+ * it watches, or watches what it writes: see `System.Misordered`.
+ *
  * @category Combinators
  */
 export const inStage: {
-  (stage: Stage): <E, R>(self: System<E, R>) => System<E, R>;
-  <E, R>(self: System<E, R>, stage: Stage): System<E, R>;
-} = dual(2, <E, R>(self: System<E, R>, stage: Stage): System<E, R> =>
-  build({ ...self, stage })
-);
-
-/**
- * Orders a system after another one in the same stage. Naming a system in an
- * earlier stage, which has already run, isn't an error; naming one in a later
- * stage is.
- *
- * **Gotchas**
- *
- * A system keeps its position in the list unless another must run before it, in
- * which case that one moves forward to just ahead of it, and so ahead of every
- * system listed between the two. It may then run before a system it reads
- * from, with no error: order that pair too.
- *
- * @category Combinators
- */
-export const after: {
-  (
-    other: System<unknown, unknown> | string
-  ): <E, R>(self: System<E, R>) => System<E, R>;
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R>;
+  <const S extends Stage>(
+    stage: S
+  ): <E, R, N extends string, Tr extends Trigger | undefined>(
+    self: System<E, R, N, Stage, Tr>
+  ) => System<E, R, N, S, Tr>;
+  <
+    E,
+    R,
+    N extends string,
+    Tr extends Trigger | undefined,
+    const S extends Stage,
+  >(
+    self: System<E, R, N, Stage, Tr>,
+    stage: S
+  ): System<E, R, N, S, Tr>;
 } = dual(
   2,
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R> =>
-    build({
-      ...self,
-      after: [...self.after, typeof other === "string" ? other : other.name],
-    })
-);
-
-/**
- * Orders a system before another one in the same stage. This is how a plugin
- * inserts a system ahead of one from a plugin it depends on. Naming a system in
- * a later stage, which already runs after it, isn't an error; naming one in an
- * earlier stage is.
- *
- * **Gotchas**
- *
- * A system listed after the other moves forward to just ahead of it, and so
- * ahead of every system listed between the two, and a plugin's systems are
- * listed before the app's own. It may then run before a system it reads from,
- * with no error: order that pair too.
- *
- * @category Combinators
- */
-export const before: {
-  (
-    other: System<unknown, unknown> | string
-  ): <E, R>(self: System<E, R>) => System<E, R>;
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R>;
-} = dual(
-  2,
-  <E, R>(
-    self: System<E, R>,
-    other: System<unknown, unknown> | string
-  ): System<E, R> =>
-    build({
-      ...self,
-      before: [...self.before, typeof other === "string" ? other : other.name],
-    })
+  <
+    E,
+    R,
+    N extends string,
+    Tr extends Trigger | undefined,
+    const S extends Stage,
+  >(
+    self: System<E, R, N, Stage, Tr>,
+    stage: S
+  ): System<E, R, N, S, Tr> => build({ ...self, stage })
 );
 
 /**
@@ -283,19 +269,37 @@ export const before: {
 export const runIf: {
   <E2, R2>(
     condition: Effect.Effect<boolean, E2, R2>
-  ): <E, R>(self: System<E, R>) => System<E | E2, R | R2>;
-  <E, R, E2, R2>(
-    self: System<E, R>,
+  ): <E, R, N extends string, St extends Stage, Tr extends Trigger | undefined>(
+    self: System<E, R, N, St, Tr>
+  ) => System<E | E2, R | R2, N, St, Tr>;
+  <
+    E,
+    R,
+    N extends string,
+    St extends Stage,
+    Tr extends Trigger | undefined,
+    E2,
+    R2,
+  >(
+    self: System<E, R, N, St, Tr>,
     condition: Effect.Effect<boolean, E2, R2>
-  ): System<E | E2, R | R2>;
+  ): System<E | E2, R | R2, N, St, Tr>;
 } = dual(
   2,
-  <E, R, E2, R2>(
-    self: System<E, R>,
+  <
+    E,
+    R,
+    N extends string,
+    St extends Stage,
+    Tr extends Trigger | undefined,
+    E2,
+    R2,
+  >(
+    self: System<E, R, N, St, Tr>,
     condition: Effect.Effect<boolean, E2, R2>
-  ): System<E | E2, R | R2> => {
+  ): System<E | E2, R | R2, N, St, Tr> => {
     const earlier = self.condition;
-    return build<E | E2, R | R2>({
+    return build<E | E2, R | R2, N, St, Tr>({
       ...self,
       condition:
         earlier === undefined
@@ -313,10 +317,10 @@ export const runIf: {
  * Makes a system a hook, set off by `trigger` in place of the tick.
  * @internal
  */
-export const triggered = <E, R>(
-  self: System<E, R>,
+export const triggered = <E, R, N extends string, St extends Stage>(
+  self: System<E, R, N, St>,
   trigger: Trigger
-): System<E, R> => build({ ...self, trigger });
+): System<E, R, N, St, Trigger> => build({ ...self, trigger });
 
 /**
  * Gives a system something to do instead of running, each time its condition
@@ -344,22 +348,240 @@ export const triggered = <E, R>(
 export const otherwise: {
   <E2, R2>(
     idle: Effect.Effect<void, E2, R2>
-  ): <E, R>(self: System<E, R>) => System<E | E2, R | R2>;
-  <E, R, E2, R2>(
-    self: System<E, R>,
+  ): <E, R, N extends string, St extends Stage, Tr extends Trigger | undefined>(
+    self: System<E, R, N, St, Tr>
+  ) => System<E | E2, R | R2, N, St, Tr>;
+  <
+    E,
+    R,
+    N extends string,
+    St extends Stage,
+    Tr extends Trigger | undefined,
+    E2,
+    R2,
+  >(
+    self: System<E, R, N, St, Tr>,
     idle: Effect.Effect<void, E2, R2>
-  ): System<E | E2, R | R2>;
+  ): System<E | E2, R | R2, N, St, Tr>;
 } = dual(
   2,
-  <E, R, E2, R2>(
-    self: System<E, R>,
+  <
+    E,
+    R,
+    N extends string,
+    St extends Stage,
+    Tr extends Trigger | undefined,
+    E2,
+    R2,
+  >(
+    self: System<E, R, N, St, Tr>,
     idle: Effect.Effect<void, E2, R2>
-  ): System<E | E2, R | R2> =>
-    build<E | E2, R | R2>({
+  ): System<E | E2, R | R2, N, St, Tr> =>
+    build<E | E2, R | R2, N, St, Tr>({
       ...self,
       idle: self.idle === undefined ? idle : Effect.andThen(self.idle, idle),
     })
 );
+
+// --- the order of a list, as the compiler sees it ---------------------------
+
+/** A system of any type. */
+type Any = System<unknown, unknown>;
+
+// A name the compiler only knows as `string` says nothing of which component
+// it is, as in the requirements of a system typed as any system: left out.
+type Named<C extends string> = string extends C ? never : C;
+type WrittenBy<R> = R extends Writes<infer C> ? Named<C> : never;
+type WatchedBy<R> = R extends Watches<infer C> ? Named<C> : never;
+
+/** Each component a system writes, with the system's name. */
+type Wrote<R, N extends string> =
+  WrittenBy<R> extends infer C extends string ? readonly [C, N] : never;
+
+/** The systems of a union that write or watch something. */
+type Touching<U> =
+  U extends System<unknown, infer R>
+    ? [Extract<R, Access>] extends [never]
+      ? never
+      : U
+    : never;
+
+/** The systems of a union that the tick runs in the order of the list. */
+type Ticking<U> = U extends Any
+  ? [U["trigger"]] extends [Trigger]
+    ? never
+    : [U["stage"]] extends [FrameStage | "input"]
+      ? never
+      : U
+  : never;
+
+/**
+ * A list whose order the compiler knows, or one that says nothing of order:
+ * a list that isn't a tuple is left out when none of its systems writes or
+ * watches anything, and is otherwise kept as it is, in no order.
+ */
+type Listed<S extends readonly Any[]> = number extends S["length"]
+  ? [Touching<S[number]>] extends [never]
+    ? readonly []
+    : S
+  : S;
+
+/** The systems of a tuple, each name once: the first to be listed stays. */
+type Once<
+  T extends readonly Any[],
+  Seen extends string = never,
+  Out extends readonly Any[] = readonly [],
+> = T extends readonly [
+  infer H extends Any,
+  ...infer Rest extends readonly Any[],
+]
+  ? string extends H["name"]
+    ? Once<Rest, Seen, readonly [...Out, H]>
+    : H["name"] extends Seen
+      ? Once<Rest, Seen, Out>
+      : Once<Rest, Seen | H["name"], readonly [...Out, H]>
+  : Out;
+
+/**
+ * The systems of a tuple in the order a tick runs them: stage by stage, as
+ * listed. A hook and a system of the frame or input stage run at another
+ * moment and are left out, and `loose` holds those whose stage the compiler
+ * doesn't know.
+ */
+type Staged<
+  T extends readonly Any[],
+  Pre extends readonly Any[] = readonly [],
+  Upd extends readonly Any[] = readonly [],
+  Post extends readonly Any[] = readonly [],
+  Loose = never,
+> = T extends readonly [
+  infer H extends Any,
+  ...infer Rest extends readonly Any[],
+]
+  ? [H["trigger"]] extends [Trigger]
+    ? Staged<Rest, Pre, Upd, Post, Loose>
+    : [H["stage"]] extends ["preUpdate"]
+      ? Staged<Rest, readonly [...Pre, H], Upd, Post, Loose>
+      : [H["stage"]] extends ["update"]
+        ? Staged<Rest, Pre, readonly [...Upd, H], Post, Loose>
+        : [H["stage"]] extends ["postUpdate"]
+          ? Staged<Rest, Pre, Upd, readonly [...Post, H], Loose>
+          : [H["stage"]] extends [FrameStage | "input"]
+            ? Staged<Rest, Pre, Upd, Post, Loose>
+            : Staged<Rest, Pre, Upd, Post, Loose | H>
+  : {
+      readonly order: readonly [...Pre, ...Upd, ...Post];
+      readonly loose: Loose;
+    };
+
+/** What is said of a system that watches what a later one writes. */
+type Late<
+  N extends string,
+  C extends string,
+  By extends string,
+> = `"${N}" watches "${C}" with Query.changed, and "${By}" writes it later in the tick, so "${N}" would react a tick late. List "${N}" after "${By}", or place it in a later stage.`;
+
+type Clash<N extends string, Watched, Later> = Later extends readonly [
+  infer C extends string,
+  infer By extends string,
+]
+  ? C extends Watched
+    ? Late<N, C, By>
+    : never
+  : never;
+
+/** From the last system to the first, with what those after it write. */
+type Behind<
+  T extends readonly Any[],
+  Later = never,
+  Found = never,
+> = T extends readonly [
+  ...infer Init extends readonly Any[],
+  infer Last extends Any,
+]
+  ? Last extends System<unknown, infer R, infer N>
+    ? Behind<Init, Later | Wrote<R, N>, Found | Clash<N, WatchedBy<R>, Later>>
+    : never
+  : Found;
+
+type SameName<A extends string, B extends string> = string extends A
+  ? false
+  : [A] extends [B]
+    ? [B] extends [A]
+      ? true
+      : false
+    : false;
+
+/** What is said of two systems whose order the compiler doesn't know. */
+type Unknown<
+  N extends string,
+  C extends string,
+  By extends string,
+> = `One of "${N}" and "${By}" watches "${C}" with Query.changed and the other writes it, and the compiler cannot tell which runs first. Write the list of systems out where it is given, and give System.inStage a stage it can read.`;
+
+/** A system whose place isn't known, against every other. */
+type Unplaced<U, All> =
+  U extends System<unknown, infer R, infer N>
+    ? All extends System<unknown, infer R2, infer N2>
+      ? SameName<N, N2> extends true
+        ? never
+        :
+              | Extract<WatchedBy<R>, WrittenBy<R2>>
+              | Extract<WrittenBy<R>, WatchedBy<R2>> extends infer C
+          ? C extends string
+            ? Unknown<N, C, N2>
+            : never
+          : never
+      : never
+    : never;
+
+/**
+ * What is wrong with the order of a list of systems, as a union of messages,
+ * and `never` when nothing is: a system that watches a component with
+ * `Query.changed`, listed ahead of one that writes it in the same tick, sees
+ * the write a tick late. `App.define` and `Plugin.make` refuse such a list
+ * with this message, so the mistake doesn't compile.
+ *
+ * What a system writes and watches is in its requirements, from the queries it
+ * yields: nothing is declared. Hooks and systems of the frame and input stages
+ * run at another moment, and are not checked against the tick's.
+ *
+ * @category Type-level
+ */
+export type Misordered<S extends readonly Any[]> =
+  Listed<S> extends infer L extends readonly Any[]
+    ? number extends L["length"]
+      ? Unplaced<Ticking<L[number]>, Ticking<L[number]>>
+      : Staged<Once<L>> extends {
+            readonly order: infer O extends readonly Any[];
+            readonly loose: infer Loose;
+          }
+        ? Behind<O> | Unplaced<Loose, O[number] | Loose>
+        : never
+    : never;
+
+/**
+ * Two lists of systems, one after the other, as `Misordered` takes them: a
+ * list that isn't a tuple and whose systems write and watch nothing is left
+ * out.
+ *
+ * @internal
+ */
+export type Listing<
+  A extends readonly Any[],
+  B extends readonly Any[],
+> = readonly [...Listed<A>, ...Listed<B>];
+
+/**
+ * What `App.define` and `Plugin.make` add to their options: nothing for a list
+ * in an order that works, and otherwise a property nobody can give, whose type
+ * is the message.
+ *
+ * @internal
+ */
+export type Ordered<S extends readonly Any[]> = [Misordered<S>] extends [never]
+  ? unknown
+  : { readonly order: Misordered<S> };
 
 /**
  * The level of the spans an app makes, as a program's
@@ -384,89 +606,15 @@ export const unique = (systems: readonly System<unknown, unknown>[]): void => {
 };
 
 /**
- * Sorts systems into run order: by stage, then by `after` and `before`
- * constraints, keeping registration order where nothing else decides.
+ * Sorts systems into run order: by stage, and within a stage in the order they
+ * are listed.
  * @internal
  */
 export const order = (
   systems: readonly System<unknown, unknown>[]
 ): System<unknown, unknown>[] => {
   unique(systems);
-  const out: System<unknown, unknown>[] = [];
-  const stageOf = new Map(systems.map((s) => [s.name, s.stage]));
-  for (const stage of everyStage) {
-    const inStage = systems.filter((s) => s.stage === stage);
-    const stageNames = new Set(inStage.map((s) => s.name));
-    // "A before B" is the same constraint as "B after A", so fold both into
-    // one map of what must already have run.
-    const mustFollow = new Map<string, string[]>();
-    for (const system of inStage) {
-      mustFollow.set(system.name, []);
-    }
-    for (const system of inStage) {
-      for (const dep of system.after) {
-        if (!stageNames.has(dep)) {
-          const other = stageOf.get(dep);
-          if (other === undefined) {
-            throw new Error(
-              `System "${system.name}" must run after "${dep}", which is not in the "${stage}" stage`
-            );
-          }
-          // A stage that runs earlier has run: there is nothing to order.
-          if (everyStage.indexOf(other) < everyStage.indexOf(stage)) {
-            continue;
-          }
-          throw new Error(
-            `System "${system.name}" must run after "${dep}", which is in the "${other}" stage: that stage runs after every system of the "${stage}" stage, this one among them`
-          );
-        }
-        mustFollow.get(system.name)!.push(dep);
-      }
-      for (const later of system.before) {
-        if (!stageNames.has(later)) {
-          const other = stageOf.get(later);
-          if (other === undefined) {
-            throw new Error(
-              `System "${system.name}" must run before "${later}", which is not in the "${stage}" stage`
-            );
-          }
-          // A stage that runs later has yet to run: there is nothing to order.
-          if (everyStage.indexOf(other) > everyStage.indexOf(stage)) {
-            continue;
-          }
-          throw new Error(
-            `System "${system.name}" must run before "${later}", which is in the "${other}" stage: that stage runs before every system of the "${stage}" stage, this one among them`
-          );
-        }
-        mustFollow.get(later)!.push(system.name);
-      }
-    }
-    // Each system keeps its registered position unless something has to run
-    // first, in which case those systems are pulled forward to just before it.
-    const byName = new Map(inStage.map((system) => [system.name, system]));
-    const done = new Set<string>();
-    const visiting: string[] = [];
-    const place = (system: System<unknown, unknown>): void => {
-      if (done.has(system.name)) {
-        return;
-      }
-      if (visiting.includes(system.name)) {
-        const cycle = visiting.slice(visiting.indexOf(system.name));
-        throw new Error(
-          `Circular ordering constraints among: ${cycle.join(", ")}`
-        );
-      }
-      visiting.push(system.name);
-      for (const dep of mustFollow.get(system.name)!) {
-        place(byName.get(dep)!);
-      }
-      visiting.pop();
-      done.add(system.name);
-      out.push(system);
-    };
-    for (const system of inStage) {
-      place(system);
-    }
-  }
-  return out;
+  return everyStage.flatMap((stage) =>
+    systems.filter((system) => system.stage === stage)
+  );
 };

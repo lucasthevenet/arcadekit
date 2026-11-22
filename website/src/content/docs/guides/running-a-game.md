@@ -142,7 +142,7 @@ Some pending work is invisible to the app, so you declare it:
 
 - A system with work to do every tick while a condition of its own holds, such as a countdown or a body in flight, requests the next tick itself with `(yield* Ticks).more()` on every tick it has more to do, as `Countdown` does. The game rests after the first tick in which nobody requests one. A system that never requests stops with the game, and nothing distinguishes it from one with nothing to do.
 - Handlers can request ticks too. Between ticks, `more` throws, since rendering doesn't decide when the game ticks. Under a driver that ticks in real time it does nothing, so call it in any system that might run in a game that rests. Requests aren't saved.
-- A system that reacts through a change query to a system listed after it reacts a tick late, and gets only the one extra tick after the last: two such systems in a row fall a tick short. Order them with `System.after`, or have the system that made the change request a tick.
+- A system that reacts through a change query to a system listed after it reacts a tick late, and gets only the one extra tick after the last: two such systems in a row fall a tick short. List the system that reacts after the one that makes the change, or have the system that made the change request a tick.
 
 ## Stepping by hand
 

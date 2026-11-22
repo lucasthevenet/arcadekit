@@ -18,6 +18,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
@@ -446,9 +447,15 @@ describe("a run condition", () => {
           System.inStage("frame"),
           System.runIf(State.is(Phase, "playing"))
         );
-        const app = yield* App.make(
-          App.define({ systems: [Listen, Emit, Look], handlers: [go] })
-        );
+        // Typed as any systems, which is the one way to list a watcher ahead
+        // of what it watches: the compiler refuses that order where it can see
+        // it.
+        const systems: readonly System.System<never, BuiltIn>[] = [
+          Listen,
+          Emit,
+          Look,
+        ];
+        const app = yield* App.make(App.define({ systems, handlers: [go] }));
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: 0 }));
         }
@@ -577,7 +584,7 @@ describe("hooks", () => {
     );
   });
 
-  it("run in the order they were given, unless told another, and only if their condition holds", () => {
+  it("run in the order they are listed, and only if their condition holds", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
@@ -588,16 +595,10 @@ describe("hooks", () => {
         const app = yield* App.make(
           App.define({
             systems: [
-              noting("Third", ran).pipe(
-                State.onEnter(Phase, "playing"),
-                System.after(Last)
-              ),
+              noting("Zeroth", ran).pipe(State.onEnter(Phase, "playing")),
               First,
               Last,
-              noting("Zeroth", ran).pipe(
-                State.onEnter(Phase, "playing"),
-                System.before(First)
-              ),
+              noting("Third", ran).pipe(State.onEnter(Phase, "playing")),
               noting("InTheRain", ran).pipe(
                 State.onEnter(Phase, "playing"),
                 System.runIf(State.is(Weather, "dry"))
@@ -614,9 +615,7 @@ describe("hooks", () => {
         app.tick(1);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
-        // As with any systems: each keeps its place, and what has to run
-        // before it is pulled forward to just ahead of it.
-        expect(ran).toEqual(["Last", "Third", "Zeroth", "First"]);
+        expect(ran).toEqual(["Zeroth", "First", "Last", "Third"]);
       })
     );
   });

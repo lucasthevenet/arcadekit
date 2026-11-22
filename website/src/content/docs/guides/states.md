@@ -55,7 +55,7 @@ There is one transition per tick, and the last request before it wins. Requestin
 
 ## Hooks
 
-`State.onEnter(Phase, "playing")` and `State.onExit(Phase, "playing")` turn a system into a hook: it runs at that moment instead of every tick. Hooks for the same moment run in the order they were given, or as `System.after` and `System.before` specify, and each hook's commands are applied before the next runs.
+`State.onEnter(Phase, "playing")` and `State.onExit(Phase, "playing")` turn a system into a hook: it runs at that moment instead of every tick. Hooks for the same moment run in the order they are listed, and each hook's commands are applied before the next runs.
 
 On the game's first tick, the enter hooks of the initial state run, followed in the same tick by any transition requested before it. A game loaded from a save doesn't run them again, since the save already holds their effects.
 

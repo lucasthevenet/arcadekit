@@ -66,6 +66,7 @@ export interface Plugin<
   out E = never,
   out RIn = never,
   out Needs = never,
+  out Sys extends readonly AnySystem[] = readonly AnySystem[],
 > {
   readonly name: string;
   readonly systems: readonly AnySystem[];
@@ -82,6 +83,7 @@ export interface Plugin<
     readonly E: E;
     readonly RIn: RIn;
     readonly Needs: Needs;
+    readonly Sys: Sys;
   };
 }
 
@@ -148,6 +150,38 @@ export type NeedsOf<T> =
     ? X
     : never;
 
+/**
+ * The systems of a list of plugins in the order an app runs them, each plugin's
+ * dependencies ahead of its own, as far as the compiler knows it: what
+ * `System.Misordered` checks.
+ *
+ * @category Type-level
+ */
+export type SystemsOf<
+  P extends readonly Any[],
+  Out extends readonly AnySystem[] = readonly [],
+> = P extends readonly [
+  infer H extends Any,
+  ...infer Rest extends readonly Any[],
+]
+  ? SystemsOf<Rest, System.Listing<Out, Sys<H>>>
+  : number extends P["length"]
+    ? System.Listing<Out, readonly Sys<P[number]>[number][]>
+    : Out;
+
+type Sys<T> =
+  T extends Plugin<
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    infer X extends readonly AnySystem[]
+  >
+    ? X
+    : never;
+
 type SystemError<T> = T extends System.System<infer E, unknown> ? E : never;
 type SystemNeeds<T> = T extends System.System<unknown, infer R> ? R : never;
 type HandlerNeeds<T> =
@@ -179,6 +213,10 @@ type EffectNeeds<T> =
  * with the same name are refused when the app is created. If a layer or a setup
  * fails, `App.make` fails with that error.
  *
+ * Its systems run in the order they are listed, after those of the plugins it
+ * depends on. A list in which a system watches a component ahead of one that
+ * writes it doesn't compile: see `System.Misordered`.
+ *
  * @category Constructors
  */
 export const make = <
@@ -207,7 +245,7 @@ export const make = <
      * app is loaded from a save, which already holds those entities.
      */
     readonly setup?: SU;
-  }
+  } & System.Ordered<System.Listing<SystemsOf<P>, S>>
 ): Plugin<
   SystemError<S[number]> | TickErrorOf<P[number]>,
   H[number] | HandlerOf<P[number]>,
@@ -218,7 +256,8 @@ export const make = <
   | SystemNeeds<S[number]>
   | HandlerNeeds<H[number]>
   | EffectNeeds<SU>
-  | NeedsOf<P[number]>
+  | NeedsOf<P[number]>,
+  System.Listing<SystemsOf<P>, S>
 > => ({
   name,
   systems: options.systems ?? [],

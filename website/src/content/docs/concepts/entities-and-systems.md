@@ -126,5 +126,5 @@ The design follows [Bevy](https://bevy.org), an ECS built around systems, querie
 ## Read more
 
 - [Components](../guides/components.md) and [queries](../guides/queries.md) in the guides.
-- [Systems](../guides/systems.md): ordering, stages, and declaring what a system reads and writes.
+- [Systems](../guides/systems.md): ordering and stages.
 - [`Field`](/reference/arcadekit/Field) in the API reference, for every field type.

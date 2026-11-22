@@ -1940,7 +1940,7 @@ export function instances(
   const kind = (
     own: readonly ComponentDef[],
     absent: readonly ComponentDef[]
-  ): Query.Query<readonly ComponentDef[]> =>
+  ): Query.Query<Query.Reading<readonly ComponentDef[]>, never> =>
     Query.all(...own, ...(color === undefined ? [] : [color])).pipe(
       Query.with(...marked),
       Query.without(...excluded, ...absent)
@@ -1951,7 +1951,7 @@ export function instances(
   const plain = (
     own: readonly ComponentDef[],
     absent: readonly ComponentDef[]
-  ): Query.Query<readonly ComponentDef[]> | undefined =>
+  ): Query.Query<Query.Reading<readonly ComponentDef[]>, never> | undefined =>
     color === undefined
       ? undefined
       : Query.all(...own).pipe(

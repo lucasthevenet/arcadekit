@@ -897,7 +897,7 @@ describe("a level's cues", () => {
         store.drop(Forest, "mu/Keep");
       }
       store.hold(Forest, "mu/Keep");
-    }).pipe(System.inStage("frame"), System.before(ForestCues));
+    }).pipe(System.inStage("frame"));
     const { app } = start(
       App.make(
         App.define({

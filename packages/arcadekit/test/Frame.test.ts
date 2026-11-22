@@ -212,15 +212,12 @@ describe("the frame stage", () => {
         const app = yield* App.make(
           App.define({
             systems: [
-              noting("Draw").pipe(System.inStage("frame")),
+              noting("Clear").pipe(System.inStage("frame")),
               noting("Tick"),
+              noting("Draw").pipe(System.inStage("frame")),
               noting("Hud").pipe(
                 System.inStage("frame"),
                 System.runIf(State.is(Phase, "paused"))
-              ),
-              noting("Clear").pipe(
-                System.inStage("frame"),
-                System.before("Draw")
               ),
             ],
           })
@@ -259,18 +256,18 @@ describe("the frame stage", () => {
         const app = yield* App.make(
           App.define({
             systems: [
+              noting("Fit", "postFrame"),
+              noting("Clear", "frame"),
               noting("Show", "postFrame"),
               noting("Draw", "frame"),
               noting("Tick", "update"),
               noting("Load", "preFrame"),
               noting("Hud", "frame"),
-              noting("Fit", "postFrame").pipe(System.before("Show")),
-              noting("Clear", "frame").pipe(System.before("Draw")),
               noting("Listen", "input"),
             ],
           })
         );
-        // The stage first, then what the systems say, then as listed.
+        // The stage first, then as listed.
         expect(app.frameOrder).toEqual([
           "Load",
           "Clear",
@@ -338,81 +335,6 @@ describe("the frame stage", () => {
         stage
       ).toThrow(/System "Splash" is a hook and is in the frame stage/);
     }
-  });
-
-  it("takes a system's word about one of another stage when it is so already, and refuses it when it cannot be", () => {
-    const sys = (name: string, stage: System.Stage) =>
-      System.make(name, function* () {}).pipe(System.inStage(stage));
-    const names = (list: readonly System.System<unknown, unknown>[]) =>
-      System.order(list).map((system) => system.name);
-    // True as it stands: nothing is moved, and nothing is wrong.
-    expect(
-      names([
-        sys("Show", "postFrame"),
-        sys("Camera", "frame").pipe(System.before("Show")),
-        sys("Draw", "frame").pipe(System.after("Load")),
-        sys("Load", "preFrame").pipe(System.before("Draw")),
-        sys("Last", "postFrame").pipe(System.after("Camera")),
-      ])
-    ).toEqual(["Load", "Camera", "Draw", "Show", "Last"]);
-    // And of a tick's stages the same.
-    expect(
-      names([
-        sys("Late", "postUpdate").pipe(System.after("Rules")),
-        sys("Rules", "update").pipe(System.after("Early")),
-        sys("Early", "preUpdate").pipe(System.before("Late")),
-      ])
-    ).toEqual(["Early", "Rules", "Late"]);
-    // What cannot be: a stage runs whole before the next.
-    expect(() =>
-      System.order([
-        sys("Show", "postFrame"),
-        sys("Camera", "frame").pipe(System.after("Show")),
-      ])
-    ).toThrow(
-      'System "Camera" must run after "Show", which is in the "postFrame" stage: that stage runs after every system of the "frame" stage, this one among them'
-    );
-    expect(() =>
-      System.order([
-        sys("Load", "preFrame"),
-        sys("Draw", "frame").pipe(System.before("Load")),
-      ])
-    ).toThrow(
-      'System "Draw" must run before "Load", which is in the "preFrame" stage: that stage runs before every system of the "frame" stage, this one among them'
-    );
-    expect(() =>
-      System.order([
-        sys("Rules", "update").pipe(System.after("Late")),
-        sys("Late", "postUpdate"),
-      ])
-    ).toThrow('which is in the "postUpdate" stage');
-    expect(() =>
-      System.order([
-        sys("Late", "postUpdate").pipe(System.before("Rules")),
-        sys("Rules", "update"),
-      ])
-    ).toThrow('which is in the "update" stage');
-    // And a system that is nowhere is still not there.
-    expect(() =>
-      System.order([sys("Draw", "frame").pipe(System.after("Nobody"))])
-    ).toThrow('must run after "Nobody", which is not in the "frame" stage');
-    expect(() =>
-      System.order([sys("Draw", "frame").pipe(System.before("Nobody"))])
-    ).toThrow('must run before "Nobody", which is not in the "frame" stage');
-    // A frame's systems and a tick's are never ordered against each other:
-    // an app sorts them apart.
-    expect(() =>
-      run(
-        App.make(
-          App.define({
-            systems: [
-              sys("Rules", "update"),
-              sys("Draw", "frame").pipe(System.after("Rules")),
-            ],
-          })
-        )
-      )
-    ).toThrow('must run after "Rules", which is not in the "frame" stage');
   });
 
   it("is told how far the frame is between two ticks", () => {
@@ -903,7 +825,7 @@ describe("what the frame stage reads", () => {
             }
           });
         });
-        const BallGame = App.define({ systems: [Count, Nudge, Draw] });
+        const BallGame = App.define({ systems: [Nudge, Count, Draw] });
         const app = yield* App.make(BallGame, { checkpointEvery: 1 });
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: n, vx: 0 }));
@@ -915,7 +837,7 @@ describe("what the frame stage reads", () => {
         app.frame(0);
         // The first frame draws everything; the next, the two that moved.
         expect(drawn).toEqual([3, 2, 0]);
-        // The simulation's own reader saw each change once, a tick late.
+        // The simulation's own reader saw each change once.
         expect(counted).toEqual([3, 1]);
 
         app.tick(1);

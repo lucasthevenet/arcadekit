@@ -41,19 +41,19 @@ References: [Expected Errors](https://effect.website/docs/v4/error-management/ex
 The package's own values behave like Effect's, using the same three mechanisms.
 
 - **Yieldable.** A value a system asks for is an Effect: `yield* Moving` gives a query's view, `yield* Collided` an event's channel, `yield* Gravity` a resource. A new kind of value like these extends `Effectable.Class` and implements `asEffect()`. `src/Query.ts` and `src/Event.ts` are the examples. API: [Effectable](https://effect.website/docs/v4/api/effect/Effectable).
-- **Pipeable.** A value that is refined step by step has `.pipe()`: `Query.all(A).pipe(Query.without(B))`, `System.make(...).pipe(System.after(Other))`. A class that extends `Effectable.Class` has it already; anything else implements `pipe() { return pipeArguments(this, arguments); }`. API: [Pipeable](https://effect.website/docs/v4/api/effect/Pipeable).
-- **Dual.** A function that refines a value works both ways: `System.after(system, other)` and `system.pipe(System.after(other))`. Define it with `dual` and write both signatures out. See [Dual APIs](https://effect.website/docs/v4/code-style/dual) and [Function](https://effect.website/docs/v4/api/effect/Function).
+- **Pipeable.** A value that is refined step by step has `.pipe()`: `Query.all(A).pipe(Query.without(B))`, `System.make(...).pipe(System.inStage("frame"))`. A class that extends `Effectable.Class` has it already; anything else implements `pipe() { return pipeArguments(this, arguments); }`. API: [Pipeable](https://effect.website/docs/v4/api/effect/Pipeable).
+- **Dual.** A function that refines a value works both ways: `System.inStage(system, stage)` and `system.pipe(System.inStage(stage))`. Define it with `dual` and write both signatures out. See [Dual APIs](https://effect.website/docs/v4/code-style/dual) and [Function](https://effect.website/docs/v4/api/effect/Function).
 
 ```ts sketch
 export const inStage: {
   (stage: Stage): <E, R>(self: System<E, R>) => System<E, R>;
   <E, R>(self: System<E, R>, stage: Stage): System<E, R>;
 } = dual(2, <E, R>(self: System<E, R>, stage: Stage): System<E, R> =>
-  build(self.name, stage, self.after, self.before, self.run)
+  build({ ...self, stage })
 );
 ```
 
-Values like these are immutable descriptions. `System.after` returns a new system; it does not change the one it was given.
+Values like these are immutable descriptions. `System.inStage` returns a new system; it does not change the one it was given.
 
 ## Schema at the boundary
 

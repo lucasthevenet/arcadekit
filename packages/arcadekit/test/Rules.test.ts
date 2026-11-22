@@ -66,11 +66,7 @@ describe("events", () => {
         ping.emit(tick * 10 + 1);
       }
     });
-    const systems = [
-      reader("Before"),
-      Emitter.pipe(System.after("Before")),
-      reader("After").pipe(System.after(Emitter)),
-    ];
+    const systems = [reader("Before"), Emitter, reader("After")];
     withApp(App.make(App.define({ systems })), (app) => {
       for (let i = 0; i < 4; i++) {
         app.tick(1);
@@ -99,7 +95,7 @@ describe("events", () => {
       for (const event of damaged.read()) {
         log.push(`${event.target}:${event.amount}`);
       }
-    }).pipe(System.after(Hit));
+    });
     withApp(App.make(App.define({ systems: [Hit, Report] })), (app) => {
       const a = app.world.spawn(Health.of({ hp: 10 }));
       const b = app.world.spawn(Health.of({ hp: 10 }));

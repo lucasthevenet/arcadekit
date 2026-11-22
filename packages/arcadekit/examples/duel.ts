@@ -156,15 +156,16 @@ const Commentary = Plugin.make("Commentary", {
     say: (line) => console.log(`    "${line}"`),
   }),
   systems: [
-    // Ahead of the rules' own system, while the fighter that was hit still exists.
+    // In the stage before the rules' own system, while the fighter that was hit
+    // still exists.
     System.make("CallHits", function* () {
       const narrator = yield* Narrator;
       const world = yield* World;
       for (const { amount, target } of (yield* Struck).read()) {
         narrator.say(`${world.get(target, Name)?.value} takes ${amount}!`);
       }
-    }).pipe(System.before(Casualties)),
-    // After the rules' own system, when the fighter that fell is gone.
+    }).pipe(System.inStage("preUpdate")),
+    // Listed after the rules' own system, when the fighter that fell is gone.
     System.make("CallEnd", function* () {
       const narrator = yield* Narrator;
       for (const _ of (yield* Fell).read()) {
@@ -172,7 +173,7 @@ const Commentary = Plugin.make("Commentary", {
           narrator.say(`And that is the end of the fight: ${name.value} wins.`);
         });
       }
-    }).pipe(System.after(Casualties)),
+    }),
   ],
 });
 
