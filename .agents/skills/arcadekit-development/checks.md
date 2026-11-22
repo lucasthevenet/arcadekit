@@ -5,7 +5,7 @@ A rule that matters is held first by a design that leaves no room to break it, a
 The repository already works this way, and a new rule joins these:
 
 - `tooling/lint/entries.ts` says what each entry may import, and the Oxlint rule `arcadekit/entry-imports` holds it in the sources, file by file, and so in the build, which writes each source file to its own file;
-- the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, `arcadekit/no-code-from-text`, `arcadekit/no-plain-error`, which keeps a mistake of the program a class of `src/Defect.ts`, and `arcadekit/top-level-classes`, which keeps a class out of a function;
+- the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, `arcadekit/no-code-from-text`, and `arcadekit/top-level-classes`, which keeps a class out of a function;
 - `test/Policy.test.ts` plays a game where making code from text is forbidden;
 - the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts` and `test/Frame.test.ts`, which every new way to write joins;
 - a frozen world, which refuses a change from the frame and input stages;
@@ -18,7 +18,7 @@ Which kind of check a rule gets:
 | The rule is about | The check is |
 | --- | --- |
 | What a caller may write | A type, with a type test: `// @ts-expect-error` above the line that must not compile |
-| What code may do as it runs | A refusal there, a class of `src/Defect.ts` thrown or given to `Effect.die`, whose fields say which mistake it is and whose message says who, what, and what to do instead |
+| What code may do as it runs | A refusal there, thrown or `Effect.die`, whose message says who, what, and what to do instead |
 | What a file may import or contain | A rule of the Oxlint plugin in `tooling/lint/plugin.ts`, turned on in `oxlint.config.ts`, whose message says what to do instead |
 | What the sources hold together (every file behind an entry, the exports a module gives) | A test that reads the sources, as `test/Entries.test.ts` does |
 | What every member of a kind must do (every writer, every way into the world) | A test with a list of them that a new one is added to |

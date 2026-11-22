@@ -31,7 +31,6 @@
 import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
-import { InvalidDefinition } from "./Defect";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
@@ -245,11 +244,7 @@ export const flatten = (plugins: readonly Any[]): Any[] => {
     seen.add(plugin);
     const other = names.get(plugin.name);
     if (other !== undefined) {
-      throw new InvalidDefinition({
-        kind: "plugin",
-        named: plugin.name,
-        message: `Two different plugins are both named "${plugin.name}"`,
-      });
+      throw new Error(`Two different plugins are both named "${plugin.name}"`);
     }
     names.set(plugin.name, plugin);
     for (const dependency of plugin.plugins) {

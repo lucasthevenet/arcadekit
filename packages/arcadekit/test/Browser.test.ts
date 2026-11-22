@@ -19,7 +19,6 @@ import {
   Assets,
   Commands,
   Component,
-  Defect,
   Driver,
   Event,
   Field,
@@ -621,7 +620,6 @@ describe("a page's devices", () => {
           /were read after Browser\.layer was let go/
         );
         expect(() => app.input()).toThrow(/Provide it to the whole program/);
-        expect(() => app.input()).toThrow(Defect.ScopeClosed);
       })
     );
   });

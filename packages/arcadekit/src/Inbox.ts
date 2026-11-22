@@ -15,13 +15,6 @@ import { Cause, Exit, Schema } from "effect";
 import type { Effect, Fiber } from "effect";
 
 import * as Action from "./Action";
-import {
-  InvalidArgument,
-  InvalidDefinition,
-  TakenOver,
-  WrongPhase,
-  said,
-} from "./Defect";
 import type { CommandBuffer } from "./ecs/commands";
 import type { World } from "./ecs/world";
 import type { EventBus } from "./Event";
@@ -63,11 +56,7 @@ export const handlersOf = (
   const named = new Map<string, Action.AnyHandler>();
   for (const handler of handlers) {
     if (named.has(handler.action.name)) {
-      throw new InvalidDefinition({
-        kind: "handler",
-        named: handler.action.name,
-        message: `Two handlers for action "${handler.action.name}"`,
-      });
+      throw new Error(`Two handlers for action "${handler.action.name}"`);
     }
     named.set(handler.action.name, handler);
   }
@@ -103,37 +92,11 @@ export class Inbox {
    * with `app.divert`. It is handed each action issued from outside, by name
    * and in its JSON form, in place of the queue.
    */
-  private diverted: ((name: string, payload: unknown) => void) | undefined;
+  diverted: ((name: string, payload: unknown) => void) | undefined;
   private readonly parts: Parts;
 
   constructor(parts: Parts) {
     this.parts = parts;
-  }
-
-  /**
-   * `app.divert`: from now on, a session is handed what comes from outside.
-   * An app is in one session at a time.
-   */
-  divert(take: (name: string, payload: unknown) => void): void {
-    if (this.diverted !== undefined) {
-      throw new TakenOver({
-        call: "divert",
-        message:
-          "divert() was called on an app that has been taken over already. An app is in one session at a time.",
-      });
-    }
-    this.diverted = take;
-  }
-
-  /** Refuses the tick an app is asked for itself once a session steps it. */
-  steppedByItsApp(): void {
-    if (this.diverted !== undefined) {
-      throw new TakenOver({
-        call: "App.tick",
-        message:
-          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver.",
-      });
-    }
   }
 
   /** Whether the game has a handler for an action. */
@@ -167,10 +130,7 @@ export class Inbox {
     const { handlers, intake, log, runner } = this.parts;
     const handler = handlers.get(action.name);
     if (handler === undefined) {
-      throw new InvalidArgument({
-        call: "enqueue",
-        message: `No handler for action "${action.name}"`,
-      });
+      throw new Error(`No handler for action "${action.name}"`);
     }
     const { name } = action;
     const { codec } = handler.action;
@@ -194,7 +154,7 @@ export class Inbox {
       return Exit.fail(
         new Action.InvalidPayload({
           action: name,
-          message: said(Cause.squash(json.cause)),
+          message: Action.said(Cause.squash(json.cause)),
         })
       );
     }
@@ -219,10 +179,9 @@ export class Inbox {
   issue(action: Action.AnyActionDef, payload: unknown): void {
     const exit = this.enqueue(action, payload);
     if (Exit.isFailure(exit)) {
-      throw new InvalidArgument({
-        call: "Actions.enqueue",
-        message: `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${said(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`,
-      });
+      throw new Error(
+        `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${Action.said(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
+      );
     }
   }
 
@@ -231,10 +190,9 @@ export class Inbox {
     const { intake, runner } = this.parts;
     if (runner.simulating) {
       if (from !== undefined) {
-        throw new InvalidArgument({
-          call: "enqueueByName",
-          message: `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`,
-        });
+        throw new Error(
+          `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
+        );
       }
       intake.queued.push({
         name,
@@ -250,10 +208,9 @@ export class Inbox {
       return;
     }
     if (from !== undefined) {
-      throw new InvalidArgument({
-        call: "enqueueByName",
-        message: `enqueueByName("${name}") was given who issued it, "${from}", on an app that a session has taken over. What a peer issues is stamped with that peer's own name, by its session, and nobody speaks for another.`,
-      });
+      throw new Error(
+        `enqueueByName("${name}") was given who issued it, "${from}", on an app that a session has taken over. What a peer issues is stamped with that peer's own name, by its session, and nobody speaks for another.`
+      );
     }
     this.diverted(name, payload);
   }
@@ -270,10 +227,7 @@ export class Inbox {
     this.betweenTicks(action.name);
     // A typed dispatch of an action nobody handles is a programming error.
     if (!this.handles(action)) {
-      throw new InvalidArgument({
-        call: "dispatch",
-        message: `No handler for action "${action.name}"`,
-      });
+      throw new Error(`No handler for action "${action.name}"`);
     }
     return this.apply(action.name, payload, "value", true, undefined);
   }
@@ -310,7 +264,7 @@ export class Inbox {
       if (Exit.isFailure(exit)) {
         const error = Cause.squash(exit.cause);
         if (entry !== undefined) {
-          entry.refused = said(error);
+          entry.refused = Action.said(error);
         }
         events._emit(Action.Rejected, {
           action: name,
@@ -325,25 +279,20 @@ export class Inbox {
   /** Refuses a dispatch that isn't made between ticks, on an app of one. */
   private betweenTicks(name: string): void {
     if (this.diverted !== undefined) {
-      throw new TakenOver({
-        call: "dispatch",
-        message: `dispatch("${name}") was called on an app that a session has taken over. It would apply the action on this machine alone, and the peers would no longer be playing the same game. Use enqueue: the session has every peer apply it on the same tick.`,
-      });
+      throw new Error(
+        `dispatch("${name}") was called on an app that a session has taken over. It would apply the action on this machine alone, and the peers would no longer be playing the same game. Use enqueue: the session has every peer apply it on the same tick.`
+      );
     }
     const now = this.parts.runner.phase;
     if (now === "tick") {
-      throw new WrongPhase({
-        call: "dispatch",
-        phase: now,
-        message: `dispatch("${name}") was called during a tick. Use enqueue: it applies the action at the start of the next tick.`,
-      });
+      throw new Error(
+        `dispatch("${name}") was called during a tick. Use enqueue: it applies the action at the start of the next tick.`
+      );
     }
     if (now === "frame" || now === "input") {
-      throw new WrongPhase({
-        call: "dispatch",
-        phase: now,
-        message: `dispatch("${name}") was called during the ${now} stage, which must not change the game. Issue it with Actions.enqueue: it is applied at the start of the next tick.`,
-      });
+      throw new Error(
+        `dispatch("${name}") was called during the ${now} stage, which must not change the game. Issue it with Actions.enqueue: it is applied at the start of the next tick.`
+      );
     }
   }
 
@@ -402,11 +351,9 @@ export class Inbox {
     const logged = form === "json" ? payload : converted.value;
 
     if (runner.phase === "handler") {
-      throw new WrongPhase({
-        call: "dispatch",
-        phase: "handler",
-        message: `dispatch("${name}") was called from the handler of "${runner.applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`,
-      });
+      throw new Error(
+        `dispatch("${name}") was called from the handler of "${runner.applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`
+      );
     }
     const mark = commands.mark();
     world.begin();

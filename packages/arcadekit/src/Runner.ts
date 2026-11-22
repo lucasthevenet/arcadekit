@@ -8,7 +8,6 @@
 import type { Exit, Fiber, Metric } from "effect";
 
 import type { Phase } from "./App";
-import { NotSynchronous, WrongPhase } from "./Defect";
 import type { TickDispatcher } from "./TickScheduler";
 
 /**
@@ -81,15 +80,6 @@ export class Runner {
   }
 
   /**
-   * What is running, for a refusal: a phase, or `"setup"` while a plugin's
-   * setup runs, which is before there is an app whose phase could say so.
-   */
-  get now(): Phase | "setup" {
-    const { phase } = this;
-    return phase === "idle" && this.own > 0 ? "setup" : phase;
-  }
-
-  /**
    * Whether the code running now is the simulation's: a tick, an action's
    * handler, or a plugin's setup. What it issues isn't logged, since a
    * replay runs it again and issues it again. Anything else is input from
@@ -113,22 +103,18 @@ export class Runner {
    * Refuses a call that is for between ticks while the app is running
    * something. `said` makes the message, given what it is running.
    */
-  whileIdle(call: string, said: (busy: string) => string): void {
-    const phase = this.now;
-    if (phase !== "idle") {
-      throw new WrongPhase({
-        call,
-        phase,
-        message: said(
-          phase === "input"
+  whileIdle(said: (busy: string) => string): void {
+    const now = this.phase;
+    if (now !== "idle") {
+      throw new Error(
+        said(
+          now === "input"
             ? "run of the input stage"
-            : phase === "handler"
+            : now === "handler"
               ? `handler of "${this.applying}"`
-              : phase === "setup"
-                ? "plugin's setup"
-                : phase
-        ),
-      });
+              : now
+        )
+      );
     }
   }
 
@@ -137,7 +123,7 @@ export class Runner {
    * the dispatcher holds has run: `what` started a fiber and left it
    * running. The systems noted as starting fibers are forgotten.
    */
-  private left(before: number, what: string): NotSynchronous | undefined {
+  private left(before: number, what: string): Error | undefined {
     this.dispatcher.flush();
     const left = this.fibers - before;
     const noted = this.starters;
@@ -148,13 +134,11 @@ export class Runner {
         noted === undefined
           ? ""
           : ` (started while ${[...noted].map((name) => `"${name}"`).join(", ")} ran)`;
-      return new NotSynchronous({
-        what,
-        message:
-          `${what} left ${left === 1 ? "a fiber" : `${left} fibers`} running${starters}, with Effect.forkDetach, Effect.forkIn or another fork that outlives it. ` +
+      return new Error(
+        `${what} left ${left === 1 ? "a fiber" : `${left} fibers`} running${starters}, with Effect.forkDetach, Effect.forkIn or another fork that outlives it. ` +
           `It would change the game later, at a moment no replay repeats. Wait for a fiber within the code that started it, ` +
-          `or keep work that takes longer than a tick in the world, in a component or a state that a system moves on each tick.`,
-      });
+          `or keep work that takes longer than a tick in the world, in a component or a state that a system moves on each tick.`
+      );
     }
     return undefined;
   }
@@ -185,7 +169,7 @@ export class Runner {
     if (exit === undefined) {
       fiber.interruptUnsafe();
       this.dispatcher.flush();
-      throw new NotSynchronous({ what, message: waited() });
+      throw new Error(waited());
     }
     const left = this.left(before, what);
     if (left !== undefined) {

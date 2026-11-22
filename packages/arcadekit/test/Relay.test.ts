@@ -2,7 +2,7 @@ import { Cause, Context, Effect, Exit, Layer, Result } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
-import { Defect, Lockstep, Relay, Rollback, Transport } from "../src/index";
+import { Lockstep, Relay, Rollback, Transport } from "../src/index";
 import { DELTA, game, moves, players, purseOf } from "./peers";
 import type { Game, Peer } from "./peers";
 
@@ -687,6 +687,5 @@ describe("the transport between machines, a WebSocket to a relay", () => {
       /was used after its scope had closed, and its socket with it.*provide it to the whole program/u
     );
     expect(() => kept.send(message("ada", 0))).toThrow(/after its scope/u);
-    expect(() => kept.receive()).toThrow(Defect.ScopeClosed);
   });
 });

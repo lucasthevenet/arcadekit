@@ -19,7 +19,6 @@
 import { Exit } from "effect";
 
 import type * as App from "./App";
-import { InvalidArgument, WrongPhase } from "./Defect";
 import type { SavedChanges } from "./ecs/changes";
 import type { World, Moment as WorldMoment } from "./ecs/world";
 import type { Told } from "./Outbox";
@@ -67,11 +66,9 @@ class Held implements Moment {
 const between = (app: Game, call: string, rule: string): void => {
   const { phase } = app;
   if (phase !== "idle") {
-    throw new WrongPhase({
-      call: `Timeline.${call}`,
-      phase,
-      message: `Timeline.${call}() was called during ${phase === "input" ? "a run of the input stage" : phase === "handler" ? "an action's handler" : `a ${phase}`}. ${rule}`,
-    });
+    throw new Error(
+      `Timeline.${call}() was called during ${phase === "input" ? "a run of the input stage" : phase === "handler" ? "an action's handler" : `a ${phase}`}. ${rule}`
+    );
   }
 };
 
@@ -145,11 +142,9 @@ export const rewind = (
   between(app, "rewind", "A game is put back between ticks.");
   const { commands, dispatcher, events, world } = app;
   if (!(moment instanceof Held) || moment.of !== world) {
-    throw new InvalidArgument({
-      call: "Timeline.rewind",
-      message:
-        "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save.",
-    });
+    throw new Error(
+      "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
+    );
   }
   dispatcher.flush();
   // What is queued on the buffer was never part of the world.

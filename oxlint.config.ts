@@ -252,7 +252,6 @@ export default defineConfig({
         "arcadekit/entry-imports": "error",
         "arcadekit/no-page": "error",
         "arcadekit/no-code-from-text": "error",
-        "arcadekit/no-plain-error": "error",
         "arcadekit/top-level-classes": "error",
       },
     },

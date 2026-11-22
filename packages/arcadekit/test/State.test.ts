@@ -7,7 +7,6 @@ import {
   App,
   Commands,
   Component,
-  Defect,
   Event,
   Field,
   Journal,
@@ -109,11 +108,9 @@ describe("a state", () => {
         expect(asked).toEqual([
           // Asked for, and not entered yet.
           ["menu", "playing"],
-          new Defect.InvalidArgument({
-            call: "State.set",
-            message:
-              'The state "st/Phase" has no value "flying". Its values are: menu, playing, paused.',
-          }),
+          new Error(
+            'The state "st/Phase" has no value "flying". Its values are: menu, playing, paused.'
+          ),
           // Asking for where the game is takes an earlier ask back.
           "paused",
           undefined,

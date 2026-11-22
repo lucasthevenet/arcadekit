@@ -19,7 +19,6 @@
 import { Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
 
-import { InvalidDefinition } from "./Defect";
 import type { RemovedReader } from "./ecs/changes";
 import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
 import type { QuerySpec, QueryView, Terms } from "./ecs/query";
@@ -291,11 +290,9 @@ export const writes: {
   ): Query<Writing<D, W[number]>> => {
     for (const def of defs) {
       if (!self.terms.includes(def)) {
-        throw new InvalidDefinition({
-          kind: "query",
-          named: def.name,
-          message: `Query.writes was given "${def.name}", which is not one of the query's terms: ${self.terms.map((term) => term.name).join(", ") || "it has none"}. A query writes only what it is handed: add it to Query.all.`,
-        });
+        throw new Error(
+          `Query.writes was given "${def.name}", which is not one of the query's terms: ${self.terms.map((term) => term.name).join(", ") || "it has none"}. A query writes only what it is handed: add it to Query.all.`
+        );
       }
     }
     return new Query(

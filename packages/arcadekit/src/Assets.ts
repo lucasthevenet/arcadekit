@@ -48,7 +48,6 @@ import {
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 
 import * as Action from "./Action";
-import { WrongPhase, said } from "./Defect";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import { Commands, Events, Frame, Random, Time, World } from "./Services";
@@ -66,6 +65,9 @@ export class AssetFailed extends Data.TaggedError("AssetFailed")<{
   /** What went wrong. */
   readonly message: string;
 }> {}
+
+const describe = (error: unknown): string =>
+  error instanceof Error ? error.message || error.name : String(error);
 
 // --- one asset ---------------------------------------------------------------
 
@@ -127,7 +129,7 @@ export const text = (url: string): Asset<string> =>
         return Effect.fail(
           new AssetFailed({
             url: at,
-            message: `It is not text: ${said(error)}`,
+            message: `It is not text: ${describe(error)}`,
           })
         );
       }
@@ -154,7 +156,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
         return Effect.fail(
           new AssetFailed({
             url: at,
-            message: `It is not JSON: ${said(error)}`,
+            message: `It is not JSON: ${describe(error)}`,
           })
         );
       }
@@ -164,7 +166,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
         : Effect.fail(
             new AssetFailed({
               url: at,
-              message: said(Cause.squash(exit.cause)),
+              message: describe(Cause.squash(exit.cause)),
             })
           );
     })
@@ -464,11 +466,9 @@ const storeLayer = Layer.effect(
     const world = yield* World;
     const betweenTicks = (bundle: Bundle<Entries>, what: string): void => {
       if (!world.frozen) {
-        throw new WrongPhase({
-          call: "Assets",
-          phase: undefined,
-          message: `The assets "${bundle.name}" were ${what} in the tick. Whether an asset has been loaded depends on real time, which a simulation must not: a replay loads nothing. Do it from a system of the frame stage, System.inStage("frame"), which draws with them, or of the input stage, which can issue an action once they are there.`,
-        });
+        throw new Error(
+          `The assets "${bundle.name}" were ${what} in the tick. Whether an asset has been loaded depends on real time, which a simulation must not: a replay loads nothing. Do it from a system of the frame stage, System.inStage("frame"), which draws with them, or of the input stage, which can issue an action once they are there.`
+        );
       }
     };
 
@@ -508,7 +508,7 @@ const storeLayer = Layer.effect(
           error:
             error instanceof AssetFailed
               ? error
-              : new AssetFailed({ url: "", message: said(error) }),
+              : new AssetFailed({ url: "", message: describe(error) }),
         };
         // What did load is no use without the rest: it is let go now, and
         // not when the bundle is.

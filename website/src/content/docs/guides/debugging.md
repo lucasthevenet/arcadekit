@@ -117,49 +117,6 @@ App.run({ plugins: [Game] }, { hz: 60 }).pipe(
 
 The app chooses once, when it is made, from what the program provides there.
 
-## Recognizing a mistake
-
-arcadekit refuses a mistake in how it is used where the mistake is made. It throws a **defect**: an error whose class and fields identify the mistake, and whose message explains what to write instead. The classes are in [`arcadekit/Defect`](/reference/arcadekit/Defect):
-
-```ts
-import { Action, App, Defect, System } from "arcadekit";
-import { Effect, Schema } from "effect";
-
-const Fire = Action.define("game/Fire", Schema.Struct({}));
-const fire = Action.handler(Fire, function* () {});
-
-const program = Effect.gen(function* () {
-  let made: App.Any | undefined;
-  // A mistake: a system of the tick applies an action itself.
-  const Hasty = System.make("game/Hasty", function* () {
-    yield* Effect.sync(() => made?.dispatchByName("game/Fire", {}));
-  });
-  const app = yield* App.make({ systems: [Hasty], handlers: [fire] });
-  made = app;
-  try {
-    app.tick(1 / 60);
-  } catch (error) {
-    if (error instanceof Defect.WrongPhase) {
-      // "dispatch" during "tick"
-      console.error(`${error.call} during ${error.phase}: ${error.message}`);
-    }
-  }
-}).pipe(Effect.scoped);
-```
-
-| Class | The mistake | Its fields |
-| --- | --- | --- |
-| `WrongPhase` | A call, or a service read, in a phase that does not allow it: `dispatch` during a tick, `Frame` read by a tick system, a sound played by the simulation | `call`, `phase` |
-| `InvalidDefinition` | A definition or an option that can't be a game: two systems with one name, a hook in the frame stage, a version that is not a whole number | `kind`, `named` |
-| `InvalidArgument` | A call given a value it can't take: a moment another app captured, an action nobody handles | `call` |
-| `TakenOver` | An app that a session steps, stepped or changed directly | `call` |
-| `ScopeClosed` | A layer used after its scope closed | `what` |
-| `NotSynchronous` | A system or a handler that waits, or leaves a fiber running | `what` |
-
-- A defect is a bug in the program. It is never in the error channel of an Effect, and nothing in arcadekit recovers from one. A failure that a correct program still has to handle, such as a refused action or a save that doesn't load, has its own class in the error channel of the call that returns it.
-- Match a defect by its class or its `_tag` and its fields. A message can be reworded in any release.
-- The storage core, `arcadekit/ecs`, has no Effect dependency and throws plain errors for its own mistakes, such as changing the world while a query iterates.
-
 ## Read more
 
 - [Testing](testing.md), to step an app by hand and check what it does.

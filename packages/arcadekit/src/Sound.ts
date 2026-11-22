@@ -47,7 +47,6 @@
 import { Context, Effect, Layer } from "effect";
 
 import * as Assets from "./Assets";
-import { InvalidArgument, WrongPhase } from "./Defect";
 import type * as Event from "./Event";
 import * as Plugin from "./Plugin";
 import { World } from "./Services";
@@ -385,11 +384,9 @@ const playerLayer = Layer.effect(
       audible: output !== silent,
       play(cue, options) {
         if (!world.frozen) {
-          throw new WrongPhase({
-            call: "Sound.play",
-            phase: undefined,
-            message: `The cue "${nameOf(cue)}" was played in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Emit an event for what happened, and play what it sounds like from a system of the frame stage, which Sound.cues makes.`,
-          });
+          throw new Error(
+            `The cue "${nameOf(cue)}" was played in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Emit an event for what happened, and play what it sounds like from a system of the frame stage, which Sound.cues makes.`
+          );
         }
         const volume = Math.max(0, options?.volume ?? 1);
         const already = asked.get(cue);
@@ -429,11 +426,9 @@ const playerLayer = Layer.effect(
       },
       music(channel, track, options) {
         if (!world.frozen) {
-          throw new WrongPhase({
-            call: "Sound.music",
-            phase: undefined,
-            message: `The music of "${channel}" was set in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Say what should be playing from a system of the frame stage, which Sound.music makes, from the game as it is.`,
-          });
+          throw new Error(
+            `The music of "${channel}" was set in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Say what should be playing from a system of the frame stage, which Sound.music makes, from the game as it is.`
+          );
         }
         const volume =
           track === undefined ? 0 : Math.max(0, options?.volume ?? 1);
@@ -483,10 +478,9 @@ const playerLayer = Layer.effect(
         ) {
           // The frame ends here, and what it said with it.
           told.said = false;
-          throw new InvalidArgument({
-            call: "Sound.music",
-            message: `The channel "${channel}" was told to play two things in one frame: ${describe(told.next, told.nextVolume, told.nextOnce)} and ${describe(track, volume, once)}. A channel plays one track at a time. The systems made with Sound.music share the channel "${MUSIC}" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`,
-          });
+          throw new Error(
+            `The channel "${channel}" was told to play two things in one frame: ${describe(told.next, told.nextVolume, told.nextOnce)} and ${describe(track, volume, once)}. A channel plays one track at a time. The systems made with Sound.music share the channel "${MUSIC}" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`
+          );
         }
       },
     };

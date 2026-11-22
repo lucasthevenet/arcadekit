@@ -32,8 +32,7 @@
  * which a game without models doesn't need.
  */
 import * as Assets from "arcadekit/Assets";
-import * as Defect from "arcadekit/Defect";
-import { Data, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import type { BufferGeometry, Material, Mesh, Object3D, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
@@ -104,26 +103,19 @@ type Document = typeof DocumentSchema.Type;
 
 const isDocument = Schema.is(DocumentSchema);
 
-/**
- * What is wrong with a file that is not the glTF it should be. The loader
- * turns it into an `AssetFailed` of the file's address, so it never leaves
- * this module.
- */
-class NotGltf extends Data.TaggedError("NotGltf")<{
-  readonly message: string;
-}> {}
-
 /** Reads a model's JSON, which must be a document of the parts this module uses. */
 const documentOf = (bytes: Uint8Array): Document => {
   const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
   if (!isDocument(parsed)) {
-    throw new NotGltf({
-      message:
-        "Its JSON is not a glTF document: its buffers, buffer views or images are not as glTF has them.",
-    });
+    throw new Error(
+      "Its JSON is not a glTF document: its buffers, buffer views or images are not as glTF has them."
+    );
   }
   return parsed;
 };
+
+const describe = (error: unknown): string =>
+  error instanceof Error ? error.message || error.name : String(error);
 
 /** Returns a model's document, and the binary chunk from the same file, if any. */
 const read = (
@@ -150,7 +142,7 @@ const read = (
     at += 8 + length;
   }
   if (document === undefined) {
-    throw new NotGltf({ message: "It is a binary glTF with no JSON in it." });
+    throw new Error("It is a binary glTF with no JSON in it.");
   }
   return { document, binary };
 };
@@ -164,7 +156,7 @@ const fromDataUri = (
   const body = uri.slice(comma + 1);
   const type = head.split(";")[0] ?? "";
   if (comma === -1 || !head.endsWith(";base64")) {
-    throw new NotGltf({ message: "It is a data URI that is not base64." });
+    throw new Error("It is a data URI that is not base64.");
   }
   const text = atob(body);
   const bytes = new Uint8Array(text.length);
@@ -218,7 +210,7 @@ const pack = (
       catch: (error) =>
         new Assets.AssetFailed({
           url,
-          message: `It is not a glTF model: ${Defect.said(error)}`,
+          message: `It is not a glTF model: ${describe(error)}`,
         }),
     });
     const buffers = document.buffers ?? [];
@@ -246,7 +238,7 @@ const pack = (
             catch: (error) =>
               new Assets.AssetFailed({
                 url,
-                message: `A file written into it could not be read: ${Defect.said(error)}`,
+                message: `A file written into it could not be read: ${describe(error)}`,
               }),
           })
         : Effect.map(loader.bytes(beside(url, uri)), (bytes) => ({
@@ -422,7 +414,7 @@ export const model = (
           catch: (error) =>
             new Assets.AssetFailed({
               url: at,
-              message: `It could not be made a model: ${Defect.said(error)}`,
+              message: `It could not be made a model: ${describe(error)}`,
             }),
         }),
         (loaded) => Effect.sync(() => dispose(loaded))
@@ -458,13 +450,11 @@ export const mesh = (of: Model, name?: string): Mesh => {
       ? found[0]
       : found.find((one) => one.name === name || one.parent?.name === name);
   if (wanted === undefined) {
-    throw new Defect.InvalidArgument({
-      call: "Gltf.mesh",
-      message:
-        name === undefined
-          ? "Gltf.mesh was given a model with no mesh in it."
-          : `Gltf.mesh found no mesh named "${name}" in the model. Its meshes are: ${found.map((one) => `"${one.name}"`).join(", ") || "none"}.`,
-    });
+    throw new Error(
+      name === undefined
+        ? "Gltf.mesh was given a model with no mesh in it."
+        : `Gltf.mesh found no mesh named "${name}" in the model. Its meshes are: ${found.map((one) => `"${one.name}"`).join(", ") || "none"}.`
+    );
   }
   return wanted;
 };

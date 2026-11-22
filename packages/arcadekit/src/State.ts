@@ -24,7 +24,6 @@
  */
 import { Effect, Effectable } from "effect";
 
-import { InvalidArgument, InvalidDefinition } from "./Defect";
 import { Component, Field } from "./ecs/component";
 import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
@@ -130,11 +129,9 @@ export const define = <const V extends string>(
 ): State<V> => {
   const first = initial ?? values[0];
   if (!values.includes(first)) {
-    throw new InvalidDefinition({
-      kind: "state",
-      named: name,
-      message: `The state "${name}" cannot start in "${first}". Its values are: ${values.join(", ")}.`,
-    });
+    throw new Error(
+      `The state "${name}" cannot start in "${first}". Its values are: ${values.join(", ")}.`
+    );
   }
   return new State(name, values, first);
 };
@@ -169,11 +166,9 @@ export const registryOf = (world: EcsWorld): Registry => {
 const valueOf = <V extends string>(state: State<V>, held: string): V => {
   const value = state.values.find((one) => one === held);
   if (value === undefined) {
-    throw new InvalidDefinition({
-      kind: "state",
-      named: state.name,
-      message: `The state "${state.name}" holds "${held}", which is not one of its values: ${state.values.join(", ")}. A migration renames a state's values in a save.`,
-    });
+    throw new Error(
+      `The state "${state.name}" holds "${held}", which is not one of its values: ${state.values.join(", ")}. A migration renames a state's values in a save.`
+    );
   }
   return value;
 };
@@ -199,10 +194,9 @@ export const handleOf = <V extends string>(
     is: (...values) => values.some((value) => value === held.value),
     set: (value) => {
       if (!state.values.includes(value)) {
-        throw new InvalidArgument({
-          call: "State.set",
-          message: `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`,
-        });
+        throw new Error(
+          `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`
+        );
       }
       // Only a write when something changes: a write is what puts a
       // singleton in the world's hash.

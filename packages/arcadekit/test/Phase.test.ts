@@ -1,7 +1,7 @@
-import { Cause, Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { Action, App, Defect, System, Timeline } from "../src/index";
+import { Action, App, System, Timeline } from "../src/index";
 import { withApp } from "./peers";
 
 describe("what an app is running", () => {
@@ -76,19 +76,10 @@ describe("what an app is running", () => {
         made.tick(1);
         const log = made.actionLog.length;
         const exit = made.dispatch(Call, {});
-        const refused = Exit.isFailure(exit)
-          ? Cause.squash(exit.cause)
-          : undefined;
-        // By its class and what it says of itself, whatever its words.
-        expect(refused, name).toBeInstanceOf(Defect.WrongPhase);
-        expect(refused, name).toMatchObject({
-          _tag: "WrongPhase",
-          call: name.replace("()", ""),
-          phase: "handler",
-        });
-        expect((refused as Defect.WrongPhase).message, name).toMatch(
+        expect(Exit.isFailure(exit), name).toBe(true);
+        expect(String(Exit.isFailure(exit) ? exit.cause : ""), name).toMatch(
           new RegExp(
-            `^${name.replace(/[.()]/gu, "\\$&")} was called (?:during|from inside) ${busy}`,
+            `Error: ${name.replace(/[.()]/gu, "\\$&")} was called (?:during|from inside) ${busy}`,
             "u"
           )
         );

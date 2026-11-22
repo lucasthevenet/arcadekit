@@ -13,8 +13,6 @@
  */
 import type * as Scheduler from "effect/Scheduler";
 
-import { NotSynchronous } from "./Defect";
-
 /**
  * Holds the work that fibers have queued, in order, until the tick flushes it.
  *
@@ -68,12 +66,10 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
         rounds += 1;
         if (rounds > this.maxRounds) {
           this.buckets = [];
-          throw new NotSynchronous({
-            what: "TickDispatcher",
-            message:
-              `TickDispatcher: still busy after ${this.maxRounds} rounds in one tick. ` +
-              `A fiber is probably looping on Effect.yieldNow; keep the work in a component or a state that a system moves on each tick instead.`,
-          });
+          throw new Error(
+            `TickDispatcher: still busy after ${this.maxRounds} rounds in one tick. ` +
+              `A fiber is probably looping on Effect.yieldNow; keep the work in a component or a state that a system moves on each tick instead.`
+          );
         }
         const { buckets } = this;
         this.buckets = [];

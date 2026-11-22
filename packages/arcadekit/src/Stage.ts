@@ -14,8 +14,6 @@
 import { Context, Data, Random as EffectRandom } from "effect";
 
 import * as Action from "./Action";
-import type { Phase } from "./App";
-import { WrongPhase } from "./Defect";
 import type { CommandBuffer } from "./ecs/commands";
 import { Component, Field } from "./ecs/component";
 import { Rng } from "./ecs/random";
@@ -101,13 +99,10 @@ const effectRandom = (
   },
 });
 
-/** What the app is running when a service refuses to be read. */
-type Now = () => Phase | "setup";
-
 /** A frame for a stage that has none: reading a field of it throws `message`. */
-const noFrame = (message: string, now: Now): Readonly<FrameState> => {
+const noFrame = (message: string): Readonly<FrameState> => {
   const refuse = (): never => {
-    throw new WrongPhase({ call: "Frame", phase: now(), message });
+    throw new Error(message);
   };
   return {
     get alpha() {
@@ -123,14 +118,11 @@ const noFrame = (message: string, now: Now): Readonly<FrameState> => {
 };
 
 /** The devices, for a stage that may not read them. */
-const noDevices = (now: Now): Input.Sample => {
+const noDevices = (): Input.Sample => {
   const refuse = (): never => {
-    throw new WrongPhase({
-      call: "Input.Devices",
-      phase: now(),
-      message:
-        'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").',
-    });
+    throw new Error(
+      'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").'
+    );
   };
   return {
     get down() {
@@ -166,19 +158,16 @@ export const tick = (parts: {
   /** Where `Ticks.more` says the game wants its next tick. */
   readonly intake: Action.Intake;
   readonly actions: Actions;
-  /** What the app is running, for what a stage may not read to say so. */
-  readonly now: Now;
 }) => {
   const { actions, commands, events, intake, time, world } = parts;
   return Context.empty().pipe(
     Context.add(World, world),
     Context.add(Time, time),
-    Context.add(Input.Devices, noDevices(parts.now)),
+    Context.add(Input.Devices, noDevices()),
     Context.add(
       Frame,
       noFrame(
-        'Frame was read by a system that runs in the tick. It tells the frame stage how far a frame is between two ticks, in real time, which a simulation must not depend on: read Time instead, or move the system to the frame stage with System.inStage("frame").',
-        parts.now
+        'Frame was read by a system that runs in the tick. It tells the frame stage how far a frame is between two ticks, in real time, which a simulation must not depend on: read Time instead, or move the system to the frame stage with System.inStage("frame").'
       )
     ),
     Context.add(Commands, commands),
@@ -209,8 +198,6 @@ export const frame = (
     readonly frame: Readonly<FrameState>;
     readonly actions: Actions;
     readonly seed: number;
-    /** What the app is running, for `Ticks.more` to say so. */
-    readonly now: Now;
   }
 ): Context.Context<unknown> => {
   const random = new Rng(parts.seed);
@@ -221,12 +208,9 @@ export const frame = (
     Context.add(Action.Actions, parts.actions),
     Context.add(Ticks, {
       more() {
-        throw new WrongPhase({
-          call: "Ticks.more",
-          phase: parts.now(),
-          message:
-            "Ticks.more was called in the frame stage or the input stage. Whether the game ticks again is the game's to say, from a system of the tick: what draws it, or reads the devices, runs between ticks and decides nothing of it. A key that should wake the game issues an action.",
-        });
+        throw new Error(
+          "Ticks.more was called in the frame stage or the input stage. Whether the game ticks again is the game's to say, from a system of the tick: what draws it, or reads the devices, runs between ticks and decides nothing of it. A key that should wake the game issues an action."
+        );
       },
     })
   );
@@ -248,8 +232,7 @@ export const input = (
     Context.add(
       Frame,
       noFrame(
-        "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn.",
-        () => "input"
+        "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
       )
     )
   );

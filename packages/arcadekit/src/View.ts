@@ -42,7 +42,6 @@
 import { Context, Effect, Equal, Layer } from "effect";
 
 import * as Action from "./Action";
-import { InvalidArgument, InvalidDefinition, WrongPhase } from "./Defect";
 import * as Plugin from "./Plugin";
 import { World } from "./Services";
 import * as System from "./System";
@@ -187,11 +186,9 @@ export const makeBridge = (): Bridge => {
       slot = { view, value: view.initial, listeners: new Set() };
       slots.set(view.name, slot);
     } else if (slot.view !== view) {
-      throw new InvalidDefinition({
-        kind: "view",
-        named: view.name,
-        message: `Two different views are both named "${view.name}". A view's name identifies it on a bridge, so give each its own, prefixed with the feature it belongs to.`,
-      });
+      throw new Error(
+        `Two different views are both named "${view.name}". A view's name identifies it on a bridge, so give each its own, prefixed with the feature it belongs to.`
+      );
     }
     return slot;
   };
@@ -206,10 +203,9 @@ export const makeBridge = (): Bridge => {
     },
     send(action, ...payload) {
       if (handles !== undefined && !handles(action)) {
-        throw new InvalidArgument({
-          call: "send",
-          message: `The action "${action.name}" was sent to a game that has no handler for it. List its handler in a plugin's handlers, or in the app's.`,
-        });
+        throw new Error(
+          `The action "${action.name}" was sent to a game that has no handler for it. List its handler in a plugin's handlers, or in the app's.`
+        );
       }
       sent.push({ action, payload: payload[0] });
     },
@@ -265,11 +261,9 @@ const noBridge: Bridge = {
   get: (view) => view.initial,
   subscribe: () => () => {},
   send() {
-    throw new InvalidArgument({
-      call: "send",
-      message:
-        "An action was sent to the bridge that stands for no UI. Make one with View.makeBridge() and provide it to the game with View.layer.",
-    });
+    throw new Error(
+      "An action was sent to the bridge that stands for no UI. Make one with View.makeBridge() and provide it to the game with View.layer."
+    );
   },
   _publish: () => false,
   _take: () => NOTHING,
@@ -349,11 +343,9 @@ const portLayer = Layer.effect(
       connected: bridge !== noBridge,
       publish(view, value) {
         if (!world.frozen) {
-          throw new WrongPhase({
-            call: "publish",
-            phase: undefined,
-            message: `The view "${view.name}" was published in the tick. What the UI sees is no part of the game: a replay and a server have no UI, and a tick must not depend on whether one is there. Publish it from a system of the frame stage, which View.publish makes.`,
-          });
+          throw new Error(
+            `The view "${view.name}" was published in the tick. What the UI sees is no part of the game: a replay and a server have no UI, and a tick must not depend on whether one is there. Publish it from a system of the frame stage, which View.publish makes.`
+          );
         }
         return bridge._publish(view, value);
       },

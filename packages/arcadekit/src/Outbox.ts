@@ -1,4 +1,3 @@
-import { WrongPhase } from "./Defect";
 /**
  * A game's outbox: the events its ticks emitted, sent out in the order they
  * were emitted, for the frame stage, the input stage and outside code to
@@ -86,11 +85,9 @@ export class Listener<P> implements EventHandle<P> {
   }
 
   emit(): void {
-    throw new WrongPhase({
-      call: "emit",
-      phase: this.stage,
-      message: `The event "${this.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`,
-    });
+    throw new Error(
+      `The event "${this.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
+    );
   }
 
   readonly read = (): readonly P[] => this.outbox.read(this);
