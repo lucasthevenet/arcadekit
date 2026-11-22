@@ -139,7 +139,7 @@ const migrations: Save.Migration[] = [
       Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
       // The action that was waiting has another name and payload now.
       const intake = contents.world.stores.find(
-        (store) => store.name === App.INTAKE
+        (store) => store.name === Action.INTAKE
       )?.data as { queued: { name: string; payload: unknown }[] } | undefined;
       for (const action of intake?.queued ?? []) {
         if (action.name === "mg/Heal") {

@@ -66,8 +66,6 @@ import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
-import { isPlain } from "./ecs/store";
-import type { Store } from "./ecs/store";
 import { World as EcsWorld } from "./ecs/world";
 import type { Moment as WorldMoment } from "./ecs/world";
 import { EventBus } from "./Event";
@@ -401,7 +399,7 @@ export interface Inspection {
   readonly singletons: Readonly<Record<string, object>>;
   /**
    * What the game holds beside its entities and singletons, as plain data,
-   * by the name of the store that holds it: under `App.INTAKE`, the actions
+   * by the name of the store that holds it: under `Action.INTAKE`, the actions
    * queued for the next tick, as `{ queued, heard }`, and under
    * `Event.STORE`, the events waiting to be read, by event name. A store that
    * holds nothing isn't listed.
@@ -730,284 +728,6 @@ const FRAME_READER = "frame:";
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
 
-/** An action waiting for the next tick. */
-interface QueuedAction {
-  readonly name: string;
-  readonly payload: unknown;
-  /**
-   * The action's codec, while the payload is the value a handler works with.
-   * Undefined for one in the JSON form that arrives from outside, which is
-   * checked when it is applied.
-   */
-  readonly codec: Schema.Codec<unknown, unknown> | undefined;
-  /**
-   * The log entry of an action enqueued from outside the simulation, told
-   * its fate when it is applied. One that a system or a handler issued has
-   * none.
-   */
-  readonly entry: { refused?: string } | undefined;
-  /** The issuer, if it came with a name. */
-  readonly from: string | undefined;
-}
-
-/** A payload's JSON form, or `null` when its action's schema doesn't take it. */
-const jsonOf = ({ codec, payload }: QueuedAction): unknown => {
-  if (codec === undefined) {
-    return payload;
-  }
-  const json = Schema.encodeUnknownExit(codec)(payload);
-  return Exit.isSuccess(json) ? json.value : null;
-};
-
-/** What a snapshot holds of the intake: `Intake.save`. */
-const IntakeData = Schema.Struct({
-  queued: Schema.Array(
-    Schema.Struct({
-      name: Schema.String,
-      payload: Schema.Unknown,
-      from: Schema.optionalKey(Schema.String),
-    })
-  ),
-  heard: Schema.Boolean,
-});
-
-/**
- * The name of the store that holds what an app's change queries have yet to
- * visit, as a snapshot has it: `readSnapshot(save.world).stores`. It holds
- * one entry per component and kind of change, `{ component, kind, entries,
- * readers }`: `world.saveChanges()`, for the systems of the tick and the
- * handlers.
- *
- * @category Constants
- */
-export const VISITS = "arcadekit/changes";
-
-/** What a snapshot holds of the visits: `world.saveChanges()`. */
-const VisitsData = Schema.Array(
-  Schema.Struct({
-    component: Schema.String,
-    kind: Schema.Literals(["changed", "added", "removed"]),
-    entries: Schema.Array(Schema.Number),
-    readers: Schema.Record(Schema.String, Schema.Number),
-  })
-);
-
-/**
- * Where each system of the tick and each handler has got to in what changed:
- * what its change queries have yet to visit. The world keeps the logs; this
- * puts them in its snapshot, so that a loaded game goes on as the saved one
- * did. The frame and input stages' own places are not the game's: a loaded
- * game has everything still to draw.
- */
-class Visits implements Store<undefined> {
-  readonly name = VISITS;
-  // Not hashed, and the world's own logs refuse what a frozen world refuses.
-  readonly betweenTicks = true;
-  private readonly world: EcsWorld;
-
-  constructor(world: EcsWorld) {
-    this.world = world;
-  }
-
-  save(): unknown {
-    const saved = this.world.saveChanges(
-      (reader) => !reader.startsWith(FRAME_READER)
-    );
-    return saved.length === 0 ? undefined : saved;
-  }
-
-  load(data: unknown): void {
-    const saved = Schema.decodeUnknownExit(VisitsData)(data);
-    if (Exit.isFailure(saved)) {
-      throw new SnapshotError(
-        "corrupt",
-        `The snapshot is damaged: what its change queries had yet to visit is not as a world saves it: ${describe(Cause.squash(saved.cause))}`
-      );
-    }
-    this.world.restoreChanges(saved.value);
-  }
-
-  hashed(): unknown {
-    return undefined;
-  }
-
-  // A moment's are kept by whoever captures it, who says whose it holds.
-  capture(): undefined {
-    return undefined;
-  }
-
-  rewind(): void {}
-
-  // The world empties its own logs.
-  clear(): void {}
-
-  begin(): void {}
-
-  rollback(): void {}
-
-  commit(): void {}
-
-  contents(): unknown {
-    return undefined;
-  }
-}
-
-/** What the intake holds at a moment: the actions as they are, with no schema. */
-interface IntakeMoment {
-  readonly queued: readonly QueuedAction[];
-  readonly heard: boolean;
-  readonly wanted: boolean;
-}
-
-/**
- * The name of the store that holds an app's queued actions, as a snapshot
- * has it: `readSnapshot(save.world).stores`. It holds `{ queued, heard }`:
- * the actions queued for the next tick, each `{ name, payload, from? }` with
- * its payload in JSON form, and whether the input stage has run since the
- * last tick.
- *
- * @category Constants
- */
-export const INTAKE = "arcadekit/actions";
-
-/**
- * What a game has taken in for its next tick: the actions queued for it,
- * whether the input stage has run since the last one, so that a game that
- * is saved, loaded or rewound between the two doesn't hear its devices
- * twice, and whether it asked for the tick. The world holds them, as a
- * store: a rewind puts them back, a refused action's own enqueues and asking
- * are taken back with the rest of it, and the actions are in its snapshot
- * and its hash, as much the game's as its components are.
- */
-class Intake implements Store<IntakeMoment> {
-  readonly name = INTAKE;
-  // The stages between ticks are there to issue actions.
-  readonly betweenTicks = true;
-  queued: QueuedAction[] = [];
-  heard = false;
-  /**
-   * Whether the game asked for its next tick, with `Ticks.more`. A game that
-   * has not ticked yet has not been asked, and is taken to want one. It goes
-   * back with a rewind and with a refused action, and is neither hashed nor
-   * saved: a game that ticks in real time is the same game whether or not
-   * its systems ask, and a loaded game's first tick always runs.
-   */
-  wanted = true;
-  private txLength = 0;
-  private txWanted = true;
-
-  /** Takes every queued action, for the tick that applies them. */
-  take(): QueuedAction[] {
-    const { queued } = this;
-    this.queued = [];
-    return queued;
-  }
-
-  save(): unknown {
-    if (this.queued.length === 0 && !this.heard) {
-      return undefined;
-    }
-    const queued = this.queued.map(({ codec, from, name, payload }) => {
-      let json = payload;
-      if (codec !== undefined) {
-        const exit = Schema.encodeUnknownExit(codec)(payload);
-        if (Exit.isFailure(exit)) {
-          throw new SnapshotError(
-            "cannot be saved",
-            `Can't save the actions queued for the next tick: the action "${name}" has a payload its schema does not take: ${describe(Cause.squash(exit.cause))}`
-          );
-        }
-        json = exit.value;
-      }
-      if (!isPlain(json)) {
-        throw new SnapshotError(
-          "cannot be saved",
-          `Can't save the actions queued for the next tick: the payload of the action "${name}" is not plain data.`
-        );
-      }
-      return from === undefined
-        ? { name, payload: json }
-        : { name, payload: json, from };
-    });
-    return { queued, heard: this.heard };
-  }
-
-  load(data: unknown): void {
-    const saved = Schema.decodeUnknownExit(IntakeData)(data);
-    if (Exit.isFailure(saved)) {
-      throw new SnapshotError(
-        "store changed",
-        `Can't load the actions queued for the next tick: they are not { queued, heard }, with each action { name, payload, from? }: ${describe(Cause.squash(saved.cause))}`
-      );
-    }
-    // In the JSON form they were saved in, checked again when applied.
-    this.queued = saved.value.queued.map(({ from, name, payload }) => ({
-      name,
-      payload,
-      codec: undefined,
-      entry: undefined,
-      from,
-    }));
-    this.heard = saved.value.heard;
-  }
-
-  hashed(): unknown {
-    // Not whether the devices were heard: hearing them changes nothing of
-    // the game but what it queues.
-    return this.queued.length === 0
-      ? undefined
-      : this.queued.map((action) => ({
-          name: action.name,
-          payload: jsonOf(action),
-          from: action.from ?? null,
-        }));
-  }
-
-  capture(): IntakeMoment {
-    return {
-      queued: this.queued.slice(),
-      heard: this.heard,
-      wanted: this.wanted,
-    };
-  }
-
-  rewind(moment: IntakeMoment): void {
-    this.queued = moment.queued.slice();
-    this.heard = moment.heard;
-    this.wanted = moment.wanted;
-    for (const action of this.queued) {
-      // It is waiting again: what became of it has not happened.
-      if (action.entry !== undefined) {
-        delete action.entry.refused;
-      }
-    }
-  }
-
-  clear(): void {
-    this.queued = [];
-    this.heard = false;
-    this.wanted = true;
-  }
-
-  begin(): void {
-    this.txLength = this.queued.length;
-    this.txWanted = this.wanted;
-  }
-
-  rollback(): void {
-    this.queued.length = this.txLength;
-    this.wanted = this.txWanted;
-  }
-
-  commit(): void {}
-
-  contents(): unknown {
-    return this.queued.length === 0 && !this.heard
-      ? undefined
-      : { queued: this.hashed() ?? [], heard: this.heard };
-  }
-}
-
 /** Why an action was refused, as `Action.Rejected` carries it. */
 const refusal = (error: unknown): { _tag: string; message: string } => {
   const tag =
@@ -1271,9 +991,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const commands = new CommandBuffer(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.
-    const intake = new Intake();
+    const intake = new Action.Intake();
     world._attach(intake);
-    world._attach(new Visits(world));
+    world._attach(
+      new Save.Visits(world, (reader) => !reader.startsWith(FRAME_READER))
+    );
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
@@ -1402,86 +1124,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       handlers.has(action.name);
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
-    /** Enqueues from outside the simulation: `app.enqueue`. */
-    const enqueue = (
-      action: Action.AnyActionDef,
-      payload: unknown
-    ): Exit.Exit<void, Action.InvalidPayload> => {
-      const handler = handlers.get(action.name);
-      if (handler === undefined) {
-        throw new Error(`No handler for action "${action.name}"`);
-      }
-      // The log holds the JSON form, and the other peers are sent it. A
-      // payload that has none is refused here, in a game of one too: queued,
-      // it would be refused on this machine alone.
-      const json = Schema.encodeUnknownExit(handler.action.codec)(payload);
-      if (Exit.isFailure(json)) {
-        return Exit.fail(
-          new Action.InvalidPayload({
-            action: action.name,
-            message: describe(Cause.squash(json.cause)),
-          })
-        );
-      }
-      if (diverted !== undefined) {
-        diverted(action.name, json.value);
-        return Exit.void;
-      }
-      intake.queued.push({
-        name: action.name,
-        payload,
-        codec: handler.action.codec,
-        entry: arrived(action.name, json.value, undefined),
-        from: undefined,
-      });
-      return Exit.void;
-    };
-    /** Queues an action that arrived as data for the next tick, and logs it. */
-    const deliver = (name: string, payload: unknown, from?: string): void => {
-      intake.queued.push({
-        name,
-        payload,
-        codec: undefined,
-        entry: arrived(name, payload, from),
-        from,
-      });
-    };
-    const enqueueByName = (
-      name: string,
-      payload: unknown,
-      from?: string
-    ): void => {
-      if (diverted === undefined) {
-        deliver(name, payload, from);
-        return;
-      }
-      if (from !== undefined) {
-        throw new Error(
-          `enqueueByName("${name}") was given who issued it, "${from}", on an app that a session has taken over. What a peer issues is stamped with that peer's own name, by its session, and nobody speaks for another.`
-        );
-      }
-      diverted(name, payload);
-    };
-    /**
-     * Enqueues from inside the simulation: the `Actions` service. Not logged,
-     * because a replay's own systems and handlers issue it again.
-     */
-    const enqueueFromInside = (
-      action: Action.AnyActionDef,
-      payload: unknown
-    ): void => {
-      if (!handlers.has(action.name)) {
-        throw new Error(`No handler for action "${action.name}"`);
-      }
-      intake.queued.push({
-        name: action.name,
-        payload,
-        codec: action.codec,
-        entry: undefined,
-        from: undefined,
-      });
-    };
-
     const frame: FrameState = { alpha: 0, delta: 0, count: 0 };
     const notInTick = (): never => {
       throw new Error(
@@ -1621,6 +1263,41 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       return undefined;
     };
+    /**
+     * Runs the game's code to its end, now: `fork` starts it, and it has to
+     * have ended by the time `fork` returns. Throws when it has not, with
+     * what `waited` says, and when it left a fiber running, as `what` did.
+     * With `noting`, the systems that start fibers while it runs are noted,
+     * for that message. Nobody is reading once it has run.
+     */
+    const finish = <A, E>(
+      fork: () => Fiber.Fiber<A, E>,
+      what: string,
+      waited: () => string,
+      noting: boolean
+    ): Exit.Exit<A, E> => {
+      const before = fibers;
+      notingStarters = noting;
+      fiberStarters = undefined;
+      let fiber: Fiber.Fiber<A, E>;
+      try {
+        fiber = fork();
+      } finally {
+        events.reader = undefined;
+        world.reader = undefined;
+      }
+      const exit = fiber.pollUnsafe();
+      if (exit === undefined) {
+        fiber.interruptUnsafe();
+        dispatcher.flush();
+        throw new Error(waited());
+      }
+      const left = leftFibers(before, what);
+      if (left !== undefined) {
+        throw left;
+      }
+      return exit;
+    };
     // Putting our scheduler in the context makes every fiber started from it
     // (systems, handlers, and anything they fork) use the tick dispatcher.
     const context = Context.merge(provided, built).pipe(
@@ -1751,47 +1428,92 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       );
     }
 
+    const verifyFrames = options.verifyFrames === true;
+    // What the world hashed to when the stage between ticks began.
+    let frameHash = 0;
     /**
-     * Runs one system of the tick as itself, with its own positions in
-     * events and changes, and applies its commands.
+     * Gives each system of a list its turn, in order. Each runs as itself:
+     * it reads the events, and what changed, from a place of its own, which
+     * for a stage between ticks is apart from the simulation's and never
+     * saved. In a tick, its commands are applied when it has run, and
+     * `observed`, whoever took the app over is told. Between ticks there is
+     * nothing to apply, and the world is checked to be as it was.
+     *
+     * A generator to delegate to, and not an Effect of its own for each
+     * system, which measured a generator per system per tick. One reading of
+     * the clock ends a turn and begins the next, which halves what timing
+     * them costs.
      */
-    const takeTurn = Effect.fnUntraced(function* (turn: Turn) {
-      running = turn.system.name;
-      events.reader = running;
-      world.reader = running;
-      const began = performance.now();
-      turn.ran = true;
-      if (turn.condition !== undefined && !(yield* turn.condition)) {
-        turn.ran = false;
-        if (turn.idle !== undefined) {
-          yield* turn.idle;
+    const takeTurns = function* (
+      turns: readonly Turn[],
+      stage: "tick" | "frame" | "input",
+      observed: boolean
+    ) {
+      const inTick = stage === "tick";
+      let clock = performance.now();
+      for (const turn of turns) {
+        running = turn.system.name;
+        const reader = inTick ? running : `${FRAME_READER}${running}`;
+        events.reader = reader;
+        world.reader = reader;
+        turn.ran = true;
+        // A system with no condition is asked nothing.
+        if (turn.condition !== undefined && !(yield* turn.condition)) {
+          turn.ran = false;
+          // What it does in place of running, if it was given anything.
+          if (turn.idle !== undefined) {
+            yield* turn.idle;
+          }
+          // It sees nothing that changed while it was off, as no event.
+          world.skip(reader);
+        } else {
+          yield* turn.run;
         }
-        // It sees nothing that changed while it was off, as no event.
-        world.skip(running);
-      } else {
-        yield* turn.run;
+        if (inTick) {
+          commands.apply();
+        }
+        const now = performance.now();
+        turn.ms = now - clock;
+        clock = now;
+        if (inTick) {
+          if (observed && observer !== undefined) {
+            observer(running);
+            // What it does is not the next system's to pay for.
+            clock = performance.now();
+          }
+        } else if (verifyFrames) {
+          if (world._frameHash() !== frameHash) {
+            return yield* Effect.die(
+              new FrameChangedWorld({
+                stage,
+                system: running,
+                frame: frame.count,
+              })
+            );
+          }
+          // The hash is not the next system's to pay for.
+          clock = performance.now();
+        }
       }
-      commands.apply();
-      turn.ms = performance.now() - began;
-    });
+    };
     /** Makes one state transition: the exit hooks, the transition, then the enter hooks. */
     const makeMove = Effect.fnUntraced(function* (
       state: State.State<string>,
       move: State.Move
     ) {
       if (move.from !== undefined) {
-        for (const hook of hooks.get(
-          hookKey({ state, on: "exit", value: move.from })
-        ) ?? []) {
-          yield* takeTurn(hook);
-        }
+        yield* takeTurns(
+          hooks.get(hookKey({ state, on: "exit", value: move.from })) ?? [],
+          "tick",
+          false
+        );
       }
       State.enter(world, state, move);
-      for (const hook of hooks.get(
-        hookKey({ state, on: "enter", value: move.to })
-      ) ?? []) {
-        yield* takeTurn(hook);
-      }
+      yield* takeTurns(
+        hooks.get(hookKey({ state, on: "enter", value: move.to })) ?? [],
+        "tick",
+        false
+      );
     });
     /** Enters the requested states, and runs their hooks. */
     const enterStates = Effect.gen(function* () {
@@ -1817,39 +1539,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         yield* enterStates;
       }
       observer?.(undefined);
-      // Written out rather than calling `takeTurn`, which costs a generator
-      // per system per tick. One reading of the clock ends a turn and
-      // begins the next, which halves what timing them costs.
-      let clock = performance.now();
-      for (const turn of tickTurns) {
-        running = turn.system.name;
-        // Each system reads events, and what changed, from its own position.
-        events.reader = running;
-        world.reader = running;
-        turn.ran = true;
-        // A system with no condition is asked nothing.
-        if (turn.condition !== undefined && !(yield* turn.condition)) {
-          turn.ran = false;
-          // What it does in place of running, if it was given anything.
-          if (turn.idle !== undefined) {
-            yield* turn.idle;
-            commands.apply();
-          }
-          // It sees nothing that changed while it was off, as no event.
-          world.skip(running);
-        } else {
-          yield* turn.run;
-          commands.apply();
-        }
-        const now = performance.now();
-        turn.ms = now - clock;
-        clock = now;
-        if (observer !== undefined) {
-          observer(turn.system.name);
-          // What it does is not the next system's to pay for.
-          clock = performance.now();
-        }
-      }
+      yield* takeTurns(tickTurns, "tick", true);
     });
 
     // --- the stages between ticks: frame and input -------------------------------
@@ -1857,7 +1547,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // What is random there comes from a generator of its own, which is not
     // part of the world; and an action issued there is input from outside,
     // and is logged as such.
-    const verifyFrames = options.verifyFrames === true;
     const frameRandom = new Rng(options.seed ?? 0);
     const frameContext = context.pipe(
       Context.add(Frame, frame),
@@ -1918,49 +1607,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       })
     ) as Context.Context<unknown>;
     const runInputFork = Effect.runForkWith(inputContext);
-    let frameHash = 0;
-    const stageEffect = (
-      stage: "frame" | "input",
-      turns: readonly Turn[]
-    ): Effect.Effect<void, unknown, unknown> =>
-      Effect.gen(function* () {
-        let clock = performance.now();
-        for (const turn of turns) {
-          running = turn.system.name;
-          // A place of its own in events and in what changed, apart from
-          // the simulation's and never saved.
-          events.reader = `${FRAME_READER}${running}`;
-          world.reader = events.reader;
-          turn.ran = true;
-          if (turn.condition !== undefined && !(yield* turn.condition)) {
-            turn.ran = false;
-            if (turn.idle !== undefined) {
-              yield* turn.idle;
-            }
-            world.skip(world.reader);
-          } else {
-            yield* turn.run;
-          }
-          const now = performance.now();
-          turn.ms = now - clock;
-          clock = now;
-          if (verifyFrames) {
-            if (world._frameHash() !== frameHash) {
-              return yield* Effect.die(
-                new FrameChangedWorld({
-                  stage,
-                  system: running,
-                  frame: frame.count,
-                })
-              );
-            }
-            // The hash is not the next system's to pay for.
-            clock = performance.now();
-          }
-        }
-      });
-    const drawn = stageEffect("frame", frameTurns);
-    const heardEffect = stageEffect("input", inputTurns);
+    const drawn = Effect.gen(() => takeTurns(frameTurns, "frame", false));
+    const heardEffect = Effect.gen(() => takeTurns(inputTurns, "input", false));
     const frameEffect = trace
       ? Effect.suspend(() =>
           Effect.withSpan(drawn, "arcadekit/frame", {
@@ -2000,15 +1648,23 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ticking
         ? "tick"
         : (between ?? (applying !== undefined ? "handler" : "idle"));
-    /** Whether the app is between ticks with nothing running. */
-    const betweenTicks = (): boolean => phase() === "idle";
-    const busy = (): string => {
+    /**
+     * Refuses a call that is for between ticks while the app is running
+     * something. `said` makes the message, given what it is running.
+     */
+    const whileIdle = (said: (busy: string) => string): void => {
       const now = phase();
-      return now === "input"
-        ? "run of the input stage"
-        : now === "handler"
-          ? `handler of "${applying}"`
-          : now;
+      if (now !== "idle") {
+        throw new Error(
+          said(
+            now === "input"
+              ? "run of the input stage"
+              : now === "handler"
+                ? `handler of "${applying}"`
+                : now
+          )
+        );
+      }
     };
 
     /**
@@ -2029,50 +1685,113 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
      */
     const simulating = (): boolean =>
       ticking || applying !== undefined || ownCode > 0;
-    /** Issues an action from anywhere: `app.enqueue` and `Actions.enqueue`. */
-    const enqueueAnywhere = (
+    /**
+     * Queues an action that arrived as data for the next tick, and logs it:
+     * what came from outside, and what a session hands back.
+     */
+    const deliver = (name: string, payload: unknown, from?: string): void => {
+      intake.queued.push({
+        name,
+        payload,
+        codec: undefined,
+        entry: arrived(name, payload, from),
+        from,
+      });
+    };
+    /**
+     * `app.enqueue` and `Actions.enqueue`: an action with its payload as a
+     * value, for the next tick. Where it is called from says what it is.
+     */
+    const enqueue = (
       action: Action.AnyActionDef,
       payload: unknown
     ): Exit.Exit<void, Action.InvalidPayload> => {
+      const handler = handlers.get(action.name);
+      if (handler === undefined) {
+        throw new Error(`No handler for action "${action.name}"`);
+      }
+      const { name } = action;
+      const { codec } = handler.action;
+      // The simulation's own move: not logged, because a replay's own
+      // systems and handlers issue it again.
       if (simulating()) {
-        enqueueFromInside(action, payload);
+        intake.queued.push({
+          name,
+          payload,
+          codec,
+          entry: undefined,
+          from: undefined,
+        });
         return Exit.void;
       }
-      return enqueue(action, payload);
+      // Input from outside. The log holds the JSON form, and the other
+      // peers are sent it. A payload that has none is refused here, in a
+      // game of one too: queued, it would be refused on this machine alone.
+      const json = Schema.encodeUnknownExit(codec)(payload);
+      if (Exit.isFailure(json)) {
+        return Exit.fail(
+          new Action.InvalidPayload({
+            action: name,
+            message: describe(Cause.squash(json.cause)),
+          })
+        );
+      }
+      if (diverted !== undefined) {
+        diverted(name, json.value);
+        return Exit.void;
+      }
+      intake.queued.push({
+        name,
+        payload,
+        codec,
+        entry: arrived(name, json.value, undefined),
+        from: undefined,
+      });
+      return Exit.void;
     };
     /**
      * `Actions.enqueue`, whose payload the compiler has checked. Outside the
      * simulation, that is only the frame and input stages.
      */
     const issue = (action: Action.AnyActionDef, payload: unknown): void => {
-      const exit = enqueueAnywhere(action, payload);
+      const exit = enqueue(action, payload);
       if (Exit.isFailure(exit)) {
         throw new Error(
           `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${describe(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
         );
       }
     };
-    const enqueueByNameAnywhere = (
+    /** `app.enqueueByName`: an action as data, for the next tick. */
+    const enqueueByName = (
       name: string,
       payload: unknown,
       from?: string
     ): void => {
-      if (!simulating()) {
-        enqueueByName(name, payload, from);
+      if (simulating()) {
+        if (from !== undefined) {
+          throw new Error(
+            `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
+          );
+        }
+        intake.queued.push({
+          name,
+          payload,
+          codec: undefined,
+          entry: undefined,
+          from,
+        });
+        return;
+      }
+      if (diverted === undefined) {
+        deliver(name, payload, from);
         return;
       }
       if (from !== undefined) {
         throw new Error(
-          `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
+          `enqueueByName("${name}") was given who issued it, "${from}", on an app that a session has taken over. What a peer issues is stamped with that peer's own name, by its session, and nobody speaks for another.`
         );
       }
-      intake.queued.push({
-        name,
-        payload,
-        codec: undefined,
-        entry: undefined,
-        from,
-      });
+      diverted(name, payload);
     };
 
     /**
@@ -2128,42 +1847,35 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       applying = name;
       events.reader = `action:${name}`;
       world.reader = events.reader;
-      let fiber: Fiber.Fiber<unknown, unknown>;
-      const fibersBefore = fibers;
-      notingStarters = false;
-      fiberStarters = undefined;
+      let exit: Exit.Exit<unknown, unknown>;
       try {
-        // The payload is the action's: its schema decoded it, or the
-        // compiler checked it in a typed dispatch.
-        const handled = handler.handle(value as never, { from });
-        fiber = runFork(
-          trace
-            ? Effect.withSpan(
-                handled,
-                `action:${name}`,
-                tickSpan === undefined
-                  ? { root: true, level: System.spanLevel }
-                  : { parent: tickSpan, level: System.spanLevel }
-              )
-            : handled
+        exit = finish(
+          () => {
+            // The payload is the action's: its schema decoded it, or the
+            // compiler checked it in a typed dispatch.
+            const handled = handler.handle(value as never, { from });
+            return runFork(
+              trace
+                ? Effect.withSpan(
+                    handled,
+                    `action:${name}`,
+                    tickSpan === undefined
+                      ? { root: true, level: System.spanLevel }
+                      : { parent: tickSpan, level: System.spanLevel }
+                  )
+                : handled
+            );
+          },
+          `The handler for "${name}"`,
+          () =>
+            `The handler for "${name}" did not finish synchronously. Handlers must not wait.`,
+          false
         );
+      } catch (error) {
+        undo(commandMark);
+        throw error;
       } finally {
-        events.reader = undefined;
-        world.reader = undefined;
         applying = undefined;
-      }
-      const exit = fiber.pollUnsafe();
-      if (exit === undefined) {
-        fiber.interruptUnsafe();
-        undo(commandMark);
-        throw new Error(
-          `The handler for "${name}" did not finish synchronously. Handlers must not wait.`
-        );
-      }
-      const left = leftFibers(fibersBefore, `The handler for "${name}"`);
-      if (left !== undefined) {
-        undo(commandMark);
-        throw left;
       }
       // A refusal, and a handler that died of a bug half-way, both leave the
       // game as it was.
@@ -2221,33 +1933,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (verifyFrames) {
           frameHash = world._frameHash();
         }
-        const fibersBefore = fibers;
-        notingStarters = true;
-        fiberStarters = undefined;
         running = "";
-        const fiber =
-          stage === "frame"
-            ? runFrameFork(frameEffect)
-            : runInputFork(inputEffect);
-        events.reader = undefined;
-        world.reader = undefined;
-        const outcome = fiber.pollUnsafe();
-        if (outcome === undefined) {
-          fiber.interruptUnsafe();
-          throw new Error(
-            `System "${running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`
-          );
-        }
-        const left = leftFibers(
-          fibersBefore,
-          stage === "frame" ? "The frame" : "The input stage"
-        );
-        if (left !== undefined) {
-          throw left;
-        }
+        exit = finish(
+          () =>
+            stage === "frame"
+              ? runFrameFork(frameEffect)
+              : runInputFork(inputEffect),
+          stage === "frame" ? "The frame" : "The input stage",
+          () =>
+            `System "${running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`,
+          true
+        ) as Exit.Exit<void, TickError<S, P>>;
         // Its systems have had their chance at every event there is.
         events.ended(stage, time.tick);
-        exit = outcome as Exit.Exit<void, TickError<S, P>>;
       } finally {
         between = undefined;
         events.stage = undefined;
@@ -2266,11 +1964,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       alpha: number,
       delta = 0
     ): Exit.Exit<void, TickError<S, P>> => {
-      if (!betweenTicks()) {
-        throw new Error(
-          `App.frame was called from inside a ${busy()}. The frame stage runs between ticks.`
-        );
-      }
+      whileIdle(
+        (busy) =>
+          `App.frame was called from inside a ${busy}. The frame stage runs between ticks.`
+      );
       if (frameSystems.length === 0) {
         return Exit.void;
       }
@@ -2281,11 +1978,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const inputExit = (): Exit.Exit<void, TickError<S, P>> => {
-      if (!betweenTicks()) {
-        throw new Error(
-          `App.input was called from inside a ${busy()}. The input stage runs between ticks, before one.`
-        );
-      }
+      whileIdle(
+        (busy) =>
+          `App.input was called from inside a ${busy}. The input stage runs between ticks, before one.`
+      );
       if (inputSystems.length === 0) {
         return Exit.void;
       }
@@ -2366,9 +2062,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       delta: number,
       options?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
-      if (!betweenTicks()) {
-        throw new Error(`App.tick was called from inside a ${busy()}`);
-      }
+      whileIdle((busy) => `App.tick was called from inside a ${busy}`);
       // A tick hears the devices first. Whoever steps the app may have
       // seen to it, as a driver does; if not, it is seen to here.
       if (
@@ -2422,7 +2116,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               }
               events.emit(Action.Rejected, {
                 action: name,
-                payload: jsonOf(action),
+                payload: Action.jsonOf(action),
                 error: refusal(error),
                 from,
               });
@@ -2438,31 +2132,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.tick++;
 
         events.open();
-        const fibersBefore = fibers;
-        notingStarters = true;
-        fiberStarters = undefined;
         running = "";
-        const fiber = runFork(
-          tickSpan === undefined
-            ? tickEffect
-            : Effect.withParentSpan(tickEffect, tickSpan)
-        );
-        events.reader = undefined;
-        world.reader = undefined;
-        const exit = fiber.pollUnsafe();
-        if (exit === undefined) {
-          fiber.interruptUnsafe();
-          dispatcher.flush();
-          throw new Error(
+        const exit = finish(
+          () =>
+            runFork(
+              tickSpan === undefined
+                ? tickEffect
+                : Effect.withParentSpan(tickEffect, tickSpan)
+            ),
+          `Tick ${time.tick}`,
+          () =>
             `System "${running}" did not finish within the tick. Systems must be synchronous: ` +
-              `what takes longer than a tick keeps its place in the world, in a component or a state that a system moves on each tick.`
-          );
-        }
-
-        const left = leftFibers(fibersBefore, `Tick ${time.tick}`);
-        if (left !== undefined) {
-          throw left;
-        }
+            `what takes longer than a tick keeps its place in the world, in a component or a state that a system moves on each tick.`,
+          true
+        );
         commands.apply();
         events.close(time.tick);
         if (checkpointEvery > 0 && time.tick % checkpointEvery === 0) {
@@ -2489,11 +2172,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       inputOrder: inputSystems.map((s) => s.name),
       actionLog,
       record(since) {
-        if (!betweenTicks()) {
-          throw new Error(
-            `record() was called during a ${busy()}. A game is recorded between ticks.`
-          );
-        }
+        whileIdle(
+          (busy) =>
+            `record() was called during a ${busy}. A game is recorded between ticks.`
+        );
         const start = since === undefined ? began : tickOf(since);
         const from = since?.logLength ?? 0;
         if (
@@ -2527,11 +2209,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         };
       },
       save() {
-        if (!betweenTicks()) {
-          throw new Error(
-            `save() was called during a ${busy()}. A game is saved between ticks.`
-          );
-        }
+        whileIdle(
+          (busy) =>
+            `save() was called during a ${busy}. A game is saved between ticks.`
+        );
         const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
           Exit.fail(new Save.SaveRefused({ message }));
         if (commands.size > 0) {
@@ -2571,19 +2252,17 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return true;
       },
       capture() {
-        if (!betweenTicks()) {
-          throw new Error(
-            `capture() was called during a ${busy()}. A game is captured between ticks.`
-          );
-        }
+        whileIdle(
+          (busy) =>
+            `capture() was called during a ${busy}. A game is captured between ticks.`
+        );
         return captured(false);
       },
       rewind(moment) {
-        if (!betweenTicks()) {
-          throw new Error(
-            `rewind() was called during a ${busy()}. A game is put back between ticks.`
-          );
-        }
+        whileIdle(
+          (busy) =>
+            `rewind() was called during a ${busy}. A game is put back between ticks.`
+        );
         if (!moments.has(moment)) {
           throw new Error(
             "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
@@ -2592,11 +2271,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         rewound(moment as Captured, false);
       },
       inspect() {
-        if (!betweenTicks()) {
-          throw new Error(
-            `inspect() was called from inside a ${busy()}. A game is inspected between ticks.`
-          );
-        }
+        whileIdle(
+          (busy) =>
+            `inspect() was called from inside a ${busy}. A game is inspected between ticks.`
+        );
         const turns = [
           ...tickTurns,
           ...[...hooks.values()].flat(),
@@ -2616,11 +2294,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         };
       },
       checkpoint() {
-        if (!betweenTicks()) {
-          throw new Error(
-            `checkpoint() was called during a ${busy()}. A checkpoint is taken between ticks, where a replay can compare it.`
-          );
-        }
+        whileIdle(
+          (busy) =>
+            `checkpoint() was called during a ${busy}. A checkpoint is taken between ticks, where a replay can compare it.`
+        );
         return checkpoint();
       },
       tickExit,
@@ -2656,12 +2333,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           never
         >;
       },
-      enqueue: enqueueAnywhere,
+      enqueue,
       dispatchByName(name, payload, from) {
         assertBetweenTicks(name);
         return apply(name, payload, true, true, from);
       },
-      enqueueByName: enqueueByNameAnywhere,
+      enqueueByName,
       divert(take) {
         if (diverted !== undefined) {
           throw new Error(
@@ -2680,19 +2357,17 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             }
           },
           capture: () => {
-            if (!betweenTicks()) {
-              throw new Error(
-                `capture() was called during a ${busy()}. A game is captured between ticks.`
-              );
-            }
+            whileIdle(
+              (busy) =>
+                `capture() was called during a ${busy}. A game is captured between ticks.`
+            );
             return captured(true);
           },
           rewind: (moment) => {
-            if (!betweenTicks()) {
-              throw new Error(
-                `rewind() was called during a ${busy()}. A game is put back between ticks.`
-              );
-            }
+            whileIdle(
+              (busy) =>
+                `rewind() was called during a ${busy}. A game is put back between ticks.`
+            );
             if (!moments.has(moment)) {
               throw new Error(
                 "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
@@ -2712,29 +2387,26 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       events.reader = `setup:${plugin.name}`;
       world.reader = events.reader;
-      const { setup } = plugin;
-      const fibersBefore = fibers;
-      const fiber = runOwn(() => runFork(setup));
-      events.reader = undefined;
-      world.reader = undefined;
-      const exit = fiber.pollUnsafe();
-      if (exit === undefined) {
-        fiber.interruptUnsafe();
-        return yield* Effect.die(
-          new Error(
-            `The setup of plugin "${plugin.name}" did not finish synchronously. Setup must not wait.`
+      const { name, setup } = plugin;
+      const ran = Result.try(() =>
+        runOwn(() =>
+          finish(
+            () => runFork(setup),
+            `The setup of plugin "${name}"`,
+            () =>
+              `The setup of plugin "${name}" did not finish synchronously. Setup must not wait.`,
+            false
           )
-        );
-      }
-      const left = leftFibers(
-        fibersBefore,
-        `The setup of plugin "${plugin.name}"`
+        )
       );
-      if (left !== undefined) {
-        return yield* Effect.die(left);
+      if (Result.isFailure(ran)) {
+        return yield* Effect.die(ran.failure);
       }
-      if (Exit.isFailure(exit)) {
-        return yield* exit as Exit.Exit<never, Plugin.ErrorOf<P[number]>>;
+      if (Exit.isFailure(ran.success)) {
+        return yield* ran.success as Exit.Exit<
+          never,
+          Plugin.ErrorOf<P[number]>
+        >;
       }
       commands.apply();
     }

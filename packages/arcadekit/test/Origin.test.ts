@@ -137,7 +137,7 @@ describe("who issued an action", () => {
       }
       expect(
         readSnapshot(save.value.world).stores.find(
-          (store) => store.name === App.INTAKE
+          (store) => store.name === Action.INTAKE
         )?.data
       ).toEqual({
         queued: [{ name: "ls/Tip", payload: { amount: 6 }, from: "grace" }],

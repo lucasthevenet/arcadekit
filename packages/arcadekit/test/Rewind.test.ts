@@ -423,7 +423,7 @@ describe("the input stage across a rewind and a save", () => {
         throw new Error("the game could not be saved");
       }
       expect(readSnapshot(save.value.world).stores).toEqual([
-        { name: App.INTAKE, data: { queued: [], heard: true } },
+        { name: Action.INTAKE, data: { queued: [], heard: true } },
       ]);
     });
   });

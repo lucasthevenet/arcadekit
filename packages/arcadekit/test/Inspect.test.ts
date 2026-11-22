@@ -146,7 +146,7 @@ describe("app.inspect", () => {
     const hash = app.world.hash();
     const { stores } = app.inspect();
     expect(stores).toEqual({
-      [App.INTAKE]: {
+      [Action.INTAKE]: {
         queued: [{ name: "in/Strike", payload: { by: 6 }, from: null }],
         heard: false,
       },

@@ -26,7 +26,8 @@ const stored = (save: Save.Save, name: string): unknown =>
 
 /** The actions a save's world holds, queued for the next tick. */
 const queuedIn = (save: Save.Save): unknown[] =>
-  (stored(save, App.INTAKE) as { queued: unknown[] } | undefined)?.queued ?? [];
+  (stored(save, Action.INTAKE) as { queued: unknown[] } | undefined)?.queued ??
+  [];
 
 // --- a game with everything a save has to carry -----------------------------------
 

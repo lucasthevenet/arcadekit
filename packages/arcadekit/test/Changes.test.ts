@@ -29,7 +29,7 @@ import { expectChecked, makeChecks } from "./checks";
 
 /** What the change queries of a snapshot's world had yet to visit. */
 const visitsOf = (world: SnapshotContents): SavedChanges[] =>
-  (world.stores.find((store) => store.name === App.VISITS)?.data ??
+  (world.stores.find((store) => store.name === Save.VISITS)?.data ??
     []) as SavedChanges[];
 const visitsIn = (save: Save.Save): SavedChanges[] =>
   visitsOf(readSnapshot(save.world));
@@ -1551,7 +1551,7 @@ describe("change queries in an app", () => {
         /** The save, with what its change queries had yet to visit replaced. */
         const withVisits = (visits: unknown): Save.Save => {
           const world = readSnapshot(save.value.world);
-          world.stores = [{ name: App.VISITS, data: visits }];
+          world.stores = [{ name: Save.VISITS, data: visits }];
           return { ...save.value, world: writeSnapshot(world) };
         };
         const damaged = withVisits([
