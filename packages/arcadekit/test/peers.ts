@@ -292,8 +292,8 @@ export const steered = <E, HU>(app: App.App<E, HU>) => {
   };
 };
 
-export const withApp = <T, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+export const withApp = <T, A, E = never>(
+  make: Effect.Effect<T, E, Scope.Scope>,
   use: (app: T) => A
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 

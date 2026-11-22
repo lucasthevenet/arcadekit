@@ -14,12 +14,12 @@
  * yet. Everything a game is in the middle of is in the world, so the save
  * holds all of it.
  *
- * Everything logged after a save is the game's tail. A game that keeps its last
- * save and the log since can return to the present by loading the save and
- * replaying only that tail, however long it has been running:
+ * Everything logged after a save is the game's tail. A game that keeps what
+ * it recorded since its last save can return to the present by replaying only
+ * that tail, which holds the save, however long it has been running:
  *
  *   const tail = app.record(save)
- *   Journal.replay(loaded, tail)
+ *   const present = yield* Journal.replay(App.make(game, tail), tail)
  */
 import { Cause, Data, Exit, Schema } from "effect";
 

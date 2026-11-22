@@ -624,9 +624,8 @@ describe("a singleton in an app", () => {
   it("is as it was after a refused action, and the game replays", () => {
     run(
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({ plugins: [Rules] }), {
-          checkpointEvery: 1,
-        });
+        const game = App.define({ plugins: [Rules] });
+        const app = yield* App.make(game, { checkpointEvery: 1 });
         const before = app.world.hash();
         expect(Exit.isFailure(app.dispatch(Cheat, {}))).toBe(true);
         // Never written, so never there.
@@ -642,10 +641,11 @@ describe("a singleton in an app", () => {
           round: 12,
         });
         expect(app.world.singleton(Score).points).toBe(42);
-        const again = yield* App.make(App.define({ plugins: [Rules] }), {
-          checkpointEvery: 1,
-        });
-        Journal.replay(again, app.record());
+        const played = app.record();
+        const again = yield* Journal.replay(
+          App.make(game, { ...played, checkpointEvery: 1 }),
+          played
+        );
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

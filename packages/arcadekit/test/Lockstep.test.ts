@@ -13,6 +13,7 @@ import {
 } from "../src/index";
 import {
   Coin,
+  CoinGame,
   DELTA,
   Drop,
   Mint,
@@ -92,10 +93,15 @@ describe("a lockstep session", () => {
       const [ada] = peers as [Peer];
       const recording = ada.app.record();
       expect(recording.end).toBe(ticks);
-      withApp(game(), (alone) => {
-        Journal.replay(alone, recording);
-        expect(alone.world.hash()).toBe(ada.app.world.hash());
-      });
+      withApp(
+        Journal.replay(
+          App.make(CoinGame, { ...recording, checkpointEvery: 1 }),
+          recording
+        ),
+        (alone) => {
+          expect(alone.world.hash()).toBe(ada.app.world.hash());
+        }
+      );
     });
   });
 

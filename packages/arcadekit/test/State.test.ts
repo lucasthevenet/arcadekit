@@ -846,10 +846,14 @@ describe("a state in a save", () => {
         expect(x).toBe(3);
 
         // And the whole game replays, hooks and conditions with it.
-        const again = yield* App.make(App.define({ plugins: [Rules] }), {
-          checkpointEvery: 1,
-        });
-        Journal.replay(again, app.record());
+        const played = app.record();
+        const again = yield* Journal.replay(
+          App.make(App.define({ plugins: [Rules] }), {
+            ...played,
+            checkpointEvery: 1,
+          }),
+          played
+        );
         expect(again.world.hash()).toBe(app.world.hash());
       })
     );

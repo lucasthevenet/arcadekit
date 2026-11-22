@@ -104,12 +104,11 @@ const Game = Plugin.make("sd/Game", {
   systems: [Cues],
 });
 
+const Noisy = App.define({ plugins: [Game] });
+
 const play = (output: Sound.OutputShape | undefined, seed = 1) => {
   asked = 0;
-  const made = App.make(App.define({ plugins: [Game] }), {
-    seed,
-    checkpointEvery: 1,
-  });
+  const made = App.make(Noisy, { seed, checkpointEvery: 1 });
   return run(
     output === undefined ? made : made.pipe(Effect.provide(Sound.layer(output)))
   );
@@ -507,8 +506,13 @@ describe("a game with sound", () => {
     }
     expect(sound.played.length).toBeGreaterThan(1);
     const again = Sound.makeRecorder();
-    const replayed = play(again, 3);
-    Journal.replay(replayed, app.record());
+    const recording = app.record();
+    const replayed = run(
+      Journal.replay(
+        App.make(Noisy, { ...recording, checkpointEvery: 1 }),
+        recording
+      ).pipe(Effect.provide(Sound.layer(again)))
+    );
     expect(replayed.world.hash()).toBe(app.world.hash());
     expect(again.played).toEqual([]);
   });

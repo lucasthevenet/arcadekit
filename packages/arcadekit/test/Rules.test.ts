@@ -12,6 +12,7 @@ import {
   Events,
   Field,
   Journal,
+  Plugin,
   Query,
   System,
   Time,
@@ -40,8 +41,8 @@ const say = Action.handler(Say, function* ({ n }) {
 });
 
 /** Builds an app, hands it to `use`, then closes its scope. */
-const withApp = <A, T>(
-  make: Effect.Effect<A, never, Scope.Scope>,
+const withApp = <A, T, E = never>(
+  make: Effect.Effect<A, E, Scope.Scope>,
   use: (app: A) => T
 ): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
@@ -274,29 +275,40 @@ const Recharge = System.make("Recharge", function* () {
   });
 });
 
+/** How a duel begins: player one's turn, and a fighter for each player. */
+const Board = Plugin.make("ru/Board", {
+  setup: Effect.map(Commands, (commands) => {
+    commands.spawn(Turn.of({ player: 1, number: 1 }));
+    commands.spawn(
+      Health.of({ hp: 10 }),
+      Energy.of({ points: 3 }),
+      Owner.of({ player: 1 })
+    );
+    commands.spawn(
+      Health.of({ hp: 6 }),
+      Energy.of({ points: 3 }),
+      Owner.of({ player: 2 })
+    );
+  }),
+});
+
+/** The duel as a game, which a recording of it is replayed in. */
+const duelOf = (...more: System.System<never, BuiltIn>[]) =>
+  App.define({
+    plugins: [Board],
+    systems: [Death, Recharge, ...more],
+    handlers: [attack, endTurn, summon],
+  });
+
+/** An app of the duel as it begins, with each player's fighter. */
 const duel = (...more: System.System<never, BuiltIn>[]) =>
-  Effect.map(
-    App.make(
-      App.define({
-        systems: [Death, Recharge, ...more],
-        handlers: [attack, endTurn, summon],
-      })
-    ),
-    (app) => {
-      app.world.spawn(Turn.of({ player: 1, number: 1 }));
-      const one = app.world.spawn(
-        Health.of({ hp: 10 }),
-        Energy.of({ points: 3 }),
-        Owner.of({ player: 1 })
-      );
-      const two = app.world.spawn(
-        Health.of({ hp: 6 }),
-        Energy.of({ points: 3 }),
-        Owner.of({ player: 2 })
-      );
-      return { app, one, two };
-    }
-  );
+  Effect.map(App.make(duelOf(...more)), (app) => {
+    const fighters = new Map<number, Entity>();
+    app.world.view(Query.all(Owner)).each((owner, entity) => {
+      fighters.set(owner.player, entity);
+    });
+    return { app, one: fighters.get(1)!, two: fighters.get(2)! };
+  });
 
 const snapshot = (app: App.Any): string[] => {
   const out: string[] = [
@@ -592,10 +604,13 @@ describe("replay", () => {
     // Player two's first fighter was killed along the way.
     expect(original.state[0]).toBe("tick=7 entities=3");
 
-    const replayed = withApp(duel(), ({ app }) => {
-      Journal.replay(app, original.recording);
-      return { log: [...app.actionLog], state: snapshot(app) };
-    });
+    const replayed = withApp(
+      Journal.replay(
+        App.make(duelOf(), original.recording),
+        original.recording
+      ),
+      (app) => ({ log: [...app.actionLog], state: snapshot(app) })
+    );
     expect(replayed.state).toEqual(original.state);
     expect(replayed.log).toEqual(original.recording.log);
   });

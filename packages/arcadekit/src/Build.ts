@@ -36,12 +36,6 @@ import * as Stage from "./Stage";
 import * as State from "./State";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
 
-/** The tick a save was made at, which its world holds. */
-const tickOf = (save: Save.Save): number => {
-  const tick = Save.singleton(save, Stage.GameTime.component.name, "tick");
-  return typeof tick === "number" ? tick : 0;
-};
-
 const NO_INPUT: TickOptions = { input: false };
 
 /**
@@ -100,7 +94,12 @@ export const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     ];
 
     const handlers = Inbox.handlersOf(allHandlers);
-    const log = new Journal.Log(world, time, start.checkpointEvery ?? 60);
+    const log = new Journal.Log(
+      world,
+      time,
+      start.checkpointEvery ?? 60,
+      save === undefined ? { seed: seed ?? 0 } : { save }
+    );
     world._attach(log);
     // What systems and handlers issue goes through the inbox, made below
     // once the app's services are built.
@@ -229,11 +228,7 @@ export const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           (busy) =>
             `record() was called during a ${busy}. A game is recorded between ticks.`
         );
-        return log.record(
-          since === undefined
-            ? undefined
-            : { tick: tickOf(since), logLength: since.logLength }
-        );
+        return log.record(since);
       },
       save() {
         runner.whileIdle(

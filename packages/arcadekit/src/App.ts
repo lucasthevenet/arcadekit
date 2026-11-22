@@ -267,11 +267,15 @@ export interface Any {
    */
   readonly actionLog: readonly Action.LogEntry[];
   /**
-   * The game as it was played, to replay with `Journal.replay`: the action log,
-   * the delta of every tick, and the ticks it begins and ends at. It begins
-   * where this app began, or at `since`, a save this app made, so that loading
-   * that save and replaying the recording returns to the present. Only between
+   * The game as it was played, to play again with `Journal.replay`: how it began,
+   * the action log, the delta of every tick, and the ticks it begins and ends
+   * at. It begins where this app began, from its seed or from the save it was
+   * made from, or at `since`, a save this app made, which the recording then
+   * holds: replaying it returns to the present from that save. Only between
    * ticks.
+   *
+   * An app made from a save keeps that save for as long as it lives, to
+   * record from.
    */
   readonly record: (since?: Save.Save) => Journal.Recording;
   /**
@@ -557,6 +561,10 @@ export const define = <
  * One run of a game, as `App.make` takes it: where it starts,
  * and how much it checks of itself as it goes.
  *
+ * A recording says where its game started in the same words, a `seed` or a
+ * `save`, so `App.make(game, recording)` makes an app that begins as the
+ * recorded game did.
+ *
  * @category Options
  */
 export interface StartOptions<SV extends Save.Save | undefined = undefined> {
@@ -603,6 +611,7 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
  *
  *   const app = yield* App.make(Duel, { seed: 1 })
  *   const again = yield* App.make(Duel, { save })
+ *   const replayed = yield* App.make(Duel, recording) // as it began
  *
  * From a save, the app's action log starts empty. To return to where the game
  * had got to, replay what it recorded since the save, `app.record(save)`, with

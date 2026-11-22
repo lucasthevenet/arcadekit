@@ -88,6 +88,14 @@ const start = <A, E>(
   };
 };
 
+/** The game of levels, with what plays its sound. */
+const game = (
+  systems: readonly System.System<
+    never,
+    BuiltIn | Sound.Player | Assets.Store
+  >[]
+) => App.define({ plugins: [Rules, Sound.plugin, Assets.plugin], systems });
+
 const play = (
   systems: readonly System.System<
     never,
@@ -97,10 +105,7 @@ const play = (
 ) => {
   asked = 0;
   const { app, close } = start(
-    App.make(
-      App.define({ plugins: [Rules, Sound.plugin, Assets.plugin], systems }),
-      { checkpointEvery: 1 }
-    ),
+    App.make(game(systems), { checkpointEvery: 1 }),
     output
   );
   return {
@@ -289,8 +294,14 @@ describe("Sound.music", () => {
     ]);
     // And a replay, which runs no frame, is silent.
     const replayed = Sound.makeRecorder();
-    const other = play([Score], replayed);
-    Journal.replay(other.app, heard.app.record());
+    const played = heard.app.record();
+    const other = start(
+      Journal.replay(
+        App.make(game([Score]), { ...played, checkpointEvery: 1 }),
+        played
+      ),
+      replayed
+    );
     expect(other.app.world.hash()).toBe(heard.app.world.hash());
     expect(replayed.scored).toEqual([]);
   });

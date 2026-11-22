@@ -241,12 +241,13 @@ describe("a game that ticks when its player moves", () => {
     plugins: [Rules, View.plugin],
     systems: [Show, Keys],
   });
+  const Played = App.define({ plugins: [Game] });
   const play = () => {
     frames = 0;
     const ui = View.makeBridge();
     const source = Input.makeManualSource();
     const app = run(
-      App.make(App.define({ plugins: [Game] }), {
+      App.make(Played, {
         checkpointEvery: 1,
         seed: 5,
       }).pipe(
@@ -325,10 +326,13 @@ describe("a game that ticks when its player moves", () => {
     frame(200);
     expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
     // The same game with no UI, no devices and no rest: tick after tick.
+    const played = app.record();
     const again = run(
-      App.make(App.define({ plugins: [Game] }), { checkpointEvery: 1, seed: 5 })
+      Journal.replay(
+        App.make(Played, { ...played, checkpointEvery: 1 }),
+        played
+      )
     );
-    Journal.replay(again, app.record());
     expect(again.world.hash()).toBe(app.world.hash());
     expect(again.time.tick).toBe(app.time.tick);
     expect(again.world.singleton(Score).moves).toBe(2);
