@@ -40,6 +40,7 @@ export type {
   SnapshotProblem,
   SnapshotSingleton,
   SnapshotSparse,
+  SnapshotStore,
   SnapshotTable,
 } from "./snapshot";
 export { RemovedReader } from "./changes";

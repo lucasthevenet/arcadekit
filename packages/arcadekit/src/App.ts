@@ -64,13 +64,14 @@ import type { SavedChanges } from "./ecs/changes";
 import { CommandBuffer } from "./ecs/commands";
 import { Component, Field } from "./ecs/component";
 import type { Entity } from "./ecs/component";
-import { defineList } from "./ecs/list";
 import { Rng } from "./ecs/random";
 import { SnapshotError, readSingleton } from "./ecs/snapshot";
+import { isPlain } from "./ecs/store";
+import type { Store } from "./ecs/store";
 import { World as EcsWorld } from "./ecs/world";
 import type { Moment as WorldMoment } from "./ecs/world";
-import { EventBus, FRAME_READER } from "./Event";
-import type { EventsMoment } from "./Event";
+import { EventBus } from "./Event";
+import type { Told } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -399,6 +400,14 @@ export interface Inspection {
   /** A copy of each singleton the world holds, by name. */
   readonly singletons: Readonly<Record<string, object>>;
   /**
+   * What the game holds beside its entities and singletons, as plain data,
+   * by the name of the store that holds it: under `App.INTAKE`, the actions
+   * queued for the next tick, as `{ queued, heard }`, and under
+   * `Event.STORE`, the events waiting to be read, by event name. A store that
+   * holds nothing isn't listed.
+   */
+  readonly stores: Readonly<Record<string, unknown>>;
+  /**
    * Every system: the tick's in the order they run, then the hooks, the input
    * stage's and the frame stages'. Each has what its last turn was: whether
    * it ran, false when a condition given with `System.runIf` didn't hold or
@@ -580,6 +589,15 @@ export interface Diverted<E = never> {
    * what changed since.
    */
   readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
+  /**
+   * Puts the game back to a moment, as `rewind` does, to run the same ticks
+   * again with what is now known of them. The frame and input stages hear
+   * each event once across it: an event a tick emits again, with the same
+   * payload, isn't heard twice, and only what the tick now does otherwise
+   * is. After `app.rewind`, which goes back to play on from there, every
+   * event is new to them.
+   */
+  readonly rewind: (moment: Moment) => void;
 }
 
 /**
@@ -701,6 +719,13 @@ class Turn {
   }
 }
 
+/**
+ * The prefix of a reader's name in the world's change logs when it is a
+ * system of the frame stage or the input stage. Such a reader isn't part of
+ * the simulation: its place in what changed isn't saved.
+ */
+const FRAME_READER = "frame:";
+
 /** Summarizes an error in a few words, for a log entry or a message. */
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
@@ -734,54 +759,154 @@ const jsonOf = ({ codec, payload }: QueuedAction): unknown => {
   return Exit.isSuccess(json) ? json.value : null;
 };
 
-const QueuedData = Schema.Struct({
-  name: Schema.String,
-  payload: Schema.Unknown,
-  from: Schema.optionalKey(Schema.String),
+/** What a snapshot holds of the intake: `Intake.save`. */
+const IntakeData = Schema.Struct({
+  queued: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      payload: Schema.Unknown,
+      from: Schema.optionalKey(Schema.String),
+    })
+  ),
+  heard: Schema.Boolean,
 });
 
+/** What the intake holds at a moment: the actions as they are, with no schema. */
+interface IntakeMoment {
+  readonly queued: readonly QueuedAction[];
+  readonly heard: boolean;
+}
+
 /**
- * The actions queued for the next tick, which are the game's as much as its
- * components are: the world keeps them, so that its snapshot, its hash and a
- * restore cover them. Each is saved as `{ name, payload, from? }`, its payload
- * in JSON form.
+ * The name of the store that holds an app's queued actions, as a snapshot
+ * has it: `readSnapshot(save.world).stores`. It holds `{ queued, heard }`:
+ * the actions queued for the next tick, each `{ name, payload, from? }` with
+ * its payload in JSON form, and whether the input stage has run since the
+ * last tick.
+ *
+ * @category Constants
  */
-const Queued = defineList<QueuedAction>(
-  "arcadekit/queued",
-  {
-    encode: (action) => {
-      const { codec, from, name, payload } = action;
+export const INTAKE = "arcadekit/actions";
+
+/**
+ * What a game has taken in for its next tick: the actions queued for it, and
+ * whether the input stage has run since the last one, so that a game that
+ * is saved, loaded or rewound between the two doesn't hear its devices
+ * twice. They are the game's as much as its components are, so the world
+ * holds them, as a store: its snapshot, its hash and a rewind cover them, and
+ * a refused action's own enqueues are taken back with the rest of it.
+ */
+class Intake implements Store<IntakeMoment> {
+  readonly name = INTAKE;
+  // The stages between ticks are there to issue actions.
+  readonly betweenTicks = true;
+  queued: QueuedAction[] = [];
+  heard = false;
+  private txLength = 0;
+
+  /** Takes every queued action, for the tick that applies them. */
+  take(): QueuedAction[] {
+    const { queued } = this;
+    this.queued = [];
+    return queued;
+  }
+
+  save(): unknown {
+    if (this.queued.length === 0 && !this.heard) {
+      return undefined;
+    }
+    const queued = this.queued.map(({ codec, from, name, payload }) => {
       let json = payload;
       if (codec !== undefined) {
         const exit = Schema.encodeUnknownExit(codec)(payload);
         if (Exit.isFailure(exit)) {
-          throw new Error(
-            `the action "${name}" has a payload its schema does not take: ${describe(Cause.squash(exit.cause))}`
+          throw new SnapshotError(
+            "cannot be saved",
+            `Can't save the actions queued for the next tick: the action "${name}" has a payload its schema does not take: ${describe(Cause.squash(exit.cause))}`
           );
         }
         json = exit.value;
       }
+      if (!isPlain(json)) {
+        throw new SnapshotError(
+          "cannot be saved",
+          `Can't save the actions queued for the next tick: the payload of the action "${name}" is not plain data.`
+        );
+      }
       return from === undefined
         ? { name, payload: json }
         : { name, payload: json, from };
-    },
-    decode: (data) => {
-      const action = Schema.decodeUnknownExit(QueuedData)(data);
-      if (Exit.isFailure(action)) {
-        throw new Error(
-          `an action is not { name, payload, from? }: ${describe(Cause.squash(action.cause))}`
-        );
-      }
-      const { from, name, payload } = action.value;
-      return { name, payload, codec: undefined, entry: undefined, from };
-    },
-  },
-  {
-    label: "the actions queued for the next tick",
-    // The stages between ticks are there to issue them.
-    betweenTicks: true,
+    });
+    return { queued, heard: this.heard };
   }
-);
+
+  load(data: unknown): void {
+    const saved = Schema.decodeUnknownExit(IntakeData)(data);
+    if (Exit.isFailure(saved)) {
+      throw new SnapshotError(
+        "store changed",
+        `Can't load the actions queued for the next tick: they are not { queued, heard }, with each action { name, payload, from? }: ${describe(Cause.squash(saved.cause))}`
+      );
+    }
+    // In the JSON form they were saved in, checked again when applied.
+    this.queued = saved.value.queued.map(({ from, name, payload }) => ({
+      name,
+      payload,
+      codec: undefined,
+      entry: undefined,
+      from,
+    }));
+    this.heard = saved.value.heard;
+  }
+
+  hashed(): unknown {
+    // Not whether the devices were heard: hearing them changes nothing of
+    // the game but what it queues.
+    return this.queued.length === 0
+      ? undefined
+      : this.queued.map((action) => ({
+          name: action.name,
+          payload: jsonOf(action),
+          from: action.from ?? null,
+        }));
+  }
+
+  capture(): IntakeMoment {
+    return { queued: this.queued.slice(), heard: this.heard };
+  }
+
+  rewind(moment: IntakeMoment): void {
+    this.queued = moment.queued.slice();
+    this.heard = moment.heard;
+    for (const action of this.queued) {
+      // It is waiting again: what became of it has not happened.
+      if (action.entry !== undefined) {
+        delete action.entry.refused;
+      }
+    }
+  }
+
+  clear(): void {
+    this.queued = [];
+    this.heard = false;
+  }
+
+  begin(): void {
+    this.txLength = this.queued.length;
+  }
+
+  rollback(): void {
+    this.queued.length = this.txLength;
+  }
+
+  commit(): void {}
+
+  contents(): unknown {
+    return this.queued.length === 0 && !this.heard
+      ? undefined
+      : { queued: this.hashed() ?? [], heard: this.heard };
+  }
+}
 
 /** Why an action was refused, as `Action.Rejected` carries it. */
 const refusal = (error: unknown): { _tag: string; message: string } => {
@@ -1045,6 +1170,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const { random } = world;
     const commands = new CommandBuffer(world);
     const events = new EventBus(world);
+    // Attached before the world loads a save, which may hold some of each.
+    const intake = new Intake();
+    world._attach(intake);
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
@@ -1082,13 +1210,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           message:
             error.problem === "unknown component"
               ? `${error.message} A migration renames or removes a component in a save.`
-              : error.problem === "unknown list" ||
-                  error.problem === "list changed"
-                ? `${error.message} A migration changes the events and the queued actions of a save in \`world.lists\`.`
+              : error.problem === "unknown store" ||
+                  error.problem === "store changed"
+                ? `${error.message} A migration changes the events and the queued actions of a save in \`world.stores\`.`
                 : error.message,
         });
       }
-      events.restore(save.events);
     }
     // Loaded with the world, or written by the first tick.
     const time: TimeState = world.singleton(GameTime);
@@ -1108,9 +1235,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       handlers.set(handler.action.name, handler);
     }
-    // Loaded with the world, in the JSON form they were saved in, checked
-    // again when applied.
-    const queued = world._list(Queued);
     const actionLog: Action.LogEntry[] = [];
     // Where this app began, and the delta of every tick it has run since, in
     // runs: for a recording.
@@ -1121,7 +1245,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
       readonly world: WorldMoment;
-      readonly events: EventsMoment;
+      /** Where the game was in what the stages between ticks were told. */
+      readonly told: Told;
       readonly changes: SavedChanges[];
       readonly logLength: number;
       readonly wanted: boolean;
@@ -1204,7 +1329,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         diverted(action.name, json.value);
         return Exit.void;
       }
-      queued.push({
+      intake.queued.push({
         name: action.name,
         payload,
         codec: handler.action.codec,
@@ -1215,7 +1340,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     /** Queues an action that arrived as data for the next tick, and logs it. */
     const deliver = (name: string, payload: unknown, from?: string): void => {
-      queued.push({
+      intake.queued.push({
         name,
         payload,
         codec: undefined,
@@ -1250,7 +1375,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (!handlers.has(action.name)) {
         throw new Error(`No handler for action "${action.name}"`);
       }
-      queued.push({
+      intake.queued.push({
         name: action.name,
         payload,
         codec: action.codec,
@@ -1461,10 +1586,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     );
     // What runs between ticks hears the events of every tick, the first
     // among them: they are kept for it from the start.
-    events.keepFor({
-      frame: frameSystems.length > 0,
-      input: inputSystems.length > 0,
-    });
+    if (frameSystems.length > 0) {
+      events.expect("frame", time.tick);
+    }
+    if (inputSystems.length > 0) {
+      events.expect("input", time.tick);
+    }
     const hookKey = (trigger: System.Trigger): string =>
       `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
     // Chosen once, so an app that doesn't trace runs what it would without.
@@ -1768,8 +1895,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     // The stage that is running between two ticks, if one is.
     let between: "frame" | "input" | undefined;
-    // Whether the input stage has run since the last tick.
-    let heard = false;
     // Whether the game asked for its next tick: `Ticks.more`. An app that
     // has not ticked yet has not been asked, and is taken to want one.
     let wanted = true;
@@ -1791,16 +1916,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           : now;
     };
 
-    /** Rolls back everything a handler did since the three marks were taken. */
-    const undo = (
-      commandMark: number,
-      eventMark: ReturnType<EventBus["mark"]>,
-      queuedMark: number
-    ): void => {
+    /**
+     * Rolls back everything a handler did since the command buffer's mark was
+     * taken: the world's rollback takes back what it wrote, emitted, read and
+     * enqueued.
+     */
+    const undo = (commandMark: number): void => {
       world.rollback();
       commands.rollback(commandMark);
-      events.rollback(eventMark);
-      queued.length = queuedMark;
     };
 
     /**
@@ -1848,7 +1971,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `enqueueByName("${name}") was given who issued it, "${from}", by the simulation. What the simulation issues is its own doing, on every peer alike, and nobody issued it.`
         );
       }
-      queued.push({ name, payload, codec: undefined, entry: undefined, from });
+      intake.queued.push({
+        name,
+        payload,
+        codec: undefined,
+        entry: undefined,
+        from,
+      });
     };
 
     /**
@@ -1900,8 +2029,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         );
       }
       const commandMark = commands.mark();
-      const eventMark = events.mark();
-      const queuedMark = queued.length;
       world.begin();
       applying = name;
       events.reader = `action:${name}`;
@@ -1933,24 +2060,28 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       const exit = fiber.pollUnsafe();
       if (exit === undefined) {
         fiber.interruptUnsafe();
-        undo(commandMark, eventMark, queuedMark);
+        undo(commandMark);
         throw new Error(
           `The handler for "${name}" did not finish synchronously. Handlers must not wait.`
         );
       }
       const left = leftFibers(fibersBefore, `The handler for "${name}"`);
       if (left !== undefined) {
-        undo(commandMark, eventMark, queuedMark);
+        undo(commandMark);
         throw left;
       }
       // A refusal, and a handler that died of a bug half-way, both leave the
       // game as it was.
       if (Exit.isFailure(exit)) {
-        undo(commandMark, eventMark, queuedMark);
+        undo(commandMark);
       } else {
         world.commit();
-        events.commit();
         commands.apply();
+        // A tick tells the stages between ticks what it emitted when it
+        // ends; an action applied between two is of the tick to come.
+        if (!ticking) {
+          events.told(time.tick + 1);
+        }
         if (dispatched) {
           actionLog.push({
             tick: time.tick,
@@ -1987,6 +2118,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       stage: "frame" | "input"
     ): Exit.Exit<void, TickError<S, P>> => {
       between = stage;
+      events.stage = stage;
       world.freeze();
       let exit: Exit.Exit<void, TickError<S, P>>;
       let drew: unknown;
@@ -2018,15 +2150,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (left !== undefined) {
           throw left;
         }
-        // Events are kept until each stage has heard them.
-        if (stage === "frame") {
-          events.endFrame();
-        } else {
-          events.endInput();
-        }
+        // Its systems have had their chance at every event there is.
+        events.ended(stage, time.tick);
         exit = outcome as Exit.Exit<void, TickError<S, P>>;
       } finally {
         between = undefined;
+        events.stage = undefined;
         // Thawing finds a draw from the world's generator, and undoes it.
         try {
           world.thaw();
@@ -2067,7 +2196,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       // One picture of the devices for the whole stage.
       Object.assign(devices, source.sample());
-      heard = true;
+      intake.heard = true;
       return runBetween("input");
     };
 
@@ -2109,7 +2238,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       const moment: Captured = {
         tick: time.tick,
         world: held,
-        events: events.capture(),
+        told: events.mark(),
         // What runs between ticks has everything still to draw, unless it
         // has drawn nothing since.
         changes: world.saveChanges(
@@ -2121,28 +2250,23 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       moments.add(moment);
       return Exit.succeed(moment);
     };
-    /** Puts the game back to a moment of this app. */
-    const rewound = (was: Captured): void => {
+    /**
+     * Puts the game back to a moment of this app. With `again`, to run the
+     * same ticks again, as a session does: the stages between ticks don't
+     * hear twice what they heard of them.
+     */
+    const rewound = (was: Captured, again: boolean): void => {
       dispatcher.flush();
       // What is queued on the buffer was never part of the world.
       commands.rollback(0);
-      // Before the world: the bus reads what the world's lists hold of the
-      // future it gives up, and `time` is still where the game was.
-      events.rewind(was.events, time.tick, was.tick);
       world._rewind(was.world);
-      for (const action of queued) {
-        // It is waiting again: what became of it has not happened.
-        if (action.entry !== undefined) {
-          delete action.entry.refused;
-        }
-      }
+      events.rewound(was.told, again);
       world.restoreChanges(was.changes);
       actionLog.length = was.logLength;
       while ((deltas.at(-1)?.tick ?? -1) >= was.tick) {
         deltas.pop();
       }
       wanted = was.wanted;
-      heard = false;
       commands.apply();
     };
     const runTick = (
@@ -2154,15 +2278,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       // A tick hears the devices first. Whoever steps the app may have
       // seen to it, as a driver does; if not, it is seen to here.
-      if (!heard && inputSystems.length > 0 && options?.input !== false) {
+      if (
+        !intake.heard &&
+        inputSystems.length > 0 &&
+        options?.input !== false
+      ) {
         const exit = inputExit();
         if (Exit.isFailure(exit)) {
           // The tick did not run, and the next one is to hear first too.
-          heard = false;
+          intake.heard = false;
           return exit;
         }
       }
-      heard = false;
+      intake.heard = false;
       // Each tick is asked afresh: one in which nobody asks is the last.
       wanted = false;
       start();
@@ -2190,9 +2318,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       try {
         // Queued actions are applied before time advances, so they land at the
         // same point in the timeline as an action dispatched between ticks.
-        if (queued.length > 0) {
-          const batch = queued.splice(0);
-          for (const action of batch) {
+        if (intake.queued.length > 0) {
+          for (const action of intake.take()) {
             const { codec, entry, from, name, payload } = action;
             const exit = apply(name, payload, codec === undefined, false, from);
             if (Exit.isFailure(exit)) {
@@ -2217,7 +2344,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         time.elapsed += delta;
         time.tick++;
 
-        events.beginTick();
+        events.open();
         const fibersBefore = fibers;
         notingStarters = true;
         fiberStarters = undefined;
@@ -2244,7 +2371,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw left;
         }
         commands.apply();
-        events.endTick(time.tick);
+        events.close(time.tick);
         if (checkpointEvery > 0 && time.tick % checkpointEvery === 0) {
           checkpoint();
         }
@@ -2331,7 +2458,6 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return Exit.succeed({
           version,
           world: bytes,
-          events: events.save(),
           // The frame stage's readers are not the game's: a loaded game
           // has everything still to draw.
           changes: world.saveChanges(
@@ -2343,9 +2469,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       get settled() {
         if (
           wanted ||
-          queued.length > 0 ||
+          intake.queued.length > 0 ||
           dispatcher.pending > 0 ||
-          events.waiting()
+          !events.settled()
         ) {
           return false;
         }
@@ -2375,7 +2501,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
           );
         }
-        rewound(moment as Captured);
+        rewound(moment as Captured, false);
       },
       inspect() {
         if (!betweenTicks()) {
@@ -2473,6 +2599,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             }
             return captured(true);
           },
+          rewind: (moment) => {
+            if (!betweenTicks()) {
+              throw new Error(
+                `rewind() was called during a ${busy()}. A game is put back between ticks.`
+              );
+            }
+            if (!moments.has(moment)) {
+              throw new Error(
+                "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
+              );
+            }
+            rewound(moment as Captured, true);
+          },
         };
       },
     };
@@ -2512,6 +2651,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       commands.apply();
     }
     commands.apply();
+    // What the setups emitted is of the tick to come.
+    events.told(time.tick + 1);
     return app;
   }) as Effect.Effect<
     App<TickError<S, P>, AllHandlers<H, P>>,

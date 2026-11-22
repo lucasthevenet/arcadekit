@@ -15,11 +15,13 @@ import {
   Plugin,
   Query,
   Random,
+  Save,
   Singleton,
   State,
   System,
   Time,
   World,
+  readSnapshot,
 } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 
@@ -31,6 +33,11 @@ const Score = Singleton.define(
   { points: 0 }
 );
 const Phase = State.define("in/Phase", ["playing", "paused"]);
+
+/** The events a save holds waiting, with how far each system had read. */
+const waitingIn = (save: Save.Save): unknown =>
+  readSnapshot(save.world).stores.find((store) => store.name === Event.STORE)
+    ?.data;
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -611,7 +618,7 @@ describe("the input stage", () => {
         const save = app.save();
         const bare = plain.save();
         assert(Exit.isSuccess(save) && Exit.isSuccess(bare));
-        expect(save.value.events).toEqual(bare.value.events);
+        expect(waitingIn(save.value)).toEqual(waitingIn(bare.value));
       })
     );
   });
@@ -691,7 +698,7 @@ describe("the input stage", () => {
         const saves = [alone, together, bare].map((app) => app.save());
         const events = saves.map((save) => {
           assert(Exit.isSuccess(save));
-          return save.value.events;
+          return waitingIn(save.value);
         });
         expect(events[0]).toEqual(events[2]);
         expect(events[1]).toEqual(events[2]);

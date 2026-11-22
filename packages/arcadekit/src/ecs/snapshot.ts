@@ -26,8 +26,8 @@ export type SnapshotProblem =
   | "corrupt"
   | "unknown component"
   | "component changed"
-  | "unknown list"
-  | "list changed"
+  | "unknown store"
+  | "store changed"
   | "world not empty"
   | "cannot be saved";
 
@@ -57,9 +57,9 @@ export const MAGIC = 0x53574b41;
  * Format 2 added singletons. Format 3 widened entity ids: a slot's generation
  * is four bytes instead of two, and an id is eight bytes instead of four, both
  * in a table's entity list and in an `entity` field. An older id is the same
- * number stored in fewer bytes. Format 4 added the world's lists, and puts the
- * singletons and the lists before the tables, so that a reader looking for a
- * singleton stops short of the entities. Formats 1 to 3 are still read.
+ * number stored in fewer bytes. Format 4 added what a world's stores hold, and puts
+ * the singletons and the stores before the tables, so that a reader looking
+ * for a singleton stops short of the entities. Formats 1 to 3 are still read.
  */
 export const FORMAT = 4;
 /** The last four bytes, so a snapshot truncated at a boundary is still detected. */
@@ -499,14 +499,16 @@ export interface SnapshotSingleton {
 }
 
 /**
- * One list of a snapshot: its values, oldest first.
+ * What one store of a world held, in a snapshot: state the world keeps for
+ * its owner beside its components.
  *
  * @category Models
  */
-export interface SnapshotList {
+export interface SnapshotStore {
+  /** The store's name. */
   name: string;
-  /** Each value as the list's codec encoded it. */
-  values: unknown[];
+  /** What it held, as plain data, in a form that is the store's own. */
+  data: unknown;
 }
 
 /**
@@ -533,11 +535,11 @@ export interface SnapshotContents {
   /** The singletons that had been written. */
   singletons: SnapshotSingleton[];
   /**
-   * The lists the world keeps beside its components, the ones that hold
-   * anything: in an app's world, the actions queued for the next tick and the
-   * events waiting to be read, under each event's name.
+   * What the world's stores held, the ones that held anything, in order of
+   * name: in an app's world, the events waiting to be read, the actions
+   * queued for the next tick, and what change queries had yet to visit.
    */
-  lists: SnapshotList[];
+  stores: SnapshotStore[];
 }
 
 const columnOf = (kind: FieldKind, count: number): Column => {
@@ -667,21 +669,16 @@ const readHead = (bytes: Uint8Array) => {
     }
     return singletons;
   };
-  const readLists = (): SnapshotList[] => {
-    const lists: SnapshotList[] = [];
-    for (let l = format >= 4 ? reader.count(8) : 0; l > 0; l--) {
-      const name = reader.text();
-      const values: unknown[] = [];
-      for (let v = reader.count(1); v > 0; v--) {
-        values.push(reader.value());
-      }
-      lists.push({ name, values });
+  const readStores = (): SnapshotStore[] => {
+    const stores: SnapshotStore[] = [];
+    for (let s = format >= 4 ? reader.count(5) : 0; s > 0; s--) {
+      stores.push({ name: reader.text(), data: reader.value() });
     }
-    return lists;
+    return stores;
   };
   // Format 4 holds them before the tables, and earlier formats after.
   const early = format >= 4 ? readSingletons() : undefined;
-  const lists = readLists();
+  const stores = readStores();
   return {
     reader,
     format,
@@ -694,7 +691,7 @@ const readHead = (bytes: Uint8Array) => {
     readFields,
     readSingletons,
     early,
-    lists,
+    stores,
   };
 };
 
@@ -753,7 +750,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     tables,
     sparse,
     singletons,
-    lists: head.lists,
+    stores: head.stores,
   };
 };
 
@@ -862,23 +859,18 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
     writer.u32(indexOf.get(named(single.component).name)!);
     writeFields(named(single.component), single.columns, 1);
   }
-  const lists = contents.lists
-    .filter((list) => list.values.length > 0)
-    .toSorted(byName);
-  writer.u32(lists.length);
-  for (const [i, list] of lists.entries()) {
-    if (lists[i + 1]?.name === list.name) {
-      throw corrupt(`it holds the list "${list.name}" twice`);
+  const stores = contents.stores.toSorted(byName);
+  writer.u32(stores.length);
+  for (const [i, store] of stores.entries()) {
+    if (stores[i + 1]?.name === store.name) {
+      throw corrupt(`it holds the store "${store.name}" twice`);
     }
-    writer.text(list.name);
-    writer.u32(list.values.length);
-    for (const value of list.values) {
-      if (!writer.value(value)) {
-        throw new SnapshotError(
-          "cannot be saved",
-          `The list "${list.name}" holds a value that is not plain data.`
-        );
-      }
+    writer.text(store.name);
+    if (!writer.value(store.data)) {
+      throw new SnapshotError(
+        "cannot be saved",
+        `The store "${store.name}" holds what is not plain data.`
+      );
     }
   }
   writer.u32(contents.tables.length);

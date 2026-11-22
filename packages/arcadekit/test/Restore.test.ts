@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
-import { defineList } from "../src/ecs/list";
 import {
   CommandBuffer,
   Component,
@@ -12,6 +11,7 @@ import {
   SnapshotError,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
+import { Shouts } from "./stores";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
 const Marked = Component.tag("rs/Marked");
@@ -35,15 +35,18 @@ const Level = Component.singleton(
   { number: 3 }
 );
 
-/** A list the world keeps, whose values its codec saves as objects. */
-const Log = defineList<number>(
-  "rs/Log",
-  {
-    encode: (value) => ({ n: value }),
-    decode: (data) => (data as { n: number }).n,
-  },
-  { label: "the log" }
-);
+/** The store each world of these tests holds, by world. */
+const logs = new WeakMap<EcsWorld, Shouts>();
+/** A world's store, attached the first time it is asked for. */
+const logOf = (world: EcsWorld): Shouts => {
+  let log = logs.get(world);
+  if (log === undefined) {
+    log = new Shouts("rs/Log");
+    world._attach(log);
+    logs.set(world, log);
+  }
+  return log;
+};
 
 const optional: ComponentDef[] = [Body, Marked, Aura, Chilled];
 const Bodies = Query.all(Body).pipe(Query.writes(Body));
@@ -62,6 +65,8 @@ const play = (
   steps: number,
   after: () => void = () => {}
 ): void => {
+  // Attached before anything is done to the world, as an app's are.
+  logOf(world);
   const dice = new EcsWorld({ seed }).random;
   const commands = new CommandBuffer(world);
   let serial = seed * 1000;
@@ -108,16 +113,17 @@ const play = (
         body.x += 1;
       });
       world.singleton(Score).name = "undone";
+      logOf(world).values.push("undone");
       world.rollback();
     } else if (choice === 9) {
       world.view(Bodies).each((body) => {
         body.y += 0.5;
       });
     } else if (choice === 12) {
-      world._list(Log).push(++serial);
+      logOf(world).values.push(String(++serial));
     } else if (choice === 13) {
       // Taken from the front, as a reader that is done with them would.
-      const log = world._list(Log);
+      const log = logOf(world).values;
       log.splice(0, dice.int(0, log.length));
     } else if (world.has(entity, Body)) {
       world.set(entity, Body, { x: dice.next() });
@@ -148,7 +154,7 @@ const contents = (world: EcsWorld) => ({
   score: { ...world.singleton(Score) },
   level: { ...world.singleton(Level) },
   random: Array.from(world.random.state),
-  log: [...world._list(Log)],
+  log: [...logOf(world).values],
 });
 
 /** What a world does from here, step by step, for a seed. */
@@ -157,7 +163,7 @@ const future = (world: EcsWorld, seed: number, steps = 150): unknown[] => {
   play(world, seed, steps, () => {
     seen.push([
       world.hash(),
-      [...world._list(Log)],
+      [...logOf(world).values],
       world.view(Bodies).entities(),
       world.view(Warm).entities(),
       world.view(Moved, "watcher").entities(),
@@ -172,6 +178,8 @@ const future = (world: EcsWorld, seed: number, steps = 150): unknown[] => {
 const known = [...optional, ChildOf, Score.component, Level.component];
 const loaded = (bytes: Uint8Array): EcsWorld => {
   const world = new EcsWorld({ seed: 999 });
+  // A world takes what a store held only if it has the store.
+  logOf(world);
   world.load(bytes, known);
   // A new world is told what its singletons start as when it is asked.
   world.singleton(Score);

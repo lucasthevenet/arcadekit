@@ -591,7 +591,7 @@ export const build = <E>(
       // that tick, and forward again with what is known now.
       const from = wrong;
       wrong = undefined;
-      app.rewind(moments.get(from)!);
+      reins.rewind(moments.get(from)!);
       rewinds++;
       for (let tick = from; tick < now; tick++) {
         const exit = run(tick);

@@ -136,10 +136,13 @@ describe("who issued an action", () => {
         throw new Error("the game could not be saved");
       }
       expect(
-        readSnapshot(save.value.world).lists.find(
-          (list) => list.name === "arcadekit/queued"
-        )?.values
-      ).toEqual([{ name: "ls/Tip", payload: { amount: 6 }, from: "grace" }]);
+        readSnapshot(save.value.world).stores.find(
+          (store) => store.name === App.INTAKE
+        )?.data
+      ).toEqual({
+        queued: [{ name: "ls/Tip", payload: { amount: 6 }, from: "grace" }],
+        heard: false,
+      });
       // And where a game goes back to: the tip is waiting again, hers still.
       const moment = app.capture();
       app.tick(DELTA);

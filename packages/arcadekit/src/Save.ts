@@ -28,18 +28,6 @@ import { SnapshotError, readSnapshot, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 
 /**
- * How far each system and handler had read the events of one type that were
- * waiting to be read when the game was saved. The world holds the events.
- *
- * @category Models
- */
-export interface SavedEvents {
-  readonly name: string;
-  /** For each system or handler that had read some, how many it had read. */
-  readonly read: Readonly<Record<string, number>>;
-}
-
-/**
  * A game captured between two ticks, made by `app.save()`: its world as a
  * snapshot, with its time, what was queued for the next tick and the events
  * waiting to be read, each reader's place, and the length of its log. `Save.encode` turns it into bytes, and `App.load` continues from it.
@@ -58,8 +46,6 @@ export interface Save {
    * the next tick and the events waiting to be read with the rest of it.
    */
   readonly world: Uint8Array;
-  /** How far each system and handler had read the waiting events. */
-  readonly events: readonly SavedEvents[];
   /**
    * What change queries haven't visited yet, with each system's and handler's
    * position: `world.saveChanges()`.
@@ -126,11 +112,6 @@ export interface Contents {
    */
   world: SnapshotContents;
   /**
-   * How far each system and handler had read the waiting events. A migration
-   * that renames an event renames it here too.
-   */
-  events: { name: string; read: Record<string, number> }[];
-  /**
    * What change queries haven't visited yet, by component name. A component a
    * migration renames or removes keeps its old name here, and entries under a
    * name the game no longer has are dropped when the save is loaded: the
@@ -193,10 +174,6 @@ export const migrate = (
   try {
     const contents: Contents = {
       world: readSnapshot(save.world),
-      events: save.events.map((events) => ({
-        name: events.name,
-        read: { ...events.read },
-      })),
       changes: save.changes.map((changes) => ({
         component: changes.component,
         kind: changes.kind,
@@ -224,7 +201,6 @@ export const migrate = (
     return Exit.succeed({
       version,
       world: writeSnapshot(contents.world),
-      events: contents.events,
       changes: contents.changes,
       logLength: save.logLength,
     });
@@ -239,19 +215,13 @@ export const migrate = (
 /** "AKSV": arcadekit save. */
 const MAGIC = 0x56534b41;
 // 2: the game's time, its queued actions and its waiting events are in the
-// world, not beside it.
-const FORMAT = 2;
+// world, not beside it. 3: so is where each system had read the events to.
+const FORMAT = 3;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Header = Schema.fromJsonString(
   Schema.Struct({
     version: Count,
-    events: Schema.Array(
-      Schema.Struct({
-        name: Schema.String,
-        read: Schema.Record(Schema.String, Count),
-      })
-    ),
     changes: Schema.Array(
       Schema.Struct({
         component: Schema.String,

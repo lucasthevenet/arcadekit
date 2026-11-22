@@ -138,6 +138,30 @@ describe("app.inspect", () => {
     expect(app.inspect().singletons["in/Score"]).toEqual({ points: 7 });
   });
 
+  it("shows the actions queued for the next tick and the events waiting to be read, as plain data", () => {
+    const app = run(game);
+    expect(app.inspect().stores).toEqual({});
+    app.dispatch(Strike, { by: 5 });
+    app.enqueue(Strike, { by: 6 });
+    const hash = app.world.hash();
+    const { stores } = app.inspect();
+    expect(stores).toEqual({
+      [App.INTAKE]: {
+        queued: [{ name: "in/Strike", payload: { by: 6 }, from: null }],
+        heard: false,
+      },
+      [Event.STORE]: { "in/Hit": [{ by: 5 }] },
+    });
+    // Copies: writing them changes nothing of the game.
+    (stores[Event.STORE] as Record<string, { by: number }[]>)[
+      "in/Hit"
+    ]![0]!.by = 100;
+    expect(app.world.hash()).toBe(hash);
+    app.tick(1 / 60, { input: false });
+    app.tick(1 / 60, { input: false });
+    expect(app.inspect().stores).toEqual({});
+  });
+
   it("hands out copies, which change nothing of the game when written", () => {
     const app = run(game);
     app.world.spawn(Position.of({ x: 1, y: 2 }));

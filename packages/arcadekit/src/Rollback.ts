@@ -237,7 +237,7 @@ export const syncTest = <E>(app: SyncTestApp<E>): SyncTest<E> => {
       return { exit, hashes, systems };
     };
     const first = run();
-    app.rewind(moment.value);
+    reins.rewind(moment.value);
     const second = run();
     const once = first.hashes;
     const twice = second.hashes;

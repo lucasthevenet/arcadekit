@@ -11,6 +11,7 @@ import {
   Driver,
   EcsWorld,
   Event,
+  Events,
   Field,
   Frame,
   Query,
@@ -482,6 +483,9 @@ describe("the frame stage", () => {
         Pinged,
         (pinged) => pinged.emit({})
       ),
+      // Around a system's handle, through the bus an app also hands out.
+      'The event "fr/Pinged" was emitted in the frame stage or the input stage':
+        Effect.map(Effect.service(Events), (events) => events.emit(Pinged, {})),
     };
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
@@ -792,17 +796,16 @@ describe("what the frame stage reads", () => {
         const saves = [again, headless].map((each) => {
           const save = each.save();
           return Exit.isSuccess(save)
-            ? {
-                waiting: readSnapshot(save.value.world).lists,
-                read: save.value.events,
-              }
+            ? readSnapshot(save.value.world).stores
             : undefined;
         });
         expect(saves[0]).toEqual(saves[1]);
-        expect(saves[0]).toEqual({
-          waiting: [{ name: "fr/Bounced", values: [{ at: 5 }] }],
-          read: [],
-        });
+        expect(saves[0]).toEqual([
+          {
+            name: Event.STORE,
+            data: [{ name: "fr/Bounced", waiting: [{ at: 5 }], read: {} }],
+          },
+        ]);
       })
     );
   });

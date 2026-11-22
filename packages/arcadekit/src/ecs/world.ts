@@ -58,8 +58,6 @@ import {
   finish,
   shapeOf,
 } from "./hash";
-import { definedList } from "./list";
-import type { ListDef } from "./list";
 import { QueryView, describeSpec } from "./query";
 import type { QuerySpec, Terms } from "./query";
 import { Rng } from "./random";
@@ -77,6 +75,7 @@ import {
   readColumn,
   writeColumn,
 } from "./snapshot";
+import type { Store } from "./store";
 import {
   RelationIndex,
   SparseSet,
@@ -156,18 +155,13 @@ const describeValue = (value: unknown): string =>
 /**
  * @internal
  * A world at one moment, held in memory: what `_capture` returns and `_rewind`
- * takes. Its lists hold their values as they were, by reference.
+ * takes.
  */
 export interface Moment {
-  /** A snapshot without the lists. */
+  /** A snapshot without the stores. */
   readonly world: Uint8Array;
-  readonly lists: readonly (readonly [ListDef, readonly unknown[]])[];
-}
-
-/** One of a world's lists. */
-interface HeldList {
-  readonly def: ListDef;
-  readonly values: unknown[];
+  /** What each store captured of itself. */
+  readonly stores: readonly (readonly [Store, unknown])[];
 }
 
 /**
@@ -285,12 +279,8 @@ export class World {
   private readonly spare = new WeakMap<Columns, unknown[]>();
   private readonly savedRandom = new Uint32Array(4);
   /** What its owner attached, in order of name. */
-  /** The lists, by name. */
-  private readonly lists = new Map<string, HeldList>();
-  /** The lists in order of name, until another is made. */
-  private listOrder: HeldList[] | undefined;
-  /** Told when `restore` has put a snapshot back: `_onRestore`. */
-  private restoreListeners: (() => void)[] = [];
+  /** What was attached, in order of name: `_attach`. */
+  private stores: readonly Store[] = [];
   /** The moments this world captured: `_rewind` takes no other. */
   private readonly moments = new WeakSet<Moment>();
   /** The random generator's state when the world was frozen. */
@@ -739,9 +729,10 @@ export class World {
 
   /**
    * Copies what the world holds, as plain objects: every live entity, in
-   * order of index, with each of its components by name, and every singleton
-   * the world holds, by name. It reads every component of every entity, so it
-   * is for tooling, and not for a system.
+   * order of index, with each of its components by name, every singleton
+   * the world holds, by name, and what each store attached to it holds, by
+   * the store's name. It reads every component of every entity, so it is for
+   * tooling, and not for a system.
    */
   contents(): {
     readonly entities: readonly {
@@ -749,6 +740,7 @@ export class World {
       readonly components: Readonly<Record<string, object>>;
     }[];
     readonly singletons: Readonly<Record<string, object>>;
+    readonly stores: Readonly<Record<string, unknown>>;
   } {
     const sparse = [...this.sparseById.values()].toSorted((a, b) =>
       byName(a.def, b.def)
@@ -788,7 +780,14 @@ export class World {
       .toSorted((a, b) => byName(a.def, b.def))) {
       singletons[single.def.name] = readRow(single.def, single.columns, 0);
     }
-    return { entities, singletons };
+    const stores: Record<string, unknown> = {};
+    for (const store of this.stores) {
+      const held = store.contents();
+      if (held !== undefined) {
+        stores[store.name] = held;
+      }
+    }
+    return { entities, singletons, stores };
   }
 
   /**
@@ -1104,12 +1103,20 @@ export class World {
     for (let i = 0; i < writeLogs.length; i++) {
       writeLogs[i]!.txEnd = writeLogs[i]!.end;
     }
+    const { stores } = this;
+    for (let i = 0; i < stores.length; i++) {
+      stores[i]!.begin();
+    }
     this._recording = true;
   }
 
   /** Ends the transaction and keeps what was written. */
   commit(): void {
     this.endTransaction("commit");
+    const { stores } = this;
+    for (let i = 0; i < stores.length; i++) {
+      stores[i]!.commit();
+    }
   }
 
   /** Ends the transaction and restores everything written since `begin`. */
@@ -1154,6 +1161,10 @@ export class World {
       log.rollback();
     }
     this.endTransaction("rollback");
+    const { stores } = this;
+    for (let i = 0; i < stores.length; i++) {
+      stores[i]!.rollback();
+    }
   }
 
   private endTransaction(op: string): void {
@@ -1469,8 +1480,9 @@ export class World {
   /**
    * Serializes the whole world to bytes: every table and sparse set, every
    * singleton that has been written, the upcoming ids, the random generator's
-   * state, and, in an app's world, the actions queued for the next tick and the
-   * events waiting to be read. A world that loads the bytes hashes the same as this one
+   * state, and what each store attached to the world holds: in an app's world,
+   * the actions queued for the next tick and the events waiting to be read. A
+   * world with the same stores that loads the bytes hashes the same as this one
    * and behaves the same from then on: the same iteration order, the same ids
    * for new entities, the same random numbers.
    *
@@ -1489,8 +1501,8 @@ export class World {
     return this.snapshotOf(true);
   }
 
-  /** `snapshot()`, with the lists or without them. */
-  private snapshotOf(withLists: boolean): Uint8Array {
+  /** `snapshot()`, with what the stores hold or without it. */
+  private snapshotOf(withStores: boolean): Uint8Array {
     const { tables } = this;
     let placed = 0;
     let estimate = 256 + this.nextIndex * 4 + this.freeList.length * 4;
@@ -1584,37 +1596,31 @@ export class World {
       }
     };
 
-    // The singletons that have been written, each one row, and the lists
-    // that hold anything: before the tables, so that a reader looking for one
-    // stops short of the entities.
+    // The singletons that have been written, each one row, and what each
+    // store holds: before the tables, so that a reader looking for one stops
+    // short of the entities.
     writer.u32(singles.length);
     for (const single of singles) {
       writer.u32(used.get(single.def)!);
       writeFields(single.def, single.columns, 1);
     }
-    const lists = withLists
-      ? this.heldLists().filter((list) => list.values.length > 0)
-      : [];
-    writer.u32(lists.length);
-    for (const { def, values } of lists) {
-      writer.text(def.name);
-      writer.u32(values.length);
-      for (const value of values) {
-        let data: unknown;
-        try {
-          data = def.codec.encode(value);
-        } catch (error) {
-          throw new SnapshotError(
-            "cannot be saved",
-            `Can't save ${def.label}: ${error instanceof Error ? error.message : String(error)}`
-          );
+    const held: (readonly [Store, unknown])[] = [];
+    if (withStores) {
+      for (const store of this.stores) {
+        const data = store.save();
+        if (data !== undefined) {
+          held.push([store, data]);
         }
-        if (!writer.value(data)) {
-          throw new SnapshotError(
-            "cannot be saved",
-            `Can't save ${def.label}: the codec did not turn one into plain data (${describeValue(value)}).`
-          );
-        }
+      }
+    }
+    writer.u32(held.length);
+    for (const [store, data] of held) {
+      writer.text(store.name);
+      if (!writer.value(data)) {
+        throw new SnapshotError(
+          "cannot be saved",
+          `The store "${store.name}" gave a snapshot what is not plain data (${describeValue(data)}).`
+        );
       }
     }
 
@@ -1655,9 +1661,9 @@ export class World {
    * would: the same hash, the same iteration order, the same upcoming ids, the
    * same random numbers. A singleton's value stays the same object, holding the
    * snapshot's value, or its initial value if the snapshot doesn't hold it.
-   * `world.random` stays the same generator. In an app's world, the queued
-   * actions and waiting events are the snapshot's too, and every system reads
-   * the waiting events as if it had read none of them, as in a loaded game.
+   * `world.random` stays the same generator. What each store attached to the
+   * world holds is the snapshot's too: in an app's world, the queued actions
+   * and the waiting events, with every system's place in them.
    *
    * Anything derived from the old tables doesn't survive it. A view or a
    * `removed` reader obtained before throws when used: obtain it again, as a
@@ -1670,14 +1676,11 @@ export class World {
    * world whose restore failed partway is unusable.
    */
   restore(bytes: Uint8Array): void {
-    this.restoring(bytes);
-    for (const listener of this.restoreListeners) {
-      listener();
-    }
+    this.restoring(bytes, true);
   }
 
-  /** `restore`, without telling the owners of lists. */
-  private restoring(bytes: Uint8Array): void {
+  /** `restore`, with what the snapshot holds of the stores or with each empty. */
+  private restoring(bytes: Uint8Array, withStores: boolean): void {
     if (this._recording) {
       throw new Error(
         "World.restore() was called between begin() and commit() or rollback(). A transaction puts back what it wrote itself; restore a snapshot outside one."
@@ -1723,17 +1726,17 @@ export class World {
     this._watched = 0;
     this.lateLogs = [];
     // The singletons stay the objects they are, as if never written, and the
-    // lists the arrays they are, empty.
+    // stores the ones that were attached, empty.
     for (const single of this.singles) {
       if (single !== undefined) {
         single.written = false;
         writeRow(single.def, single.columns, 0, single.initial);
       }
     }
-    for (const list of this.lists.values()) {
-      list.values.length = 0;
+    for (const store of this.stores) {
+      store.clear();
     }
-    this.load(bytes);
+    this.loading(bytes, withStores);
   }
 
   /**
@@ -1760,16 +1763,21 @@ export class World {
       this.tables.length > 0 ||
       this._recording ||
       this.singles.some((single) => single?.written === true) ||
-      this._lists().length > 0
+      this.stores.some((store) => store.contents() !== undefined)
     ) {
       throw new SnapshotError(
         "world not empty",
-        "World.load() fills an empty world, and this one has held entities, has written a singleton or holds a list. Load into a new World."
+        "World.load() fills an empty world, and this one has held entities, has written a singleton or has a store that holds something. Load into a new World."
       );
     }
     for (const def of components) {
       this.register(def);
     }
+    this.loading(bytes, true);
+  }
+
+  /** `load`, into a world known to be empty. */
+  private loading(bytes: Uint8Array, withStores: boolean): void {
     const reader = new Reader(bytes);
     if (reader.left < 8 || reader.u32() !== MAGIC) {
       throw new SnapshotError(
@@ -1899,10 +1907,11 @@ export class World {
         single.written = true;
       }
     };
-    // Format 4 holds the singletons and the lists before the tables.
+    // Format 4 holds the singletons and the stores before the tables.
+    let stored: (readonly [Store, unknown])[] = [];
     if (format >= 4) {
       readSingletons();
-      this.readLists(reader);
+      stored = this.readStores(reader);
     }
 
     const tableCount = reader.count(8);
@@ -2003,41 +2012,38 @@ export class World {
       throw corrupt("it does not end where it should");
     }
     this.indexRelations();
+    // Last, so that a store finds the world it is of as the snapshot has it.
+    if (withStores) {
+      for (const [store, data] of stored) {
+        store.load(data);
+      }
+    }
   }
 
-  /** Reads the lists of a snapshot, each found by its definition. */
-  private readLists(reader: Reader): void {
-    const listCount = reader.count(8);
+  /** Reads what a snapshot holds of the stores, each found by its name. */
+  private readStores(reader: Reader): (readonly [Store, unknown])[] {
+    const stored: (readonly [Store, unknown])[] = [];
+    const count = reader.count(5);
     let last = "";
-    for (let l = 0; l < listCount; l++) {
+    for (let s = 0; s < count; s++) {
       const name = reader.text();
-      if (l > 0 && name <= last) {
+      if (s > 0 && name <= last) {
         throw corrupt(
-          "its lists are not in order of name, or one is there twice"
+          "its stores are not in order of name, or one is there twice"
         );
       }
       last = name;
-      const count = reader.count(1);
-      const def = this.lists.get(name)?.def ?? definedList(name);
-      if (def === undefined) {
+      const data = reader.value();
+      const store = this.stores.find((one) => one.name === name);
+      if (store === undefined) {
         throw new SnapshotError(
-          "unknown list",
-          `The snapshot holds ${count === 1 ? "a value" : `${count} values`} of a list named "${name}", which this program doesn't define: it was renamed or removed since.`
+          "unknown store",
+          `The snapshot holds what a store named "${name}" kept, and this world has no such store: the program that made it kept more of a game in its world than this one does.`
         );
       }
-      const list = this._list(def);
-      for (let v = 0; v < count; v++) {
-        const data = reader.value();
-        try {
-          list.push(def.codec.decode(data));
-        } catch (error) {
-          throw new SnapshotError(
-            "list changed",
-            `Can't load ${def.label}: one is in a form that is no longer taken: ${error instanceof Error ? error.message : String(error)}`
-          );
-        }
-      }
+      stored.push([store, data]);
     }
+    return stored;
   }
 
   /** Reads one field's column, naming the field if its codec rejects a value. */
@@ -2091,10 +2097,10 @@ export class World {
    * - the ids the next entities will get;
    * - every singleton that has been written, by name;
    * - the state of the random number generator;
-   * - the values of every list the world keeps beside its components, each
-   *   through its codec: in an app's world, the actions queued for the next
+   * - what each store attached to the world says a simulation can tell apart
+   *   of what it holds: in an app's world, the actions queued for the next
    *   tick and the events the simulation has yet to read, but not where anyone
-   *   has read to, which is the reader's.
+   *   has read to.
    *
    * Two worlds built by the same operations in the same order hash equal, on
    * any machine. Changing one field of one entity always changes the hash. Two
@@ -2119,7 +2125,7 @@ export class World {
 
   /**
    * @internal
-   * `hash()` without the lists the stages between ticks may add to: what
+   * `hash()` without the stores the stages between ticks may change: what
    * those stages must leave as it was.
    */
   _frameHash(): number {
@@ -2222,103 +2228,59 @@ export class World {
     const random = this.random.state;
     h = add(add(add(add(h, random[0]!), random[1]!), random[2]!), random[3]!);
 
-    // The lists that hold anything, so that a world whose lists are all
+    // The stores that hold anything, so that a world whose stores are all
     // empty hashes as one that has none.
-    const lists = this.heldLists();
     let held = 0;
-    for (const { def, values } of lists) {
-      if (values.length > 0 && (betweenTicks || !def.betweenTicks)) {
+    for (const store of this.stores) {
+      if (!betweenTicks && store.betweenTicks) {
+        continue;
+      }
+      const data = store.hashed();
+      if (data !== undefined) {
+        h = addData(addString(h, store.name), data);
         held++;
       }
     }
     if (held > 0) {
       h = add(h, held);
-      for (const { def, values } of lists) {
-        if (values.length === 0 || (!betweenTicks && def.betweenTicks)) {
-          continue;
-        }
-        h = add(addString(h, def.name), values.length);
-        for (let i = 0; i < values.length; i++) {
-          // A value its codec refuses counts as null, on every machine alike:
-          // nothing checks what a list is given, and a hash doesn't fail.
-          let data: unknown;
-          try {
-            data = def.codec.encode(values[i]);
-          } catch {
-            data = null;
-          }
-          h = addData(h, data);
-        }
-      }
     }
     return finish(h);
   }
 
-  // --- lists ---------------------------------------------------------------
+  // --- stores --------------------------------------------------------------
 
   /**
    * @internal
-   * The world's list of a kind, made empty the first time it is asked for:
-   * always the same array, which its owner adds to and takes from as it
-   * likes. `snapshot`, `load`, `restore` and `hash` cover it, each value
-   * through the list's codec. Two different lists can't share a name.
+   * Attaches a store: state the world holds for its owner beside its
+   * components. From then on `snapshot`, `load`, `restore` and `hash` cover
+   * it, `_capture` and `_rewind` take it along, and a transaction's rollback
+   * takes back what was done to it. Two stores can't share a name. Before
+   * the world loads a snapshot that holds anything of it.
    */
-  _list<T>(def: ListDef<T>): T[] {
-    const held = this.lists.get(def.name);
-    if (held !== undefined) {
-      if (held.def !== def) {
-        throw new Error(
-          `Two different lists are both named "${def.name}": ${held.def.label}, and ${def.label}. A list's name identifies it in a world and in a snapshot.`
-        );
-      }
-      return held.values as T[];
+  _attach(store: Store): void {
+    if (this._recording) {
+      throw new Error(
+        `The store "${store.name}" was attached in a transaction. Attach a store when its world is made.`
+      );
     }
-    const values: T[] = [];
-    this.lists.set(def.name, { def, values });
-    this.listOrder = undefined;
-    return values;
-  }
-
-  /** The lists in order of name. */
-  private heldLists(): HeldList[] {
-    return (this.listOrder ??= Array.from(this.lists.values()).toSorted(
-      (a, b) => byName(a.def, b.def)
-    ));
+    if (this.stores.some((one) => one.name === store.name)) {
+      throw new Error(
+        `Two stores are both named "${store.name}". A store's name identifies it in a world and in a snapshot.`
+      );
+    }
+    this.stores = [...this.stores, store].toSorted(byName);
   }
 
   /**
    * @internal
-   * The lists that hold anything, in order of name.
-   */
-  _lists(): ListDef[] {
-    return this.heldLists()
-      .filter((list) => list.values.length > 0)
-      .map((list) => list.def);
-  }
-
-  /**
-   * @internal
-   * Calls `listener` each time `restore` has put a snapshot back, for the
-   * owner of a list to forget where its readers were, as a world forgets what
-   * change queries had yet to visit. `_rewind` doesn't call it: whoever rewinds
-   * a world puts its readers back themselves.
-   */
-  _onRestore(listener: () => void): void {
-    this.restoreListeners.push(listener);
-  }
-
-  /**
-   * @internal
-   * The world as it is, in memory: `snapshot()` without the lists, and each
-   * list's values as they are, so that capturing encodes none of them. Fails
-   * as `snapshot()` does.
+   * The world as it is, in memory: `snapshot()` without the stores, and what
+   * each store captures of itself, so that capturing puts nothing of theirs
+   * through a codec. Fails as `snapshot()` does.
    */
   _capture(): Moment {
     const moment: Moment = {
       world: this.snapshotOf(false),
-      lists: this.heldLists()
-        .filter((list) => list.values.length > 0)
-        .map((list) => [list.def, list.values.slice()] as const),
+      stores: this.stores.map((store) => [store, store.capture()] as const),
     };
     this.moments.add(moment);
     return moment;
@@ -2326,8 +2288,8 @@ export class World {
 
   /**
    * @internal
-   * Puts the world back to a moment it captured, as `restore` does, with the
-   * lists' values the moment held.
+   * Puts the world back to a moment it captured, as `restore` does, with
+   * what each store held then. A store attached since is left empty.
    */
   _rewind(moment: Moment): void {
     if (!this.moments.has(moment)) {
@@ -2335,12 +2297,9 @@ export class World {
         "World._rewind() was given a moment that this world did not capture."
       );
     }
-    this.restoring(moment.world);
-    for (const [def, values] of moment.lists) {
-      const list = this._list(def);
-      for (const value of values) {
-        list.push(value);
-      }
+    this.restoring(moment.world, false);
+    for (const [store, held] of moment.stores) {
+      store.rewind(held);
     }
   }
 
