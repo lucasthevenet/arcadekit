@@ -38,6 +38,7 @@ import {
   isComponentDef,
   makeEntity,
   retarget,
+  targetless,
 } from "./component";
 import type {
   Column,
@@ -75,6 +76,7 @@ import {
   readColumn,
   writeColumn,
 } from "./snapshot";
+import { describeValue } from "./store";
 import type { Store } from "./store";
 import {
   RelationIndex,
@@ -83,6 +85,7 @@ import {
   byName,
   makeColumns,
   readRow,
+  tableKey,
   writeRow,
 } from "./table";
 import type { Columns } from "./table";
@@ -131,22 +134,6 @@ interface Saved {
    */
   readonly copies: unknown[];
 }
-
-/** Explains that a relation was given without a value, and so has no target. */
-const targetless = (def: ComponentDef): Error =>
-  new Error(
-    `"${def.name}" is a relation, and a relation needs a target: give it as ${def.name.split("/").pop()}.of({ target }).`
-  );
-
-/** Summarizes a value in a few words, for a message. */
-const describeValue = (value: unknown): string =>
-  typeof value === "function"
-    ? "a function"
-    : typeof value === "symbol"
-      ? "a symbol"
-      : Array.isArray(value)
-        ? "an array"
-        : "an object";
 
 // ---------------------------------------------------------------------------
 // World
@@ -1103,9 +1090,8 @@ export class World {
     for (let i = 0; i < writeLogs.length; i++) {
       writeLogs[i]!.txEnd = writeLogs[i]!.end;
     }
-    const { stores } = this;
-    for (let i = 0; i < stores.length; i++) {
-      stores[i]!.begin();
+    for (const store of this.stores) {
+      store.begin();
     }
     this._recording = true;
   }
@@ -1113,9 +1099,8 @@ export class World {
   /** Ends the transaction and keeps what was written. */
   commit(): void {
     this.endTransaction("commit");
-    const { stores } = this;
-    for (let i = 0; i < stores.length; i++) {
-      stores[i]!.commit();
+    for (const store of this.stores) {
+      store.commit();
     }
   }
 
@@ -1161,9 +1146,8 @@ export class World {
       log.rollback();
     }
     this.endTransaction("rollback");
-    const { stores } = this;
-    for (let i = 0; i < stores.length; i++) {
-      stores[i]!.rollback();
+    for (const store of this.stores) {
+      store.rollback();
     }
   }
 
@@ -1865,11 +1849,22 @@ export class World {
           name
         );
       }
-      const was = fields.map((field, f) => `${field}: ${kinds[f]}`).join(", ");
-      const is = def.fields
-        .map((field, f) => `${field}: ${def.kinds[f]}`)
-        .join(", ");
-      if (was !== is || storage !== storageOf(def)) {
+      // Field by field, and the two said in words only when they differ:
+      // text made here for every component had this function, and the
+      // loop over the entities below with it, thrown back to the
+      // interpreter on every load.
+      let same =
+        storage === storageOf(def) && fields.length === def.fields.length;
+      for (let f = 0; same && f < fields.length; f++) {
+        same = fields[f] === def.fields[f] && kinds[f] === def.kinds[f];
+      }
+      if (!same) {
+        const was = fields
+          .map((field, f) => `${field}: ${kinds[f]}`)
+          .join(", ");
+        const is = def.fields
+          .map((field, f) => `${field}: ${def.kinds[f]}`)
+          .join(", ");
         throw new SnapshotError(
           "component changed",
           `"${name}" is not what it was when the snapshot was taken. Then: ${STORAGES[storage] ?? "unknown"} { ${was} }. Now: ${STORAGES[storageOf(def)]} { ${is} }.`,
@@ -1928,7 +1923,7 @@ export class World {
         defs.push(def);
       }
       const sorted = defs.toSorted((a, b) => a.id - b.id);
-      const key = sorted.map((def) => def.id).join(",");
+      const key = tableKey(sorted);
       if (this.tableByKey.has(key)) {
         throw corrupt("it holds two tables for the same components");
       }
@@ -2320,7 +2315,7 @@ export class World {
   }
 
   private tableFor(sortedDefs: readonly ComponentDef[]): Table {
-    const key = sortedDefs.map((d) => d.id).join(",");
+    const key = tableKey(sortedDefs);
     let table = this.tableByKey.get(key);
     if (table === undefined) {
       for (const def of sortedDefs) {

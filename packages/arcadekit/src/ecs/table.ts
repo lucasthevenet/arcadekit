@@ -75,6 +75,20 @@ export const byName = (
   b: { readonly name: string }
 ) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
+/**
+ * The key a world finds a table by: the ids of its components, in order.
+ * Written as a loop: `map` and `join` here had whoever called it thrown back
+ * to the interpreter, a table's loading among them.
+ * @internal
+ */
+export const tableKey = (sorted: readonly ComponentDef[]): string => {
+  let key = "";
+  for (let d = 0; d < sorted.length; d++) {
+    key += d === 0 ? `${sorted[d]!.id}` : `,${sorted[d]!.id}`;
+  }
+  return key;
+};
+
 // ---------------------------------------------------------------------------
 // Table (one archetype)
 // ---------------------------------------------------------------------------

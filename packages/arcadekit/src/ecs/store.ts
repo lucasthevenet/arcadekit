@@ -96,3 +96,17 @@ export const isPlain = (value: unknown): boolean => {
     }
   }
 };
+
+/**
+ * Summarizes a value that is not plain data in a few words, for a message.
+ *
+ * @internal
+ */
+export const describeValue = (value: unknown): string =>
+  typeof value === "function"
+    ? "a function"
+    : typeof value === "symbol"
+      ? "a symbol"
+      : Array.isArray(value)
+        ? "an array"
+        : "an object";
