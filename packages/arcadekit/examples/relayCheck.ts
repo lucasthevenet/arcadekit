@@ -43,15 +43,15 @@ const wait = (ms: number) =>
   Effect.promise(() => new Promise((r) => setTimeout(r, ms)));
 
 /** A peer's own transport, for as long as the scope it is opened in. */
-const open = (peer: string, inRoom = room) =>
-  Transport.open.pipe(
+const listenAs = (peer: string, inRoom = room) =>
+  Transport.listen.pipe(
     Effect.provide(
       Transport.layerWebSocket(Relay.address(base, { room: inRoom, peer }))
     )
   );
 
 /** Waits until a transport's socket has closed, and gives why. */
-const closed = (transport: Transport.Shape) =>
+const closed = (transport: Transport.Listener) =>
   Effect.gen(function* () {
     for (let i = 0; i < 400; i++) {
       // A transport whose socket has closed throws, and says why.
@@ -125,7 +125,7 @@ const check = Effect.gen(function* () {
   // --- a name that is taken ---------------------------------------------------
   // A host either closes the socket and says why, or turns the request
   // away before there is a socket, which a peer sees as no connection.
-  const taken = yield* closed(yield* open("ada"));
+  const taken = yield* closed(yield* listenAs("ada"));
   if (taken.reason !== "name taken" && taken.code !== 1006) {
     return yield* Effect.die(
       new Error(`a second "ada" was closed with: ${taken.message}`)
@@ -139,8 +139,8 @@ const check = Effect.gen(function* () {
 
   // --- a message in another's name --------------------------------------------
   const other = `${room}-liar`;
-  const honest = yield* open("grace", other);
-  const liar = yield* open("ada", other);
+  const honest = yield* listenAs("grace", other);
+  const liar = yield* listenAs("ada", other);
   yield* wait(300);
   const forged: Message.Message = { from: "grace", tick: 0, actions: [] };
   liar.send(forged);

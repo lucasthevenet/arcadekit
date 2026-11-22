@@ -279,7 +279,7 @@ describe("a page's devices", () => {
     canvas.box = { left: 100, top: 50 };
     run(
       Effect.gen(function* () {
-        const source = yield* Input.open;
+        const listener = yield* Input.listen;
         expect(page.total).toBe(6);
         expect(canvas.listening.get("pointerdown")).toBe(1);
         expect(canvas.total).toBe(1);
@@ -289,7 +289,7 @@ describe("a page's devices", () => {
         page.send("keydown", { code: "KeyA", repeat: true });
         page.send("keydown", { code: "ShiftLeft", repeat: false });
         page.send("keyup", { code: "ShiftLeft" });
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["KeyA"],
           pressed: ["KeyA", "ShiftLeft"],
           released: ["ShiftLeft"],
@@ -298,11 +298,11 @@ describe("a page's devices", () => {
         });
         // A repeat of a key that was down before the page listened is no press.
         page.send("keydown", { code: "KeyR", repeat: true });
-        expect(told(source.sample()).pressed).toEqual([]);
+        expect(told(listener.sample()).pressed).toEqual([]);
 
         // The pointer's place is measured from the target's corner.
         page.send("pointermove", { clientX: 130, clientY: 90 });
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["KeyA"],
           pressed: [],
           released: [],
@@ -314,7 +314,7 @@ describe("a page's devices", () => {
         canvas.send("pointerdown", { button: 2, clientX: 140, clientY: 90 });
         page.send("pointerdown", { button: 1, clientX: 0, clientY: 0 });
         page.send("pointerup", { button: 0, clientX: 600, clientY: 20 });
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["KeyA", "Pointer2"],
           pressed: ["Pointer0", "Pointer2"],
           released: ["Pointer0"],
@@ -323,7 +323,7 @@ describe("a page's devices", () => {
         });
         // A pointer the browser took away lets go of its buttons, not of keys.
         page.send("pointercancel");
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["KeyA"],
           pressed: [],
           released: ["Pointer2"],
@@ -333,7 +333,7 @@ describe("a page's devices", () => {
         // The page loses focus: everything held is let go.
         canvas.send("pointerdown", { button: 0, clientX: 100, clientY: 50 });
         page.send("blur");
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: [],
           pressed: ["Pointer0"],
           released: ["KeyA", "Pointer0"],
@@ -362,28 +362,28 @@ describe("a page's devices", () => {
     const canvas = new Listened();
     run(
       Effect.gen(function* () {
-        const source = yield* Input.open;
+        const listener = yield* Input.listen;
         const at = { clientX: 10, clientY: 10 };
         // The main button goes down: the one press a page reports as one.
         canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
         // The secondary goes down while it is held. A page says so with a
         // move, not a press: `buttons` is what is down by then.
         page.send("pointermove", { ...at, button: 2, buttons: 3 });
-        expect(told(source.sample())).toMatchObject({
+        expect(told(listener.sample())).toMatchObject({
           down: ["Pointer0", "Pointer2"],
           pressed: ["Pointer0", "Pointer2"],
           released: [],
         });
         // The main button goes up, the secondary still held: a move again.
         page.send("pointermove", { ...at, button: 0, buttons: 2 });
-        expect(told(source.sample())).toMatchObject({
+        expect(told(listener.sample())).toMatchObject({
           down: ["Pointer2"],
           pressed: [],
           released: ["Pointer0"],
         });
         // The last button goes up: the one release a page reports as one.
         page.send("pointerup", { ...at, button: 2, buttons: 0 });
-        expect(told(source.sample())).toMatchObject({
+        expect(told(listener.sample())).toMatchObject({
           down: [],
           pressed: [],
           released: ["Pointer2"],
@@ -392,18 +392,18 @@ describe("a page's devices", () => {
         // whose own move the page never sent, too.
         canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
         page.send("pointerup", { ...at, button: 2, buttons: 0 });
-        expect(told(source.sample())).toMatchObject({
+        expect(told(listener.sample())).toMatchObject({
           down: [],
           released: ["Pointer0"],
         });
         // The middle button is the third bit of `buttons`, not the second.
         canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
         page.send("pointermove", { ...at, button: 1, buttons: 5 });
-        expect(told(source.sample()).down).toEqual(["Pointer0", "Pointer1"]);
+        expect(told(listener.sample()).down).toEqual(["Pointer0", "Pointer1"]);
         // Let go of outside the window, the page hears of no release: the
         // next move, with nothing down, is how it is known.
         page.send("pointermove", { ...at, button: -1, buttons: 0 });
-        expect(told(source.sample())).toMatchObject({
+        expect(told(listener.sample())).toMatchObject({
           down: [],
           released: ["Pointer0", "Pointer1"],
         });
@@ -411,13 +411,13 @@ describe("a page's devices", () => {
         // the target hears of, however the pointer moves afterwards.
         page.send("pointermove", { ...at, button: -1, buttons: 1 });
         page.send("pointermove", { ...at, button: 2, buttons: 3 });
-        expect(told(source.sample()).down).toEqual([]);
+        expect(told(listener.sample()).down).toEqual([]);
         // An event that says nothing of what is down, as one made by hand
         // may, is still the press and the release of its own button.
         canvas.send("pointerdown", { ...at, button: 2, buttons: 0 });
-        expect(told(source.sample()).down).toEqual(["Pointer2"]);
+        expect(told(listener.sample()).down).toEqual(["Pointer2"]);
         page.send("pointerup", { ...at, button: 2 });
-        expect(told(source.sample()).released).toEqual(["Pointer2"]);
+        expect(told(listener.sample()).released).toEqual(["Pointer2"]);
       }).pipe(
         Effect.provide(
           Browser.layer({
@@ -435,10 +435,10 @@ describe("a page's devices", () => {
     const page = new Listened();
     run(
       Effect.gen(function* () {
-        const source = yield* Input.open;
+        const listener = yield* Input.listen;
         expect(page.listening.get("pointerdown")).toBe(1);
         page.send("pointerdown", { button: 0, clientX: 12, clientY: 34 });
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["Pointer0"],
           pressed: ["Pointer0"],
           released: [],
@@ -455,7 +455,7 @@ describe("a page's devices", () => {
     const bare = new EventTarget();
     run(
       Effect.gen(function* () {
-        const source = yield* Input.open;
+        const listener = yield* Input.listen;
         bare.dispatchEvent(
           Object.assign(new globalThis.Event("pointerdown"), {
             button: 0,
@@ -463,7 +463,7 @@ describe("a page's devices", () => {
             clientY: 6,
           })
         );
-        expect(told(source.sample()).axes).toEqual({
+        expect(told(listener.sample()).axes).toEqual({
           PointerX: 5,
           PointerY: 6,
         });
@@ -479,7 +479,7 @@ describe("a page's devices", () => {
     const page = new Listened();
     run(
       Effect.gen(function* () {
-        yield* Input.open;
+        yield* Input.listen;
         expect(page.send("keydown", { code: "Space", repeat: false })).toBe(
           true
         );
@@ -503,7 +503,7 @@ describe("a page's devices", () => {
     );
     run(
       Effect.gen(function* () {
-        yield* Input.open;
+        yield* Input.listen;
         expect(page.send("keydown", { code: "Space", repeat: false })).toBe(
           false
         );
@@ -519,14 +519,14 @@ describe("a page's devices", () => {
     let polls = 0;
     run(
       Effect.gen(function* () {
-        const source = yield* Input.open;
+        const listener = yield* Input.listen;
         expect(polls).toBe(0);
         pads = [
           null,
           pad(1, [true, false], [0.504, -0.05, -1, 0.099, 0.15]),
           pad(2, [true], [1], false),
         ];
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["Pad1Button0"],
           pressed: ["Pad1Button0"],
           released: [],
@@ -538,7 +538,7 @@ describe("a page's devices", () => {
         expect(polls).toBe(1);
         // Held still, and a stick that trembles: nothing happened.
         pads = [null, pad(1, [true, false], [0.5049, 0.02, -1, 0, 0.15])];
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["Pad1Button0"],
           pressed: [],
           released: [],
@@ -546,7 +546,7 @@ describe("a page's devices", () => {
           moved: [],
         });
         pads = [null, pad(1, [false, true], [0, 0, -1, 0, 0])];
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["Pad1Button1"],
           pressed: ["Pad1Button1"],
           released: ["Pad1Button0"],
@@ -556,7 +556,7 @@ describe("a page's devices", () => {
         // The page losing focus does not let go of a gamepad's buttons.
         page.send("keydown", { code: "KeyA", repeat: false });
         page.send("blur");
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: ["Pad1Button1"],
           pressed: ["KeyA"],
           released: ["KeyA"],
@@ -565,14 +565,14 @@ describe("a page's devices", () => {
         });
         // Unplugged: it lets go of everything.
         pads = [];
-        expect(told(source.sample())).toEqual({
+        expect(told(listener.sample())).toEqual({
           down: [],
           pressed: [],
           released: ["Pad1Button1"],
           axes: { Pad1Axis0: 0, Pad1Axis2: 0, Pad1Axis4: 0 },
           moved: ["Pad1Axis2"],
         });
-        expect(told(source.sample()).released).toEqual([]);
+        expect(told(listener.sample()).released).toEqual([]);
       }).pipe(
         Effect.provide(
           Browser.layer({
@@ -589,7 +589,7 @@ describe("a page's devices", () => {
     pads = [pad(0, [], [0.3, 0.2])];
     run(
       Effect.gen(function* () {
-        expect(told((yield* Input.open).sample()).axes).toEqual({
+        expect(told((yield* Input.listen).sample()).axes).toEqual({
           Pad0Axis0: 0.3,
         });
       }).pipe(
@@ -625,29 +625,29 @@ describe("a page's devices", () => {
     expect(page.total).toBe(0);
   });
 
-  it("opens nothing when its layer is built, and says so when read after the scope it was opened in has closed", () => {
+  it("listens to nothing when its layer is built, and says so when read after the scope it was listened to in has closed", () => {
     const page = new Listened();
     const layer = Browser.layer({
       window: page,
       gamepads: () => [],
       sounds: false,
     });
-    const source = run(
+    const listener = run(
       Effect.gen(function* () {
-        // A layer opens nothing: opening the devices does.
+        // A layer listens to nothing: listening to the devices does.
         yield* Layer.build(layer);
         expect(page.total).toBe(0);
-        const opened = yield* Input.open.pipe(Effect.provide(layer));
+        const listener = yield* Input.listen.pipe(Effect.provide(layer));
         expect(page.total).toBe(7);
-        return opened;
+        return listener;
       })
     );
     expect(page.total).toBe(0);
-    expect(() => source.sample()).toThrow(
-      /read after the scope they were opened in had closed/u
+    expect(() => listener.sample()).toThrow(
+      /read after the scope they were listened to in had closed/u
     );
-    expect(() => source.sample()).toThrow(
-      /App\.make opens them in the scope of the program that makes the app/u
+    expect(() => listener.sample()).toThrow(
+      /App\.make listens to them in the scope of the program that makes the app/u
     );
   });
 

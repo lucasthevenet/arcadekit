@@ -127,8 +127,8 @@ export interface Parts {
   readonly spans: Spans;
   /** What the tick's code runs with: the app's services and the game's own. */
   readonly context: Context.Context<unknown>;
-  /** The devices, opened in the scope the app is made in. */
-  readonly source: Input.SourceShape;
+  /** The devices, listened to in the scope the app is made in. */
+  readonly listener: Input.Listener;
   readonly actions: Stage.Actions;
   /** Where the frame stage's own random sequence starts. */
   readonly seed: number;
@@ -187,8 +187,8 @@ export const make = (parts: Parts): Loop => {
     intake,
     log,
     runner,
+    listener,
     schedule,
-    source,
     spans,
     time,
     verifyFrames,
@@ -405,7 +405,7 @@ export const make = (parts: Parts): Loop => {
       return Exit.void;
     }
     // One picture of the devices for the whole stage.
-    Object.assign(devices, source.sample());
+    Object.assign(devices, listener.sample());
     intake.heard = true;
     return between("input");
   };

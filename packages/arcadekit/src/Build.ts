@@ -207,7 +207,7 @@ export const build = <
     const runFork = Effect.runForkWith(context);
     // In the scope the app is made in, wherever its layer was provided: the
     // devices are heard for as long as the program that made the app.
-    const source = yield* Context.get(context, Input.Source).open;
+    const listener = yield* Context.get(context, Input.Source).listen;
 
     const spans = new Loop.Spans(context);
     const inbox = new Inbox.Inbox({
@@ -244,7 +244,7 @@ export const build = <
       schedule,
       spans,
       context,
-      source,
+      listener,
       actions,
       seed: seed ?? 0,
       verifyFrames: start.verifyFrames === true,

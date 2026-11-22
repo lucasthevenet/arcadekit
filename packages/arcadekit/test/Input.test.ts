@@ -45,7 +45,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
 const withSource =
-  (source: Input.SourceShape) =>
+  (source: Input.Listener) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
     Effect.provide(effect, Input.layer(source));
 
@@ -241,7 +241,7 @@ describe("the input stage", () => {
   it("does not read the devices when no system would hear of them", () => {
     let samples = 0;
     const inner = Input.makeManualSource();
-    const source: Input.SourceShape = {
+    const source: Input.Listener = {
       sample() {
         samples++;
         return inner.sample();

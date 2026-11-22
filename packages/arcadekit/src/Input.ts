@@ -122,16 +122,29 @@ export interface Sample {
 }
 
 /**
- * Open devices: where samples come from.
+ * Devices being listened to: where samples come from.
  *
  * @category Models
  */
-export interface SourceShape {
+export interface Listener {
   /**
    * Returns the devices' current state, and what changed since the last call.
    * An app calls it once per run of its input stage.
    */
   readonly sample: () => Sample;
+}
+
+/**
+ * Where devices come from: how to listen to them, and not a listener.
+ *
+ * @category Services
+ */
+export interface Source {
+  /**
+   * Starts listening to the devices in the current scope, and stops when that
+   * scope closes.
+   */
+  readonly listen: Effect.Effect<Listener, never, Scope.Scope>;
 }
 
 const NOTHING: Sample = {
@@ -143,51 +156,50 @@ const NOTHING: Sample = {
 };
 
 /** No devices at all, which differs from devices with nothing pressed. */
-const noSource: {
-  readonly open: Effect.Effect<SourceShape, never, Scope.Scope>;
-} = { open: Effect.succeed({ sample: () => NOTHING }) };
+const noSource: Source = {
+  listen: Effect.succeed({ sample: () => NOTHING }),
+};
 
 /**
- * Where an app's input stage takes its samples from: how to open the devices.
- * Nothing has to provide it: the default has no devices, which suits a replay,
- * a server and most tests. Without devices, the state `Input.plugin` keeps is
- * left unchanged: it holds whatever was last reported to it, from a log or
- * another machine. A page provides its own with `Browser.layer()` from
- * `arcadekit/Browser`, and a test that simulates input provides one it
- * controls, `Input.layer(Input.makeManualSource())`.
+ * Where an app's input stage takes its samples from. Nothing has to provide
+ * it: the default has no devices, which suits a replay, a server and most
+ * tests. Without devices, the state `Input.plugin` keeps is left unchanged: it
+ * holds whatever was last reported to it, from a log or another machine. A
+ * page provides its own with `Browser.layer()` from `arcadekit/Browser`, and a
+ * test that simulates input provides one it controls,
+ * `Input.layer(Input.makeManualSource())`.
  *
- * It holds no devices. `App.make` runs `open` in the scope the app is made in,
- * and what was opened is closed with that scope, so whatever the layer is
- * provided to, the devices are heard for as long as the program that made the
- * app. Each app opens its own.
+ * It listens to nothing itself. `App.make` runs `listen` in the scope the app
+ * is made in, and the listening stops when that scope closes, so whatever the
+ * layer is provided to, the devices are heard for as long as the program that
+ * made the app. Each app listens for itself.
  *
  * @category Services
  */
-export const Source: Context.Reference<{
-  readonly open: Effect.Effect<SourceShape, never, Scope.Scope>;
-}> = Context.Reference("arcadekit/Input.Source", {
-  defaultValue: () => noSource,
-});
+export const Source: Context.Reference<Source> = Context.Reference<Source>(
+  "arcadekit/Input.Source",
+  { defaultValue: () => noSource }
+);
 
 /**
- * Opens the devices in the current scope, as `App.make` does: for a program
- * that samples them itself.
+ * Listens to the devices in the current scope, as `App.make` does: for a
+ * program that samples them itself.
  *
  * @category Running
  */
-export const open: Effect.Effect<SourceShape, never, Scope.Scope> =
-  Effect.flatMap(Source, (source) => source.open);
+export const listen: Effect.Effect<Listener, never, Scope.Scope> =
+  Effect.flatMap(Source, (source) => source.listen);
 
 /**
- * Returns a layer that provides devices made by hand, open already, such as
- * `Input.makeManualSource()`.
+ * Returns a layer that provides devices made by hand, listened to already,
+ * such as `Input.makeManualSource()`.
  *
  *   App.make(game).pipe(Effect.provide(Input.layer(source)))
  *
  * @category Layers
  */
-export const layer = (source: SourceShape): Layer.Layer<never> =>
-  Layer.succeed(Source, { open: Effect.succeed(source) });
+export const layer = (listener: Listener): Layer.Layer<never> =>
+  Layer.succeed(Source, { listen: Effect.succeed(listener) });
 
 /**
  * The devices' state, for an input-stage system: one sample, taken when the
@@ -208,7 +220,7 @@ export class Devices extends Context.Service<Devices, Sample>()(
  *
  * @category Testing
  */
-export interface ManualSource extends SourceShape {
+export interface ManualSource extends Listener {
   /** Presses a button. Does nothing if it is already down. */
   readonly press: (code: string) => void;
   /** Releases a button. Does nothing if it is already up. */

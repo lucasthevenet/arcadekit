@@ -388,8 +388,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
   });
 
   /** A peer's transport, in a scope the test closes. */
-  const open = (url: string) =>
-    Transport.open.pipe(Effect.provide(Transport.layerWebSocket(url)));
+  const listenOn = (url: string) =>
+    Transport.listen.pipe(Effect.provide(Transport.layerWebSocket(url)));
 
   it("carries a message to the other peers of the room, and what was sent before it opened", async () => {
     const served = await serve();
@@ -397,9 +397,9 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const one = yield* open(Relay.address(served.url, ada));
-          const two = yield* open(Relay.address(served.url, grace));
-          const elsewhere = yield* open(Relay.address(served.url, linus));
+          const one = yield* listenOn(Relay.address(served.url, ada));
+          const two = yield* listenOn(Relay.address(served.url, grace));
+          const elsewhere = yield* listenOn(Relay.address(served.url, linus));
           // Sent at once, before either socket has had the time to open.
           one.send(message("ada", 0, 3));
           one.send(message("ada", 1));
@@ -518,8 +518,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const honest = yield* open(Relay.address(served.url, grace));
-          const liar = yield* open(Relay.address(served.url, ada));
+          const honest = yield* listenOn(Relay.address(served.url, grace));
+          const liar = yield* listenOn(Relay.address(served.url, ada));
           liar.send(message("ada", 0));
           // In grace's name.
           liar.send(message("grace", 0, 99));
@@ -553,11 +553,11 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const first = yield* open(Relay.address(served.url, ada));
+          const first = yield* listenOn(Relay.address(served.url, ada));
           yield* Effect.promise(() =>
             until(() => served.relay.members("blue").length === 1, "ada is in")
           );
-          const second = yield* open(Relay.address(served.url, ada));
+          const second = yield* listenOn(Relay.address(served.url, ada));
           let thrown: unknown;
           yield* Effect.promise(() =>
             until(() => {
@@ -605,13 +605,13 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          yield* open(Relay.address(served.url, long));
+          yield* listenOn(Relay.address(served.url, long));
           yield* Effect.promise(() =>
             until(() => served.relay.rooms === 1, "the first is in")
           );
-          const taken = yield* open(Relay.address(served.url, long));
-          const nowhere = yield* open(`${served.url}/blue`);
-          const closedWith = (transport: Transport.Shape) =>
+          const taken = yield* listenOn(Relay.address(served.url, long));
+          const nowhere = yield* listenOn(`${served.url}/blue`);
+          const closedWith = (transport: Transport.Listener) =>
             Effect.promise(async () => {
               let thrown: unknown;
               await until(() => {
@@ -628,7 +628,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           expect((yield* closedWith(taken)).reason).toBe("name taken");
           expect((yield* closedWith(nowhere)).reason).toBe("not an address");
           // The server is still there for whoever comes next.
-          const next = yield* open(Relay.address(served.url, ada));
+          const next = yield* listenOn(Relay.address(served.url, ada));
           yield* Effect.promise(() =>
             until(() => served.relay.rooms === 2, "the next is in")
           );
@@ -644,7 +644,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const transport = yield* open(gone);
+          const transport = yield* listenOn(gone);
           yield* Effect.promise(() =>
             until(() => served.relay.rooms === 1, "it connected")
           );
@@ -664,7 +664,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             Transport.Closed
           );
           // And one that never reaches a relay at all.
-          const nowhere = yield* open(gone);
+          const nowhere = yield* listenOn(gone);
           let thrown: unknown;
           yield* Effect.promise(() =>
             until(() => {
@@ -687,7 +687,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     const served = await serve();
     stop = served.stop;
     const url = Relay.address(served.url, ada);
-    const kept = await Effect.runPromise(Effect.scoped(open(url)));
+    const kept = await Effect.runPromise(Effect.scoped(listenOn(url)));
     expect(() => kept.receive()).toThrow(
       /was used after the scope it was opened in had closed, and its socket with it.*drive the session in that program/u
     );

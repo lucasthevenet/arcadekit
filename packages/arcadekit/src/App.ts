@@ -595,8 +595,8 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
  * is from another version of the game and the game's `migrations` don't bring
  * it up to this one: see `Save.migrate`.
  *
- * It opens the devices of `Input.Source` in the scope it runs in, and they are
- * closed with that scope: run the app in the program that made it.
+ * It listens to the devices of `Input.Source` in the scope it runs in, and
+ * stops when that scope closes: run the app in the program that made it.
  *
  * **Gotchas**
  *

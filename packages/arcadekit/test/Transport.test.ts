@@ -63,7 +63,7 @@ describe("a hub, the network in memory", () => {
     const hub = Transport.makeHub();
     const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
       hub.port(name)
-    ) as [Transport.Shape, Transport.Shape, Transport.Shape];
+    ) as [Transport.Listener, Transport.Listener, Transport.Listener];
     ada.send(message("ada", 0, 3));
     ada.send(message("ada", 1));
     expect(hub.inFlight).toBe(4);
@@ -418,11 +418,11 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const open = Transport.open.pipe(
+          const listen = Transport.listen.pipe(
             Effect.provide(Transport.layerBroadcastChannel(name))
           );
-          const ada = yield* open;
-          const grace = yield* open;
+          const ada = yield* listen;
+          const grace = yield* listen;
           ada.send(message("ada", 0, 7));
           grace.send(message("grace", 0));
           // Whatever else is posted under the name is not a message.
@@ -483,7 +483,9 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             // A layer opens nothing: opening the transport does.
             yield* Layer.build(layer);
             expect(made).toHaveLength(0);
-            const transport = yield* Transport.open.pipe(Effect.provide(layer));
+            const transport = yield* Transport.listen.pipe(
+              Effect.provide(layer)
+            );
             expect(made).toHaveLength(1);
             expect(made[0]!.name).toBe("game/room");
             expect(typeof made[0]!.onmessage).toBe("function");
@@ -538,7 +540,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     // Opened in a scope that is gone once the line has run.
     const kept = await Effect.runPromise(
       Effect.scoped(
-        Transport.open.pipe(
+        Transport.listen.pipe(
           Effect.provide(Transport.layerBroadcastChannel(name))
         )
       )
