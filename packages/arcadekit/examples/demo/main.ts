@@ -35,8 +35,8 @@ const Spray = Singleton.define(
   { wave: 0, wait: 0 }
 );
 const WAVES = 5;
-const Fountain = System.make("Fountain", function* () {
-  const spray = yield* Spray;
+const Fountain = System.tick("Fountain", function* () {
+  const spray = yield* Spray.writes;
   if (spray.wave >= WAVES) {
     return;
   }

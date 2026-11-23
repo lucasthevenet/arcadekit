@@ -16,15 +16,15 @@ describe("what an app is running", () => {
     const noted = Action.handler(Note, function* ({ by }) {
       yield* note(`handler from ${by}`);
     });
-    const Step = System.make("ph/Step", function* () {
+    const Step = System.tick("ph/Step", function* () {
       yield* note("tick");
     });
-    const Draw = System.make("ph/Draw", function* () {
+    const Draw = System.frame("ph/Draw", function* () {
       yield* note("frame");
-    }).pipe(System.inStage("frame"));
-    const Hear = System.make("ph/Hear", function* () {
+    });
+    const Hear = System.input("ph/Hear", function* () {
       yield* note("input");
-    }).pipe(System.inStage("input"));
+    });
     withApp(
       App.make(App.define({ systems: [Step, Draw, Hear], handlers: [noted] })),
       (made) => {

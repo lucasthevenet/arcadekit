@@ -68,7 +68,7 @@ const Moved = Query.all(Position, Sheet).pipe(
   Query.writes(Sheet)
 );
 // It says it writes, so that the frame stage is what refuses the write.
-const Drawn = Query.all(Position).pipe(Query.writes(Position));
+const Drawn = Query.all(Position);
 
 /** Why the game refused what it refused, each reason once. */
 const refusals: string[] = [];
@@ -84,9 +84,9 @@ const refused = (attempt: () => void): void => {
   }
 };
 
-const Movement = System.make("policy/Movement", function* () {
+const Movement = System.tick("policy/Movement", function* () {
   const { delta } = yield* Time;
-  const stats = yield* Stats;
+  const stats = yield* Stats.writes;
   (yield* Moving).each((position, velocity) => {
     position.x += velocity.x * delta;
     position.y += velocity.y * delta;
@@ -94,7 +94,7 @@ const Movement = System.make("policy/Movement", function* () {
   });
 });
 
-const Ageing = System.make("policy/Ageing", function* () {
+const Ageing = System.tick("policy/Ageing", function* () {
   (yield* Sheets).each((sheet, entity) => {
     sheet.hp -= 1;
     sheet.gold += 3;
@@ -107,9 +107,9 @@ const Ageing = System.make("policy/Ageing", function* () {
   });
 });
 
-const Fire = System.make("policy/Fire", function* () {
+const Fire = System.tick("policy/Fire", function* () {
   const { delta, tick } = yield* Time;
-  const stats = yield* Stats;
+  const stats = yield* Stats.writes;
   const commands = yield* Commands;
   (yield* OnFire).each((position, burning, entity) => {
     burning.seconds -= delta;
@@ -129,7 +129,7 @@ const Fire = System.make("policy/Fire", function* () {
   }
 });
 
-const Following = System.make("policy/Following", function* () {
+const Following = System.tick("policy/Following", function* () {
   const { tick } = yield* Time;
   // Four terms: the loop that hands out any number of them.
   (yield* Followers).each((follows, position, velocity, sheet) => {
@@ -146,7 +146,7 @@ const Following = System.make("policy/Following", function* () {
 });
 
 let noticed = 0;
-const Watching = System.make("policy/Watching", function* () {
+const Watching = System.tick("policy/Watching", function* () {
   (yield* Moved).each((position, sheet) => {
     noticed += 1;
     sheet.hp += position.x > 1000 ? 1 : 0;
@@ -154,15 +154,16 @@ const Watching = System.make("policy/Watching", function* () {
 });
 
 let drawn = 0;
-const Draw = System.make("policy/Draw", function* () {
+const Draw = System.frame("policy/Draw", function* () {
   (yield* Drawn).each((position) => {
     drawn += position.x;
     // The frame stage reads, and a write there is refused where it is made.
     refused(() => {
+      // @ts-expect-error a frame system reads
       position.x = 0;
     });
   });
-}).pipe(System.inStage("frame"));
+});
 
 class TooPoor extends Data.TaggedError("policy/TooPoor")<{}> {}
 const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }));

@@ -31,7 +31,7 @@
 import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
-import type { BuiltIn } from "./Services";
+import type { BuiltIn, Sim } from "./Services";
 import type * as System from "./System";
 
 /**
@@ -56,6 +56,11 @@ export type AnyHandler = Action.AnyHandler;
  * @param E        what building its layer or running its setup can fail with
  * @param RIn      what its layer requires that its dependencies don't provide
  * @param Needs    what its systems, handlers and setup require
+ * @param Sys      its systems, dependencies first, in the order a tick runs them
+ * @param Id       its name
+ * @param Deps     the plugins it depends on
+ * @param Own      its own systems, not its dependencies'
+ * @param Hands    its own handlers
  *
  * @category Models
  */
@@ -67,8 +72,12 @@ export interface Plugin<
   out RIn = never,
   out Needs = never,
   out Sys extends readonly AnySystem[] = readonly AnySystem[],
+  out Id extends string = string,
+  out Deps extends readonly Any[] = readonly Any[],
+  out Own extends readonly AnySystem[] = readonly AnySystem[],
+  out Hands extends readonly AnyHandler[] = readonly AnyHandler[],
 > {
-  readonly name: string;
+  readonly name: Id;
   readonly systems: readonly AnySystem[];
   readonly handlers: readonly AnyHandler[];
   readonly layer: Layer.Layer<never, unknown, unknown> | undefined;
@@ -84,6 +93,10 @@ export interface Plugin<
     readonly RIn: RIn;
     readonly Needs: Needs;
     readonly Sys: Sys;
+    readonly Id: Id;
+    readonly Deps: Deps;
+    readonly Own: Own;
+    readonly Hands: Hands;
   };
 }
 
@@ -198,6 +211,136 @@ type EffectError<T> =
 type EffectNeeds<T> =
   T extends Effect.Effect<unknown, unknown, infer R> ? R : never;
 
+type NameOf<T> = T extends { readonly name: infer N extends string }
+  ? N
+  : string;
+type OwnOf<T> =
+  T extends Plugin<
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    readonly AnySystem[],
+    string,
+    readonly Any[],
+    infer Own extends readonly AnySystem[]
+  >
+    ? Own
+    : readonly [];
+type DepsOf<T> =
+  T extends Plugin<
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    readonly AnySystem[],
+    string,
+    infer Deps extends readonly Any[]
+  >
+    ? Deps
+    : readonly [];
+type HandsOf<T> =
+  T extends Plugin<
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    readonly AnySystem[],
+    string,
+    readonly Any[],
+    readonly AnySystem[],
+    infer Hands extends readonly AnyHandler[]
+  >
+    ? Hands
+    : readonly [];
+
+type Walk<
+  P extends readonly Any[],
+  Seen extends string,
+  Out extends readonly AnySystem[],
+> = number extends P["length"]
+  ? readonly [Seen, Out]
+  : P extends readonly [infer H, ...infer Rest extends readonly Any[]]
+    ? string extends NameOf<H>
+      ? Walk<Rest, Seen, readonly [...Out, ...OwnOf<H>]>
+      : NameOf<H> extends Seen
+        ? Walk<Rest, Seen, Out>
+        : Walk<Rest, Seen | NameOf<H>, readonly [...Out, ...OwnOf<H>]>
+    : readonly [Seen, Out];
+
+type WalkHands<
+  P extends readonly Any[],
+  Seen extends string,
+  Out extends readonly AnyHandler[],
+> = number extends P["length"]
+  ? readonly [Seen, Out]
+  : P extends readonly [infer H, ...infer Rest extends readonly Any[]]
+    ? string extends NameOf<H>
+      ? WalkHands<Rest, Seen, readonly [...Out, ...HandsOf<H>]>
+      : NameOf<H> extends Seen
+        ? WalkHands<Rest, Seen, Out>
+        : WalkHands<Rest, Seen | NameOf<H>, readonly [...Out, ...HandsOf<H>]>
+    : readonly [Seen, Out];
+
+type NamedOf<H extends readonly AnyHandler[]> = H extends readonly [
+  infer Head,
+  ...infer Rest extends readonly AnyHandler[],
+]
+  ? [
+      {
+        readonly name: Head extends {
+          readonly action: { readonly name: infer N extends string };
+        }
+          ? N
+          : string;
+      },
+      ...NamedOf<Rest>,
+    ]
+  : [];
+
+type PluginNames<P extends readonly Any[]> = P extends readonly [
+  infer H,
+  ...infer Rest extends readonly Any[],
+]
+  ? [{ readonly name: NameOf<H> }, ...PluginNames<Rest>]
+  : [];
+
+/** Duplicate names of plugins in one list, and in each dependency list. */
+type PluginClashes<P extends readonly Any[]> = number extends P["length"]
+  ? never
+  : | System.Duplicated<PluginNames<P>, "plugin">
+    | (P extends readonly [infer H, ...infer Rest extends readonly Any[]]
+        ? PluginClashes<DepsOf<H>> | PluginClashes<Rest>
+        : never);
+
+type Gathered<P extends readonly Any[]> = Walk<P, never, readonly []>[1];
+type GatheredHands<P extends readonly Any[]> = WalkHands<
+  P,
+  never,
+  readonly []
+>[1];
+
+/**
+ * Duplicate system, handler and plugin names reachable from `plugins`, plus
+ * the caller's own systems and handlers. A shared dependency is counted once.
+ *
+ * @internal
+ */
+export type Clashes<
+  P extends readonly Any[],
+  H extends readonly AnyHandler[],
+  S extends readonly AnySystem[],
+> =
+  | PluginClashes<P>
+  | System.Duplicated<readonly [...Gathered<P>, ...S]>
+  | System.Duplicated<NamedOf<readonly [...GatheredHands<P>, ...H]>, "handler">;
+
 /**
  * Makes a plugin: a feature of a game, with the plugins it depends on, its
  * systems and action handlers, the services its layer provides, and what it
@@ -220,13 +363,14 @@ type EffectNeeds<T> =
  * @category Constructors
  */
 export const make = <
+  const Id extends string,
   S extends readonly AnySystem[] = readonly [],
   H extends readonly AnyHandler[] = readonly [],
   L extends Layer.Layer<never, unknown, unknown> = Layer.Layer<never>,
   SU extends Effect.Effect<void, unknown, unknown> = Effect.Effect<void>,
   P extends readonly Any[] = readonly [],
 >(
-  name: string,
+  name: Id,
   options: {
     /** The plugins this one depends on, installed first. */
     readonly plugins?: readonly [...P];
@@ -242,10 +386,12 @@ export const make = <
      * Runs once when a game starts fresh, after every plugin's layer is built,
      * to spawn the initial entities. It must not wait, nor leave a fiber running
      * when it ends: `App.make` dies if it does. It doesn't run when the
-     * app is loaded from a save, which already holds those entities.
+     * app is loaded from a save, which already holds those entities. It runs
+     * as a system of the tick does: real time, `Frame`, sound, a view and the
+     * devices do not compile here.
      */
-    readonly setup?: SU;
-  } & System.Ordered<System.Listing<SystemsOf<P>, S>>
+    readonly setup?: System.TickEffect<SU>;
+  } & System.Ordered<System.Listing<SystemsOf<P>, S>, Clashes<P, H, S>>
 ): Plugin<
   SystemError<S[number]> | TickErrorOf<P[number]>,
   H[number] | HandlerOf<P[number]>,
@@ -255,15 +401,19 @@ export const make = <
   | LayerNeedsOf<P[number]>,
   | SystemNeeds<S[number]>
   | HandlerNeeds<H[number]>
-  | EffectNeeds<SU>
+  | Exclude<EffectNeeds<SU>, Sim>
   | NeedsOf<P[number]>,
-  System.Listing<SystemsOf<P>, S>
+  System.Listing<SystemsOf<P>, S>,
+  Id,
+  P,
+  S,
+  H
 > => ({
   name,
   systems: options.systems ?? [],
   handlers: options.handlers ?? [],
   layer: options.layer,
-  setup: options.setup,
+  setup: options.setup as Effect.Effect<void, unknown, unknown> | undefined,
   plugins: options.plugins ?? [],
 });
 

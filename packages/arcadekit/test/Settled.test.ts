@@ -30,6 +30,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 // was moved.
 const Piece = Component.define("st/Piece", { x: Field.i32 });
 const Pieces = Query.all(Piece).pipe(Query.writes(Piece));
+const Seen = Query.all(Piece);
 const Score = Singleton.define("st/Score", { moves: Field.i32 }, { moves: 0 });
 const Phase = State.define("st/Phase", ["title", "playing"]);
 
@@ -39,23 +40,23 @@ const Moved = Event.define("st/Moved", Schema.Struct({ by: Schema.Int }));
 const Landed = Event.define("st/Landed", Schema.Struct({}));
 
 /** Counts the moves it hears of. It is listed before the system that says so. */
-const Tally = System.make("st/Tally", function* () {
+const Tally = System.tick("st/Tally", function* () {
   const heard = (yield* Landed).read();
   if (heard.length > 0) {
-    (yield* Score).moves += heard.length;
+    (yield* Score.writes).moves += heard.length;
   }
 });
 /** Says that a piece has landed, a tick after it was moved. */
-const Land = System.make("st/Land", function* () {
+const Land = System.tick("st/Land", function* () {
   if ((yield* Moved).read().length > 0) {
-    (yield* Landed).emit({});
+    (yield* Landed.emits).emit({});
   }
 });
 const entered: string[] = [];
-const Opening = System.make("st/Opening", function* () {
+const Opening = State.onEnter(Phase, "playing", "st/Opening", function* () {
   entered.push("playing");
   (yield* Commands.spawns(Piece)).spawn(Piece.of({ x: 0 }));
-}).pipe(State.onEnter(Phase, "playing"));
+});
 
 /** Says that a piece has landed, or has moved, with no piece doing either. */
 const Declare = Action.define(
@@ -64,9 +65,9 @@ const Declare = Action.define(
 );
 const declare = Action.handler(Declare, function* ({ landed }) {
   if (landed) {
-    (yield* Landed).emit({});
+    (yield* Landed.emits).emit({});
   } else {
-    (yield* Moved).emit({ by: 1 });
+    (yield* Moved.emits).emit({ by: 1 });
   }
 });
 
@@ -75,13 +76,13 @@ const Rules = Plugin.make("st/Rules", {
   handlers: [
     declare,
     Action.handler(Begin, function* () {
-      (yield* Phase).set("playing");
+      (yield* Phase.sets).set("playing");
     }),
     Action.handler(Move, function* ({ by }) {
       (yield* Pieces).each((piece) => {
         piece.x += by;
       });
-      (yield* Moved).emit({ by });
+      (yield* Moved.emits).emit({ by });
     }),
   ],
 });
@@ -165,9 +166,9 @@ describe("app.settled", () => {
 
   it("does not wait for what draws: an event kept for the frame stage is nothing a tick is needed for", () => {
     const heard: number[] = [];
-    const Watch = System.make("st/Watch", function* () {
+    const Watch = System.frame("st/Watch", function* () {
       heard.push((yield* Moved).read().length + (yield* Landed).read().length);
-    }).pipe(System.inStage("frame"));
+    });
     const app = run(
       App.make(App.define({ plugins: [Rules], systems: [Watch] }))
     );
@@ -224,7 +225,7 @@ describe("a game that ticks when its player moves", () => {
     frames++;
     lastAlpha = (yield* Frame).alpha;
     let x = 0;
-    (yield* Pieces).each((piece) => {
+    (yield* Seen).each((piece) => {
       ({ x } = piece);
     });
     return {
@@ -342,25 +343,25 @@ describe("a game that ticks when its player moves", () => {
 const Clock = Singleton.define("st/Clock", { left: Field.i32 }, { left: 0 });
 const Wind = Action.define("st/Wind", Schema.Struct({ ticks: Schema.Int }));
 const wind = Action.handler(Wind, function* ({ ticks }) {
-  (yield* Clock).left = ticks;
+  (yield* Clock.writes).left = ticks;
 });
 const windAndSay = Action.handler(Wind, function* ({ ticks }) {
-  (yield* Clock).left = ticks;
+  (yield* Clock.writes).left = ticks;
   // A handler may say so too: it is the tick's.
   (yield* Ticks).more();
 });
 let ran = 0;
-const RunDown = System.make("st/RunDown", function* () {
+const RunDown = System.tick("st/RunDown", function* () {
   ran++;
-  const clock = yield* Clock;
+  const clock = yield* Clock.writes;
   if (clock.left > 0) {
     clock.left -= 1;
     (yield* Ticks).more();
   }
 });
 /** The same clock, kept by a system that does not say it has more to do. */
-const RunDownSilently = System.make("st/RunDown", function* () {
-  const clock = yield* Clock;
+const RunDownSilently = System.tick("st/RunDown", function* () {
+  const clock = yield* Clock.writes;
   if (clock.left > 0) {
     clock.left -= 1;
   }
@@ -516,20 +517,23 @@ describe("a system that has more to do", () => {
     expect(loaded.time.tick).toBe(2 + 4 + 2);
   });
 
-  it("is the tick's to say: between ticks it throws, and says where it belongs", () => {
-    for (const stage of ["frame", "input", "preFrame", "postFrame"] as const) {
-      const Pushy = System.make("st/Pushy", function* () {
-        (yield* Ticks).more();
-      }).pipe(System.inStage(stage));
-      const app = run(App.make(App.define({ systems: [Pushy] })));
-      app.tick(1, { input: false });
-      const between = (): void =>
-        stage === "input" ? app.input() : app.frame(0);
-      expect(between, stage).toThrow(
-        "Ticks.more was called in the frame stage or the input stage"
-      );
-      // And nothing came of it.
-      expect(app.settled, stage).toBe(true);
+  it("is the tick's to say: a frame or input system cannot ask for another", () => {
+    for (const stage of ["preFrame", "frame", "postFrame"] as const) {
+      expect(stage).not.toBe("update");
+      System.frame(
+        "st/Pushy",
+        // @ts-expect-error Ticks.more is the tick's
+        function* () {
+          (yield* Ticks).more();
+        }
+      ).pipe(System.inStage(stage));
     }
+    System.input(
+      "st/Pushy",
+      // @ts-expect-error Ticks.more is the tick's
+      function* () {
+        (yield* Ticks).more();
+      }
+    );
   });
 });

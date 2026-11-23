@@ -46,7 +46,7 @@ class Bounds extends Context.Service<
   }
 >()("pl/Bounds") {}
 
-const Movement = System.make("Movement", function* () {
+const Movement = System.tick("Movement", function* () {
   const moving = yield* Query.all(Position, Velocity).pipe(
     Query.writes(Position)
   );
@@ -56,9 +56,9 @@ const Movement = System.make("Movement", function* () {
   });
 });
 
-const Walls = System.make("Walls", function* () {
+const Walls = System.tick("Walls", function* () {
   const { clamp, width } = yield* Bounds;
-  const bumped = yield* Bumped;
+  const bumped = yield* Bumped.emits;
   const moving = yield* Query.all(Position, Velocity).pipe(
     Query.writes(Position, Velocity)
   );
@@ -104,7 +104,7 @@ const heal = Action.handler(Heal, function* ({ amount }) {
   return total;
 });
 
-const BumpDamage = System.make("BumpDamage", function* () {
+const BumpDamage = System.tick("BumpDamage", function* () {
   const world = yield* World.writes(Health);
   for (const { entity } of (yield* Bumped).read()) {
     const health = world.get(entity, Health);
@@ -157,7 +157,7 @@ describe("plugins", () => {
       return "pong";
     });
     const seen: number[] = [];
-    const Watch = System.make("Watch", function* () {
+    const Watch = System.tick("Watch", function* () {
       seen.push((yield* Bumped).read().length);
     });
     withApp(
@@ -183,7 +183,7 @@ describe("plugins", () => {
     ) {}
     const Core = Plugin.make("Core", {
       systems: [
-        System.make("CoreSystem", function* () {
+        System.tick("CoreSystem", function* () {
           order.push("tick:Core");
         }),
       ],
@@ -197,14 +197,14 @@ describe("plugins", () => {
       setup: Effect.sync(() => void order.push("setup:Core")),
     });
     type NeedsClock = Plugin.Plugin<never, never, Clock, never, never, Clock>;
-    const plugin = (
-      name: string,
+    const plugin = <const Name extends string>(
+      name: Name,
       plugins: readonly (Plugin.Plugin<never, never, Clock> | NeedsClock)[]
     ) =>
       Plugin.make(name, {
         plugins: [...plugins],
         systems: [
-          System.make(`${name}System`, function* () {
+          System.tick(`${name}System`, function* () {
             order.push(`tick:${name}:${(yield* Clock).id}`);
           }),
         ],
@@ -255,7 +255,7 @@ describe("plugins", () => {
       ),
     });
     const seen: string[] = [];
-    const Look = System.make("Look", function* () {
+    const Look = System.tick("Look", function* () {
       const arena = yield* Arena;
       seen.push(
         `wall ${(yield* World).get(arena.wall, Position)!.x} of ${arena.width}`
@@ -279,7 +279,7 @@ describe("plugins", () => {
     const Sfx = Plugin.make("Sfx", {
       plugins: [Physics],
       systems: [
-        System.make("BumpSound", function* () {
+        System.tick("BumpSound", function* () {
           const audio = yield* Audio;
           for (const _ of (yield* Bumped).read()) {
             audio.play("boing");
@@ -313,7 +313,7 @@ describe("plugins", () => {
       Effect.map(Effect.service(Bounds), ({ width }) => ({ limit: width * 2 }))
     );
     const limits: number[] = [];
-    const ReadSpeed = System.make("ReadSpeed", function* () {
+    const ReadSpeed = System.tick("ReadSpeed", function* () {
       limits.push((yield* Speed).limit);
     });
 
@@ -416,27 +416,30 @@ describe("plugins", () => {
   it("reject clashing names", () => {
     const one = Plugin.make("Twin", {});
     const two = Plugin.make("Twin", {});
+    App.define(
+      // @ts-expect-error two plugins named Twin
+      { plugins: [one, two] }
+    );
+    const different: readonly Plugin.Plugin[] = [one, two];
     expect(() =>
       Effect.runSync(
-        Effect.scoped(App.make(App.define({ plugins: [one, two] })))
+        Effect.scoped(App.make(App.define({ plugins: different })))
       )
     ).toThrow(/both named "Twin"/);
-    // The same plugin listed twice is fine.
-    withApp(App.make(App.define({ plugins: [one, one] })), (app) =>
+    const again: readonly Plugin.Plugin[] = [one, one];
+    withApp(App.make(App.define({ plugins: again })), (app) =>
       expect(app.plugins).toEqual(["Twin"])
     );
 
     const clash = Plugin.make("Clash", { systems: [Movement] });
-    expect(() =>
-      Effect.runSync(
-        Effect.scoped(App.make(App.define({ plugins: [Physics, clash] })))
-      )
-    ).toThrow(/Duplicate system name "Movement"/);
+    App.define(
+      // @ts-expect-error duplicate system name
+      { plugins: [Physics, clash] }
+    );
     const healAgain = Plugin.make("HealAgain", { handlers: [heal] });
-    expect(() =>
-      Effect.runSync(
-        Effect.scoped(App.make(App.define({ plugins: [Combat, healAgain] })))
-      )
-    ).toThrow(/Two handlers for action "Heal"/);
+    App.define(
+      // @ts-expect-error duplicate handler
+      { plugins: [Combat, healAgain] }
+    );
   });
 });

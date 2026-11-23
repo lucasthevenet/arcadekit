@@ -133,10 +133,10 @@ import { Field, Singleton, System } from "arcadekit";
 const Player = Singleton.define("game/Player", { x: Field.f32 }, { x: 0 });
 
 // Each frame, before the scene is rendered.
-const Follow = System.make("game/Follow", function* () {
+const Follow = System.frame("game/Follow", function* () {
   const { camera } = yield* Three.Scene;
   camera.position.x = (yield* Player).x;
-}).pipe(System.inStage("frame"));
+});
 ```
 
 - `Three.Scene` is the service: `scene`, a Three.js `Scene`, and `camera`, a perspective camera at (0, 0, 10) until you move or replace it; `camera` is assignable, to an `OrthographicCamera` for example. It belongs to rendering, not to the game: no tick reads it, and none of it is saved.

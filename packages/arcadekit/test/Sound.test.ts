@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
@@ -47,10 +47,10 @@ const Mute = Action.define("sd/Mute", Schema.Struct({ on: Schema.Boolean }));
 
 class TooHigh extends Data.TaggedError("TooHigh")<{}> {}
 
-const Fall = System.make("sd/Fall", function* () {
+const Fall = System.tick("sd/Fall", function* () {
   const { delta } = yield* Time;
-  const bounced = yield* Bounced;
-  const bounces = yield* Bounces;
+  const bounced = yield* Bounced.emits;
+  const bounces = yield* Bounces.writes;
   let count = 0;
   (yield* Balls).each((ball) => {
     ball.speed += 10 * delta;
@@ -89,14 +89,14 @@ const Rules = Plugin.make("sd/Rules", {
   systems: [Fall],
   handlers: [
     Action.handler(Drop, function* ({ height }) {
-      (yield* Dropped).emit({});
+      (yield* Dropped.emits).emit({});
       if (height > 100) {
         return yield* new TooHigh();
       }
       (yield* Commands.spawns(Ball)).spawn(Ball.of({ y: height, speed: 0 }));
     }),
     Action.handler(Mute, function* ({ on }) {
-      (yield* Phase).set(on ? "muted" : "playing");
+      (yield* Phase.sets).set(on ? "muted" : "playing");
     }),
   ],
 });
@@ -304,65 +304,41 @@ describe("Sound.cues", () => {
 });
 
 describe("Sound.Player", () => {
-  it("is never called by the simulation: playing in the tick throws", () => {
-    const Loud = System.make("sd/Loud", function* () {
-      (yield* Sound.Player).play("bang");
-    });
-    const sound = Sound.makeRecorder();
-    const app = run(
-      App.make(App.define({ plugins: [Sound.plugin], systems: [Loud] })).pipe(
-        Effect.provide(Sound.layer(sound))
-      )
+  it("is never called by the simulation: a tick system or a handler cannot play", () => {
+    System.tick(
+      "sd/Loud",
+      // @ts-expect-error sound is the frame's
+      function* () {
+        (yield* Sound.Player).play("bang");
+      }
     );
-    expect(() => app.tick(0.1)).toThrow(
-      'The cue "bang" was played in the tick'
-    );
-    expect(sound.played).toEqual([]);
-
-    // Nor by an action's handler, which is the simulation too.
     const Bang = Action.define("sd/Bang", Schema.Struct({}));
-    const other = run(
-      App.make(
-        App.define({
-          plugins: [Sound.plugin],
-          handlers: [
-            Action.handler(Bang, function* () {
-              (yield* Sound.Player).play("bang");
-            }),
-          ],
-        })
-      ).pipe(Effect.provide(Sound.layer(sound)))
+    Action.handler(
+      Bang,
+      // @ts-expect-error sound is the frame's
+      function* () {
+        (yield* Sound.Player).play("bang");
+      }
     );
-    // It dies of it, as of any bug, and what it did is taken back.
-    const exit = other.dispatch(Bang, {});
-    expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toContain(
-      'The cue "bang" was played in the tick'
-    );
-    expect(sound.played).toEqual([]);
+    expect(Bang.name).toBe("sd/Bang");
   });
 
-  it("plays for a system of the frame stage or the input stage, as it is told, once the frame's systems have run", () => {
+  it("plays for a system of the frame stage, as it is told, once the frame's systems have run", () => {
     let clicks: readonly (Sound.Options | undefined)[] = [];
     const heard: number[] = [];
     const sound = Sound.makeRecorder();
-    const Click = System.make("sd/Click", function* () {
+    const Click = System.frame("sd/Click", function* () {
       const player = yield* Sound.Player;
       for (const options of clicks) {
         player.play("click", options);
       }
       // Asked for, and not played yet: the frame is not over.
       heard.push(sound.played.length);
-    }).pipe(System.inStage("frame"));
-    let beep = false;
-    const Beep = System.make("sd/Beep", function* () {
-      if (beep) {
-        (yield* Sound.Player).play("beep", { volume: 2 });
-      }
-    }).pipe(System.inStage("input"));
+    });
     const app = run(
-      App.make(
-        App.define({ plugins: [Sound.plugin], systems: [Click, Beep] })
-      ).pipe(Effect.provide(Sound.layer(sound)))
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Click] })).pipe(
+        Effect.provide(Sound.layer(sound))
+      )
     );
     const frame = (...asked: (Sound.Options | undefined)[]): Sound.Played[] => {
       clicks = asked;
@@ -390,16 +366,6 @@ describe("Sound.Player", () => {
     ).toEqual([{ cue: "click", volume: 0.9, rate: 3 }]);
     // And nothing is left of a frame for the next.
     expect(frame()).toEqual([]);
-    // Asked for in the input stage, it is heard with the frame that
-    // follows, and before what that frame asks.
-    beep = true;
-    app.input();
-    expect(sound.played).toEqual([]);
-    beep = false;
-    expect(frame(undefined)).toEqual([
-      { cue: "beep", volume: 2, rate: 1 },
-      { cue: "click", volume: 1, rate: 1 },
-    ]);
     expect(app.frameOrder).toEqual(["sd/Click", "arcadekit/Sound.Flush"]);
   });
 
@@ -410,10 +376,10 @@ describe("Sound.Player", () => {
       Sound.on(Bounced, { cue: "thud", volume: 0.3 }),
       Sound.on(Dropped, "whoosh")
     );
-    const Mine = System.make("sd/Mine", function* () {
+    const Mine = System.frame("sd/Mine", function* () {
       (yield* Sound.Player).play("whoosh", { volume: 0.2, rate: 2 });
       (yield* Sound.Player).play("ping");
-    }).pipe(System.inStage("frame"));
+    });
     const app = run(
       App.make(App.define({ plugins: [Game], systems: [Theirs, Mine] })).pipe(
         Effect.provide(Sound.layer(sound))
@@ -437,11 +403,11 @@ describe("Sound.Player", () => {
 
   it("says whether sound goes anywhere", () => {
     const seen: boolean[] = [];
-    const Ask = System.make("sd/Ask", function* () {
+    const Ask = System.frame("sd/Ask", function* () {
       seen.push((yield* Sound.Player).audible);
       // Playing to nowhere is no mistake.
       (yield* Sound.Player).play("anything");
-    }).pipe(System.inStage("frame"));
+    });
     const Asking = App.define({ plugins: [Sound.plugin], systems: [Ask] });
     run(App.make(Asking)).frame(0);
     run(

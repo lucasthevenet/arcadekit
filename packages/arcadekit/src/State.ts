@@ -4,16 +4,16 @@
  *
  *   const Phase = State.define("game/Phase", ["menu", "playing", "paused"])
  *
- *   const Movement = System.make("Movement", function*() { ... }).pipe(
+ *   const Movement = System.tick("Movement", function*() { ... }).pipe(
  *     System.runIf(State.is(Phase, "playing"))
  *   )
- *   const StartLevel = System.make("StartLevel", function*() { ... }).pipe(
- *     State.onEnter(Phase, "playing")
- *   )
+ *   const StartLevel = State.onEnter(Phase, "playing", "StartLevel", function*() {
+ *     ...
+ *   })
  *
- *   const phase = yield* Phase      // in a system or a handler
- *   phase.value                     // "menu"
- *   phase.set("playing")            // entered at the start of the next tick
+ *   const phase = yield* Phase           // value, next, is
+ *   const writing = yield* Phase.sets    // a tick system or a handler
+ *   writing.set("playing")               // entered at the start of the next tick
  *
  * A state is a singleton of the world: it is saved with the game, including any
  * pending transition, included in the world's hash, and rolled back when the
@@ -28,6 +28,7 @@ import { Component, Field } from "./ecs/component";
 import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
 import { World, whole } from "./Services";
+import type { Sim } from "./Services";
 import * as System from "./System";
 
 /** What the world stores for a state. */
@@ -41,20 +42,30 @@ type Fields = {
 };
 
 /**
- * A system's handle to a state, from `yield* SomeState`: the current state, and
- * a way to request another.
+ * What every stage gets from `yield* SomeState`: the current value, and
+ * whether it is one of a list. Setting it is `yield* SomeState.sets`, and
+ * only a system of the tick or a handler can ask for that.
  *
  * @category Models
  */
-export interface StateHandle<V extends string> {
+export interface StateView<V extends string> {
   /** The current state. */
   readonly value: V;
   /** The requested state that hasn't been entered yet, if any. */
   readonly next: V | undefined;
-  // `is` and `set` are methods, so that a handle of any state is a
-  // `StateHandle<string>`.
+  // A method, so that a view of any state is a `StateView<string>`.
   /** Returns whether the game is in one of these states. */
   is(...values: readonly V[]): boolean;
+}
+
+/**
+ * A tick system's handle to a state, from `yield* SomeState.sets`: the current
+ * value, and a way to request another.
+ *
+ * @category Models
+ */
+export interface StateHandle<V extends string> extends StateView<V> {
+  // A method, so that a handle of any state is a `StateHandle<string>`.
   /**
    * Requests a state. The game enters it at the start of the next tick: the
    * exit hooks of the old state run, then the enter hooks of the new one, and
@@ -79,12 +90,15 @@ export const defined = (): Iterable<State<string>> => definitions.values();
  * @category Models
  */
 export class State<V extends string>
-  extends Effectable.Class<StateHandle<V>, never, World>
+  extends Effectable.Class<StateView<V>, never, World>
   implements SingletonSpec<Fields>
 {
   readonly component: ComponentDef<Fields>;
   readonly initial: { value: string; next: string | null; entered: number };
-  private effect: Effect.Effect<StateHandle<V>, never, World> | undefined;
+  private effect: Effect.Effect<StateView<V>, never, World> | undefined;
+  private writing:
+    | Effect.Effect<StateHandle<V>, never, World | Sim>
+    | undefined;
 
   constructor(
     readonly name: string,
@@ -106,8 +120,27 @@ export class State<V extends string>
     definitions.set(name, this as unknown as State<string>);
   }
 
-  asEffect(): Effect.Effect<StateHandle<V>, never, World> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
+  asEffect(): Effect.Effect<StateView<V>, never, World> {
+    return (this.effect ??= Effect.map(Effect.service(World), (world) => {
+      const handle = handleOf(whole(world), this);
+      return {
+        get value() {
+          return handle.value;
+        },
+        get next() {
+          return handle.next;
+        },
+        is: (...values: readonly V[]) => handle.is(...values),
+      };
+    }));
+  }
+
+  /**
+   * The same state, with `set`. Requiring it puts `Sim` in the system's
+   * requirements, which a frame or input system does not accept.
+   */
+  get sets(): Effect.Effect<StateHandle<V>, never, World | Sim> {
+    return (this.writing ??= Effect.map(Effect.service(World), (world) =>
       handleOf(whole(world), this)
     ));
   }
@@ -282,7 +315,7 @@ export const enter = (
  * Returns a condition for `System.runIf` that holds while the game is in one of
  * these states.
  *
- *   System.make("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
+ *   System.tick("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
  *
  * @category Conditions
  */
@@ -292,40 +325,78 @@ export const is = <V extends string>(
 ): Effect.Effect<boolean, never, World> =>
   Effect.map(state, (handle) => handle.is(...values));
 
+const hook = <
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  V extends string,
+>(
+  state: State<V>,
+  value: NoInfer<V>,
+  on: "enter" | "exit",
+  name: N,
+  body: System.TickBody<Eff>
+): System.System<
+  System.GenError<Eff>,
+  Exclude<System.GenServices<Eff>, Sim>,
+  N,
+  "update",
+  System.Trigger
+> => System.triggered(System.tick(name, body), { state, on, value });
+
 /**
- * Turns a system into an enter hook: it runs once when the game enters a state,
- * at the start of that tick, before the tick's other systems. It no longer runs
- * every tick.
+ * Makes a system that runs once when the game enters a state, at the start of
+ * that tick, before the tick's other systems.
  *
  * The enter hooks of the initial state run on the game's first tick, before any
  * transition requested ahead of it, which happens in the same tick. They don't
  * run again when a saved game is loaded, since the save holds their effects.
  *
  * Hooks for the same transition run in the order they are listed, and each
- * hook's commands are applied before the next runs. A state a hook requests with `set` waits for the next tick.
+ * hook's commands are applied before the next runs. A state a hook requests
+ * with `set` waits for the next tick.
  *
- * @category Combinators
+ * @category Constructors
  */
-export const onEnter =
-  <V extends string>(state: State<V>, value: NoInfer<V>) =>
-  <E, R, N extends string, St extends System.Stage>(
-    self: System.System<E, R, N, St>
-  ): System.System<E, R, N, St, System.Trigger> =>
-    System.triggered(self, { state, on: "enter", value });
+export const onEnter = <
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  V extends string,
+>(
+  state: State<V>,
+  value: NoInfer<V>,
+  name: N,
+  body: System.TickBody<Eff>
+): System.System<
+  System.GenError<Eff>,
+  Exclude<System.GenServices<Eff>, Sim>,
+  N,
+  "update",
+  System.Trigger
+> => hook(state, value, "enter", name, body);
 
 /**
- * Turns a system into an exit hook: it runs once when the game leaves a state,
- * at the start of that tick, before the enter hooks of the next state. `yield*`
- * on the state still returns the one being left.
+ * Makes a system that runs once when the game leaves a state, at the start of
+ * that tick, before the enter hooks of the next state. `yield*` on the state
+ * still returns the one being left.
  *
- * @category Combinators
+ * @category Constructors
  */
-export const onExit =
-  <V extends string>(state: State<V>, value: NoInfer<V>) =>
-  <E, R, N extends string, St extends System.Stage>(
-    self: System.System<E, R, N, St>
-  ): System.System<E, R, N, St, System.Trigger> =>
-    System.triggered(self, { state, on: "exit", value });
+export const onExit = <
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  V extends string,
+>(
+  state: State<V>,
+  value: NoInfer<V>,
+  name: N,
+  body: System.TickBody<Eff>
+): System.System<
+  System.GenError<Eff>,
+  Exclude<System.GenServices<Eff>, Sim>,
+  N,
+  "update",
+  System.Trigger
+> => hook(state, value, "exit", name, body);
 
 /**
  * Has a world hold the states its app runs with: those a hook waits for,

@@ -207,7 +207,7 @@ describe("actions with a schema", () => {
   it("report bad queued input as events, and refuse a payload with no JSON form where it is enqueued", () => {
     const rejected: string[] = [];
     const events: (typeof Action.Rejected.codec)["Type"][] = [];
-    const Watch = System.make("Watch", function* () {
+    const Watch = System.tick("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
         rejected.push(`${event.action}: ${event.error._tag}`);
         events.push(event);
@@ -356,8 +356,8 @@ describe("events with a schema", () => {
 
   it("infer the payload type, and are emitted and read as ever, with no check", () => {
     const seen: unknown[] = [];
-    const Emit = System.make("Emit", function* () {
-      const hit = yield* Hit;
+    const Emit = System.tick("Emit", function* () {
+      const hit = yield* Hit.emits;
       // The payload is typed by the schema: a string here would not compile.
       hit.emit({ target: 1 as Entity, amount: 3, at: new Date(5), seed: 9n });
       hit.emit({
@@ -371,7 +371,7 @@ describe("events with a schema", () => {
       // checks nothing, so that it stays a plain call inside a loop.
       hit.emit({ target: 1 as Entity, amount: 500, at: new Date(5), seed: 9n });
     });
-    const Read = System.make("Read", function* () {
+    const Read = System.tick("Read", function* () {
       for (const hit of (yield* Hit).read()) {
         seen.push(hit.amount);
       }
@@ -440,14 +440,14 @@ describe("events with a schema", () => {
 
   it("are known by name in an app: two different events with one name are refused", () => {
     const Twin = Event.define("sc/Hit", Schema.Number);
-    const Both = System.make("Both", function* () {
-      (yield* Hit).emit({
+    const Both = System.tick("Both", function* () {
+      (yield* Hit.emits).emit({
         target: 1 as Entity,
         amount: 1,
         at: new Date(1),
         seed: 1n,
       });
-      (yield* Twin).emit(1);
+      (yield* Twin.emits).emit(1);
     });
     withApp(App.make(App.define({ systems: [Both] })), (app) => {
       expect(() => app.tick(1)).toThrow(
@@ -455,8 +455,8 @@ describe("events with a schema", () => {
       );
     });
     // Each on its own, in an app of its own, is fine.
-    const Alone = System.make("Alone", function* () {
-      (yield* Twin).emit(2);
+    const Alone = System.tick("Alone", function* () {
+      (yield* Twin.emits).emit(2);
     });
     withApp(App.make(App.define({ systems: [Alone] })), (app) => {
       app.tick(1);

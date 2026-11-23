@@ -20,7 +20,7 @@ import {
 const Ball = Component.define("dr/Ball", { x: Field.f32, vx: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 
-const Roll = System.make("Roll", function* () {
+const Roll = System.tick("Roll", function* () {
   const { delta } = yield* Time;
   (yield* Balls).each((ball) => {
     ball.x += ball.vx * delta;
@@ -52,9 +52,9 @@ const started = Effect.fnUntraced(function* (
   hz = 60
 ) {
   const drawn: number[] = [];
-  const Draw = System.make("Draw", function* () {
+  const Draw = System.frame("Draw", function* () {
     drawn.push((yield* Frame).alpha);
-  }).pipe(System.inStage("frame"));
+  });
   const app = yield* App.make(App.define({ systems: [Roll, Draw] }));
   const fiber = yield* Effect.forkScoped(
     Driver.frames(app, { hz }).pipe(withDisplay(display)),
@@ -114,9 +114,9 @@ describe("the frame loop", () => {
   it("gives the frame stage the real seconds since the frame before", async () => {
     const display = Driver.makeManualDisplay();
     const deltas: number[] = [];
-    const Draw = System.make("Draw", function* () {
+    const Draw = System.frame("Draw", function* () {
       deltas.push((yield* Frame).delta);
-    }).pipe(System.inStage("frame"));
+    });
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
@@ -346,7 +346,7 @@ describe("the frame loop", () => {
 
   it("stops and dies with what a tick throws, leaving nothing behind", async () => {
     class Jammed extends Data.TaggedError("Jammed")<{ readonly at: number }> {}
-    const Jam = System.make("Jam", function* () {
+    const Jam = System.tick("Jam", function* () {
       const { tick } = yield* Time;
       if (tick === 3) {
         return yield* new Jammed({ at: tick });
@@ -374,11 +374,11 @@ describe("the frame loop", () => {
   });
 
   it("stops and dies with what the frame stage throws", async () => {
-    const Smear = System.make("Smear", function* () {
+    const Smear = System.frame("Smear", function* () {
       if ((yield* Frame).count === 2) {
         throw new Error("the canvas is gone");
       }
-    }).pipe(System.inStage("frame"));
+    });
     const display = Driver.makeManualDisplay();
     const fiber = Effect.runFork(
       Effect.scoped(
@@ -494,7 +494,7 @@ describe("the timer", () => {
 
   it("stops and dies with what a tick throws", async () => {
     class Jammed extends Data.TaggedError("Jammed")<{ readonly at: number }> {}
-    const Jam = System.make("Jam", function* () {
+    const Jam = System.tick("Jam", function* () {
       const { tick } = yield* Time;
       if (tick === 3) {
         return yield* new Jammed({ at: tick });
@@ -650,17 +650,17 @@ describe("ticking when needed", () => {
   it("is how the frame loop runs a game at rest: a frame asked for and drawn each time, the tab watched, and no tick", async () => {
     const display = Driver.makeManualDisplay();
     const alphas: number[] = [];
-    const Draw = System.make("Draw", function* () {
+    const Draw = System.frame("Draw", function* () {
       alphas.push((yield* Frame).alpha);
-    }).pipe(System.inStage("frame"));
+    });
     // A fuse that burns for six ticks once it is lit.
     const Fuse = Singleton.define("dr/Fuse", { left: Field.u8 }, { left: 0 });
     const Light = Action.define("dr/Light", Schema.Struct({}));
     const light = Action.handler(Light, function* () {
-      (yield* Fuse).left = 6;
+      (yield* Fuse.writes).left = 6;
     });
-    const Burn = System.make("Burn", function* () {
-      const fuse = yield* Fuse;
+    const Burn = System.tick("Burn", function* () {
+      const fuse = yield* Fuse.writes;
       if (fuse.left > 0) {
         fuse.left -= 1;
         (yield* Ticks).more();

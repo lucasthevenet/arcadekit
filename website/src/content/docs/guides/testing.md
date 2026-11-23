@@ -24,7 +24,7 @@ const Score = Singleton.define(
 );
 const Add = Action.define("game/Add", Schema.Struct({ points: Schema.Int }));
 const add = Action.handler(Add, function* ({ points }) {
-  (yield* Score).points += points;
+  (yield* Score.writes).points += points;
 });
 export const Rules = Plugin.make("game/Rules", {
   handlers: [add],

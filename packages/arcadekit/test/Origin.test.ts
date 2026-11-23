@@ -61,7 +61,7 @@ describe("who issued an action", () => {
     const poke = Action.handler(Poke, function* (_, origin) {
       yield* Effect.sync(() => told.push(origin.from));
     });
-    const Bot = System.make("or/Bot", function* () {
+    const Bot = System.tick("or/Bot", function* () {
       if ((yield* Time).tick === 1) {
         (yield* Action.Actions).enqueue(Poke, { n: 1 });
       }
@@ -199,7 +199,7 @@ describe("who issued an action", () => {
 
   it("is told with a refusal", () => {
     const heard: (string | undefined)[] = [];
-    const Hear = System.make("or/Hear", function* () {
+    const Hear = System.tick("or/Hear", function* () {
       for (const refusal of (yield* Action.Rejected).read()) {
         heard.push(refusal.from);
       }

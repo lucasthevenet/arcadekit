@@ -115,16 +115,16 @@ const makeGame = () => {
     Schema.Struct({ to: Schema.Literals(["menu", "forest", "cave"]) })
   );
   const go = Action.handler(Go, function* ({ to }) {
-    (yield* Level).set(to);
+    (yield* Level.sets).set(to);
   });
   const drawn: string[] = [];
-  const Draw = System.make("Draw", function* () {
+  const Draw = System.frame("Draw", function* () {
     const forest = yield* Forest;
     const cave = yield* Cave;
     drawn.push(
       `${(yield* Level).value}: forest ${forest._tag}${forest._tag === "Ready" ? ` (${forest.assets.layout.name}, ${forest.assets.backdrop.size} bytes)` : ""}, cave ${cave._tag}`
     );
-  }).pipe(System.inStage("frame"));
+  });
   const Game = Plugin.make("Game", {
     plugins: [Assets.plugin],
     handlers: [go],
@@ -423,9 +423,9 @@ describe("a level's assets", () => {
       backdrop: tracked("/forest.png", log),
     });
     const seen: string[] = [];
-    const Draw = System.make("Draw", function* () {
+    const Draw = System.frame("Draw", function* () {
       seen.push((yield* Forest)._tag);
-    }).pipe(System.inStage("frame"));
+    });
     const Keep = Assets.during(State.is(Level, "forest"), Forest);
     // It is of the stage before a frame's own.
     expect(Keep.stage).toBe("preFrame");
@@ -440,11 +440,11 @@ describe("a level's assets", () => {
           );
           expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
           const go = (to: "menu" | "forest") =>
-            Effect.map(Level, (level) => {
-              level.set(to);
+            Effect.sync(() => {
+              State.handleOf(app.world, Level).set(to);
               app.tick(1);
               app.frame(0);
-            }).pipe(Effect.provideService(World, app.world));
+            });
           app.frame(0);
           yield* go("forest");
           yield* go("menu");
@@ -513,12 +513,12 @@ describe("a level's assets", () => {
     const slow = makeSlowLoader();
     const logged: unknown[] = [];
     const errors: Assets.AssetFailed[] = [];
-    const Peek = System.make("Peek", function* () {
+    const Peek = System.frame("Peek", function* () {
       const forest = yield* Forest;
       if (forest._tag === "Failed") {
         errors.push(forest.error);
       }
-    }).pipe(System.inStage("frame"));
+    });
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -714,51 +714,28 @@ describe("a level's assets", () => {
 
   it("cannot be asked for in the tick, where a replay would have nothing to say", () => {
     const { Forest, Game } = makeGame();
+    System.tick(
+      "Cheat",
+      // @ts-expect-error assets are real time
+      function* () {
+        yield* Forest;
+      }
+    );
+    System.tick(
+      "Sneak",
+      // @ts-expect-error the store of assets is real time
+      function* () {
+        yield* Assets.Store;
+      }
+    );
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
-          const Cheat = System.make("Cheat", function* () {
-            yield* Forest;
-          });
-          const app = yield* App.make(
-            App.define({ plugins: [Game], systems: [Cheat] })
-          );
-          expect(() => app.tick(1)).toThrow(
-            /The assets "as\/Forest" were asked for in the tick/
-          );
-          // The store that keeps them is no way round: it says the same of
-          // being asked, and of being told to load or to let go.
-          const calls: Record<string, (store: Assets.StoreShape) => unknown> = {
-            "asked for": (store) => store.status(Forest),
-            held: (store) => store.hold(Forest, "Sneak"),
-            "let go of": (store) => store.drop(Forest, "Sneak"),
-          };
-          let asked = 0;
-          for (const [what, call] of Object.entries(calls)) {
-            const Sneak = System.make("Sneak", function* () {
-              call(yield* Assets.Store);
-            });
-            const sneaking = yield* App.make(
-              App.define({ plugins: [Game], systems: [Sneak] })
-            ).pipe(
-              Effect.provideService(Assets.Loader, {
-                bytes: () => {
-                  asked++;
-                  return Effect.succeed(new Uint8Array(1));
-                },
-              })
-            );
-            expect(() => sneaking.tick(1), what).toThrow(
-              new RegExp(`The assets "as/Forest" were ${what} in the tick`, "u")
-            );
-          }
-          // Nothing was loaded on the way to being refused.
-          expect(asked).toBe(0);
           // The input stage may ask, as the frame stage may.
           let status = "";
-          const Ask = System.make("Ask", function* () {
+          const Ask = System.input("Ask", function* () {
             status = (yield* Forest)._tag;
-          }).pipe(System.inStage("input"));
+          });
           const asking = yield* App.make(
             App.define({ plugins: [Game], systems: [Ask] })
           );
@@ -784,23 +761,23 @@ describe("a level's assets", () => {
     const Build = Action.define("as/Build", Layout);
     const handlers = [
       Action.handler(Enter, function* () {
-        (yield* Level).set("forest");
+        (yield* Level.sets).set("forest");
       }),
       Action.handler(Build, function* ({ name, walls }) {
         const commands = yield* Commands.spawns(Wall);
         for (let at = 0; at < walls; at++) {
           commands.spawn(Wall.of({ at }));
         }
-        (yield* Built).level = name;
+        (yield* Built.writes).level = name;
       }),
     ] as const;
     // What comes from a file comes in as an action, once the file is there.
-    const Begin = System.make("Begin", function* () {
+    const Begin = System.input("Begin", function* () {
       const forest = yield* Forest;
       if (forest._tag === "Ready" && (yield* Built).level === "") {
         (yield* Action.Actions).enqueue(Build, forest.assets.layout);
       }
-    }).pipe(System.inStage("input"));
+    });
     const Rules = Plugin.make("Rules", {
       handlers,
     });
@@ -944,14 +921,14 @@ describe("a level's assets", () => {
     const { Forest, Game, Go, drawn, log } = makeGame();
     let keep = false;
     // Holds the forest while it is told to, whatever the level.
-    const Keep = System.make("Keep", function* () {
+    const Keep = System.frame("Keep", function* () {
       const store = yield* Assets.Store;
       if (keep) {
         store.hold(Forest, "Keep");
       } else {
         store.drop(Forest, "Keep");
       }
-    }).pipe(System.inStage("frame"));
+    });
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -998,9 +975,9 @@ describe("a level's assets", () => {
       one: Assets.make("/forest.png", () => Effect.die(new Error("boom"))),
     });
     let status: Assets.Status<unknown> | undefined;
-    const Look = System.make("Look", function* () {
+    const Look = System.frame("Look", function* () {
       status = yield* Cursed;
-    }).pipe(System.inStage("frame"));
+    });
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {

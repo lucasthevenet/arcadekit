@@ -37,7 +37,7 @@ const Ping = Event.define("ru/Ping", Schema.Number);
 // Says a number: how code outside the simulation has an event emitted.
 const Say = Action.define("ru/Say", Schema.Struct({ n: Schema.Number }));
 const say = Action.handler(Say, function* ({ n }) {
-  (yield* Ping).emit(n);
+  (yield* Ping.emits).emit(n);
 });
 
 /** Builds an app, hands it to `use`, then closes its scope. */
@@ -54,12 +54,12 @@ describe("events", () => {
   it("reach every system exactly once, whichever side of the emitter it runs on", () => {
     const seen: Record<string, Array<number>[]> = { Before: [], After: [] };
     const reader = (name: string) =>
-      System.make(name, function* () {
-        const ping = yield* Ping;
+      System.tick(name, function* () {
+        const ping = yield* Ping.emits;
         seen[name]!.push([...ping.read()]);
       });
-    const Emitter = System.make("Emitter", function* () {
-      const ping = yield* Ping;
+    const Emitter = System.tick("Emitter", function* () {
+      const ping = yield* Ping.emits;
       const { tick } = yield* Time;
       if (tick <= 2) {
         ping.emit(tick * 10);
@@ -81,8 +81,8 @@ describe("events", () => {
   });
 
   it("can be emitted from inside a query loop and are read in order", () => {
-    const Hit = System.make("Hit", function* () {
-      const damaged = yield* Damaged;
+    const Hit = System.tick("Hit", function* () {
+      const damaged = yield* Damaged.emits;
       const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
       wounded.each((health, entity) => {
         health.hp -= 3;
@@ -90,8 +90,8 @@ describe("events", () => {
       });
     });
     const log: string[] = [];
-    const Report = System.make("Report", function* () {
-      const damaged = yield* Damaged;
+    const Report = System.tick("Report", function* () {
+      const damaged = yield* Damaged.emits;
       for (const event of damaged.read()) {
         log.push(`${event.target}:${event.amount}`);
       }
@@ -106,7 +106,7 @@ describe("events", () => {
 
   it("are dropped a tick after they were emitted, read or not", () => {
     const seen: Array<number>[] = [];
-    const Sometimes = System.make("Sometimes", function* () {
+    const Sometimes = System.tick("Sometimes", function* () {
       const { tick } = yield* Time;
       if (tick === 1 || tick === 4) {
         seen.push([...(yield* Ping).read()]);
@@ -131,8 +131,8 @@ describe("events", () => {
   it("are emitted by the simulation alone: outside it, an action emits them", () => {
     let kept: { emit(n: number): void } | undefined;
     let bus: { emit(def: typeof Ping, n: number): void } | undefined;
-    const Keeper = System.make("Keeper", function* () {
-      kept = yield* Ping;
+    const Keeper = System.tick("Keeper", function* () {
+      kept = yield* Ping.emits;
       // A system that has the bus and no handle emits through it.
       bus = yield* Effect.service(Events);
       bus.emit(Ping, 7);
@@ -216,7 +216,7 @@ const attack = Action.handler(Attack, function* ({ attacker, target }) {
   world.set(attacker, Energy, { points: energy - 2 });
   const hp = world.get(target, Health)!.hp - 4;
   world.set(target, Health, { hp });
-  (yield* Damaged).emit({ target, amount: 4 });
+  (yield* Damaged.emits).emit({ target, amount: 4 });
   return hp;
 });
 
@@ -235,7 +235,7 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
 /** Queues a spawn and an event, then may refuse: used to test rollback. */
 const summon = Action.handler(Summon, function* ({ hp, player }) {
   const commands = yield* Commands.spawns(Health, Owner, Energy);
-  const died = yield* Died;
+  const died = yield* Died.emits;
   const entity = commands.spawn(
     Health.of({ hp }),
     Owner.of({ player }),
@@ -251,9 +251,9 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
 // The World service, imported under another name so `world` reads naturally above.
 import { World as App_World } from "../src/index";
 
-const Death = System.make("Death", function* () {
-  const damaged = yield* Damaged;
-  const died = yield* Died;
+const Death = System.tick("Death", function* () {
+  const damaged = yield* Damaged.emits;
+  const died = yield* Died.emits;
   const commands = yield* Commands;
   const world = yield* App_World;
   for (const { target } of damaged.read()) {
@@ -265,7 +265,7 @@ const Death = System.make("Death", function* () {
   }
 });
 
-const Recharge = System.make("Recharge", function* () {
+const Recharge = System.tick("Recharge", function* () {
   const fighters = yield* Query.all(Energy).pipe(Query.writes(Energy));
   fighters.each((energy) => {
     energy.points += 1;
@@ -390,7 +390,7 @@ describe("actions", () => {
 
   it("let systems react through events on the next tick", () => {
     const deaths: Entity[] = [];
-    const Mourn = System.make("Mourn", function* () {
+    const Mourn = System.tick("Mourn", function* () {
       for (const event of (yield* Died).read()) deaths.push(event.entity);
     });
     withApp(duel(Mourn), ({ app, one, two }) => {
@@ -408,7 +408,7 @@ describe("actions", () => {
 
   it("can be queued for the next tick, where a refusal becomes an event", () => {
     const rejected: string[] = [];
-    const Watch = System.make("Watch", function* () {
+    const Watch = System.tick("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
         rejected.push(
           `${event.action}: ${(event.error as { _tag: string })._tag}`
@@ -461,7 +461,7 @@ describe("actions", () => {
   });
 
   it("can be issued by systems, so AI plays by the same rules as players", () => {
-    const Bot = System.make("Bot", function* () {
+    const Bot = System.tick("Bot", function* () {
       const actions = yield* Action.Actions;
       const turn = yield* currentTurn;
       if (turn.player === 2) {
@@ -510,13 +510,10 @@ describe("actions", () => {
         /did not finish synchronously/
       );
     });
-    expect(() =>
-      Effect.runSync(
-        Effect.scoped(
-          App.make(App.define({ systems: [], handlers: [endTurn, endTurn] }))
-        )
-      )
-    ).toThrow(/Two handlers/);
+    App.define(
+      // @ts-expect-error duplicate handler
+      { systems: [], handlers: [endTurn, endTurn] }
+    );
 
     class Rng extends Context.Service<Rng, { readonly next: () => number }>()(
       "ru/Rng"
@@ -543,7 +540,7 @@ describe("actions", () => {
 
   it("cannot be dispatched in the middle of a tick", () => {
     let app!: App.Any;
-    const Sneaky = System.make("Sneaky", function* () {
+    const Sneaky = System.tick("Sneaky", function* () {
       yield* Effect.sync(() => app.dispatchByName("EndTurn", { player: 1 }));
     });
     withApp(

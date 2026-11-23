@@ -36,7 +36,7 @@ const Moving = Query.all(Position, Velocity).pipe(
   Query.without(Stunned)
 );
 
-const Movement = System.make("Movement", function* () {
+const Movement = System.tick("Movement", function* () {
   const moving = yield* Moving;
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
@@ -74,7 +74,7 @@ describe("systems", () => {
   it("are ordered by stage, then by the order they are listed", () => {
     const log: string[] = [];
     const sys = (name: string) =>
-      System.make(name, function* () {
+      System.tick(name, function* () {
         yield* Effect.sync(() => log.push(name));
       });
     const systems = [
@@ -95,7 +95,7 @@ describe("systems", () => {
   });
 
   it("see each other's commands as soon as the earlier system finishes", () => {
-    const Spawner = System.make("Spawner", function* () {
+    const Spawner = System.tick("Spawner", function* () {
       const commands = yield* Commands.spawns(Position, Lifetime);
       const { tick } = yield* Time;
       if (tick === 1) {
@@ -106,7 +106,7 @@ describe("systems", () => {
       }
     });
     const counts: number[] = [];
-    const Reaper = System.make("Reaper", function* () {
+    const Reaper = System.tick("Reaper", function* () {
       const commands = yield* Commands;
       const { delta } = yield* Time;
       const mortal = yield* Query.all(Lifetime).pipe(Query.writes(Lifetime));
@@ -141,14 +141,14 @@ describe("systems", () => {
       Query.writes(Health, Burning)
     );
 
-    const Burn = System.make("Burn", function* () {
+    const Burn = System.tick("Burn", function* () {
       const onFire = yield* OnFire;
       const { delta } = yield* Time;
       onFire.each((health, burning) => {
         health.hp -= burning.dps * delta;
       });
     });
-    const Extinguish = System.make("Extinguish", function* () {
+    const Extinguish = System.tick("Extinguish", function* () {
       const onFire = yield* OnFire;
       const commands = yield* Commands;
       const { delta } = yield* Time;
@@ -185,7 +185,7 @@ describe("systems", () => {
   it("read resources with defaults that a layer can override", () => {
     const Gravity = Resource.make("rt/Gravity", { defaultValue: () => 9.81 });
     const seen: number[] = [];
-    const ReadGravity = System.make("ReadGravity", function* () {
+    const ReadGravity = System.tick("ReadGravity", function* () {
       seen.push(yield* Gravity);
     });
     withApp(App.make(App.define({ systems: [ReadGravity] })), (app) =>
@@ -204,12 +204,12 @@ describe("systems", () => {
     const Config = Resource.make("rt/Config", {
       defaultValue: () => ({ difficulty: 1, levels: [{ name: "start" }] }),
     });
-    const Harden = System.make("rt/Harden", function* () {
+    const Harden = System.tick("rt/Harden", function* () {
       const config = yield* Config;
       // @ts-expect-error: a resource's value is read-only.
       config.difficulty = 2;
     });
-    const Rename = System.make("rt/Rename", function* () {
+    const Rename = System.tick("rt/Rename", function* () {
       const config = yield* Config;
       // @ts-expect-error: all the way down.
       config.levels[0]!.name = "end";
@@ -220,7 +220,7 @@ describe("systems", () => {
       });
     }
     const seen: unknown[] = [];
-    const Read = System.make("rt/Read", function* () {
+    const Read = System.tick("rt/Read", function* () {
       seen.push(yield* Config);
     });
     withApp(App.make(App.define({ systems: [Read] })), (app) => app.tick(1));
@@ -244,7 +244,7 @@ describe("systems", () => {
       { readonly play: (sound: string) => void }
     >()("rt/Audio") {}
     const played: string[] = [];
-    const Beep = System.make("Beep", function* () {
+    const Beep = System.tick("Beep", function* () {
       const audio = yield* Audio;
       const things = yield* Query.all(Position);
       audio.play(`beep x${things.count()}`);
@@ -274,7 +274,7 @@ describe("systems", () => {
     class OutOfBounds extends Data.TaggedError("OutOfBounds")<{
       readonly x: number;
     }> {}
-    const Bounds = System.make("Bounds", function* () {
+    const Bounds = System.tick("Bounds", function* () {
       const things = yield* Query.all(Position);
       let worst = 0;
       things.each((pos) => {
@@ -295,7 +295,7 @@ describe("systems", () => {
   });
 
   it("must finish within the tick", () => {
-    const Lazy = System.make("Lazy", function* () {
+    const Lazy = System.tick("Lazy", function* () {
       yield* Effect.sleep("1 second");
     });
     withApp(App.make(App.define({ systems: [Lazy] })), (app) => {
@@ -331,7 +331,7 @@ describe("the built-in services", () => {
       GameWorld,
       { readonly size: number }
     >()("World") {}
-    const Probe = System.make("Probe", function* () {
+    const Probe = System.tick("Probe", function* () {
       const world = yield* World;
       const mine = yield* GameWorld;
       (yield* Commands.spawns(Lifetime)).spawn(
@@ -357,7 +357,7 @@ describe("a fiber the game starts", () => {
 
   it("may be a child of the system that starts it, ended with the tick", () => {
     let ran = 0;
-    const Busy = System.make("Busy", function* () {
+    const Busy = System.tick("Busy", function* () {
       ran++;
       // A child of the tick's fiber, interrupted when the tick ends.
       yield* Effect.forkChild(Effect.never);
@@ -370,7 +370,7 @@ describe("a fiber the game starts", () => {
   });
 
   it("is refused when it outlives the tick, the handler, the frame or the setup that started it", () => {
-    const Leaky = System.make("Leaky", function* () {
+    const Leaky = System.tick("Leaky", function* () {
       yield* leave;
     });
     withApp(App.make(App.define({ systems: [Leaky] })), (app) => {
@@ -391,9 +391,9 @@ describe("a fiber the game starts", () => {
       expect(app.world.entityCount).toBe(0);
     });
 
-    const Look = System.make("Look", function* () {
+    const Look = System.frame("Look", function* () {
       yield* leave;
-    }).pipe(System.inStage("frame"));
+    });
     withApp(App.make(App.define({ systems: [Look] })), (app) => {
       expect(() => app.frame(0)).toThrow(
         /The frame left a fiber running \(started while "Look" ran\)/
@@ -408,7 +408,7 @@ describe("a fiber the game starts", () => {
 
   it("is still counted by the fiber metrics a game provides", () => {
     let started = 0;
-    const Busy = System.make("Busy", function* () {
+    const Busy = System.tick("Busy", function* () {
       yield* Effect.forkChild(Effect.void);
       yield* Effect.forkChild(Effect.void);
     });
@@ -456,7 +456,7 @@ describe("the tick scheduler", () => {
 
   it("lets a heavy system finish inside its tick", () => {
     let total = 0;
-    const Heavy = System.make("Heavy", function* () {
+    const Heavy = System.tick("Heavy", function* () {
       total = yield* busy;
     });
     withApp(App.make(App.define({ systems: [Heavy] })), (app) => {
@@ -500,7 +500,7 @@ describe("determinism", () => {
   it("replays identically from the same inputs", () => {
     const run = () => {
       const trace: string[] = [];
-      const Bounce = System.make("Bounce", function* () {
+      const Bounce = System.tick("Bounce", function* () {
         const moving = yield* Moving;
         moving.each((pos, vel) => {
           if (pos.x > 10 || pos.x < 0) {
@@ -509,7 +509,7 @@ describe("determinism", () => {
         });
       });
       // Spawns one more every sixth tick, twenty in all.
-      const Spawner = System.make("Spawner", function* () {
+      const Spawner = System.tick("Spawner", function* () {
         const { tick } = yield* Time;
         const i = tick / 6 - 1;
         if (Number.isInteger(i) && i < 20) {

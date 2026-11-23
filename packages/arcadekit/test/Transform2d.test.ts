@@ -67,7 +67,7 @@ describe("Transform2d", () => {
     const Moving = Query.all(Position, Rotation).pipe(
       Query.writes(Position, Rotation)
     );
-    const Drift = System.make("t2/Drift", function* () {
+    const Drift = System.tick("t2/Drift", function* () {
       const { delta } = yield* Time;
       (yield* Moving).eachChunk((start, end, position, rotation) => {
         for (let i = start; i < end; i++) {

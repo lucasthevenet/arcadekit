@@ -43,7 +43,6 @@ import { Context, Effect, Equal, Layer } from "effect";
 
 import * as Action from "./Action";
 import * as Plugin from "./Plugin";
-import { World, whole } from "./Services";
 import * as System from "./System";
 
 // --- a view ----------------------------------------------------------------------
@@ -303,14 +302,24 @@ export interface PortShape {
   readonly connected: boolean;
   /**
    * Publishes a view: sets its value and notifies the UI, unless the value is
-   * unchanged. Returns whether it was published. For the stages between ticks;
-   * during the tick it throws.
+   * unchanged. Returns whether it was published. A system of the frame stage
+   * publishes; a system of the tick cannot require `View.Port`.
    */
   readonly publish: <A>(view: View<A>, value: A) => boolean;
-  /**
-   * The actions the UI sent since this was last asked.
-   * @internal
-   */
+}
+
+/**
+ * The actions a UI has sent, for the input stage. Publishing is `View.Port`,
+ * which a system of the input stage cannot require.
+ *
+ * @internal
+ */
+export class Intake extends Context.Service<
+  Intake,
+  { readonly take: () => readonly Sent[] }
+>()("arcadekit/View.Intake") {}
+
+interface PortValue extends PortShape {
   readonly take: () => readonly Sent[];
 }
 
@@ -325,13 +334,9 @@ export class Port extends Context.Service<Port, PortShape>()(
   "arcadekit/View.Port"
 ) {}
 
-const portLayer = Layer.effect(
-  Port,
+const portLayer = Layer.unwrap(
   Effect.gen(function* () {
     const bridge = yield* Bridge;
-    // Between ticks an app's world is frozen: that is how the stages that
-    // may talk to the UI are told from the tick.
-    const world = whole(yield* World);
     // From here to the app's end the bridge knows what the game handles,
     // and refuses the rest where it is sent.
     const { handles } = yield* Action.Actions;
@@ -339,24 +344,23 @@ const portLayer = Layer.effect(
       Effect.sync(() => bridge._connect(handles)),
       (leave) => Effect.sync(leave)
     );
-    return {
+    const port: PortValue = {
       connected: bridge !== noBridge,
       publish(view, value) {
-        if (!world.frozen) {
-          throw new Error(
-            `The view "${view.name}" was published in the tick. What the UI sees is no part of the game: a replay and a server have no UI, and a tick must not depend on whether one is there. Publish it from a system of the frame stage, which View.publish makes.`
-          );
-        }
         return bridge._publish(view, value);
       },
       take: () => bridge._take(),
     };
+    return Layer.mergeAll(
+      Layer.succeed(Port, port),
+      Layer.succeed(Intake, { take: () => port.take() })
+    );
   })
 );
 
 /** Issues the UI's requests as actions, before the tick: input like any other. */
-const Send = System.make("arcadekit/View.Send", function* () {
-  const sent = (yield* Port).take();
+const Send = System.input("arcadekit/View.Send", function* () {
+  const sent = (yield* Intake).take();
   if (sent.length === 0) {
     return;
   }
@@ -364,7 +368,7 @@ const Send = System.make("arcadekit/View.Send", function* () {
   for (const one of sent) {
     enqueue(one.action, one.payload);
   }
-}).pipe(System.inStage("input"));
+});
 
 /**
  * Connects an app to the bridge it was given. A plugin whose systems are made
@@ -410,24 +414,38 @@ export const plugin = Plugin.make("arcadekit/View", {
  *
  * @category Systems
  */
-export const publish = <
+export function publish<
+  A,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  view: View<A>,
+  body: System.FrameBody<Eff, A>
+): System.System<
+  System.GenError<Eff>,
+  System.GenServices<Eff> | Port,
+  string,
+  "frame"
+>;
+export function publish<
   A,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
 >(
   view: View<A>,
   body: () => Generator<Eff, A, never>
-): System.System<System.GenError<Eff>, System.GenServices<Eff> | Port> => {
+): System.System<
+  System.GenError<Eff>,
+  System.GenServices<Eff> | Port,
+  string,
+  "frame"
+> {
   const read = Effect.gen(body);
-  return System.make(`View.publish(${view.name})`, function* () {
+  return System.raw(`View.publish(${view.name})`, "frame", function* () {
     const port = yield* Port;
     if (port.connected) {
       port.publish(view, yield* read);
     }
-  }).pipe(System.inStage("frame")) as System.System<
-    System.GenError<Eff>,
-    System.GenServices<Eff> | Port
-  >;
-};
+  });
+}
 
 /**
  * Publishes a view's initial value again: what a UI should show for a view

@@ -42,7 +42,7 @@ const ShowHud = View.publish(Hud, function* () {
 });
 
 const newGame = Action.handler(NewGame, function* () {
-  const score = yield* Score;
+  const score = yield* Score.writes;
   score.points = 0;
   score.lives = 3;
 });
@@ -60,7 +60,7 @@ Values are compared structurally, field by field, at any depth. The body can ret
 - Several ticks within one frame produce one publication, of the latest value.
 - When no UI is attached, on a server, in a replay, or in most tests, no body runs at all.
 - The whole value is computed and compared every frame while a UI is attached. Gate a view that is costly to compute with `System.runIf`.
-- A frame system of your own publishes through `(yield* View.Port).publish(view, value)`, which reports whether the value was new. Publishing in a tick throws.
+- A frame system of your own publishes through `(yield* View.Port).publish(view, value)`, which reports whether the value was new. A system of the tick or the input stage cannot require `View.Port`.
 
 ## The UI holds the bridge
 

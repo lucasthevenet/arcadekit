@@ -24,7 +24,7 @@ const Placed = Query.all(Transform3d.Position).pipe(
   Query.writes(Transform3d.Position)
 );
 
-const Drift = System.make("game/Drift", function* () {
+const Drift = System.tick("game/Drift", function* () {
   const { delta } = yield* Time;
   (yield* Placed).eachChunk((start, end, position) => {
     for (let i = start; i < end; i++) {

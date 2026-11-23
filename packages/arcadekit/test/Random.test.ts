@@ -254,7 +254,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
 });
 
 /** A system that draws inside its loop, and spawns a random number of things. */
-const Sparks = System.make("Sparks", function* () {
+const Sparks = System.tick("Sparks", function* () {
   const random = yield* Random;
   const commands = yield* Commands.spawns(Spark);
   const sparks = yield* Query.all(Spark).pipe(Query.writes(Spark));
@@ -275,9 +275,9 @@ const Sparks = System.make("Sparks", function* () {
 const Wait = Singleton.define("rnd/Wait", { left: Field.u8 }, { left: 0 });
 
 /** A system that draws between waits, and keeps its wait in the world. */
-const Gambler = System.make("Gambler", function* () {
+const Gambler = System.tick("Gambler", function* () {
   const random = yield* Random;
-  const wait = yield* Wait;
+  const wait = yield* Wait.writes;
   if (wait.left > 1) {
     wait.left -= 1;
     return;
@@ -327,7 +327,7 @@ const snapshot = (app: App.Any) => {
 describe("the Random service", () => {
   it("is the world's generator, so its state is part of the world", () => {
     let seen: Rng | undefined;
-    const Probe = System.make("Probe", function* () {
+    const Probe = System.tick("Probe", function* () {
       seen = yield* Random;
     });
     withApp(App.make(App.define({ systems: [Probe] }), { seed: 5 }), (app) => {
@@ -422,7 +422,7 @@ describe("the Random service", () => {
     const run = (seed: number) => {
       const out: number[] = [];
       let drew: number[] = [];
-      const Draw = System.make("Draw", function* () {
+      const Draw = System.tick("Draw", function* () {
         out.push(yield* EffectRandom.next);
         out.push(yield* EffectRandom.nextInt);
         out.push(yield* EffectRandom.nextIntBetween(1, 6));
@@ -454,7 +454,7 @@ describe("the Random service", () => {
     // Its floats use all 53 bits and its integers both signs.
     const floats: number[] = [];
     const ints: number[] = [];
-    const Many = System.make("Many", function* () {
+    const Many = System.tick("Many", function* () {
       for (let i = 0; i < 2000; i++) {
         floats.push(yield* EffectRandom.next);
         ints.push(yield* EffectRandom.nextInt);

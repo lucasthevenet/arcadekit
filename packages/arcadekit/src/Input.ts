@@ -10,7 +10,7 @@
  * **State.** `Input.plugin` keeps the held buttons, and the pointer and stick
  * positions, in the world. A system reads them:
  *
- *   const Steer = System.make("Steer", function*() {
+ *   const Steer = System.tick("Steer", function*() {
  *     const keys = yield* Input.Keyboard
  *     if (keys.down("ArrowLeft")) ...       // held
  *     if (keys.pressed("Space")) ...        // went down in this tick
@@ -27,7 +27,7 @@
  *     }))
  *   )
  *
- * Both run in the input stage, `System.inStage("input")`: just before a tick,
+ * Both run in the input stage, `System.input`: just before a tick,
  * with the world frozen, receiving the devices' state as `Input.Devices`. An
  * input-stage system that needs more than a binding, for example to find what
  * the pointer is over, reads `Input.Devices` and the world and issues the
@@ -205,9 +205,9 @@ export const layer = (listener: Listener): Layer.Layer<never> =>
  * The devices' state, for an input-stage system: one sample, taken when the
  * stage began, shared by every system in that run.
  *
- * It isn't part of the game, so nothing else can read it: in the tick and in
- * the frame stage its fields throw. Systems there read the game's input state
- * instead: `Input.Keyboard`, `Input.Pointer` or `Input.Gamepad`.
+ * It isn't part of the game, so a system of the tick or the frame stage cannot
+ * require it. Those read the game's input state instead: `Input.Keyboard`,
+ * `Input.Pointer` or `Input.Gamepad`.
  *
  * @category Services
  */
@@ -517,7 +517,7 @@ const reported = new WeakMap<
  * Reads the devices into the game: compares their state with the input state
  * the game will have at its next tick, and reports any difference as an action.
  */
-const Read = System.make("arcadekit/Input.Read", function* () {
+const Read = System.input("arcadekit/Input.Read", function* () {
   // Where there are no devices there is nothing to bring the picture up
   // to date with: it stays as it was last reported, by a log or by
   // another machine. No devices is not devices with every button up.
@@ -545,7 +545,7 @@ const Read = System.make("arcadekit/Input.Read", function* () {
     waiting.payloads.push(payload);
     (yield* Action.Actions).enqueue(Report, payload);
   }
-}).pipe(System.inStage("input"));
+});
 
 /**
  * Keeps the devices' state in the world: which buttons are down, which went
@@ -824,7 +824,7 @@ export const bind = (
   name: string,
   ...bindings: readonly Binding[]
 ): System.System<never, Devices | Action.Actions> =>
-  System.make(name, function* () {
+  System.input(name, function* () {
     const devices = yield* Devices;
     if (
       devices.pressed.length === 0 &&
@@ -837,4 +837,4 @@ export const bind = (
     for (const one of bindings) {
       one.fire(devices, enqueue);
     }
-  }).pipe(System.inStage("input"));
+  });

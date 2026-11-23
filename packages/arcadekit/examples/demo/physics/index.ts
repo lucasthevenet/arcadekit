@@ -39,7 +39,7 @@ export const Falling = Bodies.pipe(Query.writes(Position, Velocity));
 // query excludes Frozen, a sparse tag, so each table arrives as runs of
 // consecutive rows that are not frozen: a sparse component filters a raw
 // loop, and is not its data.
-export const Physics = System.make("Physics", function* () {
+export const Physics = System.tick("Physics", function* () {
   const gravity = yield* Gravity;
   const { delta } = yield* Time;
   (yield* Falling).eachChunk((start, end, pos, vel) =>

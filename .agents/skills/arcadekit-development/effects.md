@@ -14,7 +14,7 @@ Do not use any other copy of Effect's documentation. Effect's own guide says the
 ## Writing Effects
 
 - **`Effect.fn("Module.name")`** for a reusable function that returns an Effect and is worth seeing in a trace. **`Effect.fnUntraced`** for one that is not, which is most of a library's internals. Do not write a function whose whole body is `return Effect.gen(...)`: that is what these two are for. See the [Effect.fn example](https://github.com/Effect-TS/effect/blob/main/ai-docs/src/01_effect/01_basics/02_effect-fn.ts).
-- **Not for anything that runs every tick.** `Effect.fn` records a stack trace on each call. A system is built once with `Effect.gen` and the same Effect value is run every tick; `System.make` does this for you.
+- **Not for anything that runs every tick.** `Effect.fn` records a stack trace on each call. A system is built once with `Effect.gen` and the same Effect value is run every tick; `System.tick`, `System.frame` and `System.input` do this for you.
 - **Fail by yielding the error, and return it**: `return yield* new NotYourTurn(...)`. A tagged error is yieldable, so it needs no `Effect.fail`, and the lint rule `effecttsgo/unnecessary-fail-yieldable-error` refuses one. A value that is not yieldable, such as a plain `Error`, is failed with `Effect.fail`. Without `return`, TypeScript does not know the code below is unreachable.
 
 ```ts sketch
@@ -41,7 +41,7 @@ References: [Expected Errors](https://effect.website/docs/v4/error-management/ex
 The package's own values behave like Effect's, using the same three mechanisms.
 
 - **Yieldable.** A value a system asks for is an Effect: `yield* Moving` gives a query's view, `yield* Collided` an event's channel, `yield* Gravity` a resource. A new kind of value like these extends `Effectable.Class` and implements `asEffect()`. `src/Query.ts` and `src/Event.ts` are the examples. API: [Effectable](https://effect.website/docs/v4/api/effect/Effectable).
-- **Pipeable.** A value that is refined step by step has `.pipe()`: `Query.all(A).pipe(Query.without(B))`, `System.make(...).pipe(System.inStage("frame"))`. A class that extends `Effectable.Class` has it already; anything else implements `pipe() { return pipeArguments(this, arguments); }`. API: [Pipeable](https://effect.website/docs/v4/api/effect/Pipeable).
+- **Pipeable.** A value that is refined step by step has `.pipe()`: `Query.all(A).pipe(Query.without(B))`, `System.frame(...)`. A class that extends `Effectable.Class` has it already; anything else implements `pipe() { return pipeArguments(this, arguments); }`. API: [Pipeable](https://effect.website/docs/v4/api/effect/Pipeable).
 - **Dual.** A function that refines a value works both ways: `System.inStage(system, stage)` and `system.pipe(System.inStage(stage))`. Define it with `dual` and write both signatures out. See [Dual APIs](https://effect.website/docs/v4/code-style/dual) and [Function](https://effect.website/docs/v4/api/effect/Function).
 
 ```ts sketch

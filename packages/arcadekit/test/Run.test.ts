@@ -37,7 +37,7 @@ const Score = Singleton.define(
 );
 const Add = Action.define("run/Add", Schema.Struct({ by: Schema.Int }));
 const add = Action.handler(Add, function* ({ by }) {
-  (yield* Score).points += by;
+  (yield* Score.writes).points += by;
 });
 
 /** A frame every 1/60 s, starting at `from` milliseconds. */
@@ -54,17 +54,17 @@ const turn = (
 /** A game that says what it holds on to, and when it lets go. */
 const makeGame = () => {
   const log: string[] = [];
-  const Roll = System.make("Roll", function* () {
+  const Roll = System.tick("Roll", function* () {
     const { delta } = yield* Time;
     (yield* Balls).each((ball) => {
       ball.x += ball.vx * delta;
     });
   });
-  const Draw = System.make("Draw", function* () {
+  const Draw = System.frame("Draw", function* () {
     if ((yield* Frame).count === 1) {
       log.push("first frame");
     }
-  }).pipe(System.inStage("frame"));
+  });
   const Game = Plugin.make("Game", {
     handlers: [add],
     systems: [Roll, Draw],
@@ -303,7 +303,7 @@ describe("Driver.run", () => {
   it("dies with what a tick throws, and lets go of everything", async () => {
     class Jammed extends Data.TaggedError("Jammed")<{}> {}
     const { Game, log } = makeGame();
-    const Jam = System.make("Jam", function* () {
+    const Jam = System.tick("Jam", function* () {
       if ((yield* Time).tick === 2) {
         return yield* new Jammed();
       }
@@ -328,9 +328,9 @@ describe("Driver.run", () => {
   it("runs a game that moves when its player does: drawn every frame, and ticked only while something waits", async () => {
     const display = Driver.makeManualDisplay();
     let frames = 0;
-    const Count = System.make("run/Count", function* () {
+    const Count = System.frame("run/Count", function* () {
       frames++;
-    }).pipe(System.inStage("frame"));
+    });
     let made: App.Any | undefined;
     let ask = (_by: number): void => {};
     const fiber = Effect.runFork(
@@ -418,7 +418,7 @@ describe("Driver.run", () => {
     const page = new Page();
     const display = Driver.makeManualDisplay();
     const seen: boolean[] = [];
-    const Watch = System.make("Watch", function* () {
+    const Watch = System.tick("Watch", function* () {
       seen.push((yield* Input.Keyboard).down("KeyA"));
     });
     const fiber = Effect.runFork(

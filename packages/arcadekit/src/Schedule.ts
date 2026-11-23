@@ -91,9 +91,9 @@ const hookKey = (
  * Makes the schedule of a list of systems. With `trace`, each turn runs in a
  * span of its own.
  *
- * It throws for two systems with one name, for an order that cannot be, and
- * for a hook that is in the frame stage or the input stage, or is for a value
- * its state doesn't have.
+ * It throws for two systems with one name, and for a hook that is for a value
+ * its state doesn't have. A hook is made by `State.onEnter` or `State.onExit`,
+ * which are systems of the tick.
  *
  * @category Constructors
  */
@@ -124,16 +124,6 @@ export const make = (
       continue;
     }
     const state = trigger.state as State.State<string>;
-    if (System.isFrameStage(system.stage)) {
-      throw new Error(
-        `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
-      );
-    }
-    if (system.stage === "input") {
-      throw new Error(
-        `System "${system.name}" is a hook and is in the input stage. A hook runs at the start of a tick, when the game enters or leaves a state; the input stage runs before the tick. Read the devices only in some states with System.runIf(State.is(...)).`
-      );
-    }
     if (!state.values.includes(trigger.value)) {
       throw new Error(
         `System "${system.name}" is a hook for "${trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`

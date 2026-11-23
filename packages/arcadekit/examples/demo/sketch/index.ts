@@ -11,7 +11,7 @@ export const sketch = { frames: 0, highest: 0 };
 // Runs once per frame, between ticks, with the world frozen: it reads the
 // game and cannot change it. `Frame.alpha` says how far the frame is between
 // the last tick and the next, so what moves is drawn where it is by now.
-const Draw = System.make("Draw", function* () {
+const Draw = System.frame("Draw", function* () {
   const { alpha } = yield* Frame;
   const { delta } = yield* Time;
   let highest = 0;
@@ -22,7 +22,7 @@ const Draw = System.make("Draw", function* () {
   });
   sketch.frames++;
   sketch.highest = highest;
-}).pipe(System.inStage("frame"));
+});
 
 export const plugin = Plugin.make("Sketch", {
   plugins: [Physics.plugin],

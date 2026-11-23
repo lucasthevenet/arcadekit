@@ -41,7 +41,7 @@ const Go = Action.define(
   Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
 );
 const go = Action.handler(Go, function* ({ to }) {
-  (yield* Level).set(to);
+  (yield* Level.sets).set(to);
 });
 
 /** Lets what is waiting on a promise or a timer run. */
@@ -162,14 +162,14 @@ const during = (Forest: Forest) =>
  * systems that draw with them, which have looked by then. The worst way round.
  */
 const keepLate = (Forest: Forest) =>
-  System.make("ta/KeepLate", function* () {
+  System.frame("ta/KeepLate", function* () {
     const store = yield* Assets.Store;
     if ((yield* Level).value === "forest") {
       store.hold(Forest, "ta/KeepLate");
     } else {
       store.drop(Forest, "ta/KeepLate");
     }
-  }).pipe(System.inStage("frame"));
+  });
 
 const at = (x: number) => Position.of({ x, y: 0, z: 0 });
 /** Where the instances of a mesh are along x, in order. */
@@ -385,14 +385,14 @@ describe("instances whose look is made of assets", () => {
     const { Trees, looks } = makeTrees(Forest, log);
     // A system of the game's own keeps the forest, and can load it afresh.
     let afresh = false;
-    const Keep = System.make("ta/Keep", function* () {
+    const Keep = System.frame("ta/Keep", function* () {
       const store = yield* Assets.Store;
       if (afresh) {
         afresh = false;
         store.drop(Forest, "ta/Keep");
       }
       store.hold(Forest, "ta/Keep");
-    }).pipe(System.inStage("frame"));
+    });
     const { app, mesh, renderer } = play([Keep, Trees]);
     app.world.spawn(Tree, at(1));
     app.frame(0);

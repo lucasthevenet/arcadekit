@@ -12,7 +12,7 @@
  *     const turn = yield* Turn
  *     if (turn.player !== owner) return yield* new NotYourTurn()
  *     (yield* Commands).despawn(card)
- *     (yield* CardPlayed).emit({ card, target })
+ *     (yield* CardPlayed.emits).emit({ card, target })
  *   })
  *
  *   const result = app.dispatch(PlayCard, { card, target })   // Exit<void, NotYourTurn>
@@ -40,6 +40,8 @@ import { SnapshotError } from "./ecs/snapshot";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
 import * as Event from "./Event";
+import type { Sim } from "./Services";
+import type * as System from "./System";
 
 /**
  * The payload didn't match the action's schema. The handler didn't run.
@@ -185,7 +187,25 @@ export interface AnyHandler {
  *
  * @category Constructors
  */
-export const handler = <
+export function handler<
+  N extends string,
+  P,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  A,
+>(
+  action: ActionDef<N, P>,
+  body: System.TickGated<
+    Eff,
+    (payload: P, origin: Origin) => Generator<Eff, A, never>
+  >
+): Handler<
+  N,
+  P,
+  A,
+  Effect.Error<Eff> | InvalidPayload,
+  Exclude<Effect.Services<Eff>, Sim>
+>;
+export function handler<
   N extends string,
   P,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
@@ -198,20 +218,22 @@ export const handler = <
   P,
   A,
   Effect.Error<Eff> | InvalidPayload,
-  Effect.Services<Eff>
-> => ({
-  action,
-  // Built once: `fnUntraced` runs the generator itself on each call, with no
-  // closure around the payload and no stack trace captured.
-  handle: Effect.fnUntraced(body) as (
-    payload: P,
-    origin: Origin
-  ) => Effect.Effect<
-    A,
-    Effect.Error<Eff> | InvalidPayload,
-    Effect.Services<Eff>
-  >,
-});
+  Exclude<Effect.Services<Eff>, Sim>
+> {
+  return {
+    action,
+    // Built once: `fnUntraced` runs the generator itself on each call, with no
+    // closure around the payload and no stack trace captured.
+    handle: Effect.fnUntraced(body) as (
+      payload: P,
+      origin: Origin
+    ) => Effect.Effect<
+      A,
+      Effect.Error<Eff> | InvalidPayload,
+      Exclude<Effect.Services<Eff>, Sim>
+    >,
+  };
+}
 
 /**
  * One action from outside the simulation, as recorded in `app.actionLog`: a

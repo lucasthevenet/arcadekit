@@ -14,7 +14,7 @@ const Position = Component.define("game/Position", { x: Field.f32 });
 const Velocity = Component.define("game/Velocity", { x: Field.f32 });
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
-const Movement = System.make("game/Movement", function* () {
+const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
   (yield* Moving).each((position, velocity) => {
     position.x += velocity.x * delta;
@@ -40,8 +40,8 @@ const Spray = Singleton.define(
   { wave: 0, wait: 0 }
 );
 
-const Fountain = System.make("game/Fountain", function* () {
-  const spray = yield* Spray;
+const Fountain = System.tick("game/Fountain", function* () {
+  const spray = yield* Spray.writes;
   if (spray.wave >= 5) {
     return;
   }
@@ -69,12 +69,12 @@ You don't declare what a system reads and writes. The compiler knows what each s
 const Moving = Query.all(Position).pipe(Query.writes(Position));
 const Moved = Query.all(Position).pipe(Query.changed(Position));
 
-const Move = System.make("game/Move", function* () {
+const Move = System.tick("game/Move", function* () {
   (yield* Moving).each((position) => {
     position.x += 1;
   });
 });
-const Trail = System.make("game/Trail", function* () {
+const Trail = System.tick("game/Trail", function* () {
   (yield* Moved).each((position) => {});
 });
 
@@ -96,12 +96,12 @@ The error names both systems and says which to list after the other:
 
 ## Stages
 
-A tick has three stages, `"preUpdate"`, `"update"` and `"postUpdate"`, each run in full before the next. A frame has three too, `"preFrame"`, `"frame"` and `"postFrame"`. The input stage runs before each tick. A system runs in `"update"` unless you place it elsewhere:
+A tick has three stages, `"preUpdate"`, `"update"` and `"postUpdate"`, each run in full before the next. A frame has three too, `"preFrame"`, `"frame"` and `"postFrame"`. The input stage runs before each tick. `System.tick` makes a system of `"update"`, `System.frame` a system of `"frame"`, and `System.input` a system of the input stage. `System.inStage` moves one inside its own group:
 
 ```ts sketch
-const Draw = System.make("game/Draw", function* () {
+const Draw = System.frame("game/Draw", function* () {
   /* … */
-}).pipe(System.inStage("frame"));
+});
 ```
 
 `"preFrame"` is for what every frame system depends on, such as which assets are loaded, and `"postFrame"` is for what needs everything drawn first, such as a renderer's final pass.
@@ -115,7 +115,7 @@ The frame and input stages are outside the simulation, and a replay runs neither
 `System.runIf(condition)` runs a system only on ticks where the condition holds. A condition is any Effect that returns a boolean. The most common one checks a state:
 
 ```ts sketch
-const Movement = System.make("game/Movement", function* () {
+const Movement = System.tick("game/Movement", function* () {
   /* … */
 }).pipe(System.runIf(State.is(Phase, "playing")));
 ```
@@ -133,8 +133,8 @@ import { Field, Singleton, System, Ticks, Time } from "arcadekit";
 
 const Clock = Singleton.define("game/Clock", { left: Field.f32 }, { left: 3 });
 
-const Countdown = System.make("game/Countdown", function* () {
-  const clock = yield* Clock;
+const Countdown = System.tick("game/Countdown", function* () {
+  const clock = yield* Clock.writes;
   if (clock.left > 0) {
     clock.left -= (yield* Time).delta;
     (yield* Ticks).more(); // not at rest: the next tick is needed
@@ -155,7 +155,7 @@ import { Effect } from "effect";
 const Spark = Component.define("game/Spark", { x: Field.f32 });
 const Sparks = Query.all(Spark).pipe(Query.writes(Spark));
 
-const Scatter = System.make("game/Scatter", function* () {
+const Scatter = System.tick("game/Scatter", function* () {
   const random = yield* Random;
   (yield* Sparks).each((spark) => {
     spark.x += random.next() - 0.5; // from 0 inclusive to 1 exclusive

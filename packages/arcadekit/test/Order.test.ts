@@ -27,7 +27,7 @@ const Moved = Query.all(Position).pipe(Query.changed(Position));
 const Healths = Query.all(Health).pipe(Query.writes(Health));
 
 /** Moves every position on the second tick, and on no other. */
-const Move = System.make("Move", function* () {
+const Move = System.tick("Move", function* () {
   if ((yield* Time).tick === 2) {
     (yield* Positions).each((position) => {
       position.x += 1;
@@ -37,13 +37,13 @@ const Move = System.make("Move", function* () {
 
 /** A system that notes how many positions it found moved, each tick. */
 const trail = (seen: number[]) =>
-  System.make("Trail", function* () {
+  System.tick("Trail", function* () {
     seen.push((yield* Moved).entities().length);
   });
 const Trail = trail([]);
 
 /** A system that writes health, and nothing a test here watches. */
-const Bleed = System.make("Bleed", function* () {
+const Bleed = System.tick("Bleed", function* () {
   (yield* Healths).each((health) => {
     health.hp -= 1;
   });
@@ -120,10 +120,13 @@ describe("the order of systems", () => {
   });
 
   it("leaves out what runs at another moment: a hook, the frame and input stages, a handler", () => {
-    const Reset = System.make("Reset", function* () {
+    const Reset = State.onEnter(Phase, "playing", "Reset", function* () {
       (yield* Positions).each((position) => {
         position.x = 0;
       });
+    });
+    const Drawn = System.frame("Drawn", function* () {
+      (yield* Moved).each(() => {});
     });
     const Tap = Action.define("or/Tap", Schema.Struct({}));
     const tap = Action.handler(Tap, function* () {
@@ -134,27 +137,22 @@ describe("the order of systems", () => {
     App.define({
       systems: [
         // Drawn between ticks, after every one of a tick's systems.
-        Trail.pipe(System.inStage("frame")),
+        Drawn,
         Move,
-        // A hook runs at the start of a tick, ahead of them all.
-        Reset.pipe(State.onEnter(Phase, "playing")),
+        Reset,
       ],
       // And a handler ahead of the tick's systems too.
       handlers: [tap],
     });
-    const Hook = Reset.pipe(State.onEnter(Phase, "playing"));
+    const Hook = Reset;
     const none: Said<readonly [typeof Trail, typeof Hook]> = "nothing";
     expect(none).toBe("nothing");
-    // The same system as one of the tick's is a later writer.
-    App.define(
-      // @ts-expect-error not a hook, it writes after the watcher has run
-      { systems: [Trail, Reset] }
-    );
+    App.define({ systems: [Trail, Reset] });
   });
 
   it("knows what a system writes however the query is reached, with nothing declared", () => {
     // In a branch that a run may never take.
-    const Sometimes = System.make("Sometimes", function* () {
+    const Sometimes = System.tick("Sometimes", function* () {
       if ((yield* Time).tick > 1000) {
         (yield* Positions).each((position) => {
           position.x = 0;
@@ -171,7 +169,7 @@ describe("the order of systems", () => {
         position.x += 1;
       });
     });
-    const Helped = System.make("Helped", function* () {
+    const Helped = System.tick("Helped", function* () {
       yield* nudge;
     });
     App.define(
@@ -240,12 +238,8 @@ describe("the order of systems", () => {
     // does not matter, and is not asked for.
     const harmless = [Bleed, Move];
     App.define({ systems: harmless });
-    // A stage the compiler cannot read places a system nowhere.
-    const at = (stage: System.Stage) => Trail.pipe(System.inStage(stage));
-    App.define(
-      // @ts-expect-error the stage of the watcher is not known
-      { systems: [Move, at("postUpdate")] }
-    );
+    const atPost = Trail.pipe(System.inStage("postUpdate"));
+    App.define({ systems: [Move, atPost] });
     expect(listed.length + harmless.length).toBe(4);
   });
 
@@ -271,12 +265,12 @@ describe("what a system spawns and sets", () => {
   const Dot = Component.tag("or/Dot");
   const NewDots = Query.all(Dot).pipe(Query.added(Dot));
   /** Spawns a dot each tick. */
-  const Grow = System.make("Grow", function* () {
+  const Grow = System.tick("Grow", function* () {
     (yield* Commands.spawns(Dot)).spawn(Dot);
   });
   /** A system that notes how many new dots it found, each tick. */
   const count = (seen: number[]) =>
-    System.make("Count", function* () {
+    System.tick("Count", function* () {
       seen.push((yield* NewDots).entities().length);
     });
   const Count = count([]);
@@ -288,7 +282,7 @@ describe("what a system spawns and sets", () => {
 
   it("is named where the commands are asked for, and a component that was not named does not compile", () => {
     let spawned: Entity | undefined;
-    const Shoot = System.make("Shoot", function* () {
+    const Shoot = System.tick("Shoot", function* () {
       const commands = yield* Commands.spawns(Dot, Position);
       spawned = commands.spawn(Dot, Position.of({ x: 3 }));
       commands.add(spawned, Position.of({ x: 4 }));
@@ -302,7 +296,7 @@ describe("what a system spawns and sets", () => {
         Health
       );
     });
-    const Reap = System.make("Reap", function* () {
+    const Reap = System.tick("Reap", function* () {
       // Commands asked for with nothing named despawn and remove.
       const commands = yield* Commands;
       commands.remove(spawned!, Dot);
@@ -341,7 +335,7 @@ describe("what a system spawns and sets", () => {
 
     // A component an entity gains counts as written, so Query.changed
     // watches a spawn too.
-    const Place = System.make("Place", function* () {
+    const Place = System.tick("Place", function* () {
       (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0 }));
     });
     App.define(
@@ -354,7 +348,7 @@ describe("what a system spawns and sets", () => {
 
   it("names what it sets where the world is asked for, and a component that was not named does not compile", () => {
     let target: Entity | undefined;
-    const Heal = System.make("Heal", function* () {
+    const Heal = System.tick("Heal", function* () {
       const world = yield* World.writes(Health);
       world.set(target!, Health, { hp: world.get(target!, Health)!.hp + 1 });
       world.set(
@@ -364,7 +358,7 @@ describe("what a system spawns and sets", () => {
         { x: 1 }
       );
     });
-    const Look = System.make("Look", function* () {
+    const Look = System.tick("Look", function* () {
       // The world asked for with nothing named reads.
       const world = yield* World;
       world.get(target!, Health);
@@ -388,7 +382,7 @@ describe("what a system spawns and sets", () => {
   });
 
   it("puts a set in the order of the list, as a query's write is", () => {
-    const Jolt = System.make("Jolt", function* () {
+    const Jolt = System.tick("Jolt", function* () {
       for (const entity of (yield* Query.all(Position)).entities()) {
         (yield* World.writes(Position)).set(entity, Position, { x: 9 });
       }

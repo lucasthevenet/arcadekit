@@ -123,7 +123,7 @@ const Stunned = Component.tag("game/Stunned", { storage: "sparse" });
 
 ## Singletons
 
-A **singleton** is data that exists once per world: the score, whose turn it is, the current level. `yield*` gives you the world's value, an object whose fields you read and write in place, with no entity, query or loop involved. Its fields are component fields, of the same types, and the third argument is its initial value.
+A **singleton** is data that exists once per world: the score, whose turn it is, the current level. `yield*` gives you the world's value to read. `yield* Score.writes` is the same value with fields you can assign, and only a system of the tick or a handler can ask for it. Its fields are component fields, of the same types, and the third argument is its initial value.
 
 ```ts
 import { Component, Field, Plugin, Singleton, System } from "arcadekit";
@@ -135,8 +135,8 @@ const Score = Singleton.define(
 );
 const Coin = Component.tag("game/Coin");
 
-const Bonus = System.make("game/Bonus", function* () {
-  const score = yield* Score;
+const Bonus = System.tick("game/Bonus", function* () {
+  const score = yield* Score.writes;
   score.points += 1;
 });
 

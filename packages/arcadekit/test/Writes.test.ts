@@ -371,14 +371,14 @@ describe("a query, which writes only what it names, in an app", () => {
     run(
       Effect.gen(function* () {
         const turned: number[] = [];
-        const Move = System.make("Move", function* () {
+        const Move = System.tick("Move", function* () {
           (yield* Moving).eachChunk((start, end, pos, vel) => {
             for (let i = start; i < end; i++) {
               pos.x[i] = pos.x[i]! + vel.x[i]!;
             }
           });
         });
-        const Watch = System.make("Watch", function* () {
+        const Watch = System.tick("Watch", function* () {
           turned.push((yield* Turned).entities().length);
         });
         const app = yield* App.make(
