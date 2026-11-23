@@ -13,7 +13,7 @@ pnpm add arcadekit @arcadekit/three effect three
 
 ## Rules decide where, the page decides how
 
-Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`. `@arcadekit/three` has no components of its own and only reads these. The plugins that hold your rules import nothing from it, so a server or a replay installs neither it nor Three.js.
+Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`. `@arcadekit/three` has no components of its own and only reads these, each kind of entity from the one it names. The plugins that hold your rules import nothing from it, so a server or a replay installs neither it nor Three.js.
 
 ```ts title="rules.ts"
 import { Commands, Component, Plugin, Transform3d } from "arcadekit";
@@ -44,7 +44,7 @@ Only page code imports `@arcadekit/three`: the plugin that defines how each kind
 
 ```ts title="main.ts"
 import { Three } from "@arcadekit/three";
-import { App, Driver, Plugin } from "arcadekit";
+import { App, Driver, Plugin, Transform3d } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect, Layer } from "effect";
 import { AmbientLight, IcosahedronGeometry, MeshStandardMaterial } from "three";
@@ -55,6 +55,7 @@ const canvas = document.querySelector("canvas")!;
 
 const Rocks = Three.instances("game/Rocks", {
   of: Rock,
+  transform: Transform3d,
   geometry: new IcosahedronGeometry(1),
   material: new MeshStandardMaterial({ color: "#8a8f98" }),
 });
@@ -99,7 +100,7 @@ Models have their own module because they bring Three.js's glTF loader with them
 
 ## Position, rotation and scale
 
-An entity is drawn at its `Transform3d.Position`, in scene units.
+Each kind names the module that places its entities, `transform: Transform3d` above, and reads no other. An entity of a kind of `Transform3d` is drawn at its `Transform3d.Position`, in scene units.
 
 - `Transform3d.Rotation`, a quaternion, and `Transform3d.Scale`, where 1 is the geometry's own size, are for entities that rotate or have a size of their own. An entity without them is drawn upright at the geometry's size, and costs less to draw.
 - A `Rotation` is drawn as the rotation it represents, whatever its length: one your rules let drift from length 1, or never normalised, is neither skewed nor scaled by it. Normalising costs an instance about 3 ns, one division.
@@ -107,7 +108,7 @@ An entity is drawn at its `Transform3d.Position`, in scene units.
 
 ## Flat games
 
-A flat game places its entities with `Transform2d`, and the same systems draw them the same way.
+A flat game places its entities with `Transform2d`, and a kind that names it draws them the same way.
 
 ```ts sketch
 commands.spawn(
@@ -115,12 +116,19 @@ commands.spawn(
   Transform2d.Position.of({ x: 120, y: 80 }),
   Transform2d.Rotation.of({ angle: Math.PI / 6 })
 );
+
+const Cards = Three.instances("game/Cards", {
+  of: Card,
+  transform: Transform2d,
+  geometry,
+  material,
+});
 ```
 
-- An entity with a `Transform2d.Position` is drawn in the x–y plane at 0 on the third axis, rotated about that axis by its `Transform2d.Rotation`, and scaled along x and y by its `Transform2d.Scale`.
+- An entity of a kind of `Transform2d` is drawn at its `Transform2d.Position`, in the x–y plane at 0 on the third axis, rotated about that axis by its `Transform2d.Rotation`, and scaled along x and y by its `Transform2d.Scale`.
 - Draw order is set per kind, not per entity: `prepare: (mesh) => { mesh.position.z = 1 }` for instances, and wherever `make` places an object for objects. Nothing sorts entities within a kind.
 - An orthographic camera shows the plane flat: set the `camera` of `Three.Scene` to an `OrthographicCamera`.
-- A game can mix flat and 3D entities, even within one kind. An entity with both positions is drawn once, from the 3D one, and its `Transform2d` rotation and scale are ignored.
+- A game can draw flat and 3D entities side by side, with a kind for each. A kind reads nothing of the other module, so an entity with both positions is drawn by a kind of each, each from its own.
 
 ## Scene, camera and renderer
 
@@ -153,7 +161,7 @@ A test provides a renderer that draws nothing, `Layer.succeed(Three.Renderer, { 
 
 A game is drawn by frame-stage systems, in a plugin that only the page installs. A plugin of your own for another renderer follows the same principles as this one:
 
-- It decides what to draw from the components an entity has, and where from `Transform3d.Position` or `Transform2d.Position`. The rules say what an entity is, never how it looks.
+- It decides what to draw from the components an entity has, and where from `Transform3d` or `Transform2d`, whichever the kind names. The rules say what an entity is, never how it looks.
 - It draws crowds from raw columns into one buffer, allocating nothing per entity per frame.
 - It keeps state across frames, such as a mesh, a scene, or where an entity was a tick ago, in a service built in the plugin's `layer` and released with the app's scope, never in the world.
 - Its output target, a renderer or a canvas, comes from outside, as a service the game provides.

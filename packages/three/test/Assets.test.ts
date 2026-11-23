@@ -249,6 +249,7 @@ const makeTrees = (
   const meshes: InstancedMesh[] = [];
   const Trees = Three.instances("ta/Trees", {
     of: Tree,
+    transform: Transform3d,
     from: Forest,
     capacity: 2,
     // The renderer's own numbers, as they are.
@@ -590,9 +591,15 @@ describe("instances whose look is made of assets", () => {
   it("say in their types what the look is made of, and that they need the app's assets", () => {
     const Forest = makeForest([]);
     const material = new MeshBasicMaterial();
-    const Plain = Three.instances("ta/Plain", { of: Tree, geometry, material });
+    const Plain = Three.instances("ta/Plain", {
+      of: Tree,
+      transform: Transform3d,
+      geometry,
+      material,
+    });
     const From = Three.instances("ta/From", {
       of: Tree,
+      transform: Transform3d,
       from: Forest,
       look: ({ bark }) => {
         // A level's bark, as the bundle says, and nothing it does not hold.
@@ -606,14 +613,25 @@ describe("instances whose look is made of assets", () => {
     });
     Three.instances("ta/Wrong", {
       of: Tree,
+      transform: Transform3d,
       from: Forest,
       // @ts-expect-error the forest has no leaves
       look: ({ leaves }) => ({ geometry, material, leaves }),
     });
-    // @ts-expect-error a look that is there is not also made of a bundle
-    Three.instances("ta/Both", { of: Tree, geometry, material, from: Forest });
-    // @ts-expect-error a bundle is not a look until something makes one of it
-    Three.instances("ta/Half", { of: Tree, from: Forest });
+    Three.instances("ta/Both", {
+      of: Tree,
+      transform: Transform3d,
+      geometry,
+      material,
+      // @ts-expect-error a look that is there is not also made of a bundle
+      from: Forest,
+    });
+    Three.instances("ta/Half", {
+      of: Tree,
+      transform: Transform3d,
+      // @ts-expect-error a bundle is not a look until something makes one of it
+      from: Forest,
+    });
     // One that draws from a bundle needs the store of assets, which
     // `Assets.plugin` gives; one whose look is there does not.
     const plain: typeof Plain = Plain;
@@ -637,9 +655,15 @@ describe("instances whose look is made of assets", () => {
         App.define({
           plugins: [Three.plugin, Grove],
           systems: [
-            Three.instances("ta/Plain", { of: Tree, geometry, material }),
+            Three.instances("ta/Plain", {
+              of: Tree,
+              transform: Transform3d,
+              geometry,
+              material,
+            }),
             Three.objects("ta/Things", {
               of: Deer,
+              transform: Transform3d,
               make: () => new Object3D(),
             }),
           ],
@@ -657,6 +681,7 @@ describe("objects made of assets", () => {
   const makeDeer = (Forest: Forest, log: string[]) =>
     Three.objects("ta/Deer", {
       of: Deer,
+      transform: Transform3d,
       from: Forest,
       make: (entity, { bark }) => {
         const object = new Object3D();
@@ -772,6 +797,7 @@ describe("objects made of assets", () => {
     const Forest = makeForest([]);
     const Made = Three.objects("ta/Made", {
       of: Deer,
+      transform: Transform3d,
       from: Forest,
       make: (_entity: Entity, { bark }) => {
         const size: number = bark.size;
@@ -783,12 +809,14 @@ describe("objects made of assets", () => {
     });
     Three.objects("ta/Wrong", {
       of: Deer,
+      transform: Transform3d,
       from: Forest,
       // @ts-expect-error the forest has no leaves
       make: (_entity, { leaves }) => new Object3D().add(leaves),
     });
     const Plain = Three.objects("ta/Plain", {
       of: Deer,
+      transform: Transform3d,
       make: () => new Object3D(),
     });
     // @ts-expect-error the store of assets is one thing more to need
@@ -978,6 +1006,7 @@ describe("a texture", () => {
     });
     const Trees = Three.instances("ta/Trees", {
       of: Tree,
+      transform: Transform3d,
       from: Forest,
       look: ({ bark }) => ({
         geometry,

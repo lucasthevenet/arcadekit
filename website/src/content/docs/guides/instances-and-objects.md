@@ -5,13 +5,13 @@ description: "@arcadekit/three draws each kind of entity with one of two systems
 
 [`@arcadekit/three`](drawing-with-three.md) draws each kind of entity with one of two frame-stage systems. **`Three.instances`** draws every entity of a kind as an instance of one mesh, for crowds. **`Three.objects`** keeps one `Object3D` per entity, for the few entities that are more than a copy of one mesh.
 
-Both decide what to draw from the components an entity has, and where from its [`Transform3d` or `Transform2d`](drawing-with-three.md#position-rotation-and-scale). The rules say what an entity is, never how it looks.
+Both decide what to draw from the components an entity has, and where from the [`Transform3d` or `Transform2d`](drawing-with-three.md#position-rotation-and-scale) the kind names. The rules say what an entity is, never how it looks.
 
 ## Instances
 
 ```ts title="look.ts"
 import { Three } from "@arcadekit/three";
-import { Component, Field } from "arcadekit";
+import { Component, Field, Transform3d } from "arcadekit";
 import { IcosahedronGeometry, MeshStandardMaterial } from "three";
 
 const Rock = Component.tag("game/Rock");
@@ -22,6 +22,7 @@ const geometry = new IcosahedronGeometry(1);
 
 const Rocks = Three.instances("game/Rocks", {
   of: [Rock, Lit], // or a single component: Rock
+  transform: Transform3d, // or Transform2d, for a flat game
   without: [Hidden],
   geometry,
   material: new MeshStandardMaterial({ color: "#8a8f98" }),
@@ -32,7 +33,9 @@ const Rocks = Three.instances("game/Rocks", {
 });
 ```
 
-`Three.instances` draws every entity of a kind as an instance of one `InstancedMesh`. An entity belongs to the kind while it has every component in `of`, none in `without`, and a `Position`.
+`Three.instances` draws every entity of a kind as an instance of one `InstancedMesh`. An entity belongs to the kind while it has every component in `of`, none in `without`, and the `Position` of the kind's `transform`.
+
+- `transform` names the module whose components place the kind's entities: `Transform3d`, or `Transform2d`, whose entities are drawn in the x–y plane. It has no default, so a kind that leaves it out doesn't compile. A kind reads nothing of the other module: an entity with both positions is drawn by a kind of each, each from its own.
 
 - Each frame, it reads the columns raw and writes one matrix per entity straight into the mesh's instance buffer. It creates no object, matrix or vector per entity, and allocates nothing per entity per frame. Ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over.
 - The buffer has room for `capacity` instances, 256 by default, and doubles when it fills up. That is the only time the system allocates.
@@ -55,6 +58,7 @@ const Paint = Component.define("game/Paint", {
 // The page: every rock is drawn in its own colour.
 const Painted = Three.instances("game/Painted", {
   of: Rock,
+  transform: Transform3d,
   geometry,
   material: new MeshStandardMaterial({ color: "#ffffff" }),
   color: Paint,
@@ -85,17 +89,18 @@ const paint = new MeshStandardMaterial({ color: "#d0d4dc" });
 
 const Ships = Three.objects("game/Ships", {
   of: Ship,
+  transform: Transform3d,
   make: (entity) => new Mesh(hull, paint),
   free: (ship) => ship.clear(),
 });
 ```
 
-`Three.objects` keeps one `Object3D` per entity of a kind: a model with parts, a light, something that carries the camera. It accepts `of`, `without`, `smooth` and `snap`, like instances.
+`Three.objects` keeps one `Object3D` per entity of a kind: a model with parts, a light, something that carries the camera. It accepts `of`, `transform`, `without`, `smooth` and `snap`, like instances.
 
 - `make` is called on the first frame an entity belongs to the kind, and its object is added to the scene. On the frame it no longer belongs, or is despawned, the object is removed and passed to `free`. Anything left when the app's scope closes is freed then.
 - Each frame, every object receives its entity's `Position`, and its `Rotation` and `Scale` if the entity has them. A rotation of any length is applied as a unit quaternion. An entity that loses one is drawn as if it never had it.
 - Everything else about an object is up to your game: set it in `make`, or in a frame system of your own, including its colour, which is its material's.
-- For an entity placed with `Transform2d`, its object gets x and y, its rotation about the third axis, and its scale along x and y. Its position on the third axis, its tilt and its depth stay as `make` left them.
+- For a kind of `Transform2d`, an object gets x and y, its rotation about the third axis, and its scale along x and y. Its position on the third axis, its tilt and its depth stay as `make` left them.
 - Objects are flat in the scene: an entity's position is its position in the scene, not relative to a parent. Attach child objects to an object in `make`.
 - An entity that reuses a despawned entity's slot gets its own object.
 - None of this is stored in the world. A game loaded from a save, or an app that starts with entities, creates its objects on the first frame.

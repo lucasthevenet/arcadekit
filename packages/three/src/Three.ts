@@ -7,9 +7,10 @@
  *   // The rules: a rock has a position. They know nothing about how it looks.
  *   commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }))
  *
- *   // The page: every rock is one instance of one mesh.
+ *   // The page: every rock is one instance of one mesh, where its Transform3d puts it.
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
+ *     transform: Transform3d,
  *     geometry: new IcosahedronGeometry(1),
  *     material: new MeshStandardMaterial({ color: "#8a8f98" }),
  *   })
@@ -29,9 +30,9 @@
  * that isn't, and a server or a replay installs none of this.
  *
  * What is drawn depends on an entity's components, and where it is drawn on
- * arcadekit's own `Transform3d.Position`, with `Transform3d.Rotation` and
- * `Transform3d.Scale` for entities that have them. A 2D game's `Transform2d` is
- * drawn the same way, in the x-y plane:
+ * the transform its kind names: arcadekit's own `Transform3d`, its `Position`,
+ * and its `Rotation` and `Scale` for entities that have them, or a 2D game's
+ * `Transform2d`, drawn the same way in the x-y plane:
  *
  * - `Three.instances` draws every entity of a kind as one instance of one mesh.
  *   It reads the columns directly and writes one matrix each into the mesh's
@@ -414,8 +415,8 @@ export const Render = System.frame("arcadekit/three/Render", function* () {
  * The app then needs a `Three.Renderer` from outside:
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  *
- * It draws from the transform components of `Transform3d` and `Transform2d`.
- * This package defines no components of its own.
+ * Each of those systems draws from the transform it names, `Transform3d` or
+ * `Transform2d`. This package defines no components of its own.
  *
  * @category Plugins
  */
@@ -455,17 +456,28 @@ interface Angle {
 }
 
 /**
- * Which entities a drawing system draws.
+ * Which entities a drawing system draws, and the transform it draws them from.
  *
  * @category Models
  */
 export interface Which {
   /**
    * The component that marks an entity as one of these, or several, all of
-   * which it must have. It is drawn while it has them and a
-   * `Transform3d.Position` or a `Transform2d.Position`.
+   * which it must have. It is drawn while it has them and the `Position` of
+   * its `transform`.
    */
   readonly of: ComponentDef | readonly ComponentDef[];
+  /**
+   * The module whose components place the entities: `Transform3d`, or
+   * `Transform2d` for a flat game's, drawn in the x-y plane at z = 0. An entity
+   * is drawn at that module's `Position`, turned and sized by its `Rotation`
+   * and `Scale` if it has them. The other module's components are not read: a
+   * kind of `Transform2d` draws an entity that has both positions from its
+   * `Transform2d` components, whatever its `Transform3d` ones say.
+   *
+   *   Three.instances("game/Cards", { of: Card, transform: Transform2d, geometry, material })
+   */
+  readonly transform: typeof Transform3d | typeof Transform2d;
   /** Components that prevent an entity from being drawn: one that hides it, for example. */
   readonly without?: readonly ComponentDef[];
   /**
@@ -487,6 +499,10 @@ export interface Which {
 
 const required = (which: Which): readonly ComponentDef[] =>
   "id" in which.of ? [which.of] : which.of;
+
+/** Whether a kind is drawn from a flat game's transform, with the loops of the plane. */
+const isFlat = (which: Which): boolean =>
+  which.transform.Position === Transform2d.Position;
 
 // --- between two ticks -------------------------------------------------------------
 // What a system keeps to draw its entities between their last two places:
@@ -1137,16 +1153,8 @@ export interface InstancesFromOptions<
   readonly free?: (look: L) => void;
 }
 
-/** The eight loops of a kind: positioned, scaled, rotated or all three, in 3D or 2D. */
-type Loop =
-  | "placed"
-  | "sized"
-  | "turned"
-  | "whole"
-  | "placedFlat"
-  | "sizedFlat"
-  | "turnedFlat"
-  | "wholeFlat";
+/** The four loops of a kind: positioned, scaled, rotated or all three. */
+type Loop = "placed" | "sized" | "turned" | "whole";
 
 /**
  * A loop over the columns of a query, whichever its terms. Typed as a method's
@@ -1176,12 +1184,13 @@ class Instances implements Kept {
   private readonly gain: number;
   private readonly name: string;
   /**
-   * The eight loops as the system passes them to its queries: as is, or, for a
-   * kind with a colour, each followed by the colours of its rows.
+   * The four loops of the kind's transform as the system passes them to its
+   * queries: as is, or, for a kind with a colour, each followed by the colours
+   * of its rows.
    */
   readonly loops: Record<Loop, Columns>;
   /**
-   * For a kind with a colour, the eight loops for the entities that have none:
+   * For a kind with a colour, the four loops for the entities that have none:
    * each followed by white for its rows.
    */
   readonly plain: Record<Loop, Columns>;
@@ -1204,40 +1213,35 @@ class Instances implements Kept {
       options.color !== undefined && isWhole(options.color.schema.r.kind)
         ? 1 / 255
         : 1;
-    const uncoloured: Record<Loop, Columns> = {
-      placed: this.placed,
-      sized: this.sized,
-      turned: this.turned,
-      whole: this.whole,
-      placedFlat: this.placedFlat,
-      sizedFlat: this.sizedFlat,
-      turnedFlat: this.turnedFlat,
-      wholeFlat: this.wholeFlat,
-    };
+    const own: Record<Loop, Columns> = isFlat(options)
+      ? {
+          placed: this.placedFlat,
+          sized: this.sizedFlat,
+          turned: this.turnedFlat,
+          whole: this.wholeFlat,
+        }
+      : {
+          placed: this.placed,
+          sized: this.sized,
+          turned: this.turned,
+          whole: this.whole,
+        };
     if (options.color === undefined) {
-      this.loops = uncoloured;
-      this.plain = uncoloured;
+      this.loops = own;
+      this.plain = own;
     } else {
       this.plain = {
-        placed: this.whitened(this.placed),
-        sized: this.whitened(this.sized),
-        turned: this.whitened(this.turned),
-        whole: this.whitened(this.whole),
-        placedFlat: this.whitened(this.placedFlat),
-        sizedFlat: this.whitened(this.sizedFlat),
-        turnedFlat: this.whitened(this.turnedFlat),
-        wholeFlat: this.whitened(this.wholeFlat),
+        placed: this.whitened(own.placed),
+        sized: this.whitened(own.sized),
+        turned: this.whitened(own.turned),
+        whole: this.whitened(own.whole),
       };
       this.colors = new Float32Array(this.capacity * 3);
       this.loops = {
-        placed: this.painted1(this.placed),
-        sized: this.painted2(this.sized),
-        turned: this.painted2(this.turned),
-        whole: this.painted3(this.whole),
-        placedFlat: this.painted1(this.placedFlat),
-        sizedFlat: this.painted2(this.sizedFlat),
-        turnedFlat: this.painted2(this.turnedFlat),
-        wholeFlat: this.painted3(this.wholeFlat),
+        placed: this.painted1(own.placed),
+        sized: this.painted2(own.sized),
+        turned: this.painted2(own.turned),
+        whole: this.painted3(own.whole),
       };
     }
     this.mesh = new InstancedMesh(options.geometry, options.material, 0);
@@ -1610,8 +1614,9 @@ class Instances implements Kept {
     }
   };
 
-  // A flat game's entities: in the plane of x and y, turned about the axis
-  // that comes out of it. The same four loops, with fewer columns.
+  // A flat game's entities, for a kind of Transform2d: in the plane of x and
+  // y, turned about the axis that comes out of it. The same four loops, with
+  // fewer columns.
 
   /** 2D entities with only a position. */
   readonly placedFlat = (
@@ -1822,16 +1827,15 @@ type Needs = Frame | Scene | Time | World;
  *
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
+ *     transform: Transform3d,
  *     geometry: new IcosahedronGeometry(1),
  *     material: new MeshStandardMaterial({ color: "#8a8f98" }),
  *   })
  *
- * An entity is drawn while it has what `of` specifies and a
- * `Transform3d.Position`, and is rotated and scaled by `Transform3d.Rotation`
- * and `Transform3d.Scale` if it has them. One that has a `Transform2d.Position`
- * instead is drawn in the x-y plane, at z = 0, rotated and scaled by its
- * `Transform2d.Rotation` and `Transform2d.Scale`. An entity with both positions
- * is drawn once, from the 3D one.
+ * An entity is drawn while it has what `of` specifies and the `Position` of
+ * the `transform` the kind names, and is rotated and scaled by that module's
+ * `Rotation` and `Scale` if it has them. A kind of `Transform2d` draws in the
+ * x-y plane, at z = 0. The other module's components are not read.
  *
  * - Each frame, it reads the columns directly (`eachChunk`) and writes one
  *   matrix per entity straight into the mesh's instance buffer. Nothing is
@@ -1874,6 +1878,7 @@ type Needs = Frame | Scene | Time | World;
  *
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
+ *     transform: Transform3d,
  *     from: Forest,
  *     look: ({ bark }) => ({
  *       geometry: new IcosahedronGeometry(1),
@@ -1959,54 +1964,18 @@ export function instances(
           Query.without(...excluded, ...absent, color)
         );
   // An entity's table has a rotation or it does not, and a scale or not:
-  // four queries, each handed exactly the columns its entities have. And
-  // the same four for a flat game's components, but for the entities that
-  // are placed in three dimensions as well, which are drawn above.
+  // four queries of the kind's transform, each handed exactly the columns
+  // its entities have.
+  const { Position, Rotation, Scale } = options.transform;
   const shapes: readonly (readonly [
     Loop,
     readonly ComponentDef[],
     readonly ComponentDef[],
   ])[] = [
-    [
-      "placed",
-      [Transform3d.Position],
-      [Transform3d.Rotation, Transform3d.Scale],
-    ],
-    [
-      "sized",
-      [Transform3d.Position, Transform3d.Scale],
-      [Transform3d.Rotation],
-    ],
-    [
-      "turned",
-      [Transform3d.Position, Transform3d.Rotation],
-      [Transform3d.Scale],
-    ],
-    [
-      "whole",
-      [Transform3d.Position, Transform3d.Rotation, Transform3d.Scale],
-      [],
-    ],
-    [
-      "placedFlat",
-      [Transform2d.Position],
-      [Transform3d.Position, Transform2d.Rotation, Transform2d.Scale],
-    ],
-    [
-      "sizedFlat",
-      [Transform2d.Position, Transform2d.Scale],
-      [Transform3d.Position, Transform2d.Rotation],
-    ],
-    [
-      "turnedFlat",
-      [Transform2d.Position, Transform2d.Rotation],
-      [Transform3d.Position, Transform2d.Scale],
-    ],
-    [
-      "wholeFlat",
-      [Transform2d.Position, Transform2d.Rotation, Transform2d.Scale],
-      [Transform3d.Position],
-    ],
+    ["placed", [Position], [Rotation, Scale]],
+    ["sized", [Position, Scale], [Rotation]],
+    ["turned", [Position, Rotation], [Scale]],
+    ["whole", [Position, Rotation, Scale], []],
   ];
   const kinds = shapes.map(([loop, own, absent]) => ({
     loop,
@@ -2159,13 +2128,15 @@ class Objects<O extends Object3D> implements Kept {
   private seen = new Uint32Array(0);
   private turnedAt = new Uint32Array(0);
   private sizedAt = new Uint32Array(0);
-  /** For each entity index, 1 when its entity is positioned by 2D components. */
-  private flat = new Uint8Array(0);
   /** The entity indexes that have an object, unordered. */
   private readonly live: number[] = [];
   private stamp = 0;
   /** What interpolates the objects between two ticks, when the system was asked to. */
   private readonly smooth: Smooth | undefined;
+  /** Whether the kind is placed by a flat game's transform. */
+  private readonly flat: boolean;
+  /** The three loops of the kind's transform, as the system passes them to its queries. */
+  readonly loops: Record<"placed" | "turned" | "sized", Columns>;
 
   constructor(
     scene: ThreeScene,
@@ -2177,6 +2148,14 @@ class Objects<O extends Object3D> implements Kept {
     this.options = options;
     this.assets = assets;
     this.smooth = smoothOf(options);
+    this.flat = isFlat(options);
+    this.loops = this.flat
+      ? {
+          placed: this.placedFlat,
+          turned: this.turnedFlat,
+          sized: this.sizedFlat,
+        }
+      : { placed: this.placed, turned: this.turned, sized: this.sized };
   }
 
   private grow(size: number): void {
@@ -2193,9 +2172,6 @@ class Objects<O extends Object3D> implements Kept {
       bigger.set(this[name]);
       this[name] = bigger;
     }
-    const flat = new Uint8Array(length);
-    flat.set(this.flat);
-    this.flat = flat;
   }
 
   private release(index: number): void {
@@ -2250,13 +2226,13 @@ class Objects<O extends Object3D> implements Kept {
       }
       object.position.set(x[i]!, y[i]!, z[i]!);
       this.seen[index] = stamp;
-      this.flat[index] = 0;
     }
   };
 
-  // A flat game's entities. Only what its components say is set: where an
-  // object is along the third axis, how it is turned about the other two
-  // and how deep it is are as `make` left them, or as the game sets them.
+  // A flat game's entities, for a kind of Transform2d. Only what its
+  // components say is set: where an object is along the third axis, how it
+  // is turned about the other two and how deep it is are as `make` left
+  // them, or as the game sets them.
 
   readonly placedFlat = (
     start: number,
@@ -2282,7 +2258,6 @@ class Objects<O extends Object3D> implements Kept {
       object.position.x = x[i]!;
       object.position.y = y[i]!;
       this.seen[index] = stamp;
-      this.flat[index] = 1;
     }
   };
 
@@ -2387,7 +2362,7 @@ class Objects<O extends Object3D> implements Kept {
       // An entity that is no longer turned, or sized, is drawn as one that
       // never was.
       if (turnedAt[index] !== stamp && turnedAt[index] !== 0) {
-        if (flat[index] === 1) {
+        if (flat) {
           objects[index]!.rotation.z = 0;
         } else {
           objects[index]!.quaternion.identity();
@@ -2396,7 +2371,7 @@ class Objects<O extends Object3D> implements Kept {
       }
       if (sizedAt[index] !== stamp && sizedAt[index] !== 0) {
         const size = objects[index]!.scale;
-        if (flat[index] === 1) {
+        if (flat) {
           size.x = 1;
           size.y = 1;
         } else {
@@ -2422,6 +2397,7 @@ class Objects<O extends Object3D> implements Kept {
  *
  *   const Ships = Three.objects("game/Ships", {
  *     of: Ship,
+ *     transform: Transform3d,
  *     make: () => new Mesh(hull, paint),
  *   })
  *
@@ -2429,19 +2405,20 @@ class Objects<O extends Object3D> implements Kept {
  * parts, a light, or something that carries the camera. For crowds, use
  * `Three.instances`.
  *
- * - `make` is called on the first frame an entity has what `of` specifies and a
- *   `Transform3d.Position`, and its object is added to the scene. On the frame
- *   the entity stops matching, or is despawned, the object is removed, and
- *   `free` is called with it.
+ * - `make` is called on the first frame an entity has what `of` specifies and
+ *   the `Position` of the kind's `transform`, and its object is added to the
+ *   scene. On the frame the entity stops matching, or is despawned, the object
+ *   is removed, and `free` is called with it.
  * - Each frame, every object receives its entity's `Position`, and its
- *   `Rotation` and `Scale` if the entity has them. A rotation of any length is
+ *   `Rotation` and `Scale` if the entity has them, all of the kind's
+ *   `transform`: the other module's are not read. A rotation of any length is
  *   applied as a unit quaternion, and an entity that loses either is drawn as
  *   if it never had it. Anything else about an object is up to your game, in
  *   `make` or in a system of its own.
- * - For an entity positioned by a 2D `Transform2d`, the object's x and y, its
- *   rotation about the z axis, and its scale along x and y are set. Its z
- *   position, tilt and depth scale are left as `make` set them, which is how
- *   you layer one kind in front of another.
+ * - For a kind of `Transform2d`, the object's x and y, its rotation about the
+ *   z axis, and its scale along x and y are set. Its z position, tilt and
+ *   depth scale are left as `make` set them, which is how you layer one kind
+ *   in front of another.
  * - An entity that reuses a despawned entity's slot gets its own object.
  * - When the app's scope closes, or the bundle is released, every object is
  *   removed and freed, and the geometries and materials the objects were made
@@ -2458,6 +2435,7 @@ class Objects<O extends Object3D> implements Kept {
  *
  *   const Deer = Three.objects("game/Deer", {
  *     of: Deer,
+ *     transform: Transform3d,
  *     from: Forest,
  *     make: (entity, { deer }) => clone(deer),
  *   })
@@ -2488,40 +2466,20 @@ export function objects<O extends Object3D>(
   const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
-  const Placed = Query.all(Transform3d.Position).pipe(
-    Query.with(...marked),
-    Query.without(...excluded)
-  );
-  const Turned = Query.all(Transform3d.Rotation).pipe(
-    Query.with(Transform3d.Position, ...marked),
-    Query.without(...excluded)
-  );
-  const Sized = Query.all(Transform3d.Scale).pipe(
-    Query.with(Transform3d.Position, ...marked),
-    Query.without(...excluded)
-  );
-  // A flat game's, but for the entities placed in three dimensions too.
-  const flat = [...excluded, Transform3d.Position];
-  const PlacedFlat = Query.all(Transform2d.Position).pipe(
-    Query.with(...marked),
-    Query.without(...flat)
-  );
-  const TurnedFlat = Query.all(Transform2d.Rotation).pipe(
-    Query.with(Transform2d.Position, ...marked),
-    Query.without(...flat)
-  );
-  const SizedFlat = Query.all(Transform2d.Scale).pipe(
-    Query.with(Transform2d.Position, ...marked),
-    Query.without(...flat)
-  );
+  const { Position, Rotation, Scale } = options.transform;
+  const query = (term: ComponentDef, also: readonly ComponentDef[]) =>
+    Query.all(term).pipe(
+      Query.with(...also, ...marked),
+      Query.without(...excluded)
+    );
+  const Placed = query(Position, []);
+  const Turned = query(Rotation, [Position]);
+  const Sized = query(Scale, [Position]);
   return System.frame(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
     const turned = yield* Turned;
     const sized = yield* Sized;
-    const placedFlat = yield* PlacedFlat;
-    const turnedFlat = yield* TurnedFlat;
-    const sizedFlat = yield* SizedFlat;
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
     let held: Objects<O> | undefined;
@@ -2557,12 +2515,10 @@ export function objects<O extends Object3D>(
     // makes the objects that are missing; whatever it did not find is let
     // go at the end.
     held.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
-    placed.eachChunk(held.placed);
-    turned.eachChunk(held.turned);
-    sized.eachChunk(held.sized);
-    placedFlat.eachChunk(held.placedFlat);
-    turnedFlat.eachChunk(held.turnedFlat);
-    sizedFlat.eachChunk(held.sizedFlat);
+    const { loops } = held;
+    placed.eachChunk(loops.placed);
+    turned.eachChunk(loops.turned);
+    sized.eachChunk(loops.sized);
     held.finish();
   });
 }

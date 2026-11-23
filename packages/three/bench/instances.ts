@@ -103,85 +103,108 @@ const place = () =>
   Position.of({ x: Math.random(), y: Math.random(), z: Math.random() });
 const turn = () => Rotation.of(Transform3d.axisAngle(0, 1, 0, Math.random()));
 const size = () => Scale.of({ x: 2, y: 2, z: 2 });
-const instanced = (name: string) =>
-  Three.instances(name, { of: Thing, geometry, material, capacity: N });
+const instanced = (name: string, transform: Three.Which["transform"]) =>
+  Three.instances(name, {
+    of: Thing,
+    transform,
+    geometry,
+    material,
+    capacity: N,
+  });
 
 console.log(`${N} entities, one frame:`);
-variant("instances: a position", () => [place()], instanced("a"));
+variant("instances: a position", () => [place()], instanced("a", Transform3d));
 variant(
   "instances: a position and a scale",
   () => [place(), size()],
-  instanced("b")
+  instanced("b", Transform3d)
 );
 variant(
   "instances: a position and a rotation",
   () => [place(), turn()],
-  instanced("c")
+  instanced("c", Transform3d)
 );
 variant(
   "instances: all three",
   () => [place(), turn(), size()],
-  instanced("d")
+  instanced("d", Transform3d)
 );
 // A flat game's entities: fewer columns, and a sine and a cosine for a turn.
 const placeFlat = () =>
   Transform2d.Position.of({ x: Math.random(), y: Math.random() });
 const turnFlat = () => Transform2d.Rotation.of({ angle: Math.random() * 6 });
 const sizeFlat = () => Transform2d.Scale.of({ x: 2, y: 2 });
-variant("instances, flat: a position", () => [placeFlat()], instanced("f"));
+variant(
+  "instances, flat: a position",
+  () => [placeFlat()],
+  instanced("f", Transform2d)
+);
 variant(
   "instances, flat: a position and a scale",
   () => [placeFlat(), sizeFlat()],
-  instanced("g")
+  instanced("g", Transform2d)
 );
 variant(
   "instances, flat: a position and a rotation",
   () => [placeFlat(), turnFlat()],
-  instanced("h")
+  instanced("h", Transform2d)
 );
 variant(
   "instances, flat: all three",
   () => [placeFlat(), turnFlat(), sizeFlat()],
-  instanced("i")
+  instanced("i", Transform2d)
 );
 variant(
   "objects: an Object3D each, all three copied",
   () => [place(), turn(), size()],
-  Three.objects("e", { of: Thing, make: () => new Object3D() })
+  Three.objects("e", {
+    of: Thing,
+    transform: Transform3d,
+    make: () => new Object3D(),
+  })
 );
 
 variant(
   "objects, flat: an Object3D each, all three copied",
   () => [placeFlat(), turnFlat(), sizeFlat()],
-  Three.objects("j", { of: Thing, make: () => new Object3D() })
+  Three.objects("j", {
+    of: Thing,
+    transform: Transform2d,
+    make: () => new Object3D(),
+  })
 );
 
 // Drawn between two ticks: each value on its way from the one a tick ago,
 // kept per entity by the renderer. No tick runs between these frames; a
 // frame that follows one does the same work.
-const smoothed = (name: string) =>
+const smoothed = (name: string, transform: Three.Which["transform"]) =>
   Three.instances(name, {
     of: Thing,
+    transform,
     geometry,
     material,
     capacity: N,
     smooth: true,
   });
-variant("instances, smooth: a position", () => [place()], smoothed("k"));
+variant(
+  "instances, smooth: a position",
+  () => [place()],
+  smoothed("k", Transform3d)
+);
 variant(
   "instances, smooth: all three",
   () => [place(), turn(), size()],
-  smoothed("l")
+  smoothed("l", Transform3d)
 );
 variant(
   "instances, smooth, flat: a position",
   () => [placeFlat()],
-  smoothed("m")
+  smoothed("m", Transform2d)
 );
 variant(
   "instances, smooth, flat: all three",
   () => [placeFlat(), turnFlat(), sizeFlat()],
-  smoothed("n")
+  smoothed("n", Transform2d)
 );
 
 // A colour of its own for each: three more numbers, beside the matrix.
@@ -197,6 +220,7 @@ variant(
   () => [place(), paint()],
   Three.instances("o", {
     of: Thing,
+    transform: Transform3d,
     geometry,
     material,
     capacity: N,
@@ -208,6 +232,7 @@ variant(
   () => [place(), paint()],
   Three.instances("o2", {
     of: Thing,
+    transform: Transform3d,
     geometry,
     material,
     capacity: N,
@@ -220,6 +245,7 @@ variant(
   () => [place(), paint()],
   Three.instances("p", {
     of: Thing,
+    transform: Transform3d,
     geometry,
     material,
     capacity: N,
@@ -237,6 +263,7 @@ const Level = Assets.bundle("bench/Level", {
 });
 const Sourced = Three.instances("q", {
   of: Thing,
+  transform: Transform3d,
   from: Level,
   look: ({ bark }) => ({ geometry, material: bark }),
   capacity: N,

@@ -9,7 +9,7 @@ A geometry and material passed to [`Three.instances`](instances-and-objects.md) 
 
 ```ts
 import { Three } from "@arcadekit/three";
-import { Assets, Component, Plugin, State } from "arcadekit";
+import { Assets, Component, Plugin, State, Transform3d } from "arcadekit";
 import { CylinderGeometry, MeshStandardMaterial } from "three";
 
 const Tree = Component.tag("game/Tree");
@@ -21,6 +21,7 @@ const Forest = Assets.bundle("game/Forest", {
 
 const Trees = Three.instances("game/Trees", {
   of: Tree,
+  transform: Transform3d,
   from: Forest,
   look: ({ bark }) => ({
     geometry: new CylinderGeometry(1, 1, 8),
@@ -76,7 +77,7 @@ const Forest = Assets.bundle("game/Forest", {
 ```ts
 import { Three } from "@arcadekit/three";
 import * as Gltf from "@arcadekit/three/Gltf";
-import { Assets, Component } from "arcadekit";
+import { Assets, Component, Transform3d } from "arcadekit";
 
 const Ship = Component.tag("game/Ship");
 const Rock = Component.tag("game/Rock");
@@ -89,6 +90,7 @@ const Fleet = Assets.bundle("game/Fleet", {
 // One object each: a copy of the model's scene.
 const Ships = Three.objects("game/Ships", {
   of: Ship,
+  transform: Transform3d,
   from: Fleet,
   make: (entity, { ship }) => ship.scene.clone(),
 });
@@ -96,6 +98,7 @@ const Ships = Three.objects("game/Ships", {
 // Or a crowd, each an instance of one of its meshes.
 const Rocks = Three.instances("game/Rocks", {
   of: Rock,
+  transform: Transform3d,
   from: Fleet,
   look: ({ rock }) => Gltf.mesh(rock, "Boulder"),
 });
