@@ -4,13 +4,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   App,
+  Commands,
   Component,
+  Plugin,
   Query,
   Save,
   System,
   Time,
   Transform3d,
+  World,
 } from "../src/index";
+import type { Entity } from "../src/index";
 import * as Entry from "../src/Transform3d";
 
 const { Position, Rotation, Scale } = Transform3d;
@@ -35,12 +39,30 @@ describe("Transform3d", () => {
     }
     // Added bare, it is where it was made, turned by nothing, and of its
     // own size: a Scale of zeros would be drawn as nothing.
-    const { world } = run(App.make(App.define({})));
-    const bare = world.spawn(Position, Rotation, Scale);
-    expect(world.get(bare, Scale)).toEqual({ x: 1, y: 1, z: 1 });
-    expect(new Set(Object.values(world.get(bare, Position)!))).toEqual(
-      new Set([0])
+    const Bare = Plugin.make("tf/Bare", {
+      setup: Effect.gen(function* () {
+        (yield* Commands.spawns(Position, Rotation, Scale)).spawn(
+          Position,
+          Rotation,
+          Scale
+        );
+      }),
+    });
+    const bare = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [Bare] }));
+        const world = yield* app.read(World);
+        return (yield* app.read(Query.all(Position, Scale)))
+          .entities()
+          .map((entity) => ({
+            scale: world.get(entity, Scale),
+            position: new Set(Object.values(world.get(entity, Position) ?? {})),
+          }));
+      })
     );
+    expect(bare).toEqual([
+      { scale: { x: 1, y: 1, z: 1 }, position: new Set([0]) },
+    ]);
     // One module, whichever entry it is reached through.
     expect(Entry.Position).toBe(Position);
   });
@@ -57,13 +79,31 @@ describe("Transform3d", () => {
         }
       );
     });
-    const app = run(App.make(App.define({ systems: [Drift] })));
-    const rock = app.world.spawn(Position.of({ x: 1, y: 2, z: 3 }));
-    // Added with no value, it is at the origin.
-    const flat = app.world.spawn(Position);
-    app.tick(0.5);
-    expect(app.world.get(rock, Position)).toEqual({ x: 2, y: 2, z: 2.5 });
-    expect(app.world.get(flat, Position)).toEqual({ x: 1, y: 0, z: -0.5 });
+    const spawned: Entity[] = [];
+    const Rocks = Plugin.make("tf/Rocks", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Position);
+        spawned.push(
+          commands.spawn(Position.of({ x: 1, y: 2, z: 3 })),
+          // Added with no value, it is at the origin.
+          commands.spawn(Position)
+        );
+      }),
+    });
+    const moved = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ plugins: [Rocks], systems: [Drift] })
+        );
+        const world = yield* app.read(World);
+        app.tick(0.5);
+        return spawned.map((rock) => world.get(rock, Position));
+      })
+    );
+    expect(moved).toEqual([
+      { x: 2, y: 2, z: 2.5 },
+      { x: 1, y: 0, z: -0.5 },
+    ]);
   });
 
   it("axisAngle gives the unit quaternion of a turn about an axis", () => {
@@ -112,20 +152,62 @@ describe("Transform3d", () => {
       w: 1,
     });
     // It is what a Rotation is given.
-    const world = run(App.make(App.define({}))).world;
-    const turned = world.spawn(Rotation.of(quarter));
-    expect(world.get(turned, Rotation)!.w).toBe(Math.fround(quarter.w));
+    const Turned = Plugin.make("tf/Turned", {
+      setup: Effect.gen(function* () {
+        (yield* Commands.spawns(Rotation)).spawn(Rotation.of(quarter));
+      }),
+    });
+    const turned = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [Turned] }));
+        const world = yield* app.read(World);
+        return (yield* app.read(Query.all(Rotation)))
+          .entities()
+          .map((entity) => world.get(entity, Rotation)?.w);
+      })
+    );
+    expect(turned).toEqual([Math.fround(quarter.w)]);
   });
 
   it("is saved and loaded by a game that names none of its components, with no renderer anywhere", () => {
-    const made = run(App.make(App.define({})));
-    const rock = made.world.spawn(
-      Rock,
-      Position.of({ x: 1, y: 2, z: 3 }),
-      Rotation.of(Transform3d.axisAngle(0, 0, 1, 1)),
-      Scale.of({ x: 2, y: 3, z: 4 })
+    const spawned: Entity[] = [];
+    const Rocks = Plugin.make("tf/Rocks", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(
+          Rock,
+          Position,
+          Rotation,
+          Scale
+        );
+        spawned.push(
+          commands.spawn(
+            Rock,
+            Position.of({ x: 1, y: 2, z: 3 }),
+            Rotation.of(Transform3d.axisAngle(0, 0, 1, 1)),
+            Scale.of({ x: 2, y: 3, z: 4 })
+          )
+        );
+      }),
+    });
+    const Game = App.define({ plugins: [Rocks] });
+    // What a reader of the game sees of the rocks.
+    const rocks = Effect.gen(function* () {
+      const world = yield* World;
+      return {
+        hash: world.hash(),
+        rocks: spawned.map((rock) => [
+          world.get(rock, Position),
+          world.get(rock, Rotation),
+          world.get(rock, Scale),
+        ]),
+      };
+    });
+    const { made, save } = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(Game);
+        return { made: yield* app.read(rocks), save: app.save() };
+      })
     );
-    const save = made.save();
     if (Exit.isFailure(save)) {
       throw new Error("The game could not be saved");
     }
@@ -133,12 +215,20 @@ describe("Transform3d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(App.make(App.define({}), { save: read.value }));
-    expect(loaded.world.hash()).toBe(made.world.hash());
-    expect(loaded.world.get(rock, Position)).toEqual({ x: 1, y: 2, z: 3 });
-    expect(loaded.world.get(rock, Rotation)).toEqual(
-      made.world.get(rock, Rotation)
+    const loaded = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(Game, { save: read.value });
+        return yield* app.read(rocks);
+      })
     );
-    expect(loaded.world.get(rock, Scale)).toEqual({ x: 2, y: 3, z: 4 });
+    expect(loaded).toEqual(made);
+    expect(
+      loaded.rocks.map(([position, , scale]) => [position, scale])
+    ).toEqual([
+      [
+        { x: 1, y: 2, z: 3 },
+        { x: 2, y: 3, z: 4 },
+      ],
+    ]);
   });
 });

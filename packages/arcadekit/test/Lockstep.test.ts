@@ -12,6 +12,7 @@ import {
   Save,
   System,
   Time,
+  World,
 } from "../src/index";
 import { Drift, Message, Session } from "../src/net/index";
 import {
@@ -48,6 +49,12 @@ import {
 } from "./peers";
 import type { Peer } from "./peers";
 
+/** Runs `use` with what `make` makes, then closes its scope. */
+const withMade = <T, A, E = never>(
+  make: Effect.Effect<T, E, Scope.Scope>,
+  use: (made: T) => A
+): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+
 describe("a lockstep session", () => {
   it("keeps two peers hash-equal at every tick, over a network that delays and reorders", () => {
     for (const [seed, lag] of [
@@ -80,7 +87,7 @@ describe("a lockstep session", () => {
         expect(ada.session.held).toBeLessThanOrEqual(2 * (2 * 2 + 2));
         expect(ada.app.time.tick).toBe(ticks);
         expect(grace.app.time.tick).toBe(ticks);
-        expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+        expect(ada.world.hash()).toBe(grace.world.hash());
         // The same actions, on the same ticks, in the same order, and the
         // same ones refused.
         expect(ada.app.actionLog).toEqual(grace.app.actionLog);
@@ -89,7 +96,7 @@ describe("a lockstep session", () => {
         expect(
           logged.filter((entry) => entry.refused === undefined).length
         ).toBeGreaterThan(20);
-        expect(ada.app.world.singleton(Purse).taken).toBeGreaterThan(0);
+        expect(ada.world.singleton(Purse).taken).toBeGreaterThan(0);
       });
     }
   });
@@ -112,8 +119,8 @@ describe("a lockstep session", () => {
         Journal.replay(recording, (start) =>
           App.make(CoinGame, { ...start, checkpointEvery: 1 })
         ),
-        (alone) => {
-          expect(alone.world.hash()).toBe(ada.app.world.hash());
+        (_, alone) => {
+          expect(alone.hash()).toBe(ada.world.hash());
         }
       );
     });
@@ -186,7 +193,7 @@ describe("a lockstep session", () => {
           tick: 0,
           actions: [],
           // The state it starts from, for the others to compare.
-          checkpoints: [{ tick: 0, hash: ada.app.world.hash() }],
+          checkpoints: [{ tick: 0, hash: ada.world.hash() }],
           // And what it was made with, first of all.
           made: {
             game: expect.any(Number),
@@ -343,7 +350,7 @@ describe("a lockstep session", () => {
       ]);
       expect(logged.every((entry) => entry.refused !== undefined)).toBe(true);
       expect(ada.app.actionLog).toEqual(grace.app.actionLog);
-      expect(ada.app.world.entityCount).toBe(grace.app.world.entityCount);
+      expect(ada.world.entityCount).toBe(grace.world.entityCount);
     });
   });
 
@@ -365,7 +372,7 @@ describe("a lockstep session", () => {
       ];
       expect(moves(ada.app.actionLog)).toEqual(expected);
       expect(moves(grace.app.actionLog)).toEqual(expected);
-      expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+      expect(ada.world.hash()).toBe(grace.world.hash());
     });
   });
 
@@ -405,7 +412,7 @@ describe("a lockstep session", () => {
           actions: [
             { name: "ls/Mint", payload: { on: "2026-11-17T00:00:00.000Z" } },
           ],
-          checkpoints: [{ tick: 0, hash: ada.app.world.hash() }],
+          checkpoints: [{ tick: 0, hash: ada.world.hash() }],
           made: expect.objectContaining({ start: 0 }),
           heard: 0,
         },
@@ -418,9 +425,9 @@ describe("a lockstep session", () => {
       for (const peer of peers) {
         const coins = coinsOf(peer);
         expect(coins).toHaveLength(1);
-        expect(peer.app.world.get(coins[0]!, Coin)?.value).toBe(2026);
+        expect(peer.world.get(coins[0]!, Coin)?.value).toBe(2026);
       }
-      expect(grace.app.world.hash()).toBe(ada.app.world.hash());
+      expect(grace.world.hash()).toBe(ada.world.hash());
     });
   });
 
@@ -448,7 +455,7 @@ describe("a lockstep session", () => {
       expect(refusals).toEqual([]);
       expect(moves(ada.app.actionLog)).toEqual([]);
       expect(moves(grace.app.actionLog)).toEqual([]);
-      expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+      expect(ada.world.hash()).toBe(grace.world.hash());
     });
   });
 
@@ -468,13 +475,13 @@ describe("a lockstep session", () => {
       delay: 0,
       ahead: 0,
     };
-    withApp(Session.make(Fused, alone), (session) => {
+    withMade(Session.make(Fused, alone), (session) => {
       expect(session.tickExit()).toEqual(Exit.succeed(true));
       expect(session.tickExit()).toEqual(Exit.fail(new Blown({ at: 2 })));
       expect(session.tick()).toBe(true);
       expect(session.app.time.tick).toBe(3);
     });
-    withApp(Session.make(Fused, alone), (session) => {
+    withMade(Session.make(Fused, alone), (session) => {
       session.tick();
       expect(() => session.tick()).toThrow(Blown);
     });
@@ -488,7 +495,7 @@ describe("a lockstep session", () => {
         return yield* new Jammed();
       }
     });
-    withApp(
+    withMade(
       Session.make(App.define({ systems: [Keys] }), {
         peer: "ada",
         peers: ["ada"],
@@ -524,7 +531,7 @@ describe("a lockstep session", () => {
         }
         expect(ada.session.tick()).toBe(true);
         expect(grace.session.tick()).toBe(true);
-        expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+        expect(ada.world.hash()).toBe(grace.world.hash());
       }
       expect(moves(grace.app.actionLog)).toEqual([
         {
@@ -592,7 +599,7 @@ describe("a lockstep session", () => {
       expect(ada.app.actionLog).toEqual([]);
     });
     // Nor is an app taken over twice.
-    withApp(
+    withMade(
       Build.build(CoinGame, { seed: 5, checkpointEvery: 1 }),
       ({ take }) => {
         take(() => {});
@@ -632,7 +639,7 @@ describe("a lockstep session", () => {
   });
 
   it("tells whoever stepped a tick of its systems, and nobody of the next", () => {
-    withApp(
+    withMade(
       Build.build(CoinGame, { seed: 5, checkpointEvery: 1 }),
       ({ app, take }) => {
         const reins = take(() => {});
@@ -652,7 +659,7 @@ describe("a lockstep session", () => {
 
   it("refuses options that could not be a game", () => {
     const attempt = (options: Partial<Session.Options>) =>
-      withApp(
+      withMade(
         Session.make(CoinGame, {
           seed: 5,
           checkpointEvery: 1,
@@ -682,6 +689,7 @@ describe("a lockstep session", () => {
         Effect.gen(function* () {
           // A game that has been going for a while, saved for every peer.
           const going = yield* game();
+          const world = yield* going.read(World);
           going.dispatch(Drop, { by: "ada", value: 2 });
           for (let i = 0; i < 9; i++) {
             going.tick(DELTA);
@@ -701,7 +709,7 @@ describe("a lockstep session", () => {
           const ada = yield* peerOf("ada");
           const grace = yield* peerOf("grace");
           expect(ada.app.time.tick).toBe(9);
-          expect(ada.app.world.hash()).toBe(going.world.hash());
+          expect((yield* ada.app.read(World)).hash()).toBe(world.hash());
           // A loaded game's log starts empty.
           expect(ada.app.actionLog).toEqual([]);
           expect(ada.tick()).toBe(false);
@@ -709,7 +717,7 @@ describe("a lockstep session", () => {
           expect(said.map((message) => message.tick)).toEqual([9, 10]);
           // Where it starts is the first thing it says: the session takes
           // the checkpoint, once.
-          const start = { tick: 9, hash: going.world.hash() };
+          const start = { tick: 9, hash: world.hash() };
           expect(said[0]!.checkpoints).toEqual([start]);
           expect(ada.app.actionLog).toEqual([start]);
           grace.tick();
@@ -825,7 +833,7 @@ describe("peers that have come apart", () => {
   it("stop a peer in the very call that ran the tick, when the others' word for it was in already", () => {
     withPeers(["ada", "grace"], { delay: 2 }, (peers) => {
       const [ada] = peers as [Peer];
-      const start = ada.app.world.hash();
+      const start = ada.world.hash();
       // Grace, by hand: every message up to tick 5, and a hash for tick 2
       // that is not ada's.
       for (let tick = 0; tick <= 5; tick++) {
@@ -846,7 +854,7 @@ describe("peers that have come apart", () => {
           new Drift.Drifted({
             tick: 2,
             peer: "ada",
-            hashes: { ada: ada.app.world.hash(), grace: 12_345 },
+            hashes: { ada: ada.world.hash(), grace: 12_345 },
             agreedAt: 0,
           })
         )
@@ -865,7 +873,7 @@ describe("peers that have come apart", () => {
       expect(peers[0]!.app.time.tick).toBeGreaterThan(30);
     });
     // Nobody answers a peer that plays alone.
-    withApp(
+    withMade(
       Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
@@ -925,7 +933,7 @@ describe("peers that have come apart", () => {
         peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
         const stopped = untilStopped(peers, network(1, { min: 0, max: 0 }), 50);
         expect(stopped.size).toBe(0);
-        expect(peers[0]!.app.world.hash()).not.toBe(peers[1]!.app.world.hash());
+        expect(peers[0]!.world.hash()).not.toBe(peers[1]!.world.hash());
       }
     );
   });
@@ -933,7 +941,7 @@ describe("peers that have come apart", () => {
   it("are all stopped when one of three has gone its own way, and the report says which", () => {
     withPeers(["ada", "grace", "edsger"], { delay: 2 }, (peers) => {
       const [ada, grace, edsger] = peers as [Peer, Peer, Peer];
-      setGlitch({ tick: 12, worlds: new Set([grace.app.world]) });
+      setGlitch({ tick: 12, worlds: new Set([grace.world]) });
       const net = network(6, { min: 0, max: 3 });
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       const stopped = untilStopped(peers, net, 300);

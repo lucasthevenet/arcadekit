@@ -12,14 +12,17 @@
 import {
   App,
   Assets,
+  Commands,
   Component,
   Field,
+  Plugin,
   Transform2d,
   Transform3d,
+  World,
 } from "arcadekit";
 import { System } from "arcadekit";
-import type { Frame, Time, World } from "arcadekit";
-import type { ComponentInput } from "arcadekit/ecs";
+import type { Entity, Frame, Time } from "arcadekit";
+import type { ComponentDef, ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 
@@ -38,6 +41,22 @@ const noRenderer = Layer.mergeAll(
 
 const median = (values: number[]): number =>
   values.toSorted((a, b) => a - b)[values.length >> 1]!;
+
+/** A plugin whose setup spawns the crowd, each entity a Thing with `parts`. */
+const crowd = (parts: () => ComponentInput[], spawned: Entity[] = []) => {
+  const defs: ComponentDef[] = [Thing];
+  for (const part of parts()) {
+    defs.push("def" in part ? part.def : part);
+  }
+  return Plugin.make("bench/Crowd", {
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(...defs);
+      for (let i = 0; i < N; i++) {
+        spawned.push(commands.spawn(Thing, ...parts()));
+      }
+    }),
+  });
+};
 
 const measure = (frame: () => void): { ns: number; bytes: number } => {
   for (let i = 0; i < 300; i++) {
@@ -69,14 +88,11 @@ const variant = (
   const app = Effect.runSync(
     App.make(
       App.define({
-        plugins: [Three.plugin, Assets.plugin],
+        plugins: [Three.plugin, Assets.plugin, crowd(parts)],
         systems: [...also, system],
       })
     ).pipe(Effect.provide(noRenderer), Scope.provide(scope))
   );
-  for (let i = 0; i < N; i++) {
-    app.world.spawn(Thing, ...parts());
-  }
   const { bytes, ns } = measure(() => app.frame(0));
   console.log(
     `${name.padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
@@ -236,20 +252,25 @@ variant(
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
   const scope = Scope.makeUnsafe();
-  const app = Effect.runSync(
-    App.make(App.define({})).pipe(Scope.provide(scope))
-  );
-  const entities = Array.from({ length: N }, () =>
-    app.world.spawn(Thing, place(), turn(), size())
+  const entities: Entity[] = [];
+  const world = Effect.runSync(
+    Effect.gen(function* () {
+      const app = yield* App.make(
+        App.define({
+          plugins: [crowd(() => [place(), turn(), size()], entities)],
+        })
+      );
+      return yield* app.read(World);
+    }).pipe(Scope.provide(scope))
   );
   const mesh = new InstancedMesh(geometry, material, N);
   const dummy = new Object3D();
   const { bytes, ns } = measure(() => {
     for (let i = 0; i < N; i++) {
       const entity = entities[i]!;
-      const position = app.world.get(entity, Position)!;
-      const rotation = app.world.get(entity, Rotation)!;
-      const scale = app.world.get(entity, Scale)!;
+      const position = world.get(entity, Position)!;
+      const rotation = world.get(entity, Rotation)!;
+      const scale = world.get(entity, Scale)!;
       dummy.position.set(position.x, position.y, position.z);
       dummy.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
       dummy.scale.set(scale.x, scale.y, scale.z);

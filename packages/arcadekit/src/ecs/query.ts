@@ -326,7 +326,7 @@ export class QueryView<D extends Terms = Terms> {
   private refresh(): void {
     if (this.restored !== this.world._restored) {
       throw new Error(
-        "A query's view was used after its world was restored from a snapshot. What it held is gone with the tables it was made of. Ask for it again: world.view(spec), or yield* the query, as a system does every tick."
+        "A query's view was used after its world was restored from a snapshot. What it held is gone with the tables it was made of. Ask for it again: yield* the query, as a system does every tick, or yield* app.read(query) outside the game, or world.view(spec) with the storage core."
       );
     }
     const all = this.world.tables;

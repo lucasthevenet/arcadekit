@@ -1,6 +1,6 @@
 import { Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -607,44 +607,52 @@ const Orchard = App.define({
   handlers: [fell, graft],
 });
 
+/** The trees, read from outside the game: the bodies that are nobody's branch. */
+const Trees = Query.all(Body).pipe(Query.without(ChildOf));
+
 const orchard = Effect.gen(function* () {
   const app = yield* App.make(Orchard, { checkpointEvery: 1 });
-  // The trees are the bodies that are nobody's branch, in the order planted.
-  const trees = app.world
-    .view(Query.all(Body).pipe(Query.without(ChildOf)))
-    .entities();
-  return { app, trees };
+  const world = yield* app.read(World);
+  // In the order planted.
+  const [first, second, third] = (yield* app.read(Trees)).entities();
+  assert(first !== undefined && second !== undefined && third !== undefined);
+  return { app, world, trees: [first, second, third] as const };
 });
 
 describe("relations in an app", () => {
   it("are kept through actions and systems, and a game with them replays", () => {
     run(
       Effect.gen(function* () {
-        const { app, trees } = yield* orchard;
+        const {
+          app,
+          world,
+          trees: [first, second],
+        } = yield* orchard;
         app.tick(1);
         app.tick(1);
-        expect(app.world.sources(trees[0]!, ChildOf).length).toBe(3);
-        const branch = app.world.sources(trees[0]!, ChildOf)[0]!;
+        expect(world.sources(first, ChildOf).length).toBe(3);
+        const [branch] = world.sources(first, ChildOf);
+        assert(branch !== undefined);
         // A handler changes who points at whom through Commands.
-        expect(app.dispatch(Graft, { branch, onto: trees[1]! })).toEqual(
+        expect(app.dispatch(Graft, { branch, onto: second })).toEqual(
           Exit.succeed(3)
         );
-        expect(app.world.sources(trees[1]!, ChildOf).length).toBe(4);
-        app.dispatch(Fell, { tree: trees[0]! });
-        expect(app.world.isAlive(trees[0]!)).toBe(false);
-        expect(app.world.isAlive(branch)).toBe(true);
-        expect(app.world.sources(trees[0]!, ChildOf)).toEqual([]);
-        app.enqueue(Fell, { tree: trees[1]! });
+        expect(world.sources(second, ChildOf).length).toBe(4);
+        app.dispatch(Fell, { tree: first });
+        expect(world.isAlive(first)).toBe(false);
+        expect(world.isAlive(branch)).toBe(true);
+        expect(world.sources(first, ChildOf)).toEqual([]);
+        app.enqueue(Fell, { tree: second });
         app.tick(1);
-        expect(app.world.isAlive(branch)).toBe(false);
+        expect(world.isAlive(branch)).toBe(false);
         // One tree is left, with the branches of three ticks and its first.
-        expect(app.world.entityCount).toBe(5);
+        expect(world.entityCount).toBe(5);
 
         const played = app.record();
         const again = yield* Journal.replay(played, (start) =>
           App.make(Orchard, { ...start, checkpointEvery: 1 })
         );
-        expect(again.world.hash()).toBe(app.world.hash());
+        expect((yield* again.read(World)).hash()).toBe(world.hash());
       })
     );
   });
@@ -652,7 +660,11 @@ describe("relations in an app", () => {
   it("are saved with a game, and the loaded game goes on the same", () => {
     run(
       Effect.gen(function* () {
-        const { app, trees } = yield* orchard;
+        const {
+          app,
+          world,
+          trees: [first, , third],
+        } = yield* orchard;
         app.tick(1);
         const save = app.save();
         if (Exit.isFailure(save)) {
@@ -667,16 +679,17 @@ describe("relations in an app", () => {
           { save: read.value, checkpointEvery: 1 }
         );
         for (const each of [app, loaded]) {
-          each.dispatch(Fell, { tree: trees[2]! });
+          each.dispatch(Fell, { tree: third });
           each.tick(1);
           each.tick(1);
         }
-        expect(loaded.world.hash()).toBe(app.world.hash());
-        expect(loaded.world.sources(trees[0]!, ChildOf)).toEqual(
-          app.world.sources(trees[0]!, ChildOf)
+        const loadedWorld = yield* loaded.read(World);
+        expect(loadedWorld.hash()).toBe(world.hash());
+        expect(loadedWorld.sources(first, ChildOf)).toEqual(
+          world.sources(first, ChildOf)
         );
         // Two trees are left, each with its first branch and three more.
-        expect(loaded.world.entityCount).toBe(10);
+        expect(loadedWorld.entityCount).toBe(10);
       })
     );
   });

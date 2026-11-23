@@ -1,6 +1,6 @@
 import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -19,6 +19,8 @@ import {
   Time,
   World,
 } from "../src/index";
+import type { Entity } from "../src/index";
+import type { ReadingWorld } from "../src/Services";
 
 const Position = Component.define("rt/Position", {
   x: Field.f32,
@@ -36,6 +38,9 @@ const Moving = Query.all(Position, Velocity).pipe(
   Query.without(Stunned)
 );
 
+/** What moves, read from outside the game. */
+const Movers = Query.all(Position, Velocity).pipe(Query.without(Stunned));
+
 const Movement = System.tick("Movement", function* () {
   const moving = yield* Moving;
   const { delta } = yield* Time;
@@ -45,28 +50,49 @@ const Movement = System.tick("Movement", function* () {
   });
 });
 
-/** Builds an app, hands it to `use`, then closes its scope. */
-const withApp = <T, A>(
+/**
+ * Builds an app, hands it to `use` with its world, as `app.read(World)` gives
+ * it, then closes its scope.
+ */
+const withApp = <T extends Pick<App.Any, "read">, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+  use: (app: T, world: ReadingWorld) => A
+): A =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.flatMap(make, (app) =>
+        Effect.map(app.read(World), (world) => use(app, world))
+      )
+    )
+  );
 
 describe("systems", () => {
   it("run with yieldable queries and game time", () => {
-    withApp(App.make(App.define({ systems: [Movement] })), (app) => {
-      const a = app.world.spawn(
-        Position.of({ x: 0, y: 0 }),
-        Velocity.of({ x: 2, y: 4 })
-      );
-      const b = app.world.spawn(
-        Position.of({ x: 0, y: 0 }),
-        Velocity.of({ x: 2, y: 4 }),
-        Stunned
-      );
+    const spawned: Entity[] = [];
+    const Seed = Plugin.make("rt/Seed", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Position, Velocity, Stunned);
+        spawned.push(
+          commands.spawn(
+            Position.of({ x: 0, y: 0 }),
+            Velocity.of({ x: 2, y: 4 })
+          ),
+          commands.spawn(
+            Position.of({ x: 0, y: 0 }),
+            Velocity.of({ x: 2, y: 4 }),
+            Stunned
+          )
+        );
+      }),
+    });
+    const game = App.define({ plugins: [Seed], systems: [Movement] });
+    withApp(App.make(game), (app, world) => {
+      const [a, b] = spawned;
+      assert(a !== undefined && b !== undefined);
       app.tick(0.5);
       app.tick(0.5);
-      expect(app.world.get(a, Position)).toEqual({ x: 2, y: 4 });
-      expect(app.world.get(b, Position)).toEqual({ x: 0, y: 0 });
+      expect(world.get(a, Position)).toEqual({ x: 2, y: 4 });
+      expect(world.get(b, Position)).toEqual({ x: 0, y: 0 });
       expect(app.time).toEqual({ delta: 0.5, elapsed: 1, tick: 2 });
     });
   });
@@ -120,14 +146,17 @@ describe("systems", () => {
       });
     });
 
-    withApp(App.make(App.define({ systems: [Spawner, Reaper] })), (app) => {
-      app.tick(0.5);
-      expect(app.world.entityCount).toBe(1);
-      app.tick(0.5);
-      expect(app.world.entityCount).toBe(0);
-      app.tick(0.5);
-      expect(counts).toEqual([1, 1, 0]);
-    });
+    withApp(
+      App.make(App.define({ systems: [Spawner, Reaper] })),
+      (app, world) => {
+        app.tick(0.5);
+        expect(world.entityCount).toBe(1);
+        app.tick(0.5);
+        expect(world.entityCount).toBe(0);
+        app.tick(0.5);
+        expect(counts).toEqual([1, 1, 0]);
+      }
+    );
   });
 
   it("read and write sparse components as query data, with either loop style", () => {
@@ -165,20 +194,29 @@ describe("systems", () => {
       });
     });
 
-    withApp(App.make(App.define({ systems: [Burn, Extinguish] })), (app) => {
-      const torch = app.world.spawn(
-        Health.of({ hp: 100 }),
-        Burning.of({ seconds: 2, dps: 10 })
-      );
-      const rock = app.world.spawn(Health.of({ hp: 100 }));
-      const tables = app.world.tables.length;
+    const spawned: Entity[] = [];
+    const Seed = Plugin.make("rt/Seed", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Health, Burning);
+        spawned.push(
+          commands.spawn(
+            Health.of({ hp: 100 }),
+            Burning.of({ seconds: 2, dps: 10 })
+          ),
+          commands.spawn(Health.of({ hp: 100 }))
+        );
+      }),
+    });
+    const game = App.define({ plugins: [Seed], systems: [Burn, Extinguish] });
+    withApp(App.make(game), (app, world) => {
+      const [torch, rock] = spawned;
+      assert(torch !== undefined && rock !== undefined);
       for (let i = 0; i < 4; i++) {
         app.tick(1);
       }
-      expect(app.world.get(torch, Health)).toEqual({ hp: 80 });
-      expect(app.world.get(rock, Health)).toEqual({ hp: 100 });
-      expect(app.world.has(torch, Burning)).toBe(false);
-      expect(app.world.tables).toHaveLength(tables);
+      expect(world.get(torch, Health)).toEqual({ hp: 80 });
+      expect(world.get(rock, Health)).toEqual({ hp: 100 });
+      expect(world.has(torch, Burning)).toBe(false);
     });
   });
 
@@ -249,13 +287,19 @@ describe("systems", () => {
       const things = yield* Query.all(Position);
       audio.play(`beep x${things.count()}`);
     });
-    const make = App.make(App.define({ systems: [Beep] })).pipe(
+    const Seed = Plugin.make("rt/Seed", {
+      setup: Effect.gen(function* () {
+        (yield* Commands.spawns(Position)).spawn(Position.of({ x: 1, y: 1 }));
+      }),
+    });
+    const make = App.make(
+      App.define({ plugins: [Seed], systems: [Beep] })
+    ).pipe(
       Effect.provideService(Audio, {
         play: (sound) => void played.push(sound),
       })
     );
     withApp(make, (app) => {
-      app.world.spawn(Position.of({ x: 1, y: 1 }));
       app.tick(1);
     });
     expect(played).toEqual(["beep x1"]);
@@ -284,10 +328,18 @@ describe("systems", () => {
         return yield* new OutOfBounds({ x: worst });
       }
     });
-    withApp(App.make(App.define({ systems: [Bounds] })), (app) => {
-      app.world.spawn(Position.of({ x: 5, y: 0 }));
+    const Place = Action.define(
+      "rt/Place",
+      Schema.Struct({ x: Schema.Number })
+    );
+    const place = Action.handler(Place, function* ({ x }) {
+      (yield* Commands.spawns(Position)).spawn(Position.of({ x, y: 0 }));
+    });
+    const game = App.define({ systems: [Bounds], handlers: [place] });
+    withApp(App.make(game), (app) => {
+      app.dispatch(Place, { x: 5 });
       expect(Exit.isSuccess(app.tickExit(1))).toBe(true);
-      app.world.spawn(Position.of({ x: 500, y: 0 }));
+      app.dispatch(Place, { x: 500 });
       const exit = app.tickExit(1);
       expect(Exit.isFailure(exit)).toBe(true);
       expect(() => app.tick(1)).toThrow(OutOfBounds);
@@ -342,9 +394,9 @@ describe("the built-in services", () => {
       App.make(App.define({ systems: [Probe] })).pipe(
         Effect.provideService(GameWorld, { size: 7 })
       ),
-      (app) => {
+      (app, world) => {
         app.tick(1);
-        expect(app.world.entityCount).toBe(1);
+        expect(world.entityCount).toBe(1);
       }
     );
   });
@@ -383,12 +435,12 @@ describe("a fiber the game starts", () => {
       (yield* Commands.spawns(Lifetime)).spawn(Lifetime.of({ seconds: 1 }));
       yield* leave;
     });
-    withApp(App.make(App.define({ handlers: [ping] })), (app) => {
+    withApp(App.make(App.define({ handlers: [ping] })), (app, world) => {
       expect(() => app.dispatch(Ping, {})).toThrow(
         /The handler for "rt\/Ping" left a fiber running/
       );
       // Its writes are undone, as a refusal's are.
-      expect(app.world.entityCount).toBe(0);
+      expect(world.entityCount).toBe(0);
     });
 
     const Look = System.frame("Look", function* () {
@@ -519,27 +571,31 @@ describe("determinism", () => {
           );
         }
       });
-      withApp(
-        App.make(App.define({ systems: [Movement, Bounce, Spawner] })),
-        (app) => {
+      const Seed = Plugin.make("rt/Seed", {
+        setup: Effect.gen(function* () {
+          const commands = yield* Commands.spawns(Position, Velocity);
           for (let i = 0; i < 50; i++) {
-            app.world.spawn(
+            commands.spawn(
               Position.of({ x: i % 10, y: 0 }),
               Velocity.of({ x: (i % 7) - 3, y: 0 })
             );
           }
+        }),
+      });
+      withApp(
+        App.make(
+          App.define({ plugins: [Seed], systems: [Movement, Bounce, Spawner] })
+        ),
+        (app, world) => {
           const step = Driver.fixedStep(app, {
             hz: 60,
             maxStepsPerCall: 10_000,
           });
           step(5);
-          const all = app.world.view(Moving);
-          all.each((pos, vel, entity) => {
+          Effect.runSync(app.read(Movers)).each((pos, vel, entity) => {
             trace.push(`${entity}:${pos.x},${pos.y},${vel.x}`);
           });
-          trace.push(
-            `ticks=${app.time.tick} entities=${app.world.entityCount}`
-          );
+          trace.push(`ticks=${app.time.tick} entities=${world.entityCount}`);
         }
       );
       return trace;

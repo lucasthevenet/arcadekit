@@ -23,6 +23,7 @@ import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
 import type * as App from "./App";
+import { partsOf } from "./app/parts";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 import * as Save from "./Save";
@@ -441,7 +442,7 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
   override get message(): string {
     const since =
       this.agreedAt === undefined
-        ? "No earlier checkpoint matched, so the two did not start from the same state: check the seed and what was spawned before the first tick"
+        ? "No earlier checkpoint matched, so the two did not start from the same state: check the seed, and what the plugins' setups spawn"
         : `The last checkpoint that matched was at tick ${this.agreedAt}`;
     return `the world's hash at tick ${this.tick} is ${this.actual}, and ${this.expected} was recorded. ${since}.`;
   }
@@ -512,7 +513,7 @@ const play = (app: App.Any, recording: Recording): void => {
       entry = log[next]
     ) {
       if (Action.isCheckpoint(entry)) {
-        const actual = app.world.hash();
+        const actual = partsOf(app).world.hash();
         if (actual !== entry.hash) {
           throw new ReplayDiverged({
             index: next,

@@ -1,17 +1,22 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  Action,
   App,
+  Commands,
   Component,
+  Plugin,
   Query,
   Save,
   System,
   Time,
   Transform2d,
   Transform3d,
+  World,
 } from "../src/index";
+import type { Entity } from "../src/index";
 import * as Entry from "../src/Transform2d";
 
 const { Position, Rotation, Scale } = Transform2d;
@@ -36,12 +41,28 @@ describe("Transform2d", () => {
     }
     // Added bare, it is where it was made, turned by nothing, and of its
     // own size: a Scale of zeros would be drawn as nothing.
-    const { world } = run(App.make(App.define({})));
-    const bare = world.spawn(Position, Rotation, Scale);
-    expect(world.get(bare, Scale)).toEqual({ x: 1, y: 1 });
-    expect(new Set(Object.values(world.get(bare, Position)!))).toEqual(
-      new Set([0])
+    const Bare = Plugin.make("t2/Bare", {
+      setup: Effect.gen(function* () {
+        (yield* Commands.spawns(Position, Rotation, Scale)).spawn(
+          Position,
+          Rotation,
+          Scale
+        );
+      }),
+    });
+    const bare = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [Bare] }));
+        const world = yield* app.read(World);
+        return (yield* app.read(Query.all(Position, Scale)))
+          .entities()
+          .map((entity) => ({
+            scale: world.get(entity, Scale),
+            position: new Set(Object.values(world.get(entity, Position) ?? {})),
+          }));
+      })
     );
+    expect(bare).toEqual([{ scale: { x: 1, y: 1 }, position: new Set([0]) }]);
     // One module, whichever entry it is reached through.
     expect(Entry.Position).toBe(Position);
   });
@@ -50,17 +71,64 @@ describe("Transform2d", () => {
     expect(Position).not.toBe(Transform3d.Position);
     expect(Rotation).not.toBe(Transform3d.Rotation);
     expect(Scale).not.toBe(Transform3d.Scale);
-    const { world } = run(App.make(App.define({})));
-    const both = world.spawn(
-      Position.of({ x: 1, y: 2 }),
-      Transform3d.Position.of({ x: 7, y: 8, z: 9 })
+    const spawned: Entity[] = [];
+    const Both = Plugin.make("t2/Both", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Position, Transform3d.Position);
+        spawned.push(
+          commands.spawn(
+            Position.of({ x: 1, y: 2 }),
+            Transform3d.Position.of({ x: 7, y: 8, z: 9 })
+          )
+        );
+      }),
+    });
+    const Slide = Action.define(
+      "t2/Slide",
+      Schema.Struct({ x: Schema.Number, y: Schema.Number })
     );
-    world.set(both, Position, { x: 3, y: 4 });
-    expect(world.get(both, Position)).toEqual({ x: 3, y: 4 });
-    expect(world.get(both, Transform3d.Position)).toEqual({ x: 7, y: 8, z: 9 });
-    expect(world.view(Query.all(Position)).count()).toBe(1);
-    world.remove(both, Position);
-    expect(world.has(both, Transform3d.Position)).toBe(true);
+    const slide = Action.handler(Slide, function* (to) {
+      (yield* Query.all(Position).pipe(Query.writes(Position))).each(
+        (position) => {
+          position.x = to.x;
+          position.y = to.y;
+        }
+      );
+    });
+    const Lift = Action.define("t2/Lift", Schema.Struct({}));
+    const lift = Action.handler(Lift, function* () {
+      const commands = yield* Commands;
+      (yield* Query.all(Position)).each((_, entity) => {
+        commands.remove(entity, Position);
+      });
+    });
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ plugins: [Both], handlers: [slide, lift] })
+        );
+        const world = yield* app.read(World);
+        const flat = yield* app.read(Query.all(Position));
+        app.dispatch(Slide, { x: 3, y: 4 });
+        expect(
+          spawned.map((both) => [
+            world.get(both, Position),
+            world.get(both, Transform3d.Position),
+          ])
+        ).toEqual([
+          [
+            { x: 3, y: 4 },
+            { x: 7, y: 8, z: 9 },
+          ],
+        ]);
+        expect(flat.count()).toBe(1);
+        app.dispatch(Lift, {});
+        expect(flat.count()).toBe(0);
+        expect(
+          spawned.map((both) => world.get(both, Transform3d.Position))
+        ).toEqual([{ x: 7, y: 8, z: 9 }]);
+      })
+    );
   });
 
   it("is moved and turned by a system with a loop over its columns", () => {
@@ -77,29 +145,66 @@ describe("Transform2d", () => {
         }
       });
     });
-    const app = run(App.make(App.define({ systems: [Drift] })));
-    const card = app.world.spawn(
-      Position.of({ x: 1, y: 2 }),
-      Rotation.of({ angle: 0.25 })
+    const spawned: Entity[] = [];
+    const Deal = Plugin.make("t2/Deal", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Position, Rotation);
+        spawned.push(
+          commands.spawn(
+            Position.of({ x: 1, y: 2 }),
+            Rotation.of({ angle: 0.25 })
+          ),
+          // Added with no value: at the origin, and not turned.
+          commands.spawn(Position, Rotation)
+        );
+      }),
+    });
+    const moved = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ plugins: [Deal], systems: [Drift] })
+        );
+        const world = yield* app.read(World);
+        app.tick(0.5);
+        return spawned.map((card) => [
+          world.get(card, Position),
+          world.get(card, Rotation),
+        ]);
+      })
     );
-    // Added with no value: at the origin, and not turned.
-    const fresh = app.world.spawn(Position, Rotation);
-    app.tick(0.5);
-    expect(app.world.get(card, Position)).toEqual({ x: 3, y: 1 });
-    expect(app.world.get(card, Rotation)).toEqual({ angle: 0.75 });
-    expect(app.world.get(fresh, Position)).toEqual({ x: 2, y: -1 });
-    expect(app.world.get(fresh, Rotation)).toEqual({ angle: 0.5 });
+    expect(moved).toEqual([
+      [{ x: 3, y: 1 }, { angle: 0.75 }],
+      [{ x: 2, y: -1 }, { angle: 0.5 }],
+    ]);
   });
 
   it("is saved and loaded by a flat game, which names none of its components", () => {
-    const made = run(App.make(App.define({})));
-    const card = made.world.spawn(
-      Card,
-      Position.of({ x: 1, y: 2 }),
-      Rotation.of({ angle: 1.5 }),
-      Scale.of({ x: 2, y: 3 })
+    const spawned: Entity[] = [];
+    const Deal = Plugin.make("t2/Deal", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(
+          Card,
+          Position,
+          Rotation,
+          Scale
+        );
+        spawned.push(
+          commands.spawn(
+            Card,
+            Position.of({ x: 1, y: 2 }),
+            Rotation.of({ angle: 1.5 }),
+            Scale.of({ x: 2, y: 3 })
+          )
+        );
+      }),
+    });
+    const Flat = App.define({ plugins: [Deal] });
+    const { made, save } = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(Flat);
+        return { made: (yield* app.read(World)).hash(), save: app.save() };
+      })
     );
-    const save = made.save();
     if (Exit.isFailure(save)) {
       throw new Error("The game could not be saved");
     }
@@ -107,10 +212,23 @@ describe("Transform2d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(App.make(App.define({}), { save: read.value }));
-    expect(loaded.world.hash()).toBe(made.world.hash());
-    expect(loaded.world.get(card, Position)).toEqual({ x: 1, y: 2 });
-    expect(loaded.world.get(card, Rotation)).toEqual({ angle: 1.5 });
-    expect(loaded.world.get(card, Scale)).toEqual({ x: 2, y: 3 });
+    const loaded = run(
+      Effect.gen(function* () {
+        const app = yield* App.make(Flat, { save: read.value });
+        const world = yield* app.read(World);
+        return {
+          hash: world.hash(),
+          cards: spawned.map((card) => [
+            world.get(card, Position),
+            world.get(card, Rotation),
+            world.get(card, Scale),
+          ]),
+        };
+      })
+    );
+    expect(loaded).toEqual({
+      hash: made,
+      cards: [[{ x: 1, y: 2 }, { angle: 1.5 }, { x: 2, y: 3 }]],
+    });
   });
 });

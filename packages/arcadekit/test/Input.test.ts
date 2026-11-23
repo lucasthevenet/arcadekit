@@ -84,11 +84,25 @@ const Flying = Plugin.make("Flying", {
 });
 const ship = (app: App.Any): { x: number; shots: number } => {
   let found = { x: Number.NaN, shots: Number.NaN };
-  app.world.view(Ships).each((one) => {
+  Effect.runSync(app.read(Seen)).each((one) => {
     found = { x: one.x, shots: one.shots };
   });
   return found;
 };
+/** A game that begins with a ship, and no way to steer it. */
+const Docked = Plugin.make("in/Docked", {
+  setup: Effect.map(Commands.spawns(Ship), (commands) => {
+    commands.spawn(Ship.of({ x: 1, shots: 0 }));
+  }),
+});
+/** A point, given from outside the game. */
+const Award = Action.define("in/Award", Schema.Struct({}));
+const award = Action.handler(Award, function* () {
+  (yield* Score.writes).points += 1;
+});
+const hashOf = (app: App.Any): number => Effect.runSync(app.read(World)).hash();
+const pointsOf = (app: App.Any): number =>
+  Effect.runSync(app.read(Score)).points;
 const reports = (app: App.Any): unknown[] =>
   app.actionLog
     .filter(
@@ -125,6 +139,10 @@ describe("the input stage", () => {
         const Sometimes = note("Sometimes", "input").pipe(
           System.runIf(State.is(Phase, "paused"))
         );
+        const Pause = Action.define("in/Pause", Schema.Struct({}));
+        const pause = Action.handler(Pause, function* () {
+          (yield* Phase.sets).set("paused");
+        });
         const app = yield* App.make(
           App.define({
             systems: [
@@ -134,6 +152,7 @@ describe("the input stage", () => {
               note("Draw", "frame"),
               Sometimes,
             ],
+            handlers: [pause],
           })
         );
         expect(app.inputOrder).toEqual(["First", "Second", "Sometimes"]);
@@ -182,7 +201,7 @@ describe("the input stage", () => {
           "Tick",
         ]);
         // A condition is asked there as anywhere.
-        app.world.singleton(Phase).next = "paused";
+        app.dispatch(Pause, {});
         app.tick(1);
         ran.length = 0;
         expect(Exit.isSuccess(app.inputExit())).toBe(true);
@@ -306,7 +325,6 @@ describe("the input stage", () => {
   });
 
   it("cannot change the game: whatever would throws, and names what did", () => {
-    const Pinged = Event.define("in/Pinged", Schema.Struct({}));
     const Bump = Action.define("in/Bump", Schema.Struct({}));
     const bump = Action.handler(Bump, function* () {
       (yield* Score.writes).points += 1;
@@ -323,18 +341,24 @@ describe("the input stage", () => {
             yield* attempt;
           });
           const app = yield* App.make(
-            App.define({ handlers: [bump], systems: [Vandal] }),
+            App.define({
+              plugins: [Docked],
+              handlers: [bump],
+              systems: [Vandal],
+            }),
             { checkpointEvery: 1, seed: 3 }
           );
-          app.world.spawn(Ship.of({ x: 1, shots: 0 }));
           app.tick(1, { input: false });
-          const before = app.world.hash();
+          const before = hashOf(app);
           expect(() => app.input(), what).toThrow(what);
-          expect(app.world.hash(), what).toBe(before);
-          expect(app.commands.size, what).toBe(0);
-          expect(app.events.pending(Pinged), what).toBe(0);
+          expect(hashOf(app), what).toBe(before);
+          // No event waits to be read, and no command to be applied: a save
+          // would be refused for one.
+          expect(app.inspect().stores, what).not.toHaveProperty([Event.STORE]);
+          expect(Exit.isSuccess(app.save()), what).toBe(true);
           // And the app is not left frozen, or in the middle of the stage.
-          expect(app.world.frozen).toBe(false);
+          expect(Exit.isSuccess(app.dispatch(Bump, {})), what).toBe(true);
+          expect(pointsOf(app), what).toBe(1);
           app.tick(1);
           expect(Exit.isFailure(app.inputExit()), what).toBe(true);
         })
@@ -372,7 +396,7 @@ describe("the input stage", () => {
         expect(() => made.input()).toThrow(/save\(\) was called during/);
         reach = () => undefined;
         made.input();
-        expect(made.world.singleton(Score).points).toBe(0);
+        expect(pointsOf(made)).toBe(0);
         // And the input stage is not run from inside a tick.
         let nested: App.Any | undefined;
         const Nested = System.tick("Nested", function* () {
@@ -397,10 +421,10 @@ describe("the input stage", () => {
             }
           });
         });
-        const app = yield* App.make(App.define({ systems: [Scribble] }), {
-          verifyFrames: true,
-        });
-        app.world.spawn(Ship.of({ x: 1, shots: 0 }));
+        const app = yield* App.make(
+          App.define({ plugins: [Docked], systems: [Scribble] }),
+          { verifyFrames: true }
+        );
         const exit = app.inputExit();
         expect(Exit.isFailure(exit)).toBe(true);
         const error = Cause.squash(
@@ -420,10 +444,10 @@ describe("the input stage", () => {
             }
           });
         });
-        const drawn = yield* App.make(App.define({ systems: [Smudge] }), {
-          verifyFrames: true,
-        });
-        drawn.world.spawn(Ship.of({ x: 1, shots: 0 }));
+        const drawn = yield* App.make(
+          App.define({ plugins: [Docked], systems: [Smudge] }),
+          { verifyFrames: true }
+        );
         const smudged = Cause.squash(
           (drawn.frameExit(0) as Exit.Failure<void, never>).cause
         ) as Stage.FrameChangedWorld;
@@ -455,12 +479,12 @@ describe("the input stage", () => {
           App.define({ handlers: [bump], systems: [Press, Point] }),
           { verifyFrames: true }
         );
-        const before = app.world.hash();
+        const before = hashOf(app);
         expect(Exit.isSuccess(app.inputExit())).toBe(true);
         expect(Exit.isSuccess(app.frameExit(0))).toBe(true);
-        expect(app.world.hash()).not.toBe(before);
+        expect(hashOf(app)).not.toBe(before);
         app.tick(1);
-        expect(app.world.singleton(Score).points).toBe(5);
+        expect(pointsOf(app)).toBe(5);
       })
     );
   });
@@ -492,7 +516,7 @@ describe("the input stage", () => {
         );
         source.press("Enter");
         app.input();
-        expect(app.world.singleton(Score).points).toBe(0);
+        expect(pointsOf(app)).toBe(0);
         expect(app.actionLog).toEqual([
           { tick: 0, name: "in/Bump", payload: { by: 5 }, queued: true },
         ]);
@@ -610,7 +634,7 @@ describe("the input stage", () => {
         step(0.3);
         expect(drawn).toEqual([1, 2, 3, 4]);
         // The game cannot tell that its devices are read.
-        expect(app.world.hash()).toBe(plain.world.hash());
+        expect(hashOf(app)).toBe(hashOf(plain));
         const save = app.save();
         const bare = plain.save();
         assert(Exit.isSuccess(save) && Exit.isSuccess(bare));
@@ -700,7 +724,7 @@ describe("the input stage", () => {
         expect(drawnRefused).toEqual(["in/Try TooMuch"]);
         expect(onlyDrawn).toEqual([1, 3]);
         // And the game cannot tell that anyone was listening.
-        expect(alone.world.hash()).toBe(bare.world.hash());
+        expect(hashOf(alone)).toBe(hashOf(bare));
         const saves = [alone, together, bare].map((app) => app.save());
         const events = saves.map((save) => {
           assert(Exit.isSuccess(save));
@@ -713,7 +737,10 @@ describe("the input stage", () => {
           alone.input();
           alone.tick(1);
         }
-        expect(alone.events.pending(Done)).toBe(0);
+        expect(alone.inspect().stores).not.toHaveProperty([
+          Event.STORE,
+          Done.name,
+        ]);
         expect(heard).toEqual([1, 3]);
       })
     );
@@ -894,7 +921,7 @@ describe("the input stage", () => {
         app.tick(1);
         app.tick(1);
         recording = app.record();
-        hash = app.world.hash();
+        hash = hashOf(app);
         expect(ship(app).x).toBe(20);
       }).pipe(withSource(source))
     );
@@ -910,7 +937,7 @@ describe("the input stage", () => {
             checkpointEvery: 1,
           })
         );
-        expect(again.world.hash()).toBe(hash);
+        expect(hashOf(again)).toBe(hash);
         expect(ship(again)).toEqual({ x: 20, shots: 0 });
         expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
         // Played on from there, by hand, it hears the machine it is on.
@@ -927,23 +954,30 @@ describe("the input stage", () => {
         const Fail = System.input("Fail", function* () {
           return yield* new NoKeyboard();
         });
-        const app = yield* App.make(App.define({ systems: [Fail] }));
+        const app = yield* App.make(
+          App.define({ systems: [Fail], handlers: [award] })
+        );
         const exit = app.inputExit();
         expect(Exit.isFailure(exit)).toBe(true);
         expect(
           Cause.squash((exit as Exit.Failure<void, NoKeyboard>).cause)
         ).toEqual(new NoKeyboard());
         expect(() => app.input()).toThrow(NoKeyboard);
-        expect(app.world.frozen).toBe(false);
+        // The world is not left frozen: a point can still be given.
+        expect(Exit.isSuccess(app.dispatch(Award, {}))).toBe(true);
+        expect(pointsOf(app)).toBe(1);
         // A system that waits has not finished within the stage.
         const Wait = System.input("Wait", function* () {
           yield* Effect.never;
         });
-        const waiting = yield* App.make(App.define({ systems: [Wait] }));
+        const waiting = yield* App.make(
+          App.define({ systems: [Wait], handlers: [award] })
+        );
         expect(() => waiting.input()).toThrow(
           /System "Wait" did not finish within the input stage/
         );
-        expect(waiting.world.frozen).toBe(false);
+        expect(Exit.isSuccess(waiting.dispatch(Award, {}))).toBe(true);
+        expect(pointsOf(waiting)).toBe(1);
       })
     );
   });
@@ -964,11 +998,12 @@ describe("the input stage", () => {
         const app = yield* App.make(App.define({ systems: [Jitter] }), {
           seed: 5,
         });
-        const state = Array.from(app.world.random.state);
+        const before = hashOf(app);
         app.input();
         app.input();
         expect(new Set(drawn).size).toBe(2);
-        expect(Array.from(app.world.random.state)).toEqual(state);
+        // The hash holds the state of the world's generator.
+        expect(hashOf(app)).toBe(before);
       })
     );
   });
@@ -1195,7 +1230,7 @@ describe("the picture of the devices in the world", () => {
         const tickHashes: number[] = [];
         const frame = (): void => {
           step(0.1);
-          tickHashes.push(app.world.hash());
+          tickHashes.push(hashOf(app));
         };
         frame();
         source.press("ArrowRight");
@@ -1248,7 +1283,7 @@ describe("the picture of the devices in the world", () => {
           })
         );
         expect(ship(again)).toEqual(played);
-        expect(again.world.hash()).toBe(hashes.at(-1));
+        expect(hashOf(again)).toBe(hashes.at(-1));
         // Checked against every tick's checkpoint on the way.
         expect(
           entries.filter((entry) => Action.isCheckpoint(entry)).length
@@ -1295,7 +1330,7 @@ describe("the picture of the devices in the world", () => {
           bare.tick(1);
         }
         expect(app.actionLog).toEqual([]);
-        expect(app.world.hash()).toBe(bare.world.hash());
+        expect(hashOf(app)).toBe(hashOf(bare));
         source.press("KeyQ");
         app.input();
         app.tick(1);
@@ -1305,7 +1340,7 @@ describe("the picture of the devices in the world", () => {
           app.tick(1);
         }
         expect(reports(app)).toEqual([{ down: ["KeyQ"] }]);
-        expect(app.world.hash()).not.toBe(bare.world.hash());
+        expect(hashOf(app)).not.toBe(hashOf(bare));
       }).pipe(withSource(source))
     );
   });
@@ -1323,12 +1358,12 @@ describe("the picture of the devices in the world", () => {
           down: ["KeyA", "KeyB"],
           axes: { PointerX: 1, PointerY: 2 },
         });
-        expect(one.world.hash()).toBe(two.world.hash());
+        expect(hashOf(one)).toBe(hashOf(two));
         // An axis back at 0 is one nobody moved.
         const still = yield* App.make(App.define({ plugins: [Input.plugin] }));
         still.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
         one.dispatch(Input.Report, { axes: { PointerX: 0, PointerY: 0 } });
-        expect(one.world.hash()).toBe(still.world.hash());
+        expect(hashOf(one)).toBe(hashOf(still));
         // What went up is applied before what went down: a key in both
         // was let go and pressed again, and is held.
         const repressed = yield* App.make(
@@ -1340,7 +1375,7 @@ describe("the picture of the devices in the world", () => {
         const held = yield* App.make(App.define({ plugins: [Input.plugin] }));
         held.dispatch(Input.Report, { down: ["KeyA"] });
         held.tick(1);
-        expect(repressed.world.hash()).not.toBe(held.world.hash());
+        expect(hashOf(repressed)).not.toBe(hashOf(held));
         let seen = "";
         const Look = System.tick("Look", function* () {
           const keys = yield* Input.Keyboard;
@@ -1357,16 +1392,16 @@ describe("the picture of the devices in the world", () => {
         // A report that says what is so already is accepted, and writes
         // nothing: a key that is down did not go down again.
         one.tick(1);
-        const before = one.world.hash();
+        const before = hashOf(one);
         const again = one.dispatch(Input.Report, {
           down: ["KeyA"],
           up: ["KeyZ"],
           axes: { PointerX: 0 },
         });
         expect(Exit.isSuccess(again)).toBe(true);
-        expect(one.world.hash()).toBe(before);
+        expect(hashOf(one)).toBe(before);
         const fresh = yield* App.make(App.define({ plugins: [Input.plugin] }));
-        const empty = fresh.world.hash();
+        const empty = hashOf(fresh);
         expect(
           Exit.isSuccess(
             fresh.dispatch(Input.Report, {
@@ -1376,7 +1411,7 @@ describe("the picture of the devices in the world", () => {
           )
         ).toBe(true);
         expect(Exit.isSuccess(fresh.dispatch(Input.Report, {}))).toBe(true);
-        expect(fresh.world.hash()).toBe(empty);
+        expect(hashOf(fresh)).toBe(empty);
       })
     );
   });
@@ -1394,7 +1429,7 @@ describe("the picture of the devices in the world", () => {
         app.tick(1);
         never.tick(1);
         // Still remembered: it went up in the tick that just ran.
-        expect(app.world.hash()).not.toBe(never.world.hash());
+        expect(hashOf(app)).not.toBe(hashOf(never));
         // The next report, of anything, drops it: even one that says it
         // went up, which it did long ago.
         const late = app.dispatch(Input.Report, {
@@ -1403,7 +1438,7 @@ describe("the picture of the devices in the world", () => {
         });
         expect(Exit.isSuccess(late)).toBe(true);
         never.dispatch(Input.Report, { axes: { PointerX: 4 } });
-        expect(app.world.hash()).toBe(never.world.hash());
+        expect(hashOf(app)).toBe(hashOf(never));
       })
     );
   });
@@ -1428,7 +1463,7 @@ describe("the picture of the devices in the world", () => {
         for (const move of moves) {
           move();
           step(0.1);
-          seen.push(app.world.hash());
+          seen.push(hashOf(app));
         }
         return { hashes: seen, log: app.actionLog as Action.Logged[] };
       }).pipe(withSource(source))
@@ -1447,7 +1482,7 @@ describe("the picture of the devices in the world", () => {
             app.enqueueByName(entry.name, entry.payload);
           }
           step(0.1);
-          expect(app.world.hash(), `tick ${tick + 1}`).toBe(hashes[tick]);
+          expect(hashOf(app), `tick ${tick + 1}`).toBe(hashes[tick]);
         }
         // Nothing was reported of devices that are not there.
         expect(reports(app)).toEqual(log.map((entry) => entry.payload));
@@ -1506,7 +1541,7 @@ describe("the picture of the devices in the world", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Input.plugin] }));
-        const before = app.world.hash();
+        const before = hashOf(app);
         for (const payload of [
           { down: "KeyA" },
           { axes: { PointerX: "left" } },
@@ -1523,7 +1558,7 @@ describe("the picture of the devices in the world", () => {
           axes: { PointerX: Number.POSITIVE_INFINITY },
         });
         expect(Exit.isFailure(exit)).toBe(true);
-        expect(app.world.hash()).toBe(before);
+        expect(hashOf(app)).toBe(before);
       })
     );
   });
@@ -1707,19 +1742,19 @@ describe("the picture of the devices in the world", () => {
         source.press(Input.pointerButton());
         app.input();
         app.tick(1);
-        const before = app.world.hash();
+        const before = hashOf(app);
         app.frame(0);
         expect(drawn).toEqual(["3,0 true"]);
-        expect(app.world.hash()).toBe(before);
+        expect(hashOf(app)).toBe(before);
         expect(Exit.isSuccess(app.dispatch(Shoot, {}))).toBe(true);
-        expect(app.world.singleton(Score).points).toBe(1);
+        expect(pointsOf(app)).toBe(1);
         // A refused action leaves the picture as it was.
         source.release("Space");
         app.input();
         app.tick(1);
-        const held = app.world.hash();
+        const held = hashOf(app);
         expect(Exit.isFailure(app.dispatch(Shoot, {}))).toBe(true);
-        expect(app.world.hash()).toBe(held);
+        expect(hashOf(app)).toBe(held);
       }).pipe(withSource(source))
     );
   });

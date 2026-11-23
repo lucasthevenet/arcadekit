@@ -175,7 +175,7 @@ const program = Effect.gen(function* () {
 - Its methods are plain calls, so they are fine inside a loop. A draw costs about 4 ns.
 - The same seed produces the same numbers on every machine and in every JavaScript engine. Without a seed, the seed is 0, so a game stays reproducible until you pass a seed from outside, such as the current time at the entry point.
 - `int` gives every value equal probability, and `shuffle` every permutation.
-- The generator's state is four numbers in the world, `app.world.random.state`, so it is part of the world's hash. A replay with the same seed draws the same numbers, and copying the state back resumes the sequence where it was.
+- The generator's state is four numbers in the world, so it is part of the world's hash and of a save. A replay with the same seed draws the same numbers, and a loaded save resumes the sequence where it was.
 - Inside an app, Effect's own `Random` module is seeded from the same generator, so `Random.next` from `"effect"`, and anything built on it, replays too. It costs an Effect per draw, so don't use it in loops.
 - In the frame and input stages, `Random` is a separate generator that isn't part of the world, so rendering can be random without changing the game.
 - It isn't suitable for secrets: a few outputs reveal the rest.

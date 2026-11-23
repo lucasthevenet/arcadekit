@@ -16,6 +16,7 @@ import {
   System,
   Time,
   View,
+  World,
 } from "../src/index";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
@@ -82,10 +83,31 @@ const Game = Plugin.make("vw/Game", {
   ],
 });
 
-const play = (ui: View.Bridge | undefined, seed = 1) => {
+/** What a game begins with: coins of these values, and gold in the purse. */
+interface Begun {
+  readonly coins?: readonly number[];
+  readonly gold?: number;
+}
+const begun = ({ coins = [], gold }: Begun) =>
+  Plugin.make("vw/Begun", {
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Coin);
+      for (const value of coins) {
+        commands.spawn(Coin.of({ value }));
+      }
+      if (gold !== undefined) {
+        (yield* Purse.writes).gold = gold;
+      }
+    }),
+  });
+
+const play = (
+  ui: View.Bridge | undefined,
+  { seed = 1, ...start }: Begun & { readonly seed?: number } = {}
+) => {
   worked.hud = 0;
   worked.menu = 0;
-  const made = App.make(App.define({ plugins: [Game] }), {
+  const made = App.make(App.define({ plugins: [Game, begun(start)] }), {
     seed,
     checkpointEvery: 1,
   });
@@ -130,6 +152,11 @@ const keep = (
 const isAction = (entry: Action.LogEntry): entry is Action.Logged =>
   !Action.isCheckpoint(entry);
 
+const coinsOf = (app: App.Any): number =>
+  Effect.runSync(app.read(Coins)).count();
+const goldOf = (app: App.Any): number => Effect.runSync(app.read(Purse)).gold;
+const hashOf = (app: App.Any): number => Effect.runSync(app.read(World)).hash();
+
 /** A UI that only notes what it is told. */
 const listen = <A>(ui: View.Bridge, view: View.View<A>) => {
   const heard: A[] = [];
@@ -146,8 +173,7 @@ describe("a view", () => {
     expect(ui.get(Hud)).toEqual({ gold: 0, coins: 0 });
     expect(ui.get(Hud)).toBe(Hud.initial);
     expect(ui.get(Menu)).toEqual({ phase: "title" });
-    const app = play(ui);
-    app.world.spawn(Coin.of({ value: 5 }));
+    const app = play(ui, { coins: [5] });
     // Making the app publishes nothing: a frame does.
     expect(ui.get(Hud)).toBe(Hud.initial);
     app.frame(0);
@@ -166,8 +192,7 @@ describe("a view", () => {
     const ui = View.makeBridge();
     const hud = listen(ui, Hud);
     const menu = listen(ui, Menu);
-    const app = play(ui);
-    app.world.spawn(Coin.of({ value: 2 }));
+    const app = play(ui, { coins: [2] });
     app.frame(0);
     // The menu is as it was at first: nobody is told. The display is not.
     expect(menu.heard).toEqual([]);
@@ -245,15 +270,35 @@ describe("a view", () => {
     const ui = View.makeBridge();
     const a = listen(ui, Hud);
     const b = listen(ui, Hud);
-    const app = play(ui);
-    const coin = app.world.spawn(Coin.of({ value: 1 }));
+    // A coin can be found, and every coin lost.
+    const Find = Action.define("vw/Find", Schema.Struct({ value: Schema.Int }));
+    const Lose = Action.define("vw/Lose", Schema.Struct({}));
+    const Chance = Plugin.make("vw/Chance", {
+      handlers: [
+        Action.handler(Find, function* ({ value }) {
+          (yield* Commands.spawns(Coin)).spawn(Coin.of({ value }));
+        }),
+        Action.handler(Lose, function* () {
+          const commands = yield* Commands;
+          for (const coin of (yield* Coins).entities()) {
+            commands.despawn(coin);
+          }
+        }),
+      ],
+    });
+    const app = run(
+      App.make(App.define({ plugins: [Game, Chance] })).pipe(
+        Effect.provide(View.layer(ui))
+      )
+    );
+    app.dispatch(Find, { value: 1 });
     app.frame(0);
     expect(a.heard).toEqual([{ gold: 0, coins: 1 }]);
     expect(b.heard).toEqual(a.heard);
     a.stop();
     // Stopping twice is stopping once.
     a.stop();
-    app.world.despawn(coin);
+    app.dispatch(Lose, {});
     app.frame(0);
     expect(a.heard.length).toBe(1);
     expect(b.heard).toEqual([
@@ -270,9 +315,9 @@ describe("a view", () => {
     const stopLater = ui.subscribe(Hud, () => {
       order.push("later");
     });
-    app.world.spawn(Coin.of({ value: 1 }));
+    app.dispatch(Find, { value: 1 });
     app.frame(0);
-    app.world.spawn(Coin.of({ value: 1 }));
+    app.dispatch(Find, { value: 1 });
     app.frame(0);
     expect(order).toEqual(["once"]);
     expect(b.heard.length).toBe(4);
@@ -288,8 +333,7 @@ describe("a view", () => {
     ui.subscribe(Hud, () => {
       throw new Error("and so is the button");
     });
-    const app = play(ui);
-    app.world.spawn(Coin.of({ value: 1 }));
+    const app = play(ui, { coins: [1] });
     expect(() => app.frame(0)).toThrow("the label is gone");
     expect(after.heard).toEqual([{ gold: 0, coins: 1 }]);
     // The value was published: the next frame has nothing new to say.
@@ -299,8 +343,7 @@ describe("a view", () => {
   });
 
   it("is not worked out at all where there is no UI", () => {
-    const app = play(undefined);
-    app.world.spawn(Coin.of({ value: 1 }));
+    const app = play(undefined, { coins: [1] });
     for (let i = 0; i < 5; i++) {
       app.tick(1);
       app.frame(0);
@@ -329,11 +372,10 @@ describe("a view", () => {
     const ui = View.makeBridge();
     const { heard } = listen(ui, Hud);
     const app = run(
-      App.make(App.define({ plugins: [Rules] })).pipe(
+      App.make(App.define({ plugins: [Rules, begun({ gold: 9 })] })).pipe(
         Effect.provide(View.layer(ui))
       )
     );
-    app.world.singleton(Purse).gold = 9;
     app.frame(0);
     expect(heard).toEqual([]);
     expect(ui.get(Hud)).toBe(Hud.initial);
@@ -367,7 +409,7 @@ describe("a view", () => {
     });
     const ui = View.makeBridge();
     const { heard } = listen(ui, Hud);
-    const made = App.make(App.define({ plugins: [Rules] }));
+    const made = App.make(App.define({ plugins: [Rules, begun({ gold: 9 })] }));
     const app = run(made.pipe(Effect.provide(View.layer(ui))));
     const step = (action?: typeof Start | typeof Quit): void => {
       if (action !== undefined) {
@@ -376,7 +418,6 @@ describe("a view", () => {
       app.tick(1);
       app.frame(0);
     };
-    app.world.singleton(Purse).gold = 9;
     // At the title it is what it was defined as, and nobody is told so.
     step();
     step();
@@ -452,16 +493,7 @@ describe("a view", () => {
 describe("what the UI sends", () => {
   it("is heard by a game that is stepped by hand with a tick and nothing else, and by a replay not at all", () => {
     // The game, begun with gold to spend.
-    const Funded = App.define({
-      plugins: [
-        Game,
-        Plugin.make("vw/Funded", {
-          setup: Effect.gen(function* () {
-            (yield* Purse.writes).gold = 5;
-          }),
-        }),
-      ],
-    });
+    const Funded = App.define({ plugins: [Game, begun({ gold: 5 })] });
     const ui = View.makeBridge();
     const app = run(
       App.make(Funded, { seed: 1, checkpointEvery: 1 }).pipe(
@@ -473,8 +505,8 @@ describe("what the UI sends", () => {
     // No `app.input()`: the tick hears what was sent before it runs, and
     // applies it.
     app.tick(1);
-    expect(app.world.view(Coins).count()).toBe(1);
-    expect(app.world.singleton(Purse).gold).toBe(3);
+    expect(coinsOf(app)).toBe(1);
+    expect(goldOf(app)).toBe(3);
     const recording = app.record();
     expect(
       recording.log
@@ -491,8 +523,8 @@ describe("what the UI sends", () => {
         App.make(Funded, { ...start, checkpointEvery: 1 })
       ).pipe(Effect.provide(View.layer(other)))
     );
-    expect(again.world.hash()).toBe(app.world.hash());
-    expect(again.world.view(Coins).count()).toBe(1);
+    expect(hashOf(again)).toBe(hashOf(app));
+    expect(coinsOf(again)).toBe(1);
     expect(
       again.actionLog.filter((entry) => !Action.isCheckpoint(entry)).length
     ).toBe(2);
@@ -500,8 +532,7 @@ describe("what the UI sends", () => {
 
   it("is issued before the next tick, in the order it was sent, and is in the log like any input", () => {
     const ui = View.makeBridge();
-    const app = play(ui);
-    app.world.singleton(Purse).gold = 5;
+    const app = play(ui, { gold: 5 });
     ui.send(Buy, { price: 3 });
     ui.send(Start, {});
     ui.send(Buy, { price: 4 });
@@ -509,7 +540,7 @@ describe("what the UI sends", () => {
     expect(
       app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
     ).toEqual([]);
-    expect(app.world.singleton(Purse).gold).toBe(5);
+    expect(goldOf(app)).toBe(5);
     app.input();
     expect(
       app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
@@ -520,9 +551,9 @@ describe("what the UI sends", () => {
     ]);
     // Applied by the tick: the second purchase is refused by the rules.
     app.tick(1);
-    expect(app.world.view(Coins).count()).toBe(1);
+    expect(coinsOf(app)).toBe(1);
     // Three spent, and one earned by the coin it bought, once the game began.
-    expect(app.world.singleton(Purse).gold).toBe(3);
+    expect(goldOf(app)).toBe(3);
     app.frame(0);
     expect(ui.get(Menu)).toEqual({ phase: "playing" });
     const logged = app.actionLog.filter(
@@ -584,16 +615,7 @@ describe("what the UI sends", () => {
 
   it("replays with no UI: the log holds what it sent, and the game goes the same way", () => {
     // The game, begun with a coin.
-    const Kept = App.define({
-      plugins: [
-        Game,
-        Plugin.make("vw/Kept", {
-          setup: Effect.map(Commands.spawns(Coin), (commands) => {
-            commands.spawn(Coin.of({ value: 1 }));
-          }),
-        }),
-      ],
-    });
+    const Kept = App.define({ plugins: [Game, begun({ coins: [1] })] });
     const start = { seed: 11, checkpointEvery: 1 } as const;
     const ui = View.makeBridge();
     const app = run(App.make(Kept, start).pipe(Effect.provide(View.layer(ui))));
@@ -602,7 +624,7 @@ describe("what the UI sends", () => {
       app.input();
       app.tick(1);
       app.frame(0);
-      hashes.push(app.world.hash());
+      hashes.push(hashOf(app));
     };
     step();
     ui.send(Start, {});
@@ -612,7 +634,7 @@ describe("what the UI sends", () => {
     ui.send(Buy, { price: 50 });
     step();
     step();
-    expect(app.world.view(Coins).count()).toBe(2);
+    expect(coinsOf(app)).toBe(2);
 
     // No bridge, no input stage and no frame: a server, or a replay.
     const played = app.record();
@@ -621,8 +643,8 @@ describe("what the UI sends", () => {
         App.make(Kept, { ...start, checkpointEvery: 1 })
       )
     );
-    expect(again.world.hash()).toBe(hashes.at(-1));
-    expect(again.world.view(Coins).count()).toBe(2);
+    expect(hashOf(again)).toBe(hashes.at(-1));
+    expect(coinsOf(again)).toBe(2);
     // And the same game with no UI at all, given nothing, differs.
     const idle = run(App.make(Kept, start));
     for (let i = 0; i < 5; i++) {
@@ -630,7 +652,7 @@ describe("what the UI sends", () => {
       idle.tick(1);
       idle.frame(0);
     }
-    expect(idle.world.hash()).not.toBe(hashes.at(-1));
+    expect(hashOf(idle)).not.toBe(hashes.at(-1));
   });
 
   it("is a bug when the game has no handler for it, and throws where it was sent", () => {
@@ -750,15 +772,17 @@ describe("the bridge", () => {
   it("leaves the game as it found it: with a UI or with none, the game is the same game", () => {
     const ui = View.makeBridge();
     listen(ui, Hud);
-    const seen = App.make(App.define({ plugins: [Game] }), {
-      seed: 4,
-      checkpointEvery: 1,
-      verifyFrames: true,
-    }).pipe(Effect.provide(View.layer(ui)));
+    const seen = App.make(
+      App.define({ plugins: [Game, begun({ coins: [3] })] }),
+      {
+        seed: 4,
+        checkpointEvery: 1,
+        verifyFrames: true,
+      }
+    ).pipe(Effect.provide(View.layer(ui)));
     const watched = run(seen);
-    const alone = play(undefined, 4);
+    const alone = play(undefined, { seed: 4, coins: [3] });
     for (const app of [watched, alone]) {
-      app.world.spawn(Coin.of({ value: 3 }));
       app.dispatch(Start, {});
     }
     for (let i = 0; i < 30; i++) {
@@ -766,7 +790,7 @@ describe("the bridge", () => {
       watched.tick(1);
       watched.frame(0.5);
       alone.tick(1);
-      expect(watched.world.hash()).toBe(alone.world.hash());
+      expect(hashOf(watched)).toBe(hashOf(alone));
     }
     expect(watched.actionLog).toEqual(alone.actionLog);
     const saves = [watched.save(), alone.save()].map((save) =>

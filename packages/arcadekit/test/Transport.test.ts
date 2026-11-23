@@ -1,18 +1,18 @@
 import { Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App, Driver, Journal } from "../src/index";
+import { App, Driver, Input, Journal, World } from "../src/index";
 import { Drift, Message, Session, Transport } from "../src/net/index";
 import {
   CoinGame,
   DELTA,
   Drop,
+  Lying,
   moves,
   players,
   setGlitch,
-  withApp,
 } from "./peers";
-import type { Peer, SteeredGame } from "./peers";
+import type { Peer } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
   from,
@@ -27,10 +27,8 @@ const messagesIn = (
 ): Message.Message[] =>
   arrived.filter((one): one is Message.Message => "from" in one);
 
-interface Seat {
-  readonly name: string;
-  readonly app: SteeredGame;
-  readonly session: Peer["session"];
+/** A peer whose session is joined to a transport, which steps it. */
+interface Seat extends Peer {
   readonly connected: Transport.Connected;
 }
 
@@ -43,6 +41,7 @@ const seated = (
   Effect.gen(function* () {
     const seats: Seat[] = [];
     for (const name of names) {
+      const source = Input.makeManualSource();
       const session = yield* Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
@@ -50,19 +49,30 @@ const seated = (
         peers: names,
         delta: DELTA,
         ahead: ahead ?? 0,
-      });
+      }).pipe(Effect.provide(Input.layer(source)));
       // Provided to the one line that connects: the transport is opened
       // in the scope of the program, and lasts as long as it does.
       const connected = yield* Transport.connect(session).pipe(
         Effect.provide(layerOf(name))
       );
-      seats.push({ name, app: session.app, session, connected });
+      const services = yield* Effect.context();
+      seats.push({
+        name,
+        app: session.app,
+        world: yield* session.app.read(World),
+        // Read again each time: a rollback restores the world, and a view
+        // does not outlive that.
+        get coins() {
+          return Effect.runSyncWith(services)(session.app.read(Lying));
+        },
+        session,
+        hashes: [],
+        source,
+        connected,
+      });
     }
     return seats;
   });
-
-/** As the players of `peers.ts` see a peer. */
-const asPeer = (seat: Seat): Peer => seat as unknown as Peer;
 
 describe("a hub, the network in memory", () => {
   it("carries what one port sends to every other, and not back", () => {
@@ -235,7 +245,7 @@ describe("a session joined to a transport", () => {
               hub.step();
               seats.forEach((seat, index) => {
                 if (acting) {
-                  act(asPeer(seat));
+                  act(seat);
                 }
                 steps[index]!(DELTA);
               });
@@ -263,7 +273,7 @@ describe("a session joined to a transport", () => {
             expect(ada.app.time.tick).toBeGreaterThan(
               ahead === undefined ? 60 : 200
             );
-            expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+            expect(ada.world.hash()).toBe(grace.world.hash());
             expect(ada.app.actionLog).toEqual(grace.app.actionLog);
             expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
             expect(ada.session.drifted).toBeUndefined();
@@ -273,7 +283,7 @@ describe("a session joined to a transport", () => {
             const alone = yield* Journal.replay(whole, (start) =>
               App.make(CoinGame, { ...start, checkpointEvery: 1 })
             );
-            expect(alone.world.hash()).toBe(ada.app.world.hash());
+            expect((yield* alone.read(World)).hash()).toBe(ada.world.hash());
           })
         )
       );
@@ -297,7 +307,7 @@ describe("a session joined to a transport", () => {
               hub.step();
               for (const seat of seats) {
                 if (acting) {
-                  act(asPeer(seat));
+                  act(seat);
                 }
                 seat.connected.tick();
               }
@@ -343,7 +353,7 @@ describe("a session joined to a transport", () => {
             expect(grace.app.time.tick).toBe(ada.app.time.tick);
             expect(ada.app.time.tick).toBeGreaterThan(100);
             for (const seat of [edsger, grace]) {
-              expect(seat.app.world.hash()).toBe(ada.app.world.hash());
+              expect(seat.world.hash()).toBe(ada.world.hash());
               expect(seat.app.actionLog).toEqual(ada.app.actionLog);
               expect(seat.session.drifted).toBeUndefined();
             }
@@ -436,40 +446,44 @@ describe("a session joined to a transport", () => {
   });
 
   it("does not compile without a transport", () => {
-    withApp(
-      Session.make(CoinGame, {
-        seed: 5,
-        checkpointEvery: 1,
-        peer: "ada",
-        peers: ["ada"],
-        delta: DELTA,
-        ahead: 0,
-      }),
-      (session) => {
-        expect(() =>
-          Effect.runSync(
-            // @ts-expect-error A game of several peers is given a transport.
-            Transport.connect(session)
-          )
-        ).toThrow(/Transport/u);
-        const hub = Transport.makeHub();
-        const made = Effect.runSync(
-          Effect.scoped(
-            Transport.connect(session).pipe(
-              Effect.provide(Transport.layer(hub.port("ada")))
-            )
-          )
-        );
-        expect(made.tick()).toBe(true);
-        // Nor without the scope the transport is opened in. A hand-made
-        // transport is open already, so this one runs all the same.
-        Effect.runSync(
-          // @ts-expect-error A transport is opened in a scope.
-          Transport.connect(session).pipe(
-            Effect.provide(Transport.layer(hub.port("ada")))
-          )
-        );
-      }
+    Effect.runSync(
+      Effect.scoped(
+        Effect.map(
+          Session.make(CoinGame, {
+            seed: 5,
+            checkpointEvery: 1,
+            peer: "ada",
+            peers: ["ada"],
+            delta: DELTA,
+            ahead: 0,
+          }),
+          (session) => {
+            expect(() =>
+              Effect.runSync(
+                // @ts-expect-error A game of several peers is given a transport.
+                Transport.connect(session)
+              )
+            ).toThrow(/Transport/u);
+            const hub = Transport.makeHub();
+            const made = Effect.runSync(
+              Effect.scoped(
+                Transport.connect(session).pipe(
+                  Effect.provide(Transport.layer(hub.port("ada")))
+                )
+              )
+            );
+            expect(made.tick()).toBe(true);
+            // Nor without the scope the transport is opened in. A hand-made
+            // transport is open already, so this one runs all the same.
+            Effect.runSync(
+              // @ts-expect-error A transport is opened in a scope.
+              Transport.connect(session).pipe(
+                Effect.provide(Transport.layer(hub.port("ada")))
+              )
+            );
+          }
+        )
+      )
     );
   });
 });
@@ -704,7 +718,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           for (let i = 0; i < 60; i++) {
             for (const seat of seats) {
               if (i < 40) {
-                act(asPeer(seat));
+                act(seat);
               }
               seat.connected.tick();
               // The other end hears in its own time, not in this loop's.
@@ -727,7 +741,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           expect(ada.app.time.tick).toBe(grace.app.time.tick);
           expect(ada.app.time.tick).toBeGreaterThan(40);
           expect(moves(ada.app.actionLog).length).toBeGreaterThan(10);
-          expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+          expect(ada.world.hash()).toBe(grace.world.hash());
           expect(ada.app.actionLog).toEqual(grace.app.actionLog);
           expect(ada.session.drifted).toBeUndefined();
           expect(grace.session.drifted).toBeUndefined();

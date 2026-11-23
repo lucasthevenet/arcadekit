@@ -1,6 +1,24 @@
 /// <reference types="node" />
-import { App, Assets, Component, State, Transform3d } from "arcadekit";
-import { Cause, Effect, Exit, Fiber, Layer, Logger, Scope } from "effect";
+import {
+  Action,
+  App,
+  Assets,
+  Commands,
+  Component,
+  Plugin,
+  State,
+  Transform3d,
+} from "arcadekit";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  Schema,
+  Scope,
+} from "effect";
 import { InstancedMesh, Mesh, Texture } from "three";
 import type { BufferGeometry, MeshStandardMaterial, Scene } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -546,6 +564,23 @@ describe("a level's models", () => {
   const Ship = Component.tag("gl/Ship");
   const Rock = Component.tag("gl/Rock");
   const Level = State.define("gl/Level", ["dock", "space"]);
+  const Go = Action.define(
+    "gl/Go",
+    Schema.Struct({ to: Schema.Literals(["dock", "space"]) })
+  );
+  const go = Action.handler(Go, function* ({ to }) {
+    (yield* Level.sets).set(to);
+  });
+  const at = (x: number) => Transform3d.Position.of({ x, y: 0, z: 0 });
+  const Harbour = Plugin.make("gl/Harbour", {
+    handlers: [go],
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Ship, Rock, Transform3d.Position);
+      commands.spawn(Ship, at(1));
+      commands.spawn(Ship, at(2));
+      commands.spawn(Rock, at(3));
+    }),
+  });
 
   it("are what its objects and its instances are made of, for as long as the level", async () => {
     const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
@@ -570,7 +605,7 @@ describe("a level's models", () => {
     const app = Effect.runSync(
       App.make(
         App.define({
-          plugins: [Three.plugin, Assets.plugin],
+          plugins: [Three.plugin, Assets.plugin, Harbour],
           systems: [
             Assets.during(State.is(Level, "space"), Fleet),
             Ships,
@@ -588,12 +623,8 @@ describe("a level's models", () => {
         Scope.provide(scope)
       )
     );
-    const at = (x: number) => Transform3d.Position.of({ x, y: 0, z: 0 });
-    app.world.spawn(Ship, at(1));
-    app.world.spawn(Ship, at(2));
-    app.world.spawn(Rock, at(3));
-    const go = async (to: "dock" | "space"): Promise<void> => {
-      app.world.singleton(Level).next = to;
+    const travel = async (to: "dock" | "space"): Promise<void> => {
+      app.enqueue(Go, { to });
       app.tick(1);
       app.frame(0);
       // A model is read in its own time.
@@ -602,7 +633,7 @@ describe("a level's models", () => {
     };
     app.frame(0);
     expect(scene!.children).toEqual([]);
-    await go("space");
+    await travel("space");
     const [one, two] = scene!.children.filter(
       (child) => !(child instanceof InstancedMesh)
     );
@@ -621,7 +652,7 @@ describe("a level's models", () => {
     hull.addEventListener("dispose", () => {
       disposed++;
     });
-    await go("dock");
+    await travel("dock");
     expect(scene!.children).toEqual([]);
     expect(disposed).toBe(1);
     Effect.runSync(Scope.close(scope, Exit.void));

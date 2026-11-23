@@ -5,6 +5,7 @@ import { afterEach, assert, describe, expect, it, vi } from "vitest";
 import {
   Action,
   App,
+  Commands,
   Component,
   Driver,
   Field,
@@ -19,6 +20,27 @@ import {
 
 const Ball = Component.define("dr/Ball", { x: Field.f32, vx: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
+const Rolled = Query.all(Ball);
+
+/** A game that starts with a ball rolling at each of `speeds`. */
+const rolling = (...speeds: readonly number[]) =>
+  Plugin.make("dr/Rolling", {
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Ball);
+      for (const vx of speeds) {
+        commands.spawn(Ball.of({ x: 0, vx }));
+      }
+    }),
+  });
+
+/** Where each ball is. */
+const positions = (app: App.Any): number[] => {
+  const xs: number[] = [];
+  Effect.runSync(app.read(Rolled)).each((ball) => {
+    xs.push(ball.x);
+  });
+  return xs;
+};
 
 const Roll = System.tick("Roll", function* () {
   const { delta } = yield* Time;
@@ -46,16 +68,22 @@ const withDisplay =
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
     Effect.provideService(effect, Driver.Display, display);
 
-/** An app and a frame loop over it, both in the scope the caller closes. */
+/**
+ * An app with a ball rolling at each of `speeds`, and a frame loop over it,
+ * both in the scope the caller closes.
+ */
 const started = Effect.fnUntraced(function* (
   display: Driver.ManualDisplay,
-  hz = 60
+  hz = 60,
+  speeds: readonly number[] = []
 ) {
   const drawn: number[] = [];
   const Draw = System.frame("Draw", function* () {
     drawn.push((yield* Frame).alpha);
   });
-  const app = yield* App.make(App.define({ systems: [Roll, Draw] }));
+  const app = yield* App.make(
+    App.define({ plugins: [rolling(...speeds)], systems: [Roll, Draw] })
+  );
   const fiber = yield* Effect.forkScoped(
     Driver.frames(app, { hz }).pipe(withDisplay(display)),
     { startImmediately: true }
@@ -88,9 +116,8 @@ describe("the frame loop", () => {
     const scope = Scope.makeUnsafe();
     // Ticks of 100 ms against frames of 40 ms.
     const { app, drawn } = await Effect.runPromise(
-      Scope.provide(started(display, 10), scope)
+      Scope.provide(started(display, 10, [10]), scope)
     );
-    app.world.spawn(Ball.of({ x: 0, vx: 10 }));
     const ticks: number[] = [];
     for (const now of [500, 540, 580, 620, 660, 700, 1030]) {
       display.frame(now);
@@ -102,11 +129,8 @@ describe("the frame loop", () => {
     ]);
     // Each tick was a tenth of a second of the game, exactly.
     expect(app.time.elapsed).toBeCloseTo(0.5, 9);
-    expect(app.world.view(Balls).entities().length).toBe(1);
-    let x = 0;
-    app.world.view(Balls).each((ball) => {
-      ({ x } = ball);
-    });
+    const [x, ...others] = positions(app);
+    expect(others).toEqual([]);
     expect(x).toBeCloseTo(5, 5);
     await Effect.runPromise(Scope.close(scope, Exit.void));
   });
@@ -470,8 +494,9 @@ describe("the timer", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make(App.define({ systems: [Roll] }));
-          app.world.spawn(Ball.of({ x: 0, vx: 1 }));
+          const app = yield* App.make(
+            App.define({ plugins: [rolling(1)], systems: [Roll] })
+          );
           // A beat every eighth of a second, which a float holds exactly.
           const fiber = yield* Effect.forkScoped(
             Driver.interval(app, { hz: 8 })
@@ -481,9 +506,7 @@ describe("the timer", () => {
           expect(app.time.tick).toBe(0);
           yield* TestClock.adjust("876 millis");
           expect(app.time.tick).toBe(8);
-          expect(
-            app.world.get(app.world.view(Balls).entities()[0]!, Ball)?.x
-          ).toBe(1);
+          expect(positions(app)).toEqual([1]);
           yield* Fiber.interrupt(fiber);
           yield* TestClock.adjust("1 second");
           expect(app.time.tick).toBe(8);
@@ -669,10 +692,13 @@ describe("ticking when needed", () => {
     const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
       App.make(
-        App.define({ systems: [Roll, Burn, Draw], handlers: [light] })
+        App.define({
+          plugins: [rolling(60)],
+          systems: [Roll, Burn, Draw],
+          handlers: [light],
+        })
       ).pipe(Scope.provide(scope))
     );
-    app.world.spawn(Ball.of({ x: 0, vx: 60 }));
     const fiber = Effect.runFork(
       Driver.frames(app, { hz: 60, ticks: "whenNeeded" }).pipe(
         withDisplay(display)

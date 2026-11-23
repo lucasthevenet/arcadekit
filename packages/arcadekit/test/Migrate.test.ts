@@ -1,11 +1,12 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
   App,
   CommandBuffer,
+  Commands,
   Component,
   EcsWorld,
   Field,
@@ -13,15 +14,24 @@ import {
   Plugin,
   Query,
   Save,
+  World,
   readSnapshot,
   writeSnapshot,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
 
-const withApp = <T, E, A>(
+/** Runs `use` with an app and its world, as `app.read(World)` gives it. */
+const withApp = <T extends Pick<App.Any, "read">, E, A>(
   make: Effect.Effect<T, E, Scope.Scope>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+  use: (app: T, world: Effect.Success<typeof World>) => A
+): A =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.flatMap(make, (app) =>
+        Effect.map(app.read(World), (world) => use(app, world))
+      )
+    )
+  );
 const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   if (Exit.isFailure(exit)) {
     throw Cause.squash(exit.cause);
@@ -57,28 +67,36 @@ const Game0 = Plugin.make("mg/Game", {
 });
 
 /** Plays a little of version 0 and saves it, with an action waiting. */
-const savedByVersion0 = () =>
-  withApp(App.make(App.define({ plugins: [Game0] })), (app) => {
-    const entities: Entity[] = [];
-    for (let n = 0; n < 9; n++) {
-      const entity = app.world.spawn(
-        Hp0.of({ points: 10 * n }),
-        Pos0.of({ x: n, y: -n }),
-        Name0.of({ value: `unit ${n}` })
-      );
-      if (n % 2 === 0) {
-        app.world.add(entity, Old0);
+const savedByVersion0 = () => {
+  const entities: Entity[] = [];
+  const Units0 = Plugin.make("mg/Units", {
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Hp0, Pos0, Name0, Old0, Buff0);
+      for (let n = 0; n < 9; n++) {
+        const entity = commands.spawn(
+          Hp0.of({ points: 10 * n }),
+          Pos0.of({ x: n, y: -n }),
+          Name0.of({ value: `unit ${n}` })
+        );
+        if (n % 2 === 0) {
+          commands.add(entity, Old0);
+        }
+        if (n % 3 === 0) {
+          commands.add(entity, Buff0.of({ power: n, note: `buff ${n}` }));
+        }
+        entities.push(entity);
       }
-      if (n % 3 === 0) {
-        app.world.add(entity, Buff0.of({ power: n, note: `buff ${n}` }));
+      for (const entity of entities.splice(4, 1)) {
+        commands.despawn(entity);
       }
-      entities.push(entity);
-    }
-    app.world.despawn(entities.splice(4, 1)[0]!);
+    }),
+  });
+  return withApp(App.make(App.define({ plugins: [Game0, Units0] })), (app) => {
     app.tick(1);
     app.enqueue(Heal0, { amount: 3 });
     return { save: unwrap(app.save()), entities };
   });
+};
 
 // --- version 2 of the same game -----------------------------------------------------
 
@@ -103,8 +121,14 @@ const mend2 = Action.handler(Mend2, function* ({ by }) {
     health.points += by;
   });
 });
+const Recruit2 = Action.define("mg/Recruit", Schema.Struct({}));
+const recruit2 = Action.handler(Recruit2, function* () {
+  return (yield* Commands.spawns(Health2)).spawn(
+    Health2.of({ armor: 0, points: 1 })
+  );
+});
 const Game2 = Plugin.make("mg/Game", {
-  handlers: [mend2],
+  handlers: [mend2, recruit2],
 });
 
 const migrations: Save.Migration[] = [
@@ -296,8 +320,7 @@ describe("a save from another version of the game", () => {
 
   it("is migrated, one version at a time, and loads into the game as it is now", () => {
     const { entities, save } = savedByVersion0();
-    withApp(App.make(Version2, { save }), (app) => {
-      const { world } = app;
+    withApp(App.make(Version2, { save }), (app, world) => {
       expect(world.entityCount).toBe(8);
       for (const entity of entities) {
         const n = world.get(entity, Name2)!.value.slice("unit ".length);
@@ -317,21 +340,19 @@ describe("a save from another version of the game", () => {
         { power: 300, note: "buff 3", fresh: undefined },
         { power: 600, note: "buff 6", fresh: undefined },
       ]);
-      expect(world.component("mg/Old")).toBeUndefined();
-      expect(world.component("mg/Hp")).toBeUndefined();
+      const known = readSnapshot(unwrap(app.save()).world).components.map(
+        ({ name }) => name
+      );
+      expect(known).toContain("mg/Health");
+      expect(known).not.toContain("mg/Old");
+      expect(known).not.toContain("mg/Hp");
 
-      // The ids are the ones the old game handed out, dead ones stay dead,
-      // and the next entity gets the id the old game would have given.
+      // The ids are the ones the old game handed out, and dead ones stay dead.
       expect(
-        world
-          .view(Query.all(Health2))
+        Effect.runSync(app.read(Query.all(Health2)))
           .entities()
           .toSorted((a, b) => a - b)
       ).toEqual(entities.toSorted((a, b) => a - b));
-      const next = world.spawn(Health2.of({ armor: 0, points: 1 }));
-      expect(next & 0x3f_ff_ff).toBe(4);
-      expect(next >>> 22).toBe(1);
-      world.despawn(next);
 
       // The action that was waiting is applied under its new name.
       const before = world.get(entities[1]!, Health2)!.points;
@@ -342,18 +363,25 @@ describe("a save from another version of the game", () => {
       // What it saves now is a save of version 2, which loads as it is.
       const again = unwrap(app.save());
       expect(again.version).toBe(2);
-      withApp(App.make(Version2, { save: again }), (reloaded) => {
-        expect(reloaded.world.hash()).toBe(world.hash());
+      withApp(App.make(Version2, { save: again }), (_, reloaded) => {
+        expect(reloaded.hash()).toBe(world.hash());
       });
+
+      // The next entity gets the id the old game would have given.
+      const next = app.dispatch(Recruit2, {});
+      assert(Exit.isSuccess(next));
+      expect(next.value & 0x3f_ff_ff).toBe(4);
+      expect(next.value >>> 22).toBe(1);
     });
   });
 
   it("joins two tables that a removed component had kept apart", () => {
     const { entities, save } = savedByVersion0();
-    withApp(App.make(Version2, { save }), (app) => {
+    withApp(App.make(Version2, { save }), (app, world) => {
       // One table now: the units that never had the tag, then those that did.
-      const order = app.world.view(Query.all(Name2)).entities();
-      const names = order.map((entity) => app.world.get(entity, Name2)!.value);
+      const named = Effect.runSync(app.read(Query.all(Name2)));
+      const order = named.entities();
+      const names = order.map((entity) => world.get(entity, Name2)?.value);
       expect(names).toEqual([
         "unit 1",
         "unit 3",
@@ -368,7 +396,7 @@ describe("a save from another version of the game", () => {
         entities.toSorted((a, b) => a - b)
       );
       let chunks = 0;
-      app.world.view(Query.all(Name2)).eachChunk(() => {
+      named.eachChunk(() => {
         chunks++;
       });
       expect(chunks).toBe(1);

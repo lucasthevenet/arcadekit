@@ -1,6 +1,6 @@
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Scheduler, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -20,10 +20,13 @@ import {
   System,
   Ticks,
   View,
+  World,
 } from "../src/index";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
+/** The world of an app, as `app.read(World)` gives it. */
+const worldOf = (app: Pick<App.Any, "read">) => Effect.runSync(app.read(World));
 
 // --- a game that moves when its player does ----------------------------------------
 // A board of pieces. A move slides them, and a piece lands a tick after it
@@ -134,6 +137,7 @@ describe("app.settled", () => {
 
   it("is false while an event waits that a system has not had its chance at, and no longer", () => {
     const app = run(App.make(App.define({ plugins: [Rules] })));
+    const world = worldOf(app);
     app.dispatch(Begin, {});
     app.tick(1);
     app.tick(1);
@@ -143,17 +147,17 @@ describe("app.settled", () => {
     app.enqueue(Move, { by: 2 });
     app.tick(1);
     // Land said Landed, which Tally, listed before it, has yet to hear.
-    expect(app.world.singleton(Score).moves).toBe(0);
+    expect(world.singleton(Score).moves).toBe(0);
     expect(app.settled).toBe(false);
     app.tick(1);
-    expect(app.world.singleton(Score).moves).toBe(1);
+    expect(world.singleton(Score).moves).toBe(1);
     expect(app.settled).toBe(true);
     // One an action emitted between two ticks waits too.
     app.dispatch(Declare, { landed: true });
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(true);
-    expect(app.world.singleton(Score).moves).toBe(2);
+    expect(world.singleton(Score).moves).toBe(2);
     // Of whichever kind: this one, and then the one it sets off.
     app.dispatch(Declare, { landed: false });
     expect(app.settled).toBe(false);
@@ -161,7 +165,7 @@ describe("app.settled", () => {
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(true);
-    expect(app.world.singleton(Score).moves).toBe(3);
+    expect(world.singleton(Score).moves).toBe(3);
   });
 
   it("does not wait for what draws: an event kept for the frame stage is nothing a tick is needed for", () => {
@@ -186,14 +190,21 @@ describe("app.settled", () => {
   });
 
   it("is false while work is queued for the next tick", () => {
-    const app = run(App.make(App.define({})));
+    const kept: Scheduler.SchedulerDispatcher[] = [];
+    // What the game's fibers are dispatched by.
+    const Keep = System.tick("st/Keep", function* () {
+      kept.push((yield* Scheduler.Scheduler).makeDispatcher());
+    });
+    const app = run(App.make(App.define({ systems: [Keep] })));
     app.tick(1);
     expect(app.settled).toBe(true);
+    const [dispatcher] = kept;
+    assert(dispatcher !== undefined);
     const ran: string[] = [];
     // As a fiber a system forked leaves the rest of itself, when what it
     // waited for arrives between two ticks: it runs when the next tick lets
     // fibers run.
-    app.dispatcher.scheduleTask(() => ran.push("ran"), 0);
+    dispatcher.scheduleTask(() => ran.push("ran"), 0);
     expect(ran).toEqual([]);
     expect(app.settled).toBe(false);
     app.tick(1);
@@ -205,14 +216,15 @@ describe("app.settled", () => {
     const app = run(
       App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
     );
-    const before = app.world.hash();
+    const world = worldOf(app);
+    const before = world.hash();
     for (let i = 0; i < 3; i++) {
       expect(app.settled).toBe(false);
     }
     app.frame(0);
     app.input();
     expect(app.settled).toBe(false);
-    expect(app.world.hash()).toBe(before);
+    expect(world.hash()).toBe(before);
   });
 });
 
@@ -330,9 +342,10 @@ describe("a game that ticks when its player moves", () => {
         App.make(Played, { ...start, checkpointEvery: 1 })
       )
     );
-    expect(again.world.hash()).toBe(app.world.hash());
+    const replayed = worldOf(again);
+    expect(replayed.hash()).toBe(worldOf(app).hash());
     expect(again.time.tick).toBe(app.time.tick);
-    expect(again.world.singleton(Score).moves).toBe(2);
+    expect(replayed.singleton(Score).moves).toBe(2);
   });
 });
 
@@ -384,7 +397,7 @@ describe("a system that has more to do", () => {
     }
     // Three ticks with more to do; the fourth finds it run down.
     expect(settled).toEqual([false, false, false, true, true]);
-    expect(app.world.singleton(Clock).left).toBe(0);
+    expect(worldOf(app).singleton(Clock).left).toBe(0);
     // Looking does not change it, and nor do the stages between ticks.
     app.dispatch(Wind, { ticks: 1 });
     expect(app.settled).toBe(true);
@@ -399,6 +412,7 @@ describe("a system that has more to do", () => {
   it("keeps a game that ticks when it is needed going for as long as it asks, and no longer", () => {
     ran = 0;
     const app = run(App.make(App.define({ ...options, systems: [RunDown] })));
+    const world = worldOf(app);
     const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
     const frames = (count: number): void => {
       for (let i = 0; i < count; i++) {
@@ -411,12 +425,12 @@ describe("a system that has more to do", () => {
     app.enqueue(Wind, { ticks: 20 });
     frames(10);
     // Half way down, and still going: a tick a frame.
-    expect(app.world.singleton(Clock).left).toBe(10);
+    expect(world.singleton(Clock).left).toBe(10);
     expect(app.time.tick).toBe(12);
     frames(100);
     // Twenty ticks of the clock, the one that found it at nothing, and the
     // one that follows the last; then rest.
-    expect(app.world.singleton(Clock).left).toBe(0);
+    expect(world.singleton(Clock).left).toBe(0);
     expect(app.time.tick).toBe(2 + 20 + 2);
     expect(ran).toBe(app.time.tick);
 
@@ -433,7 +447,7 @@ describe("a system that has more to do", () => {
     for (let i = 0; i < 100; i++) {
       step(0.1);
     }
-    expect(silent.world.singleton(Clock).left).toBe(18);
+    expect(worldOf(silent).singleton(Clock).left).toBe(18);
   });
 
   it("is heard from a handler, and changes nothing of a game that ticks in real time", () => {
@@ -465,7 +479,7 @@ describe("a system that has more to do", () => {
       Driver.fixedStep(one, { hz: 10 })(1);
     }
     expect(said.time.tick).toBe(5);
-    expect(said.world.hash()).toBe(unsaid.world.hash());
+    expect(worldOf(said).hash()).toBe(worldOf(unsaid).hash());
     expect(said.actionLog).toEqual(unsaid.actionLog);
   });
 
@@ -495,7 +509,7 @@ describe("a system that has more to do", () => {
     app.enqueue(Wind, { ticks: 6 });
     app.tick(1);
     app.tick(1);
-    expect(app.world.singleton(Clock).left).toBe(4);
+    expect(worldOf(app).singleton(Clock).left).toBe(4);
     const save = app.save();
     expect(save._tag).toBe("Success");
     if (save._tag !== "Success") {
@@ -513,7 +527,7 @@ describe("a system that has more to do", () => {
     for (let i = 0; i < 50; i++) {
       advance(0.1);
     }
-    expect(loaded.world.singleton(Clock).left).toBe(0);
+    expect(worldOf(loaded).singleton(Clock).left).toBe(0);
     expect(loaded.time.tick).toBe(2 + 4 + 2);
   });
 

@@ -30,19 +30,19 @@ import type { Peer } from "./peers";
 
 describe("who issued an action", () => {
   it("is told to its handler when the action came with a name", () => {
-    withApp(game(), (app) => {
+    withApp(game(), (app, world) => {
       // Brought in on someone's behalf, as a server does for its clients.
       expect(app.dispatchByName("ls/Tip", { amount: 3 }, "ada")).toEqual(
         Exit.succeed("ada")
       );
       app.enqueueByName("ls/Tip", { amount: 4 }, "grace");
       app.tick(DELTA);
-      expect(purseOf(app)).toEqual({ ada: 3, grace: 4 });
+      expect(purseOf(world)).toEqual({ ada: 3, grace: 4 });
     });
   });
 
   it("is nobody for an action this program issued itself", () => {
-    withApp(game(), (app) => {
+    withApp(game(), (app, world) => {
       // Typed, through the app: a game of one has no one to name.
       expect(app.dispatch(Tip, { amount: 1 })).toEqual(
         Exit.fail(new Stranger({ from: undefined }))
@@ -53,7 +53,7 @@ describe("who issued an action", () => {
       app.enqueue(Tip, { amount: 1 });
       app.tick(DELTA);
       expect(moves(app.actionLog).at(-1)?.refused).toBeDefined();
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 0 });
+      expect(purseOf(world)).toEqual({ ada: 0, grace: 0 });
     });
     // And for one the simulation issues, a bot's: no peer stands behind it.
     const told: (string | undefined)[] = [];
@@ -77,12 +77,12 @@ describe("who issued an action", () => {
   });
 
   it("is in the log, and a replay hands it back", () => {
-    const recorded = withApp(game(), (app) => {
+    const recorded = withApp(game(), (app, world) => {
       app.dispatchByName("ls/Tip", { amount: 2 }, "ada");
       app.enqueueByName("ls/Tip", { amount: 5 }, "grace");
       app.enqueueByName("ls/Tip", { amount: 9 }, "mallory");
       app.tick(DELTA);
-      return { recording: app.record(), hash: app.world.hash() };
+      return { recording: app.record(), hash: world.hash() };
     });
     const { log } = recorded.recording;
     expect(moves(log)).toEqual([
@@ -112,9 +112,9 @@ describe("who issued an action", () => {
       Journal.replay(read.value, (start) =>
         App.make(CoinGame, { ...start, checkpointEvery: 1 })
       ),
-      (app) => {
-        expect(app.world.hash()).toBe(recorded.hash);
-        expect(purseOf(app)).toEqual({ ada: 2, grace: 5 });
+      (_, world) => {
+        expect(world.hash()).toBe(recorded.hash);
+        expect(purseOf(world)).toEqual({ ada: 2, grace: 5 });
       }
     );
     // A log that had lost who issued each is another game, and says so.
@@ -126,16 +126,16 @@ describe("who issued an action", () => {
       return rest;
     });
     const alteredRecording = { ...recorded.recording, log: anonymous };
-    withApp(
-      Effect.flip(
-        Journal.replay(alteredRecording, (start) =>
-          App.make(CoinGame, { ...start, checkpointEvery: 1 })
+    const diverged = Effect.runSync(
+      Effect.scoped(
+        Effect.flip(
+          Journal.replay(alteredRecording, (start) =>
+            App.make(CoinGame, { ...start, checkpointEvery: 1 })
+          )
         )
-      ),
-      (diverged) => {
-        expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
-      }
+      )
     );
+    expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
     // A name is text.
     expect(
       Exit.isFailure(
@@ -150,7 +150,7 @@ describe("who issued an action", () => {
   });
 
   it("is kept with an action that waits, in a save and in a moment", () => {
-    const saved = withApp(game(), (app) => {
+    const saved = withApp(game(), (app, world) => {
       app.tick(DELTA);
       app.enqueueByName("ls/Tip", { amount: 6 }, "grace");
       const save = app.save();
@@ -168,14 +168,14 @@ describe("who issued an action", () => {
       // And where a game goes back to: the tip is waiting again, hers still.
       const moment = Timeline.capture(app);
       app.tick(DELTA);
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });
+      expect(purseOf(world)).toEqual({ ada: 0, grace: 6 });
       Timeline.rewind(
         app,
         Exit.isSuccess(moment) ? moment.value : { tick: -1 }
       );
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 0 });
+      expect(purseOf(world)).toEqual({ ada: 0, grace: 0 });
       app.tick(DELTA);
-      expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });
+      expect(purseOf(world)).toEqual({ ada: 0, grace: 6 });
       return Save.encode(save.value);
     });
     const read = Save.decode(saved);
@@ -190,7 +190,7 @@ describe("who issued an action", () => {
             checkpointEvery: 1,
           });
           app.tick(DELTA);
-          const { ada, grace } = app.world.singleton(Purse);
+          const { ada, grace } = yield* app.read(Purse);
           expect({ ada, grace }).toEqual({ ada: 0, grace: 6 });
         })
       )
@@ -242,7 +242,7 @@ describe("who issued an action, in a session", () => {
           }
           catchUp(peers, net);
           for (const peer of peers) {
-            expect(purseOf(peer.app)).toEqual({ ada: 2, grace: 6 });
+            expect(purseOf(peer.world)).toEqual({ ada: 2, grace: 6 });
             expect(
               moves(peer.app.actionLog).map((entry) => [
                 entry.from,
@@ -254,7 +254,7 @@ describe("who issued an action, in a session", () => {
               ["grace", 1],
             ]);
           }
-          expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+          expect(ada.world.hash()).toBe(grace.world.hash());
         }
       );
     }
@@ -310,7 +310,7 @@ describe("who issued an action, in a session", () => {
         actions: [{ name: "ls/Tip", payload: { amount: 7 } }],
       });
       expect(ada.session.tickExit()).toEqual(Exit.succeed(true));
-      expect(purseOf(ada.app)).toEqual({ ada: 0, grace: 7 });
+      expect(purseOf(ada.world)).toEqual({ ada: 0, grace: 7 });
     });
   });
 });

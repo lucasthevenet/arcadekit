@@ -19,6 +19,7 @@
 import { Exit } from "effect";
 
 import type * as App from "./App";
+import { partsOf } from "./app/parts";
 import type { SavedChanges } from "./ecs/changes";
 import type { World, Moment as WorldMoment } from "./ecs/world";
 import type { Told } from "./Outbox";
@@ -41,10 +42,7 @@ export interface Moment {
  *
  * @category Type-level
  */
-export type Game = Pick<
-  App.Any,
-  "commands" | "dispatcher" | "events" | "phase" | "time" | "world"
->;
+export type Game = Pick<App.Any, "phase" | "time">;
 
 /**
  * What a moment holds beyond its tick. Only `capture` makes one, so a moment
@@ -90,7 +88,8 @@ export const capture = (
   options?: { readonly stages?: boolean }
 ): Exit.Exit<Moment, Save.SaveRefused> => {
   between(app, "capture", "A game is captured between ticks.");
-  const { commands, events, time, world } = app;
+  const { time } = app;
+  const { commands, events, world } = partsOf(app);
   return Exit.map(
     Save.taking(commands, "capture", () => world._capture()),
     (of) =>
@@ -140,7 +139,7 @@ export const rewind = (
   options?: { readonly again?: boolean }
 ): void => {
   between(app, "rewind", "A game is put back between ticks.");
-  const { commands, dispatcher, events, world } = app;
+  const { commands, dispatcher, events, world } = partsOf(app);
   if (!(moment instanceof Held) || moment.of !== world) {
     throw new Error(
       "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."

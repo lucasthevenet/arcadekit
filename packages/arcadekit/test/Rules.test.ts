@@ -1,6 +1,6 @@
 import { Context, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -46,6 +46,9 @@ const withApp = <A, T, E = never>(
   use: (app: A) => T
 ): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
+/** The events waiting to be read, by name, as `app.inspect()` copies them. */
+const waiting = (app: App.Any): unknown => app.inspect().stores[Event.STORE];
+
 /** The applied actions of a log, without the checkpoints recorded among them. */
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
   log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
@@ -76,7 +79,7 @@ describe("events", () => {
       // ...the earlier one sees the same events, once, a tick later.
       expect(seen.Before).toEqual([[], [10, 11], [20, 21], []]);
       // And then they are gone.
-      expect(app.events.pending(Ping)).toBe(0);
+      expect(waiting(app)).toBeUndefined();
     });
   });
 
@@ -96,12 +99,24 @@ describe("events", () => {
         log.push(`${event.target}:${event.amount}`);
       }
     });
-    withApp(App.make(App.define({ systems: [Hit, Report] })), (app) => {
-      const a = app.world.spawn(Health.of({ hp: 10 }));
-      const b = app.world.spawn(Health.of({ hp: 10 }));
-      app.tick(1);
-      expect(log).toEqual([`${a}:3`, `${b}:3`]);
+    const wounded: Entity[] = [];
+    const Two = Plugin.make("ru/Two", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Health);
+        wounded.push(
+          commands.spawn(Health.of({ hp: 10 })),
+          commands.spawn(Health.of({ hp: 10 }))
+        );
+      }),
     });
+    withApp(
+      App.make(App.define({ plugins: [Two], systems: [Hit, Report] })),
+      (app) => {
+        app.tick(1);
+        expect(log).toEqual(wounded.map((entity) => `${entity}:3`));
+        expect(wounded).toHaveLength(2);
+      }
+    );
   });
 
   it("are dropped a tick after they were emitted, read or not", () => {
@@ -141,19 +156,18 @@ describe("events", () => {
       App.make(App.define({ systems: [Keeper], handlers: [say] })),
       (app) => {
         app.tick(1);
-        expect(app.events.pending(Ping)).toBe(1);
+        expect(waiting(app)).toEqual({ "ru/Ping": [7] });
         const refused =
           /The event "ru\/Ping" was emitted from outside the simulation\..*Issue an action whose handler emits it/;
-        // Through the bus, through a handle asked for outside, and through one
-        // a system kept.
-        expect(() => app.events.emit(Ping, 1)).toThrow(refused);
-        expect(() => app.events.handle(Ping).emit(1)).toThrow(refused);
+        // @ts-expect-error the app hands out no bus to emit through
+        void app.events;
+        // Through a handle and through the bus, each of which a system kept.
         expect(() => kept!.emit(1)).toThrow(refused);
         expect(() => bus!.emit(Ping, 1)).toThrow(refused);
-        expect(app.events.pending(Ping)).toBe(1);
+        expect(waiting(app)).toEqual({ "ru/Ping": [7] });
         // An action's handler is the simulation's.
         app.dispatch(Say, { n: 1 });
-        expect(app.events.pending(Ping)).toBe(2);
+        expect(waiting(app)).toEqual({ "ru/Ping": [7, 1] });
       }
     );
   });
@@ -300,37 +314,51 @@ const duelOf = (...more: System.System<never, BuiltIn>[]) =>
     handlers: [attack, endTurn, summon],
   });
 
-/** An app of the duel as it begins, with each player's fighter. */
-const duel = (...more: System.System<never, BuiltIn>[]) =>
-  Effect.map(App.make(duelOf(...more)), (app) => {
+/** An app of a game the board begins, its world, and each player's fighter. */
+const begin = <A extends App.Any, E>(make: Effect.Effect<A, E, Scope.Scope>) =>
+  Effect.gen(function* () {
+    const app = yield* make;
     const fighters = new Map<number, Entity>();
-    app.world.view(Query.all(Owner)).each((owner, entity) => {
+    (yield* app.read(Query.all(Owner))).each((owner, entity) => {
       fighters.set(owner.player, entity);
     });
-    return { app, one: fighters.get(1)!, two: fighters.get(2)! };
+    const one = fighters.get(1);
+    const two = fighters.get(2);
+    assert(
+      one !== undefined && two !== undefined,
+      "the board has two fighters"
+    );
+    return { app, world: yield* app.read(App_World), one, two };
   });
 
-const snapshot = (app: App.Any): string[] => {
+/** An app of the duel as it begins, with each player's fighter. */
+const duel = (...more: System.System<never, BuiltIn>[]) =>
+  begin(App.make(duelOf(...more)));
+
+const Turns = Query.all(Turn);
+const look = Effect.gen(function* () {
+  const world = yield* App_World;
   const out: string[] = [
-    `tick=${app.time.tick} entities=${app.world.entityCount}`,
+    `tick=${(yield* Time).tick} entities=${world.entityCount}`,
   ];
-  app.world.view(Query.all(Health)).each((health, entity) => {
-    const energy = app.world.get(entity, Energy);
+  (yield* Query.all(Health)).each((health, entity) => {
+    const energy = world.get(entity, Energy);
     out.push(`${entity}: hp=${health.hp} energy=${energy?.points}`);
   });
-  app.world
-    .view(TurnQuery)
-    .each((turn) => void out.push(`turn ${turn.number} player ${turn.player}`));
+  (yield* Turns).each(
+    (turn) => void out.push(`turn ${turn.number} player ${turn.player}`)
+  );
   return out;
-};
+});
+const snapshot = (app: App.Any): string[] => Effect.runSync(app.read(look));
 
 describe("actions", () => {
   it("are validated and applied by their handler, and the result comes straight back", () => {
-    withApp(duel(), ({ app, one, two }) => {
+    withApp(duel(), ({ app, world, one, two }) => {
       const exit = app.dispatch(Attack, { attacker: one, target: two });
       expect(exit).toEqual(Exit.succeed(2));
-      expect(app.world.get(two, Health)).toEqual({ hp: 2 });
-      expect(app.world.get(one, Energy)).toEqual({ points: 1 });
+      expect(world.get(two, Health)).toEqual({ hp: 2 });
+      expect(world.get(one, Energy)).toEqual({ points: 1 });
       expect(moves(app.actionLog)).toEqual([
         { tick: 0, name: "Attack", payload: { attacker: one, target: two } },
       ]);
@@ -350,7 +378,7 @@ describe("actions", () => {
   });
 
   it("refuse with a typed error and change nothing", () => {
-    withApp(duel(), ({ app, one, two }) => {
+    withApp(duel(), ({ app, world, one, two }) => {
       const before = snapshot(app);
       const notYours = app.dispatch(Attack, { attacker: two, target: one });
       expect(notYours).toEqual(Exit.fail(new NotYourTurn({ player: 1 })));
@@ -360,31 +388,27 @@ describe("actions", () => {
       expect(tired).toEqual(
         Exit.fail(new NotEnoughEnergy({ have: 1, need: 2 }))
       );
-      expect(app.world.get(two, Health)).toEqual({ hp: 2 });
+      expect(world.get(two, Health)).toEqual({ hp: 2 });
       expect(moves(app.actionLog)).toHaveLength(1);
       expect(before).toHaveLength(4);
     });
   });
 
   it("discard the commands and events of a refused action", () => {
-    withApp(duel(), ({ app }) => {
-      const entities = app.world.entityCount;
+    withApp(duel(), ({ app, world }) => {
+      const entities = world.entityCount;
       const refused = app.dispatch(Summon, { player: 1, hp: 0 });
       expect(Exit.isFailure(refused)).toBe(true);
-      expect(app.world.entityCount).toBe(entities);
-      expect(app.commands.size).toBe(0);
-      expect(app.events.pending(Died)).toBe(0);
+      expect(world.entityCount).toBe(entities);
+      expect(waiting(app)).toBeUndefined();
 
+      // Had the refused spawn been kept, it would be applied with this one.
       const accepted = app.dispatch(Summon, { player: 1, hp: 5 });
-      expect(Exit.isSuccess(accepted)).toBe(true);
-      expect(app.world.entityCount).toBe(entities + 1);
-      expect(app.events.pending(Died)).toBe(1);
+      assert(Exit.isSuccess(accepted));
+      expect(world.entityCount).toBe(entities + 1);
+      expect(waiting(app)).toEqual({ "ru/Died": [{ entity: accepted.value }] });
       // The id the refused summon had reserved was released and is reused.
-      const summoned = Exit.match(accepted, {
-        onSuccess: (entity) => app.world.get(entity, Health),
-        onFailure: () => undefined,
-      });
-      expect(summoned).toEqual({ hp: 5 });
+      expect(world.get(accepted.value, Health)).toEqual({ hp: 5 });
     });
   });
 
@@ -393,15 +417,15 @@ describe("actions", () => {
     const Mourn = System.tick("Mourn", function* () {
       for (const event of (yield* Died).read()) deaths.push(event.entity);
     });
-    withApp(duel(Mourn), ({ app, one, two }) => {
+    withApp(duel(Mourn), ({ app, world, one, two }) => {
       app.dispatch(Attack, { attacker: one, target: two });
       app.tick(1);
-      expect(app.world.isAlive(two)).toBe(true);
+      expect(world.isAlive(two)).toBe(true);
       app.tick(1); // energy is back to 3
       app.dispatch(Attack, { attacker: one, target: two });
-      expect(app.world.get(two, Health)).toEqual({ hp: -2 });
+      expect(world.get(two, Health)).toEqual({ hp: -2 });
       app.tick(1);
-      expect(app.world.isAlive(two)).toBe(false);
+      expect(world.isAlive(two)).toBe(false);
       expect(deaths).toEqual([two]);
     });
   });
@@ -415,30 +439,22 @@ describe("actions", () => {
         );
       }
     });
-    const make = Effect.map(
-      App.make(App.define({ systems: [Watch], handlers: [attack, endTurn] })),
-      (app) => {
-        app.world.spawn(Turn.of({ player: 1, number: 1 }));
-        const one = app.world.spawn(
-          Health.of({ hp: 10 }),
-          Energy.of({ points: 3 }),
-          Owner.of({ player: 1 })
-        );
-        const two = app.world.spawn(
-          Health.of({ hp: 6 }),
-          Energy.of({ points: 3 }),
-          Owner.of({ player: 2 })
-        );
-        return { app, one, two };
-      }
+    const make = begin(
+      App.make(
+        App.define({
+          plugins: [Board],
+          systems: [Watch],
+          handlers: [attack, endTurn],
+        })
+      )
     );
-    withApp(make, ({ app, one, two }) => {
+    withApp(make, ({ app, world, one, two }) => {
       app.enqueue(Attack, { attacker: one, target: two });
       app.enqueue(Attack, { attacker: two, target: one });
-      expect(app.world.get(two, Health)).toEqual({ hp: 6 });
+      expect(world.get(two, Health)).toEqual({ hp: 6 });
       app.tick(1);
-      expect(app.world.get(two, Health)).toEqual({ hp: 2 });
-      expect(app.world.get(one, Health)).toEqual({ hp: 10 });
+      expect(world.get(two, Health)).toEqual({ hp: 2 });
+      expect(world.get(one, Health)).toEqual({ hp: 10 });
       expect(rejected).toEqual(["Attack: NotYourTurn"]);
       // Both are in the log, in the order they arrived: a replay enqueues
       // both again, and its own rules refuse the second.
@@ -468,12 +484,8 @@ describe("actions", () => {
         actions.enqueue(EndTurn, { player: 2 });
       }
     });
-    const make = Effect.map(
-      App.make(App.define({ systems: [Bot], handlers: [endTurn] })),
-      (app) => {
-        app.world.spawn(Turn.of({ player: 1, number: 1 }));
-        return app;
-      }
+    const make = App.make(
+      App.define({ plugins: [Board], systems: [Bot], handlers: [endTurn] })
     );
     withApp(make, (app) => {
       app.dispatch(EndTurn, { player: 1 });

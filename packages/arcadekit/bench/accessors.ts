@@ -20,11 +20,13 @@ import { Data, Effect, Exit, Layer, Schema } from "effect";
 import {
   Action,
   App,
+  Commands,
   Driver,
   EntityId,
   Event,
   Field,
   Input,
+  Plugin,
   Query,
   Singleton,
   Sound,
@@ -57,6 +59,18 @@ if (N !== sizes.entities || DT !== sizes.step) {
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 const Seen = Query.all(Position, Velocity);
+
+const Empty = Plugin.make("bench/Empty", {});
+
+/** The N entities of `populate`, spawned by a game's setup. */
+const Populated = Plugin.make("bench/Populated", {
+  setup: Effect.gen(function* () {
+    const commands = yield* Commands.spawns(Position, Velocity);
+    for (let i = 0; i < N; i++) {
+      commands.spawn(Position.of({ x: i, y: i }), Velocity.of({ x: 1, y: 2 }));
+    }
+  }),
+});
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
 
@@ -123,11 +137,11 @@ const dispatching = <P>(
     Effect.scoped(
       Effect.gen(function* () {
         // No checkpoints: this measures the action, not the hash.
-        const app = yield* App.make(App.define({ handlers: [nudge, sweep] }), {
-          checkpointEvery: 0,
-        });
-        populate(app.world);
-        const target = app.world.view(Moving).entities()[N >> 1]!;
+        const app = yield* App.make(
+          App.define({ plugins: [Populated], handlers: [nudge, sweep] }),
+          { checkpointEvery: 0 }
+        );
+        const target = (yield* app.read(Seen)).entities()[N >> 1]!;
         const given = payload(target);
         const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
         return measure(() => dispatch(action, given), runs, warmup);
@@ -148,8 +162,14 @@ const idling = (power: "on" | "off"): number =>
             yield* Time;
           }).pipe(System.runIf(State.is(Power, "on")))
         );
-        const app = yield* App.make(App.define({ systems }));
-        State.handleOf(app.world, Power).set(power);
+        const Switched = Plugin.make("bench/Switched", {
+          setup: Effect.gen(function* () {
+            (yield* Power.sets).set(power);
+          }),
+        });
+        const app = yield* App.make(
+          App.define({ plugins: [Switched], systems })
+        );
         return measure(() => app.tick(DT), 50_000, 20_000);
       })
     )
@@ -366,8 +386,9 @@ const rewinding = (back: boolean): number =>
             }
           });
         });
-        const app = yield* App.make(App.define({ systems: [Movement] }));
-        populate(app.world);
+        const app = yield* App.make(
+          App.define({ plugins: [Populated], systems: [Movement] })
+        );
         app.tick(DT);
         const moment = Timeline.capture(app);
         if (Exit.isFailure(moment)) {
@@ -408,12 +429,10 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
             }
           })
         );
-        const app = yield* App.make(App.define({ systems }), {
-          verifyFrames: verify,
-        });
-        if (reading) {
-          populate(app.world);
-        }
+        const app = yield* App.make(
+          App.define({ plugins: [reading ? Populated : Empty], systems }),
+          { verifyFrames: verify }
+        );
         const ms = reading
           ? measure(() => app.frame(0.5))
           : measure(() => app.frame(0.5), 50_000, 20_000);
@@ -428,10 +447,10 @@ const scanned = (handler: typeof scanPlain): number =>
   Effect.runSync(
     Effect.scoped(
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({ handlers: [handler] }), {
-          checkpointEvery: 0,
-        });
-        populate(app.world);
+        const app = yield* App.make(
+          App.define({ plugins: [Populated], handlers: [handler] }),
+          { checkpointEvery: 0 }
+        );
         return measure(() => app.dispatch(Scan, {}), 300, 80);
       })
     )
@@ -517,8 +536,9 @@ const variants: Record<string, Variant> = {
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
-            const app = yield* App.make(App.define({ systems: [Movement] }));
-            populate(app.world);
+            const app = yield* App.make(
+              App.define({ plugins: [Populated], systems: [Movement] })
+            );
             return measure(() => app.tick(DT));
           })
         )
@@ -531,8 +551,9 @@ const variants: Record<string, Variant> = {
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
-            const app = yield* App.make(App.define({ systems: [MovementRaw] }));
-            populate(app.world);
+            const app = yield* App.make(
+              App.define({ plugins: [Populated], systems: [MovementRaw] })
+            );
             return measure(() => app.tick(DT));
           })
         )

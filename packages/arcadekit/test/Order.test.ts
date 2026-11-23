@@ -1,5 +1,4 @@
 import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +16,7 @@ import {
 } from "../src/index";
 import type { Entity } from "../src/index";
 import type { BuiltIn } from "../src/Services";
+import { withApp } from "./peers";
 
 const Position = Component.define("or/Position", { x: Field.f32 });
 const Health = Component.define("or/Health", { hp: Field.i32 });
@@ -49,12 +49,6 @@ const Bleed = System.tick("Bleed", function* () {
   });
 });
 
-/** Builds an app, hands it to `use`, then closes its scope. */
-const withApp = <T, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
-
 /** What the compiler says of a list, or that it says nothing. */
 type Said<S extends readonly System.System<unknown, unknown>[]> = [
   System.Misordered<S>,
@@ -68,8 +62,12 @@ const LATE =
 describe("the order of systems", () => {
   it("has a system that watches a component react in the tick it is written, and a list the other way round does not compile", () => {
     // Three ticks of one entity, moved on the second.
+    const One = Plugin.make("or/One", {
+      setup: Effect.gen(function* () {
+        (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0 }));
+      }),
+    });
     const play = (app: App.Any): void => {
-      app.world.spawn(Position.of({ x: 0 }));
       for (let n = 0; n < 3; n++) {
         app.tick(1);
       }
@@ -77,7 +75,10 @@ describe("the order of systems", () => {
     // Listed after what it watches: all of it on its first visit, then the
     // move in the tick it is made.
     const seen: number[] = [];
-    withApp(App.make(App.define({ systems: [Move, trail(seen)] })), play);
+    withApp(
+      App.make(App.define({ plugins: [One], systems: [Move, trail(seen)] })),
+      play
+    );
     expect(seen).toEqual([1, 1, 0]);
 
     // Listed ahead of it, the move is seen a tick late. The compiler refuses
@@ -97,7 +98,7 @@ describe("the order of systems", () => {
       trail(late),
       Move,
     ];
-    withApp(App.make(App.define({ systems: unread })), play);
+    withApp(App.make(App.define({ plugins: [One], systems: unread })), play);
     expect(late).toEqual([1, 0, 1]);
   });
 
@@ -305,10 +306,10 @@ describe("what a system spawns and sets", () => {
         Dot
       );
     });
-    withApp(App.make(App.define({ systems: [Shoot, Reap] })), (app) => {
+    withApp(App.make(App.define({ systems: [Shoot, Reap] })), (app, world) => {
       app.tick(1);
-      expect(app.world.get(spawned!, Position)).toEqual({ x: 4 });
-      expect(app.world.has(spawned!, Dot)).toBe(false);
+      expect(world.get(spawned!, Position)).toEqual({ x: 4 });
+      expect(world.has(spawned!, Dot)).toBe(false);
     });
   });
 
@@ -374,11 +375,18 @@ describe("what a system spawns and sets", () => {
       world.view(Healths);
     });
     expect(Look.name).toBe("Look");
-    withApp(App.make(App.define({ systems: [Heal] })), (app) => {
-      target = app.world.spawn(Health.of({ hp: 1 }));
-      app.tick(1);
-      expect(app.world.get(target, Health)).toEqual({ hp: 2 });
+    const Patient = Plugin.make("or/Patient", {
+      setup: Effect.gen(function* () {
+        target = (yield* Commands.spawns(Health)).spawn(Health.of({ hp: 1 }));
+      }),
     });
+    withApp(
+      App.make(App.define({ plugins: [Patient], systems: [Heal] })),
+      (app, world) => {
+        app.tick(1);
+        expect(world.get(target!, Health)).toEqual({ hp: 2 });
+      }
+    );
   });
 
   it("puts a set in the order of the list, as a query's write is", () => {

@@ -61,7 +61,7 @@ export class Drifted extends Data.TaggedError("Drifted")<{
       .join(", ");
     const since =
       this.agreedAt === undefined
-        ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same seed, and spawned the same things before its first tick"
+        ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same seed, and that the plugins' setups spawn the same things on each"
         : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers whose systems of the same name do different things`;
     return `The peers are no longer playing the same game. At tick ${this.tick} the hashes of their worlds are: ${hashes} (found by "${this.peer}"). ${since}.`;
   }

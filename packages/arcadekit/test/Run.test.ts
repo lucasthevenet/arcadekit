@@ -30,6 +30,7 @@ import {
 
 const Ball = Component.define("run/Ball", { x: Field.f32, vx: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
+const Rolling = Query.all(Ball);
 const Score = Singleton.define(
   "run/Score",
   { points: Field.i32 },
@@ -84,7 +85,7 @@ const makeGame = () => {
 
 const position = (app: App.Any): number => {
   let x = Number.NaN;
-  app.world.view(Balls).each((ball) => {
+  Effect.runSync(app.read(Rolling)).each((ball) => {
     ({ x } = ball);
   });
   return x;
@@ -149,7 +150,7 @@ describe("Driver.run", () => {
               yield* Effect.addFinalizer(() =>
                 Effect.sync(() => log.push("menu unwired"))
               );
-              log.push(`score ${app.world.singleton(Score).points}`);
+              log.push(`score ${(yield* app.read(Score)).points}`);
             })
           )
         ),
@@ -361,7 +362,7 @@ describe("Driver.run", () => {
     ask(4);
     repaint(1);
     expect(made!.time.tick).toBe(3);
-    expect(made!.world.singleton(Score).points).toBe(4);
+    expect(Effect.runSync(made!.read(Score)).points).toBe(4);
     repaint(60);
     expect(made!.time.tick).toBe(4);
     expect(frames).toBe(151);

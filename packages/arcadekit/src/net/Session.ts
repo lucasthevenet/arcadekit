@@ -59,6 +59,7 @@ import { Cause, Data, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
 import type * as App from "../App";
+import { partsOf } from "../app/parts";
 import { build } from "../Build";
 import type { Reins } from "../Build";
 import { add, addString, finish } from "../ecs/hash";
@@ -298,7 +299,7 @@ const twice = <E, HU>(
       const hashes: number[] = [];
       const systems: (string | undefined)[] = [];
       const exit = reins.tickExit(delta, (system) => {
-        hashes.push(app.world.hash());
+        hashes.push(partsOf(app).world.hash());
         systems.push(system);
       });
       return { exit, hashes, systems };

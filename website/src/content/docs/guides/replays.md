@@ -49,7 +49,7 @@ const program = Effect.gen(function* () {
 
 `app.record()` returns a recording: how the game began, that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes.
 
-`Journal.replay(recording, (start) => App.make(game, start))` hands that start to the function that makes the app, plays the recording in the app, and returns it where the recording ends. An app made from `start` begins as the recorded game did, so a replay can't be given the wrong seed. The app must also start from the same state: whatever was spawned into `app.world` before the first action or tick. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay in an app that isn't at the recording's first tick throws.
+`Journal.replay(recording, (start) => App.make(game, start))` hands that start to the function that makes the app, plays the recording in the app, and returns it where the recording ends. An app made from `start` begins as the recorded game did, so a replay can't be given the wrong seed. It starts from the same state too, since what a game starts with is what its plugins' `setup` spawns, and code outside the game has no way to spawn anything. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay in an app that isn't at the recording's first tick throws.
 
 The function is also where the app gets its other options, `App.make(game, { ...start, checkpointEvery: 1 })`, and where you keep or prepare it before the replay begins, with `.pipe(Effect.tap((app) => ...))`. An app kept that way is the one to look at when a replay has stopped.
 
@@ -69,7 +69,7 @@ A replay compares its own world at each checkpoint, and stops at the first misma
 
 ## The world's hash
 
-`app.world.hash()` is a single integer, from 0 to 2^32 - 1, for everything in the world a simulation can observe. Two machines that ran the same game hold the same number, as does a replay that went the same way. It covers:
+`world.hash()`, on the world that `app.read(World)` gives, is a single integer, from 0 to 2^32 - 1, for everything in the world a simulation can observe. Two machines that ran the same game hold the same number, as does a replay that went the same way. It covers:
 
 - every entity and the value of every field of every component it has, components being identified by name and fields;
 - the order queries visit entities in: tables in creation order, rows ascending;
@@ -92,7 +92,6 @@ It doesn't depend on anything a simulation can't observe: a table's capacity, le
 
 - It runs no frame or input stage: it reads no device and draws nothing. `Journal.replay` ticks with `{ input: false }`, and a tool that replays by hand with `tick` must do the same, or the machine's own keys leak into the game.
 - Actions the simulation issues itself, such as a bot's move, aren't in the log: the replay's own systems issue them again.
-- Once a game has started, every change to its world must be in the log or come from the simulation: an action, a system, a handler. A coin spawned into `app.world` by hand between two ticks is in neither, so the replay can't reproduce it, and stops at the next checkpoint.
 - A write through a raw column in the frame or input stage changes the game without an error, unless the app was created with `verifyFrames`. A replay runs neither stage, so it diverges. See [testing](testing.md).
 
 ## Read more
