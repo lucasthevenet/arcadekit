@@ -5,8 +5,10 @@
  *
  * No Effect dependency.
  */
-import { INDEX_MASK, growColumn, isBoxed, makeColumn } from "./component";
-import type { Column, ComponentDef, Entity } from "./component";
+import { growColumn, makeColumn } from "./column";
+import type { Column } from "./column";
+import { INDEX_MASK, isBoxed } from "./component";
+import type { ComponentDef, Entity } from "./component";
 
 /** A component's columns, by field. @internal */
 export type Columns = Record<string, Column>;

@@ -26,7 +26,6 @@ import {
 } from "../src/index";
 import type { Entity, QueryView } from "../src/index";
 import { Message, Session } from "../src/net/index";
-import { whole } from "../src/Services";
 import type { ReadingWorld } from "../src/Services";
 
 // --- a small game: players drop coins, which drift about, and take them --------
@@ -163,25 +162,16 @@ export const Bot = System.tick("ls/Bot", function* () {
  * A bug of the kind that drift detection is for: on one tick, in the worlds
  * it is set for, a system moves a coin by a number that is not the game's.
  */
-let glitch: { tick: number; worlds: Set<EcsWorld> | "all" } | undefined;
-/** Sets the bug, in the worlds given as `app.read(World)` gives them, or takes it away. */
-export const setGlitch = (
-  to: { tick: number; worlds: Set<ReadingWorld> | "all" } | undefined
-): void => {
-  glitch =
-    to === undefined
-      ? undefined
-      : {
-          tick: to.tick,
-          worlds:
-            to.worlds === "all" ? "all" : new Set([...to.worlds].map(whole)),
-        };
+let glitch: { tick: number; worlds: Set<ReadingWorld> | "all" } | undefined;
+/** Sets the bug, in the worlds as `app.read(World)` gives them, or takes it away. */
+export const setGlitch = (to: typeof glitch): void => {
+  glitch = to;
 };
 export const Fault = System.tick("ls/Fault", function* () {
   if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
     return;
   }
-  if (glitch.worlds !== "all" && !glitch.worlds.has(whole(yield* World))) {
+  if (glitch.worlds !== "all" && !glitch.worlds.has(yield* World)) {
     return;
   }
   let first = true;

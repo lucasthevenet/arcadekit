@@ -17,6 +17,7 @@ import {
 import type * as Action from "./Action";
 import type { TickOptions } from "./App";
 import type { CommandBuffer } from "./ecs/commands";
+import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type { Inbox } from "./Inbox";
@@ -115,7 +116,7 @@ export class Spans {
  */
 export interface Parts {
   readonly world: EcsWorld;
-  readonly commands: CommandBuffer;
+  readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
   /** What the game has taken in for its next tick, a store of the world. */
   readonly intake: Action.Intake;
@@ -166,9 +167,10 @@ export interface Loop {
     setup: Effect.Effect<unknown, unknown, unknown>
   ) => Exit.Exit<unknown, unknown>;
   /**
-   * Whether the game has come to rest, `app.settled`: nobody asked for a
-   * tick, no action is queued, no fiber waits, every event has been read and
-   * no state has a move to make.
+   * Whether the game has come to rest, `app.settled`: its last tick changed
+   * nothing but its time, no action was dispatched since, no action is
+   * queued, no fiber waits, every event has been read and no state has a
+   * move to make.
    */
   readonly settled: () => boolean;
 }
@@ -410,6 +412,9 @@ export const make = (parts: Parts): Loop => {
     return between("input");
   };
 
+  /** Whether the app was asked if it rests, `app.settled`, since it was made. */
+  let resting = false;
+
   /** Runs one tick, once the input stage has been seen to. */
   const ticked = (delta: number): Exit.Exit<void, unknown> => {
     runner.ticking = true;
@@ -441,6 +446,10 @@ export const make = (parts: Parts): Loop => {
       commands.apply();
       events.close(time.tick);
       log.ticked();
+      // Hashed only once someone asks whether the game rests.
+      intake.ticked(
+        resting ? world._frameHash(Stage.GameTime.component) : undefined
+      );
       return exit;
     } finally {
       runner.ticking = false;
@@ -516,6 +525,11 @@ export const make = (parts: Parts): Loop => {
       return exit;
     },
     settled: () => {
+      if (!resting) {
+        // What the next tick is compared with: the world as it is now.
+        resting = true;
+        intake.rest = world._frameHash(Stage.GameTime.component);
+      }
       if (
         intake.wanted ||
         intake.queued.length > 0 ||

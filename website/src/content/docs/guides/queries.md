@@ -160,7 +160,7 @@ Change queries are for data that changes occasionally. A system that processes e
 
 ## Counting and listing
 
-`view.count()` counts without visiting; for a change query, it is the number of entities it has left to visit. `view.entities()` returns the ids, and for a change query counts as a visit, like `each`. `yield* app.read(query)` gives you a view outside a system, in a test or a tool, of a query that only reads: one with `Query.writes`, `Query.changed` or `Query.added` doesn't compile there, since what it writes and visits belongs to the game.
+`view.count()` counts without visiting; for a change query, it is the number of entities it has left to visit. `view.entities()` returns the ids, and for a change query counts as a visit, like `each`. `yield* app.read(query)` gives you a view outside a system, in a test or a tool, of a query that only reads: one with `Query.writes`, `Query.changed` or `Query.added`, and `Query.removed`, don't compile there, since what they write and visit belongs to the game.
 
 ## Read more
 

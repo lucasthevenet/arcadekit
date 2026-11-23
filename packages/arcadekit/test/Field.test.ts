@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { Component, EcsWorld, Field, Query, SnapshotError } from "../src/index";
-import type { ComponentDef, Entity, RefCodec } from "../src/index";
+import type { ComponentDef, Entity, JsonValue, RefCodec } from "../src/index";
 
 const dates: RefCodec<Date> = {
   encode: (value) => {
@@ -34,7 +34,7 @@ type Profile = typeof Profile.Type;
 
 // Every kind of field that is not a number, in a table and in a sparse set.
 const fields = {
-  data: Field.json<unknown>(),
+  data: Field.json<JsonValue>(),
   when: Field.ref(dates),
   tags: Field.ref(sets),
   profile: Field.schema(Profile),
@@ -282,7 +282,7 @@ describe("a field that is not a number", () => {
   });
 
   it("refuses a snapshot whose JSON is damaged, as damaged and not as a changed component", () => {
-    const Note = Component.define("fld/Note", { v: Field.json<unknown>() });
+    const Note = Component.define("fld/Note", { v: Field.json<JsonValue>() });
     const world = new EcsWorld();
     world.spawn(Note.of({ v: { key: "value" } }));
     const bytes = world.snapshot();
@@ -306,8 +306,8 @@ describe("a field that is not a number", () => {
 
   it("saves plain data in a json field as JSON does: what comes back is what JSON makes of it", () => {
     const world = new EcsWorld();
-    const Note = Component.define("fld/Note", { v: Field.json<unknown>() });
-    const values: unknown[] = [
+    const Note = Component.define("fld/Note", { v: Field.json<JsonValue>() });
+    const values: JsonValue[] = [
       { a: 1, b: [true, null, "x", { c: [] }] },
       [],
       {},
@@ -321,6 +321,7 @@ describe("a field that is not a number", () => {
       null,
       // Not plain data, and JSON's own rules apply: the date becomes text,
       // the undefined member is dropped, and NaN inside becomes null.
+      // @ts-expect-error A Date is not JSON, nor is an undefined member.
       { when: new Date(0), gone: undefined, bad: Number.NaN },
     ];
     const entities = values.map((v) => world.spawn(Note.of({ v })));
@@ -332,5 +333,64 @@ describe("a field that is not a number", () => {
     expect(back[11]).toEqual({ when: "1970-01-01T00:00:00.000Z", bad: null });
     // The hash is of the saved form, so it agrees all the same.
     expect(copy.hash()).toBe(world.hash());
+  });
+});
+
+describe("a field that holds an object", () => {
+  it("holds in a json field only what JSON holds, refused where the field is made", () => {
+    const Notes = Component.define("fld/Notes", {
+      tags: Field.json<{ tags: string[] }>(),
+      // @ts-expect-error A Date comes back from JSON as text: it is a ref.
+      when: Field.json<Date>(),
+      // @ts-expect-error A Map comes back from JSON as an empty object.
+      counts: Field.json<Map<string, number>>(),
+      // @ts-expect-error JSON cannot write a function at all.
+      call: Field.json<() => void>(),
+    });
+    expect(Notes.kinds).toEqual(["json", "json", "json", "json"]);
+  });
+
+  it("is read-only where it is read, and replaced with set", () => {
+    const Tagged = Component.define("fld/Tagged", {
+      tags: Field.json<{ tags: string[] }>(),
+      labels: Field.ref(sets),
+    });
+    const world = new EcsWorld();
+    const entity = world.spawn(
+      Tagged.of({ tags: { tags: ["a"] }, labels: new Set(["x"]) })
+    );
+    // Only compiled: run, each line would change the stored value where no
+    // change query sees it and no rollback undoes it.
+    const inPlace = (): void => {
+      const read = world.get(entity, Tagged);
+      if (read === undefined) return;
+      // @ts-expect-error The array is read-only.
+      read.tags.tags.push("b");
+      // @ts-expect-error So is each of its elements.
+      read.tags.tags[0] = "b";
+      // @ts-expect-error A set read back is a ReadonlySet.
+      read.labels.add("y");
+      world.view(Query.all(Tagged).pipe(Query.writes(Tagged))).each((row) => {
+        // @ts-expect-error In a query, too.
+        row.tags.tags.push("b");
+        // @ts-expect-error In a query, too.
+        row.labels.add("y");
+      });
+    };
+    void inPlace;
+
+    world.set(entity, Tagged, {
+      tags: { tags: ["a", "b"] },
+      labels: new Set(["x", "y"]),
+    });
+    expect(world.get(entity, Tagged)?.tags).toEqual({ tags: ["a", "b"] });
+    expect(world.get(entity, Tagged)?.labels).toEqual(new Set(["x", "y"]));
+    // In a query, a field is assigned whole.
+    world.view(Query.all(Tagged).pipe(Query.writes(Tagged))).each((row) => {
+      row.tags = { tags: [...row.tags.tags, "c"] };
+      row.labels = new Set([...row.labels, "z"]);
+    });
+    expect(world.get(entity, Tagged)?.tags).toEqual({ tags: ["a", "b", "c"] });
+    expect(world.get(entity, Tagged)?.labels).toEqual(new Set(["x", "y", "z"]));
   });
 });

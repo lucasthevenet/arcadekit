@@ -45,6 +45,7 @@ import type { Scope } from "effect";
 import * as Action from "./Action";
 import { build } from "./Build";
 import type { Entity } from "./ecs/component";
+import type { Placed } from "./ecs/spawned";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -220,17 +221,25 @@ export interface Any {
    */
   readonly tick: (delta: number, options?: TickOptions) => void;
   /**
-   * Whether the game is at rest: a tick now would find no pending work. It is
-   * false while an action is queued, a state transition is pending, a fiber is
-   * due, or an event is waiting that some system hasn't had a chance to read. Reading it changes
-   * nothing.
+   * Whether the game is at rest: its last tick changed nothing but its
+   * time, and a tick now would find no pending work. It is false while an
+   * action is queued or was dispatched since the last tick, a state
+   * transition is pending, a fiber is due, or an event is waiting that some
+   * system hasn't had a chance to read. Reading it changes nothing of the
+   * game.
    *
-   * A driver set to tick only when needed checks it, so a game that moves only
-   * when its player does stands still in between. A system that acts every tick
-   * while a condition of its own holds isn't visible unless it signals so, with
-   * `Ticks.more`, each tick it has more to do; and an app that hasn't ticked
-   * yet, new or just loaded, isn't settled, so every system gets a tick to
-   * signal.
+   * A driver set to tick only when needed checks it, so a game that moves
+   * only when its player does stands still in between, and one with a clock
+   * running or a body in flight ticks for as long as they change the world.
+   * An app that hasn't ticked yet, new or just loaded, isn't settled.
+   *
+   * **Gotchas**
+   *
+   * - From the first time it is read, the app hashes its world after every
+   *   tick to tell whether it changed: about 10 µs for a thousand entities.
+   * - A system that waits for a moment of game time by comparing it with
+   *   `Time`, and writes nothing meanwhile, is never reached: game time
+   *   stands still at rest. Count down in the world instead.
    */
   readonly settled: boolean;
   /**
@@ -437,7 +446,7 @@ export interface App<E = never, HU = never> extends Any {
   readonly dispatch: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
-  ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
+  ) => Exit.Exit<Placed<ResultFor<HU, N>>, FailureFor<HU, N>>;
   /**
    * Queues an action for the start of the next tick. A refusal when it is
    * applied becomes an `Action.Rejected` event. It is the same as

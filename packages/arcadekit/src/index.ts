@@ -24,7 +24,9 @@ export {
   type RefCodec,
   type SingletonSpec,
 } from "./ecs/component";
+export type { JsonValue } from "./ecs/frozen";
 export type { Rng } from "./ecs/random";
+export type { Placed, Spawned, WithSpawned } from "./ecs/spawned";
 export {
   readSnapshot,
   type SnapshotComponent,
@@ -66,15 +68,7 @@ export * as Sound from "./Sound";
 export * as Stage from "./Stage";
 export * as State from "./State";
 export { EntityId } from "./Schemas";
-export {
-  Commands,
-  Events,
-  Frame,
-  Random,
-  Ticks,
-  Time,
-  World,
-} from "./Services";
+export { Commands, Events, Frame, Random, Time, World } from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";
 export * as Timeline from "./Timeline";

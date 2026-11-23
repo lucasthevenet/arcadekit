@@ -9,7 +9,8 @@
  *
  * No Effect dependency.
  */
-import type { Column, FieldKind } from "./component";
+import type { Column } from "./column";
+import type { FieldKind } from "./component";
 import { read, write } from "./format";
 import type { Shape, SnapshotStore, TableSource, Target } from "./format";
 import { STORAGES, corrupt } from "./snapshot";

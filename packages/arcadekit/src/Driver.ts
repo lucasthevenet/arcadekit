@@ -52,15 +52,16 @@ export interface StepOptions {
    *
    * `"always"`, the default: at `hz`, in real time.
    *
-   * `"whenNeeded"`: only while something is waiting for a tick, for a game that
-   * moves only when its player does. The input stage runs every frame, so a key
-   * press, a UI button or a message is handled immediately. While the app isn't
-   * settled (an action is queued, a state transition is pending, a system asked
-   * for one with `Ticks`, or an event hasn't been read by every system) it ticks
-   * at `hz` like any game, plus one more tick for systems that react a tick
-   * late to what a later system did. Then it rests: no tick runs, game time
-   * stands still, and the frame stage keeps drawing, with the frame at the last
-   * tick (`Frame.alpha` of 1).
+   * `"whenNeeded"`: only while the game changes, for a game that moves only
+   * when its player does. The input stage runs every frame, so a key press, a
+   * UI button or a message is handled immediately. While the app isn't
+   * settled (its last tick changed more than its time, an action is queued or
+   * was dispatched, a state transition is pending, or an event hasn't been read
+   * by every system) it ticks at `hz` like any game. Then it rests: no tick
+   * runs, game time stands still, and the frame stage keeps drawing, with the
+   * frame at the last tick (`Frame.alpha` of 1). Telling whether a tick
+   * changed the game costs a hash of the world each tick: about 10 µs for a
+   * thousand entities.
    */
   readonly ticks?: "always" | "whenNeeded";
 }
@@ -94,9 +95,6 @@ export const fixedStep = (
   const maxSteps = options.maxStepsPerCall ?? 5;
   const whenNeeded = options.ticks === "whenNeeded";
   let accumulator = 0;
-  // Ticking when needed: whether the last tick had something waiting for
-  // it, in which case one more follows it.
-  let settling = false;
   // Whether the call before this one found the game at rest.
   let resting = false;
   return (realDelta) => {
@@ -112,12 +110,10 @@ export const fixedStep = (
       app.input?.();
       if (whenNeeded) {
         // Asked after the input stage, which is where a move comes in.
-        const needed = app.settled !== true;
-        if (!needed && !settling) {
+        if (app.settled === true) {
           resting = true;
           break;
         }
-        settling = needed;
       }
       app.tick(dt);
       accumulator = Math.max(0, accumulator - dt);

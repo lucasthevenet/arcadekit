@@ -13,14 +13,14 @@ import {
   Field,
   Journal,
   Query,
+  Singleton,
   System,
-  Ticks,
   Time,
   Timeline,
   World,
   readSnapshot,
 } from "../src/index";
-import type { Entity } from "../src/index";
+import type { Entity, JsonValue } from "../src/index";
 import { Session } from "../src/net/index";
 import type { BuiltIn } from "../src/Services";
 import {
@@ -146,10 +146,12 @@ describe("a game that is put back to a moment", () => {
   });
 
   it("is as settled as it was", () => {
-    // A clock that runs for three ticks, and asks for each of them.
+    // A clock that runs down for two ticks.
+    const Left = Singleton.define("rw/Left", { ticks: Field.u8 }, { ticks: 2 });
     const Clock = System.tick("rw/Clock", function* () {
-      if ((yield* Time).tick < 3) {
-        (yield* Ticks).more();
+      const left = yield* Left.writes;
+      if (left.ticks > 0) {
+        left.ticks -= 1;
       }
     });
     withApp(App.make(App.define({ systems: [Clock] })), (app) => {
@@ -160,7 +162,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       expect(app.settled).toBe(true);
       Timeline.rewind(app, moment);
-      // The clock had asked for the next tick, and is owed it again.
+      // The clock had changed in the tick before, and is owed the next again.
       expect(app.settled).toBe(false);
     });
   });
@@ -316,11 +318,14 @@ describe("a game that is put back to a moment", () => {
 
   it("cannot be captured with a field that cannot be saved", () => {
     const Holder = Component.define("rw/Holder", {
-      thing: Field.json<unknown>(),
+      thing: Field.json<JsonValue>(),
     });
     const Hold = Action.define("rw/Hold", Schema.Struct({}));
     const hold = Action.handler(Hold, function* () {
-      (yield* Commands.spawns(Holder)).spawn(Holder.of({ thing: () => 1 }));
+      (yield* Commands.spawns(Holder)).spawn(
+        // @ts-expect-error A function is not JSON.
+        Holder.of({ thing: () => 1 })
+      );
     });
     withApp(App.make(App.define({ handlers: [hold] })), (app) => {
       expect(Exit.isSuccess(Timeline.capture(app))).toBe(true);
@@ -831,10 +836,13 @@ describe("Session.syncTest", () => {
 
   it("fails with the refusal of a game it can't capture, and takes the app over", () => {
     const Held = Component.define("vr/Held", {
-      thing: Field.json<unknown>(),
+      thing: Field.json<JsonValue>(),
     });
     const Hold = System.tick("vr/Hold", function* () {
-      (yield* Commands.spawns(Held)).spawn(Held.of({ thing: () => 1 }));
+      (yield* Commands.spawns(Held)).spawn(
+        // @ts-expect-error A function is not JSON.
+        Held.of({ thing: () => 1 })
+      );
     });
     withMade(Session.syncTest(App.define({ systems: [Hold] })), (test) => {
       expect(() =>

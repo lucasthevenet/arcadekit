@@ -22,7 +22,8 @@ import { dual } from "effect/Function";
 import type { RemovedReader } from "./ecs/changes";
 import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
 import type { QuerySpec, QueryView, Terms } from "./ecs/query";
-import { World, whole } from "./Services";
+import { World } from "./Services";
+import { whole } from "./services/handed";
 
 /**
  * An immutable query description, independent of any world.
@@ -304,6 +305,18 @@ export interface WatchesAdded<out N extends string> {
 }
 
 /**
+ * In a system's requirements, says that it reads which entities lost the
+ * component named `N`: it yields `Query.removed`. What it has read is the
+ * game's, so `app.read` doesn't take it. As with `Writes`, nobody writes this
+ * type or provides it.
+ *
+ * @category Type-level
+ */
+export interface WatchesRemoved<out N extends string> {
+  readonly "~arcadekit/Query/WatchesRemoved": N;
+}
+
+/**
  * In a system's requirements, says that it gives entities the component named
  * `N`, by spawning them with it or adding it: it asked for its commands with
  * `Commands.spawns`. As with `Writes`, nobody writes this type or provides it.
@@ -329,7 +342,11 @@ export type Watching = Watches<string> | WatchesAdded<string>;
  *
  * @category Type-level
  */
-export type Access = Writes<string> | Adds<string> | Watching;
+export type Access =
+  | Writes<string>
+  | Adds<string>
+  | Watching
+  | WatchesRemoved<string>;
 
 /**
  * The name of a component, as its definition's type has it, or as the type of
@@ -493,14 +510,20 @@ export const writes: {
  *
  * @category Models
  */
-export class Removed extends Effectable.Class<RemovedReader, never, World> {
-  private effect: Effect.Effect<RemovedReader, never, World> | undefined;
+export class Removed<N extends string = string> extends Effectable.Class<
+  RemovedReader,
+  never,
+  World | WatchesRemoved<N>
+> {
+  private effect:
+    | Effect.Effect<RemovedReader, never, World | WatchesRemoved<N>>
+    | undefined;
 
   constructor(readonly component: ComponentDef) {
     super();
   }
 
-  asEffect(): Effect.Effect<RemovedReader, never, World> {
+  asEffect(): Effect.Effect<RemovedReader, never, World | WatchesRemoved<N>> {
     return (this.effect ??= Effect.map(Effect.service(World), (world) =>
       whole(world).removed(this.component)
     ));
@@ -513,5 +536,6 @@ export class Removed extends Effectable.Class<RemovedReader, never, World> {
  *
  * @category Constructors
  */
-export const removed = (component: ComponentDef): Removed =>
-  new Removed(component);
+export const removed = <const D extends ComponentDef>(
+  component: D
+): Removed<NameOf<D>> => new Removed(component);

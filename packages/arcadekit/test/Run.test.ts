@@ -356,15 +356,16 @@ describe("Driver.run", () => {
     };
     repaint(90);
     expect(frames).toBe(90);
-    // The tick a new game runs to be asked in, and the one after it.
-    expect(made!.time.tick).toBe(2);
-    // A move: the tick that applies it, and one more.
+    // The tick a new game runs, which changes nothing but its time.
+    expect(made!.time.tick).toBe(1);
+    // A move: the tick that applies it, and the one that finds nothing
+    // more to change.
     ask(4);
     repaint(1);
-    expect(made!.time.tick).toBe(3);
+    expect(made!.time.tick).toBe(2);
     expect(Effect.runSync(made!.read(Score)).points).toBe(4);
     repaint(60);
-    expect(made!.time.tick).toBe(4);
+    expect(made!.time.tick).toBe(3);
     expect(frames).toBe(151);
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(display.pending).toBe(0);

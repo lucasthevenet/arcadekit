@@ -37,6 +37,7 @@
 import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
 
 import { SnapshotError } from "./ecs/snapshot";
+import type { WithSpawned } from "./ecs/spawned";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
 import * as Event from "./Event";
@@ -182,8 +183,9 @@ export interface AnyHandler {
  * - A handler can't dispatch another action, which throws. It issues one with
  *   `Actions.enqueue` instead, and a refusal rolls that back too.
  * - A refusal rolls back what the handler did to the world, and nothing outside
- *   it: not an object held in a field and mutated in place, not a call to your
- *   game's own service, and not a fiber it forked.
+ *   it: not a call to your game's own service, and not a fiber it forked. A
+ *   value a field holds is read-only, so it is replaced, and the refusal puts
+ *   it back.
  *
  * @category Constructors
  */
@@ -339,7 +341,7 @@ export class Actions extends Context.Service<
   {
     readonly enqueue: <N extends string, P>(
       action: ActionDef<N, P>,
-      payload: P
+      payload: WithSpawned<P>
     ) => void;
     /**
      * Returns whether the game has a handler for an action. An action without
@@ -412,6 +414,7 @@ interface IntakeMoment {
   readonly queued: readonly QueuedAction[];
   readonly heard: boolean;
   readonly wanted: boolean;
+  readonly rest: number | undefined;
 }
 
 /**
@@ -443,13 +446,28 @@ export class Intake implements Store<IntakeMoment> {
   queued: QueuedAction[] = [];
   heard = false;
   /**
-   * Whether the game asked for its next tick, with `Ticks.more`. A game that
-   * has not ticked yet has not been asked, and is taken to want one. It goes
-   * back with a rewind and with a refused action, and is neither hashed nor
-   * saved: a game that ticks in real time is the same game whether or not
-   * its systems ask, and a loaded game's first tick always runs.
+   * Whether the game wants its next tick: its last tick changed more than its
+   * time, or an action was dispatched since. A game that has not ticked yet
+   * is taken to want one. It goes back with a rewind and with a refused
+   * action, and is neither hashed nor saved: a game that ticks in real time
+   * is the same game whether or not it would rest, and a loaded game's first
+   * tick always runs.
    */
   wanted = true;
+  /**
+   * The world's hash after the last tick, without its time and what the
+   * stages between ticks change, once the app is asked whether it rests.
+   */
+  rest: number | undefined = undefined;
+
+  /** Notes the world after a tick: it wants another if it changed. */
+  ticked(rest: number | undefined): void {
+    if (rest === undefined || rest !== this.rest) {
+      this.wanted = true;
+    }
+    this.rest = rest;
+  }
+
   private txLength = 0;
   private txWanted = true;
 
@@ -525,6 +543,7 @@ export class Intake implements Store<IntakeMoment> {
       queued: this.queued.slice(),
       heard: this.heard,
       wanted: this.wanted,
+      rest: this.rest,
     };
   }
 
@@ -532,6 +551,7 @@ export class Intake implements Store<IntakeMoment> {
     this.queued = moment.queued.slice();
     this.heard = moment.heard;
     this.wanted = moment.wanted;
+    this.rest = moment.rest;
     for (const action of this.queued) {
       // It is waiting again: what became of it has not happened.
       if (action.entry !== undefined) {
@@ -544,6 +564,7 @@ export class Intake implements Store<IntakeMoment> {
     this.queued = [];
     this.heard = false;
     this.wanted = true;
+    this.rest = undefined;
   }
 
   begin(): void {

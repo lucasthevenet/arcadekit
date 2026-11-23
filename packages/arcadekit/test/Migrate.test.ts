@@ -2,6 +2,7 @@ import { Cause, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import type { JsonValue, Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -19,6 +20,7 @@ import {
   writeSnapshot,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
+import { placedIn } from "./placed";
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
 const withApp = <T extends Pick<App.Any, "read">, E, A>(
@@ -68,7 +70,7 @@ const Game0 = Plugin.make("mg/Game", {
 
 /** Plays a little of version 0 and saves it, with an action waiting. */
 const savedByVersion0 = () => {
-  const entities: Entity[] = [];
+  const spawned: Spawned[] = [];
   const Units0 = Plugin.make("mg/Units", {
     setup: Effect.gen(function* () {
       const commands = yield* Commands.spawns(Hp0, Pos0, Name0, Old0, Buff0);
@@ -84,18 +86,22 @@ const savedByVersion0 = () => {
         if (n % 3 === 0) {
           commands.add(entity, Buff0.of({ power: n, note: `buff ${n}` }));
         }
-        entities.push(entity);
+        spawned.push(entity);
       }
-      for (const entity of entities.splice(4, 1)) {
+      for (const entity of spawned.splice(4, 1)) {
         commands.despawn(entity);
       }
     }),
   });
-  return withApp(App.make(App.define({ plugins: [Game0, Units0] })), (app) => {
-    app.tick(1);
-    app.enqueue(Heal0, { amount: 3 });
-    return { save: unwrap(app.save()), entities };
-  });
+  return withApp(
+    App.make(App.define({ plugins: [Game0, Units0] })),
+    (app, world) => {
+      app.tick(1);
+      app.enqueue(Heal0, { amount: 3 });
+      const entities = spawned.map((id) => placedIn(world, id));
+      return { save: unwrap(app.save()), entities };
+    }
+  );
 };
 
 // --- version 2 of the same game -----------------------------------------------------
@@ -251,7 +257,7 @@ describe("a snapshot read without the program's components", () => {
       short: Field.u16,
       byte: Field.u8,
       other: Field.entity,
-      data: Field.json<unknown>(),
+      data: Field.json<JsonValue>(),
       when: Field.ref<Date>({
         encode: (date) => date.getTime(),
         decode: (data) => new Date(data as number),

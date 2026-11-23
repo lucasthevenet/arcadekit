@@ -75,23 +75,29 @@ export const entity = Field.entity;
 /**
  * Plain data, saved and hashed as is: a string, number, boolean, bigint, null
  * or undefined, or an array or object of strings, numbers, booleans and null.
- * `Field.json<string>()`.
+ * `Field.json<string>()`. A type that holds anything else, a `Date`, a `Map`
+ * or a class, doesn't compile: give it `Field.schema` or `Field.ref`.
+ *
+ * The value reads as read-only all the way down: an array or an object is
+ * replaced, with `world.set` or an assignment to the field in `each`, and
+ * never changed in place, which no change query would see and no refused
+ * action would undo.
  *
  * **Gotchas**
  *
  * - An array or an object is saved and hashed as its `JSON.stringify` text,
- *   once per hash, and is loaded as whatever JSON parses that text into: a Date
- *   inside an object comes back as a string. Give such a value a schema, with
- *   `Field.schema`.
- * - A value that isn't plain data can't be saved: the snapshot is refused and
- *   names the field.
+ *   once per hash, and is loaded as whatever JSON parses that text into.
+ * - A value that isn't plain data, which only a cast gets past the compiler,
+ *   can't be saved: the snapshot is refused and names the field.
  *
  * @category Fields
  */
 export const json = Field.json;
 /**
  * A value of any type, saved and hashed through the given codec: an `encode` to
- * plain data and a `decode` back. `Field.schema` is built on it.
+ * plain data and a `decode` back. `Field.schema` is built on it. The value
+ * reads as read-only all the way down, as a `json` field's does: replace it,
+ * and don't change it in place.
  *
  * **Gotchas**
  *
@@ -106,7 +112,9 @@ export const json = Field.json;
 export const ref = Field.ref;
 /**
  * A value that is neither saved nor hashed, such as a sprite or a handle to
- * something outside the game. It is `undefined` after a load.
+ * something outside the game. It is `undefined` after a load. It reads as
+ * read-only all the way down, as a `json` field's does: replace it, and don't
+ * change it in place, which no change query would see.
  *
  * @category Fields
  */

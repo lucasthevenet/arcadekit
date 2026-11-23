@@ -2,6 +2,7 @@ import { Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -16,8 +17,8 @@ import {
   Transform3d,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
 import * as Entry from "../src/Transform2d";
+import { placedIn } from "./placed";
 
 const { Position, Rotation, Scale } = Transform2d;
 
@@ -71,7 +72,7 @@ describe("Transform2d", () => {
     expect(Position).not.toBe(Transform3d.Position);
     expect(Rotation).not.toBe(Transform3d.Rotation);
     expect(Scale).not.toBe(Transform3d.Scale);
-    const spawned: Entity[] = [];
+    const spawned: Spawned[] = [];
     const Both = Plugin.make("t2/Both", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(Position, Transform3d.Position);
@@ -108,10 +109,11 @@ describe("Transform2d", () => {
           App.define({ plugins: [Both], handlers: [slide, lift] })
         );
         const world = yield* app.read(World);
+        const placed = spawned.map((id) => placedIn(world, id));
         const flat = yield* app.read(Query.all(Position));
         app.dispatch(Slide, { x: 3, y: 4 });
         expect(
-          spawned.map((both) => [
+          placed.map((both) => [
             world.get(both, Position),
             world.get(both, Transform3d.Position),
           ])
@@ -125,7 +127,7 @@ describe("Transform2d", () => {
         app.dispatch(Lift, {});
         expect(flat.count()).toBe(0);
         expect(
-          spawned.map((both) => world.get(both, Transform3d.Position))
+          placed.map((both) => world.get(both, Transform3d.Position))
         ).toEqual([{ x: 7, y: 8, z: 9 }]);
       })
     );
@@ -145,7 +147,7 @@ describe("Transform2d", () => {
         }
       });
     });
-    const spawned: Entity[] = [];
+    const spawned: Spawned[] = [];
     const Deal = Plugin.make("t2/Deal", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(Position, Rotation);
@@ -166,10 +168,12 @@ describe("Transform2d", () => {
         );
         const world = yield* app.read(World);
         app.tick(0.5);
-        return spawned.map((card) => [
-          world.get(card, Position),
-          world.get(card, Rotation),
-        ]);
+        return spawned
+          .map((id) => placedIn(world, id))
+          .map((card) => [
+            world.get(card, Position),
+            world.get(card, Rotation),
+          ]);
       })
     );
     expect(moved).toEqual([
@@ -179,7 +183,7 @@ describe("Transform2d", () => {
   });
 
   it("is saved and loaded by a flat game, which names none of its components", () => {
-    const spawned: Entity[] = [];
+    const spawned: Spawned[] = [];
     const Deal = Plugin.make("t2/Deal", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(
@@ -218,11 +222,13 @@ describe("Transform2d", () => {
         const world = yield* app.read(World);
         return {
           hash: world.hash(),
-          cards: spawned.map((card) => [
-            world.get(card, Position),
-            world.get(card, Rotation),
-            world.get(card, Scale),
-          ]),
+          cards: spawned
+            .map((id) => placedIn(world, id))
+            .map((card) => [
+              world.get(card, Position),
+              world.get(card, Rotation),
+              world.get(card, Scale),
+            ]),
         };
       })
     );

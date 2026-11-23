@@ -2,6 +2,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import type { JsonValue, Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -21,7 +22,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
-import { whole } from "../src/Services";
+import { placedIn } from "./placed";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -32,7 +33,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<unknown>(),
+  note: Field.json<JsonValue>(),
 };
 const Body = Component.define("tx/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("tx/Sheet", kinds);
@@ -48,7 +49,7 @@ const sheet = (n: number) => ({
   short: 60_000 + n,
   byte: 200 + (n % 50),
   other: n as Entity,
-  note: `note ${n}` as unknown,
+  note: `note ${n}`,
 });
 
 // Two singletons: one the populated world has written, one it has not.
@@ -601,7 +602,7 @@ const withApp = <T, A, E = never>(
 /** What the game begins with: bodies of every shape, and two freed slots. */
 const Scene = Plugin.make("tx/Scene", {
   setup: Effect.map(Commands.spawns(Body, Sheet, Aura, Chilled), (commands) => {
-    const entities: Entity[] = [];
+    const entities: Spawned[] = [];
     for (let n = 0; n < 12; n++) {
       const entity = commands.spawn(
         Body.of({ x: n, y: n }),
@@ -653,7 +654,7 @@ const waiting = (app: App.Any): string[] =>
 
 /** A game that begins with a body at each place, and the ids they are given. */
 const bodiesAt = (...places: { x: number; y: number }[]) => {
-  const ids: Entity[] = [];
+  const ids: Spawned[] = [];
   const plugin = Plugin.make("tx/Bodies", {
     setup: Effect.gen(function* () {
       const commands = yield* Commands.spawns(Body);
@@ -936,30 +937,26 @@ describe("an action that is accepted", () => {
           App.define({ plugins: [plugin], handlers: [twice] })
         );
         const world = yield* app.read(World);
-        const [target] = ids;
-        assert(target !== undefined);
+        const [id] = ids;
+        assert(id !== undefined);
+        const target = placedIn(world, id);
         expect(app.dispatch(Twice, { target })).toEqual(Exit.succeed([20, 2]));
         expect(world.get(target, Body)).toEqual({ x: 20, y: 1 });
       })
     );
   });
 
-  it("changes which entities exist through Commands: a direct change is a bug, and is undone like one", () => {
+  it("changes which entities exist through Commands alone: its world has no despawn", () => {
     const Direct = Action.define(
       "tx/Direct",
-      Schema.Struct({
-        target: EntityId,
-        how: Schema.Literals(["world", "commands"]),
-      })
+      Schema.Struct({ target: EntityId })
     );
-    const direct = Action.handler(Direct, function* ({ how, target }) {
+    const direct = Action.handler(Direct, function* ({ target }) {
       const world = yield* World.writes(Body);
       world.set(target, Body, { x: 42 });
-      if (how === "world") {
-        whole(world).despawn(target);
-      } else {
-        (yield* Commands).despawn(target);
-      }
+      // @ts-expect-error the set of entities changes through Commands
+      void world.despawn;
+      (yield* Commands).despawn(target);
     });
     const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
     run(
@@ -968,20 +965,10 @@ describe("an action that is accepted", () => {
           App.define({ plugins: [plugin], handlers: [direct] })
         );
         const world = yield* app.read(World);
-        const [target] = ids;
-        assert(target !== undefined);
-        const before = world.hash();
-        const exit = app.dispatch(Direct, { target, how: "world" });
-        expect(Exit.isFailure(exit)).toBe(true);
-        expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
-          /World\.despawn\(\) was called inside a transaction/
-        );
-        expect(world.hash()).toBe(before);
-        expect(world.get(target, Body)).toEqual({ x: 1, y: 1 });
-
-        expect(
-          Exit.isSuccess(app.dispatch(Direct, { target, how: "commands" }))
-        ).toBe(true);
+        const [id] = ids;
+        assert(id !== undefined);
+        const target = placedIn(world, id);
+        expect(Exit.isSuccess(app.dispatch(Direct, { target }))).toBe(true);
         expect(world.isAlive(target)).toBe(false);
       })
     );
@@ -1004,8 +991,9 @@ describe("an action that is accepted", () => {
         );
         app = made;
         const world = yield* made.read(World);
-        const [entity] = ids;
-        assert(entity !== undefined);
+        const [id] = ids;
+        assert(id !== undefined);
+        const entity = placedIn(world, id);
         const exit = made.dispatch(Outer, {});
         expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
           /dispatch\("tx\/Echo"\) was called from the handler of "tx\/Outer".*Actions\.enqueue/

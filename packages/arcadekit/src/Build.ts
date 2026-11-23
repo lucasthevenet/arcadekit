@@ -23,6 +23,7 @@ import type {
 } from "./App";
 import { hold } from "./app/parts";
 import { CommandBuffer } from "./ecs/commands";
+import type { Spawned } from "./ecs/spawned";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Inbox from "./Inbox";
@@ -33,7 +34,7 @@ import * as Plugin from "./Plugin";
 import * as Runner from "./Runner";
 import * as Save from "./Save";
 import * as Schedule from "./Schedule";
-import { Time, World, outside } from "./Services";
+import { Time, World } from "./Services";
 import type { TimeState } from "./Services";
 import * as Stage from "./Stage";
 import * as State from "./State";
@@ -119,7 +120,7 @@ export const build = <
       );
     }
     const world = new EcsWorld(seed === undefined ? undefined : { seed });
-    const commands = new CommandBuffer(world);
+    const commands = new CommandBuffer<Spawned>(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.
     const intake = new Action.Intake();
@@ -174,7 +175,6 @@ export const build = <
       time,
       commands,
       events,
-      intake,
       actions,
     });
     // Plugin layers are chained in dependency order, so each one can use the
@@ -273,7 +273,7 @@ export const build = <
 
     yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
 
-    const reading = Context.make(World, outside(world)).pipe(
+    const reading = Context.make(World, Context.get(builtIns, World)).pipe(
       Context.add(Time, time)
     );
     const app: App<TickError<S, P>, AllHandlers<H, P>> = {

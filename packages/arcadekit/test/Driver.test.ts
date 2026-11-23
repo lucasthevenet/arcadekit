@@ -14,7 +14,6 @@ import {
   Query,
   Singleton,
   System,
-  Ticks,
   Time,
 } from "../src/index";
 
@@ -593,7 +592,7 @@ describe("ticking when needed", () => {
     expect(game.calls.filter((call) => call === "input").length).toBe(47);
   });
 
-  it("ticks in the frame a move arrives in, while anything is waiting, and once more after", () => {
+  it("ticks in the frame a move arrives in, and while the game is not settled", () => {
     const game = makeStepped();
     const advance = Driver.fixedStep(game, { hz: 10, ticks: "whenNeeded" });
     advance(1);
@@ -621,29 +620,19 @@ describe("ticking when needed", () => {
     expect(advance(0.05)).toBe(0);
     expect(advance(0.05)).toBe(1);
     expect(game.settled).toBe(true);
-    // Settled, and once more: for what reacts a tick late.
-    expect(advance(0.1)).toBe(1);
-    expect(game.ticks).toBe(3);
-    // And then it rests.
+    // Settled: it rests.
     game.calls.length = 0;
     expect(advance(0.1)).toBe(0);
     expect(advance(0.1)).toBe(0);
     expect(game.calls).toEqual(["input", "frame 1", "input", "frame 1"]);
-    expect(game.ticks).toBe(3);
+    expect(game.ticks).toBe(2);
     // A frame long enough for the last tick and for finding the game at
     // rest after it: drawn all the way to that tick, in that same frame.
     arriving = true;
     advance(0.05);
     game.calls.length = 0;
-    expect(advance(0.3)).toBe(2);
-    expect(game.calls).toEqual([
-      "input",
-      "tick 0.1",
-      "input",
-      "tick 0.1",
-      "input",
-      "frame 1",
-    ]);
+    expect(advance(0.3)).toBe(1);
+    expect(game.calls).toEqual(["input", "tick 0.1", "input", "frame 1"]);
   });
 
   it("owes no ticks for the time it rested, and drops a backlog as ever while it does not rest", () => {
@@ -686,14 +675,13 @@ describe("ticking when needed", () => {
       const fuse = yield* Fuse.writes;
       if (fuse.left > 0) {
         fuse.left -= 1;
-        (yield* Ticks).more();
       }
     });
     const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
       App.make(
         App.define({
-          plugins: [rolling(60)],
+          plugins: [rolling(0)],
           systems: [Roll, Burn, Draw],
           handlers: [light],
         })
@@ -705,25 +693,24 @@ describe("ticking when needed", () => {
       )
     );
     let now = turn(display, 120, 0);
-    // Two seconds of frames. A game that has just been made runs a tick,
-    // in which it could have asked for more, and the one that follows the
-    // last; then nothing asks, and the ball rolls no further.
-    expect(app.time.tick).toBe(2);
+    // Two seconds of frames. A game that has just been made runs a tick, which
+    // changes nothing of a ball at rest; then no tick runs.
+    expect(app.time.tick).toBe(1);
     expect(alphas.length).toBe(120);
     expect(alphas.at(-1)).toBe(1);
     expect(display.pending).toBe(1);
     expect(display.watching).toBe(1);
-    // A fuse lit from outside: the six ticks it burns, the one that finds it
-    // out, and one more.
+    // A fuse lit from outside: the six ticks it burns, and the one that
+    // finds it out and changes nothing.
     app.enqueue(Light, {});
     now = turn(display, 60, now);
-    expect(app.time.tick).toBe(10);
+    expect(app.time.tick).toBe(8);
     // Hidden, it asks for nothing; shown, it is at rest as it was.
     display.hide();
     expect(display.pending).toBe(0);
     display.show();
     now = turn(display, 30, now + 5000);
-    expect(app.time.tick).toBe(10);
+    expect(app.time.tick).toBe(8);
     expect(display.pending).toBe(1);
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(display.pending).toBe(0);

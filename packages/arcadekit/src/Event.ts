@@ -30,6 +30,7 @@
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
 import { SnapshotError } from "./ecs/snapshot";
+import type { WithSpawned } from "./ecs/spawned";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
@@ -51,6 +52,12 @@ export interface EventReader<P> {
 }
 
 /**
+ * A payload as its readers get it: an event is read once the spawns of the
+ * code that emitted it are applied, so an id it spawned is an entity by then.
+ */
+const placedLater = <P>(payload: WithSpawned<P>): P => payload as P;
+
+/**
  * A tick system's handle to one event type, from `yield* SomeEvent.emits`: it
  * emits events, and reads the ones it hasn't seen yet.
  *
@@ -59,9 +66,10 @@ export interface EventReader<P> {
 export interface EventHandle<P> extends EventReader<P> {
   /**
    * Queues an event. Synchronous, so it can be called inside query loops. A
-   * method, so that any event is an `EventHandle<unknown>`.
+   * method, so that any event is an `EventHandle<unknown>`. An entity in the
+   * payload may be one `Commands.spawn` returned: it is read once placed.
    */
-  emit(payload: P): void;
+  emit(payload: WithSpawned<P>): void;
 }
 
 // Every event this program has defined, by name, so that an app can load a
@@ -627,7 +635,7 @@ export class EventBus {
       const listener = this.outbox.outside(def);
       return {
         emit: (payload) => {
-          this.emit(def, payload);
+          this.emit(def, placedLater(payload));
         },
         read: listener.read,
       };
@@ -648,7 +656,7 @@ export class EventBus {
           if (this.reader === undefined) {
             throw outside(def);
           }
-          waiting.emit(channel, payload);
+          waiting.emit(channel, placedLater(payload));
         },
         read: () => waiting.read(channel, reader),
       };

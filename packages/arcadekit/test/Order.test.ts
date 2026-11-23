@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -14,9 +15,9 @@ import {
   Time,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 import { withApp } from "./peers";
+import { placedIn } from "./placed";
 
 const Position = Component.define("or/Position", { x: Field.f32 });
 const Health = Component.define("or/Health", { hp: Field.i32 });
@@ -282,17 +283,18 @@ describe("what a system spawns and sets", () => {
   };
 
   it("is named where the commands are asked for, and a component that was not named does not compile", () => {
-    let spawned: Entity | undefined;
+    let spawned: Spawned | undefined;
     const Shoot = System.tick("Shoot", function* () {
       const commands = yield* Commands.spawns(Dot, Position);
-      spawned = commands.spawn(Dot, Position.of({ x: 3 }));
-      commands.add(spawned, Position.of({ x: 4 }));
+      const shot = commands.spawn(Dot, Position.of({ x: 3 }));
+      spawned = shot;
+      commands.add(shot, Position.of({ x: 4 }));
       commands.spawn(
         // @ts-expect-error the commands were not asked for health
         Health.of({ hp: 1 })
       );
       commands.add(
-        spawned,
+        shot,
         // @ts-expect-error nor to add it
         Health
       );
@@ -308,8 +310,10 @@ describe("what a system spawns and sets", () => {
     });
     withApp(App.make(App.define({ systems: [Shoot, Reap] })), (app, world) => {
       app.tick(1);
-      expect(world.get(spawned!, Position)).toEqual({ x: 4 });
-      expect(world.has(spawned!, Dot)).toBe(false);
+      assert(spawned !== undefined);
+      const shot = placedIn(world, spawned);
+      expect(world.get(shot, Position)).toEqual({ x: 4 });
+      expect(world.has(shot, Dot)).toBe(false);
     });
   });
 
@@ -348,12 +352,14 @@ describe("what a system spawns and sets", () => {
   });
 
   it("names what it sets where the world is asked for, and a component that was not named does not compile", () => {
-    let target: Entity | undefined;
+    let target: Spawned | undefined;
     const Heal = System.tick("Heal", function* () {
       const world = yield* World.writes(Health);
-      world.set(target!, Health, { hp: world.get(target!, Health)!.hp + 1 });
+      assert(target !== undefined);
+      const patient = placedIn(world, target);
+      world.set(patient, Health, { hp: world.get(patient, Health)!.hp + 1 });
       world.set(
-        target!,
+        patient,
         // @ts-expect-error the world was not asked for positions
         Position,
         { x: 1 }
@@ -362,9 +368,11 @@ describe("what a system spawns and sets", () => {
     const Look = System.tick("Look", function* () {
       // The world asked for with nothing named reads.
       const world = yield* World;
-      world.get(target!, Health);
+      assert(target !== undefined);
+      const patient = placedIn(world, target);
+      world.get(patient, Health);
       world.set(
-        target!,
+        patient,
         // @ts-expect-error and sets nothing
         Health,
         { hp: 0 }
@@ -384,7 +392,8 @@ describe("what a system spawns and sets", () => {
       App.make(App.define({ plugins: [Patient], systems: [Heal] })),
       (app, world) => {
         app.tick(1);
-        expect(world.get(target!, Health)).toEqual({ hp: 2 });
+        assert(target !== undefined);
+        expect(world.get(placedIn(world, target), Health)).toEqual({ hp: 2 });
       }
     );
   });

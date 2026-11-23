@@ -28,6 +28,7 @@
  */
 import { ChangeLog, RemovedReader } from "./changes";
 import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
+import type { Column } from "./column";
 import {
   GENERATIONS,
   INDEX_MASK,
@@ -41,7 +42,6 @@ import {
   targetless,
 } from "./component";
 import type {
-  Column,
   ComponentDef,
   ComponentInput,
   ComponentValue,
@@ -64,8 +64,11 @@ import {
 import { QueryView, describeSpec } from "./query";
 import type { QuerySpec, Terms } from "./query";
 import { Rng } from "./random";
+import { NOT_PLACED, WHOLE } from "./records";
+import type { Saved, Single } from "./records";
 import { STORAGES, SnapshotError, WIDTH, corrupt } from "./snapshot";
 import type { Store } from "./store";
+import type { Columns } from "./table";
 import {
   RelationIndex,
   SparseSet,
@@ -76,52 +79,14 @@ import {
   tableKey,
   writeRow,
 } from "./table";
-import type { Columns } from "./table";
 
-const NOT_PLACED = -1;
 const FREE = -2;
 /** The number of slots: what an id's generation is multiplied by. */
 const SLOTS = INDEX_MASK + 1;
-/** In a `Saved`, the row value that means "every row". */
-const WHOLE = -1;
 /** What `hash` folds in before each singleton, to distinguish it from a sparse set. */
 const SINGLETON = 0x53_49_4e_47;
 const storageOf = (def: ComponentDef): 0 | 1 | 2 =>
   def.single ? 2 : def.storage === "sparse" ? 1 : 0;
-
-/** The single instance of a singleton that a world holds. */
-interface Single {
-  readonly def: ComponentDef;
-  /** One row. */
-  readonly columns: Columns;
-  /**
-   * Its value in a world that hasn't written it, once the world has been given
-   * it: what `restore` puts back when the snapshot doesn't hold it.
-   */
-  initial: Readonly<Record<string, unknown>> | undefined;
-  /**
-   * False until it is first written. Until then it holds its initial value and
-   * behaves as if absent: it isn't saved, and isn't in the hash.
-   */
-  written: boolean;
-  /** What `World.singleton` returns: reads and writes go to `columns`. */
-  readonly value: object;
-}
-
-/** What a transaction saved before a write: one row, or whole columns. */
-interface Saved {
-  readonly cols: Columns;
-  readonly def: ComponentDef;
-  /** `WHOLE`, or the one row that was saved. */
-  readonly row: number;
-  /** How many rows `copies` holds when it holds whole columns. */
-  readonly count: number;
-  /**
-   * For each field, a copy of the column's first `count` rows (the array may be
-   * longer, since it is reused), or the single row's value.
-   */
-  readonly copies: unknown[];
-}
 
 // ---------------------------------------------------------------------------
 // World
@@ -1959,13 +1924,14 @@ export class World {
   /**
    * @internal
    * `hash()` without the stores the stages between ticks may change: what
-   * those stages must leave as it was.
+   * those stages must leave as it was. Without the singleton `clock` too, it
+   * is what a tick that changed nothing but its time leaves as it was.
    */
-  _frameHash(): number {
-    return this.hashing(false);
+  _frameHash(clock?: ComponentDef): number {
+    return this.hashing(false, clock);
   }
 
-  private hashing(betweenTicks: boolean): number {
+  private hashing(betweenTicks: boolean, clock?: ComponentDef): number {
     const { shapes } = this;
     // The ids to come: the next unused index, then the freed slots in the
     // order they will be reused, each with the generation it will get.
@@ -2045,6 +2011,9 @@ export class World {
     // from its not being there.
     if (this.singles.length > 0) {
       for (const { columns, def } of this.writtenSingles()) {
+        if (def === clock) {
+          continue;
+        }
         h = add(add(h, SINGLETON), shapes[def.id]!);
         for (let f = 0; f < def.fields.length; f++) {
           h = addColumn(

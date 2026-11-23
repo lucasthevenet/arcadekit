@@ -46,7 +46,8 @@ Other values use a field type that declares how snapshots and the hash treat the
 
 - The hash covers exactly what a snapshot saves, in its saved form, so a world loaded from a snapshot has the same hash.
 - A snapshot fails, naming the field, when it meets a value it can't encode: a non-plain value in a `json` field, or one a codec or schema rejects. Loading fails the same way when a codec rejects a value.
-- A `json` field returns what JSON makes of a value: a `Date` inside an object comes back as a string. Give such values a schema instead.
+- A `json` field takes a type JSON holds: `Field.json<Date>()` or an object with a `Map` in it doesn't compile. Give such values a schema instead.
+- A value a `json`, `ref`, `schema` or `transient` field holds is read-only all the way down. Replace it, with `world.set` or by assigning the field in `each`, rather than changing it in place: a change in place would be seen by no change query and undone by no refused action, so it doesn't compile.
 - Every hash encodes each `schema` and `ref` value, and stringifies each array or object in a `json` field. Use these fields for small or rarely changing data, and keep numbers that change every tick in numeric fields.
 
 ## Creating and changing entities

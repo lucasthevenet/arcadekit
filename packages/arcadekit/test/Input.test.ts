@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
@@ -25,7 +25,7 @@ import {
   World,
   readSnapshot,
 } from "../src/index";
-import { whole } from "../src/Services";
+import type { Rng } from "../src/index";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
@@ -90,6 +90,15 @@ const ship = (app: App.Any): { x: number; shots: number } => {
   return found;
 };
 /** A game that begins with a ship, and no way to steer it. */
+/**
+ * The tick's generator, which is the world's, kept by a plugin's layer as a
+ * service of its own: how a frame or input system could draw from it.
+ */
+class Dice extends Context.Service<Dice, Rng>()("in/Dice") {}
+const Kept = Plugin.make("in/Kept", {
+  layer: Layer.effect(Dice, Effect.service(Random)),
+});
+
 const Docked = Plugin.make("in/Docked", {
   setup: Effect.map(Commands.spawns(Ship), (commands) => {
     commands.spawn(Ship.of({ x: 1, shots: 0 }));
@@ -329,9 +338,9 @@ describe("the input stage", () => {
     const bump = Action.handler(Bump, function* () {
       (yield* Score.writes).points += 1;
     });
-    const attempts: Record<string, Effect.Effect<unknown, never, World>> = {
-      "A draw from world.random": Effect.map(World, (world) =>
-        whole(world).random.next()
+    const attempts: Record<string, Effect.Effect<unknown, never, Dice>> = {
+      "A draw from world.random": Effect.map(Effect.service(Dice), (dice) =>
+        dice.next()
       ),
     };
     for (const [what, attempt] of Object.entries(attempts)) {
@@ -342,7 +351,7 @@ describe("the input stage", () => {
           });
           const app = yield* App.make(
             App.define({
-              plugins: [Docked],
+              plugins: [Docked, Kept],
               handlers: [bump],
               systems: [Vandal],
             }),

@@ -26,10 +26,12 @@
 import { Cause, Data, Exit, Schema } from "effect";
 
 import type { CommandBuffer } from "./ecs/commands";
+import type { Entity } from "./ecs/component";
 import { readSingleton, readSnapshot, writeSnapshot } from "./ecs/contents";
 import type { SnapshotContents } from "./ecs/contents";
 import { SnapshotError } from "./ecs/snapshot";
 import type { SnapshotProblem } from "./ecs/snapshot";
+import type { Spawned } from "./ecs/spawned";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 
@@ -305,7 +307,7 @@ const describeCause = (cause: Cause.Cause<unknown>): string => {
  * @internal
  */
 export const taking = <A>(
-  commands: CommandBuffer,
+  commands: CommandBuffer<Entity | Spawned>,
   to: "save" | "capture",
   take: () => A
 ): Exit.Exit<A, SaveRefused> => {
@@ -334,7 +336,7 @@ export const taking = <A>(
  */
 export const take = (
   world: World,
-  commands: CommandBuffer,
+  commands: CommandBuffer<Entity | Spawned>,
   version: number,
   logLength: number
 ): Exit.Exit<Save, SaveRefused> =>

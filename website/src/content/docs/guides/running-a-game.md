@@ -89,29 +89,19 @@ NodeRuntime.runMain(
 
 ## Ticking only when needed
 
-A turn-based game, a puzzle or a menu has nothing to do between moves. Ticking sixty times a second regardless runs its systems, advances its time and fills its log with checkpoints for nothing. With `ticks: "whenNeeded"`, the loop draws every frame but only ticks while something is pending:
+A turn-based game, a puzzle or a menu has nothing to do between moves. Ticking sixty times a second regardless runs its systems, advances its time and fills its log with checkpoints for nothing. With `ticks: "whenNeeded"`, the loop draws every frame but only ticks while the game changes:
 
 ```ts
-import {
-  App,
-  Driver,
-  Field,
-  Plugin,
-  Singleton,
-  System,
-  Ticks,
-  Time,
-} from "arcadekit";
+import { App, Driver, Field, Plugin, Singleton, System, Time } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 
 const Clock = Singleton.define("chess/Clock", { left: Field.f32 }, { left: 0 });
 
-// It requests the next tick while the clock runs.
+// The game ticks while the clock runs, since each tick changes it.
 const Countdown = System.tick("chess/Countdown", function* () {
   const clock = yield* Clock.writes;
   if (clock.left > 0) {
-    clock.left -= (yield* Time).delta;
-    (yield* Ticks).more();
+    clock.left = Math.max(0, clock.left - (yield* Time).delta);
   }
 });
 
@@ -131,18 +121,15 @@ Browser.runMain(
 ```
 
 - The input stage runs every frame, so a key press, a UI button or a network message is received in the frame it arrives, and the tick it requests runs then.
-- The app ticks at `hz` while it isn't settled, plus one more tick for systems that react a tick late to a system listed after them. Then it rests: no tick runs and game time stands still.
-- `app.settled` reports whether anything is pending: an action to apply, a state to enter, a tick some system asked for, a fiber that is due, or an event some system hasn't read.
-- A newly created or loaded app isn't settled. It runs one tick, in which every system can request more, plus the following one, before it rests.
+- The app ticks at `hz` while it isn't settled. Then it rests: no tick runs and game time stands still.
+- `app.settled` is false while the last tick changed more than the game's time, or while anything is pending: an action to apply or one dispatched since the last tick, a state to enter, a fiber that is due, or an event some system hasn't read. A countdown or a body in flight keeps the game ticking for as long as it moves, with nothing to declare, and the game rests after the first tick that changes nothing.
+- To tell, the app hashes its world after each tick, from the first time `app.settled` is read: about 10 µs for a thousand entities and 0.9 ms for a hundred thousand. A game that ticks in real time never reads it, and pays nothing.
+- A newly created or loaded app isn't settled. It runs one tick, and rests after it if that tick changed nothing.
 - The frame stage runs every frame, including at rest, with a `Frame.alpha` of 1, so interpolated rendering draws the game where it is.
 - Resting isn't part of the game. A recording holds the actions, their ticks and the tick the game had reached, and a replay runs them back to back and ends on the same hash.
 - A frame of a game at rest costs about 5 µs with device input, a state and a view: reading the devices, checking the app, and the frame stage.
-
-Some pending work is invisible to the app, so you declare it:
-
-- A system with work to do every tick while a condition of its own holds, such as a countdown or a body in flight, requests the next tick itself with `(yield* Ticks).more()` on every tick it has more to do, as `Countdown` does. The game rests after the first tick in which nobody requests one. A system that never requests stops with the game, and nothing distinguishes it from one with nothing to do.
-- Handlers can request ticks too. A system of the frame or input stage cannot require `Ticks`: rendering does not decide when the game ticks. Under a driver that ticks in real time `more` does nothing, so call it in any system of the tick that might run in a game that rests. Requests aren't saved.
-- A system that reacts through a change query to a system listed after it reacts a tick late, and gets only the one extra tick after the last: two such systems in a row fall a tick short. List the system that reacts after the one that makes the change, or have the system that made the change request a tick.
+- A system that draws from `Random` every tick changes the world every tick, so the game never rests. Draw only when something happens.
+- Game time stands still at rest, so a system that waits for a moment of game time by comparing it with `Time` alone, writing nothing while it waits, is never reached. Count down in the world instead, as `Countdown` does.
 
 ## Stepping by hand
 

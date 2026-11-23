@@ -2,6 +2,7 @@ import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   App,
   Commands,
@@ -14,8 +15,8 @@ import {
   Transform3d,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
 import * as Entry from "../src/Transform3d";
+import { placedIn } from "./placed";
 
 const { Position, Rotation, Scale } = Transform3d;
 
@@ -79,7 +80,7 @@ describe("Transform3d", () => {
         }
       );
     });
-    const spawned: Entity[] = [];
+    const spawned: Spawned[] = [];
     const Rocks = Plugin.make("tf/Rocks", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(Position);
@@ -97,7 +98,7 @@ describe("Transform3d", () => {
         );
         const world = yield* app.read(World);
         app.tick(0.5);
-        return spawned.map((rock) => world.get(rock, Position));
+        return spawned.map((id) => world.get(placedIn(world, id), Position));
       })
     );
     expect(moved).toEqual([
@@ -170,7 +171,7 @@ describe("Transform3d", () => {
   });
 
   it("is saved and loaded by a game that names none of its components, with no renderer anywhere", () => {
-    const spawned: Entity[] = [];
+    const spawned: Spawned[] = [];
     const Rocks = Plugin.make("tf/Rocks", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(
@@ -195,11 +196,13 @@ describe("Transform3d", () => {
       const world = yield* World;
       return {
         hash: world.hash(),
-        rocks: spawned.map((rock) => [
-          world.get(rock, Position),
-          world.get(rock, Rotation),
-          world.get(rock, Scale),
-        ]),
+        rocks: spawned
+          .map((id) => placedIn(world, id))
+          .map((rock) => [
+            world.get(rock, Position),
+            world.get(rock, Rotation),
+            world.get(rock, Scale),
+          ]),
       };
     });
     const { made, save } = run(

@@ -1,4 +1,12 @@
-import { Cause, Effect, Random as EffectRandom, Exit, Schema } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Random as EffectRandom,
+  Exit,
+  Layer,
+  Schema,
+} from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -27,8 +35,7 @@ import {
   World,
   readSnapshot,
 } from "../src/index";
-import type { Entity } from "../src/index";
-import { whole } from "../src/Services";
+import type { Entity, Rng } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
@@ -50,6 +57,15 @@ const Watched = Query.all(Ball).pipe(Query.changed(Ball));
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
+
+/**
+ * The tick's generator, which is the world's, kept by a plugin's layer as a
+ * service of its own: how a frame or input system could draw from it.
+ */
+class Dice extends Context.Service<Dice, Rng>()("fr/Dice") {}
+const Kept = Plugin.make("fr/Kept", {
+  layer: Layer.effect(Dice, Effect.service(Random)),
+});
 
 const Roll = System.tick("Roll", function* () {
   const { delta } = yield* Time;
@@ -555,7 +571,7 @@ describe("the frame stage", () => {
         const drawn: string[] = [];
         const Cheat = System.frame("Cheat", function* () {
           if (cheat) {
-            whole(yield* World).random.next();
+            (yield* Dice).next();
           }
         });
         const After = System.frame("After", function* () {
@@ -564,7 +580,7 @@ describe("the frame stage", () => {
         // Not checked with verifyFrames: this is found either way.
         const app = yield* App.make(
           App.define({
-            plugins: [racked({ x: 1, vx: 1 })],
+            plugins: [racked({ x: 1, vx: 1 }), Kept],
             systems: [Cheat, After, Roll],
           }),
           { seed: 5 }
@@ -1001,7 +1017,7 @@ describe("a frame stage that is checked", () => {
           }
         });
       } else if (how === "random") {
-        whole(yield* World).random.next();
+        (yield* Dice).next();
       }
     });
   const Honest = System.frame("Honest", function* () {
@@ -1045,7 +1061,7 @@ describe("a frame stage that is checked", () => {
         Effect.gen(function* () {
           const app = yield* App.make(
             App.define({
-              plugins: [racked({ x: 1, vx: 1 })],
+              plugins: [racked({ x: 1, vx: 1 }), Kept],
               systems: [Honest, Sneak(how), Roll],
             }),
             { verifyFrames: true }
@@ -1079,7 +1095,7 @@ describe("a frame stage that is checked", () => {
       Effect.gen(function* () {
         const checked = yield* App.make(
           App.define({
-            plugins: [racked({ x: 1, vx: 1 })],
+            plugins: [racked({ x: 1, vx: 1 }), Kept],
             systems: [Honest, Sneak("none"), Roll],
           }),
           { verifyFrames: true }
@@ -1092,7 +1108,7 @@ describe("a frame stage that is checked", () => {
         // Unchecked, the write goes through: it is the game's to avoid.
         const unchecked = yield* App.make(
           App.define({
-            plugins: [racked({ x: 1, vx: 1 })],
+            plugins: [racked({ x: 1, vx: 1 }), Kept],
             systems: [Sneak("raw"), Roll],
           })
         );

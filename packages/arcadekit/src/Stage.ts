@@ -17,19 +17,13 @@ import * as Action from "./Action";
 import type { CommandBuffer } from "./ecs/commands";
 import { Component, Field } from "./ecs/component";
 import { Rng } from "./ecs/random";
+import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import * as Input from "./Input";
-import {
-  Commands,
-  Events,
-  Frame,
-  Random,
-  Ticks,
-  Time,
-  World,
-} from "./Services";
+import { Commands, Events, Frame, Random, Time, World } from "./Services";
 import type { FrameState, TimeState } from "./Services";
+import { handed } from "./services/handed";
 
 /**
  * The prefix of a reader's name in the world's change logs when it is a
@@ -109,22 +103,15 @@ const effectRandom = (
 export const tick = (parts: {
   readonly world: EcsWorld;
   readonly time: Readonly<TimeState>;
-  readonly commands: CommandBuffer;
+  readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
-  /** Where `Ticks.more` says the game wants its next tick. */
-  readonly intake: Action.Intake;
   readonly actions: Actions;
 }) => {
-  const { actions, commands, events, intake, time, world } = parts;
+  const { actions, commands, events, time, world } = parts;
   return Context.empty().pipe(
-    Context.add(World, world),
+    Context.add(World, handed(world)),
     Context.add(Time, time),
     Context.add(Commands, commands),
-    Context.add(Ticks, {
-      more() {
-        intake.wanted = true;
-      },
-    }),
     Context.add(Events, events),
     Context.add(Action.Actions, actions),
     Context.add(Random, world.random),
@@ -150,7 +137,7 @@ export const frame = (
   }
 ): Context.Context<unknown> => {
   const random = new Rng(parts.seed);
-  return Context.omit(Ticks)(context).pipe(
+  return context.pipe(
     Context.add(Frame, parts.frame),
     Context.add(Random, random),
     Context.add(EffectRandom.Random, effectRandom(random)),

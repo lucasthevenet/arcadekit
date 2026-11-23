@@ -19,6 +19,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import * as Services from "../src/Services";
 
 const Position = Component.define("rd/Position", { x: Field.f32 });
 const Score = Singleton.define(
@@ -99,6 +100,8 @@ describe("a game, from outside it", () => {
           app.read(Pushed),
           // @ts-expect-error what a change query has visited is the game's
           app.read(Moved),
+          // @ts-expect-error and so is what a removal query has read
+          app.read(Query.removed(Position)),
           // @ts-expect-error an event is heard by the game's own code
           app.read(Ping),
           // @ts-expect-error setting a state changes it
@@ -106,7 +109,7 @@ describe("a game, from outside it", () => {
           // @ts-expect-error writing a singleton changes it
           app.read(Score.writes),
         ];
-        expect(reads).toHaveLength(7);
+        expect(reads).toHaveLength(8);
         expect(app.enqueue(Drop, { x: 1 })).toEqual(
           expect.objectContaining({ _tag: "Success" })
         );
@@ -161,5 +164,28 @@ describe("a game, from outside it", () => {
         })
       )
     ).toThrow(/app\.read\(\) was run during a tick/);
+  });
+});
+
+describe("the world a system is handed", () => {
+  it("is not the world itself, so no check of its class reaches spawn or despawn", () => {
+    const seen: unknown[] = [];
+    const Look = System.tick("rd/Look", function* () {
+      seen.push(yield* World, yield* World.writes(Position));
+    });
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ systems: [Look] }));
+        app.tick(1 / 60);
+        expect(seen).toHaveLength(2);
+        for (const world of seen) {
+          expect(world).not.toBeInstanceOf(EcsWorld);
+        }
+        // One world, whoever asks: a system, with or without writes, and app.read.
+        expect(new Set([...seen, yield* app.read(World)]).size).toBe(1);
+      })
+    );
+    // What unwraps it is no export of the entry.
+    expect(Object.keys(Services)).not.toContain("whole");
   });
 });

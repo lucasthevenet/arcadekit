@@ -10,14 +10,14 @@ import {
   Query,
   SnapshotError,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { ComponentDef, Entity, JsonValue } from "../src/index";
 import { Shouts } from "./stores";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
 const Marked = Component.tag("rs/Marked");
 const Aura = Component.define(
   "rs/Aura",
-  { power: Field.i32, note: Field.json<unknown>() },
+  { power: Field.i32, note: Field.json<JsonValue>() },
   { storage: "sparse" }
 );
 const Chilled = Component.tag("rs/Chilled", { storage: "sparse" });

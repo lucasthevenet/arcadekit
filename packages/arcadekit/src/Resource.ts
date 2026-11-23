@@ -11,6 +11,8 @@
  */
 import { Context, Layer } from "effect";
 
+import type { Frozen as Deep } from "./ecs/frozen";
+
 /**
  * A resource's value: read-only all the way down, since one value is shared
  * by every app that reads it. A function, and what isn't an object, are as
@@ -18,15 +20,7 @@ import { Context, Layer } from "effect";
  *
  * @category Type-level
  */
-export type Frozen<A> = A extends (...args: never) => unknown
-  ? A
-  : A extends ReadonlyMap<infer K, infer V>
-    ? ReadonlyMap<K, Frozen<V>>
-    : A extends ReadonlySet<infer V>
-      ? ReadonlySet<Frozen<V>>
-      : A extends object
-        ? { readonly [K in keyof A]: Frozen<A[K]> }
-        : A;
+export type Frozen<A> = Deep<A>;
 
 /** Freezes plain objects and arrays, and what they hold, in place. */
 const freeze = <A>(value: A): Frozen<A> => {

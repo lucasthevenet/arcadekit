@@ -14,6 +14,7 @@ import {
   System,
   Time,
 } from "../src/index";
+import type { JsonValue } from "../src/index";
 import { Drift, Session } from "../src/net/index";
 import {
   Coin,
@@ -492,12 +493,13 @@ describe("a rollback session", () => {
 
   it("fails a tick it cannot be sure of when the game cannot be captured", () => {
     const Holder = Component.define("rb/Holder", {
-      thing: Field.json<unknown>(),
+      thing: Field.json<JsonValue>(),
     });
     const Spoil = System.tick("rb/Spoil", function* () {
       if ((yield* Time).tick === 2) {
         (yield* Query.all(Holder).pipe(Query.writes(Holder))).each((holder) => {
           // Not plain data: no snapshot can hold it.
+          // @ts-expect-error A function is not JSON.
           holder.thing = () => 1;
         });
       }

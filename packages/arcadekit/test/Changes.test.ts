@@ -3,6 +3,7 @@ import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import type { Terms } from "../src/ecs/query";
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -30,6 +31,7 @@ import type {
 } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 import { expectChecked, makeChecks } from "./checks";
+import { placedIn } from "./placed";
 
 /** What the change queries of a snapshot's world had yet to visit. */
 const visitsOf = (world: SnapshotContents): SavedChanges[] =>
@@ -1517,7 +1519,7 @@ describe("change queries in an app", () => {
       world.set(entity, Health, { hp: 9 });
       world.set(entity, Position, { x: 9 });
     });
-    const made: Entity[] = [];
+    const made: Spawned[] = [];
     const Four = Plugin.make("ch/Four", {
       setup: Effect.map(Commands.spawns(Position, Health), (commands) => {
         for (let n = 0; n < 4; n++) {
@@ -1535,7 +1537,7 @@ describe("change queries in an app", () => {
         const [, second] = made;
         assert(second !== undefined);
         expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4]));
-        app.dispatch(Hit, { entity: second });
+        app.dispatch(Hit, { entity: placedIn(yield* app.read(World), second) });
         const save = app.save();
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");

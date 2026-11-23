@@ -1,3 +1,4 @@
+import type { Column } from "./column";
 /**
  * The encoding of a world's snapshot: how a number, a text, a value of plain
  * data and a column become bytes, and come back. `format.ts` says what a
@@ -12,7 +13,7 @@
  * No Effect dependency.
  */
 import { isBoxed } from "./component";
-import type { Column, FieldKind, RefCodec } from "./component";
+import type { FieldKind, RefCodec } from "./component";
 
 /**
  * Why a snapshot couldn't be taken or loaded.
