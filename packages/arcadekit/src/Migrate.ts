@@ -19,6 +19,8 @@
  * its save says so. A singleton is migrated the same way, by name, and a save
  * holds one only if the game wrote it.
  */
+import { Schema } from "effect";
+
 import { makeColumn } from "./ecs/column";
 import type { Column } from "./ecs/column";
 import type { FieldKind } from "./ecs/component";
@@ -27,6 +29,8 @@ import type {
   SnapshotContents,
   SnapshotTable,
 } from "./ecs/contents";
+import { renameInChanges } from "./ecs/query";
+import * as Save from "./Save";
 
 /** The field types that hold numbers, in a typed array. */
 type NumericKind = "f32" | "f64" | "i32" | "u32" | "u16" | "u8" | "entity";
@@ -144,13 +148,9 @@ const columnOf = (
 };
 
 /**
- * Renames a component. Its data is unchanged. It throws when the save already
- * holds a component named `to`.
- *
- * **Gotchas**
- *
- * - It leaves the component's entries under `Save.VISITS` with the old name,
- *   so the load drops them, as `Save.Contents` says.
+ * Renames a component, and its change queries' places under `Save.VISITS`,
+ * so they go on from where they were. Its data is unchanged. It throws when
+ * the save already holds a component named `to`.
  *
  * @category Migrations
  */
@@ -176,6 +176,11 @@ export const renameComponent = (
     if (set.component === from) {
       set.component = to;
     }
+  }
+  const visits = world.stores.find((store) => store.name === Save.VISITS);
+  // Visits that aren't as a world saves them make the load fail as "corrupt".
+  if (visits !== undefined && Schema.is(Save.VisitsData)(visits.data)) {
+    visits.data = renameInChanges(visits.data, from, to);
   }
 };
 
