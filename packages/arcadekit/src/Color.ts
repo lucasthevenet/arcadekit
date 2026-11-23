@@ -38,9 +38,9 @@ import { Component, Field } from "./ecs/component";
  *
  * **Gotchas**
  *
- * A number below 0 or over 1 is not a colour, and `@arcadekit/three` fails the
- * frame that draws it with an error that names the entity. Divide a byte, such
- * as 255, by 255 first.
+ * A number below 0 or over 1, or NaN, is not a colour, and `@arcadekit/three`
+ * fails the frame that draws it with an error that names the entity. Divide a
+ * byte, such as 255, by 255 first.
  *
  * @category Components
  */
