@@ -784,7 +784,7 @@ describe("the stores a world holds", () => {
     const late = new Shouts("snap/Late");
     world._attach(late);
     late.values.push("new");
-    world._rewind(moment);
+    world._rewind(moment, []);
     expect(asks.values).toEqual(["who"]);
     expect(shouts.values).toEqual(["unsayable"]);
     expect(late.values).toEqual([]);

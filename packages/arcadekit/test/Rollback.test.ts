@@ -12,10 +12,12 @@ import {
   Plugin,
   Query,
   Save,
+  Singleton,
   System,
   Time,
+  World,
 } from "../src/index";
-import type { JsonValue } from "../src/index";
+import type { Entity, JsonValue } from "../src/index";
 import { Drift, Session } from "../src/net/index";
 import {
   Coin,
@@ -562,6 +564,85 @@ describe("a rollback session", () => {
         expect(() => session.tick()).toThrow(Save.SaveRefused);
         // The tick did not run.
         expect(app.time.tick).toBe(2);
+      }
+    );
+  });
+
+  it("has what draws visit only what the ticks given up and the ticks run again changed", () => {
+    const Dot = Component.define("rb/Dot", { x: Field.f32 });
+    const Dots = Query.all(Dot);
+    const Halted = Singleton.define("rb/Halted", { on: Field.i32 }, { on: 0 });
+    const Halt = Action.define("rb/Halt", Schema.Struct({}));
+    const halt = Action.handler(Halt, function* () {
+      (yield* Halted.writes).on = 1;
+    });
+    const Lay = Plugin.make("rb/Lay", {
+      setup: Effect.map(Commands.spawns(Dot), (commands) => {
+        for (let x = 0; x < 10; x++) {
+          commands.spawn(Dot.of({ x }));
+        }
+      }),
+    });
+    // On tick 3, a game that was not halted spawns a dot, despawns one and
+    // moves another; one that was halted moves a third.
+    const Play = System.tick("rb/Play", function* () {
+      if ((yield* Time).tick !== 3) {
+        return;
+      }
+      const dots = (yield* Dots).entities();
+      const world = yield* World.writes(Dot);
+      if ((yield* Halted).on === 1) {
+        world.set(dots[5]!, Dot, { x: 50 });
+        return;
+      }
+      (yield* Commands.spawns(Dot)).spawn(Dot.of({ x: 10 }));
+      (yield* Commands).despawn(dots[1]!);
+      world.set(dots[2]!, Dot, { x: 20 });
+    });
+    const Changed = Query.all(Dot).pipe(Query.changed(Dot));
+    const Added = Query.all(Dot).pipe(Query.added(Dot));
+    const drawn: { changed: Entity[]; added: Entity[] }[] = [];
+    const Draw = System.frame("rb/Draw", function* () {
+      drawn.push({
+        changed: (yield* Changed).entities(),
+        added: (yield* Added).entities(),
+      });
+    });
+    withMade(
+      Session.make(
+        App.define({ plugins: [Lay], systems: [Play, Draw], handlers: [halt] }),
+        { me: "ada", others: ["grace"], delta: DELTA, ahead: 10 }
+      ),
+      (session) => {
+        const { app } = session;
+        const dots = Effect.runSync(app.read(Dots)).entities();
+        // Ahead of grace, who has said nothing: every tick is a guess.
+        for (let tick = 0; tick < 5; tick++) {
+          session.tick();
+          app.frame(0);
+        }
+        expect(drawn.map(({ changed }) => changed.length)).toEqual([
+          10, 0, 2, 0, 0,
+        ]);
+        // Grace halted the game on tick 2: ada goes back there, and runs
+        // ticks 2 to 4 again, and then tick 5.
+        for (let tick = 0; tick < 5; tick++) {
+          session.receive({
+            from: "grace",
+            tick,
+            actions: tick === 2 ? [{ name: "rb/Halt", payload: {} }] : [],
+          });
+        }
+        drawn.length = 0;
+        session.tick();
+        app.frame(0);
+        expect(session.rewinds).toBe(1);
+        // The dot moved in the future given up and the one moved in the ticks
+        // run again changed, and the despawned one is back: the dot spawned
+        // in the future given up is no more.
+        expect(drawn).toEqual([
+          { changed: [dots[1], dots[2], dots[5]], added: [dots[1]] },
+        ]);
       }
     );
   });

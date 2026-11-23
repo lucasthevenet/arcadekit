@@ -741,6 +741,79 @@ describe("what the stages between ticks hear across a rewind", () => {
   });
 });
 
+describe("what the stages between ticks visit across a rewind", () => {
+  const Dot = Component.define("rw/Dot", { x: Field.i32 });
+  const Dots = Query.all(Dot);
+  const Moved = Query.all(Dot).pipe(Query.changed(Dot));
+  const Act = Action.define(
+    "rw/Act",
+    Schema.Struct({ op: Schema.Int, pick: Schema.Int, x: Schema.Int })
+  );
+  // Spawns a dot, despawns one, or moves one.
+  const act = Action.handler(Act, function* ({ op, pick, x }) {
+    const dots = (yield* Dots).entities();
+    const dot = dots[pick % Math.max(1, dots.length)];
+    if (op === 0 || dot === undefined) {
+      (yield* Commands.spawns(Dot)).spawn(Dot.of({ x }));
+    } else if (op === 1) {
+      (yield* Commands).despawn(dot);
+    } else {
+      (yield* World.writes(Dot)).set(dot, Dot, { x });
+    }
+  });
+  /** Where the frame stage last saw each dot. */
+  const shown = new Map<Entity, number>();
+  const Show = System.frame("rw/Show", function* () {
+    const world = yield* World;
+    for (const dot of (yield* Moved).entities()) {
+      shown.set(dot, world.get(dot, Dot)?.x ?? -1);
+    }
+  });
+  const game = App.define({ systems: [Show], handlers: [act] });
+
+  it("are enough to keep what they show true, through random rewinds", () => {
+    const wrong: string[] = [];
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const dice = new EcsWorld({ seed }).random;
+      shown.clear();
+      withApp(App.make(game), (app, world) => {
+        const moments: Timeline.Moment[] = [];
+        for (let step = 0; step < 300; step++) {
+          const roll = dice.int(1, 10);
+          if (roll <= 5) {
+            for (let i = dice.int(0, 2); i > 0; i--) {
+              app.enqueue(Act, {
+                op: dice.int(0, 2),
+                pick: dice.int(0, 99),
+                x: dice.int(0, 999),
+              });
+            }
+            app.tick(DELTA);
+          } else if (roll <= 8) {
+            moments.push(captured(app));
+          } else if (moments.length > 0) {
+            // To a moment of this future or of one given up, to run the
+            // same ticks again or to play on.
+            Timeline.rewind(app, dice.pick(moments), {
+              again: roll !== 10,
+            });
+          }
+          if (dice.int(0, 2) > 0) {
+            app.frame(0);
+            const dots = Effect.runSync(app.read(Dots)).entities();
+            for (const dot of dots) {
+              if (shown.get(dot) !== world.get(dot, Dot)?.x) {
+                wrong.push(`seed ${seed}, step ${step}, dot ${dot}`);
+              }
+            }
+          }
+        }
+      });
+    }
+    expect(wrong).toEqual([]);
+  });
+});
+
 describe("Session.syncTest", () => {
   const Mark = Component.define("vr/Mark", { n: Field.i32 });
   const Marks = Query.all(Mark);

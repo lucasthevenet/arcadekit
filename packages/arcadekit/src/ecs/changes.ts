@@ -91,6 +91,12 @@ export class ChangeLog {
   readonly cursors: ChangeCursor[] = [];
   /** Where the log ended when the current transaction began. */
   txEnd = 0;
+  /**
+   * Once the world has captured a moment, the sequence number from which the
+   * entries may be of changes since the last capture: they are kept as a
+   * reader's would be, for the world to take at the next capture or rewind.
+   */
+  kept: number | undefined;
 
   constructor(
     readonly def: ComponentDef,
@@ -207,7 +213,8 @@ export class ChangeLog {
     // entries kept at or past the old one. The floor moves as a reader's
     // place does.
     const floor = { at: this.floor };
-    const byPlace = [...cursors, floor].toSorted((a, b) => b.at - a.at);
+    const held = { at: this.kept ?? this.end };
+    const byPlace = [...cursors, floor, held].toSorted((a, b) => b.at - a.at);
     const places: number[] = [];
     let next = 0;
     let kept = 0;
@@ -236,6 +243,9 @@ export class ChangeLog {
     // An entity that is noted has one entry past the floor, its newest,
     // which was kept: `noted` stands as it is.
     this.floor = floor.at;
+    if (this.kept !== undefined) {
+      this.kept = held.at;
+    }
     this.moved();
   }
 
@@ -284,6 +294,24 @@ export class ChangeLog {
     }
   }
 
+  /** Returns a copy of the entries from sequence number `from` on. */
+  since(from: number): Uint32Array | Float64Array {
+    return this.entries.slice(
+      this.first + (Math.max(from, this.base) - this.base),
+      this.first + (this.end - this.base)
+    );
+  }
+
+  /**
+   * Keeps what changes from now on, at a capture. An entity noted since the
+   * last visit has no new entry when it changes again: its entry is kept.
+   */
+  captured(): void {
+    this.kept =
+      this.kind === "removed" ? this.end : Math.max(this.floor, this.base);
+    this.moved();
+  }
+
   /** Copies the entries from sequence number `from` on into `into` at `offset`. */
   copy(from: number, into: Uint32Array | Float64Array, offset: number): void {
     const start = this.first + (Math.max(from, this.base) - this.base);
@@ -326,7 +354,7 @@ export class ChangeLog {
     if (this.world._recording) {
       return;
     }
-    let min = this.end;
+    let min = this.kept ?? this.end;
     for (const cursor of this.cursors) {
       if (cursor.at < min) {
         min = cursor.at;
@@ -409,6 +437,9 @@ export class ChangeLog {
       this.entries[i] = entry;
     }
     this.end = entries.length;
+    if (this.kept !== undefined) {
+      this.kept = this.end;
+    }
     for (const [key, visited] of Object.entries(saved.readers)) {
       if (!Number.isInteger(visited) || visited < 0 || visited > this.end) {
         throw corrupt(

@@ -51,9 +51,10 @@
  * sound for a move that is then refused has played, and a UI has shown its
  * score. A frame system that must show only final ticks checks
  * `session.confirmed`. After each rewind, the change queries of the frame
- * and input stages visit everything again. A rewind restores only what a save
- * holds. A tick that reads anything else runs differently when it is
- * resimulated, and the peers drift apart.
+ * and input stages visit only the entities that the ticks given up or the
+ * ticks run again changed, spawned or despawned. A rewind restores only
+ * what a save holds. A tick that reads anything else runs differently when
+ * it is resimulated, and the peers drift apart.
  * `Session.syncTest` finds such a tick in a test, with no second peer.
  *
  * `Peer` is the session without its app, `Message` what the peers say to

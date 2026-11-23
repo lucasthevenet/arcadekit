@@ -59,6 +59,7 @@ if (N !== sizes.entities || DT !== sizes.step) {
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 const Seen = Query.all(Position, Velocity);
+const Moved = Query.all(Position).pipe(Query.changed(Position));
 
 const Empty = Plugin.make("bench/Empty", {});
 
@@ -388,6 +389,49 @@ const rewinding = (back: boolean): number =>
     })
   );
 
+/**
+ * A session's rollback of a tick that wrote 10 of the 100,000 entities: back
+ * to run it again, the tick, and a frame whose change query watches them all.
+ */
+const rollingBack = (): number =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      let ten: readonly Entity[] = [];
+      const Write = System.tick("Write", function* () {
+        const world = yield* WorldService.writes(Position);
+        const { tick } = yield* Time;
+        for (const entity of ten) {
+          world.set(entity, Position, { x: tick });
+        }
+      });
+      let sink = 0;
+      const Draw = System.frame("Draw", function* () {
+        (yield* Moved).eachChunk((start, end) => {
+          sink += end - start;
+        });
+      });
+      const app = yield* App.make(
+        App.define({ plugins: [Populated], systems: [Write, Draw] })
+      );
+      ten = (yield* app.read(Seen)).entities().slice(0, 10);
+      app.tick(DT);
+      app.frame(0);
+      const moment = Timeline.capture(app);
+      if (Exit.isFailure(moment)) {
+        throw new Error("the game could not be captured");
+      }
+      app.tick(DT);
+      app.frame(0);
+      const ms = measure(() => {
+        Timeline.rewind(app, moment.value, { again: true });
+        app.tick(DT);
+        app.frame(0);
+      });
+      void sink;
+      return ms;
+    })
+  );
+
 const drawing = (count: number, reading: boolean, verify: boolean): number =>
   Effect.runSync(
     Effect.gen(function* () {
@@ -568,6 +612,10 @@ const variants: Record<string, Variant> = {
   rewind: {
     label: "Timeline.rewind(): back to that moment",
     run: () => rewinding(true),
+  },
+  rollback: {
+    label: "rollback: rewind, the tick again, a frame watching them",
+    run: rollingBack,
   },
 
   // The frame stage: systems that draw, run between ticks with the world

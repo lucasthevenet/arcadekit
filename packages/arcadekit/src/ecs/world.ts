@@ -103,7 +103,75 @@ export interface Moment {
   readonly world: Uint8Array;
   /** What each store captured of itself. */
   readonly stores: readonly (readonly [Store, unknown])[];
+  /** Where the trail was: what the change logs hold from then on. */
+  readonly trail: Trail;
 }
+
+/**
+ * What the change logs held between one capture and the next, and what they
+ * held after: a list only moments hold the start of, so what no moment can go
+ * back to is forgotten. A rewind with readers to take back finds in it what
+ * the future it gives up changed.
+ */
+interface Trail {
+  /** Which run of the trail it is of: `restore` starts another. */
+  readonly run: number;
+  /** The logs there were when it began, by `logKey`. */
+  readonly watched: ReadonlySet<number>;
+  changes: {
+    readonly def: ComponentDef;
+    readonly kind: ChangeKind;
+    readonly entries: Uint32Array | Float64Array;
+  }[];
+  next: Trail | undefined;
+  /** True once a rewind has given it up. */
+  dead: boolean;
+}
+
+const KINDS: readonly ChangeKind[] = ["changed", "added", "removed"];
+const logKey = (def: ComponentDef, kind: ChangeKind): number =>
+  def.id * KINDS.length + KINDS.indexOf(kind);
+
+/**
+ * What a rewind's readers are given, ahead of what the moment holds for the
+ * others, who are placed past it. An entity past the moment's last slot was
+ * spawned in the future given up, and is gone.
+ */
+const ahead = (
+  given: readonly SavedChanges[],
+  held: readonly SavedChanges[],
+  slots: number
+): SavedChanges[] => {
+  const byLog = new Map(
+    given.map((changes) => [
+      `${changes.kind}\n${changes.component}`,
+      {
+        ...changes,
+        entries: changes.entries.filter((index) => index < slots),
+      },
+    ])
+  );
+  const out = held.map((changes) => {
+    const key = `${changes.kind}\n${changes.component}`;
+    const first = byLog.get(key);
+    if (first === undefined) {
+      return changes;
+    }
+    byLog.delete(key);
+    const offset = first.entries.length;
+    return {
+      ...changes,
+      entries: [...first.entries, ...changes.entries],
+      readers: {
+        ...first.readers,
+        ...Object.fromEntries(
+          Object.entries(changes.readers).map(([key, at]) => [key, at + offset])
+        ),
+      },
+    };
+  });
+  return [...out, ...byLog.values()];
+};
 
 /**
  * A world of entities and their components: the tables and sparse sets that
@@ -239,6 +307,10 @@ export class World {
   private stores: readonly Store[] = [];
   /** The moments this world captured: `_rewind` takes no other. */
   private readonly moments = new WeakSet<Moment>();
+  /** Where what the logs hold since the last capture goes, once there was one. */
+  private trail: Trail | undefined;
+  /** The run of the trail: a moment of another can't find its way in it. */
+  private trails = 0;
   /** The random generator's state when the world was frozen. */
   private readonly frozenRandom = new Uint32Array(4);
 
@@ -1384,6 +1456,14 @@ export class World {
       log = new ChangeLog(def, kind, this);
       byId[def.id] = log;
       this.logs.push(log);
+      if (this.trail !== undefined) {
+        log.kept = 0;
+        // An entity that lost the component and is back after a rewind is
+        // one to visit again.
+        if (kind !== "removed") {
+          this._log(def, "removed");
+        }
+      }
       if (kind === "changed") {
         this.writeLogs.push(log);
         this._watched++;
@@ -1616,6 +1696,11 @@ export class World {
     }
     // Not in a frozen world either, nor in the middle of a loop.
     this.assertNotIterating("restore");
+    if (withStores) {
+      // A moment from before has no way to what changed since.
+      this.trail = undefined;
+      this.trails++;
+    }
     let placed = 0;
     for (const table of this.tables) {
       placed += table.count;
@@ -2155,26 +2240,155 @@ export class World {
     const moment: Moment = {
       world: this.snapshotOf(false),
       stores: this.stores.map((store) => [store, store.capture()] as const),
+      trail: this.follow(),
     };
     this.moments.add(moment);
     return moment;
   }
 
   /**
+   * Puts what the logs hold since the last capture on the trail, and starts
+   * the trail anew for the moment being captured.
+   */
+  private follow(): Trail {
+    const last = this.trail;
+    if (last === undefined) {
+      for (const log of this.logs.filter((one) => one.kind !== "removed")) {
+        this._log(log.def, "removed");
+      }
+    }
+    for (const log of this.logs) {
+      const { kept } = log;
+      if (last !== undefined && kept !== undefined && log.waiting(kept) > 0) {
+        last.changes.push({
+          def: log.def,
+          kind: log.kind,
+          entries: log.since(kept),
+        });
+      }
+      log.captured();
+    }
+    const next: Trail = {
+      run: this.trails,
+      watched: new Set(this.logs.map((log) => logKey(log.def, log.kind))),
+      changes: [],
+      next: undefined,
+      dead: false,
+    };
+    if (last !== undefined) {
+      last.next = next;
+    }
+    this.trail = next;
+    return next;
+  }
+
+  /**
    * @internal
    * Puts the world back to a moment it captured, as `restore` does, with
-   * what each store held then. A store attached since is left empty.
+   * what each store held then, and what `changes`, which `saveChanges`
+   * returned then, says the readers had yet to visit. A store attached since
+   * is left empty.
+   *
+   * A reader that `again` accepts, which `changes` doesn't hold, goes on to
+   * visit what changed since it last visited and since the moment, in the
+   * future given up: with what the ticks run again change, that is all that
+   * can be other than it saw. Others start over.
    */
-  _rewind(moment: Moment): void {
+  _rewind(
+    moment: Moment,
+    changes: readonly SavedChanges[],
+    again?: (reader: string) => boolean
+  ): void {
     if (!this.moments.has(moment)) {
       throw new Error(
         "World._rewind() was given a moment that this world did not capture."
       );
     }
+    const { trail } = moment;
+    const onTrail = !trail.dead && trail.run === this.trails;
+    const given = onTrail ? this.givenUp(trail, again) : [];
     this.restoring(moment.world, false);
     for (const [store, held] of moment.stores) {
       store.rewind(held);
     }
+    if (!onTrail) {
+      this.trails++;
+    }
+    this.trail = onTrail ? trail : undefined;
+    this.restoreChanges(ahead(given, changes, this._slots));
+  }
+
+  /**
+   * For each log there was at `from`, what the readers `again` accepts are to
+   * visit after a rewind to it: what they had yet to visit, and what the
+   * future given up changed, gave or took away. Gives up the trail after
+   * `from`, which is that future's.
+   */
+  private givenUp(
+    from: Trail,
+    again: ((reader: string) => boolean) | undefined
+  ): SavedChanges[] {
+    const touched = new Map<number, number[]>();
+    const touch = (
+      def: ComponentDef,
+      kind: ChangeKind,
+      entries: Uint32Array | Float64Array
+    ): void => {
+      const key = logKey(def, kind);
+      let indexes = touched.get(key);
+      if (indexes === undefined) {
+        indexes = [];
+        touched.set(key, indexes);
+      }
+      for (let i = 0; i < entries.length; i++) {
+        indexes.push(entries[i]! & INDEX_MASK);
+      }
+    };
+    for (let node: Trail | undefined = from; node !== undefined;) {
+      for (const { def, kind, entries } of node.changes) {
+        touch(def, kind, entries);
+      }
+      const next: Trail | undefined = node.next;
+      if (node !== from) {
+        node.dead = true;
+      }
+      node = next;
+    }
+    from.changes = [];
+    from.next = undefined;
+    for (const log of this.logs) {
+      touch(log.def, log.kind, log.since(log.kept ?? log.end));
+    }
+    const out: SavedChanges[] = [];
+    for (const log of this.logs) {
+      const { def, kind } = log;
+      if (kind === "removed" || !from.watched.has(logKey(def, kind))) {
+        continue;
+      }
+      const readers = log.cursors.filter(
+        (cursor) => !cursor.fresh && again?.(cursor.reader) === true
+      );
+      const entries = new Set<number>();
+      if (readers.length > 0) {
+        const at = Math.min(...readers.map((cursor) => cursor.at));
+        for (const indexes of [
+          log.since(at),
+          touched.get(logKey(def, kind)) ?? [],
+          touched.get(logKey(def, "removed")) ?? [],
+        ]) {
+          for (const index of indexes) {
+            entries.add(index);
+          }
+        }
+      }
+      out.push({
+        component: def.name,
+        kind,
+        entries: [...entries],
+        readers: Object.fromEntries(readers.map((cursor) => [cursor.key, 0])),
+      });
+    }
+    return out;
   }
 
   // --- internals -----------------------------------------------------------

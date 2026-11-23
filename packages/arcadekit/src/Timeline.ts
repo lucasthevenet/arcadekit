@@ -56,7 +56,9 @@ class Held implements Moment {
     readonly world: WorldMoment,
     /** Where the game was in what the stages between ticks were told. */
     readonly told: Told,
-    readonly changes: SavedChanges[]
+    readonly changes: SavedChanges[],
+    /** Whether `changes` holds the frame and input stages' places too. */
+    readonly stages: boolean
   ) {}
 }
 
@@ -77,7 +79,8 @@ const between = (app: Game, call: string, rule: string): void => {
  * With `stages`, the moment also holds where the change queries of the frame
  * and input stages had got to, for a rewind that comes before those stages
  * run again. `Session.syncTest` runs each tick twice that way. Without it,
- * their change queries visit everything again after the rewind.
+ * their change queries visit everything again after a rewind, unless the
+ * rewind is to run the same ticks again.
  *
  * Fails with `Save.SaveRefused` when the world can't be captured: a field
  * holds a value that can't be saved, or commands are queued but not applied.
@@ -105,7 +108,8 @@ export const capture = (
           options?.stages === true
             ? undefined
             : (reader) => !reader.startsWith(READER)
-        )
+        ),
+        options?.stages === true
       )
   );
 };
@@ -125,6 +129,9 @@ export const capture = (
  * now known of them, as a session that runs ahead does. Each of them then
  * hears each event once. An event a tick emits again with the same payload
  * isn't heard twice, and only what the tick now does differently is heard.
+ * The two stages' change queries visit what they had yet to visit, and the
+ * entities that the future given up or the ticks run again change, spawn or
+ * despawn, and no other.
  *
  * **Gotchas**
  *
@@ -150,8 +157,12 @@ export const rewind = (
   dispatcher.flush();
   // What is queued on the buffer was never part of the world.
   commands.rollback(0);
-  world._rewind(moment.world);
-  events.rewound(moment.told, options?.again === true);
-  world.restoreChanges(moment.changes);
+  const again = options?.again === true;
+  world._rewind(
+    moment.world,
+    moment.changes,
+    again && !moment.stages ? (reader) => reader.startsWith(READER) : undefined
+  );
+  events.rewound(moment.told, again);
   commands.apply();
 };
