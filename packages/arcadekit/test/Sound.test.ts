@@ -115,7 +115,7 @@ const Game = Plugin.make("sd/Game", {
 
 const Noisy = App.define({ plugins: [Game] });
 
-const play = (output: Sound.OutputShape | undefined, seed = 1) => {
+const play = (output: Sound.Speaker | undefined, seed = 1) => {
   asked = 0;
   const made = App.make(Noisy, { seed, checkpointEvery: 1 });
   return run(

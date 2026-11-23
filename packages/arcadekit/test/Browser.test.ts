@@ -1,6 +1,5 @@
 import {
   Cause,
-  Context,
   Data,
   Effect,
   Exit,
@@ -772,9 +771,9 @@ describe("Browser.layer", () => {
     // The frame loop asks the page for its frames, and watches its tab.
     expect(page.requested.size).toBe(1);
     expect(page.visibility.size).toBe(1);
-    // The keyboard and the pointer are listened to on the window, and
-    // the first touch, which the page's sound waits for.
-    expect(page.window.total).toBe(9);
+    // The keyboard and the pointer are listened to on the window. A game
+    // with no sound opens none, and waits for no touch.
+    expect(page.window.total).toBe(7);
     page.repaint(0);
     page.window.send("keydown", { code: "ArrowRight", repeat: false });
     page.repaint(1000 / 60);
@@ -888,9 +887,8 @@ describe("Browser.runMain", () => {
     );
     expect(log).toEqual(["sound opened"]);
     expect(page.requested.size).toBe(1);
-    // The page's devices, the touch its sound waits for, and the page
-    // going away.
-    expect(page.window.total).toBe(10);
+    // The page's devices, and the page going away.
+    expect(page.window.total).toBe(8);
     expect(page.window.listening.get("pagehide")).toBe(1);
     page.repaint(0);
     page.window.send("keydown", { code: "ArrowLeft", repeat: false });
@@ -1139,7 +1137,6 @@ describe("a page's sound", () => {
         ? Promise.reject(new Error("Unable to decode audio data"))
         : Promise.resolve({ samples: data.byteLength });
     };
-  /** Builds the layer into a scope of the test's, and gives what it provides. */
   /** A stand-in for what plays a streamed track, which notes what it is asked. */
   const makeMedia = (url: string, broken: boolean) => {
     const media = {
@@ -1191,24 +1188,27 @@ describe("a page's sound", () => {
     const decode = options.decode ?? decodeInto(decoded);
     const logged: string[] = [];
     const scope = Scope.makeUnsafe();
-    const context = await Effect.runPromise(
-      Layer.build(
-        Browser.layerSound(files, {
-          window: page,
-          audio: () => {
-            made++;
-            return audio;
-          },
-          decode,
-          media: (url) => {
-            const media = makeMedia(url, options.brokenMedia === true);
-            streamed.push(media);
-            return media;
-          },
-          ...(options.volume === undefined ? {} : { volume: options.volume }),
-        })
-      ).pipe(
+    // Opened in a scope of the test's, as an app opens it: the layer is
+    // provided to the opening alone.
+    const output = await Effect.runPromise(
+      Sound.open.pipe(
         Scope.provide(scope),
+        Effect.provide(
+          Browser.layerSound(files, {
+            window: page,
+            audio: () => {
+              made++;
+              return audio;
+            },
+            decode,
+            media: (url) => {
+              const media = makeMedia(url, options.brokenMedia === true);
+              streamed.push(media);
+              return media;
+            },
+            ...(options.volume === undefined ? {} : { volume: options.volume }),
+          })
+        ),
         Effect.provideService(Driver.Display, display),
         Effect.provide(
           Layer.mergeAll(
@@ -1233,7 +1233,7 @@ describe("a page's sound", () => {
       logged,
       streamed,
       made: () => made,
-      output: Context.get(context, Sound.Output),
+      output,
       close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
     };
   };
@@ -1304,7 +1304,7 @@ describe("a page's sound", () => {
     output.play("coin", 1, 1);
     expect(audio.started.length).toBe(1);
     expect(logged.length).toBe(2);
-    // Let go, the layer plays nothing and says nothing.
+    // Let go, the page's audio plays nothing and says nothing.
     await close();
     output.play("coin", 1, 1);
     expect(logged.length).toBe(2);
@@ -1323,14 +1323,15 @@ describe("a page's sound", () => {
     const page = new Listened();
     const logged: string[] = [];
     const scope = Scope.makeUnsafe();
-    const context = await Effect.runPromise(
-      Layer.build(
-        Browser.layerSound(
-          { coin: "/coin.wav" },
-          { window: page, decode: decodeInto([]) }
-        )
-      ).pipe(
+    const output = await Effect.runPromise(
+      Sound.open.pipe(
         Scope.provide(scope),
+        Effect.provide(
+          Browser.layerSound(
+            { coin: "/coin.wav" },
+            { window: page, decode: decodeInto([]) }
+          )
+        ),
         Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
         Effect.provide(
           Layer.mergeAll(
@@ -1345,7 +1346,6 @@ describe("a page's sound", () => {
       )
     );
     await settle();
-    const output = Context.get(context, Sound.Output);
     output.play("coin", 1, 1);
     output.music("score", "coin", 1, 0, false);
     page.send("pointerdown");
@@ -1448,7 +1448,7 @@ describe("a page's sound", () => {
     page.send("pointerdown");
     expect(made()).toBe(1);
 
-    // A file that is still being decoded when the layer is let go is not
+    // A file that is still being decoded when the audio is let go is not
     // kept when it is done.
     let done = (_sound: unknown): void => {};
     const late = await build(
@@ -1957,12 +1957,12 @@ describe("a page's sound", () => {
     // nothing throws.
     const bare = new Listened();
     const scope = Scope.makeUnsafe();
-    const context = await Effect.runPromise(
-      Layer.build(Browser.layerSound(undefined, { window: bare })).pipe(
-        Scope.provide(scope)
+    const quiet = await Effect.runPromise(
+      Sound.open.pipe(
+        Scope.provide(scope),
+        Effect.provide(Browser.layerSound(undefined, { window: bare }))
       )
     );
-    const quiet = Context.get(context, Sound.Output);
     expect(bare.total).toBe(2);
     bare.send("pointerdown");
     bare.send("keydown", { code: "Enter" });
@@ -2107,5 +2107,120 @@ describe("a page's sound", () => {
     page.repaint(0);
     expect(audible).toEqual([false]);
     await Effect.runPromise(Fiber.interrupt(silent));
+  });
+
+  /** A game that plays a coin in each frame. */
+  const Clinking = App.define({
+    plugins: [Sound.plugin],
+    systems: [
+      System.frame("br/Clink", function* () {
+        (yield* Sound.Player).play("coin");
+      }),
+    ],
+  });
+
+  it("lasts as long as the program that made the app, wherever it is provided", async () => {
+    const page = new Listened();
+    const audio = makeAudio();
+    const scope = Scope.makeUnsafe();
+    // Provided to the making of the app alone, which ends here.
+    const app = await Effect.runPromise(
+      App.make(Clinking).pipe(
+        Effect.provide(
+          Browser.layerSound(
+            { coin: "/coin.wav" },
+            { window: page, audio: () => audio, decode: decodeInto([]) }
+          )
+        ),
+        Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
+        Effect.provide(Assets.layerMemory(sounds)),
+        Scope.provide(scope)
+      )
+    );
+    await settle();
+    page.send("pointerdown");
+    app.frame(0);
+    expect(audio.started).toEqual([
+      { buffer: { samples: 3 }, rate: 1, volume: 1, into: audio.destination },
+    ]);
+    expect(audio.closed).toBe(0);
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    expect(audio.closed).toBe(1);
+    expect(page.total).toBe(0);
+  });
+
+  it("is one audio for every app made under it, each file fetched once, and closed with the last of them", async () => {
+    const page = new Listened();
+    const audio = makeAudio();
+    let made = 0;
+    const decoded: number[] = [];
+    // Built once, as a program provides it, and its own scope closed at once.
+    const provided = await Effect.runPromise(
+      Effect.scoped(
+        Layer.build(
+          Browser.layerSound(
+            { coin: "/coin.wav" },
+            {
+              window: page,
+              audio: () => {
+                made++;
+                return audio;
+              },
+              decode: decodeInto(decoded),
+            }
+          )
+        )
+      ).pipe(
+        Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
+        Effect.provide(Assets.layerMemory(sounds))
+      )
+    );
+    const start = async () => {
+      const scope = Scope.makeUnsafe();
+      const app = await Effect.runPromise(
+        App.make(Clinking).pipe(
+          Effect.provideContext(provided),
+          Scope.provide(scope)
+        )
+      );
+      return {
+        app,
+        close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+      };
+    };
+    const one = await start();
+    const two = await start();
+    await settle();
+    expect(decoded).toEqual([3]);
+    expect(Object.fromEntries(page.listening)).toEqual({
+      pointerdown: 1,
+      keydown: 1,
+    });
+    page.send("pointerdown");
+    expect(made).toBe(1);
+    one.app.frame(0);
+    two.app.frame(0);
+    expect(audio.started.length).toBe(2);
+    // The first app goes; the other still plays through the same audio.
+    await one.close();
+    expect(audio.closed).toBe(0);
+    two.app.frame(1);
+    expect(audio.started.length).toBe(3);
+    await two.close();
+    expect(audio.closed).toBe(1);
+    expect(made).toBe(1);
+    expect(page.total).toBe(0);
+
+    // An app made after that opens the page's audio again, and its files.
+    const three = await start();
+    await settle();
+    expect(decoded).toEqual([3, 3]);
+    page.send("pointerdown");
+    expect(made).toBe(2);
+    three.app.frame(0);
+    expect(audio.started.length).toBe(4);
+    await three.close();
+    expect(audio.closed).toBe(2);
+    expect(page.total).toBe(0);
   });
 });

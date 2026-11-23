@@ -137,14 +137,15 @@ const Air = Sound.music(
 
 The output is Web Audio, provided by `Browser.runMain` and `Browser.layer`. The `sounds` option maps the names cues and tracks play by to the files the page keeps for its lifetime, and `volume` sets the master volume. `Browser.layerSound(files)` provides the same layer on its own.
 
-- The files are fetched when the page starts, through `Assets.Loader`, and decoded on arrival.
+- The page's sound opens with the first app that has `Sound.plugin`, in the scope the app is made in, wherever the layer is provided. The apps made under one `Browser.layer` share it: one audio context, as a browser allows a page only a few, and each file fetched once.
+- The files are fetched when the page's sound opens, through `Assets.Loader`, and decoded on arrival.
 - A page may not make a sound until the user interacts with it. The audio context is created on the first key or pointer press, and cues requested from the next frame on play. A cue requested before that, or before its file has loaded, is dropped: a late sound is worse than none. The first cue dropped before the first interaction is logged once, by name, through Effect's logger, so a game that opens with a sound learns why it isn't heard.
 - Cues only play while the audio is running. While the audio is suspended, or resuming, which takes a moment when the page becomes visible again or a laptop lid opens, cues are dropped: otherwise they would queue up and all play at once.
 - Music is never late, since it describes what should be playing. A track requested before the first interaction, or before its file has loaded, starts as soon as it can.
 - A cue or track with no file, or whose file couldn't be fetched or decoded, is logged once and plays nothing.
 - While the page is hidden its audio is suspended, music included, and resumes when the page is visible again, matching the frame loop, which also pauses.
 - A page without sounds of its own still has audio, for its levels' clips. `sounds: false` disables audio entirely: no audio context is created, and the game is told that nothing is heard.
-- When the page closes, the audio context is closed and pending requests are cancelled.
+- When the last app that plays through it goes, or the page closes, the audio context is closed and pending requests are cancelled. An app made after that opens the page's sound again, and the page waits for a touch again.
 
 ### Streaming long music
 
@@ -159,9 +160,9 @@ A file given by URL, and `Browser.sound`, are downloaded in full and kept decode
 
 Sound follows real time and isn't part of the game. A game with sound has the same hash, log and save as one without, and a replay or a server, which runs no frame stage, plays nothing.
 
-`Sound.Output` is where sound goes: a `Context.Reference` whose default is no output, in which case the cue system reads nothing. `Sound.layer(output)` provides one. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`. See [testing](testing.md#sound).
+`Sound.Output` is where sound goes: how to open a speaker, a `Context.Reference` whose default is nowhere, in which case the cue system reads nothing. `Sound.plugin` opens it in the scope the app is made in, and lets go of it when that scope closes. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`. See [testing](testing.md#sound).
 
-`Sound.clip(name, data)` creates a clip by hand, for a custom output or for a test, which needs nothing to play: a recorder records a clip by its `name`, and the clip itself as `clip`.
+`Sound.clip(name, data)` creates a clip by hand, for a speaker of your own or for a test, which needs nothing to play: a recorder records a clip by its `name`, and the clip itself as `clip`.
 
 ## When a frame fails
 
