@@ -32,6 +32,7 @@ describe("what an app is running", () => {
         expect(made.phase).toBe("idle");
         made.dispatch(Note, { by: "dispatch" });
         made.enqueue(Note, { by: "a tick" });
+        made.input();
         made.tick(1);
         made.frame(0);
         expect(made.phase).toBe("idle");

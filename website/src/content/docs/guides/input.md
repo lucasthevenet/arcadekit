@@ -119,12 +119,12 @@ const Pick = System.input("game/Pick", function* () {
 
 ## The input stage
 
-The input stage runs just before a tick. A driver runs it, and a tick that finds it hasn't run runs it itself, so a game that steps its app with `app.tick(delta)` receives its keys with no extra code.
+The input stage runs just before a tick. A driver runs it before each tick. A tick doesn't read the devices, so a game that steps its app by hand calls `app.input()` before each `app.tick(delta)` that receives them.
 
 - The devices are read once per run. A frame with no tick due reads nothing, and presses in the meantime are kept for the next tick, so a quick tap is never lost between two frames.
 - The world is read-only here, as in the frame stage: a system issues actions with `Actions.enqueue` and changes nothing itself. The actions are logged and applied at the start of the following tick.
 - It receives events through its own reader, each once: what a tick's systems emitted, what its actions emitted, and `Action.Rejected`, so a system that issued an action learns it was refused. Events are kept for it for up to 600 ticks when it doesn't run at all.
-- A replay doesn't run it, since the log already holds what the devices reported. `Journal.replay` ticks with `app.tick(delta, { input: false })`, a tick that reads nothing. A tool that re-runs a game from its log by hand does the same, or the keys of the machine it runs on leak into the game. See [replays](replays.md).
+- A replay doesn't run it, since the log already holds what the devices reported. A tool that re-runs a game from its log by hand ticks it with `app.tick(delta)` alone. See [replays](replays.md).
 
 The simulation can't tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
 

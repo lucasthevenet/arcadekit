@@ -90,7 +90,7 @@ It doesn't depend on anything a simulation can't observe: a table's capacity, le
 
 ## What a replay doesn't do
 
-- It runs no frame or input stage: it reads no device and draws nothing. `Journal.replay` ticks with `{ input: false }`, and a tool that replays by hand with `tick` must do the same, or the machine's own keys leak into the game.
+- It runs no frame or input stage: it reads no device and draws nothing.
 - Actions the simulation issues itself, such as a bot's move, aren't in the log: the replay's own systems issue them again.
 - A write through a raw column in the frame or input stage changes the game without an error, unless the app was created with `verifyFrames`. A replay runs neither stage, so it diverges. See [testing](testing.md).
 

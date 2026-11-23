@@ -60,7 +60,6 @@ Some ways to break determinism aren't caught by the type checker or at run time:
 
 - A write through a raw column during the frame or input stage is only detected by an app created with `verifyFrames`.
 - State a tick reads from outside the world, in a service, a plugin or a module, isn't put back by a rewind, so a rollback session runs the tick again differently. It is only detected by `Session.syncTest`, which runs each tick twice from the same moment. See [testing](../guides/testing.md#rewinds).
-- A tick reads the devices unless told not to. A tool that re-runs a game from its log by hand passes `app.tick(delta, { input: false })`, as `Journal.replay` does, or the keys of the machine it runs on leak into the game.
 - The hash covers only the world, with the actions queued and the events waiting that it holds: not how far a system has read those events, nor what change queries haven't visited. Two games with the same hash can still diverge.
 
 In a multiplayer game, a broken rule is caught quickly: peers compare the hashes of their worlds, and every session stops with `Drift.Drifted`, which reports the last tick they agreed on. To test such a game, run two apps side by side and compare their hashes. See [several players](several-players.md).

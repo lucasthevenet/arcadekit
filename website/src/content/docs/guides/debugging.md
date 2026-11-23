@@ -38,7 +38,7 @@ Then type `app.inspect()` in the console, or `console.table(app.inspect().system
 | `tick` | The number of ticks run |
 | `entities` | Every live entity in order of id, as `{ id, components }`, with each component's fields by component name |
 | `singletons` | Each singleton the world holds, by name |
-| `stores` | What the game holds beside its entities and singletons, by store name: the actions queued for the next tick under `Action.INTAKE`, as `{ queued, heard }`, and the events waiting to be read under `Event.STORE`, by event name |
+| `stores` | What the game holds beside its entities and singletons, by store name: the actions queued for the next tick under `Action.INTAKE`, as `{ queued }`, and the events waiting to be read under `Event.STORE`, by event name |
 | `systems` | Every system, as `{ name, stage, ran, ms }`: the tick's in the order they run, then the hooks, the input stage's and the frame stages'. `ran` is whether its last turn ran it, and `ms` how long that turn took |
 | `events` | The events emitted in the last tick, by event name, each in the order it was emitted |
 

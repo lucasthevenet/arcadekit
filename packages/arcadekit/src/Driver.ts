@@ -19,9 +19,8 @@ import type { Scope } from "effect";
 export interface Tickable {
   readonly tick: (delta: number) => void;
   /**
-   * An app's input stage, run just before each tick if present. An app's own
-   * tick would run it too; a driver runs it first, so it can check whether the
-   * game is settled after input arrives.
+   * An app's input stage, run just before each tick if present: a tick reads
+   * no device, so this is where the game hears them.
    */
   readonly input?: () => void;
   /** An app's frame stage, run after each call's ticks if present. */

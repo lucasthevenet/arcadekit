@@ -143,7 +143,8 @@ const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
   const app = yield* App.make(App.define({ plugins: [Game] }));
-  app.tick(1 / 60); // one tick, after its input stage
+  app.input(); // the input stage: reads the devices and the UI
+  app.tick(1 / 60); // one tick
   app.frame(1, 1 / 60); // the frame stage: alpha, then real seconds
 
   const advance = Driver.fixedStep(app, { hz: 60 });
@@ -153,7 +154,7 @@ const program = Effect.gen(function* () {
 
 A program that steps its app runs it in a scope, with `Effect.scoped`, and closing the scope releases everything the app holds.
 
-- A tick reads the devices first. A tool that re-runs a game from its log by hand passes `app.tick(delta, { input: false })`, as `Journal.replay` does, or the keys of the machine it runs on leak into the game. See [replays](replays.md).
+- A tick reads no device. Call `app.input()` before each tick that receives the devices and the UI, as a driver does. A tool that re-runs a game from its log by hand doesn't, since the log already holds what they reported. See [replays](replays.md).
 - Nothing ticks a game that steps itself: when its UI sends something, the game runs a tick.
 
 `Driver.frames(app, { hz })` is the loop `Driver.run` uses, for a program that creates its app itself, and `Driver.interval(app, { hz })` steps the same way on a timer. Each is interrupted with the fiber that runs it, so one started with `Effect.forkScoped` stops when its scope closes, leaving no frame requested.

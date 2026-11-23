@@ -618,6 +618,7 @@ describe("a page's devices", () => {
         expect(page.total).toBe(7);
         page.send("keydown", { code: "Space", repeat: false });
         page.send("keyup", { code: "Space" });
+        app.input();
         app.tick(0.1);
         expect(ship(app).shots).toBe(1);
       })
@@ -661,7 +662,9 @@ describe("a page's devices", () => {
         expect(page.total).toBe(14);
         page.send("keydown", { code: "Space", repeat: false });
         page.send("keyup", { code: "Space" });
+        one.input();
         one.tick(0.1);
+        two.input();
         two.tick(0.1);
         expect(ship(one).shots).toBe(1);
         expect(ship(two).shots).toBe(1);
