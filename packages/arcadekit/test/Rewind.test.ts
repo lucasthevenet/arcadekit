@@ -1,6 +1,10 @@
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { partsOf } from "../src/app/parts";
 import type { EventBus } from "../src/Event";
 import {
   Action,
@@ -738,6 +742,111 @@ describe("what the stages between ticks hear across a rewind", () => {
         expect(heard()).toEqual([2, 2]);
       });
     });
+  });
+});
+
+describe("what the stages between ticks visit across a rewind", () => {
+  const Dot = Component.define("rw/Dot", { x: Field.i32 });
+  const Dots = Query.all(Dot);
+  const Moved = Query.all(Dot).pipe(Query.changed(Dot));
+  const Act = Action.define(
+    "rw/Act",
+    Schema.Struct({ op: Schema.Int, pick: Schema.Int, x: Schema.Int })
+  );
+  // Spawns a dot, despawns one, or moves one.
+  const act = Action.handler(Act, function* ({ op, pick, x }) {
+    const dots = (yield* Dots).entities();
+    const dot = dots[pick % Math.max(1, dots.length)];
+    if (op === 0 || dot === undefined) {
+      (yield* Commands.spawns(Dot)).spawn(Dot.of({ x }));
+    } else if (op === 1) {
+      (yield* Commands).despawn(dot);
+    } else {
+      (yield* World.writes(Dot)).set(dot, Dot, { x });
+    }
+  });
+  /** Where the frame stage last saw each dot. */
+  const shown = new Map<Entity, number>();
+  const Show = System.frame("rw/Show", function* () {
+    const world = yield* World;
+    for (const dot of (yield* Moved).entities()) {
+      shown.set(dot, world.get(dot, Dot)?.x ?? -1);
+    }
+  });
+  const game = App.define({ systems: [Show], handlers: [act] });
+
+  it("keep nothing for a rewind once no moment of the game is held", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    const app = Effect.runSync(App.make(game));
+    const { world } = partsOf(app);
+    for (let x = 0; x < 20; x++) {
+      app.enqueue(Act, { op: 0, pick: 0, x });
+    }
+    app.tick(DELTA);
+    app.frame(0);
+    // A moment no one keeps, as an undo point that is let go.
+    captured(app);
+    // A weakly held object outlives the turn it was last reached in.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    collect();
+    for (let tick = 0; tick < 2000; tick++) {
+      app.enqueue(Act, { op: 2, pick: tick, x: tick });
+      app.enqueue(Act, { op: 1, pick: tick, x: 0 });
+      app.enqueue(Act, { op: 0, pick: 0, x: tick });
+      app.tick(DELTA);
+      app.frame(0);
+    }
+    const held = (kind: "changed" | "removed"): number => {
+      const log = world._log(Dot, kind);
+      return log.end - log.base;
+    };
+    expect({ changed: held("changed"), removed: held("removed") }).toEqual({
+      changed: 0,
+      removed: 0,
+    });
+  });
+
+  it("are enough to keep what they show true, through random rewinds", () => {
+    const wrong: string[] = [];
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const dice = new EcsWorld({ seed }).random;
+      shown.clear();
+      withApp(App.make(game), (app, world) => {
+        const moments: Timeline.Moment[] = [];
+        for (let step = 0; step < 300; step++) {
+          const roll = dice.int(1, 10);
+          if (roll <= 5) {
+            for (let i = dice.int(0, 2); i > 0; i--) {
+              app.enqueue(Act, {
+                op: dice.int(0, 2),
+                pick: dice.int(0, 99),
+                x: dice.int(0, 999),
+              });
+            }
+            app.tick(DELTA);
+          } else if (roll <= 8) {
+            moments.push(captured(app));
+          } else if (moments.length > 0) {
+            // To a moment of this future or of one given up, to run the
+            // same ticks again or to play on.
+            Timeline.rewind(app, dice.pick(moments), {
+              again: roll !== 10,
+            });
+          }
+          if (dice.int(0, 2) > 0) {
+            app.frame(0);
+            const dots = Effect.runSync(app.read(Dots)).entities();
+            for (const dot of dots) {
+              if (shown.get(dot) !== world.get(dot, Dot)?.x) {
+                wrong.push(`seed ${seed}, step ${step}, dot ${dot}`);
+              }
+            }
+          }
+        }
+      });
+    }
+    expect(wrong).toEqual([]);
   });
 });
 

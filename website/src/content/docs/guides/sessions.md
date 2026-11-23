@@ -115,7 +115,7 @@ const program = Driver.run(
   - A `Field.transient` field is `undefined` afterwards, as in a loaded game.
 - **Expect the frame stage to show a prediction.** A game that runs ahead is drawn and heard as predicted.
   - The frame and input stages hear each event once, however often a session runs its tick. An event that a resimulated tick emits again, with the same payload, isn't heard twice. Only what the tick now does differently is heard.
-  - Their change queries visit everything after each rewind.
+  - After each rewind, their change queries visit only the entities that the given-up ticks or the ticks run again changed, spawned or despawned.
   - A sound for a prediction that is rolled back has already played, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final.
 
 ## Read more
