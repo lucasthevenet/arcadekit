@@ -60,10 +60,12 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
         fetch: Effect.gen(function* () {
           const request = yield* HttpServerRequest;
           const everyone = yield* present;
-          // Whether this peer may have this name is settled before this
-          // line, with whatever the request carries: a token, a session.
+          // Anyone may take any free name here. A game's relay proves the
+          // name from what the request carries, a token or a session, and
+          // passes it instead of Relay.anyone.
           const joined = Relay.join(
             request.url,
+            Relay.anyone,
             everyone.map(({ member }) => member)
           );
           if (Exit.isFailure(joined)) {
