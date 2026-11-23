@@ -17,23 +17,27 @@
  *   })
  *   const Arcade = App.define({ plugins: [Game] })
  *
- *   // The UI receives the bridge, and nothing else.
- *   const ui = View.makeBridge(Arcade)
- *   ui.subscribe(Hud, ({ score }) => { label.textContent = `${score}` })
- *   button.onclick = () => ui.send(NewGame, {})
+ *   // The app hands the UI its bridge, and nothing else.
+ *   const mount = (ui: View.Bridge<typeof NewGame>) => {
+ *     ui.subscribe(Hud, ({ score }) => { label.textContent = `${score}` })
+ *     button.onclick = () => ui.send(NewGame, {})
+ *   }
  *
  *   Browser.runMain(
- *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
+ *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(
+ *       Effect.provide(View.layer(Arcade, mount))
+ *     )
  *   )
  *
  * A view is a value the game exposes to the UI. It is published from the frame
  * stage, once per frame, and only when it differs from the value the UI already
  * has. An unchanged value costs the UI nothing.
  *
- * The UI acts by sending actions, like any other input source. A bridge is made
- * from its game, and sends only the actions the game has a handler for. Any
- * other action doesn't compile. What the bridge sends is issued in the input
- * stage, before the next tick, and is logged, so a replay needs no UI.
+ * The UI acts by sending actions, like any other input source. The app makes
+ * the bridge when it is made, and it sends only the actions the game has a
+ * handler for. Any other action doesn't compile. What the bridge sends is
+ * issued in the input stage, before the next tick, and is logged, so a replay
+ * needs no UI.
  *
  * Neither side holds the other. The UI holds the bridge, which holds values but
  * no world. The game publishes to whoever is listening. When no one is, on a
@@ -101,8 +105,9 @@ export interface Sent {
  * What the UI receives: the game's views, and a way to request the actions
  * `Sends`.
  *
- * `View.makeBridge(game)` makes one whose actions are every action the game
- * has a handler for. A UI names the actions it sends, as
+ * An app hands one to the `mount` of `View.layer(game, mount)`, and its
+ * actions are every action the game has a handler for. A UI names the actions
+ * it sends, as
  * `View.Bridge<typeof Start | typeof Quit>`, and is handed a bridge only if its
  * game handles each of them. A `View.Bridge` with no actions reads views and
  * sends nothing.
@@ -142,17 +147,6 @@ export interface Bridge<
     action: D & Sends,
     ...payload: PayloadArgument<PayloadOf<D>>
   ) => void;
-  /**
-   * The game's end: sets a view's value and tells its listeners, unless it
-   * is the value the view has. Says whether it was.
-   * @internal
-   */
-  readonly _publish: <A>(view: View<A>, value: A) => boolean;
-  /**
-   * The game's end: the actions sent since this was last asked.
-   * @internal
-   */
-  readonly _take: () => readonly Sent[];
 }
 
 const NOTHING: readonly Sent[] = Object.freeze([]);
@@ -164,44 +158,12 @@ interface Slot {
   readonly listeners: Set<(value: never) => void>;
 }
 
-/**
- * Makes the bridge of a game. The entry point makes one, hands it to the UI,
- * and provides it to the game's app with `View.layer`:
- *
- *   const Arcade = App.define({ plugins: [Game] })
- *   const ui = View.makeBridge(Arcade)
- *   mountMenu(document.body, ui)
- *   Browser.runMain(
- *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
- *   )
- *
- * The game gives the bridge its type. The bridge sends every action the game
- * has a handler for, its plugins' among them, and no other. It holds the views'
- * values, their listeners and the actions waiting to be issued, and nothing of
- * the game or its world. A UI can mount on it before the app is made, and sees
- * every view at its initial value until then.
- *
- * **Gotchas**
- *
- * - Provided to the app of another game, it can send an action that app has
- *   no handler for, which throws in the app's input stage. Provide it to an
- *   app of the game it was made from.
- *
- * @param game a game, as `App.define` makes it
- *
- * @category Constructors
- */
-export function makeBridge<
-  H extends readonly Action.AnyHandler[],
-  P extends readonly Plugin.Any[],
->(game: {
-  readonly handlers: readonly [...H];
-  readonly plugins: readonly [...P];
-  // A game has a version, and a plugin has none.
-  readonly version: number;
-}): Bridge<ActionOf<H[number] | Plugin.HandlerOf<P[number]>>>;
-// A bridge takes nothing from its game but the type.
-export function makeBridge(): Bridge<Action.AnyActionDef> {
+/** A UI's bridge, and the app's end of it. */
+interface Opened extends Omit<PortValue, "connected"> {
+  readonly ui: Bridge<Action.AnyActionDef>;
+}
+
+const open = (): Opened => {
   const slots = new Map<string, Slot>();
   let sent: Sent[] = [];
   const slotOf = (view: View<unknown>): Slot => {
@@ -216,7 +178,7 @@ export function makeBridge(): Bridge<Action.AnyActionDef> {
     }
     return slot;
   };
-  return {
+  const ui: Bridge<Action.AnyActionDef> = {
     get: (view) => slotOf(view).value as never,
     subscribe(view, listener) {
       const { listeners } = slotOf(view);
@@ -228,7 +190,10 @@ export function makeBridge(): Bridge<Action.AnyActionDef> {
     send(action, ...payload) {
       sent.push({ action, payload: payload[0] });
     },
-    _publish(view, value) {
+  };
+  return {
+    ui,
+    publish(view, value) {
       const slot = slotOf(view);
       // Compared as data: an object made anew each frame with the same
       // fields is the same value, and nobody is told.
@@ -256,7 +221,7 @@ export function makeBridge(): Bridge<Action.AnyActionDef> {
       }
       return true;
     },
-    _take() {
+    take() {
       if (sent.length === 0) {
         return NOTHING;
       }
@@ -265,40 +230,7 @@ export function makeBridge(): Bridge<Action.AnyActionDef> {
       return taken;
     },
   };
-}
-
-const noBridge: Bridge = {
-  get: (view) => view.initial,
-  subscribe: () => () => {},
-  // Its type sends no action: only a cast reaches this.
-  send() {
-    throw new Error(
-      "An action was sent to the bridge that stands for no UI. Make one with View.makeBridge(game) and provide it to the game with View.layer."
-    );
-  },
-  _publish: () => false,
-  _take: () => NOTHING,
 };
-
-/**
- * The bridge a game publishes to and receives actions from. It is a
- * `Context.Reference` whose default stands for no UI, as on a server, in a
- * replay and in most tests. With the default, nothing is published, and no
- * view is computed. A page provides a bridge with `View.layer`.
- */
-export const Bridge: Context.Reference<Bridge> = Context.Reference<Bridge>(
-  "arcadekit/View.Bridge",
-  { defaultValue: () => noBridge }
-);
-
-/**
- * Returns a layer that provides a bridge to the game:
- * `Effect.provide(View.layer(ui))`.
- *
- * @category Layers
- */
-export const layer = (bridge: Bridge): Layer.Layer<never> =>
-  Layer.succeed(Bridge, bridge) as Layer.Layer<never>;
 
 // --- the app's end of the bridge ---------------------------------------------------
 
@@ -346,19 +278,34 @@ export class Port extends Context.Service<Port, PortShape>()(
   "arcadekit/View.Port"
 ) {}
 
+/** What the UI of an app is handed its bridge by, if it has a UI. */
+type Mount = (ui: Bridge<Action.AnyActionDef>) => void | (() => void);
+
+const Ui = Context.Reference<Mount | undefined>("arcadekit/View.Ui", {
+  defaultValue: () => undefined,
+});
+
+const alone: PortValue = {
+  connected: false,
+  publish: () => false,
+  take: () => NOTHING,
+};
+
 const portLayer = Layer.unwrap(
   Effect.gen(function* () {
-    const bridge = yield* Bridge;
-    const port: PortValue = {
-      connected: bridge !== noBridge,
-      publish(view, value) {
-        return bridge._publish(view, value);
-      },
-      take: () => bridge._take(),
-    };
+    const mount = yield* Ui;
+    let port = alone;
+    if (mount !== undefined) {
+      const { ui, publish, take } = open();
+      const unmount = mount(ui);
+      if (typeof unmount === "function") {
+        yield* Effect.addFinalizer(() => Effect.sync(unmount));
+      }
+      port = { connected: true, publish, take };
+    }
     return Layer.mergeAll(
       Layer.succeed(Port, port),
-      Layer.succeed(Intake, { take: () => port.take() })
+      Layer.succeed(Intake, { take: port.take })
     );
   })
 );
@@ -376,13 +323,14 @@ const Send = System.input("arcadekit/View.Send", function* () {
 });
 
 /**
- * Connects an app to the bridge it was given. A plugin whose systems are made
- * with `View.publish`, or whose UI sends actions, lists it in `plugins`.
+ * Connects an app to its UI: with `View.layer`, it makes the bridge and hands
+ * it to the UI when the app is made. A plugin whose systems are made with
+ * `View.publish`, or whose UI sends actions, lists it in `plugins`.
  *
  * - The UI's requests are issued in the input stage, just before a tick, in the
  *   order they were sent, with `Actions.enqueue`: logged, and applied at the
  *   start of the tick.
- * - Without a bridge, the plugin does nothing.
+ * - Without `View.layer`, the plugin does nothing.
  *
  * @category Plugins
  */
@@ -390,6 +338,66 @@ export const plugin = Plugin.make("arcadekit/View", {
   layer: portLayer,
   systems: [Send],
 });
+
+/** Refuses a game without `View.plugin`, whose app would hand out no bridge. */
+type Listed<P extends readonly Plugin.Any[]> = [Port] extends [
+  Plugin.ProvidedOf<P[number]>,
+]
+  ? unknown
+  : { readonly plugins: "View.plugin is not among the game's plugins" };
+
+/**
+ * Returns a layer that gives a game's app a UI. When the app is made, it makes
+ * the bridge and hands it to `mount`, which puts the UI on the page. If `mount`
+ * returns a function, the app calls it when it is closed, to take the UI off.
+ *
+ *   const Arcade = App.define({ plugins: [Game] })
+ *   Browser.runMain(
+ *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(
+ *       Effect.provide(View.layer(Arcade, (ui) => mountMenu(document.body, ui)))
+ *     )
+ *   )
+ *
+ * The game gives the bridge its type. The bridge sends every action the game
+ * has a handler for, its plugins' among them, and no other. A game that does
+ * not list `View.plugin`, itself or through one of its plugins, doesn't
+ * compile. The bridge holds the views' values, their listeners and the actions
+ * waiting to be issued, and nothing of the game or its world. The UI sees each
+ * view at its initial value until the first frame publishes it.
+ *
+ * Each app made under the layer hands `mount` a bridge of its own. Where it
+ * isn't provided, as on a server, in a replay and in most tests, there is no
+ * UI: nothing is published, and no view is computed.
+ *
+ * **Gotchas**
+ *
+ * - Provided to the app of another game, its bridge can send an action that
+ *   app has no handler for, which throws in the app's input stage. Provide it
+ *   to an app of the game it was made from.
+ *
+ * @param game a game, as `App.define` makes it
+ * @param mount puts the UI on the page, and may return what takes it off
+ *
+ * @category Layers
+ */
+export function layer<
+  H extends readonly Action.AnyHandler[],
+  P extends readonly Plugin.Any[],
+>(
+  game: {
+    readonly handlers: readonly [...H];
+    readonly plugins: readonly [...P];
+    // A game has a version, and a plugin has none.
+    readonly version: number;
+  } & Listed<P>,
+  mount: (
+    ui: Bridge<ActionOf<H[number] | Plugin.HandlerOf<P[number]>>>
+  ) => void | (() => void)
+): Layer.Layer<never>;
+// A layer takes nothing from its game but the type.
+export function layer(_game: unknown, mount: Mount): Layer.Layer<never> {
+  return Layer.succeed(Ui, mount);
+}
 
 /**
  * Makes a frame-stage system that publishes a view. Each frame it computes the

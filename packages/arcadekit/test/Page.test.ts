@@ -4,7 +4,7 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Game, Screen } from "../examples/page/game";
-import { Hud, Menu, Start } from "../examples/page/protocol";
+import { Hud, Menu } from "../examples/page/protocol";
 import type { Requests } from "../examples/page/protocol";
 import { mount as mountDom } from "../examples/page/uiDom";
 import { mount as mountReact } from "../examples/page/uiReact";
@@ -63,60 +63,55 @@ const play = async (
       }
     }
   );
-  const ui = View.makeBridge(Catch);
-  // What the UI is handed: the bridge, counting how often it is told.
-  let told = 0;
-  const handed: typeof ui = {
-    get: ui.get,
-    send: ui.send,
-    _publish: ui._publish,
-    _take: ui._take,
-    subscribe: (view, listener) =>
-      ui.subscribe(view, (value) => {
-        told++;
-        listener(value);
-      }),
-  };
   const root = document.createElement("div");
   document.body.append(root);
-  let unmount = (): void => {};
-  // The UI is there before the game is.
-  await act(async () => {
-    unmount = mount(root, handed);
+  let records = 0;
+  const changes = new MutationObserver((list) => {
+    records += list.length;
   });
+  const handed: View.Bridge<Requests>[] = [];
+  // What the UI is handed: the bridge, counting how often it is told.
+  let told = 0;
+  const ui = View.layer(Catch, (bridge) => {
+    handed.push(bridge);
+    return mount(root, {
+      get: bridge.get,
+      send: bridge.send,
+      subscribe: (view, listener) =>
+        bridge.subscribe(view, (value) => {
+          told++;
+          listener(value);
+        }),
+    });
+  });
+  const source = Input.makeManualSource();
+  const sound = Sound.makeRecorder();
+  // The app puts the UI on the page when it is made.
+  const app = await act(async () =>
+    Effect.runSync(
+      App.make(Catch, { seed: 3 }).pipe(
+        Effect.provide(
+          Layer.mergeAll(ui, Sound.layer(sound), Assets.layerMemory(files))
+        ),
+        Effect.provideService(Screen, { canvas }),
+        Effect.provide(Input.layer(source))
+      )
+    )
+  );
   const before = {
     buttons: Array.from(root.querySelectorAll("button"))
       .filter((button) => !button.hidden)
       .map((button) => button.textContent),
     hud: root.querySelector(".hud")?.textContent,
   };
-  let records = 0;
-  const changes = new MutationObserver((list) => {
-    records += list.length;
-  });
   changes.observe(root, {
     attributes: true,
     characterData: true,
     childList: true,
     subtree: true,
   });
-  const source = Input.makeManualSource();
-  const sound = Sound.makeRecorder();
-  const app = Effect.runSync(
-    App.make(Catch, { seed: 3 }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          View.layer(ui),
-          Sound.layer(sound),
-          Assets.layerMemory(files)
-        )
-      ),
-      Effect.provideService(Screen, { canvas }),
-      Effect.provide(Input.layer(source))
-    )
-  );
   return {
-    ui,
+    ui: handed[0]!,
     root,
     source,
     sound,
@@ -156,12 +151,7 @@ const play = async (
         }
       });
     },
-    unmount: async () => {
-      await act(async () => {
-        unmount();
-      });
-    },
-    close: () => Effect.runPromise(app.close),
+    close: () => act(() => Effect.runPromise(app.close)),
   };
 };
 
@@ -267,16 +257,9 @@ describe.each([
     expect(page.sound.playing.size).toBe(0);
     expect(page.sound.scored.length).toBe(4);
 
-    // Taken out, it listens no more and leaves nothing behind.
-    await page.unmount();
-    expect(page.root.childNodes.length).toBe(0);
-    const told = page.told();
-    page.ui.send(Start, {});
-    await page.step(2);
-    expect(page.ui.get(Menu)).toEqual({ phase: "playing" });
-    expect(page.told()).toBe(told);
-    expect(page.root.childNodes.length).toBe(0);
+    // Closing the app takes the UI out, and it leaves nothing behind.
     await page.close();
+    expect(page.root.childNodes.length).toBe(0);
   });
 });
 

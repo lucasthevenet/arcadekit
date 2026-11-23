@@ -242,15 +242,14 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
         };
       });
       const WithHud = App.define({ plugins: [View.plugin], systems: [Show] });
-      const ui = View.makeBridge(WithHud);
-      let heard = 0;
-      ui.subscribe(Hud, () => {
-        heard++;
+      // A UI that listens, so that a value published is told to someone.
+      const ui = View.layer(WithHud, (bridge) => {
+        bridge.subscribe(Hud, () => {});
       });
       const made = App.make(WithHud, { checkpointEvery: 0 });
       const app = yield* mode === "nobody"
         ? made
-        : made.pipe(Effect.provide(View.layer(ui)));
+        : made.pipe(Effect.provide(ui));
       return measure(
         () => {
           frames++;
@@ -339,7 +338,10 @@ const atRest = (): number =>
       });
       const app = yield* App.make(Resting, { checkpointEvery: 0 }).pipe(
         Effect.provide(
-          Layer.merge(Input.layer(source), View.layer(View.makeBridge(Resting)))
+          Layer.merge(
+            Input.layer(source),
+            View.layer(Resting, () => {})
+          )
         )
       );
       const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });

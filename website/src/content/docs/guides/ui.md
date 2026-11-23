@@ -64,7 +64,7 @@ The system compares values field by field, at any depth. The body can return a n
 
 ## Read views and send actions from the UI
 
-A UI never holds the app. It receives a `View.Bridge` and nothing else from the game. The bridge's type names the actions that the UI sends.
+A UI never holds the app. The app hands it a `View.Bridge`, and nothing else of the game. The bridge's type names the actions that the UI sends.
 
 ```ts title="ui.ts"
 import type { View } from "arcadekit";
@@ -74,10 +74,11 @@ import { Hud, NewGame } from "./protocol";
 export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
   const label = root.querySelector("output")!;
   label.textContent = `${ui.get(Hud).score}`;
-  ui.subscribe(Hud, ({ score }) => {
+  const stop = ui.subscribe(Hud, ({ score }) => {
     label.textContent = `${score}`;
   });
   root.querySelector("button")!.onclick = () => ui.send(NewGame, {});
+  return stop;
 };
 ```
 
@@ -85,7 +86,7 @@ export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
 - `ui.subscribe(view, listener)` calls the listener each time the value changes, and returns a function that unsubscribes. It doesn't call the listener with the current value, so read that with `get`. A listener that throws fails the frame, like any bug in the frame stage, once every other listener has been notified.
 - `ui.send(action, payload)` requests an action. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for a key bound to it. A replay therefore needs no UI, and a button counts the same as a key.
 
-A bridge sends the actions of its type and no other. `View.makeBridge(game)` makes a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` can be handed the bridge only if the game handles `NewGame`. A `View.Bridge` with no actions reads views and sends nothing. An action that the game has no handler for doesn't compile, in `send` or where the bridge is handed to the UI.
+A bridge sends the actions of its type and no other. The app of a game hands out a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` can be handed the bridge only if the game handles `NewGame`. A `View.Bridge` with no actions reads views and sends nothing. An action that the game has no handler for doesn't compile, in `send` or where the bridge is handed to the UI.
 
 The UI isn't told the outcome of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and publish as a view.
 
@@ -103,22 +104,23 @@ import { mount } from "./ui";
 
 const Arcade = App.define({ plugins: [Game] });
 
-const ui = View.makeBridge(Arcade);
-mount(document.body, ui);
+const ui = View.layer(Arcade, (bridge) => mount(document.body, bridge));
 
 Browser.runMain(
-  Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(View.layer(ui))),
+  Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(ui)),
   { target: document.querySelector("canvas")! }
 );
 ```
 
-Make the bridge and the app from the same game. A bridge provided to the app of another game can send an action that the app has no handler for, and the app's input stage then throws.
+`View.layer(game, mount)` gives the app a UI. When the app is made, `View.plugin` makes the bridge and calls `mount` with it. If `mount` returns a function, the app calls it when it closes, to take the UI off the page. Each app made under the layer hands out a bridge of its own. A game that doesn't list `View.plugin`, itself or through one of its plugins, doesn't compile here, since its app would hand out no bridge.
 
-You can mount a UI before the app is made. It sees every view at its initial value, and what it sends waits for the app.
+Give the layer and the app the same game. A layer provided to the app of another game hands out a bridge that can send an action the app has no handler for, and the app's input stage then throws.
+
+The UI sees every view at its initial value until the first frame publishes it.
 
 The next tick applies what the UI sends. Under a driver, that tick runs in the frame the action was sent in or the one after. A game that steps its app by hand runs a tick itself when its UI has sent something.
 
-`View.Bridge` is a `Context.Reference` whose default is no UI, which is what a server, a replay, and most tests have. Given the same actions, a game with a UI and the same game without one have the same hash, log, and save.
+Without `View.layer` the app has no UI, which is what a server, a replay, and most tests have. Given the same actions, a game with a UI and the same game without one have the same hash, log, and save.
 
 ## Use the bridge from React
 

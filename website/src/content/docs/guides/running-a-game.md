@@ -64,7 +64,7 @@ The loop keeps to these rules:
 - After a freeze while the tab stays visible, the loop runs at most `maxStepsPerCall` ticks and drops the rest.
 - If a tick or a frame throws, the loop stops and the program dies with the thrown error.
 
-To connect something outside the game to the app before its first frame, give it as `ready`, as above. What `ready` acquires is released when the run ends. When `ready` fails, `Driver.run` closes the app and fails with what `ready` failed with. A UI doesn't need the app, because it receives [the view bridge](ui.md).
+To connect something outside the game to the app before its first frame, give it as `ready`, as above. What `ready` acquires is released when the run ends. When `ready` fails, `Driver.run` closes the app and fails with what `ready` failed with. A UI doesn't need the app, because the app hands it [the view bridge](ui.md).
 
 An app made from a `save` resumes from it instead of starting fresh. Making it can fail with `Save.LoadRefused`, and `Driver.run` fails with whatever making the app fails with. See [saving and loading](saving-and-loading.md).
 

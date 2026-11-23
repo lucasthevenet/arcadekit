@@ -273,14 +273,24 @@ describe("a game that ticks when its player moves", () => {
   const Played = App.define({ plugins: [Game] });
   const play = () => {
     frames = 0;
-    const ui = View.makeBridge(Played);
+    const handed: View.Bridge<typeof Begin | typeof Move>[] = [];
     const source = Input.makeManualSource();
     const app = Effect.runSync(
       App.make(Played, {
         checkpointEvery: 1,
         seed: 5,
-      }).pipe(Effect.provide(Layer.merge(View.layer(ui), Input.layer(source))))
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            View.layer(Played, (ui) => {
+              handed.push(ui);
+            }),
+            Input.layer(source)
+          )
+        )
+      )
     );
+    const ui = handed[0]!;
     const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
     /** Frames at the screen's rate, sixty a second. */
     const frame = (count = 1): number => {

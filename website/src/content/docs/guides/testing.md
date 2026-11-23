@@ -126,9 +126,9 @@ To check that a level's assets are released when the level ends, give the level 
 
 ## Act as the UI
 
-To test the game, the test acts as the UI. It makes a bridge from the game with `View.makeBridge(game)` and provides it with `Effect.provide(View.layer(ui))`. It reads views with `get` or `subscribe`, acts with `send`, and steps the app.
+To test the game, the test acts as the UI. It provides `View.layer(game, (ui) => { handed.push(ui) })` to the app and keeps the bridge the app hands it. It reads views with `get` or `subscribe`, acts with `send`, and steps the app.
 
-To test a UI, mount it on a bridge in a document, with `// @vitest-environment happy-dom` at the top of the file. Count what the UI was told, and count what changed in the document with a `MutationObserver`. See [a UI](ui.md).
+To test a UI, mount it with `View.layer` in a document, with `// @vitest-environment happy-dom` at the top of the file. Count what the UI was told, and count what changed in the document with a `MutationObserver`. See [a UI](ui.md).
 
 ## Record what is drawn
 
