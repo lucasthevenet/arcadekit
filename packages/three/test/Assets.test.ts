@@ -18,6 +18,7 @@ import type { BuiltIn } from "arcadekit/Services";
 import { Cause, Effect, Exit, Layer, Logger, Schema, Scope } from "effect";
 import {
   BoxGeometry,
+  FileLoader,
   InstancedMesh,
   MeshBasicMaterial,
   MirroredRepeatWrapping,
@@ -28,7 +29,7 @@ import {
   SRGBColorSpace,
   Texture,
 } from "three";
-import type { Scene } from "three";
+import type { LoadingManager, Scene } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Three } from "../src/index";
@@ -1019,5 +1020,54 @@ describe("a texture", () => {
     expect(events).toEqual(["texture", "material"]);
     expect(bitmaps[0]!.closed).toBe(1);
     expect(renderer.drew).toEqual([]);
+  });
+});
+
+describe("a manager of Three.js's requests", () => {
+  /** Makes a manager of `served` under in-memory files, in a scope of the test's. */
+  const make = async (
+    files: Readonly<Record<string, string>>,
+    served: ReadonlyArray<string>
+  ) => {
+    const scope = Scope.makeUnsafe();
+    const exit = await Effect.runPromise(
+      Effect.exit(Three.manager(served)).pipe(
+        Scope.provide(scope),
+        Effect.provide(Assets.layerMemory(files))
+      )
+    );
+    return {
+      exit,
+      close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+    };
+  };
+  const text = (manager: LoadingManager, path: string, url: string) =>
+    new FileLoader(manager).setPath(path).loadAsync(url);
+
+  it("serves a loader made with it the files it was given, fetched through Assets.Loader, until its scope closes", async () => {
+    // Node has no ProgressEvent, which a FileLoader reports progress with.
+    vi.stubGlobal("ProgressEvent", Event);
+    const { close, exit } = await make(
+      { "/draco/decoder.js": "decode()", "/other.js": "other()" },
+      ["/draco/decoder.js"]
+    );
+    const manager = Exit.isSuccess(exit) ? exit.value : undefined;
+    expect(await text(manager!, "/draco/", "decoder.js")).toBe("decode()");
+    await expect(text(manager!, "", "/other.js")).rejects.toThrow(
+      'A Three.js loader asked for "/other.js", which is not one of the files its manager serves.'
+    );
+    const blob = URL.createObjectURL(new Blob(["held()"]));
+    expect(await text(manager!, "", blob)).toBe("held()");
+    await close();
+    await expect(text(manager!, "/draco/", "decoder.js")).rejects.toThrow(
+      "fetch failed"
+    );
+  });
+
+  it("fails with the file that is missing", async () => {
+    const { exit } = await make({}, ["/draco/decoder.js"]);
+    const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+    expect(failure).toBeInstanceOf(Assets.AssetFailed);
+    expect(failure).toMatchObject({ url: "/draco/decoder.js" });
   });
 });
