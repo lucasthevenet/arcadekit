@@ -50,17 +50,17 @@ All browser actions go through `control-docs browser`. Prefer roles and accessib
 
 Stable handles on this site:
 
-| What | Handle |
-| --- | --- |
-| Brand / home | link role, name `arcadekit` (class `site-title`, href `/`) |
-| Search | button role, name `Search` (opens a `dialog`) |
-| Search field | placeholder `Search` inside the open dialog |
-| Hero CTA | link role, name `Get started` → `/making-a-game` |
-| Topics | links `Learn`, `Guides`, `Reference` in navigation `Main` |
-| Walkthrough | path `/making-a-game`, heading includes `Making a game` |
-| Reference index | path `/reference` |
-| Package page | path `/reference/arcadekit` or `/reference/three` |
-| Module page | path `/reference/arcadekit/<Module>` (e.g. `Sound`) |
+| What            | Handle                                                     |
+| --------------- | ---------------------------------------------------------- |
+| Brand / home    | link role, name `arcadekit` (class `site-title`, href `/`) |
+| Search          | button role, name `Search` (opens a `dialog`)              |
+| Search field    | placeholder `Search` inside the open dialog                |
+| Hero CTA        | link role, name `Get started` → `/making-a-game`           |
+| Topics          | links `Learn`, `Guides`, `Reference` in navigation `Main`  |
+| Walkthrough     | path `/making-a-game`, heading includes `Making a game`    |
+| Reference index | path `/reference`                                          |
+| Package page    | path `/reference/arcadekit` or `/reference/three`          |
+| Module page     | path `/reference/arcadekit/<Module>` (e.g. `Sound`)        |
 
 Examples:
 
