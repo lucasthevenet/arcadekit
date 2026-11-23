@@ -1,10 +1,12 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  Action,
   App,
   Commands,
   Component,
+  Event,
   Field,
   Journal,
   Plugin,
@@ -276,6 +278,47 @@ describe("a rollback session", () => {
         },
       ]);
     });
+  });
+
+  it("has the frame stage hear each event once, though a rewind runs its tick again", () => {
+    const Rang = Event.define("rb/Rang", Schema.Struct({ by: Schema.String }));
+    const Ring = Action.define("rb/Ring", Schema.Struct({}));
+    const ring = Action.handler(Ring, function* (_, { from }) {
+      (yield* Rang.emits).emit({ by: from ?? "" });
+    });
+    const heard: string[] = [];
+    const Listen = System.frame("rb/Listen", function* () {
+      heard.push(...(yield* Rang).read().map((rang) => rang.by));
+    });
+    const Ringing = App.define({ systems: [Listen], handlers: [ring] });
+    withMade(
+      Session.make(Ringing, {
+        me: "ada",
+        others: ["grace"],
+        delta: DELTA,
+        ahead: 8,
+      }),
+      (ada) => {
+        expect(ada.tick()).toBe(true);
+        ada.frame(0);
+        ada.app.enqueue(Ring, {});
+        expect(ada.tick()).toBe(true);
+        ada.frame(0);
+        expect(heard).toEqual(["ada"]);
+        // Grace rang on the first tick: ada goes back, and runs ada's ring
+        // again after grace's.
+        ada.receive({
+          from: "grace",
+          tick: 0,
+          actions: [{ name: "rb/Ring", payload: {} }],
+        });
+        ada.receive({ from: "grace", tick: 1, actions: [] });
+        expect(ada.tick()).toBe(true);
+        ada.frame(0);
+        expect(ada.rewinds).toBe(1);
+        expect(heard).toEqual(["ada", "grace"]);
+      }
+    );
   });
 
   it("captures the game only before a tick it is not sure of", () => {
