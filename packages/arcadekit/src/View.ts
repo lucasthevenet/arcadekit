@@ -43,7 +43,7 @@ import { Context, Effect, Equal, Layer } from "effect";
 
 import * as Action from "./Action";
 import * as Plugin from "./Plugin";
-import { World } from "./Services";
+import { World, whole } from "./Services";
 import * as System from "./System";
 
 // --- a view ----------------------------------------------------------------------
@@ -331,7 +331,7 @@ const portLayer = Layer.effect(
     const bridge = yield* Bridge;
     // Between ticks an app's world is frozen: that is how the stages that
     // may talk to the UI are told from the tick.
-    const world = yield* World;
+    const world = whole(yield* World);
     // From here to the app's end the bridge knows what the game handles,
     // and refuses the rest where it is sent.
     const { handles } = yield* Action.Actions;

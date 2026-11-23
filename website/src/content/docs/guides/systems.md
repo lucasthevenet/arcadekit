@@ -51,7 +51,7 @@ const Fountain = System.make("game/Fountain", function* () {
   }
   spray.wave += 1;
   spray.wait = 0.5;
-  (yield* Commands).spawn(Velocity.of({ y: spray.wave }));
+  (yield* Commands.spawns(Velocity)).spawn(Velocity.of({ y: spray.wave }));
 });
 ```
 
@@ -91,7 +91,8 @@ The error names both systems and says which to list after the other:
 - The check follows the order a tick runs: stage by stage, a plugin's dependencies before the plugin, and plugins before the app's own systems.
 - Hooks, handlers, and systems of the frame and input stages run at another moment, and are not checked against the tick's systems.
 - Write the list where you give it to `App.define` or `Plugin.make`, and write a system's stage out in `System.inStage`. A list or a stage held in a variable of a wider type has no order the compiler can read, and is refused when the order would matter.
-- The compiler knows a write from the query that makes it. It doesn't know a write made with `world.set`, or a component an entity gained through `Commands`: a watcher listed ahead of such a system reacts a tick late, with no error.
+- The compiler knows what a system changes from what it requests: a query that names a component with `Query.writes`, `World.writes`, and `Commands.spawns`. A component an entity gains counts as written, so a system that watches with `Query.changed` or `Query.added` is listed after the systems that spawn or add the component.
+- `Query.removed` isn't checked. A despawn doesn't say which components its entity had, so a system that reads removals, listed ahead of the system that despawns, reads them a tick late.
 
 ## Stages
 

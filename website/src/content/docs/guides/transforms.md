@@ -36,7 +36,12 @@ const Drift = System.make("game/Drift", function* () {
 const Rules = Plugin.make("game/Rules", {
   systems: [Drift],
   setup: Effect.gen(function* () {
-    (yield* Commands).spawn(
+    (yield* Commands.spawns(
+      Rock,
+      Transform3d.Position,
+      Transform3d.Rotation,
+      Transform3d.Scale
+    )).spawn(
       Rock,
       Transform3d.Position.of({ x: 0, y: 4, z: 0 }),
       Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2)),
@@ -69,7 +74,12 @@ const Card = Component.tag("game/Card");
 
 const Rules = Plugin.make("game/Rules", {
   setup: Effect.gen(function* () {
-    (yield* Commands).spawn(
+    (yield* Commands.spawns(
+      Card,
+      Transform2d.Position,
+      Transform2d.Rotation,
+      Transform2d.Scale
+    )).spawn(
       Card,
       Transform2d.Position.of({ x: 120, y: 80 }),
       Transform2d.Rotation.of({ angle: Math.PI / 6 }),

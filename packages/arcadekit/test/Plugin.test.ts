@@ -77,7 +77,7 @@ const Physics = Plugin.make("Physics", {
   // tripped up type inference in an earlier design.
   layer: Layer.succeed(Bounds, { width: 10, clamp: (x) => Math.min(x, 10) }),
   setup: Effect.gen(function* () {
-    const commands = yield* Commands;
+    const commands = yield* Commands.spawns(Position, Velocity);
     commands.spawn(Position.of({ x: 9, y: 0 }), Velocity.of({ x: 2, y: 0 }));
   }),
 });
@@ -105,7 +105,7 @@ const heal = Action.handler(Heal, function* ({ amount }) {
 });
 
 const BumpDamage = System.make("BumpDamage", function* () {
-  const world = yield* World;
+  const world = yield* World.writes(Health);
   for (const { entity } of (yield* Bumped).read()) {
     const health = world.get(entity, Health);
     if (health === undefined) {
@@ -248,9 +248,8 @@ describe("plugins", () => {
         Arena,
         Effect.gen(function* () {
           const { width } = yield* Bounds; // from the Physics plugin
-          const commands = yield* Commands; // built in
+          const commands = yield* Commands.spawns(Position); // built in
           const wall = commands.spawn(Position.of({ x: width, y: 0 }));
-          commands.apply();
           return { wall, width };
         })
       ),
@@ -358,13 +357,13 @@ describe("plugins", () => {
     let seen = -1;
     const First = Plugin.make("pl/First", {
       setup: Effect.gen(function* () {
-        (yield* Commands).spawn(Health.of({ hp: 1 }));
+        (yield* Commands.spawns(Health)).spawn(Health.of({ hp: 1 }));
       }),
     });
     const Second = Plugin.make("pl/Second", {
       plugins: [First],
       setup: Effect.gen(function* () {
-        seen = (yield* World).view(Query.all(Health)).entities().length;
+        seen = (yield* Query.all(Health)).entities().length;
       }),
     });
     withApp(App.make(App.define({ plugins: [Second] })), () => {

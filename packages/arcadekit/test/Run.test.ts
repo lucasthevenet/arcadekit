@@ -74,7 +74,7 @@ const makeGame = () => {
         () => Effect.sync(() => log.push("sound closed"))
       )
     ),
-    setup: Effect.map(Commands, (commands) => {
+    setup: Effect.map(Commands.spawns(Ball), (commands) => {
       log.push("setup");
       commands.spawn(Ball.of({ x: 0, vx: 60 }));
     }),

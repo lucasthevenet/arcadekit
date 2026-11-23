@@ -22,7 +22,7 @@ import { dual } from "effect/Function";
 import type { RemovedReader } from "./ecs/changes";
 import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
 import type { QuerySpec, QueryView, Terms } from "./ecs/query";
-import { World } from "./Services";
+import { World, whole } from "./Services";
 
 /**
  * An immutable query description, independent of any world.
@@ -33,7 +33,7 @@ import { World } from "./Services";
  *
  * @category Models
  */
-export class Query<D extends Terms, W extends string = string>
+export class Query<D extends Terms, W extends Watching = Watching>
   extends Effectable.Class<QueryView<D>, never, Needs<D, W>>
   implements QuerySpec<D>
 {
@@ -59,7 +59,7 @@ export class Query<D extends Terms, W extends string = string>
     // the first tick this is a service lookup plus a Map hit. A change
     // query's view is the one of whoever is running: `world.reader`.
     return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      world.view(this)
+      whole(world).view(this)
     ));
   }
 }
@@ -87,14 +87,14 @@ export const all = <const D extends Terms>(
 const with_: {
   (
     ...defs: readonly ComponentDef[]
-  ): <D extends Terms, W extends string>(self: Query<D, W>) => Query<D, W>;
-  <D extends Terms, W extends string>(
+  ): <D extends Terms, W extends Watching>(self: Query<D, W>) => Query<D, W>;
+  <D extends Terms, W extends Watching>(
     self: Query<D, W>,
     ...defs: readonly ComponentDef[]
   ): Query<D, W>;
 } = dual(
   (args) => args[0] instanceof Query,
-  <D extends Terms, W extends string>(
+  <D extends Terms, W extends Watching>(
     self: Query<D, W>,
     ...defs: readonly ComponentDef[]
   ): Query<D, W> =>
@@ -121,14 +121,14 @@ export {
 export const without: {
   (
     ...defs: readonly ComponentDef[]
-  ): <D extends Terms, W extends string>(self: Query<D, W>) => Query<D, W>;
-  <D extends Terms, W extends string>(
+  ): <D extends Terms, W extends Watching>(self: Query<D, W>) => Query<D, W>;
+  <D extends Terms, W extends Watching>(
     self: Query<D, W>,
     ...defs: readonly ComponentDef[]
   ): Query<D, W>;
 } = dual(
   (args) => args[0] instanceof Query,
-  <D extends Terms, W extends string>(
+  <D extends Terms, W extends Watching>(
     self: Query<D, W>,
     ...defs: readonly ComponentDef[]
   ): Query<D, W> =>
@@ -173,39 +173,47 @@ export const without: {
  *   position. It isn't part of the world's snapshot or hash.
  *
  * - A system that watches a component is listed after the systems that write it
- *   in the same tick, or it would see their writes a tick late. `App.define`
- *   and `Plugin.make` refuse a list the other way round, and the error names
- *   the two systems: see `System.Misordered`.
+ *   in the same tick, with a query, with `World.writes` or by spawning it, or
+ *   it would see their writes a tick late. `App.define` and `Plugin.make`
+ *   refuse a list the other way round, and the error names the two systems:
+ *   see `System.Misordered`.
  *
  * **Gotchas**
  *
  * - A change query can't `eachChunk` over a component it watches and writes,
  *   and throws: it would mistake its own visit for a change. Iterate with
  *   `each`.
- * - The compiler knows a write from the query that makes it, named with
- *   `Query.writes`. It doesn't know a write made with `world.set`, or a
- *   component an entity gained through `Commands`: a watcher listed ahead of a
- *   system that writes that way sees the write a tick late, with no error.
+ * - Raw columns are typed arrays all the same: a write to one of a term the
+ *   query only reads, past the compiler, is seen by no change query and by no
+ *   check of the order.
  *
  * @category Combinators
  */
 export const changed: {
   <const C extends readonly ComponentDef[]>(
     ...defs: C
-  ): <D extends Terms, W extends string>(
+  ): <D extends Terms, W extends Watching>(
     self: Query<D, W>
-  ) => Query<D, W | NameOf<C[number]>>;
-  <D extends Terms, W extends string, const C extends readonly ComponentDef[]>(
+  ) => Query<D, W | WatchesOf<NameOf<C[number]>>>;
+  <
+    D extends Terms,
+    W extends Watching,
+    const C extends readonly ComponentDef[],
+  >(
     self: Query<D, W>,
     ...defs: C
-  ): Query<D, W | NameOf<C[number]>>;
+  ): Query<D, W | WatchesOf<NameOf<C[number]>>>;
 } = dual(
   (args) => args[0] instanceof Query,
-  <D extends Terms, W extends string, const C extends readonly ComponentDef[]>(
+  <
+    D extends Terms,
+    W extends Watching,
+    const C extends readonly ComponentDef[],
+  >(
     self: Query<D, W>,
     ...defs: C
-  ): Query<D, W | NameOf<C[number]>> =>
-    new Query<D, W | NameOf<C[number]>>(
+  ): Query<D, W | WatchesOf<NameOf<C[number]>>> =>
+    new Query<D, W | WatchesOf<NameOf<C[number]>>>(
       self.terms,
       self.withDefs,
       self.withoutDefs,
@@ -220,23 +228,38 @@ export const changed: {
  * last visited, by being spawned with it or by `add`. Otherwise works like
  * `Query.changed`.
  *
+ * A system that watches for a component is listed after the systems that spawn
+ * or add it in the same tick, those that asked for it with `Commands.spawns`,
+ * or it would see the entities a tick late. `App.define` and `Plugin.make`
+ * refuse a list the other way round: see `System.Misordered`.
+ *
  * @category Combinators
  */
 export const added: {
-  (
-    ...defs: readonly ComponentDef[]
-  ): <D extends Terms, W extends string>(self: Query<D, W>) => Query<D, W>;
-  <D extends Terms, W extends string>(
+  <const C extends readonly ComponentDef[]>(
+    ...defs: C
+  ): <D extends Terms, W extends Watching>(
+    self: Query<D, W>
+  ) => Query<D, W | WatchesAddedOf<NameOf<C[number]>>>;
+  <
+    D extends Terms,
+    W extends Watching,
+    const C extends readonly ComponentDef[],
+  >(
     self: Query<D, W>,
-    ...defs: readonly ComponentDef[]
-  ): Query<D, W>;
+    ...defs: C
+  ): Query<D, W | WatchesAddedOf<NameOf<C[number]>>>;
 } = dual(
   (args) => args[0] instanceof Query,
-  <D extends Terms, W extends string>(
+  <
+    D extends Terms,
+    W extends Watching,
+    const C extends readonly ComponentDef[],
+  >(
     self: Query<D, W>,
-    ...defs: readonly ComponentDef[]
-  ): Query<D, W> =>
-    new Query<D, W>(
+    ...defs: C
+  ): Query<D, W | WatchesAddedOf<NameOf<C[number]>>> =>
+    new Query<D, W | WatchesAddedOf<NameOf<C[number]>>>(
       self.terms,
       self.withDefs,
       self.withoutDefs,
@@ -270,22 +293,73 @@ export interface Watches<out N extends string> {
 }
 
 /**
- * What a query's `yield*` puts in the requirements beside the world: every
- * `Writes` and `Watches`. An app provides them, since they stand for nothing at
- * run time.
+ * In a system's requirements, says that it watches the component named `N` for
+ * entities that gain it: it yields a query made with `Query.added`. As with
+ * `Writes`, nobody writes this type or provides it.
  *
  * @category Type-level
  */
-export type Access = Writes<string> | Watches<string>;
+export interface WatchesAdded<out N extends string> {
+  readonly "~arcadekit/Query/WatchesAdded": N;
+}
 
-/** The name of a component, as its definition's type has it. */
-type NameOf<T> = T extends { readonly name: infer N extends string }
-  ? N
-  : never;
+/**
+ * In a system's requirements, says that it gives entities the component named
+ * `N`, by spawning them with it or adding it: it asked for its commands with
+ * `Commands.spawns`. As with `Writes`, nobody writes this type or provides it.
+ *
+ * @category Type-level
+ */
+export interface Adds<out N extends string> {
+  readonly "~arcadekit/Query/Adds": N;
+}
+
+/**
+ * What a query watches for, as its type has it: a `Watches` for each component
+ * given to `Query.changed` and a `WatchesAdded` for each given to
+ * `Query.added`.
+ *
+ * @category Type-level
+ */
+export type Watching = Watches<string> | WatchesAdded<string>;
+
+/**
+ * What a system's requirements say of what it writes, adds and watches, beside
+ * its services. An app provides them, since they stand for nothing at run time.
+ *
+ * @category Type-level
+ */
+export type Access = Writes<string> | Adds<string> | Watching;
+
+/**
+ * The name of a component, as its definition's type has it, or as the type of
+ * its value has it.
+ *
+ * @category Type-level
+ */
+export type NameOf<T> = T extends { readonly def: { readonly name: infer N } }
+  ? N & string
+  : T extends { readonly name: infer N extends string }
+    ? N
+    : never;
 
 // Distributive on purpose: no name gives `never`, not a `Writes` of nothing.
-type WritesOf<N extends string> = N extends string ? Writes<N> : never;
+/**
+ * A `Writes` for each name of a union, and `never` for none.
+ *
+ * @category Type-level
+ */
+export type WritesOf<N extends string> = N extends string ? Writes<N> : never;
 type WatchesOf<N extends string> = N extends string ? Watches<N> : never;
+type WatchesAddedOf<N extends string> = N extends string
+  ? WatchesAdded<N>
+  : never;
+/**
+ * An `Adds` for each name of a union, and `never` for none.
+ *
+ * @category Type-level
+ */
+export type AddsOf<N extends string> = N extends string ? Adds<N> : never;
 
 /** The names of the terms a query writes: those not marked as read-only. */
 type Written<D extends Terms> = {
@@ -298,10 +372,10 @@ type Written<D extends Terms> = {
  *
  * @category Type-level
  */
-export type Needs<D extends Terms, W extends string = never> =
+export type Needs<D extends Terms, W extends Watching = never> =
   | World
   | WritesOf<Written<D>>
-  | WatchesOf<W>;
+  | W;
 
 /**
  * A query's terms, each marked as read-only.
@@ -360,12 +434,12 @@ export type Writing<D extends Terms, W> = {
 export const writes: {
   <const W extends readonly [ComponentDef, ...ComponentDef[]]>(
     ...defs: W
-  ): <D extends Terms, Wa extends string>(
+  ): <D extends Terms, Wa extends Watching>(
     self: Query<D, Wa>
   ) => Query<Writing<D, W[number]>, Wa>;
   <
     D extends Terms,
-    Wa extends string,
+    Wa extends Watching,
     const W extends readonly [ComponentDef, ...ComponentDef[]],
   >(
     self: Query<D, Wa>,
@@ -375,7 +449,7 @@ export const writes: {
   (args) => args[0] instanceof Query,
   <
     D extends Terms,
-    Wa extends string,
+    Wa extends Watching,
     const W extends readonly [ComponentDef, ...ComponentDef[]],
   >(
     self: Query<D, Wa>,
@@ -410,6 +484,13 @@ export const writes: {
  * alive. Removals are tracked from the reader's first read, and each system and
  * handler tracks its own position.
  *
+ * **Gotchas**
+ *
+ * The order of a list is not checked for removals, as it is for
+ * `Query.changed` and `Query.added`: a despawn doesn't say which components its
+ * entity had. A system that reads removals, listed ahead of the system that
+ * despawns or removes, reads them a tick late. List it after.
+ *
  * @category Models
  */
 export class Removed extends Effectable.Class<RemovedReader, never, World> {
@@ -421,7 +502,7 @@ export class Removed extends Effectable.Class<RemovedReader, never, World> {
 
   asEffect(): Effect.Effect<RemovedReader, never, World> {
     return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      world.removed(this.component)
+      whole(world).removed(this.component)
     ));
   }
 }

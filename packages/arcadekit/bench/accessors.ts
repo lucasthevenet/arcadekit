@@ -64,7 +64,7 @@ const Nudge = Action.define(
   Schema.Struct({ target: EntityId, refuse: Schema.Boolean })
 );
 const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
-  const world = yield* WorldService;
+  const world = yield* WorldService.writes(Position);
   const position = world.get(target, Position);
   if (position === undefined) {
     return yield* new Refused();

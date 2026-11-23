@@ -289,7 +289,7 @@ describe("a run condition", () => {
               noting("Spawner", ran).pipe(
                 System.runIf(State.is(Phase, "playing")),
                 System.otherwise(
-                  Effect.map(Commands, (commands) => {
+                  Effect.map(Commands.spawns(Ball), (commands) => {
                     commands.spawn(Ball.of({ x: 1 }));
                   })
                 )
@@ -556,14 +556,14 @@ describe("hooks", () => {
         const seen: string[] = [];
         const Leaving = System.make("Leaving", function* () {
           seen.push(`leaving ${(yield* Phase).value}`);
-          (yield* Commands).spawn(Ball.of({ x: 1 }));
+          (yield* Commands.spawns(Ball)).spawn(Ball.of({ x: 1 }));
         }).pipe(State.onExit(Phase, "menu"));
         const Entering = System.make("Entering", function* () {
           // What the hook before it queued has been applied.
           seen.push(
             `entering ${(yield* Phase).value} with ${(yield* Balls).count()}`
           );
-          (yield* Commands).spawn(Ball.of({ x: 2 }));
+          (yield* Commands.spawns(Ball)).spawn(Ball.of({ x: 2 }));
         }).pipe(State.onEnter(Phase, "playing"));
         const Count = System.make("Count", function* () {
           seen.push(`tick with ${(yield* Balls).count()}`);
@@ -774,7 +774,7 @@ describe("a state in a save", () => {
   const Built = Component.define("st/Built", { level: Field.json<string>() });
   const build = (level: "one" | "two" | "three") =>
     System.make(`Build ${level}`, function* () {
-      (yield* Commands).spawn(Built.of({ level }));
+      (yield* Commands.spawns(Built)).spawn(Built.of({ level }));
     }).pipe(State.onEnter(Level, level));
   const Rules = Plugin.make("st/Rules", {
     systems: [
@@ -789,7 +789,7 @@ describe("a state in a save", () => {
     ],
     handlers: [next],
     setup: Effect.gen(function* () {
-      (yield* Commands).spawn(Ball.of({ x: 0 }));
+      (yield* Commands.spawns(Ball)).spawn(Ball.of({ x: 0 }));
     }),
   });
   const built = (app: App.Any): string[] => {

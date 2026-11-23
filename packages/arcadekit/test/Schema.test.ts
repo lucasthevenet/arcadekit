@@ -42,7 +42,7 @@ const Reset = Action.define("Reset");
 const received: unknown[] = [];
 const damage = Action.handler(Damage, function* (payload) {
   received.push(payload);
-  const world = yield* World;
+  const world = yield* World.writes(Health);
   const health = world.get(payload.target, Health);
   if (health === undefined) {
     return yield* new NoSuchTarget({ target: payload.target });
@@ -60,7 +60,7 @@ const reset = Action.handler(Reset, function* (payload) {
 
 /** How the game begins: with one thing to damage. */
 const Target = Plugin.make("sc/Target", {
-  setup: Effect.map(Commands, (commands) => {
+  setup: Effect.map(Commands.spawns(Health), (commands) => {
     commands.spawn(Health.of({ hp: 50 }));
   }),
 });

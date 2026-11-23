@@ -23,7 +23,12 @@ export const Rock = Component.tag("game/Rock");
 
 export const Rules = Plugin.make("game/Rules", {
   setup: Effect.gen(function* () {
-    const commands = yield* Commands;
+    const commands = yield* Commands.spawns(
+      Rock,
+      Transform3d.Position,
+      Transform3d.Rotation,
+      Transform3d.Scale
+    );
     commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }));
     commands.spawn(
       Rock,

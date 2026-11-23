@@ -96,7 +96,7 @@ describe("systems", () => {
 
   it("see each other's commands as soon as the earlier system finishes", () => {
     const Spawner = System.make("Spawner", function* () {
-      const commands = yield* Commands;
+      const commands = yield* Commands.spawns(Position, Lifetime);
       const { tick } = yield* Time;
       if (tick === 1) {
         commands.spawn(
@@ -334,7 +334,9 @@ describe("the built-in services", () => {
     const Probe = System.make("Probe", function* () {
       const world = yield* World;
       const mine = yield* GameWorld;
-      world.spawn(Lifetime.of({ seconds: mine.size }));
+      (yield* Commands.spawns(Lifetime)).spawn(
+        Lifetime.of({ seconds: mine.size + world.entityCount })
+      );
     });
     withApp(
       App.make(App.define({ systems: [Probe] })).pipe(
@@ -378,7 +380,7 @@ describe("a fiber the game starts", () => {
     });
 
     const ping = Action.handler(Ping, function* () {
-      (yield* Commands).spawn(Lifetime.of({ seconds: 1 }));
+      (yield* Commands.spawns(Lifetime)).spawn(Lifetime.of({ seconds: 1 }));
       yield* leave;
     });
     withApp(App.make(App.define({ handlers: [ping] })), (app) => {
@@ -511,7 +513,7 @@ describe("determinism", () => {
         const { tick } = yield* Time;
         const i = tick / 6 - 1;
         if (Number.isInteger(i) && i < 20) {
-          (yield* Commands).spawn(
+          (yield* Commands.spawns(Position, Velocity)).spawn(
             Position.of({ x: 5, y: i }),
             Velocity.of({ x: i, y: 0 })
           );

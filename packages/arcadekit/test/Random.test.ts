@@ -256,7 +256,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
 /** A system that draws inside its loop, and spawns a random number of things. */
 const Sparks = System.make("Sparks", function* () {
   const random = yield* Random;
-  const commands = yield* Commands;
+  const commands = yield* Commands.spawns(Spark);
   const sparks = yield* Query.all(Spark).pipe(Query.writes(Spark));
   sparks.each((spark, entity) => {
     spark.x += random.next() - 0.5;
@@ -365,7 +365,7 @@ describe("the Random service", () => {
     // and the handler, and must still draw the same numbers in the same order
     // to end in the same state.
     const Begin = Plugin.make("rnd/Begin", {
-      setup: Effect.map(Commands, (commands) => {
+      setup: Effect.map(Commands.spawns(Die), (commands) => {
         commands.spawn(Die.of({ face: 1, rolls: 0 }));
       }),
     });

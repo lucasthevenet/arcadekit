@@ -43,7 +43,10 @@ export const Physics = Plugin.make("physics/Physics", {
   layer: Layer.succeed(Bounds, { width: 10 }), // services for the whole app
   setup: Effect.gen(function* () {
     // runs once, on a fresh start
-    (yield* Commands).spawn(Position.of({ x: 0 }), Velocity.of({ x: 1 }));
+    (yield* Commands.spawns(Position, Velocity)).spawn(
+      Position.of({ x: 0 }),
+      Velocity.of({ x: 1 })
+    );
   }),
 });
 

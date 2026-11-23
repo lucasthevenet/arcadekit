@@ -155,7 +155,7 @@ const handlers = [
     }
   }),
   Action.handler(Scatter, function* ({ fastest, slowest, stars }) {
-    const commands = yield* Commands;
+    const commands = yield* Commands.spawns(Star);
     const random = yield* Random;
     for (let i = 0; i < stars; i++) {
       commands.spawn(

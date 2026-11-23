@@ -378,7 +378,7 @@ export interface ComponentDef<
    * Pairs this component with a value, for `spawn` and `add`. A method, so
    * that any component is a `ComponentDef`.
    */
-  of(value: ValueOf<S>): ComponentValue<S>;
+  of(value: ValueOf<S>): ComponentValue<S, N>;
 }
 
 /**
@@ -387,8 +387,11 @@ export interface ComponentDef<
  *
  * @category Models
  */
-export interface ComponentValue<S extends Schema = Schema> {
-  readonly def: ComponentDef<S>;
+export interface ComponentValue<
+  S extends Schema = Schema,
+  N extends string = string,
+> {
+  readonly def: ComponentDef<S, Storage, N>;
   readonly value: ValueOf<S>;
 }
 

@@ -89,7 +89,7 @@ So a loop never uses `yield*`. A system takes what it needs from its services be
 
 ## Spawning and despawning
 
-The world throws if anything spawns, despawns, adds or removes a component while a query is iterating. A system uses `Commands` instead, which applies the change when the system finishes:
+A system changes which entities exist through `Commands`, which applies the change when the system finishes, so the world never changes under a running loop:
 
 ```ts
 import { Commands, Component, Field, Query, System, Time } from "arcadekit";

@@ -93,7 +93,7 @@ const Rules = Plugin.make("sd/Rules", {
       if (height > 100) {
         return yield* new TooHigh();
       }
-      (yield* Commands).spawn(Ball.of({ y: height, speed: 0 }));
+      (yield* Commands.spawns(Ball)).spawn(Ball.of({ y: height, speed: 0 }));
     }),
     Action.handler(Mute, function* ({ on }) {
       (yield* Phase).set(on ? "muted" : "playing");

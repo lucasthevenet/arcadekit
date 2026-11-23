@@ -22,6 +22,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import type { BuiltIn } from "../src/Services";
 
 // --- a small game: coins are dropped, drift about at random, and are taken ------
 
@@ -36,7 +37,9 @@ class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
 
 const drop = Action.handler(Drop, function* ({ value }) {
   const random = yield* Random;
-  return (yield* Commands).spawn(Coin.of({ value, x: random.next() }));
+  return (yield* Commands.spawns(Coin)).spawn(
+    Coin.of({ value, x: random.next() })
+  );
 });
 const take = Action.handler(Take, function* ({ coin }) {
   const world = yield* World;
@@ -80,10 +83,7 @@ const fault = (onTick: number, kind: "nudge" | "lose") =>
   });
 
 /** The build's second system: the fault, or what a test puts in its place. */
-type Faulty =
-  ReturnType<typeof fault> extends System.System<infer E, infer R>
-    ? System.System<E, R>
-    : never;
+type Faulty = System.System<never, BuiltIn>;
 
 interface Options {
   readonly seed?: number;
@@ -267,7 +267,7 @@ describe("checkpoints", () => {
   it("are taken when a tick is over, after the commands its systems queued are applied", () => {
     // The last system's commands are the last thing a tick applies.
     const Mint = System.make("Mint", function* () {
-      (yield* Commands).spawn(Coin.of({ value: 1, x: 0 }));
+      (yield* Commands.spawns(Coin)).spawn(Coin.of({ value: 1, x: 0 }));
     });
     withApp(game({ checkpointEvery: 1, faulty: Mint }), (app) => {
       for (let tick = 1; tick <= 5; tick++) {
@@ -1076,11 +1076,9 @@ describe("a recording", () => {
   const Walker = Component.define("rp/Walker", { x: Field.f64 });
   const Walk = System.make("rp/Walk", function* () {
     const { delta } = yield* Time;
-    (yield* World)
-      .view(Query.all(Walker).pipe(Query.writes(Walker)))
-      .each((walker) => {
-        walker.x += delta;
-      });
+    (yield* Query.all(Walker).pipe(Query.writes(Walker))).each((walker) => {
+      walker.x += delta;
+    });
   });
   const walking = Effect.map(
     App.make(App.define({ systems: [Walk], handlers: [drop] }), {

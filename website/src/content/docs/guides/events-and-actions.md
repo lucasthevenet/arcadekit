@@ -102,7 +102,7 @@ A refusal doesn't roll back anything outside the world: an object held in a fiel
 Handlers follow a few rules of their own:
 
 - A handler finishes immediately; it doesn't wait.
-- It changes which entities exist through `Commands`. `world.spawn`, `despawn`, `add` and `remove` throw inside a handler.
+- It changes which entities exist through `Commands`, and sets a component of one entity through `World.writes`. See [creating and changing entities](components.md#creating-and-changing-entities).
 - It reads its own writes while it runs.
 - It can't dispatch another action. It issues one with `Actions.enqueue`, and a refusal rolls that back too.
 

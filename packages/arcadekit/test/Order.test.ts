@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   Action,
   App,
+  Commands,
   Component,
   Field,
   Plugin,
@@ -12,7 +13,9 @@ import {
   State,
   System,
   Time,
+  World,
 } from "../src/index";
+import type { Entity } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 
 const Position = Component.define("or/Position", { x: Field.f32 });
@@ -261,5 +264,142 @@ describe("the order of systems", () => {
     >;
     const none: Said<Repeat<Busy, 300>> = "nothing";
     expect(none).toBe("nothing");
+  });
+});
+
+describe("what a system spawns and sets", () => {
+  const Dot = Component.tag("or/Dot");
+  const NewDots = Query.all(Dot).pipe(Query.added(Dot));
+  /** Spawns a dot each tick. */
+  const Grow = System.make("Grow", function* () {
+    (yield* Commands.spawns(Dot)).spawn(Dot);
+  });
+  /** A system that notes how many new dots it found, each tick. */
+  const count = (seen: number[]) =>
+    System.make("Count", function* () {
+      seen.push((yield* NewDots).entities().length);
+    });
+  const Count = count([]);
+  const tick3 = (app: App.Any): void => {
+    for (let n = 0; n < 3; n++) {
+      app.tick(1);
+    }
+  };
+
+  it("is named where the commands are asked for, and a component that was not named does not compile", () => {
+    let spawned: Entity | undefined;
+    const Shoot = System.make("Shoot", function* () {
+      const commands = yield* Commands.spawns(Dot, Position);
+      spawned = commands.spawn(Dot, Position.of({ x: 3 }));
+      commands.add(spawned, Position.of({ x: 4 }));
+      commands.spawn(
+        // @ts-expect-error the commands were not asked for health
+        Health.of({ hp: 1 })
+      );
+      commands.add(
+        spawned,
+        // @ts-expect-error nor to add it
+        Health
+      );
+    });
+    const Reap = System.make("Reap", function* () {
+      // Commands asked for with nothing named despawn and remove.
+      const commands = yield* Commands;
+      commands.remove(spawned!, Dot);
+      commands.spawn(
+        // @ts-expect-error and spawn nothing
+        Dot
+      );
+    });
+    withApp(App.make(App.define({ systems: [Shoot, Reap] })), (app) => {
+      app.tick(1);
+      expect(app.world.get(spawned!, Position)).toEqual({ x: 4 });
+      expect(app.world.has(spawned!, Dot)).toBe(false);
+    });
+  });
+
+  it("puts a spawn in the order of the list: a system that watches for it is listed after", () => {
+    const seen: number[] = [];
+    withApp(App.make(App.define({ systems: [Grow, count(seen)] })), tick3);
+    expect(seen).toEqual([1, 1, 1]);
+
+    App.define(
+      // @ts-expect-error a watcher of what is added, listed ahead of what spawns it
+      { systems: [Count, Grow] }
+    );
+    const said: Said<readonly [typeof Count, typeof Grow]> =
+      '"Count" watches "or/Dot" with Query.added, and "Grow" spawns or adds it later in the tick, so "Count" would react a tick late. List "Count" after "Grow", or place it in a later stage.';
+    expect(said).toContain('"Grow" spawns or adds it');
+    // What it refuses is what happens.
+    const late: number[] = [];
+    const unread: readonly System.System<never, BuiltIn>[] = [
+      count(late),
+      Grow,
+    ];
+    withApp(App.make(App.define({ systems: unread })), tick3);
+    expect(late).toEqual([0, 1, 1]);
+
+    // A component an entity gains counts as written, so Query.changed
+    // watches a spawn too.
+    const Place = System.make("Place", function* () {
+      (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0 }));
+    });
+    App.define(
+      // @ts-expect-error a watcher of what is written, listed ahead of what spawns it
+      { systems: [Trail, Place] }
+    );
+    // A query that writes a component adds it to no entity.
+    App.define({ systems: [Count, Move] });
+  });
+
+  it("names what it sets where the world is asked for, and a component that was not named does not compile", () => {
+    let target: Entity | undefined;
+    const Heal = System.make("Heal", function* () {
+      const world = yield* World.writes(Health);
+      world.set(target!, Health, { hp: world.get(target!, Health)!.hp + 1 });
+      world.set(
+        target!,
+        // @ts-expect-error the world was not asked for positions
+        Position,
+        { x: 1 }
+      );
+    });
+    const Look = System.make("Look", function* () {
+      // The world asked for with nothing named reads.
+      const world = yield* World;
+      world.get(target!, Health);
+      world.set(
+        target!,
+        // @ts-expect-error and sets nothing
+        Health,
+        { hp: 0 }
+      );
+      // @ts-expect-error The set of entities changes through Commands alone.
+      world.spawn(Dot);
+      // @ts-expect-error And a query is asked for, not taken from the world.
+      world.view(Healths);
+    });
+    expect(Look.name).toBe("Look");
+    withApp(App.make(App.define({ systems: [Heal] })), (app) => {
+      target = app.world.spawn(Health.of({ hp: 1 }));
+      app.tick(1);
+      expect(app.world.get(target, Health)).toEqual({ hp: 2 });
+    });
+  });
+
+  it("puts a set in the order of the list, as a query's write is", () => {
+    const Jolt = System.make("Jolt", function* () {
+      for (const entity of (yield* Query.all(Position)).entities()) {
+        (yield* World.writes(Position)).set(entity, Position, { x: 9 });
+      }
+    });
+    App.define({ systems: [Jolt, Trail] });
+    App.define(
+      // @ts-expect-error a watcher listed ahead of the system that sets what it watches
+      { systems: [Trail, Jolt] }
+    );
+    const said: Said<readonly [typeof Trail, typeof Jolt]> =
+      '"Trail" watches "or/Position" with Query.changed, and "Jolt" writes it later in the tick, so "Trail" would react a tick late. List "Trail" after "Jolt", or place it in a later stage.';
+    expect(said).toContain('"Jolt" writes it');
   });
 });

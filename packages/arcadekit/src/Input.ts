@@ -49,7 +49,7 @@ import * as Action from "./Action";
 import type { World as EcsWorld } from "./ecs/world";
 import * as Field from "./Field";
 import * as Plugin from "./Plugin";
-import { Time, World } from "./Services";
+import { Time, World, whole } from "./Services";
 import type { TimeState } from "./Services";
 import * as Singleton from "./Singleton";
 import * as System from "./System";
@@ -525,7 +525,7 @@ const Read = System.make("arcadekit/Input.Read", function* () {
     return;
   }
   const devices = yield* Devices;
-  const world = yield* World;
+  const world = whole(yield* World);
   const { tick } = yield* Time;
   const held = world.singleton(Held);
   let { axes, buttons } = held;
@@ -674,7 +674,7 @@ class View<A> extends Effectable.Class<A, never, World | Time> {
   asEffect(): Effect.Effect<A, never, World | Time> {
     return (this.effect ??= Effect.flatMap(Effect.service(World), (world) =>
       Effect.map(Effect.service(Time), (time) =>
-        this.pick(viewsOf(world, time))
+        this.pick(viewsOf(whole(world), time))
       )
     ));
   }
