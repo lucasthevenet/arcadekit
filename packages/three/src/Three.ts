@@ -910,9 +910,11 @@ class FromAssets<T extends Kept> implements Kept {
 export interface TextureOptions {
   /**
    * Called once with the texture, before it is first uploaded to the renderer:
-   * to mark it as non-colour data, or to set its wrapping and filtering.
+   * to mark it as non-colour data, or to set its wrapping and filtering. It is
+   * handed the texture without its `flipY`, which is set with the option of
+   * that name.
    */
-  readonly prepare?: (texture: Texture) => void;
+  readonly prepare?: (texture: Omit<Texture, "flipY">) => void;
   /**
    * Whether the image is flipped vertically on decode, so its first row is at
    * the top of a Three.js geometry. Defaults to `true`, as a `TextureLoader`
@@ -939,10 +941,9 @@ export interface TextureOptions {
  * - It is an sRGB colour image, unless `prepare`, which receives the texture
  *   once, says otherwise.
  * - It is oriented for Three.js geometries, unless `flipY: false` keeps it as
- *   stored in the file. This is set here and not in `prepare`: a bitmap is
- *   flipped when it is decoded, and Three.js ignores a bitmap's `flipY`
- *   afterwards. Setting it in `prepare` would do nothing, so it fails the load
- *   with an error that explains this.
+ *   stored in the file. This is set here and not in `prepare`, whose texture
+ *   has no `flipY`: a bitmap is flipped when it is decoded, and Three.js
+ *   ignores a bitmap's `flipY` afterwards.
  * - It is decoded off the page's main thread by `createImageBitmap`, which
  *   pages have and Node doesn't.
  * - A file that isn't an image fails the bundle with `Assets.AssetFailed`,
@@ -969,12 +970,6 @@ export const texture = (
           // What the texture says of itself is how it was decoded.
           made.flipY = flipY;
           options.prepare?.(made);
-          if (made.flipY !== flipY) {
-            bitmap.close();
-            throw new Error(
-              `flipY was set to ${made.flipY} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("${url}", { flipY: ${made.flipY} }).`
-            );
-          }
           made.needsUpdate = true;
           return made;
         },
