@@ -530,6 +530,13 @@ export interface Options<
    * components or what its saves contain. Defaults to 0. A save records it.
    * `App.make` loads a save of this version as is, migrates an older one with
    * `migrations`, and refuses a newer one.
+   *
+   * At any version, a save whose components differ from the game's in
+   * storage, field names, field order or field kinds is refused with
+   * `"component changed"`. A change that keeps those, such as a field read in
+   * other units or a `json` field holding another shape, loads with no error
+   * unless the version is incremented with a migration that converts the old
+   * values.
    */
   readonly version?: number;
   /**
