@@ -27,17 +27,27 @@
  * A model loads like any asset, with its bundle and through `Assets.Loader`.
  * When the scope it was loaded in closes, its geometries, materials and
  * textures are disposed of. The buffers and images a `.gltf` file references
- * load the same way. This module fetches them through `Assets.Loader` and
- * hands them to Three.js with the model, so Three.js fetches nothing itself.
+ * load the same way, and so do the files a decoder of compressed models
+ * fetches. This module fetches them through `Assets.Loader` and hands them to
+ * Three.js with the model, so Three.js fetches nothing itself.
  *
  * It is a separate entry point because it imports Three.js's glTF loader,
  * which a game without models doesn't need to ship.
  */
 import * as Assets from "arcadekit/Assets";
 import { Effect, Schema } from "effect";
-import type { BufferGeometry, Material, Mesh, Object3D, Texture } from "three";
+import type {
+  BufferGeometry,
+  LoadingManager,
+  Material,
+  Mesh,
+  Object3D,
+  Texture,
+} from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
+
+import * as Three from "./Three";
 
 /**
  * A loaded model, as Three.js's glTF loader returns it. `scene` is its default
@@ -60,12 +70,24 @@ export type Model = GLTF;
  */
 export interface ModelOptions {
   /**
-   * Receives the loader once per load, before it parses the model. Use it to
-   * set the decoders a compressed model needs, with `setDRACOLoader`,
-   * `setKTX2Loader` or `setMeshoptDecoder`. Your game supplies the decoders. A
-   * decoder that fetches files of its own fetches them outside `Assets.Loader`.
+   * The files the loader's decoders fetch, such as
+   * `"/draco/draco_decoder.wasm"`. The manager `prepare` receives serves them,
+   * fetched through `Assets.Loader`. Defaults to none.
    */
-  readonly prepare?: (loader: GLTFLoader) => void;
+  readonly files?: ReadonlyArray<string>;
+  /**
+   * Receives the loader once per load, before it parses the model, with the
+   * manager that serves `files`. Use it to set the decoders a compressed model
+   * needs, with `setDRACOLoader`, `setKTX2Loader` or `setMeshoptDecoder`. Make
+   * a DRACO or KTX2 loader here, with the manager:
+   *
+   *   prepare: (loader, manager) => {
+   *     loader.setDRACOLoader(new DRACOLoader(manager).setDecoderPath("/draco/"))
+   *   }
+   *
+   * It is disposed of once the model is parsed.
+   */
+  readonly prepare?: (loader: GLTFLoader, manager: LoadingManager) => void;
 }
 
 // --- a model's files, packed into one ------------------------------------------------
@@ -396,7 +418,9 @@ const dispose = (model: Model): void => {
  *   requests.
  * - A file that isn't a valid model fails the bundle with `Assets.AssetFailed`,
  *   which says what was wrong.
- * - Set what a compressed model needs on the loader, in `prepare`.
+ * - Set what a compressed model needs on the loader, in `prepare`, and list
+ *   the files its decoders fetch in `files`. They are fetched through
+ *   `Assets.Loader` too.
  * - A bundle loads each model once. Copies made with `model.scene.clone()`
  *   share its geometries and materials, so a copy is cheap and has nothing to
  *   free.
@@ -419,14 +443,22 @@ export const model = (
       // Fetched before anything is held: a loading that is given up gives
       // these requests up, which what is being acquired would not.
       const packed = yield* pack(data, at, yield* Assets.Loader);
+      const manager = yield* Three.manager(options.files ?? []);
+      const loader = new GLTFLoader(manager);
+      options.prepare?.(loader, manager);
+      const decoders = [loader.dracoLoader, loader.ktx2Loader].filter(
+        (decoder) => decoder !== null
+      );
+      if (decoders.some((decoder) => decoder.manager !== manager)) {
+        return yield* new Assets.AssetFailed({
+          url: at,
+          message:
+            "A decoder set in `prepare` was not made with the manager `prepare` receives, so it would fetch its files around `Assets.Loader`.",
+        });
+      }
       return yield* Effect.acquireRelease(
         Effect.tryPromise({
-          try: () =>
-            new Promise<Model>((resolve, reject) => {
-              const loader = new GLTFLoader();
-              options.prepare?.(loader);
-              loader.parse(packed, "", resolve, reject);
-            }),
+          try: () => loader.parseAsync(packed, ""),
           catch: (error) =>
             new Assets.AssetFailed({
               url: at,
@@ -434,6 +466,14 @@ export const model = (
             }),
         }),
         (loaded) => Effect.sync(() => dispose(loaded))
+      ).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            for (const decoder of decoders) {
+              decoder.dispose();
+            }
+          })
+        )
       );
     })
   );
