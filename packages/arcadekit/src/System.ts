@@ -19,7 +19,7 @@
  * `System.Misordered`.
  */
 import { Effect } from "effect";
-import type { Layer } from "effect";
+import type { Layer, Scope } from "effect";
 import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
@@ -220,7 +220,8 @@ type FrameBan =
   | Writes<string>
   | Adds<string>
   | Devices
-  | Intake;
+  | Intake
+  | Scope.Scope;
 type InputBan =
   | Sim
   | Commands
@@ -228,15 +229,16 @@ type InputBan =
   | Adds<string>
   | Frame
   | Player
-  | Port;
+  | Port
+  | Scope.Scope;
 type LayerBan = Sim | Commands | Writes<string> | Adds<string>;
 
 const TICK_MSG =
   "A tick reads and changes the simulation, and requires only its built-in services, queries, singletons, states, events and resources. Keep the game's state in the world (a cache that is rebuilt in a transient field of a singleton), make configuration a Resource, draw and play with System.frame, and read the devices with System.input." as const;
 const FRAME_MSG =
-  "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit or state set. Read Input.Devices from System.input." as const;
+  "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit or state set. Read Input.Devices from System.input. It has no scope to load into: hold a bundle with Assets.during." as const;
 const INPUT_MSG =
-  "An input system reads the devices and enqueues actions. It cannot change the game, and it cannot read Frame, play sound or publish a view." as const;
+  "An input system reads the devices and enqueues actions. It cannot change the game, and it cannot read Frame, play sound or publish a view. It has no scope to load into: hold a bundle with Assets.during." as const;
 const LAYER_MSG =
   "A plugin's layer is built again when a save is loaded, so it cannot change the game: no commands, world.set or query writes. Spawn what a game starts with in the plugin's setup, which a load does not run." as const;
 
@@ -397,8 +399,9 @@ export function tick<
  *
  * `System.inStage("preFrame")` or `System.inStage("postFrame")` moves it
  * within the frame. Requiring `Commands`, `World.writes`, a writing query, an
- * event's `emits`, a state's `sets`, a singleton's `writes` or `Input.Devices`
- * does not compile.
+ * event's `emits`, a state's `sets`, a singleton's `writes`, `Input.Devices`
+ * or a `Scope` does not compile. A system has no scope of its own, so what it
+ * would open, such as with `Assets.load`, has nowhere to be released.
  *
  * @category Constructors
  */
@@ -447,8 +450,8 @@ export const raw = <
  * actions just before a tick, and leaves the world as it found it.
  *
  * Requiring `Commands`, `World.writes`, a writing query, an event's `emits`, a
- * state's `sets`, a singleton's `writes`, `Frame`, `Sound` or `View` does not
- * compile. Reading a bundle of `Assets` does, so an input system can issue an
+ * state's `sets`, a singleton's `writes`, `Frame`, `Sound`, `View` or a
+ * `Scope` does not compile. Reading a bundle of `Assets` does, so an input system can issue an
  * action once the assets are there.
  *
  * @category Constructors

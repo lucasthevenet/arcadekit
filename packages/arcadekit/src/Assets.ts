@@ -359,10 +359,10 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
  *
  * **Gotchas**
  *
- * - Don't use it in a system. A system of the tick that yields it doesn't
- *   compile. A frame or input system that yields it compiles, and throws when
- *   a file takes real time to load, since the system doesn't finish within
- *   its stage.
+ * - A system that yields it doesn't compile, in any stage. A system has no
+ *   scope to load into but the app's, which would keep what each frame loads
+ *   until the app ends. A system holds a bundle with `Assets.during` or
+ *   `Assets.Store`.
  *
  * @category Running
  */
