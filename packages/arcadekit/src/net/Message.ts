@@ -88,7 +88,8 @@ export interface Message {
 /**
  * What a relay tells the members of a room: that a peer joined it, again or
  * for the first time, or that it left. A peer that joins is told who is
- * there already, with a `joined` for each.
+ * there already, with a `joined` for each. `Transport.layerBroadcastChannel`
+ * says the same of its own peer, and tells no peer who is there.
  *
  * @category Models
  */
