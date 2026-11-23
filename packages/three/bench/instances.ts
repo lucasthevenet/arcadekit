@@ -12,9 +12,9 @@
 import {
   App,
   Assets,
+  Color,
   Commands,
   Component,
-  Field,
   Plugin,
   Transform2d,
   Transform3d,
@@ -185,13 +185,10 @@ variant(
 );
 
 // A colour of its own for each: three more numbers, beside the matrix.
-const Paint = Component.define("bench/Paint", {
-  r: Field.f32,
-  g: Field.f32,
-  b: Field.f32,
-});
 const paint = () =>
-  Paint.of({ r: Math.random(), g: Math.random(), b: Math.random() });
+  Color.Srgb.of({ r: Math.random(), g: Math.random(), b: Math.random() });
+const glow = () =>
+  Color.Linear.of({ r: Math.random(), g: Math.random(), b: Math.random() });
 variant(
   "instances, a colour each: a position",
   () => [place(), paint()],
@@ -200,19 +197,18 @@ variant(
     geometry,
     material,
     capacity: N,
-    color: Paint,
+    color: Color.Srgb,
   })
 );
 variant(
   "instances, a colour each, as the renderer has it: a position",
-  () => [place(), paint()],
+  () => [place(), glow()],
   Three.instances("o2", {
     of: Thing,
     geometry,
     material,
     capacity: N,
-    color: Paint,
-    colorSpace: "srgb-linear",
+    color: Color.Linear,
   })
 );
 variant(
@@ -223,7 +219,7 @@ variant(
     geometry,
     material,
     capacity: N,
-    color: Paint,
+    color: Color.Srgb,
     smooth: true,
   })
 );

@@ -47,13 +47,9 @@
  * - `Three.Render` then draws the scene, through `Three.Renderer`.
  */
 import * as Assets from "arcadekit/Assets";
+import * as Color from "arcadekit/Color";
 import { entityIndex } from "arcadekit/ecs";
-import type {
-  ComponentDef,
-  Entity,
-  EntityColumn,
-  FieldDef,
-} from "arcadekit/ecs";
+import type { ComponentDef, Entity, EntityColumn } from "arcadekit/ecs";
 import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
 import { Frame, Time } from "arcadekit/Services";
@@ -414,8 +410,9 @@ export const Render = System.frame("arcadekit/three/Render", function* () {
  * The app then needs a `Three.Renderer` from outside:
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  *
- * It draws from the transform components of `Transform3d` and `Transform2d`.
- * This package defines no components of its own.
+ * It draws from the transform components of `Transform3d` and `Transform2d`,
+ * and an instance's colour from `Color`. This package defines no components of
+ * its own.
  *
  * @category Plugins
  */
@@ -1016,24 +1013,6 @@ const LINEAR = /* @__PURE__ */ (() => {
   return table;
 })();
 
-/** Returns whether a field holds integers, in which case a colour's values are bytes. */
-const isWhole = (kind: string): boolean =>
-  kind === "u8" || kind === "u16" || kind === "u32" || kind === "i32";
-
-/**
- * A game component that is a colour: three numbers, `r`, `g` and `b`, stored in
- * a table. Any other fields are ignored.
- *
- * @category Models
- */
-export type ColorComponent = ComponentDef<ComponentDef["schema"], "table"> & {
-  readonly schema: {
-    readonly r: FieldDef<number, unknown>;
-    readonly g: FieldDef<number, unknown>;
-    readonly b: FieldDef<number, unknown>;
-  };
-};
-
 /**
  * How an instance looks: its mesh's geometry and material.
  *
@@ -1051,41 +1030,25 @@ export interface Look {
  */
 export interface InstancesShared extends Which {
   /**
-   * A game component that gives each instance its own colour: its `r`, `g` and
-   * `b`, from 0 to 1, which multiply the material's own colour. An entity
-   * without it is drawn in the material's own colour, as if its colour were
-   * white.
+   * Which of arcadekit's colour components gives each instance its entity's
+   * colour, which multiplies the material's own. An entity without it is drawn
+   * in the material's own colour, as if its colour were white.
    *
-   *   const Paint = Component.define("game/Paint", { r: Field.f32, g: Field.f32, b: Field.f32 })
-   *   Three.instances("game/Rocks", { of: Rock, geometry, material, color: Paint })
+   *   Three.instances("game/Rocks", { of: Rock, geometry, material, color: Color.Srgb })
    *
-   * The values are a colour as a hex code or a style sheet writes it, unless
-   * `colorSpace` says otherwise: `#ff6188` is an `r` of `0xff / 255`, a `g` of
-   * `0x61 / 255` and a `b` of `0x88 / 255`. Float fields hold 0 to 1; integer
-   * fields (`Field.u8`) hold the bytes themselves, 0 to 255. All three fields
-   * must be of one kind or the other, and a component that isn't a colour, is
-   * sparse or lacks a field throws when the system is created.
+   * - `Color.Srgb` is a colour as a hex code writes it, converted for the
+   *   renderer, which works in linear colour, through a lookup table: exact
+   *   for a hex code's byte over 255, and within a sixteenth of a byte for any
+   *   other number, finer than a screen can show. A number below 0 or over 1
+   *   isn't a colour, and fails the frame with an error that names the entity.
+   * - `Color.Linear` is the renderer's own numbers, passed through as they are:
+   *   over 1 is brighter than white, which a renderer with bloom can show.
    *
    * With `smooth`, a colour changes smoothly between two ticks, like a
    * position, however far it changes: `snap` doesn't apply to it. It is
-   * interpolated in the game's values, then converted.
+   * interpolated in the game's numbers, then converted.
    */
-  readonly color?: ColorComponent;
-  /**
-   * The colour space of `color`'s values, using Three.js's names.
-   *
-   * - `"srgb"`, the default: what a hex code holds and a colour picker shows.
-   *   Each value is converted for the renderer, which works in linear colour,
-   *   through a lookup table: exact for a byte, and within a sixteenth of a
-   *   byte for a float, finer than a screen can show. A value outside 0 to 1,
-   *   or 0 to 255 in an integer field, isn't a colour, and fails the frame with
-   *   an error that names the entity.
-   * - `"srgb-linear"`: the renderer's own working space, the `r`, `g` and `b`
-   *   of Three.js's `new Color("#ff6188")`. The values are passed through
-   *   unchecked: a value over 1 is brighter than white, which a renderer with
-   *   bloom can show.
-   */
-  readonly colorSpace?: "srgb" | "srgb-linear";
+  readonly color?: typeof Color.Srgb | typeof Color.Linear;
   /**
    * How many instances there is room for initially. Defaults to 256. The
    * capacity doubles when it runs out, which is the only time the system
@@ -1165,10 +1128,8 @@ class Instances implements Kept {
   /** The instances' colours, three numbers each, for a kind that has them. */
   private colors: Float32Array | undefined;
   private readonly colorRange = { start: 0, count: 0 };
-  /** Whether a colour's values are converted from sRGB, or passed through. */
+  /** Whether a colour's numbers are converted from sRGB, or passed through. */
   private readonly curved: boolean;
-  /** What a colour's value is multiplied by, to bring it into the 0 to 1 range. */
-  private readonly gain: number;
   private readonly name: string;
   /**
    * The eight loops as the system passes them to its queries: as is, or, for a
@@ -1194,11 +1155,7 @@ class Instances implements Kept {
     this.smooth = smoothOf(options);
     this.capacity = Math.max(1, Math.floor(options.capacity ?? 256));
     this.array = new Float32Array(this.capacity * 16);
-    this.curved = options.colorSpace !== "srgb-linear";
-    this.gain =
-      options.color !== undefined && isWhole(options.color.schema.r.kind)
-        ? 1 / 255
-        : 1;
+    this.curved = options.color !== Color.Linear;
     const uncoloured: Record<Loop, Columns> = {
       placed: this.placed,
       sized: this.sized,
@@ -1353,24 +1310,22 @@ class Instances implements Kept {
       } = this.smooth.color.run(start, end, r, g, b, entities));
     }
     let at = from * 3;
-    const { gain } = this;
     if (!this.curved) {
-      // The renderer's own numbers: as they are, or bytes over 255.
+      // The renderer's own numbers, as they are.
       for (let i = start; i < end; i++) {
-        out[at] = r[i]! * gain;
-        out[at + 1] = g[i]! * gain;
-        out[at + 2] = b[i]! * gain;
+        out[at] = r[i]!;
+        out[at + 1] = g[i]!;
+        out[at + 2] = b[i]!;
         at += 3;
       }
       return;
     }
     // A hex code's numbers, each looked up in the table at the nearest of
     // its steps. One that is off either end of it is no colour.
-    const scale = gain * STEPS;
     for (let i = start; i < end; i++) {
-      const u = (r[i]! * scale + 0.5) | 0;
-      const v = (g[i]! * scale + 0.5) | 0;
-      const w = (b[i]! * scale + 0.5) | 0;
+      const u = (r[i]! * STEPS + 0.5) | 0;
+      const v = (g[i]! * STEPS + 0.5) | 0;
+      const w = (b[i]! * STEPS + 0.5) | 0;
       // Under zero or past the table's end, either of which leaves one of
       // the six below zero: one test for the three numbers.
       if ((u | v | w | (STEPS - u) | (STEPS - v) | (STEPS - w)) < 0) {
@@ -1384,13 +1339,8 @@ class Instances implements Kept {
   }
 
   private refuse(entity: Entity, r: number, g: number, b: number): never {
-    const most = this.gain === 1 ? 1 : 255;
     throw new Error(
-      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: each of its numbers is from 0 to ${most}${
-        most === 1
-          ? ", as a hex code's bytes over 255 are. For the bytes themselves, give the component fields of whole numbers, Field.u8"
-          : ""
-      }. A colour that is brighter than white is one of the renderer's own, which colorSpace: "srgb-linear" hands over as it is.`
+      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: each number of a Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is a Color.Linear, the renderer's own numbers, which are drawn as they are.`
     );
   }
 
@@ -1906,29 +1856,6 @@ export function instances(
   const marked = required(options);
   const excluded = options.without ?? [];
   const { color } = options;
-  if (
-    color !== undefined &&
-    (color.storage !== "table" ||
-      !["r", "g", "b"].every((field) => color.fields.includes(field)))
-  ) {
-    throw new Error(
-      `Three.instances("${name}") was given "${color.name}" as its colour, which is not one: a colour is a component kept in a table with the fields r, g and b.`
-    );
-  }
-  if (color !== undefined) {
-    const kinds = [color.schema.r, color.schema.g, color.schema.b].map(
-      (field) => field.kind
-    );
-    const numbers = ["f32", "f64", "u8", "u16", "u32", "i32"];
-    if (
-      !kinds.every((kind) => numbers.includes(kind)) ||
-      new Set(kinds.map(isWhole)).size > 1
-    ) {
-      throw new Error(
-        `Three.instances("${name}") was given "${color.name}" as its colour, whose r, g and b are fields of ${kinds.join(", ")}: the three are all floats, from 0 to 1, or all whole numbers, the bytes from 0 to 255.`
-      );
-    }
-  }
   // The terms of a query are a tuple in its type, and a kind with a colour
   // has one more than one without, after the ones its loop reads: its type
   // only says that they are components, and its loop takes any columns.

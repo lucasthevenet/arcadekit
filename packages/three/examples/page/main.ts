@@ -17,6 +17,7 @@
 import {
   App,
   Assets,
+  Color,
   Commands,
   Component,
   Driver,
@@ -36,11 +37,11 @@ import { Effect, Layer } from "effect";
 import {
   AmbientLight,
   BoxGeometry,
-  Color,
   DirectionalLight,
   DoubleSide,
   MeshStandardMaterial,
   PlaneGeometry,
+  Color as ThreeColor,
 } from "three";
 
 // In a game of your own this is "@arcadekit/three".
@@ -67,22 +68,14 @@ const Spin = Component.define("page/Spin", {
   angle: Field.f32,
 });
 
-/**
- * What colour a mote is: the game's to say, as where it is. A mote that
- * comes off a wall takes that wall's.
- */
-const Tint = Component.define("page/Tint", {
-  r: Field.f32,
-  g: Field.f32,
-  b: Field.f32,
-});
-
-const Drifting = Query.all(Position, Velocity, Tint).pipe(
-  Query.writes(Position, Velocity, Tint)
+// A mote's colour is the game's to say, as where it is: one that comes off
+// a wall takes that wall's.
+const Drifting = Query.all(Position, Velocity, Color.Srgb).pipe(
+  Query.writes(Position, Velocity, Color.Srgb)
 );
 const Spinning = Query.all(Rotation, Spin).pipe(Query.writes(Rotation, Spin));
 
-/** A hex code's three bytes, each over 255: what a `Tint` holds. */
+/** A hex code's three bytes, each over 255: what a `Color.Srgb` holds. */
 const code = (hex: number) => ({
   r: (hex >> 16) / 255,
   g: ((hex >> 8) & 255) / 255,
@@ -182,7 +175,7 @@ const Rules = Plugin.make("page/Rules", {
       Rotation,
       Spin,
       Scale,
-      Tint,
+      Color.Srgb,
       Card,
       Transform2d.Position,
       Transform2d.Rotation,
@@ -201,7 +194,7 @@ const Rules = Plugin.make("page/Rules", {
         Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
         Spin.of({ rate: speed() / 4, angle: 0 }),
         Scale.of({ x: size, y: size, z: size }),
-        Tint.of(code(0xcb_cb_cb))
+        Color.Srgb.of(code(0xcb_cb_cb))
       );
     }
     for (let i = 0; i < CARDS; i++) {
@@ -226,7 +219,7 @@ const Motes = Three.instances("page/Motes", {
   geometry: new BoxGeometry(1, 1, 1),
   // White, which each mote's own colour multiplies.
   material: new MeshStandardMaterial({ color: "#ffffff" }),
-  color: Tint,
+  color: Color.Srgb,
   capacity: COUNT,
   // Sixty ticks a second and as many frames as the screen shows: each mote
   // is drawn between its last two places, so that it moves evenly, and
@@ -309,7 +302,7 @@ const Look = Plugin.make("page/Look", {
   // The scene is set up once, when the app is made.
   layer: Layer.effectDiscard(
     Effect.map(Three.Scene, ({ scene }) => {
-      scene.background = new Color("#10131a");
+      scene.background = new ThreeColor("#10131a");
       const sun = new DirectionalLight("#ffffff", 2.5);
       sun.position.set(1, 2, 3);
       scene.add(new AmbientLight("#8090b0", 1.2), sun);
