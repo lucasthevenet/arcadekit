@@ -113,9 +113,8 @@ export interface Contents {
    * The world. Its `stores` hold, each under its name, what an app keeps of a
    * game beside its entities:
    *
-   * - `Action.INTAKE`: `{ queued, heard }`, the actions that were queued,
-   *   each `{ name, payload, from? }` with its payload in JSON form, and
-   *   whether the input stage had run since the last tick;
+   * - `Action.INTAKE`: `{ queued }`, the actions that were queued, each
+   *   `{ name, payload, from? }` with its payload in JSON form;
    * - `Event.STORE`: for each event that was waiting, `{ name, waiting,
    *   read }`, its events in JSON form and how many each system had read;
    * - `Save.VISITS`: what change queries hadn't visited yet, by component

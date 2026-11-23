@@ -19,7 +19,6 @@ import type {
   StartOptions,
   Systems,
   TickError,
-  TickOptions,
 } from "./App";
 import { hold } from "./app/parts";
 import { CommandBuffer } from "./ecs/commands";
@@ -40,8 +39,6 @@ import * as Stage from "./Stage";
 import * as State from "./State";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
 
-const NO_INPUT: TickOptions = { input: false };
-
 /**
  * What the code that took over an app holds: the two operations the app no
  * longer performs for anyone else.
@@ -55,9 +52,9 @@ export interface Reins<E = never> {
    */
   readonly deliver: (name: string, payload: unknown, from?: string) => void;
   /**
-   * Runs one tick, as `tickExit` did. It reads no device. `observe` is told
-   * when the tick's systems are about to run, with no name, and after each
-   * system has run and its commands are applied, with the system's name.
+   * Runs one tick, as `tickExit` did. `observe` is told when the tick's
+   * systems are about to run, with no name, and after each system has run
+   * and its commands are applied, with the system's name.
    */
   readonly tickExit: (
     delta: number,
@@ -262,13 +259,13 @@ export const build = <
     const frameExit = (alpha: number, delta?: number): Ran =>
       loop.frame(alpha, delta) as Ran;
     const inputExit = (): Ran => loop.input() as Ran;
-    const tickExit = (delta: number, options?: TickOptions): Ran => {
+    const tickExit = (delta: number): Ran => {
       if (inbox.diverted !== undefined) {
         throw new Error(
           "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
         );
       }
-      return loop.tick(delta, options) as Ran;
+      return loop.tick(delta) as Ran;
     };
 
     yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
@@ -344,8 +341,8 @@ export const build = <
         return log.checkpoint();
       },
       tickExit,
-      tick: (delta, options) => {
-        orThrow(tickExit(delta, options));
+      tick: (delta) => {
+        orThrow(tickExit(delta));
       },
       frameExit,
       frame: (alpha, delta) => {
@@ -377,8 +374,7 @@ export const build = <
         deliver: (name, payload, from) => {
           inbox.deliver(name, payload, from);
         },
-        tickExit: (delta, observe) =>
-          loop.tick(delta, NO_INPUT, observe) as Ran,
+        tickExit: (delta, observe) => loop.tick(delta, observe) as Ran,
       };
     };
 

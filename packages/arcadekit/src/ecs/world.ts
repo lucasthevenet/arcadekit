@@ -46,8 +46,6 @@ import type {
   ComponentInput,
   ComponentValue,
   Entity,
-  PatchOf,
-  RelationDef,
   Schema,
   SingletonSpec,
   ValueOf,
@@ -68,6 +66,7 @@ import type { QuerySpec, Terms } from "./query";
 import { Rng } from "./random";
 import { NOT_PLACED, WHOLE } from "./records";
 import type { Saved, Single } from "./records";
+import type { PatchOf, RelationDef } from "./relation";
 import { STORAGES, SnapshotError, WIDTH, corrupt } from "./snapshot";
 import type { Store } from "./store";
 import type { Columns } from "./table";

@@ -178,12 +178,21 @@ describe("a frozen world", () => {
 
   it("counts nothing as written, so a change query can read what it watches raw", () => {
     const { ball, world } = populated();
-    const moved = world.view(Moved, "drawer");
+    // Thawed, a query that watches and writes Ball has no raw loop: put
+    // together by hand, it throws, as it would take its own visit for a change.
+    const moved = world.view(
+      {
+        terms: [Ball] as const,
+        withDefs: [],
+        withoutDefs: [],
+        changedDefs: [Ball],
+      },
+      "drawer"
+    );
     const other = world.view(Moved, "other");
     other.entities();
     world.freeze();
     const seen: number[] = [];
-    // Thawed, this throws: it would take its own visit for a change.
     moved.eachChunk((start, end, rows) => {
       for (let i = start; i < end; i++) {
         seen.push(rows.x[i]!);

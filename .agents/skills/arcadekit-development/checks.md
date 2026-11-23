@@ -1,8 +1,6 @@
 # Rules and the checks that hold them
 
-A rule that matters is held first by a design that leaves no room to break it, and otherwise by something that runs. Prose is for what no check holds yet, and a sentence that a check has made true is taken out.
-
-The repository already works this way, and a new rule joins these:
+`AGENTS.md` says a rule is held by a design or a check before a sentence. A sentence that a check has made true is taken out. These checks hold rules already, and a new rule joins them:
 
 - `tooling/lint/entries.ts` says what each entry may import, and the Oxlint rule `arcadekit/entry-imports` holds it in the sources, file by file, and so in the build, which writes each source file to its own file;
 - the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, `arcadekit/no-code-from-text`, and `arcadekit/top-level-classes`, which keeps a class out of a function;

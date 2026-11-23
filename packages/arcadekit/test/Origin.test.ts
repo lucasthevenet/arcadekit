@@ -163,7 +163,6 @@ describe("who issued an action", () => {
         )?.data
       ).toEqual({
         queued: [{ name: "ls/Tip", payload: { amount: 6 }, from: "grace" }],
-        heard: false,
       });
       // And where a game goes back to: the tip is waiting again, hers still.
       const moment = Timeline.capture(app);

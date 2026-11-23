@@ -491,7 +491,7 @@ describe("a view", () => {
 });
 
 describe("what the UI sends", () => {
-  it("is heard by a game that is stepped by hand with a tick and nothing else, and by a replay not at all", () => {
+  it("is heard when the input stage runs, which a tick alone does not, and by a replay not at all", () => {
     // The game, begun with gold to spend.
     const Funded = App.define({ plugins: [Game, begun({ gold: 5 })] });
     const ui = View.makeBridge();
@@ -502,8 +502,10 @@ describe("what the UI sends", () => {
     );
     ui.send(Buy, { price: 3 });
     ui.send(Start, {});
-    // No `app.input()`: the tick hears what was sent before it runs, and
-    // applies it.
+    // A tick alone hears none of it.
+    app.tick(1);
+    expect(goldOf(app)).toBe(5);
+    app.input();
     app.tick(1);
     expect(coinsOf(app)).toBe(1);
     expect(goldOf(app)).toBe(3);
@@ -663,6 +665,7 @@ describe("what the UI sends", () => {
     );
     // And was not kept: the game goes on, and hears what it does handle.
     ui.send(Start, {});
+    app.input();
     app.tick(1);
     expect(app.actionLog.filter(isAction).map((e) => e.name)).toEqual([
       "vw/Start",
@@ -695,6 +698,7 @@ describe("what the UI sends", () => {
       }),
     ]);
     pings = 0;
+    second.app.input();
     second.app.tick(1);
     expect(pings).toBe(100);
     ui.send(Unknown, {});
@@ -745,6 +749,7 @@ describe("what the UI sends", () => {
         })
       )
     );
+    app.input();
     app.tick(1);
     app.frame(0);
     expect(said).toEqual([true, false, true, false, true, false]);

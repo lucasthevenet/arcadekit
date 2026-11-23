@@ -1,12 +1,11 @@
 import type {
   ComponentDef,
   Entity,
-  PatchOf,
-  RelationDef,
   Schema,
   SingletonSpec,
   ValueOf,
 } from "../ecs/component";
+import type { PatchOf, RelationDef } from "../ecs/relation";
 import { placed } from "../ecs/spawned";
 import type { Spawned } from "../ecs/spawned";
 import type { World as EcsWorld } from "../ecs/world";

@@ -111,7 +111,7 @@ describe("tracing an app", () => {
     app.enqueue(Begin, {});
     app.enqueue(Add, { by: 2 });
     app.enqueue(Refused, {});
-    app.tick(1 / 60, { input: false });
+    app.tick(1 / 60);
 
     const ticks = spans.filter((span) => span.name === "arcadekit/tick");
     expect(ticks).toHaveLength(1);
@@ -144,7 +144,7 @@ describe("tracing an app", () => {
   it("gives an action dispatched between two ticks a span of its own, and not the last tick's", () => {
     const { spans, tracer } = recorder();
     const app = traced(tracer, game());
-    app.tick(1 / 60, { input: false });
+    app.tick(1 / 60);
     app.dispatch(Add, { by: 2 });
     const added = spans.find((span) => span.name === "action:tr/Add")!;
     expect(added.parent).toEqual(Option.none());

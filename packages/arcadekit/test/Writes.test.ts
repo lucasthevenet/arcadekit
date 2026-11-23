@@ -16,7 +16,7 @@ import {
   System,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
+import type { ComponentDef, Entity } from "../src/index";
 
 // Two components with the same fields: a query has to tell them apart.
 const Position = Component.define("rd/Position", {
@@ -196,11 +196,11 @@ describe("a query, which writes only what it names", () => {
     world.set(entities[1]!, Position, { x: 10 });
     visit();
     expect(world.view(Turned).entities()).toEqual([entities[1]]);
-    // One that hands out what it watches, to be written, is refused.
+    // One that hands out what it watches, to be written, doesn't compile.
     const Rewritten = Moved.pipe(Query.writes(Position));
-    expect(() => world.view(Rewritten).eachChunk(() => {})).toThrow(
-      /watches "rd\/Position" for changes and also hands it out.*Query\.writes/
-    );
+    void (() =>
+      // @ts-expect-error raw columns would count its own visit as a change
+      world.view(Rewritten).eachChunk(() => {}));
   });
 
   it("is not saved for a rollback: what is only read is not copied", () => {
@@ -233,7 +233,16 @@ describe("a query, which writes only what it names", () => {
   });
 
   it("names components of the query, and keeps its word however the query is put together", () => {
-    expect(() => Query.all(Position).pipe(Query.writes(Velocity))).toThrow(
+    // Another component doesn't compile, whichever way it is given.
+    void (() =>
+      // @ts-expect-error Velocity is not one of the query's terms
+      Query.all(Position).pipe(Query.writes(Velocity)));
+    void (() =>
+      // @ts-expect-error Velocity is not one of the query's terms
+      Query.writes(Query.all(Position), Velocity));
+    // One the compiler knows only as a component is refused when it is given.
+    const unnamed: ComponentDef = Velocity;
+    expect(() => Query.all(Position).pipe(Query.writes(unnamed))).toThrow(
       /Query\.writes was given "rd\/Velocity", which is not one of the query's terms: rd\/Position/
     );
     // It names at least one: a query that writes nothing names nothing.
@@ -267,6 +276,10 @@ describe("a query, which writes only what it names", () => {
     ];
     for (const query of built) {
       expect(query.readDefs).toEqual([Velocity]);
+      // Each watches what it writes, so it has no raw loop.
+      void (() =>
+        // @ts-expect-error raw columns would count its own visit as a change
+        world.view(query, "anyone").eachChunk(() => {}));
       expect(() =>
         world.view(query, "anyone").each((pos, vel) => {
           pos.x = 1;

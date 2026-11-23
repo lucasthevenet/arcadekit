@@ -288,7 +288,7 @@ export default defineConfig({
     ...Object.entries({
       "packages/three/src/Three.ts": 1760,
       "packages/arcadekit/src/ecs/world.ts": 1579,
-      "packages/arcadekit/src/ecs/query.ts": 808,
+      "packages/arcadekit/src/ecs/query.ts": 802,
       "packages/arcadekit/src/Browser.ts": 629,
     }).map(([file, max]) => ({
       files: [file],

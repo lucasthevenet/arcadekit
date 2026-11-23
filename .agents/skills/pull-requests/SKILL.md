@@ -14,7 +14,7 @@ A pull request is ready when a reviewer can judge the change from it, without ru
    - an issue for what the change leaves to do later, named in the description and never a file of the repository: one labelled `silent-failure`, a sub-issue of the roadmap, for what goes wrong with no error, and a line under its area of the roadmap's "Not built yet" for what is not built;
    - the site's pages, when what they show changed, with the `website-docs` skill, and the doc comment of each export that was added or changed, with the `jsdocs` skill.
 3. **Run the checks** that the table in `AGENTS.md` lists for the change, and fix what they find in the change, never in the check.
-4. **Show the evidence** in the description:
+4. **Write the description and the commit message** to pstack's [`technical-writing`](https://github.com/cursor/plugins/blob/main/pstack/skills/technical-writing/SKILL.md) skill, and **show the evidence** in the description:
    - the checks that were run and what they said, and which could not be run;
    - the benchmark before and after, for a hot path;
    - a screenshot of a page or of what is drawn, when either changed;

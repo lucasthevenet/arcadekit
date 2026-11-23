@@ -406,23 +406,20 @@ const IntakeData = Schema.Struct({
       from: Schema.optionalKey(Schema.String),
     })
   ),
-  heard: Schema.Boolean,
 });
 
 /** What the intake holds at a moment: the actions as they are, with no schema. */
 interface IntakeMoment {
   readonly queued: readonly QueuedAction[];
-  readonly heard: boolean;
   readonly wanted: boolean;
   readonly rest: number | undefined;
 }
 
 /**
  * The name of the store that holds an app's queued actions, as a snapshot
- * has it: `readSnapshot(save.world).stores`. It holds `{ queued, heard }`:
- * the actions queued for the next tick, each `{ name, payload, from? }` with
- * its payload in JSON form, and whether the input stage has run since the
- * last tick.
+ * has it: `readSnapshot(save.world).stores`. It holds `{ queued }`: the
+ * actions queued for the next tick, each `{ name, payload, from? }` with its
+ * payload in JSON form.
  *
  * @category Constants
  */
@@ -430,9 +427,7 @@ export const INTAKE = "arcadekit/actions";
 
 /**
  * What a game has taken in for its next tick: the actions queued for it,
- * whether the input stage has run since the last one, so that a game that
- * is saved, loaded or rewound between the two doesn't hear its devices
- * twice, and whether it asked for the tick. The world holds them, as a
+ * and whether it asked for the tick. The world holds them, as a
  * store: a rewind puts them back, a refused action's own enqueues and asking
  * are taken back with the rest of it, and the actions are in its snapshot
  * and its hash, as much the game's as its components are.
@@ -444,7 +439,6 @@ export class Intake implements Store<IntakeMoment> {
   // The stages between ticks are there to issue actions.
   readonly betweenTicks = true;
   queued: QueuedAction[] = [];
-  heard = false;
   /**
    * Whether the game wants its next tick: its last tick changed more than its
    * time, or an action was dispatched since. A game that has not ticked yet
@@ -479,7 +473,7 @@ export class Intake implements Store<IntakeMoment> {
   }
 
   save(): unknown {
-    if (this.queued.length === 0 && !this.heard) {
+    if (this.queued.length === 0) {
       return undefined;
     }
     const queued = this.queued.map(({ codec, from, name, payload }) => {
@@ -504,7 +498,7 @@ export class Intake implements Store<IntakeMoment> {
         ? { name, payload: json }
         : { name, payload: json, from };
     });
-    return { queued, heard: this.heard };
+    return { queued };
   }
 
   load(data: unknown): void {
@@ -512,7 +506,7 @@ export class Intake implements Store<IntakeMoment> {
     if (Exit.isFailure(saved)) {
       throw new SnapshotError(
         "store changed",
-        `Can't load the actions queued for the next tick: they are not { queued, heard }, with each action { name, payload, from? }: ${said(Cause.squash(saved.cause))}`
+        `Can't load the actions queued for the next tick: they are not { queued }, with each action { name, payload, from? }: ${said(Cause.squash(saved.cause))}`
       );
     }
     // In the JSON form they were saved in, checked again when applied.
@@ -523,12 +517,9 @@ export class Intake implements Store<IntakeMoment> {
       entry: undefined,
       from,
     }));
-    this.heard = saved.value.heard;
   }
 
   hashed(): unknown {
-    // Not whether the devices were heard: hearing them changes nothing of
-    // the game but what it queues.
     return this.queued.length === 0
       ? undefined
       : this.queued.map((action) => ({
@@ -541,7 +532,6 @@ export class Intake implements Store<IntakeMoment> {
   capture(): IntakeMoment {
     return {
       queued: this.queued.slice(),
-      heard: this.heard,
       wanted: this.wanted,
       rest: this.rest,
     };
@@ -549,7 +539,6 @@ export class Intake implements Store<IntakeMoment> {
 
   rewind(moment: IntakeMoment): void {
     this.queued = moment.queued.slice();
-    this.heard = moment.heard;
     this.wanted = moment.wanted;
     this.rest = moment.rest;
     for (const action of this.queued) {
@@ -562,7 +551,6 @@ export class Intake implements Store<IntakeMoment> {
 
   clear(): void {
     this.queued = [];
-    this.heard = false;
     this.wanted = true;
     this.rest = undefined;
   }
@@ -580,8 +568,6 @@ export class Intake implements Store<IntakeMoment> {
   commit(): void {}
 
   contents(): unknown {
-    return this.queued.length === 0 && !this.heard
-      ? undefined
-      : { queued: this.hashed() ?? [], heard: this.heard };
+    return this.queued.length === 0 ? undefined : { queued: this.hashed() };
   }
 }

@@ -29,8 +29,6 @@ import type { World } from "./ecs/world";
 import * as Save from "./Save";
 import { GameTime } from "./Stage";
 
-const NO_INPUT = { input: false } as const;
-
 /**
  * How a recorded game began: the seed of one recorded from its start, or the
  * save of one recorded since. A save holds where its game's random sequence
@@ -578,8 +576,7 @@ const play = (app: App.Any, recording: Recording): void => {
       );
     }
     applyDue();
-    // A replay reads no device: what the devices said is in the log.
-    app.tick(delta, NO_INPUT);
+    app.tick(delta);
     checkQueued();
   }
   applyDue();
@@ -636,8 +633,8 @@ const play = (app: App.Any, recording: Recording): void => {
  *
  * - It throws when the app `make` returns isn't where the recording begins:
  *   it has run another number of ticks. An app made from `start` is.
- * - It runs neither the frame stage nor the input stage: every tick runs with
- *   `{ input: false }`.
+ * - It runs neither the frame stage nor the input stage: what the devices
+ *   said is in the log.
  * - A log without checkpoints, from an app created with `checkpointEvery: 0`,
  *   is verified by its actions alone: a replay that has diverged runs until an
  *   action happens to be refused, or to the end.

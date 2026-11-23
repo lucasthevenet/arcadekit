@@ -18,6 +18,7 @@
  * are only available here.
  */
 export { Component, entityGeneration, entityIndex, Field } from "./component";
+export type { PatchOf, RelationDef, TargetField } from "./relation";
 export type {
   ComponentDef,
   ComponentInput,
@@ -27,13 +28,10 @@ export type {
   FieldKind,
   InputOf,
   OnTargetDespawn,
-  PatchOf,
   ReadonlyColumn,
   RefCodec,
-  RelationDef,
   SingletonSpec,
   Storage,
-  TargetField,
   ValueOf,
 } from "./component";
 export { Rng } from "./random";

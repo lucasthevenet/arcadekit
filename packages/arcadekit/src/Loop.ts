@@ -15,7 +15,6 @@ import {
 } from "effect";
 
 import type * as Action from "./Action";
-import type { TickOptions } from "./App";
 import type { CommandBuffer } from "./ecs/commands";
 import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
@@ -151,7 +150,6 @@ export interface Loop {
    */
   readonly tick: (
     delta: number,
-    options?: TickOptions,
     observe?: (system: string | undefined) => void
   ) => Exit.Exit<void, unknown>;
   /** Runs the frame stage, for a frame `alpha` of the way to the next tick. */
@@ -408,14 +406,13 @@ export const make = (parts: Parts): Loop => {
     }
     // One picture of the devices for the whole stage.
     Object.assign(devices, listener.sample());
-    intake.heard = true;
     return between("input");
   };
 
   /** Whether the app was asked if it rests, `app.settled`, since it was made. */
   let resting = false;
 
-  /** Runs one tick, once the input stage has been seen to. */
+  /** Runs one tick. */
   const ticked = (delta: number): Exit.Exit<void, unknown> => {
     runner.ticking = true;
     try {
@@ -456,26 +453,8 @@ export const make = (parts: Parts): Loop => {
     }
   };
 
-  const stepped = (
-    delta: number,
-    options?: TickOptions
-  ): Exit.Exit<void, unknown> => {
+  const stepped = (delta: number): Exit.Exit<void, unknown> => {
     runner.whileIdle((busy) => `App.tick was called from inside a ${busy}`);
-    // A tick hears the devices first. Whoever steps the app may have
-    // seen to it, as a driver does; if not, it is seen to here.
-    if (
-      !intake.heard &&
-      schedule.input.length > 0 &&
-      options?.input !== false
-    ) {
-      const exit = runInputStage();
-      if (Exit.isFailure(exit)) {
-        // The tick did not run, and the next one is to hear first too.
-        intake.heard = false;
-        return exit;
-      }
-    }
-    intake.heard = false;
     // Each tick is asked afresh: one in which nobody asks is the last.
     intake.wanted = false;
     log.start();
@@ -500,10 +479,10 @@ export const make = (parts: Parts): Loop => {
   };
 
   return {
-    tick: (delta, options, observe) => {
+    tick: (delta, observe) => {
       // Whoever steps this tick, and nobody who stepped one before.
       observer = observe;
-      return stepped(delta, options);
+      return stepped(delta);
     },
     frame: runFrameStage,
     input: runInputStage,

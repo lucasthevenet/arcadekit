@@ -5,12 +5,8 @@
  * No Effect dependency.
  */
 import { frozenWrite } from "./component";
-import type {
-  ComponentDef,
-  ComponentInput,
-  Entity,
-  Targeted,
-} from "./component";
+import type { ComponentDef, ComponentInput, Entity } from "./component";
+import type { Targeted } from "./relation";
 import type { Spawned } from "./spawned";
 import type { World } from "./world";
 

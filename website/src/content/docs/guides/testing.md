@@ -66,14 +66,15 @@ it("hears a key", () =>
         App.define({ plugins: [Rules, Input.plugin] })
       ).pipe(Effect.provide(Input.layer(source)));
       source.press("Space");
-      app.tick(1 / 60); // hears the devices first
+      app.input(); // reads the devices
+      app.tick(1 / 60);
     })
   ));
 ```
 
-`source.press`, `release`, `tap` and `move` simulate the devices, and the following tick receives the input, as a page's would.
+`source.press`, `release`, `tap` and `move` simulate the devices. `app.input()` reads them, as a driver does in a page, and the following tick receives the input.
 
-To test what a game does with a key, you don't need a device. Dispatch the action the key is bound to, or `Input.Report`, the action that updates the device state. When a source is also provided, the next tick reads it and overrides a report made by hand: `app.tick(delta, { input: false })` runs a tick that reads no devices and keeps the report.
+To test what a game does with a key, you don't need a device. Dispatch the action the key is bound to, or `Input.Report`, the action that updates the device state. When a source is also provided, the next `app.input()` reads it and overrides a report made by hand. A tick reads no device, so a test that calls `app.tick(delta)` alone keeps the report.
 
 ## Sound
 

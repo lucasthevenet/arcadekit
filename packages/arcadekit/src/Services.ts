@@ -8,14 +8,13 @@ import type {
   ComponentDef,
   ComponentInput,
   Entity,
-  PatchOf,
   Schema,
   SingletonSpec,
   Storage,
-  Targeted,
   ValueOf,
 } from "./ecs/component";
 import type { Rng } from "./ecs/random";
+import type { PatchOf, Targeted } from "./ecs/relation";
 import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";

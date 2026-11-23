@@ -22,9 +22,9 @@ export {
   type FieldDef,
   type OnTargetDespawn,
   type RefCodec,
-  type RelationDef,
   type SingletonSpec,
 } from "./ecs/component";
+export type { RelationDef } from "./ecs/relation";
 export type { JsonValue } from "./ecs/frozen";
 export type { Rng } from "./ecs/random";
 export type { Placed, Spawned, WithSpawned } from "./ecs/spawned";
