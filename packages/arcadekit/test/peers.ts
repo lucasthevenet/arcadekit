@@ -24,9 +24,10 @@ import {
   Timeline,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
+import type { Entity, QueryView } from "../src/index";
 import { Message, Session } from "../src/net/index";
 import { whole } from "../src/Services";
+import type { ReadingWorld } from "../src/Services";
 
 // --- a small game: players drop coins, which drift about, and take them --------
 
@@ -35,6 +36,8 @@ export const Coin = Component.define("ls/Coin", {
   x: Field.f32,
 });
 export const Coins = Query.all(Coin).pipe(Query.writes(Coin));
+/** The coins, read from outside the game. */
+export const Lying = Query.all(Coin);
 export const Purse = Singleton.define(
   "ls/Purse",
   {
@@ -205,9 +208,9 @@ export type Game = Effect.Success<ReturnType<typeof game>>;
 
 /** What each of the two players has in the purse. */
 export const purseOf = (
-  app: Pick<Game, "world">
+  world: ReadingWorld
 ): { ada: number; grace: number } => {
-  const { ada, grace } = app.world.singleton(Purse);
+  const { ada, grace } = world.singleton(Purse);
   return { ada, grace };
 };
 
@@ -220,6 +223,10 @@ export interface Peer {
   readonly name: string;
   /** The session's app. */
   readonly app: SteeredGame;
+  /** Its world, as `app.read(World)` gives it. */
+  readonly world: ReadingWorld;
+  /** Its coins, as `app.read(Lying)` gives them. */
+  readonly coins: QueryView<readonly [typeof Coin]>;
   /** A session, whether or not it runs ahead. */
   readonly session: Session.Session<Parts["e"], Parts["hu"]>;
   /** The world's hash after each tick this peer ran: `hashes[0]` is after the first. */
@@ -262,7 +269,15 @@ export const withPeers = <A>(
             ...(setup.delay === undefined ? {} : { delay: setup.delay }),
             ahead: setup.ahead ?? 0,
           }).pipe(Effect.provide(Input.layer(source)));
-          peers.push({ name, app: session.app, session, hashes: [], source });
+          peers.push({
+            name,
+            app: session.app,
+            world: yield* session.app.read(World),
+            coins: yield* session.app.read(Lying),
+            session,
+            hashes: [],
+            source,
+          });
         }
         return use(peers);
       })
@@ -301,10 +316,18 @@ export const steered = <E, HU>({ app, take }: Build.Built<E, HU>) => {
   };
 };
 
-export const withApp = <T, A, E = never>(
+/** Runs `use` with an app and its world, as `app.read(World)` gives it. */
+export const withApp = <T extends Pick<App.Any, "read">, A, E = never>(
   make: Effect.Effect<T, E, Scope.Scope>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+  use: (app: T, world: ReadingWorld) => A
+): A =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.flatMap(make, (app) =>
+        Effect.map(app.read(World), (world) => use(app, world))
+      )
+    )
+  );
 
 /**
  * A network that is nothing like a wire: every message takes a random
@@ -361,7 +384,7 @@ export const round = (
       peer.session.receive(message);
     }
     if (peer.session.tick()) {
-      peer.hashes.push(peer.app.world.hash());
+      peer.hashes.push(peer.world.hash());
     }
     net.send(
       peers.filter((other) => other !== peer).map((other) => other.name),
@@ -383,8 +406,7 @@ export const catchUp = (peers: readonly Peer[], net: Network): number => {
   throw new Error("the peers never caught up with each other");
 };
 
-export const coinsOf = (peer: Peer): Entity[] =>
-  peer.app.world.view(Coins).entities();
+export const coinsOf = (peer: Peer): Entity[] => peer.coins.entities();
 
 /** Each peer's player does something at random, from what its own world holds. */
 export const players = (seed: number) => {

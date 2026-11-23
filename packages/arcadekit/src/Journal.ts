@@ -23,6 +23,7 @@ import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
 import type * as App from "./App";
+import { partsOf } from "./app/parts";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 import * as Save from "./Save";
@@ -512,7 +513,7 @@ const play = (app: App.Any, recording: Recording): void => {
       entry = log[next]
     ) {
       if (Action.isCheckpoint(entry)) {
-        const actual = app.world.hash();
+        const actual = partsOf(app).world.hash();
         if (actual !== entry.hash) {
           throw new ReplayDiverged({
             index: next,

@@ -119,7 +119,7 @@ export const whole = (world: ReadingWorld): EcsWorld => {
     return world;
   }
   throw new Error(
-    "The World service was provided something that is not a world. An app provides its own: to read a game from outside one, use app.world."
+    "The World service was provided something that is not a world. An app provides its own: to read a game from outside one, use app.read(World)."
   );
 };
 

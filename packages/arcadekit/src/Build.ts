@@ -21,6 +21,7 @@ import type {
   TickError,
   TickOptions,
 } from "./App";
+import { hold } from "./app/parts";
 import { CommandBuffer } from "./ecs/commands";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
@@ -32,6 +33,7 @@ import * as Plugin from "./Plugin";
 import * as Runner from "./Runner";
 import * as Save from "./Save";
 import * as Schedule from "./Schedule";
+import { Time, World } from "./Services";
 import type { TimeState } from "./Services";
 import * as Stage from "./Stage";
 import * as State from "./State";
@@ -271,12 +273,25 @@ export const build = <
 
     yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
 
+    const reading = Context.make(World, world).pipe(Context.add(Time, time));
     const app: App<TickError<S, P>, AllHandlers<H, P>> = {
-      world,
-      commands,
-      events,
       time,
-      dispatcher,
+      read: (effect) =>
+        Effect.suspend(() => {
+          runner.whileIdle(
+            (busy) =>
+              `app.read() was run during a ${busy}. A game is read from outside it between ticks.`
+          );
+          // `Readable` holds the requirements to what `reading` provides.
+          return Effect.provideContext(
+            effect as Effect.Effect<
+              Effect.Success<typeof effect>,
+              Effect.Error<typeof effect>,
+              World | Time
+            >,
+            reading
+          );
+        }),
       plugins: plugins.map((plugin) => plugin.name),
       systemOrder: schedule.tick.map((turn) => turn.system.name),
       get phase() {
@@ -348,6 +363,7 @@ export const build = <
         inbox.enqueueByName(name, payload, from);
       },
     };
+    hold(app, { world, commands, events, dispatcher });
     const take: Built<TickError<S, P>>["take"] = (issued) => {
       if (inbox.diverted !== undefined) {
         throw new Error(

@@ -44,16 +44,12 @@ import type { Scope } from "effect";
 
 import * as Action from "./Action";
 import { build } from "./Build";
-import { CommandBuffer } from "./ecs/commands";
 import type { Entity } from "./ecs/component";
-import { World as EcsWorld } from "./ecs/world";
-import { EventBus } from "./Event";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
-import type { BuiltIn, TimeState } from "./Services";
+import type { BuiltIn, Time, TimeState, World } from "./Services";
 import * as System from "./System";
-import { TickDispatcher } from "./TickScheduler";
 
 /** @internal The systems of a game, of any type. */
 export type Systems = readonly Plugin.AnySystem[];
@@ -140,6 +136,23 @@ type FailureFor<HU, N extends string> =
     : never;
 
 /**
+ * `app.read` is told this of an effect that requires more than reading.
+ *
+ * @category Type-level
+ */
+export type Readable<R> = [Exclude<R, Reads>] extends [never]
+  ? unknown
+  : {
+      readonly "Code outside the game reads it, with World, Time, a query that only reads, a singleton or a state, and changes it with an action: app.enqueue or app.dispatch.": Exclude<
+        R,
+        Reads
+      >;
+    };
+
+/** What `app.read` provides. */
+type Reads = World | Time;
+
+/**
  * What an app is running: `app.phase`.
  *
  * - `"idle"`: nothing. The app is between ticks.
@@ -159,11 +172,25 @@ export type Phase = "idle" | "tick" | "frame" | "input" | "handler";
  * @category Models
  */
 export interface Any {
-  readonly world: EcsWorld;
-  readonly commands: CommandBuffer;
-  readonly events: EventBus;
   readonly time: Readonly<TimeState>;
-  readonly dispatcher: TickDispatcher;
+  /**
+   * Reads the game from outside it: runs `effect` with the services that
+   * read, `World` and `Time`, and nothing that changes the game. A query that
+   * only reads, a singleton and a state's value are read the same way.
+   *
+   *   const world = yield* app.read(World)
+   *   world.get(rock, Position)?.x
+   *   const score = yield* app.read(Score)
+   *
+   * Code outside the game changes it with an action alone, `enqueue` or
+   * `dispatch`, which the log holds and a replay repeats, so `effect` can
+   * require nothing that writes: a query with `Query.writes`, `Commands`,
+   * `World.writes`, an event, `State.sets` or `Singleton.writes` don't
+   * compile, and the error says so. Only between ticks.
+   */
+  readonly read: <A, E, R>(
+    effect: Effect.Effect<A, E, R> & Readable<R>
+  ) => Effect.Effect<A, E>;
   /** Installed plugin names, dependencies first. */
   readonly plugins: readonly string[];
   /** System names in the order they run. */

@@ -13,11 +13,13 @@ import {
   Commands,
   Component,
   Field,
+  Plugin,
   Query,
   Save,
   Singleton,
   System,
   Time,
+  World,
 } from "../src/index";
 import type { Entity } from "../src/index";
 
@@ -57,6 +59,8 @@ const Stats = Singleton.define(
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 const Sheets = Query.all(Sheet).pipe(Query.writes(Sheet));
+/** The sheets, read from outside the game. */
+const Ledger = Query.all(Sheet);
 const OnFire = Query.all(Position, Burning).pipe(
   Query.writes(Position, Burning)
 );
@@ -179,7 +183,48 @@ const tax = Action.handler(Tax, function* ({ amount }) {
   }
 });
 
+const Populate = Plugin.make("policy/Populate", {
+  setup: Effect.gen(function* () {
+    const commands = yield* Commands.spawns(
+      Position,
+      Velocity,
+      Sheet,
+      Burning,
+      Follows
+    );
+    let leader: Entity | undefined;
+    for (let i = 0; i < 40; i++) {
+      const entity = commands.spawn(
+        Position.of({ x: i, y: 2 * i }),
+        ...(i % 2 === 0 ? [Velocity.of({ x: 1 + i, y: -i })] : []),
+        ...(i % 3 === 0
+          ? [
+              Sheet.of({
+                hp: 10 + i,
+                gold: 2,
+                level: i,
+                flags: i & 255,
+                rival: 0 as Entity,
+                name: `hero ${i}`,
+                born: DateTime.toDateUtc(
+                  DateTime.makeUnsafe(1_000_000 * i)
+                ),
+                cache: undefined,
+              }),
+            ]
+          : []),
+        ...(i % 5 === 0 ? [Burning.of({ seconds: 0.03 + i / 1000 })] : []),
+        ...(leader !== undefined && i % 6 === 0
+          ? [Follows.of({ target: leader, since: i })]
+          : [])
+      );
+      leader ??= entity;
+    }
+  }),
+});
+
 const Game = App.define({
+  plugins: [Populate],
   systems: [Movement, Ageing, Fire, Following, Watching, Draw],
   handlers: [tax],
 });
@@ -203,35 +248,7 @@ export const play = (): Record<string, unknown> =>
         noticed = 0;
         drawn = 0;
         const app = yield* App.make(Game, { seed: 7, checkpointEvery: 1 });
-        const { world } = app;
-        let leader: Entity | undefined;
-        for (let i = 0; i < 40; i++) {
-          const entity = world.spawn(
-            Position.of({ x: i, y: 2 * i }),
-            ...(i % 2 === 0 ? [Velocity.of({ x: 1 + i, y: -i })] : []),
-            ...(i % 3 === 0
-              ? [
-                  Sheet.of({
-                    hp: 10 + i,
-                    gold: 2,
-                    level: i,
-                    flags: i & 255,
-                    rival: 0 as Entity,
-                    name: `hero ${i}`,
-                    born: DateTime.toDateUtc(
-                      DateTime.makeUnsafe(1_000_000 * i)
-                    ),
-                    cache: undefined,
-                  }),
-                ]
-              : []),
-            ...(i % 5 === 0 ? [Burning.of({ seconds: 0.03 + i / 1000 })] : []),
-            ...(leader !== undefined && i % 6 === 0
-              ? [Follows.of({ target: leader, since: i })]
-              : [])
-          );
-          leader ??= entity;
-        }
+        const world = yield* app.read(World);
         const outcomes: string[] = [];
         for (let tick = 0; tick < 6; tick++) {
           app.tick(1 / 60);
@@ -259,11 +276,10 @@ export const play = (): Record<string, unknown> =>
         app.tick(1 / 60);
         return {
           hash: world.hash(),
-          loaded: again.world.hash(),
+          loaded: (yield* again.read(World)).hash(),
           bytes: bytes.length,
           stats: { ...world.singleton(Stats) },
-          sheets: world
-            .view(Sheets)
+          sheets: (yield* app.read(Ledger))
             .entities()
             .map((entity) => {
               const sheet = world.get(entity, Sheet)!;
