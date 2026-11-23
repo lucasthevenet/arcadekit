@@ -25,27 +25,30 @@
  *     )
  *   )
  *
- * Everything here is a frame-stage system: it runs between ticks, with the
- * world frozen, and only reads it. A game that is drawn is the same game as one
- * that isn't, and a server or a replay installs none of this.
+ * Its systems run in the frame stage, between ticks, and only read the world. A
+ * game that is drawn is the same game as one that isn't, and a server or a
+ * replay installs none of this.
  *
- * What is drawn depends on an entity's components, and where it is drawn on
- * the transform its kind names: arcadekit's own `Transform3d`, its `Position`,
- * and its `Rotation` and `Scale` for entities that have them, or a 2D game's
- * `Transform2d`, drawn the same way in the x-y plane:
+ * An entity's components decide what is drawn. The transform its kind names
+ * decides where: arcadekit's own `Transform3d`, or a flat game's `Transform2d`,
+ * drawn the same way in the x-y plane. An entity is drawn at that module's
+ * `Position`, turned and sized by its `Rotation` and `Scale` when it has them.
  *
- * - `Three.instances` draws every entity of a kind as one instance of one mesh.
- *   It reads the columns directly and writes one matrix each into the mesh's
- *   buffer: no object is created per entity, and nothing is allocated per
- *   entity per frame.
- * - `Three.objects` keeps one Object3D per entity, created when the entity
- *   first matches and released when it stops matching, and copies the entity's
- *   transform into it each frame. Use it for the few things that are more than
- *   a copy of a mesh.
- * - Either takes a look available from the start, or one built from a bundle's
- *   assets (`from`), available while the bundle is loaded. `Three.texture` is
- *   the texture asset.
- * - `Three.Render` then draws the scene, through `Three.Renderer`.
+ * Each kind of entity is drawn by one of two systems:
+ *
+ * - `Three.instances` draws every entity of a kind as an instance of one mesh,
+ *   for crowds. It reads the columns directly and writes one matrix per entity
+ *   into the mesh's buffer. It creates no object per entity, and allocates
+ *   nothing per entity per frame.
+ * - `Three.objects` keeps one `Object3D` per entity, for the few entities that
+ *   are more than a copy of one mesh. The object exists from the frame the
+ *   entity first matches to the frame it stops matching, and receives the
+ *   entity's transform each frame.
+ *
+ * Either system takes a look that exists from the start, or builds one `from` a
+ * bundle's assets while the bundle is loaded. `Three.texture` makes a texture
+ * asset for such a bundle. After every frame-stage system has run,
+ * `Three.Render` renders the scene through `Three.Renderer`.
  */
 import * as Assets from "arcadekit/Assets";
 import * as Color from "arcadekit/Color";
@@ -175,8 +178,9 @@ export interface SceneShape {
   /** The scene everything is drawn into. Add lights and anything else to it. */
   readonly scene: ThreeScene;
   /**
-   * The camera the scene is viewed through. Defaults to a perspective camera at
-   * (0, 0, 10) looking at the origin, until it is moved or replaced.
+   * The camera the scene is rendered through. It starts as a perspective camera
+   * at (0, 0, 10), looking at the origin. Move it, or assign another camera,
+   * such as an `OrthographicCamera`.
    */
   camera: Camera;
   /**
@@ -193,9 +197,9 @@ export interface SceneShape {
 }
 
 /**
- * An app's scene and camera. `Three.plugin` provides it; a plugin that depends
- * on that one sets up the scene in its `layer`, and a frame-stage system moves
- * the camera:
+ * An app's scene and camera, which `Three.plugin` provides. A plugin that
+ * depends on `Three.plugin` sets up the scene in its `layer`, and a frame-stage
+ * system moves the camera.
  *
  *   const Lights = Layer.effectDiscard(
  *     Effect.map(Three.Scene, ({ scene, camera }) => {
@@ -205,8 +209,10 @@ export interface SceneShape {
  *     })
  *   )
  *
- * It belongs to the rendering, not the game: nothing in a tick reads it, and
- * none of it is saved.
+ * **Details**
+ *
+ * It belongs to rendering, not to the game. A tick cannot require it, and none
+ * of it is saved.
  *
  * @category Services
  */
@@ -242,22 +248,26 @@ const sceneLayer = Layer.effect(
 // --- the renderer ----------------------------------------------------------------
 
 /**
- * What draws: a Three.js renderer, or a test's renderer that records what it
- * was asked to draw.
+ * The shape of `Three.Renderer`: a Three.js renderer, or a test's renderer that
+ * draws nothing or records what it was asked to render.
  *
  * @category Services
  */
 export interface RendererShape {
-  /** Draws the scene as the camera sees it. Called once per frame. */
+  /** Renders the scene as the camera sees it. `Three.Render` calls it once per frame. */
   readonly render: (scene: ThreeScene, camera: Camera) => void;
 }
 
 /**
- * What draws the scene. It comes from outside the app, since it needs a canvas:
- * `Three.layerWebGL({ canvas })` in a page. A game that installs `Three.plugin`
- * without providing one doesn't compile. A test provides one that draws
- * nothing, or records what it was asked, and inspects the scene, which Three.js
- * builds under Node as in a page:
+ * What renders the scene. It needs a canvas, so it comes from outside the app,
+ * such as `Three.layerWebGL({ canvas })` in a page. A game that installs
+ * `Three.plugin` without providing one doesn't compile.
+ *
+ * **Details**
+ *
+ * A test provides a renderer that draws nothing, or one that records what it
+ * was asked, and inspects the scene. Three.js builds the scene under Node as it
+ * does in a page.
  *
  *   Layer.succeed(Three.Renderer, { render(scene, camera) {} })
  *
@@ -268,8 +278,8 @@ export class Renderer extends Context.Service<Renderer, RendererShape>()(
 ) {}
 
 /**
- * The parts of a Three.js renderer that are used. `WebGLRenderer` and
- * `WebGPURenderer` both satisfy it.
+ * The parts of a Three.js renderer that `Three.layerRenderer` uses.
+ * `WebGLRenderer` and `WebGPURenderer` both have them.
  *
  * @category Models
  */
@@ -292,15 +302,16 @@ export interface RendererLike {
  */
 export interface FitOptions {
   /**
-   * Whether the image follows the canvas's size on the page: when that changes,
-   * the renderer is resized, without touching the canvas's style, and a
-   * perspective camera gets the new aspect ratio. Defaults to true. Fitting any
-   * other kind of camera is up to your game.
+   * Whether the image follows the canvas's size on the page. When that size
+   * changes, the renderer is resized without touching the canvas's style, and a
+   * perspective camera gets the new aspect ratio. Defaults to true. Your game
+   * fits any other kind of camera itself.
    */
   readonly fit?: boolean;
   /**
    * How many pixels are drawn per CSS pixel. Defaults to the page's
-   * `devicePixelRatio`, capped at 2.
+   * `devicePixelRatio`, capped at 2. It is set only while `fit` is on, so with
+   * `fit: false` your game sets the renderer's pixel ratio itself.
    */
   readonly pixelRatio?: number;
 }
@@ -309,13 +320,21 @@ const isPerspective = (camera: Camera): camera is PerspectiveCamera =>
   (camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera === true;
 
 /**
- * Returns a layer for a renderer you create, which is disposed of when the
- * scope it is provided to closes:
+ * Returns a layer that provides `Three.Renderer` from a Three.js renderer you
+ * create. The renderer is disposed of when the scope the layer is provided to
+ * closes.
  *
  *   Three.layerRenderer(() => new WebGPURenderer({ canvas }))
  *
- * Provide it to the whole program, as the page is provided with
- * `Browser.runMain`.
+ * **When to use**
+ *
+ * Use for a renderer other than a `WebGLRenderer`, such as a `WebGPURenderer`.
+ * For a `WebGLRenderer`, use `Three.layerWebGL`.
+ *
+ * **Gotchas**
+ *
+ * - Provide it to the whole program, such as `Driver.run(...)`, and not to
+ *   something shorter. The renderer is disposed of when that scope closes.
  *
  * @category Layers
  */
@@ -369,9 +388,18 @@ export const layerRenderer = (
   );
 
 /**
- * Returns a layer for a page's renderer: a `WebGLRenderer` on the given canvas,
- * with the parameters Three.js accepts, fitted to the canvas unless configured
- * otherwise.
+ * Returns a layer that provides `Three.Renderer` as a `WebGLRenderer` on a
+ * page's canvas. It takes the parameters Three.js's `WebGLRenderer` accepts,
+ * and fits the image to the canvas unless `fit` is false.
+ *
+ *   Driver.run(app, { hz: 60 }).pipe(
+ *     Effect.provide(Three.layerWebGL({ canvas, antialias: true }))
+ *   )
+ *
+ * **Gotchas**
+ *
+ * - Provide it to the whole program, as above. The renderer is disposed of
+ *   when that scope closes, as with `Three.layerRenderer`.
  *
  * @category Layers
  */
@@ -381,17 +409,20 @@ export const layerWebGL = (
   layerRenderer(() => new WebGLRenderer(parameters), parameters);
 
 /**
- * Draws the scene once per frame. It runs in the stage after a frame's own,
- * `"postFrame"`, so it runs after every frame-stage system, regardless of where
- * each is listed and without any ordering: `Three.instances` and
- * `Three.objects`, and your own system that moves the camera.
+ * The system that renders the scene once per frame, through `Three.Renderer`.
+ * `Three.plugin` installs it.
  *
- *   System.frame("Follow", ...)
+ * **Details**
  *
- * Just before drawing, it checks whether the assets of every kind built from a
- * bundle are still loaded, and removes from the scene whatever isn't: nothing
- * is drawn with released assets, whichever runs first of the system that
- * releases a bundle and the one that draws with it.
+ * It runs in `"postFrame"`, the stage after the frame's own. Every frame-stage
+ * system therefore runs before it, wherever it is listed and with no ordering:
+ * `Three.instances`, `Three.objects`, and a system of your own that moves the
+ * camera.
+ *
+ * Just before rendering, it checks that the assets of each kind built from a
+ * bundle are still loaded, and removes from the scene what was built from
+ * released ones. Nothing is drawn with released assets, whichever runs first
+ * of the system that releases a bundle and the system that draws with it.
  *
  * @category Systems
  */
@@ -404,11 +435,14 @@ export const Render = System.frame("arcadekit/three/Render", function* () {
 }).pipe(System.inStage("postFrame"));
 
 /**
- * Gives an app a scene and draws it each frame. The plugin that defines how the
- * game looks lists it in `plugins`, and its systems, made with
- * `Three.instances` and `Three.objects`, are drawn.
+ * Gives an app a scene, `Three.Scene`, and renders it each frame with
+ * `Three.Render`. The plugin that defines how the game looks lists it in its
+ * `plugins`, beside its systems made with `Three.instances` and
+ * `Three.objects`.
  *
- * The app then needs a `Three.Renderer` from outside:
+ * **Details**
+ *
+ * The app then needs a `Three.Renderer` from outside, such as
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  *
  * Each of those systems draws from the transform it names, `Transform3d` or
@@ -454,42 +488,43 @@ interface Angle {
 
 /**
  * Which entities a drawing system draws, and the transform it draws them from.
+ * `Three.instances` and `Three.objects` both take these options.
  *
- * @category Models
+ * @category Options
  */
 export interface Which {
   /**
-   * The component that marks an entity as one of these, or several, all of
-   * which it must have. It is drawn while it has them and the `Position` of
-   * its `transform`.
+   * The component that marks an entity as one of the kind, or several
+   * components, all of which it must have. An entity is drawn while it has
+   * them, none of `without`, and the `Position` of the kind's `transform`.
    */
   readonly of: ComponentDef | readonly ComponentDef[];
   /**
    * The module whose components place the entities: `Transform3d`, or
-   * `Transform2d` for a flat game's, drawn in the x-y plane at z = 0. An entity
-   * is drawn at that module's `Position`, turned and sized by its `Rotation`
-   * and `Scale` if it has them. The other module's components are not read: a
-   * kind of `Transform2d` draws an entity that has both positions from its
-   * `Transform2d` components, whatever its `Transform3d` ones say.
+   * `Transform2d` for a flat game, whose entities are drawn in the x-y plane at
+   * z = 0. An entity is drawn at that module's `Position`, turned and sized by
+   * its `Rotation` and `Scale` when it has them. A kind reads nothing of the
+   * other module, so a kind of `Transform2d` draws an entity that has both
+   * positions from its `Transform2d` components alone.
    *
    *   Three.instances("game/Cards", { of: Card, transform: Transform2d, geometry, material })
    */
   readonly transform: typeof Transform3d | typeof Transform2d;
-  /** Components that prevent an entity from being drawn: one that hides it, for example. */
+  /** Components that keep an entity from being drawn, such as one that hides it. */
   readonly without?: readonly ComponentDef[];
   /**
-   * Interpolates each entity between its last two positions, instead of drawing
-   * it where the last tick left it: at `Frame.alpha` of the way from where it
-   * was a tick ago to where it is now. A game whose ticks and frames don't line
-   * up then moves smoothly, up to a tick behind. Defaults to false:
-   * `Three.instances` describes what is interpolated.
+   * Whether each entity is drawn between its last two positions, at
+   * `Frame.alpha` of the way from where it was a tick ago to where it is now,
+   * instead of where the last tick left it. Defaults to false. With it, a game
+   * whose ticks and frames don't line up moves smoothly, up to a tick behind.
+   * `Three.instances` says what is interpolated.
    */
   readonly smooth?: boolean;
   /**
-   * With `smooth`, how far an entity may move in one tick and still be
-   * interpolated. One that moved further, for example wrapping from one edge to
-   * the other, is drawn where it is. Defaults to no limit. It is one distance
-   * per kind, in scene units.
+   * With `smooth`, the farthest an entity may move in one tick and still be
+   * interpolated, in scene units. An entity that moves farther, such as one
+   * that wraps from one edge to the other, is drawn where it is. Defaults to no
+   * limit.
    */
   readonly snap?: number;
 }
@@ -922,25 +957,24 @@ class FromAssets<T extends Kept> implements Kept {
  */
 export interface TextureOptions {
   /**
-   * Called once with the texture, before it is first uploaded to the renderer:
-   * to mark it as non-colour data, or to set its wrapping and filtering. It is
-   * handed the texture without its `flipY`, which is set with the option of
-   * that name.
+   * Called once with the texture, before it is first uploaded to the renderer,
+   * to mark it as non-colour data or to set its wrapping and filtering. The
+   * texture it receives has no `flipY`, which the `flipY` option sets.
    */
   readonly prepare?: (texture: Omit<Texture, "flipY">) => void;
   /**
-   * Whether the image is flipped vertically on decode, so its first row is at
-   * the top of a Three.js geometry. Defaults to `true`, as a `TextureLoader`
-   * does. `false` leaves it as stored in the file, which is what a model's own
+   * Whether the image is flipped vertically when it is decoded, so its first
+   * row is at the top of a Three.js geometry. Defaults to `true`, as with a
+   * `TextureLoader`. `false` keeps the file's orientation, which a model's own
    * UV coordinates expect.
    */
   readonly flipY?: boolean;
 }
 
 /**
- * Makes a texture asset: a Three.js `Texture`, in a bundle with the rest of a
- * level's assets, disposed of along with its image when the scope it was loaded
- * in closes.
+ * Makes a texture asset, a Three.js `Texture` loaded with the rest of its
+ * bundle. The texture and its image are disposed of when the scope it was
+ * loaded in closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     bark: Three.texture("/bark.png"),
@@ -951,16 +985,21 @@ export interface TextureOptions {
  *     }),
  *   })
  *
- * - It is an sRGB colour image, unless `prepare`, which receives the texture
- *   once, says otherwise.
- * - It is oriented for Three.js geometries, unless `flipY: false` keeps it as
- *   stored in the file. This is set here and not in `prepare`, whose texture
- *   has no `flipY`: a bitmap is flipped when it is decoded, and Three.js
- *   ignores a bitmap's `flipY` afterwards.
- * - It is decoded off the page's main thread by `createImageBitmap`, which
- *   pages have and Node doesn't.
+ * **Details**
+ *
+ * - It is an sRGB colour image unless `prepare` sets another colour space.
+ * - It is oriented for Three.js geometries unless `flipY: false` keeps the
+ *   file's orientation. The orientation is an option, and `prepare` cannot set
+ *   it, because a bitmap is flipped when it is decoded and Three.js ignores a
+ *   bitmap's `flipY` afterwards.
+ * - It is decoded off the page's main thread, with `createImageBitmap`.
  * - A file that isn't an image fails the bundle with `Assets.AssetFailed`,
  *   which names the URL.
+ *
+ * **Gotchas**
+ *
+ * - Node has no `createImageBitmap`, so a texture loads only in a page. Under
+ *   Node, loading one fails its bundle.
  *
  * @category Constructors
  */
@@ -1042,39 +1081,42 @@ export interface Look {
 /**
  * The options of `Three.instances`, wherever its look comes from.
  *
- * @category Models
+ * @category Options
  */
 export interface InstancesShared extends Which {
   /**
    * Which of arcadekit's colour components gives each instance its entity's
-   * colour, which multiplies the material's own. An entity without it is drawn
-   * in the material's own colour, as if its colour were white.
+   * colour, which multiplies the material's own. An entity without it, or with
+   * the other colour component, is drawn in the material's own colour, as if
+   * its colour were white.
    *
-   *   Three.instances("game/Rocks", { of: Rock, geometry, material, color: Color.Srgb })
+   *   Three.instances("game/Rocks", { of: Rock, transform: Transform3d, geometry, material, color: Color.Srgb })
    *
-   * - `Color.Srgb` is a colour as a hex code writes it, converted for the
-   *   renderer, which works in linear colour, through a lookup table: exact
-   *   for a hex code's byte over 255, and within a sixteenth of a byte for any
-   *   other number, finer than a screen can show. A number below 0 or over 1
-   *   isn't a colour, and fails the frame with an error that names the entity.
-   * - `Color.Linear` is the renderer's own numbers, passed through as they are:
-   *   over 1 is brighter than white, which a renderer with bloom can show.
+   * - `Color.Srgb` is a colour as a hex code writes it. The renderer works in
+   *   linear colour, so a lookup table converts each number: a hex code's byte
+   *   over 255 exactly, and any other number to the nearest sixteenth of a
+   *   byte. A number below 0 or over 1 isn't a colour, and fails the frame with
+   *   an error that names the entity.
+   * - `Color.Linear` is the renderer's own numbers, passed through as they are.
+   *   A number over 1 is brighter than white, which a renderer with bloom can
+   *   show.
    *
-   * With `smooth`, a colour changes smoothly between two ticks, like a
-   * position, however far it changes: `snap` doesn't apply to it. It is
+   * With `smooth`, a colour is interpolated between two ticks like a position,
+   * however far it changes, since `snap` doesn't apply to it. It is
    * interpolated in the game's numbers, then converted.
    */
   readonly color?: typeof Color.Srgb | typeof Color.Linear;
   /**
-   * How many instances there is room for initially. Defaults to 256. The
-   * capacity doubles when it runs out, which is the only time the system
+   * How many instances the mesh has room for at first. Defaults to 256. The
+   * room doubles when it runs out, which is the only time the system
    * allocates.
    */
   readonly capacity?: number;
   /**
-   * Called once with the mesh when it is created: to make it cast shadows, or
-   * to put it on a layer. The mesh isn't frustum culled, since its instances
-   * can be anywhere; a game that knows where they are can change that here.
+   * Called with the mesh each time one is created, to make it cast shadows or
+   * to put it on a layer, for example. The mesh isn't frustum culled, since its
+   * instances can be anywhere. A game that knows where they are can turn
+   * culling on here.
    */
   readonly prepare?: (mesh: InstancedMesh) => void;
 }
@@ -1104,9 +1146,10 @@ export interface InstancesFromOptions<
    */
   readonly look: (assets: Assets.Loaded<B>) => L;
   /**
-   * Called when the assets are released, or the app's scope closes, after the mesh is removed from the scene: to dispose of anything
-   * `look` created besides the geometry and the material, which are disposed
-   * of for you. Releasing the assets themselves is the bundle's job.
+   * Called with what `look` returned, after the mesh is removed from the scene,
+   * when the assets are released or the app's scope closes. Use it to dispose
+   * of anything `look` created besides the geometry and the material, which are
+   * disposed of for you. The bundle releases the assets themselves.
    */
   readonly free?: (look: L) => void;
 }
@@ -1777,23 +1820,30 @@ type Needs = Frame | Scene | Time | World;
  *     material: new MeshStandardMaterial({ color: "#8a8f98" }),
  *   })
  *
- * An entity is drawn while it has what `of` specifies and the `Position` of
- * the `transform` the kind names, and is rotated and scaled by that module's
- * `Rotation` and `Scale` if it has them. A kind of `Transform2d` draws in the
- * x-y plane, at z = 0. The other module's components are not read.
+ * **When to use**
  *
- * - Each frame, it reads the columns directly (`eachChunk`) and writes one
- *   matrix per entity straight into the mesh's instance buffer. Nothing is
- *   created per entity: no object, matrix or vector. The buffer is only
- *   reallocated to double when it is full.
- * - A `Rotation` is drawn as the rotation it represents, whatever its length:
- *   it neither skews nor scales the instance. One whose four fields are 0, as
- *   when added without a value, means no rotation.
+ * Use for crowds, many entities that look the same. For the few entities that
+ * are more than a copy of one mesh, use `Three.objects`.
+ *
+ * **Details**
+ *
+ * An entity is drawn while it has what `of` specifies, none of `without`, and
+ * the `Position` of the kind's `transform`. It is rotated and scaled by that
+ * module's `Rotation` and `Scale` when it has them. A kind of `Transform2d`
+ * draws in the x-y plane, at z = 0. A kind reads nothing of the other module.
+ *
+ * - Each frame, it reads the columns directly with `eachChunk`, and writes one
+ *   matrix per entity into the mesh's instance buffer. It creates no object,
+ *   matrix or vector per entity. It reallocates the buffer only to double it
+ *   when it is full.
+ * - A `Rotation` is drawn as the rotation it represents, whatever its length,
+ *   so it neither skews nor scales the instance. A `Rotation` whose four fields
+ *   are 0, as one added without a value is, means no rotation.
  * - Entities are drawn where the last tick left them, unless `smooth` is set.
  * - The mesh is created on the first frame, named after the system, and added
- *   to the scene. It is removed and disposed of when the app's scope closes,
- *   and so are the geometry and the material, once no other system draws with
- *   them. Share them between systems freely.
+ *   to the scene. When the app's scope closes, the mesh is removed and disposed
+ *   of. So are the geometry and the material, once no other system draws with
+ *   them, so share them between systems freely.
  * - It requires `Three.plugin`, and its name must be unique among the app's
  *   systems.
  *
@@ -1801,7 +1851,7 @@ type Needs = Frame | Scene | Time | World;
  * positions, at `Frame.alpha` of the way from where it was a tick ago to where
  * it is now:
  *
- * - The image is then up to one tick behind the game: just after a tick, at an
+ * - The image is then up to one tick behind the game. Just after a tick, at an
  *   `alpha` of 0, an entity is drawn where it was before the tick. A game that
  *   ticks only when needed receives an `alpha` of 1 while it rests, and is
  *   drawn where it is.
@@ -1810,13 +1860,14 @@ type Needs = Frame | Scene | Time | World;
  * - An entity that wasn't drawn in the previous frame is drawn where it is: a
  *   new entity, one in a slot that belonged to another, one that was hidden,
  *   and every entity on the first frame, after a load, or after a frame the
- *   system didn't run in. So is one that moved further in a tick than `snap`.
+ *   system didn't run in. So is an entity that moved farther than `snap` in a
+ *   tick.
  * - When several ticks ran since the last frame, an entity moves from where it
- *   was last drawn; when none ran, it is between the same two positions as in
- *   the previous frame. A position changed without a tick becomes the
- *   destination from where the entity was coming from.
- * - What is kept for interpolation, each component's value a tick ago, isn't
- *   part of the world: the game's hash, log and save are unaffected.
+ *   was last drawn. When none ran, it stays between the same two positions as
+ *   in the previous frame. A position changed without a tick becomes the new
+ *   end of that move, which keeps its start.
+ * - What interpolation keeps, each component's value a tick ago, isn't part of
+ *   the world. The game's hash, log and save are the same with it or without.
  *
  * A look built from assets, such as a level's texture, is given as the bundle
  * it comes `from` and a function that builds it:
@@ -1831,14 +1882,19 @@ type Needs = Frame | Scene | Time | World;
  *     }),
  *   })
  *
- * - The entities are drawn while the app has the bundle loaded, which
- *   `Assets.during` or your own system manages, and not before or after: no
- *   mesh is in the scene then.
- * - `look` is called once each time the bundle loads. What it returned is
- *   disposed of, and `free` called with it, when the bundle is released or the
- *   app's scope closes. A mesh built from a reloaded bundle
- *   starts with the capacity the previous one had grown to.
- * - It also requires `Assets.plugin`, as the system's type reflects.
+ * - The entities are drawn only while the app has the bundle loaded, which
+ *   `Assets.during` or a system of your own manages. At any other time, no
+ *   mesh of the kind is in the scene.
+ * - `look` is called once each time the bundle loads. When the bundle is
+ *   released or the app's scope closes, the mesh is disposed of, with the
+ *   geometry and the material once no other system draws with them. Then
+ *   `free` receives what `look` returned. A mesh built from a reloaded bundle
+ *   starts with the room the previous one had grown to.
+ * - It also requires `Assets.plugin`, as the system's type shows.
+ *
+ * **Gotchas**
+ *
+ * - Instances are drawn in no particular order.
  *
  * @category Systems
  */
@@ -1981,23 +2037,23 @@ export function instances(
 /**
  * The options of `Three.objects`, wherever its objects come from.
  *
- * @category Models
+ * @category Options
  */
 export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
   /**
-   * Called when the entity stops matching, or the app's scope closes, after
-   * the object is removed from the scene: to dispose of what `make` created for
-   * this object alone, such as its own material, as soon as it goes. The
-   * geometries and materials of every object are disposed of when the bundle
-   * they were made from is released or the app's scope closes, once no other
-   * system draws with them.
+   * Called with an entity's object after it is removed from the scene, when
+   * the entity stops matching, its bundle is released, or the app's scope
+   * closes. Use it to dispose of what `make` created for this object alone,
+   * such as its own material, as soon as the object goes. Every object's
+   * geometries and materials are disposed of when the bundle they were made
+   * from is released or the app's scope closes, once no other system draws
+   * with them.
    */
   readonly free?: (object: O, entity: Entity) => void;
 }
 
 /**
- * Options for how `Three.objects` creates, updates and frees each entity's
- * object.
+ * Options for objects whose `make` needs no assets.
  *
  * @category Options
  */
@@ -2024,9 +2080,9 @@ export interface ObjectsFromOptions<
   /** The bundle the objects are built from. Objects exist while it is loaded. */
   readonly from: Assets.Bundle<B>;
   /**
-   * Creates an entity's object from the bundle's assets: on the first frame the
-   * entity matches and the assets are loaded, and again each time they are
-   * reloaded.
+   * Creates an entity's object from the bundle's assets. It is called on the
+   * first frame that the entity matches and the assets are loaded, and again
+   * each time the assets load again.
    */
   readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
 }
@@ -2314,7 +2370,7 @@ class Objects<O extends Object3D> implements Kept {
 }
 
 /**
- * Makes a frame-stage system that keeps one Object3D per entity of a kind, at
+ * Makes a frame-stage system that keeps one `Object3D` per entity of a kind, at
  * the entity's transform.
  *
  *   const Ships = Three.objects("game/Ships", {
@@ -2323,28 +2379,32 @@ class Objects<O extends Object3D> implements Kept {
  *     make: () => new Mesh(hull, paint),
  *   })
  *
- * Use it for the few things that are more than a copy of one mesh: a model with
- * parts, a light, or something that carries the camera. For crowds, use
- * `Three.instances`.
+ * **When to use**
  *
- * - `make` is called on the first frame an entity has what `of` specifies and
- *   the `Position` of the kind's `transform`, and its object is added to the
- *   scene. On the frame the entity stops matching, or is despawned, the object
- *   is removed, and `free` is called with it.
+ * Use for the few entities that are more than a copy of one mesh, such as a
+ * model with parts, a light, or something that carries the camera. For crowds,
+ * use `Three.instances`.
+ *
+ * **Details**
+ *
+ * - `make` is called on the first frame an entity has what `of` specifies,
+ *   none of `without`, and the `Position` of the kind's `transform`. Its object
+ *   is added to the scene. On the frame the entity stops matching, or is
+ *   despawned, the object is removed and passed to `free`.
  * - Each frame, every object receives its entity's `Position`, and its
- *   `Rotation` and `Scale` if the entity has them, all of the kind's
- *   `transform`: the other module's are not read. A rotation of any length is
- *   applied as a unit quaternion, and an entity that loses either is drawn as
- *   if it never had it. Anything else about an object is up to your game, in
- *   `make` or in a system of its own.
- * - For a kind of `Transform2d`, the object's x and y, its rotation about the
- *   z axis, and its scale along x and y are set. Its z position, tilt and
- *   depth scale are left as `make` set them, which is how you layer one kind
- *   in front of another.
+ *   `Rotation` and `Scale` when the entity has them, all from the kind's
+ *   `transform`. A rotation of any length is applied as a unit quaternion. An
+ *   entity that loses its `Rotation` or `Scale` is drawn as if it never had
+ *   it. Your game sets anything else about an object, in `make` or in a frame
+ *   system of its own.
+ * - For a kind of `Transform2d`, the system sets the object's x and y, its
+ *   rotation about the z axis, and its scale along x and y. Its z position,
+ *   tilt and depth scale stay as `make` set them. Set the z position in `make`
+ *   to layer one kind in front of another.
  * - An entity that reuses a despawned entity's slot gets its own object.
  * - When the app's scope closes, or the bundle is released, every object is
- *   removed and freed, and the geometries and materials the objects were made
- *   with are disposed of, once no other system draws with them.
+ *   removed and passed to `free`. The geometries and materials the objects
+ *   were made with are disposed of, once no other system draws with them.
  * - Nothing is kept in the world. A game loaded from a save, or an app that
  *   starts with entities, has its objects created on the first frame.
  * - With `smooth: true`, an object is interpolated between its entity's last
@@ -2353,18 +2413,19 @@ class Objects<O extends Object3D> implements Kept {
  *   systems.
  *
  * Objects built from a level's assets name the bundle they come `from`, and
- * `make` receives its contents:
+ * `make` receives its assets:
  *
- *   const Deer = Three.objects("game/Deer", {
- *     of: Deer,
+ *   const Trees = Three.objects("game/Trees", {
+ *     of: Tree,
  *     transform: Transform3d,
  *     from: Forest,
- *     make: (entity, { deer }) => clone(deer),
+ *     make: (entity, { oak }) => oak.scene.clone(),
  *   })
  *
- * - Objects exist while the app has the bundle loaded: each is created in the
- *   frame it loads, and all are released, through `free`, when it isn't, before
- *   the scene is next drawn. When it reloads, each is created again.
+ * - Objects exist only while the app has the bundle loaded. Each is created in
+ *   the frame the bundle loads. When the bundle is released, every object is
+ *   removed and passed to `free` before the scene is next rendered. When the
+ *   bundle loads again, each object is created again.
  * - It also requires `Assets.plugin`.
  *
  * @category Systems
