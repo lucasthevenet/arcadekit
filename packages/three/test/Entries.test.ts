@@ -153,10 +153,11 @@ describe("the entries of @arcadekit/three", () => {
     );
   });
 
-  it("has no components of its own: where a thing is drawn is arcadekit's Transform3d, which it imports by its entry", () => {
+  it("has no components of its own: where a thing is drawn and in what colour are arcadekit's Transform3d and Color, which it imports by their entries", () => {
     const { packages } = reach(sourceOf("./Three"));
     expect(packages).toContain("arcadekit/Transform3d");
     expect(packages).toContain("arcadekit/Transform2d");
+    expect(packages).toContain("arcadekit/Color");
     // It defines no component: it reads the game's. (Its comments show
     // a game defining one.)
     expect(

@@ -13,7 +13,7 @@ pnpm add arcadekit @arcadekit/three effect three
 
 ## Rules decide where, the page decides how
 
-Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`. `@arcadekit/three` has no components of its own and only reads these, each kind of entity from the one it names. The plugins that hold your rules import nothing from it, so a server or a replay installs neither it nor Three.js.
+Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`, and give an instance its colour with its `Color`. `@arcadekit/three` has no components of its own and only reads these, each kind of entity from the transform it names. The plugins that hold your rules import nothing from it, so a server or a replay installs neither it nor Three.js.
 
 ```ts title="rules.ts"
 import { Commands, Component, Plugin, Transform3d } from "arcadekit";

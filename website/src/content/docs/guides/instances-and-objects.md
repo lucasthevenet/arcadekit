@@ -11,7 +11,7 @@ Both decide what to draw from the components an entity has, and where from the [
 
 ```ts title="look.ts"
 import { Three } from "@arcadekit/three";
-import { Component, Field, Transform3d } from "arcadekit";
+import { Color, Component, Field, Transform3d } from "arcadekit";
 import { IcosahedronGeometry, MeshStandardMaterial } from "three";
 
 const Rock = Component.tag("game/Rock");
@@ -48,34 +48,25 @@ When the app's scope closes, the mesh is removed from the scene and disposed. So
 ## Per-instance colour
 
 ```ts title="look.ts"
-// The rules: a colour is three numbers, like a position.
-const Paint = Component.define("game/Paint", {
-  r: Field.f32,
-  g: Field.f32,
-  b: Field.f32,
-});
-
-// The page: every rock is drawn in its own colour.
+// Every rock is drawn in the colour its entity has.
 const Painted = Three.instances("game/Painted", {
   of: Rock,
   transform: Transform3d,
   geometry,
   material: new MeshStandardMaterial({ color: "#ffffff" }),
-  color: Paint,
+  color: Color.Srgb,
 });
 ```
 
-`color` names one of your game's components to give each instance its own colour. `@arcadekit/three` defines none: what colour an entity is, such as its team's or how damaged it is, is up to your game, whose rules write it as they write a position.
+`color` gives each instance the colour its entity has, from one of arcadekit's two colour components, [`Color.Srgb`](/reference/arcadekit/Color#srgb) or [`Color.Linear`](/reference/arcadekit/Color#linear). Like `Transform3d`, they are arcadekit's and not this package's, since what colour an entity is, such as its team's or how damaged it is, is up to your game. Its rules write it as they write a position, `commands.spawn(Rock, Transform3d.Position, Color.Srgb.of({ r: 1, g: 0.5, b: 0 }))`. A component of your game's own doesn't compile as `color`, whatever its fields.
 
-- Any table-stored component with `r`, `g` and `b` fields is a colour, whatever else it has. Anything else passed as one throws when the system is created, and is a type error before that.
-- An entity without the colour is drawn in the material's own colour, as if its colour were white. Giving some entities a colour changes how those look, and hides none.
-- The material's colour is multiplied by it, so a white material is drawn in exactly the instance's colour.
-- The numbers are a colour as a hex code writes it: `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`, from 0 to 1 in float fields. A component with integer fields, `Field.u8`, holds the bytes themselves, 0 to 255. The three fields must all be floats or all integers, which is checked when the system is created.
-- Renderers work in linear colour, so each value is converted: a byte exactly, and a float to within a sixteenth of a byte.
-- A value out of range, such as 255 in a float field or 300 in an integer one, isn't a colour: the frame fails with an error naming the entity and its three values.
-- `colorSpace: "srgb-linear"` declares that the values are already in the renderer's space, what `new Color("#ff6188")` of Three.js holds as its `r`, `g` and `b`. They are passed through as they are, bytes divided by 255, and unchecked: a value over 1 is brighter than white, which a renderer with bloom can show. `"srgb"`, Three.js's other name, is the default.
-- It costs about 6 ns more per entity, mostly the conversion, and allocates nothing.
-- With `smooth: true`, a colour is interpolated between two ticks like a position, and `snap` doesn't apply to it: a colour change is never too large to interpolate. It is interpolated in your game's values and then converted, so halfway between two hex codes is the hex code halfway between them.
+- An entity without the colour is drawn in the material's own colour, as if its colour were white. Giving some entities a colour changes how those look, and hides none. An entity that has the other of the two is one without.
+- The material's colour is multiplied by it, so a white material is drawn in exactly the instance's colour. Added bare, either is white.
+- `Color.Srgb` holds a colour as a hex code writes it, each number from 0 to 1: `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`. Renderers work in linear colour, so each number is converted: a hex code's byte exactly, and any other number to within a sixteenth of a byte.
+- A number below 0 or over 1 in a `Color.Srgb`, such as a byte that wasn't divided by 255, isn't a colour: the frame fails with an error naming the entity and its three numbers.
+- `Color.Linear` holds the renderer's own numbers, what `new Color("#ff6188")` of Three.js holds as its `r`, `g` and `b`. They are passed through as they are, whatever they are: a number over 1 is brighter than white, which a renderer with bloom can show.
+- It costs about 6 ns more per entity for a `Color.Srgb`, mostly the conversion, and 2 ns for a `Color.Linear`. It allocates nothing.
+- With `smooth: true`, a colour is interpolated between two ticks like a position, and `snap` doesn't apply to it: a colour change is never too large to interpolate. It is interpolated in your game's numbers and then converted, so halfway between two hex codes is the hex code halfway between them.
 
 ## Objects
 

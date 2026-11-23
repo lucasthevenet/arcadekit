@@ -3,10 +3,10 @@ import {
   Action,
   App,
   Assets,
+  Color,
   Commands,
   Component,
   EntityId,
-  Field,
   Plugin,
   State,
   System,
@@ -20,8 +20,11 @@ import {
   BoxGeometry,
   InstancedMesh,
   MeshBasicMaterial,
+  MirroredRepeatWrapping,
+  NearestFilter,
   NoColorSpace,
   Object3D,
+  RepeatWrapping,
   SRGBColorSpace,
   Texture,
 } from "three";
@@ -34,11 +37,6 @@ const { Position } = Transform3d;
 
 const Tree = Component.tag("ta/Tree");
 const Deer = Component.tag("ta/Deer");
-const Paint = Component.define("ta/Paint", {
-  r: Field.f32,
-  g: Field.f32,
-  b: Field.f32,
-});
 const Level = State.define("ta/Level", ["menu", "forest"]);
 const Go = Action.define(
   "ta/Go",
@@ -60,10 +58,10 @@ const Arrive = Action.define(
   })
 );
 const arrive = Action.handler(Arrive, function* ({ kind, paint, x }) {
-  return (yield* Commands.spawns(Tree, Deer, Position, Paint)).spawn(
+  return (yield* Commands.spawns(Tree, Deer, Position, Color.Linear)).spawn(
     kind === "tree" ? Tree : Deer,
     at(x),
-    ...(paint === undefined ? [] : [Paint.of(paint)])
+    ...(paint === undefined ? [] : [Color.Linear.of(paint)])
   );
 });
 const Move = Action.define(
@@ -241,7 +239,7 @@ const geometry = new BoxGeometry(1, 1, 1);
 const makeTrees = (
   Forest: Forest,
   log: string[],
-  more: { readonly smooth?: boolean; readonly color?: typeof Paint } = {}
+  more: { readonly smooth?: boolean; readonly color?: typeof Color.Linear } = {}
 ) => {
   const looks: { readonly bark: Bark; readonly material: MeshBasicMaterial }[] =
     [];
@@ -252,8 +250,6 @@ const makeTrees = (
     transform: Transform3d,
     from: Forest,
     capacity: 2,
-    // The renderer's own numbers, as they are.
-    colorSpace: "srgb-linear",
     ...more,
     look: ({ bark }) => {
       log.push(`look ${bark.load}`);
@@ -561,7 +557,10 @@ describe("instances whose look is made of assets", () => {
   it("are drawn between two ticks, and each in its colour, as any instances are", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
-    const { Trees } = makeTrees(Forest, log, { smooth: true, color: Paint });
+    const { Trees } = makeTrees(Forest, log, {
+      smooth: true,
+      color: Color.Linear,
+    });
     const { app, enter, mesh, moveTo, spawn } = play([during(Forest), Trees]);
     const tree = spawn("tree", 0, { r: 0.25, g: 0.5, b: 0.75 });
     // Not painted: drawn white, after the painted ones.
@@ -905,73 +904,62 @@ describe("a texture", () => {
     expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1]);
   });
 
-  it("is left as its file has it when it is told so where it is made, and refuses to be told in prepare", async () => {
+  it("is left as its file has it when it is told so where it is made, and cannot be told in prepare", async () => {
     const { asked, bitmaps } = stubBitmaps();
     const files = Assets.layerMemory({ "/skin.png": new Uint8Array([1, 2]) });
     const load = (asset: Assets.Asset<Texture>) =>
       Effect.runPromise(
-        Effect.exit(
-          Effect.scoped(
-            Effect.map(
-              Assets.load(Assets.bundle("ta/Skin", { skin: asset })),
-              ({ skin }) => ({ flipY: skin.flipY, image: skin.image })
-            )
+        Effect.scoped(
+          Effect.map(
+            Assets.load(Assets.bundle("ta/Skin", { skin: asset })),
+            ({ skin }) => ({ flipY: skin.flipY, image: skin.image })
           )
         ).pipe(Effect.provide(files))
       );
     // A model's own picture, say: as the file has it.
-    const seen: boolean[] = [];
-    const plain = await load(
-      Three.texture("/skin.png", {
-        flipY: false,
-        // Said again as it is, it is not a change.
-        prepare: (texture) => {
-          seen.push(texture.flipY);
-          texture.flipY = false;
-        },
-      })
-    );
-    expect(plain).toEqual(Exit.succeed({ flipY: false, image: bitmaps[0] }));
-    expect(seen).toEqual([false]);
+    expect(await load(Three.texture("/skin.png", { flipY: false }))).toEqual({
+      flipY: false,
+      image: bitmaps[0],
+    });
     // And turned over, which is what it is when nothing says: the texture
     // says of itself how it was decoded.
-    expect(await load(Three.texture("/skin.png", { flipY: true }))).toEqual(
-      Exit.succeed({ flipY: true, image: bitmaps[1] })
-    );
+    expect(await load(Three.texture("/skin.png", { flipY: true }))).toEqual({
+      flipY: true,
+      image: bitmaps[1],
+    });
     expect(asked.map((one) => one.options)).toEqual([
       { imageOrientation: "from-image" },
       { imageOrientation: "flipY" },
     ]);
-    // Three.js does not read flipY of a bitmap, so setting it in prepare
-    // would do nothing, either way: the load fails and says where to.
-    for (const [made, set] of [
-      [undefined, false],
-      [true, false],
-      [false, true],
-    ] as const) {
-      const exit = await load(
-        Three.texture("/skin.png", {
-          ...(made === undefined ? {} : { flipY: made }),
-          prepare: (texture) => {
-            texture.flipY = set;
-          },
-        })
-      );
-      expect(Exit.isFailure(exit)).toBe(true);
-      expect(
-        Cause.squash((exit as Exit.Failure<never, unknown>).cause)
-      ).toEqual(
-        new Assets.AssetFailed({
-          url: "/skin.png",
-          message: `It could not be made a texture: flipY was set to ${set} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("/skin.png", { flipY: ${set} }).`,
-        })
-      );
-    }
+    // Three.js does not read flipY of a bitmap, so prepare is handed a
+    // texture without it, and with everything else a game sets.
+    Three.texture("/skin.png", {
+      prepare: (texture) => {
+        texture.colorSpace = NoColorSpace;
+        texture.wrapS = RepeatWrapping;
+        texture.wrapT = MirroredRepeatWrapping;
+        texture.magFilter = NearestFilter;
+        texture.minFilter = NearestFilter;
+        texture.generateMipmaps = false;
+        texture.anisotropy = 4;
+        texture.premultiplyAlpha = true;
+        texture.repeat.set(2, 2);
+        texture.offset.set(0.5, 0);
+        texture.center.set(0.5, 0.5);
+        texture.rotation = Math.PI / 2;
+        // @ts-expect-error flipY is said where the texture is made
+        texture.flipY = false;
+      },
+    });
+    Three.texture("/skin.png", {
+      // @ts-expect-error nor by a function that takes a whole texture
+      prepare: (texture: Texture) => {
+        texture.flipY = false;
+      },
+    });
     // How it is told is an object, as a model is: a function alone is not.
     // @ts-expect-error prepare is named
     Three.texture("/skin.png", () => {});
-    // What was decoded for a load that failed is not kept.
-    expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1, 1, 1, 1]);
   });
 
   it("fails as an asset that could not be loaded when the file is no picture", async () => {
