@@ -3,7 +3,7 @@
 `AGENTS.md` says a rule is held by a design or a check before a sentence. A sentence that a check has made true is taken out. These checks hold rules already, and a new rule joins them:
 
 - `tooling/lint/entries.ts` says what each entry may import, and the Oxlint rule `arcadekit/entry-imports` holds it in the sources, file by file, and so in the build, which writes each source file to its own file;
-- the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, `arcadekit/no-code-from-text`, and `arcadekit/top-level-classes`, which keeps a class out of a function;
+- the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/Browser.ts`, `arcadekit/no-code-from-text`, `arcadekit/top-level-classes`, which keeps a class out of a function, and `arcadekit/no-outside-state`, which keeps what the code of the tick changes in the world;
 - `test/Policy.test.ts` plays a game where making code from text is forbidden;
 - the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts` and `test/Frame.test.ts`, which every new way to write joins;
 - a frozen world, which refuses a change from the frame and input stages;

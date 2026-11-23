@@ -8,7 +8,8 @@ import { defineConfig } from "oxlint";
 // refusal of `any`; and unused names allowed when they start with `_`, as both
 // have it. Then arcadekit's own:
 // its file names, and its plugin, tooling/lint/plugin.ts, on the sources of the
-// published packages.
+// published packages and, for the code of the tick, on their examples and
+// benchmarks too.
 export default defineConfig({
   options: {
     reportUnusedDisableDirectives: "error",
@@ -271,6 +272,13 @@ export default defineConfig({
         "arcadekit/no-code-from-text": "error",
         "arcadekit/top-level-classes": "error",
       },
+    },
+    {
+      // The code of the tick keeps what it changes in the world, except in
+      // the tests, which record what systems did in arrays outside them.
+      files: ["packages/**"],
+      excludeFiles: ["packages/*/test/**"],
+      rules: { "arcadekit/no-outside-state": "error" },
     },
     {
       // Where the app runs plugins, systems, handlers and scripts of any
