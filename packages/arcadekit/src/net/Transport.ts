@@ -7,7 +7,7 @@
  *
  *   const program = Effect.gen(function* () {
  *     const session = yield* Session.make(Duel, { seed, me, others, delta: 1 / 60 })
- *     return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
+ *     return yield* Driver.frames(yield* Transport.connect(session))
  *   }).pipe(
  *     Effect.scoped,
  *     Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
@@ -30,7 +30,7 @@
 import { Context, Data, Effect, Exit, Layer } from "effect";
 import type { Scope } from "effect";
 
-import type { Tickable } from "../Driver";
+import type { Paced } from "../Driver";
 import { Rng } from "../ecs/random";
 import * as Message from "./Message";
 import type { Peer } from "./Peer";
@@ -91,12 +91,13 @@ export const layer = (transport: Listener): Layer.Layer<Transport> =>
 
 /**
  * A session connected to a transport, which a driver steps in the session's
- * place. Its `tick` returns whether the session's tick ran.
+ * place, at the session's `delta`. Its `tick` returns whether the session's
+ * tick ran.
  *
  * @category Models
  */
-export interface Connected extends Tickable {
-  readonly tick: (delta?: number) => boolean;
+export interface Connected extends Paced {
+  readonly tick: () => boolean;
   /** The session's frame stage, for a driver to draw the game with. */
   readonly frame: (alpha: number, delta?: number) => void;
   /**
@@ -120,7 +121,7 @@ export interface Connected extends Tickable {
  * sends again what some peer hasn't heard. When it says a peer left, the peer
  * is in `away` until it joins again.
  *
- *   yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
+ *   yield* Driver.frames(yield* Transport.connect(session))
  *
  * The transport closes with the scope, so drive the session in the program
  * that connected it.
@@ -130,14 +131,15 @@ export interface Connected extends Tickable {
 export const connect: (
   session: Pick<
     Peer<unknown>,
-    "frame" | "outgoing" | "receive" | "resend" | "tick"
+    "delta" | "frame" | "outgoing" | "receive" | "resend" | "tick"
   >
 ) => Effect.Effect<Connected, never, Transport | Scope.Scope> =
   Effect.fnUntraced(function* (session) {
     const transport = yield* listen;
     const away = new Set<string>();
     return {
-      tick(delta) {
+      delta: session.delta,
+      tick() {
         let again = false;
         for (const arrived of transport.receive()) {
           if ("from" in arrived) {
@@ -157,7 +159,7 @@ export const connect: (
           }
         }
         try {
-          return session.tick(delta);
+          return session.tick();
         } finally {
           for (const message of session.outgoing()) {
             transport.send(message);

@@ -543,16 +543,14 @@ describe("a lockstep session", () => {
     });
   });
 
-  it("is stepped by a driver, as an app is", () => {
+  it("is stepped by a driver at its own delta, and is given no rate", () => {
     withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
       const [ada, grace] = peers as [Peer, Peer];
-      const steps = peers.map((peer) =>
-        Driver.fixedStep(peer.session, { hz: 30 })
-      );
+      const steps = peers.map((peer) => Driver.fixedStep(peer.session));
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       for (let i = 0; i < 20; i++) {
-        steps[0]!(DELTA);
-        steps[1]!(DELTA);
+        // A frame as long as the session's delta is one tick of it.
+        expect([steps[0]!(DELTA), steps[1]!(DELTA)]).toEqual([1, 1]);
         for (const message of ada.session.outgoing()) {
           grace.session.receive(message);
         }
@@ -563,11 +561,42 @@ describe("a lockstep session", () => {
       expect(ada.app.time.tick).toBeGreaterThan(15);
       expect(ada.app.time.elapsed).toBeCloseTo(ada.app.time.tick * DELTA, 9);
       expect(moves(grace.app.actionLog)).toHaveLength(1);
-      // A driver at another rate would have the peers simulate different
-      // lengths of time.
-      expect(() => Driver.fixedStep(ada.session, { hz: 60 })(1)).toThrow(
-        /ticks 0\.0333\d* seconds at a time.*hz: 30/u
+      // A rate of its own would have the peers simulate different lengths
+      // of time, and a session that rests would keep the others waiting.
+      // Neither is run: each would tick ada alone.
+      void Driver.fixedStep(
+        ada.session,
+        // @ts-expect-error a session ticks 1 / delta times a second
+        { hz: 30 }
       );
+      void Driver.fixedStep(
+        ada.session,
+        // @ts-expect-error a session ticks continuously
+        { ticks: "whenNeeded" }
+      );
+      void Driver.frames(
+        ada.session,
+        // @ts-expect-error a session ticks 1 / delta times a second
+        { hz: 30 }
+      );
+      void Driver.interval(
+        ada.session,
+        // @ts-expect-error a session ticks continuously
+        { ticks: "always" }
+      );
+      void Driver.run(
+        Effect.succeed(ada.session),
+        // @ts-expect-error a session ticks 1 / delta times a second
+        { hz: 30 }
+      );
+      // Its tick simulates its delta, and is given none.
+      const told = [
+        // @ts-expect-error a session's tick takes no delta
+        () => ada.session.tick(DELTA),
+        // @ts-expect-error a session's tick takes no delta
+        () => ada.session.tickExit(DELTA),
+      ];
+      void told;
     });
   });
 

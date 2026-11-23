@@ -42,7 +42,7 @@ import { Cause, Exit } from "effect";
 import * as Action from "../Action";
 import type * as App from "../App";
 import type { Reins } from "../Build";
-import type { Tickable } from "../Driver";
+import type { Paced } from "../Driver";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";
 import * as Drift from "./Drift";
@@ -66,14 +66,14 @@ export interface Options {
 
 /**
  * One peer of a multiplayer game, without its app: what a driver steps and a
- * transport carries the messages of. A driver steps it as it steps an app:
- * `Driver.frames(session, { hz })`. `Session.Session` is a peer with its app.
+ * transport carries the messages of. A driver steps it at its own `delta`:
+ * `Driver.frames(session)`. `Session.Session` is a peer with its app.
  *
  * @param E what a tick of its app can fail with
  *
  * @category Models
  */
-export interface Peer<E = never> extends Tickable {
+export interface Peer<E = never> extends Paced {
   /** This peer's name. */
   readonly me: string;
   /**
@@ -119,19 +119,20 @@ export interface Peer<E = never> extends Tickable {
    * in, up to `ahead` ticks past what every peer has sent, and first goes
    * back over the ticks a message has since arrived for.
    *
-   * Throws if a system fails, or if the peers have drifted apart. When given a
-   * number, as a driver does, it must equal the session's `delta`.
+   * The tick simulates the session's `delta`. Throws if a system fails, or if
+   * the peers have drifted apart.
    */
-  readonly tick: (delta?: number) => boolean;
+  readonly tick: () => boolean;
   /**
    * Like `tick`, but returns a failure, typed: a system's error, `Unlike`
    * once a peer has said it was made otherwise, `Drifted` once the peers have
    * drifted apart, or `Save.SaveRefused` when the game can't be captured
    * before a tick that runs ahead, in which case the tick doesn't run.
    */
-  readonly tickExit: (
-    delta?: number
-  ) => Exit.Exit<boolean, E | Drift.Unlike | Drift.Drifted | Save.SaveRefused>;
+  readonly tickExit: () => Exit.Exit<
+    boolean,
+    E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
+  >;
   /**
    * Why the session stopped, once it has: a peer was made otherwise than this
    * one, or its world hashed differently from this one's at the same tick.
@@ -385,17 +386,10 @@ export const build = <E, A extends PeerApp<E>>(
     return Exit.fail(reason);
   };
 
-  const tickExit = (
-    given?: number
-  ): Exit.Exit<
+  const tickExit = (): Exit.Exit<
     boolean,
     E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
   > => {
-    if (given !== undefined && Math.abs(given - delta) > 1e-9) {
-      throw new Error(
-        `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`
-      );
-    }
     const now = app.time.tick;
     if (!begun) {
       begun = true;
@@ -527,8 +521,8 @@ export const build = <E, A extends PeerApp<E>>(
       return kept.size;
     },
     tickExit,
-    tick(given) {
-      const exit = tickExit(given);
+    tick() {
+      const exit = tickExit();
       if (Exit.isFailure(exit)) {
         throw Cause.squash(exit.cause);
       }

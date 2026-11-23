@@ -4,7 +4,7 @@
  *   import { Session, Transport } from "arcadekit/net"
  *
  *   const session = yield* Session.make(Duel, { seed, me, others, delta: 1 / 60 })
- *   yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
+ *   yield* Driver.frames(yield* Transport.connect(session))
  *
  * Each module is an entry of its own too, `arcadekit/net/Session`, for a
  * program that wants one of them: a relay server imports

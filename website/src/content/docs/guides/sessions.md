@@ -81,7 +81,7 @@ Before each tick it isn't sure of, the session captures the game with `Timeline.
 
 ## Driving a session
 
-A session steps its app. Pass the session to a driver, and the driver renders the game through it. A driver at a different rate from the session's `delta` is refused:
+A session steps its app. Pass the session to a driver, and the driver renders the game through it. The driver ticks it `1 / delta` times a second, the rate every peer is made with, so it takes neither `hz` nor `ticks`, and giving it either doesn't compile:
 
 ```ts sketch
 const program = Effect.gen(function* () {
@@ -91,7 +91,7 @@ const program = Effect.gen(function* () {
     others,
     delta: 1 / 60,
   });
-  return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 });
+  return yield* Driver.frames(yield* Transport.connect(session));
 }).pipe(
   Effect.scoped,
   Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
@@ -99,6 +99,9 @@ const program = Effect.gen(function* () {
 ```
 
 Key presses, the UI and `session.app.enqueue` all feed this peer's next message. Your game issues input exactly as it does with one player.
+
+- `session.tick()` takes no delta: each tick simulates the session's `delta`.
+- A session never rests: the other peers wait for its message for every tick, so `ticks: "whenNeeded"` is for a game of one.
 
 ## Requirements for online play
 
