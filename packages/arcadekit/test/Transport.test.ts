@@ -45,8 +45,8 @@ const seated = (
       const session = yield* Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
-        peer: name,
-        peers: names,
+        me: name,
+        others: names.filter((other) => other !== name),
         delta: DELTA,
         ahead: ahead ?? 0,
       }).pipe(Effect.provide(Input.layer(source)));
@@ -425,8 +425,8 @@ describe("a session joined to a transport", () => {
           const session = yield* Session.make(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-            peer: "ada",
-            peers: ["ada"],
+            me: "ada",
+            others: [],
             delta: DELTA,
             ahead: 0,
           });
@@ -452,8 +452,8 @@ describe("a session joined to a transport", () => {
           Session.make(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-            peer: "ada",
-            peers: ["ada"],
+            me: "ada",
+            others: [],
             delta: DELTA,
             ahead: 0,
           }),
@@ -663,8 +663,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           // Provided to the one line that connects, and open after it.
           const session = yield* Session.make(CoinGame, {
             seed: 5,
-            peer: "ada",
-            peers: ["ada", "grace"],
+            me: "ada",
+            others: ["grace"],
             delta: DELTA,
           });
           const connected = yield* Transport.connect(session).pipe(

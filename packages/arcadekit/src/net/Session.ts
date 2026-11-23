@@ -8,8 +8,8 @@
  *
  *   const session = yield* Session.make(Duel, {
  *     seed: 1,
- *     peer: "ada",
- *     peers: ["ada", "grace"],
+ *     me: "ada",
+ *     others: ["grace"],
  *     delta: 1 / 60,
  *   })
  *
@@ -70,20 +70,26 @@ import * as Peer from "./Peer";
 
 /**
  * Options for a session: how its game starts, as `App.make` takes it, this
- * peer, every peer, and how far it sends and runs ahead.
+ * peer, the others, and how far it sends and runs ahead.
+ *
+ * `Me` and `Others` are the names as the compiler knows them, so that
+ * `Session.make` can refuse a name given twice.
  *
  * @category Options
  */
 export interface Options<
   SV extends Save.Save | undefined = undefined,
+  Me extends string = string,
+  Others extends readonly string[] = readonly string[],
 > extends App.StartOptions<SV> {
   /** This peer's name. */
-  readonly peer: string;
+  readonly me: Me;
   /**
-   * Every peer of the game, including this one. Every peer is given the same
-   * names, in any order.
+   * The names of the other peers of the game, in any order. Each peer is
+   * given its own name as `me` and every other peer's here, so all of them
+   * play with the same names.
    */
-  readonly peers: readonly string[];
+  readonly others: Others;
   /** The seconds a tick simulates, the same on every peer. */
   readonly delta: number;
   /**
@@ -107,6 +113,55 @@ export interface Options<
    */
   readonly ahead?: number;
 }
+
+// A name the compiler only knows as `string` could be any: left out.
+type Named<N extends string> = string extends N ? never : N;
+
+type Twice<
+  Me extends string,
+  Others extends readonly string[],
+  Seen extends string,
+  Found,
+> = Others extends readonly [
+  infer Name extends string,
+  ...infer Rest extends readonly string[],
+]
+  ? [Name] extends [Seen]
+    ? Twice<
+        Me,
+        Rest,
+        Seen,
+        | Found
+        | ([Name] extends [Named<Me>]
+            ? `"${Name}" is me, and among the others too. Name only the other peers in others.`
+            : `"${Name}" is among the others twice. Every peer has a name of its own: name each other peer once.`)
+      >
+    : Twice<Me, Rest, Seen | Named<Name>, Found>
+  : Found;
+
+/**
+ * The names a session is given twice, as a union of messages, and `never`
+ * when every name is its own: this peer's name among the others, or two
+ * others of one name. A name the compiler only knows as `string`, and a list
+ * of others that isn't a tuple, are left out. `Session.make` refuses the
+ * options with this message.
+ *
+ * @category Type-level
+ */
+export type Repeated<
+  Me extends string,
+  Others extends readonly string[],
+> = Twice<Me, Others, Named<Me>, never>;
+
+/**
+ * What `Session.make` adds to its options: nothing when every name is its
+ * own, and otherwise a property nobody can give, whose type is the message.
+ */
+type Distinct<Me extends string, Others extends readonly string[]> = [
+  Repeated<Me, Others>,
+] extends [never]
+  ? unknown
+  : { readonly names: Repeated<Me, Others> };
 
 /**
  * One peer of a multiplayer game, with its app. A driver steps it as it steps
@@ -174,11 +229,14 @@ const simulates = (
  * The session begins at whatever tick its app does, so a game can continue
  * from a save every peer loaded. It fails with what `App.make` fails with.
  *
+ * A name given twice, as `me` and among `others` or twice among `others`,
+ * does not compile, and the error says which.
+ *
  * **Gotchas**
  *
- * - It throws when the options can't describe a game: a peer not among `peers`,
- *   two peers with the same name, a `delay` or an `ahead` that isn't a whole
- *   number of ticks, or a `delta` that isn't greater than 0.
+ * - It throws when the options can't describe a game: a name given twice that
+ *   the compiler knows only as `string`, a `delay` or an `ahead` that isn't a
+ *   whole number of ticks, or a `delta` that isn't greater than 0.
  * - A payload its schema rejects has no JSON form to send: it is refused on the
  *   issuing peer only, and the others never see it.
  * - Each peer is given its own game, seed, `delta` and names. Its first
@@ -196,9 +254,11 @@ export const make = <
   H extends App.Handlers = readonly [],
   P extends App.Plugins = readonly [],
   SV extends Save.Save | undefined = undefined,
+  Me extends string = string,
+  const Others extends readonly string[] = readonly string[],
 >(
   game: App.Game<S, H, P>,
-  options: Options<SV>
+  options: Options<SV, Me, Others> & Distinct<Me, Others>
 ): Effect.Effect<
   Session<App.TickError<S, P>, App.AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
@@ -210,8 +270,8 @@ export const make = <
       const ahead = options.ahead ?? 8;
       return Peer.build(app, take, {
         game: simulates(game, app.systemOrder),
-        peer: options.peer,
-        peers: options.peers,
+        me: options.me,
+        others: options.others,
         delta: options.delta,
         // A session that predicts nothing would wait for the network on
         // every tick with no delay.

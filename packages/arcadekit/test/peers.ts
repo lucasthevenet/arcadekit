@@ -241,7 +241,7 @@ export interface Setup {
   readonly checkpointEvery?: Readonly<Record<string, number>>;
   /** How far the sessions run ahead: not at all unless told. */
   readonly ahead?: number;
-  /** Whether each peer is given the names the other way round from the last. */
+  /** Whether each peer is given the others the other way round from the last. */
   readonly shuffled?: boolean;
 }
 
@@ -257,14 +257,15 @@ export const withPeers = <A>(
         const services = yield* Effect.context<never>();
         for (const name of names) {
           const source = Input.makeManualSource();
+          const others = names.filter((other) => other !== name);
           const session = yield* Session.make(CoinGame, {
             seed: setup.seeds?.[name] ?? 5,
             checkpointEvery: setup.checkpointEvery?.[name] ?? 1,
-            peer: name,
-            peers:
+            me: name,
+            others:
               setup.shuffled === true && peers.length % 2 === 1
-                ? names.toReversed()
-                : names,
+                ? others.toReversed()
+                : others,
             delta: DELTA,
             ...(setup.delay === undefined ? {} : { delay: setup.delay }),
             ahead: setup.ahead ?? 0,

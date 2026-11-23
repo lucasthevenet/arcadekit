@@ -9,7 +9,19 @@ import { CoinGame, DELTA, Drop, game } from "./peers";
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
-const alone = { peer: "ada", peers: ["ada"], delta: DELTA } as const;
+const alone = { me: "ada", others: [], delta: DELTA } as const;
+
+/** What the compiler says of a session's names, or that it says nothing. */
+type Said<Me extends string, Others extends readonly string[]> = [
+  Session.Repeated<Me, Others>,
+] extends [never]
+  ? "nothing"
+  : Session.Repeated<Me, Others>;
+
+const ME_TOO =
+  '"ada" is me, and among the others too. Name only the other peers in others.';
+const OTHER_TWICE =
+  '"grace" is among the others twice. Every peer has a name of its own: name each other peer once.';
 
 describe("a session", () => {
   it("makes the app it steps, from the game and how it starts", () => {
@@ -34,6 +46,46 @@ describe("a session", () => {
         // A recording of it says how it began, as an app's does.
         expect(app.record().seed).toBe(5);
       })
+    );
+  });
+
+  it("is told this peer apart from the others, and a name given twice does not compile", () => {
+    run(
+      Effect.gen(function* () {
+        const session = yield* Session.make(CoinGame, {
+          seed: 5,
+          me: "grace",
+          others: ["edsger", "ada"],
+          delta: DELTA,
+        });
+        expect(session.me).toBe("grace");
+        // Every peer, in the order their actions are applied.
+        expect(session.peers).toEqual(["ada", "edsger", "grace"]);
+      })
+    );
+
+    const mine: Said<"ada", readonly ["grace", "ada"]> = ME_TOO;
+    const theirs: Said<"ada", readonly ["grace", "edsger", "grace"]> =
+      OTHER_TWICE;
+    const fine: Said<"ada", readonly ["grace", "edsger"]> = "nothing";
+    // Names the compiler only knows as text are refused when it runs.
+    const unknown: Said<string, readonly string[]> = "nothing";
+    expect([mine, theirs, fine, unknown]).toEqual([
+      ME_TOO,
+      OTHER_TWICE,
+      "nothing",
+      "nothing",
+    ]);
+    // Refused where they are written: neither effect is run.
+    void Session.make(
+      CoinGame,
+      // @ts-expect-error "ada" is me, and among the others too
+      { seed: 5, me: "ada", others: ["grace", "ada"], delta: DELTA }
+    );
+    void Session.make(
+      CoinGame,
+      // @ts-expect-error "grace" is among the others twice
+      { seed: 5, me: "ada", others: ["grace", "grace"], delta: DELTA }
     );
   });
 

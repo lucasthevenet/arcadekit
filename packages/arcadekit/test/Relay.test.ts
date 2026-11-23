@@ -34,8 +34,8 @@ const seatAt = (url: string, name: string) =>
     const session = yield* Session.make(CoinGame, {
       seed: 5,
       checkpointEvery: 1,
-      peer: name,
-      peers: ["ada", "grace"],
+      me: name,
+      others: ["ada", "grace"].filter((other) => other !== name),
       delta: DELTA,
     }).pipe(Effect.provide(Input.layer(source)));
     const connected = yield* Transport.connect(session).pipe(
@@ -736,8 +736,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
         Effect.gen(function* () {
           const session = yield* Session.make(CoinGame, {
             seed: 5,
-            peer: "ada",
-            peers: ["ada", "grace"],
+            me: "ada",
+            others: ["grace"],
             delta: DELTA,
             ahead: 0,
           });

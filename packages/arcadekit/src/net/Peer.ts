@@ -23,8 +23,8 @@
  * A peer's first message says what it was made with, `Message.Made`: the game
  * it simulates, its `delta`, the names of every peer and the tick it begins
  * at. A peer that hears another made otherwise stops, and its tick fails with
- * `Drift.Unlike`, which says what differs. A name that isn't among its peers
- * is told apart this way too, since that peer's names are other ones.
+ * `Drift.Unlike`, which says what differs. A peer the others don't name is
+ * told apart this way too, since its names are other ones.
  *
  * Peers also exchange the checkpoints their logs record: the world's hash at a
  * tick. A peer that receives a different hash than its own for the same tick
@@ -57,8 +57,8 @@ import type { Issued, Made, Message } from "./Message";
  */
 export interface Options {
   readonly game: number;
-  readonly peer: string;
-  readonly peers: readonly string[];
+  readonly me: string;
+  readonly others: readonly string[];
   readonly delta: number;
   readonly delay: number;
   readonly ahead: number;
@@ -74,8 +74,12 @@ export interface Options {
  * @category Models
  */
 export interface Peer<E = never> extends Tickable {
-  readonly peer: string;
-  /** Every peer of the game, in the order their actions are applied. */
+  /** This peer's name. */
+  readonly me: string;
+  /**
+   * Every peer of the game, this one too, in the order their actions are
+   * applied.
+   */
   readonly peers: readonly string[];
   /** The seconds a tick simulates. */
   readonly delta: number;
@@ -194,7 +198,7 @@ export const build = <E, A extends PeerApp<E>>(
   take: (issued: (name: string, payload: unknown) => void) => Reins<E>,
   options: Options
 ): Peer<E> & { readonly app: A } => {
-  const { ahead, delay, delta, game, peer } = options;
+  const { ahead, delay, delta, game, me: peer } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
       `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`
@@ -210,15 +214,10 @@ export const build = <E, A extends PeerApp<E>>(
       `A session's delta is the seconds a tick simulates, more than 0, and this one is ${delta}.`
     );
   }
-  const peers = options.peers.toSorted(byName);
+  const peers = [peer, ...options.others].toSorted(byName);
   if (new Set(peers).size !== peers.length) {
     throw new Error(
-      `Two peers of a session have the same name: ${peers.join(", ")}.`
-    );
-  }
-  if (!peers.includes(peer)) {
-    throw new Error(
-      `The peer "${peer}" is not among the peers of its own session: ${peers.join(", ")}. Every peer is given the names of all of them, its own among them.`
+      `Two peers of a session have the same name: ${peers.join(", ")}, with "${peer}" as me. Give this peer's name as me, and each other peer's once in others.`
     );
   }
 
@@ -462,7 +461,7 @@ export const build = <E, A extends PeerApp<E>>(
 
   return {
     app,
-    peer,
+    me: peer,
     peers,
     delta,
     delay,

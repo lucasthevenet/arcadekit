@@ -22,8 +22,8 @@ const Duel = App.define({ plugins: [Game] });
 const program = Effect.gen(function* () {
   const session = yield* Session.make(Duel, {
     seed: 1, // or a save: how the game starts, as App.make takes it
-    peer: "ada", // this machine's player
-    peers: ["ada", "grace"], // everyone: the same names on every machine
+    me: "ada", // this machine's player
+    others: ["grace"], // everyone else: grace's machine has me: "grace", others: ["ada"]
     delta: 1 / 60, // the seconds a tick simulates, the same everywhere
   });
 
@@ -42,6 +42,7 @@ What a game played on several machines needs is in `arcadekit/net`, and none of 
 Messages from other peers go to `session.receive(message)`. Usually a [transport](transports-and-relays.md) handles both directions and a driver steps the session, so your game never calls these itself. If you carry messages some other way, `Message.encode` and `Message.decode` convert them to text and back, the latter returning an `Exit` that rejects anything that isn't a message.
 
 - Every peer must be made identically: the same game, the same seed or save, the same `delta`, the same peer names, the same starting state. A session begins at whatever tick its app does, so a game can start from a save every peer loaded.
+- Each peer is given its own name as `me`, and every other peer's in `others`, in any order. A name given twice, as `me` and among `others` or twice among `others`, doesn't compile when the compiler knows the names, and `Session.make` throws when it knows them only as strings.
 - Every peer sends one message per tick, usually empty: it is also how a peer says it has nothing more for that tick.
 - Messages can arrive in any order and more than once. A duplicate, a message for a tick that already ran, or one from a name that isn't a peer of the game is dropped. Every message must eventually arrive.
 - A session's peers are fixed when it is made. `session.waitingFor` names the peers a tick is waiting for, and a peer that stops is waited for.
@@ -54,8 +55,8 @@ const session =
   yield *
   Session.make(Duel, {
     seed: 1,
-    peer: "ada",
-    peers: ["ada", "grace"],
+    me: "ada",
+    others: ["grace"],
     delta: 1 / 60,
     delay: 0, // how many ticks pass before a player's own action applies
     ahead: 8, // how many ticks it may run past what every peer has sent
@@ -86,8 +87,8 @@ A session steps its app. Pass the session to a driver, and the driver renders th
 const program = Effect.gen(function* () {
   const session = yield* Session.make(Duel, {
     seed,
-    peer,
-    peers,
+    me,
+    others,
     delta: 1 / 60,
   });
   return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 });

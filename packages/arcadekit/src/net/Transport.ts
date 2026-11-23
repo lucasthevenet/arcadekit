@@ -6,7 +6,7 @@
  * them:
  *
  *   const program = Effect.gen(function* () {
- *     const session = yield* Session.make(Duel, { seed, peer, peers, delta: 1 / 60 })
+ *     const session = yield* Session.make(Duel, { seed, me, others, delta: 1 / 60 })
  *     return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
  *   }).pipe(
  *     Effect.scoped,
