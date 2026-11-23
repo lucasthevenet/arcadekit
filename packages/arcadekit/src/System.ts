@@ -24,7 +24,7 @@ import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
 import type { Actions } from "./Action";
-import type { Devices } from "./Input";
+import type { Devices, Gamepads, Keyboard, Pointer } from "./Input";
 import type { Access, Adds, Writes } from "./Query";
 import { Sim } from "./Services";
 import type { Commands, Events, Frame, Random, Time, World } from "./Services";
@@ -195,12 +195,23 @@ type Refused<R, Ban> =
 
 /**
  * What the tick may require: the built-in services of the simulation, and
- * what yielding a query, a singleton, a state or an event puts there. A
- * resource requires nothing. A service of the game's own would keep what no
+ * what yielding a query, a singleton, a state or an event puts there, and
+ * the devices' state that `Input.plugin` keeps in the world. A resource
+ * requires nothing. A service of the game's own would keep what no
  * save, rewind or refused action sees.
  */
 type TickBan = Only<
-  World | Time | Commands | Events | Actions | Random | Access | Sim
+  | World
+  | Time
+  | Commands
+  | Events
+  | Actions
+  | Random
+  | Access
+  | Sim
+  | Keyboard
+  | Pointer
+  | Gamepads
 >;
 type FrameBan =
   | Sim
@@ -326,8 +337,10 @@ const define = <
  * Defines a system of the tick, in the `"update"` stage.
  *
  * The body can require what a tick provides: `World`, `Time`, `Commands`,
- * `Events`, `Actions` and `Random`, and the queries, singletons, states,
- * events and resources it yields. Anything else does not compile. `Frame`,
+ * `Events`, `Actions` and `Random`, the queries, singletons, states, events
+ * and resources it yields, and `Input.Keyboard`, `Input.Pointer` and
+ * `Input.Gamepads`, which `Input.plugin` provides. Anything else does not
+ * compile. `Frame`,
  * `Sound`, `View`, `Assets` and `Input.Devices` are real time, and belong to
  * `System.frame` or `System.input`. A service of the game's own would hold
  * what no save, rewind or refused action sees. Keep the game's state in the

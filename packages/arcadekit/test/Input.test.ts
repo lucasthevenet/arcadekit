@@ -1006,16 +1006,16 @@ describe("the picture of the devices in the world", () => {
       (yield* Input.Keyboard).pressed("Space");
     });
     for (const system of reads) {
-      expectTypeOf(
-        App.make(App.define({ systems: [system] }))
-      ).not.toExtend<Effect.Effect<unknown, never>>();
+      expectTypeOf(App.make(App.define({ systems: [system] }))).not.toExtend<
+        Effect.Effect<unknown, never>
+      >();
       expectTypeOf(
         App.make(App.define({ plugins: [Input.plugin], systems: [system] }))
       ).toExtend<Effect.Effect<unknown, never>>();
     }
-    expectTypeOf(
-      App.make(App.define({ handlers: [press] }))
-    ).not.toExtend<Effect.Effect<unknown, never>>();
+    expectTypeOf(App.make(App.define({ handlers: [press] }))).not.toExtend<
+      Effect.Effect<unknown, never>
+    >();
     expectTypeOf(
       App.make(App.define({ plugins: [Input.plugin], handlers: [press] }))
     ).toExtend<Effect.Effect<unknown, never>>();
