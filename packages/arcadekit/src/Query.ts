@@ -20,7 +20,7 @@ import { Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
 
 import type { RemovedReader } from "./ecs/changes";
-import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
+import type { ComponentDef, ReadOnlyTerm, WatchedTerm } from "./ecs/component";
 import type { QuerySpec, QueryView, Terms } from "./ecs/query";
 import { World } from "./Services";
 import { whole } from "./services/handed";
@@ -173,6 +173,10 @@ export const without: {
  * - `app.save()` saves what a query has yet to visit, with each reader's
  *   position. It isn't part of the world's snapshot or hash.
  *
+ * - A query that watches a component and writes it has no `eachChunk`, and a
+ *   call doesn't compile: it would mistake its own visit for a change. Iterate
+ *   with `each`.
+ *
  * - A system that watches a component is listed after the systems that write it
  *   in the same tick, with a query, with `World.writes` or by spawning it, or
  *   it would see their writes a tick late. `App.define` and `Plugin.make`
@@ -181,9 +185,6 @@ export const without: {
  *
  * **Gotchas**
  *
- * - A change query can't `eachChunk` over a component it watches and writes,
- *   and throws: it would mistake its own visit for a change. Iterate with
- *   `each`.
  * - Raw columns are typed arrays all the same: a write to one of a term the
  *   query only reads, past the compiler, is seen by no change query and by no
  *   check of the order.
@@ -195,7 +196,7 @@ export const changed: {
     ...defs: C
   ): <D extends Terms, W extends Watching>(
     self: Query<D, W>
-  ) => Query<D, W | WatchesOf<NameOf<C[number]>>>;
+  ) => Query<Watched<D, NameOf<C[number]>>, W | WatchesOf<NameOf<C[number]>>>;
   <
     D extends Terms,
     W extends Watching,
@@ -203,7 +204,7 @@ export const changed: {
   >(
     self: Query<D, W>,
     ...defs: C
-  ): Query<D, W | WatchesOf<NameOf<C[number]>>>;
+  ): Query<Watched<D, NameOf<C[number]>>, W | WatchesOf<NameOf<C[number]>>>;
 } = dual(
   (args) => args[0] instanceof Query,
   <
@@ -213,9 +214,10 @@ export const changed: {
   >(
     self: Query<D, W>,
     ...defs: C
-  ): Query<D, W | WatchesOf<NameOf<C[number]>>> =>
-    new Query<D, W | WatchesOf<NameOf<C[number]>>>(
-      self.terms,
+  ): Query<Watched<D, NameOf<C[number]>>, W | WatchesOf<NameOf<C[number]>>> =>
+    new Query<Watched<D, NameOf<C[number]>>, W | WatchesOf<NameOf<C[number]>>>(
+      // The same terms, with the ones it watches marked in the type.
+      self.terms as Terms as Watched<D, NameOf<C[number]>>,
       self.withDefs,
       self.withoutDefs,
       [...self.changedDefs, ...defs],
@@ -417,11 +419,47 @@ type Unmarked<T, W> = W extends unknown ? (T extends W ? W : never) : never;
 export type Writing<D extends Terms, W> = {
   [K in keyof D]: D[K] extends ReadOnlyTerm
     ? D[K] extends W
-      ? Unmarked<D[K], W>
+      ? Unmarked<D[K], W> & (D[K] extends WatchedTerm ? WatchedTerm : unknown)
       : D[K]
     : D[K];
 } extends infer Marked extends Terms
   ? Marked
+  : never;
+
+/**
+ * A query's terms, with the ones named `N` marked as watched for writes. A name
+ * the compiler only knows as `string` marks none.
+ *
+ * @category Type-level
+ */
+export type Watched<D extends Terms, N extends string> = {
+  [K in keyof D]: string extends N
+    ? D[K]
+    : NameOf<D[K]> extends N
+      ? D[K] & WatchedTerm
+      : D[K];
+} extends infer Marked extends Terms
+  ? Marked
+  : never;
+
+/**
+ * What `Query.writes` asks of the query it is given: nothing, unless it was
+ * given a component that isn't one of the query's terms. A name the compiler
+ * only knows as `string` is left to the check at run time.
+ *
+ * @category Type-level
+ */
+export type OwnTerms<D extends Terms, W extends ComponentDef> = [
+  Exclude<
+    W extends unknown ? (string extends NameOf<W> ? never : NameOf<W>) : never,
+    NameOf<D[number]>
+  >,
+] extends [infer Strangers]
+  ? [Strangers] extends [never]
+    ? unknown
+    : {
+        readonly "Query.writes takes only the query's terms: add it to Query.all, or require it without its data with Query.with": Strangers;
+      }
   : never;
 
 /**
@@ -443,8 +481,9 @@ export type Writing<D extends Terms, W> = {
  * the compiler has still written it: no change query sees that write, and no
  * refusal rolls it back.
  *
- * Throws when given a component that isn't one of the query's terms: to require
- * a component without its data, use `Query.with`.
+ * Takes only the query's terms: another component doesn't compile, and one the
+ * compiler knows only as a `ComponentDef` throws. To require a component
+ * without its data, use `Query.with`.
  *
  * @category Combinators
  */
@@ -452,14 +491,14 @@ export const writes: {
   <const W extends readonly [ComponentDef, ...ComponentDef[]]>(
     ...defs: W
   ): <D extends Terms, Wa extends Watching>(
-    self: Query<D, Wa>
+    self: Query<D, Wa> & OwnTerms<D, W[number]>
   ) => Query<Writing<D, W[number]>, Wa>;
   <
     D extends Terms,
     Wa extends Watching,
     const W extends readonly [ComponentDef, ...ComponentDef[]],
   >(
-    self: Query<D, Wa>,
+    self: Query<D, Wa> & OwnTerms<D, W[number]>,
     ...defs: W
   ): Query<Writing<D, W[number]>, Wa>;
 } = dual(

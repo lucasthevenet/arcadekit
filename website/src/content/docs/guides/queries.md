@@ -100,11 +100,11 @@ Used as a filter, with `Query.with` or `Query.without`, a sparse component adds 
 
 ## What a query writes
 
-A query only reads its terms. `Query.writes(Position)` names the ones it writes, as in `Moving` above:
+A query only reads its terms. `Query.writes(Position)` names the ones it writes, as in `Moving` above. It takes only the query's terms: another component doesn't compile. To require a component without its data, use `Query.with`.
 
 - `each` passes an accessor whose fields can't be assigned for a term the query doesn't write: the compiler rejects an assignment, and at run time it throws and names the field.
 - `eachChunk` types the columns of such a term as read-only, and doesn't mark their rows as written. The rows of a term it writes all count as written, since raw columns can't tell a read from a write.
-- A change query watching a component isn't triggered by a loop that only reads it, and a change query can read, raw, the component it watches. One that also writes it can't use `eachChunk`, and throws: it would see its own visit as a change.
+- A change query watching a component isn't triggered by a loop that only reads it, and a change query can read, raw, the component it watches. One that also writes it has no `eachChunk`, and a call doesn't compile: the query would see its own visit as a change. Visit it with `each`.
 - In an action handler, only the columns of what the query writes are copied for rollback.
 - The compiler tells apart two components with the same fields by their names, which are part of their types: above, `position.x` is writable and `velocity.x` is not, although both are `{ x, y }`.
 
@@ -151,7 +151,6 @@ Change queries are for data that changes occasionally. A system that processes e
 - Writes are tracked per entity: by `world.set`, by adding a component with a value, and by assigning a field in `each`. A newly added component counts as written. Reading tracks nothing.
 - `eachChunk` passes raw columns and can't tell reads from writes, so every row it passes of a component the query writes counts as written.
 - A write through a raw column of a component the query only reads still happens: the compiler doesn't see it, nothing refuses it, and no change query sees it.
-- For the same reason, a change query can't `eachChunk` over a component it watches and writes: that throws, because the query would count its own visit as a change.
 - Only watched components are tracked. Writing a component no query watches costs nothing extra.
 - A system that writes what it watches sees its own writes the next time it runs.
 - A refused action's writes aren't changes: they are rolled back with everything else, along with the visits its handler made.

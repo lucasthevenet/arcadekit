@@ -175,15 +175,25 @@ describe("a change query", () => {
     expect(hurt.entities()).toEqual([]);
   });
 
-  it("refuses to hand out raw columns of a component it watches itself", () => {
+  it("has no raw loop over a component it watches and writes", () => {
     const { entities, world } = populated();
     const moved = world.view(Moved);
-    // Every row handed out counts as written: it would never come to rest.
-    expect(() => moved.eachChunk(() => {})).toThrow(
+    // Every row handed out would count as written: it would never come to rest.
+    void (() =>
+      // @ts-expect-error raw columns would count its own visit as a change
+      moved.eachChunk(() => {}));
+    // A description put together by hand is refused when it runs.
+    const byHand = world.view({
+      terms: [Position],
+      withDefs: [],
+      withoutDefs: [],
+      changedDefs: [Position],
+    });
+    expect(() => byHand.eachChunk(() => {})).toThrow(
       /watches "ch\/Position" for changes and also hands it out.*Visit it with each\(\)/
     );
     // The refusal was not a visit.
-    expect(moved.count()).toBe(10);
+    expect(byHand.count()).toBe(10);
     // Another component of the same query, which it does not watch, is fine,
     // and so is a query that watches for a component being gained.
     const hurt = world.view(
