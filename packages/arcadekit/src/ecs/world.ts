@@ -106,9 +106,25 @@ export interface Moment {
 }
 
 /**
- * The storage core: entities, the tables of their components, sparse sets,
- * singletons and change logs. Plain synchronous code with no Effect; an app
- * holds one and provides it to systems as the `World` service.
+ * A world of entities and their components: the tables and sparse sets that
+ * store them, its singletons, its change logs and its random generator. An
+ * app holds one, and its systems reach it through the `World` service.
+ *
+ *   const world = new World({ seed: 7 })
+ *   const rock = world.spawn(Position.of({ x: 0, y: 0 }))
+ *   world.set(rock, Position, { x: 2 })
+ *   world.get(rock, Position)                  // { x: 2, y: 0 }
+ *
+ * Entities with the same set of table components share a table, with one
+ * column per field. While a query iterates or a transaction is open, the
+ * world refuses a spawn, a despawn, an add or a remove. Queue them on a
+ * `CommandBuffer` there, and apply it afterwards. A frozen world refuses
+ * changes too: see `freeze`.
+ *
+ * **When to use**
+ *
+ * Use to run the storage core without an app, in a tool, a benchmark or a
+ * test of plain code. `arcadekit` exports the class as `EcsWorld`.
  *
  * @category Models
  */
@@ -154,9 +170,9 @@ export class World {
   _restored = 0;
 
   /**
-   * The current reader: the reader a change query, or `removed`, belongs to
-   * when none is given. An app sets this before each system and handler runs,
-   * which gives each its own position in every change log.
+   * The current reader, which a change query or a `removed` reader belongs to
+   * when none is given. An app sets it before each system and handler runs, so
+   * that each has its own place in every change log.
    */
   reader: string | undefined;
   /** @internal Indexed by component id: the log of writes, when a query watches them. */
@@ -199,7 +215,7 @@ export class World {
 
   /**
    * The world's random number generator. Its state is part of the world, so
-   * everything random in a simulation comes from here.
+   * every random number a simulation draws comes from here.
    */
   readonly random: Rng;
 
@@ -219,7 +235,6 @@ export class World {
    */
   private readonly spare = new WeakMap<Columns, unknown[]>();
   private readonly savedRandom = new Uint32Array(4);
-  /** What its owner attached, in order of name. */
   /** What was attached, in order of name: `_attach`. */
   private stores: readonly Store[] = [];
   /** The moments this world captured: `_rewind` takes no other. */
@@ -227,12 +242,19 @@ export class World {
   /** The random generator's state when the world was frozen. */
   private readonly frozenRandom = new Uint32Array(4);
 
-  /** @param options.seed where the random sequence starts; defaults to 0. */
+  /**
+   * Makes an empty world. `seed`, an integer from 0 to
+   * `Number.MAX_SAFE_INTEGER`, is where its random sequence starts, and
+   * defaults to 0. Any other seed throws.
+   */
   constructor(options?: { readonly seed?: number }) {
     this.random = new Rng(options?.seed ?? 0);
   }
 
-  /** The number of live entities. */
+  /**
+   * The number of live entities, counting those a `CommandBuffer` spawned and
+   * hasn't applied yet.
+   */
   get entityCount(): number {
     return this.alive;
   }
@@ -246,8 +268,8 @@ export class World {
 
   /**
    * Returns whether the entity an id refers to is alive. Once the entity is
-   * despawned it is false for good: its slot is reused with another generation,
-   * and so under another id.
+   * despawned, it returns false for good, since the slot is reused under
+   * another generation, and so under another id.
    */
   isAlive(entity: Entity): boolean {
     const index = entityIndex(entity);
@@ -410,9 +432,10 @@ export class World {
   }
 
   /**
-   * Creates an entity with these components and returns its id. Like every
-   * structural change, it throws while a query is iterating and inside a
-   * transaction: queue it on a `CommandBuffer` there.
+   * Creates an entity with these components and returns its id. A component
+   * given twice takes the later value. Like every structural change, it throws
+   * while a query is iterating and inside a transaction, where a
+   * `CommandBuffer` queues it instead, and while the world is frozen.
    */
   spawn<const I extends readonly ComponentInput[]>(
     ...inputs: { readonly [K in keyof I]: I[K] & Targeted<I[K]> }
@@ -426,11 +449,12 @@ export class World {
   }
 
   /**
-   * Despawns an entity. Entities that point at it with a relation are handled
-   * as the relation specifies: despawned too, recursively, or stripped of the
-   * relation. Relations are processed in order of name, and the entities
-   * pointing at it in order of index, so the same world always loses the same
-   * entities in the same order.
+   * Despawns an entity, and returns false when it was gone already. The
+   * entities that point at it with a relation are despawned too, at any depth,
+   * or lose the relation, as the relation's `onTargetDespawn` says. Relations
+   * are processed in order of name, and the entities that point at it in order
+   * of index, so the same world always loses the same entities in the same
+   * order.
    */
   despawn(entity: Entity): boolean {
     this.assertNotIterating("despawn");
@@ -525,10 +549,10 @@ export class World {
   // --- components ----------------------------------------------------------
 
   /**
-   * Adds a component to an entity or, given a value, overwrites the existing
-   * one. This is also how a relation gets a new target. Returns false when the
-   * entity is gone, or when a relation's target is: whatever that target's
-   * despawn would have done then happens at once.
+   * Adds a component to an entity, or overwrites the one it has when given a
+   * value. Adding a relation again gives it a new target. Returns false when
+   * the entity is gone, or when a relation's target is. In that second case,
+   * the world does at once what the target's despawn would have done.
    */
   add<const I extends ComponentInput>(
     entity: Entity,
@@ -602,7 +626,10 @@ export class World {
     return true;
   }
 
-  /** Removes a component from an entity. Returns false when it didn't have it. */
+  /**
+   * Removes a component from an entity. Returns false when the entity is gone
+   * or didn't have the component.
+   */
   remove(entity: Entity, def: ComponentDef): boolean {
     this.assertNotIterating("remove");
     if (!this.isAlive(entity)) {
@@ -653,7 +680,11 @@ export class World {
     );
   }
 
-  /** Reads a component as a new plain object. Convenient, but not for hot loops. */
+  /**
+   * Returns a copy of an entity's component as a plain object, or undefined
+   * when the entity is gone or doesn't have the component. It makes an object
+   * per call, so a loop over many entities uses a query instead.
+   */
   get<S extends Schema>(
     entity: Entity,
     def: ComponentDef<S>
@@ -674,11 +705,14 @@ export class World {
   }
 
   /**
-   * Copies what the world holds, as plain objects: every live entity, in
-   * order of index, with each of its components by name, every singleton
-   * the world holds, by name, and what each store attached to it holds, by
-   * the store's name. It reads every component of every entity, so it is for
-   * tooling, and not for a system.
+   * Returns a copy of what the world holds, as plain objects. `entities` has
+   * every live entity in order of index, with each of its components by name.
+   * `singletons` has every singleton the world has read or written, by name.
+   * `stores` has what each store attached to the world holds, by the store's
+   * name.
+   *
+   * It reads every component of every entity, so it is for tools and not for
+   * a system.
    */
   contents(): {
     readonly entities: readonly {
@@ -737,8 +771,10 @@ export class World {
   }
 
   /**
-   * Writes some or all fields of a component the entity already has. A
-   * relation's `target` is not one of them: add the relation again.
+   * Writes some or all fields of a component the entity has, and returns
+   * false when the entity doesn't have it. A field left out keeps its value.
+   * A relation's `target` is not one of the fields: add the relation again to
+   * change it.
    */
   set<S extends Schema>(
     entity: Entity,
@@ -782,8 +818,8 @@ export class World {
 
   /**
    * Returns the entities that point at `target` with a relation, in order of
-   * index: a parent's children, or whatever is aiming at something. Finding
-   * them doesn't examine any other entity.
+   * index, such as a parent's children. Finding them doesn't look at any other
+   * entity.
    */
   sources(target: Entity, def: RelationDef): Entity[] {
     const relation = this.relations[def.id];
@@ -854,16 +890,17 @@ export class World {
   // --- singletons ------------------------------------------------------------
 
   /**
-   * Returns the world's single instance of a singleton, as an object whose
-   * fields you read and write in place:
+   * Returns the world's value of a singleton, an object whose fields you read
+   * and write in place. It is the same object on every call.
    *
    *   const turn = world.singleton(Turn)
    *   turn.player = turn.player === 1 ? 2 : 1
    *
-   * It holds the singleton's initial value until it is written. From then on it
-   * is part of the world: in its snapshot and its hash, and restored by a
-   * rollback. Reading it changes nothing, so a world that has only read a
-   * singleton hashes the same as one that never accessed it.
+   * The value is the singleton's initial value until it is written. From then
+   * on it is part of the world: a snapshot and the hash include it, and a
+   * rollback restores it. Reading it changes nothing, so a world that has only
+   * read a singleton hashes the same as one that never read it. Given a
+   * component that is not a singleton, it throws.
    */
   singleton<S extends Schema>(spec: SingletonSpec<S>): ValueOf<S> {
     const found = this.singles[spec.component.id];
@@ -889,9 +926,9 @@ export class World {
   }
 
   /**
-   * Whether the world holds a singleton as its own: written since the world
-   * began, or loaded. Until then it is its initial value, and is in neither
-   * the snapshot nor the hash.
+   * Returns whether the world holds a singleton as its own: written since the
+   * world began, or loaded from a snapshot. Until then the singleton has its
+   * initial value, and neither a snapshot nor the hash includes it.
    */
   holds<S extends Schema>(spec: SingletonSpec<S>): boolean {
     return this.singles[spec.component.id]?.written === true;
@@ -948,19 +985,21 @@ export class World {
   // --- freezing ---------------------------------------------------------------
 
   /**
-   * Freezes the world: until `thaw`, it can be read but not changed. Anything
-   * that would change it throws and explains why: `spawn`, `despawn`, `add`,
-   * `remove`, `set`, a write to a singleton, a command queued on a
-   * `CommandBuffer`, and an assignment through the accessors of `each`.
+   * Freezes the world. Until `thaw`, it can be read and not changed. Anything
+   * that would change it throws and says why: `spawn`, `despawn`, `add`,
+   * `remove`, `set`, `begin`, `restore`, a write to a singleton, a command
+   * queued on a `CommandBuffer`, and an assignment through the accessors of
+   * `each`. `freeze` throws inside a transaction.
    *
    * An app freezes its world for the frame stage, which draws the game between
    * two ticks and must leave it unchanged.
    *
-   * Two things aren't stopped at the point they happen, because stopping them
-   * there would slow every loop and every draw. A draw from `world.random` is
-   * detected by `thaw`, which restores the generator and throws. A write
-   * through the raw columns `eachChunk` hands out isn't detected at all:
-   * compare `world.hash()` before and after to find it.
+   * Some changes aren't stopped where they happen. `thaw` detects a draw from
+   * `world.random`, restores the generator, and throws. Nothing detects a
+   * write through the raw columns that `eachChunk` hands out: compare
+   * `world.hash()` before and after to find one. A check on either would slow
+   * every loop and every draw. A spawn that a `CommandBuffer` queued before
+   * the freeze, and applies during it, isn't stopped either.
    *
    * In a frozen world, `eachChunk` counts nothing as written, so a change query
    * can hand out a component it watches.
@@ -976,9 +1015,9 @@ export class World {
   }
 
   /**
-   * Ends a freeze. If random numbers were drawn from the world's generator in
-   * the meantime, it restores the generator, so the world is as it was, and
-   * throws: the draw was a change, and a bug.
+   * Ends a freeze. When a random number was drawn from `world.random` during
+   * the freeze, it restores the generator, so that the world is as it was, and
+   * throws.
    */
   thaw(): void {
     if (!this._frozen) {
@@ -1010,20 +1049,22 @@ export class World {
   /**
    * Starts a transaction. Until `commit` or `rollback`:
    *
-   * - every write to component data through `set`, `each` and `eachChunk` can
-   *   be rolled back by `rollback`, as can every random number drawn;
+   * - `rollback` can undo every write to component data, through `set`, `each`
+   *   and `eachChunk`, every write to a singleton, every random number drawn,
+   *   every visit of a change query, and what was done to each store attached
+   *   to the world.
    * - `spawn`, `despawn`, `add` and `remove` throw. Queue them on a
-   *   `CommandBuffer`, whose own `rollback` discards them. Rows therefore stay
-   *   in place for the duration of the transaction, which is what makes rolling
-   *   back a write a plain copy.
+   *   `CommandBuffer`, whose own `rollback` discards them. Rows then stay in
+   *   place for the whole transaction, so undoing a write is a plain copy.
    *
-   * An action's handler runs inside one, so a refused action leaves nothing
-   * behind. What is saved is what is about to be written: one row for `set`,
-   * and for a loop, the columns of the query's terms in each table it visits,
-   * once each.
+   * An action's handler runs inside a transaction, so a refused action leaves
+   * nothing behind. The world saves what is about to be written: one row for
+   * `set`, and for a loop, the columns of the query's terms in each table it
+   * visits, once each.
    *
-   * An object held in a `ref` field and mutated in place isn't restored: the
-   * field still holds the same object.
+   * An object held in a `ref` field and changed in place isn't restored, since
+   * the field still holds the same object. `begin` throws inside a transaction
+   * and in a frozen world.
    */
   begin(): void {
     if (this._frozen) {
@@ -1052,7 +1093,7 @@ export class World {
     this._recording = true;
   }
 
-  /** Ends the transaction and keeps what was written. */
+  /** Ends the transaction and keeps what was written. Throws outside one. */
   commit(): void {
     this.endTransaction("commit");
     for (const store of this.stores) {
@@ -1060,7 +1101,10 @@ export class World {
     }
   }
 
-  /** Ends the transaction and restores everything written since `begin`. */
+  /**
+   * Ends the transaction and restores everything written since `begin`.
+   * Throws outside one.
+   */
   rollback(): void {
     const { saved } = this;
     // Newest first, so that where a row was saved before its whole column,
@@ -1175,10 +1219,11 @@ export class World {
   }
 
   /**
-   * Registers a component with the world. A component is registered
-   * automatically the first time the world stores or queries it, so this is
-   * only needed to look one up by name before then. Its name is its identity in
-   * this world: a second component with the same name is refused.
+   * Registers a component with the world, so that `component` finds it by
+   * name. The world registers a component itself the first time it stores or
+   * queries it, so a call is needed only to look one up by name before then.
+   * Its name is its identity in this world, and a second component with the
+   * same name throws.
    */
   register(def: ComponentDef): void {
     if (this.registered[def.id] === true) {
@@ -1210,7 +1255,10 @@ export class World {
     }
   }
 
-  /** Returns the registered component with this name, for saves, the network and tools. */
+  /**
+   * Returns the registered component with this name, or undefined. Saves, the
+   * network and tools find components this way.
+   */
   component(name: string): ComponentDef | undefined {
     return this.componentsByName.get(name);
   }
@@ -1218,25 +1266,30 @@ export class World {
   // --- queries -------------------------------------------------------------
 
   /**
-   * Resolves a query description against this world. Cached per description.
+   * Resolves a query description against this world and returns its view. The
+   * world keeps the view, one per description object, and returns it again for
+   * the same object. A change query's view is kept per reader too.
    *
-   * A description with `changedDefs` or `addedDefs` is a change query. Its view
-   * visits only the entities that had one of those components written, or
-   * gained one, since the view last visited, in the usual query order; the
-   * first time, that is every matching entity. `each`, `eachChunk` and
-   * `entities` count as visits, and `count` doesn't. When nothing changed, a
-   * visit costs a few comparisons.
+   * A description with `changedDefs` or `addedDefs` is a change query's. Its
+   * view visits only the entities that had one of those components written,
+   * or gained one, since the view last visited, in the usual order. The first
+   * time, it visits every matching entity. `each`, `eachChunk` and `entities`
+   * count as visits, and `count` doesn't. When nothing changed, a visit costs
+   * a few comparisons.
    *
-   * Such a view belongs to one reader: `reader`, or `world.reader`, or an
-   * anonymous one. Two readers of the same description each see every change
-   * once. A reader is identified by its name and the description's components,
-   * so two equivalent descriptions share a view.
+   * A change query's view belongs to one reader: `reader`, or else
+   * `world.reader`, or else an anonymous one. Two readers of the same
+   * description each see every change once. Two descriptions that name the
+   * same components in the same places share a reader's view.
    *
-   * A write is recorded per row by `set`, by `add` with a value, and by the
-   * setters of `each`. `eachChunk` hands out raw columns and can't detect
-   * writes, so every row it hands out counts as written, except for the terms
-   * the description declares read-only (`readDefs`). Only watched components
-   * are recorded at all.
+   * `set`, `add` with a value, and the setters of `each` record a write per
+   * row. `eachChunk` hands out raw columns and can't detect writes, so every
+   * row it hands out counts as written, except for the terms the description
+   * only reads (`readDefs`). The world records writes only to the components
+   * that some change query watches.
+   *
+   * A new description object on every call makes a new view, and the world
+   * keeps every one. Keep a description in a constant.
    */
   view<D extends Terms>(spec: QuerySpec<D>, reader?: string): QueryView<D> {
     // The views are kept by their description, so each is a view of `D`.
@@ -1288,10 +1341,11 @@ export class World {
   // --- changes ---------------------------------------------------------------
 
   /**
-   * Returns the entities that lost a component, by `remove` or by being
-   * despawned, since this reader last read. Removals are tracked from the first
-   * time anyone requests them. There is one reader per name and component:
-   * `reader`, or `world.reader`, or an anonymous one.
+   * Returns a reader of the entities that lost a component, by `remove` or by
+   * being despawned. Its `read` returns those that lost it since the last
+   * `read`. The world logs a component's removals from the first time anyone
+   * asks for them. There is one reader per name and component: `reader`, or
+   * else `world.reader`, or else an anonymous one.
    */
   removed(def: ComponentDef, reader?: string): RemovedReader {
     const who = reader ?? this.reader ?? "";
@@ -1331,11 +1385,12 @@ export class World {
   }
 
   /**
-   * Has `reader` skip what changed: each change query and `removed` reader of
-   * its that has visited before moves to the end, so that its next visit sees
-   * only what changes from now on. One that has never visited still sees
-   * everything that matches. An app calls this for a system that its
-   * condition doesn't let run, so that it sees nothing from while it was off.
+   * Makes `reader` skip what changed so far. Each of its change queries and
+   * `removed` readers that has visited before moves to the end of its log, so
+   * that its next visit sees only what changes from now on. One that has never
+   * visited still sees everything that matches. An app calls `skip` for a
+   * system whose condition keeps it from running, so that the system sees
+   * nothing of the time it was off.
    */
   skip(reader: string): void {
     for (const log of this.logs) {
@@ -1372,10 +1427,11 @@ export class World {
 
   /**
    * Returns what change queries and `removed` readers have yet to visit, as
-   * plain data: one entry per component and kind of change, in order of name. A
-   * snapshot doesn't hold this, since it belongs to the world's readers rather
-   * than the world itself; a game's save does. `keep` selects which readers to
-   * save, by name, and defaults to all of them.
+   * plain data: one entry per component and kind of change, in order of name.
+   * It belongs to the world's readers and not to the world, so the hash never
+   * covers it, and a snapshot holds it only when a store attached to the world
+   * saves it, as an app's world does. `keep` chooses which readers to save, by
+   * name, and all of them are saved without it.
    */
   saveChanges(keep?: (reader: string) => boolean): SavedChanges[] {
     const out: SavedChanges[] = [];
@@ -1396,10 +1452,11 @@ export class World {
 
   /**
    * Restores what `saveChanges` returned, in a world that has just loaded the
-   * snapshot taken with it and hasn't watched anything yet. A reader that
-   * requests its changes afterwards continues from where it was; one the save
-   * doesn't know starts by visiting everything. Changes to components this
-   * world doesn't know are dropped.
+   * snapshot taken with it and watches nothing yet. A reader that asks for its
+   * changes afterwards goes on from where it was. A reader the save doesn't
+   * know starts by visiting everything. Changes to components this world
+   * doesn't know are dropped. It throws in a world whose changes are already
+   * watched.
    */
   restoreChanges(saved: readonly SavedChanges[]): void {
     if (this.logs.length > 0) {
@@ -1419,23 +1476,23 @@ export class World {
 
   /**
    * Serializes the whole world to bytes: every table and sparse set, every
-   * singleton that has been written, the upcoming ids, the random generator's
-   * state, and what each store attached to the world holds: in an app's world,
-   * the actions queued for the next tick and the events waiting to be read. A
-   * world with the same stores that loads the bytes hashes the same as this one
-   * and behaves the same from then on: the same iteration order, the same ids
-   * for new entities, the same random numbers.
+   * singleton that has been written, the ids to come, the random generator's
+   * state, and what each store attached to the world holds, such as an app's
+   * queued actions and waiting events. A world with the same stores that
+   * loads the bytes hashes the same as this one, and goes on the same way: the
+   * same iteration order, the same ids for new entities, the same random
+   * numbers.
    *
    * A component is written under its name, with its field names and types, so
    * the bytes don't depend on the order a program defines its components in.
-   * Numeric columns are written raw, which makes a snapshot about as big as the
+   * Numeric columns are written raw, so a snapshot is about as big as the
    * data: four bytes for an `f32`, and so on.
    *
    * A `json` field is written as the plain data it holds, a `ref` field as its
    * codec's encoding of each value, and a `transient` field not at all. A value
-   * that isn't plain data, or that a codec won't encode, has no serialized
-   * form, and the snapshot is refused with a `SnapshotError` naming the field.
-   * So is a world with a spawn queued on a `CommandBuffer` but not yet applied.
+   * that isn't plain data, or that a codec won't encode, has no saved form,
+   * and the snapshot throws a `SnapshotError` that names the field. So does a
+   * world with a spawn that a `CommandBuffer` queued and hasn't applied.
    */
   snapshot(): Uint8Array {
     return this.snapshotOf(true);
@@ -1511,28 +1568,29 @@ export class World {
   }
 
   /**
-   * Replaces everything in this world with a snapshot: the world is emptied and
-   * then loaded, as `load` loads a new one. It is meant for a snapshot this
-   * world took itself, or one from an identically built world, since it only
-   * knows the components it has encountered.
+   * Replaces everything in this world with a snapshot: the world is emptied,
+   * then loaded as `load` loads a new one. It is for a snapshot this world
+   * took itself, or one from a world built the same way, since it knows only
+   * the components it has met.
    *
    * Afterwards, the world holds what a new world that loaded the snapshot
-   * would: the same hash, the same iteration order, the same upcoming ids, the
-   * same random numbers. A singleton's value stays the same object, holding the
-   * snapshot's value, or its initial value if the snapshot doesn't hold it.
-   * `world.random` stays the same generator. What each store attached to the
-   * world holds is the snapshot's too: in an app's world, the queued actions
-   * and the waiting events, with every system's place in them.
+   * would: the same hash, the same iteration order, the same ids to come, the
+   * same random numbers. A singleton's value stays the same object, which
+   * holds the snapshot's value, or its initial value when the snapshot doesn't
+   * hold it. `world.random` stays the same generator. What each store attached
+   * to the world holds is the snapshot's too: in an app's world, the queued
+   * actions and the waiting events, with every system's place in them.
    *
-   * Anything derived from the old tables doesn't survive it. A view or a
-   * `removed` reader obtained before throws when used: obtain it again, as a
-   * system does every tick. What change queries hadn't visited is dropped, as
-   * in a new world: `restoreChanges` restores what `saveChanges` returned when
-   * the snapshot was taken.
+   * Nothing made from the old tables survives it. A view or a `removed` reader
+   * obtained before throws when it is used. Obtain it again, as a system does
+   * every tick. In a world with no app, what change queries hadn't visited is
+   * dropped, as in a new world. `restoreChanges` restores what `saveChanges`
+   * returned when the snapshot was taken.
    *
-   * Not allowed while a query is iterating, in a transaction, or while the
-   * world is frozen. Every failure is a `SnapshotError`, as for `load`, and a
-   * world whose restore failed partway is unusable.
+   * It throws an `Error` while a query is iterating, inside a transaction,
+   * while the world is frozen, and while a `CommandBuffer` holds a spawn it
+   * hasn't applied. A snapshot it can't load throws a `SnapshotError`, as for
+   * `load`, and a world whose restore failed partway is unusable.
    */
   restore(bytes: Uint8Array): void {
     this.restoring(bytes, true);
@@ -1599,22 +1657,21 @@ export class World {
   }
 
   /**
-   * Fills this world from a snapshot. The world must be empty: one that has
-   * never held an entity.
+   * Fills this world from a snapshot. The world must be empty: it has never
+   * held an entity or written a singleton, and its stores hold nothing.
    *
-   * A snapshot names its components, and each is found by its definition: the
-   * one this world has met with that name, or else the one this program
-   * defined last with it. `components` are met first, for a tool that reads a
-   * snapshot with definitions other than the program's latest, such as those
-   * of an older build. A snapshot that holds a component the program doesn't
-   * define, or one whose fields differ from when it was taken, is refused.
+   * A snapshot names its components, and the world finds each definition by
+   * its name: the one this world has met with that name, or else the one this
+   * program defined last with it. The world meets `components` first, for a
+   * tool that reads a snapshot with definitions other than the program's
+   * latest, such as those of an older build. The world refuses a snapshot
+   * that holds a component the program doesn't define, or one whose fields
+   * differ from when the snapshot was taken.
    *
-   * Every failure is a `SnapshotError`, whose `problem` identifies the kind:
-   * the bytes aren't a snapshot, are truncated or corrupt, or use a newer
-   * format; a component is unknown or has changed; or the world isn't empty.
-   * Counts are checked against the available bytes before anything is allocated
-   * for them. A world whose load failed partway is unusable: load into a new
-   * one.
+   * A snapshot it can't load throws a `SnapshotError`, whose `problem` says
+   * why: see `SnapshotProblem`. The world checks each count against the bytes
+   * left before it allocates anything for it. A world whose load failed
+   * partway is unusable: load into a new one.
    */
   load(bytes: Uint8Array, components: readonly ComponentDef[] = []): void {
     if (
@@ -1888,20 +1945,20 @@ export class World {
   // --- hash ----------------------------------------------------------------
 
   /**
-   * Returns a single number, from 0 to 2^32 - 1, for everything in the world a
-   * simulation can observe:
+   * Returns a single number, from 0 to 2^32 - 1, for everything in the world
+   * that a simulation can observe:
    *
-   * - every entity and the value of every field of every component it has, with
-   *   components identified by name;
-   * - the order queries visit entities in (tables in creation order, rows
-   *   ascending);
-   * - the ids the next entities will get;
-   * - every singleton that has been written, by name;
-   * - the state of the random number generator;
+   * - every entity, and the value of every field of every component it has,
+   *   with each component identified by its name
+   * - the order queries visit entities in: tables in the order they were
+   *   created, and the rows of each table in order
+   * - the ids the next entities will get
+   * - every singleton that has been written, by name
+   * - the state of the random number generator
    * - what each store attached to the world says a simulation can tell apart
-   *   of what it holds: in an app's world, the actions queued for the next
-   *   tick and the events the simulation has yet to read, but not where anyone
-   *   has read to.
+   *   of what it holds. In an app's world, that is the actions queued for the
+   *   next tick and the events the simulation has yet to read, and not how far
+   *   anyone has read.
    *
    * Two worlds built by the same operations in the same order hash equal, on
    * any machine. Changing one field of one entity always changes the hash. Two
@@ -1911,14 +1968,15 @@ export class World {
    * capacity, leftover data past a column's last row, which queries were
    * created, the order a sparse component's members joined in, or the order
    * components were defined in. Every NaN counts as the same NaN, since its
-   * bits are the one thing engines don't agree on; 0 and -0 differ. A `json`
+   * bits are the one thing engines don't agree on. 0 and -0 differ. A `json`
    * field counts as the plain data it holds, a `ref` field as its codec's
-   * encoding of each value, and a `transient` field not at all: the hash covers
-   * exactly what a snapshot saves.
+   * encoding of each value, and a `transient` field not at all, so the hash
+   * covers exactly what a snapshot saves.
    *
-   * Measured, it costs about 1.4 ns per 32-bit field per entity in a table,
-   * with an entity's id counting as two: 0.8 ms for 100,000 entities with four
-   * float fields, and about four times that per field of a sparse component.
+   * It costs about 1.4 ns per 32-bit field per entity in a table, measured,
+   * with an entity's id counting as two fields: 0.8 ms for 100,000 entities
+   * with four float fields. A field of a sparse component costs about four
+   * times as much.
    */
   hash(): number {
     return this.hashing(true);

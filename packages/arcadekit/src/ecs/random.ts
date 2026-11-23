@@ -28,24 +28,41 @@ const mix = (value: number): number => {
 const GOLDEN = 0x9e3779b9;
 
 /**
- * A seeded random number generator, xoshiro128**: the same seed produces the
- * same numbers on every machine. Each world owns one, as `world.random`.
+ * A seeded random number generator, xoshiro128**. The same seed gives the
+ * same numbers on every machine and in every JavaScript engine. Each world
+ * owns one, as `world.random`, and its state is part of the world: a
+ * snapshot, the hash and a rollback cover it.
+ *
+ * **When to use**
+ *
+ * Use `world.random` for every random number a simulation draws. In a game,
+ * the `Random` service gives a system of the tick this generator.
+ *
+ * **Gotchas**
+ *
+ * It is not suitable for secrets: a few outputs reveal the rest.
  *
  * @category Models
  */
 export class Rng {
   /**
-   * The generator's entire state. Copy it to save the generator, and write it
-   * back with `state.set` to resume from there.
+   * The generator's entire state, four 32-bit numbers. Copy it to save the
+   * generator, and write it back with `state.set` to resume from there.
    */
   readonly state: Uint32Array = new Uint32Array(4);
 
-  /** @param seed an integer from 0 to `Number.MAX_SAFE_INTEGER`. */
+  /**
+   * Makes a generator that starts from `seed`, an integer from 0 to
+   * `Number.MAX_SAFE_INTEGER`, which defaults to 0. Any other seed throws.
+   */
   constructor(seed = 0) {
     this.seed(seed);
   }
 
-  /** Restarts the sequence from a seed. Different seeds produce different sequences. */
+  /**
+   * Restarts the sequence from a seed, an integer from 0 to
+   * `Number.MAX_SAFE_INTEGER`. Two different seeds give different sequences.
+   */
   seed(seed: number): void {
     if (!Number.isSafeInteger(seed) || seed < 0) {
       throw new Error(
@@ -91,7 +108,8 @@ export class Rng {
 
   /**
    * Returns an integer from `min` to `max`, both inclusive: `int(1, 6)` rolls a
-   * die. Every value is equally likely.
+   * die. Every value is equally likely. Both must be integers, with `max` no
+   * less than `min` and at most 2^32 - 1 above it, or it throws.
    */
   int(min: number, max: number): number {
     const range = max - min + 1;

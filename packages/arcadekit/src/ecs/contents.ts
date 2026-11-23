@@ -21,14 +21,17 @@ import { STORAGES, corrupt } from "./snapshot";
  * @category Models
  */
 export interface SnapshotComponent {
+  /** Its name, by which a world finds its definition. */
   name: string;
   /** Where its data is stored: in tables, in a sparse set, or as a single value for the world. */
   storage: "table" | "sparse" | "singleton";
+  /** Its fields, each with its name and kind, in the order they were defined. */
   fields: { name: string; kind: FieldKind }[];
 }
 
 /**
- * One table of a snapshot: its entities' components, and their rows.
+ * One table of a snapshot: the components its entities have, and one row per
+ * entity.
  *
  * @category Models
  */
@@ -48,8 +51,9 @@ export interface SnapshotTable {
  * @category Models
  */
 export interface SnapshotSparse {
+  /** The component's name. */
   component: string;
-  /** The index (not the id) of each entity that has the component. */
+  /** The index of each entity that has the component, and not its id. */
   members: Uint32Array;
   /** For each field name, one value per member. */
   columns: Record<string, Column>;
@@ -61,6 +65,7 @@ export interface SnapshotSparse {
  * @category Models
  */
 export interface SnapshotSingleton {
+  /** The singleton's name. */
   component: string;
   /** For each field name, a column holding the single value. */
   columns: Record<string, Column>;
@@ -68,31 +73,39 @@ export interface SnapshotSingleton {
 
 /**
  * Everything a snapshot holds, read without the program's component
- * definitions, since a snapshot describes its own. Migrations work on this
- * form, to make an old save match the game's current components.
+ * definitions, since a snapshot describes its own components. Migrations work
+ * on this form, to make an old save match the game's current components.
  *
  * A `json` field's column holds the plain data itself. A `ref` field's column
  * holds each value as its codec encoded it. A `transient` field has no column.
  *
+ * **When to use**
+ *
+ * Use to read or change a snapshot outside any world, as a migration does.
+ * `readSnapshot` makes one, and `writeSnapshot` writes it back to bytes.
+ *
  * @category Models
  */
 export interface SnapshotContents {
-  /** The random generator's four words. */
+  /** The random generator's state, four 32-bit words. */
   random: Uint32Array;
   /** One generation per entity slot. */
   generations: Uint32Array;
   /** The freed slots, in the order they will be reused. */
   freed: number[];
+  /** The components the tables, sparse sets and singletons hold, in order of name. */
   components: SnapshotComponent[];
   /** In the order queries visit them. */
   tables: SnapshotTable[];
+  /** The sparse components that some entity has. */
   sparse: SnapshotSparse[];
   /** The singletons that had been written. */
   singletons: SnapshotSingleton[];
   /**
-   * What the world's stores held, the ones that held anything, in order of
-   * name: in an app's world, the events waiting to be read, the actions
-   * queued for the next tick, and what change queries had yet to visit.
+   * What the world's stores held, for each store that held anything, in order
+   * of name. In an app's world, they are the events waiting to be read, the
+   * actions queued for the next tick, and what change queries had yet to
+   * visit.
    */
   stores: SnapshotStore[];
 }
@@ -237,7 +250,9 @@ const reading = (): [SnapshotContents, Target<Listed>] => {
 };
 
 /**
- * Reads a snapshot into its contents, without needing component definitions.
+ * Reads a snapshot's bytes into its contents, without the program's component
+ * definitions. Throws a `SnapshotError` when the bytes are not a snapshot,
+ * are truncated or corrupt, or use a newer format.
  *
  * @category Codecs
  */
@@ -272,10 +287,16 @@ const byComponent = (
 ): number => byName({ name: a.component }, { name: b.component });
 
 /**
- * Writes contents back into snapshot bytes. The contents must be consistent:
- * every component a table or a sparse set names is listed, and every saved
- * field has a column with one value per row. `World.load` checks the rest when
- * it reads the result.
+ * Writes contents back into a snapshot's bytes. It checks only that the
+ * contents agree with themselves, and `World.load` checks the rest when it
+ * reads the bytes.
+ *
+ * **Gotchas**
+ *
+ * It throws a `SnapshotError` whose problem is `"corrupt"` when the contents
+ * disagree with themselves: a table, a sparse set or a singleton names a
+ * component that `components` doesn't list, or a saved field has no column
+ * of one value per row.
  *
  * @category Codecs
  */

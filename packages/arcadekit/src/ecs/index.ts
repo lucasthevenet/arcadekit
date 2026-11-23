@@ -1,21 +1,23 @@
 /**
- * The `arcadekit/ecs` entry point: the storage core on its own.
+ * The storage core on its own: components, entities and the world that holds
+ * them, as plain synchronous TypeScript.
  *
  *   import { Component, Field, World } from "arcadekit/ecs"
  *
  *   const Position = Component.define("physics/Position", { x: Field.f32, y: Field.f32 })
- *   const world = new World({ seed: 7 })
- *   world.spawn(Position.of({ x: 0, y: 0 }))
- *   world
- *     .view({ terms: [Position], withDefs: [], withoutDefs: [] })
- *     .each((pos) => { pos.x += 1 })
+ *   const Positioned = { terms: [Position] as const, withDefs: [], withoutDefs: [] }
  *
- * The core is plain synchronous TypeScript with no imports: no Effect, and
- * nothing else from this package. The root entry exports the same objects, so a
- * world created here is one `arcadekit` accepts and a component is the same
- * component. The root entry exports the world class as `EcsWorld`, next to the
- * `World` service, and leaves out `entityIndex` and `entityGeneration`, which
- * are only available here.
+ *   const world = new World({ seed: 7 })
+ *   const rock = world.spawn(Position.of({ x: 0, y: 0 }))
+ *   world.view(Positioned).each((position) => { position.x += 1 })
+ *   world.get(rock, Position)                  // { x: 1, y: 0 }
+ *
+ * The core imports nothing: not Effect, and nothing else of this package. The
+ * root entry, `arcadekit`, exports the same objects. A component defined here
+ * is the same component there, and the root entry's `EcsWorld`, beside the
+ * `World` service, is this `World` class. The root entry's `Field` module has
+ * one more field type, `Field.schema`. `entityIndex`, `entityGeneration` and
+ * `placed` are exported only here.
  */
 export { Component, entityGeneration, entityIndex, Field } from "./component";
 export type { PatchOf, RelationDef, TargetField } from "./relation";

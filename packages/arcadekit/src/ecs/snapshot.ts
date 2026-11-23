@@ -16,7 +16,21 @@ import { isBoxed } from "./component";
 import type { FieldKind, RefCodec } from "./component";
 
 /**
- * Why a snapshot couldn't be taken or loaded.
+ * Why a snapshot couldn't be taken or loaded, as a `SnapshotError` gives it:
+ *
+ * - `"not a snapshot"`: the bytes don't begin as a snapshot does.
+ * - `"newer format"`: a later version of arcadekit wrote the snapshot.
+ * - `"truncated"`: the bytes end before what they say they hold.
+ * - `"corrupt"`: the bytes hold what no world could have saved.
+ * - `"unknown component"`: the snapshot holds a component this program
+ *   doesn't define.
+ * - `"component changed"`: a component's storage or fields differ from when
+ *   the snapshot was taken, or a `ref` field's codec refuses a value.
+ * - `"unknown store"`: the snapshot holds a store that the world doesn't have.
+ * - `"store changed"`: a store refuses what the snapshot holds of it.
+ * - `"world not empty"`: `World.load` was given a world that isn't empty.
+ * - `"cannot be saved"`: the world holds a value with no saved form, or a
+ *   spawn that a `CommandBuffer` hasn't applied.
  *
  * @category Models
  */
@@ -33,14 +47,16 @@ export type SnapshotProblem =
   | "cannot be saved";
 
 /**
- * A snapshot couldn't be taken or loaded. `problem` identifies the kind of
- * failure for code, and the message explains it for a person, naming the
- * component or field where there is one.
+ * What `World.snapshot`, `World.load`, `World.restore`, `readSnapshot` and
+ * `writeSnapshot` throw when a snapshot can't be taken or loaded. `problem`
+ * names the kind of failure for code. The message explains it for a person,
+ * and names the component or field where there is one.
  *
  * @category Errors
  */
 export class SnapshotError extends Error {
   override readonly name = "SnapshotError";
+  /** The kind of failure. */
   readonly problem: SnapshotProblem;
   /** The component the problem concerns, if any. */
   readonly component: string | undefined;

@@ -37,21 +37,48 @@ type Command =
     };
 
 /**
- * Queues structural changes so they can be made from inside query loops, and
- * applied in one pass at a known point in the tick.
+ * A queue of structural changes to a world: spawns, despawns, and components
+ * added and removed. The world refuses those changes while a query iterates
+ * and inside a transaction, so a loop queues them here. `apply` then makes
+ * them in one pass, in order, at a point the caller chooses.
+ *
+ * **When to use**
+ *
+ * Use with the storage core alone. In a game, the `Commands` service queues
+ * on the app's buffer, which the app applies when each system finishes.
+ *
+ * **Gotchas**
+ *
+ * - `spawn` reserves the id at once. `isAlive` and `entityCount` count the
+ *   entity before `apply`, and it has no component until then.
+ * - A spawn left unapplied makes `World.snapshot` and `World.restore` throw.
+ * - Call `apply` outside any query's loop and transaction, in a world that
+ *   isn't frozen. Inside a loop or a transaction, or in a frozen world, a
+ *   queued despawn, add or remove throws, and the queue is empty afterwards,
+ *   so that command and the ones after it are lost. A queued spawn is made
+ *   there with no error, and a rollback doesn't undo it.
+ *
+ * @typeParam Id the type of the ids `spawn` returns, `Entity` by default, and
+ *   `Spawned` in an app's buffer
  *
  * @category Models
  */
 export class CommandBuffer<Id extends Entity | Spawned = Entity> {
   private ops: Command[] = [];
 
+  /** Makes an empty buffer for `world`. */
   constructor(readonly world: World) {}
 
+  /** How many commands are queued. */
   get size(): number {
     return this.ops.length;
   }
 
-  /** Returns the new entity's id immediately; it receives its components on apply. */
+  /**
+   * Queues a spawn and returns the new entity's id at once. The entity gets
+   * its components when the buffer is applied. A component the world refuses,
+   * such as a singleton, throws here and not at `apply`.
+   */
   spawn<const I extends readonly ComponentInput[]>(
     ...inputs: { readonly [K in keyof I]: I[K] & Targeted<I[K]> }
   ): Id {
@@ -68,11 +95,17 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
     return entity as Id;
   }
 
+  /** Queues a despawn, which `apply` makes as `World.despawn` does. */
   despawn(entity: Entity | Id): void {
     this.refuseFrozen("despawn");
     this.ops.push({ op: "despawn", entity: applied(entity) });
   }
 
+  /**
+   * Queues adding a component, or overwriting one the entity has, which
+   * `apply` makes as `World.add` does. Adding a relation again gives it a new
+   * target.
+   */
   add<const I extends ComponentInput>(
     entity: Entity | Id,
     input: I & Targeted<I>
@@ -82,6 +115,7 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
     this.ops.push({ op: "add", entity: applied(entity), input });
   }
 
+  /** Queues removing a component, which `apply` makes as `World.remove` does. */
   remove(entity: Entity | Id, def: ComponentDef): void {
     this.refuseFrozen("remove");
     this.ops.push({ op: "remove", entity: applied(entity), def });
@@ -100,10 +134,10 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
   }
 
   /**
-   * Discards every command queued since `mark`. The ids of entities whose spawn
-   * is discarded are returned to the pool, newest first, so the world is left
-   * as if they were never requested: the next entities get the same ids either
-   * way.
+   * Discards every command queued since `mark`. It gives back the ids of the
+   * discarded spawns, newest first. When nothing else was spawned or despawned
+   * in the meantime, the next entities get the same ids as if those spawns had
+   * never been queued.
    */
   rollback(mark: number): void {
     for (let i = this.ops.length - 1; i >= mark; i--) {
@@ -115,7 +149,11 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
     this.ops.length = Math.min(this.ops.length, mark);
   }
 
-  /** Applies queued commands in order, and returns how many were applied. */
+  /**
+   * Makes the queued commands in order, empties the queue, and returns how
+   * many commands it ran. A command whose entity is gone by then does nothing,
+   * and still counts.
+   */
   apply(): number {
     if (this.ops.length === 0) {
       return 0;

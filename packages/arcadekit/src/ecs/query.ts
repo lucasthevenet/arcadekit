@@ -37,57 +37,92 @@ export const describeSpec = (spec: QuerySpec): string => {
 };
 
 /**
- * The components a query reads, in the order its loop is given them.
+ * The components whose data a query hands to its loop, in the order the loop
+ * receives them.
  *
  * @category Models
  */
 export type Terms = readonly ComponentDef[];
 
 /**
- * A description of a query, independent of any world. Any object with this
- * shape works; the Effect layer provides a yieldable, pipeable implementation.
+ * A description of a query, independent of any world. `World.view` resolves
+ * it against a world, which takes any object of this shape. In a game,
+ * `Query.all` from `arcadekit` makes one that a system can also `yield*`.
+ *
+ *   const Moving = {
+ *     terms: [Position, Velocity] as const,
+ *     withDefs: [],
+ *     withoutDefs: [Stunned],
+ *     readDefs: [Velocity],
+ *   }
+ *   world.view(Moving).each((position, velocity) => { position.x += velocity.x })
+ *
+ * **Gotchas**
+ *
+ * - Write `terms` as a tuple, with `as const`. With an array of components,
+ *   each argument of the loop's callback has the type of any term, or of an
+ *   `Entity`.
+ * - A term that `readDefs` doesn't name is written. In a description written
+ *   by hand, `readDefs` makes an assignment throw, and the compiler still
+ *   allows it. `Query.writes` makes one the compiler checks.
+ * - `World.view` keeps one view per description object. Keep a description
+ *   in a constant: a new object on every call makes a new view, and the world
+ *   keeps every one.
  *
  * @category Models
  */
 export interface QuerySpec<D extends Terms = Terms> {
-  /** Components whose data the query reads or writes (table or sparse). */
+  /**
+   * The components whose data the query hands to its loop, table or sparse.
+   * An entity must have each of them.
+   */
   readonly terms: D;
-  /** Extra components an entity must have (table or sparse). */
+  /** More components an entity must have, whose data the loop doesn't get. */
   readonly withDefs: readonly ComponentDef[];
-  /** Components an entity must not have (table or sparse). */
+  /** Components an entity must not have. */
   readonly withoutDefs: readonly ComponentDef[];
   /**
-   * Components to watch for writes. With any of these or of `addedDefs`, the
-   * query visits only the entities for which one of them changed since it last
-   * visited: see `World.view`.
+   * Components to watch for writes. A description with any of these, or any
+   * `addedDefs`, is a change query's: it visits only the entities that had one
+   * of them written or added since its last visit. An entity must have each
+   * of them. See `World.view`.
    */
   readonly changedDefs?: readonly ComponentDef[];
-  /** Components to watch for being added. */
+  /** Components to watch for being added. An entity must have each of them. */
   readonly addedDefs?: readonly ComponentDef[];
   /**
-   * The terms the query only reads. `each` hands out accessors for them whose
-   * setters throw. `eachChunk` doesn't count their rows as written for the
-   * change queries that watch them, and a transaction doesn't save their
-   * columns, since there is nothing to restore.
+   * The terms the query only reads. An assignment to one of them through
+   * `each` throws. `eachChunk` doesn't count their rows as written for the
+   * change queries that watch them. A transaction doesn't save their columns,
+   * since there is nothing to restore. Each must be one of `terms`, or
+   * `World.view` throws.
    */
   readonly readDefs?: readonly ComponentDef[];
 }
 
 /**
- * The columns of a sparse component. They aren't aligned with table rows, so
- * look up the row per entity:
+ * The columns of a sparse component, as `eachChunk` hands them out. Their rows
+ * are not the table's, so look up each entity's row:
  * `burning.columns.seconds[burning.indexOf(entity)]`.
+ *
+ * @typeParam S the component's fields
+ * @typeParam C its columns, read-only for a term the query only reads
  *
  * @category Models
  */
 export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
+  /** One column per field. */
   readonly columns: C;
-  /** The row of an entity in `columns`. Only meaningful for entities that have the component. */
+  /**
+   * Returns an entity's row in `columns`, for an entity that has the
+   * component. For any other entity, the number means nothing.
+   */
   readonly indexOf: (entity: number) => number;
 }
 
 /**
- * The entity ids of a table's rows. Reading an element returns an `Entity`.
+ * The ids of a table's entities, one per row, as `eachChunk` hands them out.
+ * An element reads as an `Entity`.
  *
  * @category Models
  */
@@ -168,8 +203,17 @@ type Callback = (...args: unknown[]) => void;
 type OnRun = (table: Table, start: number, end: number) => void;
 
 /**
- * A query bound to one world: what a system gets from `yield* SomeQuery`, to
- * iterate with `each`.
+ * A query resolved against one world, as `World.view` returns it and a system
+ * gets it from `yield* SomeQuery`. `each` and `eachChunk` visit the entities
+ * that match, and `count` and `entities` read them.
+ *
+ * Every visit goes in the same order: tables in the order they were created,
+ * and the rows of each table in order.
+ *
+ * **Gotchas**
+ *
+ * A view obtained before `World.restore` throws when it is used. Obtain it
+ * again, as a system does every tick.
  *
  * @category Models
  */
@@ -239,6 +283,7 @@ export class QueryView<D extends Terms = Terms> {
   /** @internal */
   constructor(
     private readonly world: World,
+    /** The description this view resolves. */
     readonly spec: QuerySpec<D>,
     /** For a change query, how a save identifies this reader. */
     key = ""
@@ -790,10 +835,13 @@ export class QueryView<D extends Terms = Terms> {
   // --- each: one callback per entity, through accessors -----------------------
 
   /**
-   * Calls `fn` once per matching entity, with one accessor per term.
+   * Calls `fn` once for each matching entity, with an accessor for each term
+   * and then the entity's id. An accessor has the fields of its component, and
+   * reads and writes them for the current entity.
    *
-   * The accessors are reused between calls: read and write through them inside
-   * the callback, but don't keep references to them.
+   * The loop reuses the accessors from one call to the next. Read and write
+   * through them inside the callback, and don't keep them. An assignment
+   * throws for a term the query only reads, and in a frozen world.
    */
   each(fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void): void {
     const frame = this.enter();
@@ -927,31 +975,32 @@ export class QueryView<D extends Terms = Terms> {
   // --- eachChunk: raw columns, the caller writes the loop ---------------------
 
   /**
-   * The fast path. Calls `fn` with raw columns and a range of rows `[start,
-   * end)` that all match; you write the loop yourself:
+   * Calls `fn` with the raw columns of each run of matching rows,
+   * `[start, end)` of one table. You write the loop yourself:
    *
    *   view.eachChunk((start, end, pos, vel) => {
    *     for (let i = start; i < end; i++) pos.x[i] += vel.x[i] * dt
    *   })
    *
-   * A query without sparse conditions gets one chunk per table. With sparse
-   * conditions, each table is split into runs of consecutive matching rows.
+   * A query that names no sparse component, and is not a change query, gets
+   * one run per table. Any other query splits each table into runs of
+   * consecutive matching rows.
    *
-   * Sparse data terms arrive as `{ columns, indexOf }`, because their rows
-   * don't line up with the table's. After the columns comes `entities`, the ids
-   * of the table's rows.
+   * A sparse term arrives as `{ columns, indexOf }`, since its rows are not
+   * the table's. After the terms comes `entities`, the ids of the table's
+   * rows.
    *
    * Under `noUncheckedIndexedAccess`, a read from a column is `number |
-   * undefined` and needs an assertion, `pos.x[i]!`. The raw path can't avoid
-   * it: a checked read would cost a call per read.
+   * undefined` and needs an assertion, `pos.x[i]!`. A checked read would cost
+   * a call per read.
    *
-   * Raw columns can't report which rows were written. When a change query
+   * Raw columns can't say which rows were written. When a change query
    * watches one of this query's terms, every row handed out counts as written,
-   * unless the query declares the term read-only (`readDefs`). For the same
-   * reason, a change query can't hand out a component it watches unless it
-   * declares it read-only: a query made with `Query.changed` and `Query.writes`
-   * doesn't compile, and a description put together by hand throws. In a
-   * frozen world nothing is written, so neither applies.
+   * unless the query only reads the term (`readDefs`). For the same reason, a
+   * change query can't hand out a component it watches unless it only reads
+   * it. A query made with `Query.changed` and `Query.writes` of the same
+   * component doesn't compile, and a description written by hand throws. In a
+   * frozen world nothing counts as written, so neither applies.
    */
   eachChunk(
     this: Chunked<D> & QueryView<D>,
@@ -1036,8 +1085,8 @@ export class QueryView<D extends Terms = Terms> {
   // --- conveniences -----------------------------------------------------------
 
   /**
-   * Returns the number of matching entities. For a change query, how many it
-   * has yet to visit: counting isn't visiting.
+   * Returns the number of matching entities. For a change query, it returns
+   * how many entities the query has yet to visit, and counting is not a visit.
    */
   count(): number {
     this.refresh();
@@ -1069,8 +1118,8 @@ export class QueryView<D extends Terms = Terms> {
   }
 
   /**
-   * Returns the matching entities in iteration order, as a new array. For a
-   * change query, this is a visit, like `each`.
+   * Returns the matching entities in the order a loop visits them, as a new
+   * array. For a change query, the call is a visit, as `each` is.
    */
   entities(): Entity[] {
     const out: Entity[] = [];
