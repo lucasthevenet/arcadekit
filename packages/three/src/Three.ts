@@ -1169,8 +1169,8 @@ export interface InstancesShared extends Which {
    * - `Color.Srgb` is a colour as a hex code writes it. The renderer works in
    *   linear colour, so a lookup table converts each number: a hex code's byte
    *   over 255 exactly, and any other number to the nearest sixteenth of a
-   *   byte. A number below 0 or over 1 isn't a colour, and fails the frame with
-   *   an error that names the entity.
+   *   byte. A number below 0 or over 1, or NaN, isn't a colour, and fails the
+   *   frame with an error that names the entity.
    * - `Color.Linear` is the renderer's own numbers, passed through as they are.
    *   A number over 1 is brighter than white, which a renderer with bloom can
    *   show.
@@ -1439,21 +1439,26 @@ class Instances implements Kept {
         continue;
       }
       // A hex code's numbers, each looked up in the table at the nearest of
-      // its steps. One that is off either end of it is no colour.
-      const u = (r[i]! * STEPS + 0.5) | 0;
-      const v = (g[i]! * STEPS + 0.5) | 0;
-      const w = (b[i]! * STEPS + 0.5) | 0;
-      // A space that is neither, or a number under zero or past the table's
-      // end, either of which leaves one of the six below zero.
+      // its steps. One that is off either end of it, or NaN, is no colour.
+      const u = r[i]! * STEPS + 0.5;
+      const v = g[i]! * STEPS + 0.5;
+      const w = b[i]! * STEPS + 0.5;
       if (
         space[i] !== Color.Srgb ||
-        (u | v | w | (STEPS - u) | (STEPS - v) | (STEPS - w)) < 0
+        !(
+          u >= 0 &&
+          u < STEPS + 1 &&
+          v >= 0 &&
+          v < STEPS + 1 &&
+          w >= 0 &&
+          w < STEPS + 1
+        )
       ) {
         this.refuse(entities[i]!, r[i]!, g[i]!, b[i]!, space[i]!);
       }
-      out[at] = LINEAR[u]!;
-      out[at + 1] = LINEAR[v]!;
-      out[at + 2] = LINEAR[w]!;
+      out[at] = LINEAR[u | 0]!;
+      out[at + 1] = LINEAR[v | 0]!;
+      out[at + 2] = LINEAR[w | 0]!;
       at += 3;
     }
   }
