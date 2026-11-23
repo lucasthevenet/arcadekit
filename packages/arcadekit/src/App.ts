@@ -263,12 +263,17 @@ export interface Any {
    * the systems as the `Frame` service. A driver calls `frame` after each
    * frame's ticks.
    *
+   * Without an `alpha`, it is 1, so a game stepped by hand is drawn where its
+   * last tick left it. At 0, what is drawn between two ticks, such as a kind
+   * of `@arcadekit/three` with `smooth`, is still where it was before that
+   * tick.
+   *
    * The world is frozen while the stage runs, and anything that would change
    * the game throws. It throws if a system fails or leaves a fiber running,
    * as `tick` does. Call it only between ticks, since it throws anywhere
    * else.
    */
-  readonly frame: (alpha: number, delta?: number) => void;
+  readonly frame: (alpha?: number, delta?: number) => void;
   /**
    * Runs the input stage once, the systems made with `System.input`, which
    * turn the devices' state into actions. It reads the devices once, and the
@@ -440,7 +445,7 @@ export interface App<E = never, HU = never> extends Any {
    */
   readonly tickExit: (delta: number) => Exit.Exit<void, E>;
   /** Like `frame`, but returns the outcome, with a system's failure typed. */
-  readonly frameExit: (alpha: number, delta?: number) => Exit.Exit<void, E>;
+  readonly frameExit: (alpha?: number, delta?: number) => Exit.Exit<void, E>;
   /** Like `input`, but returns the outcome, with a system's failure typed. */
   readonly inputExit: () => Exit.Exit<void, E>;
   /**

@@ -1942,7 +1942,8 @@ type Needs = Frame | Scene | Time | World;
  * - The image is then up to one tick behind the game. Just after a tick, at an
  *   `alpha` of 0, an entity is drawn where it was before the tick. A game that
  *   ticks only when needed receives an `alpha` of 1 while it rests, and is
- *   drawn where it is.
+ *   drawn where it is. So is a game stepped by hand and drawn with
+ *   `app.frame()`, whose `alpha` is 1.
  * - Positions, scales and colours are interpolated linearly. A rotation takes
  *   the shorter arc.
  * - An entity that wasn't drawn in the previous frame is drawn where it is: a

@@ -2201,7 +2201,7 @@ describe("a page's sound", () => {
     page.window.send("keydown", { code: "Space", repeat: false });
     app.input();
     app.tick(1 / 60);
-    app.frame(0);
+    app.frame();
     expect(audio.started).toEqual([
       { buffer: { samples: 3 }, rate: 1, volume: 1, into: audio.destination },
     ]);
@@ -2235,7 +2235,7 @@ describe("a page's sound", () => {
     );
     await settle();
     page.send("pointerdown");
-    app.frame(0);
+    app.frame();
     expect(audio.started).toEqual([
       { buffer: { samples: 3 }, rate: 1, volume: 1, into: audio.destination },
     ]);
@@ -2294,8 +2294,8 @@ describe("a page's sound", () => {
     });
     page.send("pointerdown");
     expect(made).toBe(1);
-    one.app.frame(0);
-    two.app.frame(0);
+    one.app.frame();
+    two.app.frame();
     expect(audio.started.length).toBe(2);
     // The first app goes; the other still plays through the same audio, and
     // the one that went refuses to.
@@ -2316,7 +2316,7 @@ describe("a page's sound", () => {
     expect(decoded).toEqual([3, 3]);
     page.send("pointerdown");
     expect(made).toBe(2);
-    three.app.frame(0);
+    three.app.frame();
     expect(audio.started.length).toBe(4);
     await three.close();
     expect(audio.closed).toBe(2);

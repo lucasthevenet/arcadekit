@@ -464,7 +464,7 @@ describe("Three.instances", () => {
     hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Rotation);
     hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Rotation, Scale);
     hand.spawn(Rock);
-    app.frame(0);
+    app.frame();
 
     const mesh = meshOf(renderer.scene, "th/Rocks");
     expect(mesh.geometry).toBe(geometry);
@@ -525,7 +525,7 @@ describe("Three.instances", () => {
       Rotation,
       Scale.of({ x: 2, y: 2, z: 2 })
     );
-    app.frame(0);
+    app.frame();
     expect(drawn(meshOf(renderer.scene, "th/Rocks"))).toEqual([
       "1 0 0 0 0 1 0 0 0 0 1 0 1 2 3 1",
       "2 0 0 0 0 2 0 0 0 0 2 0 4 5 6 1",
@@ -559,7 +559,7 @@ describe("Three.instances", () => {
         Scale.of({ x: 0.5, y: 1, z: 6 })
       ),
     ];
-    app.frame(0);
+    app.frame();
     const mesh = meshOf(renderer.scene, "th/Rocks");
     // As Three.js draws the same turns made of length 1.
     expectDrawn(mesh, world, rocks, Transform3d);
@@ -633,7 +633,7 @@ describe("Three.instances", () => {
           hand.add(one, place());
         }
       }
-      app.frame(0);
+      app.frame();
       const mesh = meshOf(renderer.scene, "th/Rocks");
       expect(mesh.count).toBe(alive.length);
       expectDrawn(mesh, world, alive, Transform3d);
@@ -691,7 +691,7 @@ describe("Three.instances", () => {
       hand.spawn(only, at(9), turn);
       hand.spawn(only, at(9), turn, size);
     }
-    app.frame(0);
+    app.frame();
     const mesh = meshOf(renderer.scene, "th/Heavies");
     expect(mesh.count).toBe(4);
     expect(drawn(mesh)).toEqual(expected(world, shown));
@@ -702,7 +702,7 @@ describe("Three.instances", () => {
     for (const one of shown) {
       hand.add(one, Hidden);
     }
-    app.frame(0);
+    app.frame();
     expect(mesh.count).toBe(4);
     expect(drawn(mesh)).toEqual(expected(world, hidden));
   });
@@ -728,10 +728,10 @@ describe("Three.instances", () => {
       renderer
     );
     hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     app.tick(1 / 60);
-    app.frame(0);
+    app.frame();
     const mesh = meshOf(renderer.scene, "th/Shadows");
     expect(prepared).toEqual([mesh]);
     expect(mesh.castShadow).toBe(true);
@@ -762,7 +762,7 @@ describe("Three.instances", () => {
       }
     };
     more(4);
-    app.frame(0);
+    app.frame();
     const mesh = meshOf(renderer.scene, "th/Few");
     const first = mesh.instanceMatrix;
     expect(first.array.length).toBe(4 * 16);
@@ -771,11 +771,11 @@ describe("Three.instances", () => {
       dropped++;
     });
     // Full, and not over: nothing is allocated.
-    app.frame(0);
+    app.frame();
     expect(mesh.instanceMatrix).toBe(first);
     expect(dropped).toBe(0);
     more(1);
-    app.frame(0);
+    app.frame();
     expect(mesh.instanceMatrix).not.toBe(first);
     expect(mesh.instanceMatrix.array.length).toBe(8 * 16);
     expect(dropped).toBe(1);
@@ -789,7 +789,7 @@ describe("Three.instances", () => {
         Scale.of({ x: 3, y: 3, z: 3 })
       )
     );
-    app.frame(0);
+    app.frame();
     expect(mesh.instanceMatrix.array.length).toBe(64 * 16);
     expect(dropped).toBe(2);
     expect(mesh.count).toBe(46);
@@ -799,7 +799,7 @@ describe("Three.instances", () => {
     for (const rock of rocks.splice(2)) {
       hand.despawn(rock);
     }
-    app.frame(0);
+    app.frame();
     expect(mesh.instanceMatrix).toBe(full);
     expect(mesh.count).toBe(2);
     expect(drawn(mesh)).toEqual(expected(world, rocks));
@@ -814,7 +814,7 @@ describe("Three.instances", () => {
     const rocks = [0, 1, 2].map((x) =>
       hand.spawn(Rock, Position.of({ x, y: 0, z: 0 }))
     );
-    app.frame(0);
+    app.frame();
     const attribute = meshOf(renderer.scene, "th/Rocks").instanceMatrix;
     expect(attribute.updateRanges).toEqual([{ start: 0, count: 48 }]);
     const sent = attribute.version;
@@ -822,18 +822,18 @@ describe("Three.instances", () => {
     // The renderer empties the list once it has sent it.
     attribute.clearUpdateRanges();
     hand.despawn(rocks[0]!);
-    app.frame(0);
+    app.frame();
     expect(attribute.updateRanges).toEqual([{ start: 0, count: 32 }]);
     expect(attribute.version).toBe(sent + 1);
     // A renderer that sent nothing in between is not told twice.
-    app.frame(0);
+    app.frame();
     expect(attribute.updateRanges).toEqual([{ start: 0, count: 32 }]);
     // Nothing to draw: nothing to send.
     hand.despawn(rocks[1]!);
     hand.despawn(rocks[2]!);
     attribute.clearUpdateRanges();
     const before = attribute.version;
-    app.frame(0);
+    app.frame();
     expect(meshOf(renderer.scene, "th/Rocks").count).toBe(0);
     expect(attribute.updateRanges).toEqual([]);
     expect(attribute.version).toBe(before);
@@ -999,7 +999,7 @@ describe("Three.instances", () => {
       renderer
     );
     hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
-    app.frame(0);
+    app.frame();
     const mesh = meshOf(renderer.scene, "th/Rocks");
     const disposed: string[] = [];
     mesh.addEventListener("dispose", () => disposed.push("mesh"));
@@ -1037,7 +1037,7 @@ describe("a flat game's Transform2d", () => {
     hand.spawn(Ship, at(8, 8));
     hand.spawn(Ship, at(8, 8), Flat.Rotation, Flat.Scale);
     hand.spawn(Rock, Flat.Rotation.of({ angle: 1 }));
-    app.frame(0);
+    app.frame();
     const mesh = meshOf(renderer.scene, "th/FlatRocks");
     expectDrawn(mesh, world, rocks, Transform2d);
     // By hand, so that the test does not only agree with Three.js. Only
@@ -1075,7 +1075,7 @@ describe("a flat game's Transform2d", () => {
     );
     const solid = hand.spawn(Rock, Position.of({ x: 5, y: 6, z: 7 }));
     const flat = hand.spawn(Rock, at(30, 40));
-    app.frame(0);
+    app.frame();
     const rocks = meshOf(renderer.scene, "th/Rocks");
     const flatRocks = meshOf(renderer.scene, "th/FlatRocks");
     expectDrawn(rocks, world, [both, solid], Transform3d);
@@ -1091,7 +1091,7 @@ describe("a flat game's Transform2d", () => {
     // A change to either is drawn by its own kind and by no other.
     hand.set(both, Flat.Position, { x: 11 });
     hand.set(both, Position, { z: 9 });
-    app.frame(0);
+    app.frame();
     expect(byPlace(rowsOf(flatRocks))[0]!.slice(12)).toEqual([11, 20, 0, 1]);
     expect(byPlace(rowsOf(rocks))[0]!.slice(12)).toEqual([1, 2, 9, 1]);
   });
@@ -1169,7 +1169,7 @@ describe("a flat game's Transform2d", () => {
           }
         }
       }
-      app.frame(0);
+      app.frame();
       expectDrawn(
         meshOf(renderer.scene, "th/Rocks"),
         world,
@@ -1236,7 +1236,7 @@ describe("a flat game's Transform2d", () => {
       hand.spawn(only, at(9, 0), turn);
       hand.spawn(only, at(9, 0), turn, size);
     }
-    app.frame(0);
+    app.frame();
     const mesh = meshOf(renderer.scene, "th/FlatHeavies");
     expectDrawn(mesh, world, shown, Transform2d);
     for (const one of hidden) {
@@ -1245,7 +1245,7 @@ describe("a flat game's Transform2d", () => {
     for (const one of shown) {
       hand.add(one, Hidden);
     }
-    app.frame(0);
+    app.frame();
     expectDrawn(mesh, world, hidden, Transform2d);
   });
 
@@ -1286,7 +1286,7 @@ describe("a flat game's Transform2d", () => {
     // Turned and sized, and nowhere; and hidden.
     hand.spawn(Ship, Flat.Rotation, Flat.Scale);
     hand.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
-    app.frame(0);
+    app.frame();
     expect(made.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual([
       plain,
       whole,
@@ -1302,7 +1302,7 @@ describe("a flat game's Transform2d", () => {
     hand.set(whole, Flat.Position, { x: 10, y: 20 });
     hand.set(whole, Flat.Rotation, { angle: 1.5 });
     hand.set(whole, Flat.Scale, { x: 5, y: 6 });
-    app.frame(0);
+    app.frame();
     expect(made.length).toBe(2);
     expect(objectOf(whole).position.toArray()).toEqual([10, 20, 5]);
     expect(objectOf(whole).rotation.z).toBe(1.5);
@@ -1310,17 +1310,17 @@ describe("a flat game's Transform2d", () => {
     // One that is no longer turned, or sized, is as one that never was:
     // in the plane only, the rest as it was made.
     hand.remove(whole, Flat.Rotation);
-    app.frame(0);
+    app.frame();
     expect(objectOf(whole).rotation.z).toBe(0);
     expect(objectOf(whole).rotation.x).toBe(0.25);
     expect(objectOf(whole).scale.toArray()).toEqual([5, 6, 4]);
     hand.remove(whole, Flat.Scale);
-    app.frame(0);
+    app.frame();
     expect(objectOf(whole).scale.toArray()).toEqual([1, 1, 4]);
     // What the game then sets is left alone.
     objectOf(whole).rotation.z = 2;
     objectOf(whole).scale.x = 7;
-    app.frame(0);
+    app.frame();
     expect(objectOf(whole).rotation.z).toBe(2);
     expect(objectOf(whole).scale.x).toBe(7);
     // Given a place in three dimensions as well, it stays where its flat
@@ -1328,7 +1328,7 @@ describe("a flat game's Transform2d", () => {
     hand.add(plain, Position.of({ x: 7, y: 8, z: 9 }));
     hand.add(plain, Rotation.of(Transform3d.axisAngle(1, 0, 0, 1)));
     hand.add(plain, Scale.of({ x: 6, y: 6, z: 6 }));
-    app.frame(0);
+    app.frame();
     expect(objectOf(plain).position.toArray()).toEqual([1, 2, 5]);
     expect(objectOf(plain).rotation.toArray()).toEqual([0.25, 0, 0, "XYZ"]);
     expect(objectOf(plain).scale.toArray()).toEqual([1, 1, 4]);
@@ -1336,7 +1336,7 @@ describe("a flat game's Transform2d", () => {
     // And it goes with its entity like any other.
     hand.despawn(plain);
     hand.add(whole, Hidden);
-    app.frame(0);
+    app.frame();
     expect(freed.toSorted((a, b) => a - b)).toEqual(
       [plain, whole].toSorted((a, b) => a - b)
     );
@@ -1360,7 +1360,7 @@ describe("a flat game's Transform2d", () => {
       makeRenderer()
     );
     const first = hand.spawn(Ship, at(1, 1), Flat.Rotation.of({ angle: 2 }));
-    app.frame(0);
+    app.frame();
     expect(made.get(first)!.rotation.z).toBe(2);
     // In one frame: the first is no longer turned, and a crowd arrives
     // after it, more than there was room for.
@@ -1368,7 +1368,7 @@ describe("a flat game's Transform2d", () => {
     for (let i = 0; i < 200; i++) {
       hand.spawn(Ship, at(i, 2));
     }
-    app.frame(0);
+    app.frame();
     expect(made.size).toBe(201);
     // Its turn in the plane is gone, and the turn it was made with is not.
     expect(made.get(first)!.rotation.z).toBe(0);
@@ -1400,7 +1400,7 @@ describe("a flat game's Transform2d", () => {
       renderer
     );
     expect(world.hash()).toBe(first.world.hash());
-    app.frame(0);
+    app.frame();
     expectDrawn(
       meshOf(renderer.scene, "th/FlatRocks"),
       world,
@@ -1502,6 +1502,18 @@ describe("an entity drawn between two ticks", () => {
     expect(xAt(mesh(), 1)).toBe(10);
   });
 
+  it("is where the last tick left it in a frame run by hand without an alpha", () => {
+    const { app, hand, mesh } = play(Smoothed);
+    hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    app.frame();
+    app.tick(1);
+    app.frame();
+    expect(xAt(mesh(), 1)).toBe(10);
+    app.tick(1);
+    app.frame();
+    expect(xAt(mesh(), 1)).toBe(20);
+  });
+
   it("is drawn between its last two places when its id is past what 32 bits hold", () => {
     const { app, hand, mesh } = play(Smoothed);
     // A slot given out 1,100 times: the next entity in it has such an id.
@@ -1523,7 +1535,7 @@ describe("an entity drawn between two ticks", () => {
   it("comes from where it was last drawn when several ticks ran since, and stays between the two when none did", () => {
     const { app, hand, mesh } = play(Smoothed);
     const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-    app.frame(0);
+    app.frame();
     app.tick(1);
     app.frame(0.5);
     expect(xAt(mesh(), 1)).toBe(5);
@@ -1549,7 +1561,7 @@ describe("an entity drawn between two ticks", () => {
     const { app, hand, mesh } = play(Smoothed);
     const old = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     const hidden = hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }));
-    app.frame(0);
+    app.frame();
     app.tick(1);
     app.frame(0.5);
     expect(xAt(mesh(), 1)).toBe(5);
@@ -1582,7 +1594,7 @@ describe("an entity drawn between two ticks", () => {
     const Gated = Smoothed.pipe(System.runIf(Effect.sync(() => Phase.on)));
     const { app, hand, mesh } = play(Gated);
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-    app.frame(0);
+    app.frame();
     app.tick(1);
     app.frame(0.5);
     expect(xAt(mesh(), 1)).toBe(5);
@@ -1612,7 +1624,7 @@ describe("an entity drawn between two ticks", () => {
     );
     const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     const card = hand.spawn(Rock, Flat.Position.of({ x: 0, y: 2 }));
-    app.frame(0);
+    app.frame();
     app.tick(1);
     app.frame(0.5);
     expect(xAt(mesh(), 1)).toBe(5);
@@ -1668,7 +1680,7 @@ describe("an entity drawn between two ticks", () => {
         Flat.Scale.of({ x: 1, y: 1 })
       ),
     ];
-    app.frame(0);
+    app.frame();
     app.tick(1);
     app.frame(0.5);
     // Both gone, and their slots taken at once, the second's first.
@@ -1706,7 +1718,7 @@ describe("an entity drawn between two ticks", () => {
       Scale.of({ x: 1, y: 1, z: 1 })
     );
     hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), Rotation);
-    app.frame(0);
+    app.frame();
     hand.set(rock, Rotation, quarter);
     hand.set(rock, Scale, { x: 3, y: 5, z: 7 });
     app.tick(1);
@@ -1761,7 +1773,7 @@ describe("an entity drawn between two ticks", () => {
       Flat.Rotation.of({ angle: 0.2 }),
       Flat.Scale.of({ x: 1, y: 1 })
     );
-    app.frame(0);
+    app.frame();
     hand.set(card, Flat.Rotation, { angle: 1 });
     hand.set(card, Flat.Scale, { x: 3, y: 5 });
     app.tick(1);
@@ -1885,7 +1897,7 @@ describe("an entity drawn between two ticks", () => {
       Position.of({ x: 0, y: 2, z: 0 }),
       Rotation.of({ x: 0, y: 0, z: 0, w: 0.2 })
     );
-    app.frame(0);
+    app.frame();
     hand.set(rock, Rotation, stretched(quarter, 3));
     hand.set(bare, Rotation, stretched(quarter, 0.2));
     app.tick(1);
@@ -2083,7 +2095,7 @@ describe("an entity drawn between two ticks", () => {
     });
     const { app, hand, mesh } = play(Plain);
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-    app.frame(0);
+    app.frame();
     app.tick(1);
     for (const alpha of [0, 0.5, 0.99]) {
       app.frame(alpha);
@@ -2230,7 +2242,7 @@ describe("a colour per instance", () => {
     // Painted and not a rock; and hidden.
     hand.spawn(Ship, at(20), paint(1, 1, 1));
     hand.spawn(Rock, Hidden, at(20), paint(1, 1, 1));
-    app.frame(0);
+    app.frame();
     expectDrawn(
       mesh(),
       world,
@@ -2265,7 +2277,7 @@ describe("a colour per instance", () => {
     // Painted, and no longer.
     hand.add(bare[0]!, paint(0.5, 0.5, 0.5));
     hand.remove(rocks[2]!, Color.Rgb);
-    app.frame(0);
+    app.frame();
     expect(mesh().count).toBe(7);
     expect(flatMesh().count).toBe(8);
     expect(colorAt(mesh(), 1)).toEqual([0, 1, 0.5]);
@@ -2320,7 +2332,7 @@ describe("a colour per instance", () => {
           hand.add(one.entity, paint(random.next(), 0, 0));
         }
       }
-      app.frame(0);
+      app.frame();
       if (frame === 0) {
         for (const [k, kind] of [mesh(), flatMesh()].entries()) {
           kind.addEventListener("dispose", () => {
@@ -2359,7 +2371,7 @@ describe("a colour per instance", () => {
     const rocks = [1, 2, 3].map((y) =>
       hand.spawn(Rock, Position.of({ x: 0, y, z: 0 }), paint(1, 1, 1))
     );
-    app.frame(0);
+    app.frame();
     const colors = mesh().instanceColor!;
     expect(colors.updateRanges).toEqual([{ start: 0, count: 9 }]);
     const [range] = colors.updateRanges;
@@ -2367,19 +2379,19 @@ describe("a colour per instance", () => {
     expect(sent).toBeGreaterThan(0);
     colors.clearUpdateRanges();
     hand.despawn(rocks[0]!);
-    app.frame(0);
+    app.frame();
     expect(colors.updateRanges).toEqual([{ start: 0, count: 6 }]);
     expect(colors.updateRanges[0]).toBe(range);
     expect(colors.version).toBe(sent + 1);
     // A renderer that sent nothing in between is not told twice.
-    app.frame(0);
+    app.frame();
     expect(colors.updateRanges.length).toBe(1);
     // Nothing to draw: nothing to send.
     hand.despawn(rocks[1]!);
     hand.despawn(rocks[2]!);
     colors.clearUpdateRanges();
     const before = colors.version;
-    app.frame(0);
+    app.frame();
     expect(colors.updateRanges).toEqual([]);
     expect(colors.version).toBe(before);
     expect(mesh().instanceColor).toBe(colors);
@@ -2443,7 +2455,7 @@ describe("a colour per instance", () => {
         srgb(c, 1 - c, c)
       );
     }
-    app.frame(0);
+    app.frame();
     for (const [i, code] of codes.entries()) {
       // What Three.js itself holds of the code, in the space it works in.
       const { b, g, r } = new ThreeColor(code);
@@ -2490,7 +2502,7 @@ describe("a colour per instance", () => {
     for (const [i, [r, g, b]] of colours.entries()) {
       hand.spawn(Rock, Position.of({ x: 0, y: i + 1, z: 0 }), srgb(r, g, b));
     }
-    app.frame(0);
+    app.frame();
     const drawnColours = mesh().instanceColor!.array;
     const heights = mesh().instanceMatrix.array;
     const want = new ThreeColor();
@@ -2518,7 +2530,7 @@ describe("a colour per instance", () => {
       // The ends themselves, and a hair past one as arithmetic leaves it.
       srgb(0, 1, 1.00001)
     );
-    app.frame(0);
+    app.frame();
     expect(colorAt(mesh(), 1)).toEqual([0, 1, 1]);
     // A hex code's bytes, not over 255: each channel is told from the others.
     for (const [r, g, b] of [
@@ -2532,13 +2544,13 @@ describe("a colour per instance", () => {
       [1052689, 0.5, 0.5],
     ] as const) {
       hand.set(fine, Color.Rgb, { r, g, b });
-      expect(() => app.frame(0)).toThrow(
+      expect(() => app.frame()).toThrow(
         `Three.instances("th/Painted") was given the colour (${Math.fround(r)}, ${Math.fround(g)}, ${Math.fround(b)}) by entity ${fine}, which is no colour: each number of a colour in Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is in Color.Linear, the renderer's own numbers, which are drawn as they are.`
       );
     }
     // Put right, it is drawn again.
     hand.set(fine, Color.Rgb, { r: 1, g: 0, b: 0 });
-    app.frame(0);
+    app.frame();
     expect(colorAt(mesh(), 1)).toEqual([1, 0, 0]);
   });
 
@@ -2581,7 +2593,7 @@ describe("a colour per instance", () => {
     ] as const) {
       hand.set(rock, Color.Rgb, { r, g: 0.5, b: 0.5 });
       app.tick(1);
-      expect(() => app.frame(0)).toThrow(
+      expect(() => app.frame()).toThrow(
         `Three.instances("th/Painted") was given the colour (${spoilt}, 0.5, 0.5) by entity ${rock},`
       );
     }
@@ -2590,7 +2602,7 @@ describe("a colour per instance", () => {
   it("takes any number in Color.Linear, the renderer's own, brighter than white or below black", () => {
     const { app, hand, mesh } = play();
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), paint(4, 0, -1));
-    app.frame(0);
+    app.frame();
     expect(colorAt(mesh(), 1)).toEqual([4, 0, -1]);
   });
 
@@ -2633,7 +2645,7 @@ describe("a colour per instance", () => {
     const { app, hand, mesh } = play(Plain);
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), paint(1, 0, 0));
-    app.frame(0);
+    app.frame();
     expect(mesh().count).toBe(2);
     expect(mesh().instanceColor).toBeNull();
   });
@@ -2684,18 +2696,18 @@ describe("a colour per instance", () => {
       Position.of({ x: 0, y: 3, z: 0 }),
       paint(0, 0, 1)
     );
-    app.frame(0);
+    app.frame();
     expect(colorAt(mesh(), 1)[0]).toBe(1);
     expect(colorAt(mesh(), 1)[1]).toBeCloseTo(half, 6);
     expect(colorAt(mesh(), 2)).toEqual([4, 0.5, 0]);
     expect(colorAt(mesh(), 3)).toEqual([0, 0, 1]);
     // The same numbers in the other space are another colour.
     hand.set(turned, Color.Rgb, { b: 0.5, space: Color.Srgb });
-    app.frame(0);
+    app.frame();
     expect(colorAt(mesh(), 3)[2]).toBeCloseTo(half, 6);
     // @ts-expect-error a space is Color.Srgb or Color.Linear
     hand.set(turned, Color.Rgb, { space: 2 });
-    expect(() => app.frame(0)).toThrow(
+    expect(() => app.frame()).toThrow(
       `Three.instances("th/Painted") was given the colour (0, 0, 0.5) by entity ${turned}, which is no colour: its space is 2, and a colour's space is Color.Srgb (0) or Color.Linear (1).`
     );
   });
@@ -2703,7 +2715,7 @@ describe("a colour per instance", () => {
   it("goes with the mesh when the app's scope closes", () => {
     const { app, close, hand, mesh } = play();
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), paint(1, 1, 1));
-    app.frame(0);
+    app.frame();
     const kept = mesh();
     let disposed = 0;
     kept.instanceColor!.addEventListener("dispose", () => {
@@ -2770,7 +2782,7 @@ describe("Three.objects", () => {
     );
     // All zeros is not turned at all.
     const still = hand.spawn(Ship, Position.of({ x: 3, y: 0, z: 0 }), Rotation);
-    app.frame(0);
+    app.frame();
     for (const ship of [long, short]) {
       const object = objectOf(ship)!;
       expect(object.quaternion.length()).toBeCloseTo(1, 6);
@@ -2804,7 +2816,7 @@ describe("Three.objects", () => {
     hand.spawn(Rock, Position.of({ x: 9, y: 9, z: 9 }));
     // One that is turned and sized, and nowhere.
     hand.spawn(Ship, Rotation, Scale);
-    app.frame(0);
+    app.frame();
     expect(made.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual([
       plain,
       whole,
@@ -2822,7 +2834,7 @@ describe("Three.objects", () => {
     hand.set(plain, Position, { x: 10, y: 20, z: 30 });
     hand.set(whole, Scale, { x: 5, y: 5, z: 5 });
     hand.set(whole, Rotation, { x: 0, y: 0, z: 1, w: 0 });
-    app.frame(0);
+    app.frame();
     expect(made.length).toBe(2);
     expect(freed).toEqual([]);
     expect(objectOf(plain)!.position.toArray()).toEqual([10, 20, 30]);
@@ -2838,10 +2850,10 @@ describe("Three.objects", () => {
     }
     const ship = hand.spawn(Ship, Position.of({ x: 1, y: 2, z: 3 }));
     expect(ship).toBeGreaterThan(2 ** 32);
-    app.frame(0);
+    app.frame();
     hand.set(ship, Position, { x: 4, y: 5, z: 6 });
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     // Made once, for this entity, and not again for every frame that
     // finds it.
     expect(made.map((one) => one.entity)).toEqual([ship]);
@@ -2855,14 +2867,14 @@ describe("Three.objects", () => {
     const [gone, unmarked, hidden, nowhere, stays] = [1, 2, 3, 4, 5].map((x) =>
       hand.spawn(Ship, at(x))
     ) as [Entity, Entity, Entity, Entity, Entity];
-    app.frame(0);
+    app.frame();
     expect(made.length).toBe(5);
     const objects = new Map(made.map((one) => [one.entity, one.object]));
     hand.despawn(gone);
     hand.remove(unmarked, Ship);
     hand.add(hidden, Hidden);
     hand.remove(nowhere, Position);
-    app.frame(0);
+    app.frame();
     expect(freed.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
       [gone, unmarked, hidden, nowhere].toSorted((a, b) => a - b)
     );
@@ -2872,11 +2884,11 @@ describe("Three.objects", () => {
     }
     expect(renderer.scene?.children).toEqual([objects.get(stays)]);
     // Each was freed once.
-    app.frame(0);
+    app.frame();
     expect(freed.length).toBe(4);
     // One that is one of these again gets a new object.
     hand.remove(hidden, Hidden);
-    app.frame(0);
+    app.frame();
     expect(made.length).toBe(6);
     expect(objectOf(hidden)).not.toBe(objects.get(hidden));
     expect(objectOf(hidden)!.position.x).toBe(3);
@@ -2891,7 +2903,7 @@ describe("Three.objects", () => {
       Rotation.of({ x: 0, y: 0, z: 1, w: 0 }),
       Scale.of({ x: 3, y: 3, z: 3 })
     );
-    app.frame(0);
+    app.frame();
     const old = objectOf(first)!;
     hand.despawn(first);
     tilted = true;
@@ -2899,13 +2911,13 @@ describe("Three.objects", () => {
     // The same slot, and another entity.
     expect(second & 0x3f_ff_ff).toBe(first & 0x3f_ff_ff);
     expect(second).not.toBe(first);
-    app.frame(0);
+    app.frame();
     expect(freed).toEqual([{ object: old, entity: first }]);
     expect(objectOf(second)).not.toBe(old);
     expect(objectOf(second)!.position.toArray()).toEqual([2, 2, 2]);
     // The new one was never turned or sized: what `make` gave it stands,
     // this frame and the next.
-    app.frame(0);
+    app.frame();
     expect(objectOf(second)!.quaternion.toArray()).toEqual([0, 1, 0, 0]);
     expect(objectOf(second)!.scale.toArray()).toEqual([2, 2, 2]);
     expect(old.parent).toBeNull();
@@ -2921,20 +2933,20 @@ describe("Three.objects", () => {
       Rotation.of({ x: 1, y: 0, z: 0, w: 0 }),
       Scale.of({ x: 3, y: 3, z: 3 })
     );
-    app.frame(0);
+    app.frame();
     const object = objectOf(ship)!;
     expect(object.quaternion.toArray()).toEqual([1, 0, 0, 0]);
     hand.remove(ship, Rotation);
-    app.frame(0);
+    app.frame();
     expect(object.quaternion.toArray()).toEqual([0, 0, 0, 1]);
     expect(object.scale.toArray()).toEqual([3, 3, 3]);
     hand.remove(ship, Scale);
-    app.frame(0);
+    app.frame();
     expect(object.scale.toArray()).toEqual([1, 1, 1]);
     // What the game itself then sets on the object is left alone.
     object.scale.set(7, 7, 7);
     object.quaternion.set(0, 1, 0, 0);
-    app.frame(0);
+    app.frame();
     expect(object.scale.toArray()).toEqual([7, 7, 7]);
     expect(object.quaternion.toArray()).toEqual([0, 1, 0, 0]);
     expect(made.length).toBe(1);
@@ -2991,7 +3003,7 @@ describe("Three.objects", () => {
           );
         }
       }
-      app.frame(0);
+      app.frame();
       const shown = all.filter(
         (one) => world.has(one, Ship) && !world.has(one, Hidden)
       );
@@ -3029,7 +3041,7 @@ describe("Three.objects", () => {
   it("makes the objects of a loaded game on its first frame: none of them is in the save", () => {
     const first = fresh();
     const ship = first.hand.spawn(Ship, Position.of({ x: 4, y: 5, z: 6 }));
-    first.app.frame(0);
+    first.app.frame();
     first.app.tick(1 / 60);
     const hash = first.world.hash();
     const save = first.app.save();
@@ -3044,7 +3056,7 @@ describe("Three.objects", () => {
     );
     expect(world.hash()).toBe(hash);
     expect(made).toEqual([]);
-    app.frame(0);
+    app.frame();
     expect(made.map((one) => one.entity)).toEqual([ship]);
     expect(objectOf(ship)!.position.toArray()).toEqual([4, 5, 6]);
     expect(renderer.scene?.children).toEqual([objectOf(ship)]);
@@ -3055,9 +3067,9 @@ describe("Three.objects", () => {
     const ships = [1, 2, 3].map((x) =>
       hand.spawn(Ship, Position.of({ x, y: 0, z: 0 }))
     );
-    app.frame(0);
+    app.frame();
     hand.despawn(ships[0]!);
-    app.frame(0);
+    app.frame();
     expect(freed.length).toBe(1);
     close();
     expect(freed.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
@@ -3115,7 +3127,7 @@ describe("Three.plugin", () => {
     // Nothing is drawn by a tick.
     app.tick(1 / 60);
     expect(renderer.frames).toBe(0);
-    app.frame(0);
+    app.frame();
     expect(order).toEqual(["make", "aim", "render"]);
     expect(renderer.frames).toBe(1);
     expect(renderer.camera).toBe(camera);
@@ -3142,7 +3154,7 @@ describe("Three.plugin", () => {
     const { app } = start(App.make(App.define({ plugins: [Stage] })), renderer);
     expect(seen?.camera).toBeInstanceOf(PerspectiveCamera);
     expect(seen?.camera.position.toArray()).toEqual([0, 0, 10]);
-    app.frame(0);
+    app.frame();
     expect(renderer.scene).toBe(seen?.scene);
     expect(renderer.camera).toBe(seen?.camera);
     expect(renderer.scene?.children).toEqual([light]);
@@ -3401,7 +3413,7 @@ describe("the geometries and materials a system draws with", () => {
       renderer
     );
     hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
-    app.frame(0);
+    app.frame();
     const seen = disposals(shared, own, other);
     close();
     expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);
@@ -3441,10 +3453,10 @@ describe("the geometries and materials a system draws with", () => {
     );
     const first = hand.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
     hand.spawn(Ship, Position.of({ x: 1, y: 0, z: 0 }));
-    app.frame(0);
+    app.frame();
     const seen = disposals(hull, ...paints);
     hand.despawn(first);
-    app.frame(0);
+    app.frame();
     expect(seen).toEqual([1]);
     close();
     expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);

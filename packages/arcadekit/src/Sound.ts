@@ -250,7 +250,7 @@ export interface Recorder extends Speaker {
  *     Effect.provide(Sound.layer(sound))
  *   )
  *   app.tick(1 / 60)
- *   app.frame(0)
+ *   app.frame()
  *   sound.played   // [{ cue: "coin", volume: 1, rate: 1 }]
  *
  * @category Testing

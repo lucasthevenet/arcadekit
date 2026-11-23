@@ -244,7 +244,7 @@ describe("plugins", () => {
       ]);
       order.length = 0;
       app.tick(1);
-      app.frame(0);
+      app.frame();
       expect(order).toEqual([
         "frame:Core",
         "frame:Left:1",
@@ -291,7 +291,7 @@ describe("plugins", () => {
       App.make(App.define({ plugins: [ArenaPlugin], systems: [Look] })),
       (app) => {
         app.tick(1);
-        app.frame(0);
+        app.frame();
         expect(seen).toEqual(["wall 10 of 10, 0 built"]);
       }
     );
@@ -367,7 +367,7 @@ describe("plugins", () => {
     );
     withApp(provided, (app) => {
       app.tick(1);
-      app.frame(0);
+      app.frame();
     });
     expect(played).toEqual(["boing"]);
 
@@ -377,7 +377,7 @@ describe("plugins", () => {
         App.make(App.define({ plugins: [Sfx] })),
         (app) => {
           app.tick(1);
-          app.frame(0);
+          app.frame();
         }
       )
     ).toThrow(/Service not found: .*Audio/);
@@ -408,7 +408,7 @@ describe("plugins", () => {
       systems: [ReadSpeed],
     });
     withApp(App.make(App.define({ plugins: [Declared] })), (app) =>
-      app.frame(0)
+      app.frame()
     );
     expect(limits).toEqual([20]);
 
@@ -423,14 +423,14 @@ describe("plugins", () => {
       withApp(
         // @ts-expect-error Units is needed by Undeclared's layer and not declared
         App.make(App.define({ plugins: [Undeclared, Metric] })),
-        (app) => app.frame(0)
+        (app) => app.frame()
       )
     ).toThrow(/Service not found: .*Units/);
     withApp(
       App.make(App.define({ plugins: [Undeclared] })).pipe(
         Effect.provideService(Units, { scale: 3 })
       ),
-      (app) => app.frame(0)
+      (app) => app.frame()
     );
     expect(limits).toEqual([20, 6]);
   });
@@ -474,7 +474,7 @@ describe("plugins", () => {
           play: (sound) => void played.push(sound),
         })
       ),
-      (app) => app.frame(0)
+      (app) => app.frame()
     );
     expect(played).toEqual(["boing"]);
   });

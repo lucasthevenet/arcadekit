@@ -819,7 +819,7 @@ describe("the hash of an app's world", () => {
     });
 
     it("but not where a reader between ticks is, so that watching changes nothing", () => {
-      expect(after(1, (app) => app.frame(0))).toBe(after(1));
+      expect(after(1, (app) => app.frame())).toBe(after(1));
     });
   });
 

@@ -289,7 +289,7 @@ const assemble = <
         throw Cause.squash(exit.cause);
       }
     };
-    const frameExit = (alpha: number, delta?: number): Ran =>
+    const frameExit = (alpha = 1, delta?: number): Ran =>
       loop.frame(alpha, delta) as Ran;
     const inputExit = (): Ran => loop.input() as Ran;
     const tickExit = (delta: number): Ran => {

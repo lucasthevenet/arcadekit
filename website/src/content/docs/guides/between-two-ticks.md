@@ -29,7 +29,7 @@ const Rocks = Three.instances("game/Rocks", {
 A real-time game wants interpolation. It is off by default because the picture is then up to one tick behind the game.
 
 - Just after a tick, at an `alpha` of 0, an entity is drawn where it was before that tick.
-- A game stepped by hand and drawn with `app.frame(0)`, as a test does, shows each tick's result only after the next tick.
+- A game stepped by hand and drawn with `app.frame()`, as a test does, is drawn where its last tick left it, since a frame without an `alpha` is at 1. `app.frame(0)` draws it where it was before that tick.
 - A game that ticks when its player moves, run with `ticks: "whenNeeded"`, receives an `alpha` of 1 while it rests, so it is drawn where it is.
 
 ## Predict where an entity is drawn

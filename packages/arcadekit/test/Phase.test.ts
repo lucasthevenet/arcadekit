@@ -34,7 +34,7 @@ describe("what an app is running", () => {
         made.enqueue(Note, { by: "a tick" });
         made.input();
         made.tick(1);
-        made.frame(0);
+        made.frame();
         expect(made.phase).toBe("idle");
       }
     );
@@ -53,7 +53,7 @@ describe("what an app is running", () => {
     const named = 'a handler of "ph/Call"';
     const calls: [string, (app: App.Any) => unknown, string][] = [
       ["App.tick", (app) => app.tick(1), named],
-      ["App.frame", (app) => app.frame(0), named],
+      ["App.frame", (app) => app.frame(), named],
       ["App.input", (app) => app.input(), named],
       ["save()", (app) => app.save(), named],
       // Another module's: it knows a handler is running, and not which.

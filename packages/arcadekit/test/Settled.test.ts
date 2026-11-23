@@ -94,13 +94,13 @@ describe("app.settled", () => {
     // A game that has not ticked yet has not been asked whether it has
     // anything to do.
     expect(app.settled).toBe(false);
-    app.frame(0);
+    app.frame();
     app.input();
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(true);
     app.tick(1);
-    app.frame(0);
+    app.frame();
     app.input();
     expect(app.settled).toBe(true);
   });
@@ -199,7 +199,7 @@ describe("app.settled", () => {
     // No frame has been drawn: both events are still kept for the system
     // that draws, and the game is at rest all the same.
     expect(app.settled).toBe(true);
-    app.frame(0);
+    app.frame();
     expect(heard).toEqual([2]);
     expect(app.settled).toBe(true);
   });
@@ -237,7 +237,7 @@ describe("app.settled", () => {
     for (let i = 0; i < 3; i++) {
       expect(app.settled).toBe(false);
     }
-    app.frame(0);
+    app.frame();
     app.input();
     expect(app.settled).toBe(false);
     expect(world.hash()).toBe(before);
@@ -417,7 +417,7 @@ describe("a game that changes", () => {
     expect(worldOf(app).singleton(Clock).left).toBe(0);
     // Looking does not change it, and nor do the stages between ticks.
     for (let i = 0; i < 3; i++) {
-      app.frame(0);
+      app.frame();
       app.input();
       expect(app.settled).toBe(true);
     }

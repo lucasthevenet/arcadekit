@@ -253,7 +253,7 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
       return measure(
         () => {
           frames++;
-          app.frame(0);
+          app.frame();
         },
         50_000,
         20_000
@@ -287,7 +287,7 @@ const sounding = (happening: boolean): number =>
         { checkpointEvery: 0 }
       ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
       return measure(
-        () => app.frame(0),
+        () => app.frame(),
         50_000,
         20_000,
         () => app.tick(DT)
@@ -313,7 +313,7 @@ const scoring = (): number =>
         App.define({ plugins: [Sound.plugin], systems: [Score] }),
         { checkpointEvery: 0 }
       ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
-      return measure(() => app.frame(0), 50_000, 20_000);
+      return measure(() => app.frame(), 50_000, 20_000);
     })
   );
 

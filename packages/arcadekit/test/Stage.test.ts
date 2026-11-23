@@ -57,7 +57,7 @@ describe("a system's stage", () => {
       App.make(App.define({ plugins: [Start], systems: [Move, Read] }))
     );
     app.tick(1);
-    app.frame(0);
+    app.frame();
     expect(seen).toEqual([1]);
     const world = Effect.runSync(app.read(World));
     const positions = Effect.runSync(app.read(Placed))
