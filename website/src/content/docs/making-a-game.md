@@ -308,7 +308,7 @@ Browser.runMain(
 
 `App.make` creates the app, and `Driver.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
-Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`. Coins fall toward the basket, the arrow keys move it, and the top-left corner counts the coins caught and the lives left.
+Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas width="480" height="480">`. At that size the whole field fits on the canvas. Coins fall toward the basket, the arrow keys move it, and the top-left corner counts the coins caught and the lives left.
 
 ## Where to go next
 
