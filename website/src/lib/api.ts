@@ -364,10 +364,121 @@ const docAbove = (parsed: DeclarationFile, node: Node): string => {
   return comment.value;
 };
 
-/** A declaration as a page shows it: without `declare`, and with the build's `$1` taken off names. */
+const isNode = (value: unknown): value is Node =>
+  typeof (value as Node | null)?.type === "string";
+
+const childrenOf = (node: Node): Node[] =>
+  Object.values(node)
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter(isNode);
+
+/** The members of a class, an interface or an object type, or `undefined` for any other node. */
+const membersOf = (node: Node): readonly Node[] | undefined => {
+  switch (node.type) {
+    case "ClassBody":
+    case "TSInterfaceBody":
+      return node.body as Node[];
+    case "TSTypeLiteral":
+      return node.members as Node[];
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * The members a page leaves out: the private ones and those marked `@internal`, with any other
+ * member of the same name, such as an internal getter's setter or an internal method's overloads.
+ */
+const hiddenOf = (parsed: DeclarationFile, members: readonly Node[]) => {
+  const internal = new Set(
+    members
+      .filter((member) => docMarkdown(docAbove(parsed, member)).internal)
+      .map((member) => nameOf(member.key))
+  );
+  return members.filter(
+    (member) =>
+      member.accessibility === "private" ||
+      (member.key as Node | undefined)?.type === "PrivateIdentifier" ||
+      internal.has(nameOf(member.key))
+  );
+};
+
+/**
+ * Where a hidden member is written: from its doc comment to its end, with the lines it is alone
+ * on.
+ */
+const spanOf = (parsed: DeclarationFile, member: Node) => {
+  const doc = docAbove(parsed, member);
+  let start =
+    doc === ""
+      ? member.start
+      : parsed.source.lastIndexOf(`/*${doc}`, member.start);
+  let end = member.end;
+  const lineStart = parsed.source.lastIndexOf("\n", start - 1) + 1;
+  const lineEnd = parsed.source.indexOf("\n", end);
+  if (
+    /^\s*$/u.test(parsed.source.slice(lineStart, start)) &&
+    /^\s*$/u.test(parsed.source.slice(end, lineEnd))
+  ) {
+    start = lineStart;
+    end = lineEnd + 1;
+  }
+  return { start, end, text: "" };
+};
+
+/**
+ * The superclass of a class that a factory makes, such as `Context.Service`: the build names it
+ * `<Class>_base`, declared as a constant of the factory's type, which holds the class's members.
+ */
+const factoryBaseOf = (parsed: DeclarationFile, node: Node) => {
+  const superClass = node.superClass as Node | null | undefined;
+  const base = parsed.declarations
+    .get(nameOf(superClass) ?? "")
+    ?.find((declaration) => declaration.type === "VariableDeclaration");
+  const type = (
+    ((base?.declarations as Node[] | undefined)?.[0]?.id as Node | undefined)
+      ?.typeAnnotation as Node | undefined
+  )?.typeAnnotation as Node | undefined;
+  return superClass && type?.type === "TSTypeReference"
+    ? { start: superClass.start, end: superClass.end, type }
+    : undefined;
+};
+
+/** A node's text without its hidden members, and with a factory's type for its `_base`. */
+const textOf = (parsed: DeclarationFile, node: Node): string => {
+  const edits: { start: number; end: number; text: string }[] = [];
+  const visit = (current: Node) => {
+    const members = membersOf(current);
+    const hidden = members === undefined ? [] : hiddenOf(parsed, members);
+    edits.push(...hidden.map((member) => spanOf(parsed, member)));
+    if (current.type === "ClassDeclaration") {
+      const base = factoryBaseOf(parsed, current);
+      if (base !== undefined) {
+        edits.push({ ...base, text: textOf(parsed, base.type) });
+      }
+    }
+    for (const child of childrenOf(current)) {
+      if (!hidden.includes(child) && child !== current.superClass) {
+        visit(child);
+      }
+    }
+  };
+  visit(node);
+  let text = "";
+  let at = node.start;
+  for (const edit of edits.toSorted((a, b) => a.start - b.start)) {
+    text += parsed.source.slice(at, edit.start) + edit.text;
+    at = edit.end;
+  }
+  return text + parsed.source.slice(at, node.end);
+};
+
+/**
+ * A declaration as a page shows it: without `declare`, private or `@internal` members, or the
+ * build's `$1` on names, and with the members a factory gives a class.
+ */
 const signatureOf = (parsed: DeclarationFile, node: Node) =>
-  parsed.source
-    .slice(node.start, node.end)
+  textOf(parsed, node)
     .replace(/^declare /u, "")
     .replaceAll(/\b([A-Za-z_]\w*)\$\d+\b/gu, "$1");
 
