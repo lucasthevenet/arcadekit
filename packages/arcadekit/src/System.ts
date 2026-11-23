@@ -22,18 +22,10 @@ import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
 import type { Actions } from "./Action";
-import type { Store } from "./Assets";
 import type { Devices } from "./Input";
 import type { Access, Adds, Writes } from "./Query";
 import { Sim } from "./Services";
-import type {
-  Commands,
-  Events,
-  Frame,
-  Random,
-  Time,
-  World,
-} from "./Services";
+import type { Commands, Events, Frame, Random, Time, World } from "./Services";
 import type { Player } from "./Sound";
 import type { Intake, Port } from "./View";
 

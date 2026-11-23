@@ -758,16 +758,16 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
     run(
       Effect.gen(function* () {
         const app = yield* App.make(Game);
-        const byX = () => Effect.runSync(app.read(Index)).byX;
+        const byX = () => Effect.map(app.read(Index), (index) => index.byX);
         app.tick(1);
         app.tick(1);
         expect(built).toBe(1);
-        expect(byX()).toEqual({ 1: 2, 2: 1 });
+        expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
         // A refused action's replacement is undone with the rest of it.
         expect(Exit.isFailure(app.dispatch(Clear, { refuse: true }))).toBe(
           true
         );
-        expect(byX()).toEqual({ 1: 2, 2: 1 });
+        expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
         const moment = Timeline.capture(app);
         expect(Exit.isSuccess(moment)).toBe(true);
         // A save doesn't hold it: the loaded game builds it again.
@@ -777,16 +777,16 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
           return;
         }
         const loaded = yield* App.make(Game, { save: save.value });
-        expect(Effect.runSync(loaded.read(Index)).byX).toBeUndefined();
+        expect((yield* loaded.read(Index)).byX).toBeUndefined();
         loaded.tick(1);
         expect(built).toBe(2);
-        expect(Effect.runSync(loaded.read(Index)).byX).toEqual({ 1: 2, 2: 1 });
+        expect((yield* loaded.read(Index)).byX).toEqual({ 1: 2, 2: 1 });
         // Nor does a rewind put it back: the next tick builds it again.
         Timeline.rewind(app, moment.value);
-        expect(byX()).toBeUndefined();
+        expect(yield* byX()).toBeUndefined();
         app.tick(1);
         expect(built).toBe(3);
-        expect(byX()).toEqual({ 1: 2, 2: 1 });
+        expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
       })
     );
   });

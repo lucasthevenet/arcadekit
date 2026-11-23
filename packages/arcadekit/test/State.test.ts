@@ -13,6 +13,7 @@ import {
   Plugin,
   Query,
   Save,
+  Singleton,
   State,
   System,
   Time,
@@ -211,24 +212,25 @@ describe("a run condition", () => {
   });
 
   it("can be any Effect that gives a boolean, and several have all to hold", () => {
-    class Switch extends Context.Service<
-      Switch,
-      { on: boolean; asked: number }
-    >()("st/Switch") {}
+    const Switch = Singleton.define("st/Switch", { on: Field.u8 }, { on: 1 });
+    const Flip = Action.define("st/Flip", Schema.Struct({}));
+    const flip = Action.handler(Flip, function* () {
+      const held = yield* Switch.writes;
+      held.on = held.on === 1 ? 0 : 1;
+    });
     class Broken extends Data.TaggedError("Broken")<{}> {}
     const evenTick = Effect.map(Time, (time) => time.tick % 2 === 0);
+    let asked = 0;
     const switchedOn = Effect.gen(function* () {
-      const held = yield* Switch;
-      held.asked++;
-      if (held.asked > 100) {
+      asked++;
+      if (asked > 100) {
         return yield* new Broken();
       }
-      return held.on;
+      return (yield* Switch).on === 1;
     });
     run(
       Effect.gen(function* () {
         const ran: number[] = [];
-        const held = { on: true, asked: 0 };
         const Both = System.tick("Both", function* () {
           ran.push((yield* Time).tick);
         }).pipe(System.runIf(evenTick), System.runIf(switchedOn));
@@ -237,21 +239,21 @@ describe("a run condition", () => {
           switchedOn
         );
         const app = yield* App.make(
-          App.define({ systems: [Both, Either] })
-        ).pipe(Effect.provideService(Switch, held));
+          App.define({ systems: [Both, Either], handlers: [flip] })
+        );
         for (let tick = 0; tick < 6; tick++) {
           app.tick(1);
         }
         expect(ran).toEqual([2, 4, 6]);
         // The second condition is asked only when the first held; the
         // other system asks every tick.
-        expect(held.asked).toBe(3 + 6);
-        held.on = false;
+        expect(asked).toBe(3 + 6);
+        app.dispatch(Flip, {});
         app.tick(1);
         app.tick(1);
         expect(ran).toEqual([2, 4, 6]);
         // What a condition can fail with is what the tick can fail with.
-        held.asked = 100;
+        asked = 100;
         const exit = app.tickExit(1);
         expect(
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
@@ -260,11 +262,25 @@ describe("a run condition", () => {
         void failure;
       })
     );
-    // And what it needs has to be provided, like what a system needs.
-    const needs: Effect.Effect<unknown, never, Scope.Scope | Switch> = App.make(
+    // What it needs is the system's: in the tick, a service of the game's
+    // own does not compile, and in the frame it has to be provided.
+    class Lever extends Context.Service<Lever, { readonly on: boolean }>()(
+      "st/Lever"
+    ) {}
+    const pulled = Effect.map(Lever, (lever) => lever.on);
+    System.tick("Pulled", function* () {}).pipe(
+      // @ts-expect-error a tick's condition requires no service of the game's own
+      System.runIf(pulled)
+    );
+    System.runIf(
+      // @ts-expect-error nor given first
+      System.tick("PulledFirst", function* () {}),
+      pulled
+    );
+    const needs: Effect.Effect<unknown, never, Scope.Scope | Lever> = App.make(
       App.define({
         systems: [
-          System.tick("Needy", function* () {}).pipe(System.runIf(switchedOn)),
+          System.frame("Needy", function* () {}).pipe(System.runIf(pulled)),
         ],
       })
     );
@@ -366,10 +382,11 @@ describe("a run condition", () => {
       // @ts-expect-error a frame system cannot set a state
       System.otherwise(Effect.map(Phase.sets, (phase) => phase.set("paused")))
     );
-    // And what it needs and can fail with are the system's.
+    // And what it needs and can fail with are the system's: a frame
+    // system's, since a tick's may need no service of the game's own.
     class Lamp extends Context.Service<Lamp, { lit: boolean }>()("st/Lamp") {}
     class Burnt extends Data.TaggedError("Burnt")<{}> {}
-    const Lit = System.tick("Lit", function* () {}).pipe(
+    const Lit = System.frame("Lit", function* () {}).pipe(
       System.runIf(Effect.succeed(false)),
       System.otherwise(
         Effect.flatMap(Lamp, (lamp) =>
@@ -383,6 +400,20 @@ describe("a run condition", () => {
     expect([typed.name, untyped.name]).toEqual(["Lit", "Lit"]);
     expect(Lit.idle).toBeDefined();
     expect(noting("Plain", []).idle).toBeUndefined();
+    System.tick("Unlit", function* () {}).pipe(
+      System.runIf(Effect.succeed(false)),
+      // @ts-expect-error a tick's otherwise requires no service of the game's own
+      System.otherwise(Effect.asVoid(Lamp))
+    );
+    State.onEnter(
+      Phase,
+      "playing",
+      "st/LampHook",
+      // @ts-expect-error a hook is a system of the tick
+      function* () {
+        void (yield* Lamp).lit;
+      }
+    );
   });
 
   it("lets a hook say the same of the time it is set off and its condition does not hold", () => {

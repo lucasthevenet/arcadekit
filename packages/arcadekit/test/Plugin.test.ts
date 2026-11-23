@@ -409,10 +409,19 @@ describe("plugins", () => {
     const Play = System.frame("pl/FrameAudio", function* () {
       (yield* Audio).play("boing");
     });
-    const needs: Effect.Effect<unknown, never, Scope.Scope | Audio> = App.make(
+    const needs: Effect.Effect<App.Any, never, Scope.Scope | Audio> = App.make(
       App.define({ systems: [Play] })
     );
-    void needs;
+    const played: string[] = [];
+    withApp(
+      needs.pipe(
+        Effect.provideService(Audio, {
+          play: (sound) => void played.push(sound),
+        })
+      ),
+      (app) => app.frame(0)
+    );
+    expect(played).toEqual(["boing"]);
   });
 
   it("have what a setup spawned in the world when the next plugin's setup runs", () => {
