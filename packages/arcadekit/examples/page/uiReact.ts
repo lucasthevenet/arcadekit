@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 
 import type * as View from "../../src/View";
 import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
+import type { Requests } from "./protocol";
 
 /** A view's value, in a component that is drawn again when it changes. */
 const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
@@ -28,7 +29,7 @@ const HudLine = ({ ui }: { readonly ui: View.Bridge }): ReactNode => {
   );
 };
 
-const MenuBar = ({ ui }: { readonly ui: View.Bridge }): ReactNode => {
+const MenuBar = ({ ui }: { readonly ui: View.Bridge<Requests> }): ReactNode => {
   const { phase } = useView(ui, Menu);
   return h(
     "nav",
@@ -59,7 +60,10 @@ const MenuBar = ({ ui }: { readonly ui: View.Bridge }): ReactNode => {
 };
 
 /** Puts the UI in `root`, and returns what takes it out again. */
-export const mount = (root: Element, ui: View.Bridge): (() => void) => {
+export const mount = (
+  root: Element,
+  ui: View.Bridge<Requests>
+): (() => void) => {
   const react = createRoot(root);
   // Two components, so that a star caught draws the line and not the menu.
   react.render([

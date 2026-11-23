@@ -64,14 +64,14 @@ Values are compared structurally, field by field, at any depth. The body can ret
 
 ## The UI holds the bridge
 
-A UI never holds the app. It receives a `View.Bridge`, and nothing else from the game.
+A UI never holds the app. It receives a `View.Bridge`, and nothing else from the game. Its type names the actions the UI sends.
 
 ```ts title="ui.ts"
 import type { View } from "arcadekit";
 
 import { Hud, NewGame } from "./protocol";
 
-export const mount = (root: Element, ui: View.Bridge) => {
+export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
   const label = root.querySelector("output")!;
   label.textContent = `${ui.get(Hud).score}`;
   ui.subscribe(Hud, ({ score }) => {
@@ -85,9 +85,9 @@ export const mount = (root: Element, ui: View.Bridge) => {
 - `ui.subscribe(view, listener)` calls the listener each time the value changes, and returns a function that unsubscribes. It isn't called with the current value: read that with `get`. A listener that throws fails the frame, like any bug in the frame stage, after every other listener has been notified.
 - `ui.send(action, payload)` requests an action. `View.plugin` issues it in the input stage, before the next tick: it is logged, and applied or refused by its handler, exactly as a key bound to it would be. A replay therefore needs no UI, and a button is as good as a key.
 
-Sending an action the game has no handler for is a bug, and `send` throws in the UI's own code: `View.plugin` tells the bridge which actions the game handles, from when the app is created until it ends. An action sent before the game exists, when this can't be checked, throws in the game's first input stage.
+A bridge sends the actions of its type and no other. `View.makeBridge(game)` makes a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` is handed it only if the game handles `NewGame`, and a `View.Bridge` with no actions reads views and sends nothing. An action the game has no handler for does not compile, in `send` or where the bridge is handed to the UI.
 
-The UI isn't told the outcome of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and publish as a view. `ui.send` accepts any action as far as the compiler knows; whether the game handles it is checked at run time.
+The UI isn't told the outcome of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and publish as a view.
 
 A bridge refuses two different views with the same name.
 
@@ -101,16 +101,18 @@ import { Effect } from "effect";
 import { Game } from "./game";
 import { mount } from "./ui";
 
-const ui = View.makeBridge();
+const Arcade = App.define({ plugins: [Game] });
+
+const ui = View.makeBridge(Arcade);
 mount(document.body, ui);
 
 Browser.runMain(
-  Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(
-    Effect.provide(View.layer(ui))
-  ),
+  Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(View.layer(ui))),
   { target: document.querySelector("canvas")! }
 );
 ```
+
+The bridge and the app are made from the same game. A bridge provided to the app of another game can send an action that app has no handler for, which throws in the app's input stage.
 
 You can mount a UI before the game is created: it sees every view at its initial value, and what it sends waits.
 

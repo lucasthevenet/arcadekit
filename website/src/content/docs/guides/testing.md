@@ -131,7 +131,7 @@ Provide it with `Effect.provideService(Assets.Loader, slowLoader)`. The test ste
 
 ## A UI
 
-To test the game, the test acts as the UI. It creates a bridge with `View.makeBridge()`, provides it with `Effect.provide(View.layer(ui))`, reads views with `get` or `subscribe`, acts with `send`, and steps the app.
+To test the game, the test acts as the UI. It creates a bridge from the game with `View.makeBridge(game)`, provides it with `Effect.provide(View.layer(ui))`, reads views with `get` or `subscribe`, acts with `send`, and steps the app.
 
 To test a UI, mount it on a bridge in a document, with `// @vitest-environment happy-dom` at the top of the file, and count what the UI was told and what changed in the document with a `MutationObserver`. See [a UI](ui.md).
 
