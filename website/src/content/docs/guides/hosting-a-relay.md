@@ -16,10 +16,12 @@ import { Cause, Exit } from "effect";
 // What the host knows: who is connected, and each member's socket.
 declare const present: readonly Relay.Member[];
 declare const socketOf: (member: Relay.Member) => WebSocket;
+// The name the request proves its sender holds, from a token or a session.
+declare const proven: Relay.Proven;
 
 // A peer asks to join, at the address it connected to.
 export const onConnect = (url: string, socket: WebSocket) => {
-  const joined = Relay.join(url, present); // Exit<Member, Refused>
+  const joined = Relay.join(url, proven, present); // Exit<Member, Refused>
   if (Exit.isFailure(joined)) {
     const refused = Cause.squash(joined.cause) as Relay.Refused;
     socket.close(refused.code, refused.reason);
@@ -56,7 +58,7 @@ export const onClose = (gone: Relay.Member) => {
 };
 ```
 
-- `Relay.join(url, present, options)` decides whether a peer may join, from the address it asked for and who is already in the room. It refuses an address without a room or a peer, a name already taken in that room, a full room, and a name that the room's `peers` doesn't list. Room and peer names are at most 64 characters.
+- `Relay.join(url, proven, present, options)` decides whether a peer may join, from the address it asked for, the name the host proved it holds, and who is already in the room. It refuses an address without a room or a peer, a name other than the proven one, a name already taken in that room, a full room, and a name that the room's `peers` doesn't list. Room and peer names are at most 64 characters.
 - `Relay.forward(member, data, present, options)` decides what to forward from a member's message: one text for every other member of its room. The relay writes the forwarded message again from what it parsed, so nothing else the peer sent is passed on. It refuses anything that isn't a message, anything longer than `maxLength`, and a message that claims to be from anyone but the member that sent it.
 - `Relay.joined(member, present)` and `Relay.left(member, present)` return the notices for a member that joins or leaves the room. Every other member gets `{"joined":"ada"}` or `{"left":"ada"}`, and the member who joined gets a `joined` for each member already there. With these notices, a peer that comes back after its socket dropped is sent again what it missed, and `Transport.connect` lists who left in `away`. A member can't send a notice itself, since a notice isn't a message and `forward` refuses it.
 - `present` is everyone connected, as the host tracks them. The functions keep no state between calls, so a host that sleeps between messages can call them. `Relay.Member` is the schema to store a member with.
@@ -79,13 +81,26 @@ A refusal is a `Relay.Refused`:
 
 The relay authenticates the sender. A peer declares its name once, when it connects, and is held to it. The relay refuses a message in another peer's name, and the host closes the socket. The `from` a handler receives is therefore the peer the relay admitted under that name.
 
-Before calling `join`, decide whether to admit the peer under the name it asks for, from whatever the request carries, such as a token, a session or a list of players. The relay checks none of it. `join` admits whoever first asks for a free name, so a host that doesn't check lets anyone claim any name.
+Who may use a name is the host's to prove, from whatever the request carries, such as a token or a session. `join` takes the name it proved, and refuses the peer with `"not your name"` when the address asks for another:
+
+```ts
+import * as Relay from "arcadekit/net/Relay";
+
+// Your own check of the request, such as a signed token's subject.
+declare const playerOf: (request: Request) => string;
+declare const present: readonly Relay.Member[];
+
+export const admit = (request: Request) =>
+  Relay.join(request.url, playerOf(request), present);
+```
+
+A host that proves nothing passes `Relay.anyone`, and `join` admits whoever first asks for a free name. That suits a relay on a network whose machines trust each other, such as the Node example below, and lets anyone claim any name on one open to strangers.
 
 ## Host a relay on Node
 
-`Relay.make(options)` makes a relay that tracks connections itself, and tells each room who joins and leaves. `relay.connect(url, send)` returns an `Exit` of a connection, which fails when the peer may not join. Call the connection's `receive` with what the peer sent, and its `close` when the peer leaves.
+`Relay.make(options)` makes a relay that tracks connections itself, and tells each room who joins and leaves. `relay.connect(url, proven, send)` returns an `Exit` of a connection, which fails when the peer may not join. Call the connection's `receive` with what the peer sent, and its `close` when the peer leaves.
 
-[`examples/relay.ts`](../../../../../packages/arcadekit/examples/relay.ts) wraps it in a WebSocket server on Node, in about forty lines. `pnpm --filter arcadekit relay` runs it on port 8787, or on `PORT` if set. Two machines on the same network can play through it as it is.
+[`examples/relay.ts`](../../../../../packages/arcadekit/examples/relay.ts) wraps it in a WebSocket server on Node, in about forty lines. `pnpm --filter arcadekit relay` runs it on port 8787, or on `PORT` if set. Two machines on the same network can play through it as it is. It passes `Relay.anyone`, so it proves nothing of who connects.
 
 ## Host a relay that sleeps between messages
 
