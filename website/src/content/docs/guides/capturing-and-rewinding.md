@@ -33,8 +33,8 @@ const program = Effect.gen(function* () {
 
 ## Control what the frame and input stages hear after a rewind
 
-- After `Timeline.rewind`, the game plays on from the moment. The frame and input stages hear every event it emits from then on, including one they heard before the rewind, and their change queries visit everything again. They hear nothing of the future that was given up before they had read it.
-- To run the same ticks again, as a rollback session does, pass `{ again: true }` to `Timeline.rewind`. The two stages then hear each event once. An event that a tick emits again, with the same payload, isn't heard twice.
+- After `Timeline.rewind`, the game plays on from the moment. The frame and input stages, and code outside the game that reads an event, hear every event it emits from then on, including one they heard before the rewind, and their change queries visit everything again. They hear nothing of the future that was given up before they had read it.
+- To run the same ticks again, as a rollback session does, pass `{ again: true }` to `Timeline.rewind`. Each of them then hears each event once. An event that a tick emits again, with the same payload, isn't heard twice.
 - For a rewind that comes before the two stages run again, capture with `Timeline.capture(app, { stages: true })`. The moment also keeps the stages' place in what changed, and their change queries go on from where they were.
 
 ## Read more
