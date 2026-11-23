@@ -37,7 +37,7 @@ Interpolation is what a real-time game wants, but it is off by default because o
 - An entity not drawn in the previous frame is drawn where it is: a new entity, one reusing another's slot, one that was hidden, and every entity in the first frame, after a load, or after a frame in which the system didn't run.
 - `snap` is how far an entity can move in one tick and still be interpolated. An entity that moved further, such as one that wrapped from one edge of the world to the other, is drawn where it is. Without `snap`, any distance counts as motion. It is one distance per kind, in scene units.
 - When several ticks ran since the last frame, an entity starts from where it was last drawn, which is more than a tick back: for that one frame it moves faster. When no tick ran, it stays between the same two positions as in the previous frame.
-- A position changed without a tick, by an action dispatched between ticks or by hand, becomes the target, interpolated from where the entity was coming from.
+- A position changed without a tick, by an action dispatched between ticks, becomes the target, interpolated from where the entity was coming from.
 - An [instance's colour](instances-and-objects.md#per-instance-colour) is interpolated too, however far it changes.
 
 ## What it stores, and what it costs

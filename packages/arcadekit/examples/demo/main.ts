@@ -5,20 +5,23 @@
  *   pnpm --filter arcadekit demo
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Console, Effect } from "effect";
+import { Console, Effect, Schema } from "effect";
 
 import {
+  Action,
   App,
   Commands,
   Component,
   Driver,
   Field,
   Plugin,
+  Query,
   Random,
   Resource,
   Singleton,
   System,
   Time,
+  World,
 } from "../../src/index";
 import * as Lifetime from "./lifetime/index";
 import * as Physics from "./physics/index";
@@ -62,12 +65,44 @@ const Fountain = System.tick("Fountain", function* () {
   }
 });
 
+// --- what a player does --------------------------------------------------------------
+// Code outside the game changes it with actions alone, which the log holds and
+// a replay repeats.
+const Thaw = Action.define("demo/Thaw");
+const thaw = Action.handler(Thaw, function* () {
+  const commands = yield* Commands;
+  for (const entity of (yield* Query.all(Frozen)).entities()) {
+    commands.remove(entity, Frozen);
+  }
+});
+const Launch = Action.define(
+  "demo/Launch",
+  Schema.Struct({ speed: Schema.Number })
+);
+const launch = Action.handler(Launch, function* ({ speed }) {
+  (yield* Commands.spawns(Position, Velocity)).spawn(
+    Position.of({ x: 0, y: 0 }),
+    Velocity.of({ x: 0, y: speed })
+  );
+});
+
 // The demo itself is a plugin too: the ones it is made of, and what no
 // plugin of its has.
 const Name = Component.define("demo/Name", { value: Field.json<string>() });
+const Named = Query.all(Name, Position);
 const Demo = Plugin.make("Demo", {
   plugins: [Physics.plugin, Lifetime.plugin, Sketch.plugin],
   systems: [Fountain],
+  handlers: [thaw, launch],
+  // A rock, held in the air until it thaws.
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Name, Position, Velocity, Frozen)).spawn(
+      Name.of({ value: "rock" }),
+      Position.of({ x: 0, y: 100 }),
+      Velocity,
+      Frozen
+    );
+  }),
 });
 
 // --- the entry point -------------------------------------------------------------
@@ -85,12 +120,18 @@ const program = Effect.gen(function* () {
             `system order: ${app.systemOrder.join(" -> ")}; each frame: ${app.frameOrder.join(" -> ")}`
           );
 
-          const rock = app.world.spawn(
-            Name.of({ value: "rock" }),
-            Position.of({ x: 0, y: 100 }),
-            Velocity
-          );
-          app.world.add(rock, Frozen);
+          // Outside the game, it is read with app.read.
+          const world = yield* app.read(World);
+          const named = yield* app.read(Named);
+          const rockY = (): string => {
+            let y = Number.NaN;
+            named.each((name, position) => {
+              if (name.value === "rock") {
+                y = position.y;
+              }
+            });
+            return y.toFixed(1);
+          };
 
           // 1. As fast as possible: three seconds of game time at a fixed 60 Hz.
           const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
@@ -98,14 +139,14 @@ const program = Effect.gen(function* () {
           for (let second = 1; second <= 3; second++) {
             step(1);
             yield* Console.log(
-              `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${app.world.entityCount} ` +
-                `rock.y=${app.world.get(rock, Position)!.y.toFixed(1)}`
+              `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${world.entityCount} ` +
+                `rock.y=${rockY()}`
             );
             if (second === 1) {
-              app.world.remove(rock, Frozen);
+              app.enqueue(Thaw, undefined);
             } // the rock starts falling
           }
-          const { wave } = app.world.singleton(Spray);
+          const { wave } = yield* app.read(Spray);
           yield* Console.log(
             `180 ticks took ${(performance.now() - started).toFixed(1)} ms; fountain: ${wave} of ${WAVES} waves`
           );
@@ -118,10 +159,7 @@ const program = Effect.gen(function* () {
           );
 
           // 3. Real time is what Driver.run does next, from here.
-          app.world.spawn(
-            Position.of({ x: 0, y: 0 }),
-            Velocity.of({ x: 0, y: 30 })
-          );
+          app.enqueue(Launch, { speed: 30 });
           noted.app = app;
           noted.ticks = app.time.tick;
           noted.frames = Sketch.sketch.frames;

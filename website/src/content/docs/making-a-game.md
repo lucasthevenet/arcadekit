@@ -164,10 +164,10 @@ Systems run in the order they are listed.
 
 ## Test it
 
-You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page. `App.define` says what the game is, and `App.make` starts one run of it.
+You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page. `App.define` says what the game is, and `App.make` starts one run of it. A test sets the scene with a plugin of its own, whose `setup` runs when the app is made, and reads the game with `app.read`.
 
 ```ts title="rules.test.ts"
-import { App, Journal } from "arcadekit";
+import { App, Commands, Journal, Plugin, World } from "arcadekit";
 import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { expect, it } from "vitest";
@@ -179,30 +179,45 @@ const Catch = App.define({ plugins: [Rules] });
 const play = <A>(body: Effect.Effect<A, unknown, Scope.Scope>) =>
   Effect.runSync(Effect.scoped(body));
 
+/** A coin just above the basket. */
+const OneCoin = Plugin.make("catch/OneCoin", {
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Position, Fall)).spawn(
+      Position.of({ x: 0, y: 0.5 }),
+      Fall.of({ speed: 1 })
+    );
+  }),
+});
+
+/** No lives left. */
+const Over = Plugin.make("catch/Over", {
+  setup: Effect.gen(function* () {
+    (yield* Basket.writes).lives = 0;
+  }),
+});
+
 it("catches a coin that lands in the basket", () =>
   play(
     Effect.gen(function* () {
-      const app = yield* App.make(Catch);
-      app.world.spawn(Position.of({ x: 0, y: 0.5 }), Fall.of({ speed: 1 }));
+      const app = yield* App.make(App.define({ plugins: [Rules, OneCoin] }));
       for (let i = 0; i < 60; i++) {
         app.tick(1 / 60);
       }
-      expect(app.world.singleton(Basket).caught).toBe(1);
+      expect((yield* app.read(Basket)).caught).toBe(1);
     })
   ));
 
 it("refuses a move once the game is over", () =>
   play(
     Effect.gen(function* () {
-      const app = yield* App.make(Catch);
-      app.world.singleton(Basket).lives = 0;
+      const app = yield* App.make(App.define({ plugins: [Rules, Over] }));
       const moved = app.dispatch(Move, { dx: 1 });
       expect(Exit.isFailure(moved)).toBe(true);
     })
   ));
 ```
 
-`app.dispatch` applies an action immediately and returns its outcome. `app.enqueue` queues the action for the start of the next tick instead, which is what a real-time game needs.
+`app.dispatch` applies an action immediately and returns its outcome. `app.enqueue` queues the action for the start of the next tick instead, which is what a real-time game needs. Code outside the game has no other way to change it: `app.read` takes nothing that writes.
 
 A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation, `app.record()` returns that log with the seed the game began with and how long each tick was, and `Journal.replay` plays the recording in an app made from that seed, verifying the world's hash along the way:
 
@@ -220,7 +235,9 @@ it("plays the same game again from its log", () =>
       const again = yield* Journal.replay(recording, (start) =>
         App.make(Catch, start)
       );
-      expect(again.world.hash()).toBe(game.world.hash());
+      const hash = (app: App.Any) =>
+        Effect.map(app.read(World), (world) => world.hash());
+      expect(yield* hash(again)).toBe(yield* hash(game));
     })
   ));
 ```

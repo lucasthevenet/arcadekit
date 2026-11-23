@@ -141,6 +141,19 @@ const Rules = Plugin.make("Rules", {
   // Listed so that a saved game, which names them, can be loaded.
   systems: [Casualties, Rest],
   handlers: [strike, pass],
+  // Seats the two fighters. A replay runs it too, and a load doesn't: the
+  // save holds them.
+  setup: Effect.gen(function* () {
+    const commands = yield* Commands.spawns(Name, Fighter);
+    commands.spawn(
+      Name.of({ value: "Knight" }),
+      Fighter.of({ player: 1, hp: 10, energy: 4 })
+    );
+    commands.spawn(
+      Name.of({ value: "Rogue" }),
+      Fighter.of({ player: 2, hp: 11, energy: 3 })
+    );
+  }),
 });
 
 class Narrator extends Context.Service<
@@ -177,24 +190,28 @@ const Commentary = Plugin.make("Commentary", {
 });
 
 // --- the game --------------------------------------------------------------------
-const seat = (app: App.Any) => ({
-  knight: app.world.spawn(
-    Name.of({ value: "Knight" }),
-    Fighter.of({ player: 1, hp: 10, energy: 4 })
-  ),
-  rogue: app.world.spawn(
-    Name.of({ value: "Rogue" }),
-    Fighter.of({ player: 2, hp: 11, energy: 3 })
-  ),
-});
-
-const standing = (app: App.Any): string => {
-  const out: string[] = [];
-  app.world.view(Standing).each((name, fighter) => {
-    out.push(`${name.value} hp=${fighter.hp} energy=${fighter.energy}`);
+// Outside the game, it is read with app.read, and changed with actions alone.
+const standing = (app: App.Any): Effect.Effect<string> =>
+  Effect.map(app.read(Standing), (fighters) => {
+    const out: string[] = [];
+    fighters.each((name, fighter) => {
+      out.push(`${name.value} hp=${fighter.hp} energy=${fighter.energy}`);
+    });
+    return out.join(", ");
   });
-  return out.join(", ");
-};
+
+/** The fighter of this name. */
+const fighter = (app: App.Any, name: string): Effect.Effect<Entity> =>
+  Effect.gen(function* () {
+    const world = yield* app.read(World);
+    const found = (yield* app.read(Standing))
+      .entities()
+      .find((entity) => world.get(entity, Name)?.value === name);
+    if (found === undefined) {
+      return yield* Effect.die(`no fighter is named ${name}`);
+    }
+    return found;
+  });
 
 const program = Effect.gen(function* () {
   // One tick per move, so a checkpoint of the world's hash after every tick
@@ -202,7 +219,8 @@ const program = Effect.gen(function* () {
   const app = yield* App.make(App.define({ plugins: [Commentary] }), {
     checkpointEvery: 1,
   });
-  const { knight, rogue } = seat(app);
+  const knight = yield* fighter(app, "Knight");
+  const rogue = yield* fighter(app, "Rogue");
 
   // One move: dispatch, report, then let the world react for one tick.
   const strikeWith = Effect.fnUntraced(function* (
@@ -238,23 +256,24 @@ const program = Effect.gen(function* () {
     yield* Console.log(`${who} strikes: ${outcome}`);
     app.tick(1);
   });
-  const passTurn = (player: 1 | 2) => {
+  const passTurn = Effect.fnUntraced(function* (player: 1 | 2) {
     app.dispatch(Pass, { player });
     app.tick(1);
-    console.log(`player ${player} passes -> ${standing(app)}`);
-  };
+    yield* Console.log(`player ${player} passes -> ${yield* standing(app)}`);
+  });
 
-  yield* Console.log(`start -> ${standing(app)}`);
+  yield* Console.log(`start -> ${yield* standing(app)}`);
   yield* strikeWith("Rogue", rogue, knight); // out of turn
   yield* strikeWith("Knight", knight, rogue);
   yield* strikeWith("Knight", knight, rogue);
   yield* strikeWith("Knight", knight, rogue); // out of energy
-  passTurn(1);
+  yield* passTurn(1);
   yield* strikeWith("Rogue", rogue, knight);
-  passTurn(2);
+  yield* passTurn(2);
   yield* strikeWith("Knight", knight, rogue); // the Rogue falls
   yield* strikeWith("Knight", knight, rogue); // nobody left to hit
-  yield* Console.log(`end -> ${standing(app)}`);
+  const end = yield* standing(app);
+  yield* Console.log(`end -> ${end}`);
 
   // The recording holds the moves that were accepted, the world's hash after
   // every tick, and how long each tick was. Written out as text and read
@@ -270,17 +289,18 @@ const program = Effect.gen(function* () {
       return "not a save file";
     }
     // The replay hands over how the game began, its seed, and the app made
-    // from it is seated as the game was before its first move. A replay that
+    // from it seats the fighters as the game did, in its setup. A replay that
     // goes another way fails, and says where.
     return yield* Journal.replay(loaded.value, (start) =>
       App.make(App.define({ plugins: [Rules] }), {
         ...start,
         checkpointEvery: 1,
-      }).pipe(Effect.tap((made) => Effect.sync(() => seat(made))))
+      })
     ).pipe(
+      Effect.flatMap(standing),
       Effect.map(
         (replayed) =>
-          `${standing(replayed)} (${standing(replayed) === standing(app) ? "identical" : "DIFFERENT"})`
+          `${replayed} (${replayed === end ? "identical" : "DIFFERENT"})`
       ),
       Effect.catch((why) => Effect.succeed(`stopped: ${why.message}`))
     );
@@ -307,8 +327,9 @@ const program = Effect.gen(function* () {
       const loaded = yield* App.make(App.define({ plugins: [Rules] }), {
         save: read.value,
       });
+      const held = yield* standing(loaded);
       yield* Console.log(
-        `saved (${file.length} bytes) and loaded -> ${standing(loaded)} at tick ${loaded.time.tick} (${standing(loaded) === standing(app) ? "identical" : "DIFFERENT"})`
+        `saved (${file.length} bytes) and loaded -> ${held} at tick ${loaded.time.tick} (${held === end ? "identical" : "DIFFERENT"})`
       );
     }
   }

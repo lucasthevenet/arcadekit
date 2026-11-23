@@ -42,7 +42,7 @@ Work that must continue in real time while the game runs, such as loading, runs 
 
 ## The world's hash
 
-`app.world.hash()` is a single number for everything in the world a simulation can observe: every entity and field, the order queries visit them in, the ids the next entities will get, every singleton that has been written, and the state of the random generator. Two worlds built by the same operations hash the same, and changing one field always changes the hash.
+`world.hash()`, on the world that `app.read(World)` gives, is a single number for everything in the world a simulation can observe: every entity and field, the order queries visit them in, the ids the next entities will get, every singleton that has been written, and the state of the random generator. Two worlds built by the same operations hash the same, and changing one field always changes the hash.
 
 The app records the hash in its log every `checkpointEvery` ticks, 60 by default. A replay compares its own world at each checkpoint and stops at the first mismatch with `Journal.ReplayDiverged`, which reports the tick and when the two last agreed. [Replays](../guides/replays.md#the-worlds-hash) covers what the hash includes and what it costs.
 

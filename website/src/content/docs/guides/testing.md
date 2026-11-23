@@ -9,7 +9,7 @@ The examples use [Vitest](https://vitest.dev), but any test runner works.
 
 ## Stepping an app
 
-An app is created inside a scope. A test creates it, steps it with `tick`, and inspects the world:
+An app is created inside a scope. A test creates it, steps it with `tick`, and reads the game with `app.read`:
 
 ```ts title="rules.test.ts"
 import { Action, App, Field, Plugin, Singleton } from "arcadekit";
@@ -39,12 +39,14 @@ it("adds points", () =>
       const app = yield* App.make(App.define({ plugins: [Rules] }));
       app.enqueue(Add, { points: 3 });
       app.tick(1 / 60);
-      expect(app.world.singleton(Score).points).toBe(3);
+      expect((yield* app.read(Score)).points).toBe(3);
     })
   ));
 ```
 
 `app.dispatch` returns an action's outcome immediately, for testing a rule and its refusals.
+
+A test changes the game as a player does, with an action, and sets the scene with a plugin of its own whose `setup` spawns what the test needs. `app.read` takes `World`, `Time`, a query that only reads, a singleton or a state, and nothing that writes.
 
 - Game time is `Time`, and a test advances it by ticking: `app.tick(1 / 60)` is a sixtieth of a second of game time, however long the test takes. Effect's `TestClock` doesn't affect it.
 - Vitest's `toEqual` treats two `Data.TaggedError` errors that differ only in their `message` as equal, since `message` isn't enumerable. When a test compares a failure, it compares the `message` too.
@@ -177,7 +179,9 @@ while (adaApp.time.tick !== graceApp.time.tick) {
   hub.step();
   (adaApp.time.tick < graceApp.time.tick ? ada : grace).tick();
 }
-expect(adaApp.world.hash()).toBe(graceApp.world.hash());
+const adaWorld = yield * adaApp.read(World);
+const graceWorld = yield * graceApp.read(World);
+expect(adaWorld.hash()).toBe(graceWorld.hash());
 expect(adaApp.actionLog).toEqual(graceApp.actionLog);
 ```
 

@@ -442,7 +442,7 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
   override get message(): string {
     const since =
       this.agreedAt === undefined
-        ? "No earlier checkpoint matched, so the two did not start from the same state: check the seed and what was spawned before the first tick"
+        ? "No earlier checkpoint matched, so the two did not start from the same state: check the seed, and what the plugins' setups spawn"
         : `The last checkpoint that matched was at tick ${this.agreedAt}`;
     return `the world's hash at tick ${this.tick} is ${this.actual}, and ${this.expected} was recorded. ${since}.`;
   }

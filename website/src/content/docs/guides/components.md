@@ -51,18 +51,25 @@ Other values use a field type that declares how snapshots and the hash treat the
 
 ## Creating and changing entities
 
-`Hero.of({...})` creates a component value for a spawn. A system, a handler or a plugin's `setup` spawns through `Commands`, which it requests with the components it spawns. Code outside the simulation, such as a test or the entry point, uses `app.world`:
+`Hero.of({...})` creates a component value for a spawn. A system, a handler or a plugin's `setup` spawns through `Commands`, which it requests with the components it spawns. Code outside the simulation, such as a test or the entry point, can't change the world: it reads it with `app.read`, and changes the game with an [action](events-and-actions.md), whose handler makes the change:
 
 ```ts
-import { App, Commands, Component, Field, Plugin } from "arcadekit";
-import { Effect } from "effect";
+import { Action, App, Commands, Component, Field, Plugin, Query, World } from "arcadekit";
+import { Effect, Schema } from "effect";
 
 const Position = Component.define("game/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+const Placed = Query.all(Position);
+
+const Throw = Action.define("game/Throw", Schema.Struct({ x: Schema.Number }));
+const toss = Action.handler(Throw, function* ({ x }) {
+  return (yield* Commands.spawns(Position)).spawn(Position.of({ x, y: 2 }));
+});
 
 const Rules = Plugin.make("game/Rules", {
+  handlers: [toss],
   setup: Effect.gen(function* () {
     (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0, y: 0 }));
   }),
@@ -70,17 +77,16 @@ const Rules = Plugin.make("game/Rules", {
 
 const program = Effect.gen(function* () {
   const app = yield* App.make(App.define({ plugins: [Rules] }));
-  const rock = app.world.spawn(Position.of({ x: 4, y: 2 }));
-  app.world.set(rock, Position, { y: 3 });
-  app.world.get(rock, Position)?.x; // 4
-  app.world.despawn(rock);
-  app.world.isAlive(rock); // false, permanently
+  const thrown = yield* app.dispatch(Throw, { x: 4 });
+  const world = yield* app.read(World);
+  world.get(thrown, Position)?.x; // 4
+  (yield* app.read(Placed)).count(); // 2
 });
 ```
 
-An id kept after its entity is despawned [refers to no entity](../concepts/entities-and-systems.md#entity-ids), even once its slot is reused.
+`app.read` runs an effect that requires only what reads: `World`, `Time`, a query with no `Query.writes`, a singleton or a state. One that requires `Commands`, `World.writes` or a query that writes doesn't compile, and the error says to issue an action. The world it gives has no `spawn`, `set` or `despawn`, and stays current: read it once and keep it. Every change is then in the action log, so a [replay](replays.md) reproduces it. See [determinism](../concepts/determinism.md).
 
-Once a game is running, make changes from the simulation (a system or a handler) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
+An id kept after its entity is despawned [refers to no entity](../concepts/entities-and-systems.md#entity-ids), even once its slot is reused.
 
 Inside the simulation, you name the components where you request what changes them:
 
@@ -159,8 +165,8 @@ A `Resource` is the other kind of single value: configuration with a default tha
 A **relation** is a component that points at another entity, its `target`, and stays consistent when that entity is despawned: a parent and its children, a target, an owner. Use a relation rather than a bare `Field.entity` for any reference that must never dangle.
 
 ```ts
-import { App, Component, Field, Plugin } from "arcadekit";
-import { Effect } from "effect";
+import { Action, Commands, Component, EntityId, Field, Plugin, World } from "arcadekit";
+import { Effect, Schema } from "effect";
 
 const Position = Component.define("game/Position", {
   x: Field.f32,
@@ -175,21 +181,30 @@ const Targets = Component.relation("ai/Targets", {
   fields: { since: Field.f32 }, // fields of its own, beside the target
 });
 
-const Rules = Plugin.make("game/Rules", {});
-
-const program = Effect.gen(function* () {
-  const { world } = yield* App.make(App.define({ plugins: [Rules] }));
-  const tank = world.spawn(Position.of({ x: 0, y: 0 }));
-  const truck = world.spawn(Position.of({ x: 9, y: 0 }));
-  const turret = world.spawn(
-    Position.of({ x: 0, y: 1 }),
-    ChildOf.of({ target: tank })
-  );
-  world.get(turret, ChildOf)?.target; // its parent
-  world.sources(tank, ChildOf); // the tank's children
-  world.add(turret, ChildOf.of({ target: truck })); // a new parent
-  world.despawn(truck); // despawns the turret too, and everything attached to it
+// A tank with a turret on it.
+const setup = Effect.gen(function* () {
+  const commands = yield* Commands.spawns(Position, ChildOf);
+  const tank = commands.spawn(Position.of({ x: 0, y: 0 }));
+  commands.spawn(Position.of({ x: 0, y: 1 }), ChildOf.of({ target: tank }));
 });
+
+// Moves the turret onto the truck, then scraps the truck.
+const Swap = Action.define(
+  "game/Swap",
+  Schema.Struct({ turret: EntityId, truck: EntityId })
+);
+const swap = Action.handler(Swap, function* ({ turret, truck }) {
+  const world = yield* World;
+  const commands = yield* Commands.spawns(ChildOf);
+  const tank = world.get(turret, ChildOf)?.target; // its parent
+  if (tank !== undefined) {
+    world.sources(tank, ChildOf); // the tank's children
+  }
+  commands.add(turret, ChildOf.of({ target: truck })); // a new parent
+  commands.despawn(truck); // despawns the turret too, and everything attached to it
+});
+
+export const Rules = Plugin.make("game/Rules", { handlers: [swap], setup });
 ```
 
 - `onTargetDespawn` controls what happens to the entities pointing at a target when it is despawned. `"despawn"` despawns them too, along with whatever points at them, at any depth. `"remove"` removes the relation from them and leaves them otherwise untouched.

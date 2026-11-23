@@ -8,16 +8,19 @@ A **save** captures a game between two ticks, and a game loaded from it continue
 ## Saving
 
 ```ts
-import { App, Component, Field, Plugin, Save } from "arcadekit";
+import { App, Commands, Component, Field, Plugin, Save, World } from "arcadekit";
 import { Effect, Exit } from "effect";
 
 const Position = Component.define("game/Position", { x: Field.f32 });
-const Rules = Plugin.make("game/Rules", {});
+const Rules = Plugin.make("game/Rules", {
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Position)).spawn(Position.of({ x: 3 }));
+  }),
+});
 const Game = App.define({ plugins: [Rules] });
 
 const program = Effect.gen(function* () {
   const app = yield* App.make(Game);
-  app.world.spawn(Position.of({ x: 3 }));
   app.tick(1 / 60);
 
   const saved = app.save(); // Exit<Save, SaveRefused>
@@ -29,7 +32,9 @@ const program = Effect.gen(function* () {
   const read = Save.decode(bytes); // Exit<Save, LoadRefused>
   if (Exit.isSuccess(read)) {
     const again = yield* App.make(Game, { save: read.value });
-    again.world.hash() === app.world.hash(); // true
+    const loaded = yield* again.read(World);
+    const played = yield* app.read(World);
+    loaded.hash() === played.hash(); // true
   }
 }).pipe(Effect.scoped);
 ```

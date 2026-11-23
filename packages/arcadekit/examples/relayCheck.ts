@@ -13,7 +13,7 @@
 import { NodeRuntime } from "@effect/platform-node";
 import { Console, Data, Effect, Result, Schema } from "effect";
 
-import { Action, App, Field, Singleton } from "../src/index";
+import { Action, App, Field, Singleton, World } from "../src/index";
 import { Message, Relay, Session, Transport } from "../src/net/index";
 
 const base = process.argv[2];
@@ -106,10 +106,12 @@ const check = Effect.gen(function* () {
     yield* wait(30);
     (ada.app.time.tick <= grace.app.time.tick ? ada : grace).connected.tick();
   }
-  const purse = { ...ada.app.world.singleton(Purse) };
+  const purse = { ...(yield* ada.app.read(Purse)) };
+  const hashOf = (app: typeof ada.app) =>
+    Effect.map(app.read(World), (world) => world.hash());
   if (
     ada.app.time.tick !== grace.app.time.tick ||
-    ada.app.world.hash() !== grace.app.world.hash() ||
+    (yield* hashOf(ada.app)) !== (yield* hashOf(grace.app)) ||
     purse.ada !== 8 ||
     purse.grace !== 8
   ) {
