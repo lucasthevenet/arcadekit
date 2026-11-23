@@ -28,6 +28,7 @@
  */
 import { ChangeLog, RemovedReader } from "./changes";
 import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
+import type { Column } from "./column";
 import {
   GENERATIONS,
   INDEX_MASK,
@@ -41,7 +42,6 @@ import {
   targetless,
 } from "./component";
 import type {
-  Column,
   ComponentDef,
   ComponentInput,
   ComponentValue,

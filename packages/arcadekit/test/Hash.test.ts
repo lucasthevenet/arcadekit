@@ -17,7 +17,7 @@ import {
   Timeline,
   World,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { ComponentDef, Entity, JsonValue } from "../src/index";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -28,7 +28,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<unknown>(),
+  note: Field.json<JsonValue>(),
 };
 const Body = Component.define("hash/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("hash/Sheet", kinds);
@@ -191,7 +191,7 @@ describe("the hash of a world", () => {
   });
 
   it("tells apart values that compare equal or print alike", () => {
-    const hashOf = (note: unknown, single = 0, double = 0): number => {
+    const hashOf = (note: JsonValue, single = 0, double = 0): number => {
       const world = new EcsWorld();
       world.spawn(Sheet.of({ ...sheet(1), note, single, double }));
       world.spawn(Aura.of({ ...sheet(2), note, single, double }));
@@ -549,13 +549,13 @@ describe("the hash of a world", () => {
   });
 
   it("counts an array or an object in a json field by what is in it", () => {
-    const hashOf = (note: unknown): number => {
+    const hashOf = (note: JsonValue): number => {
       const world = new EcsWorld();
       world.spawn(Sheet.of({ ...sheet(1), note }));
       world.add(world.spawn(), Aura.of({ ...sheet(2), note }));
       return world.hash();
     };
-    const values: unknown[] = [
+    const values: JsonValue[] = [
       { hp: 1 },
       { hp: 2 },
       { hp: 1, mp: 0 },
@@ -581,9 +581,10 @@ describe("the hash of a world", () => {
       hashOf(structuredClone({ hp: 1, items: ["a", "b"] }))
     );
     // A value JSON cannot write is refused in so many words.
-    expect(() => hashOf({ big: 1n })).toThrow(
-      /A json field holds a value that JSON cannot write/
-    );
+    expect(() =>
+      // @ts-expect-error A bigint inside an object is not JSON.
+      hashOf({ big: 1n })
+    ).toThrow(/A json field holds a value that JSON cannot write/);
   });
 
   it("counts tags, which have no data, by who has them", () => {

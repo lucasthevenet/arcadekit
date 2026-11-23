@@ -4,6 +4,8 @@
  * No Effect dependency: this file and world.ts are the storage core, and are
  * plain synchronous TypeScript by design.
  */
+import type { Column } from "./column";
+import type { Frozen, JsonValue } from "./frozen";
 import type { Spawned } from "./spawned";
 
 // ---------------------------------------------------------------------------
@@ -150,79 +152,26 @@ export const Field = {
    * hashed as its `JSON.stringify` text, so it is loaded as whatever
    * `JSON.parse` makes of that text.
    */
-  json: <T>(): FieldDef<T, T[]> => field<T, T[]>("json"),
+  json: <T extends JsonValue>(): FieldDef<Frozen<T>, Frozen<T>[]> =>
+    field<Frozen<T>, Frozen<T>[]>("json"),
   /**
    * Any value, with a codec that converts it to plain data and back: a Date, a
    * Map, a class instance. Snapshots and the hash use its encoded form, so it
    * is encoded once per value on every hash.
    */
-  ref: <T>(codec: RefCodec<T>): FieldDef<T, T[]> => ({ kind: "ref", codec }),
+  ref: <T>(codec: RefCodec<T>): FieldDef<Frozen<T>, Frozen<T>[]> => ({
+    kind: "ref",
+    codec: codec as RefCodec<Frozen<T>>,
+  }),
   /**
    * A value that isn't part of the game's state, such as a handle, a cache, or
    * something another system can recreate. It is neither saved nor hashed, and
    * is undefined in a world loaded from a snapshot.
    */
-  transient: <T>(): FieldDef<T | undefined, (T | undefined)[]> =>
-    field<T | undefined, (T | undefined)[]>("transient"),
-};
-
-export type Column =
-  | Float32Array
-  | Float64Array
-  | Int32Array
-  | Uint32Array
-  | Uint16Array
-  | Uint8Array
-  | unknown[];
-
-export const makeColumn = (kind: FieldKind, capacity: number): Column => {
-  switch (kind) {
-    case "f32": {
-      return new Float32Array(capacity);
-    }
-    case "f64": {
-      return new Float64Array(capacity);
-    }
-    case "i32": {
-      return new Int32Array(capacity);
-    }
-    case "u32": {
-      return new Uint32Array(capacity);
-    }
-    case "entity": {
-      // An id is a whole number below 2^53, which a 64-bit float holds.
-      return new Float64Array(capacity);
-    }
-    case "u16": {
-      return new Uint16Array(capacity);
-    }
-    case "u8": {
-      return new Uint8Array(capacity);
-    }
-    case "json":
-    case "ref":
-    case "transient": {
-      return Array.from({ length: capacity }, () => undefined);
-    }
-  }
-};
-
-export const growColumn = (
-  kind: FieldKind,
-  old: Column,
-  capacity: number
-): Column => {
-  const next = makeColumn(kind, capacity);
-  if (isBoxed(kind)) {
-    const from = old as unknown[];
-    const to = next as unknown[];
-    for (let i = 0; i < from.length; i++) {
-      to[i] = from[i];
-    }
-  } else {
-    (next as Float32Array).set(old as Float32Array);
-  }
-  return next;
+  transient: <T>(): FieldDef<
+    Frozen<T> | undefined,
+    (Frozen<T> | undefined)[]
+  > => field<Frozen<T> | undefined, (Frozen<T> | undefined)[]>("transient"),
 };
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import type { Spawned } from "../src/index";
+import type { JsonValue, Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -33,7 +33,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<unknown>(),
+  note: Field.json<JsonValue>(),
 };
 const Body = Component.define("tx/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("tx/Sheet", kinds);
@@ -49,7 +49,7 @@ const sheet = (n: number) => ({
   short: 60_000 + n,
   byte: 200 + (n % 50),
   other: n as Entity,
-  note: `note ${n}` as unknown,
+  note: `note ${n}`,
 });
 
 // Two singletons: one the populated world has written, one it has not.

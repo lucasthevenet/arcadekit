@@ -2,7 +2,7 @@ import { Cause, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import type { Spawned } from "../src/index";
+import type { JsonValue, Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -257,7 +257,7 @@ describe("a snapshot read without the program's components", () => {
       short: Field.u16,
       byte: Field.u8,
       other: Field.entity,
-      data: Field.json<unknown>(),
+      data: Field.json<JsonValue>(),
       when: Field.ref<Date>({
         encode: (date) => date.getTime(),
         decode: (data) => new Date(data as number),

@@ -21,6 +21,7 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/index";
+import type { JsonValue } from "../src/index";
 
 /** What one store of a save's world held. */
 const stored = (save: Save.Save, name: string): unknown =>
@@ -479,7 +480,7 @@ describe("a saved game", () => {
 });
 
 describe("a game that cannot be saved as it stands", () => {
-  const Blob = Component.define("sv/Blob", { v: Field.json<unknown>() });
+  const Blob = Component.define("sv/Blob", { v: Field.json<JsonValue>() });
 
   it("says which action is waiting with a payload its schema does not take", () => {
     const Small = Action.define(
@@ -513,7 +514,10 @@ describe("a game that cannot be saved as it stands", () => {
     });
     const Spill = Plugin.make("sv/Spill", {
       setup: Effect.map(Commands.spawns(Blob), (commands) => {
-        commands.spawn(Blob.of({ v: () => 1 }));
+        commands.spawn(
+          // @ts-expect-error A function is not JSON.
+          Blob.of({ v: () => 1 })
+        );
       }),
     });
     withApp(

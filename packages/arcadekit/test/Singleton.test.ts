@@ -22,6 +22,7 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/index";
+import type { JsonValue } from "../src/index";
 
 const Turn = Singleton.define(
   "sg/Turn",
@@ -44,7 +45,7 @@ const Everything = Singleton.define(
     short: Field.u16,
     byte: Field.u8,
     other: Field.entity,
-    note: Field.json<unknown>(),
+    note: Field.json<JsonValue>(),
     when: Field.schema(Schema.Date),
     handle: Field.transient<{ open: boolean }>(),
   },
@@ -323,6 +324,7 @@ describe("a singleton in a snapshot", () => {
     expect(kind.message).toMatch(/Then: singleton .* Now: table/);
     // A value its field cannot save is refused when the snapshot is taken.
     const world = written();
+    // @ts-expect-error A function is not JSON.
     world.singleton(Everything).note = () => 1;
     const unsaved = problemOf(() => world.snapshot());
     expect(unsaved.problem).toBe("cannot be saved");

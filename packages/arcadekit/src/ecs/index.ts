@@ -34,6 +34,7 @@ export type {
   ValueOf,
 } from "./component";
 export { Rng } from "./random";
+export type { Frozen, JsonValue } from "./frozen";
 export { placed } from "./spawned";
 export type { Placed, Spawned, WithSpawned } from "./spawned";
 export { readSnapshot, writeSnapshot } from "./contents";

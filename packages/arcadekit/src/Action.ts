@@ -183,8 +183,9 @@ export interface AnyHandler {
  * - A handler can't dispatch another action, which throws. It issues one with
  *   `Actions.enqueue` instead, and a refusal rolls that back too.
  * - A refusal rolls back what the handler did to the world, and nothing outside
- *   it: not an object held in a field and mutated in place, not a call to your
- *   game's own service, and not a fiber it forked.
+ *   it: not a call to your game's own service, and not a fiber it forked. A
+ *   value a field holds is read-only, so it is replaced, and the refusal puts
+ *   it back.
  *
  * @category Constructors
  */

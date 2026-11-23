@@ -13,7 +13,8 @@
  *
  * No Effect dependency.
  */
-import type { Column, FieldKind, RefCodec } from "./component";
+import type { Column } from "./column";
+import type { FieldKind, RefCodec } from "./component";
 import {
   END,
   FORMAT,

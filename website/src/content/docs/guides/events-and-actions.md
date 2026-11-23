@@ -97,7 +97,7 @@ A refusal changes nothing, even after the handler has written to the world, so a
 
 The same applies to a handler that dies from a bug halfway through. A refused action isn't logged, so a replay never runs it, and anything it left behind would make the replay diverge.
 
-A refusal doesn't roll back anything outside the world: an object held in a field and mutated in place, or a call to one of your own services. Replace the object instead of mutating it, and call the service after the last check. A fiber the handler forks ends with it, and one that would outlive it makes `dispatch` throw, with the handler's changes undone. It also doesn't undo a write forced through a raw column of a component the query [only reads](queries.md#what-a-query-writes).
+A refusal doesn't roll back anything outside the world, such as a call to one of your own services: call the service after the last check. A value a field holds is read-only, so it is replaced, and a refusal puts it back. A fiber the handler forks ends with it, and one that would outlive it makes `dispatch` throw, with the handler's changes undone. It also doesn't undo a write forced through a raw column of a component the query [only reads](queries.md#what-a-query-writes).
 
 Handlers follow a few rules of their own:
 

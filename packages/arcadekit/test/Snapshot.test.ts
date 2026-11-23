@@ -11,7 +11,7 @@ import {
   Query,
   SnapshotError,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { ComponentDef, Entity, JsonValue } from "../src/index";
 import { Shouts } from "./stores";
 
 // One component of every field kind, in a table and in a sparse set.
@@ -23,7 +23,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<unknown>(),
+  note: Field.json<JsonValue>(),
 };
 const define = (prefix: string) => ({
   Body: Component.define(`${prefix}/Body`, { x: Field.f32, y: Field.f32 }),
@@ -35,7 +35,7 @@ const define = (prefix: string) => ({
 const C = define("snap");
 const all = Object.values(C) as ComponentDef[];
 
-const notes: unknown[] = [
+const notes: JsonValue[] = [
   "plain",
   "",
   "ünïcödé ✓ 日本語 🎲",
@@ -351,7 +351,10 @@ describe("a snapshot that cannot be taken", () => {
     ] as const) {
       const world = new EcsWorld();
       world.spawn(C.Sheet.of(sheet(1)));
-      world.spawn(C.Sheet.of({ ...sheet(2), note: value }));
+      world.spawn(
+        // @ts-expect-error None of these values is JSON.
+        C.Sheet.of({ ...sheet(2), note: value })
+      );
       const error = problemOf(() => world.snapshot());
       expect(error.problem).toBe("cannot be saved");
       expect(error.component).toBe("snap/Sheet");
@@ -360,7 +363,11 @@ describe("a snapshot that cannot be taken", () => {
       expect(error.message).toMatch(/Field\.ref.*Field\.transient/);
       // The same in a sparse component.
       const sparse = new EcsWorld();
-      sparse.add(sparse.spawn(), C.Aura.of({ ...sheet(2), note: value }));
+      sparse.add(
+        sparse.spawn(),
+        // @ts-expect-error None of these values is JSON.
+        C.Aura.of({ ...sheet(2), note: value })
+      );
       expect(problemOf(() => sparse.snapshot()).message).toContain(
         `"snap/Aura.note"`
       );
