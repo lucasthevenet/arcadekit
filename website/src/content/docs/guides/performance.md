@@ -151,7 +151,7 @@ The work [`@arcadekit/three`](drawing-with-three.md) does before Three.js takes 
 - An object per entity costs ten to twenty times as much as an instance, mostly Three.js keeping each object's Euler angles in sync with its quaternion. That's why crowds use instances.
 - An unrotated flat entity costs slightly less than a 3D one. A rotated one costs twice as much, 36 ns: a sine and a cosine each, where a quaternion takes a few multiplications.
 - With `smooth` interpolation, an entity costs about three times as much for a position, 27 ns, and four times for all three, 72 ns: each value is read, stored, and blended with the previous one. Ten thousand cost 0.27 to 0.83 ms of a frame, still with no per-entity allocation.
-- A per-instance colour costs about 6 ns more per entity, mostly the colour conversion. In the renderer's space, with `colorSpace: "srgb-linear"`, it costs 2 ns. Interpolated, it costs 22 ns more, the same as interpolating the position.
+- A per-instance colour costs about 6 ns more per entity, mostly the colour conversion. In the renderer's space, a `Color.Linear`, it costs 2 ns. Interpolated, it costs 22 ns more, the same as interpolating the position.
 - A look built from assets adds no per-entity cost: the loops are the same. Checking that the assets are still loaded happens twice per frame, allocates under a kilobyte, and takes too little time to measure.
 - In headless Chromium, the example page with 10,000 lit cubes grew its heap by 7 to 58 KB per frame, including the renderer's own allocations, and by 17 KB with a hundred cubes: per-frame allocation doesn't grow with what is drawn. Headless Chromium renders in software, so this says nothing about GPU rendering speed.
 

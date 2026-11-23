@@ -57,6 +57,11 @@
       "types": "./dist/Build.d.ts",
       "default": "./dist/Build.js"
     },
+    "./Color": {
+      "source": "./src/Color.ts",
+      "types": "./dist/Color.d.ts",
+      "default": "./dist/Color.js"
+    },
     "./Driver": {
       "source": "./src/Driver.ts",
       "types": "./dist/Driver.d.ts",

@@ -3,10 +3,10 @@ import {
   Action,
   App,
   Assets,
+  Color,
   Commands,
   Component,
   EntityId,
-  Field,
   Plugin,
   State,
   System,
@@ -34,11 +34,6 @@ const { Position } = Transform3d;
 
 const Tree = Component.tag("ta/Tree");
 const Deer = Component.tag("ta/Deer");
-const Paint = Component.define("ta/Paint", {
-  r: Field.f32,
-  g: Field.f32,
-  b: Field.f32,
-});
 const Level = State.define("ta/Level", ["menu", "forest"]);
 const Go = Action.define(
   "ta/Go",
@@ -60,10 +55,10 @@ const Arrive = Action.define(
   })
 );
 const arrive = Action.handler(Arrive, function* ({ kind, paint, x }) {
-  return (yield* Commands.spawns(Tree, Deer, Position, Paint)).spawn(
+  return (yield* Commands.spawns(Tree, Deer, Position, Color.Linear)).spawn(
     kind === "tree" ? Tree : Deer,
     at(x),
-    ...(paint === undefined ? [] : [Paint.of(paint)])
+    ...(paint === undefined ? [] : [Color.Linear.of(paint)])
   );
 });
 const Move = Action.define(
@@ -241,7 +236,7 @@ const geometry = new BoxGeometry(1, 1, 1);
 const makeTrees = (
   Forest: Forest,
   log: string[],
-  more: { readonly smooth?: boolean; readonly color?: typeof Paint } = {}
+  more: { readonly smooth?: boolean; readonly color?: typeof Color.Linear } = {}
 ) => {
   const looks: { readonly bark: Bark; readonly material: MeshBasicMaterial }[] =
     [];
@@ -251,8 +246,6 @@ const makeTrees = (
     of: Tree,
     from: Forest,
     capacity: 2,
-    // The renderer's own numbers, as they are.
-    colorSpace: "srgb-linear",
     ...more,
     look: ({ bark }) => {
       log.push(`look ${bark.load}`);
@@ -560,7 +553,10 @@ describe("instances whose look is made of assets", () => {
   it("are drawn between two ticks, and each in its colour, as any instances are", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
-    const { Trees } = makeTrees(Forest, log, { smooth: true, color: Paint });
+    const { Trees } = makeTrees(Forest, log, {
+      smooth: true,
+      color: Color.Linear,
+    });
     const { app, enter, mesh, moveTo, spawn } = play([during(Forest), Trees]);
     const tree = spawn("tree", 0, { r: 0.25, g: 0.5, b: 0.75 });
     // Not painted: drawn white, after the painted ones.
