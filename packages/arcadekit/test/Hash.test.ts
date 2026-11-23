@@ -14,6 +14,8 @@ import {
   Query,
   Random,
   System,
+  Timeline,
+  World,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
 
@@ -667,10 +669,25 @@ const KNOWN_HASH = 2_316_040_553;
 
 // --- through an app --------------------------------------------------------------
 
-const withApp = <T, A>(
+const withApp = <T extends Pick<App.Any, "read">, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+  use: (app: T, world: Effect.Success<typeof World>) => A
+): A =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.flatMap(make, (app) =>
+        Effect.map(app.read(World), (world) => use(app, world))
+      )
+    )
+  );
+
+const capture = (app: Timeline.Game): Timeline.Moment => {
+  const moment = Timeline.capture(app);
+  if (moment._tag !== "Success") {
+    throw new Error("the game could not be captured");
+  }
+  return moment.value;
+};
 
 describe("the hash of an app's world", () => {
   const Drift = System.tick("Drift", function* () {
@@ -686,11 +703,11 @@ describe("the hash of an app's world", () => {
     commands.spawn(Body.of({ x: 0, y: random.next() }));
   });
   const hashes = (make: Effect.Effect<App.Any, never, Scope.Scope>) =>
-    withApp(make, (app) => {
+    withApp(make, (app, world) => {
       const out: number[] = [];
       for (let i = 0; i < 100; i++) {
         app.tick(1 / 60);
-        out.push(app.world.hash());
+        out.push(world.hash());
       }
       return out;
     });
@@ -737,11 +754,11 @@ describe("the hash of an app's world", () => {
 
   it("covers the game's time, which the world holds", () => {
     const after = (deltas: readonly number[]) =>
-      withApp(App.make(App.define({}), { seed: 5 }), (app) => {
+      withApp(App.make(App.define({}), { seed: 5 }), (app, world) => {
         for (const delta of deltas) {
           app.tick(delta);
         }
-        return app.world.hash();
+        return world.hash();
       });
     const twice = after([1 / 60, 1 / 60]);
     expect(after([1 / 60, 1 / 60])).toBe(twice);
@@ -774,11 +791,11 @@ describe("the hash of an app's world", () => {
       ring: number | undefined,
       act: (app: Effect.Success<ReturnType<typeof make>>) => void = () => {}
     ) =>
-      withApp(make(), (app) => {
+      withApp(make(), (app, world) => {
         ringing = ring;
         app.tick(1 / 60);
         act(app);
-        return app.world.hash();
+        return world.hash();
       });
 
     it("the events the simulation has yet to read", () => {
@@ -808,7 +825,7 @@ describe("the hash of an app's world", () => {
     });
   });
 
-  it("is put back with the actions queued and the events waiting by the world alone, which every system then reads afresh", () => {
+  it("is put back by a rewind with the actions queued and the events waiting, which every system then reads afresh", () => {
     const Rang = Event.define("hash/Rang2", Schema.Struct({ n: Schema.Int }));
     const Push = Action.define("hash/Push2", Schema.Struct({ by: Schema.Int }));
     const heard: number[] = [];
@@ -832,17 +849,16 @@ describe("the hash of an app's world", () => {
       App.make(App.define({ systems: [Hear, Ring], handlers: [push] }), {
         seed: 5,
       }),
-      (app) => {
+      (app, world) => {
         app.tick(1 / 60);
         ringing = false;
         app.enqueue(Push, { by: 7 });
-        const hash = app.world.hash();
-        const bytes = app.world.snapshot();
+        const hash = world.hash();
+        const moment = capture(app);
         app.tick(1 / 60);
         expect([heard, pushed]).toEqual([[1], [7]]);
-        app.world.restore(bytes);
-        expect(app.world.hash()).toBe(hash);
-        expect(app.events.pending(Rang)).toBe(1);
+        Timeline.rewind(app, moment);
+        expect(world.hash()).toBe(hash);
         app.tick(1 / 60);
         expect([heard, pushed]).toEqual([
           [1, 1],
@@ -852,17 +868,20 @@ describe("the hash of an app's world", () => {
     );
   });
 
-  it("is put back with the game's time by the world alone", () => {
-    withApp(App.make(App.define({ systems: [Drift] }), { seed: 5 }), (app) => {
-      app.tick(1 / 60);
-      app.tick(1 / 30);
-      const time = { ...app.time };
-      const hash = app.world.hash();
-      const bytes = app.world.snapshot();
-      app.tick(1 / 60);
-      app.world.restore(bytes);
-      expect(app.time).toEqual(time);
-      expect(app.world.hash()).toBe(hash);
-    });
+  it("is put back with the game's time by a rewind", () => {
+    withApp(
+      App.make(App.define({ systems: [Drift] }), { seed: 5 }),
+      (app, world) => {
+        app.tick(1 / 60);
+        app.tick(1 / 30);
+        const time = { ...app.time };
+        const hash = world.hash();
+        const moment = capture(app);
+        app.tick(1 / 60);
+        Timeline.rewind(app, moment);
+        expect(app.time).toEqual(time);
+        expect(world.hash()).toBe(hash);
+      }
+    );
   });
 });

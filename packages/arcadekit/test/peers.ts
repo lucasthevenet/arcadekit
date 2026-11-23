@@ -164,9 +164,17 @@ export const Bot = System.tick("ls/Bot", function* () {
  * it is set for, a system moves a coin by a number that is not the game's.
  */
 let glitch: { tick: number; worlds: Set<EcsWorld> | "all" } | undefined;
-/** Sets the bug, or takes it away. */
-export const setGlitch = (to: typeof glitch): void => {
-  glitch = to;
+/** Sets the bug, in the worlds given as `app.read(World)` gives them, or takes it away. */
+export const setGlitch = (
+  to: { tick: number; worlds: Set<ReadingWorld> | "all" } | undefined
+): void => {
+  glitch =
+    to === undefined
+      ? undefined
+      : {
+          tick: to.tick,
+          worlds: to.worlds === "all" ? "all" : new Set([...to.worlds].map(whole)),
+        };
 };
 export const Fault = System.tick("ls/Fault", function* () {
   if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
@@ -225,7 +233,7 @@ export interface Peer {
   readonly app: SteeredGame;
   /** Its world, as `app.read(World)` gives it. */
   readonly world: ReadingWorld;
-  /** Its coins, as `app.read(Lying)` gives them. */
+  /** Its coins, as `app.read(Lying)` gives them, read again each time: a rollback ends a view. */
   readonly coins: QueryView<readonly [typeof Coin]>;
   /** A session, whether or not it runs ahead. */
   readonly session: Session.Session<Parts["e"], Parts["hu"]>;
@@ -269,11 +277,14 @@ export const withPeers = <A>(
             ...(setup.delay === undefined ? {} : { delay: setup.delay }),
             ahead: setup.ahead ?? 0,
           }).pipe(Effect.provide(Input.layer(source)));
+          const { app } = session;
           peers.push({
             name,
-            app: session.app,
-            world: yield* session.app.read(World),
-            coins: yield* session.app.read(Lying),
+            app,
+            world: yield* app.read(World),
+            get coins() {
+              return Effect.runSync(app.read(Lying));
+            },
             session,
             hashes: [],
             source,

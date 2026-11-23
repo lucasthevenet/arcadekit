@@ -16,6 +16,7 @@ import {
   Random,
   Singleton,
   System,
+  World,
 } from "../src/index";
 
 const withApp = <T, A, E = never>(
@@ -288,14 +289,24 @@ const Gambler = System.tick("Gambler", function* () {
   wait.left = random.pick([1, 2, 3]);
 });
 
+/** The game starts with one die. */
+const Begin = Plugin.make("rnd/Begin", {
+  setup: Effect.map(Commands.spawns(Die), (commands) => {
+    commands.spawn(Die.of({ face: 1, rolls: 0 }));
+  }),
+});
+
 const play = (seed: number | undefined, ticks: number) =>
   withApp(
     App.make(
-      App.define({ systems: [Sparks, Gambler], handlers: [roll] }),
+      App.define({
+        plugins: [Begin],
+        systems: [Sparks, Gambler],
+        handlers: [roll],
+      }),
       seed === undefined ? {} : { seed }
     ),
     (app) => {
-      app.world.spawn(Die.of({ face: 1, rolls: 0 }));
       for (let i = 0; i < ticks; i++) {
         if (i % 7 === 3) {
           app.dispatch(Roll, { sides: 6 });
@@ -308,35 +319,56 @@ const play = (seed: number | undefined, ticks: number) =>
 
 const snapshot = (app: App.Any) => {
   const sparks: [number, number, number][] = [];
-  app.world.view(Query.all(Spark)).each((spark, entity) => {
-    sparks.push([entity, spark.x, spark.y]);
-  });
   const dice: [number, number][] = [];
-  app.world.view(Query.all(Die)).each((die) => {
-    dice.push([die.face, die.rolls]);
-  });
+  const hash = Effect.runSync(
+    app.read(
+      Effect.gen(function* () {
+        (yield* Query.all(Spark)).each((spark, entity) => {
+          sparks.push([entity, spark.x, spark.y]);
+        });
+        (yield* Query.all(Die)).each((die) => {
+          dice.push([die.face, die.rolls]);
+        });
+        // It covers the generator's state, which is part of the world.
+        return (yield* World).hash();
+      })
+    )
+  );
   return {
     sparks,
     dice,
     log: app.actionLog,
     recording: app.record(),
-    generator: Array.from(app.world.random.state),
+    hash,
   };
 };
 
 describe("the Random service", () => {
   it("is the world's generator, so its state is part of the world", () => {
-    let seen: Rng | undefined;
+    let seen: number[] = [];
+    let drawing = false;
     const Probe = System.tick("Probe", function* () {
-      seen = yield* Random;
+      const random = yield* Random;
+      seen = Array.from(random.state);
+      if (drawing) {
+        random.bits();
+      }
     });
-    withApp(App.make(App.define({ systems: [Probe] }), { seed: 5 }), (app) => {
-      app.tick(1);
-      expect(seen).toBe(app.world.random);
-      expect(Array.from(app.world.random.state)).toEqual(
-        Array.from(new Rng(5).state)
+    const hashAfterATick = (draws: boolean) => {
+      drawing = draws;
+      return withApp(
+        App.make(App.define({ systems: [Probe] }), { seed: 5 }),
+        (app) => {
+          app.tick(1);
+          return Effect.runSync(app.read(World)).hash();
+        }
       );
-    });
+    };
+    const still = hashAfterATick(false);
+    expect(seen).toEqual(Array.from(new Rng(5).state));
+    expect(hashAfterATick(false)).toBe(still);
+    // A draw moves the generator, and the world with it.
+    expect(hashAfterATick(true)).not.toBe(still);
     expect(Random.key).toBe("arcadekit/Random");
   });
 
@@ -352,7 +384,7 @@ describe("the Random service", () => {
     expect(first.log.length).toBeGreaterThan(15);
 
     const other = play(2025, 120);
-    expect(other.generator).not.toEqual(first.generator);
+    expect(other.hash).not.toBe(first.hash);
     expect(other.sparks).not.toEqual(first.sparks);
     expect(other.log).not.toEqual(first.log);
     // Leaving the seed out is seed 0, not a different game each time.
@@ -364,11 +396,6 @@ describe("the Random service", () => {
     // The rolls are in the log as actions, so the replay runs the systems
     // and the handler, and must still draw the same numbers in the same order
     // to end in the same state.
-    const Begin = Plugin.make("rnd/Begin", {
-      setup: Effect.map(Commands.spawns(Die), (commands) => {
-        commands.spawn(Die.of({ face: 1, rolls: 0 }));
-      }),
-    });
     const Game = App.define({
       plugins: [Begin],
       systems: [Sparks],
@@ -435,7 +462,7 @@ describe("the Random service", () => {
       return withApp(
         App.make(App.define({ systems: [Draw] }), { seed }),
         (app) => {
-          const before = Array.from(app.world.random.state);
+          const before = Array.from(new Rng(seed).state);
           app.tick(1);
           // Effect's draws were from the world's generator, not from one of
           // their own: it had moved before anything drew from it by name.

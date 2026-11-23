@@ -1,4 +1,5 @@
 import { Effect, Exit, Schema } from "effect";
+import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,21 +13,21 @@ import {
   Field,
   Journal,
   Query,
-  Save,
   System,
   Ticks,
   Time,
   Timeline,
+  World,
   readSnapshot,
 } from "../src/index";
 import type { Entity } from "../src/index";
 import { Session } from "../src/net/index";
 import type { BuiltIn } from "../src/Services";
 import {
-  Coin,
   CoinGame,
   DELTA,
   Drop,
+  Lying,
   Take,
   Whisper,
   game,
@@ -36,24 +37,32 @@ import {
 } from "./peers";
 import type { Game, SteeredGame } from "./peers";
 
+/** Runs `use` with what `make` makes: a build, a sync test. */
+const withMade = <T, A>(
+  make: Effect.Effect<T, never, Scope.Scope>,
+  use: (made: T) => A
+): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+
 /** A stretch of a game, played by a seed: the same moves for the same seed. */
 const stretch = (app: Game, seed: number, ticks: number): number[] => {
   const dice = new EcsWorld({ seed }).random;
+  const world = Effect.runSync(app.read(World));
+  const lying = Effect.runSync(app.read(Lying));
   const hashes: number[] = [];
   for (let i = 0; i < ticks; i++) {
     const roll = dice.int(1, 5);
     if (roll <= 2) {
       app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
     } else if (roll === 3) {
-      const coins = app.world.view(Query.all(Coin)).entities();
-      if (coins.length > 0) {
-        app.enqueue(Take, { by: "grace", coin: dice.pick(coins) });
+      const [oldest, ...rest] = lying.entities();
+      if (oldest !== undefined) {
+        app.enqueue(Take, { by: "grace", coin: dice.pick([oldest, ...rest]) });
         // And once more, which is refused: the coin is gone by then.
-        app.enqueue(Take, { by: "ada", coin: coins[0]! });
+        app.enqueue(Take, { by: "ada", coin: oldest });
       }
     }
     app.tick(DELTA);
-    hashes.push(app.world.hash());
+    hashes.push(world.hash());
   }
   return hashes;
 };
@@ -69,7 +78,7 @@ const captured = (app: App.Any): Timeline.Moment => {
 describe("a game that is put back to a moment", () => {
   it("is the game it was, and goes on as that game did", () => {
     for (const seed of [1, 2, 3]) {
-      withApp(game(), (app) => {
+      withApp(game(), (app, world) => {
         stretch(app, seed, 40);
         // Something is waiting at this moment: an action for the next tick.
         app.enqueue(Drop, { by: "ada", value: 4 });
@@ -86,7 +95,7 @@ describe("a game that is put back to a moment", () => {
         // Another way from the same moment, and back again.
         Timeline.rewind(app, moment);
         stretch(app, seed + 20, 45);
-        expect(app.world.hash()).not.toBe(first.at(-1));
+        expect(world.hash()).not.toBe(first.at(-1));
         Timeline.rewind(app, moment);
         expect({
           save: app.save(),
@@ -262,38 +271,6 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
-  it("runs what was waiting to resume in the game it gives up", () => {
-    withApp(game(), (app) => {
-      app.tick(DELTA);
-      const moment = captured(app);
-      const count = app.world.entityCount;
-      // A fiber's work, queued for the next flush: it is of the game as it
-      // is now, and not of the one the rewind brings back.
-      app.dispatcher.scheduleTask(() => {
-        app.world.spawn(Coin.of({ value: 7, x: 0 }));
-      }, 0);
-      Timeline.rewind(app, moment);
-      expect(app.dispatcher.pending).toBe(0);
-      app.tick(DELTA);
-      expect(app.world.entityCount).toBe(count);
-    });
-  });
-
-  it("throws away commands that were queued and never applied", () => {
-    withApp(game(), (app) => {
-      app.dispatch(Drop, { by: "ada", value: 1 });
-      const moment = captured(app);
-      const count = app.world.entityCount;
-      const queued = app.commands.spawn(Coin.of({ value: 2, x: 0 }));
-      Timeline.rewind(app, moment);
-      expect(app.commands.size).toBe(0);
-      expect(app.world.entityCount).toBe(count);
-      expect(app.world.isAlive(queued)).toBe(false);
-      app.tick(DELTA);
-      expect(app.world.entityCount).toBe(count);
-    });
-  });
-
   it("is refused with a moment of another app, and in the middle of a tick", () => {
     const moment = withApp(game(), (app) => captured(app));
     withApp(game(), (app) => {
@@ -337,23 +314,17 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
-  it("cannot be captured with commands queued, or with a field that cannot be saved", () => {
+  it("cannot be captured with a field that cannot be saved", () => {
     const Holder = Component.define("rw/Holder", {
       thing: Field.json<unknown>(),
     });
-    withApp(App.make(App.define({})), (app) => {
-      app.commands.spawn(Holder.of({ thing: 1 }));
-      expect(Timeline.capture(app)).toEqual(
-        Exit.fail(
-          new Save.SaveRefused({
-            message:
-              "1 commands are queued and not applied. They are applied at the end of a tick: capture after one.",
-          })
-        )
-      );
-      app.commands.apply();
+    const Hold = Action.define("rw/Hold", Schema.Struct({}));
+    const hold = Action.handler(Hold, function* () {
+      (yield* Commands.spawns(Holder)).spawn(Holder.of({ thing: () => 1 }));
+    });
+    withApp(App.make(App.define({ handlers: [hold] })), (app) => {
       expect(Exit.isSuccess(Timeline.capture(app))).toBe(true);
-      app.world.spawn(Holder.of({ thing: () => 1 }));
+      app.dispatch(Hold, {});
       const refused = Timeline.capture(app);
       expect(Exit.isFailure(refused)).toBe(true);
       expect(String(Exit.isFailure(refused) ? refused.cause : "")).toMatch(
@@ -446,10 +417,10 @@ describe("the input stage across a rewind and a save", () => {
 
   it("leaves the hash as it was: that the devices were heard is no part of the game", () => {
     const Idle = System.input("rw/Idle", function* () {});
-    withApp(App.make(App.define({ systems: [Idle] })), (app) => {
-      const before = app.world.hash();
+    withApp(App.make(App.define({ systems: [Idle] })), (app, world) => {
+      const before = world.hash();
       app.input();
-      expect(app.world.hash()).toBe(before);
+      expect(world.hash()).toBe(before);
       // A save holds that it ran, all the same.
       const save = app.save();
       if (Exit.isFailure(save)) {
@@ -503,7 +474,7 @@ describe("what the stages between ticks hear across a rewind", () => {
   describe("to run the same ticks again, as a session does", () => {
     it("hear each event once, and what the ticks run again do otherwise", () => {
       const { heard, game: Ringing } = listening();
-      withApp(Build.build(Ringing, {}), (built) => {
+      withMade(Build.build(Ringing, {}), (built) => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
@@ -533,7 +504,7 @@ describe("what the stages between ticks hear across a rewind", () => {
 
     it("hear once what they heard of ticks whose events were dropped since", () => {
       const { heard, game: Ringing } = listening();
-      withApp(Build.build(Ringing, {}), (built) => {
+      withMade(Build.build(Ringing, {}), (built) => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
@@ -544,7 +515,9 @@ describe("what the stages between ticks hear across a rewind", () => {
           session.tick(DELTA);
           app.frame(0);
         }
-        expect(app.events.pending(Rang)).toBe(2);
+        expect(app.inspect().stores[Event.STORE]).toEqual({
+          "rw/Rang": [{ n: 5 }, { n: 5 }],
+        });
         heard.frame.length = 0;
         session.rewind(back);
         for (let i = 0; i < 4; i++) {
@@ -557,7 +530,7 @@ describe("what the stages between ticks hear across a rewind", () => {
 
     it("hear again none of what they heard before a moment was taken", () => {
       const { heard, game: Ringing } = listening();
-      withApp(Build.build(Ringing, {}), (built) => {
+      withMade(Build.build(Ringing, {}), (built) => {
         const session = steered(built);
         const { app } = session;
         // Taken before anything between ticks has run.
@@ -580,7 +553,7 @@ describe("what the stages between ticks hear across a rewind", () => {
 
     it("hear the events of ticks they never heard, after a rewind further back", () => {
       const { heard, game: Ringing } = listening();
-      withApp(Build.build(Ringing, {}), (built) => {
+      withMade(Build.build(Ringing, {}), (built) => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
@@ -599,7 +572,7 @@ describe("what the stages between ticks hear across a rewind", () => {
 
     it("hear an event a later tick now emits, though an earlier one emitted the same", () => {
       const { heard, game: Chiming } = listening(Chimed);
-      withApp(Build.build(Chiming, {}), (built) => {
+      withMade(Build.build(Chiming, {}), (built) => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
@@ -622,7 +595,7 @@ describe("what the stages between ticks hear across a rewind", () => {
 
     it("hear an event an earlier tick now emits, though a later one emitted the same", () => {
       const { heard, game: Chiming } = listening(Chimed);
-      withApp(Build.build(Chiming, {}), (built) => {
+      withMade(Build.build(Chiming, {}), (built) => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
@@ -646,7 +619,7 @@ describe("what the stages between ticks hear across a rewind", () => {
     it("leave the game as one that never went back", () => {
       const one = listening();
       const other = listening();
-      withApp(Build.build(one.game, {}), (built) =>
+      withMade(Build.build(one.game, {}), (built) =>
         withApp(other.make, (straight) => {
           const session = steered(built);
           const back = session.app;
@@ -662,7 +635,9 @@ describe("what the stages between ticks hear across a rewind", () => {
             straight.tick(DELTA);
             straight.frame(0);
           }
-          expect(back.world.hash()).toBe(straight.world.hash());
+          expect(Effect.runSync(back.read(World)).hash()).toBe(
+            Effect.runSync(straight.read(World)).hash()
+          );
           expect(back.save()).toEqual(straight.save());
           expect(one.heard.frame).toEqual(other.heard.frame);
         })
@@ -738,7 +713,7 @@ describe("Session.syncTest", () => {
     const After = System.tick("vr/After", function* () {
       (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: 0 }));
     });
-    withApp(
+    withMade(
       Session.syncTest(App.define({ systems: [Steady, Leaky, After] })),
       (test) => {
         const error = failure(() => test.tick(DELTA));
@@ -758,7 +733,7 @@ describe("Session.syncTest", () => {
       outside++;
       (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: outside }));
     });
-    withApp(
+    withMade(
       Session.syncTest(App.define({ systems: [Steady], handlers: [bump] })),
       (test) => {
         test.tick(DELTA);
@@ -777,7 +752,7 @@ describe("Session.syncTest", () => {
         return yield* Effect.fail("the second time");
       }
     });
-    withApp(
+    withMade(
       Session.syncTest(App.define({ systems: [Steady, Once] })),
       (test) => {
         const error = failure(() => test.tick(DELTA));
@@ -793,6 +768,7 @@ describe("Session.syncTest", () => {
       readonly checked: number;
     }) => {
       const { app } = test;
+      const world = Effect.runSync(app.read(World));
       const dice = new EcsWorld({ seed: 11 }).random;
       const hashes: number[] = [];
       for (let i = 0; i < 40; i++) {
@@ -800,7 +776,7 @@ describe("Session.syncTest", () => {
           app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
         }
         test.tick(DELTA);
-        hashes.push(app.world.hash());
+        hashes.push(world.hash());
       }
       return {
         hashes,
@@ -810,7 +786,7 @@ describe("Session.syncTest", () => {
     };
     const played = (checked: boolean) =>
       checked
-        ? withApp(
+        ? withMade(
             Session.syncTest(CoinGame, { seed: 5, checkpointEvery: 1 }),
             stepped
           )
@@ -838,7 +814,7 @@ describe("Session.syncTest", () => {
     const Keys = System.input("vr/Keys", function* () {
       keys.push(...(yield* Rang).read().map((rang) => rang.n));
     });
-    withApp(
+    withMade(
       Session.syncTest(App.define({ systems: [Steady, Ring, Draw, Keys] })),
       (test) => {
         for (let i = 0; i < 3; i++) {
@@ -848,7 +824,7 @@ describe("Session.syncTest", () => {
         expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
         // The input stage runs before each tick: it has heard the first two.
         expect(keys).toEqual([1, 2]);
-        expect(test.app.world.view(Marks).entities().length).toBe(3);
+        expect(Effect.runSync(test.app.read(Marks)).count()).toBe(3);
       }
     );
   });
@@ -860,7 +836,7 @@ describe("Session.syncTest", () => {
     const Hold = System.tick("vr/Hold", function* () {
       (yield* Commands.spawns(Held)).spawn(Held.of({ thing: () => 1 }));
     });
-    withApp(Session.syncTest(App.define({ systems: [Hold] })), (test) => {
+    withMade(Session.syncTest(App.define({ systems: [Hold] })), (test) => {
       expect(() =>
         // @ts-expect-error the app of a sync test has no tick: the test steps it
         test.app.tick(DELTA)

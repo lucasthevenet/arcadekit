@@ -427,6 +427,13 @@ describe("a level's assets", () => {
       seen.push((yield* Forest)._tag);
     });
     const Keep = Assets.during(State.is(Level, "forest"), Forest);
+    const Visit = Action.define(
+      "as/Visit",
+      Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
+    );
+    const visit = Action.handler(Visit, function* ({ to }) {
+      (yield* Level.sets).set(to);
+    });
     // It is of the stage before a frame's own.
     expect(Keep.stage).toBe("preFrame");
     await Effect.runPromise(
@@ -436,12 +443,13 @@ describe("a level's assets", () => {
             App.define({
               plugins: [Assets.plugin], // Listed after what draws with the bundle.
               systems: [Draw, Keep],
+              handlers: [visit],
             })
           );
           expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
           const go = (to: "menu" | "forest") =>
             Effect.sync(() => {
-              State.handleOf(app.world, Level).set(to);
+              app.dispatch(Visit, { to });
               app.tick(1);
               app.frame(0);
             });
@@ -621,7 +629,9 @@ describe("a level's assets", () => {
             seen.tick(1);
             seen.frame(0);
             unseen.tick(1);
-            expect(seen.world.hash()).toBe(unseen.world.hash());
+            expect((yield* seen.read(World)).hash()).toBe(
+              (yield* unseen.read(World)).hash()
+            );
           }
           expect(asked).toBe(0);
           expect(bare.log).toEqual([]);
@@ -634,7 +644,9 @@ describe("a level's assets", () => {
               checkpointEvery: 1,
             })
           ).pipe(Effect.provideService(Assets.Loader, counting));
-          expect(again.world.hash()).toBe(seen.world.hash());
+          expect((yield* again.read(World)).hash()).toBe(
+            (yield* seen.read(World)).hash()
+          );
           expect(asked).toBe(0);
         })
       )
@@ -700,13 +712,14 @@ describe("a level's assets", () => {
             "forest: forest Ready (Drawn, 26 bytes), cave Absent"
           );
           expect(reached).toEqual([]);
-          // The game that loaded is the game that did not.
-          expect(Array.from(seen.world.random.state)).toEqual(
-            Array.from(unseen.world.random.state)
-          );
+          // The game that loaded is the game that did not, its random
+          // numbers among the rest.
+          const seenWorld = yield* seen.read(World);
+          const unseenWorld = yield* unseen.read(World);
+          expect(seenWorld.hash()).toBe(unseenWorld.hash());
           seen.tick(1);
           unseen.tick(1);
-          expect(seen.world.hash()).toBe(unseen.world.hash());
+          expect(seenWorld.hash()).toBe(unseenWorld.hash());
         })
       ).pipe(Effect.provideService(Assets.Loader, loader))
     );
@@ -797,13 +810,13 @@ describe("a level's assets", () => {
           app.dispatch(Enter, {});
           step(0.1);
           step(0.1);
-          expect(app.world.view(Query.all(Wall)).count()).toBe(0);
+          expect((yield* app.read(Query.all(Wall))).count()).toBe(0);
           slow.waiting
             .get("/forest.json")!
             .arrive(new TextEncoder().encode('{"walls":4,"name":"Forest"}'));
           yield* Effect.promise(settle);
           step(0.1);
-          expect(app.world.view(Query.all(Wall)).count()).toBe(4);
+          expect((yield* app.read(Query.all(Wall))).count()).toBe(4);
           step(0.1);
           step(0.1);
           // Issued once.
@@ -821,7 +834,7 @@ describe("a level's assets", () => {
             },
           ]);
           return {
-            hash: app.world.hash(),
+            hash: (yield* app.read(World)).hash(),
             recording: app.record(),
           };
         })
@@ -837,8 +850,8 @@ describe("a level's assets", () => {
               checkpointEvery: 1,
             })
           );
-          expect(again.world.hash()).toBe(hash);
-          expect(again.world.view(Query.all(Wall)).count()).toBe(4);
+          expect((yield* again.read(World)).hash()).toBe(hash);
+          expect((yield* again.read(Query.all(Wall))).count()).toBe(4);
         })
       )
     );

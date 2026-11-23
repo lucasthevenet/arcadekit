@@ -19,6 +19,7 @@ import {
   State,
   System,
   Time,
+  World,
 } from "../src/index";
 import { steered } from "./peers";
 
@@ -44,6 +45,10 @@ const Bounced = Event.define(
 const Dropped = Event.define("sd/Dropped", Schema.Struct({}));
 const Drop = Action.define("sd/Drop", Schema.Struct({ height: Schema.Finite }));
 const Mute = Action.define("sd/Mute", Schema.Struct({ on: Schema.Boolean }));
+const Throw = Action.define(
+  "sd/Throw",
+  Schema.Struct({ speed: Schema.Finite })
+);
 
 class TooHigh extends Data.TaggedError("TooHigh")<{}> {}
 
@@ -98,6 +103,9 @@ const Rules = Plugin.make("sd/Rules", {
     Action.handler(Mute, function* ({ on }) {
       (yield* Phase.sets).set(on ? "muted" : "playing");
     }),
+    Action.handler(Throw, function* ({ speed }) {
+      (yield* Commands.spawns(Ball)).spawn(Ball.of({ y: 0.001, speed }));
+    }),
   ],
 });
 const Game = Plugin.make("sd/Game", {
@@ -116,8 +124,8 @@ const play = (output: Sound.OutputShape | undefined, seed = 1) => {
 };
 
 /** A ball that hits the floor on the next tick, at `speed`. */
-const about = (app: App.Any, speed: number): void => {
-  app.world.spawn(Ball.of({ y: 0.001, speed }));
+const about = (app: ReturnType<typeof play>, speed: number): void => {
+  app.dispatch(Throw, { speed });
 };
 
 describe("Sound.cues", () => {
@@ -448,11 +456,13 @@ describe("a game with sound", () => {
       app.dispatch(Drop, { height: 2 });
       app.dispatch(Drop, { height: 0.5 });
     }
+    const heardWorld = run(heard.read(World));
+    const deafWorld = run(deaf.read(World));
     for (let i = 0; i < 80; i++) {
       heard.tick(0.05);
       heard.frame(0.5);
       deaf.tick(0.05);
-      expect(heard.world.hash()).toBe(deaf.world.hash());
+      expect(heardWorld.hash()).toBe(deafWorld.hash());
     }
     expect(heard.actionLog).toEqual(deaf.actionLog);
     const saves = [heard.save(), deaf.save()].map((save) =>
@@ -461,7 +471,7 @@ describe("a game with sound", () => {
     expect(saves[0]).toBeDefined();
     expect(saves[0]).toEqual(saves[1]);
     // And it was heard: every bounce that was fast enough.
-    expect(heard.world.singleton(Bounces).count).toBeGreaterThan(5);
+    expect(run(heard.read(Bounces)).count).toBeGreaterThan(5);
     expect(
       sound.played.filter((one) => one.cue === "thud").length
     ).toBeGreaterThan(5);
@@ -484,7 +494,7 @@ describe("a game with sound", () => {
         App.make(Noisy, { ...start, checkpointEvery: 1 })
       ).pipe(Effect.provide(Sound.layer(again)))
     );
-    expect(replayed.world.hash()).toBe(app.world.hash());
+    expect(run(replayed.read(World)).hash()).toBe(run(app.read(World)).hash());
     expect(again.played).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import {
   App,
   Commands,
   Component,
+  EcsWorld,
   Event,
   Field,
   Journal,
@@ -78,6 +79,13 @@ describe("a game, from outside it", () => {
         const world = yield* app.read(World);
         // @ts-expect-error the world app.read gives has no spawn
         void world.spawn;
+        // Nor is it the world itself, which a check of its class would write through.
+        expect(world).not.toBeInstanceOf(EcsWorld);
+        const scoreFive = () => {
+          // @ts-expect-error a singleton it reads is read-only
+          world.singleton(Score).points = 5;
+        };
+        void scoreFive;
         const reads = [
           // @ts-expect-error commands change the game
           app.read(Commands.spawns(Position)),

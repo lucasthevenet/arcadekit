@@ -2,9 +2,10 @@ import { Cause, Effect, Exit, Result } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
+import { Input, World } from "../src/index";
 import { Message, Relay, Session, Transport } from "../src/net/index";
-import { CoinGame, DELTA, moves, players, purseOf } from "./peers";
-import type { Peer, SteeredGame } from "./peers";
+import { CoinGame, DELTA, Lying, moves, players, purseOf } from "./peers";
+import type { Peer } from "./peers";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
   from,
@@ -20,6 +21,47 @@ const messagesIn = (
   arrived: readonly (Message.Message | Message.Notice)[]
 ): Message.Message[] =>
   arrived.filter((one): one is Message.Message => "from" in one);
+
+/** A peer whose session is joined to a transport, which steps it. */
+interface Seat extends Peer {
+  readonly connected: Transport.Connected;
+}
+
+/** A peer of the game, joined to the room "match" of the relay at `url`. */
+const seatAt = (url: string, name: string) =>
+  Effect.gen(function* () {
+    const source = Input.makeManualSource();
+    const session = yield* Session.make(CoinGame, {
+      seed: 5,
+      checkpointEvery: 1,
+      peer: name,
+      peers: ["ada", "grace"],
+      delta: DELTA,
+    }).pipe(Effect.provide(Input.layer(source)));
+    const connected = yield* Transport.connect(session).pipe(
+      Effect.provide(
+        Transport.layerWebSocket(
+          Relay.address(url, { room: "match", peer: name })
+        )
+      )
+    );
+    const services = yield* Effect.context();
+    const seat: Seat = {
+      name,
+      app: session.app,
+      world: yield* session.app.read(World),
+      // Read again each time: a rollback restores the world, and a view
+      // does not outlive that.
+      get coins() {
+        return Effect.runSyncWith(services)(session.app.read(Lying));
+      },
+      session,
+      hashes: [],
+      source,
+      connected,
+    };
+    return seat;
+  });
 
 const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   if (Exit.isSuccess(exit)) {
@@ -519,35 +561,16 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const seats: {
-            name: string;
-            app: SteeredGame;
-            session: Peer["session"];
-            connected: Transport.Connected;
-          }[] = [];
+          const seats: Seat[] = [];
           for (const name of ["ada", "grace"]) {
-            const session = yield* Session.make(CoinGame, {
-              seed: 5,
-              checkpointEvery: 1,
-              peer: name,
-              peers: ["ada", "grace"],
-              delta: DELTA,
-            });
-            const connected = yield* Transport.connect(session).pipe(
-              Effect.provide(
-                Transport.layerWebSocket(
-                  Relay.address(served.url, { room: "match", peer: name })
-                )
-              )
-            );
-            seats.push({ name, app: session.app, session, connected });
+            seats.push(yield* seatAt(served.url, name));
           }
           const act = players(31);
-          const [one, two] = seats as [(typeof seats)[0], (typeof seats)[0]];
+          const [one, two] = seats as [Seat, Seat];
           for (let i = 0; i < 60; i++) {
             for (const seat of seats) {
               if (i < 40) {
-                act(seat as unknown as Peer);
+                act(seat);
               }
               seat.connected.tick();
               yield* Effect.promise(() => later(1));
@@ -568,7 +591,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           }
           expect(one.app.time.tick).toBe(two.app.time.tick);
           expect(one.app.time.tick).toBeGreaterThan(40);
-          expect(one.app.world.hash()).toBe(two.app.world.hash());
+          expect(one.world.hash()).toBe(two.world.hash());
           expect(one.app.actionLog).toEqual(two.app.actionLog);
           expect(one.session.drifted).toBeUndefined();
           // Tips went to whoever issued them, by the name the relay knows.
@@ -589,7 +612,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           expect(tips.some((entry) => entry.from === "ada")).toBe(true);
           expect(tips.some((entry) => entry.from === "grace")).toBe(true);
           expect(tips.every((entry) => entry.refused === undefined)).toBe(true);
-          expect(purseOf(two.app)).toEqual(purseOf(one.app));
+          expect(purseOf(two.world)).toEqual(purseOf(one.world));
         })
       )
     );
@@ -601,36 +624,17 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const seats: {
-            name: string;
-            app: SteeredGame;
-            session: Peer["session"];
-            connected: Transport.Connected;
-          }[] = [];
+          const seats: Seat[] = [];
           for (const name of ["ada", "grace"]) {
-            const session = yield* Session.make(CoinGame, {
-              seed: 5,
-              checkpointEvery: 1,
-              peer: name,
-              peers: ["ada", "grace"],
-              delta: DELTA,
-            });
-            const connected = yield* Transport.connect(session).pipe(
-              Effect.provide(
-                Transport.layerWebSocket(
-                  Relay.address(served.url, { room: "match", peer: name })
-                )
-              )
-            );
-            seats.push({ name, app: session.app, session, connected });
+            seats.push(yield* seatAt(served.url, name));
           }
           const act = players(41);
-          const [one, two] = seats as [(typeof seats)[0], (typeof seats)[0]];
+          const [one, two] = seats as [Seat, Seat];
           const play = (rounds: number) =>
             Effect.gen(function* () {
               for (let i = 0; i < rounds; i++) {
                 for (const seat of seats) {
-                  act(seat as unknown as Peer);
+                  act(seat);
                   seat.connected.tick();
                   yield* Effect.promise(() => later(1));
                 }
@@ -658,7 +662,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           }
           expect(one.app.time.tick).toBe(two.app.time.tick);
           expect(one.app.time.tick).toBeGreaterThanOrEqual(80);
-          expect(one.app.world.hash()).toBe(two.app.world.hash());
+          expect(one.world.hash()).toBe(two.world.hash());
           expect(one.app.actionLog).toEqual(two.app.actionLog);
           expect(moves(one.app.actionLog).length).toBeGreaterThan(20);
           expect(one.session.drifted).toBeUndefined();

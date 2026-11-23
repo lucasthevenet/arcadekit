@@ -32,6 +32,7 @@ import {
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
+const Flown = Query.all(Ship);
 
 const run = <A, E>(effect: Effect.Effect<A, E, ScopeType.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -74,7 +75,7 @@ const Flying = Plugin.make("Flying", {
 });
 const ship = (app: App.Any): { x: number; shots: number } => {
   let found = { x: Number.NaN, shots: Number.NaN };
-  app.world.view(Ships).each((one) => {
+  Effect.runSync(app.read(Flown)).each((one) => {
     found = { x: one.x, shots: one.shots };
   });
   return found;

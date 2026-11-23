@@ -2,7 +2,7 @@ import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { App, Build, Save } from "../src/index";
+import { App, Build, Save, World } from "../src/index";
 import { Session } from "../src/net/index";
 import { CoinGame, DELTA, Drop, game } from "./peers";
 
@@ -24,7 +24,9 @@ describe("a session", () => {
         expect(app.time.tick).toBe(0);
         // The same game, made the same way, is the same world.
         const single = yield* game(5, 1);
-        expect(app.world.hash()).toBe(single.world.hash());
+        expect((yield* app.read(World)).hash()).toBe(
+          (yield* single.read(World)).hash()
+        );
         // What is enqueued on its app is the session's to apply.
         app.enqueue(Drop, { by: "ada", value: 3 });
         expect(session.tick()).toBe(true);
@@ -45,7 +47,7 @@ describe("a session", () => {
         }
         const saved = app.save();
         assert(Exit.isSuccess(saved));
-        return { save: saved.value, hash: app.world.hash() };
+        return { save: saved.value, hash: (yield* app.read(World)).hash() };
       })
     );
     run(
@@ -55,7 +57,7 @@ describe("a session", () => {
           save: save.save,
         });
         expect(session.app.time.tick).toBe(4);
-        expect(session.app.world.hash()).toBe(save.hash);
+        expect((yield* session.app.read(World)).hash()).toBe(save.hash);
         expect(session.tick()).toBe(true);
         expect(session.app.time.tick).toBe(5);
       })
@@ -143,7 +145,9 @@ describe("taking an app over", () => {
         for (let i = 0; i < 5; i++) {
           single.tick(DELTA);
         }
-        expect(test.app.world.hash()).toBe(single.world.hash());
+        expect((yield* test.app.read(World)).hash()).toBe(
+          (yield* single.read(World)).hash()
+        );
       })
     );
   });

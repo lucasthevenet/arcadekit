@@ -5,12 +5,15 @@ import { describe, expect, it } from "vitest";
 import {
   Action,
   App,
+  Commands,
   Component,
   Field,
+  Plugin,
   Query,
   Random,
   State,
   System,
+  World,
 } from "../src/index";
 
 /** A tracer that keeps every span it makes, in the order it made them. */
@@ -85,18 +88,21 @@ const handlers = [
   }),
 ];
 
+const Start = Plugin.make("tr/Start", {
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Count)).spawn(Count.of({ n: 0 }));
+  }),
+});
+
 const game = () =>
-  Effect.gen(function* () {
-    const app = yield* App.make(
-      App.define({
-        systems: [Grow, Roll, Asleep, Opening, Draw, Read],
-        handlers,
-      }),
-      { seed: 7 }
-    );
-    app.world.spawn(Count.of({ n: 0 }));
-    return app;
-  });
+  App.make(
+    App.define({
+      plugins: [Start],
+      systems: [Grow, Roll, Asleep, Opening, Draw, Read],
+      handlers,
+    }),
+    { seed: 7 }
+  );
 
 describe("tracing an app", () => {
   it("makes a span for each tick, holding the actions applied in it and a span for each system's turn", () => {
@@ -214,13 +220,15 @@ describe("tracing an app", () => {
     const { spans, tracer } = recorder();
     const tracing = traced(tracer, game());
     const quiet = Effect.runSync(Effect.scoped(game()));
+    const tracingWorld = Effect.runSync(tracing.read(World));
+    const quietWorld = Effect.runSync(quiet.read(World));
     for (let tick = 0; tick < 30; tick++) {
       for (const app of [tracing, quiet]) {
         app.enqueue(Add, { by: tick });
         app.tick(1 / 60);
         app.frame(0.5);
       }
-      expect(tracing.world.hash()).toBe(quiet.world.hash());
+      expect(tracingWorld.hash()).toBe(quietWorld.hash());
     }
     expect(spans.length).toBeGreaterThan(0);
   });

@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import type { Terms } from "../src/ecs/query";
 import {
@@ -9,6 +9,7 @@ import {
   Commands,
   Component,
   EcsWorld,
+  EntityId,
   Field,
   Journal,
   Migrate,
@@ -17,6 +18,7 @@ import {
   Save,
   System,
   Time,
+  World,
   readSnapshot,
   writeSnapshot,
 } from "../src/index";
@@ -1232,9 +1234,11 @@ const Tally = Component.define("ch/Tally", {
   early: Field.u32,
 });
 const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
-const tallyOf = (app: App.Any) => {
+/** The tallies, read from outside the game. */
+const Tallied = Query.all(Tally);
+const tallyOf = (app: Pick<App.Any, "read">) => {
   let out: Record<string, number> = {};
-  app.world.view(Tallies).each((tally) => {
+  Effect.runSync(app.read(Tallied)).each((tally) => {
     out = {
       moved: tally.moved,
       hurt: tally.hurt,
@@ -1378,11 +1382,15 @@ describe("change queries in an app", () => {
   it("do not show a refused action's writes to anyone", () => {
     run(
       Effect.gen(function* () {
+        const One = Plugin.make("ch/One", {
+          setup: Effect.map(Commands.spawns(Tally, Position), (commands) => {
+            commands.spawn(Tally);
+            commands.spawn(Position.of({ x: 0, y: 0 }));
+          }),
+        });
         const quiet = yield* App.make(
-          App.define({ systems: [Count], handlers: [push] })
+          App.define({ plugins: [One], systems: [Count], handlers: [push] })
         );
-        quiet.world.spawn(Tally);
-        quiet.world.spawn(Position.of({ x: 0, y: 0 }));
         quiet.tick(1);
         expect(tallyOf(quiet).moved).toBe(1);
         expect(
@@ -1397,7 +1405,7 @@ describe("change queries in an app", () => {
     );
   });
 
-  it("give a handler and a script a place of their own", () => {
+  it("give a handler a place of its own, apart from the systems'", () => {
     const Inspect = Action.define("ch/Inspect", Schema.Struct({}));
     const inspect = Action.handler(Inspect, function* () {
       return (yield* Moved).entities().length;
@@ -1408,32 +1416,28 @@ describe("change queries in an app", () => {
         const Watch = System.tick("Watch", function* () {
           watched.push((yield* Moved).entities().length);
         });
+        const Three = Plugin.make("ch/Three", {
+          setup: Effect.map(Commands.spawns(Position), (commands) => {
+            for (let n = 0; n < 3; n++) {
+              commands.spawn(Position.of({ x: n, y: 0 }));
+            }
+          }),
+        });
         const app = yield* App.make(
-          App.define({ systems: [Watch], handlers: [inspect, push] })
+          App.define({
+            plugins: [Three],
+            systems: [Watch],
+            handlers: [inspect, push],
+          })
         );
-        for (let n = 0; n < 3; n++) {
-          app.world.spawn(Position.of({ x: n, y: 0 }));
-        }
-        const seen: number[] = [];
-        // Read between ticks, from the place everything outside the
-        // simulation shares.
-        const peek = () => {
-          seen.push(app.world.view(Moved).entities().length);
-        };
-        peek();
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(3));
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(0));
         app.dispatch(Push, { slot: 1, refuse: false });
         app.tick(1);
-        peek();
         expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(1));
         app.tick(1);
-        peek();
         // Each reads from its own place.
-        expect(seen).toEqual([3, 1, 0]);
         expect(watched).toEqual([3, 0]);
-        // Between ticks nobody in particular is asking.
-        expect(app.world.reader).toBeUndefined();
       })
     );
   });
@@ -1449,7 +1453,9 @@ describe("change queries in an app", () => {
         const again = yield* Journal.replay(played, (start) =>
           App.make(Game, { ...start, checkpointEvery: 1 })
         );
-        expect(again.world.hash()).toBe(app.world.hash());
+        expect((yield* again.read(World)).hash()).toBe(
+          (yield* app.read(World)).hash()
+        );
         expect(tallyOf(again)).toEqual(tallyOf(app));
       })
     );
@@ -1483,7 +1489,9 @@ describe("change queries in an app", () => {
             App.make(Game, { ...start, checkpointEvery: 1 })
           );
           expect(tallyOf(loaded)).toEqual(tallyOf(app));
-          expect(loaded.world.hash()).toBe(app.world.hash());
+          expect((yield* loaded.read(World)).hash()).toBe(
+            (yield* app.read(World)).hash()
+          );
         })
       );
     }
@@ -1494,28 +1502,40 @@ describe("change queries in an app", () => {
     const Placed = Query.all(Place).pipe(Query.changed(Place));
     const Look = Action.define("ch/Look", Schema.Struct({}));
     const before = Action.handler(Look, function* () {
-      return [(yield* Moved).count(), (yield* Hurt).count()];
+      const counts = [(yield* Moved).count(), (yield* Hurt).count()];
+      // Counting is not visiting: these are.
+      (yield* Moved).entities();
+      (yield* Hurt).entities();
+      return counts;
     });
     const after = Action.handler(Look, function* () {
       return [(yield* Placed).count(), (yield* Hurt).count()];
     });
+    const Hit = Action.define("ch/Hit", Schema.Struct({ entity: EntityId }));
+    const hit = Action.handler(Hit, function* ({ entity }) {
+      const world = yield* World.writes(Health, Position);
+      world.set(entity, Health, { hp: 9 });
+      world.set(entity, Position, { x: 9 });
+    });
+    const made: Entity[] = [];
+    const Four = Plugin.make("ch/Four", {
+      setup: Effect.map(Commands.spawns(Position, Health), (commands) => {
+        for (let n = 0; n < 4; n++) {
+          made.push(
+            commands.spawn(Position.of({ x: n, y: 0 }), Health.of({ hp: n }))
+          );
+        }
+      }),
+    });
     run(
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({ handlers: [before] }));
-        const { entities } = (() => {
-          const made: Entity[] = [];
-          for (let n = 0; n < 4; n++) {
-            made.push(
-              app.world.spawn(Position.of({ x: n, y: 0 }), Health.of({ hp: n }))
-            );
-          }
-          return { entities: made };
-        })();
+        const app = yield* App.make(
+          App.define({ plugins: [Four], handlers: [before, hit] })
+        );
+        const [, second] = made;
+        assert(second !== undefined);
         expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4]));
-        app.world.view(Moved, "action:ch/Look").entities();
-        app.world.view(Hurt, "action:ch/Look").entities();
-        app.world.set(entities[1]!, Health, { hp: 9 });
-        app.world.set(entities[1]!, Position, { x: 9 });
+        app.dispatch(Hit, { entity: second });
         const save = app.save();
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");

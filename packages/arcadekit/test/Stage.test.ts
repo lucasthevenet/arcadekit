@@ -19,10 +19,12 @@ import {
   System,
   Ticks,
   View,
+  World,
 } from "../src/index";
 
 const Position = Component.define("stg/Position", { x: Field.f32 });
 const Moving = Query.all(Position).pipe(Query.writes(Position));
+const Placed = Query.all(Position);
 const Moved = Event.define("stg/Moved", Schema.Struct({ x: Schema.Number }));
 const Phase = State.define("stg/Phase", ["menu", "playing"]);
 const Turn = Singleton.define("stg/Turn", { player: Field.u8 }, { player: 1 });
@@ -43,17 +45,28 @@ const Read = System.frame("stg/Read", function* () {
 
 const seen: number[] = [];
 
+const Start = Plugin.make("stg/Start", {
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0 }));
+  }),
+});
+
 describe("a system's stage", () => {
   it("emits from the tick and reads that event from the frame", () => {
     seen.length = 0;
     const app = Effect.runSync(
-      Effect.scoped(App.make(App.define({ systems: [Move, Read] })))
+      Effect.scoped(
+        App.make(App.define({ plugins: [Start], systems: [Move, Read] }))
+      )
     );
-    const id = app.world.spawn(Position.of({ x: 0 }));
     app.tick(1);
     app.frame(0);
     expect(seen).toEqual([1]);
-    expect(app.world.get(id, Position)?.x).toBe(1);
+    const world = Effect.runSync(app.read(World));
+    const positions = Effect.runSync(app.read(Placed))
+      .entities()
+      .map((id) => world.get(id, Position)?.x);
+    expect(positions).toEqual([1]);
   });
 
   it("refuses what the other stages do", () => {

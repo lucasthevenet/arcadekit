@@ -9,6 +9,7 @@ import {
   Component,
   Event,
   Field,
+  Plugin,
   Query,
   Singleton,
   State,
@@ -16,6 +17,7 @@ import {
   Timeline,
   World,
 } from "../src/index";
+import type { Entity } from "../src/index";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -87,23 +89,38 @@ const game = App.make(
   App.define({ systems: [Draw, Read, Move, Scorer, Asleep, Opening], handlers })
 );
 
+const worldOf = (app: Pick<App.Any, "read">) => Effect.runSync(app.read(World));
+
 describe("app.inspect", () => {
   it("copies every live entity, in order, with its components by name, sparse ones and tags included", () => {
-    const app = run(game);
-    const { world } = app;
-    const parent = world.spawn(
-      Position.of({ x: 1, y: 2 }),
-      Boss,
-      Name.of({ text: "boss" })
-    );
-    const gone = world.spawn(Position.of({ x: 9, y: 9 }));
-    const child = world.spawn(
-      Position.of({ x: 3, y: 4 }),
-      Heat.of({ degrees: 40 }),
-      ChildOf.of({ target: parent })
-    );
-    const bare = world.spawn();
-    world.despawn(gone);
+    const ids: Entity[] = [];
+    const Seed = Plugin.make("in/Seed", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(
+          Position,
+          Boss,
+          Name,
+          Heat,
+          ChildOf
+        );
+        const parent = commands.spawn(
+          Position.of({ x: 1, y: 2 }),
+          Boss,
+          Name.of({ text: "boss" })
+        );
+        const gone = commands.spawn(Position.of({ x: 9, y: 9 }));
+        const child = commands.spawn(
+          Position.of({ x: 3, y: 4 }),
+          Heat.of({ degrees: 40 }),
+          ChildOf.of({ target: parent })
+        );
+        const bare = commands.spawn();
+        commands.despawn(gone);
+        ids.push(parent, child, bare);
+      }),
+    });
+    const app = run(App.make(App.define({ plugins: [Seed] })));
+    const [parent, child, bare] = ids;
 
     const { entities } = app.inspect();
     expect(entities).toEqual([
@@ -129,7 +146,7 @@ describe("app.inspect", () => {
 
   it("copies every singleton the world holds, by name", () => {
     const app = run(game);
-    app.world.singleton(Score).points = 7;
+    app.enqueue(Strike, { by: 7 });
     app.tick(1 / 60, { input: false });
     expect(app.inspect().singletons["in/Score"]).toEqual({ points: 7 });
   });
@@ -139,7 +156,8 @@ describe("app.inspect", () => {
     expect(app.inspect().stores).toEqual({});
     app.dispatch(Strike, { by: 5 });
     app.enqueue(Strike, { by: 6 });
-    const hash = app.world.hash();
+    const world = worldOf(app);
+    const hash = world.hash();
     const { stores } = app.inspect();
     expect(stores).toEqual({
       [Action.INTAKE]: {
@@ -152,25 +170,34 @@ describe("app.inspect", () => {
     (stores[Event.STORE] as Record<string, { by: number }[]>)[
       "in/Hit"
     ]![0]!.by = 100;
-    expect(app.world.hash()).toBe(hash);
+    expect(world.hash()).toBe(hash);
     app.tick(1 / 60, { input: false });
     app.tick(1 / 60, { input: false });
     expect(app.inspect().stores).toEqual({});
   });
 
   it("hands out copies, which change nothing of the game when written", () => {
-    const app = run(game);
-    app.world.spawn(Position.of({ x: 1, y: 2 }));
-    app.world.singleton(Score).points = 3;
-    const hash = app.world.hash();
+    const Seed = Plugin.make("in/Seed", {
+      setup: Effect.gen(function* () {
+        (yield* Commands.spawns(Position)).spawn(Position.of({ x: 1, y: 2 }));
+      }),
+    });
+    const app = run(
+      App.make(App.define({ plugins: [Seed], systems: [Scorer], handlers }))
+    );
+    app.enqueue(Strike, { by: 3 });
+    app.tick(1 / 60);
+    const world = worldOf(app);
+    expect(world.singleton(Score).points).toBe(3);
+    const hash = world.hash();
     const inspection = app.inspect();
-    expect(app.world.hash()).toBe(hash);
+    expect(world.hash()).toBe(hash);
     const position = inspection.entities[0]!.components["in/Position"] as {
       x: number;
     };
     position.x = 100;
     (inspection.singletons["in/Score"] as { points: number }).points = 100;
-    expect(app.world.hash()).toBe(hash);
+    expect(world.hash()).toBe(hash);
     expect(app.inspect().entities[0]!.components["in/Position"]).toEqual({
       x: 1,
       y: 2,

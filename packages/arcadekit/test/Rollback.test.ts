@@ -1,11 +1,14 @@
 import { Effect, Exit } from "effect";
+import type { Scope } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   App,
+  Commands,
   Component,
   Field,
   Journal,
+  Plugin,
   Query,
   Save,
   System,
@@ -31,6 +34,12 @@ import {
   withPeers,
 } from "./peers";
 import type { Network, Peer } from "./peers";
+
+/** Runs `use` with what `make` makes: a session. */
+const withMade = <T, A>(
+  make: Effect.Effect<T, never, Scope.Scope>,
+  use: (made: T) => A
+): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
 /**
  * Lets a game come to rest: rounds in which nobody issues anything, long
@@ -71,7 +80,7 @@ describe("a rollback session", () => {
       };
       expect(moves(ada.app.actionLog).at(-1)).toEqual(move);
       const coin = coinsOf(ada).at(-1)!;
-      expect(ada.app.world.get(coin, Coin)?.value).toBe(9);
+      expect(ada.world.get(coin, Coin)?.value).toBe(9);
       // Grace has run that tick too, and has not heard of it.
       expect(grace.app.time.tick).toBe(6);
       expect(moves(grace.app.actionLog)).not.toContainEqual(move);
@@ -81,7 +90,7 @@ describe("a rollback session", () => {
       // tick the message arrived in.
       expect(moves(grace.app.actionLog)).toContainEqual(move);
       expect(grace.session.rewinds).toBeGreaterThan(before);
-      expect(grace.app.world.hash()).toBe(ada.app.world.hash());
+      expect(grace.world.hash()).toBe(ada.world.hash());
     });
   });
 
@@ -117,7 +126,7 @@ describe("a rollback session", () => {
           logged.some((entry) => entry.refused !== undefined),
           where
         ).toBe(true);
-        const purse = ada.app.world.singleton(Purse);
+        const purse = ada.world.singleton(Purse);
         expect(purse.taken, where).toBeGreaterThan(0);
         expect(purse.tallied, where).toBeGreaterThan(0);
         expect(purse.born, where).toBeGreaterThan(40);
@@ -136,7 +145,7 @@ describe("a rollback session", () => {
         expect(ada.session.kept, where).toBeLessThanOrEqual(ahead);
         expect(ada.session.kept, where).toBeLessThanOrEqual(lag.max + 1);
         // The same game on both.
-        expect(ada.app.world.hash(), where).toBe(grace.app.world.hash());
+        expect(ada.world.hash(), where).toBe(grace.world.hash());
         expect(ada.app.actionLog, where).toEqual(grace.app.actionLog);
         expect(ada.session.drifted, where).toBeUndefined();
         expect(grace.session.drifted, where).toBeUndefined();
@@ -148,9 +157,9 @@ describe("a rollback session", () => {
           Journal.replay(played, (start) =>
             App.make(CoinGame, { ...start, checkpointEvery: 1 })
           ),
-          (alone) => {
-            expect(alone.world.hash(), where).toBe(ada.app.world.hash());
-            expect({ ...alone.world.singleton(Purse) }, where).toEqual({
+          (_, alone) => {
+            expect(alone.hash(), where).toBe(ada.world.hash());
+            expect({ ...alone.singleton(Purse) }, where).toEqual({
               ...purse,
             });
           }
@@ -171,7 +180,7 @@ describe("a rollback session", () => {
       const ticks = settle(peers, net, 6);
       const [first, ...others] = peers as [Peer, Peer, Peer];
       for (const other of others) {
-        expect(other.app.world.hash()).toBe(first.app.world.hash());
+        expect(other.world.hash()).toBe(first.world.hash());
         expect(other.app.actionLog).toEqual(first.app.actionLog);
         expect(other.session.drifted).toBeUndefined();
       }
@@ -182,8 +191,8 @@ describe("a rollback session", () => {
         Journal.replay(recording, (start) =>
           App.make(CoinGame, { ...start, checkpointEvery: 1 })
         ),
-        (alone) => {
-          expect(alone.world.hash()).toBe(first.app.world.hash());
+        (_, alone) => {
+          expect(alone.hash()).toBe(first.world.hash());
         }
       );
     });
@@ -286,35 +295,25 @@ describe("a rollback session", () => {
               peers: ["ada", "grace"],
               delta: DELTA,
             }),
-            (session) => {
-              const count = { captures: 0 };
-              // A capture of the game is one of its world.
-              const { world } = session.app;
-              const capture = world._capture.bind(world);
-              world._capture = () => {
-                count.captures++;
-                return capture();
-              };
-              return { count, session };
-            }
+            (session) => session
           );
           // Grace says everything before ada runs: ada is sure of every tick.
           const sure = yield* counted;
-          const start = sure.session.peers.length;
+          const start = sure.peers.length;
           expect(start).toBe(2);
           for (let tick = 0; tick < 20; tick++) {
-            sure.session.receive({ from: "grace", tick, actions: [] });
-            expect(sure.session.tick()).toBe(true);
+            sure.receive({ from: "grace", tick, actions: [] });
+            expect(sure.tick()).toBe(true);
+            expect(sure.kept).toBe(0);
           }
-          expect(sure.count.captures).toBe(0);
-          expect(sure.session.confirmed).toBe(20);
+          expect(sure.confirmed).toBe(20);
           // Grace says nothing: every tick is a guess, and is captured.
           const unsure = yield* counted;
           for (let tick = 0; tick < 5; tick++) {
-            expect(unsure.session.tick()).toBe(true);
+            expect(unsure.tick()).toBe(true);
+            expect(unsure.kept).toBe(tick + 1);
           }
-          expect(unsure.count.captures).toBe(5);
-          expect(unsure.session.confirmed).toBe(0);
+          expect(unsure.confirmed).toBe(0);
         })
       )
     );
@@ -347,7 +346,7 @@ describe("a rollback session", () => {
   });
 
   it("runs eight ticks ahead unless told, and none with a delay of its own", () => {
-    withApp(
+    withMade(
       Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
@@ -367,7 +366,7 @@ describe("a rollback session", () => {
     );
     for (const ahead of [-1, 1.5, Number.NaN]) {
       expect(() =>
-        withApp(
+        withMade(
           Session.make(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
@@ -417,7 +416,7 @@ describe("a rollback session", () => {
         );
       expect(order(ada)).toEqual([3, 1, 2]);
       expect(order(grace)).toEqual([3, 1, 2]);
-      expect(ada.app.world.hash()).toBe(grace.app.world.hash());
+      expect(ada.world.hash()).toBe(grace.world.hash());
     });
   });
 
@@ -430,17 +429,17 @@ describe("a rollback session", () => {
       const coin = coinsOf(grace)[0]!;
       // The first of them: the bot has dropped others since.
       expect(coinsOf(ada)).toEqual(coinsOf(grace));
-      expect(ada.app.world.get(coin, Coin)?.value).toBe(5);
+      expect(ada.world.get(coin, Coin)?.value).toBe(5);
       // Both go for it on the same tick. Each sees itself take it.
       ada.app.enqueue(Take, { by: "ada", coin });
       grace.app.enqueue(Take, { by: "grace", coin });
       round(peers, net);
-      expect(ada.app.world.singleton(Purse).ada).toBe(5);
-      expect(grace.app.world.singleton(Purse).grace).toBe(5);
+      expect(ada.world.singleton(Purse).ada).toBe(5);
+      expect(grace.world.singleton(Purse).grace).toBe(5);
       settle(peers, net, 5);
       // Ada's name comes first: hers stands on both, and grace's is taken back.
       for (const peer of peers) {
-        const purse = peer.app.world.singleton(Purse);
+        const purse = peer.world.singleton(Purse);
         expect({
           ada: purse.ada,
           grace: purse.grace,
@@ -503,15 +502,19 @@ describe("a rollback session", () => {
         });
       }
     });
-    withApp(
-      Session.make(App.define({ systems: [Spoil] }), {
+    const Hold = Plugin.make("rb/Hold", {
+      setup: Effect.map(Commands.spawns(Holder), (commands) => {
+        commands.spawn(Holder.of({ thing: "fine" }));
+      }),
+    });
+    withMade(
+      Session.make(App.define({ plugins: [Hold], systems: [Spoil] }), {
         peer: "ada",
         peers: ["ada", "grace"],
         delta: DELTA,
       }),
       (session) => {
         const { app } = session;
-        app.world.spawn(Holder.of({ thing: "fine" }));
         expect(session.tickExit()).toEqual(Exit.succeed(true));
         expect(session.tickExit()).toEqual(Exit.succeed(true));
         const exit = session.tickExit();

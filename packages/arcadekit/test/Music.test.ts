@@ -13,6 +13,7 @@ import {
   Sound,
   State,
   System,
+  World,
 } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 
@@ -270,7 +271,9 @@ describe("Sound.music", () => {
       app.tick(0.1);
     }
     heard.app.frame(0);
-    expect(heard.app.world.hash()).toBe(deaf.app.world.hash());
+    const hashOf = (app: App.Any): number =>
+      Effect.runSync(app.read(World)).hash();
+    expect(hashOf(heard.app)).toBe(hashOf(deaf.app));
     expect(heard.app.actionLog).toEqual(deaf.app.actionLog);
     const saves = [heard.app.save(), deaf.app.save()].map((save) =>
       Exit.isSuccess(save) ? save.value : undefined
@@ -301,7 +304,7 @@ describe("Sound.music", () => {
       ),
       replayed
     );
-    expect(other.app.world.hash()).toBe(heard.app.world.hash());
+    expect(hashOf(other.app)).toBe(hashOf(heard.app));
     expect(replayed.scored).toEqual([]);
   });
 

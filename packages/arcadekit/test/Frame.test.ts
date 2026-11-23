@@ -58,6 +58,26 @@ const Roll = System.tick("Roll", function* () {
   });
 });
 
+/** A game that begins with these balls. */
+const racked = (...balls: readonly { x: number; vx: number }[]) =>
+  Plugin.make("fr/Rack", {
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Ball);
+      for (const ball of balls) {
+        commands.spawn(Ball.of(ball));
+      }
+    }),
+  });
+
+/** Each ball, where it is and how fast it rolls. */
+const ballsOf = (app: App.Any): { x: number; vx: number }[] => {
+  const found: { x: number; vx: number }[] = [];
+  Effect.runSync(app.read(Seen)).each(({ x, vx }) => {
+    found.push({ x, vx });
+  });
+  return found;
+};
+
 describe("a frozen world", () => {
   const populated = (): { world: EcsWorld; ball: Entity } => {
     const world = new EcsWorld({ seed: 1 });
@@ -223,6 +243,10 @@ describe("the frame stage", () => {
           }
           return System.tick(name, body);
         };
+        const Pause = Action.define("fr/Pause", Schema.Struct({}));
+        const pause = Action.handler(Pause, function* () {
+          (yield* Phase.sets).set("paused");
+        });
         const app = yield* App.make(
           App.define({
             systems: [
@@ -233,6 +257,7 @@ describe("the frame stage", () => {
                 System.runIf(State.is(Phase, "paused"))
               ),
             ],
+            handlers: [pause],
           })
         );
         expect(app.systemOrder).toEqual(["Tick"]);
@@ -243,7 +268,7 @@ describe("the frame stage", () => {
         app.tick(1);
         expect(ran).toEqual(["Clear", "Draw", "Tick", "Tick"]);
         ran.length = 0;
-        State.handleOf(app.world, Phase).set("paused");
+        app.dispatch(Pause, {});
         app.frame(0.5);
         // A state is entered by a tick, not by a frame.
         expect(ran).toEqual(["Clear", "Draw"]);
@@ -350,8 +375,12 @@ describe("the frame stage", () => {
             drawn.push(ball.x + ball.vx * delta * frame.alpha);
           });
         });
-        const app = yield* App.make(App.define({ systems: [Roll, Draw] }));
-        app.world.spawn(Ball.of({ x: 0, vx: 10 }));
+        const app = yield* App.make(
+          App.define({
+            plugins: [racked({ x: 0, vx: 10 })],
+            systems: [Roll, Draw],
+          })
+        );
         app.tick(0.5);
         app.frame(0, 0.016);
         app.frame(0.5, 0.008);
@@ -454,20 +483,27 @@ describe("the frame stage", () => {
         const Vandal = System.frame("Vandal", function* () {
           (yield* Events).emit(Pinged, {});
         });
-        const app = yield* App.make(App.define({ systems: [Roll, Vandal] }), {
-          checkpointEvery: 1,
-        });
-        app.world.spawn(Ball.of({ x: 1, vx: 1 }));
+        const app = yield* App.make(
+          App.define({
+            plugins: [racked({ x: 1, vx: 1 })],
+            systems: [Roll, Vandal],
+          }),
+          { checkpointEvery: 1 }
+        );
+        const world = yield* app.read(World);
         app.tick(1);
-        const before = app.world.hash();
+        const before = world.hash();
         expect(() => app.frame(0)).toThrow(
           /was emitted in the frame stage or the input stage/
         );
-        expect(app.world.hash()).toBe(before);
-        expect(app.commands.size).toBe(0);
-        expect(app.events.pending(Pinged)).toBe(0);
+        expect(world.hash()).toBe(before);
+        // No event waits to be read, and no command to be applied: a save
+        // would be refused for one.
+        expect(app.inspect().stores).toEqual({});
+        expect(Exit.isSuccess(app.save())).toBe(true);
+        // The world is not left frozen: the tick moves the ball.
         app.tick(1);
-        expect(app.world.frozen).toBe(false);
+        expect(world.hash()).not.toBe(before);
         const exit = app.frameExit(0);
         expect(Exit.isFailure(exit)).toBe(true);
       })
@@ -484,13 +520,13 @@ describe("the frame stage", () => {
         const app = yield* App.make(App.define({ systems: [Sparkle, Roll] }), {
           seed: 5,
         });
-        const before = app.world.hash();
-        const state = Array.from(app.world.random.state);
+        const world = yield* app.read(World);
+        const before = world.hash();
         app.frame(0);
         app.frame(0);
         expect(new Set(drawn).size).toBe(4);
-        expect(app.world.hash()).toBe(before);
-        expect(Array.from(app.world.random.state)).toEqual(state);
+        // The hash holds the state of the world's generator.
+        expect(world.hash()).toBe(before);
         // Seeded, so the same game sparkles the same way.
         const again = yield* App.make(
           App.define({ systems: [Sparkle, Roll] }),
@@ -527,24 +563,28 @@ describe("the frame stage", () => {
         });
         // Not checked with verifyFrames: this is found either way.
         const app = yield* App.make(
-          App.define({ systems: [Cheat, After, Roll] }),
+          App.define({
+            plugins: [racked({ x: 1, vx: 1 })],
+            systems: [Cheat, After, Roll],
+          }),
           { seed: 5 }
         );
-        app.world.spawn(Ball.of({ x: 1, vx: 1 }));
+        const world = yield* app.read(World);
         app.tick(1);
-        const before = app.world.hash();
+        const before = world.hash();
         expect(() => app.frame(0)).toThrow(
           /A draw from world\.random was made while the world is frozen/
         );
-        expect(app.world.hash()).toBe(before);
-        expect(app.world.frozen).toBe(false);
+        expect(world.hash()).toBe(before);
         // The frame ran to its end first, and the outcome is a defect.
         expect(drawn).toEqual(["After"]);
         const exit = app.frameExit(0);
         expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
-        expect(app.world.hash()).toBe(before);
-        // The app is not left in a frame: it ticks, and draws once it behaves.
+        expect(world.hash()).toBe(before);
+        // The app is not left in a frame, nor the world frozen: it ticks,
+        // and draws once it behaves.
         app.tick(1);
+        expect(world.hash()).not.toBe(before);
         cheat = false;
         app.frame(0);
         expect(Exit.isSuccess(app.frameExit(0))).toBe(true);
@@ -581,9 +621,7 @@ describe("the frame stage", () => {
           app.tick(1);
           app.frame(0);
         }
-        expect(
-          app.world.get(app.world.view(Balls).entities()[0]!, Ball)
-        ).toEqual({ x: 1 + 1 + 1 + 5 + 5, vx: 5 });
+        expect(ballsOf(app)).toEqual([{ x: 1 + 1 + 1 + 5 + 5, vx: 5 }]);
         expect(
           app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
         ).toEqual([
@@ -594,7 +632,9 @@ describe("the frame stage", () => {
         const headless = yield* Journal.replay(played, (start) =>
           App.make(game([Roll]), { ...start, checkpointEvery: 1 })
         );
-        expect(headless.world.hash()).toBe(app.world.hash());
+        expect((yield* headless.read(World)).hash()).toBe(
+          (yield* app.read(World)).hash()
+        );
         // Nor may a frame dispatch: that would change the game there and then.
         let own: App.Any | undefined;
         const Hasty = System.frame("Hasty", function* () {
@@ -721,9 +761,7 @@ describe("what the frame stage reads", () => {
           again.tick(1);
         }
         expect(late).toEqual(without);
-        expect(again.events.pending(Bounced)).toBe(
-          headless.events.pending(Bounced)
-        );
+        expect(again.inspect().stores).toEqual(headless.inspect().stores);
         // A system that sat ticks out is no different: when it reads
         // again it goes no further back than it could with no frame stage.
         const sat: number[] = [];
@@ -835,11 +873,11 @@ describe("what the frame stage reads", () => {
             }
           });
         });
-        const BallGame = App.define({ systems: [Nudge, Count, Draw] });
+        const BallGame = App.define({
+          plugins: [racked({ x: 0, vx: 0 }, { x: 1, vx: 0 }, { x: 2, vx: 0 })],
+          systems: [Nudge, Count, Draw],
+        });
         const app = yield* App.make(BallGame, { checkpointEvery: 1 });
-        for (let n = 0; n < 3; n++) {
-          app.world.spawn(Ball.of({ x: n, vx: 0 }));
-        }
         app.frame(0);
         app.tick(1);
         app.tick(1);
@@ -909,25 +947,38 @@ describe("what the frame stage reads", () => {
         });
         const make = (systems: readonly System.System<never, BuiltIn>[]) =>
           Effect.gen(function* () {
-            const app = yield* App.make(App.define({ systems }), {
-              checkpointEvery: 1,
-              seed: 3,
-              verifyFrames: true,
-            });
-            for (let n = 0; n < 4; n++) {
-              app.world.spawn(Ball.of({ x: n, vx: 1 }));
-            }
-            return app;
+            const app = yield* App.make(
+              App.define({
+                plugins: [
+                  racked(
+                    { x: 0, vx: 1 },
+                    { x: 1, vx: 1 },
+                    { x: 2, vx: 1 },
+                    { x: 3, vx: 1 }
+                  ),
+                ],
+                systems,
+              }),
+              { checkpointEvery: 1, seed: 3, verifyFrames: true }
+            );
+            return { app, world: yield* app.read(World) };
           });
-        const drawn = yield* make([Roll, Tally, Watch]);
-        const undrawn = yield* make([Roll, Tally]);
+        const { app: drawn, world: drawnWorld } = yield* make([
+          Roll,
+          Tally,
+          Watch,
+        ]);
+        const { app: undrawn, world: undrawnWorld } = yield* make([
+          Roll,
+          Tally,
+        ]);
         for (let n = 0; n < 20; n++) {
           drawn.tick(1 / 60);
           for (let f = 0; f < n % 3; f++) {
             drawn.frame(f / 3, 0.005);
           }
           undrawn.tick(1 / 60);
-          expect(drawn.world.hash()).toBe(undrawn.world.hash());
+          expect(drawnWorld.hash()).toBe(undrawnWorld.hash());
         }
         expect(drawn.actionLog).toEqual(undrawn.actionLog);
         const saved = [drawn.save(), undrawn.save()].map((save) =>
@@ -974,10 +1025,10 @@ describe("a frame stage that is checked", () => {
             })
           )
         );
-        const app = yield* App.make(App.define({ systems: [Idle] }), {
-          verifyFrames: true,
-        });
-        app.world.spawn(Ball.of({ x: 1, vx: 1 }));
+        const app = yield* App.make(
+          App.define({ plugins: [racked({ x: 1, vx: 1 })], systems: [Idle] }),
+          { verifyFrames: true }
+        );
         const exit = app.frameExit(0);
         const error = Exit.isFailure(exit)
           ? Cause.squash(exit.cause)
@@ -993,10 +1044,13 @@ describe("a frame stage that is checked", () => {
       run(
         Effect.gen(function* () {
           const app = yield* App.make(
-            App.define({ systems: [Honest, Sneak(how), Roll] }),
+            App.define({
+              plugins: [racked({ x: 1, vx: 1 })],
+              systems: [Honest, Sneak(how), Roll],
+            }),
             { verifyFrames: true }
           );
-          app.world.spawn(Ball.of({ x: 1, vx: 1 }));
+          const world = yield* app.read(World);
           app.tick(1);
           const exit = app.frameExit(0.5);
           const error = Exit.isFailure(exit)
@@ -1012,9 +1066,9 @@ describe("a frame stage that is checked", () => {
           // Checked, a draw from the world's generator is laid at the door
           // of the system that made it, and taken back as ever. A write
           // through a raw column is not taken back: #195.
-          const before = app.world.hash();
+          const before = world.hash();
           expect(() => app.frame(0)).toThrow(Stage.FrameChangedWorld);
-          expect(app.world.hash() === before).toBe(how === "random");
+          expect(world.hash() === before).toBe(how === "random");
         })
       );
     }
@@ -1024,10 +1078,12 @@ describe("a frame stage that is checked", () => {
     run(
       Effect.gen(function* () {
         const checked = yield* App.make(
-          App.define({ systems: [Honest, Sneak("none"), Roll] }),
+          App.define({
+            plugins: [racked({ x: 1, vx: 1 })],
+            systems: [Honest, Sneak("none"), Roll],
+          }),
           { verifyFrames: true }
         );
-        checked.world.spawn(Ball.of({ x: 1, vx: 1 }));
         checked.tick(1);
         checked.frame(0);
         // The world a frame is held to is the one it found, not the last one.
@@ -1035,11 +1091,13 @@ describe("a frame stage that is checked", () => {
         checked.frame(0.5);
         // Unchecked, the write goes through: it is the game's to avoid.
         const unchecked = yield* App.make(
-          App.define({ systems: [Sneak("raw"), Roll] })
+          App.define({
+            plugins: [racked({ x: 1, vx: 1 })],
+            systems: [Sneak("raw"), Roll],
+          })
         );
-        const ball = unchecked.world.spawn(Ball.of({ x: 1, vx: 1 }));
         unchecked.frame(0);
-        expect(unchecked.world.get(ball, Ball)!.x).toBe(2);
+        expect(ballsOf(unchecked)).toEqual([{ x: 2, vx: 1 }]);
       })
     );
   });

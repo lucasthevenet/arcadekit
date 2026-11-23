@@ -432,7 +432,7 @@ const nextAxes = (before: Axes, moves: Axes | undefined): Axes | undefined => {
 };
 
 const report = Action.handler(Report, function* (payload) {
-  const held = (yield* World).singleton(Held);
+  const held = yield* Held.writes;
   // It is applied at the start of a tick, before the tick is counted: the
   // tick whose systems see it first is the next.
   const tick = (yield* Time).tick + 1;

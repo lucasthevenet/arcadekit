@@ -9,6 +9,7 @@ import type {
   ComponentInput,
   Entity,
   Schema,
+  SingletonSpec,
   Storage,
   ValueOf,
 } from "./ecs/component";
@@ -45,15 +46,18 @@ type Settable<C extends string, N extends string> = [N] extends [never]
  */
 export interface ReadingWorld extends Pick<
   EcsWorld,
-  | "entityCount"
-  | "get"
-  | "has"
-  | "hash"
-  | "holds"
-  | "isAlive"
-  | "singleton"
-  | "sources"
-> {}
+  "entityCount" | "has" | "hash" | "holds" | "isAlive" | "sources"
+> {
+  /** A copy of an entity's component, or undefined if it doesn't have it. */
+  get<S extends Schema>(
+    entity: Entity,
+    def: ComponentDef<S>
+  ): Readonly<ValueOf<S>> | undefined;
+  /**
+   * A singleton, read-only: a system writes one with `yield* Score.writes`.
+   */
+  singleton<S extends Schema>(spec: SingletonSpec<S>): Readonly<ValueOf<S>>;
+}
 
 /**
  * The world as a system or a handler is handed it: it reads, and it sets the
@@ -109,14 +113,50 @@ export class World extends Context.Service<World, WritingWorld<never>>()(
   > => Effect.map(Effect.service(World), whole);
 }
 
+/** The world behind each one `outside` made. */
+const behind = new WeakMap<ReadingWorld, EcsWorld>();
+
+/**
+ * The world as `app.read` hands it to code outside the game: an object of its
+ * own, which reads the world and holds nothing a cast or `instanceof` could
+ * write it through.
+ * @internal
+ */
+export const outside = (world: EcsWorld): WritingWorld<never> => {
+  const reading: WritingWorld<never> = {
+    get entityCount() {
+      return world.entityCount;
+    },
+    get: (entity, def) => world.get(entity, def),
+    has: (entity, def) => world.has(entity, def),
+    hash: () => world.hash(),
+    holds: (spec) => world.holds(spec),
+    isAlive: (entity) => world.isAlive(entity),
+    singleton: (spec) => world.singleton(spec),
+    sources: (target, def) => world.sources(target, def),
+    set: () => {
+      throw new Error(
+        "world.set() was called on the world app.read gives. Code outside a game changes it with an action, app.enqueue or app.dispatch, whose handler sets the component."
+      );
+    },
+  };
+  behind.set(reading, world);
+  return reading;
+};
+
 /**
  * The whole world behind the one a system is handed: they are one object, and
- * the type of the second is what a game's code may do with it.
+ * the type of the second is what a game's code may do with it. Behind the one
+ * `app.read` hands out, it is the world `outside` was given.
  * @internal
  */
 export const whole = (world: ReadingWorld): EcsWorld => {
   if (world instanceof EcsWorld) {
     return world;
+  }
+  const held = behind.get(world);
+  if (held !== undefined) {
+    return held;
   }
   throw new Error(
     "The World service was provided something that is not a world. An app provides its own: to read a game from outside one, use app.read(World)."
