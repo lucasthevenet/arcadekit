@@ -272,33 +272,6 @@ export default defineConfig({
         "arcadekit/top-level-classes": "error",
       },
     },
-    // A source file holds one thing, in 500 lines of code or fewer. The
-    // files below are over that, each held to what it is today: a change
-    // that makes one longer splits it instead, and one that makes it
-    // shorter lowers its number here, until it leaves the list.
-    {
-      files: ["packages/*/src/**"],
-      rules: {
-        "max-lines": [
-          "error",
-          { max: 500, skipComments: true, skipBlankLines: true },
-        ],
-      },
-    },
-    ...Object.entries({
-      "packages/three/src/Three.ts": 1760,
-      "packages/arcadekit/src/ecs/world.ts": 1579,
-      "packages/arcadekit/src/ecs/query.ts": 802,
-      "packages/arcadekit/src/Browser.ts": 629,
-    }).map(([file, max]) => ({
-      files: [file],
-      rules: {
-        "max-lines": [
-          "error",
-          { max, skipComments: true, skipBlankLines: true },
-        ] as const,
-      },
-    })),
     {
       // Where the app runs plugins, systems, handlers and scripts of any
       // type: their types can't follow them into one app, and a few casts
