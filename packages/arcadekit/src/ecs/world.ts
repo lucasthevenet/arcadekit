@@ -1095,7 +1095,8 @@ export class World {
 
   /** Ends the transaction and keeps what was written. Throws outside one. */
   commit(): void {
-    this.endTransaction("commit");
+    this.requireTransaction("commit");
+    this.endTransaction();
     for (const store of this.stores) {
       store.commit();
     }
@@ -1106,6 +1107,7 @@ export class World {
    * Throws outside one.
    */
   rollback(): void {
+    this.requireTransaction("rollback");
     const { saved } = this;
     // Newest first, so that where a row was saved before its whole column,
     // the oldest value is the one left standing.
@@ -1145,18 +1147,21 @@ export class World {
       log.txEnd = Math.min(log.txEnd, log.end);
       log.rollback();
     }
-    this.endTransaction("rollback");
+    this.endTransaction();
     for (const store of this.stores) {
       store.rollback();
     }
   }
 
-  private endTransaction(op: string): void {
+  private requireTransaction(op: string): void {
     if (!this._recording) {
       throw new Error(
         `World.${op}() was called with no transaction in progress. Call begin() first.`
       );
     }
+  }
+
+  private endTransaction(): void {
     this.saved.length = 0;
     this.savedSingles.length = 0;
     if (this.savedWhole.size > 0) {
