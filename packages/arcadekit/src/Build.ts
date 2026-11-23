@@ -33,7 +33,7 @@ import * as Plugin from "./Plugin";
 import * as Runner from "./Runner";
 import * as Save from "./Save";
 import * as Schedule from "./Schedule";
-import { outside, Time, World } from "./Services";
+import { Time, World, outside } from "./Services";
 import type { TimeState } from "./Services";
 import * as Stage from "./Stage";
 import * as State from "./State";
@@ -273,7 +273,9 @@ export const build = <
 
     yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
 
-    const reading = Context.make(World, outside(world)).pipe(Context.add(Time, time));
+    const reading = Context.make(World, outside(world)).pipe(
+      Context.add(Time, time)
+    );
     const app: App<TickError<S, P>, AllHandlers<H, P>> = {
       time,
       read: (effect) =>

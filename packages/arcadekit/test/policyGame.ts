@@ -206,9 +206,7 @@ const Populate = Plugin.make("policy/Populate", {
                 flags: i & 255,
                 rival: 0 as Entity,
                 name: `hero ${i}`,
-                born: DateTime.toDateUtc(
-                  DateTime.makeUnsafe(1_000_000 * i)
-                ),
+                born: DateTime.toDateUtc(DateTime.makeUnsafe(1_000_000 * i)),
                 cache: undefined,
               }),
             ]
@@ -279,12 +277,10 @@ export const play = (): Record<string, unknown> =>
           loaded: (yield* again.read(World)).hash(),
           bytes: bytes.length,
           stats: { ...world.singleton(Stats) },
-          sheets: (yield* app.read(Ledger))
-            .entities()
-            .map((entity) => {
-              const sheet = world.get(entity, Sheet)!;
-              return [sheet.hp, sheet.gold, sheet.name, sheet.born.getTime()];
-            }),
+          sheets: (yield* app.read(Ledger)).entities().map((entity) => {
+            const sheet = world.get(entity, Sheet)!;
+            return [sheet.hp, sheet.gold, sheet.name, sheet.born.getTime()];
+          }),
           noticed,
           drawn,
           outcomes,

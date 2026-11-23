@@ -173,7 +173,8 @@ export const setGlitch = (
       ? undefined
       : {
           tick: to.tick,
-          worlds: to.worlds === "all" ? "all" : new Set([...to.worlds].map(whole)),
+          worlds:
+            to.worlds === "all" ? "all" : new Set([...to.worlds].map(whole)),
         };
 };
 export const Fault = System.tick("ls/Fault", function* () {
@@ -263,6 +264,7 @@ export const withPeers = <A>(
     Effect.scoped(
       Effect.gen(function* () {
         const peers: Peer[] = [];
+        const services = yield* Effect.context<never>();
         for (const name of names) {
           const source = Input.makeManualSource();
           const session = yield* Session.make(CoinGame, {
@@ -283,7 +285,7 @@ export const withPeers = <A>(
             app,
             world: yield* app.read(World),
             get coins() {
-              return Effect.runSync(app.read(Lying));
+              return Effect.runSyncWith(services)(app.read(Lying));
             },
             session,
             hashes: [],

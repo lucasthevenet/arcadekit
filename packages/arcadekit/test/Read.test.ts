@@ -21,7 +21,11 @@ import {
 } from "../src/index";
 
 const Position = Component.define("rd/Position", { x: Field.f32 });
-const Score = Singleton.define("rd/Score", { points: Field.u32 }, { points: 0 });
+const Score = Singleton.define(
+  "rd/Score",
+  { points: Field.u32 },
+  { points: 0 }
+);
 const Phase = State.define("rd/Phase", ["menu", "playing"]);
 const Ping = Event.define("rd/Ping", Schema.Struct({ n: Schema.Int }));
 const Placed = Query.all(Position);

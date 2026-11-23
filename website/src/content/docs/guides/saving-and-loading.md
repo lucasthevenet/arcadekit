@@ -8,7 +8,15 @@ A **save** captures a game between two ticks, and a game loaded from it continue
 ## Saving
 
 ```ts
-import { App, Commands, Component, Field, Plugin, Save, World } from "arcadekit";
+import {
+  App,
+  Commands,
+  Component,
+  Field,
+  Plugin,
+  Save,
+  World,
+} from "arcadekit";
 import { Effect, Exit } from "effect";
 
 const Position = Component.define("game/Position", { x: Field.f32 });

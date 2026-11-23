@@ -54,7 +54,16 @@ Other values use a field type that declares how snapshots and the hash treat the
 `Hero.of({...})` creates a component value for a spawn. A system, a handler or a plugin's `setup` spawns through `Commands`, which it requests with the components it spawns. Code outside the simulation, such as a test or the entry point, can't change the world: it reads it with `app.read`, and changes the game with an [action](events-and-actions.md), whose handler makes the change:
 
 ```ts
-import { Action, App, Commands, Component, Field, Plugin, Query, World } from "arcadekit";
+import {
+  Action,
+  App,
+  Commands,
+  Component,
+  Field,
+  Plugin,
+  Query,
+  World,
+} from "arcadekit";
 import { Effect, Schema } from "effect";
 
 const Position = Component.define("game/Position", {
@@ -165,7 +174,15 @@ A `Resource` is the other kind of single value: configuration with a default tha
 A **relation** is a component that points at another entity, its `target`, and stays consistent when that entity is despawned: a parent and its children, a target, an owner. Use a relation rather than a bare `Field.entity` for any reference that must never dangle.
 
 ```ts
-import { Action, Commands, Component, EntityId, Field, Plugin, World } from "arcadekit";
+import {
+  Action,
+  Commands,
+  Component,
+  EntityId,
+  Field,
+  Plugin,
+  World,
+} from "arcadekit";
 import { Effect, Schema } from "effect";
 
 const Position = Component.define("game/Position", {
