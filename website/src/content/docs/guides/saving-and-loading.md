@@ -92,6 +92,7 @@ The [replay](replays.md) checks itself against the tail's checkpoints, so a save
 | --- | --- |
 | `"not a save"`, `"not a snapshot"` | Isn't a saved game at all |
 | `"truncated"`, `"corrupt"` | Is incomplete or damaged |
+| `"older format"` | Was written by an earlier version of arcadekit, in a format this one doesn't read |
 | `"newer format"` | Was written by a later version of arcadekit |
 | `"newer version"` | Was written by a later version of the game |
 | `"no migration"` | Is older, and there is no migration from its version, or from a version on the way |

@@ -523,6 +523,19 @@ export interface Closes {
 }
 
 /**
+ * The step `Driver.run` takes as `ready`.
+ *
+ * @category Options
+ */
+export interface Ready<A, E, R> {
+  /**
+   * Runs once the app is made, before its first frame, with the app. The run
+   * closes the app however it ends, so the app is closed when `ready` fails.
+   */
+  readonly ready?: (app: A) => Effect.Effect<unknown, E, R>;
+}
+
+/**
  * Runs an app until interrupted, from the effect that makes it, and closes
  * the app when it ends. It is a game's usual entry point.
  *
@@ -542,16 +555,14 @@ export interface Closes {
  * process is told to stop.
  *
  * To connect something to the app before its first frame, such as a button
- * that dispatches or a menu that saves, add a step to the effect that makes
- * it: `App.make(Duel).pipe(Effect.tap((app) => ...))`. What that step
+ * that dispatches or a menu that saves, give it as `ready`:
+ * `Driver.run(App.make(Duel), { hz: 60, ready: (app) => ... })`. What `ready`
  * acquires in its scope is released when the run ends, after the app is
- * closed. If the step can fail, hold the app in that scope, so that the app
- * is closed when the step fails, before the run has it:
- * `Effect.acquireRelease(App.make(Duel), (app) => app.close).pipe(Effect.tap(...))`.
+ * closed. When `ready` fails, the run closes the app and fails with it.
  *
  * Provide what the game needs from outside to `Driver.run` as a whole, so it
  * stays provided for as long as the game runs. It fails with what making the
- * app fails with, and dies with whatever a tick or a frame throws.
+ * app or `ready` fails with, and dies with whatever a tick or a frame throws.
  *
  * Outside a page, the display is a timer, so
  * `NodeRuntime.runMain(Driver.run(...))` runs the same game under Node.
@@ -563,24 +574,32 @@ export interface Closes {
  *
  * @category Running
  */
-export function run<A extends Tickable & Closes, E, R>(
+export function run<A extends Tickable & Closes, E, R, E2 = never, R2 = never>(
   app: Effect.Effect<A, E, R>,
-  options: StepOptions
-): Effect.Effect<never, E, Exclude<R, Scope.Scope>>;
-export function run<A extends Paced & Closes, E, R>(
+  options: StepOptions & Ready<A, E2, R2>
+): Effect.Effect<never, E | E2, Exclude<R | R2, Scope.Scope>>;
+export function run<A extends Paced & Closes, E, R, E2 = never, R2 = never>(
   session: Effect.Effect<A, E, R>,
-  options?: PacedOptions
-): Effect.Effect<never, E, Exclude<R, Scope.Scope>>;
-export function run<E, R>(
-  made: Effect.Effect<(Tickable | Paced) & Closes, E, R>,
-  options?: StepOptions | PacedOptions
-): Effect.Effect<never, E, Exclude<R, Scope.Scope>> {
-  // Closed however the loop ends, with nothing between the making and the
-  // loop that an interruption could slip into.
+  options?: PacedOptions & Ready<A, E2, R2>
+): Effect.Effect<never, E | E2, Exclude<R | R2, Scope.Scope>>;
+export function run<A extends (Tickable | Paced) & Closes, E, R, E2, R2>(
+  made: Effect.Effect<A, E, R>,
+  options?: (StepOptions | PacedOptions) & Ready<A, E2, R2>
+): Effect.Effect<never, E | E2, Exclude<R | R2, Scope.Scope>> {
+  // Closed however `ready` or the loop ends, with nothing between the making
+  // and them that an interruption could slip into.
   return Effect.scoped(
     Effect.uninterruptibleMask((restore) =>
       Effect.flatMap(restore(made), (target) =>
-        Effect.ensuring(restore(loop(paceOf(target, options))), target.close)
+        Effect.ensuring(
+          restore(
+            Effect.andThen(
+              options?.ready?.(target) ?? Effect.void,
+              loop(paceOf(target, options))
+            )
+          ),
+          target.close
+        )
       )
     )
   );

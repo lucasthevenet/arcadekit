@@ -1,6 +1,7 @@
 import { Effect, Exit, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
+import type { EventBus } from "../src/Event";
 import {
   Action,
   App,
@@ -9,6 +10,7 @@ import {
   Component,
   EcsWorld,
   Event,
+  Events,
   Field,
   Journal,
   Query,
@@ -683,6 +685,57 @@ describe("what the stages between ticks hear across a rewind", () => {
         app.tick(DELTA);
         app.frame();
         expect(heard.frame).toEqual([1, 1, 2, 2]);
+      });
+    });
+  });
+
+  describe("code outside the game, which hears as the stages do", () => {
+    /** A game whose bus is kept for code outside it, once it has ticked. */
+    const kept = () => {
+      let bus: EventBus | undefined;
+      const Keep = System.tick("rw/Keep", function* () {
+        bus = yield* Effect.service(Events);
+      });
+      const game = App.define({ systems: [Ring, Keep], handlers: [louder] });
+      const listen = () => {
+        assert(bus !== undefined, "the game has not ticked");
+        const reader = bus.handle(Rang);
+        return () => reader.read().map((rang) => rang.n);
+      };
+      return { game, listen };
+    };
+
+    it("hears what a tick run again does otherwise, and nothing twice", () => {
+      const { game, listen } = kept();
+      withMade(Build.build(game, {}), (built) => {
+        const session = steered(built);
+        session.tick(DELTA);
+        const heard = listen();
+        const back = session.capture();
+        session.tick(DELTA);
+        session.tick(DELTA);
+        expect(heard()).toEqual([2, 2, 3, 3]);
+        session.rewind(back);
+        session.tick(DELTA);
+        session.app.enqueue(Louder, { by: 7 });
+        session.tick(DELTA);
+        expect(heard()).toEqual([307]);
+        session.tick(DELTA);
+        expect(heard()).toEqual([4, 4, 407]);
+      });
+    });
+
+    it("hears every event told after an undo, before it next reads", () => {
+      const { game, listen } = kept();
+      withApp(App.make(game), (app) => {
+        app.tick(DELTA);
+        const heard = listen();
+        const back = captured(app);
+        app.tick(DELTA);
+        app.tick(DELTA);
+        Timeline.rewind(app, back);
+        app.tick(DELTA);
+        expect(heard()).toEqual([2, 2]);
       });
     });
   });

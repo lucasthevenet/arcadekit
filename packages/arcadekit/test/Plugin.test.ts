@@ -1,7 +1,6 @@
 import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
-import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -18,7 +17,6 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
-import { placedIn } from "./placed";
 
 const Position = Component.define("pl/Position", {
   x: Field.f32,
@@ -259,11 +257,11 @@ describe("plugins", () => {
     expect(released).toBe(1);
   });
 
-  it("let a plugin's layer use its dependencies and the built-in services while it builds", () => {
+  it("let a plugin's layer use its dependencies and read the built-in services while it builds", () => {
     // Bounds is 100 unless Physics, which Arena lists, overrides it.
     class Arena extends Context.Service<
       Arena,
-      { readonly wall: Spawned; readonly width: number }
+      { readonly width: number; readonly entities: number }
     >()("pl/Arena") {}
     const ArenaPlugin = Plugin.make("Arena", {
       plugins: [Physics],
@@ -271,27 +269,78 @@ describe("plugins", () => {
         Arena,
         Effect.gen(function* () {
           const { width } = yield* Bounds; // as the Physics plugin sets it
-          const commands = yield* Commands.spawns(Position); // built in
-          const wall = commands.spawn(Position.of({ x: width, y: 0 }));
-          return { wall, width };
+          const world = yield* World; // built in
+          return { width, entities: world.entityCount };
         })
       ),
+      setup: Effect.gen(function* () {
+        const { width } = yield* Bounds;
+        const commands = yield* Commands.spawns(Position);
+        commands.spawn(Position.of({ x: width, y: 0 }));
+      }),
     });
     const seen: string[] = [];
     const Look = System.frame("Look", function* () {
       const arena = yield* Arena;
-      const world = yield* World;
-      const wall = placedIn(world, arena.wall);
-      seen.push(`wall ${world.get(wall, Position)!.x} of ${arena.width}`);
+      const walls = yield* Query.all(Position).pipe(Query.without(Velocity));
+      walls.each((wall) => {
+        seen.push(`wall ${wall.x} of ${arena.width}, ${arena.entities} built`);
+      });
     });
     withApp(
       App.make(App.define({ plugins: [ArenaPlugin], systems: [Look] })),
       (app) => {
         app.tick(1);
         app.frame();
-        expect(seen).toEqual(["wall 10 of 10"]);
+        expect(seen).toEqual(["wall 10 of 10, 0 built"]);
       }
     );
+  });
+
+  it("refuse a layer that changes the game, since loading a save builds it again", () => {
+    class Arena extends Context.Service<Arena, { readonly width: number }>()(
+      "pl/SpawningArena"
+    ) {}
+    Plugin.make("pl/SpawningArena", {
+      // @ts-expect-error a layer spawns nothing; a setup does
+      layer: Layer.effect(
+        Arena,
+        Effect.gen(function* () {
+          const commands = yield* Commands.spawns(Position);
+          commands.spawn(Position.of({ x: 10, y: 0 }));
+          return { width: 10 };
+        })
+      ),
+    });
+    Plugin.make("pl/WritingArena", {
+      // @ts-expect-error a layer writes no component
+      layer: Layer.effectDiscard(
+        Effect.gen(function* () {
+          const all = yield* Query.all(Position).pipe(Query.writes(Position));
+          all.each((position) => {
+            position.x = 0;
+          });
+        })
+      ),
+    });
+
+    const Walls = Plugin.make("pl/Walls", {
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Position);
+        commands.spawn(Position.of({ x: 10, y: 0 }));
+      }),
+    });
+    const game = App.define({ plugins: [Walls] });
+    const entities = Effect.map(Effect.service(World), (w) => w.entityCount);
+    const save = withApp(App.make(game), (app) => {
+      app.tick(1);
+      expect(Effect.runSync(app.read(entities))).toBe(1);
+      return app.save();
+    });
+    assert(Exit.isSuccess(save));
+    withApp(App.make(game, { save: save.value }), (app) => {
+      expect(Effect.runSync(app.read(entities))).toBe(1);
+    });
   });
 
   it("leave unmet needs as ordinary Effect requirements", () => {

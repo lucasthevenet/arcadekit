@@ -767,16 +767,13 @@ describe("Browser.layer", () => {
     const page = makePage();
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
-      Driver.run(
-        App.make(App.define({ plugins: [Flying] })).pipe(
-          Effect.tap((app) =>
-            Effect.sync(() => {
-              made = app;
-            })
-          )
-        ),
-        { hz: 60 }
-      ).pipe(Effect.provide(Browser.layer({ gamepads: () => [] })))
+      Driver.run(App.make(App.define({ plugins: [Flying] })), {
+        hz: 60,
+        ready: (app) =>
+          Effect.sync(() => {
+            made = app;
+          }),
+      }).pipe(Effect.provide(Browser.layer({ gamepads: () => [] })))
     );
     // The frame loop asks the page for its frames, and watches its tab.
     expect(page.requested.size).toBe(1);
@@ -876,16 +873,13 @@ describe("Browser.runMain", () => {
     let made: App.Any | undefined;
     let ended: Exit.Exit<unknown, unknown> | undefined;
     Browser.runMain(
-      Driver.run(
-        App.make(App.define({ plugins: [Sound] })).pipe(
-          Effect.tap((app) =>
-            Effect.sync(() => {
-              made = app;
-            })
-          )
-        ),
-        { hz: 60 }
-      ),
+      Driver.run(App.make(App.define({ plugins: [Sound] })), {
+        hz: 60,
+        ready: (app) =>
+          Effect.sync(() => {
+            made = app;
+          }),
+      }),
       {
         gamepads: () => [],
         preventDefault: ["Space"],

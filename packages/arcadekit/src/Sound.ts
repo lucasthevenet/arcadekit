@@ -345,7 +345,12 @@ export interface PlayerShape {
    */
   readonly play: (cue: Playable, options?: Options) => void;
   /**
-   * Plays what was asked for since this was last called.
+   * Forgets what the last frame asked for, which a failed frame never played.
+   * @internal
+   */
+  readonly _begin: () => void;
+  /**
+   * Plays what was asked for since the frame began.
    * @internal
    */
   readonly _flush: () => void;
@@ -442,12 +447,17 @@ const playerLayer = Layer.effect(
           already.rate = options?.rate ?? 1;
         }
       },
+      _begin() {
+        for (const told of channels.values()) {
+          told.said = false;
+        }
+        asked.clear();
+      },
       _flush() {
         for (const [channel, told] of channels) {
           if (!told.said) {
             continue;
           }
-          told.said = false;
           const { next, nextOnce, nextVolume } = told;
           if (
             told.track === next &&
@@ -461,13 +471,9 @@ const playerLayer = Layer.effect(
           told.once = nextOnce;
           speaker.music(channel, next, nextVolume, told.nextFade, nextOnce);
         }
-        if (asked.size === 0) {
-          return;
-        }
         for (const [cue, how] of asked) {
           speaker.play(cue, how.volume, how.rate);
         }
-        asked.clear();
       },
       music(channel, track, options) {
         const volume =
@@ -516,8 +522,6 @@ const playerLayer = Layer.effect(
           told.nextVolume !== volume ||
           told.nextOnce !== once
         ) {
-          // The frame ends here, and what it said with it.
-          told.said = false;
           throw new Error(
             `The channel "${channel}" was told to play two things in one frame: ${describe(told.next, told.nextVolume, told.nextOnce)} and ${describe(track, volume, once)}. A channel plays one track at a time. The systems made with Sound.music share the channel "${MUSIC}" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`
           );
@@ -526,6 +530,11 @@ const playerLayer = Layer.effect(
     };
   })
 );
+
+/** Forgets what the last frame asked to hear, before any system asks. */
+const Begin = System.frame("arcadekit/Sound.Begin", function* () {
+  (yield* Player)._begin();
+}).pipe(System.inStage("preFrame"));
 
 /** Plays what the frame's systems asked to hear, once they have all run. */
 const Flush = System.frame("arcadekit/Sound.Flush", function* () {
@@ -540,7 +549,9 @@ const Flush = System.frame("arcadekit/Sound.Flush", function* () {
  *
  * It provides `Sound.Player`. It also adds a system in `"postFrame"`, the stage
  * after the frame's own, that passes the frame's requests to the speaker once
- * all the frame's systems have run. It opens `Sound.Output` when the app is
+ * all the frame's systems have run, and one in `"preFrame"` that starts each
+ * frame with nothing requested: what a failed frame requested is never played,
+ * and holds nothing against the next. It opens `Sound.Output` when the app is
  * made, wherever the output was provided. When the app is closed, every
  * playing channel is silenced at once, and the plugin lets go of the speaker.
  *
@@ -548,7 +559,7 @@ const Flush = System.frame("arcadekit/Sound.Flush", function* () {
  */
 export const plugin = Plugin.make("arcadekit/Sound", {
   layer: playerLayer,
-  systems: [Flush],
+  systems: [Begin, Flush],
 });
 
 // --- cues: from the game's events to what they sound like ---------------------------

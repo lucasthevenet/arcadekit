@@ -10,7 +10,7 @@
  * the host, calls them:
  *
  *   // a peer asks to connect: who is it, and may it join?
- *   const member = Relay.join(request.url, present)        // Exit<Member, Refused>
+ *   const member = Relay.join(request.url, proven, present) // Exit<Member, Refused>
  *
  *   // a member sent something: what goes to whom?
  *   const deliveries = Relay.forward(member, data, present) // Exit<Delivery[], Refused>
@@ -31,9 +31,10 @@
  * The relay authenticates the sender. A peer declares its name once, when it
  * connects, and is held to it. A message that claims to be from anyone else
  * is refused, and the host closes its socket. The `from` a handler receives
- * is therefore the peer the relay admitted under that name. The host decides
- * whether to admit that peer under that name, before it calls `join`, with a
- * token in the request, a session, or whatever it has.
+ * is therefore the peer the relay admitted under that name. Who may have that
+ * name is the host's to prove, from a token in the request, a session, or
+ * whatever it has, and `join` takes the name it proved, or `Relay.anyone` for
+ * a relay that lets anyone take any name.
  *
  * A room belongs to nobody. The first peer to connect opens it, and it closes
  * when the last one leaves. The relay tells the room who joins and who leaves,
@@ -83,6 +84,7 @@ export interface Delivery {
 export class Refused extends Data.TaggedError("RelayRefused")<{
   readonly reason:
     | "not an address"
+    | "not your name"
     | "name taken"
     | "room full"
     | "not a peer"
@@ -125,6 +127,23 @@ export interface Options {
   readonly maxLength?: number;
 }
 
+/**
+ * What a host hands `join` when it proves nothing of who is asking: anyone
+ * may take any free name. It suits a relay on a network the host trusts, or a
+ * test.
+ *
+ * @category Hosting
+ */
+export const anyone: unique symbol = Symbol.for("arcadekit/net/Relay/anyone");
+
+/**
+ * Who the host has proven a peer to be, as `join` takes it: the one name the
+ * peer may use, or `anyone`.
+ *
+ * @category Models
+ */
+export type Proven = string | typeof anyone;
+
 /** The maximum length of a room's or a peer's name. */
 const NAME_LENGTH = 64;
 
@@ -149,25 +168,26 @@ export const address = (base: string, member: Member): string =>
   `${base.replace(/\/+$/u, "")}/${encodeURIComponent(member.room)}?peer=${encodeURIComponent(member.peer)}`;
 
 /**
- * Decides whether a peer may join, from the address it requested and who is
- * already in that room. The returned member is what the host stores with the
- * connection.
+ * Decides whether a peer may join, from the address it requested, who the
+ * host has proven it to be, and who is already in that room. The returned
+ * member is what the host stores with the connection.
  *
  * The room is the last segment of the address's path and the peer its `peer`
  * query parameter, as `address` writes them, each at most 64 characters. The
- * peer is refused when the address lacks either, when the name is taken in
- * that room, when the room is full, or when the room admits only other names.
+ * peer is refused when the address lacks either, when the name is not the one
+ * `proven`, when the name is taken in that room, when the room is full, or
+ * when the room admits only other names.
  *
- * **Gotchas**
- *
- * - It doesn't check that the peer is who it claims to be. The host settles
- *   that before it calls `join`, with whatever the request carries. Whoever
- *   first asks for a free name is admitted.
+ * `proven` is the name the host has established that the asking peer holds,
+ * from whatever the request carries: a token, a session. With `anyone`, the
+ * host vouches for nobody, and whoever first asks for a free name is
+ * admitted.
  *
  * @category Hosting
  */
 export const join = (
   url: string,
+  proven: Proven,
   present: readonly Member[],
   options: Options = {}
 ): Exit.Exit<Member, Refused> => {
@@ -196,6 +216,14 @@ export const join = (
       "not an address",
       `"${url}" is not a relay's address: it ends in a room's name and says which peer is asking, as Relay.address writes it, each ${NAME_LENGTH} characters at most.`,
       400,
+      1008
+    );
+  }
+  if (proven !== anyone && proven !== peer) {
+    return refuse(
+      "not your name",
+      `The address asks for the name "${peer}", and the host has proven only that the peer asking is "${proven}".`,
+      403,
       1008
     );
   }
@@ -362,11 +390,13 @@ export interface Connection {
  */
 export interface Server {
   /**
-   * Connects a peer at `url`, with `send` for the relay to reach it. Fails when
-   * the peer may not join.
+   * Connects a peer at `url`, whom the host has proven to be `proven`, with
+   * `send` for the relay to reach it. Fails when the peer may not join, as
+   * `join` says.
    */
   readonly connect: (
     url: string,
+    proven: Proven,
     send: (text: string) => void
   ) => Exit.Exit<Connection, Refused>;
   /** Returns who is in a room, in the order they joined. */
@@ -383,7 +413,9 @@ export interface Server {
  *
  *   const relay = Relay.make()
  *   server.on("connection", (socket, request) => {
- *     const connection = relay.connect(request.url, (text) => socket.send(text))
+ *     const connection = relay.connect(request.url, Relay.anyone, (text) =>
+ *       socket.send(text)
+ *     )
  *     if (Exit.isFailure(connection)) return socket.close(1008, "refused")
  *     socket.on("message", (data) => connection.value.receive(data))
  *     socket.on("close", () => connection.value.close())
@@ -400,10 +432,10 @@ export const make = (options: Options = {}): Server => {
   const members = (room: string): Member[] =>
     Array.from(rooms.get(room)?.keys() ?? [], (peer) => ({ room, peer }));
   return {
-    connect(url, send) {
+    connect(url, proven, send) {
       // Only that room's members are needed, and the address says which.
       const all = Array.from(rooms.keys()).flatMap((room) => members(room));
-      const admitted = join(url, all, options);
+      const admitted = join(url, proven, all, options);
       if (Exit.isFailure(admitted)) {
         return Exit.failCause(admitted.cause);
       }

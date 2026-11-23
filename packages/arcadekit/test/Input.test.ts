@@ -989,6 +989,38 @@ describe("the input stage", () => {
 });
 
 describe("the picture of the devices in the world", () => {
+  it("is what Input.plugin provides: a game that reads it and leaves the plugin out does not compile", () => {
+    const Press = Action.define("in/Press", Schema.Struct({}));
+    const reads = [
+      System.tick("in/Keys", function* () {
+        (yield* Input.Keyboard).down("Space");
+      }),
+      System.tick("in/Point", function* () {
+        void (yield* Input.Pointer).x;
+      }),
+      System.frame("in/Pad", function* () {
+        (yield* Input.Gamepad(1)).axis(0);
+      }),
+    ] as const;
+    const press = Action.handler(Press, function* () {
+      (yield* Input.Keyboard).pressed("Space");
+    });
+    for (const system of reads) {
+      expectTypeOf(App.make(App.define({ systems: [system] }))).not.toExtend<
+        Effect.Effect<unknown, never>
+      >();
+      expectTypeOf(
+        App.make(App.define({ plugins: [Input.plugin], systems: [system] }))
+      ).toExtend<Effect.Effect<unknown, never>>();
+    }
+    expectTypeOf(App.make(App.define({ handlers: [press] }))).not.toExtend<
+      Effect.Effect<unknown, never>
+    >();
+    expectTypeOf(
+      App.make(App.define({ plugins: [Input.plugin], handlers: [press] }))
+    ).toExtend<Effect.Effect<unknown, never>>();
+  });
+
   it("says what is held, and what went down or up in this tick, the same to every system", () => {
     const source = Input.makeManualSource();
     Effect.runSync(

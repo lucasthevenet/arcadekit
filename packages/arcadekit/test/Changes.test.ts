@@ -1504,19 +1504,33 @@ describe("change queries in an app", () => {
     }
   });
 
-  it("start over for a component a migration renamed, and go on for the rest", () => {
+  it("go on, under its new name, for a component a migration renamed", () => {
     const Place = Component.define("ch/Place", { x: Field.f32, y: Field.f32 });
-    const Placed = Query.all(Place).pipe(Query.changed(Place));
+    const Placed = Query.all(Place).pipe(
+      Query.changed(Place),
+      Query.writes(Place)
+    );
+    const Arrived = Query.all(Position).pipe(Query.added(Position));
+    const Landed = Query.all(Place).pipe(Query.added(Place));
     const Look = Action.define("ch/Look", Schema.Struct({}));
     const before = Action.handler(Look, function* () {
-      const counts = [(yield* Moved).count(), (yield* Hurt).count()];
+      const counts = [
+        (yield* Moved).count(),
+        (yield* Hurt).count(),
+        (yield* Arrived).count(),
+      ];
       // Counting is not visiting: these are.
       (yield* Moved).entities();
       (yield* Hurt).entities();
+      (yield* Arrived).entities();
       return counts;
     });
     const after = Action.handler(Look, function* () {
-      return [(yield* Placed).count(), (yield* Hurt).count()];
+      return [
+        (yield* Placed).count(),
+        (yield* Hurt).count(),
+        (yield* Landed).count(),
+      ];
     });
     const Hit = Action.define("ch/Hit", Schema.Struct({ entity: EntityId }));
     const hit = Action.handler(Hit, function* ({ entity }) {
@@ -1541,7 +1555,7 @@ describe("change queries in an app", () => {
         );
         const [, second] = made;
         assert(second !== undefined);
-        expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4]));
+        expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4, 4]));
         app.dispatch(Hit, { entity: placedIn(yield* app.read(World), second) });
         const save = app.save();
         if (Exit.isFailure(save)) {
@@ -1560,18 +1574,18 @@ describe("change queries in an app", () => {
                     "ch/Position",
                     "ch/Place"
                   );
-                  // A migration is handed the changes too.
                   expect(
                     visitsOf(contents.world).map((each) => each.component)
-                  ).toEqual(["ch/Health", "ch/Position"]);
+                  ).toEqual(["ch/Health", "ch/Place", "ch/Place"]);
                 },
               },
             ],
           }),
           { save: save.value }
         );
-        // Everything placed counts as changed; health goes on from the save.
-        expect(loaded.dispatch(Look, {})).toEqual(Exit.succeed([4, 1]));
+        // Only the entity hit since the last look counts as changed, and
+        // none as added.
+        expect(loaded.dispatch(Look, {})).toEqual(Exit.succeed([1, 1, 0]));
       })
     );
   });

@@ -208,9 +208,19 @@ variant(
 
 // A colour of its own for each: three more numbers, beside the matrix.
 const paint = () =>
-  Color.Srgb.of({ r: Math.random(), g: Math.random(), b: Math.random() });
+  Color.Rgb.of({
+    r: Math.random(),
+    g: Math.random(),
+    b: Math.random(),
+    space: Color.Srgb,
+  });
 const glow = () =>
-  Color.Linear.of({ r: Math.random(), g: Math.random(), b: Math.random() });
+  Color.Rgb.of({
+    r: Math.random(),
+    g: Math.random(),
+    b: Math.random(),
+    space: Color.Linear,
+  });
 variant(
   "instances, a colour each: a position",
   () => [place(), paint()],
@@ -220,7 +230,7 @@ variant(
     geometry,
     material,
     capacity: N,
-    color: Color.Srgb,
+    color: Color.Rgb,
   })
 );
 variant(
@@ -232,7 +242,7 @@ variant(
     geometry,
     material,
     capacity: N,
-    color: Color.Linear,
+    color: Color.Rgb,
   })
 );
 variant(
@@ -244,7 +254,7 @@ variant(
     geometry,
     material,
     capacity: N,
-    color: Color.Srgb,
+    color: Color.Rgb,
     smooth: true,
   })
 );

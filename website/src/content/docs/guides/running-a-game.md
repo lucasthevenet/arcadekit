@@ -20,16 +20,13 @@ const canvas = document.querySelector("canvas")!;
 const button = document.querySelector("button")!;
 
 Browser.runMain(
-  Driver.run(
-    App.make(App.define({ plugins: [Game] }), { seed: Date.now() }).pipe(
-      Effect.tap((app) =>
-        Effect.sync(() => {
-          button.onclick = () => app.enqueue(NewGame, {});
-        })
-      )
-    ),
-    { hz: 60 }
-  ),
+  Driver.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+    hz: 60,
+    ready: (app) =>
+      Effect.sync(() => {
+        button.onclick = () => app.enqueue(NewGame, {});
+      }),
+  }),
   { target: canvas, preventDefault: ["Space", "ArrowUp", "ArrowDown"] }
 );
 ```
@@ -46,6 +43,7 @@ Browser.runMain(
 | `hz` | Required | The ticks per second, whatever the frame rate |
 | `ticks` | `"always"` | `"whenNeeded"` ticks only while the game changes. See [tick only when needed](#tick-only-when-needed) |
 | `maxStepsPerCall` | `5` | The most ticks that one frame runs after a freeze. The loop drops the ticks still owed |
+| `ready` | None | A step that has the app once it is made, before its first frame |
 
 `Browser.runMain` is the page's `runMain`. It reports failures, and it provides the page's display and devices to the whole program. The loop follows `requestAnimationFrame`, and the input stage reads the keyboard, the pointer, and the gamepads. Its options:
 
@@ -66,7 +64,7 @@ The loop keeps to these rules:
 - After a freeze while the tab stays visible, the loop runs at most `maxStepsPerCall` ticks and drops the rest.
 - If a tick or a frame throws, the loop stops and the program dies with the thrown error.
 
-To connect something outside the game to the app before its first frame, add a step to the effect that makes the app, as `Effect.tap` does above. What the step acquires is released when the run ends. If the step can fail, hold the app with `Effect.acquireRelease(App.make(game), (app) => app.close)`, so that the app is closed when the step fails. A UI doesn't need the app, because it receives [the view bridge](ui.md).
+To connect something outside the game to the app before its first frame, give it as `ready`, as above. What `ready` acquires is released when the run ends. When `ready` fails, `Driver.run` closes the app and fails with what `ready` failed with. A UI doesn't need the app, because it receives [the view bridge](ui.md).
 
 An app made from a `save` resumes from it instead of starting fresh. Making it can fail with `Save.LoadRefused`, and `Driver.run` fails with whatever making the app fails with. See [saving and loading](saving-and-loading.md).
 

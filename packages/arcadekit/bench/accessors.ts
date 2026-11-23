@@ -343,11 +343,11 @@ const atRest = (): number =>
         )
       );
       const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
-      // The first tick enters the state, and one more follows it.
+      // A new game rests after its first tick when that tick changed nothing.
       for (let i = 0; i < 10; i++) {
         advance(DT);
       }
-      if (app.time.tick !== 2) {
+      if (app.time.tick !== 1) {
         throw new Error(`The game did not come to rest: tick ${app.time.tick}`);
       }
       return measure(() => advance(DT), 50_000, 20_000);

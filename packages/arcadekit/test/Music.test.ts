@@ -628,6 +628,31 @@ describe("Sound.Player.music", () => {
     expect(Object.fromEntries(sound.playing)).toEqual({ a: "hum", b: "buzz" });
   });
 
+  it("forgets what a frame said of a channel when another system failed it", () => {
+    const sound = Sound.makeRecorder();
+    let track = "hum";
+    let failing = true;
+    const Say = System.frame("mu/Say", function* () {
+      (yield* Sound.Player).music("a", track);
+    });
+    const Fail = System.frame("mu/Fail", function* () {
+      if (failing) {
+        return yield* Effect.fail("broken");
+      }
+    });
+    const { app } = start(
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Say, Fail] })),
+      sound
+    );
+    expect(() => app.frame()).toThrow("broken");
+    failing = false;
+    track = "drone";
+    app.frame();
+    expect(sound.scored).toEqual([
+      { channel: "a", track: "drone", volume: 1, fade: 0.5 },
+    ]);
+  });
+
   it("is heard in the same frame as the frame's cues, each as it was asked", () => {
     const sound = Sound.makeRecorder();
     let on = false;

@@ -42,7 +42,7 @@
  * Nothing provides a source to a replay or a server, and no devices are read
  * there.
  */
-import { Context, Effect, Effectable, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 
 import * as Action from "./Action";
@@ -50,7 +50,6 @@ import type { World as EcsWorld } from "./ecs/world";
 import * as Field from "./Field";
 import * as Plugin from "./Plugin";
 import { Time, World } from "./Services";
-import type { TimeState } from "./Services";
 import { whole } from "./services/handed";
 import * as Singleton from "./Singleton";
 import * as System from "./System";
@@ -571,42 +570,6 @@ const Read = System.input("arcadekit/Input.Read", function* () {
 });
 
 /**
- * Keeps the devices' state in the world: which buttons are down, which went
- * down or up in this tick, and where the axes are. Systems read it with
- * `Input.Keyboard`, `Input.Pointer` and `Input.Gamepad`.
- *
- * **When to use**
- *
- * Use when systems read held buttons and positions directly. To map the
- * devices to the game's own actions, use `Input.bind`, which doesn't require
- * this plugin.
- *
- * **Details**
- *
- * - The devices are read once before each tick, in the input stage. What
- *   changed becomes one action in the log, `Input.Report`, and nothing is
- *   logged while nothing changes. Every system in a tick therefore sees the
- *   same state, and a replay sees the same state as the game.
- * - The state is a singleton of the world. It is saved with the game, restored
- *   when an action is refused, and included in the hash once something was
- *   pressed.
- * - The devices win over a save. When a game is loaded from a save in which a
- *   key was held, and the key is no longer down, the first read releases it.
- *
- * **Gotchas**
- *
- * - It holds one state, for one player's devices. For several players, on one
- *   machine or several, bind each player's devices with `Input.bind` to
- *   actions that carry the player.
- *
- * @category Plugins
- */
-export const plugin = Plugin.make("arcadekit/Input", {
-  handlers: [report],
-  systems: [Read],
-});
-
-/**
  * Buttons, as a system reads them.
  *
  * @category Models
@@ -654,73 +617,8 @@ export interface GamepadView {
   readonly released: (button: number) => boolean;
 }
 
-interface Views {
-  readonly keyboard: KeyboardView;
-  readonly pointer: PointerView;
-  readonly pad: (index: number) => GamepadView;
-}
-
-// A world's views of its picture, made once.
-const views = new WeakMap<EcsWorld, Views>();
-
-const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
-  const found = views.get(world);
-  if (found !== undefined) {
-    return found;
-  }
-  const held = world.singleton(Held);
-  const down = (code: string): boolean => held.buttons[code]?.[0] === 1;
-  // The tick whoever asks belongs to. An action's handler runs before its
-  // tick is counted, in a transaction of the world, which is how it is
-  // known here: it is told what that tick's systems will be told.
-  const now = (): number => time.tick + (world._recording ? 1 : 0);
-  const pressed = (code: string): boolean => held.buttons[code]?.[1] === now();
-  const released = (code: string): boolean => held.buttons[code]?.[2] === now();
-  const pads: GamepadView[] = [];
-  const made: Views = {
-    keyboard: { down, pressed, released },
-    pointer: {
-      get x() {
-        return held.axes[pointerX] ?? 0;
-      },
-      get y() {
-        return held.axes[pointerY] ?? 0;
-      },
-      down: (button = 0) => down(pointerButton(button)),
-      pressed: (button = 0) => pressed(pointerButton(button)),
-      released: (button = 0) => released(pointerButton(button)),
-    },
-    pad: (index) =>
-      (pads[index] ??= {
-        axis: (axis) => held.axes[padAxis(index, axis)] ?? 0,
-        down: (button) => down(padButton(index, button)),
-        pressed: (button) => pressed(padButton(index, button)),
-        released: (button) => released(padButton(index, button)),
-      }),
-  };
-  views.set(world, made);
-  return made;
-};
-
-/** One view of the input state. It is an Effect, so `yield*` returns the view. */
-class View<A> extends Effectable.Class<A, never, World | Time> {
-  private effect: Effect.Effect<A, never, World | Time> | undefined;
-
-  constructor(private readonly pick: (all: Views) => A) {
-    super();
-  }
-
-  asEffect(): Effect.Effect<A, never, World | Time> {
-    return (this.effect ??= Effect.flatMap(Effect.service(World), (world) =>
-      Effect.map(Effect.service(Time), (time) =>
-        this.pick(viewsOf(whole(world), time))
-      )
-    ));
-  }
-}
-
 /**
- * The keyboard's state in the current tick. Requires `Input.plugin`.
+ * The keyboard's state in the current tick, which `Input.plugin` provides.
  *
  *   const keys = yield* Input.Keyboard
  *   keys.down("ArrowLeft")    // held
@@ -740,39 +638,125 @@ class View<A> extends Effectable.Class<A, never, World | Time> {
  *   in the next tick, and isn't down.
  * - A held key released and pressed again between two ticks is both released
  *   and pressed in the next tick, and is down.
- * - Without `Input.plugin`, every key reads as up, and nothing fails.
+ * - A game that reads it and leaves out `Input.plugin` doesn't compile.
  *
  * @category Views
  */
-export const Keyboard: View<KeyboardView> = new View((all) => all.keyboard);
+export class Keyboard extends Context.Service<Keyboard, KeyboardView>()(
+  "arcadekit/Input.Keyboard"
+) {}
 
 /**
- * The pointer's state in the current tick. Requires `Input.plugin`.
- *
- * **Gotchas**
- *
- * - Without `Input.plugin`, every button reads as up and the position as
- *   (0, 0), and nothing fails.
+ * The pointer's state in the current tick, which `Input.plugin` provides.
  *
  * @category Views
  */
-export const Pointer: View<PointerView> = new View((all) => all.pointer);
+export class Pointer extends Context.Service<Pointer, PointerView>()(
+  "arcadekit/Input.Pointer"
+) {}
 
-const padViews: View<GamepadView>[] = [];
+/**
+ * Every gamepad's state in the current tick, by index, which `Input.plugin`
+ * provides. A system reads one with `Input.Gamepad`.
+ *
+ * @category Views
+ */
+export class Gamepads extends Context.Service<
+  Gamepads,
+  (index: number) => GamepadView
+>()("arcadekit/Input.Gamepads") {}
+
+const padViews: Effect.Effect<GamepadView, never, Gamepads>[] = [];
 
 /**
  * Returns a gamepad's state in the current tick, or the first gamepad's when
- * given no index. Requires `Input.plugin`.
- *
- * **Gotchas**
- *
- * - Without `Input.plugin`, every button reads as up and every axis as 0, and
- *   nothing fails.
+ * given no index. It requires `Input.Gamepads`, which `Input.plugin` provides.
  *
  * @category Views
  */
-export const Gamepad = (index = 0): View<GamepadView> =>
-  (padViews[index] ??= new View((all) => all.pad(index)));
+export const Gamepad = (
+  index = 0
+): Effect.Effect<GamepadView, never, Gamepads> =>
+  (padViews[index] ??= Effect.map(Gamepads, (pads) => pads(index)));
+
+const views = Layer.effectContext(
+  Effect.gen(function* () {
+    const world = whole(yield* World);
+    const time = yield* Time;
+    const held = world.singleton(Held);
+    const down = (code: string): boolean => held.buttons[code]?.[0] === 1;
+    // The tick whoever asks belongs to. An action's handler runs before its
+    // tick is counted, in a transaction of the world, which is how it is
+    // known here: it is told what that tick's systems will be told.
+    const now = (): number => time.tick + (world._recording ? 1 : 0);
+    const pressed = (code: string): boolean =>
+      held.buttons[code]?.[1] === now();
+    const released = (code: string): boolean =>
+      held.buttons[code]?.[2] === now();
+    const pads: GamepadView[] = [];
+    return Context.make(Keyboard, { down, pressed, released }).pipe(
+      Context.add(Pointer, {
+        get x() {
+          return held.axes[pointerX] ?? 0;
+        },
+        get y() {
+          return held.axes[pointerY] ?? 0;
+        },
+        down: (button = 0) => down(pointerButton(button)),
+        pressed: (button = 0) => pressed(pointerButton(button)),
+        released: (button = 0) => released(pointerButton(button)),
+      }),
+      Context.add(
+        Gamepads,
+        (index) =>
+          (pads[index] ??= {
+            axis: (axis) => held.axes[padAxis(index, axis)] ?? 0,
+            down: (button) => down(padButton(index, button)),
+            pressed: (button) => pressed(padButton(index, button)),
+            released: (button) => released(padButton(index, button)),
+          })
+      )
+    );
+  })
+);
+
+/**
+ * Keeps the devices' state in the world: which buttons are down, which went
+ * down or up in this tick, and where the axes are. It provides
+ * `Input.Keyboard`, `Input.Pointer` and `Input.Gamepads`, from which systems
+ * and action handlers read it.
+ *
+ * **When to use**
+ *
+ * Use when systems read held buttons and positions directly. To map the
+ * devices to the game's own actions, use `Input.bind`, which doesn't require
+ * this plugin.
+ *
+ * **Details**
+ *
+ * - The devices are read once before each tick, in the input stage. What
+ *   changed becomes one action in the log, `Input.Report`, and nothing is
+ *   logged while nothing changes. Every system in a tick therefore sees the
+ *   same state, and a replay sees the same state as the game.
+ * - The state is a singleton of the world. It is saved with the game, restored
+ *   when an action is refused, and included in the hash once something was
+ *   pressed.
+ * - The devices win over a save. When a game is loaded from a save in which a
+ *   key was held, and the key is no longer down, the first read releases it.
+ *
+ * **Gotchas**
+ *
+ * - It holds one state, for one player's devices. For several players, on one
+ *   machine or several, bind each player's devices with `Input.bind` to
+ *   actions that carry the player.
+ *
+ * @category Plugins
+ */
+export const plugin = Plugin.make("arcadekit/Input", {
+  handlers: [report],
+  systems: [Read],
+  layer: views,
+});
 
 // --- bindings: from the devices to the game's own actions -------------------------
 

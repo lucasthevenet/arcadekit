@@ -80,7 +80,7 @@ Only the systems of the [frame and input stages](../concepts/ticks-and-frames.md
 - Make configuration a [`Resource`](#configure-a-plugin-with-a-resource), which the tick may read.
 - Play, draw, log and call the network from `System.frame`, which hears what the tick's events said.
 
-A plugin's `layer` builds its services. While it builds, it can use the built-in services and whatever the plugin's dependencies provide. A layer that needs another plugin's service lists that plugin in `plugins`. Acquire what needs releasing with `Effect.acquireRelease` inside `Layer.effect`, and the app releases it when it is closed.
+A plugin's `layer` builds its services. While it builds, it can read the built-in services and use whatever the plugin's dependencies provide. It is built again when a save is loaded, so a layer that changes the game, with `Commands`, `World.writes` or a query that writes, doesn't compile: spawn what a game starts with in `setup`. A layer that needs another plugin's service lists that plugin in `plugins`. Acquire what needs releasing with `Effect.acquireRelease` inside `Layer.effect`, and the app releases it when it is closed.
 
 Anything your frame and input systems need that no plugin provides remains a requirement of `App.make`. Provide it the usual Effect way, and a missing one is the usual compile error:
 

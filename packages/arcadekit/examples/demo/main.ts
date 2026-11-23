@@ -108,66 +108,63 @@ const Demo = Plugin.make("Demo", {
 // --- the entry point -------------------------------------------------------------
 // Driver.run runs the app that App.make makes until it is interrupted: sixty
 // ticks a second, and the frame stage each time the display is due, which
-// under Node is a timer. Before its first frame, a step on the effect that
-// makes the app has it, where this demo steps the same app by hand.
+// under Node is a timer. Before its first frame, its ready step has the app,
+// where this demo steps the same app by hand.
 const program = Effect.gen(function* () {
   const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
-  yield* Driver.run(
-    App.make(App.define({ plugins: [Demo] }), { seed: 7 }).pipe(
-      Effect.tap((app) =>
-        Effect.gen(function* () {
+  yield* Driver.run(App.make(App.define({ plugins: [Demo] }), { seed: 7 }), {
+    hz: 60,
+    ready: (app) =>
+      Effect.gen(function* () {
+        yield* Console.log(
+          `system order: ${app.systemOrder.join(" -> ")}; each frame: ${app.frameOrder.join(" -> ")}`
+        );
+
+        // Outside the game, it is read with app.read.
+        const world = yield* app.read(World);
+        const named = yield* app.read(Named);
+        const rockY = (): string => {
+          let y = Number.NaN;
+          named.each((name, position) => {
+            if (name.value === "rock") {
+              y = position.y;
+            }
+          });
+          return y.toFixed(1);
+        };
+
+        // 1. As fast as possible: three seconds of game time at a fixed 60 Hz.
+        const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
+        const started = performance.now();
+        for (let second = 1; second <= 3; second++) {
+          step(1);
           yield* Console.log(
-            `system order: ${app.systemOrder.join(" -> ")}; each frame: ${app.frameOrder.join(" -> ")}`
+            `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${world.entityCount} ` +
+              `rock.y=${rockY()}`
           );
+          if (second === 1) {
+            app.enqueue(Thaw, undefined);
+          } // the rock starts falling
+        }
+        const { wave } = yield* app.read(Spray);
+        yield* Console.log(
+          `180 ticks took ${(performance.now() - started).toFixed(1)} ms; fountain: ${wave} of ${WAVES} waves`
+        );
 
-          // Outside the game, it is read with app.read.
-          const world = yield* app.read(World);
-          const named = yield* app.read(Named);
-          const rockY = (): string => {
-            let y = Number.NaN;
-            named.each((name, position) => {
-              if (name.value === "rock") {
-                y = position.y;
-              }
-            });
-            return y.toFixed(1);
-          };
+        // 2. Turn-based: nothing happens until a player acts, then exactly one tick.
+        const before = app.time.tick;
+        app.tick(1);
+        yield* Console.log(
+          `turn-based step: tick ${before} -> ${app.time.tick}`
+        );
 
-          // 1. As fast as possible: three seconds of game time at a fixed 60 Hz.
-          const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
-          const started = performance.now();
-          for (let second = 1; second <= 3; second++) {
-            step(1);
-            yield* Console.log(
-              `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${world.entityCount} ` +
-                `rock.y=${rockY()}`
-            );
-            if (second === 1) {
-              app.enqueue(Thaw, undefined);
-            } // the rock starts falling
-          }
-          const { wave } = yield* app.read(Spray);
-          yield* Console.log(
-            `180 ticks took ${(performance.now() - started).toFixed(1)} ms; fountain: ${wave} of ${WAVES} waves`
-          );
-
-          // 2. Turn-based: nothing happens until a player acts, then exactly one tick.
-          const before = app.time.tick;
-          app.tick(1);
-          yield* Console.log(
-            `turn-based step: tick ${before} -> ${app.time.tick}`
-          );
-
-          // 3. Real time is what Driver.run does next, from here.
-          app.enqueue(Launch, { speed: 30 });
-          noted.app = app;
-          noted.ticks = app.time.tick;
-          noted.frames = Sketch.sketch.frames;
-        })
-      )
-    ),
-    { hz: 60 }
-  ).pipe(
+        // 3. Real time is what Driver.run does next, from here.
+        app.enqueue(Launch, { speed: 30 });
+        noted.app = app;
+        noted.ticks = app.time.tick;
+        noted.frames = Sketch.sketch.frames;
+      }),
+  }).pipe(
     Effect.provide(Resource.layer(Gravity, -20)),
     // A game runs until its page or its process goes away. This one is
     // interrupted after a quarter of a second, which stops the frame loop

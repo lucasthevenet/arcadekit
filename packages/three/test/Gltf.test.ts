@@ -19,10 +19,12 @@ import {
   Schema,
   Scope,
 } from "effect";
-import { InstancedMesh, Mesh, Texture } from "three";
+import { FileLoader, InstancedMesh, Mesh, Texture } from "three";
 import type { BufferGeometry, MeshStandardMaterial, Scene } from "three";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 
 import { Gltf, Three } from "../src/index";
 
@@ -382,8 +384,9 @@ describe("a model", () => {
     const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
     const prepared: unknown[] = [];
     const options: Gltf.ModelOptions = {
-      prepare: (loader) => {
+      prepare: (loader, manager) => {
         prepared.push(loader);
+        expect(loader.manager).toBe(manager);
       },
     };
     await load("/tri.glb", { "/tri.glb": file }, options);
@@ -391,6 +394,53 @@ describe("a model", () => {
     expect(prepared.length).toBe(2);
     expect(prepared[0]).toBeInstanceOf(GLTFLoader);
     expect(prepared[1]).not.toBe(prepared[0]);
+  });
+
+  it("serves the files its decoders fetch through the loader, and disposes of the decoders once it is read", async () => {
+    // Node has no ProgressEvent, which a FileLoader reports progress with.
+    vi.stubGlobal("ProgressEvent", Event);
+    const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
+    const wasm = new Uint8Array([0, 97, 115, 109]);
+    let disposed: MockInstance | undefined;
+    let fetched: Promise<unknown> | undefined;
+    const { asked, failure } = await load(
+      "/tri.glb",
+      { "/tri.glb": file, "/draco/draco_decoder.wasm": wasm },
+      {
+        files: ["/draco/draco_decoder.wasm"],
+        prepare: (loader, manager) => {
+          const draco = new DRACOLoader(manager).setDecoderPath("/draco/");
+          disposed = vi.spyOn(draco, "dispose");
+          loader.setDRACOLoader(draco);
+          fetched = new FileLoader(manager)
+            .setPath("/draco/")
+            .setResponseType("arraybuffer")
+            .loadAsync("draco_decoder.wasm");
+        },
+      }
+    );
+    expect(failure).toBeUndefined();
+    expect(asked.toSorted()).toEqual(["/draco/draco_decoder.wasm", "/tri.glb"]);
+    expect(new Uint8Array((await fetched) as ArrayBuffer)).toEqual(wasm);
+    expect(disposed).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails its bundle when a decoder was not made with the manager prepare receives", async () => {
+    const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
+    const { failure } = await load(
+      "/tri.glb",
+      { "/tri.glb": file },
+      {
+        prepare: (loader) => {
+          loader.setDRACOLoader(new DRACOLoader());
+        },
+      }
+    );
+    expect(failure).toBeInstanceOf(Assets.AssetFailed);
+    expect(failure).toMatchObject({
+      url: "/tri.glb",
+      message: expect.stringContaining("not made with the manager"),
+    });
   });
 
   it("has its pictures fetched through the loader too, decoded by the page, and closed with it", async () => {

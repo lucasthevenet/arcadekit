@@ -65,8 +65,7 @@ const components: readonly ComponentDef[] = [
   Ship,
   Hidden,
   Heavy,
-  Color.Srgb,
-  Color.Linear,
+  Color.Rgb,
   Velocity,
 ];
 const named = new Map(components.map((def) => [def.name, def]));
@@ -878,7 +877,7 @@ describe("Three.instances", () => {
           material,
           capacity: 8192,
           smooth,
-          ...(colored ? { color: Color.Srgb } : {}),
+          ...(colored ? { color: Color.Rgb } : {}),
         });
       const renderer = makeRenderer();
       const { app, hand, world } = start(
@@ -915,10 +914,11 @@ describe("Three.instances", () => {
         ] as ComponentInput[];
         if (colored) {
           parts.push(
-            Color.Srgb.of({
+            Color.Rgb.of({
               r: random.next(),
               g: random.next(),
               b: random.next(),
+              space: Color.Srgb,
             })
           );
         }
@@ -2165,7 +2165,7 @@ describe("a colour per instance", () => {
       material,
       // The renderer's own numbers, handed over as they are: what these
       // tests follow is which instance has which.
-      color: Color.Linear,
+      color: Color.Rgb,
       capacity: 4,
     });
   const Painted = painted("th/Painted", Transform3d);
@@ -2195,9 +2195,10 @@ describe("a colour per instance", () => {
     };
   };
   const paint = (r: number, g: number, b: number) =>
-    Color.Linear.of({ r, g, b });
+    Color.Rgb.of({ r, g, b, space: Color.Linear });
   /** A colour as a hex code writes it, which is converted. */
-  const srgb = (r: number, g: number, b: number) => Color.Srgb.of({ r, g, b });
+  const srgb = (r: number, g: number, b: number) =>
+    Color.Rgb.of({ r, g, b, space: Color.Srgb });
   /** The colour of the instance that is drawn at this height. */
   const colorAt = (mesh: InstancedMesh, y: number): number[] => {
     for (let i = 0; i < mesh.count; i++) {
@@ -2271,11 +2272,11 @@ describe("a colour per instance", () => {
     expect(colors.itemSize).toBe(3);
     expect(colors.usage).toBe(mesh().instanceMatrix.usage);
     // It follows the entity: repainted, and gone.
-    hand.set(rocks[0]!, Color.Linear, { r: 0, g: 1, b: 0.5 });
+    hand.set(rocks[0]!, Color.Rgb, { r: 0, g: 1, b: 0.5 });
     hand.despawn(rocks[1]!);
     // Painted, and no longer.
     hand.add(bare[0]!, paint(0.5, 0.5, 0.5));
-    hand.remove(rocks[2]!, Color.Linear);
+    hand.remove(rocks[2]!, Color.Rgb);
     app.frame();
     expect(mesh().count).toBe(7);
     expect(flatMesh().count).toBe(8);
@@ -2320,13 +2321,13 @@ describe("a colour per instance", () => {
           hand.despawn(one.entity);
           alive.splice(alive.indexOf(one), 1);
         } else if (roll === 5) {
-          hand.set(one.entity, Color.Linear, {
+          hand.set(one.entity, Color.Rgb, {
             r: random.next(),
             g: random.next(),
           });
-        } else if (world.has(one.entity, Color.Linear)) {
+        } else if (world.has(one.entity, Color.Rgb)) {
           // Unpainted for a while, and painted again.
-          hand.remove(one.entity, Color.Linear);
+          hand.remove(one.entity, Color.Rgb);
         } else {
           hand.add(one.entity, paint(random.next(), 0, 0));
         }
@@ -2343,7 +2344,7 @@ describe("a colour per instance", () => {
       expect(mesh().count).toBe(alive.filter((one) => !one.flat).length);
       expect(flatMesh().count).toBe(alive.filter((one) => one.flat).length);
       for (const one of alive) {
-        const { b, g, r } = world.get(one.entity, Color.Linear) ?? {
+        const { b, g, r } = world.get(one.entity, Color.Rgb) ?? {
           r: 1,
           g: 1,
           b: 1,
@@ -2402,7 +2403,7 @@ describe("a colour per instance", () => {
       transform: Transform3d,
       geometry,
       material,
-      color: Color.Linear,
+      color: Color.Rgb,
       smooth: true,
       // How far an entity may go: a colour is not a place, and is never too far.
       snap: 0.1,
@@ -2415,7 +2416,7 @@ describe("a colour per instance", () => {
     );
     app.frame(0.5);
     expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
-    hand.set(rock, Color.Linear, { r: 1, g: 0.5, b: 0 });
+    hand.set(rock, Color.Rgb, { r: 1, g: 0.5, b: 0 });
     app.tick(1);
     app.frame(0);
     expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
@@ -2425,13 +2426,13 @@ describe("a colour per instance", () => {
     expect(colorAt(mesh(), 1)).toEqual([1, 0.5, 0]);
   });
 
-  it("is a hex code's numbers in a Color.Srgb, converted for the renderer as Three.js converts them", () => {
+  it("is a hex code's numbers in Color.Srgb, converted for the renderer as Three.js converts them", () => {
     const Coded = Three.instances("th/Painted", {
       of: Rock,
       transform: Transform3d,
       geometry,
       material,
-      color: Color.Srgb,
+      color: Color.Rgb,
     });
     const { app, hand, mesh } = play(Coded);
     const codes = ["#ff6188", "#000000", "#ffffff", "#0a141e", "#7f8081"];
@@ -2483,7 +2484,7 @@ describe("a colour per instance", () => {
       transform: Transform3d,
       geometry,
       material,
-      color: Color.Srgb,
+      color: Color.Rgb,
     });
     const { app, hand, mesh } = play(Coded);
     const random = makeRandom(20_261_117);
@@ -2520,7 +2521,7 @@ describe("a colour per instance", () => {
       transform: Transform3d,
       geometry,
       material,
-      color: Color.Srgb,
+      color: Color.Rgb,
     });
     const { app, hand, mesh } = play(Coded);
     const fine = hand.spawn(
@@ -2540,18 +2541,18 @@ describe("a colour per instance", () => {
       [0.5, -3, 0.5],
       [0.5, 0.5, -200],
     ] as const) {
-      hand.set(fine, Color.Srgb, { r, g, b });
+      hand.set(fine, Color.Rgb, { r, g, b });
       expect(() => app.frame()).toThrow(
-        `Three.instances("th/Painted") was given the colour (${Math.fround(r)}, ${Math.fround(g)}, ${Math.fround(b)}) by entity ${fine}, which is no colour: each number of a Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is a Color.Linear, the renderer's own numbers, which are drawn as they are.`
+        `Three.instances("th/Painted") was given the colour (${Math.fround(r)}, ${Math.fround(g)}, ${Math.fround(b)}) by entity ${fine}, which is no colour: each number of a colour in Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is in Color.Linear, the renderer's own numbers, which are drawn as they are.`
       );
     }
     // Put right, it is drawn again.
-    hand.set(fine, Color.Srgb, { r: 1, g: 0, b: 0 });
+    hand.set(fine, Color.Rgb, { r: 1, g: 0, b: 0 });
     app.frame();
     expect(colorAt(mesh(), 1)).toEqual([1, 0, 0]);
   });
 
-  it("takes any number in a Color.Linear, the renderer's own, brighter than white or below black", () => {
+  it("takes any number in Color.Linear, the renderer's own, brighter than white or below black", () => {
     const { app, hand, mesh } = play();
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), paint(4, 0, -1));
     app.frame();
@@ -2564,7 +2565,7 @@ describe("a colour per instance", () => {
       transform: Transform3d,
       geometry,
       material,
-      color: Color.Srgb,
+      color: Color.Rgb,
       smooth: true,
     });
     const { app, hand, mesh } = play(Fading);
@@ -2574,7 +2575,7 @@ describe("a colour per instance", () => {
       srgb(0, 0.2, 1)
     );
     app.frame(0.5);
-    hand.set(rock, Color.Srgb, { r: 1, g: 0.2, b: 0 });
+    hand.set(rock, Color.Rgb, { r: 1, g: 0.2, b: 0 });
     app.tick(1);
     app.frame(0.25);
     // A quarter of the way between the two codes, as a code.
@@ -2602,7 +2603,7 @@ describe("a colour per instance", () => {
     expect(mesh().instanceColor).toBeNull();
   });
 
-  it("is one of arcadekit's two: a component of the game's own does not compile as one, whatever its fields", () => {
+  it("is arcadekit's one colour, drawn by each entity's own space: a component of the game's own does not compile as one", () => {
     const base = { of: Rock, transform: Transform3d, geometry, material };
     const Paint = Component.define("th/Paint", {
       r: Field.f32,
@@ -2617,7 +2618,7 @@ describe("a colour per instance", () => {
     const Hue = Component.define("th/Hue", { degrees: Field.f32 });
     Three.instances("th/Own", {
       ...base,
-      // @ts-expect-error the game's own colour, of the same fields as Color.Srgb's
+      // @ts-expect-error the game's own colour, of the same fields as Color.Rgb's
       color: Paint,
     });
     Three.instances("th/Bytes", {
@@ -2630,22 +2631,38 @@ describe("a colour per instance", () => {
       // @ts-expect-error a hue is one number, not three
       color: Hue,
     });
-    // Nor does `colorSpace`: which numbers a colour holds is which of the
-    // two it is.
+    // Nor does `colorSpace`: the space is each entity's colour's.
     Three.instances("th/Space", {
       ...base,
-      color: Color.Srgb,
-      // @ts-expect-error the space is the component's
+      color: Color.Rgb,
+      // @ts-expect-error the space is the colour's
       colorSpace: "srgb-linear",
     });
-    // A kind draws the one it is given: an entity with the other is drawn
-    // as one with none.
+    // One kind draws each entity by the space of its own colour, and keeps a
+    // linear one brighter than white.
     const { app, hand, mesh } = play();
-    hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), srgb(1, 0, 0));
-    hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), paint(0, 1, 0));
+    const half = new ThreeColor().setRGB(0.5, 0.5, 0.5, SRGBColorSpace).r;
+    hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), srgb(1, 0.5, 0));
+    hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), paint(4, 0.5, 0));
+    const turned = hand.spawn(
+      Rock,
+      Position.of({ x: 0, y: 3, z: 0 }),
+      paint(0, 0, 1)
+    );
     app.frame();
-    expect(colorAt(mesh(), 1)).toEqual([1, 1, 1]);
-    expect(colorAt(mesh(), 2)).toEqual([0, 1, 0]);
+    expect(colorAt(mesh(), 1)[0]).toBe(1);
+    expect(colorAt(mesh(), 1)[1]).toBeCloseTo(half, 6);
+    expect(colorAt(mesh(), 2)).toEqual([4, 0.5, 0]);
+    expect(colorAt(mesh(), 3)).toEqual([0, 0, 1]);
+    // The same numbers in the other space are another colour.
+    hand.set(turned, Color.Rgb, { b: 0.5, space: Color.Srgb });
+    app.frame();
+    expect(colorAt(mesh(), 3)[2]).toBeCloseTo(half, 6);
+    // @ts-expect-error a space is Color.Srgb or Color.Linear
+    hand.set(turned, Color.Rgb, { space: 2 });
+    expect(() => app.frame()).toThrow(
+      `Three.instances("th/Painted") was given the colour (0, 0, 0.5) by entity ${turned}, which is no colour: its space is 2, and a colour's space is Color.Srgb (0) or Color.Linear (1).`
+    );
   });
 
   it("goes with the mesh when the app's scope closes", () => {
