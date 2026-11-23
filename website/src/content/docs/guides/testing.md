@@ -94,7 +94,7 @@ In a test, replace a sound that a page loads with `Browser.sound(url)` by an ass
 
 ## Run the frame stage by hand
 
-`app.frame()` runs the frame stage, and draws the game where its last tick left it. `app.frame(alpha)` draws it `alpha` of the way between its last two ticks, which a kind drawn with `smooth` shows. With `App.make(game, { verifyFrames: true })`, the app hashes the world before the stage and after each of its systems, and `frame` dies with `Stage.FrameChangedWorld` if a system changed the game through a raw column. It costs a hash per system, so use it in tests.
+`app.frame()` runs the frame stage, and draws the game where its last tick left it. `app.frame(alpha)` draws it `alpha` of the way between its last two ticks, which a kind drawn with `smooth` shows. With `App.make(game, { verifyFrames: true })`, the app hashes the world before the stage and after each of its systems, and `frame` dies with `Stage.FrameChangedWorld`, which names the system, if a system changed the game. In every stage, `eachChunk` throws when a loop wrote a column it was handed read-only, and puts the column back. Each check costs a hash per system, or a copy of each column handed out read-only, so use it in tests.
 
 To test a program that runs its own frame loop, provide `Driver.makeManualDisplay()` as `Driver.Display`, a display you drive by hand instead of real timers. `display.frame(ms)` signals that a frame is due, and `display.hide()` and `display.show()` act as the tab being hidden and shown again. `display.pending` and `display.watching` count the requested frames and the listeners on the tab, so a test can check that a stopped loop left nothing behind.
 
@@ -126,9 +126,9 @@ To check that a level's assets are released when the level ends, give the level 
 
 ## Act as the UI
 
-To test the game, the test acts as the UI. It makes a bridge from the game with `View.makeBridge(game)` and provides it with `Effect.provide(View.layer(ui))`. It reads views with `get` or `subscribe`, acts with `send`, and steps the app.
+To test the game, the test acts as the UI. It provides `View.layer(game, (ui) => { handed.push(ui) })` to the app and keeps the bridge the app hands it. It reads views with `get` or `subscribe`, acts with `send`, and steps the app.
 
-To test a UI, mount it on a bridge in a document, with `// @vitest-environment happy-dom` at the top of the file. Count what the UI was told, and count what changed in the document with a `MutationObserver`. See [a UI](ui.md).
+To test a UI, mount it with `View.layer` in a document, with `// @vitest-environment happy-dom` at the top of the file. Count what the UI was told, and count what changed in the document with a `MutationObserver`. See [a UI](ui.md).
 
 ## Record what is drawn
 

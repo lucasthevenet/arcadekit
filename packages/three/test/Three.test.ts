@@ -2540,6 +2540,8 @@ describe("a colour per instance", () => {
       [-0.01, 0.5, 0.5],
       [0.5, -3, 0.5],
       [0.5, 0.5, -200],
+      // Past what a 32-bit integer holds, which would wrap back into range.
+      [1052689, 0.5, 0.5],
     ] as const) {
       hand.set(fine, Color.Rgb, { r, g, b });
       expect(() => app.frame()).toThrow(
@@ -2550,6 +2552,51 @@ describe("a colour per instance", () => {
     hand.set(fine, Color.Rgb, { r: 1, g: 0, b: 0 });
     app.frame();
     expect(colorAt(mesh(), 1)).toEqual([1, 0, 0]);
+  });
+
+  it("refuses a colour that is no number, as a division by zero leaves it", () => {
+    const Painting = Query.all(Rock, Color.Rgb).pipe(Query.writes(Color.Rgb));
+    const Spoil = System.tick("th/Spoil", function* () {
+      (yield* Painting).eachChunk((from, to, _rock, color) => {
+        for (let i = from; i < to; i++) {
+          color.r[i] = color.r[i]! / 0;
+        }
+      });
+    });
+    const renderer = makeRenderer();
+    const { app, hand } = start(
+      App.make(
+        App.define({
+          plugins: [Three.plugin, Hand],
+          systems: [
+            Spoil,
+            Three.instances("th/Painted", {
+              of: Rock,
+              transform: Transform3d,
+              geometry,
+              material,
+              color: Color.Rgb,
+            }),
+          ],
+        })
+      ),
+      renderer
+    );
+    const rock = hand.spawn(
+      Rock,
+      Position.of({ x: 0, y: 1, z: 0 }),
+      srgb(1, 1, 1)
+    );
+    for (const [r, spoilt] of [
+      [0, Number.NaN],
+      [1, Number.POSITIVE_INFINITY],
+    ] as const) {
+      hand.set(rock, Color.Rgb, { r, g: 0.5, b: 0.5 });
+      app.tick(1);
+      expect(() => app.frame()).toThrow(
+        `Three.instances("th/Painted") was given the colour (${spoilt}, 0.5, 0.5) by entity ${rock},`
+      );
+    }
   });
 
   it("takes any number in Color.Linear, the renderer's own, brighter than white or below black", () => {

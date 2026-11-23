@@ -715,6 +715,29 @@ describe("a level's assets", () => {
 
   it("cannot be asked for in the tick, where a replay would have nothing to say", () => {
     const { Forest, Game } = makeGame();
+    // Nor loaded by any system: the only scope there is the app's, which
+    // would keep what each frame loaded until the app closed.
+    System.tick(
+      "Reload",
+      // @ts-expect-error a tick has no scope
+      function* () {
+        yield* Assets.load(Forest);
+      }
+    );
+    System.frame(
+      "Reload",
+      // @ts-expect-error a frame has no scope
+      function* () {
+        yield* Assets.load(Forest);
+      }
+    );
+    System.input(
+      "Reload",
+      // @ts-expect-error an input system has no scope
+      function* () {
+        yield* Assets.load(Forest);
+      }
+    );
     System.tick(
       "Cheat",
       // @ts-expect-error assets are real time

@@ -223,6 +223,11 @@ export class World {
   _recording = false;
   /** @internal True between `freeze` and `thaw`. */
   _frozen = false;
+  /**
+   * @internal When true, `eachChunk` refuses a loop that wrote a column it
+   * handed out as read-only, at the cost of a copy and a comparison of each.
+   */
+  _checkReads = false;
   /** What a rollback restores, in the order it was saved. */
   private readonly saved: Saved[] = [];
   /** The column sets saved whole, so each is copied once. */
@@ -995,10 +1000,10 @@ export class World {
    * two ticks and must leave it unchanged.
    *
    * Some changes aren't stopped where they happen. `thaw` detects a draw from
-   * `world.random`, restores the generator, and throws. Nothing detects a
-   * write through the raw columns that `eachChunk` hands out: compare
-   * `world.hash()` before and after to find one. A check on either would slow
-   * every loop and every draw.
+   * `world.random`, restores the generator, and throws. A write through the
+   * raw columns that `eachChunk` hands out is refused only in an app made
+   * with `verifyFrames`. A check on either in every world would slow every
+   * loop and every draw.
    *
    * In a frozen world, `eachChunk` counts nothing as written, so a change query
    * can hand out a component it watches.

@@ -98,7 +98,7 @@ const program = Driver.run(
     });
     return yield* Transport.connect(session);
   })
-).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7")));
+).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7", me)));
 ```
 
 `Transport.connect` connects the session to a transport and returns what a driver steps in the session's place. The driver ticks it `1 / delta` times a second, the rate every peer is made with, and draws the game through it. A driver of a session takes neither `hz` nor `ticks`, and giving it either doesn't compile.

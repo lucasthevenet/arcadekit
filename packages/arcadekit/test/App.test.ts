@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
+import { Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { App, Plugin, System } from "../src/index";
@@ -23,17 +23,22 @@ describe("an app", () => {
     expectTypeOf(App.make(App.define({ plugins: [Held] }))).toEqualTypeOf<
       Effect.Effect<App.App<never, never>, never, never>
     >();
-    // Nor when a system of its own requires one: it is handed the app's.
-    class Audio extends Context.Service<Audio, { readonly id: number }>()(
-      "app/Audio"
-    ) {}
-    const Scoped = System.frame("app/Scoped", function* () {
-      yield* Scope.Scope;
-      yield* Audio;
-    });
-    expectTypeOf(App.make(App.define({ systems: [Scoped] }))).toEqualTypeOf<
-      Effect.Effect<App.App<never, never>, never, Audio>
-    >();
+    // Nor hands one to a system, where what it opened on each frame would be
+    // kept until the app closed.
+    System.frame(
+      "app/Opens",
+      // @ts-expect-error a frame system has no scope
+      function* () {
+        yield* Effect.acquireRelease(Effect.void, () => Effect.void);
+      }
+    );
+    System.input(
+      "app/Opens",
+      // @ts-expect-error an input system has no scope
+      function* () {
+        yield* Scope.Scope;
+      }
+    );
   });
 
   it("holds what it opened until it is closed, however soon the effect that made it ended", () => {
@@ -49,23 +54,6 @@ describe("an app", () => {
     // Closing it again does nothing.
     Effect.runSync(app.close);
     expect(log).toEqual(["acquired", "released"]);
-  });
-
-  it("hands its systems its own scope, which closes with it", () => {
-    const log: string[] = [];
-    const Opens = System.frame("app/Opens", function* () {
-      yield* Effect.acquireRelease(
-        Effect.sync(() => log.push("opened")),
-        () => Effect.sync(() => log.push("closed"))
-      );
-    });
-    const app = Effect.runSync(
-      Effect.scoped(App.make(App.define({ systems: [Opens] })))
-    );
-    app.frame();
-    expect(log).toEqual(["opened"]);
-    Effect.runSync(app.close);
-    expect(log).toEqual(["opened", "closed"]);
   });
 
   it("lets go at once of what it opened when the making fails", async () => {

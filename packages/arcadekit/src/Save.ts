@@ -43,7 +43,9 @@ export interface Save {
   /**
    * The `version` of the game that wrote the save, as `App.define` was given
    * it, 0 by default. When you change the game's components, increment it and
-   * give the game a migration from the version before.
+   * give the game a migration from the version before. A changed field kind,
+   * name or order is refused at load whatever the version; a field whose
+   * values mean something else is caught only by incrementing the version.
    */
   readonly version: number;
   /**

@@ -28,16 +28,17 @@ import { Game, Screen } from "./game";
 const Catch = App.define({ plugins: [Game] });
 
 // --- the UI ----------------------------------------------------------------------
-// The bridge is made here, handed to the UI, and provided to the game. It
-// sends what the game handles, and the UI takes it only if the game handles
-// what the UI sends. The UI holds the bridge and nothing of the game; only
-// the one that is shown is loaded.
-const ui = View.makeBridge(Catch);
+// The app makes the bridge when it is made, and hands it to the UI, which it
+// takes out again when it closes. The bridge sends what the game handles, and
+// the UI takes it only if the game handles what the UI sends. The UI holds the
+// bridge and nothing of the game; only the one that is shown is loaded.
 const { mount } =
   new URLSearchParams(location.search).get("ui") === "react"
     ? await import("./uiReact")
     : await import("./uiDom");
-mount(document.querySelector("#ui")!, ui);
+const ui = View.layer(Catch, (bridge) =>
+  mount(document.querySelector("#ui")!, bridge)
+);
 
 // --- the entry point -------------------------------------------------------------
 // Driver.run makes the app and runs it, sixty ticks a second, until it is
@@ -48,7 +49,7 @@ mount(document.querySelector("#ui")!, ui);
 // any more.
 Browser.runMain(
   Driver.run(App.make(Catch, { seed: Date.now() }), { hz: 60 }).pipe(
-    Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))
+    Effect.provide(Layer.mergeAll(Screen.layer, ui))
   ),
   {
     target: document.querySelector("#game")!,

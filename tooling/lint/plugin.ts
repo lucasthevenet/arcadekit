@@ -1,5 +1,6 @@
-// The Oxlint plugin `arcadekit`: the rules of what a source file of a published package may
-// import or contain. oxlint.config.ts turns them on for packages/*/src.
+// The Oxlint plugin `arcadekit`: the rules of what a file of a published package may import or
+// contain. oxlint.config.ts turns them on for packages/*/src, and no-outside-state for the
+// examples and benchmarks too.
 import type { RuleTester } from "oxlint/plugins-dev";
 
 import { mayReach, packages } from "./entries.ts";
@@ -232,6 +233,155 @@ const topLevelClasses: Rule = {
   },
 };
 
+type Context = Parameters<NonNullable<Rule["create"]>>[0];
+type Scope = Context["sourceCode"]["scopeManager"]["scopes"][number];
+type Reference = Scope["through"][number];
+type TickCode = NodeOf<"CallExpression">["arguments"][number];
+
+/** The calls whose last argument is code of the tick: `System.tick("Move", function* () { ... })`. */
+const tickCallees = new Set([
+  "System.tick",
+  "State.onEnter",
+  "State.onExit",
+  "Action.handler",
+]);
+
+/** The methods that change their object: an array's, a map's, a set's. */
+const changesItsObject = new Set([
+  "push",
+  "pop",
+  "shift",
+  "unshift",
+  "splice",
+  "sort",
+  "reverse",
+  "fill",
+  "copyWithin",
+  "set",
+  "add",
+  "delete",
+  "clear",
+]);
+
+/**
+ * The code of the tick a call is given: its last argument, or the `setup` of `Plugin.make`'s
+ * options.
+ */
+const tickCodeOf = (node: NodeOf<"CallExpression">): TickCode | undefined => {
+  const { callee } = node;
+  if (
+    callee.type !== "MemberExpression" ||
+    callee.computed ||
+    callee.object.type !== "Identifier" ||
+    callee.property.type !== "Identifier"
+  ) {
+    return undefined;
+  }
+  const name = `${callee.object.name}.${callee.property.name}`;
+  if (tickCallees.has(name)) {
+    return node.arguments.at(-1);
+  }
+  const options = node.arguments[1];
+  if (name !== "Plugin.make" || options?.type !== "ObjectExpression") {
+    return undefined;
+  }
+  for (const property of options.properties) {
+    if (
+      property.type === "Property" &&
+      !property.computed &&
+      property.key.type === "Identifier" &&
+      property.key.name === "setup"
+    ) {
+      return property.value;
+    }
+  }
+  return undefined;
+};
+
+const within = (
+  node: { readonly start: number; readonly end: number },
+  body: TickCode
+): boolean => node.start >= body.start && node.end <= body.end;
+
+/**
+ * Whether the code of the tick changes what a name it did not declare names: `n++`,
+ * `list.push(x)`, `delete cache.key`.
+ */
+const changes = (reference: Reference): boolean => {
+  if (reference.resolved?.defs.some((def) => def.type === "ImportBinding")) {
+    return false;
+  }
+  if (reference.isWrite()) {
+    return !reference.init;
+  }
+  let top: Reference["identifier"] | NodeOf<"MemberExpression"> =
+    reference.identifier;
+  while (top.parent.type === "MemberExpression" && top.parent.object === top) {
+    top = top.parent;
+  }
+  const { parent } = top;
+  switch (parent.type) {
+    case "AssignmentExpression":
+      return parent.left === top;
+    case "UpdateExpression":
+      return true;
+    case "UnaryExpression":
+      return parent.operator === "delete";
+    case "CallExpression":
+      return (
+        parent.callee === top &&
+        top.type === "MemberExpression" &&
+        !top.computed &&
+        top.property.type === "Identifier" &&
+        changesItsObject.has(top.property.name)
+      );
+    default:
+      return false;
+  }
+};
+
+/**
+ * Code of the tick keeps what it changes in the world. It can't see what code of the tick is
+ * given by name rather than written in the call, nor a function declared elsewhere that the
+ * code calls. It leaves imports alone, since `HashMap.set(map, key, value)` changes nothing,
+ * and so misses a `Map` a module exports. The repository's tests record what systems did in arrays outside them, so
+ * oxlint.config.ts leaves test/ out.
+ */
+const noOutsideState: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "The code of the tick (a system of the tick, a state's hook, an action's handler, a plugin's setup) changes nothing declared outside it.",
+    },
+  },
+  create: (context) => ({
+    CallExpression: (node) => {
+      const body = tickCodeOf(node);
+      if (body === undefined) {
+        return;
+      }
+      for (const scope of context.sourceCode.scopeManager.scopes) {
+        if (
+          scope.upper === null ||
+          !within(scope.block, body) ||
+          within(scope.upper.block, body)
+        ) {
+          continue;
+        }
+        for (const reference of scope.through) {
+          if (changes(reference)) {
+            context.report({
+              node: reference.identifier,
+              message: `This changes ${reference.identifier.name}, which is declared outside the code of the tick it is in: a refused action doesn't undo it, and a save, a rewind or a replay doesn't hold it. Keep the state in the world, as a component or a singleton, or, for a cache rebuilt from the world, in a Field.transient field of a singleton.`,
+            });
+          }
+        }
+      }
+    },
+  }),
+};
+
 export default {
   meta: { name: "arcadekit" },
   rules: {
@@ -239,5 +389,6 @@ export default {
     "no-page": noPage,
     "no-code-from-text": noCodeFromText,
     "top-level-classes": topLevelClasses,
+    "no-outside-state": noOutsideState,
   },
 };

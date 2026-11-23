@@ -143,6 +143,7 @@ const assemble = <
       );
     }
     const world = new EcsWorld(seed === undefined ? undefined : { seed });
+    world._checkReads = start.verifyFrames === true;
     const commands = new CommandBuffer<Spawned>(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.

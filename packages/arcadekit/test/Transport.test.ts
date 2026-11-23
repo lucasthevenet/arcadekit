@@ -604,11 +604,12 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const listen = Transport.listen.pipe(
-            Effect.provide(Transport.layerBroadcastChannel(name))
-          );
-          const ada = yield* listen;
-          const grace = yield* listen;
+          const listen = (peer: string) =>
+            Transport.listen.pipe(
+              Effect.provide(Transport.layerBroadcastChannel(name, peer))
+            );
+          const ada = yield* listen("ada");
+          const grace = yield* listen("grace");
           ada.send(message("ada", 0, 7));
           grace.send(message("grace", 0));
           // Whatever else is posted under the name is not a message.
@@ -616,15 +617,23 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           stranger.postMessage("nor is this");
           yield* Effect.promise(() => later(20));
           expect(grace.receive()).toEqual([message("ada", 0, 7)]);
-          expect(ada.receive()).toEqual([message("grace", 0)]);
+          expect(ada.receive()).toEqual([
+            { joined: "grace" },
+            message("grace", 0),
+          ]);
           expect(grace.receive()).toEqual([]);
         })
       )
     );
+    await later(20);
     // As text, as any wire would carry it.
     expect(heard).toEqual([
+      Message.encodeNotice({ joined: "ada" }),
+      Message.encodeNotice({ joined: "grace" }),
       Message.encode(message("ada", 0, 7)),
       Message.encode(message("grace", 0)),
+      Message.encodeNotice({ left: "grace" }),
+      Message.encodeNotice({ left: "ada" }),
     ]);
     stranger.close();
   });
@@ -665,7 +674,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
       Effect.runSync(
         Effect.scoped(
           Effect.gen(function* () {
-            const layer = Transport.layerBroadcastChannel("game/room");
+            const layer = Transport.layerBroadcastChannel("game/room", "ada");
             // A layer opens nothing: opening the transport does.
             yield* Layer.build(layer);
             expect(made).toHaveLength(0);
@@ -678,10 +687,14 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             expect(made[0]!.closed).toBe(false);
             transport.send(message("ada", 0));
             expect(made[0]!.posted).toEqual([
+              Message.encodeNotice({ joined: "ada" }),
               Message.encode(message("ada", 0)),
             ]);
           })
         )
+      );
+      expect(made[0]!.posted.at(-1)).toBe(
+        Message.encodeNotice({ left: "ada" })
       );
       expect(made[0]!.closed).toBe(true);
       expect(made[0]!.onmessage).toBeNull();
@@ -719,13 +732,16 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           }),
           (session) =>
             Transport.connect(session).pipe(
-              Effect.provide(Transport.layerBroadcastChannel(name))
+              Effect.provide(Transport.layerBroadcastChannel(name, "ada"))
             )
         )
       )
     );
     expect(connected.tick()).toBe(true);
-    await until(() => heard.length > 0, "the first message was heard");
+    await until(
+      () => heard.length > 1,
+      "the notice that ada joined, and its first message, were heard"
+    );
     expect(log).toEqual(["acquired"]);
     await Effect.runPromise(connected.close);
     expect(log).toEqual(["acquired", "released"]);
@@ -742,7 +758,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     const kept = await Effect.runPromise(
       Effect.scoped(
         Transport.listen.pipe(
-          Effect.provide(Transport.layerBroadcastChannel(name))
+          Effect.provide(Transport.layerBroadcastChannel(name, "ada"))
         )
       )
     );
@@ -752,6 +768,69 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     outside.close();
   });
 
+  it("says a peer left when its connection closes, and joined when it listens again", async () => {
+    const name = nextRoom();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const [ada, grace] = (yield* seated(
+            ["ada", "grace"],
+            (peer) => Transport.layerBroadcastChannel(name, peer),
+            8
+          )) as [Seat, Seat];
+          ada.connected.tick();
+          grace.connected.tick();
+          yield* grace.connected.close;
+          yield* Effect.promise(() =>
+            until(() => {
+              ada.connected.tick();
+              return ada.connected.away.length > 0;
+            }, "ada heard that grace left")
+          );
+          expect(ada.connected.away).toEqual(["grace"]);
+          yield* Transport.listen.pipe(
+            Effect.provide(Transport.layerBroadcastChannel(name, "grace"))
+          );
+          yield* Effect.promise(() =>
+            until(() => {
+              ada.connected.tick();
+              return ada.connected.away.length === 0;
+            }, "ada heard that grace joined again")
+          );
+        })
+      )
+    );
+  });
+
+  it("fails the tick once a peer whose tab closed stays away longer than awayFor", async () => {
+    const name = nextRoom();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const [ada, grace] = (yield* seated(
+            ["ada", "grace"],
+            (peer) => Transport.layerBroadcastChannel(name, peer),
+            8,
+            { awayFor: 0 }
+          )) as [Seat, Seat];
+          ada.connected.tick();
+          yield* grace.connected.close;
+          let thrown: unknown;
+          yield* Effect.promise(() =>
+            until(() => {
+              const ticked = Result.try(() => ada.connected.tick());
+              thrown = Result.isFailure(ticked) ? ticked.failure : undefined;
+              return thrown !== undefined;
+            }, "ada's tick failed")
+          );
+          expect(thrown).toEqual(
+            new Transport.Left({ peers: ["grace"], awayFor: 0 })
+          );
+        })
+      )
+    );
+  });
+
   it("keeps two peers the same game, each ticking in its own time", async () => {
     const name = nextRoom();
     await Effect.runPromise(
@@ -759,7 +838,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         Effect.gen(function* () {
           const seats = yield* seated(
             ["ada", "grace"],
-            () => Transport.layerBroadcastChannel(name),
+            (peer) => Transport.layerBroadcastChannel(name, peer),
             8
           );
           const act = players(21);

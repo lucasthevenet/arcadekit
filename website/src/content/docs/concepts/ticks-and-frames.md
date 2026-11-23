@@ -94,7 +94,7 @@ In every other way, all three are part of the frame stage. A frame system and a 
 Two kinds of change aren't refused where they happen:
 
 - A draw from `world.random` is detected when the frame ends. The app restores the generator, so the game is unchanged, and `frame` throws.
-- A write through the raw columns of `eachChunk` is detected only when you ask for it. `App.make(game, { verifyFrames: true })` hashes the world before the stage and after each of its systems. When a hash differs, `frame` dies with `Stage.FrameChangedWorld`, which names the system. Each check costs one hash of the world per system, so use it in development and tests. It checks the input stage the same way.
+- A write through the raw columns of `eachChunk` is refused only when you ask for it. With `App.make(game, { verifyFrames: true })`, `eachChunk` copies the columns it hands out read-only, which in these stages is all of them, and throws when a loop changed one, after putting it back. The app also hashes the world before the stage and after each of its systems. When a hash differs, `frame` dies with `Stage.FrameChangedWorld`, which names the system. The checks cost a copy of each column handed out and a hash of the world per system, so use them in development and tests. They check the input stage the same way.
 
 ## Input reaches the game as actions
 

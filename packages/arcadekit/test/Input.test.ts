@@ -384,19 +384,14 @@ describe("the input stage", () => {
     );
   });
 
-  it("is checked by verifyFrames, which names the system that wrote through raw columns", () => {
+  it("is checked by verifyFrames, which names the system that drew from the world's generator", () => {
     Effect.runSync(
       Effect.gen(function* () {
         const Scribble = System.input("Scribble", function* () {
-          (yield* Seen).eachChunk((start, end, ships) => {
-            for (let i = start; i < end; i++) {
-              // @ts-expect-error a read query's columns are not assigned
-              ships.x[i] = 99;
-            }
-          });
+          (yield* Dice).next();
         });
         const app = yield* App.make(
-          App.define({ plugins: [Docked], systems: [Scribble] }),
+          App.define({ plugins: [Docked, Kept], systems: [Scribble] }),
           { verifyFrames: true }
         );
         const exit = app.inputExit();
@@ -411,15 +406,10 @@ describe("the input stage", () => {
         expect(error.message).toMatch(/reads the devices before a tick/);
         // A frame system that does the same is still called a frame system.
         const Smudge = System.frame("Smudge", function* () {
-          (yield* Seen).eachChunk((start, end, ships) => {
-            for (let i = start; i < end; i++) {
-              // @ts-expect-error a read query's columns are not assigned
-              ships.x[i] = 7;
-            }
-          });
+          (yield* Dice).next();
         });
         const drawn = yield* App.make(
-          App.define({ plugins: [Docked], systems: [Smudge] }),
+          App.define({ plugins: [Docked, Kept], systems: [Smudge] }),
           { verifyFrames: true }
         );
         const smudged = Cause.squash(
@@ -429,6 +419,33 @@ describe("the input stage", () => {
         expect(smudged.message).toMatch(
           /^The frame stage changed the world: its hash was not the same after system "Smudge" ran in frame 1 as before/
         );
+      })
+    );
+  });
+
+  it("refuses with verifyFrames a write through a raw column, where it is made, and puts it back", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const Scribble = System.input("Scribble", function* () {
+          (yield* Seen).eachChunk((start, end, ships) => {
+            for (let i = start; i < end; i++) {
+              // @ts-expect-error a read query's columns are not assigned
+              ships.x[i] = 99;
+            }
+          });
+        });
+        const app = yield* App.make(
+          App.define({ plugins: [Docked], systems: [Scribble] }),
+          { verifyFrames: true }
+        );
+        const before = hashOf(app);
+        const exit = app.inputExit();
+        expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
+          new Error(
+            'eachChunk() wrote "in/Ship.x", which the query only reads, through its raw column. No change query would see the write, and no refusal would undo it, so it has been put back. Name "in/Ship" in Query.writes to write it, or write it with each().'
+          )
+        );
+        expect(hashOf(app)).toBe(before);
       })
     );
   });

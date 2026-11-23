@@ -62,7 +62,7 @@ Each action holds its payload in JSON form and the tick it arrived at. Actions t
 - A third argument gives the replay's app the rest of what `App.make` takes, such as `{ checkpointEvery: 1 }`.
 - The app it returns belongs to the caller, as one that `App.make` makes does. Close it when you are done with it.
 - It runs no frame or input stage, so it reads no device and draws nothing. What the devices said is in the log.
-- In the recorded game, a frame or input stage that wrote through a raw column changed the game with no error, unless the app was made with `verifyFrames`. The replay runs neither stage, so it diverges. See [testing](testing.md#run-the-frame-stage-by-hand).
+- In the recorded game, a frame or input stage that wrote through a raw column changed the game with no error, unless the app was made with `verifyFrames`, which refuses the write. The replay runs neither stage, so it diverges. See [testing](testing.md#run-the-frame-stage-by-hand).
 
 `Journal.encode` turns a recording into text, and `Journal.decode` turns the text back. `Journal.decode` refuses a recording that doesn't say how its game began, one whose save doesn't read or is of another tick than the recording begins at, and one whose log or runs of deltas are out of order or outside it. A recording made since a save holds the save, which is most of its text.
 
