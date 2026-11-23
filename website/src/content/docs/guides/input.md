@@ -59,6 +59,7 @@ const Game = Plugin.make("game/Game", {
 });
 ```
 
+- `Input.plugin` provides `Input.Keyboard`, `Input.Pointer`, and `Input.Gamepads`, which `Input.Gamepad(index)` reads. A game that reads them and leaves out the plugin doesn't compile.
 - `Input.Keyboard` has `down`, `pressed`, and `released`. `Input.Pointer` has `x`, `y`, and the same three for a button, the primary button by default. `Input.Gamepad(index)` has `axis(n)` and the same three for a button.
 - `pressed` and `released` are true during the one tick that first sees the change. Every system of that tick sees them, and so do the handlers of the actions that the tick applies. The handler of an action bound to a key sees the press that issued it.
 - A key pressed and released between two ticks is both pressed and released in the same tick, and isn't down. A held key released and pressed again between two ticks is both released and pressed in the same tick, and is down.
