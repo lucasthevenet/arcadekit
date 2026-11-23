@@ -6,6 +6,7 @@
  */
 import type { Column } from "./column";
 import type { Frozen, JsonValue } from "./frozen";
+import type { RelationSchema, RowOf } from "./relation";
 import type { Spawned } from "./spawned";
 
 // ---------------------------------------------------------------------------
@@ -225,12 +226,12 @@ export interface ReadOnlyTerm {
   readonly _reads: true;
 }
 
-/** What `each` hands out for each term: read-only for a term the query only reads. */
+/** What `each` hands out for each term: read-only for a term the query only reads, and a relation's `target` in any. */
 export type AccessorsOf<D extends readonly ComponentDef[]> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, Storage>
     ? D[K] extends ReadOnlyTerm
-      ? Readonly<ValueOf<S>>
-      : ValueOf<S>
+      ? Readonly<RowOf<S>>
+      : RowOf<S>
     : never;
 };
 
@@ -291,11 +292,6 @@ export interface ReadonlyColumn<T> {
   readonly [index: number]: T;
   readonly length: number;
 }
-
-/** A relation's fields: its target, then any of its own. */
-export type RelationSchema<S extends Schema> = {
-  readonly target: FieldDef<Entity, ReadonlyColumn<Entity>>;
-} & S;
 
 /** @internal What an accessor that notices writes tells: `ChangeLog` in world.ts. */
 export interface WriteLog {
@@ -453,6 +449,20 @@ export const frozenWrite = (what: string): string =>
 /** Explains what to do instead of writing a relation's target. */
 export const retarget = (name: string): string =>
   `"${name}" is a relation, and its target is not written like a field: the world keeps track of who points at whom. Give it another target by adding it again, with add(entity, ${name.split("/").pop()}.of({ target })) on Commands or on the world.`;
+
+/**
+ * Refuses a relation's target given to `set`, which only a cast lets through:
+ * an undefined, like any number not given, is left as it was.
+ */
+export const refuseRetarget = (def: ComponentDef, value: object): void => {
+  if (
+    def.relation !== undefined &&
+    "target" in value &&
+    value.target !== undefined
+  ) {
+    throw new Error(retarget(def.name));
+  }
+};
 
 /** Explains that a relation was given without a value, and so has no target. */
 export const targetless = (def: ComponentDef): Error =>
@@ -848,12 +858,13 @@ export const Component = {
    * like any others. The target isn't:
    *
    * - To change it, add the relation again: `add(entity, ChildOf.of({ target
-   *   }))`. Assigning to it, in `each` or with `set`, throws, and its raw
-   *   column is typed as read-only.
-   * - It must be alive. A relation without a target is refused at the call
-   *   site. Given a target that is already gone, whatever that entity's despawn
-   *   would have done happens at once: the holder is despawned, or the relation
-   *   isn't added.
+   *   }))`. It is read-only in `each`, in `set` and in its raw column, so an
+   *   assignment doesn't compile.
+   * - It must be alive. A relation given bare, with no target, doesn't
+   *   compile, on `Commands` or on the world.
+   *   Given a target that is already gone, whatever that entity's despawn
+   *   would have done happens at once: the holder is despawned, or the
+   *   relation isn't added.
    * - An entity has one target per relation. For another kind of link, define
    *   another relation.
    */

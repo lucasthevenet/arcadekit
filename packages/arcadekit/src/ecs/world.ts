@@ -38,7 +38,7 @@ import {
   isBoxed,
   isComponentDef,
   makeEntity,
-  retarget,
+  refuseRetarget,
   targetless,
 } from "./component";
 import type {
@@ -66,6 +66,7 @@ import type { QuerySpec, Terms } from "./query";
 import { Rng } from "./random";
 import { NOT_PLACED, WHOLE } from "./records";
 import type { Saved, Single } from "./records";
+import type { PatchOf, RelationDef, Targeted } from "./relation";
 import { STORAGES, SnapshotError, WIDTH, corrupt } from "./snapshot";
 import type { Store } from "./store";
 import type { Columns } from "./table";
@@ -413,7 +414,9 @@ export class World {
    * structural change, it throws while a query is iterating and inside a
    * transaction: queue it on a `CommandBuffer` there.
    */
-  spawn(...inputs: readonly ComponentInput[]): Entity {
+  spawn<const I extends readonly ComponentInput[]>(
+    ...inputs: { readonly [K in keyof I]: I[K] & Targeted<I[K]> }
+  ): Entity {
     this.assertNotIterating("spawn");
     // Before an id is reserved, so a refused component leaves nothing behind.
     this._registerAll(inputs);
@@ -527,7 +530,10 @@ export class World {
    * entity is gone, or when a relation's target is: whatever that target's
    * despawn would have done then happens at once.
    */
-  add(entity: Entity, input: ComponentInput): boolean {
+  add<const I extends ComponentInput>(
+    entity: Entity,
+    input: I & Targeted<I>
+  ): boolean {
     this.assertNotIterating("add");
     if (!this.isAlive(entity)) {
       return false;
@@ -732,20 +738,17 @@ export class World {
 
   /**
    * Writes some or all fields of a component the entity already has. A
-   * relation's `target` can't be written this way, and throws: add the relation
-   * again.
+   * relation's `target` is not one of them: add the relation again.
    */
   set<S extends Schema>(
     entity: Entity,
     def: ComponentDef<S>,
-    value: Partial<ValueOf<S>>
+    value: PatchOf<S>
   ): boolean {
     if (!this.has(entity, def)) {
       return false;
     }
-    if (def.relation !== undefined && "target" in value) {
-      throw new Error(retarget(def.name));
-    }
+    refuseRetarget(def, value);
     if (this._frozen) {
       throw new Error(frozenWrite("World.set()"));
     }
@@ -782,7 +785,7 @@ export class World {
    * index: a parent's children, or whatever is aiming at something. Finding
    * them doesn't examine any other entity.
    */
-  sources(target: Entity, def: ComponentDef): Entity[] {
+  sources(target: Entity, def: RelationDef): Entity[] {
     const relation = this.relations[def.id];
     if (relation === undefined || !this.isAlive(target)) {
       return [];

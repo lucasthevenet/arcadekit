@@ -144,7 +144,7 @@ const Following = System.tick("policy/Following", function* () {
     if (tick === 2) {
       // A relation's target is the world's to change.
       refused(() => {
-        follows.target = 0 as Entity;
+        (follows as { target: Entity }).target = 0 as Entity;
       });
     }
   });

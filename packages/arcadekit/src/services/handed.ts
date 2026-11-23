@@ -5,6 +5,7 @@ import type {
   SingletonSpec,
   ValueOf,
 } from "../ecs/component";
+import type { PatchOf, RelationDef } from "../ecs/relation";
 import { placed } from "../ecs/spawned";
 import type { Spawned } from "../ecs/spawned";
 import type { World as EcsWorld } from "../ecs/world";
@@ -62,14 +63,14 @@ class Handed implements WritingWorld<string> {
     return this.#world.singleton(spec);
   }
 
-  sources(target: Entity, def: ComponentDef): Entity[] {
+  sources(target: Entity, def: RelationDef): Entity[] {
     return this.#world.sources(target, def);
   }
 
   set<S extends Schema>(
     entity: Entity,
     def: ComponentDef<S>,
-    value: Partial<ValueOf<S>>
+    value: PatchOf<S>
   ): boolean {
     return this.#world.set(entity, def, value);
   }

@@ -14,6 +14,7 @@ import type {
   ValueOf,
 } from "./ecs/component";
 import type { Rng } from "./ecs/random";
+import type { PatchOf, Targeted } from "./ecs/relation";
 import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
@@ -75,12 +76,15 @@ export interface ReadingWorld extends Pick<
  *
  * - `get`, `has`, `isAlive` and `sources` read an entity, `singleton` and
  *   `holds` a singleton, and `entityCount` and `hash` the world.
+ *   `sources(target, ChildOf)` gives the entities that point at `target` with
+ *   a relation, and takes no component that is not one.
  * - `placed` gives the entity of an id `Commands.spawn` returned, once its
  *   spawn is applied, and undefined before: the world's reads take an
  *   `Entity`, and not a `Spawned` id.
  * - `set` writes the fields given of one entity's component, and returns false
  *   for an entity that doesn't have it. A component the world was not asked for
- *   doesn't compile, and the error says where to name it.
+ *   doesn't compile, and the error says where to name it, nor does a
+ *   relation's `target`: `Commands` adds the relation again to change it.
  * - The set of entities changes through `Commands` alone.
  *
  * @category Models
@@ -89,7 +93,7 @@ export interface WritingWorld<N extends string> extends ReadingWorld {
   set<S extends Schema, St extends Storage, C extends string>(
     entity: Entity,
     def: ComponentDef<S, St, C> & Settable<C, N>,
-    value: Partial<ValueOf<S>>
+    value: PatchOf<S>
   ): boolean;
 }
 
@@ -179,12 +183,19 @@ export class Frame extends Context.Service<Frame, Readonly<FrameState>>()(
   "arcadekit/Frame"
 ) {}
 
-/** What `spawn` and `add` are told of a component their commands were not asked for. */
-type Spawnable<C extends string, N extends string> = [N] extends [never]
-  ? "These commands were asked for with yield* Commands, which despawn and remove. To spawn or add, ask for them with yield* Commands.spawns(...), naming each component this system spawns or adds."
-  : C extends N
-    ? unknown
-    : `Commands.spawns was not given "${C}". Add it where the commands are asked for: yield* Commands.spawns(...), with every component this system spawns or adds.`;
+/**
+ * What `spawn` and `add` are told of a component their commands were not asked
+ * for. Nothing of a relation given bare: `Targeted` tells that, and two
+ * messages would make one `never`.
+ */
+type Spawnable<I, N extends string> =
+  unknown extends Targeted<I>
+    ? [N] extends [never]
+      ? "These commands were asked for with yield* Commands, which despawn and remove. To spawn or add, ask for them with yield* Commands.spawns(...), naming each component this system spawns or adds."
+      : NameOf<I> extends N
+        ? unknown
+        : `Commands.spawns was not given "${NameOf<I>}". Add it where the commands are asked for: yield* Commands.spawns(...), with every component this system spawns or adds.`
+    : unknown;
 
 /**
  * The commands of a system or a handler: changes to the set of entities,
@@ -201,13 +212,13 @@ export interface Spawning<N extends string> {
    */
   spawn<const I extends readonly ComponentInput[]>(
     ...inputs: {
-      readonly [K in keyof I]: I[K] & Spawnable<NameOf<I[K]>, N>;
+      readonly [K in keyof I]: I[K] & Targeted<I[K]> & Spawnable<I[K], N>;
     }
   ): Spawned;
   /** Queues a component to add to an entity, or a relation to point elsewhere. */
   add<const I extends ComponentInput>(
     entity: Entity | Spawned,
-    input: I & Spawnable<NameOf<I>, N>
+    input: I & Targeted<I> & Spawnable<I, N>
   ): void;
   /** Queues an entity to despawn. */
   despawn(entity: Entity | Spawned): void;

@@ -132,12 +132,15 @@ const Bot = System.tick("Bot", function* () {
 });
 const Sound = System.tick("Sound", function* () {
   const { tick } = yield* Time;
-  const sounded = yield* Sounded.emits;
-  sounded.emit({ tick, at: new Date(tick * 1000) });
-  // Read by this system at once, and by Listen on the next tick: the two
-  // have read different amounts when a save is taken. Each event is counted
-  // once here, so reading one again after a load would show.
-  const echoes = sounded.read().length;
+  (yield* Sounded.emits).emit({ tick, at: new Date(tick * 1000) });
+});
+/**
+ * Reads what Sound emits on the tick it is emitted, and Listen on the next:
+ * the two have read different amounts when a save is taken. Each event is
+ * counted once here, so reading one again after a load would show.
+ */
+const Echo = System.tick("Echo", function* () {
+  const echoes = (yield* Sounded).read().length;
   (yield* Tallies).each((tally) => {
     tally.echoes += echoes;
   });
@@ -152,7 +155,7 @@ const Pulsing = System.tick("Pulsing", function* () {
 });
 
 const Game = Plugin.make("sv/Game", {
-  systems: [Listen, Drift, Bot, Sound, Pulsing],
+  systems: [Listen, Drift, Bot, Sound, Echo, Pulsing],
   handlers: [add, double, scatter, pulse],
   setup: Effect.gen(function* () {
     setups++;
@@ -379,13 +382,13 @@ describe("a saved game", () => {
           app.tick(1);
         }
         const save = unwrap(app.save());
-        // The event of tick 4 is waiting, in the world: Sound has read it,
+        // The event of tick 4 is waiting, in the world: Echo has read it,
         // Listen has not.
         expect(stored(save, Event.STORE)).toEqual([
           {
             name: "sv/Sounded",
             waiting: [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
-            read: { Sound: 1 },
+            read: { Echo: 1 },
           },
         ]);
         const heard = (of: GameApp) =>
@@ -666,7 +669,7 @@ describe("a save that cannot be loaded", () => {
     const { save } = record(10, 5);
     // No plugin lists the components or the waiting events.
     const Bare = Plugin.make("sv/Bare", {
-      systems: [Listen, Drift, Bot, Sound],
+      systems: [Listen, Drift, Bot, Sound, Echo],
       handlers: [add, double, scatter, pulse],
     });
     const world = readSnapshot(save.world);

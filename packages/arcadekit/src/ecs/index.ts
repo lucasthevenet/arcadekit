@@ -18,6 +18,7 @@
  * are only available here.
  */
 export { Component, entityGeneration, entityIndex, Field } from "./component";
+export type { PatchOf, RelationDef, TargetField } from "./relation";
 export type {
   ComponentDef,
   ComponentInput,
