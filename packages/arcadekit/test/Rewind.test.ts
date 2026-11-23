@@ -21,6 +21,7 @@ import {
 } from "../src/index";
 import type { Entity } from "../src/index";
 import { Session } from "../src/net/index";
+import type { BuiltIn } from "../src/Services";
 import {
   Coin,
   CoinGame,
@@ -231,9 +232,17 @@ describe("a game that is put back to a moment", () => {
       seen.frame.push((yield* NewDots).entities().length);
     }).pipe(System.inStage("frame"));
     const Grow = System.make("rw/Grow", function* () {
-      (yield* Commands).spawn(Dot.of({ x: 1 }));
+      (yield* Commands.spawns(Dot)).spawn(Dot.of({ x: 1 }));
     });
-    withApp(App.make(App.define({ systems: [Count, Draw, Grow] })), (app) => {
+    // Listed ahead of what it watches, so that a dot is waiting for it when the
+    // game goes back. Typed as any systems, which is the one way to list it
+    // so: the compiler refuses that order where it can see it.
+    const systems: readonly System.System<never, BuiltIn>[] = [
+      Count,
+      Draw,
+      Grow,
+    ];
+    withApp(App.make(App.define({ systems })), (app) => {
       for (let i = 0; i < 3; i++) {
         app.tick(DELTA);
         app.frame(0);
@@ -461,7 +470,7 @@ describe("what the stages between ticks hear across a rewind", () => {
   const Bells = Query.all(Bell);
   const Louder = Action.define("rw/Louder", Schema.Struct({ by: Schema.Int }));
   const louder = Action.handler(Louder, function* ({ by }) {
-    (yield* Commands).spawn(Bell.of({ extra: by }));
+    (yield* Commands.spawns(Bell)).spawn(Bell.of({ extra: by }));
   });
   // A number that says nothing of the tick it is chimed on.
   const Chimed = Event.define("rw/Chimed", Schema.Struct({ n: Schema.Int }));
@@ -711,7 +720,7 @@ describe("Session.syncTest", () => {
   const Mark = Component.define("vr/Mark", { n: Field.i32 });
   const Marks = Query.all(Mark);
   const Steady = System.make("vr/Steady", function* () {
-    (yield* Commands).spawn(Mark.of({ n: (yield* Time).tick }));
+    (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: (yield* Time).tick }));
   });
   const failure = (run: () => void): unknown => {
     try {
@@ -726,10 +735,10 @@ describe("Session.syncTest", () => {
     let outside = 0;
     const Leaky = System.make("vr/Leaky", function* () {
       outside++;
-      (yield* Commands).spawn(Mark.of({ n: outside }));
+      (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: outside }));
     });
     const After = System.make("vr/After", function* () {
-      (yield* Commands).spawn(Mark.of({ n: 0 }));
+      (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: 0 }));
     });
     withApp(
       Session.syncTest(App.define({ systems: [Steady, Leaky, After] })),
@@ -749,7 +758,7 @@ describe("Session.syncTest", () => {
     const Bump = Action.define("vr/Bump", Schema.Struct({}));
     const bump = Action.handler(Bump, function* () {
       outside++;
-      (yield* Commands).spawn(Mark.of({ n: outside }));
+      (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: outside }));
     });
     withApp(
       Session.syncTest(App.define({ systems: [Steady], handlers: [bump] })),
@@ -851,7 +860,7 @@ describe("Session.syncTest", () => {
       thing: Field.json<unknown>(),
     });
     const Hold = System.make("vr/Hold", function* () {
-      (yield* Commands).spawn(Held.of({ thing: () => 1 }));
+      (yield* Commands.spawns(Held)).spawn(Held.of({ thing: () => 1 }));
     });
     withApp(Session.syncTest(App.define({ systems: [Hold] })), (test) => {
       expect(() =>

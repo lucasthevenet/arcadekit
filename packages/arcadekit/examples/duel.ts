@@ -81,7 +81,7 @@ const STRIKE_COST = 2;
 const STRIKE_DAMAGE = 4;
 
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
-  const world = yield* World;
+  const world = yield* World.writes(Fighter);
   const me = world.get(attacker, Fighter);
   const them = world.get(target, Fighter);
   if (me === undefined || them === undefined) {

@@ -21,7 +21,7 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
-import type { Access, Watches, Writes } from "./Query";
+import type { Access, Adds, Watches, WatchesAdded, Writes } from "./Query";
 
 /**
  * The stages of a tick, in the order they run.
@@ -392,11 +392,21 @@ type Any = System<unknown, unknown>;
 // it is, as in the requirements of a system typed as any system: left out.
 type Named<C extends string> = string extends C ? never : C;
 type WrittenBy<R> = R extends Writes<infer C> ? Named<C> : never;
+type AddedBy<R> = R extends Adds<infer C> ? Named<C> : never;
+/** What a system watches with `Query.changed`. */
 type WatchedBy<R> = R extends Watches<infer C> ? Named<C> : never;
+/** What a system watches with `Query.added`. */
+type AwaitedBy<R> = R extends WatchesAdded<infer C> ? Named<C> : never;
 
-/** Each component a system writes, with the system's name. */
+// Distributive on purpose: one for each component of a union.
+type Did<C, N extends string, How extends string> = C extends string
+  ? readonly [C, N, How]
+  : never;
+
+/** Each component a system writes or adds, with its name and which it does. */
 type Wrote<R, N extends string> =
-  WrittenBy<R> extends infer C extends string ? readonly [C, N] : never;
+  | Did<WrittenBy<R>, N, "writes">
+  | Did<AddedBy<R>, N, "spawns or adds">;
 
 /** The systems of a union that write or watch something. */
 type Touching<U> =
@@ -474,23 +484,31 @@ type Staged<
       readonly loose: Loose;
     };
 
-/** What is said of a system that watches what a later one writes. */
+/** What is said of a system that watches what a later one writes or adds. */
 type Late<
   N extends string,
   C extends string,
   By extends string,
-> = `"${N}" watches "${C}" with Query.changed, and "${By}" writes it later in the tick, so "${N}" would react a tick late. List "${N}" after "${By}", or place it in a later stage.`;
+  With extends string,
+  How extends string,
+> = `"${N}" watches "${C}" with ${With}, and "${By}" ${How} it later in the tick, so "${N}" would react a tick late. List "${N}" after "${By}", or place it in a later stage.`;
 
-type Clash<N extends string, Watched, Later> = Later extends readonly [
+// A component that is written or gained fires `Query.changed`, and one that is
+// gained alone fires `Query.added`.
+type Clash<N extends string, Watched, Awaited, Later> = Later extends readonly [
   infer C extends string,
   infer By extends string,
+  infer How extends string,
 ]
-  ? C extends Watched
-    ? Late<N, C, By>
-    : never
+  ? | (C extends Watched ? Late<N, C, By, "Query.changed", How> : never)
+    | (How extends "spawns or adds"
+        ? C extends Awaited
+          ? Late<N, C, By, "Query.added", How>
+          : never
+        : never)
   : never;
 
-/** From the last system to the first, with what those after it write. */
+/** From the last system to the first, with what those after it write and add. */
 type Behind<
   T extends readonly Any[],
   Later = never,
@@ -500,7 +518,11 @@ type Behind<
   infer Last extends Any,
 ]
   ? Last extends System<unknown, infer R, infer N>
-    ? Behind<Init, Later | Wrote<R, N>, Found | Clash<N, WatchedBy<R>, Later>>
+    ? Behind<
+        Init,
+        Later | Wrote<R, N>,
+        Found | Clash<N, WatchedBy<R>, AwaitedBy<R>, Later>
+      >
     : never
   : Found;
 
@@ -517,7 +539,12 @@ type Unknown<
   N extends string,
   C extends string,
   By extends string,
-> = `One of "${N}" and "${By}" watches "${C}" with Query.changed and the other writes it, and the compiler cannot tell which runs first. Write the list of systems out where it is given, and give System.inStage a stage it can read.`;
+> = `One of "${N}" and "${By}" watches "${C}" and the other writes, spawns or adds it, and the compiler cannot tell which runs first. Write the list of systems out where it is given, and give System.inStage a stage it can read.`;
+
+/** What one system watches that the other writes or adds. */
+type Between<R, R2> =
+  | Extract<WatchedBy<R>, WrittenBy<R2> | AddedBy<R2>>
+  | Extract<AwaitedBy<R>, AddedBy<R2>>;
 
 /** A system whose place isn't known, against every other. */
 type Unplaced<U, All> =
@@ -525,9 +552,7 @@ type Unplaced<U, All> =
     ? All extends System<unknown, infer R2, infer N2>
       ? SameName<N, N2> extends true
         ? never
-        :
-              | Extract<WatchedBy<R>, WrittenBy<R2>>
-              | Extract<WrittenBy<R>, WatchedBy<R2>> extends infer C
+        : Between<R, R2> | Between<R2, R> extends infer C
           ? C extends string
             ? Unknown<N, C, N2>
             : never
@@ -538,12 +563,13 @@ type Unplaced<U, All> =
 /**
  * What is wrong with the order of a list of systems, as a union of messages,
  * and `never` when nothing is: a system that watches a component with
- * `Query.changed`, listed ahead of one that writes it in the same tick, sees
- * the write a tick late. `App.define` and `Plugin.make` refuse such a list
+ * `Query.changed` or `Query.added`, listed ahead of one that writes it, spawns
+ * it or adds it in the same tick, sees that a tick late. `App.define` and `Plugin.make` refuse such a list
  * with this message, so the mistake doesn't compile.
  *
- * What a system writes and watches is in its requirements, from the queries it
- * yields: nothing is declared. Hooks and systems of the frame and input stages
+ * What a system writes, adds and watches is in its requirements, from what it
+ * yields: a query, `World.writes` and `Commands.spawns`. Nothing is declared
+ * beside them. Hooks and systems of the frame and input stages
  * run at another moment, and are not checked against the tick's.
  *
  * @category Type-level

@@ -51,7 +51,7 @@ Other values use a field type that declares how snapshots and the hash treat the
 
 ## Creating and changing entities
 
-`Hero.of({...})` creates a component value for a spawn. A system spawns through `Commands`; code outside the simulation, such as a test or the entry point, uses `app.world`:
+`Hero.of({...})` creates a component value for a spawn. A system, a handler or a plugin's `setup` spawns through `Commands`, which it requests with the components it spawns. Code outside the simulation, such as a test or the entry point, uses `app.world`:
 
 ```ts
 import { App, Commands, Component, Field, Plugin } from "arcadekit";
@@ -64,7 +64,7 @@ const Position = Component.define("game/Position", {
 
 const Rules = Plugin.make("game/Rules", {
   setup: Effect.gen(function* () {
-    (yield* Commands).spawn(Position.of({ x: 0, y: 0 }));
+    (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0, y: 0 }));
   }),
 });
 
@@ -81,6 +81,20 @@ const program = Effect.gen(function* () {
 An id kept after its entity is despawned [refers to no entity](../concepts/entities-and-systems.md#entity-ids), even once its slot is reused.
 
 Once a game is running, make changes from the simulation (a system or a handler) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
+
+Inside the simulation, you name the components where you request what changes them:
+
+| To | Request | Then |
+| --- | --- | --- |
+| Spawn an entity, or add a component | `yield* Commands.spawns(Bullet, Position)` | `commands.spawn(Bullet, Position.of({ x: 0, y: 0 }))`, `commands.add(entity, Bullet)` |
+| Despawn an entity, or remove a component | `yield* Commands` | `commands.despawn(entity)`, `commands.remove(entity, Bullet)` |
+| Set a component of one entity by id | `yield* World.writes(Health)` | `world.set(target, Health, { hp: 3 })` |
+| Read one entity by id | `yield* World` | `world.get(target, Health)`, `world.has(target, Health)`, `world.isAlive(target)` |
+| Write every entity that matches | A query with [`Query.writes`](queries.md#what-a-query-writes) | `view.each((health) => { health.hp -= 1 })` |
+
+- Spawning, adding or setting a component you didn't name doesn't compile, and the error says where to name it.
+- Naming them is how the compiler knows what a system changes, which is what lets it [check the order of your systems](systems.md#ordering).
+- The world a system requests has no `spawn`, `despawn`, `add` or `remove`. The set of entities changes through `Commands` alone, which applies the change when the system finishes.
 
 A component added without a value is all zeros, unless it says otherwise, and a number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. A component whose zeros are wrong, a size say, gives `initial`, the value it has when added bare:
 

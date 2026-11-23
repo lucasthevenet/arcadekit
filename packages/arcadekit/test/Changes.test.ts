@@ -1266,7 +1266,10 @@ const push = Action.handler(Push, function* ({ refuse, slot }) {
   }
 });
 const spawn = Action.handler(Spawn, function* () {
-  (yield* Commands).spawn(Position.of({ x: 0, y: 0 }), Sprite);
+  (yield* Commands.spawns(Position, Sprite)).spawn(
+    Position.of({ x: 0, y: 0 }),
+    Sprite
+  );
 });
 const cull = Action.handler(Cull, function* ({ slot }) {
   const all = (yield* Positions).entities();
@@ -1310,7 +1313,7 @@ const Count = System.make("Count", function* () {
 
 /** How the game begins: its tally, and six entities with a position. */
 const Begin = Plugin.make("ch/Begin", {
-  setup: Effect.map(Commands, (commands) => {
+  setup: Effect.map(Commands.spawns(Tally, Position), (commands) => {
     commands.spawn(Tally);
     for (let n = 0; n < 6; n++) {
       commands.spawn(Position.of({ x: n, y: 0 }));

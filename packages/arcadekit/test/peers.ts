@@ -26,6 +26,7 @@ import {
 } from "../src/index";
 import type { Entity } from "../src/index";
 import { Message, Session } from "../src/net/index";
+import { whole } from "../src/Services";
 
 // --- a small game: players drop coins, which drift about, and take them --------
 
@@ -85,7 +86,9 @@ export class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
 
 export const drop = Action.handler(Drop, function* ({ value }) {
   const random = yield* Random;
-  return (yield* Commands).spawn(Coin.of({ value, x: random.next() }));
+  return (yield* Commands.spawns(Coin)).spawn(
+    Coin.of({ value, x: random.next() })
+  );
 });
 export const take = Action.handler(Take, function* ({ by, coin }) {
   const world = yield* World;
@@ -112,10 +115,12 @@ export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   return from;
 });
 export const fire = Action.handler(Fire, function* () {
-  (yield* Commands).spawn(Coin.of({ value: 100, x: 0 }));
+  (yield* Commands.spawns(Coin)).spawn(Coin.of({ value: 100, x: 0 }));
 });
 export const mint = Action.handler(Mint, function* ({ on }) {
-  (yield* Commands).spawn(Coin.of({ value: on.getUTCFullYear(), x: 0 }));
+  (yield* Commands.spawns(Coin)).spawn(
+    Coin.of({ value: on.getUTCFullYear(), x: 0 })
+  );
 });
 export const whisper = Action.handler(Whisper, function* () {
   // Nothing: it is here to be enqueued.
@@ -164,7 +169,7 @@ export const Fault = System.make("ls/Fault", function* () {
   if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
     return;
   }
-  if (glitch.worlds !== "all" && !glitch.worlds.has(yield* World)) {
+  if (glitch.worlds !== "all" && !glitch.worlds.has(whole(yield* World))) {
     return;
   }
   let first = true;

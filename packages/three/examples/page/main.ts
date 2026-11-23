@@ -175,7 +175,20 @@ const Rules = Plugin.make("page/Rules", {
   plugins: [Input.plugin],
   systems: [Steer, Drift, Turn, Wheel],
   setup: Effect.gen(function* () {
-    const commands = yield* Commands;
+    const commands = yield* Commands.spawns(
+      Mote,
+      Position,
+      Velocity,
+      Rotation,
+      Spin,
+      Scale,
+      Tint,
+      Card,
+      Transform2d.Position,
+      Transform2d.Rotation,
+      Transform2d.Scale,
+      Ship
+    );
     const random = yield* Random;
     const within = () => (random.next() * 2 - 1) * BOX;
     const speed = () => (random.next() * 2 - 1) * 12;

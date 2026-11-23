@@ -2841,7 +2841,7 @@ describe("Three.plugin", () => {
   it("leaves the game as it found it: a game that is drawn is the same game as one that is not", () => {
     const Spin = System.make("th/Spin", function* () {
       const { delta, tick } = yield* Time;
-      const commands = yield* Commands;
+      const commands = yield* Commands.spawns(Rock, Position, Ship, Rotation);
       (yield* Query.all(Position).pipe(Query.writes(Position))).each(
         (position) => {
           position.x += delta * 3;

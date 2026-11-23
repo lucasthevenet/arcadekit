@@ -74,7 +74,7 @@ const Game = Plugin.make("vw/Game", {
         return yield* new TooPoor();
       }
       purse.gold -= price;
-      (yield* Commands).spawn(Coin.of({ value: 1 }));
+      (yield* Commands.spawns(Coin)).spawn(Coin.of({ value: 1 }));
     }),
     Action.handler(Ping, function* () {
       pings++;
@@ -594,7 +594,7 @@ describe("what the UI sends", () => {
       plugins: [
         Game,
         Plugin.make("vw/Kept", {
-          setup: Effect.map(Commands, (commands) => {
+          setup: Effect.map(Commands.spawns(Coin), (commands) => {
             commands.spawn(Coin.of({ value: 1 }));
           }),
         }),

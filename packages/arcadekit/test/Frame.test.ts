@@ -28,6 +28,7 @@ import {
   readSnapshot,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { whole } from "../src/Services";
 import type { BuiltIn } from "../src/Services";
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
@@ -403,10 +404,13 @@ describe("the frame stage", () => {
           ball.x = 99;
         })
       ),
-      "World.set()": Effect.map(World, (world) =>
-        world.set(world.view(Balls).entities()[0]!, Ball, { x: 99 })
+      "World.set()": Effect.gen(function* () {
+        const [first] = (yield* Balls).entities();
+        (yield* World.writes(Ball)).set(first!, Ball, { x: 99 });
+      }),
+      "A spawn": Effect.map(Commands.spawns(Ball), (commands) =>
+        commands.spawn(Ball)
       ),
-      "A spawn": Effect.map(Commands, (commands) => commands.spawn(Ball)),
       "Commands.despawn()": Effect.gen(function* () {
         (yield* Commands).despawn((yield* Balls).entities()[0]!);
       }),
@@ -493,7 +497,7 @@ describe("the frame stage", () => {
         const drawn: string[] = [];
         const Cheat = System.make("Cheat", function* () {
           if (cheat) {
-            (yield* World).random.next();
+            whole(yield* World).random.next();
           }
         }).pipe(System.inStage("frame"));
         const After = System.make("After", function* () {
@@ -542,7 +546,7 @@ describe("the frame stage", () => {
           }
         }).pipe(System.inStage("frame"));
         const Begin = Plugin.make("fr/Begin", {
-          setup: Effect.map(Commands, (commands) => {
+          setup: Effect.map(Commands.spawns(Ball), (commands) => {
             commands.spawn(Ball.of({ x: 0, vx: 1 }));
           }),
         });
@@ -939,7 +943,7 @@ describe("a frame stage that is checked", () => {
           }
         });
       } else if (how === "random") {
-        (yield* World).random.next();
+        whole(yield* World).random.next();
       }
     }).pipe(System.inStage("frame"));
   const Honest = System.make("Honest", function* () {

@@ -142,7 +142,7 @@ const Rain = System.make("catch/Rain", function* () {
   }
   cloud.wait += 1;
   const random = yield* Random;
-  (yield* Commands).spawn(
+  (yield* Commands.spawns(Position, Fall)).spawn(
     Position.of({ x: random.next() * 8 - 4, y: 10 }),
     Fall.of({ speed: 2 + random.next() * 3 })
   );

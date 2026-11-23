@@ -54,7 +54,7 @@ const Land = System.make("st/Land", function* () {
 const entered: string[] = [];
 const Opening = System.make("st/Opening", function* () {
   entered.push("playing");
-  (yield* Commands).spawn(Piece.of({ x: 0 }));
+  (yield* Commands.spawns(Piece)).spawn(Piece.of({ x: 0 }));
 }).pipe(State.onEnter(Phase, "playing"));
 
 /** Says that a piece has landed, or has moved, with no piece doing either. */

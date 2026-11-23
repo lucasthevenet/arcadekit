@@ -787,7 +787,7 @@ describe("a level's assets", () => {
         (yield* Level).set("forest");
       }),
       Action.handler(Build, function* ({ name, walls }) {
-        const commands = yield* Commands;
+        const commands = yield* Commands.spawns(Wall);
         for (let at = 0; at < walls; at++) {
           commands.spawn(Wall.of({ at }));
         }

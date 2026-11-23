@@ -25,6 +25,7 @@ import {
   World,
   readSnapshot,
 } from "../src/index";
+import { whole } from "../src/Services";
 import type { BuiltIn } from "../src/Services";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
@@ -77,7 +78,7 @@ const Steer = System.make("Steer", function* () {
 const Flying = Plugin.make("Flying", {
   plugins: [Input.plugin],
   systems: [Steer],
-  setup: Effect.map(Commands, (commands) => {
+  setup: Effect.map(Commands.spawns(Ship), (commands) => {
     commands.spawn(Ship.of({ x: 0, shots: 0 }));
   }),
 });
@@ -321,10 +322,13 @@ describe("the input stage", () => {
           one.x = 99;
         })
       ),
-      "World.set()": Effect.map(World, (world) =>
-        world.set(world.view(Ships).entities()[0]!, Ship, { x: 99 })
+      "World.set()": Effect.gen(function* () {
+        const [first] = (yield* Ships).entities();
+        (yield* World.writes(Ship)).set(first!, Ship, { x: 99 });
+      }),
+      "A spawn": Effect.map(Commands.spawns(Ship), (commands) =>
+        commands.spawn(Ship)
       ),
-      "A spawn": Effect.map(Commands, (commands) => commands.spawn(Ship)),
       'singleton "in/Score"': Effect.map(Score, (score) => {
         score.points = 1;
       }),
@@ -332,7 +336,7 @@ describe("the input stage", () => {
       'event "in/Pinged" was emitted in the frame stage or the input stage':
         Effect.map(Pinged, (pinged) => pinged.emit({})),
       "A draw from world.random": Effect.map(World, (world) =>
-        world.random.next()
+        whole(world).random.next()
       ),
     };
     for (const [what, attempt] of Object.entries(attempts)) {
@@ -1296,7 +1300,7 @@ describe("the picture of the devices in the world", () => {
           checkpointEvery: 0,
         });
         const Bare = Plugin.make("Bare", {
-          setup: Effect.map(Commands, (commands) => {
+          setup: Effect.map(Commands.spawns(Ship), (commands) => {
             commands.spawn(Ship.of({ x: 0, shots: 0 }));
           }),
         });

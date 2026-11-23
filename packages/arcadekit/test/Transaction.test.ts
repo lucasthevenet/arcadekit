@@ -21,6 +21,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { whole } from "../src/Services";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -475,8 +476,8 @@ const Echo = Action.define("tx/Echo", Schema.Struct({ by: Schema.Int }));
 
 /** Does whatever it is told, in order, and only then decides to refuse. */
 const act = Action.handler(Act, function* ({ refuse, steps, target }) {
-  const world = yield* World;
-  const commands = yield* Commands;
+  const world = yield* World.writes(Body);
+  const commands = yield* Commands.spawns(Body, Sheet, Aura, Marked);
   const random = yield* Random;
   const noted = yield* Noted;
   const actions = yield* Action.Actions;
@@ -596,7 +597,7 @@ const withApp = <T, A, E = never>(
 
 /** What the game begins with: bodies of every shape, and two freed slots. */
 const Scene = Plugin.make("tx/Scene", {
-  setup: Effect.map(Commands, (commands) => {
+  setup: Effect.map(Commands.spawns(Body, Sheet, Aura, Chilled), (commands) => {
     const entities: Entity[] = [];
     for (let n = 0; n < 12; n++) {
       const entity = commands.spawn(
@@ -883,7 +884,7 @@ describe("an action that is accepted", () => {
       Schema.Struct({ target: EntityId })
     );
     const twice = Action.handler(Twice, function* ({ target }) {
-      const world = yield* World;
+      const world = yield* World.writes(Body);
       world.set(target, Body, { x: 10 });
       const seen = world.get(target, Body)!.x;
       world.set(target, Body, { x: seen * 2 });
@@ -913,10 +914,10 @@ describe("an action that is accepted", () => {
       })
     );
     const direct = Action.handler(Direct, function* ({ how, target }) {
-      const world = yield* World;
+      const world = yield* World.writes(Body);
       world.set(target, Body, { x: 42 });
       if (how === "world") {
-        world.despawn(target);
+        whole(world).despawn(target);
       } else {
         (yield* Commands).despawn(target);
       }

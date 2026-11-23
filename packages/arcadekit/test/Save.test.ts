@@ -73,7 +73,7 @@ const double = Action.handler(Double, function* () {
 });
 const scatter = Action.handler(Scatter, function* ({ count }) {
   const random = yield* Random;
-  const commands = yield* Commands;
+  const commands = yield* Commands.spawns(Mote);
   for (let i = 0; i < count; i++) {
     commands.spawn(
       Mote.of({ x: random.next(), name: `mote ${random.int(1, 99)}` })
@@ -152,7 +152,7 @@ const Game = Plugin.make("sv/Game", {
   handlers: [add, double, scatter, pulse],
   setup: Effect.gen(function* () {
     setups++;
-    const commands = yield* Commands;
+    const commands = yield* Commands.spawns(Tally, Mote);
     commands.spawn(
       Tally.of({ value: 1, heard: 0, rejections: 0, pulses: 0, echoes: 0 })
     );

@@ -46,7 +46,11 @@ const Fountain = System.make("Fountain", function* () {
   }
   spray.wave += 1;
   spray.wait = 0.5;
-  const commands = yield* Commands;
+  const commands = yield* Commands.spawns(
+    Position,
+    Velocity,
+    Lifetime.Lifetime
+  );
   // Seeded: the same seed sprays the same fountain on every run and machine.
   const random = yield* Random;
   for (let i = 0; i < 100; i++) {

@@ -319,7 +319,7 @@ describe("app.inspect", () => {
 
   it("works on an app that spawns through commands", () => {
     const Spawner = System.make("in/Spawner", function* () {
-      (yield* Commands).spawn(Position.of({ x: 5, y: 5 }));
+      (yield* Commands.spawns(Position)).spawn(Position.of({ x: 5, y: 5 }));
     });
     const app = run(App.make(App.define({ systems: [Spawner] })));
     app.tick(1 / 60);

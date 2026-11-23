@@ -27,7 +27,7 @@ import { Effect, Effectable } from "effect";
 import { Component, Field } from "./ecs/component";
 import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
-import { World } from "./Services";
+import { World, whole } from "./Services";
 import * as System from "./System";
 
 /** What the world stores for a state. */
@@ -108,7 +108,7 @@ export class State<V extends string>
 
   asEffect(): Effect.Effect<StateHandle<V>, never, World> {
     return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      handleOf(world, this)
+      handleOf(whole(world), this)
     ));
   }
 }

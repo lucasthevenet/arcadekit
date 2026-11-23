@@ -198,7 +198,8 @@ const currentTurn = Effect.gen(function* () {
 
 const attack = Action.handler(Attack, function* ({ attacker, target }) {
   const world =
-    (yield* Query.all(Health)).spec && (yield* Effect.service(App_World));
+    (yield* Query.all(Health)).spec &&
+    (yield* App_World.writes(Energy, Health));
   const turn = yield* currentTurn;
   const owner = world.get(attacker, Owner);
   if (owner === undefined || owner.player !== turn.player) {
@@ -233,7 +234,7 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
 
 /** Queues a spawn and an event, then may refuse: used to test rollback. */
 const summon = Action.handler(Summon, function* ({ hp, player }) {
-  const commands = yield* Commands;
+  const commands = yield* Commands.spawns(Health, Owner, Energy);
   const died = yield* Died;
   const entity = commands.spawn(
     Health.of({ hp }),
@@ -273,19 +274,22 @@ const Recharge = System.make("Recharge", function* () {
 
 /** How a duel begins: player one's turn, and a fighter for each player. */
 const Board = Plugin.make("ru/Board", {
-  setup: Effect.map(Commands, (commands) => {
-    commands.spawn(Turn.of({ player: 1, number: 1 }));
-    commands.spawn(
-      Health.of({ hp: 10 }),
-      Energy.of({ points: 3 }),
-      Owner.of({ player: 1 })
-    );
-    commands.spawn(
-      Health.of({ hp: 6 }),
-      Energy.of({ points: 3 }),
-      Owner.of({ player: 2 })
-    );
-  }),
+  setup: Effect.map(
+    Commands.spawns(Turn, Health, Energy, Owner),
+    (commands) => {
+      commands.spawn(Turn.of({ player: 1, number: 1 }));
+      commands.spawn(
+        Health.of({ hp: 10 }),
+        Energy.of({ points: 3 }),
+        Owner.of({ player: 1 })
+      );
+      commands.spawn(
+        Health.of({ hp: 6 }),
+        Energy.of({ points: 3 }),
+        Owner.of({ player: 2 })
+      );
+    }
+  ),
 });
 
 /** The duel as a game, which a recording of it is replayed in. */

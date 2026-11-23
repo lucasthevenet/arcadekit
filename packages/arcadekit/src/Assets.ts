@@ -50,7 +50,15 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 import * as Action from "./Action";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
-import { Commands, Events, Frame, Random, Time, World } from "./Services";
+import {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Time,
+  World,
+  whole,
+} from "./Services";
 import * as System from "./System";
 
 /**
@@ -463,7 +471,7 @@ const storeLayer = Layer.effect(
     const held = new Map<Bundle<Entries>, Held>();
     // Between ticks an app's world is frozen: that is how the stages that
     // may know about assets are told from the tick.
-    const world = yield* World;
+    const world = whole(yield* World);
     const betweenTicks = (bundle: Bundle<Entries>, what: string): void => {
       if (!world.frozen) {
         throw new Error(

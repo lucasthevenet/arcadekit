@@ -49,7 +49,7 @@ import { Context, Effect, Layer } from "effect";
 import * as Assets from "./Assets";
 import type * as Event from "./Event";
 import * as Plugin from "./Plugin";
-import { World } from "./Services";
+import { World, whole } from "./Services";
 import type { Events } from "./Services";
 import * as System from "./System";
 
@@ -346,7 +346,7 @@ const playerLayer = Layer.effect(
     const output = yield* Output;
     // Between ticks an app's world is frozen: that is how the stages that
     // may play are told from the tick.
-    const world = yield* World;
+    const world = whole(yield* World);
     // What each channel was last told: the output hears of a change only.
     // And what this frame's systems have said of it so far, if any has:
     // kept in the same record, so that a frame makes none.

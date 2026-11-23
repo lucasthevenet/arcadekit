@@ -578,13 +578,13 @@ const graft = Action.handler(Graft, function* ({ branch, onto }) {
   if (!world.isAlive(onto)) {
     return yield* Effect.fail("no such tree" as const);
   }
-  (yield* Commands).add(branch, ChildOf.of({ target: onto }));
+  (yield* Commands.spawns(ChildOf)).add(branch, ChildOf.of({ target: onto }));
   return world.sources(onto, ChildOf).length;
 });
 /** Every tick, each tree that has branches grows one more. */
 const Grow = System.make("Grow", function* () {
   const world = yield* World;
-  const commands = yield* Commands;
+  const commands = yield* Commands.spawns(Body, ChildOf);
   (yield* Query.all(Body).pipe(Query.without(ChildOf))).each((_, tree) => {
     if (world.sources(tree, ChildOf).length > 0) {
       commands.spawn(Body, ChildOf.of({ target: tree }));
@@ -594,7 +594,7 @@ const Grow = System.make("Grow", function* () {
 
 /** How the orchard begins: three trees, each with a first branch. */
 const Planted = Plugin.make("rl/Planted", {
-  setup: Effect.map(Commands, (commands) => {
+  setup: Effect.map(Commands.spawns(Body, ChildOf), (commands) => {
     const trees = [0, 1, 2].map(() => commands.spawn(Body));
     for (const tree of trees) {
       commands.spawn(Body, ChildOf.of({ target: tree }));

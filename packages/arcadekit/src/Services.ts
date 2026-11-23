@@ -1,24 +1,114 @@
 /**
  * The services every system and handler can access with `yield*`.
  */
-import { Context } from "effect";
+import { Context, Effect } from "effect";
 
 import type { Actions } from "./Action";
-import type { CommandBuffer } from "./ecs/commands";
+import type {
+  ComponentDef,
+  ComponentInput,
+  Entity,
+  Schema,
+  Storage,
+  ValueOf,
+} from "./ecs/component";
 import type { Rng } from "./ecs/random";
-import type { World as EcsWorld } from "./ecs/world";
+import { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
-import type { Access } from "./Query";
+import type { Access, AddsOf, NameOf, WritesOf } from "./Query";
+
+/** What `set` is told of a component its world was not asked for. */
+type Settable<C extends string, N extends string> = [N] extends [never]
+  ? "This world was asked for with yield* World, which reads. To set a component, ask for it with yield* World.writes(...), naming each component this system sets."
+  : C extends N
+    ? unknown
+    : `World.writes was not given "${C}". Add it where the world is asked for: yield* World.writes(...), with every component this system sets.`;
 
 /**
- * The ECS world. Most systems use queries and `Commands` instead.
+ * What every world a system or a handler is handed can do: read.
+ *
+ * @category Models
+ */
+export interface ReadingWorld extends Pick<
+  EcsWorld,
+  | "entityCount"
+  | "get"
+  | "has"
+  | "hash"
+  | "holds"
+  | "isAlive"
+  | "singleton"
+  | "sources"
+> {}
+
+/**
+ * The world as a system or a handler is handed it: it reads, and it sets the
+ * components named `N`, those `World.writes` was given.
+ *
+ *   const world = yield* World                  // reads
+ *   const world = yield* World.writes(Health)   // reads, and sets Health
+ *
+ * - `get`, `has`, `isAlive` and `sources` read an entity, `singleton` and
+ *   `holds` a singleton, and `entityCount` and `hash` the world.
+ * - `set` writes the fields given of one entity's component, and returns false
+ *   for an entity that doesn't have it. A component the world was not asked for
+ *   doesn't compile, and the error says where to name it.
+ * - The set of entities changes through `Commands` alone.
+ *
+ * @category Models
+ */
+export interface WritingWorld<N extends string> extends ReadingWorld {
+  set<S extends Schema, St extends Storage, C extends string>(
+    entity: Entity,
+    def: ComponentDef<S, St, C> & Settable<C, N>,
+    value: Partial<ValueOf<S>>
+  ): boolean;
+}
+
+/**
+ * The world, for reading. Most systems use queries and `Commands` instead.
+ *
+ *   const world = yield* World
+ *   world.get(target, Health)?.hp
+ *
+ * `World.writes` gives the same world with a `set` for the components it is
+ * given, for writing one entity whose id a system holds:
+ *
+ *   const world = yield* World.writes(Health)
+ *   world.set(target, Health, { hp: 3 })
+ *
+ * Naming the components puts them in the system's requirements, as a query's
+ * `Query.writes` does, so that the order of a list of systems can be checked:
+ * see `System.Misordered`.
  *
  * @category Services
  */
-export class World extends Context.Service<World, EcsWorld>()(
+export class World extends Context.Service<World, WritingWorld<never>>()(
   "arcadekit/World"
-) {}
+) {
+  static readonly writes = <const D extends readonly ComponentDef[]>(
+    ..._defs: D
+  ): Effect.Effect<
+    WritingWorld<NameOf<D[number]>>,
+    never,
+    World | WritesOf<NameOf<D[number]>>
+  > => Effect.map(Effect.service(World), whole);
+}
+
+/**
+ * The whole world behind the one a system is handed: they are one object, and
+ * the type of the second is what a game's code may do with it.
+ * @internal
+ */
+export const whole = (world: ReadingWorld): EcsWorld => {
+  if (world instanceof EcsWorld) {
+    return world;
+  }
+  throw new Error(
+    "The World service was provided something that is not a world. An app provides its own: to read a game from outside one, use app.world."
+  );
+};
 
 /**
  * The game's time, as `Time` provides it to a system.
@@ -73,14 +163,72 @@ export class Frame extends Context.Service<Frame, Readonly<FrameState>>()(
   "arcadekit/Frame"
 ) {}
 
+/** What `spawn` and `add` are told of a component their commands were not asked for. */
+type Spawnable<C extends string, N extends string> = [N] extends [never]
+  ? "These commands were asked for with yield* Commands, which despawn and remove. To spawn or add, ask for them with yield* Commands.spawns(...), naming each component this system spawns or adds."
+  : C extends N
+    ? unknown
+    : `Commands.spawns was not given "${C}". Add it where the commands are asked for: yield* Commands.spawns(...), with every component this system spawns or adds.`;
+
 /**
- * Deferred structural changes, applied when the current system finishes.
+ * The commands of a system or a handler: changes to the set of entities,
+ * queued, and applied when it finishes. They despawn and remove, and they
+ * spawn and add the components named `N`, those `Commands.spawns` was given.
+ *
+ * @category Models
+ */
+export interface Spawning<N extends string> {
+  /**
+   * Queues a new entity with these components, and returns its id at once. The
+   * entity receives its components when the system finishes.
+   */
+  spawn<const I extends readonly ComponentInput[]>(
+    ...inputs: {
+      readonly [K in keyof I]: I[K] & Spawnable<NameOf<I[K]>, N>;
+    }
+  ): Entity;
+  /** Queues a component to add to an entity, or a relation to point elsewhere. */
+  add<const I extends ComponentInput>(
+    entity: Entity,
+    input: I & Spawnable<NameOf<I>, N>
+  ): void;
+  /** Queues an entity to despawn. */
+  despawn(entity: Entity): void;
+  /** Queues a component to remove from an entity. */
+  remove(entity: Entity, def: ComponentDef): void;
+}
+
+/**
+ * Deferred changes to the set of entities, applied when the current system
+ * finishes.
+ *
+ *   const commands = yield* Commands
+ *   commands.despawn(entity)
+ *
+ * `Commands.spawns` gives the same commands with a `spawn` and an `add` for the
+ * components it is given:
+ *
+ *   const commands = yield* Commands.spawns(Bullet, Position)
+ *   commands.spawn(Bullet, Position.of({ x: 0, y: 0 }))
+ *
+ * Naming the components puts them in the system's requirements, so that the
+ * order of a list of systems can be checked: a system that watches a component
+ * with `Query.added` or `Query.changed` is listed after the ones that spawn it.
+ * See `System.Misordered`.
  *
  * @category Services
  */
-export class Commands extends Context.Service<Commands, CommandBuffer>()(
+export class Commands extends Context.Service<Commands, Spawning<never>>()(
   "arcadekit/Commands"
-) {}
+) {
+  static readonly spawns = <const D extends readonly ComponentDef[]>(
+    ..._defs: D
+  ): Effect.Effect<
+    Spawning<NameOf<D[number]>>,
+    never,
+    Commands | AddsOf<NameOf<D[number]>>
+  > => Effect.service(Commands);
+}
 
 /**
  * Lets a system tell a driver that ticks only when needed that the game has
