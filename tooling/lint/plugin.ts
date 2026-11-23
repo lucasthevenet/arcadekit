@@ -308,6 +308,9 @@ const within = (
  * `list.push(x)`, `delete cache.key`.
  */
 const changes = (reference: Reference): boolean => {
+  if (reference.resolved?.defs.some((def) => def.type === "ImportBinding")) {
+    return false;
+  }
   if (reference.isWrite()) {
     return !reference.init;
   }
@@ -340,7 +343,8 @@ const changes = (reference: Reference): boolean => {
 /**
  * Code of the tick keeps what it changes in the world. It can't see what code of the tick is
  * given by name rather than written in the call, nor a function declared elsewhere that the
- * code calls. The repository's tests record what systems did in arrays outside them, so
+ * code calls. It leaves imports alone, since `HashMap.set(map, key, value)` changes nothing,
+ * and so misses a `Map` a module exports. The repository's tests record what systems did in arrays outside them, so
  * oxlint.config.ts leaves test/ out.
  */
 const noOutsideState: Rule = {
