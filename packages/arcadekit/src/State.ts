@@ -27,8 +27,9 @@ import { Effect, Effectable } from "effect";
 import { Component, Field } from "./ecs/component";
 import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
-import { World, whole } from "./Services";
+import { World } from "./Services";
 import type { Sim } from "./Services";
+import { whole } from "./services/handed";
 import * as System from "./System";
 
 /** What the world stores for a state. */

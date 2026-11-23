@@ -21,7 +21,6 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
-import { whole } from "../src/Services";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -944,22 +943,17 @@ describe("an action that is accepted", () => {
     );
   });
 
-  it("changes which entities exist through Commands: a direct change is a bug, and is undone like one", () => {
+  it("changes which entities exist through Commands alone: its world has no despawn", () => {
     const Direct = Action.define(
       "tx/Direct",
-      Schema.Struct({
-        target: EntityId,
-        how: Schema.Literals(["world", "commands"]),
-      })
+      Schema.Struct({ target: EntityId })
     );
-    const direct = Action.handler(Direct, function* ({ how, target }) {
+    const direct = Action.handler(Direct, function* ({ target }) {
       const world = yield* World.writes(Body);
       world.set(target, Body, { x: 42 });
-      if (how === "world") {
-        whole(world).despawn(target);
-      } else {
-        (yield* Commands).despawn(target);
-      }
+      // @ts-expect-error the set of entities changes through Commands
+      void world.despawn;
+      (yield* Commands).despawn(target);
     });
     const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
     run(
@@ -970,18 +964,7 @@ describe("an action that is accepted", () => {
         const world = yield* app.read(World);
         const [target] = ids;
         assert(target !== undefined);
-        const before = world.hash();
-        const exit = app.dispatch(Direct, { target, how: "world" });
-        expect(Exit.isFailure(exit)).toBe(true);
-        expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
-          /World\.despawn\(\) was called inside a transaction/
-        );
-        expect(world.hash()).toBe(before);
-        expect(world.get(target, Body)).toEqual({ x: 1, y: 1 });
-
-        expect(
-          Exit.isSuccess(app.dispatch(Direct, { target, how: "commands" }))
-        ).toBe(true);
+        expect(Exit.isSuccess(app.dispatch(Direct, { target }))).toBe(true);
         expect(world.isAlive(target)).toBe(false);
       })
     );

@@ -49,8 +49,9 @@ import * as Action from "./Action";
 import type { World as EcsWorld } from "./ecs/world";
 import * as Field from "./Field";
 import * as Plugin from "./Plugin";
-import { Time, World, whole } from "./Services";
+import { Time, World } from "./Services";
 import type { TimeState } from "./Services";
+import { whole } from "./services/handed";
 import * as Singleton from "./Singleton";
 import * as System from "./System";
 

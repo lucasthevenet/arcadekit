@@ -30,6 +30,7 @@ import {
   World,
 } from "./Services";
 import type { FrameState, TimeState } from "./Services";
+import { handed } from "./services/handed";
 
 /**
  * The prefix of a reader's name in the world's change logs when it is a
@@ -117,7 +118,7 @@ export const tick = (parts: {
 }) => {
   const { actions, commands, events, intake, time, world } = parts;
   return Context.empty().pipe(
-    Context.add(World, world),
+    Context.add(World, handed(world)),
     Context.add(Time, time),
     Context.add(Commands, commands),
     Context.add(Ticks, {

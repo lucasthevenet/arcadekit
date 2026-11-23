@@ -22,7 +22,8 @@ import { dual } from "effect/Function";
 import type { RemovedReader } from "./ecs/changes";
 import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
 import type { QuerySpec, QueryView, Terms } from "./ecs/query";
-import { World, whole } from "./Services";
+import { World } from "./Services";
+import { whole } from "./services/handed";
 
 /**
  * An immutable query description, independent of any world.
