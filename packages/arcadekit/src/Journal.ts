@@ -9,12 +9,13 @@
  *   // The same game, begun the same way, and checked as it is played.
  *   const again = yield* Journal.replay(recording, game)
  *
- * An app keeps its journal as it plays: every action from outside the
- * simulation, a checkpoint of the world's hash at a regular interval of
- * ticks, and how long each tick was. A recording holds how its game began
- * beside them, its seed or its save, in the words `App.make` takes. A replay
- * makes an app of the game from that, applies the log to the app, and stops
- * at the first action or checkpoint that doesn't match.
+ * An app keeps its journal as it plays: every action that enters from
+ * outside the simulation, a checkpoint of the world's hash at a regular
+ * interval of ticks, and how long each tick was. A recording also holds how
+ * its game began, its `seed` or the `save` it was recorded since, as
+ * `App.make` takes them. A replay makes an app of the game from that start,
+ * applies the log to it, and stops at the first action or checkpoint that
+ * doesn't match.
  */
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
@@ -30,10 +31,10 @@ import * as Save from "./Save";
 import { GameTime } from "./Stage";
 
 /**
- * How a recorded game began: the seed of one recorded from its start, or the
- * save of one recorded since. A save holds where its game's random sequence
- * had got to, so a recording has one of the two, in the words `App.make`
- * takes. `Journal.replay` makes its app from it.
+ * How a recorded game began: its `seed`, when it was recorded from its start,
+ * or the `save` it was recorded since. A save holds where the game's random
+ * sequence had got to, so a recording holds one of the two, never both. It
+ * has the form `App.make` takes, and `Journal.replay` makes its app from it.
  *
  * @category Models
  */
@@ -52,8 +53,8 @@ export interface Played {
   /** The number of ticks the game had run where it ends. */
   readonly end: number;
   /**
-   * The delta of every tick from `start` to `end`, in runs: from each run's
-   * `tick` on, every tick took its `delta`, until the next run. The first run
+   * The delta of every tick from `start` to `end`, in runs. Every tick from a
+   * run's `tick` up to the next run took the run's `delta`. The first run
    * begins at `start`.
    */
   readonly deltas: readonly {
@@ -65,8 +66,8 @@ export interface Played {
 }
 
 /**
- * A game as it was played, from `app.record()`, for `Journal.replay` to play
- * again: how it began, and what was played of it. With the game, it is
+ * A game as it was played, which `app.record()` returns and `Journal.replay`
+ * plays again: how it began, and what was played of it. With the game, it is
  * everything a replay needs.
  *
  * @category Models
@@ -178,8 +179,8 @@ const RecordingSchema = Schema.fromJsonString(
 );
 
 /**
- * Encodes a recording as text, for a file or the network. One recorded since
- * a save holds the save, which is most of its length.
+ * Encodes a recording as text, for a file or the network. A recording made
+ * since a save holds the save, which is most of its text.
  *
  * @category Codecs
  */
@@ -191,11 +192,12 @@ export const encode = (recording: Recording): string =>
   );
 
 /**
- * Decodes a recording from text. It checks the recording's own structure:
- * that it says how its game began, that a save it holds reads and is of the
- * tick it begins at, and that its runs of deltas and its log are in order
- * and within it. Each payload is validated against its action's schema, and
- * each checkpoint against the world, when it is replayed.
+ * Decodes a recording from text, and fails with a `Schema.SchemaError` on
+ * text that isn't one. It checks the recording's own structure: that it says
+ * how its game began, that a save it holds decodes and was made at the tick
+ * the recording begins at, and that its log and its runs of deltas are in
+ * order and within it. A replay checks the rest: each payload against its
+ * action's schema, and each checkpoint against the world.
  *
  * @category Codecs
  */
@@ -464,10 +466,12 @@ export class ReplayDiverged<
 > extends Data.TaggedError("ReplayDiverged")<{
   /** The position in the log of the entry that failed to match. */
   readonly index: number;
+  /** The entry that failed to match. */
   readonly entry: Action.LogEntry;
   /**
-   * Why: the error an action was refused with, or a `HashMismatch` for a
-   * checkpoint.
+   * Why it failed to match: a `HashMismatch` for a checkpoint, the error a
+   * dispatched action was refused with, or text that says how an enqueued
+   * action, or an entry the replay never reached, went otherwise.
    */
   readonly reason: unknown;
   /**
@@ -622,22 +626,22 @@ const play = <A extends App.Any>(
 };
 
 /**
- * What `Journal.replay` makes its app with beside the recording: the options
- * of `App.make`, without where the game starts, which the recording says.
+ * The options of `App.make` that `Journal.replay` gives its app: all of them
+ * except `seed` and `save`, since the recording holds how its game began.
  *
  * @category Options
  */
 export interface ReplayOptions extends Omit<App.StartOptions, "seed" | "save"> {
-  /** Not an option of a replay: the recording holds its seed or its save. */
+  /** Not an option of a replay. The recording holds its seed or its save. */
   readonly seed?: never;
-  /** Not an option of a replay: the recording holds its seed or its save. */
+  /** Not an option of a replay. The recording holds its seed or its save. */
   readonly save?: never;
 }
 
 /**
- * Plays a recording again, from `app.record()`, in an app of `game` made from
- * how the recorded game began, its seed or the save it was recorded since,
- * and returns that app where the recording ends:
+ * Plays a recording from `app.record()` again, and returns the app it played
+ * it in, where the recording ends. It makes that app of `game` from how the
+ * recorded game began: its seed, or the save it was recorded since.
  *
  *   const again = yield* Journal.replay(recording, Duel)
  *   const checked = yield* Journal.replay(recording, Duel, {
@@ -648,33 +652,38 @@ export interface ReplayOptions extends Omit<App.StartOptions, "seed" | "save"> {
  * end. With the same systems and the same beginning, the result is the same
  * game.
  *
- * The replay verifies itself against the log, and fails with
- * `ReplayDiverged` at the first entry that doesn't match, which holds the
- * app where the replay stopped:
+ * The replay checks itself against the log. It fails with `ReplayDiverged`
+ * at the first entry that doesn't match, and the error holds the app where
+ * the replay stopped. An entry doesn't match when it is one of these:
  *
  * - A checkpoint whose hash differs from the replay's world. The replay stops
  *   at that tick, before applying anything recorded after it. With a checkpoint
  *   every tick, that is the tick it diverged on.
- * - A dispatched action that is refused. The log only holds dispatched actions
- *   that were accepted, so either the log was altered or the game changed
- *   since.
- * - An enqueued action refused where the game accepted it, or vice versa. It is
- *   enqueued again at the point it arrived, and the replay stops after the tick
- *   that applied it.
+ * - A dispatched action that is refused. The log holds only dispatched
+ *   actions that were accepted, so either the log was altered or the game
+ *   changed since.
+ * - An enqueued action refused where the game accepted it, or accepted where
+ *   the game refused it. It is enqueued again at the point it arrived, and the
+ *   replay stops after the tick that applied it.
  *
- * Actions the game's systems and handlers issued aren't in the log:
- * the replay's own simulation issues them again.
+ * Actions the game's systems and handlers issued aren't in the log. The
+ * replay's own simulation issues them again.
  *
- * It fails as `App.make` does too: with `Save.LoadRefused` when a recording
- * made since a save holds one this game can't load.
+ * It also fails as `App.make` does: with the error of a plugin's layer or
+ * setup, or with `Save.LoadRefused` when a recording made since a save holds
+ * a save this game can't load.
  *
  * **Gotchas**
  *
- * - It runs neither the frame stage nor the input stage: what the devices
- *   said is in the log.
- * - A log without checkpoints, from an app created with `checkpointEvery: 0`,
- *   is verified by its actions alone: a replay that has diverged runs until an
- *   action happens to be refused, or to the end.
+ * - It runs neither the frame stage nor the input stage. What the devices
+ *   reported is already in the log.
+ * - A recording from an app made with `checkpointEvery: 0` has no
+ *   checkpoints, so the replay checks it by its actions alone. A replay that
+ *   has diverged then runs until an action happens to be refused, or to the
+ *   end.
+ * - It throws on a recording that `Journal.decode` refuses: one whose `start`
+ *   isn't the tick its seed or save begins at, or whose first run of deltas
+ *   doesn't begin at its `start`.
  *
  * @category Running
  */
