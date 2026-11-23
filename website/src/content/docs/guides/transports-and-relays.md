@@ -55,7 +55,7 @@ const program = Effect.gen(function* () {
     others: ["grace"],
     delta: 1 / 60,
   });
-  return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 });
+  return yield* Driver.frames(yield* Transport.connect(session));
 }).pipe(Effect.scoped, Effect.provide(Transport.layerWebSocket(url)));
 
 Browser.runMain(program, { target: document.querySelector("canvas")! });

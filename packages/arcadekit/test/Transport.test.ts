@@ -237,9 +237,7 @@ describe("a session joined to a transport", () => {
               (name) => hub.layer(name),
               ahead
             );
-            const steps = seats.map((seat) =>
-              Driver.fixedStep(seat.connected, { hz: 30 })
-            );
+            const steps = seats.map((seat) => Driver.fixedStep(seat.connected));
             const act = players(11);
             const frame = (acting: boolean): void => {
               hub.step();
@@ -437,7 +435,7 @@ describe("a session joined to a transport", () => {
               drawn++;
             },
           }).pipe(Effect.provide(hub.layer("ada")));
-          Driver.fixedStep(connected, { hz: 30 })(DELTA);
+          Driver.fixedStep(connected)(DELTA);
           expect(drawn).toBe(1);
           expect(session.app.time.tick).toBe(1);
         })

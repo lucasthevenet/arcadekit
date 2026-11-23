@@ -164,9 +164,9 @@ type Distinct<Me extends string, Others extends readonly string[]> = [
   : { readonly names: Repeated<Me, Others> };
 
 /**
- * One peer of a multiplayer game, with its app. A driver steps it as it steps
- * an app: `Driver.frames(session, { hz })`. `Peer.Peer` documents what it
- * receives, sends and reports.
+ * One peer of a multiplayer game, with its app. A driver steps it at its own
+ * `delta`, and is given neither `hz` nor `ticks`: `Driver.frames(session)`.
+ * `Peer.Peer` documents what it receives, sends and reports.
  *
  * `E` is what a tick of its app can fail with, and `HU` the actions its
  * handlers accept.
