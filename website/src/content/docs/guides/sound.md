@@ -77,7 +77,7 @@ Nothing happens while the body returns the same thing. When it returns a differe
 - `{ track: "fanfare", once: true }` plays to its end and stops. It still counts as what the channel is playing: it doesn't restart while the body returns the same thing, a different track fades it out if it hasn't ended, and it plays again from the start once the body has returned something else in between.
 - The body can read anything a frame system can: singletons, states, queries, events, assets. When sound has no output, the body doesn't run at all.
 - Under `System.runIf`, a music system that doesn't run counts as returning silence: a level's music fades out when the level is left, with its configured fade, unless another system on its channel plays. When the system runs again, the body decides what plays, from the start of the track.
-- When the app's scope closes, every playing channel is silenced immediately.
+- When the app is closed, every playing channel is silenced immediately.
 
 ### Channels
 
@@ -137,7 +137,7 @@ const Air = Sound.music(
 
 The output is Web Audio, provided by `Browser.runMain` and `Browser.layer`. The `sounds` option maps the names cues and tracks play by to the files the page keeps for its lifetime, and `volume` sets the master volume. `Browser.layerSound(files)` provides the same layer on its own.
 
-- The page's sound opens with the first app that has `Sound.plugin`, in the scope the app is made in, wherever the layer is provided. The apps made under one `Browser.layer` share it: one audio context, as a browser allows a page only a few, and each file fetched once.
+- The page's sound opens with the first app that has `Sound.plugin`, wherever the layer is provided, and is heard until that app is closed. The apps made under one `Browser.layer` share it: one audio context, as a browser allows a page only a few, and each file fetched once. It closes with the last of them, and an app that plays after it was closed throws, and says so.
 - The files are fetched when the page's sound opens, through `Assets.Loader`, and decoded on arrival.
 - A page may not make a sound until the user interacts with it. The audio context is created on the first key or pointer press, and cues requested from the next frame on play. A cue requested before that, or before its file has loaded, is dropped: a late sound is worse than none. The first cue dropped before the first interaction is logged once, by name, through Effect's logger, so a game that opens with a sound learns why it isn't heard.
 - Cues only play while the audio is running. While the audio is suspended, or resuming, which takes a moment when the page becomes visible again or a laptop lid opens, cues are dropped: otherwise they would queue up and all play at once.
@@ -160,7 +160,7 @@ A file given by URL, and `Browser.sound`, are downloaded in full and kept decode
 
 Sound follows real time and isn't part of the game. A game with sound has the same hash, log and save as one without, and a replay or a server, which runs no frame stage, plays nothing.
 
-`Sound.Output` is where sound goes: how to open a speaker, a `Context.Reference` whose default is nowhere, in which case the cue system reads nothing. `Sound.plugin` opens it in the scope the app is made in, and lets go of it when that scope closes. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`. See [testing](testing.md#sound).
+`Sound.Output` is where sound goes: how to open a speaker, a `Context.Reference` whose default is nowhere, in which case the cue system reads nothing. `Sound.plugin` opens it when the app is made, and lets go of it when the app is closed. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`. See [testing](testing.md#sound).
 
 `Sound.clip(name, data)` creates a clip by hand, for a speaker of your own or for a test, which needs nothing to play: a recorder records a clip by its `name`, and the clip itself as `clip`.
 

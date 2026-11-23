@@ -28,7 +28,10 @@ const Rules = Plugin.make("game/Rules", {
 const Game = App.define({ plugins: [Rules] });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make(Game);
+  const app = yield* Effect.acquireRelease(
+    App.make(Game),
+    (made) => made.close
+  );
   app.tick(1 / 60);
 
   const saved = app.save(); // Exit<Save, SaveRefused>
@@ -39,7 +42,10 @@ const program = Effect.gen(function* () {
 
   const read = Save.decode(bytes); // Exit<Save, LoadRefused>
   if (Exit.isSuccess(read)) {
-    const again = yield* App.make(Game, { save: read.value });
+    const again = yield* Effect.acquireRelease(
+      App.make(Game, { save: read.value }),
+      (made) => made.close
+    );
     const loaded = yield* again.read(World);
     const played = yield* app.read(World);
     loaded.hash() === played.hash(); // true

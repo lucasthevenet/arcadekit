@@ -26,7 +26,10 @@ const Rules = Plugin.make("game/Rules", {
 const Game = App.define({ plugins: [Rules] });
 
 const program = Effect.gen(function* () {
-  const game = yield* App.make(Game, { seed: 42, checkpointEvery: 1 });
+  const game = yield* Effect.acquireRelease(
+    App.make(Game, { seed: 42, checkpointEvery: 1 }),
+    (app) => app.close
+  );
   game.enqueue(Add, { points: 3 });
   for (let i = 0; i < 10; i++) {
     game.tick(1 / 60);
@@ -35,9 +38,10 @@ const program = Effect.gen(function* () {
 
   const recording = yield* Journal.decode(text); // fails on text that isn't one
   // The replay makes its app from how the recorded game began: its seed.
-  const again = yield* Journal.replay(recording, Game, {
-    checkpointEvery: 1,
-  }); // fails with Journal.ReplayDiverged
+  const again = yield* Effect.acquireRelease(
+    Journal.replay(recording, Game, { checkpointEvery: 1 }), // fails with Journal.ReplayDiverged
+    (app) => app.close
+  );
 }).pipe(Effect.scoped);
 ```
 
@@ -49,7 +53,7 @@ const program = Effect.gen(function* () {
 
 `app.record()` returns a recording: how the game began, that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes.
 
-`Journal.replay(recording, game)` makes an app of the game from how the recorded game began, plays the recording in it, and returns it where the recording ends. It takes no seed and no save, so a replay begins as the recorded game did. It starts from the same state too, since what a game starts with is what its plugins' `setup` spawns, and code outside the game has no way to spawn anything. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A third argument gives the app the rest of what `App.make` takes, such as `{ checkpointEvery: 1 }`.
+`Journal.replay(recording, game)` makes an app of the game from how the recorded game began, plays the recording in it, and returns it where the recording ends. It takes no seed and no save, so a replay begins as the recorded game did. It starts from the same state too, since what a game starts with is what its plugins' `setup` spawns, and code outside the game has no way to spawn anything. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A third argument gives the app the rest of what `App.make` takes, such as `{ checkpointEvery: 1 }`. The app it returns is the caller's to close, as one `App.make` makes is.
 
 `Journal.encode` and `Journal.decode` turn a recording into text and back. Decoding refuses one that doesn't say how its game began, whose save doesn't read or is of another tick than it begins at, or whose log or runs of deltas are out of order or outside it. A recording made since a save holds the save, which is most of its text.
 
@@ -65,7 +69,7 @@ A replay compares its own world at each checkpoint, and stops at the first misma
 - A dispatched action the replay refuses, where the game accepted it, also stops the replay, with the refusal as the `reason`.
 - An enqueued action is enqueued again at the point it arrived, so it takes its turn among the actions the replay's own simulation issues. If the replay refuses what the game accepted, or the other way round, it stops after the tick that applied it.
 
-Whatever stops a replay, the error's `app` is the replay's app where it stopped, to look at while the scope the replay ran in is open:
+Whatever stops a replay, the error's `app` is the replay's app where it stopped, which the replay has closed, to look at:
 
 ```ts sketch
 yield* Journal.replay(recording, Game).pipe(

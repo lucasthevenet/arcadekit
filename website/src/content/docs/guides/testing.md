@@ -9,12 +9,11 @@ The examples use [Vitest](https://vitest.dev), but any test runner works.
 
 ## Stepping an app
 
-An app is created inside a scope. A test creates it, steps it with `tick`, and reads the game with `app.read`:
+A test creates an app, steps it with `tick`, and reads the game with `app.read`:
 
 ```ts title="rules.test.ts"
 import { Action, App, Field, Plugin, Singleton } from "arcadekit";
 import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
 import { expect, it } from "vitest";
 
 const Score = Singleton.define(
@@ -30,11 +29,8 @@ export const Rules = Plugin.make("game/Rules", {
   handlers: [add],
 });
 
-export const play = <A>(body: Effect.Effect<A, unknown, Scope.Scope>) =>
-  Effect.runSync(Effect.scoped(body));
-
 it("adds points", () =>
-  play(
+  Effect.runSync(
     Effect.gen(function* () {
       const app = yield* App.make(App.define({ plugins: [Rules] }));
       app.enqueue(Add, { points: 3 });
@@ -48,6 +44,7 @@ it("adds points", () =>
 
 A test changes the game as a player does, with an action, and sets the scene with a plugin of its own whose `setup` spawns what the test needs. `app.read` takes `World`, `Time`, a query that only reads, a singleton or a state, and nothing that writes.
 
+- An app has a scope of its own, so making one needs no `Effect.scoped`. It holds what it opened until `app.close`: the stand-ins below hold nothing, and a test that opens something real, such as a page's devices or a socket, closes the app when done.
 - Game time is `Time`, and a test advances it by ticking: `app.tick(1 / 60)` is a sixtieth of a second of game time, however long the test takes. Effect's `TestClock` doesn't affect it.
 - Vitest's `toEqual` treats two `Data.TaggedError` errors that differ only in their `message` as equal, since `message` isn't enumerable. When a test compares a failure, it compares the `message` too.
 
@@ -59,7 +56,7 @@ By default, an app has no devices. A test provides a source it drives by hand:
 import { Input } from "arcadekit";
 
 it("hears a key", () =>
-  play(
+  Effect.runSync(
     Effect.gen(function* () {
       const source = Input.makeManualSource();
       const app = yield* App.make(
@@ -84,7 +81,7 @@ To test what a game does with a key, you don't need a device. Dispatch the actio
 import { Sound } from "arcadekit";
 
 it("plays nothing when nothing happens", () =>
-  play(
+  Effect.runSync(
     Effect.gen(function* () {
       const sound = Sound.makeRecorder();
       const app = yield* App.make(

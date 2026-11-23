@@ -20,9 +20,9 @@ There is no default transport. A multiplayer game without one doesn't compile: e
 
 A transport needs little from its channel: every message must arrive, in any order. Duplicates are dropped by the session. A session keeps what it sent until every other peer has said it heard it, and sends it again when a relay says a peer joined the room, so a socket that drops and connects again loses nothing.
 
-A transport's layer opens nothing. `Transport.connect` listens on the transport in the scope of the program that calls it: the channel or the socket opens then, and closes with that scope, so `Transport.connect` requires a `Scope`. Provide the layer to the whole program or to `Transport.connect` alone: either way, the channel lasts as long as the program that drives the session. A transport used after its scope has closed throws and says so.
+A transport's layer opens nothing. `Transport.connect` listens on the transport in a scope of its own, as an app opens its devices: the channel or the socket opens then, and closes with the connection's `close`, which closes the session too. `Driver.run` closes the connection when it ends. Provide the layer to the whole program or to `Transport.connect` alone: either way, the channel lasts until the connection is closed. A transport used after that throws and says so.
 
-`Transport.listen` listens on the transport the same way, for a program that sends and receives messages itself.
+`Transport.listen` listens on the transport in the scope it runs in, until that scope closes, for a program that sends and receives messages itself.
 
 ## Within one browser
 
@@ -48,15 +48,17 @@ const url = Relay.address("wss://relay.example.com/rooms", {
 });
 // "wss://relay.example.com/rooms/blue?peer=ada"
 
-const program = Effect.gen(function* () {
-  const session = yield* Session.make(App.define({ plugins: [Game] }), {
-    seed: 1,
-    me: peer,
-    others: ["grace"],
-    delta: 1 / 60,
-  });
-  return yield* Driver.frames(yield* Transport.connect(session));
-}).pipe(Effect.scoped, Effect.provide(Transport.layerWebSocket(url)));
+const program = Driver.run(
+  Effect.gen(function* () {
+    const session = yield* Session.make(App.define({ plugins: [Game] }), {
+      seed: 1,
+      me: peer,
+      others: ["grace"],
+      delta: 1 / 60,
+    });
+    return yield* Transport.connect(session);
+  })
+).pipe(Effect.provide(Transport.layerWebSocket(url)));
 
 Browser.runMain(program, { target: document.querySelector("canvas")! });
 ```

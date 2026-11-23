@@ -457,7 +457,10 @@ const loop = Effect.fnUntraced(function* (pace: Pace) {
  * stage, as `fixedStep` does. In a page, with the page's display, a frame is
  * due once per repaint (`requestAnimationFrame`).
  *
- *   const app = yield* Effect.acquireRelease(App.make(Game), (app) => app.close)
+ *   const app = yield* Effect.acquireRelease(
+ *     App.make(App.define({ plugins: [Game] })),
+ *     (made) => made.close
+ *   )
  *   yield* Driver.frames(app, { hz: 60 })
  *
  * It does not close the app it is given, which is its maker's: `Driver.run`

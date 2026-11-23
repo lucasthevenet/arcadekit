@@ -65,7 +65,7 @@ const program = Effect.gen(function* () {
 | `plugins` | The plugins this one depends on. Each is installed once, however many plugins depend on it |
 | `systems` | Its systems, registered after its dependencies' |
 | `handlers` | Its action handlers, from which `app.dispatch` is typed |
-| `layer` | Services for the whole app, built once. Resources it acquires are released when the app's scope closes |
+| `layer` | Services for the whole app, built once. Resources it acquires are released when the app is closed |
 | `setup` | An Effect that runs on a fresh start, but not on a load, since the save already holds what it spawned |
 
 Components, events and actions are plain values, exported from the plugin's module. A plugin doesn't list them: a save finds each by its name, see [saving and loading](/guides/saving-and-loading/#requirements-for-saving).
@@ -81,7 +81,7 @@ A service is for the [frame and input stages](../concepts/ticks-and-frames.md). 
 - make configuration a [`Resource`](#configuration), which the tick may read;
 - play, draw, log and call the network from `System.frame`, which hears what the tick's events said.
 
-A plugin's `layer` builds its services. While building, it can use the built-in services and whatever the plugin's dependencies provide: a layer that needs another plugin's service lists that plugin in `plugins`. Acquire resources that need releasing with `Effect.acquireRelease` inside `Layer.effect`; they are released when the app's scope closes.
+A plugin's `layer` builds its services. While building, it can use the built-in services and whatever the plugin's dependencies provide: a layer that needs another plugin's service lists that plugin in `plugins`. Acquire resources that need releasing with `Effect.acquireRelease` inside `Layer.effect`; they are released when the app is closed.
 
 Anything your frame and input systems need that no plugin provides remains a requirement of `App.make`. Provide it the usual Effect way, and a missing one is the usual compile error:
 

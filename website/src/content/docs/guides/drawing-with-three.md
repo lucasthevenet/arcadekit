@@ -163,7 +163,7 @@ A game is drawn by frame-stage systems, in a plugin that only the page installs.
 
 - It decides what to draw from the components an entity has, and where from `Transform3d` or `Transform2d`, whichever the kind names. The rules say what an entity is, never how it looks.
 - It draws crowds from raw columns into one buffer, allocating nothing per entity per frame.
-- It keeps state across frames, such as a mesh, a scene, or where an entity was a tick ago, in a service built in the plugin's `layer` and released with the app's scope, never in the world.
+- It keeps state across frames, such as a mesh, a scene, or where an entity was a tick ago, in a service built in the plugin's `layer` and released when the app is closed, never in the world.
 - Its output target, a renderer or a canvas, comes from outside, as a service the game provides.
 
 ## Names

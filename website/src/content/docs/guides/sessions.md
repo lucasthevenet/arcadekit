@@ -20,12 +20,15 @@ const Game = Plugin.make("game/Game", { handlers: [move] });
 const Duel = App.define({ plugins: [Game] });
 
 const program = Effect.gen(function* () {
-  const session = yield* Session.make(Duel, {
-    seed: 1, // or a save: how the game starts, as App.make takes it
-    me: "ada", // this machine's player
-    others: ["grace"], // everyone else: grace's machine has me: "grace", others: ["ada"]
-    delta: 1 / 60, // the seconds a tick simulates, the same everywhere
-  });
+  const session = yield* Effect.acquireRelease(
+    Session.make(Duel, {
+      seed: 1, // or a save: how the game starts, as App.make takes it
+      me: "ada", // this machine's player
+      others: ["grace"], // everyone else: grace's machine has me: "grace", others: ["ada"]
+      delta: 1 / 60, // the seconds a tick simulates, the same everywhere
+    }),
+    (made) => made.close // closes its app with the program's scope
+  );
 
   session.app.enqueue(Move, { dx: 1 }); // as in a single-player game
 
@@ -37,7 +40,7 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 ```
 
-What a game played on several machines needs is in `arcadekit/net`, and none of it is in `arcadekit` itself, so a game with one player loads none of it. `Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` is that app without what would move this machine's game alone: it has no `tick` and no `dispatch`, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's.
+What a game played on several machines needs is in `arcadekit/net`, and none of it is in `arcadekit` itself, so a game with one player loads none of it. `Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` is that app without what would move this machine's game alone: it has no `tick` and no `dispatch`, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's. It has no `close` either: `session.close` closes it, as `app.close` closes an app.
 
 Messages from other peers go to `session.receive(message)`. Usually a [transport](transports-and-relays.md) handles both directions and a driver steps the session, so your game never calls these itself. If you carry messages some other way, `Message.encode` and `Message.decode` convert them to text and back, the latter returning an `Exit` that rejects anything that isn't a message.
 
@@ -84,21 +87,22 @@ Before each tick it isn't sure of, the session captures the game with `Timeline.
 A session steps its app. Pass the session to a driver, and the driver renders the game through it. The driver ticks it `1 / delta` times a second, the rate every peer is made with, so it takes neither `hz` nor `ticks`, and giving it either doesn't compile:
 
 ```ts sketch
-const program = Effect.gen(function* () {
-  const session = yield* Session.make(Duel, {
-    seed,
-    me,
-    others,
-    delta: 1 / 60,
-  });
-  return yield* Driver.frames(yield* Transport.connect(session));
-}).pipe(
-  Effect.scoped,
-  Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
-);
+const program = Driver.run(
+  Effect.gen(function* () {
+    const session = yield* Session.make(Duel, {
+      seed,
+      me,
+      others,
+      delta: 1 / 60,
+    });
+    return yield* Transport.connect(session);
+  })
+).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7")));
 ```
 
 Key presses, the UI and `session.app.enqueue` all feed this peer's next message. Your game issues input exactly as it does with one player.
+
+- `Transport.connect(session)` stands in for the session: its `close` stops listening on the transport and closes the session. `Driver.run` closes it when it ends, as it closes an app.
 
 - `session.tick()` takes no delta: each tick simulates the session's `delta`.
 - A session never rests: the other peers wait for its message for every tick, so `ticks: "whenNeeded"` is for a game of one.
@@ -122,7 +126,10 @@ import { Effect, Exit } from "effect";
 const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make(App.define({ plugins: [Game] }));
+  const app = yield* Effect.acquireRelease(
+    App.make(App.define({ plugins: [Game] })),
+    (made) => made.close
+  );
   const moment = Timeline.capture(app); // Exit<Timeline.Moment, Save.SaveRefused>
   app.tick(1 / 60);
   if (Exit.isSuccess(moment)) {
