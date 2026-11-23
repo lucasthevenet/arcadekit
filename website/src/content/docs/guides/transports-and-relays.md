@@ -51,8 +51,8 @@ const url = Relay.address("wss://relay.example.com/rooms", {
 const program = Effect.gen(function* () {
   const session = yield* Session.make(App.define({ plugins: [Game] }), {
     seed: 1,
-    peer,
-    peers: ["ada", "grace"],
+    me: peer,
+    others: ["grace"],
     delta: 1 / 60,
   });
   return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 });

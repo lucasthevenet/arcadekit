@@ -292,8 +292,8 @@ describe("a rollback session", () => {
             Session.make(CoinGame, {
               seed: 5,
               checkpointEvery: 1,
-              peer: "ada",
-              peers: ["ada", "grace"],
+              me: "ada",
+              others: ["grace"],
               delta: DELTA,
             }),
             (session) => session
@@ -351,8 +351,8 @@ describe("a rollback session", () => {
       Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
-        peer: "ada",
-        peers: ["ada", "grace"],
+        me: "ada",
+        others: ["grace"],
         delta: DELTA,
       }),
       (session) => {
@@ -371,8 +371,8 @@ describe("a rollback session", () => {
           Session.make(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-            peer: "ada",
-            peers: ["ada"],
+            me: "ada",
+            others: [],
             delta: DELTA,
             ahead,
           }),
@@ -511,8 +511,8 @@ describe("a rollback session", () => {
     });
     withMade(
       Session.make(App.define({ plugins: [Hold], systems: [Spoil] }), {
-        peer: "ada",
-        peers: ["ada", "grace"],
+        me: "ada",
+        others: ["grace"],
         delta: DELTA,
       }),
       (session) => {
