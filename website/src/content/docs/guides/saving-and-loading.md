@@ -63,7 +63,7 @@ To return to an earlier moment of the same app within the same run, `Timeline.ca
 
 When the last requirement isn't met, or a field holds a value that can't be saved, `app.save()` fails with `Save.SaveRefused`, whose message names the problem.
 
-These aren't saved: `Field.transient` fields, which are `undefined` after a load, and any state held by your game's own services.
+These aren't saved: `Field.transient` fields, which are `undefined` after a load, and anything kept outside the world, such as a variable of a module.
 
 ## Saves and the action log
 

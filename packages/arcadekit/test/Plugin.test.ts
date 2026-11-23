@@ -13,6 +13,7 @@ import {
   Field,
   Plugin,
   Query,
+  Resource,
   System,
   Time,
   World,
@@ -38,15 +39,14 @@ const withApp = <A, E, T>(
   use: (app: A) => T
 ): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
-// --- a "physics" plugin: a service, two systems, some setup --------------------
+// --- a "physics" plugin: a resource, two systems, some setup -------------------
 
-class Bounds extends Context.Service<
-  Bounds,
-  {
-    readonly width: number;
-    readonly clamp: (x: number) => number;
-  }
->()("pl/Bounds") {}
+const Bounds = Resource.make<{
+  readonly width: number;
+  readonly clamp: (x: number) => number;
+}>("pl/Bounds", {
+  defaultValue: () => ({ width: 100, clamp: (x) => Math.min(x, 100) }),
+});
 
 const Movement = System.tick("Movement", function* () {
   const moving = yield* Query.all(Position, Velocity).pipe(
@@ -77,7 +77,7 @@ const Physics = Plugin.make("Physics", {
   systems: [Movement, Walls],
   // Written inline, with a function inside, on purpose: this shape is what
   // tripped up type inference in an earlier design.
-  layer: Layer.succeed(Bounds, { width: 10, clamp: (x) => Math.min(x, 10) }),
+  layer: Resource.layer(Bounds, { width: 10, clamp: (x) => Math.min(x, 10) }),
   setup: Effect.gen(function* () {
     const commands = yield* Commands.spawns(Position, Velocity);
     commands.spawn(Position.of({ x: 9, y: 0 }), Velocity.of({ x: 2, y: 0 }));
@@ -136,7 +136,7 @@ const wound = Action.handler(Wound, function* ({ hp }) {
 });
 
 describe("plugins", () => {
-  it("bundle systems, handlers, services and setup into one value", () => {
+  it("bundle systems, handlers, resources and setup into one value", () => {
     Effect.gen(function* () {
       const app = yield* App.make(
         App.define({ plugins: [Combat], handlers: [wound] })
@@ -198,8 +198,8 @@ describe("plugins", () => {
     ) {}
     const Core = Plugin.make("Core", {
       systems: [
-        System.tick("CoreSystem", function* () {
-          order.push("tick:Core");
+        System.frame("CoreSystem", function* () {
+          order.push("frame:Core");
         }),
       ],
       layer: Layer.effect(
@@ -219,8 +219,8 @@ describe("plugins", () => {
       Plugin.make(name, {
         plugins: [...plugins],
         systems: [
-          System.tick(`${name}System`, function* () {
-            order.push(`tick:${name}:${(yield* Clock).id}`);
+          System.frame(`${name}System`, function* () {
+            order.push(`frame:${name}:${(yield* Clock).id}`);
           }),
         ],
         setup: Effect.sync(() => void order.push(`setup:${name}`)),
@@ -240,11 +240,12 @@ describe("plugins", () => {
       ]);
       order.length = 0;
       app.tick(1);
+      app.frame(0);
       expect(order).toEqual([
-        "tick:Core",
-        "tick:Left:1",
-        "tick:Right:1",
-        "tick:Top:1",
+        "frame:Core",
+        "frame:Left:1",
+        "frame:Right:1",
+        "frame:Top:1",
       ]);
       expect(released).toBe(0);
     });
@@ -253,6 +254,7 @@ describe("plugins", () => {
   });
 
   it("let a plugin's layer use its dependencies and the built-in services while it builds", () => {
+    // Bounds is 100 unless Physics, which Arena lists, overrides it.
     class Arena extends Context.Service<
       Arena,
       { readonly wall: Spawned; readonly width: number }
@@ -262,7 +264,7 @@ describe("plugins", () => {
       layer: Layer.effect(
         Arena,
         Effect.gen(function* () {
-          const { width } = yield* Bounds; // from the Physics plugin
+          const { width } = yield* Bounds; // as the Physics plugin sets it
           const commands = yield* Commands.spawns(Position); // built in
           const wall = commands.spawn(Position.of({ x: width, y: 0 }));
           return { wall, width };
@@ -270,7 +272,7 @@ describe("plugins", () => {
       ),
     });
     const seen: string[] = [];
-    const Look = System.tick("Look", function* () {
+    const Look = System.frame("Look", function* () {
       const arena = yield* Arena;
       const world = yield* World;
       const wall = placedIn(world, arena.wall);
@@ -280,6 +282,7 @@ describe("plugins", () => {
       App.make(App.define({ plugins: [ArenaPlugin], systems: [Look] })),
       (app) => {
         app.tick(1);
+        app.frame(0);
         expect(seen).toEqual(["wall 10 of 10"]);
       }
     );
@@ -294,7 +297,7 @@ describe("plugins", () => {
     const Sfx = Plugin.make("Sfx", {
       plugins: [Physics],
       systems: [
-        System.tick("BumpSound", function* () {
+        System.frame("BumpSound", function* () {
           const audio = yield* Audio;
           for (const _ of (yield* Bumped).read()) {
             audio.play("boing");
@@ -307,65 +310,109 @@ describe("plugins", () => {
         play: (sound) => void played.push(sound),
       })
     );
-    withApp(provided, (app) => app.tick(1));
+    withApp(provided, (app) => {
+      app.tick(1);
+      app.frame(0);
+    });
     expect(played).toEqual(["boing"]);
 
     expect(() =>
       withApp(
         // @ts-expect-error nothing provides Audio
         App.make(App.define({ plugins: [Sfx] })),
-        (app) => app.tick(1)
+        (app) => {
+          app.tick(1);
+          app.frame(0);
+        }
       )
     ).toThrow(/Service not found: .*Audio/);
   });
 
   it("require a layer's dependencies to be declared", () => {
+    class Units extends Context.Service<Units, { readonly scale: number }>()(
+      "pl/Units"
+    ) {}
+    const Metric = Plugin.make("Metric", {
+      layer: Layer.succeed(Units, { scale: 10 }),
+    });
     class Speed extends Context.Service<Speed, { readonly limit: number }>()(
       "pl/Speed"
     ) {}
-    const speedFromBounds = Layer.effect(
+    const speedFromUnits = Layer.effect(
       Speed,
-      Effect.map(Effect.service(Bounds), ({ width }) => ({ limit: width * 2 }))
+      Effect.map(Effect.service(Units), ({ scale }) => ({ limit: scale * 2 }))
     );
     const limits: number[] = [];
-    const ReadSpeed = System.tick("ReadSpeed", function* () {
+    const ReadSpeed = System.frame("ReadSpeed", function* () {
       limits.push((yield* Speed).limit);
     });
 
     const Declared = Plugin.make("Declared", {
-      plugins: [Physics],
-      layer: speedFromBounds,
+      plugins: [Metric],
+      layer: speedFromUnits,
       systems: [ReadSpeed],
     });
     withApp(App.make(App.define({ plugins: [Declared] })), (app) =>
-      app.tick(1)
+      app.frame(0)
     );
     expect(limits).toEqual([20]);
 
-    // Installing Physics alongside is not enough: the layer is built from
+    // Installing Metric alongside is not enough: the layer is built from
     // what the plugin itself declares, so the missing service stays a
     // requirement and the app does not compile until something provides it.
     const Undeclared = Plugin.make("Undeclared", {
-      layer: speedFromBounds,
+      layer: speedFromUnits,
       systems: [ReadSpeed],
     });
     expect(() =>
       withApp(
-        // @ts-expect-error Bounds is needed by Undeclared's layer and not declared
-        App.make(App.define({ plugins: [Undeclared, Physics] })),
-        (app) => app.tick(1)
+        // @ts-expect-error Units is needed by Undeclared's layer and not declared
+        App.make(App.define({ plugins: [Undeclared, Metric] })),
+        (app) => app.frame(0)
       )
-    ).toThrow(/Service not found: .*Bounds/);
+    ).toThrow(/Service not found: .*Units/);
     withApp(
       App.make(App.define({ plugins: [Undeclared] })).pipe(
-        Effect.provideService(Bounds, {
-          width: 3,
-          clamp: (x) => Math.min(x, 3),
-        })
+        Effect.provideService(Units, { scale: 3 })
       ),
-      (app) => app.tick(1)
+      (app) => app.frame(0)
     );
     expect(limits).toEqual([20, 6]);
+  });
+
+  it("refuse a service of the game's own in the tick, and take it in the frame", () => {
+    class Audio extends Context.Service<
+      Audio,
+      { readonly play: (sound: string) => void }
+    >()("pl/Audio") {}
+    System.tick(
+      "pl/TickAudio",
+      // @ts-expect-error what a service keeps is no part of the world
+      function* () {
+        (yield* Audio).play("boing");
+      }
+    );
+    const Ping = Action.define("pl/Ping", Schema.Struct({}));
+    Action.handler(
+      Ping,
+      // @ts-expect-error a handler runs as the tick does
+      function* () {
+        (yield* Audio).play("boing");
+      }
+    );
+    Plugin.make("pl/LoudSetup", {
+      // @ts-expect-error a setup runs as the tick does
+      setup: Effect.gen(function* () {
+        (yield* Audio).play("boing");
+      }),
+    });
+    const Play = System.frame("pl/FrameAudio", function* () {
+      (yield* Audio).play("boing");
+    });
+    const needs: Effect.Effect<unknown, never, Scope.Scope | Audio> = App.make(
+      App.define({ systems: [Play] })
+    );
+    void needs;
   });
 
   it("have what a setup spawned in the world when the next plugin's setup runs", () => {

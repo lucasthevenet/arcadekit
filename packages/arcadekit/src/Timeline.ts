@@ -127,8 +127,8 @@ export const capture = (
  *
  * **Gotchas**
  *
- * - State held by your game's own services is left as it is:
- *   `Session.syncTest` finds a tick that reads it.
+ * - State kept outside the world, in a variable of a module that a system
+ *   reads, is left as it is: `Session.syncTest` finds a tick that reads it.
  * - A `transient` field is undefined afterwards.
  *
  * @category Running

@@ -2,8 +2,8 @@
  * Plugins bundle everything a feature needs into a single value.
  *
  *   const Physics = Plugin.make("Physics", {
- *     systems: [Movement, Collision],
- *     layer: SpatialIndexLive,            // services its systems use
+ *     systems: [Movement, Collision, Draw],
+ *     layer: RendererLive,                // services its frame systems use
  *     setup: spawnWalls                    // runs once when the app starts
  *   })
  *
@@ -377,9 +377,11 @@ export const make = <
     readonly systems?: readonly [...S];
     readonly handlers?: readonly [...H];
     /**
-     * Services for the whole app. While it builds, it can use the built-in
-     * services and anything the plugins listed above provide. What it acquires
-     * is released when the app's scope closes.
+     * Services for the whole app, which its frame and input systems require:
+     * the code of the tick requires only the built-in services and resources,
+     * since what a service keeps is no part of the world. While it builds, it
+     * can use the built-in services and anything the plugins listed above
+     * provide. What it acquires is released when the app's scope closes.
      */
     readonly layer?: L;
     /**

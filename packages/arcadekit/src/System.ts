@@ -21,11 +21,19 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
+import type { Actions } from "./Action";
 import type { Store } from "./Assets";
 import type { Devices } from "./Input";
-import type { Adds, Writes } from "./Query";
+import type { Access, Adds, Writes } from "./Query";
 import { Sim } from "./Services";
-import type { Commands, Frame } from "./Services";
+import type {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Time,
+  World,
+} from "./Services";
 import type { Player } from "./Sound";
 import type { Intake, Port } from "./View";
 
@@ -164,7 +172,32 @@ export type GenServices<Eff> = [Eff] extends [never]
     ? R
     : never;
 
-type TickBan = Frame | Player | Port | Intake | Store | Devices;
+/** A gate that refuses everything but `A`. */
+interface Only<out A> {
+  readonly "~arcadekit/Only": A;
+}
+
+/**
+ * What a gate refuses of `R`: what `Ban` names, or all but what `Only` names.
+ * `unknown` is what is required before inference has found it, and is refused
+ * by neither.
+ */
+type Refused<R, Ban> =
+  Ban extends Only<infer A>
+    ? unknown extends R
+      ? never
+      : Exclude<R, A>
+    : Extract<R, Ban>;
+
+/**
+ * What the tick may require: the built-in services of the simulation, and
+ * what yielding a query, a singleton, a state or an event puts there. A
+ * resource requires nothing. A service of the game's own would keep what no
+ * save, rewind or refused action sees.
+ */
+type TickBan = Only<
+  World | Time | Commands | Events | Actions | Random | Access | Sim
+>;
 type FrameBan =
   | Sim
   | Commands
@@ -182,17 +215,17 @@ type InputBan =
   | Port;
 
 const TICK_MSG =
-  "A tick reads and changes the simulation. Frame, Sound, View, Assets and Input.Devices are real time: draw and play with System.frame, read the devices with System.input." as const;
+  "A tick reads and changes the simulation, and requires only its built-in services, queries, singletons, states, events and resources. Keep the game's state in the world (a cache that is rebuilt in a transient field of a singleton), make configuration a Resource, draw and play with System.frame, and read the devices with System.input." as const;
 const FRAME_MSG =
   "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit or state set. Read Input.Devices from System.input." as const;
 const INPUT_MSG =
   "An input system reads the devices and enqueues actions. It cannot change the game, and it cannot read Frame, play sound or publish a view." as const;
 
 type Body<Eff, Ban, Msg extends string, A = void> = [
-  Extract<GenServices<Eff>, Ban>,
+  Refused<GenServices<Eff>, Ban>,
 ] extends [never]
   ? () => Generator<Eff, A, never>
-  : { readonly [K in Msg]: Extract<GenServices<Eff>, Ban> };
+  : { readonly [K in Msg]: Refused<GenServices<Eff>, Ban> };
 
 /**
  * `Ok` when a tick may require `Eff`, and the refusal otherwise. `System.tick`,
@@ -243,10 +276,10 @@ export type FrameBody<
 > = Body<Eff, FrameBan, typeof FRAME_MSG, A>;
 
 type EffectBody<Eff, Ban, Msg extends string> = [
-  Extract<GenServices<Eff>, Ban>,
+  Refused<GenServices<Eff>, Ban>,
 ] extends [never]
   ? Eff
-  : { readonly [K in Msg]: Extract<GenServices<Eff>, Ban> };
+  : { readonly [K in Msg]: Refused<GenServices<Eff>, Ban> };
 
 /**
  * A plugin's `setup`, or any other Effect that runs as the tick does.
@@ -297,9 +330,14 @@ const define = <
  * names it. Work that spans many ticks keeps its place in the world, in a
  * component or a state, and a system moves it on each tick.
  *
- * The body can require anything a tick provides, and a plugin's own services.
- * Requiring `Frame`, `Sound`, `View`, `Assets` or `Input.Devices` does not
- * compile: those are real time, and belong to `System.frame` or `System.input`.
+ * The body can require what a tick provides: `World`, `Time`, `Commands`,
+ * `Events`, `Actions` and `Random`, and the queries, singletons, states,
+ * events and resources it yields. Anything else does not compile: `Frame`,
+ * `Sound`, `View`, `Assets` and `Input.Devices` are real time, and belong to
+ * `System.frame` or `System.input`, and a service of the game's own keeps
+ * what no save, rewind or refused action sees. Keep the game's state in the
+ * world, and a cache rebuilt from it in a `Field.transient` field of a
+ * singleton.
  *
  * @category Constructors
  */
@@ -479,10 +517,9 @@ export const inStage: {
  *
  * @category Combinators
  */
-type Gate<R, Ban, Msg extends string> =
-  Extract<R, Ban> extends never
-    ? unknown
-    : { readonly [K in Msg]: Extract<R, Ban> };
+type Gate<R, Ban, Msg extends string> = [Refused<R, Ban>] extends [never]
+  ? unknown
+  : { readonly [K in Msg]: Refused<R, Ban> };
 
 type StageGate<St, R2> = St extends TickStage
   ? [R2] extends [Gate<R2, TickBan, typeof TICK_MSG>]

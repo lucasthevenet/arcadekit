@@ -48,7 +48,7 @@ const Standing = Query.all(Name, Fighter);
 // Defined with schemas too, so that an event can be written down.
 const Struck = Event.define(
   "duel/Struck",
-  Schema.Struct({ target: EntityId, amount: Schema.Int })
+  Schema.Struct({ target: EntityId, name: Schema.String, amount: Schema.Int })
 );
 const Fell = Event.define("duel/Fell", Schema.Struct({ entity: EntityId }));
 const TurnEnded = Event.define(
@@ -82,6 +82,7 @@ const STRIKE_DAMAGE = 4;
 
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const world = yield* World.writes(Fighter);
+  const name = world.get(target, Name)?.value ?? "nobody";
   const me = world.get(attacker, Fighter);
   const them = world.get(target, Fighter);
   if (me === undefined || them === undefined) {
@@ -97,7 +98,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   // Every check has passed. Only now does anything change.
   world.set(attacker, Fighter, { energy: me.energy - STRIKE_COST });
   world.set(target, Fighter, { hp: them.hp - STRIKE_DAMAGE });
-  (yield* Struck.emits).emit({ target, amount: STRIKE_DAMAGE });
+  (yield* Struck.emits).emit({ target, name, amount: STRIKE_DAMAGE });
   return them.hp - STRIKE_DAMAGE;
 });
 
@@ -167,18 +168,16 @@ const Commentary = Plugin.make("Commentary", {
   layer: Layer.succeed(Narrator, {
     say: (line) => console.log(`    "${line}"`),
   }),
+  // Commentary is said, not played: it is of the frame, which hears what the
+  // ticks did and changes nothing.
   systems: [
-    // In the stage before the rules' own system, while the fighter that was hit
-    // still exists.
-    System.tick("CallHits", function* () {
+    System.frame("CallHits", function* () {
       const narrator = yield* Narrator;
-      const world = yield* World;
-      for (const { amount, target } of (yield* Struck).read()) {
-        narrator.say(`${world.get(target, Name)?.value} takes ${amount}!`);
+      for (const { amount, name } of (yield* Struck).read()) {
+        narrator.say(`${name} takes ${amount}!`);
       }
-    }).pipe(System.inStage("preUpdate")),
-    // Listed after the rules' own system, when the fighter that fell is gone.
-    System.tick("CallEnd", function* () {
+    }),
+    System.frame("CallEnd", function* () {
       const narrator = yield* Narrator;
       for (const _ of (yield* Fell).read()) {
         (yield* Standing).each((name) => {
@@ -255,10 +254,12 @@ const program = Effect.gen(function* () {
     );
     yield* Console.log(`${who} strikes: ${outcome}`);
     app.tick(1);
+    app.frame(1);
   });
   const passTurn = Effect.fnUntraced(function* (player: 1 | 2) {
     app.dispatch(Pass, { player });
     app.tick(1);
+    app.frame(1);
     yield* Console.log(`player ${player} passes -> ${yield* standing(app)}`);
   });
 
