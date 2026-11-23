@@ -150,7 +150,7 @@ export class World {
   private readonly tableByKey = new Map<string, Table>();
   private readonly sparseById = new Map<number, SparseSet>();
   private readonly sparseList: SparseSet[] = [];
-  private readonly views = new Map<QuerySpec, QueryView>();
+  private views = new WeakMap<QuerySpec, QueryView>();
   private readonly componentsByName = new Map<string, ComponentDef>();
   /** Indexed by component id: true once registered, so the common check is a single read. */
   private readonly registered: (true | undefined)[] = [];
@@ -187,8 +187,8 @@ export class World {
   _watched = 0;
   /** Logs started while a query was iterating, whose accessors record nothing. */
   private lateLogs: ChangeLog[] = [];
-  private readonly watchViews = new Map<QuerySpec, Map<string, QueryView>>();
-  private readonly watchViewsByKey = new Map<string, QueryView>();
+  private watchViews = new WeakMap<QuerySpec, Map<string, QueryView>>();
+  private readonly viewsByKey = new Map<string, QueryView>();
   private readonly removedReaders = new Map<string, RemovedReader>();
   /** Indexed by component id: which entities point at which, once a relation is stored. */
   private readonly relations: (RelationIndex | undefined)[] = [];
@@ -1267,8 +1267,9 @@ export class World {
 
   /**
    * Resolves a query description against this world and returns its view. The
-   * world keeps the view, one per description object, and returns it again for
-   * the same object. A change query's view is kept per reader too.
+   * world keeps one view per description, and returns it again for any object
+   * that names the same components in the same places. A change query's view
+   * is kept per reader too.
    *
    * A description with `changedDefs` or `addedDefs` is a change query's. Its
    * view visits only the entities that had one of those components written,
@@ -1287,9 +1288,6 @@ export class World {
    * row it hands out counts as written, except for the terms the description
    * only reads (`readDefs`). The world records writes only to the components
    * that some change query watches.
-   *
-   * A new description object on every call makes a new view, and the world
-   * keeps every one. Keep a description in a constant.
    */
   view<D extends Terms>(spec: QuerySpec<D>, reader?: string): QueryView<D> {
     // The views are kept by their description, so each is a view of `D`.
@@ -1312,6 +1310,13 @@ export class World {
         return view as QueryView<D>;
       }
     }
+    for (const def of spec.readDefs ?? []) {
+      if (!spec.terms.includes(def)) {
+        throw new Error(
+          `A query says it only reads "${def.name}", which is not one of its terms: ${spec.terms.map((term) => term.name).join(", ") || "it has none"}.`
+        );
+      }
+    }
     for (const defs of [
       spec.terms,
       spec.withDefs,
@@ -1323,18 +1328,20 @@ export class World {
         this.register(def);
       }
     }
-    if (byReader === undefined) {
-      view = new QueryView(this, spec);
-      this.views.set(spec, view);
-      return view as QueryView<D>;
-    }
-    const key = `${who}\n${describeSpec(spec)}`;
-    view = this.watchViewsByKey.get(key);
+    const key =
+      byReader === undefined
+        ? describeSpec(spec)
+        : `${who}\n${describeSpec(spec)}`;
+    view = this.viewsByKey.get(key);
     if (view === undefined) {
-      view = new QueryView(this, spec, key);
-      this.watchViewsByKey.set(key, view);
+      view = new QueryView(this, spec, byReader === undefined ? "" : key);
+      this.viewsByKey.set(key, view);
     }
-    byReader.set(who, view);
+    if (byReader === undefined) {
+      this.views.set(spec, view);
+    } else {
+      byReader.set(who, view);
+    }
     return view as QueryView<D>;
   }
 
@@ -1631,9 +1638,9 @@ export class World {
     this.relationList = [];
     // What was made of those: views, and what they had yet to visit.
     this._restored++;
-    this.views.clear();
-    this.watchViews.clear();
-    this.watchViewsByKey.clear();
+    this.views = new WeakMap();
+    this.watchViews = new WeakMap();
+    this.viewsByKey.clear();
     this.removedReaders.clear();
     this._changed.length = 0;
     this.addedLogs.length = 0;
