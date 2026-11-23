@@ -504,17 +504,24 @@ describe("saving and replaying", () => {
     payload?: Record<string, unknown>;
     hash?: number;
   }
-  /** A recording as its JSON has it, with a log of written entries. */
-  type WrittenRecording = Omit<Journal.Recording, "log"> & {
-    log: Written[];
-  };
-  const replayInto = (recording: Journal.Recording | WrittenRecording) => {
-    // Whatever the file says: the replay is what checks it.
-    const written = recording as Journal.Recording;
-    return withApp(
-      begin(Journal.replay(written, Game)),
+  const replayInto = (recording: Journal.Recording) =>
+    withApp(
+      begin(Journal.replay(recording, Game)),
       ({ world, target }) => world.get(target, Health)!.hp
     );
+  /**
+   * The recording in `text` with its log replaced by `log`, read back as a
+   * player's edited file is: whatever the log says, the replay checks it.
+   */
+  const withLog = (
+    text: string,
+    log: readonly Written[]
+  ): Journal.Recording => {
+    const read = Journal.decode(
+      JSON.stringify({ ...(JSON.parse(text) as object), log })
+    );
+    assert(Exit.isSuccess(read));
+    return read.value;
   };
 
   it("round-trips the recording through text and reproduces the game", () => {
@@ -550,13 +557,7 @@ describe("saving and replaying", () => {
         }
         const save = app.save();
         assert(Exit.isSuccess(save));
-        return Journal.encode({
-          save: save.value,
-          start: ticks,
-          end: ticks,
-          deltas: [],
-          log: [],
-        });
+        return Journal.encode(app.record(save.value));
       });
     const valid = {
       ...(JSON.parse(since(1)) as { save: string }),
@@ -620,8 +621,7 @@ describe("saving and replaying", () => {
     const saved = record();
     // Entry 0 is the checkpoint of the state the game started from; the four
     // actions follow it.
-    const recording = JSON.parse(saved.text) as WrittenRecording;
-    const { log } = recording;
+    const { log } = JSON.parse(saved.text) as { log: Written[] };
     expect(log.map((entry) => entry.name)).toEqual([
       undefined,
       "Damage",
@@ -635,7 +635,7 @@ describe("saving and replaying", () => {
     edited[2]!.payload!.amount = 9999;
     let caught: unknown;
     try {
-      replayInto({ ...recording, log: edited });
+      replayInto(withLog(saved.text, edited));
     } catch (error) {
       caught = error;
     }
@@ -652,22 +652,26 @@ describe("saving and replaying", () => {
     // An action this build of the game does not have.
     const renamed = structuredClone(log);
     renamed[1]!.name = "Smite";
-    expect(() => replayInto({ ...recording, log: renamed })).toThrow(
+    expect(() => replayInto(withLog(saved.text, renamed))).toThrow(
       /Log entry 1 \("Smite" at tick 0\)/
     );
 
     // Valid entries the rules refuse: the target is not in this game.
     const retargeted = structuredClone(log);
     retargeted[3]!.payload!.target = 4000;
-    expect(() => replayInto({ ...recording, log: retargeted })).toThrow(
+    expect(() => replayInto(withLog(saved.text, retargeted))).toThrow(
       /Log entry 3/
     );
 
-    // Entries that could never be reached.
+    // An entry past the recording's end is refused before any replay.
     const late = structuredClone(log);
     late[4]!.tick = 99;
-    expect(() => replayInto({ ...recording, log: late })).toThrow(
-      /its tick \(99\) was never reached/
-    );
+    expect(
+      Exit.isFailure(
+        Journal.decode(
+          JSON.stringify({ ...(JSON.parse(saved.text) as object), log: late })
+        )
+      )
+    ).toBe(true);
   });
 });
