@@ -562,7 +562,8 @@ export const define = <
  * and how much it checks of itself as it goes.
  *
  * A recording says where its game started in the same words, a `seed` or a
- * `save`: `Journal.replay` hands them to the function that makes its app.
+ * `save`, and `Journal.replay` makes its app from that, with the rest of
+ * these as its `Journal.ReplayOptions`.
  *
  * @category Options
  */

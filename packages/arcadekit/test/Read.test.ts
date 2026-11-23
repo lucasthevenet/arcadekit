@@ -139,9 +139,9 @@ describe("a game, from outside it", () => {
     expect(count).toBe(2);
     const replayed = run(
       Effect.gen(function* () {
-        const app = yield* Journal.replay(recording, (start) =>
-          App.make(Game, { ...start, checkpointEvery: 0 })
-        );
+        const app = yield* Journal.replay(recording, Game, {
+          checkpointEvery: 0,
+        });
         return (yield* app.read(World)).entityCount;
       })
     );

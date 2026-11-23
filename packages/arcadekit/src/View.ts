@@ -15,23 +15,25 @@
  *     systems: [ShowHud],
  *     handlers: [newGame],
  *   })
+ *   const Arcade = App.define({ plugins: [Game] })
  *
  *   // The UI receives the bridge, and nothing else.
- *   const ui = View.makeBridge()
+ *   const ui = View.makeBridge(Arcade)
  *   ui.subscribe(Hud, ({ score }) => { label.textContent = `${score}` })
  *   button.onclick = () => ui.send(NewGame, {})
  *
  *   Browser.runMain(
- *     Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
+ *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
  *   )
  *
  * A view is a value the game exposes to the UI. It is published from the frame
  * stage, once per frame, and only when it differs from the value the UI already
  * has, so an unchanged value costs the UI nothing.
  *
- * The UI acts by sending actions, like any other input source. What it sends is
- * issued in the input stage, before the next tick, and is logged, so a replay
- * needs no UI.
+ * The UI acts by sending actions, like any other input source. A bridge is made
+ * from its game, and sends only the actions the game has a handler for: any
+ * other does not compile. What it sends is issued in the input stage, before
+ * the next tick, and is logged, so a replay needs no UI.
  *
  * Neither side holds the other. The UI holds the bridge, which holds values but
  * no world; the game publishes to whoever is listening, and when no one is, on
@@ -81,6 +83,9 @@ export const define = <A>(name: string, initial: A): View<A> => ({
 
 /** Omitted for an action that takes no payload. */
 type PayloadArgument<P> = undefined extends P ? [payload?: P] : [payload: P];
+type PayloadOf<D> = D extends Action.ActionDef<string, infer P> ? P : never;
+/** The actions of a union of handlers. Distributive: none for no handler. */
+type ActionOf<HU> = HU extends Action.AnyHandler ? HU["action"] : never;
 
 /**
  * An action the UI requested, waiting for the input stage.
@@ -93,11 +98,23 @@ export interface Sent {
 }
 
 /**
- * What the UI receives: the game's views, and a way to request actions.
+ * What the UI receives: the game's views, and a way to request the actions
+ * `Sends`.
+ *
+ * `View.makeBridge(game)` makes one whose actions are every action the game
+ * has a handler for. A UI names the actions it sends, as
+ * `View.Bridge<typeof Start | typeof Quit>`, and is handed a bridge only if its
+ * game handles each of them. A `View.Bridge` with no actions reads views and
+ * sends nothing.
+ *
+ * @typeParam Sends the actions it sends
  *
  * @category Models
  */
-export interface Bridge {
+export interface Bridge<
+  // Without `in`, the compiler takes a bridge for one that sends more.
+  in Sends extends Action.AnyActionDef = never,
+> {
   /**
    * Returns a view's last published value, or its initial value. It is the same
    * object until the view is published with a different value, so you can
@@ -115,17 +132,15 @@ export interface Bridge {
     listener: (value: A) => void
   ) => () => void;
   /**
-   * Requests an action from the game. It is issued before the game's next tick,
-   * logged, and applied or refused by its handler, just as a key bound to it
-   * would be.
-   *
-   * An action the game has no handler for is a bug, and throws here, where it
-   * was sent. If it is sent before the game is created, when that can't be
-   * known yet, it throws in the game's first input stage.
+   * Requests one of the bridge's actions from the game, with its payload. It is
+   * issued before the game's next tick, logged, and applied or refused by its
+   * handler, just as a key bound to it would be.
    */
-  readonly send: <N extends string, P>(
-    action: Action.ActionDef<N, P>,
-    ...payload: PayloadArgument<P>
+  readonly send: <D extends Action.AnyActionDef>(
+    // Not `D extends Sends`, under which an action of no handler that takes
+    // no payload is reported as a payload missing.
+    action: D & Sends,
+    ...payload: PayloadArgument<PayloadOf<D>>
   ) => void;
   /**
    * The game's end: sets a view's value and tells its listeners, unless it
@@ -138,15 +153,6 @@ export interface Bridge {
    * @internal
    */
   readonly _take: () => readonly Sent[];
-  /**
-   * The game's end: says which actions the game has a handler for, from
-   * now until what is returned is called. A bridge serves one game at a
-   * time: the last to say.
-   * @internal
-   */
-  readonly _connect: (
-    handles: (action: Sent["action"]) => boolean
-  ) => () => void;
 }
 
 const NOTHING: readonly Sent[] = Object.freeze([]);
@@ -159,26 +165,45 @@ interface Slot {
 }
 
 /**
- * Makes a bridge. The entry point creates one, passes it to the UI, and
- * provides it to the game with `View.layer`:
+ * Makes the bridge of a game. The entry point makes one, hands it to the UI,
+ * and provides it to the game's app with `View.layer`:
  *
- *   const ui = View.makeBridge()
+ *   const Arcade = App.define({ plugins: [Game] })
+ *   const ui = View.makeBridge(Arcade)
  *   mountMenu(document.body, ui)
  *   Browser.runMain(
- *     Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
+ *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
  *   )
  *
- * It holds the views' values, their listeners and the actions waiting to be
- * issued, and nothing of the world. A UI can mount on it before the game is
- * created, and sees every view at its initial value until then.
+ * The game gives the bridge its type: it sends every action the game has a
+ * handler for, its plugins' among them, and no other. It holds the views'
+ * values, their listeners and the actions waiting to be issued, and nothing of
+ * the game or its world. A UI can mount on it before the app is made, and sees
+ * every view at its initial value until then.
+ *
+ * **Gotchas**
+ *
+ * - Provided to the app of another game, it can send an action that app has
+ *   no handler for, which throws in the app's input stage. Provide it to an
+ *   app of the game it was made from.
+ *
+ * @param game a game, as `App.define` makes it
  *
  * @category Constructors
  */
-export const makeBridge = (): Bridge => {
+export function makeBridge<
+  H extends readonly Action.AnyHandler[],
+  P extends readonly Plugin.Any[],
+>(game: {
+  readonly handlers: readonly [...H];
+  readonly plugins: readonly [...P];
+  // A game has a version, and a plugin has none.
+  readonly version: number;
+}): Bridge<ActionOf<H[number] | Plugin.HandlerOf<P[number]>>>;
+// A bridge takes nothing from its game but the type.
+export function makeBridge(): Bridge<Action.AnyActionDef> {
   const slots = new Map<string, Slot>();
   let sent: Sent[] = [];
-  // Which actions the game handles, once a game is there to say.
-  let handles: ((action: Sent["action"]) => boolean) | undefined;
   const slotOf = (view: View<unknown>): Slot => {
     let slot = slots.get(view.name);
     if (slot === undefined) {
@@ -201,11 +226,6 @@ export const makeBridge = (): Bridge => {
       };
     },
     send(action, ...payload) {
-      if (handles !== undefined && !handles(action)) {
-        throw new Error(
-          `The action "${action.name}" was sent to a game that has no handler for it. List its handler in a plugin's handlers, or in the app's.`
-        );
-      }
       sent.push({ action, payload: payload[0] });
     },
     _publish(view, value) {
@@ -244,29 +264,20 @@ export const makeBridge = (): Bridge => {
       sent = [];
       return taken;
     },
-    _connect(mine) {
-      handles = mine;
-      return () => {
-        // A game that ended after another began leaves the other's.
-        if (handles === mine) {
-          handles = undefined;
-        }
-      };
-    },
   };
-};
+}
 
 const noBridge: Bridge = {
   get: (view) => view.initial,
   subscribe: () => () => {},
+  // Its type sends no action: only a cast reaches this.
   send() {
     throw new Error(
-      "An action was sent to the bridge that stands for no UI. Make one with View.makeBridge() and provide it to the game with View.layer."
+      "An action was sent to the bridge that stands for no UI. Make one with View.makeBridge(game) and provide it to the game with View.layer."
     );
   },
   _publish: () => false,
   _take: () => NOTHING,
-  _connect: () => () => {},
 };
 
 /**
@@ -337,13 +348,6 @@ export class Port extends Context.Service<Port, PortShape>()(
 const portLayer = Layer.unwrap(
   Effect.gen(function* () {
     const bridge = yield* Bridge;
-    // From here to the app's end the bridge knows what the game handles,
-    // and refuses the rest where it is sent.
-    const { handles } = yield* Action.Actions;
-    yield* Effect.acquireRelease(
-      Effect.sync(() => bridge._connect(handles)),
-      (leave) => Effect.sync(leave)
-    );
     const port: PortValue = {
       connected: bridge !== noBridge,
       publish(view, value) {
@@ -377,9 +381,6 @@ const Send = System.input("arcadekit/View.Send", function* () {
  * - The UI's requests are issued in the input stage, just before a tick, in the
  *   order they were sent, with `Actions.enqueue`: logged, and applied at the
  *   start of the tick.
- * - An action the app has no handler for is a bug. The bridge learns which
- *   actions the app handles when the app is created, and `send` throws for any
- *   other; one sent before that throws here, in the app's first input stage.
  * - Without a bridge, the plugin does nothing.
  *
  * @category Plugins

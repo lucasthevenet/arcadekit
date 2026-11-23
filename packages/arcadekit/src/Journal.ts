@@ -7,33 +7,33 @@
  *   const text = Journal.encode(recording)         // for a file or the network
  *
  *   // The same game, begun the same way, and checked as it is played.
- *   const again = yield* Journal.replay(recording, (start) =>
- *     App.make(game, start)
- *   )
+ *   const again = yield* Journal.replay(recording, game)
  *
  * An app keeps its journal as it plays: every action from outside the
  * simulation, a checkpoint of the world's hash at a regular interval of
  * ticks, and how long each tick was. A recording holds how its game began
  * beside them, its seed or its save, in the words `App.make` takes. A replay
- * hands that to the function that makes its app, applies the log to the app,
- * and stops at the first action or checkpoint that doesn't match.
+ * makes an app of the game from that, applies the log to the app, and stops
+ * at the first action or checkpoint that doesn't match.
  */
 import { Cause, Data, Effect, Exit, Schema } from "effect";
+import type { Scope } from "effect";
 import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
-import type * as App from "./App";
+import * as App from "./App";
 import { partsOf } from "./app/parts";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
+import type * as Plugin from "./Plugin";
 import * as Save from "./Save";
 import { GameTime } from "./Stage";
 
 /**
  * How a recorded game began: the seed of one recorded from its start, or the
  * save of one recorded since. A save holds where its game's random sequence
- * had got to, so a recording has one of the two. It is what `Journal.replay`
- * hands to the function that makes its app, in the words `App.make` takes.
+ * had got to, so a recording has one of the two, in the words `App.make`
+ * takes. `Journal.replay` makes its app from it.
  *
  * @category Models
  */
@@ -447,11 +447,21 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
 }
 
 /**
- * A replayed log didn't behave as it did when it was recorded.
+ * A replayed log didn't behave as it did when it was recorded. It holds the
+ * replay's app, stopped where it diverged, to look at.
  *
+ *   Journal.replay(recording, Duel).pipe(
+ *     Effect.catchTag("ReplayDiverged", (diverged) =>
+ *       diverged.app.read(World)  // the world where the replay stopped
+ *     )
+ *   )
+ *
+ * @typeParam A The app the replay made.
  * @category Errors
  */
-export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
+export class ReplayDiverged<
+  A extends App.Any = App.Any,
+> extends Data.TaggedError("ReplayDiverged")<{
   /** The position in the log of the entry that failed to match. */
   readonly index: number;
   readonly entry: Action.LogEntry;
@@ -460,6 +470,11 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
    * checkpoint.
    */
   readonly reason: unknown;
+  /**
+   * The replay's app, where the replay stopped. It lives as long as the
+   * scope the replay ran in.
+   */
+  readonly app: A;
 }> {
   /** The tick of the entry that failed to match. */
   get tick(): number {
@@ -485,16 +500,25 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
 }
 
 /**
- * Applies a recording to an app that is where the recording begins, tick by
- * tick, and throws `ReplayDiverged` at the first entry that doesn't match.
+ * Applies a recording to the app made from how it began, tick by tick, and
+ * returns `ReplayDiverged` at the first entry that doesn't match.
  */
-const play = (app: App.Any, recording: Recording): void => {
+const play = <A extends App.Any>(
+  app: A,
+  recording: Recording
+): ReplayDiverged<A> | undefined => {
   const { deltas, end, log, start } = recording;
   if (app.time.tick !== start) {
+    const began =
+      recording.save === undefined
+        ? "with a seed, and a game begins at tick 0"
+        : `and its save was made at tick ${app.time.tick}`;
     throw new Error(
-      `Journal.replay was given a recording that begins at tick ${start}, and made an app that has run ${app.time.tick} ticks. Make the app from the start it hands over, (start) => App.make(game, start), which begins as the recorded game did: from its seed, or from the save it was recorded since.`
+      `Journal.replay was given a recording that begins at tick ${start}, ${began}. Decode a recording with Journal.decode, which checks it.`
     );
   }
+  const diverged = (index: number, entry: Action.LogEntry, reason: unknown) =>
+    new ReplayDiverged({ index, entry, reason, app });
   let next = 0;
   let agreedAt: number | undefined;
   // Enqueued entries the next tick will apply, each with the entry the
@@ -504,7 +528,7 @@ const play = (app: App.Any, recording: Recording): void => {
     readonly entry: Action.Logged;
     readonly mine: Action.Logged;
   }[] = [];
-  const applyDue = (): void => {
+  const applyDue = (): ReplayDiverged<A> | undefined => {
     for (
       let entry = log[next];
       entry !== undefined && entry.tick === app.time.tick;
@@ -513,16 +537,16 @@ const play = (app: App.Any, recording: Recording): void => {
       if (Action.isCheckpoint(entry)) {
         const actual = partsOf(app).world.hash();
         if (actual !== entry.hash) {
-          throw new ReplayDiverged({
-            index: next,
+          return diverged(
+            next,
             entry,
-            reason: new HashMismatch({
+            new HashMismatch({
               tick: entry.tick,
               expected: entry.hash,
               actual,
               agreedAt,
-            }),
-          });
+            })
+          );
         }
         agreedAt = entry.tick;
       } else if (entry.queued === true) {
@@ -537,32 +561,30 @@ const play = (app: App.Any, recording: Recording): void => {
       } else {
         const exit = app.dispatchByName(entry.name, entry.payload, entry.from);
         if (Exit.isFailure(exit)) {
-          throw new ReplayDiverged({
-            index: next,
-            entry,
-            reason: Cause.squash(exit.cause),
-          });
+          return diverged(next, entry, Cause.squash(exit.cause));
         }
       }
       next++;
     }
+    return undefined;
   };
   // The tick that has just run applied every action enqueued before it. Each
   // must have met the fate the log records for it.
-  const checkQueued = (): void => {
+  const checkQueued = (): ReplayDiverged<A> | undefined => {
     for (const { entry, index, mine } of waiting) {
       if (mine.refused !== undefined && entry.refused === undefined) {
-        throw new ReplayDiverged({ index, entry, reason: mine.refused });
+        return diverged(index, entry, mine.refused);
       }
       if (mine.refused === undefined && entry.refused !== undefined) {
-        throw new ReplayDiverged({
+        return diverged(
           index,
           entry,
-          reason: `the game refused it (${entry.refused}) and the replay accepted it`,
-        });
+          `the game refused it (${entry.refused}) and the replay accepted it`
+        );
       }
     }
     waiting.length = 0;
+    return undefined;
   };
   let run = 0;
   for (let tick = start; tick < end; tick++) {
@@ -575,37 +597,60 @@ const play = (app: App.Any, recording: Recording): void => {
         `Journal.replay was given a recording with no delta for tick ${tick}: a recording's first run of deltas begins where it does. Decode a recording with Journal.decode, which checks it.`
       );
     }
-    applyDue();
+    const due = applyDue();
+    if (due !== undefined) {
+      return due;
+    }
     app.tick(delta);
-    checkQueued();
+    const queued = checkQueued();
+    if (queued !== undefined) {
+      return queued;
+    }
   }
-  applyDue();
+  const due = applyDue();
+  if (due !== undefined) {
+    return due;
+  }
   const unreached = log[next];
-  if (unreached !== undefined) {
-    throw new ReplayDiverged({
-      index: next,
-      entry: unreached,
-      reason: `its tick (${unreached.tick}) was never reached; the log is out of order or past the recording's end, tick ${end}`,
-    });
-  }
+  return unreached === undefined
+    ? undefined
+    : diverged(
+        next,
+        unreached,
+        `its tick (${unreached.tick}) was never reached; the log is out of order or past the recording's end, tick ${end}`
+      );
 };
 
 /**
- * Plays a recording again, from `app.record()`, in an app made for it, and
- * returns that app where the recording ends. `make` is handed how the
- * recorded game began, its seed or the save it was recorded since, and makes
- * the app from it:
+ * What `Journal.replay` makes its app with beside the recording: the options
+ * of `App.make`, without where the game starts, which the recording says.
  *
- *   const again = yield* Journal.replay(recording, (start) =>
- *     App.make(Duel, start)
- *   )
+ * @category Options
+ */
+export interface ReplayOptions extends Omit<App.StartOptions, "seed" | "save"> {
+  /** Not an option of a replay: the recording holds its seed or its save. */
+  readonly seed?: never;
+  /** Not an option of a replay: the recording holds its seed or its save. */
+  readonly save?: never;
+}
+
+/**
+ * Plays a recording again, from `app.record()`, in an app of `game` made from
+ * how the recorded game began, its seed or the save it was recorded since,
+ * and returns that app where the recording ends:
+ *
+ *   const again = yield* Journal.replay(recording, Duel)
+ *   const checked = yield* Journal.replay(recording, Duel, {
+ *     checkpointEvery: 1,
+ *   })
  *
  * Each tick takes the delta it took when it was recorded, to the recording's
  * end. With the same systems and the same beginning, the result is the same
  * game.
  *
  * The replay verifies itself against the log, and fails with
- * `ReplayDiverged` at the first entry that doesn't match:
+ * `ReplayDiverged` at the first entry that doesn't match, which holds the
+ * app where the replay stopped:
  *
  * - A checkpoint whose hash differs from the replay's world. The replay stops
  *   at that tick, before applying anything recorded after it. With a checkpoint
@@ -620,19 +665,11 @@ const play = (app: App.Any, recording: Recording): void => {
  * Actions the game's systems and handlers issued aren't in the log:
  * the replay's own simulation issues them again.
  *
- * `make` is where the app is given its other options, and where it is kept
- * or prepared before the replay begins, as a step of the effect:
- *
- *   Journal.replay(recording, (start) =>
- *     App.make(Duel, { ...start, checkpointEvery: 1 }).pipe(Effect.tap(keep))
- *   )
- *
- * An app kept that way is the one to look at when a replay has stopped.
+ * It fails as `App.make` does too: with `Save.LoadRefused` when a recording
+ * made since a save holds one this game can't load.
  *
  * **Gotchas**
  *
- * - It throws when the app `make` returns isn't where the recording begins:
- *   it has run another number of ticks. An app made from `start` is.
  * - It runs neither the frame stage nor the input stage: what the devices
  *   said is in the log.
  * - A log without checkpoints, from an app created with `checkpointEvery: 0`,
@@ -641,26 +678,31 @@ const play = (app: App.Any, recording: Recording): void => {
  *
  * @category Running
  */
-export const replay = <A extends App.Any, E, R>(
+export const replay = <
+  S extends App.Systems = readonly [],
+  H extends App.Handlers = readonly [],
+  P extends App.Plugins = readonly [],
+>(
   recording: Recording,
-  make: (start: Origin) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | ReplayDiverged, R> =>
-  Effect.flatMap(
-    make(
-      recording.save === undefined
-        ? { seed: recording.seed }
-        : { save: recording.save }
-    ),
-    (made) =>
-      Effect.suspend(() => {
-        try {
-          play(made, recording);
-        } catch (error) {
-          if (error instanceof ReplayDiverged) {
-            return Effect.fail(error);
-          }
-          throw error;
-        }
-        return Effect.succeed(made);
-      })
+  game: App.Game<S, H, P>,
+  options?: ReplayOptions
+): Effect.Effect<
+  App.App<App.TickError<S, P>, App.AllHandlers<H, P>>,
+  | Plugin.ErrorOf<P[number]>
+  | Save.LoadRefused
+  | ReplayDiverged<App.App<App.TickError<S, P>, App.AllHandlers<H, P>>>,
+  Scope.Scope | App.External<S, H, P>
+> => {
+  const origin: Origin =
+    recording.save === undefined
+      ? { seed: recording.seed }
+      : { save: recording.save };
+  return Effect.flatMap(App.make(game, { ...options, ...origin }), (made) =>
+    Effect.suspend(() => {
+      const diverged = play(made, recording);
+      return diverged === undefined
+        ? Effect.succeed(made)
+        : Effect.fail(diverged);
+    })
   );
+};

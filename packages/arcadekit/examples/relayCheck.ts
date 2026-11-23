@@ -74,8 +74,8 @@ const check = Effect.gen(function* () {
   for (const peer of ["ada", "grace"]) {
     const session = yield* Session.make(App.define({ handlers: [tip] }), {
       checkpointEvery: 1,
-      peer,
-      peers: ["ada", "grace"],
+      me: peer,
+      others: [peer === "ada" ? "grace" : "ada"],
       delta: 1 / 30,
     });
     const connected = yield* Transport.connect(session).pipe(

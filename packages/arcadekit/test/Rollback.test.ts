@@ -155,9 +155,7 @@ describe("a rollback session", () => {
         // tick's hash against the log's, and ends on the same one.
         const played = ada.app.record();
         withApp(
-          Journal.replay(played, (start) =>
-            App.make(CoinGame, { ...start, checkpointEvery: 1 })
-          ),
+          Journal.replay(played, CoinGame, { checkpointEvery: 1 }),
           (_, alone) => {
             expect(alone.hash(), where).toBe(ada.world.hash());
             expect({ ...alone.singleton(Purse) }, where).toEqual({
@@ -189,9 +187,7 @@ describe("a rollback session", () => {
       const recording = first.app.record();
       expect(recording.end).toBe(ticks);
       withApp(
-        Journal.replay(recording, (start) =>
-          App.make(CoinGame, { ...start, checkpointEvery: 1 })
-        ),
+        Journal.replay(recording, CoinGame, { checkpointEvery: 1 }),
         (_, alone) => {
           expect(alone.hash()).toBe(first.world.hash());
         }
@@ -292,8 +288,8 @@ describe("a rollback session", () => {
             Session.make(CoinGame, {
               seed: 5,
               checkpointEvery: 1,
-              peer: "ada",
-              peers: ["ada", "grace"],
+              me: "ada",
+              others: ["grace"],
               delta: DELTA,
             }),
             (session) => session
@@ -351,8 +347,8 @@ describe("a rollback session", () => {
       Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
-        peer: "ada",
-        peers: ["ada", "grace"],
+        me: "ada",
+        others: ["grace"],
         delta: DELTA,
       }),
       (session) => {
@@ -371,8 +367,8 @@ describe("a rollback session", () => {
           Session.make(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-            peer: "ada",
-            peers: ["ada"],
+            me: "ada",
+            others: [],
             delta: DELTA,
             ahead,
           }),
@@ -511,8 +507,8 @@ describe("a rollback session", () => {
     });
     withMade(
       Session.make(App.define({ plugins: [Hold], systems: [Spoil] }), {
-        peer: "ada",
-        peers: ["ada", "grace"],
+        me: "ada",
+        others: ["grace"],
         delta: DELTA,
       }),
       (session) => {

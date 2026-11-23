@@ -116,9 +116,7 @@ describe("a lockstep session", () => {
       const recording = ada.app.record();
       expect(recording.end).toBe(ticks);
       withApp(
-        Journal.replay(recording, (start) =>
-          App.make(CoinGame, { ...start, checkpointEvery: 1 })
-        ),
+        Journal.replay(recording, CoinGame, { checkpointEvery: 1 }),
         (_, alone) => {
           expect(alone.hash()).toBe(ada.world.hash());
         }
@@ -181,7 +179,7 @@ describe("a lockstep session", () => {
       // Two ticks, unless it is told otherwise.
       expect(ada.session.delay).toBe(2);
       expect(ada.session.delta).toBe(DELTA);
-      expect(ada.session.peer).toBe("ada");
+      expect(ada.session.me).toBe("ada");
       ada.app.enqueue(Drop, { by: "ada", value: 1 });
       ada.app.enqueue(Drop, { by: "ada", value: 2 });
       expect(ada.session.tick()).toBe(false);
@@ -469,8 +467,8 @@ describe("a lockstep session", () => {
     });
     const Fused = App.define({ systems: [Fuse] });
     const alone = {
-      peer: "ada",
-      peers: ["ada"],
+      me: "ada",
+      others: [],
       delta: DELTA,
       delay: 0,
       ahead: 0,
@@ -497,8 +495,8 @@ describe("a lockstep session", () => {
     });
     withMade(
       Session.make(App.define({ systems: [Keys] }), {
-        peer: "ada",
-        peers: ["ada"],
+        me: "ada",
+        others: [],
         delta: DELTA,
         delay: 0,
         ahead: 0,
@@ -545,16 +543,14 @@ describe("a lockstep session", () => {
     });
   });
 
-  it("is stepped by a driver, as an app is", () => {
+  it("is stepped by a driver at its own delta, and is given no rate", () => {
     withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
       const [ada, grace] = peers as [Peer, Peer];
-      const steps = peers.map((peer) =>
-        Driver.fixedStep(peer.session, { hz: 30 })
-      );
+      const steps = peers.map((peer) => Driver.fixedStep(peer.session));
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       for (let i = 0; i < 20; i++) {
-        steps[0]!(DELTA);
-        steps[1]!(DELTA);
+        // A frame as long as the session's delta is one tick of it.
+        expect([steps[0]!(DELTA), steps[1]!(DELTA)]).toEqual([1, 1]);
         for (const message of ada.session.outgoing()) {
           grace.session.receive(message);
         }
@@ -565,11 +561,42 @@ describe("a lockstep session", () => {
       expect(ada.app.time.tick).toBeGreaterThan(15);
       expect(ada.app.time.elapsed).toBeCloseTo(ada.app.time.tick * DELTA, 9);
       expect(moves(grace.app.actionLog)).toHaveLength(1);
-      // A driver at another rate would have the peers simulate different
-      // lengths of time.
-      expect(() => Driver.fixedStep(ada.session, { hz: 60 })(1)).toThrow(
-        /ticks 0\.0333\d* seconds at a time.*hz: 30/u
+      // A rate of its own would have the peers simulate different lengths
+      // of time, and a session that rests would keep the others waiting.
+      // Neither is run: each would tick ada alone.
+      void Driver.fixedStep(
+        ada.session,
+        // @ts-expect-error a session ticks 1 / delta times a second
+        { hz: 30 }
       );
+      void Driver.fixedStep(
+        ada.session,
+        // @ts-expect-error a session ticks continuously
+        { ticks: "whenNeeded" }
+      );
+      void Driver.frames(
+        ada.session,
+        // @ts-expect-error a session ticks 1 / delta times a second
+        { hz: 30 }
+      );
+      void Driver.interval(
+        ada.session,
+        // @ts-expect-error a session ticks continuously
+        { ticks: "always" }
+      );
+      void Driver.run(
+        Effect.succeed(ada.session),
+        // @ts-expect-error a session ticks 1 / delta times a second
+        { hz: 30 }
+      );
+      // Its tick simulates its delta, and is given none.
+      const told = [
+        // @ts-expect-error a session's tick takes no delta
+        () => ada.session.tick(DELTA),
+        // @ts-expect-error a session's tick takes no delta
+        () => ada.session.tickExit(DELTA),
+      ];
+      void told;
     });
   });
 
@@ -663,19 +690,20 @@ describe("a lockstep session", () => {
         Session.make(CoinGame, {
           seed: 5,
           checkpointEvery: 1,
-          peer: "ada",
-          peers: ["ada", "grace"],
+          me: "ada",
+          others: ["grace"],
           delta: DELTA,
           ...options,
           ahead: 0,
         }),
         (session) => session
       );
-    expect(() => attempt({ peer: "linus" })).toThrow(
-      /"linus" is not among the peers of its own session: ada, grace/u
+    // Names the compiler knows only as text, which it cannot refuse.
+    expect(() => attempt({ others: ["grace", "ada"] })).toThrow(
+      /same name: ada, ada, grace, with "ada" as me/u
     );
-    expect(() => attempt({ peers: ["ada", "grace", "ada"] })).toThrow(
-      /same name: ada, ada, grace/u
+    expect(() => attempt({ others: ["grace", "grace"] })).toThrow(
+      /same name: ada, grace, grace/u
     );
     expect(() => attempt({ delay: -1 })).toThrow(/delay.*-1/u);
     expect(() => attempt({ delay: 1.5 })).toThrow(/delay.*1\.5/u);
@@ -696,12 +724,12 @@ describe("a lockstep session", () => {
           }
           const saved = going.save();
           assert(Exit.isSuccess(saved));
-          const peerOf = (peer: string) =>
+          const peerOf = (me: string) =>
             Session.make(CoinGame, {
               save: saved.value,
               checkpointEvery: 1,
-              peer,
-              peers: ["ada", "grace"],
+              me,
+              others: [me === "ada" ? "grace" : "ada"],
               delta: DELTA,
               delay: 1,
               ahead: 0,
@@ -877,8 +905,8 @@ describe("peers that have come apart", () => {
       Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
-        peer: "ada",
-        peers: ["ada"],
+        me: "ada",
+        others: [],
         delta: DELTA,
         ahead: 0,
       }),
@@ -1052,7 +1080,6 @@ const madeApart = (
 /** How each peer of these tests is made, unless it is told otherwise. */
 const alike = {
   seed: 5,
-  peers: ["ada", "grace"],
   delta: DELTA,
   ahead: 0,
 } as const;
@@ -1065,10 +1092,18 @@ const unlike = (failure: unknown): Drift.Unlike => {
 describe("peers that were not made alike", () => {
   it("stop before either runs a tick when one ticks another delta, and say which", () => {
     const { stopped, ticks } = madeApart([
-      ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
+      [
+        "ada",
+        Session.make(CoinGame, { ...alike, me: "ada", others: ["grace"] }),
+      ],
       [
         "grace",
-        Session.make(CoinGame, { ...alike, peer: "grace", delta: 1 / 60 }),
+        Session.make(CoinGame, {
+          ...alike,
+          me: "grace",
+          others: ["ada"],
+          delta: 1 / 60,
+        }),
       ],
     ]);
     const found = unlike(stopped.get("ada"));
@@ -1099,15 +1134,28 @@ describe("peers that were not made alike", () => {
   });
 
   it("stop, every one of them, when one was given names that leave a peer out", () => {
-    const three = ["ada", "edsger", "grace"];
     const { stopped, ticks } = madeApart([
-      ["ada", Session.make(CoinGame, { ...alike, peer: "ada", peers: three })],
+      [
+        "ada",
+        Session.make(CoinGame, {
+          ...alike,
+          me: "ada",
+          others: ["edsger", "grace"],
+        }),
+      ],
       [
         "edsger",
-        Session.make(CoinGame, { ...alike, peer: "edsger", peers: three }),
+        Session.make(CoinGame, {
+          ...alike,
+          me: "edsger",
+          others: ["ada", "grace"],
+        }),
       ],
       // Grace never hears edsger, and would wait for nobody.
-      ["grace", Session.make(CoinGame, { ...alike, peer: "grace" })],
+      [
+        "grace",
+        Session.make(CoinGame, { ...alike, me: "grace", others: ["ada"] }),
+      ],
     ]);
     expect(stopped.size).toBe(3);
     for (const failure of stopped.values()) {
@@ -1122,13 +1170,16 @@ describe("peers that were not made alike", () => {
   it("stop, when a stranger that counts this peer among its own speaks to it", () => {
     const { stopped } = madeApart(
       [
-        ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
+        [
+          "ada",
+          Session.make(CoinGame, { ...alike, me: "ada", others: ["grace"] }),
+        ],
         [
           "mallory",
           Session.make(CoinGame, {
             ...alike,
-            peer: "mallory",
-            peers: ["ada", "mallory"],
+            me: "mallory",
+            others: ["ada"],
           }),
         ],
       ],
@@ -1149,13 +1200,21 @@ describe("peers that were not made alike", () => {
     });
     for (const ahead of [0, 8]) {
       const { stopped, ticks, confirmed } = madeApart([
-        ["ada", Session.make(CoinGame, { ...alike, peer: "ada", ahead })],
+        [
+          "ada",
+          Session.make(CoinGame, {
+            ...alike,
+            me: "ada",
+            others: ["grace"],
+            ahead,
+          }),
+        ],
         [
           "grace",
           Session.make(CoinGame, {
             save: saved,
-            peer: "grace",
-            peers: alike.peers,
+            me: "grace",
+            others: ["ada"],
             delta: DELTA,
             ahead,
           }),
@@ -1176,7 +1235,7 @@ describe("peers that were not made alike", () => {
 
   it("stop when they play another game, and not when one only draws it", () => {
     const handlers = [drop, take, tip, fire, mint, whisper] as const;
-    const grace = { ...alike, peer: "grace" };
+    const grace = { ...alike, me: "grace", others: ["ada"] };
     const others = [
       Session.make(
         App.define({
@@ -1206,7 +1265,10 @@ describe("peers that were not made alike", () => {
     ];
     for (const other of others) {
       const { stopped } = madeApart([
-        ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
+        [
+          "ada",
+          Session.make(CoinGame, { ...alike, me: "ada", others: ["grace"] }),
+        ],
         ["grace", other],
       ]);
       expect(stopped.size).toBe(2);
@@ -1223,8 +1285,14 @@ describe("peers that were not made alike", () => {
       handlers,
     });
     const { stopped, ticks } = madeApart([
-      ["ada", Session.make(CoinGame, { ...alike, peer: "ada" })],
-      ["grace", Session.make(drawn, { ...alike, peer: "grace" })],
+      [
+        "ada",
+        Session.make(CoinGame, { ...alike, me: "ada", others: ["grace"] }),
+      ],
+      [
+        "grace",
+        Session.make(drawn, { ...alike, me: "grace", others: ["ada"] }),
+      ],
     ]);
     expect(stopped.size).toBe(0);
     expect(ticks[0]).toBeGreaterThan(20);

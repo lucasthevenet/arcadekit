@@ -1,7 +1,7 @@
 import { Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App, Driver, Input, Journal, World } from "../src/index";
+import { Driver, Input, Journal, World } from "../src/index";
 import { Drift, Message, Session, Transport } from "../src/net/index";
 import {
   CoinGame,
@@ -45,8 +45,8 @@ const seated = (
       const session = yield* Session.make(CoinGame, {
         seed: 5,
         checkpointEvery: 1,
-        peer: name,
-        peers: names,
+        me: name,
+        others: names.filter((other) => other !== name),
         delta: DELTA,
         ahead: ahead ?? 0,
       }).pipe(Effect.provide(Input.layer(source)));
@@ -237,9 +237,7 @@ describe("a session joined to a transport", () => {
               (name) => hub.layer(name),
               ahead
             );
-            const steps = seats.map((seat) =>
-              Driver.fixedStep(seat.connected, { hz: 30 })
-            );
+            const steps = seats.map((seat) => Driver.fixedStep(seat.connected));
             const act = players(11);
             const frame = (acting: boolean): void => {
               hub.step();
@@ -280,9 +278,9 @@ describe("a session joined to a transport", () => {
             // Only a game played with rollback goes back.
             expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
             const whole = ada.app.record();
-            const alone = yield* Journal.replay(whole, (start) =>
-              App.make(CoinGame, { ...start, checkpointEvery: 1 })
-            );
+            const alone = yield* Journal.replay(whole, CoinGame, {
+              checkpointEvery: 1,
+            });
             expect((yield* alone.read(World)).hash()).toBe(ada.world.hash());
           })
         )
@@ -425,8 +423,8 @@ describe("a session joined to a transport", () => {
           const session = yield* Session.make(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-            peer: "ada",
-            peers: ["ada"],
+            me: "ada",
+            others: [],
             delta: DELTA,
             ahead: 0,
           });
@@ -437,7 +435,7 @@ describe("a session joined to a transport", () => {
               drawn++;
             },
           }).pipe(Effect.provide(hub.layer("ada")));
-          Driver.fixedStep(connected, { hz: 30 })(DELTA);
+          Driver.fixedStep(connected)(DELTA);
           expect(drawn).toBe(1);
           expect(session.app.time.tick).toBe(1);
         })
@@ -452,8 +450,8 @@ describe("a session joined to a transport", () => {
           Session.make(CoinGame, {
             seed: 5,
             checkpointEvery: 1,
-            peer: "ada",
-            peers: ["ada"],
+            me: "ada",
+            others: [],
             delta: DELTA,
             ahead: 0,
           }),
@@ -663,8 +661,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           // Provided to the one line that connects, and open after it.
           const session = yield* Session.make(CoinGame, {
             seed: 5,
-            peer: "ada",
-            peers: ["ada", "grace"],
+            me: "ada",
+            others: ["grace"],
             delta: DELTA,
           });
           const connected = yield* Transport.connect(session).pipe(

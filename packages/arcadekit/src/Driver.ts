@@ -7,12 +7,16 @@
  *   const step = Driver.fixedStep(app, { hz: 60 })   // by hand: step(seconds)
  *   yield* Driver.frames(app, { hz: 60 })            // in a page, once per repaint
  *   yield* Driver.interval(app, { hz: 60 })          // on a timer
+ *
+ * A session ticks by the `delta` every peer of it is made with, so a driver
+ * given one is given no rate: `Driver.frames(session)`.
  */
 import { Clock, Context, Duration, Effect, Schedule } from "effect";
 import type { Scope } from "effect";
 
 /**
- * Anything with a `tick`, so drivers work with every kind of app.
+ * Anything with a `tick` that is given how long a tick is, so drivers work
+ * with every kind of app.
  *
  * @category Models
  */
@@ -31,6 +35,24 @@ export interface Tickable {
    * tick.
    */
   readonly settled?: boolean;
+  /** None: what ticks by a `delta` of its own is `Paced`. */
+  readonly delta?: never;
+}
+
+/**
+ * Anything that ticks by a `delta` of its own: a session, or a session
+ * connected to a transport. A driver runs it at `1 / delta` ticks a second,
+ * and is given neither `hz` nor `ticks`.
+ *
+ * @category Models
+ */
+export interface Paced {
+  /** The seconds each of its ticks simulates. */
+  readonly delta: number;
+  /** Runs its next tick: its input stage, then the tick, if it can run. */
+  readonly tick: () => void;
+  /** Its frame stage, run after each call's ticks. */
+  readonly frame: (alpha: number, delta?: number) => void;
 }
 
 /**
@@ -65,34 +87,63 @@ export interface StepOptions {
   readonly ticks?: "always" | "whenNeeded";
 }
 
+/**
+ * Options for how a driver steps a session, which ticks at its own `delta`
+ * and never rests.
+ *
+ * @category Options
+ */
+export interface PacedOptions {
+  /** As for an app: see `StepOptions`. */
+  readonly maxStepsPerCall?: number;
+  /** None, and its type is what the compiler says of one. */
+  readonly hz?: "A session ticks 1 / delta times a second, the same on every peer: give its driver no hz.";
+  /** None, and its type is what the compiler says of one. */
+  readonly ticks?: "A session ticks continuously, since the other peers wait for its messages: give its driver no ticks.";
+}
+
+/** How a driver steps what it is given: how long a tick is, and whether it rests. */
+interface Pace {
+  readonly app: Tickable;
+  readonly dt: number;
+  readonly maxSteps: number;
+  readonly whenNeeded: boolean;
+}
+
+/** Returns how a driver steps an app at `hz`, or a session at its own `delta`. */
+const paceOf = (
+  target: Tickable | Paced,
+  options: StepOptions | PacedOptions | undefined
+): Pace => {
+  const maxSteps = options?.maxStepsPerCall ?? 5;
+  if (target.delta !== undefined) {
+    // A session reads its devices in its own tick.
+    return {
+      app: { tick: () => target.tick(), frame: target.frame },
+      dt: target.delta,
+      maxSteps,
+      whenNeeded: false,
+    };
+  }
+  // The signatures give an app the options with `hz`.
+  const { hz, ticks } = options as StepOptions;
+  return {
+    app: target,
+    dt: 1 / hz,
+    maxSteps,
+    whenNeeded: ticks === "whenNeeded",
+  };
+};
+
 const EPSILON = 1e-9;
 
-/**
- * Steps an app on a fixed timestep. Call it once per frame with the real
- * elapsed seconds; it runs zero or more ticks of exactly `1 / hz`, each after
- * the app's input stage, then runs the app's frame stage, and returns the
- * number of ticks it ran.
- *
- * The input stage reads the devices once per tick, so each tick sees one
- * consistent state of them, and a frame with no tick due reads nothing: input
- * from that frame is there for the next tick.
- *
- * The simulation ticks at a fixed rate whatever the frame rate, and the frame
- * stage receives how far its frame is between the last tick and the next
- * (`Frame.alpha`), so it can interpolate what moves.
- *
- * With `ticks: "whenNeeded"`, it ticks only while the app has pending work, and
- * rests in between: see `StepOptions`.
- *
- * @category Running
- */
-export const fixedStep = (
-  app: Tickable,
-  options: StepOptions
-): ((realDelta: number) => number) => {
-  const dt = 1 / options.hz;
-  const maxSteps = options.maxStepsPerCall ?? 5;
-  const whenNeeded = options.ticks === "whenNeeded";
+/** Returns what `fixedStep` returns for a pace. */
+const stepper = ({
+  app,
+  dt,
+  maxSteps,
+  whenNeeded,
+}: Pace): ((realDelta: number) => number) => {
   let accumulator = 0;
   // Whether the call before this one found the game at rest.
   let resting = false;
@@ -132,23 +183,47 @@ export const fixedStep = (
 };
 
 /**
- * Ticks on a timer until interrupted, then stops the timer. In a page, use
- * `frames`, which follows the display.
+ * Steps an app on a fixed timestep. Call it once per frame with the real
+ * elapsed seconds; it runs zero or more ticks of exactly `1 / hz`, each after
+ * the app's input stage, then runs the app's frame stage, and returns the
+ * number of ticks it ran.
  *
- * Each beat of the timer is one `fixedStep` call: the input stage and the ticks
- * that are due, then the frame stage. If a tick or a frame throws, the timer
- * stops and the effect dies with the thrown error. The timer runs on Effect's
- * `Clock`, so a test moves it on with `TestClock`.
+ * The input stage reads the devices once per tick, so each tick sees one
+ * consistent state of them, and a frame with no tick due reads nothing: input
+ * from that frame is there for the next tick.
+ *
+ * The simulation ticks at a fixed rate whatever the frame rate, and the frame
+ * stage receives how far its frame is between the last tick and the next
+ * (`Frame.alpha`), so it can interpolate what moves.
+ *
+ * With `ticks: "whenNeeded"`, it ticks only while the app has pending work, and
+ * rests in between: see `StepOptions`.
+ *
+ * A session is stepped the same way, with ticks of its own `delta`, and is
+ * given neither `hz` nor `ticks`: `Driver.fixedStep(session)`.
  *
  * @category Running
  */
-export const interval = (
+export function fixedStep(
   app: Tickable,
   options: StepOptions
-): Effect.Effect<never> =>
+): (realDelta: number) => number;
+export function fixedStep(
+  session: Paced,
+  options?: PacedOptions
+): (realDelta: number) => number;
+export function fixedStep(
+  target: Tickable | Paced,
+  options?: StepOptions | PacedOptions
+): (realDelta: number) => number {
+  return stepper(paceOf(target, options));
+}
+
+/** Returns what `interval` returns for a pace. */
+const beat = (pace: Pace): Effect.Effect<never> =>
   Effect.gen(function* () {
-    const advance = fixedStep(app, options);
-    const period = Duration.millis(1000 / options.hz);
+    const advance = stepper(pace);
+    const period = Duration.millis(pace.dt * 1000);
     let last = yield* Clock.currentTimeNanos;
     const step = Effect.flatMap(Clock.currentTimeNanos, (now) =>
       Effect.sync(() => {
@@ -160,6 +235,33 @@ export const interval = (
     yield* Effect.schedule(step, Schedule.fixed(period));
     return yield* Effect.never;
   });
+
+/**
+ * Ticks on a timer until interrupted, then stops the timer. In a page, use
+ * `frames`, which follows the display.
+ *
+ * Each beat of the timer is one `fixedStep` call: the input stage and the ticks
+ * that are due, then the frame stage. If a tick or a frame throws, the timer
+ * stops and the effect dies with the thrown error. The timer runs on Effect's
+ * `Clock`, so a test moves it on with `TestClock`. A session beats once per
+ * tick of its own `delta`, and is given neither `hz` nor `ticks`.
+ *
+ * @category Running
+ */
+export function interval(
+  app: Tickable,
+  options: StepOptions
+): Effect.Effect<never>;
+export function interval(
+  session: Paced,
+  options?: PacedOptions
+): Effect.Effect<never>;
+export function interval(
+  target: Tickable | Paced,
+  options?: StepOptions | PacedOptions
+): Effect.Effect<never> {
+  return beat(paceOf(target, options));
+}
 
 /**
  * What a frame loop needs from the screen it draws to: a callback when the next
@@ -292,44 +394,11 @@ export const makeManualDisplay = (): ManualDisplay => {
   };
 };
 
-/**
- * Runs the frame loop: follows the display until interrupted. Each time a frame
- * is due, it runs the ticks that are due at a fixed `hz`, then the app's frame
- * stage, as `fixedStep` does. In a page, with the page's display, a frame is
- * due once per repaint (`requestAnimationFrame`).
- *
- *   const app = yield* App.make(App.define({ plugins: [Game] }))
- *   yield* Driver.frames(app, { hz: 60 })
- *
- * - The first frame draws the game as it is and runs no tick: time is measured
- *   from it.
- * - While the tab is hidden, the loop requests no frames, and the hidden time
- *   doesn't count: a game that becomes visible again resumes where it was.
- * - Interrupting it cancels its pending frame request and stops watching the
- *   tab, so nothing is left running. It is interrupted with the fiber that runs
- *   it, which is how closing a scope stops it.
- * - If a tick or a frame throws, it stops the same way and dies with the thrown
- *   error.
- * - With `ticks: "whenNeeded"`, for a game that moves only when its player
- *   does, every frame is drawn but a tick runs only while something is waiting
- *   for one:
- *
- *     yield* Driver.frames(app, { hz: 60, ticks: "whenNeeded" })
- *
- * It reaches the screen through `Display`, which a test can replace.
- *
- * @category Running
- */
-export const frames: (
-  app: Tickable,
-  options: StepOptions
-) => Effect.Effect<never> = Effect.fnUntraced(function* (
-  app: Tickable,
-  options: StepOptions
-) {
+/** Returns what `frames` returns for a pace. */
+const loop = Effect.fnUntraced(function* (pace: Pace) {
   const display = yield* Display;
   return yield* Effect.callback<never>((resume) => {
-    const advance = fixedStep(app, options);
+    const advance = stepper(pace);
     // When the frame before this one was, or undefined when time starts
     // over: at the first frame, and after the tab was hidden.
     let last: number | undefined;
@@ -383,6 +452,54 @@ export const frames: (
 });
 
 /**
+ * Runs the frame loop: follows the display until interrupted. Each time a frame
+ * is due, it runs the ticks that are due at a fixed `hz`, then the app's frame
+ * stage, as `fixedStep` does. In a page, with the page's display, a frame is
+ * due once per repaint (`requestAnimationFrame`).
+ *
+ *   const app = yield* App.make(App.define({ plugins: [Game] }))
+ *   yield* Driver.frames(app, { hz: 60 })
+ *
+ * A session runs the ticks that are due at its own `delta`, and is given
+ * neither `hz` nor `ticks`:
+ *
+ *   yield* Driver.frames(yield* Transport.connect(session))
+ *
+ * - The first frame draws the game as it is and runs no tick: time is measured
+ *   from it.
+ * - While the tab is hidden, the loop requests no frames, and the hidden time
+ *   doesn't count: a game that becomes visible again resumes where it was.
+ * - Interrupting it cancels its pending frame request and stops watching the
+ *   tab, so nothing is left running. It is interrupted with the fiber that runs
+ *   it, which is how closing a scope stops it.
+ * - If a tick or a frame throws, it stops the same way and dies with the thrown
+ *   error.
+ * - With `ticks: "whenNeeded"`, for a game that moves only when its player
+ *   does, every frame is drawn but a tick runs only while something is waiting
+ *   for one:
+ *
+ *     yield* Driver.frames(app, { hz: 60, ticks: "whenNeeded" })
+ *
+ * It reaches the screen through `Display`, which a test can replace.
+ *
+ * @category Running
+ */
+export function frames(
+  app: Tickable,
+  options: StepOptions
+): Effect.Effect<never>;
+export function frames(
+  session: Paced,
+  options?: PacedOptions
+): Effect.Effect<never>;
+export function frames(
+  target: Tickable | Paced,
+  options?: StepOptions | PacedOptions
+): Effect.Effect<never> {
+  return loop(paceOf(target, options));
+}
+
+/**
  * Runs an app until interrupted, from the effect that makes it. This is the
  * usual entry point.
  *
@@ -415,10 +532,24 @@ export const frames: (
  * It runs wherever there is a display, which outside a page is a timer:
  * `NodeRuntime.runMain(Driver.run(...))` runs the same game under Node.
  *
+ * An effect that makes a session, connected to its transport, runs at the
+ * session's own `delta`, and is given neither `hz` nor `ticks`.
+ *
  * @category Running
  */
-export const run = <A extends Tickable, E, R>(
+export function run<A extends Tickable, E, R>(
   app: Effect.Effect<A, E, R>,
   options: StepOptions
-): Effect.Effect<never, E, Exclude<R, Scope.Scope>> =>
-  Effect.scoped(Effect.flatMap(app, (made) => frames(made, options)));
+): Effect.Effect<never, E, Exclude<R, Scope.Scope>>;
+export function run<A extends Paced, E, R>(
+  session: Effect.Effect<A, E, R>,
+  options?: PacedOptions
+): Effect.Effect<never, E, Exclude<R, Scope.Scope>>;
+export function run<E, R>(
+  made: Effect.Effect<Tickable | Paced, E, R>,
+  options?: StepOptions | PacedOptions
+): Effect.Effect<never, E, Exclude<R, Scope.Scope>> {
+  return Effect.scoped(
+    Effect.flatMap(made, (target) => loop(paceOf(target, options)))
+  );
+}

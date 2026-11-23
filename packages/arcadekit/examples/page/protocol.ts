@@ -29,3 +29,9 @@ export const Hud = View.define("page/Hud", {
 export const Start = Action.define("page/Start", Schema.Struct({}));
 export const Quit = Action.define("page/Quit", Schema.Struct({}));
 export const TogglePause = Action.define("page/TogglePause", Schema.Struct({}));
+
+/**
+ * Every action the UI may ask for. The UI takes a `View.Bridge<Requests>`,
+ * and the compiler hands it only the bridge of a game that handles each one.
+ */
+export type Requests = typeof Start | typeof Quit | typeof TogglePause;

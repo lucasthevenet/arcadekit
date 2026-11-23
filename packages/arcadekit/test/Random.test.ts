@@ -418,7 +418,7 @@ describe("the Random service", () => {
       if (Exit.isFailure(loaded)) {
         throw new Error("the log did not survive being written down");
       }
-      return Journal.replay(loaded.value, (start) => App.make(Game, start));
+      return Journal.replay(loaded.value, Game);
     };
 
     const recorded = record(31);

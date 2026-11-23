@@ -23,8 +23,8 @@
  * A peer's first message says what it was made with, `Message.Made`: the game
  * it simulates, its `delta`, the names of every peer and the tick it begins
  * at. A peer that hears another made otherwise stops, and its tick fails with
- * `Drift.Unlike`, which says what differs. A name that isn't among its peers
- * is told apart this way too, since that peer's names are other ones.
+ * `Drift.Unlike`, which says what differs. A peer the others don't name is
+ * told apart this way too, since its names are other ones.
  *
  * Peers also exchange the checkpoints their logs record: the world's hash at a
  * tick. A peer that receives a different hash than its own for the same tick
@@ -42,7 +42,7 @@ import { Cause, Exit } from "effect";
 import * as Action from "../Action";
 import type * as App from "../App";
 import type { Reins } from "../Build";
-import type { Tickable } from "../Driver";
+import type { Paced } from "../Driver";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";
 import * as Drift from "./Drift";
@@ -57,8 +57,8 @@ import type { Issued, Made, Message } from "./Message";
  */
 export interface Options {
   readonly game: number;
-  readonly peer: string;
-  readonly peers: readonly string[];
+  readonly me: string;
+  readonly others: readonly string[];
   readonly delta: number;
   readonly delay: number;
   readonly ahead: number;
@@ -66,16 +66,20 @@ export interface Options {
 
 /**
  * One peer of a multiplayer game, without its app: what a driver steps and a
- * transport carries the messages of. A driver steps it as it steps an app:
- * `Driver.frames(session, { hz })`. `Session.Session` is a peer with its app.
+ * transport carries the messages of. A driver steps it at its own `delta`:
+ * `Driver.frames(session)`. `Session.Session` is a peer with its app.
  *
  * @param E what a tick of its app can fail with
  *
  * @category Models
  */
-export interface Peer<E = never> extends Tickable {
-  readonly peer: string;
-  /** Every peer of the game, in the order their actions are applied. */
+export interface Peer<E = never> extends Paced {
+  /** This peer's name. */
+  readonly me: string;
+  /**
+   * Every peer of the game, this one too, in the order their actions are
+   * applied.
+   */
   readonly peers: readonly string[];
   /** The seconds a tick simulates. */
   readonly delta: number;
@@ -115,19 +119,20 @@ export interface Peer<E = never> extends Tickable {
    * in, up to `ahead` ticks past what every peer has sent, and first goes
    * back over the ticks a message has since arrived for.
    *
-   * Throws if a system fails, or if the peers have drifted apart. When given a
-   * number, as a driver does, it must equal the session's `delta`.
+   * The tick simulates the session's `delta`. Throws if a system fails, or if
+   * the peers have drifted apart.
    */
-  readonly tick: (delta?: number) => boolean;
+  readonly tick: () => boolean;
   /**
    * Like `tick`, but returns a failure, typed: a system's error, `Unlike`
    * once a peer has said it was made otherwise, `Drifted` once the peers have
    * drifted apart, or `Save.SaveRefused` when the game can't be captured
    * before a tick that runs ahead, in which case the tick doesn't run.
    */
-  readonly tickExit: (
-    delta?: number
-  ) => Exit.Exit<boolean, E | Drift.Unlike | Drift.Drifted | Save.SaveRefused>;
+  readonly tickExit: () => Exit.Exit<
+    boolean,
+    E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
+  >;
   /**
    * Why the session stopped, once it has: a peer was made otherwise than this
    * one, or its world hashed differently from this one's at the same tick.
@@ -194,7 +199,7 @@ export const build = <E, A extends PeerApp<E>>(
   take: (issued: (name: string, payload: unknown) => void) => Reins<E>,
   options: Options
 ): Peer<E> & { readonly app: A } => {
-  const { ahead, delay, delta, game, peer } = options;
+  const { ahead, delay, delta, game, me: peer } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
       `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`
@@ -210,15 +215,10 @@ export const build = <E, A extends PeerApp<E>>(
       `A session's delta is the seconds a tick simulates, more than 0, and this one is ${delta}.`
     );
   }
-  const peers = options.peers.toSorted(byName);
+  const peers = [peer, ...options.others].toSorted(byName);
   if (new Set(peers).size !== peers.length) {
     throw new Error(
-      `Two peers of a session have the same name: ${peers.join(", ")}.`
-    );
-  }
-  if (!peers.includes(peer)) {
-    throw new Error(
-      `The peer "${peer}" is not among the peers of its own session: ${peers.join(", ")}. Every peer is given the names of all of them, its own among them.`
+      `Two peers of a session have the same name: ${peers.join(", ")}, with "${peer}" as me. Give this peer's name as me, and each other peer's once in others.`
     );
   }
 
@@ -386,17 +386,10 @@ export const build = <E, A extends PeerApp<E>>(
     return Exit.fail(reason);
   };
 
-  const tickExit = (
-    given?: number
-  ): Exit.Exit<
+  const tickExit = (): Exit.Exit<
     boolean,
     E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
   > => {
-    if (given !== undefined && Math.abs(given - delta) > 1e-9) {
-      throw new Error(
-        `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`
-      );
-    }
     const now = app.time.tick;
     if (!begun) {
       begun = true;
@@ -462,7 +455,7 @@ export const build = <E, A extends PeerApp<E>>(
 
   return {
     app,
-    peer,
+    me: peer,
     peers,
     delta,
     delay,
@@ -528,8 +521,8 @@ export const build = <E, A extends PeerApp<E>>(
       return kept.size;
     },
     tickExit,
-    tick(given) {
-      const exit = tickExit(given);
+    tick() {
+      const exit = tickExit();
       if (Exit.isFailure(exit)) {
         throw Cause.squash(exit.cause);
       }

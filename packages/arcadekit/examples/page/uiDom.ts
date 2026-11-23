@@ -7,9 +7,13 @@
  */
 import type * as View from "../../src/View";
 import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
+import type { Requests } from "./protocol";
 
 /** Puts the UI in `root`, and returns what takes it out again. */
-export const mount = (root: Element, ui: View.Bridge): (() => void) => {
+export const mount = (
+  root: Element,
+  ui: View.Bridge<Requests>
+): (() => void) => {
   const hud = document.createElement("p");
   hud.className = "hud";
   const menu = document.createElement("nav");

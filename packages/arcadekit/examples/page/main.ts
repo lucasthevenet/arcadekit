@@ -24,11 +24,15 @@ import * as Browser from "../../src/Browser";
 import { App, Driver, View } from "../../src/index";
 import { Game, Screen } from "./game";
 
+// The game, which the bridge and the app are both made from.
+const Catch = App.define({ plugins: [Game] });
+
 // --- the UI ----------------------------------------------------------------------
-// The bridge is made here, handed to the UI, and provided to the game. The
-// UI holds the bridge and nothing of the game; only the one that is shown
-// is loaded.
-const ui = View.makeBridge();
+// The bridge is made here, handed to the UI, and provided to the game. It
+// sends what the game handles, and the UI takes it only if the game handles
+// what the UI sends. The UI holds the bridge and nothing of the game; only
+// the one that is shown is loaded.
+const ui = View.makeBridge(Catch);
 const { mount } =
   new URLSearchParams(location.search).get("ui") === "react"
     ? await import("./uiReact")
@@ -43,9 +47,9 @@ mount(document.querySelector("#ui")!, ui);
 // the app's scope closes, what was loaded is let go, and nobody listens any
 // more.
 Browser.runMain(
-  Driver.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
-    hz: 60,
-  }).pipe(Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))),
+  Driver.run(App.make(Catch, { seed: Date.now() }), { hz: 60 }).pipe(
+    Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))
+  ),
   {
     target: document.querySelector("#game")!,
     preventDefault: ["ArrowLeft", "ArrowRight", "Space"],
