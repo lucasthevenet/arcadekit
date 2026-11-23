@@ -2,3 +2,5 @@
 artifacts/
 *.out
 states/
+*_TTrace_*
+.cursor/skills/verify-peer-rollback/model/*_TTrace_*
