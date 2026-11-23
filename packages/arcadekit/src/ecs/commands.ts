@@ -6,7 +6,14 @@
  */
 import { frozenWrite } from "./component";
 import type { ComponentDef, ComponentInput, Entity } from "./component";
+import type { Spawned } from "./spawned";
 import type { World } from "./world";
+
+/**
+ * The id a command applies to: one spawned by this buffer is placed by the
+ * time a later command in it is applied, since they are applied in order.
+ */
+const applied = (entity: Entity | Spawned): Entity => entity as Entity;
 
 type Command =
   | {
@@ -34,7 +41,7 @@ type Command =
  *
  * @category Models
  */
-export class CommandBuffer {
+export class CommandBuffer<Id extends Entity | Spawned = Entity> {
   private ops: Command[] = [];
 
   constructor(readonly world: World) {}
@@ -44,7 +51,7 @@ export class CommandBuffer {
   }
 
   /** Returns the new entity's id immediately; it receives its components on apply. */
-  spawn(...inputs: readonly ComponentInput[]): Entity {
+  spawn(...inputs: readonly ComponentInput[]): Id {
     // Checked here, where the mistake is, and not when the queue is applied.
     this.world._registerAll(inputs);
     const entity = this.world._reserve();
@@ -54,23 +61,24 @@ export class CommandBuffer {
       inputs,
       fresh: this.world._reservedFresh,
     });
-    return entity;
+    // The id the buffer is made to give: an app's is `Spawned`.
+    return entity as Id;
   }
 
-  despawn(entity: Entity): void {
+  despawn(entity: Entity | Id): void {
     this.refuseFrozen("despawn");
-    this.ops.push({ op: "despawn", entity });
+    this.ops.push({ op: "despawn", entity: applied(entity) });
   }
 
-  add(entity: Entity, input: ComponentInput): void {
+  add(entity: Entity | Id, input: ComponentInput): void {
     this.refuseFrozen("add");
     this.world._registerAll([input]);
-    this.ops.push({ op: "add", entity, input });
+    this.ops.push({ op: "add", entity: applied(entity), input });
   }
 
-  remove(entity: Entity, def: ComponentDef): void {
+  remove(entity: Entity | Id, def: ComponentDef): void {
     this.refuseFrozen("remove");
-    this.ops.push({ op: "remove", entity, def });
+    this.ops.push({ op: "remove", entity: applied(entity), def });
   }
 
   /** Refuses a command in a frozen world, since it would still change the world later. */

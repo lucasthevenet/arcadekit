@@ -7,6 +7,7 @@
  */
 import { Data, DateTime, Effect, Exit, Schema } from "effect";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -192,7 +193,7 @@ const Populate = Plugin.make("policy/Populate", {
       Burning,
       Follows
     );
-    let leader: Entity | undefined;
+    let leader: Spawned | undefined;
     for (let i = 0; i < 40; i++) {
       const entity = commands.spawn(
         Position.of({ x: i, y: 2 * i }),

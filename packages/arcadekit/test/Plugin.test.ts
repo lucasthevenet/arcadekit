@@ -2,6 +2,7 @@ import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -17,6 +18,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { placedIn } from "./placed";
 
 const Position = Component.define("pl/Position", {
   x: Field.f32,
@@ -253,7 +255,7 @@ describe("plugins", () => {
   it("let a plugin's layer use its dependencies and the built-in services while it builds", () => {
     class Arena extends Context.Service<
       Arena,
-      { readonly wall: Entity; readonly width: number }
+      { readonly wall: Spawned; readonly width: number }
     >()("pl/Arena") {}
     const ArenaPlugin = Plugin.make("Arena", {
       plugins: [Physics],
@@ -270,9 +272,9 @@ describe("plugins", () => {
     const seen: string[] = [];
     const Look = System.tick("Look", function* () {
       const arena = yield* Arena;
-      seen.push(
-        `wall ${(yield* World).get(arena.wall, Position)!.x} of ${arena.width}`
-      );
+      const world = yield* World;
+      const wall = placedIn(world, arena.wall);
+      seen.push(`wall ${world.get(wall, Position)!.x} of ${arena.width}`);
     });
     withApp(
       App.make(App.define({ plugins: [ArenaPlugin], systems: [Look] })),

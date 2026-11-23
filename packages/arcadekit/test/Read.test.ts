@@ -100,6 +100,8 @@ describe("a game, from outside it", () => {
           app.read(Pushed),
           // @ts-expect-error what a change query has visited is the game's
           app.read(Moved),
+          // @ts-expect-error and so is what a removal query has read
+          app.read(Query.removed(Position)),
           // @ts-expect-error an event is heard by the game's own code
           app.read(Ping),
           // @ts-expect-error setting a state changes it
@@ -107,7 +109,7 @@ describe("a game, from outside it", () => {
           // @ts-expect-error writing a singleton changes it
           app.read(Score.writes),
         ];
-        expect(reads).toHaveLength(7);
+        expect(reads).toHaveLength(8);
         expect(app.enqueue(Drop, { x: 1 })).toEqual(
           expect.objectContaining({ _tag: "Success" })
         );

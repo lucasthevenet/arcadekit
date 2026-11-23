@@ -2,6 +2,7 @@ import { Data, Effect, Option, Schema, Tracer } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -17,7 +18,7 @@ import {
   Timeline,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
+import { placedIn } from "./placed";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -93,7 +94,7 @@ const worldOf = (app: Pick<App.Any, "read">) => Effect.runSync(app.read(World));
 
 describe("app.inspect", () => {
   it("copies every live entity, in order, with its components by name, sparse ones and tags included", () => {
-    const ids: Entity[] = [];
+    const ids: Spawned[] = [];
     const Seed = Plugin.make("in/Seed", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(
@@ -120,7 +121,8 @@ describe("app.inspect", () => {
       }),
     });
     const app = run(App.make(App.define({ plugins: [Seed] })));
-    const [parent, child, bare] = ids;
+    const world = worldOf(app);
+    const [parent, child, bare] = ids.map((id) => placedIn(world, id));
 
     const { entities } = app.inspect();
     expect(entities).toEqual([

@@ -55,7 +55,7 @@ const Fountain = System.tick("game/Fountain", function* () {
 });
 ```
 
-Since the fountain's place is in the world, a [save](saving-and-loading.md) holds it, a replay or a rewind picks it up where it was, and the world's hash covers it. A game that [ticks only when needed](#requesting-ticks) needs the fountain to ask for its next tick while it waits.
+Since the fountain's place is in the world, a [save](saving-and-loading.md) holds it, a replay or a rewind picks it up where it was, and the world's hash covers it. A game that [ticks only when needed](running-a-game.md#ticking-only-when-needed) keeps ticking while the fountain counts down, since each tick changes the world.
 
 ## Ordering
 
@@ -124,26 +124,6 @@ A system that doesn't run sees nothing of what happened while it was off: no eve
 
 A system that keeps something outside itself up to date, such as music or a view, can declare what to do while it doesn't run with `System.otherwise(effect)`. See [states](states.md).
 
-## Requesting ticks
-
-A game that [ticks only when needed](running-a-game.md) rests when nothing is pending, and the app sees actions, states and events as pending work. A system with work to do on every tick for a while, such as a countdown or a body in flight, is none of those, so it requests the next tick itself on every tick it has more to do:
-
-```ts
-import { Field, Singleton, System, Ticks, Time } from "arcadekit";
-
-const Clock = Singleton.define("game/Clock", { left: Field.f32 }, { left: 3 });
-
-const Countdown = System.tick("game/Countdown", function* () {
-  const clock = yield* Clock.writes;
-  if (clock.left > 0) {
-    clock.left -= (yield* Time).delta;
-    (yield* Ticks).more(); // not at rest: the next tick is needed
-  }
-});
-```
-
-Nothing distinguishes a countdown system that never requests a tick from one with nothing to do: it stops when the game rests, with no error. In a game that ticks in real time, `more` does nothing, so call it in any system that might run in a game that rests. Handlers request ticks the same way.
-
 ## Random numbers
 
 `Random` is the only source of randomness in a simulation:
@@ -182,4 +162,4 @@ const program = Effect.gen(function* () {
 
 ## Read more
 
-- [`System`](/reference/arcadekit/System) and [`State`](/reference/arcadekit/State) in the API reference, with [`Random`](/reference/arcadekit/Services#random) and [`Ticks`](/reference/arcadekit/Services#ticks).
+- [`System`](/reference/arcadekit/System) and [`State`](/reference/arcadekit/State) in the API reference, with [`Random`](/reference/arcadekit/Services#random).

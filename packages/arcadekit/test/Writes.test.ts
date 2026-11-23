@@ -8,6 +8,8 @@ import {
   Commands,
   Component,
   EcsWorld,
+  EntityId,
+  Event,
   Field,
   Plugin,
   Query,
@@ -419,6 +421,57 @@ describe("a query, which writes only what it names, in an app", () => {
         expect(world.hash()).not.toBe(before);
         app.tick(1);
         expect(turned.at(-1)).toBe(0);
+      })
+    );
+  });
+});
+
+describe("an id Commands.spawn returns", () => {
+  const Target = Component.relation("rd/Target", {
+    onTargetDespawn: "remove",
+  });
+  const Fired = Event.define("rd/Fired", Schema.Struct({ shot: EntityId }));
+  const Fire = Action.define("rd/Fire", Schema.Struct({}));
+
+  it("is not read before its entity is placed, and is once it is", () => {
+    const seen: (Entity | undefined)[] = [];
+    const heard: Entity[] = [];
+    const fire = Action.handler(Fire, function* () {
+      const commands = yield* Commands.spawns(Position, Target);
+      const world = yield* World;
+      const shot = commands.spawn(Position.of({ x: 1, y: 0 }));
+      // @ts-expect-error its entity is not placed until the handler ends
+      world.get(shot, Position);
+      // Commands, a component's value and an event's payload take it.
+      commands.add(shot, Position.of({ x: 2, y: 0 }));
+      commands.spawn(Position, Target.of({ target: shot }));
+      (yield* Fired.emits).emit({ shot });
+      seen.push(world.placed(shot));
+      return shot;
+    });
+    const Hear = System.tick("rd/Hear", function* () {
+      for (const { shot } of (yield* Fired).read()) {
+        heard.push(shot);
+      }
+    });
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ handlers: [fire], systems: [Hear] })
+        );
+        const world = yield* app.read(World);
+        const exit = app.dispatch(Fire, {});
+        // dispatch gives it back as an entity, once the handler has ended.
+        const shot = Exit.isSuccess(exit) ? exit.value : undefined;
+        expect(shot).toBeDefined();
+        if (shot === undefined) {
+          return;
+        }
+        expect(seen).toEqual([undefined]);
+        expect(world.get(shot, Position)).toEqual({ x: 2, y: 0 });
+        expect(world.sources(shot, Target)).toHaveLength(1);
+        app.tick(1 / 60);
+        expect(heard).toEqual([shot]);
       })
     );
   });

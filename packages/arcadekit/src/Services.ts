@@ -14,6 +14,7 @@ import type {
   ValueOf,
 } from "./ecs/component";
 import type { Rng } from "./ecs/random";
+import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
@@ -49,6 +50,11 @@ export interface ReadingWorld extends Pick<
   EcsWorld,
   "entityCount" | "has" | "hash" | "holds" | "isAlive" | "sources"
 > {
+  /**
+   * The entity of an id `Commands.spawn` returned, once its spawn is applied,
+   * and undefined before: the world's reads take an `Entity`.
+   */
+  placed(id: Spawned): Entity | undefined;
   /** A copy of an entity's component, or undefined if it doesn't have it. */
   get<S extends Schema>(
     entity: Entity,
@@ -69,6 +75,9 @@ export interface ReadingWorld extends Pick<
  *
  * - `get`, `has`, `isAlive` and `sources` read an entity, `singleton` and
  *   `holds` a singleton, and `entityCount` and `hash` the world.
+ * - `placed` gives the entity of an id `Commands.spawn` returned, once its
+ *   spawn is applied, and undefined before: the world's reads take an
+ *   `Entity`, and not a `Spawned` id.
  * - `set` writes the fields given of one entity's component, and returns false
  *   for an entity that doesn't have it. A component the world was not asked for
  *   doesn't compile, and the error says where to name it.
@@ -186,23 +195,24 @@ type Spawnable<C extends string, N extends string> = [N] extends [never]
  */
 export interface Spawning<N extends string> {
   /**
-   * Queues a new entity with these components, and returns its id at once. The
-   * entity receives its components when the system finishes.
+   * Queues a new entity with these components, and returns its id at once:
+   * a `Spawned` id, since the entity is placed when the system finishes. The
+   * commands and a component's value take it, and the world's reads don't.
    */
   spawn<const I extends readonly ComponentInput[]>(
     ...inputs: {
       readonly [K in keyof I]: I[K] & Spawnable<NameOf<I[K]>, N>;
     }
-  ): Entity;
+  ): Spawned;
   /** Queues a component to add to an entity, or a relation to point elsewhere. */
   add<const I extends ComponentInput>(
-    entity: Entity,
+    entity: Entity | Spawned,
     input: I & Spawnable<NameOf<I>, N>
   ): void;
   /** Queues an entity to despawn. */
-  despawn(entity: Entity): void;
+  despawn(entity: Entity | Spawned): void;
   /** Queues a component to remove from an entity. */
-  remove(entity: Entity, def: ComponentDef): void;
+  remove(entity: Entity | Spawned, def: ComponentDef): void;
 }
 
 /**
@@ -236,42 +246,6 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
     Commands | AddsOf<NameOf<D[number]>>
   > => Effect.service(Commands);
 }
-
-/**
- * Lets a system tell a driver that ticks only when needed that the game has
- * more to do.
- *
- *   const Countdown = System.tick("Countdown", function*() {
- *     const clock = yield* Clock
- *     if (clock.left > 0) {
- *       clock.left -= (yield* Time).delta
- *       ;(yield* Ticks).more()     // not at rest: the next tick is needed
- *     }
- *   })
- *
- * A game that moves only when its player does rests when nothing is pending,
- * and the pending work an app can see is actions, state transitions and
- * events. A system that acts every tick while a condition of its own holds,
- * such as a running clock or a body in flight, isn't among them: it requests
- * the next tick itself, each tick it has more to do. The first tick in which no
- * one requests another is the last, and the game rests.
- *
- * - Call it during the tick, from a system or a handler. Between
- *   ticks it throws: the code that draws the game doesn't decide when it ticks.
- * - Under a driver that ticks in real time it does nothing, and costs nothing
- *   to leave in.
- * - Requests aren't saved. An app that was just created, or loaded from a save,
- *   runs one tick before it rests, in which every system can request again.
- *
- * @category Services
- */
-export class Ticks extends Context.Service<
-  Ticks,
-  {
-    /** Signals that the game has more to do: the tick after this one is needed. */
-    readonly more: () => void;
-  }
->()("arcadekit/Ticks") {}
 
 /**
  * The app's event channels. Usually accessed by yielding an event definition.
@@ -322,7 +296,6 @@ export type BuiltIn =
   | Time
   | Frame
   | Commands
-  | Ticks
   | Events
   | Actions
   | Random

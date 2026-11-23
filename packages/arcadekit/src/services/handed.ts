@@ -5,6 +5,8 @@ import type {
   SingletonSpec,
   ValueOf,
 } from "../ecs/component";
+import { placed } from "../ecs/spawned";
+import type { Spawned } from "../ecs/spawned";
 import type { World as EcsWorld } from "../ecs/world";
 import type { WritingWorld } from "../Services";
 
@@ -50,6 +52,10 @@ class Handed implements WritingWorld<string> {
 
   isAlive(entity: Entity): boolean {
     return this.#world.isAlive(entity);
+  }
+
+  placed(id: Spawned): Entity | undefined {
+    return placed(this.#world, id);
   }
 
   singleton<S extends Schema>(spec: SingletonSpec<S>): ValueOf<S> {

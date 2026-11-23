@@ -25,7 +25,7 @@ import type { Store } from "./Assets";
 import type { Devices } from "./Input";
 import type { Adds, Writes } from "./Query";
 import { Sim } from "./Services";
-import type { Commands, Frame, Ticks } from "./Services";
+import type { Commands, Frame } from "./Services";
 import type { Player } from "./Sound";
 import type { Intake, Port } from "./View";
 
@@ -167,7 +167,6 @@ export type GenServices<Eff> = [Eff] extends [never]
 type TickBan = Frame | Player | Port | Intake | Store | Devices;
 type FrameBan =
   | Sim
-  | Ticks
   | Commands
   | Writes<string>
   | Adds<string>
@@ -175,7 +174,6 @@ type FrameBan =
   | Intake;
 type InputBan =
   | Sim
-  | Ticks
   | Commands
   | Writes<string>
   | Adds<string>
@@ -186,7 +184,7 @@ type InputBan =
 const TICK_MSG =
   "A tick reads and changes the simulation. Frame, Sound, View, Assets and Input.Devices are real time: draw and play with System.frame, read the devices with System.input." as const;
 const FRAME_MSG =
-  "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit, state set or Ticks.more. Read Input.Devices from System.input." as const;
+  "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit or state set. Read Input.Devices from System.input." as const;
 const INPUT_MSG =
   "An input system reads the devices and enqueues actions. It cannot change the game, and it cannot read Frame, play sound or publish a view." as const;
 
@@ -328,7 +326,7 @@ export function tick<
  *
  * `System.inStage("preFrame")` or `"postFrame"` moves it within the frame.
  * Requiring commands, a writing query, an event's `emits`, a state's `sets`,
- * a singleton's `writes`, `Ticks` or `Input.Devices` does not compile.
+ * a singleton's `writes` or `Input.Devices` does not compile.
  *
  * @category Constructors
  */
@@ -377,7 +375,7 @@ export const raw = <
  * actions, just before a tick, and leaves the world as it found it.
  *
  * Requiring commands, a writing query, an event's `emits`, a state's `sets`,
- * a singleton's `writes`, `Ticks`, `Frame`, `Sound` or `View` does not compile.
+ * a singleton's `writes`, `Frame`, `Sound` or `View` does not compile.
  * Loading assets does: an input system can issue an action once they are there.
  *
  * @category Constructors

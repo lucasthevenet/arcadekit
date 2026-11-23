@@ -4,6 +4,7 @@
  * No Effect dependency: this file and world.ts are the storage core, and are
  * plain synchronous TypeScript by design.
  */
+import type { Spawned } from "./spawned";
 
 // ---------------------------------------------------------------------------
 // Entities
@@ -239,6 +240,21 @@ export type ValueOf<S extends Schema> = {
   -readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown> ? T : never;
 };
 
+/** A field of a value given to `of`: an entity field takes a spawned id too. */
+type InputField<T> = [T] extends [Entity] ? Entity | Spawned : T;
+
+/**
+ * The shape of the value a component's `of` takes: its `ValueOf`, where an
+ * entity field takes an id that `Commands.spawn` returned as well.
+ *
+ * @category Type-level
+ */
+export type InputOf<S extends Schema> = {
+  -readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown>
+    ? InputField<T>
+    : never;
+};
+
 /** The column shape of a component: `{ x: Float32Array, y: Float32Array }`. */
 export type ColumnsOf<S extends Schema> = {
   readonly [K in keyof S]: S[K] extends FieldDef<unknown, infer C> ? C : never;
@@ -378,7 +394,7 @@ export interface ComponentDef<
    * Pairs this component with a value, for `spawn` and `add`. A method, so
    * that any component is a `ComponentDef`.
    */
-  of(value: ValueOf<S>): ComponentValue<S, N>;
+  of(value: InputOf<S>): ComponentValue<S, N>;
 }
 
 /**
@@ -392,7 +408,7 @@ export interface ComponentValue<
   N extends string = string,
 > {
   readonly def: ComponentDef<S, Storage, N>;
-  readonly value: ValueOf<S>;
+  readonly value: InputOf<S>;
 }
 
 /**

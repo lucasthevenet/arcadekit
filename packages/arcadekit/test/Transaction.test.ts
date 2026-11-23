@@ -2,6 +2,7 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -21,6 +22,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { placedIn } from "./placed";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
@@ -600,7 +602,7 @@ const withApp = <T, A, E = never>(
 /** What the game begins with: bodies of every shape, and two freed slots. */
 const Scene = Plugin.make("tx/Scene", {
   setup: Effect.map(Commands.spawns(Body, Sheet, Aura, Chilled), (commands) => {
-    const entities: Entity[] = [];
+    const entities: Spawned[] = [];
     for (let n = 0; n < 12; n++) {
       const entity = commands.spawn(
         Body.of({ x: n, y: n }),
@@ -652,7 +654,7 @@ const waiting = (app: App.Any): string[] =>
 
 /** A game that begins with a body at each place, and the ids they are given. */
 const bodiesAt = (...places: { x: number; y: number }[]) => {
-  const ids: Entity[] = [];
+  const ids: Spawned[] = [];
   const plugin = Plugin.make("tx/Bodies", {
     setup: Effect.gen(function* () {
       const commands = yield* Commands.spawns(Body);
@@ -935,8 +937,9 @@ describe("an action that is accepted", () => {
           App.define({ plugins: [plugin], handlers: [twice] })
         );
         const world = yield* app.read(World);
-        const [target] = ids;
-        assert(target !== undefined);
+        const [id] = ids;
+        assert(id !== undefined);
+        const target = placedIn(world, id);
         expect(app.dispatch(Twice, { target })).toEqual(Exit.succeed([20, 2]));
         expect(world.get(target, Body)).toEqual({ x: 20, y: 1 });
       })
@@ -962,8 +965,9 @@ describe("an action that is accepted", () => {
           App.define({ plugins: [plugin], handlers: [direct] })
         );
         const world = yield* app.read(World);
-        const [target] = ids;
-        assert(target !== undefined);
+        const [id] = ids;
+        assert(id !== undefined);
+        const target = placedIn(world, id);
         expect(Exit.isSuccess(app.dispatch(Direct, { target }))).toBe(true);
         expect(world.isAlive(target)).toBe(false);
       })
@@ -987,8 +991,9 @@ describe("an action that is accepted", () => {
         );
         app = made;
         const world = yield* made.read(World);
-        const [entity] = ids;
-        assert(entity !== undefined);
+        const [id] = ids;
+        assert(id !== undefined);
+        const entity = placedIn(world, id);
         const exit = made.dispatch(Outer, {});
         expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
           /dispatch\("tx\/Echo"\) was called from the handler of "tx\/Outer".*Actions\.enqueue/

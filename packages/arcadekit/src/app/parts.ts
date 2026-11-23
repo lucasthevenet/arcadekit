@@ -1,4 +1,5 @@
 import type { CommandBuffer } from "../ecs/commands";
+import type { Spawned } from "../ecs/spawned";
 import type { World } from "../ecs/world";
 import type { EventBus } from "../Event";
 import type { TickDispatcher } from "../TickScheduler";
@@ -9,7 +10,7 @@ import type { TickDispatcher } from "../TickScheduler";
  */
 export interface Parts {
   readonly world: World;
-  readonly commands: CommandBuffer;
+  readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
   readonly dispatcher: TickDispatcher;
 }

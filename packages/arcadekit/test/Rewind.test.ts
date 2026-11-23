@@ -13,8 +13,8 @@ import {
   Field,
   Journal,
   Query,
+  Singleton,
   System,
-  Ticks,
   Time,
   Timeline,
   World,
@@ -146,10 +146,12 @@ describe("a game that is put back to a moment", () => {
   });
 
   it("is as settled as it was", () => {
-    // A clock that runs for three ticks, and asks for each of them.
+    // A clock that runs down for two ticks.
+    const Left = Singleton.define("rw/Left", { ticks: Field.u8 }, { ticks: 2 });
     const Clock = System.tick("rw/Clock", function* () {
-      if ((yield* Time).tick < 3) {
-        (yield* Ticks).more();
+      const left = yield* Left.writes;
+      if (left.ticks > 0) {
+        left.ticks -= 1;
       }
     });
     withApp(App.make(App.define({ systems: [Clock] })), (app) => {
@@ -160,7 +162,7 @@ describe("a game that is put back to a moment", () => {
       app.tick(DELTA);
       expect(app.settled).toBe(true);
       Timeline.rewind(app, moment);
-      // The clock had asked for the next tick, and is owed it again.
+      // The clock had changed in the tick before, and is owed the next again.
       expect(app.settled).toBe(false);
     });
   });

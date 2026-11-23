@@ -16,10 +16,12 @@ import type { Effect, Fiber } from "effect";
 
 import * as Action from "./Action";
 import type { CommandBuffer } from "./ecs/commands";
+import type { Spawned } from "./ecs/spawned";
 import type { World } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type * as Journal from "./Journal";
 import type { Runner } from "./Runner";
+import { GameTime } from "./Stage";
 
 /**
  * What an inbox works with: the parts of an app that an action touches.
@@ -28,7 +30,7 @@ import type { Runner } from "./Runner";
  */
 export interface Parts {
   readonly world: World;
-  readonly commands: CommandBuffer;
+  readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
   /** The actions queued for the next tick, a store of the world. */
   readonly intake: Action.Intake;
@@ -385,9 +387,16 @@ export class Inbox {
       world.commit();
       commands.apply();
       // A tick tells the stages between ticks what it emitted when it
-      // ends; an action applied between two is of the tick to come.
+      // ends; an action applied between two is of the tick to come, which
+      // a game that rests then wants, to follow it up.
       if (!runner.ticking) {
         events.told(time.tick + 1);
+        const { intake } = this.parts;
+        intake.wanted = true;
+        // The next tick is held to the game as the action left it.
+        if (intake.rest !== undefined) {
+          intake.rest = world._frameHash(GameTime.component);
+        }
       }
       if (dispatched) {
         log.accepted(name, logged, from);

@@ -21,7 +21,7 @@ import {
   World,
 } from "arcadekit";
 import { System } from "arcadekit";
-import type { Entity, Frame, Time } from "arcadekit";
+import type { Frame, Spawned, Time } from "arcadekit";
 import type { ComponentDef, ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
@@ -43,7 +43,7 @@ const median = (values: number[]): number =>
   values.toSorted((a, b) => a - b)[values.length >> 1]!;
 
 /** A plugin whose setup spawns the crowd, each entity a Thing with `parts`. */
-const crowd = (parts: () => ComponentInput[], spawned: Entity[] = []) => {
+const crowd = (parts: () => ComponentInput[], spawned: Spawned[] = []) => {
   const defs: ComponentDef[] = [Thing];
   for (const part of parts()) {
     defs.push("def" in part ? part.def : part);
@@ -252,17 +252,24 @@ variant(
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
   const scope = Scope.makeUnsafe();
-  const entities: Entity[] = [];
+  const spawned: Spawned[] = [];
   const world = Effect.runSync(
     Effect.gen(function* () {
       const app = yield* App.make(
         App.define({
-          plugins: [crowd(() => [place(), turn(), size()], entities)],
+          plugins: [crowd(() => [place(), turn(), size()], spawned)],
         })
       );
       return yield* app.read(World);
     }).pipe(Scope.provide(scope))
   );
+  const entities = spawned.map((id) => {
+    const entity = world.placed(id);
+    if (entity === undefined) {
+      throw new Error("an entity of the crowd was not placed");
+    }
+    return entity;
+  });
   const mesh = new InstancedMesh(geometry, material, N);
   const dummy = new Object3D();
   const { bytes, ns } = measure(() => {

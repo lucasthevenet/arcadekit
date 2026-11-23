@@ -2,6 +2,7 @@ import { Context, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -99,7 +100,7 @@ describe("events", () => {
         log.push(`${event.target}:${event.amount}`);
       }
     });
-    const wounded: Entity[] = [];
+    const wounded: Spawned[] = [];
     const Two = Plugin.make("ru/Two", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(Health);

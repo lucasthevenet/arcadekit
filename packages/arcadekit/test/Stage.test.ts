@@ -17,7 +17,6 @@ import {
   Sound,
   State,
   System,
-  Ticks,
   View,
   World,
 } from "../src/index";
@@ -138,13 +137,6 @@ describe("a system's stage", () => {
       // @ts-expect-error writing a singleton is the tick's
       function* () {
         (yield* Turn.writes).player = 2;
-      }
-    );
-    System.frame(
-      "stg/BadTicks",
-      // @ts-expect-error Ticks.more is the tick's
-      function* () {
-        (yield* Ticks).more();
       }
     );
     System.input(

@@ -23,6 +23,7 @@ import type {
 } from "./App";
 import { hold } from "./app/parts";
 import { CommandBuffer } from "./ecs/commands";
+import type { Spawned } from "./ecs/spawned";
 import { World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Inbox from "./Inbox";
@@ -119,7 +120,7 @@ export const build = <
       );
     }
     const world = new EcsWorld(seed === undefined ? undefined : { seed });
-    const commands = new CommandBuffer(world);
+    const commands = new CommandBuffer<Spawned>(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.
     const intake = new Action.Intake();
@@ -174,7 +175,6 @@ export const build = <
       time,
       commands,
       events,
-      intake,
       actions,
     });
     // Plugin layers are chained in dependency order, so each one can use the

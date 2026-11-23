@@ -2,6 +2,7 @@ import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import type { Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -19,8 +20,8 @@ import {
   Time,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
 import type { ReadingWorld } from "../src/Services";
+import { placedIn } from "./placed";
 
 const Position = Component.define("rt/Position", {
   x: Field.f32,
@@ -68,7 +69,7 @@ const withApp = <T extends Pick<App.Any, "read">, A>(
 
 describe("systems", () => {
   it("run with yieldable queries and game time", () => {
-    const spawned: Entity[] = [];
+    const spawned: Spawned[] = [];
     const Seed = Plugin.make("rt/Seed", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(Position, Velocity, Stunned);
@@ -87,7 +88,7 @@ describe("systems", () => {
     });
     const game = App.define({ plugins: [Seed], systems: [Movement] });
     withApp(App.make(game), (app, world) => {
-      const [a, b] = spawned;
+      const [a, b] = spawned.map((id) => placedIn(world, id));
       assert(a !== undefined && b !== undefined);
       app.tick(0.5);
       app.tick(0.5);
@@ -194,7 +195,7 @@ describe("systems", () => {
       });
     });
 
-    const spawned: Entity[] = [];
+    const spawned: Spawned[] = [];
     const Seed = Plugin.make("rt/Seed", {
       setup: Effect.gen(function* () {
         const commands = yield* Commands.spawns(Health, Burning);
@@ -209,7 +210,7 @@ describe("systems", () => {
     });
     const game = App.define({ plugins: [Seed], systems: [Burn, Extinguish] });
     withApp(App.make(game), (app, world) => {
-      const [torch, rock] = spawned;
+      const [torch, rock] = spawned.map((id) => placedIn(world, id));
       assert(torch !== undefined && rock !== undefined);
       for (let i = 0; i < 4; i++) {
         app.tick(1);
