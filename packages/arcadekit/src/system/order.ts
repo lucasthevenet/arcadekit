@@ -1,4 +1,4 @@
-import type { Access, Adds, Watches, WatchesAdded, Writes } from "../Query";
+import type { Adds, Watches, WatchesAdded, Writes } from "../Query";
 import type { System, Trigger } from "../System";
 import { frameStages } from "../System";
 
@@ -29,33 +29,9 @@ type Wrote<R, N extends string> =
   | Did<WrittenBy<R>, N, "writes">
   | Did<AddedBy<R>, N, "spawns or adds">;
 
-/** The systems of a union that write or watch something. */
-type Touching<U> =
-  U extends System<unknown, infer R>
-    ? [Extract<R, Access>] extends [never]
-      ? never
-      : U
-    : never;
-
-/** The systems of a union that the tick runs in the order of the list. */
-type Ticking<U> = U extends Any
-  ? [U["trigger"]] extends [Trigger]
-    ? never
-    : [U["stage"]] extends [FrameStage | "input"]
-      ? never
-      : U
-  : never;
-
-/**
- * A list whose order the compiler knows, or one that says nothing of order:
- * a list that isn't a tuple is left out when none of its systems writes or
- * watches anything, and is otherwise kept as it is, in no order.
- */
-type Listed<S extends readonly Any[]> = number extends S["length"]
-  ? [Touching<S[number]>] extends [never]
-    ? readonly []
-    : S
-  : S;
+/** What is said of a list that isn't written out as a tuple. */
+type NotTuple =
+  "List systems, handlers and plugins as a literal list, [a, b], so the compiler can read their names and order.";
 
 /** The systems of a tuple, each name once: the first to be listed stays. */
 type Once<
@@ -160,7 +136,7 @@ type Unknown<
   N extends string,
   C extends string,
   By extends string,
-> = `One of "${N}" and "${By}" watches "${C}" and the other writes, spawns or adds it, and the compiler cannot tell which runs first. Write the list of systems out where it is given, and give System.inStage a stage it can read.`;
+> = `One of "${N}" and "${By}" watches "${C}" and the other writes, spawns or adds it, and the compiler cannot tell which runs first. Give System.inStage a stage it can read.`;
 
 /** What one system watches that the other writes or adds. */
 type Between<R, R2> =
@@ -198,36 +174,32 @@ type Unplaced<U, All> =
  *
  * **Gotchas**
  *
- * - The compiler can't read the order of a list that isn't written out as a
- *   tuple, or the place of a system whose type allows more than one stage.
- *   Such a system is refused when another system of the list writes what it
- *   watches, or watches what it writes.
+ * - A list that isn't written out as a tuple is refused, whatever it holds,
+ *   since the compiler can't read its order.
+ * - The compiler can't read the place of a system whose type allows more than
+ *   one stage. Such a system is refused when another system of the list
+ *   writes what it watches, or watches what it writes.
  *
  * @category Type-level
  */
-export type Misordered<S extends readonly Any[]> =
-  Listed<S> extends infer L extends readonly Any[]
-    ? number extends L["length"]
-      ? Unplaced<Ticking<L[number]>, Ticking<L[number]>>
-      : Staged<Once<L>> extends {
-            readonly order: infer O extends readonly Any[];
-            readonly loose: infer Loose;
-          }
-        ? Behind<O> | Unplaced<Loose, O[number] | Loose>
-        : never
+export type Misordered<S extends readonly Any[]> = number extends S["length"]
+  ? NotTuple
+  : Staged<Once<S>> extends {
+        readonly order: infer O extends readonly Any[];
+        readonly loose: infer Loose;
+      }
+    ? Behind<O> | Unplaced<Loose, O[number] | Loose>
     : never;
 
 /**
- * Two lists of systems, one after the other, as `Misordered` takes them: a
- * list that isn't a tuple and whose systems write and watch nothing is left
- * out.
+ * Two lists of systems, one after the other, as `Misordered` takes them.
  *
  * @internal
  */
 export type Listing<
   A extends readonly Any[],
   B extends readonly Any[],
-> = readonly [...Listed<A>, ...Listed<B>];
+> = readonly [...A, ...B];
 
 type Dup<
   T extends readonly { readonly name: string }[],
@@ -259,8 +231,8 @@ type Dup<
  * The duplicate names in a list, as a union of messages, or `never` when every
  * name is its own. `App.define` and `Plugin.make` refuse a list of systems, of
  * handlers or of plugins with a duplicate name, so the mistake doesn't
- * compile. A name the compiler only knows as `string`, and a list that isn't a
- * tuple, are left out.
+ * compile. A name the compiler only knows as `string` is left out, and a list
+ * that isn't a tuple is refused, since the compiler can't read its names.
  *
  * @typeParam What what the list holds, `"system"`, `"handler"` or
  *   `"plugin"`, which picks the message
@@ -270,7 +242,7 @@ type Dup<
 export type Duplicated<
   T extends readonly { readonly name: string }[],
   What extends string = "system",
-> = number extends T["length"] ? never : Dup<T, What>;
+> = number extends T["length"] ? NotTuple : Dup<T, What>;
 
 /**
  * What `App.define` and `Plugin.make` add to their options: nothing for a list

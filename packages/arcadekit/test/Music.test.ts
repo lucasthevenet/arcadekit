@@ -85,26 +85,19 @@ const start = <A extends { readonly close: Effect.Effect<void> }, E>(
   return { app, close: () => Effect.runSync(app.close) };
 };
 
-/** The game of levels, with what plays its sound. */
-const game = (
-  systems: readonly System.System<
-    never,
-    BuiltIn | Sound.Player | Assets.Store
-  >[]
-) => App.define({ plugins: [Rules, Sound.plugin, Assets.plugin], systems });
+/** The plugins of the game of levels, with what plays its sound. */
+const plugins = [Rules, Sound.plugin, Assets.plugin] as const;
 
-const play = (
-  systems: readonly System.System<
-    never,
-    BuiltIn | Sound.Player | Assets.Store
-  >[],
-  output?: Sound.Speaker
-) => {
+/** A game of levels, with systems of its own. */
+type Levels = App.Game<
+  readonly System.System<never, BuiltIn | Sound.Player | Assets.Store>[],
+  readonly [],
+  typeof plugins
+>;
+
+const play = (game: Levels, output?: Sound.Speaker) => {
   asked = 0;
-  const { app, close } = start(
-    App.make(game(systems), { checkpointEvery: 1 }),
-    output
-  );
+  const { app, close } = start(App.make(game, { checkpointEvery: 1 }), output);
   return {
     app,
     close,
@@ -120,7 +113,10 @@ const play = (
 describe("Sound.music", () => {
   it("keeps a channel playing what the game, as it is, should sound like", () => {
     const sound = Sound.makeRecorder();
-    const { app, step } = play([Score], sound);
+    const { app, step } = play(
+      App.define({ plugins, systems: [Score] }),
+      sound
+    );
     // The menu is silent, and a channel that was told nothing is not told so.
     app.tick(0.1);
     app.frame();
@@ -174,7 +170,7 @@ describe("Sound.music", () => {
       yield* Level;
       return wanted;
     });
-    const { app } = play([Plain], sound);
+    const { app } = play(App.define({ plugins, systems: [Plain] }), sound);
     app.frame();
     wanted = { track: "a", volume: -3 };
     app.frame();
@@ -205,7 +201,10 @@ describe("Sound.music", () => {
         ? { track: "fanfare", volume: 0.5 }
         : { track: "fanfare", once: true };
     });
-    const { app, step } = play([Fanfare], sound);
+    const { app, step } = play(
+      App.define({ plugins, systems: [Fanfare] }),
+      sound
+    );
     step(Go, { to: "cave" });
     expect(sound.scored).toEqual([
       {
@@ -234,7 +233,7 @@ describe("Sound.music", () => {
         : "fanfare";
     });
     const other = Sound.makeRecorder();
-    const second = play([Twice], other);
+    const second = play(App.define({ plugins, systems: [Twice] }), other);
     second.app.frame();
     second.step(SetHush, { on: true });
     expect(other.scored.map((one) => one.once)).toEqual([undefined, true]);
@@ -256,7 +255,7 @@ describe("Sound.music", () => {
 
   it("is worked out from the game and kept nowhere in it: a game that is loaded has its music from its first frame, and is the same game as one with none", () => {
     const sound = Sound.makeRecorder();
-    const heard = play([Score], sound);
+    const heard = play(App.define({ plugins, systems: [Score] }), sound);
     // The rules alone: no output, and no system that plays.
     const deaf = start(
       App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
@@ -295,7 +294,9 @@ describe("Sound.music", () => {
     const replayed = Sound.makeRecorder();
     const played = heard.app.record();
     const other = start(
-      Journal.replay(played, game([Score]), { checkpointEvery: 1 }),
+      Journal.replay(played, App.define({ plugins, systems: [Score] }), {
+        checkpointEvery: 1,
+      }),
       replayed
     );
     expect(hashOf(other.app)).toBe(hashOf(heard.app));
@@ -313,12 +314,12 @@ describe("Sound.music", () => {
       return (yield* Level).value === "forest" ? "theme" : "drip";
     }).pipe(System.runIf(State.is(Level, "forest", "cave")));
     // Whichever of the two is listed first: silence gives way to a track.
-    for (const systems of [
-      [MenuScore, LevelScore],
-      [LevelScore, MenuScore],
+    for (const game of [
+      App.define({ plugins, systems: [MenuScore, LevelScore] }),
+      App.define({ plugins, systems: [LevelScore, MenuScore] }),
     ]) {
       const sound = Sound.makeRecorder();
-      const { app, step } = play(systems, sound);
+      const { app, step } = play(game, sound);
       app.frame();
       expect(sound.scored).toEqual([
         { channel: "music", track: "theme", volume: 1, fade: 0.5 },
@@ -347,7 +348,10 @@ describe("Sound.music", () => {
     const Two = Sound.music("mu/Two", function* () {
       return (yield* Hush).on === 1 ? undefined : other;
     });
-    const { app, step } = play([One, Two], sound);
+    const { app, step } = play(
+      App.define({ plugins, systems: [One, Two] }),
+      sound
+    );
     const refused = (first: string, second: string) =>
       `The channel "music" was told to play two things in one frame: ${first} and ${second}. A channel plays one track at a time. The systems made with Sound.music share the channel "music" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`;
     expect(() => app.frame()).toThrow(refused('"theme"', '"wind"'));
@@ -393,7 +397,10 @@ describe("Sound.music", () => {
       },
       { channel: "wind", fade: 4 }
     );
-    const { app, step } = play([Score, Wind, Breeze], sound);
+    const { app, step } = play(
+      App.define({ plugins, systems: [Score, Wind, Breeze] }),
+      sound
+    );
     app.frame();
     expect(sound.scored).toEqual([
       { channel: "wind", track: "breeze", volume: 1, fade: 4 },
@@ -421,7 +428,10 @@ describe("Sound.music", () => {
       },
       { channel: "mu/Wind" }
     );
-    const { step } = play([Score, Wind], sound);
+    const { step } = play(
+      App.define({ plugins, systems: [Score, Wind] }),
+      sound
+    );
     step(Go, { to: "forest" });
     expect(Object.fromEntries(sound.playing)).toEqual({
       music: "theme",
@@ -440,12 +450,15 @@ describe("Sound.music", () => {
   });
 
   it("works nothing out where sound goes nowhere", () => {
-    const { app, step } = play([Score]);
+    const { app, step } = play(App.define({ plugins, systems: [Score] }));
     step(Go, { to: "forest" });
     app.frame();
     expect(asked).toBe(0);
     // Somewhere to go, it is asked each frame.
-    const heard = play([Score], Sound.makeRecorder());
+    const heard = play(
+      App.define({ plugins, systems: [Score] }),
+      Sound.makeRecorder()
+    );
     heard.app.frame();
     heard.app.frame();
     expect(asked).toBe(2);
@@ -456,7 +469,10 @@ describe("Sound.music", () => {
     const Gated = Score.pipe(
       System.runIf(Effect.map(Hush, (hush) => hush.on === 0))
     );
-    const { app, step } = play([Gated], sound);
+    const { app, step } = play(
+      App.define({ plugins, systems: [Gated] }),
+      sound
+    );
     step(Go, { to: "forest" });
     expect(Object.fromEntries(sound.playing)).toEqual({ music: "theme" });
     // Hushed, the system is not run: its music stops, with the fade it
@@ -480,13 +496,16 @@ describe("Sound.music", () => {
     // A system that was never run has nothing to stop.
     const other = Sound.makeRecorder();
     const never = play(
-      [Score.pipe(System.runIf(Effect.succeed(false)))],
+      App.define({
+        plugins,
+        systems: [Score.pipe(System.runIf(Effect.succeed(false)))],
+      }),
       other
     );
     never.step(Go, { to: "forest" });
     expect(other.scored).toEqual([]);
     // And where nothing is heard, nothing is said.
-    const deaf = play([Gated]);
+    const deaf = play(App.define({ plugins, systems: [Gated] }));
     deaf.step(SetHush, { on: true });
     expect(asked).toBe(0);
   });
@@ -508,7 +527,10 @@ describe("Sound.music", () => {
       },
       { channel: "never" }
     );
-    const { close, step } = play([Score, Wind, Never], sound);
+    const { close, step } = play(
+      App.define({ plugins, systems: [Score, Wind, Never] }),
+      sound
+    );
     step(Go, { to: "forest" });
     // The wind stops of itself in the cave; the score is still playing.
     step(Go, { to: "cave" });
@@ -776,7 +798,7 @@ describe("a clip", () => {
       Sound.on(Stepped, ({ hard }) => (hard ? other : undefined)),
       Sound.on(Stepped, "tap")
     );
-    const { app } = play([Cues], sound);
+    const { app } = play(App.define({ plugins, systems: [Cues] }), sound);
     app.dispatch(Step, { hard: false });
     app.dispatch(Step, { hard: false });
     app.tick(0.1);
@@ -1013,7 +1035,7 @@ describe("a level's music", () => {
     const Hum = Sound.music("mu/Hum", function* () {
       return (yield* Level).value === "menu" ? hum : undefined;
     });
-    const { app, step } = play([Hum], sound);
+    const { app, step } = play(App.define({ plugins, systems: [Hum] }), sound);
     app.frame();
     expect(sound.scored).toEqual([
       { channel: "music", track: "hum", volume: 1, fade: 0.5, clip: hum },

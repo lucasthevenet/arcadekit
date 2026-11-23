@@ -215,23 +215,17 @@ describe("plugins", () => {
       ),
       setup: Effect.sync(() => void order.push("setup:Core")),
     });
-    type NeedsClock = Plugin.Plugin<never, never, Clock, never, never, Clock>;
-    const plugin = <const Name extends string>(
-      name: Name,
-      plugins: readonly (Plugin.Plugin<never, never, Clock> | NeedsClock)[]
-    ) =>
-      Plugin.make(name, {
-        plugins: [...plugins],
-        systems: [
-          System.frame(`${name}System`, function* () {
-            order.push(`frame:${name}:${(yield* Clock).id}`);
-          }),
-        ],
-        setup: Effect.sync(() => void order.push(`setup:${name}`)),
-      });
-    const Left = plugin("Left", [Core]);
-    const Right = plugin("Right", [Core]);
-    const Top = plugin("Top", [Left, Right]);
+    const own = <const Name extends string>(name: Name) => ({
+      systems: [
+        System.frame(`${name}System`, function* () {
+          order.push(`frame:${name}:${(yield* Clock).id}`);
+        }),
+      ] as const,
+      setup: Effect.sync(() => void order.push(`setup:${name}`)),
+    });
+    const Left = Plugin.make("Left", { plugins: [Core], ...own("Left") });
+    const Right = Plugin.make("Right", { plugins: [Core], ...own("Right") });
+    const Top = Plugin.make("Top", { plugins: [Left, Right], ...own("Top") });
 
     withApp(App.make(App.define({ plugins: [Top, Core] })), (app) => {
       expect(app.plugins).toEqual(["Core", "Left", "Right", "Top"]);
@@ -537,18 +531,21 @@ describe("plugins", () => {
   it("reject clashing names", () => {
     const one = Plugin.make("Twin", {});
     const two = Plugin.make("Twin", {});
-    App.define(
-      // @ts-expect-error two plugins named Twin
-      { plugins: [one, two] }
-    );
-    const different: readonly Plugin.Plugin[] = [one, two];
     expect(() =>
-      Effect.runSync(App.make(App.define({ plugins: different })))
+      Effect.runSync(
+        App.make(
+          App.define(
+            // @ts-expect-error two plugins named Twin
+            { plugins: [one, two] }
+          )
+        )
+      )
     ).toThrow(/both named "Twin"/);
-    const again: readonly Plugin.Plugin[] = [one, one];
-    withApp(App.make(App.define({ plugins: again })), (app) =>
-      expect(app.plugins).toEqual(["Twin"])
+    const again = App.define(
+      // @ts-expect-error the same plugin twice in one list, installed once
+      { plugins: [one, one] }
     );
+    withApp(App.make(again), (app) => expect(app.plugins).toEqual(["Twin"]));
 
     const clash = Plugin.make("Clash", { systems: [Movement] });
     App.define(

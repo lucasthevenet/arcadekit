@@ -150,16 +150,33 @@ const dispatching = <P>(
 
 const Power = State.define("bench/Power", ["on", "off"]);
 
+/** A system that fetches a query and the time, then does nothing. */
+const idle = <const I extends number>(i: I) =>
+  System.tick(`Idle${i}`, function* () {
+    yield* Moving;
+    yield* Time;
+  });
+
+/** The same, run when the power is on. */
+const powered = <const I extends number>(i: I) =>
+  idle(i).pipe(System.runIf(State.is(Power, "on")));
+
 /** Median milliseconds of a tick of ten idle systems that run when the power is on. */
 const idling = (power: "on" | "off"): number =>
   Effect.runSync(
     Effect.gen(function* () {
-      const systems = Array.from({ length: 10 }, (_, i) =>
-        System.tick(`Idle${i}`, function* () {
-          yield* Moving;
-          yield* Time;
-        }).pipe(System.runIf(State.is(Power, "on")))
-      );
+      const systems = [
+        powered(0),
+        powered(1),
+        powered(2),
+        powered(3),
+        powered(4),
+        powered(5),
+        powered(6),
+        powered(7),
+        powered(8),
+        powered(9),
+      ] as const;
       const Switched = Plugin.make("bench/Switched", {
         setup: Effect.gen(function* () {
           (yield* Power.sets).set(power);
@@ -434,32 +451,54 @@ const rollingBack = (): number =>
     })
   );
 
-const drawing = (count: number, reading: boolean, verify: boolean): number =>
+let sink = 0;
+
+/** A system that draws: it fetches a query and the time, and with `reading` reads every column. */
+const drawer = <const I extends number>(i: I, reading: boolean) =>
+  System.frame(`Draw${i}`, function* () {
+    const moving = yield* Seen;
+    yield* Time;
+    if (reading) {
+      moving.eachChunk((start, end, pos, vel) => {
+        const px = pos.x;
+        const vx = vel.x;
+        for (let n = start; n < end; n++) {
+          sink += px[n]! + vx[n]! * DT;
+        }
+      });
+    }
+  });
+
+/** Median milliseconds of a frame of ten systems that draw nothing. */
+const drawingIdle = (): number =>
   Effect.runSync(
     Effect.gen(function* () {
-      let sink = 0;
-      const systems = Array.from({ length: count }, (_, i) =>
-        System.frame(`Draw${i}`, function* () {
-          const moving = yield* Seen;
-          yield* Time;
-          if (reading) {
-            moving.eachChunk((start, end, pos, vel) => {
-              const px = pos.x;
-              const vx = vel.x;
-              for (let n = start; n < end; n++) {
-                sink += px[n]! + vx[n]! * DT;
-              }
-            });
-          }
-        })
-      );
+      const systems = [
+        drawer(0, false),
+        drawer(1, false),
+        drawer(2, false),
+        drawer(3, false),
+        drawer(4, false),
+        drawer(5, false),
+        drawer(6, false),
+        drawer(7, false),
+        drawer(8, false),
+        drawer(9, false),
+      ] as const;
+      const app = yield* App.make(App.define({ plugins: [Empty], systems }));
+      return measure(() => app.frame(0.5), 50_000, 20_000);
+    })
+  );
+
+/** Median milliseconds of a frame of one system that reads raw columns. */
+const drawingRaw = (verify: boolean): number =>
+  Effect.runSync(
+    Effect.gen(function* () {
       const app = yield* App.make(
-        App.define({ plugins: [reading ? Populated : Empty], systems }),
+        App.define({ plugins: [Populated], systems: [drawer(0, true)] }),
         { verifyFrames: verify }
       );
-      const ms = reading
-        ? measure(() => app.frame(0.5))
-        : measure(() => app.frame(0.5), 50_000, 20_000);
+      const ms = measure(() => app.frame(0.5));
       void sink;
       return ms;
     })
@@ -584,12 +623,18 @@ const variants: Record<string, Variant> = {
     run: () =>
       Effect.runSync(
         Effect.gen(function* () {
-          const systems = Array.from({ length: 10 }, (_, i) =>
-            System.tick(`Idle${i}`, function* () {
-              yield* Moving;
-              yield* Time;
-            })
-          );
+          const systems = [
+            idle(0),
+            idle(1),
+            idle(2),
+            idle(3),
+            idle(4),
+            idle(5),
+            idle(6),
+            idle(7),
+            idle(8),
+            idle(9),
+          ] as const;
           const app = yield* App.make(App.define({ systems }));
           return measure(() => app.tick(DT), 50_000, 20_000);
         })
@@ -626,15 +671,15 @@ const variants: Record<string, Variant> = {
   frameIdle: {
     unit: "matches",
     label: "app.frame: 10 systems that do no work",
-    run: () => drawing(10, false, false),
+    run: drawingIdle,
   },
   frameRaw: {
     label: "app.frame: one system reading raw columns",
-    run: () => drawing(1, true, false),
+    run: () => drawingRaw(false),
   },
   frameVerified: {
     label: "app.frame: the same, with verifyFrames",
-    run: () => drawing(1, true, true),
+    run: () => drawingRaw(true),
   },
 
   // The input stage: the devices are read once per tick and compared with

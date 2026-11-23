@@ -80,7 +80,7 @@ const handlers = [
     (yield* Hit.emits).emit({ by: 1000 });
     return yield* new NotNow();
   }),
-];
+] as const;
 
 const game = App.make(
   App.define({ systems: [Draw, Read, Move, Scorer, Asleep, Opening], handlers })
