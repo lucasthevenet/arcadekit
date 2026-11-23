@@ -68,14 +68,16 @@ const Game = App.define({
   plugins: [Target],
   handlers: [damage, rename, reset],
 });
-/** The thing to damage, which the game begins with. */
-const targetOf = (app: App.Any): Entity =>
-  app.world.view(Query.all(Health)).entities()[0]!;
+/** An app, its world, and the thing to damage, which the game begins with. */
+const begin = <A extends App.Any, E>(make: Effect.Effect<A, E, Scope.Scope>) =>
+  Effect.gen(function* () {
+    const app = yield* make;
+    const [target] = (yield* app.read(Query.all(Health))).entities();
+    assert(target !== undefined, "the game begins with a thing to damage");
+    return { app, world: yield* app.read(World), target };
+  });
 
-const game = Effect.map(App.make(Game), (app) => ({
-  app,
-  target: targetOf(app),
-}));
+const game = begin(App.make(Game));
 
 const withApp = <A, T, E = never>(
   make: Effect.Effect<A, E, Scope.Scope>,
@@ -125,7 +127,7 @@ describe("actions with a schema", () => {
   });
 
   it("reject a payload the compiler accepts but the schema does not", () => {
-    withApp(game, ({ app, target }) => {
+    withApp(game, ({ app, world, target }) => {
       received.length = 0;
       const exit = app.dispatch(Damage, { target, amount: 999, seed: 1n });
       const error = failure(exit);
@@ -134,7 +136,7 @@ describe("actions with a schema", () => {
       expect(error.message).toMatch(/amount/);
       // The handler never ran, nothing changed, nothing was logged.
       expect(received).toEqual([]);
-      expect(app.world.get(target, Health)).toEqual({ hp: 50 });
+      expect(world.get(target, Health)).toEqual({ hp: 50 });
       expect(moves(app.actionLog)).toEqual([]);
     });
   });
@@ -163,7 +165,7 @@ describe("actions with a schema", () => {
   });
 
   it("turn every kind of bad input into a failure, never a crash", () => {
-    withApp(game, ({ app, target }) => {
+    withApp(game, ({ app, world, target }) => {
       received.length = 0;
       const bad: [label: string, payload: unknown][] = [
         ["missing field", { target, amount: 3 }],
@@ -199,7 +201,7 @@ describe("actions with a schema", () => {
       ).toEqual(new NoSuchTarget({ target: dead }));
 
       expect(received).toHaveLength(1); // only the last one reached the handler
-      expect(app.world.get(target, Health)).toEqual({ hp: 50 });
+      expect(world.get(target, Health)).toEqual({ hp: 50 });
       expect(moves(app.actionLog)).toEqual([]);
     });
   });
@@ -213,14 +215,12 @@ describe("actions with a schema", () => {
         events.push(event);
       }
     });
-    const make = Effect.map(
-      App.make(App.define({ systems: [Watch], handlers: [damage] })),
-      (app) => {
-        const target = app.world.spawn(Health.of({ hp: 50 }));
-        return { app, target };
-      }
+    const make = begin(
+      App.make(
+        App.define({ plugins: [Target], systems: [Watch], handlers: [damage] })
+      )
     );
-    withApp(make, ({ app, target }) => {
+    withApp(make, ({ app, world, target }) => {
       app.enqueueByName("Damage", { target, amount: 5, seed: "9" });
       app.enqueueByName("Damage", { target, amount: 500, seed: "9" });
       app.enqueueByName("Teleport", { x: 1 });
@@ -240,7 +240,7 @@ describe("actions with a schema", () => {
         )
       );
       app.tick(1);
-      expect(app.world.get(target, Health)).toEqual({ hp: 43 });
+      expect(world.get(target, Health)).toEqual({ hp: 43 });
       expect(rejected).toEqual([
         "Damage: InvalidPayload",
         "Teleport: UnknownAction",
@@ -379,7 +379,7 @@ describe("events with a schema", () => {
     withApp(App.make(App.define({ systems: [Emit, Read] })), (app) => {
       app.tick(1);
       expect(seen).toEqual([3, "three", 500]);
-      expect(app.events.pending(Hit)).toBe(3);
+      expect(app.inspect().events["sc/Hit"]).toHaveLength(3);
     });
     expect(Hit.name).toBe("sc/Hit");
     expect(Hit.codec).toBeDefined();
@@ -458,21 +458,32 @@ describe("events with a schema", () => {
     const Alone = System.tick("Alone", function* () {
       (yield* Twin.emits).emit(2);
     });
-    withApp(App.make(App.define({ systems: [Alone] })), (app) => {
-      app.tick(1);
-      expect(app.events.pending(Twin)).toBe(1);
+    const heard: number[] = [];
+    const Hear = System.tick("Hear", function* () {
+      heard.push(...(yield* Twin).read());
     });
-    withApp(App.make(App.define({})), (app) => {
-      expect(app.events.pending(Hit)).toBe(0);
-      expect(() => app.events.emit(Twin, 1)).toThrow(/both named/);
-      expect(() => app.events.pending(Twin)).toThrow(/both named/);
+    withApp(App.make(App.define({ systems: [Alone, Hear] })), (app) => {
+      app.tick(1);
+      expect(heard).toEqual([2]);
+    });
+    // An event that is only read is known by its name as well.
+    const Shout = System.tick("Shout", function* () {
+      (yield* Hit.emits).emit({
+        target: 1 as Entity,
+        amount: 1,
+        at: new Date(1),
+        seed: 1n,
+      });
+    });
+    withApp(App.make(App.define({ systems: [Shout, Hear] })), (app) => {
+      expect(() => app.tick(1)).toThrow(/both named/);
     });
   });
 });
 
 describe("saving and replaying", () => {
   const record = () =>
-    withApp(game, ({ app, target }) => {
+    withApp(game, ({ app, world, target }) => {
       app.dispatch(Damage, { target, amount: 4, seed: 1n });
       app.tick(1);
       app.enqueue(Damage, { target, amount: 10, seed: 2n, note: "big hit" });
@@ -483,7 +494,7 @@ describe("saving and replaying", () => {
       app.tick(1);
       return {
         text: Journal.encode(app.record()),
-        hp: app.world.get(target, Health)!.hp,
+        hp: world.get(target, Health)!.hp,
       };
     });
 
@@ -502,8 +513,8 @@ describe("saving and replaying", () => {
     // Whatever the file says: the replay is what checks it.
     const written = recording as Journal.Recording;
     return withApp(
-      Journal.replay(written, (start) => App.make(Game, start)),
-      (app) => app.world.get(targetOf(app), Health)!.hp
+      begin(Journal.replay(written, (start) => App.make(Game, start))),
+      ({ world, target }) => world.get(target, Health)!.hp
     );
   };
 

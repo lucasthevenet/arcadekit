@@ -124,19 +124,32 @@ const Combat = Plugin.make("Combat", {
   handlers: [heal],
 });
 
+/** Gives everything that has a position some health. */
+const Wound = Action.define("pl/Wound", Schema.Struct({ hp: Schema.Int }));
+const wound = Action.handler(Wound, function* ({ hp }) {
+  const commands = yield* Commands.spawns(Health);
+  for (const entity of (yield* Query.all(Position)).entities()) {
+    commands.add(entity, Health.of({ hp }));
+  }
+});
+
 describe("plugins", () => {
   it("bundle systems, handlers, services and setup into one value", () => {
-    withApp(App.make(App.define({ plugins: [Combat] })), (app) => {
+    Effect.gen(function* () {
+      const app = yield* App.make(
+        App.define({ plugins: [Combat], handlers: [wound] })
+      );
       expect(app.plugins).toEqual(["Physics", "Combat"]);
       expect(app.systemOrder).toEqual(["Movement", "Walls", "BumpDamage"]);
       // Physics' setup spawned the ball.
-      expect(app.world.entityCount).toBe(1);
-      const ball = app.world.view(Query.all(Position)).entities()[0];
-      app.world.add(ball!, Health.of({ hp: 3 }));
+      const world = yield* app.read(World);
+      expect(world.entityCount).toBe(1);
+      const [ball] = (yield* app.read(Query.all(Position))).entities();
+      expect(app.dispatch(Wound, { hp: 3 })).toEqual(Exit.void);
 
       app.tick(1); // 9 -> 11, bounces off the wall at 10, loses 1 hp
-      expect(app.world.get(ball!, Position)!.x).toBe(10);
-      expect(app.world.get(ball!, Health)).toEqual({ hp: 2 });
+      expect(world.get(ball!, Position)!.x).toBe(10);
+      expect(world.get(ball!, Health)).toEqual({ hp: 2 });
 
       // The handler came with the plugin, and dispatch is typed from it.
       const healed: Exit.Exit<number, NothingToHeal | Action.InvalidPayload> =
@@ -148,7 +161,7 @@ describe("plugins", () => {
       // So is the tick's failure type.
       const exit: Exit.Exit<void, Fragile> = app.tickExit(1);
       expect(Exit.isSuccess(exit)).toBe(true);
-    });
+    }).pipe(Effect.scoped, Effect.runSync);
   });
 
   it("can be combined with systems and handlers the app defines itself", () => {

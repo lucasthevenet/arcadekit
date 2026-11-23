@@ -5,11 +5,14 @@ import { describe, expect, it } from "vitest";
 import {
   Action,
   App,
+  Commands,
   Component,
   EcsWorld,
   Field,
+  Plugin,
   Query,
   System,
+  World,
 } from "../src/index";
 import type { Entity } from "../src/index";
 
@@ -381,29 +384,39 @@ describe("a query, which writes only what it names, in an app", () => {
         const Watch = System.tick("Watch", function* () {
           turned.push((yield* Turned).entities().length);
         });
+        const Seed = Plugin.make("rd/Seed", {
+          setup: Effect.gen(function* () {
+            const commands = yield* Commands.spawns(Position, Velocity);
+            for (let n = 0; n < 4; n++) {
+              commands.spawn(
+                Position.of({ x: n, y: 0 }),
+                Velocity.of({ x: n, y: 0 })
+              );
+            }
+          }),
+        });
         const app = yield* App.make(
-          App.define({ systems: [Move, Watch], handlers: [survey] }),
+          App.define({
+            plugins: [Seed],
+            systems: [Move, Watch],
+            handlers: [survey],
+          }),
           { checkpointEvery: 1 }
         );
-        for (let n = 0; n < 4; n++) {
-          app.world.spawn(
-            Position.of({ x: n, y: 0 }),
-            Velocity.of({ x: n, y: 0 })
-          );
-        }
+        const world = yield* app.read(World);
         app.tick(1);
         app.tick(1);
         app.tick(1);
         // The system reads the velocities every tick, raw, and the one
         // that watches them is left in peace after its first look.
         expect(turned).toEqual([4, 0, 0]);
-        const before = app.world.hash();
+        const before = world.hash();
         expect(app.dispatch(Survey, { limit: 2 })).toEqual(
           Exit.fail(new TooFast())
         );
-        expect(app.world.hash()).toBe(before);
+        expect(world.hash()).toBe(before);
         expect(app.dispatch(Survey, { limit: 5 })).toEqual(Exit.succeed(3));
-        expect(app.world.hash()).not.toBe(before);
+        expect(world.hash()).not.toBe(before);
         app.tick(1);
         expect(turned.at(-1)).toBe(0);
       })

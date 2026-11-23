@@ -61,11 +61,13 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ handlers: [go] }));
-        const read = yield* Effect.gen(function* () {
-          const phase = yield* Phase;
-          const weather = yield* Weather;
-          return [phase.value, phase.next, weather.value, weather.is("wet")];
-        }).pipe(Effect.provideService(World, app.world));
+        const read = yield* app.read(
+          Effect.gen(function* () {
+            const phase = yield* Phase;
+            const weather = yield* Weather;
+            return [phase.value, phase.next, weather.value, weather.is("wet")];
+          })
+        );
         expect(read).toEqual(["menu", undefined, "wet", true]);
         expect(Phase.values).toEqual(["menu", "playing", "paused"]);
         expect(Phase.name).toBe("st/Phase");
@@ -146,22 +148,23 @@ describe("a state", () => {
             handlers: [go],
           })
         );
+        const world = yield* app.read(World);
         // Asking for the state a game is in already changes nothing at all.
-        const untouched = app.world.hash();
+        const untouched = world.hash();
         app.dispatch(Go, { to: "menu", refuse: false });
-        expect(app.world.hash()).toBe(untouched);
+        expect(world.hash()).toBe(untouched);
         app.tick(1);
-        const before = app.world.hash();
+        const before = world.hash();
         expect(
           Exit.isFailure(app.dispatch(Go, { to: "playing", refuse: true }))
         ).toBe(true);
-        expect(app.world.hash()).toBe(before);
+        expect(world.hash()).toBe(before);
         app.dispatch(Go, { to: "menu", refuse: false });
-        expect(app.world.hash()).toBe(before);
+        expect(world.hash()).toBe(before);
         app.tick(1);
         expect(ran).toEqual([]);
         app.dispatch(Go, { to: "playing", refuse: false });
-        expect(app.world.hash()).not.toBe(before);
+        expect(world.hash()).not.toBe(before);
         app.tick(1);
         expect(ran).toEqual(["Entered"]);
       })
@@ -455,10 +458,17 @@ describe("a run condition", () => {
           Emit,
           Look,
         ];
-        const app = yield* App.make(App.define({ systems, handlers: [go] }));
-        for (let n = 0; n < 3; n++) {
-          app.world.spawn(Ball.of({ x: 0 }));
-        }
+        const Three = Plugin.make("st/Three", {
+          setup: Effect.gen(function* () {
+            const commands = yield* Commands.spawns(Ball);
+            for (let n = 0; n < 3; n++) {
+              commands.spawn(Ball.of({ x: 0 }));
+            }
+          }),
+        });
+        const app = yield* App.make(
+          App.define({ plugins: [Three], systems, handlers: [go] })
+        );
         const tick = () => {
           app.tick(1);
           app.frame(0);
@@ -705,6 +715,11 @@ describe("hooks", () => {
         const looked = yield* App.make(App.define({ systems: [Late] }));
         const drawn = yield* App.make(App.define({ systems: [Draw] }));
         const unseen = yield* App.make(App.define({ systems: [] }));
+        const [lookedWorld, drawnWorld, unseenWorld] = [
+          yield* looked.read(World),
+          yield* drawn.read(World),
+          yield* unseen.read(World),
+        ];
         for (let tick = 1; tick <= 5; tick++) {
           looked.tick(1);
           drawn.tick(1);
@@ -712,12 +727,12 @@ describe("hooks", () => {
           unseen.tick(1);
           // A look changes nothing from the frame, which a replay doesn't
           // run.
-          expect(drawn.world.hash()).toBe(unseen.world.hash());
+          expect(drawnWorld.hash()).toBe(unseenWorld.hash());
           // And from the tick, until a value is asked for in tick 3.
-          expect(looked.world.hash() === unseen.world.hash()).toBe(tick < 3);
+          expect(lookedWorld.hash() === unseenWorld.hash()).toBe(tick < 3);
         }
         // Asked for in tick 3: entered, and moved, at the start of tick 4.
-        expect({ ...looked.world.singleton(Phase) }).toEqual({
+        expect({ ...lookedWorld.singleton(Phase) }).toEqual({
           value: "playing",
           next: null,
           entered: 1,
@@ -820,13 +835,14 @@ describe("a state in a save", () => {
       (yield* Commands.spawns(Ball)).spawn(Ball.of({ x: 0 }));
     }),
   });
-  const built = (app: App.Any): string[] => {
-    const out: string[] = [];
-    app.world.view(Query.all(Built)).each((row) => {
-      out.push(row.level);
+  const built = (app: App.Any) =>
+    Effect.map(app.read(Query.all(Built)), (view) => {
+      const out: string[] = [];
+      view.each((row) => {
+        out.push(row.level);
+      });
+      return out;
     });
-    return out;
-  };
 
   it("is saved with what was asked for, and its first hooks do not run again", () => {
     run(
@@ -838,10 +854,11 @@ describe("a state in a save", () => {
         const fresh = yield* App.make(App.define({ plugins: [Rules] }), {
           checkpointEvery: 1,
         });
-        expect(fresh.world.hash()).toBe(app.world.hash());
+        const world = yield* app.read(World);
+        expect((yield* fresh.read(World)).hash()).toBe(world.hash());
         app.tick(1);
-        expect(built(app)).toEqual(["one"]);
-        expect(app.world.hash()).not.toBe(fresh.world.hash());
+        expect(yield* built(app)).toEqual(["one"]);
+        expect(world.hash()).not.toBe((yield* fresh.read(World)).hash());
         // Saved with a move asked for and not made yet.
         app.dispatch(Next, {});
         const save = app.save();
@@ -856,7 +873,8 @@ describe("a state in a save", () => {
           save: read.value,
           checkpointEvery: 1,
         });
-        expect(loaded.world.hash()).toBe(app.world.hash());
+        const loadedWorld = yield* loaded.read(World);
+        expect(loadedWorld.hash()).toBe(world.hash());
         for (const each of [app, loaded]) {
           each.tick(1);
           each.tick(1);
@@ -864,10 +882,10 @@ describe("a state in a save", () => {
           each.tick(1);
         }
         // Level one was not built again; two and three were built once.
-        expect(built(loaded)).toEqual(["one", "two", "three"]);
-        expect(loaded.world.hash()).toBe(app.world.hash());
+        expect(yield* built(loaded)).toEqual(["one", "two", "three"]);
+        expect(loadedWorld.hash()).toBe(world.hash());
         let x = 0;
-        loaded.world.view(Balls).each((ball) => {
+        (yield* loaded.read(Query.all(Ball))).each((ball) => {
           x = ball.x;
         });
         expect(x).toBe(3);
@@ -880,7 +898,7 @@ describe("a state in a save", () => {
             checkpointEvery: 1,
           })
         );
-        expect(again.world.hash()).toBe(app.world.hash());
+        expect((yield* again.read(World)).hash()).toBe(world.hash());
       })
     );
   });
@@ -888,18 +906,20 @@ describe("a state in a save", () => {
   it("refuses to give a value it no longer has, which a save from before could hold", () => {
     const Before = State.define("st/Door", ["open", "shut", "ajar"]);
     const After = State.define("st/Door", ["open", "shut"]);
+    const Prop = Action.define("st/Prop", Schema.Struct({}));
+    const prop = Action.handler(Prop, function* () {
+      (yield* Before.sets).set("ajar");
+    });
     run(
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({}));
-        State.handleOf(app.world, Before).set("ajar");
+        const app = yield* App.make(App.define({ handlers: [prop] }));
+        expect(app.dispatch(Prop, {})).toEqual(Exit.void);
         app.tick(1);
         const save = app.save();
         assert(Exit.isSuccess(save));
         const loaded = yield* App.make(App.define({}), { save: save.value });
         const exit = yield* Effect.exit(
-          Effect.map(After, (door) => door.value).pipe(
-            Effect.provideService(World, loaded.world)
-          )
+          loaded.read(Effect.map(After, (door) => door.value))
         );
         assert(Exit.isFailure(exit));
         expect(String(Cause.squash(exit.cause))).toContain(
@@ -924,7 +944,7 @@ describe("a state in a save", () => {
           save: save.value,
         });
         loaded.tick(1);
-        expect({ ...loaded.world.singleton(Level) }).toEqual({
+        expect({ ...(yield* loaded.read(World)).singleton(Level) }).toEqual({
           value: "two",
           next: null,
           entered: 1,
