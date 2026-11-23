@@ -1,7 +1,7 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Layer } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { App, Build, Save, World } from "../src/index";
+import { App, Build, Plugin, Save, World } from "../src/index";
 import { Session } from "../src/net/index";
 import { CoinGame, DELTA, Drop, game } from "./peers";
 
@@ -149,6 +149,39 @@ describe("a session", () => {
         expect([both.ahead, both.delay]).toEqual([3, 1]);
       })
     );
+  });
+
+  it("closes its app when it is closed, and at once the one made for options that describe no game", () => {
+    const held: string[] = [];
+    const Held = Plugin.make("se/Held", {
+      layer: Layer.effectDiscard(
+        Effect.acquireRelease(
+          Effect.sync(() => held.push("acquired")),
+          () => Effect.sync(() => held.push("released"))
+        )
+      ),
+    });
+    const Holding = App.define({ plugins: [Held] });
+    const session = Effect.runSync(Session.make(Holding, alone));
+    expect(held).toEqual(["acquired"]);
+    // Its app is closed with it, and by nothing else.
+    // @ts-expect-error a session's app has no close: the session's closes it
+    void session.app.close;
+    Effect.runSync(session.close);
+    expect(held).toEqual(["acquired", "released"]);
+
+    held.length = 0;
+    expect(() =>
+      Effect.runSync(Session.make(Holding, { ...alone, delay: 1.5 }))
+    ).toThrow(/A session's delay is a whole number of ticks/u);
+    expect(held).toEqual(["acquired", "released"]);
+
+    // A sync test's too.
+    held.length = 0;
+    const test = Effect.runSync(Session.syncTest(Holding));
+    test.tick(DELTA);
+    Effect.runSync(test.close);
+    expect(held).toEqual(["acquired", "released"]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Layer, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -483,8 +483,8 @@ describe("a replay that checks itself", () => {
               coins: (yield* app.read(Lying)).count(),
               reason,
             };
-            // It is a live app of the game: it takes the game's actions,
-            // and no other.
+            // The replay closed it, and it is an app of the game all the
+            // same: it takes the game's actions, and no other.
             const dropped = app.dispatch(Drop, { value: 1 });
             // @ts-expect-error the game has no handler for `Add`
             expect(() => app.dispatch(Add, { by: 1 })).toThrow(/No handler/);
@@ -505,6 +505,43 @@ describe("a replay that checks itself", () => {
     expect(looked.hash).not.toBe(recorded.hashes[19]);
     expect(looked.dropped).toBe(true);
     expect(looked.after).toBe(looked.coins + 1);
+  });
+
+  it("closes the app it stopped in, and leaves the app of one that went the way the game went to its caller", () => {
+    const held: string[] = [];
+    const Held = Plugin.make("rp/Held", {
+      layer: Layer.effectDiscard(
+        Effect.acquireRelease(
+          Effect.sync(() => held.push("acquired")),
+          () => Effect.sync(() => held.push("released"))
+        )
+      ),
+    });
+    const heldGame = (faulty: Faulty) =>
+      App.define({
+        plugins: [startingWith([]), Held],
+        systems: [Drift, faulty],
+        handlers: [drop, take],
+      });
+    const recorded = record({ ticks: 30, checkpointEvery: 1 });
+    const stopped = stoppedBy(
+      Journal.replay(recorded.recording, heldGame(fault(10, "lose")), {
+        checkpointEvery: 1,
+      })
+    );
+    expect(held).toEqual(["acquired", "released"]);
+    // Closed, it is there to read.
+    const reason = stopped.reason as Journal.HashMismatch;
+    expect(Effect.runSync(stopped.app.read(World)).hash()).toBe(reason.actual);
+
+    held.length = 0;
+    const app = Effect.runSync(
+      Journal.replay(recorded.recording, heldGame(fault(-1, "nudge")))
+    );
+    expect(app.time.tick).toBe(30);
+    expect(held).toEqual(["acquired"]);
+    Effect.runSync(app.close);
+    expect(held).toEqual(["acquired", "released"]);
   });
 
   it("would otherwise run on until an action happened to be refused, or to the end", () => {
