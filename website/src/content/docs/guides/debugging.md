@@ -15,16 +15,13 @@ import { Effect } from "effect";
 const Game = Plugin.make("game/Game", {});
 
 Browser.runMain(
-  Driver.run(
-    App.make(App.define({ plugins: [Game] })).pipe(
-      Effect.tap((app) =>
-        Effect.sync(() => {
-          Object.assign(globalThis, { app });
-        })
-      )
-    ),
-    { hz: 60 }
-  ),
+  Driver.run(App.make(App.define({ plugins: [Game] })), {
+    hz: 60,
+    ready: (app) =>
+      Effect.sync(() => {
+        Object.assign(globalThis, { app });
+      }),
+  }),
   { target: document.querySelector("canvas")! }
 );
 ```

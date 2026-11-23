@@ -5,7 +5,7 @@
  * No Effect dependency.
  */
 import { ChangeLog } from "./changes";
-import type { ChangeCursor, ChangeKind } from "./changes";
+import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
 import { INDEX_MASK, makeAccessor } from "./component";
 import type {
   Accessor,
@@ -37,6 +37,40 @@ export const describeSpec = (spec: QuerySpec): string => {
 };
 
 /**
+ * Renames a component in saved changes: the changes of it, and the queries
+ * that name it in their readers' keys, so each reader goes on from its place.
+ * @internal
+ */
+export const renameInChanges = (
+  saved: readonly SavedChanges[],
+  from: string,
+  to: string
+): SavedChanges[] => {
+  const renamed = (key: string): string => {
+    // A query's reader is `${who}\n${describeSpec(spec)}`; a removal's has no query.
+    const at = key.indexOf("\n");
+    return at === -1
+      ? key
+      : key.slice(0, at) +
+          key.slice(at).replaceAll(
+            /\(([^)]*)\)/g,
+            (_, names: string) =>
+              `(${names
+                .split(",")
+                .map((name) => (name === from ? to : name))
+                .join(",")})`
+          );
+  };
+  return saved.map((changes) => ({
+    ...changes,
+    component: changes.component === from ? to : changes.component,
+    readers: Object.fromEntries(
+      Object.entries(changes.readers).map(([key, read]) => [renamed(key), read])
+    ),
+  }));
+};
+
+/**
  * The components whose data a query hands to its loop, in the order the loop
  * receives them.
  *
@@ -65,9 +99,6 @@ export type Terms = readonly ComponentDef[];
  * - A term that `readDefs` doesn't name is written. In a description written
  *   by hand, `readDefs` makes an assignment throw, and the compiler still
  *   allows it. `Query.writes` makes one the compiler checks.
- * - `World.view` keeps one view per description object. Keep a description
- *   in a constant: a new object on every call makes a new view, and the world
- *   keeps every one.
  *
  * @category Models
  */
@@ -296,13 +327,6 @@ export class QueryView<D extends Terms = Terms> {
       }
       return set;
     };
-    for (const def of spec.readDefs ?? []) {
-      if (!spec.terms.includes(def)) {
-        throw new Error(
-          `A query says it only reads "${def.name}", which is not one of its terms: ${spec.terms.map((term) => term.name).join(", ") || "it has none"}.`
-        );
-      }
-    }
     for (const def of spec.terms) {
       this.termRead.push(spec.readDefs?.includes(def) === true);
       if (def.storage === "table") {

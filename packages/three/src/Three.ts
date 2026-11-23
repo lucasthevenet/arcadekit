@@ -61,12 +61,13 @@ import type { World } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Scope } from "effect";
 import {
   BufferGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
   InstancedMesh,
+  LoadingManager,
   PerspectiveCamera,
   SRGBColorSpace,
   Texture,
@@ -473,6 +474,7 @@ interface Rgb {
   readonly r: Numbers;
   readonly g: Numbers;
   readonly b: Numbers;
+  readonly space: Numbers;
 }
 interface Xyzw extends Xyz {
   readonly w: { readonly [row: number]: number };
@@ -1044,6 +1046,77 @@ export const texture = (
   );
 };
 
+/**
+ * Makes a Three.js `LoadingManager` that serves the files given, fetched
+ * through `Assets.Loader`, to any Three.js loader made with it. Give it to a
+ * loader that fetches for itself, such as a decoder of compressed models or
+ * the FBX loader, so that a test's in-memory files serve that loader too, and
+ * leaving a level while it loads cancels its requests.
+ *
+ *   const fbx = (url: string, textures: ReadonlyArray<string>) =>
+ *     Assets.make(url, (data) =>
+ *       Effect.map(Three.manager(textures), (manager) =>
+ *         new FBXLoader(manager).parse(data.slice().buffer, "")
+ *       )
+ *     )
+ *
+ * **Details**
+ *
+ * - The files are fetched in parallel, and the manager is made once they have
+ *   all arrived. A missing file fails with `Assets.AssetFailed`, which names it.
+ * - A loader asks for a file by the URL it resolved: its path, then the name it
+ *   was given. The manager matches that URL exactly against the files given.
+ * - The files are held until the scope closes.
+ *
+ * **Gotchas**
+ *
+ * - A loader made with it that asks for any other URL is refused with an error
+ *   that names the URL, which the loader passes on as its own. Add the URL to
+ *   the files. A `blob:` or `data:` URL is served as it is, since it holds its
+ *   bytes.
+ *
+ * @category Constructors
+ */
+export const manager = (
+  files: ReadonlyArray<string>
+): Effect.Effect<LoadingManager, Assets.AssetFailed, Scope.Scope> =>
+  Effect.gen(function* () {
+    const loader = yield* Assets.Loader;
+    const fetched = yield* Effect.forEach(files, loader.bytes, {
+      concurrency: "unbounded",
+    });
+    const served = yield* Effect.acquireRelease(
+      Effect.sync(
+        () =>
+          new Map(
+            files.map((url, i) => [
+              url,
+              // A copy: a Blob wants bytes that nothing else can change.
+              URL.createObjectURL(new Blob([fetched[i]!.slice()])),
+            ])
+          )
+      ),
+      (urls) =>
+        Effect.sync(() => {
+          for (const url of urls.values()) {
+            URL.revokeObjectURL(url);
+          }
+        })
+    );
+    return new LoadingManager().setURLModifier((url) => {
+      const blob = served.get(url);
+      if (blob !== undefined) {
+        return blob;
+      }
+      if (url.startsWith("blob:") || url.startsWith("data:")) {
+        return url;
+      }
+      throw new Error(
+        `A Three.js loader asked for "${url}", which is not one of the files its manager serves. Add it to them.`
+      );
+    });
+  });
+
 // --- instances -------------------------------------------------------------------
 
 /**
@@ -1085,12 +1158,13 @@ export interface Look {
  */
 export interface InstancesShared extends Which {
   /**
-   * Which of arcadekit's colour components gives each instance its entity's
-   * colour, which multiplies the material's own. An entity without it, or with
-   * the other colour component, is drawn in the material's own colour, as if
-   * its colour were white.
+   * `Color.Rgb`, for each instance to have its entity's colour, which
+   * multiplies the material's own. An entity without one is drawn in the
+   * material's own colour, as if its colour were white.
    *
-   *   Three.instances("game/Rocks", { of: Rock, transform: Transform3d, geometry, material, color: Color.Srgb })
+   *   Three.instances("game/Rocks", { of: Rock, transform: Transform3d, geometry, material, color: Color.Rgb })
+   *
+   * Each entity's colour is drawn by the space its `space` names:
    *
    * - `Color.Srgb` is a colour as a hex code writes it. The renderer works in
    *   linear colour, so a lookup table converts each number: a hex code's byte
@@ -1103,9 +1177,10 @@ export interface InstancesShared extends Which {
    *
    * With `smooth`, a colour is interpolated between two ticks like a position,
    * however far it changes, since `snap` doesn't apply to it. It is
-   * interpolated in the game's numbers, then converted.
+   * interpolated in the game's numbers, then converted by the space it has at
+   * the later tick.
    */
-  readonly color?: typeof Color.Srgb | typeof Color.Linear;
+  readonly color?: typeof Color.Rgb;
   /**
    * How many instances the mesh has room for at first. Defaults to 256. The
    * room doubles when it runs out, which is the only time the system
@@ -1179,8 +1254,6 @@ class Instances implements Kept {
   /** The instances' colours, three numbers each, for a kind that has them. */
   private colors: Float32Array | undefined;
   private readonly colorRange = { start: 0, count: 0 };
-  /** Whether a colour's numbers are converted from sRGB, or passed through. */
-  private readonly curved: boolean;
   private readonly name: string;
   /**
    * The four loops of the kind's transform as the system passes them to its
@@ -1207,7 +1280,6 @@ class Instances implements Kept {
     this.smooth = smoothOf(options);
     this.capacity = Math.max(1, Math.floor(options.capacity ?? 256));
     this.array = new Float32Array(this.capacity * 16);
-    this.curved = options.color !== Color.Linear;
     const own: Record<Loop, Columns> = isFlat(options)
       ? {
           placed: this.placedFlat,
@@ -1348,6 +1420,7 @@ class Instances implements Kept {
   ): void {
     // Read after the loop, which may have made more room for both.
     const out = this.colors!;
+    const { space } = color;
     let { r, g, b } = color;
     if (this.smooth !== undefined) {
       ({
@@ -1357,23 +1430,21 @@ class Instances implements Kept {
       } = this.smooth.color.run(start, end, r, g, b, entities));
     }
     let at = from * 3;
-    if (!this.curved) {
-      // The renderer's own numbers, as they are.
-      for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i++) {
+      if (space[i] === Color.Linear) {
         out[at] = r[i]!;
         out[at + 1] = g[i]!;
         out[at + 2] = b[i]!;
         at += 3;
+        continue;
       }
-      return;
-    }
-    // A hex code's numbers, each looked up in the table at the nearest of
-    // its steps. One that is off either end of it, or NaN, is no colour.
-    for (let i = start; i < end; i++) {
+      // A hex code's numbers, each looked up in the table at the nearest of
+      // its steps. One that is off either end of it, or NaN, is no colour.
       const u = r[i]! * STEPS + 0.5;
       const v = g[i]! * STEPS + 0.5;
       const w = b[i]! * STEPS + 0.5;
       if (
+        space[i] !== Color.Srgb ||
         !(
           u >= 0 &&
           u < STEPS + 1 &&
@@ -1383,7 +1454,7 @@ class Instances implements Kept {
           w < STEPS + 1
         )
       ) {
-        this.refuse(entities[i]!, r[i]!, g[i]!, b[i]!);
+        this.refuse(entities[i]!, r[i]!, g[i]!, b[i]!, space[i]!);
       }
       out[at] = LINEAR[u | 0]!;
       out[at + 1] = LINEAR[v | 0]!;
@@ -1392,9 +1463,19 @@ class Instances implements Kept {
     }
   }
 
-  private refuse(entity: Entity, r: number, g: number, b: number): never {
+  private refuse(
+    entity: Entity,
+    r: number,
+    g: number,
+    b: number,
+    space: number
+  ): never {
+    const why =
+      space === Color.Srgb
+        ? "each number of a colour in Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is in Color.Linear, the renderer's own numbers, which are drawn as they are."
+        : `its space is ${space}, and a colour's space is Color.Srgb (${Color.Srgb}) or Color.Linear (${Color.Linear}).`;
     throw new Error(
-      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: each number of a Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is a Color.Linear, the renderer's own numbers, which are drawn as they are.`
+      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: ${why}`
     );
   }
 

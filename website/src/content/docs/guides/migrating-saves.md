@@ -38,7 +38,7 @@ const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
 - An older save is migrated one version at a time, by the migration `from` each version on the way.
 - A newer save is refused with `"newer version"`.
 
-`Migrate.renameComponent` renames the component in the save's tables, sparse sets and singletons, but not its entries under `Save.VISITS`, what change queries had yet to visit. After the load, every change query on the renamed component starts over. Its first visit covers every entity with the component, so an `added` query sees all of them as added.
+`Migrate.renameComponent` renames the component in the save's tables, sparse sets and singletons, and in its entries under `Save.VISITS`, what change queries had yet to visit. After the load, a change query on the renamed component goes on from where the same query on the old name was.
 
 ## Read a save's contents
 

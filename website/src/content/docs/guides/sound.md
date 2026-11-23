@@ -42,7 +42,7 @@ Browser.runMain(
 - `Sound.cues` makes a frame-stage system. Each frame, it plays the cues for the events since the last frame. Like every frame system, it sees each event once, however many ticks ran in between.
 - `Sound.on(event, cue)` maps an event to a cue. The cue is a name, a name with a `volume` and a `rate`, or a function of the payload that returns either one or nothing. `rate` is the playback speed, so it also sets the pitch. A volume below 0 counts as 0. Several mappings can share an event, and each one receives it.
 - A cue requested several times in one frame plays once, at the loudest requested volume. Forty coins caught in one tick make one sound, not forty. The same holds across systems. If a plugin and your game both play the same cue in a frame, it plays once.
-- Cues play after all of a frame's systems have run, in the order they were first requested. A `"postFrame"` system that `Sound.plugin` provides plays them.
+- Cues play after all of a frame's systems have run, in the order they were first requested. A `"postFrame"` system that `Sound.plugin` provides plays them. A frame that fails plays nothing it requested, cues or music, and the next frame starts from nothing.
 - A cue plays once, to its end.
 - Events emitted by a refused action are rolled back with everything else, so they are never heard.
 

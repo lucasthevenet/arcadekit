@@ -116,13 +116,14 @@ export const capture = (
  * then. Its log goes back to the length it had. Call it between ticks, with
  * a moment of this app: it throws otherwise.
  *
- * The game plays on from there. The frame and input stages hear every event
- * it emits from then on, including one they heard before the rewind. Of the
- * future the rewind gives up, they hear nothing they hadn't read already.
+ * The game plays on from there. The frame and input stages, and code outside
+ * the game that reads an event, hear every event it emits from then on,
+ * including one they heard before the rewind. Of the future the rewind gives
+ * up, they hear nothing they hadn't read already.
  *
  * With `again`, the game goes back to run the same ticks again with what is
- * now known of them, as a session that runs ahead does. The two stages then
- * hear each event once. An event a tick emits again with the same payload
+ * now known of them, as a session that runs ahead does. Each of them then
+ * hears each event once. An event a tick emits again with the same payload
  * isn't heard twice, and only what the tick now does differently is heard.
  *
  * **Gotchas**

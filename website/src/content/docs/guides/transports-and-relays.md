@@ -76,6 +76,7 @@ When the socket drops, the game goes on:
 - The transport connects again, waiting longer each time, up to two seconds. What the session sends meanwhile is buffered.
 - The relay tells the room the peer joined again, and tells the peer who is there. Every session then sends again what some peer hasn't heard, and the game continues where it was.
 - While a peer is gone, the others wait for it. `connected.away` lists the peers the relay said left the room and that haven't joined it again. Show that list to the player.
+- They wait for as long as `Transport.connect(session, { awayFor })` says, in milliseconds, 60,000 by default. Then the tick throws `Transport.Left`, naming the peers that stayed away, and the driver stops.
 
 The game ends for that peer when the socket closes for good: when it never opened, when the relay refused it, or when it couldn't connect again within `reconnectFor`. From then on, `send` and `receive` throw `Transport.Closed`, so the next tick fails and the driver stops. The error carries the close code and the relay's reason, such as `"name taken"` when the peer's name is already in the room. While the transport connects again, it tries a taken name again, since the relay may not have seen the old socket close yet.
 

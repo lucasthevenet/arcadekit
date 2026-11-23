@@ -69,16 +69,12 @@ export class Listener<P> implements EventHandle<P> {
    */
   echo: Map<number, P[]> | undefined;
 
-  /** For outside code: how many times the game had gone back when it last read. */
-  rewinds: number;
-
   constructor(
     outbox: Outbox,
     def: EventDef<P>,
     stage: Stage | undefined,
     after: Told
   ) {
-    this.rewinds = outbox.rewinds;
     this.outbox = outbox;
     this.def = def;
     this.stage = stage;
@@ -143,8 +139,6 @@ const same = (a: unknown, b: unknown): boolean => {
  */
 export class Outbox {
   private seq = 0;
-  /** How many times the game went back. */
-  rewinds = 0;
   /** The last that was told. */
   private tail: Told = {
     seq: 0,
@@ -164,6 +158,11 @@ export class Outbox {
     string,
     Map<object, Listener<unknown>>
   >();
+  /** The listeners of outside code, held only while outside code holds them. */
+  private readonly outsiders = new Set<WeakRef<Listener<unknown>>>();
+  private readonly forgotten = new FinalizationRegistry<
+    WeakRef<Listener<unknown>>
+  >((outsider) => this.outsiders.delete(outsider));
   /** What was told since the last tick ended. */
   private since: Emitted[] = [];
   /** What was told from the end of the tick before the last to the end of the last. */
@@ -235,6 +234,12 @@ export class Outbox {
     for (const mine of this.listeners.values()) {
       yield* mine.values();
     }
+    for (const outsider of this.outsiders) {
+      const listener = outsider.deref();
+      if (listener !== undefined) {
+        yield listener;
+      }
+    }
   }
 
   /**
@@ -262,17 +267,15 @@ export class Outbox {
 
   /** Returns a place for outside code, which hears what is told from now on. */
   outside<P>(def: EventDef<P>): Listener<P> {
-    return new Listener(this, def, undefined, this.tail);
+    const listener = new Listener(this, def, undefined, this.tail);
+    const outsider = new WeakRef<Listener<unknown>>(listener);
+    this.outsiders.add(outsider);
+    this.forgotten.register(listener, outsider);
+    return listener;
   }
 
   /** Returns what was told of a listener's event since it last read. */
   read<P>(listener: Listener<P>): readonly P[] {
-    // Outside code, which nothing keeps track of, hears what is told from a
-    // rewind on. A system of a stage was moved by the rewind.
-    if (listener.stage === undefined && listener.rewinds !== this.rewinds) {
-      listener.rewinds = this.rewinds;
-      listener.after = this.tail;
-    }
     let told = listener.after;
     if (told.next === undefined) {
       listener.after = told;
@@ -333,7 +336,6 @@ export class Outbox {
    * would, and every event is new.
    */
   rewound(to: Told, again: boolean): void {
-    this.rewinds++;
     this.since = [];
     this.last = {};
     const first = to.dead ? undefined : to.next;

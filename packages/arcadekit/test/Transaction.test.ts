@@ -321,6 +321,17 @@ describe("a transaction of a world", () => {
     expect(() => world.rollback()).toThrow(/no transaction/);
   });
 
+  it("changes nothing when it is ended with none in progress", () => {
+    const { world } = populated();
+    world.begin();
+    world.commit();
+    world.random.next();
+    const before = world.hash();
+    expect(() => world.rollback()).toThrow(/no transaction/);
+    expect(() => world.commit()).toThrow(/no transaction/);
+    expect(world.hash()).toBe(before);
+  });
+
   it("starts each transaction from what the last one left", () => {
     const { entities, world } = populated();
     const [first] = entities;
