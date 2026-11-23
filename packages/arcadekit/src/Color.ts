@@ -1,7 +1,7 @@
 /**
- * What colour an entity is: the components a renderer reads to draw each
- * entity in a colour of its own. A colour is the game's to say, as where a
- * thing is, so the rules write it and a renderer only reads it.
+ * The components that give each entity a colour of its own, which a renderer
+ * reads to draw it. An entity's colour is the game's, as its position is, so
+ * the game's systems write it and a renderer only reads it.
  *
  *   commands.spawn(
  *     Rock,
@@ -9,35 +9,38 @@
  *     Color.Srgb.of({ r: 0xff / 255, g: 0x61 / 255, b: 0x88 / 255 })
  *   )
  *
- * They are ordinary components: columns of 32-bit floats that the game's
- * systems write, and that are saved, hashed and replayed. Nothing here draws:
- * `@arcadekit/three` draws an instance in its entity's colour when its kind is
- * given one, `Three.instances(name, { ..., color: Color.Srgb })`.
+ * They are ordinary components of three 32-bit floats. The game's systems
+ * write them, and a save, the world's hash and a replay hold them. Nothing
+ * here draws. `@arcadekit/three` draws an instance in its entity's colour
+ * when its kind names one of them:
+ * `Three.instances(name, { ..., color: Color.Srgb })`.
  *
- * There are two, for the two ways of writing a colour's numbers, and which one
- * an entity has says which its numbers are:
+ * There are two, one for each way of writing a colour's numbers. The one an
+ * entity has says how to read its numbers:
  *
- * - `Srgb`, a colour as a hex code or a colour picker writes it, from 0 to 1.
- * - `Linear`, a renderer's own numbers, in which light adds up: any number,
- *   over 1 for brighter than white.
+ * - `Srgb` holds a colour as a hex code or a colour picker writes it, each
+ *   number from 0 to 1.
+ * - `Linear` holds a renderer's own numbers, in which light adds up. A number
+ *   can be over 1, for a colour brighter than white.
  */
 import { Component, Field } from "./ecs/component";
 
 /**
- * An entity's colour as a hex code or a colour picker writes it: its `r`, `g`
- * and `b`, each from 0 to 1. `#ff6188` is an `r` of `0xff / 255`, a `g` of
- * `0x61 / 255` and a `b` of `0x88 / 255`. Added without a value, it is white.
+ * An entity's colour as a hex code or a colour picker writes it, with an `r`,
+ * a `g` and a `b` that each run from 0 to 1. `#ff6188` is an `r` of
+ * `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`. Added
+ * without a value, it is white.
  *
  * **When to use**
  *
- * Use for any colour a game picks, such as a team's. For one worked out as
- * light, or brighter than white, use `Color.Linear`.
+ * Use for any colour a game picks, such as a team's. For a colour worked out
+ * as light, or one brighter than white, use `Color.Linear`.
  *
  * **Gotchas**
  *
- * A number below 0 or over 1 is no colour, and the frame that draws it fails
- * with an error that names the entity. A byte, such as 255, is divided by 255
- * first.
+ * A number below 0 or over 1 is not a colour, and `@arcadekit/three` fails the
+ * frame that draws it with an error that names the entity. Divide a byte, such
+ * as 255, by 255 first.
  *
  * @category Components
  */
@@ -48,10 +51,11 @@ export const Srgb = Component.define(
 );
 
 /**
- * An entity's colour in a renderer's own numbers, linear sRGB, in which two
- * lights add up: the `r`, `g` and `b` of Three.js's `new Color("#ff6188")`.
- * Every number is one: over 1 is brighter than white, which a renderer with
- * bloom shows. Added without a value, it is white.
+ * An entity's colour in a renderer's own numbers, linear sRGB, in which the
+ * light of two sources adds up. Its `r`, `g` and `b` are those that Three.js's
+ * `new Color("#ff6188")` holds. A renderer takes each number as it is, and one
+ * over 1 is brighter than white, which a renderer with bloom shows. Added
+ * without a value, it is white.
  *
  * **When to use**
  *

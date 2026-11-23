@@ -1,10 +1,10 @@
 /**
- * The `arcadekit/Browser` entry point: everything only a page can use, namely
- * its display, input devices, images and sound, and the way a program starts in
- * it. It is the only entry point that imports a browser package, so a server, a
+ * Everything that only a page can use: its display, its input devices, its
+ * images and sound, and the way a program starts in it. `arcadekit/Browser`
+ * is the only entry point that imports a browser package, so a server, a
  * replay or a test of the game imports `arcadekit` alone.
  *
- *   import { App } from "arcadekit"
+ *   import { App, Driver } from "arcadekit"
  *   import * as Browser from "arcadekit/Browser"
  *
  *   Browser.runMain(Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }), {
@@ -12,11 +12,11 @@
  *     preventDefault: ["Space", "ArrowUp", "ArrowDown"],
  *   })
  *
- * `Browser.runMain` wraps the game in the platform's `runMain`, and provides
- * the page's display and devices to the whole program: the frame loop follows
- * `requestAnimationFrame`, the input stage reads the keyboard, the pointer and
- * gamepads, and when the page closes the game is interrupted and everything is
- * released.
+ * `Browser.runMain` runs the game with the platform's `runMain`, and provides
+ * the page's display and devices to the whole program. The frame loop
+ * follows `requestAnimationFrame`, and the input stage reads the keyboard,
+ * the pointer and gamepads. When the page closes, the game is interrupted and
+ * everything it holds is released.
  */
 import * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";
 import { Effect, Fiber, Layer } from "effect";
@@ -33,8 +33,9 @@ const describe = (error: unknown): string =>
 // --- the display ---------------------------------------------------------------
 
 /**
- * A page's display: a frame is due once per repaint (`requestAnimationFrame`),
- * and the game is hidden while the document is. It holds no state.
+ * A page's display, on which a frame is due once per repaint, with
+ * `requestAnimationFrame`, and the game is hidden while the document is. It
+ * holds no state.
  *
  * @category Services
  */
@@ -53,7 +54,7 @@ export const display: Driver.DisplayShape = {
 // --- the devices ---------------------------------------------------------------
 
 /**
- * The parts of a gamepad that are read; the browser's `Gamepad` satisfies it.
+ * The parts of a gamepad that are read. The browser's `Gamepad` satisfies it.
  *
  * @category Models
  */
@@ -84,8 +85,9 @@ export interface PointerTarget extends EventTarget {
  */
 export interface Options {
   /**
-   * The element the pointer is pressed on and measured from: `PointerX` and
-   * `PointerY` are CSS pixels from its top-left corner. Defaults to the window.
+   * The element the pointer is pressed on and measured from. `PointerX` and
+   * `PointerY` are CSS pixels from its top-left corner. Defaults to the
+   * window.
    */
   readonly target?: PointerTarget;
   /**
@@ -94,9 +96,9 @@ export interface Options {
    */
   readonly preventDefault?: readonly string[];
   /**
-   * How far from center a gamepad axis must move to register; anything closer
-   * reads as 0. Defaults to 0.1. Values are rounded to two decimals, so a stick
-   * held still doesn't report every frame.
+   * How far from center a gamepad axis must move to register. Anything
+   * closer reads as 0. Defaults to 0.1. Values are rounded to two decimals,
+   * so a stick held still doesn't report a change every frame.
    */
   readonly deadzone?: number;
   /** Where key presses and pointer movement are listened for. Defaults to the window. */
@@ -105,12 +107,12 @@ export interface Options {
   readonly gamepads?: () => ArrayLike<GamepadLike | null>;
   /**
    * The page's sounds for its whole lifetime, by the name a cue or a track is
-   * played with, as `Browser.layerSound` takes them: each is either the URL of
-   * a file, which is fetched and decoded, or a clip, such as
+   * played with, as `Browser.layerSound` takes them. Each is the URL of a
+   * file, which is fetched and decoded, or a clip, such as
    * `Browser.stream(url)` for a long piece of music. When omitted, the page
-   * still plays the sounds in a level's bundle, `Browser.sound`. `false` means
-   * no sound at all: no audio context is created, and the game is told that
-   * nothing is heard.
+   * still plays the sounds in a level's bundle, made with `Browser.sound`.
+   * `false` means no sound at all. No audio context is created, and the game
+   * is told that nothing is heard.
    */
   readonly sounds?: Readonly<Record<string, string | Sound.Clip>> | false;
   /** The master volume. Defaults to 1, the volume the game requests. */
@@ -302,6 +304,8 @@ const listen = (
  * Returns a layer that provides a page's display and input devices to a whole
  * program.
  *
+ * **Details**
+ *
  * - The frame loop follows `requestAnimationFrame`, and pauses while the
  *   document is hidden.
  * - A key's code is its `KeyboardEvent.code`. A held key counts as pressed
@@ -313,18 +317,18 @@ const listen = (
  * - Mouse buttons held together are tracked individually, even though the page
  *   reports every press but the first, and every release but the last, as
  *   moves.
- * - Gamepads are read when the app samples, once per tick. Unplugging one
- *   releases all its inputs.
+ * - Gamepads are read when the input stage samples the devices, once before
+ *   each tick. Unplugging one releases all its inputs.
  * - An asset's path is read against the document's base, its `<base href>`,
  *   as `fetch` reads it, unless a loader of the game's own, such as
  *   `Assets.layerMemory`, is provided around this layer.
- * - The devices are listened to from when `App.make` starts listening until
- *   the scope the app was made in closes, wherever the layer is provided. Each
- *   app listens for itself. Devices read after that scope has closed throw, and
- *   say so.
- * - Its sound, unless `sounds: false`, is that of `Browser.layerSound`: opened
- *   by `Sound.plugin` in the scope the app is made in, wherever the layer is
- *   provided, and shared by the apps made under it.
+ * - Each app listens to the devices for itself, from when `App.make` starts
+ *   listening until the scope the app was made in closes, wherever the layer
+ *   is provided. Reading the devices after that scope has closed throws, with
+ *   an error that says so.
+ * - Unless `sounds` is `false`, its sound is that of `Browser.layerSound`.
+ *   `Sound.plugin` opens it in the scope the app is made in, wherever the
+ *   layer is provided, and the apps made under the layer share it.
  *
  * @category Layers
  */
@@ -368,7 +372,7 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
 // --- sound -----------------------------------------------------------------------
 
 /**
- * The parts of a page's audio that are used; the browser's `AudioContext`
+ * The parts of a page's audio that are used. The browser's `AudioContext`
  * satisfies it.
  *
  * @category Models
@@ -404,7 +408,7 @@ export interface AudioLike {
 }
 
 /**
- * The parts of a streamed track's player that are used; an `<audio>` element
+ * The parts of a streamed track's player that are used. An `<audio>` element
  * satisfies it.
  *
  * @category Models
@@ -421,11 +425,11 @@ class Streamed {
 }
 
 /**
- * Makes a streamed track: a `Sound.Clip` that holds only its file's URL. Played
- * on a channel, the page fetches and decodes it progressively, while a file
- * given by URL, and `Browser.sound`, are fetched whole and kept decoded: a long
- * piece of music takes tens of megabytes that way, and a few hundred kilobytes
- * streamed.
+ * Makes a streamed track, a `Sound.Clip` that holds only its file's URL. When
+ * a channel plays it, the page fetches and decodes it progressively. A file
+ * given by URL, and one made with `Browser.sound`, are fetched whole and kept
+ * decoded instead. A long piece of music takes tens of megabytes that way,
+ * and a few hundred kilobytes streamed.
  *
  *   // By name, for the page's whole lifetime:
  *   Browser.runMain(game, { sounds: { theme: Browser.stream("/theme.ogg") } })
@@ -436,14 +440,17 @@ class Streamed {
  *     return (yield* Level).value === "forest" ? ForestTheme : undefined
  *   })
  *
- * - It isn't an asset and belongs to no bundle: nothing is fetched until it
+ * **Details**
+ *
+ * - It isn't an asset and belongs to no bundle. Nothing is fetched until it
  *   plays, so there is nothing to load or release, and it doesn't go through
  *   `Assets.Loader`. A test plays `Sound.clip(name)` instead.
  * - It is for a channel's track. Played as a cue, it is logged once through
  *   Effect's logger and not played, since a cue must sound immediately.
  * - It starts, fades and stops like any track, and with `once` plays to its
- *   end. A looping stream may have an audible seam where it loops, so decode a
- *   short piece that must loop seamlessly.
+ *   end. A looping stream may have an audible seam where it loops, so load a
+ *   short piece that must loop seamlessly with `Browser.sound`, which decodes
+ *   it whole.
  *
  * @category Constructors
  */
@@ -836,37 +843,42 @@ const openPage = (
  *
  *   Browser.layerSound({ coin: "/coin.wav", theme: "/theme.ogg" })
  *
- * - It opens nothing when it is built. `Sound.plugin` opens it in the scope the
- *   app is made in, wherever the layer is provided, and the page is heard for
- *   as long as the program that made the app.
- * - The page's audio is the page's, and not one app's: the apps made under one
- *   `Effect.provide` of the layer share one audio context, as a browser lets a
- *   page have only a few, and each file is fetched once. It starts when the
- *   first of them opens it, and when the last lets go, the audio context is
- *   closed, pending file requests are cancelled, and the page is no longer
- *   listened to.
+ * **Details**
+ *
+ * - It opens nothing when it is built. `Sound.plugin` opens it in the scope
+ *   the app is made in, wherever the layer is provided, and the page is heard
+ *   for as long as the program that made the app.
+ * - The page's audio belongs to the page, not to one app. The apps made under
+ *   one `Effect.provide` of the layer share one audio context, since a
+ *   browser lets a page have only a few, and each file is fetched once. The
+ *   audio starts when the first of those apps opens it. When the last lets
+ *   go, the audio context is closed, pending file requests are cancelled, and
+ *   the page is no longer listened to.
  * - The files are fetched through `Assets.Loader` when the audio starts, and
  *   decoded as they arrive.
  * - A page can't play sound before the user interacts with it. The audio
  *   context is created on the first key or pointer press, and a cue requested
  *   in the very next frame plays. A cue requested before that, or before its
- *   file arrived, doesn't play: a late sound is worse than none. The first cue
- *   requested before the first interaction is logged once, through Effect's
- *   logger, so a game that opens with a sound learns why it isn't heard.
- * - A cue only plays while the audio is running. While it is suspended, or
- *   still resuming, which takes a moment when the page becomes visible again, a
- *   cue is dropped, as one before the first interaction is: started then, it
- *   would be delayed and play all at once with every other delayed cue.
- * - Music is never late, since it is what should be playing: a track requested
- *   before the first interaction, or before its file arrived, starts as soon as
- *   it can. It loops, or plays once to its end if requested, and a change of
- *   track or volume fades over the requested duration.
+ *   file arrived, doesn't play, since a late sound is worse than none. The
+ *   first cue requested before the first interaction is logged once through
+ *   Effect's logger, so a game that opens with a sound learns why it isn't
+ *   heard.
+ * - A cue plays only while the audio is running. While the audio is
+ *   suspended, or still resuming for a moment after the page becomes visible
+ *   again, a cue is dropped, as one before the first interaction is. Started
+ *   then, it would be delayed and play all at once with every other delayed
+ *   cue.
+ * - Music is never late, since it is what should be playing. A track
+ *   requested before the first interaction, or before its file arrived,
+ *   starts as soon as it can. It loops, or plays once to its end if
+ *   requested, and a change of track or volume fades over the requested
+ *   duration.
  * - A cue or a track without a file, or whose file couldn't be fetched or
  *   decoded, is logged once through Effect's logger, and plays nothing.
- * - While its display, `Driver.Display`, reports the page as hidden, the audio
- *   is suspended, music included, and resumed when the page is visible again:
- *   the frame loop is paused then, and a frozen game should be silent.
- *   `Browser.layer` provides the page's display.
+ * - While its display, `Driver.Display`, reports the page as hidden, the
+ *   audio is suspended, music included, and it resumes when the page is
+ *   visible again. The frame loop is paused then, and a frozen game should be
+ *   silent. `Browser.layer` provides the page's display.
  * - A page without Web Audio plays nothing.
  *
  * @category Layers
@@ -910,20 +922,27 @@ export const layerSound = (
   );
 
 /**
- * Makes a sound asset, decoded and ready to play: a `Sound.Clip`, in a bundle
- * with the rest of a level's assets, playable wherever a cue's or a track's
- * name is.
+ * Makes a sound asset, a `Sound.Clip` decoded and ready to play, which a
+ * bundle loads with the rest of a level's assets. A cue or a track can play
+ * it wherever it takes a sound's name.
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     chirp: Browser.sound("/chirp.wav"),
  *     theme: Browser.sound("/forest.ogg"),
  *   })
  *
- * - It is decoded whole into memory as it arrives, so a long track takes memory
- *   in proportion to its length.
- * - Once its bundle is released, the bundle no longer plays it; whatever is
- *   still sounding plays to its end, or until its channel changes, and is freed
- *   afterwards.
+ * **When to use**
+ *
+ * Use for a cue, or for a track that is short or must loop seamlessly. For a
+ * long piece of music, use `Browser.stream`, which isn't decoded whole.
+ *
+ * **Details**
+ *
+ * - It is decoded whole into memory as it arrives, so a long track takes
+ *   memory in proportion to its length.
+ * - Once its bundle is released, the bundle no longer plays it. Whatever is
+ *   still sounding plays to its end, or until its channel changes, and is
+ *   freed afterwards.
  *
  * @category Constructors
  */
@@ -943,8 +962,8 @@ export const sound = (url: string): Assets.Asset<Sound.Clip> =>
 // --- pictures --------------------------------------------------------------------
 
 /**
- * Makes an image asset, decoded and ready to draw: an `ImageBitmap`, closed
- * when the scope it was loaded in closes.
+ * Makes an image asset, an `ImageBitmap` decoded and ready to draw, which is
+ * closed when the scope it was loaded in closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     backdrop: Browser.image("/forest.png"),
@@ -972,18 +991,20 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
 // --- starting a program ------------------------------------------------------------
 
 /**
- * Runs a game in a page. It wraps the game in the platform's `runMain`
- * (`BrowserRuntime.runMain`), with `Browser.layer(options)` provided to the
+ * Runs a game in a page, with the platform's `runMain`,
+ * `BrowserRuntime.runMain`, and with `Browser.layer(options)` provided to the
  * whole program.
  *
  *   Browser.runMain(Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }), { target: canvas })
  *
- * - The game must have no remaining requirements: provide your game's own
- *   services to it first, and a missing one is a compile error here.
+ * **Details**
+ *
+ * - The game must have no remaining requirements. Provide your game's own
+ *   services to it first, since a missing one is a compile error here.
  * - A failure is reported through Effect's logger.
- * - When the page is closed for good (`pagehide`, and not entering the
- *   back/forward cache), the game is interrupted: the frame loop stops, the
- *   app's scope closes, and the page is no longer listened to.
+ * - When the page is closed for good, on a `pagehide` that doesn't enter the
+ *   browser's back-forward cache, the game is interrupted. The frame loop
+ *   stops, the app's scope closes, and the page is no longer listened to.
  *
  * @category Running
  */

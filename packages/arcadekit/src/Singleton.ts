@@ -6,13 +6,13 @@
  *
  *   const turn = yield* Turn              // read, in any stage
  *   if (turn.player !== mine) return yield* new NotYourTurn()
- *   const writing = yield* Turn.writes    // a tick system or a handler
+ *   const writing = yield* Turn.writes    // in the code of the tick
  *   writing.player = writing.player === 1 ? 2 : 1
  *
- * The value belongs to the world: it is saved with it and included in its hash,
- * and a refused action's writes to it are rolled back with everything else. For
- * configuration that isn't game state, use a `Resource`: a value with a default
- * that a layer can override, which isn't saved.
+ * The value belongs to the world. A save holds it, the world's hash includes
+ * it, and a refused action's writes to it are rolled back with the rest. For
+ * configuration that isn't game state, use a `Resource`, a value with a
+ * default that a layer can override, which no save holds.
  */
 import { Effect, Effectable } from "effect";
 
@@ -27,10 +27,11 @@ import { World } from "./Services";
 import type { Sim } from "./Services";
 
 /**
- * A singleton's definition. It is an Effect, so `yield*` returns the world's
- * value to be read. `yield* SomeSingleton.writes` returns the same value with
- * fields that can be assigned, and only a system of the tick or a handler can
- * ask for it.
+ * A singleton's definition, as `Singleton.define` makes it. It is an Effect,
+ * and `yield*` returns its value in the world, read-only.
+ * `yield* SomeSingleton.writes` returns the same value with fields that can be
+ * assigned. Only the code of the tick can ask for it: a system of the tick, a
+ * handler or a plugin's setup.
  *
  * @category Models
  */
@@ -60,9 +61,9 @@ export class Singleton<S extends Schema>
   }
 
   /**
-   * The same value, with fields that can be assigned. Requiring it puts `Sim`
-   * in the system's requirements, which a frame or input system does not
-   * accept.
+   * The same value, with fields that can be assigned. Asking for it adds `Sim`
+   * to the system's requirements, and a system of the frame or input stage
+   * that requires `Sim` doesn't compile.
    */
   get writes(): Effect.Effect<ValueOf<S>, never, World | Sim> {
     return (this.writing ??= Effect.map(Effect.service(World), (world) =>
@@ -72,18 +73,21 @@ export class Singleton<S extends Schema>
 }
 
 /**
- * Defines a singleton: its name, its fields, and its value in a world that
+ * Defines a singleton from its name, its fields, and its value in a world that
  * hasn't written it.
+ *
+ * **Details**
  *
  * - The fields are a component's: typed numeric fields, and `Field.json`,
  *   `Field.schema` or `Field.transient` for anything else.
  * - The name is one of the world's component names, prefixed with the feature
  *   it belongs to. A save that holds the singleton finds it by that name.
- * - Until it is written, it holds `initial` and behaves as if absent: it isn't
- *   saved, and a world that has only read it hashes the same as one that never
- *   did. A game loaded from a save where it was never written starts it at the
- *   `initial` of the build that loads it.
- * - No entity has it, and no query visits it: spawning or adding it throws.
+ * - Until it is written, it holds `initial` and behaves as if absent. No save
+ *   holds it, and a world that has only read it hashes the same as one that
+ *   never did. A game loaded from a save where it was never written starts it
+ *   at the `initial` of the build that loads it.
+ * - No entity has it, and no query visits it. Spawning it, or adding it to an
+ *   entity, throws.
  * - A migration changes it by name with `Migrate`, as it does a component.
  *
  * @category Constructors
