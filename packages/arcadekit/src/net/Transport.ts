@@ -10,7 +10,7 @@
  *       const session = yield* Session.make(Duel, { seed, me, others, delta: 1 / 60 })
  *       return yield* Transport.connect(session)
  *     })
- *   ).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7")))
+ *   ).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7", me)))
  *
  * `Transport.connect` listens on the transport and returns what a driver
  * steps. Each tick, it passes the session what has arrived, runs the
@@ -51,8 +51,8 @@ export interface Listener {
   /**
    * Returns the messages that have arrived since the last call, in arrival
    * order, and removes them: the next call returns only newer ones. A
-   * transport through a relay also returns the relay's notices of who joined
-   * the room and who left it.
+   * transport through a relay or a `BroadcastChannel` also returns notices of
+   * who joined and who left.
    */
   readonly receive: () => readonly (Message.Message | Message.Notice)[];
 }
@@ -108,10 +108,10 @@ export interface Connected extends Paced {
   /** The session's frame stage, for a driver to draw the game with. */
   readonly frame: (alpha: number, delta?: number) => void;
   /**
-   * The peers a relay has said left the room and that haven't joined it
-   * again, in order of name. The session waits for them, for as long as
-   * `awayFor` says, so tell the player. A transport that reports no peer
-   * leaving keeps it empty.
+   * The peers the transport has said left and that haven't joined again, in
+   * order of name. The session waits for them, for as long as `awayFor`
+   * says, so tell the player. A transport that reports no peer leaving keeps
+   * it empty.
    */
   readonly away: readonly string[];
   /**
@@ -306,7 +306,8 @@ export interface TextTransport extends Listener {
  * data channel must be configured to.
  *
  * It throws when it is used after `close`. It authenticates no sender, and
- * doesn't report that its wire closed, unless your code does.
+ * doesn't report that its wire closed, or tell the other peers that this one
+ * joined or left, unless your code sends them a `Message.Notice`.
  *
  * @category Constructors
  */
@@ -361,23 +362,32 @@ export const text = (wire: Wire): TextTransport => {
  * The transport between the tabs, windows and workers of one browser, or the
  * threads of one process, over a `BroadcastChannel`. Every peer that opens the
  * same name hears every other. It needs no server, and doesn't reach other
- * machines.
+ * machines. `me` is this peer's name, as its session has it.
  *
  * The channel opens when `Transport.connect` listens on the transport, and
  * closes when the connection is closed. A transport used after that throws
  * and says so.
+ *
+ * As a relay does, it tells the other peers that this one joined when the
+ * channel opens, and that it left when the channel closes. `Browser.runMain`
+ * closes it when the page is closed for good. A tab that is killed, or a
+ * worker that is terminated, says nothing.
  *
  * Unlike a relay, nothing authenticates the sender here. A peer can send a
  * message in another peer's name, and the peers then stop as drifted.
  *
  * @category Layers
  */
-export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
+export const layerBroadcastChannel = (
+  name: string,
+  me: string
+): Layer.Layer<Transport> =>
   Layer.succeed(Transport, {
     listen: Effect.map(
       Effect.acquireRelease(
         Effect.sync(() => {
           const channel = new BroadcastChannel(name);
+          channel.postMessage(Message.encodeNotice({ joined: me }));
           const over = text({
             send: (message) => channel.postMessage(message),
             listen(onText) {
@@ -397,6 +407,7 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
           Effect.sync(() => {
             held.open = false;
             held.over.close();
+            held.channel.postMessage(Message.encodeNotice({ left: me }));
             held.channel.close();
           })
       ),

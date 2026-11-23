@@ -13,7 +13,7 @@ There is no default transport. A multiplayer game without one doesn't compile, s
 
 | Transport | Connects |
 | --- | --- |
-| `Transport.layerBroadcastChannel(name)` | The tabs, windows and workers of one browser, with no server |
+| `Transport.layerBroadcastChannel(name, me)` | The tabs, windows and workers of one browser, with no server |
 | `Transport.layerWebSocket(url)` | Machines, through a relay |
 | `Transport.text(wire)` | Anything that carries text, such as a data channel or a port |
 | `Transport.makeHub(options)` | Peers in one test, in memory. See [testing](testing.md#connect-several-peers) |
@@ -26,9 +26,10 @@ A transport's layer opens nothing. `Transport.connect` listens on the transport 
 
 ## Connect peers within one browser
 
-Every peer that opens `Transport.layerBroadcastChannel` with the same name hears every other: the tabs, windows and workers of one browser, or the threads of one process. It doesn't reach other machines.
+Every peer that opens `Transport.layerBroadcastChannel(name, me)` with the same name hears every other: the tabs, windows and workers of one browser, or the threads of one process. It doesn't reach other machines. `me` is the peer's name, as its session has it.
 
 - The frame loop pauses while its tab is hidden, and the other peers wait for a paused peer. To run two peers in one browser, use two windows side by side, not two tabs.
+- Each peer tells the others it joined when its channel opens, and that it left when its channel closes, as a relay does. `Browser.runMain` closes the channel when the page is closed for good, and the `connected.away` of each other peer then lists it. A tab that is killed, or a worker that is terminated, says nothing.
 - Nothing authenticates the sender here. A peer can send a message in [another peer's name](../concepts/several-players.md#only-a-relay-vouches-for-who-issued-an-action).
 
 ## Connect machines through a relay
@@ -105,6 +106,7 @@ export const layer = Transport.layer(transport);
 - The channel must deliver every message. A WebSocket does, and a data channel does once it is configured to.
 - `transport.close()` stops listening, and `send` and `receive` throw from then on. A transport passed to `Transport.layer` is listened on already, and your game closes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
+- It doesn't tell the other peers that this one joined or left. Send them `Message.encodeNotice({ joined: me })` when the channel opens and `Message.encodeNotice({ left: me })` before it closes, or `connected.away` never lists a peer that is gone.
 
 For a channel that doesn't carry text, pass a `Transport.Listener` of your own to `Transport.layer`. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows of one. Neither of its calls waits, so a tick stays one synchronous step. Whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
 

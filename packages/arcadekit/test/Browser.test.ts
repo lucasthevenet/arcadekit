@@ -28,6 +28,7 @@ import {
   System,
   Time,
 } from "../src/index";
+import { Message, Session, Transport } from "../src/net/index";
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
@@ -922,6 +923,42 @@ describe("Browser.runMain", () => {
     expect(page.window.total).toBe(0);
     page.repaint(5000);
     expect(made!.time.tick).toBe(2);
+  });
+
+  it("tells the other peers over a BroadcastChannel that this one left, before the page goes for good", async () => {
+    const page = makePage();
+    const posted: unknown[] = [];
+    vi.stubGlobal(
+      "BroadcastChannel",
+      class {
+        onmessage: unknown = null;
+        postMessage(data: unknown): void {
+          posted.push(data);
+        }
+        close(): void {}
+      }
+    );
+    Browser.runMain(
+      Driver.run(
+        Effect.flatMap(
+          Session.make(App.define({ plugins: [Flying] }), {
+            seed: 1,
+            me: "ada",
+            others: ["grace"],
+            delta: 1 / 60,
+          }),
+          Transport.connect
+        )
+      ).pipe(Effect.provide(Transport.layerBroadcastChannel("room", "ada"))),
+      { gamepads: () => [], teardown: (_, onExit) => onExit(0) }
+    );
+    await settle();
+    page.repaint(0);
+    expect(posted[0]).toBe(Message.encodeNotice({ joined: "ada" }));
+    expect(posted).not.toContain(Message.encodeNotice({ left: "ada" }));
+    page.window.send("pagehide", { persisted: false });
+    // At once: the page may run nothing after it.
+    expect(posted.at(-1)).toBe(Message.encodeNotice({ left: "ada" }));
   });
 
   it("ends with what the game fails with, and takes only a game that needs nothing more", async () => {
