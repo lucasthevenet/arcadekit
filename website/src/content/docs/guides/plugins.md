@@ -67,7 +67,7 @@ const program = Effect.gen(function* () {
 | `layer` | Services for the whole app, built once. What it acquires is released when the app's scope closes | None |
 | `setup` | An Effect that runs on a fresh start, but not on a load, because the save already holds what it spawned | None |
 
-Components, events and actions are plain values, exported from the plugin's module. A plugin doesn't list them, because a save finds each by its name. See [saving and loading](saving-and-loading.md#requirements-for-saving).
+Components, events and actions are plain values, exported from the plugin's module. A plugin doesn't list them, because a save finds each by its name. See [saving and loading](saving-and-loading.md#keep-a-game-savable).
 
 ## Provide a service
 

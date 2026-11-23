@@ -93,7 +93,7 @@ A frame system of your own can call `(yield* Sound.Player).music(channel, track,
 
 Sound follows real time and isn't part of the game. A game with sound has the same hash, log, and save as one without. A replay or a server runs no frame stage, so it plays nothing.
 
-`Sound.Output` is where sound goes: how to open a speaker. It is a `Context.Reference` whose default goes nowhere, and then the cue system reads nothing. `Sound.plugin` opens the output in the scope the app is made in, and lets go of the speaker when that scope closes. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked. It records the cues in `played`, what each channel was told in `scored`, and what each channel plays now in `playing`. See [testing](testing.md#sound).
+`Sound.Output` is where sound goes: how to open a speaker. It is a `Context.Reference` whose default goes nowhere, and then the cue system reads nothing. `Sound.plugin` opens the output in the scope the app is made in, and lets go of the speaker when that scope closes. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked. It records the cues in `played`, what each channel was told in `scored`, and what each channel plays now in `playing`. See [testing](testing.md#record-the-sound).
 
 `Sound.clip(name, data)` makes a clip by hand, for a speaker of your own or for a test, which needs nothing to play. A recorder records a clip by its `name`, with the clip itself as `clip`.
 
