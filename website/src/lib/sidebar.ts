@@ -85,6 +85,7 @@ export const OUTLINE: readonly (Group & {
     label: "The simulation",
     items: [
       "guides/components",
+      "guides/relations",
       "guides/transforms",
       "guides/queries",
       "guides/systems",
@@ -101,6 +102,7 @@ export const OUTLINE: readonly (Group & {
       "guides/input",
       "guides/assets",
       "guides/sound",
+      "guides/sound-in-a-page",
       "guides/ui",
       "guides/drawing-with-three",
       "guides/instances-and-objects",
@@ -111,20 +113,30 @@ export const OUTLINE: readonly (Group & {
   {
     topic: "guides",
     label: "Saves and replays",
-    items: ["guides/saving-and-loading", "guides/replays"],
+    items: [
+      "guides/saving-and-loading",
+      "guides/migrating-saves",
+      "guides/capturing-and-rewinding",
+      "guides/replays",
+    ],
   },
   {
     topic: "guides",
     label: "Several players",
     items: [
       "guides/sessions",
+      "guides/detecting-drift",
       "guides/transports-and-relays",
       "guides/hosting-a-relay",
     ],
   },
   { topic: "guides", label: "Testing", items: ["guides/testing"] },
   { topic: "guides", label: "Debugging", items: ["guides/debugging"] },
-  { topic: "guides", label: "Performance", items: ["guides/performance"] },
+  {
+    topic: "guides",
+    label: "Performance",
+    items: ["guides/performance", "guides/drawing-performance"],
+  },
   { topic: "guides", label: "More", section: "guides", items: [] },
   {
     topic: "reference",

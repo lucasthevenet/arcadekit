@@ -81,8 +81,7 @@ A relay forwards what one peer of a room sends to the others. It runs no game an
 
 - A room is identified by its address and owned by nobody: the first peer to connect opens it, and it closes when the last peer leaves.
 - The relay tells the room who joins it and who leaves it. `Transport.connect` reads it: a peer that joins is sent again what it missed, and a peer that leaves is in `connected.away` until it joins again.
-- **The relay authenticates the sender.** A peer declares its name once, when it connects, and is held to it: a message in another peer's name is refused and the socket closed. The `from` a handler receives is therefore the peer the relay admitted under that name.
-- Deciding whether that peer may use that name is the relay host's responsibility. A relay whose host doesn't check lets anyone claim any name.
+- The relay holds each peer to the name it connected under, and refuses a message in another peer's name. Its host decides who may connect under a name, as [peer identity](hosting-a-relay.md#peer-identity) describes.
 
 `arcadekit/net/Relay` implements the relay as plain functions, which whatever accepts the sockets calls. You host it yourself; see [hosting a relay](hosting-a-relay.md).
 

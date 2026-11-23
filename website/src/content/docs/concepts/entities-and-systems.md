@@ -48,7 +48,7 @@ The storage core is `arcadekit/ecs`. It is plain synchronous TypeScript with no 
 
 ## Entity ids
 
-An id packs two numbers: an **index**, the slot the entity occupies, and a **generation**, which counts how many times that slot was used before. When a slot is freed and reused, the new entity gets the next generation. An id kept from before the reuse refers to no entity: `isAlive` returns false, `get` returns nothing, and any [relation](../guides/components.md#relations) that held it is removed.
+An id packs two numbers: an **index**, the slot the entity occupies, and a **generation**, which counts how many times that slot was used before. When a slot is freed and reused, the new entity gets the next generation. An id kept from before the reuse refers to no entity: `isAlive` returns false, `get` returns nothing, and any [relation](../guides/relations.md) that held it is removed.
 
 ```ts
 import {

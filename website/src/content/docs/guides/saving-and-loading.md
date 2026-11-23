@@ -1,9 +1,9 @@
 ---
 title: "Saving and loading"
-description: "A save captures a game between two ticks, and a game loaded from it continues exactly as the saved one would have. Learn how to save, load, and migrate old saves."
+description: "A save captures a game between two ticks, and a game loaded from it continues exactly as the saved one would have. Learn how to save, load, and read why a load was refused."
 ---
 
-A **save** captures a game between two ticks, and a game loaded from it continues exactly as the saved game would have. This guide covers saving, loading, and migrating old saves.
+A **save** captures a game between two ticks, and a game loaded from it continues exactly as the saved game would have. This guide covers saving and loading. [Migrating old saves](migrating-saves.md) covers saves an older version of the game wrote.
 
 ## Saving
 
@@ -53,11 +53,11 @@ It is essentially the snapshot plus a little text: for 100,000 entities with fou
 
 `App.make(game, { save })` continues a game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds its effects. Given to `Driver.run`, it starts a page from one. A save holds where the game's random sequence had reached, so `save` and `seed` can't both be given.
 
-To return to an earlier moment of the same app within the same run, `Timeline.capture(app)` and `Timeline.rewind(app, moment)` work in memory, and encode none of the pending actions and events. See [capturing and rewinding](sessions.md#capturing-and-rewinding).
+To return to an earlier moment of the same app within the same run, `Timeline.capture(app)` and `Timeline.rewind(app, moment)` work in memory, and encode none of the pending actions and events. See [capturing and rewinding](capturing-and-rewinding.md).
 
 ## Requirements for saving
 
-- **Give each component one name.** A save names every component, singleton, state and event it holds, and a load finds each by the definition your program has under that name. Nothing lists them. A save that holds a name your program no longer defines fails to load and names it, with `"unknown component"`, or `"store changed"` for an event: rename or remove it in a migration.
+- **Give each component one name.** A save names every component, singleton, state and event it holds, and a load finds each by the definition your program has under that name. Nothing lists them. A save that holds a name your program no longer defines fails to load and names it, with `"unknown component"`, or `"store changed"` for an event: rename or remove it in a [migration](migrating-saves.md).
 - **Keep what the game is in the middle of in the world.** Work that takes [many ticks](systems.md#work-that-takes-many-ticks), such as a countdown or a wave of enemies, keeps its place in a component, a singleton or a state, so a save holds it.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.
 
@@ -77,49 +77,6 @@ const app = yield * Journal.replay(tail, Game);
 `app.record(save)` takes a save the app made itself, and throws for one whose tick its log doesn't reach. An app made from a save starts its own log empty, and a recording of it begins at that save.
 
 The [replay](replays.md) verifies itself against the tail's checkpoints, so a save that didn't restore the game faithfully is caught at the next checkpoint.
-
-## Versions and migrations
-
-A game has a `version`: an integer you increment whenever you change its components or what its saves contain, 0 by default. A save records the version that wrote it. A save of the current version loads as is. An older one is migrated one version at a time, by the migration `from` each version. A newer one is refused.
-
-```ts
-import { App, Migrate, Plugin, Save } from "arcadekit";
-import { Effect } from "effect";
-
-const migrations: Save.Migration[] = [
-  {
-    from: 1, // migrates a version 1 save to version 2
-    migrate: ({ world }) => {
-      Migrate.renameComponent(world, "game/Hp", "game/Health");
-      Migrate.addField(world, "game/Health", "armor", "i32", 0);
-      Migrate.mapField(
-        world,
-        "game/Health",
-        "points",
-        "f32",
-        (hp: number) => hp / 2
-      );
-    },
-  },
-];
-
-const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
-  App.make(App.define({ plugins, version: 2, migrations }), { save });
-```
-
-A migration receives the save in a plain, self-describing form, `Save.Contents`, so it needs none of the game's old component definitions. Its `world` lists what the snapshot holds: components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The game's time is one of the world's singletons, `arcadekit/Time`. The world's `stores` hold what the app keeps of the game beside its entities, each as plain data under a name:
-
-| Store | Holds |
-| --- | --- |
-| `Action.INTAKE` | `{ queued }`: the pending actions, each as `{ name, payload, from? }` with its payload in JSON form |
-| `Event.STORE` | One `{ name, waiting, read }` per event with events pending: the events in JSON form, and how many of them each system had read |
-| `Save.VISITS` | What change queries haven't visited, one entry per component and kind of change |
-
-`Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. `addField` and `mapField` also fail for a value that a field of a number type cannot hold, such as a string, a fraction in an `i32`, or 300 in a `u8`, where the typed array would have stored something else; the compiler refuses a value that is not a number. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
-
-- For a component a migration renames, the change queries watching it start over after the load: every entity counts as changed.
-- When a migration accompanies a schema change, it must also update the payloads in `world.stores`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"store changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
-- A migration turns an old save into a new game, so the log recorded before it doesn't replay against the migrated save.
 
 ## When a load is refused
 

@@ -1,9 +1,9 @@
 ---
 title: "Components"
-description: "A component is a kind of data an entity can have. Learn how to define components, choose field types, and use tags, singletons and relations."
+description: "A component is a kind of data an entity can have. Learn how to define components, choose field types, and use tags and singletons."
 ---
 
-A **component** is a kind of data an entity can have, such as a position, health, or a `Stunned` tag. This guide covers defining components, field types, tags and sparse storage, singletons, and relations.
+A **component** is a kind of data an entity can have, such as a position, health, or a `Stunned` tag. This guide covers defining components, field types, tags and sparse storage, and singletons. [Relations](relations.md) covers components that point at another entity.
 
 ## Defining a component
 
@@ -165,76 +165,10 @@ A singleton lives in the world, so it is saved, hashed, and restored when an act
 
 - Until it is first written, it holds its initial value and is neither saved nor hashed. Reading it changes nothing, so a plugin that only reads a singleton doesn't change the hash of the game it observes.
 - Loading a save in which a singleton was never written gives it the initial value of the build that loads it.
-- Its name is one of the world's component names, by which a save finds it. Rename or change it in a [migration](saving-and-loading.md) with `Migrate`, as you would a component.
+- Its name is one of the world's component names, by which a save finds it. Rename or change it in a [migration](migrating-saves.md) with `Migrate`, as you would a component.
 - No entity can have it and no query visits it: spawning or adding it throws.
 
 A `Resource` is the other kind of single value: configuration with a default that a layer can override, such as gravity. It isn't game state and isn't saved.
-
-## Relations
-
-A **relation** is a component that points at another entity, its `target`, and stays consistent when that entity is despawned: a parent and its children, a target, an owner. Use a relation rather than a bare `Field.entity` for any reference that must never dangle.
-
-```ts
-import {
-  Action,
-  Commands,
-  Component,
-  EntityId,
-  Field,
-  Plugin,
-  World,
-} from "arcadekit";
-import { Effect, Schema } from "effect";
-
-const Position = Component.define("game/Position", {
-  x: Field.f32,
-  y: Field.f32,
-});
-const ChildOf = Component.relation("scene/ChildOf", {
-  onTargetDespawn: "despawn", // a child is despawned with its parent
-});
-const Targets = Component.relation("ai/Targets", {
-  onTargetDespawn: "remove", // whoever aimed at it now aims at nothing
-  storage: "sparse",
-  fields: { since: Field.f32 }, // fields of its own, beside the target
-});
-
-// A tank with a turret on it.
-const setup = Effect.gen(function* () {
-  const commands = yield* Commands.spawns(Position, ChildOf);
-  const tank = commands.spawn(Position.of({ x: 0, y: 0 }));
-  commands.spawn(Position.of({ x: 0, y: 1 }), ChildOf.of({ target: tank }));
-});
-
-// Moves the turret onto the truck, then scraps the truck.
-const Swap = Action.define(
-  "game/Swap",
-  Schema.Struct({ turret: EntityId, truck: EntityId })
-);
-const swap = Action.handler(Swap, function* ({ turret, truck }) {
-  const world = yield* World;
-  const commands = yield* Commands.spawns(ChildOf);
-  const tank = world.get(turret, ChildOf)?.target; // its parent
-  if (tank !== undefined) {
-    world.sources(tank, ChildOf); // the tank's children
-  }
-  commands.add(turret, ChildOf.of({ target: truck })); // a new parent
-  commands.despawn(truck); // despawns the turret too, and everything attached to it
-});
-
-export const Rules = Plugin.make("game/Rules", { handlers: [swap], setup });
-```
-
-- `onTargetDespawn` controls what happens to the entities pointing at a target when it is despawned. `"despawn"` despawns them too, along with whatever points at them, at any depth. `"remove"` removes the relation from them and leaves them otherwise untouched.
-- Either way, nothing is left pointing at a despawned entity, so a dangling reference can never be read as a live one. A plain `Field.entity` gets no such guarantee: it holds whatever id was written, and readers check `world.isAlive` themselves.
-- `world.sources(target, ChildOf)` returns the entities pointing at a target, ordered by index. The world tracks these links, so neither this call nor a despawn scans other entities. It takes a relation, and any other component doesn't compile.
-- To change a target, add the relation again. `target` is read-only in `each`, in `world.set` and in its raw column, so assigning to it doesn't compile. A relation's own fields are written like any others.
-- A relation requires a live target. Given bare, as `ChildOf` and not `ChildOf.of({ target })`, it doesn't compile, on `Commands` or on the world. With a target that is already despawned, the despawn behaviour applies immediately: the child doesn't survive the call, or the relation isn't added.
-- An entity has one target per relation. A different kind of link is a different relation.
-- A despawn follows relations ordered by name and the pointing entities ordered by index, so the same world always loses the same entities in the same order.
-- In a system or an action handler, add, remove and retarget relations through `Commands`, like any other structural change.
-
-In every other way, a relation is a component: stored in tables or a sparse set, read in queries, watched with `Query.added` and `Query.removed`, saved in snapshots and included in the hash. The links between entities are derived from it, and rebuilt when a world loads a snapshot, which refuses a relation pointing at no entity.
 
 ## Transforms
 

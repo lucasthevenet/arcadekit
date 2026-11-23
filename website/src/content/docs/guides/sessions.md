@@ -3,7 +3,7 @@ title: "Sessions"
 description: "A session is one peer of a game played on several machines. Learn how to make a session, how far it runs ahead of the network, how to drive it, and what your game must do to play online."
 ---
 
-A **session** is one peer of a game played on several machines: it makes its app, steps it, and exchanges with the other peers what their players do. This guide covers making a session, how far it runs ahead of the network, driving it, and what your game must do to be played this way. [Several players](../concepts/several-players.md) explains the model.
+A **session** is one peer of a game played on several machines: it makes its app, steps it, and exchanges with the other peers what their players do. This guide covers making a session, how far it runs ahead of the network, driving it, and what your game must do to be played this way. [Several players](../concepts/several-players.md) explains the model, and [detecting drift](detecting-drift.md) covers peers that end up with different games.
 
 ## Making a session
 
@@ -70,10 +70,8 @@ A session runs each tick immediately, predicting that the peers it hasn't heard 
 - `delay` is how many ticks ahead a player's own action is sent. It defaults to 0, so a player's own move is applied on the next tick, and to 2 for a session whose `ahead` is 0, which would otherwise wait for the network on every tick. A delay of a tick or two spares the other peers a rewind for every move, at the cost of that much input lag for the local player. Each peer can use its own value.
 - `session.confirmed` is the number of final ticks: anything after it may still be resimulated. `session.rewinds` and `session.resimulated` measure the cost.
 - A message that contains nothing for a tick that already ran costs nothing: the prediction was right.
-- Every peer ends on the same game. Each applies every action on the tick it is stamped with, whenever it heard of it, and its log replays into a single-player game that never rewound.
-- A peer that runs ahead may see a move accepted that is later refused. When two players take the same coin on the same tick, each sees themselves take it until the other's message arrives. Then both agree that the player whose name sorts first takes it, and the other's take is refused, in the log and in the world.
 
-Before each tick it isn't sure of, the session captures the game with `Timeline.capture`, and releases the capture once every peer has sent their actions for that tick: `session.kept` captures at a time, never more than `ahead`.
+Before each tick it isn't sure of, the session captures the game with [`Timeline.capture`](capturing-and-rewinding.md), and releases the capture once every peer has sent their actions for that tick: `session.kept` captures at a time, never more than `ahead`.
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one, so for a very large world each uncertain tick pays that cost.
@@ -111,58 +109,7 @@ Key presses, the UI and `session.app.enqueue` all feed this peer's next message.
   - A `Field.transient` field is `undefined` afterwards, as in a loaded game.
 - **Expect the frame stage to show a prediction.** A game that runs ahead is drawn and heard as predicted. The frame and input stages hear each event once however often a session runs its tick: an event a resimulated tick emits again, with the same payload, isn't heard twice, and only what the tick now does otherwise is. Their change queries visit everything after each rewind. A sound for a prediction that is rolled back has already played, and a UI may show a score that is then rolled back. `session.confirmed` tells rendering code which ticks are final.
 
-## Capturing and rewinding
-
-`Timeline` captures a moment of an app's game and returns to it, for an undo, a search ahead, a rewind mechanic or a tool:
-
-```ts
-import { App, Plugin, Timeline } from "arcadekit";
-import { Effect, Exit } from "effect";
-
-const Game = Plugin.make("game/Game", {});
-
-const program = Effect.gen(function* () {
-  const app = yield* App.make(App.define({ plugins: [Game] }));
-  const moment = Timeline.capture(app); // Exit<Timeline.Moment, Save.SaveRefused>
-  app.tick(1 / 60);
-  if (Exit.isSuccess(moment)) {
-    Timeline.rewind(app, moment.value); // the same app, as it was
-  }
-}).pipe(Effect.scoped);
-```
-
-- A moment holds what a [save](saving-and-loading.md) does: the world, the game time, the actions queued for the next tick, the events waiting to be read with every reader's position, what change queries haven't visited, and the log's length. `rewind` restores all of it in place and truncates the log. The app, its world and its services are the same objects as before.
-- It lives in memory and belongs to one app in one run of the program. It holds pending actions and events as they are and encodes none of them, so a game can be captured while a payload its schema doesn't take is pending, when it can't be saved.
-- A game is captured and rewound between ticks. What a rewind doesn't restore is what the requirements above keep out of the simulation's way.
-- After `Timeline.rewind`, the game plays on from the moment. The frame and input stages hear every event it emits from then on, including one they heard before the rewind, and their change queries visit everything again. They hear nothing of the future that was given up before they had read it.
-- A session that rewinds to run the same ticks again passes `{ again: true }` to `Timeline.rewind`. That is the rewind after which the two stages hear each event once.
-- `Timeline.capture(app, { stages: true })` also keeps the place of the frame and input stages in what changed, for a rewind that comes before they run again: their change queries then go on from where they were.
-
-## When peers were not made alike
-
-Every peer is made with its own game, seed or save, `delta` and names, and they have to be alike. A peer's first message says what it was made with: a hash of what its game simulates, its `delta`, the names of every peer, and the tick its game begins at. A peer that hears another made otherwise stops with `Drift.Unlike`, before it runs a tick it is sure of, and so does every peer that hears it. `session.tick()` throws it, `session.tickExit()` fails with it, as does every later tick, and `session.drifted` keeps it.
-
-- The report names both peers, what each was made with, and `differ`, the parts that differ: `"game"`, `"delta"`, `"peers"` or `"start"`. Its message says what to give every peer.
-- What is compared of a game is what it simulates: the systems of the tick in the order they run, the hooks of its states, the actions it handles, and its version, by name. Frame and input systems are left out, so a peer that draws the game plays with one that doesn't.
-- A list of names that leaves a peer out is found too: that peer is heard by the others, whose names are not the same.
-- Peers that begin at different ticks, from different saves, are found, where they would otherwise wait for each other.
-- Two systems with one name that do different things, or a different seed, are not in this comparison. The worlds' hashes find them, as below.
-
-## When peers drift apart
-
-Each peer sends the others the [checkpoints](replays.md#checkpoints) its log records, the world's hash at a tick, in the messages it sends anyway. When every peer has reported its hash for a tick and they differ, every session stops with `Drift.Drifted`. `session.tick()` throws it, which stops a driver; `session.tickExit()` fails with it, as does every later tick; and `session.drifted` keeps it for a UI to display.
-
-- The report includes the tick, every peer's hash by name, so that with three or more peers the odd one out stands out, and `agreedAt`, the last tick they matched. With a checkpoint every tick, that is the tick before they diverged.
-- Drift is detected within a bounded number of ticks, however slow the network. No peer whose `ahead` is 0 runs more than `checkpointEvery - 1 + delay` ticks past the first tick whose world differed, where `delay` is the largest any peer uses: with a checkpoint every tick and a delay of 2, two ticks. A peer that runs ahead runs at most `2 × ahead` ticks more, since a tick's hash is sent once every peer has sent their actions for it.
-- The peers' starting state is compared first, whatever `checkpointEvery` is: a session records a checkpoint when it begins. Peers whose `ahead` is 0, made with a different seed or with different entities spawned at startup, never run a tick, and the report says they didn't start from the same state.
-- After that, peers compare what their logs record: every 60 ticks by default, and never with `checkpointEvery: 0`. Peers with different intervals compare the ticks both record, and a checkpoint one peer records by hand with `app.checkpoint()` isn't held against the others.
-- A peer that stops sends its hash first, so the others stop with the same report instead of waiting for it.
-- A checkpoint adds about 30 bytes to a message. The hash is the one the app already computes for its log.
-
-What the hash doesn't cover is only detected once it [reaches the world](../concepts/several-players.md#when-peers-drift-apart).
-
-Peers that drift apart stay stopped. To continue, every peer makes its session again from one peer's save.
-
 ## Read more
 
+- [Detecting drift](detecting-drift.md), [capturing and rewinding](capturing-and-rewinding.md), and [transports and relays](transports-and-relays.md).
 - [`arcadekit/net`](/reference/arcadekit/net) in the API reference: [`Session`](/reference/arcadekit/net/Session), [`Message`](/reference/arcadekit/net/Message) and [`Drift`](/reference/arcadekit/net/Drift).

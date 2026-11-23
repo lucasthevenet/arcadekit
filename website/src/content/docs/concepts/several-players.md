@@ -20,6 +20,9 @@ A session that plays with **rollback** doesn't wait: its `ahead` is 8 ticks by d
 
 Each player sees their own move on the next tick, whatever the network latency. The cost is a rewind whenever a prediction was wrong.
 
+- Every peer ends on the same game. Each applies every action on the tick it is stamped with, whenever it heard of it, and its log replays into a single-player game that never rewound.
+- A peer that runs ahead may see a move accepted that is later refused. When two players take the same coin on the same tick, each sees themselves take it until the other's message arrives. Then both agree that the player whose name sorts first takes it, and the other's take is refused, in the log and in the world.
+
 Lockstep is rollback that never runs ahead: there is one session, `Session.make`, and `ahead` says how far it predicts.
 
 ## Sessions take over the app
@@ -58,5 +61,5 @@ Only the world's hash is compared. It covers the actions queued and the events w
 
 ## Read more
 
-- [Sessions](../guides/sessions.md) and [transports and relays](../guides/transports-and-relays.md).
+- [Sessions](../guides/sessions.md), [detecting drift](../guides/detecting-drift.md), and [transports and relays](../guides/transports-and-relays.md).
 - [`arcadekit/net`](/reference/arcadekit/net): [`Session`](/reference/arcadekit/net/Session), [`Transport`](/reference/arcadekit/net/Transport) and [`Relay`](/reference/arcadekit/net/Relay) in the API reference.

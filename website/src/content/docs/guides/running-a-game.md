@@ -50,7 +50,7 @@ Browser.runMain(
 | `target` | The element the pointer is pressed on and measured from |
 | `preventDefault` | Keys that must not scroll the page |
 | `deadzone` | How far a stick must move to register, `0.1` by default |
-| `sounds` | The page's sounds by name, available for the page's lifetime. See [sound](sound.md) |
+| `sounds` | The page's sounds by name, available for the page's lifetime. See [playing sound in a page](sound-in-a-page.md) |
 | `volume` | The master volume |
 
 When the page is closed, the game is interrupted: the loop stops requesting frames, the app's scope closes, and the plugins' resources are released.

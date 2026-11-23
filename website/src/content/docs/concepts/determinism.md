@@ -42,9 +42,26 @@ Work that must continue in real time while the game runs, such as loading, runs 
 
 ## The world's hash
 
-`world.hash()`, on the world that `app.read(World)` gives, is a single number for everything in the world a simulation can observe: every entity and field, the order queries visit them in, the ids the next entities will get, every singleton that has been written, and the state of the random generator. Two worlds built by the same operations hash the same, and changing one field always changes the hash.
+`world.hash()`, on the world that `app.read(World)` gives, is a single integer, from 0 to 2^32 - 1, for everything in the world a simulation can observe. Two machines that ran the same game hold the same number, as does a replay that went the same way. It covers:
 
-The app records the hash in its log every `checkpointEvery` ticks, 60 by default. A replay compares its own world at each checkpoint and stops at the first mismatch with `Journal.ReplayDiverged`, which reports the tick and when the two last agreed. [Replays](../guides/replays.md#the-worlds-hash) covers what the hash includes and what it costs.
+- every entity and the value of every field of every component it has, components being identified by name and fields;
+- the order queries visit entities in: tables in creation order, rows ascending;
+- the ids the next entities will get: the freed slots, in reuse order, and their generations;
+- every singleton that has been written, by name;
+- the game's time: the ticks run, the seconds simulated and the last tick's `delta`, which the world holds as the singleton `arcadekit/Time`;
+- the state of the random number generator;
+- the actions queued for the next tick, with who issued them, and the events the simulation has yet to read, each in its JSON form.
+
+Two worlds built by the same operations in the same order hash equal, and changing a single field of a single entity always changes the hash: one change can't cancel out. Two different worlds collide by chance about once in four billion.
+
+It doesn't depend on anything a simulation can't observe: a table's capacity, leftover data in a column past its last row, which queries were created, the order a sparse component's members joined in, or the order the program defined its components in. Every `NaN` counts as the same `NaN`, because its bits are the one thing engines don't agree on. `0` and `-0` differ.
+
+- A non-numeric field counts as it is [saved](../guides/saving-and-loading.md#snapshots): a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all.
+- It uses 32-bit integer arithmetic on each field's bits, so it is identical on every machine and in every JavaScript engine.
+- It reads and changes nothing, so you can call it at any time. It costs about 8 ns per entity with four float fields.
+- It doesn't cover where each reader is: how far a system has read the events, or what change queries haven't visited. They are the readers', so a plugin that only watches doesn't change the hash of the game it watches. Two games with the same hash can still diverge on these until it reaches the world. A [save](../guides/saving-and-loading.md) holds them.
+
+The app records the hash in its log every `checkpointEvery` ticks, 60 by default. A replay compares its own world at each checkpoint and stops at the first mismatch with `Journal.ReplayDiverged`, which reports the tick and when the two last agreed. [Checkpoints](../guides/replays.md#checkpoints) covers how often to record one, and what it costs.
 
 ## Refused actions leave no trace
 
@@ -60,7 +77,7 @@ Some ways to break determinism aren't caught by the type checker or at run time:
 
 - A write through a raw column during the frame or input stage is only detected by an app created with `verifyFrames`.
 - State a tick reads from outside the world, in a service, a plugin or a module, isn't put back by a rewind, so a rollback session runs the tick again differently. It is only detected by `Session.syncTest`, which runs each tick twice from the same moment. See [testing](../guides/testing.md#rewinds).
-- The hash covers only the world, with the actions queued and the events waiting that it holds: not how far a system has read those events, nor what change queries haven't visited. Two games with the same hash can still diverge.
+- The hash doesn't cover [where each reader is](#the-worlds-hash), so two games with the same hash can still diverge.
 
 In a multiplayer game, a broken rule is caught quickly: peers compare the hashes of their worlds, and every session stops with `Drift.Drifted`, which reports the last tick they agreed on. To test such a game, run two apps side by side and compare their hashes. See [several players](several-players.md).
 

@@ -66,7 +66,7 @@ const Begin = System.input("game/Begin", function* () {
 | `Assets.text(url)` | A string, from a UTF-8 file |
 | `Assets.json(url, schema)` | A value validated against the schema |
 | `Browser.image(url)` | An `ImageBitmap`, closed on release |
-| `Browser.sound(url)` | A `Sound.Clip`, fully decoded. See [sound](sound.md) |
+| `Browser.sound(url)` | A `Sound.Clip`, fully decoded. See [a level's own sounds](sound-in-a-page.md#a-levels-own-sounds) |
 | `Assets.make(url, decode)` | Anything else, with `Effect.acquireRelease` for what needs releasing, such as a font |
 
 [`@arcadekit/three`](/reference/three) adds `Three.texture(url)` and `Gltf.model(url)`.

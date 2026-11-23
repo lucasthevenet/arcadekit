@@ -55,7 +55,7 @@ const program = Effect.gen(function* () {
 
 ## Checkpoints
 
-The app records a checkpoint before the first action or tick, then at the end of every tick whose number is a multiple of `checkpointEvery`. `app.checkpoint()` records an extra one, for a moment the game wants verified, such as when it is saved.
+The app records a checkpoint, the [world's hash](../concepts/determinism.md#the-worlds-hash) at that tick, before the first action or tick, then at the end of every tick whose number is a multiple of `checkpointEvery`. `app.checkpoint()` records an extra one, for a moment the game wants verified, such as when it is saved.
 
 A replay compares its own world at each checkpoint, and stops at the first mismatch, before applying anything recorded after it. It fails with `Journal.ReplayDiverged`, whose `tick` is that checkpoint's tick. Its `reason` is a `Journal.HashMismatch` with the `expected` hash, the `actual` one, and `agreedAt`, the tick of the last matching checkpoint. With a checkpoint every tick, `tick` is the exact tick the replay diverged on.
 
@@ -74,27 +74,6 @@ yield* Journal.replay(recording, Game).pipe(
   )
 );
 ```
-
-## The world's hash
-
-`world.hash()`, on the world that `app.read(World)` gives, is a single integer, from 0 to 2^32 - 1, for everything in the world a simulation can observe. Two machines that ran the same game hold the same number, as does a replay that went the same way. It covers:
-
-- every entity and the value of every field of every component it has, components being identified by name and fields;
-- the order queries visit entities in: tables in creation order, rows ascending;
-- the ids the next entities will get: the freed slots, in reuse order, and their generations;
-- every singleton that has been written, by name;
-- the game's time: the ticks run, the seconds simulated and the last tick's `delta`, which the world holds as the singleton `arcadekit/Time`;
-- the state of the random number generator;
-- the actions queued for the next tick, with who issued them, and the events the simulation has yet to read, each in its JSON form.
-
-Two worlds built by the same operations in the same order hash equal, and changing a single field of a single entity always changes the hash: one change can't cancel out. Two different worlds collide by chance about once in four billion.
-
-It doesn't depend on anything a simulation can't observe: a table's capacity, leftover data in a column past its last row, which queries were created, the order a sparse component's members joined in, or the order the program defined its components in. Every `NaN` counts as the same `NaN`, because its bits are the one thing engines don't agree on. `0` and `-0` differ.
-
-- A non-numeric field counts as it is [saved](saving-and-loading.md#snapshots): a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all.
-- It uses 32-bit integer arithmetic on each field's bits, so it is identical on every machine and in every JavaScript engine.
-- It reads and changes nothing, so you can call it at any time. It costs about 8 ns per entity with four float fields.
-- It doesn't cover where each reader is: how far a system has read the events, or what change queries haven't visited. They are the readers', so a plugin that only watches doesn't change the hash of the game it watches. Two games with the same hash can still diverge on these until it reaches the world. A [save](saving-and-loading.md) holds them.
 
 ## What a replay doesn't do
 
