@@ -3,11 +3,11 @@ title: "Drawing performance"
 description: "What @arcadekit/three costs a frame, as measured by its benchmark: instances and objects, flat and smooth drawing, colours, and looks built from assets."
 ---
 
-This guide lists what [`@arcadekit/three`](drawing-with-three.md) costs a frame, as measured by its benchmark, and how to run the benchmark yourself. [Performance](performance.md) lists what the rest of arcadekit costs.
+The **drawing benchmark** measures what [`@arcadekit/three`](drawing-with-three.md) costs a frame. This page lists its results, and how to run it yourself. [Performance](performance.md) lists what the rest of arcadekit costs.
 
 ## Instances and objects
 
-The work `@arcadekit/three` does before Three.js takes over: 10,000 entities, one frame, with a renderer that draws nothing. These are medians after warm-up, on the kind of machine [reading the numbers](performance.md#reading-the-numbers) describes.
+The benchmark measures the work that `@arcadekit/three` does before Three.js draws: 10,000 entities, one frame, with a renderer that draws nothing. The numbers are medians after warm-up, on the kind of machine that [how the numbers were measured](performance.md#how-the-numbers-were-measured) describes.
 
 | Variant | ns/entity | Bytes allocated per frame |
 | --- | --- | --- |
@@ -31,17 +31,17 @@ The work `@arcadekit/three` does before Three.js takes over: 10,000 entities, on
 | `Three.objects`, flat: an Object3D each, all three copied | 167.8 | 5,700 |
 | By hand: `world.get` and `setMatrixAt`, per entity | 361.6 | 2,480,000 |
 
-- Ten thousand moving objects, drawn where the last tick left them, cost 0.08 to 0.36 ms of a frame. The seven kilobytes are per-frame overhead, the same for one entity as for ten thousand. A test holds the system to under 4 bytes per object per tick and frame, where allocating one number per object would take 12.
-- An object per entity costs ten to twenty times as much as an instance, mostly Three.js keeping each object's Euler angles in sync with its quaternion. That's why crowds use instances.
-- An unrotated flat entity costs slightly less than a 3D one. A rotated one costs twice as much, 36 ns: a sine and a cosine each, where a quaternion takes a few multiplications.
-- With `smooth` interpolation, an entity costs about three times as much for a position, 27 ns, and four times for all three, 72 ns: each value is read, stored, and blended with the previous one. Ten thousand cost 0.27 to 0.83 ms of a frame, still with no per-entity allocation.
-- A per-instance colour costs about 6 ns more per entity, mostly the colour conversion. In the renderer's space, a `Color.Linear`, it costs 2 ns. Interpolated, it costs 22 ns more, the same as interpolating the position.
-- A look built from assets adds no per-entity cost: the loops are the same. Checking that the assets are still loaded happens twice per frame, allocates under a kilobyte, and takes too little time to measure.
-- In headless Chromium, the example page with 10,000 lit cubes grew its heap by 7 to 58 KB per frame, including the renderer's own allocations, and by 17 KB with a hundred cubes: per-frame allocation doesn't grow with what is drawn. Headless Chromium renders in software, so this says nothing about GPU rendering speed.
+- Ten thousand moving objects, drawn where the last tick left them, cost 0.08 to 0.36 ms of a frame. The seven kilobytes allocated are per-frame overhead, the same for one entity as for ten thousand. A test holds the system to under 4 bytes per object per tick and frame, where allocating one number per object would take 12 bytes.
+- An object per entity costs ten to twenty times as much as an instance, mostly because Three.js keeps each object's Euler angles in sync with its quaternion. Crowds therefore use instances.
+- An unrotated flat entity costs slightly less than a 3D one. A rotated flat entity costs about twice as much as a rotated 3D one, 36 ns, because it takes a sine and a cosine where a quaternion takes a few multiplications.
+- With `smooth`, an entity costs about three times as much for a position, 27 ns, and four times as much for all three, 72 ns. Each value is read, stored, and blended with the previous one. Ten thousand entities cost 0.27 to 0.83 ms of a frame, still with no allocation per entity.
+- A colour per instance costs about 6 ns more per entity, mostly the conversion. A `Color.Linear`, in the renderer's own numbers, costs 2 ns more. Interpolated, a colour costs 22 ns more, the same as interpolating the position.
+- A look built from assets adds no cost per entity, because the loops are the same. The check that the assets are still loaded runs twice per frame, allocates under a kilobyte, and takes too little time to measure.
+- In headless Chromium, the example page with 10,000 lit cubes grew its heap by 7 to 58 KB per frame, the renderer's own allocations included. With a hundred cubes it grew by 17 KB, so per-frame allocation doesn't grow with what is drawn. Headless Chromium draws in software, so these numbers say nothing about how fast a GPU draws.
 
-## Running the benchmark
+## Run the benchmark
 
-The benchmark lives in the repository, not in the published package. From a checkout:
+The benchmark is in the repository, not in the published package. Run it from a checkout:
 
 ```sh
 pnpm --filter @arcadekit/three bench

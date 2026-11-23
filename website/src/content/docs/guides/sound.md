@@ -3,9 +3,9 @@ title: "Sound"
 description: "Sound effects are named cues played in response to events, and music follows the game's current state. Both play from the frame stage, never from the simulation."
 ---
 
-A **cue** is a named sound played because something happened: the simulation emits an event, and a separate system decides what that event sounds like. **Music** is what the game should sound like in its current state. Both play from the frame stage; the simulation never plays sound. [Playing sound in a page](sound-in-a-page.md) covers where a page's sounds come from.
+A **cue** is a named sound that plays because something happened. The simulation emits an event, and a separate system decides what that event sounds like. **Music** is what the game should sound like in its current state. Both play from the frame stage, and the simulation never plays sound. [Playing sound in a page](sound-in-a-page.md) covers where a page's sounds come from.
 
-## Cues
+## Play a cue from an event
 
 ```ts
 import { App, Driver, Event, Plugin, Sound } from "arcadekit";
@@ -39,16 +39,16 @@ Browser.runMain(
 );
 ```
 
-- `Sound.cues` creates a frame-stage system. Each frame, it plays the cues for the events since the last frame. Like every frame system, it sees each event once, however many ticks ran in between.
-- `Sound.on(event, cue)` maps an event to a cue: a cue name, a name with a `volume` and a `rate`, or a function of the payload that returns either, or nothing. `rate` is the playback speed, and so also the pitch. Several mappings can share an event, and each one receives it.
-- A cue requested several times in one frame plays once, at the loudest requested volume: forty coins caught in one tick make one sound, not forty stacked on top of each other. This holds across systems: if a plugin and your game both play the same cue in a frame, it plays once.
-- Cues play after all of a frame's systems have run, in a `"postFrame"` system that `Sound.plugin` provides, in the order they were first requested.
+- `Sound.cues` makes a frame-stage system. Each frame, it plays the cues for the events since the last frame. Like every frame system, it sees each event once, however many ticks ran in between.
+- `Sound.on(event, cue)` maps an event to a cue. The cue is a name, a name with a `volume` and a `rate`, or a function of the payload that returns either one or nothing. `rate` is the playback speed, so it also sets the pitch. A volume below 0 counts as 0. Several mappings can share an event, and each one receives it.
+- A cue requested several times in one frame plays once, at the loudest requested volume. Forty coins caught in one tick make one sound, not forty. The same holds across systems. If a plugin and your game both play the same cue in a frame, it plays once.
+- Cues play after all of a frame's systems have run, in the order they were first requested. A `"postFrame"` system that `Sound.plugin` provides plays them.
 - A cue plays once, to its end.
 - Events emitted by a refused action are rolled back with everything else, so they are never heard.
 
-`Sound.Player` is the service that plays sounds, provided by `Sound.plugin`. A frame system plays a sound that no event stands for through it: `(yield* Sound.Player).play("click", { volume: 0.5 })`. It plays with the rest of its frame, merged with any other request for the same cue. A system of the tick or the input stage, and an action handler, cannot require it.
+`Sound.plugin` provides `Sound.Player`, the service that plays sounds. A frame system plays a sound that no event stands for through it, as in `(yield* Sound.Player).play("click", { volume: 0.5 })`. The sound plays with the rest of its frame, merged with any other request for the same cue. A system of the tick or the input stage, or an action handler, that requires `Sound.Player` doesn't compile.
 
-## Music
+## Play music that follows the game
 
 ```ts
 import { Sound, State } from "arcadekit";
@@ -68,42 +68,42 @@ const Score = Sound.music(
 );
 ```
 
-Each frame, the body returns what should play: a track by a name the output knows, a track with its own `volume` and `fade`, or `undefined` for silence. A track loops until the body returns another.
+Each frame, the body returns what should play. It returns a track by a name the output knows, a track with its own `volume` and `fade`, or `undefined` for silence. A track loops until the body returns another.
 
-Nothing happens while the body returns the same thing. When it returns a different track, the first fades out while the second fades in, over `fade` seconds; a different volume for the same track fades to it over the same time. The fade defaults to half a second.
+Nothing happens while the body returns the same thing. When it returns a different track, the first track fades out while the second fades in, over `fade` seconds. A new volume for the same track fades to it over the same time. The fade defaults to half a second.
 
-- Music is computed from the game and stored nowhere in it, so a game loaded from a save, or an app that starts in the middle of a level, has its music from the first frame.
-- Music isn't for one-off sounds, which are cues.
-- `{ track: "fanfare", once: true }` plays to its end and stops. It still counts as what the channel is playing: it doesn't restart while the body returns the same thing, a different track fades it out if it hasn't ended, and it plays again from the start once the body has returned something else in between.
-- The body can read anything a frame system can: singletons, states, queries, events, assets. When sound has no output, the body doesn't run at all.
-- Under `System.runIf`, a music system that doesn't run counts as returning silence: a level's music fades out when the level is left, with its configured fade, unless another system on its channel plays. When the system runs again, the body decides what plays, from the start of the track.
-- When the app's scope closes, every playing channel is silenced immediately.
+- Music is computed from the game and stored nowhere in it. A game loaded from a save, or an app that starts in the middle of a level, has its music from the first frame.
+- Use a cue, not music, for a one-off sound.
+- `{ track: "fanfare", once: true }` plays to its end and stops. It still counts as what the channel is playing. It doesn't restart while the body returns the same thing, and a different track fades it out if it hasn't ended. Once the body has returned something else in between, it plays again from the start.
+- The body can read anything a frame system can: singletons, states, queries, events, and assets. When sound goes nowhere, the body doesn't run at all.
+- Under `System.runIf`, a music system that doesn't run counts as returning silence. A level's music fades out with its configured fade when the game leaves the level, unless another system on its channel plays. When the system runs again, the body's track plays from its start.
+- When the app's scope closes, `Sound.plugin` silences every playing channel at once.
 
-### Channels
+### Play music on several channels
 
-Every music system plays on the `"music"` channel unless given another. When a menu and a level each have a music system that runs while the game is there, the one with something to play is heard, and a track both play continues seamlessly from one to the other. A frame's systems are merged per channel once they have all run: a track wins over silence, and the first one returned wins among tracks.
+Every music system plays on the `"music"` channel unless given another. When a menu and a level each have a music system that runs while the game is in them, the one with something to play is heard. A track that both play continues from one to the other without restarting. Once a frame's systems have all run, the player merges what they returned for each channel. A track wins over silence, and the same track returned twice plays once.
 
-Two systems returning different tracks for the same channel in one frame, or the same track at two volumes, is a bug: the frame fails where the second is returned, with an error naming the channel and both values.
+Two systems that return different tracks for the same channel in one frame, or the same track at two volumes, are a bug. The frame fails where the second is returned, with an error that names the channel and both tracks.
 
-Music that plays alongside the main score gets its own channel, with any name: `Sound.music("game/Wind", body, { channel: "wind" })`. Different channels play together, and several systems can share a channel.
+Give music that plays alongside the main score its own channel, with any name, as in `Sound.music("game/Wind", body, { channel: "wind" })`. Different channels play together, and several systems can share a channel.
 
-`(yield* Sound.Player).music(channel, track, { volume, fade })` is the call `Sound.music` is built on, for a frame system of your own. It only sends the output changes, so you can call it every frame. The output receives it at the end of the frame, like a cue.
+A frame system of your own can call `(yield* Sound.Player).music(channel, track, { volume, fade })`, which `Sound.music` is built on. It sends the output only the changes, so you can call it every frame. The output receives a change at the end of the frame, like a cue.
 
-## Sound doesn't affect the game
+## Choose where sound goes
 
-Sound follows real time and isn't part of the game. A game with sound has the same hash, log and save as one without, and a replay or a server, which runs no frame stage, plays nothing.
+Sound follows real time and isn't part of the game. A game with sound has the same hash, log, and save as one without. A replay or a server runs no frame stage, so it plays nothing.
 
-`Sound.Output` is where sound goes: how to open a speaker, a `Context.Reference` whose default is nowhere, in which case the cue system reads nothing. `Sound.plugin` opens it in the scope the app is made in, and lets go of it when that scope closes. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`. See [testing](testing.md#sound).
+`Sound.Output` is where sound goes: how to open a speaker. It is a `Context.Reference` whose default goes nowhere, and then the cue system reads nothing. `Sound.plugin` opens the output in the scope the app is made in, and lets go of the speaker when that scope closes. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked. It records the cues in `played`, what each channel was told in `scored`, and what each channel plays now in `playing`. See [testing](testing.md#sound).
 
-`Sound.clip(name, data)` creates a clip by hand, for a speaker of your own or for a test, which needs nothing to play: a recorder records a clip by its `name`, and the clip itself as `clip`.
+`Sound.clip(name, data)` makes a clip by hand, for a speaker of your own or for a test, which needs nothing to play. A recorder records a clip by its `name`, with the clip itself as `clip`.
 
-## When a frame fails
+## Keep stepping after a failed frame
 
-What a failed frame set for a channel stays in place until a frame completes. Systems that set something different for that channel in the next frame are refused, as if two had set it at once, unless the failure was that conflict itself. A game under a driver stops at a failed frame; a test that keeps stepping after one must account for this.
+When a frame fails, what it set for a channel stays in place until a frame completes. In the next frame, a system that sets something different for that channel is refused, as if two systems had set it at once. The exception is a frame that failed on that conflict itself. A game under a driver stops at a failed frame, so only a test that keeps stepping after one meets the refusal.
 
-## With rollback
+## Play sound under rollback
 
-In a multiplayer game played with [rollback](sessions.md), a tick can run again. A cue it plays again with the same payload plays once: the frame stage hears each event once however often a session runs its tick. A cue the tick now plays otherwise, or with another payload, plays then. A sound for something that is then rolled back has already played, and keeps playing. A game that must not play sounds early checks its session's `session.confirmed`.
+In a multiplayer game played with [rollback](sessions.md), a tick can run again. A cue that the second run plays with the same payload plays once, because the frame stage hears each event once however often a session runs its tick. A cue that only the second run plays, or plays with another payload, plays then. A sound for something that is later rolled back has already played, and keeps playing. A game that must not play sounds early checks `session.confirmed`.
 
 ## Read more
 

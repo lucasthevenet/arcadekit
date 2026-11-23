@@ -3,13 +3,13 @@ title: "Performance"
 description: "What each part of arcadekit costs, as measured by its benchmarks: loops, hashing and snapshots, change queries, idle ticks and frames, spawning, and actions."
 ---
 
-This guide lists what each part of arcadekit costs, as measured by its benchmarks: the two ways to loop, hashing and snapshots, change queries, idle ticks and frames, spawning and despawning, actions, and how to run the benchmarks yourself. [Drawing performance](drawing-performance.md) lists what `@arcadekit/three` costs a frame.
+arcadekit's **benchmarks** measure what each part of it costs: the two ways to loop, hashing and snapshots, change queries, idle ticks and frames, spawns and despawns, and actions. This page lists their results, and how to run them yourself. [Drawing performance](drawing-performance.md) lists what `@arcadekit/three` costs a frame.
 
-## Reading the numbers
+## How the numbers were measured
 
-The numbers come from a cloud Linux VM running Node 22. Each variant runs in its own process, and its line is the best of three runs. The machine is shared and noisy: about one run in six is 50% slower than the rest, and a variant can measure twice as slow from one run to the next. Trust the ratios more than the absolute numbers.
+The numbers come from a cloud Linux VM that runs Node 22. Each variant runs in its own process, and its line is the best of three runs. The machine is shared and noisy. About one run in six is 50% slower than the rest, and a variant can measure twice as slow from one run to the next. Trust the ratios more than the absolute numbers.
 
-Unless a table says otherwise, the world holds 100,000 entities, each with a position and a velocity of two floats. A tick at 60 per second has a budget of 16.7 ms.
+Unless a table says otherwise, the world holds 100,000 entities, each with a position and a velocity of two floats. A tick at 60 ticks a second has a budget of 16.7 ms.
 
 ## Loops
 
@@ -27,15 +27,15 @@ Every variant does the same work, `pos += vel * dt`:
 | Array of plain objects (no ECS)                            | 16.0      |
 | One Effect per entity                                      | 69.3      |
 
-- Start with [`each`](queries.md). In a game-like program with ten components and fields of six types, it costs 10 ns per entity, less than a loop over plain objects: a millisecond for 100,000.
-- `eachChunk` is three to four times faster, a quarter of a millisecond for 100,000. Use it for the few systems that visit most of the world every tick.
-- An Effect per entity costs seven times as much as `each`. That's why a system is one Effect with a plain loop inside.
-- A sparse tag that few entities have costs a loop little, as a filter. One that many entities have, interleaved with ones that don't, breaks tables into short runs and erases `eachChunk`'s advantage: store such a component in a table. See [components](components.md).
+- Start with [`each`](queries.md). In a game-like program with ten components and fields of six types, it costs 10 ns per entity, less than a loop over plain objects. That is a millisecond for 100,000 entities.
+- `eachChunk` is three to four times faster, a quarter of a millisecond for 100,000 entities. Use it for the few systems that visit most of the world every tick.
+- An Effect per entity costs seven times as much as `each`, so a system is one Effect with a plain loop inside.
+- As a filter, a sparse tag that few entities have costs a loop little. A sparse tag that many entities have, interleaved with entities that don't, breaks tables into short runs and erases `eachChunk`'s advantage. Store such a component in a table. See [components](components.md).
 - A query that requires a sparse tag held by 1 entity in 100 takes about 38 µs per pass to visit its 1,000 matches.
-- `each` rebinds its accessors for each table it visits, about 75 ns per term, so a world with very many very small tables pays for it: 100,000 entities in 8,192 tables measured 19.8 ns per entity.
+- `each` rebinds its accessors for each table it visits, at about 75 ns per term, so a world of many small tables pays for it. With 100,000 entities in 8,192 tables, `each` measured 19.8 ns per entity.
 - Running through `app.tick` adds no measurable cost to a loop over 100,000 entities.
 
-## Hashing, snapshots and rewinding
+## Hashing, snapshots, and rewinds
 
 | Variant | ns/entity |
 | --- | --- |
@@ -48,9 +48,10 @@ Every variant does the same work, `pos += vel * dt`:
 | `Timeline.capture()`: a game of those entities, kept to go back to | 6.9 |
 | `Timeline.rewind()`: the game put back to that moment | 16.2 |
 
-- Hashing a world costs about three raw passes over it: 1.4 ns per 32-bit field per entity, with an entity's id counting as two. A sparse component's field costs about four times that, since its members are hashed individually so that their order doesn't matter. An app's hash also encodes each action queued and each event waiting through its schema, about 0.6 µs apiece for a payload of four fields: 0.15 ms for 256 events, at every checkpoint.
-- A [checkpoint](replays.md) is one hash every `checkpointEvery` ticks, 60 by default: 14 µs per tick on average here.
-- A [rollback session](sessions.md) pays one capture per uncertain tick, 0.69 ms for 100,000 entities and 7 µs for a thousand. A misprediction costs a rewind, 1.6 ms for 100,000, plus resimulating the ticks since.
+- Hashing a world costs about three raw passes over it, 1.4 ns per 32-bit field per entity, with an entity's id counting as two fields. A sparse component's field costs about four times as much, because its members are hashed one by one so that their order doesn't matter.
+- An app's hash also encodes each queued action and each waiting event through its schema. Each costs about 0.6 µs for a payload of four fields, and 256 events cost 0.15 ms at every checkpoint.
+- A [checkpoint](replays.md) is one hash every `checkpointEvery` ticks, 60 by default. Over the world of 100,000 entities, checkpoints average 14 µs per tick.
+- A [rollback session](sessions.md) pays one capture per uncertain tick: 0.69 ms for 100,000 entities, and 7 µs for a thousand. A misprediction costs a rewind, 1.6 ms for 100,000 entities, plus running the ticks since then again.
 
 ## Change queries
 
@@ -67,15 +68,15 @@ With a query that watches `Position`:
 | `eachChunk` handed the watched component to write (`Query.writes`): every row noted | 6.3 ns/entity |
 | The same through a query that only reads it | 2.6 ns/entity |
 
-- Writes are tracked per row, and only for components some query watches. A component no query watches costs a loop what the first table shows.
-- For a watched component, an assignment in `each` costs about 5 ns more the first time a row is written since the last visit, and about 3 ns after that, while `eachChunk` costs 2.8 ns per row it passes. A loop through a query that only reads the component, one that leaves it out of [`Query.writes`](queries.md#what-a-query-writes), pays nothing.
-- Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the change log. A system that needs every entity every tick should use an ordinary query.
+- The app tracks writes per row, and only for components that some query watches. A component that no query watches costs a loop what the [loops](#loops) table shows.
+- For a watched component, an assignment in `each` costs about 5 ns more the first time a row is written since the last visit, and about 3 ns more after that. `eachChunk` costs 2.8 ns per row it passes. A loop through a query that only reads the component, one that leaves it out of [`Query.writes`](queries.md#name-what-a-query-writes), pays nothing.
+- Visiting all entities because all were written costs three and a half plain passes, since the query looks each entity up from the change log. A system that needs every entity every tick should use an ordinary query.
 
 ## Idle ticks and frames
 
-A tick of ten empty systems costs about 5 µs, and a frame of ten 5.8 µs. With a [condition](systems.md) on each of the ten that holds, the tick costs 8.5 µs; with one that doesn't, 3.5 µs.
+A tick of ten empty systems costs about 5 µs, and a frame of ten empty systems costs 5.8 µs. With a [condition](systems.md) that holds on each of the ten, the tick costs 8.5 µs. With a condition that doesn't hold, it costs 3.5 µs.
 
-The overhead of arcadekit's own plugins, each with little to do:
+arcadekit's own plugins cost this much when each has little to do:
 
 | Variant | Cost |
 | --- | --- |
@@ -89,14 +90,14 @@ The overhead of arcadekit's own plugins, each with little to do:
 | `app.frame()`: music that goes on as it was, nothing told | 1.24 µs |
 | One frame of a game at rest: the devices read, the app asked, drawn, no tick | 5.3 µs |
 
-- **Input**, with `Input.plugin`, three buttons held and the pointer somewhere. The input stage runs before every tick, so its idle cost is the one that matters: one sample of the devices, compared with the state in the world. An app with no input-stage system reads nothing and pays nothing.
-- **A view** of four fields, read from a singleton. It costs the game its body and one comparison per frame, 2.3 µs, and the UI nothing until a field differs. A new value is detected at the first differing field, which is why it costs less than an unchanged one. When no UI is attached, the system checks for one and stops.
-- **Sound**, with one system playing cues for two kinds of event, or one keeping a channel's music, to an output that does nothing. It costs a frame two reads of empty event queues, 0.7 µs over an empty frame, plus 0.2 µs per cue played. When sound has no output, the system checks for one and stops.
-- **A game at rest** is one that [ticks only when needed](running-a-game.md), with device state, a state and a view.
-- Verifying frames with `verifyFrames` costs a hash of the world before the stage and after each of its systems, 1.7 ms more for one system over 100,000 entities. Use it in [tests](testing.md#the-frame-stage).
-- Checking rewinds with `Session.syncTest` costs a capture of the game, a rewind, a second run and a world hash per system, every tick: about 100 µs a tick for a game of 1,000 entities and two systems, against 7 to 20 µs without. Use it in [tests](testing.md#rewinds).
+- **Input** was measured with `Input.plugin`, three buttons held, and the pointer somewhere. The input stage runs before every tick, so its idle cost is the one that matters: one sample of the devices, compared with the state in the world. An app with no input-stage system reads nothing and pays nothing.
+- **A view** was measured with four fields, read from a singleton. It costs the game its body and one comparison per frame, 2.3 µs, and costs the UI nothing until a field differs. The comparison stops at the first field that differs, so a new value costs less than an unchanged one. When no UI is attached, the system checks for one and stops.
+- **Sound** was measured with one system that plays cues for two kinds of event, or one that keeps a channel's music, to an output that does nothing. The cue system costs a frame two reads of empty event queues, 0.7 µs over an empty frame, plus 0.2 µs per cue played. When sound goes nowhere, the system checks for an output and stops.
+- **A game at rest** was measured as one that [ticks only when needed](running-a-game.md#tick-only-when-needed), with device state, a state, and a view.
+- `verifyFrames` hashes the world before the frame stage and after each of its systems. For one system over 100,000 entities, it adds 1.7 ms. Use it in [tests](testing.md#the-frame-stage).
+- `Session.syncTest` checks rewinds with a capture of the game, a rewind, a second run, and a world hash per system, every tick. For a game of 1,000 entities and two systems, the check costs about 100 µs a tick, against 7 to 20 µs without it. Use it in [tests](testing.md#rewinds).
 
-## Spawning and despawning
+## Spawns and despawns
 
 | Variant                                                    | Cost   |
 | ---------------------------------------------------------- | ------ |
@@ -104,7 +105,7 @@ The overhead of arcadekit's own plugins, each with little to do:
 | The same, each also pointing at one entity with a relation | 693 µs |
 | Despawn 100 parents, each taking its 10 children with it   | 143 µs |
 
-A relation costs its component plus a few assignments to link and unlink: 0.13 µs more per entity spawned and despawned with one. A cascading despawn costs the same as despawning each entity individually, 130 ns each here.
+A relation costs its component plus a few assignments to link and unlink, 0.13 µs more per entity spawned and despawned with one. A cascading despawn costs the same as despawning each entity alone, 130 ns per entity in the last row.
 
 ## Actions
 
@@ -117,19 +118,19 @@ One action, in the world of 100,000 entities:
 | Handler loops over all 100,000 with `each`, accepted | 0.81 ms |
 | The same, refused after its loop                     | 0.94 ms |
 
-- A handler runs in a transaction, so that a [refusal leaves no trace](events-and-actions.md). A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to restore them on refusal.
-- Columns a query only reads aren't copied: a handler that reads all 100,000 entities takes 0.78 ms through a query that names them in `Query.writes` and 0.67 ms through one that doesn't.
-- A refusal itself costs about 9 µs, which is Effect constructing the failure.
+- A handler runs in a transaction, so that a [refusal leaves no trace](events-and-actions.md). A handler that loops pays for one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to restore them on refusal.
+- Columns that a query only reads aren't copied. A handler that reads all 100,000 entities takes 0.78 ms through a query that names the component in `Query.writes`, and 0.67 ms through one that doesn't.
+- A refusal itself costs about 9 µs, the time Effect takes to construct the failure.
 
-## Running the benchmarks
+## Run the benchmarks
 
-The benchmarks live in the repository, not in the published packages. From a checkout:
+The benchmarks are in the repository, not in the published packages. Run them from a checkout:
 
 ```sh
 pnpm --filter arcadekit bench
 ```
 
-They are in [`packages/arcadekit/bench`](../../../../../packages/arcadekit/bench). Each variant runs in its own process because V8 specialises a call site for the functions it has seen: a variant that runs after others in the same process measures slower than it is. Do the same when you benchmark your own systems.
+They are in [`packages/arcadekit/bench`](../../../../../packages/arcadekit/bench). Each variant runs in its own process, because V8 specialises a call site for the functions it has seen. A variant that runs after others in the same process measures slower than it is. Run each variant in its own process when you benchmark your own systems too.
 
 ## Read more
 
