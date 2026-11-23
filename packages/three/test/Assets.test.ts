@@ -58,10 +58,12 @@ const Arrive = Action.define(
   })
 );
 const arrive = Action.handler(Arrive, function* ({ kind, paint, x }) {
-  return (yield* Commands.spawns(Tree, Deer, Position, Color.Linear)).spawn(
+  return (yield* Commands.spawns(Tree, Deer, Position, Color.Rgb)).spawn(
     kind === "tree" ? Tree : Deer,
     at(x),
-    ...(paint === undefined ? [] : [Color.Linear.of(paint)])
+    ...(paint === undefined
+      ? []
+      : [Color.Rgb.of({ ...paint, space: Color.Linear })])
   );
 });
 const Move = Action.define(
@@ -237,7 +239,7 @@ const geometry = new BoxGeometry(1, 1, 1);
 const makeTrees = (
   Forest: Forest,
   log: string[],
-  more: { readonly smooth?: boolean; readonly color?: typeof Color.Linear } = {}
+  more: { readonly smooth?: boolean; readonly color?: typeof Color.Rgb } = {}
 ) => {
   const looks: { readonly bark: Bark; readonly material: MeshBasicMaterial }[] =
     [];
@@ -557,7 +559,7 @@ describe("instances whose look is made of assets", () => {
     const Forest = makeForest(log);
     const { Trees } = makeTrees(Forest, log, {
       smooth: true,
-      color: Color.Linear,
+      color: Color.Rgb,
     });
     const { app, enter, mesh, moveTo, spawn } = play([during(Forest), Trees]);
     const tree = spawn("tree", 0, { r: 0.25, g: 0.5, b: 0.75 });

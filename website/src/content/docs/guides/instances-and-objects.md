@@ -53,19 +53,21 @@ const Painted = Three.instances("game/Painted", {
   transform: Transform3d,
   geometry,
   material: new MeshStandardMaterial({ color: "#ffffff" }),
-  color: Color.Srgb,
+  color: Color.Rgb,
 });
 ```
 
-`color` gives each instance the colour its entity has, from one of arcadekit's two colour components, [`Color.Srgb`](/reference/arcadekit/Color#srgb) or [`Color.Linear`](/reference/arcadekit/Color#linear). Like `Transform3d`, they belong to arcadekit and not to this package, because an entity's colour, such as its team's or how damaged it is, is part of your game. The rules write it as they write a position: `commands.spawn(Rock, Transform3d.Position, Color.Srgb.of({ r: 1, g: 0.5, b: 0 }))`. A component of your game's own doesn't compile as `color`, whatever its fields.
+`color` gives each instance the colour its entity has, from arcadekit's colour component, [`Color.Rgb`](/reference/arcadekit/Color#rgb). Like `Transform3d`, it belongs to arcadekit and not to this package, because an entity's colour, such as its team's or how damaged it is, is part of your game. The rules write it as they write a position: `commands.spawn(Rock, Transform3d.Position, Color.Rgb.of({ r: 1, g: 0.5, b: 0, space: Color.Srgb }))`. A component of your game's own doesn't compile as `color`, whatever its fields.
 
-- An entity without the colour is drawn in the material's own colour, as if its colour were white. Giving some entities a colour changes how those look, and hides none. An entity that has the other colour component counts as one without.
-- The system multiplies the material's colour by the instance's, so a white material is drawn in exactly the instance's colour. Either component is white when added bare.
-- `Color.Srgb` holds a colour as a hex code writes it, each number from 0 to 1. `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255`, and a `b` of `0x88 / 255`. Renderers work in linear colour, so the system converts each number. It converts a hex code's byte exactly, and any other number to within a sixteenth of a byte.
-- A number below 0 or over 1 in a `Color.Srgb`, such as a byte that wasn't divided by 255, isn't a colour. `Three.instances` fails the frame with an error that names the entity and its three numbers.
-- `Color.Linear` holds the renderer's own numbers, which Three.js's `new Color("#ff6188")` holds as its `r`, `g`, and `b`. The system passes them through unchanged, whatever they are. A number over 1 is brighter than white, which a renderer with bloom can show.
-- A colour costs about 6 ns more per entity for a `Color.Srgb`, mostly the conversion, and 2 ns more for a `Color.Linear`. It allocates nothing.
-- With `smooth: true`, a colour is interpolated between two ticks like a position. `snap` doesn't apply to it, so no colour change is too large to interpolate. The system interpolates in your game's numbers and then converts, so halfway between two hex codes is the hex code halfway between them.
+A colour's `space` says how its numbers are drawn, [`Color.Srgb`](/reference/arcadekit/Color#srgb) or [`Color.Linear`](/reference/arcadekit/Color#linear). Each entity's colour is drawn in its own space, so entities of one kind can have either.
+
+- An entity without the colour is drawn in the material's own colour, as if its colour were white. Giving some entities a colour changes how those look, and hides none.
+- The system multiplies the material's colour by the instance's, so a white material is drawn in exactly the instance's colour. The colour is white when added bare.
+- A colour in `Color.Srgb` is written as a hex code writes it, each number from 0 to 1. `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255`, and a `b` of `0x88 / 255`. Renderers work in linear colour, so the system converts each number. It converts a hex code's byte exactly, and any other number to within a sixteenth of a byte.
+- A number below 0 or over 1 in `Color.Srgb`, such as a byte that wasn't divided by 255, isn't a colour. `Three.instances` fails the frame with an error that names the entity and its three numbers.
+- A colour in `Color.Linear` is the renderer's own numbers, which Three.js's `new Color("#ff6188")` holds as its `r`, `g`, and `b`. The system passes them through unchanged, whatever they are. A number over 1 is brighter than white, which a renderer with bloom can show.
+- A colour costs about 9 ns more per entity in `Color.Srgb`, mostly the conversion, and 5 ns more in `Color.Linear`. It allocates nothing.
+- With `smooth: true`, a colour is interpolated between two ticks like a position. `snap` doesn't apply to it, so no colour change is too large to interpolate. The system interpolates in your game's numbers and then converts them by the space the colour has at the later tick, so halfway between two hex codes is the hex code halfway between them.
 
 ## Keep one object per entity
 
