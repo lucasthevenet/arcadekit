@@ -45,7 +45,7 @@ The folders are a contract, and most of it is checked.
 
 ## Root causes, not workarounds
 
-- Fix the cause. The workarounds this repository is most likely to grow are: a timer, a promise or `Effect.sleep` that makes something happen later (in a tick it resumes outside the tick, and no replay repeats it; order is said with the list, a stage, a state's hooks or `Ticks.more`); a wait or a retry in a test that passes most of the time; a `try` that swallows a defect; a cast, `as unknown as`, an `any` or a `!` that quiets the compiler where the types are wrong; and a write through a raw column or a `world._` field from code that may not make it.
+- Fix the cause, as pstack's [`principle-fix-root-causes`](https://github.com/cursor/plugins/blob/main/pstack/skills/principle-fix-root-causes/SKILL.md) skill says. The workarounds this repository is most likely to grow are: a timer, a promise or `Effect.sleep` that makes something happen later (in a tick it resumes outside the tick, and no replay repeats it; order is said with the list, a stage, a state's hooks or `Ticks.more`); a wait or a retry in a test that passes most of the time; a `try` that swallows a defect; a cast, `as unknown as`, an `any` or a `!` that quiets the compiler where the types are wrong; and a write through a raw column or a `world._` field from code that may not make it.
 - Code that is already here is not precedent. If what you would copy is a workaround, a deprecated API or an Effect 3 habit, do not copy it: say so. If it is in the module you are changing and fixing it is small, fix it and add the check that keeps it out; otherwise name it in the PR.
 - Two checks are off on purpose, and no other is: `eslint/require-yield`, because a system is a generator even when it yields nothing, and `test/policyGame.ts` makes code from text because that is what it tests.
 - Use the constrained form when there is one. [Rules for your simulation](../../../website/src/content/docs/concepts/determinism.md#rules-for-your-simulation) lists them for what a tick runs (`Time`, `Random`, work kept in the world, an action for a device), and the package's own code keeps to the same list. Beside it: `App.make` and never `Layer.build` or a `Scheduler` of your own; `yield*` and never `Effect.runSync` inside a program; `app.enqueue` and never `app.dispatch` in a game of several peers; `State.onEnter` and never a flag a system checks; `Query.changed` and never a copy kept to compare.
@@ -53,8 +53,7 @@ The folders are a contract, and most of it is checked.
 ## Comments
 
 - Every export has a doc comment, which is its reference: the `jsdocs` skill says how one is written.
-- Inside the code, write no comment by default. Write one only for a why the code cannot say: an invariant, an order that matters, a number that was measured, the engine a design came from. Keep it to a line or two.
-- No comment, doc sentence or rule explains a workaround or why the right thing was not done. Say that in the reply or the PR. If the debt stays, it is an issue, with what would close it, as `AGENTS.md` says.
+- Inside the code, comments follow pstack's [`no-comments`](https://github.com/cursor/plugins/blob/main/pstack/skills/no-comments/SKILL.md) skill, run on the diff before it is reviewed. Beside what it keeps, a line or two may stay for a number that was measured or the engine a design came from.
 
 ## Where the code does not follow this yet
 
