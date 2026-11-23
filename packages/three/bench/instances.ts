@@ -16,12 +16,13 @@ import {
   Commands,
   Component,
   Plugin,
+  Query,
   Transform2d,
   Transform3d,
   World,
 } from "arcadekit";
 import { System } from "arcadekit";
-import type { Frame, Spawned, Time } from "arcadekit";
+import type { Frame, Time } from "arcadekit";
 import type { ComponentDef, ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
@@ -43,7 +44,7 @@ const median = (values: number[]): number =>
   values.toSorted((a, b) => a - b)[values.length >> 1]!;
 
 /** A plugin whose setup spawns the crowd, each entity a Thing with `parts`. */
-const crowd = (parts: () => ComponentInput[], spawned: Spawned[] = []) => {
+const crowd = (parts: () => ComponentInput[]) => {
   const defs: ComponentDef[] = [Thing];
   for (const part of parts()) {
     defs.push("def" in part ? part.def : part);
@@ -52,7 +53,7 @@ const crowd = (parts: () => ComponentInput[], spawned: Spawned[] = []) => {
     setup: Effect.gen(function* () {
       const commands = yield* Commands.spawns(...defs);
       for (let i = 0; i < N; i++) {
-        spawned.push(commands.spawn(Thing, ...parts()));
+        commands.spawn(Thing, ...parts());
       }
     }),
   });
@@ -273,24 +274,19 @@ variant(
 // What the loops above replace: an Object3D per entity, its matrix worked
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
-  const spawned: Spawned[] = [];
-  const world = Effect.runSync(
+  const { entities, world } = Effect.runSync(
     Effect.gen(function* () {
       const app = yield* App.make(
         App.define({
-          plugins: [crowd(() => [place(), turn(), size()], spawned)],
+          plugins: [crowd(() => [place(), turn(), size()])],
         })
       );
-      return yield* app.read(World);
+      return {
+        entities: (yield* app.read(Query.all(Thing))).entities(),
+        world: yield* app.read(World),
+      };
     })
   );
-  const entities = spawned.map((id) => {
-    const entity = world.placed(id);
-    if (entity === undefined) {
-      throw new Error("an entity of the crowd was not placed");
-    }
-    return entity;
-  });
   const mesh = new InstancedMesh(geometry, material, N);
   const dummy = new Object3D();
   const { bytes, ns } = measure(() => {
