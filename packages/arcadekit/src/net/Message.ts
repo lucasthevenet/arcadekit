@@ -5,12 +5,12 @@
  * that tick, usually nothing, and the checkpoints its log recorded since its
  * last message. Its first message also says what it was made with, `Made`,
  * which the others compare with their own before anything else. Every message
- * says how far the peer has heard the others, `heard`, so that each keeps
+ * says how far the peer has heard the others, `heard`, so each peer keeps
  * what it sent until every other peer has it.
  *
- * A transport carries messages as the text `encode` writes, and a relay
- * passes them on: neither needs a session, a peer or an app. A relay also
- * tells a room who joined it and who left it, with a `Notice`.
+ * A transport carries messages as the text `Message.encode` writes, and a
+ * relay passes them on. Neither needs a session, a peer or an app. A relay
+ * also tells a room who joined it and who left it, with a `Notice`.
  */
 import { Schema } from "effect";
 import type { Exit } from "effect";
@@ -28,8 +28,8 @@ export interface Issued {
 }
 
 /**
- * What a peer was made with, which every peer of a game is made with alike,
- * as its first message says it.
+ * What a peer was made with, as its first message says. Every peer of a game
+ * is made alike.
  *
  * @category Models
  */
@@ -51,8 +51,8 @@ export interface Made {
 
 /**
  * What peers send each other: everything one peer issued for one tick. Every
- * peer sends one for every tick, usually with no actions in it: it is also how
- * a peer says it has nothing more for that tick.
+ * peer sends one for every tick, usually with no actions in it. An empty
+ * message is how a peer says it has nothing more for that tick.
  *
  * @category Models
  */
@@ -72,15 +72,15 @@ export interface Message {
    */
   readonly checkpoints?: readonly Action.Checkpoint[];
   /**
-   * What the peer was made with, in the message for the tick its game begins
-   * at alone.
+   * What the peer was made with. Only the message for the tick its game
+   * begins at has it.
    */
   readonly made?: Made;
   /**
-   * The first tick the peer is missing a message for, from any other peer:
-   * it has every peer's message for each tick before it. A peer keeps what it
-   * sent until every other peer has said it heard that far. Omitted, it says
-   * nothing.
+   * The first tick for which the peer is missing another peer's message. It
+   * has every peer's message for each tick before it. A peer keeps what it
+   * sent until every other peer has said it heard that far. A message without
+   * it says nothing of what its peer heard.
    */
   readonly heard?: number;
 }
@@ -88,7 +88,7 @@ export interface Message {
 /**
  * What a relay tells the members of a room: that a peer joined it, again or
  * for the first time, or that it left. A peer that joins is told who is
- * there already, a `joined` for each.
+ * there already, with a `joined` for each.
  *
  * @category Models
  */
@@ -142,9 +142,10 @@ const NoticeSchema = Schema.fromJsonString(
 export const encode = (message: Message): string => JSON.stringify(message);
 
 /**
- * Decodes a message from text. It checks the message's own structure; each
- * payload is validated against its action's schema when the action is applied,
- * and a payload that fails is refused by every peer alike.
+ * Decodes a message from text, and fails with a `Schema.SchemaError` on text
+ * that isn't one. It checks the message's own structure. Each payload is
+ * checked against its action's schema when the action is applied, and every
+ * peer refuses a payload that fails.
  *
  * @category Codecs
  */
@@ -159,7 +160,8 @@ export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
 export const encodeNotice = (notice: Notice): string => JSON.stringify(notice);
 
 /**
- * Decodes a relay's notice from text. A message is not one.
+ * Decodes a relay's notice from text, and fails on a message or anything
+ * else that isn't a notice.
  *
  * @category Codecs
  */

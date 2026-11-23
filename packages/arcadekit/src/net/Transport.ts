@@ -14,18 +14,22 @@
  *   )
  *
  * `Transport.connect` listens on the transport in the scope of the program
- * that calls it, and returns what a driver steps: each tick, it passes the
+ * that calls it, and returns what a driver steps. Each tick, it passes the
  * session what has arrived, runs the session's tick, and sends what the
- * session produced. The service itself holds no channel, only how to listen
- * on one, so its layer can be provided anywhere: the channel lasts as long as
- * the program that drives the session.
+ * session produced. The service holds no channel, only how to listen on one,
+ * so its layer can be provided anywhere, and the channel lasts as long as the
+ * program that drives the session.
  *
- * A transport needs little from its channel: every message must arrive, in any
- * order. `Transport.layerWebSocket` connects machines through a relay
- * (`arcadekit/Relay`); `Transport.layerBroadcastChannel` connects the tabs and
- * workers of one browser; `Transport.text` creates a transport over anything
- * else that carries text; and `Transport.makeHub` is an in-memory network for
- * tests, which delays and reorders messages as configured.
+ * A transport needs only that every message arrives, in any order. A game
+ * gets one from these:
+ *
+ * - `Transport.layerWebSocket` connects machines through a relay,
+ *   `arcadekit/net/Relay`.
+ * - `Transport.layerBroadcastChannel` connects the tabs, windows and workers
+ *   of one browser.
+ * - `Transport.text` makes a transport over anything else that carries text.
+ * - `Transport.makeHub` is an in-memory network for tests, which delays and
+ *   reorders messages as it is told.
  */
 import { Context, Data, Effect, Exit, Layer } from "effect";
 import type { Scope } from "effect";
@@ -36,10 +40,10 @@ import * as Message from "./Message";
 import type { Peer } from "./Peer";
 
 /**
- * A transport being listened on. Both of its operations are plain calls: nothing here
- * waits, so a tick that uses them stays one synchronous step. Whatever listens
- * behind the transport, a channel or a socket, fills a buffer in its own time,
- * and `receive` returns the buffer.
+ * A transport being listened on. Its two calls don't wait, so a tick that
+ * uses them stays one synchronous step. Whatever listens behind the
+ * transport, a channel or a socket, fills a buffer in its own time, and
+ * `receive` returns the buffer.
  *
  * @category Models
  */
@@ -56,9 +60,9 @@ export interface Listener {
 }
 
 /**
- * This peer's transport: how to listen on it. A multiplayer game must be given
- * one, and one without doesn't compile: there is no default, since every way of
- * reaching the other peers is an explicit choice.
+ * The service that says how this peer listens on its transport. A
+ * multiplayer game that isn't given one doesn't compile. There is no default,
+ * since every way of reaching the other peers is an explicit choice.
  *
  * It holds no channel. `listen` opens one in the scope it is run in, and closes
  * it with that scope, so whatever the layer is provided to, the channel lasts
@@ -73,8 +77,11 @@ export class Transport extends Context.Service<
 
 /**
  * Listens on this peer's transport in the current scope, as
- * `Transport.connect` does: for a program that sends and receives messages
- * itself.
+ * `Transport.connect` does.
+ *
+ * **When to use**
+ *
+ * Use when a program sends and receives messages itself.
  *
  * @category Running
  */
@@ -82,7 +89,8 @@ export const listen: Effect.Effect<Listener, never, Transport | Scope.Scope> =
   Effect.flatMap(Transport, (transport) => transport.listen);
 
 /**
- * Returns a layer that provides a hand-made transport, listened on already.
+ * Returns a layer that provides a transport made by hand, already listened
+ * on. The layer doesn't close it: the program that made it does.
  *
  * @category Layers
  */
@@ -101,25 +109,24 @@ export interface Connected extends Paced {
   /** The session's frame stage, for a driver to draw the game with. */
   readonly frame: (alpha: number, delta?: number) => void;
   /**
-   * The peers a relay has said left the room, and that haven't joined it
-   * again, in order of name. The session waits for them: say so to the
-   * player. A transport that isn't a relay's says nothing of it, and this is
-   * empty.
+   * The peers a relay has said left the room and that haven't joined it
+   * again, in order of name. The session waits for them, so tell the player.
+   * A transport that reports no peer leaving keeps it empty.
    */
   readonly away: readonly string[];
 }
 
 /**
- * Listens on the transport in the current scope and connects a session to it. Each
- * tick of the result passes the session every message that has arrived, runs
- * the session's tick, and sends what the session produced, whether the tick
- * ran, waited or failed: a session that stops because the peers drifted apart
- * tells the others first.
+ * Listens on the transport in the current scope, and connects a session to
+ * it. Each tick of the result passes the session every message that has
+ * arrived, runs the session's tick, and sends what the session produced,
+ * whether the tick ran, waited or failed. So a session that stops because
+ * the peers drifted apart tells the others first.
  *
- * When a relay says a peer joined the room, as it does when a peer comes back
- * after its socket dropped, and to that peer of each one there, the session
- * sends again what some peer hasn't heard. When it says a peer left, the peer
- * is in `away` until it joins again.
+ * A relay says a peer joined the room when it comes back after its socket
+ * dropped, and tells that peer of each peer already there. On such a notice,
+ * the session sends again what some peer hasn't heard. A peer the relay says
+ * left is in `away` until it joins again.
  *
  *   yield* Driver.frames(yield* Transport.connect(session))
  *
@@ -182,7 +189,7 @@ export const connect: (
  * @category Models
  */
 export interface Wire {
-  /** Sends a text to every other peer. */
+  /** Sends text to every other peer. */
   readonly send: (text: string) => void;
   /**
    * Calls `onText` with each text that arrives from another peer. Returns a
@@ -198,8 +205,8 @@ export interface Wire {
  */
 export interface TextTransport extends Listener {
   /**
-   * Stops listening to the wire. `send` and `receive` throw from then on, in
-   * place of a game that would wait for messages that can no longer arrive.
+   * Stops listening to the wire. `send` and `receive` throw from then on, so
+   * a game doesn't wait for messages that can no longer arrive.
    */
   readonly close: () => void;
   /**
@@ -210,13 +217,13 @@ export interface TextTransport extends Listener {
 }
 
 /**
- * Makes a transport over anything that carries text. Messages are sent in the
- * format `Message.encode` writes, and arriving text is read with
- * `Message.decode`, or as a relay's notice with `Message.decodeNotice`: text
- * that is neither is dropped and counted.
+ * Makes a transport over anything that carries text. It sends messages as
+ * `Message.encode` writes them, and reads arriving text with
+ * `Message.decode`, or as a relay's notice with `Message.decodeNotice`. It
+ * drops text that is neither, and counts it in `dropped`.
  *
- * The wire must deliver every message, in any order. A WebSocket does; a data
- * channel must be configured to.
+ * The wire must deliver every message, in any order. A WebSocket does, and a
+ * data channel must be configured to.
  *
  * It throws when it is used after `close`. It authenticates no sender, and
  * doesn't report that its wire closed, unless your code does.
@@ -277,10 +284,10 @@ export const text = (wire: Wire): TextTransport => {
  * machines.
  *
  * The channel opens when `Transport.connect` listens on the transport, and
- * closes with the scope it was opened in. A transport used after that throws and says
- * so.
+ * closes with the scope it was opened in. A transport used after that throws
+ * and says so.
  *
- * Unlike a relay, nothing authenticates the sender here: a peer can send a
+ * Unlike a relay, nothing authenticates the sender here. A peer can send a
  * message in another peer's name, and the peers then stop as drifted.
  *
  * @category Layers
@@ -331,11 +338,12 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
   });
 
 /**
- * A transport's socket is closed for good: the relay refused it, or the
- * network was gone for longer than it tries to connect again. `send` and
- * `receive` throw this error from then on, so the tick that uses the transport
- * fails with it and its driver stops, instead of the game waiting for messages
- * that can never arrive. The relay tells the other peers that this one left.
+ * A transport's socket is closed for good: it never opened, the relay refused
+ * it, or the network was gone for longer than `reconnectFor`. `send` and
+ * `receive` throw this error from then on. The tick that uses the transport
+ * fails with it and its driver stops, instead of the game waiting for
+ * messages that can never arrive. The relay tells the other peers that this
+ * one left.
  *
  * @category Errors
  */
@@ -391,12 +399,13 @@ const refused = (code: number, reason: string, again: boolean): boolean =>
  *
  * - The socket opens when `Transport.connect` listens on the transport. Messages
  *   sent before it opens are buffered and sent once it does.
- * - It closes with the scope it was opened in; a transport used after that
- *   says so.
+ * - It closes with the scope it was opened in. A transport used after that
+ *   throws and says so.
  * - When a socket that was open drops, it connects again, waiting longer each
  *   time, up to two seconds, for as long as `reconnectFor` says. What is sent
  *   meanwhile is buffered. The relay tells the room it joined again, and the
- *   sessions send each other again what was lost: see `Transport.connect`.
+ *   sessions send each other again what was lost, as `Transport.connect`
+ *   says.
  * - A name that is taken is tried again too, since the relay may not have
  *   seen the old socket close yet.
  * - `send` and `receive` throw `Transport.Closed`, with the close code and the
@@ -552,9 +561,9 @@ export const layerWebSocket = (
  */
 export interface HubOptions {
   /**
-   * How many steps a message takes to arrive: a number, or a range each
-   * message's delay is drawn from, so a message sent later can arrive first.
-   * Defaults to 0: the message is there on the next `receive`.
+   * How many steps a message takes to arrive: a number, or a range to draw
+   * each message's delay from, so that a message sent later can arrive first.
+   * Defaults to 0, so a message is there on the next `receive`.
    */
   readonly delay?: number | { readonly min: number; readonly max: number };
   /** The seed delays are drawn from: the same seed produces the same network. */
@@ -578,9 +587,9 @@ export interface Hub {
   /** Advances time by one step: every message in transit is one step closer. */
   readonly step: () => void;
   /**
-   * Cuts a peer off, as a socket that drops: what is on its way to it or from
-   * it is lost, and until it reconnects it hears nothing and what it sends is
-   * lost. The other peers are told it left, as a relay tells them.
+   * Cuts a peer off, as when its socket drops. What is on its way to it or
+   * from it is lost. Until it reconnects, it hears nothing, and what it sends
+   * is lost. The other peers are told it left, as a relay tells them.
    */
   readonly disconnect: (peer: string) => void;
   /**
@@ -595,10 +604,9 @@ export interface Hub {
 
 /**
  * Makes an in-memory network. Nothing is lost unless a peer is cut off with
- * `disconnect`, and nothing happens until the test says so: a message is in
- * transit for as many steps as its delay, and time advances when `step` is
- * called. Messages travel as text, so a message
- * that wouldn't survive a wire doesn't survive this either.
+ * `disconnect`, and time moves only when the test calls `step`. A message is
+ * in transit for as many steps as its delay. Messages travel as text, so a
+ * message that wouldn't survive a wire doesn't survive the hub either.
  *
  *   const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 })
  *   const ada = yield* Transport.connect(session).pipe(Effect.provide(hub.layer("ada")))
