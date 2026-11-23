@@ -307,8 +307,11 @@ export class World {
   private stores: readonly Store[] = [];
   /** The moments this world captured: `_rewind` takes no other. */
   private readonly moments = new WeakSet<Moment>();
-  /** Where what the logs hold since the last capture goes, once there was one. */
-  private trail: Trail | undefined;
+  /**
+   * Where what the logs hold since the last capture goes, once there was one.
+   * Only moments hold it: once none is left, nothing is kept for one.
+   */
+  private trail: WeakRef<Trail> | undefined;
   /** The run of the trail: a moment of another can't find its way in it. */
   private trails = 0;
   /** The random generator's state when the world was frozen. */
@@ -2247,11 +2250,42 @@ export class World {
   }
 
   /**
+   * @internal
+   * Whether a moment still holds the trail. Once none does, no rewind can ask
+   * for what the logs keep for one: they keep nothing more, and a log of
+   * removals that only the trail read is dropped.
+   */
+  _keeping(): boolean {
+    if (this.trail === undefined) {
+      return false;
+    }
+    if (this.trail.deref() !== undefined || this._recording) {
+      return true;
+    }
+    this.trail = undefined;
+    this.trails++;
+    const logs = this.logs.filter(
+      (log) => log.kind !== "removed" || log.cursors.length > 0
+    );
+    for (const log of this.logs) {
+      log.kept = undefined;
+      if (!logs.includes(log)) {
+        this.removedLogs[log.def.id] = undefined;
+      }
+    }
+    this.logs.splice(0, this.logs.length, ...logs);
+    for (const log of logs) {
+      log.moved();
+    }
+    return false;
+  }
+
+  /**
    * Puts what the logs hold since the last capture on the trail, and starts
    * the trail anew for the moment being captured.
    */
   private follow(): Trail {
-    const last = this.trail;
+    const last = this._keeping() ? this.trail?.deref() : undefined;
     if (last === undefined) {
       for (const log of this.logs.filter((one) => one.kind !== "removed")) {
         this._log(log.def, "removed");
@@ -2278,7 +2312,7 @@ export class World {
     if (last !== undefined) {
       last.next = next;
     }
-    this.trail = next;
+    this.trail = new WeakRef(next);
     return next;
   }
 
@@ -2314,7 +2348,7 @@ export class World {
     if (!onTrail) {
       this.trails++;
     }
-    this.trail = onTrail ? trail : undefined;
+    this.trail = onTrail ? new WeakRef(trail) : undefined;
     this.restoreChanges(ahead(given, changes, this._slots));
   }
 

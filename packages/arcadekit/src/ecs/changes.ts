@@ -177,6 +177,10 @@ export class ChangeLog {
 
   /** Makes room for one more entry and returns its position. */
   private makeRoom(): number {
+    // What is kept for a moment that no one holds any more is let go.
+    if (this.kept !== undefined && !this.world._keeping()) {
+      this.moved();
+    }
     // A reader that has not run for a long time keeps everything logged
     // since. Before the log outgrows the world, entities logged more than
     // once are brought down to once. Not in a transaction, whose rollback
