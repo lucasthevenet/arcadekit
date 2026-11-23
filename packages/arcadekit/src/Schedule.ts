@@ -1,11 +1,10 @@
 /**
- * A game's schedule: its systems, each with its turn, by when it runs. The
- * tick's systems in the order they run, the frame stage's and the input
- * stage's, and the hooks of each state, which run when the game enters or
- * leaves it.
+ * A game's schedule holds its systems by when they run, each with its turn.
+ * It has the tick's systems in the order they run, the frame stage's, the
+ * input stage's, and the hooks of each state, which run when the game enters
+ * or leaves one of the state's values.
  *
- * An app makes one from the systems of its plugins and its own, and gives
- * each list its turns.
+ * An app makes its schedule from its plugins' systems and its own.
  */
 import { Effect } from "effect";
 
@@ -14,19 +13,36 @@ import type * as State from "./State";
 import * as System from "./System";
 
 /**
- * A system as the app runs it: its condition, then its run or what it
- * does in place of running, in a span of its own when the app traces.
- * Made once, so an app that doesn't trace runs what it would without.
- * What its last turn was is kept for `app.inspect`.
+ * A system as the app runs it. A turn checks the system's condition, then runs
+ * the system or what it does in place of running, in a span of its own when
+ * the app traces. A turn is made once, so an app that doesn't trace runs no
+ * tracing code. What its last turn was is kept for `app.inspect`.
  *
  * @category Models
  */
 export class Turn {
-  /** Asked before `run`, unless the span holds it. */
+  /**
+   * The system's condition, checked before `run`. It is undefined for a system
+   * with no condition, and when `run` checks the condition in its span.
+   */
   readonly condition: Effect.Effect<boolean, unknown, unknown> | undefined;
+  /**
+   * What runs in place of `run` when the condition doesn't hold. It is
+   * undefined for a system with nothing to run then, and when `run` runs it
+   * in its span.
+   */
   readonly idle: Effect.Effect<void, unknown, unknown> | undefined;
+  /** The system's run, in a span of its own when the app traces. */
   readonly run: Effect.Effect<void, unknown, unknown>;
+  /**
+   * Whether the system ran on its last turn. It is false when its condition
+   * didn't hold, and before its first turn.
+   */
   ran = false;
+  /**
+   * How long the system's last turn took, in milliseconds, its condition and
+   * its commands included.
+   */
   ms = 0;
   constructor(
     readonly system: Plugin.AnySystem,
@@ -91,9 +107,9 @@ const hookKey = (
  * Makes the schedule of a list of systems. With `trace`, each turn runs in a
  * span of its own.
  *
- * It throws for two systems with one name, and for a hook that is for a value
- * its state doesn't have. A hook is made by `State.onEnter` or `State.onExit`,
- * which are systems of the tick.
+ * It throws for two systems with one name. It also throws for a hook, made by
+ * `State.onEnter` or `State.onExit`, that is for a value its state doesn't
+ * have.
  *
  * @category Constructors
  */

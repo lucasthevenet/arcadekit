@@ -5,10 +5,9 @@
  * the peer. The relay forwards what one peer sends to the others in its room.
  * It runs no game and keeps no game state: it receives text and forwards text.
  *
- * The relay is a handler, not a server: plain functions that decide what to do
- * with a connection and with what it sends, called by whatever accepts the
- * sockets. The host can store its connections anywhere, including on the socket
- * itself, on platforms that discard everything else between two messages:
+ * The relay is a handler, not a server: plain functions that decide what to
+ * do with a connection and with what it sends. Whatever accepts the sockets,
+ * the host, calls them:
  *
  *   // a peer asks to connect: who is it, and may it join?
  *   const member = Relay.join(request.url, present)        // Exit<Member, Refused>
@@ -21,32 +20,34 @@
  *   for (const { to, text } of Relay.joined(member, present)) socketOf(to).send(text)
  *   for (const { to, text } of Relay.left(member, present)) socketOf(to).send(text)
  *
- * `present` is everyone connected to that room, as the host tracks them: on
- * Cloudflare, what a Durable Object reads back from its sockets' attachments;
- * behind an API Gateway, the rows of a connections table. `Relay.make()` tracks
- * them itself, for a host that stays in memory, such as a Node server or a
- * test.
+ * `present` is everyone connected, as the host tracks them. The host can
+ * store its connections anywhere, even on the sockets themselves, on a
+ * platform that discards everything else between two messages. On
+ * Cloudflare, `present` is what a Durable Object reads back from its
+ * sockets' attachments, and behind an API Gateway, the rows of a connections
+ * table. `Relay.make()` tracks them itself, for a host that stays in memory,
+ * such as a Node server or a test.
  *
  * The relay authenticates the sender. A peer declares its name once, when it
- * connects, and is held to it: a message that claims to be from anyone else is
- * refused, and its socket closed. The `from` a handler receives is therefore
- * the peer the relay admitted under that name. Deciding whether to admit that
- * peer under that name is the host's responsibility, before it calls `join`,
- * using a token in the request, a session, or whatever it has.
+ * connects, and is held to it. A message that claims to be from anyone else
+ * is refused, and the host closes its socket. The `from` a handler receives
+ * is therefore the peer the relay admitted under that name. The host decides
+ * whether to admit that peer under that name, before it calls `join`, with a
+ * token in the request, a session, or whatever it has.
  *
- * A room belongs to nobody: the first peer to connect opens it, and it closes
+ * A room belongs to nobody. The first peer to connect opens it, and it closes
  * when the last one leaves. The relay tells the room who joins and who leaves,
- * with a `Message.Notice`, so that a peer that comes back is sent again what
- * it missed, and the others know who is gone.
+ * with a `Message.Notice`, so a peer that comes back is sent again what it
+ * missed, and the others know who is gone.
  */
 import { Data, Exit, Schema } from "effect";
 
 import * as Message from "./Message";
 
 /**
- * A connection's identity: its room, and the peer it speaks for. A host stores
- * this with the connection, and passes the relay everyone in a room when it
- * asks what to do.
+ * A connection's identity: its room, and the peer it speaks for. A host
+ * stores it with the connection, and passes the relay every member it tracks
+ * when it asks what to do.
  *
  * @category Schemas
  */
@@ -89,9 +90,15 @@ export class Refused extends Data.TaggedError("RelayRefused")<{
     | "speaks for another"
     | "too long";
   readonly message: string;
-  /** For a rejected connection request: 400, 403 or 409. */
+  /**
+   * The HTTP status, for a host that rejects the connection request: 400, 403
+   * or 409.
+   */
   readonly status: number;
-  /** For a closed socket: 1007, 1008 or 1009. */
+  /**
+   * The WebSocket close code, for a host that closes the socket: 1007, 1008
+   * or 1009.
+   */
   readonly code: number;
 }> {}
 
@@ -107,8 +114,8 @@ export interface Options {
    */
   readonly maxPeers?: number;
   /**
-   * The only names a room admits, for a game that knows its players. Defaults
-   * to any name.
+   * The only names a room admits, for a game that knows its players. By
+   * default, a room admits any name.
    */
   readonly peers?: readonly string[];
   /**
@@ -148,12 +155,14 @@ export const address = (base: string, member: Member): string =>
  *
  * The room is the last segment of the address's path and the peer its `peer`
  * query parameter, as `address` writes them, each at most 64 characters. The
- * peer is refused when the address lacks either, when the name is taken in that
- * room, when the room is full, or when the room only admits other names.
+ * peer is refused when the address lacks either, when the name is taken in
+ * that room, when the room is full, or when the room admits only other names.
  *
- * It doesn't verify that the peer is who it claims to be: the host must settle
- * that before calling it, using whatever the request carries. Whoever first
- * asks for a free name is admitted.
+ * **Gotchas**
+ *
+ * - It doesn't check that the peer is who it claims to be. The host settles
+ *   that before it calls `join`, with whatever the request carries. Whoever
+ *   first asks for a free name is admitted.
  *
  * @category Hosting
  */
@@ -225,11 +234,11 @@ const decoder = new TextDecoder();
  * Decides what to do with a member's message: the text to forward to every
  * other member of its room.
  *
- * The forwarded text is the message as the relay parsed it, re-serialized, so
- * nothing extra rides along. The message is refused, and the host closes the
- * socket with the refusal's `code`, when it isn't a message, when it is longer
- * than the relay accepts, or when it claims to be from anyone but the member
- * that sent it.
+ * The forwarded text is the message as the relay decoded it, encoded again,
+ * so it carries nothing a message doesn't have. It refuses text that isn't a
+ * message, text longer than `maxLength`, and a message that claims to be from
+ * anyone but the member that sent it. The host then closes the socket with
+ * the refusal's `code`.
  *
  * @category Hosting
  */
@@ -294,8 +303,8 @@ const notify = (
  * notice for each of the others, so it knows who is there. The host sends
  * them once it has let the member in.
  *
- * It tells a peer that came back after its socket dropped, and the others,
- * to send again what may have been lost while it was gone.
+ * A session that hears a peer joined sends again what that peer may have
+ * missed, so a peer that comes back after its socket dropped loses nothing.
  *
  * @category Hosting
  */

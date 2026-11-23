@@ -1,14 +1,17 @@
 /**
  * Peers that are no longer playing the same game, and how they find out.
  *
- * Before anything else, each peer says what it was made with, `Message.Made`,
- * in its first message, and a peer that hears another made otherwise stops
+ * Before anything else, each peer says in its first message what it was made
+ * with, `Message.Made`. A peer that hears another was made otherwise stops
  * with `Unlike`. After that, each peer's log records checkpoints, its world's
  * hash at a tick, and the peers send them to each other with the messages
- * they send anyway. A `Comparison` is one peer's side of that: it is told the
- * checkpoints this peer takes and the ones the others sent, says which of its
- * own to send, and compares a tick's once every peer has said and the tick is
- * final. The first tick whose hashes differ is `Drifted`.
+ * they send anyway.
+ *
+ * A `Comparison` is one peer's side of that. It is told the checkpoints this
+ * peer takes and the ones the others sent, and says which of its own to send.
+ * It compares the hashes of a tick once every peer has sent its own and the
+ * tick is final. The first tick whose hashes differ makes it report
+ * `Drifted`.
  *
  *   const drift = Drift.make({ peer: "ada", made })
  *   drift.told("grace", theirs)                  // what grace was made with
@@ -16,7 +19,7 @@
  *   drift.heard("grace", 0, [{ tick: 0, hash }]) // with grace's message for tick 0
  *   drift.compare(final, now)                    // Drifted, once they differ
  *
- * It knows no session and no network: `Peer` tells it what is final.
+ * It knows no session and no network. `Peer` tells it which ticks are final.
  */
 import { Data } from "effect";
 
@@ -27,25 +30,26 @@ import type { Made } from "./Message";
  * The peers are no longer playing the same game: at one tick, their worlds'
  * hashes differed. Every later tick of the session fails with this error.
  *
- * Drift is detected within a bounded number of ticks. A checkpoint is recorded
- * every `checkpointEvery` ticks and travels with the message for the tick
- * `delay` ahead, which no peer can run without. So no peer runs more than
- * `checkpointEvery - 1 + delay` ticks past the first tick whose world differed,
- * where `delay` is the largest any peer uses. A session that runs ahead
- * sends a tick's hash once every peer has sent their actions for it, so there
- * the bound is `checkpointEvery - 1 + delay + 2 × ahead` ticks.
+ * Drift is found within a bounded number of ticks. A checkpoint is recorded
+ * every `checkpointEvery` ticks, and travels with the message for the tick
+ * `delay` ahead, a message no peer can run that tick without. So no peer runs
+ * more than `checkpointEvery - 1 + delay` ticks past the first tick whose
+ * world differed, where `delay` is the largest any peer uses. A session that
+ * runs ahead sends a tick's hash only once every peer has sent its actions
+ * for that tick, so its bound is `checkpointEvery - 1 + delay + 2 × ahead`
+ * ticks.
  *
  * What is compared is the world's hash, which covers the actions queued for
- * the next tick and the events waiting to be read. What it doesn't cover, how
- * far a system has read or a system's own variables, is only detected once it
- * affects the world, and the report names that tick.
+ * the next tick and the events waiting to be read. A difference it doesn't
+ * cover, such as how far a system has read or a system's own variables, is
+ * found only once it reaches the world, and the report names that tick.
  *
  * @category Errors
  */
 export class Drifted extends Data.TaggedError("Drifted")<{
   /** The tick of the first checkpoint whose hashes differ. */
   readonly tick: number;
-  /** The peer that detected it: this one. */
+  /** The peer that found it, which is this one. */
   readonly peer: string;
   /**
    * Every peer's world hash at that tick, by name. Look at the peer whose hash
@@ -84,15 +88,15 @@ const list = (names: readonly string[]): string =>
     : `${names.slice(0, -1).join(", ")} and ${names.at(-1)!}`;
 
 /**
- * The peers were not made alike: another peer's first message says it was
+ * The peers were not made alike. Another peer's first message says it was
  * made with another game, another `delta`, other names or another start than
- * this one. It is found before either runs a tick it is sure of, and every
- * later tick of the session fails with it.
+ * this one. It is found before either peer runs a tick it is sure of, and
+ * every later tick of the session fails with it.
  *
  * @category Errors
  */
 export class Unlike extends Data.TaggedError("Unlike")<{
-  /** The peer that found it: this one. */
+  /** The peer that found it, which is this one. */
   readonly peer: string;
   /** The peer whose first message said otherwise. */
   readonly other: string;
@@ -136,22 +140,22 @@ const UNANSWERED = 600;
  */
 export interface Comparison {
   /**
-   * What another peer says it was made with. A peer made otherwise than this
-   * one stops the comparison with `Unlike`, whoever it is, since a name that
-   * isn't a peer of this game is one this peer was made without.
+   * Tells it what another peer says it was made with. A peer made otherwise
+   * than this one stops the comparison with `Unlike`, even one that isn't a
+   * peer of this game, since this peer was made without its name.
    */
   readonly told: (from: string, made: Made) => void;
   /**
-   * This peer's own hash at a tick, as its log recorded it. It is neither
-   * sent nor compared until the tick is final. A tick that is run again
-   * says again, and the last hash said is the one kept.
+   * Tells it this peer's own hash at a tick, as its log recorded it. The hash
+   * is neither sent nor compared until the tick is final. A tick that runs
+   * again is told again, and the last hash told is kept.
    */
   readonly took: (tick: number, hash: number) => void;
   /**
-   * The checkpoints a peer's message carried: `sent` is the tick the
-   * message is for. A peer's checkpoints are taken in the order it sent
-   * them, whatever order its messages arrive in, so that the last tick the
-   * peers agreed at is known when the next one differs.
+   * Tells it the checkpoints a peer's message carried, where `sent` is the
+   * tick the message is for. It takes a peer's checkpoints in the order the
+   * peer sent them, whatever order its messages arrive in, so the last tick
+   * the peers agreed at is known when the next one differs.
    */
   readonly heard: (
     from: string,
@@ -161,17 +165,17 @@ export interface Comparison {
   /**
    * Makes this peer's hashes final up to the tick `final`, and compares
    * every checkpoint up to it that this peer and all the others have. `now`
-   * is the tick the game is at: a checkpoint no peer has answered in 600
-   * ticks is let go of. Returns why the peers have drifted, once they have,
-   * and from then on compares nothing.
+   * is the tick the game is at, and a checkpoint no peer has answered in 600
+   * ticks is dropped. Returns `Drifted` or `Unlike` once the peers have
+   * drifted or were found unlike, and compares nothing from then on.
    */
   readonly compare: (
     final: number,
     now: number
   ) => Drifted | Unlike | undefined;
   /**
-   * This peer's final checkpoints that it has not sent yet, for its next
-   * message, and forgets them: the next call returns only newer ones.
+   * Returns this peer's final checkpoints that it hasn't sent yet, for its
+   * next message, and forgets them. The next call returns only newer ones.
    */
   readonly unsent: () => readonly Action.Checkpoint[];
   /**
@@ -184,9 +188,9 @@ export interface Comparison {
 }
 
 /**
- * Makes one peer's comparison: `peer` is this peer and `made` what it was
- * made with, among it every peer of the game and the tick the game begins
- * at, which is the tick of every peer's first message.
+ * Makes one peer's comparison. `peer` is this peer's name, and `made` is what
+ * it was made with, which names every peer of the game and the tick the game
+ * begins at. That tick is the tick of every peer's first message.
  *
  * @category Constructors
  */

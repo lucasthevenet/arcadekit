@@ -11,7 +11,7 @@
  *     Sound.on(Collided, ({ speed }) => ({ cue: "thud", volume: Math.min(1, speed / 10) }))
  *   )
  *
- *   const Game = Plugin.make("Game", {
+ *   const Game = Plugin.make("game/Game", {
  *     plugins: [Sound.plugin],
  *     systems: [Physics, Cues],
  *   })
@@ -21,17 +21,17 @@
  *     sounds: { coin: "/coin.wav", thud: "/thud.wav" },
  *   })
  *
- * Music isn't an event but a state: what should be heard for as long as the
- * game stays as it is. A frame-stage system declares it each frame, and the
- * player starts, fades and stops tracks as needed:
+ * Music isn't an event. It is what should be heard for as long as the game
+ * stays as it is. A frame-stage system returns it each frame, and the player
+ * starts, fades and stops tracks to match:
  *
  *   const Score = Sound.music("game/Score", function*() {
  *     const level = yield* Level
  *     return level.value === "menu" ? "menu-theme" : { track: "forest-theme", volume: 0.6 }
  *   })
  *
- * A level's own sounds are assets in its bundle, `Browser.sound(url)` in a
- * page, loaded and released with the rest of it:
+ * A level's own sounds are assets of its bundle, made with `Browser.sound(url)`
+ * in a page. They load and are released with the rest of the bundle:
  *
  *   const ForestCues = Sound.cues("forest/Cues", Forest, ({ creak, chirp }) => [
  *     Sound.on(Stepped, creak),
@@ -39,10 +39,11 @@
  *   ])
  *
  * Sound follows real time, so it isn't part of the simulation. A tick emits
- * events; a frame-stage system, which reads every event once however many ticks
- * ran since the last frame, plays what they sound like. The simulation never
- * calls the player: playing during the tick throws. A replay and a server,
- * which run no frame stage, play nothing, and the game they run is the same.
+ * events, and a frame-stage system plays what they sound like. It reads every
+ * event once, however many ticks ran since the last frame. A system of the
+ * tick or the input stage, and an action handler, cannot require
+ * `Sound.Player`, so the simulation never plays sound. A replay and a server
+ * run no frame stage. They play nothing, and the game they run is the same.
  */
 import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
@@ -56,12 +57,14 @@ import * as System from "./System";
 // --- a sound that is not a name ------------------------------------------------------
 
 /**
- * A loaded sound, as an output accepts it: for example, a level's sound held by
- * its bundle. A clip works anywhere a cue's or a track's name does.
+ * A loaded sound, such as a level's sound held by its bundle. A clip works
+ * anywhere a cue's or a track's name does.
  *
- * Whatever loads it creates it for the output that will play it: in a page, the
- * `Browser.sound(url)` asset. `name` is what a log or a recorder calls it, and
- * `data` is what the output plays, which only the output reads.
+ * **Details**
+ *
+ * Whatever loads a clip makes it for the output that will play it, such as the
+ * `Browser.sound(url)` asset in a page. `name` is what a log or a recorder
+ * calls it. `data` is what the output plays, and only the output reads it.
  *
  * @category Models
  */
@@ -73,8 +76,8 @@ export class Clip {
 }
 
 /**
- * Makes a clip by hand, for your own output, or for a test, where nothing needs
- * to play.
+ * Makes a clip by hand, for an output of your own or for a test, where nothing
+ * needs to play.
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     chirp: Assets.make("/chirp.wav", () => Effect.succeed(Sound.clip("chirp"))),
@@ -99,8 +102,9 @@ const nameOf = (sound: Playable): string =>
 // --- where sound goes ------------------------------------------------------------
 
 /**
- * What plays sound, opened: a page's Web Audio, or a recorder in a test. The
- * player tells it what to play once a frame has run.
+ * An opened output that plays sound, such as a page's Web Audio or a test's
+ * recorder. `Sound.Player` tells it what to play once a frame's systems have
+ * run.
  *
  * @category Models
  */
@@ -112,9 +116,9 @@ export interface Speaker {
   readonly play: (cue: Playable, volume: number, rate: number) => void;
   /**
    * Sets what a channel plays from now on: `track` at `volume`, faded in over
-   * `fade` seconds from whatever it was playing, which fades out over the same
-   * time. It loops, or with `once` plays to its end and stops. No track means
-   * silence. It is only called when one of these changes.
+   * `fade` seconds while what the channel was playing fades out over the same
+   * time. The track loops, or with `once` plays to its end and stops. No track
+   * means silence. The player calls it only when one of these changes.
    */
   readonly music: (
     channel: string,
@@ -126,7 +130,8 @@ export interface Speaker {
 }
 
 /**
- * Where sound goes: how to open a speaker, and not a speaker.
+ * The shape of `Sound.Output`. An output says how to open a speaker, and opens
+ * nothing until `open` runs.
  *
  * @category Services
  */
@@ -143,15 +148,18 @@ const silent: Speaker = { play() {}, music() {} };
 const nowhere: Output = { open: Effect.succeed(silent) };
 
 /**
- * Where an app's sound goes. A `Context.Reference` whose default is nowhere,
- * which suits a server, a replay and most tests. A page provides its own:
- * `Browser.layerSound(files)`, or the `sounds` option of `Browser.runMain`. A
- * test provides a speaker that records what it was asked,
- * `Sound.layer(Sound.makeRecorder())`.
+ * Where an app's sound goes. Nothing has to provide it. By default sound goes
+ * nowhere, as a server, a replay and most tests need.
  *
- * It opens nothing itself. `Sound.plugin` runs `open` in the app's own scope,
- * and lets go when the app is closed, so whatever the layer is provided to,
- * the app is heard for as long as it is open.
+ * **Details**
+ *
+ * A page provides its own output with `Browser.layerSound(files)`, or with the
+ * `sounds` option of `Browser.runMain`. A test provides a speaker that records
+ * what it was asked, `Sound.layer(Sound.makeRecorder())`.
+ *
+ * An output opens nothing itself. `Sound.plugin` runs `open` in the app's own
+ * scope, and lets go of the speaker when the app is closed. Wherever the
+ * layer is provided, the app is heard for as long as it is open.
  *
  * @category Services
  */
@@ -161,9 +169,13 @@ export const Output: Context.Reference<Output> = Context.Reference<Output>(
 );
 
 /**
- * Opens the output in the current scope, until that scope closes: for a
- * program that plays to it itself. `Sound.plugin` opens it in the app's own
- * scope.
+ * Opens `Sound.Output` in the current scope, and returns its speaker. The
+ * speaker is let go when that scope closes. `Sound.plugin` opens the output
+ * in the app's own scope instead.
+ *
+ * **When to use**
+ *
+ * Use when a program plays to the speaker itself, outside an app.
  *
  * @category Running
  */
@@ -204,7 +216,7 @@ export interface Played {
  */
 export interface Scored {
   readonly channel: string;
-  /** The track's name, or the clip's name; `undefined` for silence. */
+  /** The track's name, the clip's name, or `undefined` for silence. */
   readonly track: string | undefined;
   readonly volume: number;
   readonly fade: number;
@@ -225,7 +237,7 @@ export interface Recorder extends Speaker {
   readonly played: Played[];
   /** Everything a channel was told, oldest first. */
   readonly scored: Scored[];
-  /** What each channel is currently playing, by channel name: a missing entry means silence. */
+  /** What each channel plays now, by channel name. A channel with no entry is silent. */
   readonly playing: Map<string, string>;
 }
 
@@ -288,7 +300,7 @@ const MUSIC = "music";
  * @category Options
  */
 export interface Options {
-  /** The volume, where 1 is the cue as recorded. Defaults to 1. Can't be negative. */
+  /** The volume, where 1 is the cue as recorded. Defaults to 1. A negative volume plays as 0. */
   readonly volume?: number;
   /** The playback speed, and therefore pitch, where 1 is normal speed. Defaults to 1. */
   readonly rate?: number;
@@ -300,19 +312,19 @@ export interface Options {
  * @category Options
  */
 export interface MusicOptions {
-  /** The volume, where 1 is the track as recorded. Defaults to 1. Can't be negative. */
+  /** The volume, where 1 is the track as recorded. Defaults to 1. A negative volume plays as 0. */
   readonly volume?: number;
   /**
-   * How many seconds a change takes: the new track or volume fades in, and what
-   * was playing fades out over the same time. Defaults to half a second; 0 is
-   * immediate.
+   * How many seconds a change takes. The new track or volume fades in while
+   * what was playing fades out over the same time. Defaults to half a second,
+   * and 0 changes at once.
    */
   readonly fade?: number;
   /**
-   * Whether the track plays to its end and stops, instead of looping: a
-   * fanfare, for example. It isn't restarted while the channel keeps being
-   * given the same track; given another track, or silence, and then this one
-   * again, it plays again from the start.
+   * Whether the track plays to its end and stops instead of looping, as a
+   * fanfare does. It isn't restarted while the channel keeps being given the
+   * same track. Given another track or silence, and then this one again, it
+   * plays again from the start.
    */
   readonly once?: boolean;
 }
@@ -326,13 +338,10 @@ export interface PlayerShape {
   /** Whether sound goes anywhere. False on a server, in a replay, and in most tests. */
   readonly audible: boolean;
   /**
-   * Plays a cue, by name or as a clip, in the frame it is requested: the cues a
-   * frame's systems request play once they have all run. A cue requested
-   * several times in one frame, by any of them, plays once, at the loudest
-   * requested volume; cues play in the order they were first requested. For the
-   * stages between ticks: requested in the input stage, it plays with the
-   * following frame; during the tick it throws, since the simulation doesn't
-   * play sound.
+   * Plays a cue, by name or as a clip, once every system of the frame has run.
+   * A cue requested several times in one frame, by any system, plays once, at
+   * the loudest requested volume. Cues play in the order they were first
+   * requested.
    */
   readonly play: (cue: Playable, options?: Options) => void;
   /**
@@ -341,20 +350,20 @@ export interface PlayerShape {
    */
   readonly _flush: () => void;
   /**
-   * Sets what a channel should be playing, looping or with `once` to its end: a
-   * track, or `undefined` for silence. Setting the same track and volume again
-   * does nothing, so a system can set it every frame; setting another fades
-   * from one to the other.
+   * Sets what a channel should play: a track, which loops or with `once` plays
+   * to its end, or `undefined` for silence. Setting the same track and volume
+   * again does nothing, so a system can set it every frame. Setting another
+   * fades from one to the other.
    *
    * Everything a frame's systems set for one channel resolves to one request,
    * which the output receives once they have all run. A track wins over
-   * silence, whichever was set first: among the systems that share a channel,
-   * the one with something to play is heard. Two different tracks set for one
-   * channel in one frame, or one track at two volumes, is a bug and throws: a
-   * channel plays one thing at a time.
+   * silence, whichever was set first, so among the systems that share a
+   * channel, the one with something to play is heard. Two different tracks set
+   * for one channel in one frame, or one track at two volumes, throws, since a
+   * channel plays one track at a time.
    *
-   * A channel can have any name: `Sound.music` uses `"music"` unless given
-   * another. Like `play`, it is only for the stages between ticks.
+   * A channel can have any name. `Sound.music` uses `"music"` unless given
+   * another.
    */
   readonly music: (
     channel: string,
@@ -364,9 +373,19 @@ export interface PlayerShape {
 }
 
 /**
- * An app's cue player. `Sound.plugin` provides it and `Sound.cues` drives it. A
- * frame-stage system can play through it too, for a sound no event represents:
- * `(yield* Sound.Player).play("click")`.
+ * An app's sound player, which `Sound.plugin` provides. `Sound.cues` and
+ * `Sound.music` play through it.
+ *
+ * **When to use**
+ *
+ * Use in a frame-stage system to play a sound that no event stands for:
+ *
+ *   (yield* Sound.Player).play("click", { volume: 0.5 })
+ *
+ * **Gotchas**
+ *
+ * - Only a frame-stage system can require it. A system of the tick or the
+ *   input stage, and an action handler, don't compile with it.
  *
  * @category Services
  */
@@ -517,11 +536,13 @@ const Flush = System.frame("arcadekit/Sound.Flush", function* () {
  * Plays what the frame's systems request. A game with cues or music lists it
  * among its plugins.
  *
- * It provides `Sound.Player`, and a system in the stage after a frame's own,
- * `"postFrame"`, that passes the frame's requests to the speaker once all its
- * systems have run. It opens `Sound.Output` when the app is made, wherever the
- * output was provided. When the app is closed, every playing channel is
- * silenced at once, and the speaker is let go.
+ * **Details**
+ *
+ * It provides `Sound.Player`. It also adds a system in `"postFrame"`, the stage
+ * after the frame's own, that passes the frame's requests to the speaker once
+ * all the frame's systems have run. It opens `Sound.Output` when the app is
+ * made, wherever the output was provided. When the app is closed, every
+ * playing channel is silenced at once, and the plugin lets go of the speaker.
  *
  * @category Plugins
  */
@@ -543,7 +564,8 @@ export interface Cue extends Options {
 
 /**
  * What an event sounds like: a cue's name or a clip, optionally with playback
- * options, or a function of the event that returns one of those, or nothing.
+ * options, or a function of the event's payload that returns one of those, or
+ * nothing.
  *
  * @category Type-level
  */
@@ -565,7 +587,7 @@ export interface Line {
 }
 
 /**
- * Plays a cue each time an event happens.
+ * Makes an entry of `Sound.cues` that plays a cue each time an event happens.
  *
  *   Sound.on(Scored, "coin")
  *   Sound.on(Collided, ({ speed }) => ({ cue: "thud", volume: Math.min(1, speed / 10) }))
@@ -609,7 +631,7 @@ const byEvent = (lines: readonly Line[]): Heard => {
 };
 
 /**
- * Makes a frame-stage system from entries: each frame, it plays what the events
+ * Makes a frame-stage system from entries. Each frame, it plays what the events
  * since the last frame sound like.
  *
  *   const Cues = Sound.cues("game/Cues",
@@ -617,12 +639,13 @@ const byEvent = (lines: readonly Line[]): Heard => {
  *     Sound.on(Collided, "thud")
  *   )
  *
+ * **Details**
+ *
  * - Like any frame system, it reads every event once, whatever order the
  *   systems run in and however many ticks ran since the last frame.
  * - A cue that several events in one frame request plays once, at the loudest
- *   requested volume: forty coins caught in one tick make one sound, not forty
- *   layered. This holds across systems too: two systems that play the same cue
- *   in one frame produce one sound.
+ *   requested volume. Forty coins caught in one tick make one sound, not forty.
+ *   Two systems that play the same cue in one frame also make one sound.
  * - Cues play in the order they were first requested.
  * - When sound goes nowhere, it reads nothing and plays nothing.
  * - It requires `Sound.plugin`, and accepts `System.runIf` like any system.
@@ -733,8 +756,8 @@ const isTrack = (picked: Playable | Track): picked is Track =>
 
 /**
  * Makes a frame-stage system that keeps a channel playing the music that
- * matches the game's state: each frame the body returns a track, and the track
- * is started, cross-faded or stopped when the result changes.
+ * matches the game's state. Each frame the body returns a track or nothing, and
+ * the player starts, cross-fades or stops tracks when the result changes.
  *
  *   const Score = Sound.music("game/Score", function*() {
  *     const level = yield* Level
@@ -742,35 +765,40 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *     return level.value === "menu" ? undefined : "theme"
  *   }, { fade: 1 })
  *
+ * **Details**
+ *
  * - A track loops until the body returns another, or nothing. It is a name the
  *   output knows, a clip, or either with its own `volume` and `fade`.
- * - With `once: true`, a track plays to its end and stops: a fanfare for as
- *   long as the game is won, `{ track: "fanfare", once: true }`. It isn't
- *   restarted while the body keeps returning it, and fades like any other track
- *   when the body returns something else before it ends.
- * - It is derived from the game and stored nowhere in it: a game loaded from a
- *   save, or an app that starts in the middle of a level, has its music from
- *   the first frame.
+ * - With `once: true`, a track plays to its end and stops, such as a fanfare
+ *   for as long as the game is won: `{ track: "fanfare", once: true }`. It
+ *   isn't restarted while the body keeps returning it. When the body returns
+ *   something else before it ends, it fades like any other track.
+ * - Music is computed from the game and stored nowhere in it. A game loaded
+ *   from a save, or an app that starts in the middle of a level, has its music
+ *   from the first frame.
  * - The body can read whatever a frame-stage system can: singletons, states,
- *   queries, events and assets. A level's own music is a clip from its bundle:
- *   `const forest = yield* Forest`, then `forest.assets.theme` once it is
- *   `Ready`.
- * - All such systems share one score, on the `"music"` channel: between a
- *   menu's and a level's, the one with something to play is heard, and a track
- *   both play continues seamlessly from one to the other. Two that return
- *   different tracks in one frame, or one track at two volumes, is a bug: the
- *   frame fails at the second, with an error naming the channel and both
- *   tracks.
- * - Music that plays alongside the score uses its own `channel`, with any name:
- *   `Sound.music("game/Wind", body, { channel: "wind" })`. Channels play
- *   simultaneously.
+ *   queries, events and assets. A level's own music is a clip from its bundle,
+ *   such as `forest.assets.theme` once `yield* Forest` is `Ready`.
+ * - Music systems share one score, on the `"music"` channel. Between a menu's
+ *   system and a level's, the one with something to play is heard, and a track
+ *   both play continues without a break from one to the other.
+ * - Music that plays alongside the score uses a `channel` of its own, with any
+ *   name, such as `Sound.music("game/Wind", body, { channel: "wind" })`.
+ *   Channels play at the same time.
  * - `fade` is how many seconds a change takes. Defaults to half a second.
  * - When sound goes nowhere, the body doesn't run at all.
- * - It requires `Sound.plugin`. Under `System.runIf`, while the condition
- *   doesn't hold, it requests silence as if the body had returned nothing: a
- *   level's music stops, with its fade, when the player leaves the level,
- *   unless another system on its channel plays. When the system runs again, the
- *   body's track plays from its start.
+ * - It requires `Sound.plugin`.
+ * - Under `System.runIf`, while the condition doesn't hold, the system requests
+ *   silence as if the body had returned nothing. A level's music therefore
+ *   fades out when the player leaves the level, unless another system on its
+ *   channel plays. When the system runs again, the body's track plays from its
+ *   start.
+ *
+ * **Gotchas**
+ *
+ * - Two systems that return different tracks for one channel in one frame, or
+ *   one track at two volumes, fail the frame at the second. The error names the
+ *   channel and both tracks.
  *
  * @category Systems
  */

@@ -2,33 +2,36 @@
  * Events let systems and handlers signal that something happened,
  * without knowing about each other.
  *
- *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
+ *   const Collided = Event.define("physics/Collided", Schema.Struct({ a: EntityId, b: EntityId }))
  *
  *   // in a system of the tick
  *   const collided = yield* Collided.emits
  *   collided.emit({ a, b })                 // plain call, fine inside loops
  *   for (const hit of collided.read()) ...  // unseen ones, from before this run
  *
- *   // reading is every stage's
+ *   // in any stage
  *   for (const hit of (yield* Collided).read()) ...
  *
  * Every system sees every event exactly once, whatever order the systems run
- * in. An earlier system sees an event emitted by a later one on the next tick,
- * so an event emitted while systems are running is kept until the end of the
- * following tick. So does the emitter itself, on its next run: a system or a
- * handler reads only what was emitted before it began to run, so an entity
- * an event names is spawned by the time the event is read. An event emitted
- * between ticks, by the handler of an action dispatched there, is dropped at
- * the end of the next tick. Only the simulation emits: an event is in no log,
- * so code outside it issues an action whose handler emits the event. Events
- * aren't kept for a system that `System.runIf` has disabled: when it runs
- * again, the events from the ticks it skipped are gone, as are the changes
+ * in. A system that runs before the emitter sees the event on the next tick,
+ * so an event emitted while systems run is kept until the end of the
+ * following tick. The emitter itself reads the event on its next run. A
+ * system or a handler reads only what was emitted before its run began, so
+ * an entity that an event names is spawned by the time the event is read. An
+ * event that a dispatched action's handler emits between ticks is dropped at
+ * the end of the next tick.
+ *
+ * Only the simulation emits. No log holds an event, so code outside the
+ * simulation issues an action whose handler emits the event.
+ *
+ * A system that `System.runIf` has disabled misses the events of the ticks it
+ * skipped. When it runs again, those events are gone, and so are the changes
  * its change queries would have seen in them.
  *
- * The payload type is inferred from the event's schema. Emitting is a plain
- * call with no validation: the schema is only used when the event leaves the
- * program, for a save, a tool or another machine, by `Event.encode` and
- * `Event.decode`.
+ * The event's schema gives the payload its type. Emitting is a plain call
+ * that validates nothing. The schema converts a payload to JSON only when the
+ * event leaves the program: in a save, which holds the events waiting to be
+ * read, or through `Event.encode` and `Event.decode`, for a tool.
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
@@ -43,16 +46,17 @@ import { Events } from "./Services";
 import type { Sim } from "./Services";
 
 /**
- * What every stage gets from `yield* SomeEvent`: the events it has not seen
- * yet. Emitting is `yield* SomeEvent.emits`, and only a system of the tick
- * can ask for that.
+ * The handle to one event type that `yield* SomeEvent` gives the code of any
+ * stage, which reads the events its holder has not seen yet. To emit, the
+ * code of the tick asks for `yield* SomeEvent.emits`.
  *
  * @category Models
  */
 export interface EventReader<P> {
   /**
    * Returns the events not yet seen through this handle, oldest first. In the
-   * tick, they are those emitted before the code reading them began to run.
+   * tick, they are the events emitted before the code reading them began to
+   * run.
    */
   readonly read: () => readonly P[];
 }
@@ -66,17 +70,20 @@ export interface EventReader<P> {
 const placedLater = <P>(payload: WithSpawned<P>): P => payload as P;
 
 /**
- * A tick system's handle to one event type, from `yield* SomeEvent.emits`: it
- * emits events, and reads the ones it hasn't seen yet. What it emits, it reads
- * on its next run.
+ * The handle to one event type that `yield* SomeEvent.emits` gives the code
+ * of the tick: a system of the tick, a handler or a plugin's setup. It emits
+ * events and reads the ones its holder hasn't seen yet. The holder reads its
+ * own events on its next run.
  *
  * @category Models
  */
 export interface EventHandle<P> extends EventReader<P> {
   /**
-   * Queues an event. Synchronous, so it can be called inside query loops. A
-   * method, so that any event is an `EventHandle<unknown>`. An entity in the
-   * payload may be one `Commands.spawn` returned: it is read once placed.
+   * Queues an event. It is a plain synchronous call, so a query loop can make
+   * it. It is a method, so a handle of any payload is an
+   * `EventHandle<unknown>`. An entity in the payload may be one that
+   * `Commands.spawn` returned, since the event is read once that entity is
+   * placed.
    */
   emit(payload: WithSpawned<P>): void;
 }
@@ -88,8 +95,8 @@ export interface EventHandle<P> extends EventReader<P> {
 const defined = new Map<string, EventDef<unknown>>();
 
 /**
- * An event type. It is an Effect, so `yield*` returns a handle to its channel
- * in the current app.
+ * An event type, as `Event.define` makes it. It is an Effect, and `yield*`
+ * returns its `EventReader` in the current app.
  *
  * @category Models
  */
@@ -121,8 +128,9 @@ export class EventDef<P> extends Effectable.Class<
   }
 
   /**
-   * The same events, with `emit`. Requiring it puts `Sim` in the system's
-   * requirements, which a frame or input system does not accept.
+   * The same events, with `emit`. Asking for it adds `Sim` to the system's
+   * requirements, and a system of the frame or input stage that requires
+   * `Sim` doesn't compile.
    */
   get emits(): Effect.Effect<EventHandle<P>, never, Events | Sim> {
     return (this.emitting ??= Effect.map(Effect.service(Events), (bus) =>
@@ -133,12 +141,16 @@ export class EventDef<P> extends Effectable.Class<
 
 /**
  * Defines an event type, with the schema of its payload. The payload type is
- * inferred from the schema: `Event.define("Collided", Schema.Struct({ ... }))`.
- * An event with no payload takes only its name, `Event.define("Started")`,
- * and is emitted with `undefined`.
+ * inferred from the schema:
+ * `Event.define("physics/Collided", Schema.Struct({ ... }))`. An event with no
+ * payload takes only its name, `Event.define("game/Started")`, and is emitted
+ * with `undefined`.
  *
- * An event's name is its identity within an app: when two different events
- * share a name, the second is refused the first time it is used.
+ * **Gotchas**
+ *
+ * An event's name identifies it in an app and in a save, so prefix each name
+ * with its feature. When two different events share a name, the second throws
+ * the first time an app uses it.
  *
  * @category Constructors
  */
@@ -189,8 +201,9 @@ const convert = <P, A>(
 };
 
 /**
- * Encodes an event's payload to its JSON form, for a save, a tool or the
- * network. Fails with `InvalidEvent` when its schema rejects the payload.
+ * Encodes an event's payload to the JSON form a save holds it in, for a tool
+ * or a message to another program. Fails with `InvalidEvent` when the event's
+ * schema rejects the payload.
  *
  * @category Codecs
  */
@@ -201,8 +214,9 @@ export const encode = <P>(
   convert(def, (codec) => Schema.encodeUnknownExit(codec)(payload));
 
 /**
- * Decodes an event's payload from its JSON form, validated against its schema.
- * Fails with `InvalidEvent` when the data doesn't match it.
+ * Decodes an event's payload from its JSON form, and validates it against the
+ * event's schema. Fails with `InvalidEvent` when the data doesn't match the
+ * schema.
  *
  * @category Codecs
  */
@@ -288,10 +302,11 @@ const labelOf = (name: string): string =>
   `the "${name}" events waiting to be read`;
 
 /**
- * The name of the store that holds an app's waiting events, as a snapshot has
- * it: `readSnapshot(save.world).stores`. Each entry is `{ name, waiting, read }`:
- * the event's name, the events waiting in JSON form, oldest first, and for each
- * system and handler that has read some, how many.
+ * The name of the store that holds an app's waiting events, as a snapshot
+ * lists it in `readSnapshot(save.world).stores`. Each entry of the store is
+ * `{ name, waiting, read }`: the event's name, the waiting events in JSON form
+ * with the oldest first, and how many of them each system and handler has
+ * read.
  *
  * @category Constants
  */
@@ -620,8 +635,9 @@ const outside = (def: EventDef<unknown>): Error =>
 // ---------------------------------------------------------------------------
 
 /**
- * Where an app's events are emitted and read. The app holds one; a game
- * reads and emits through an `EventHandle`.
+ * Where an app's events are emitted and read. Each app holds one, which the
+ * `Events` service provides. A game's code reads and emits through the
+ * handles that `yield* SomeEvent` and `SomeEvent.emits` give.
  *
  * @category Models
  */
@@ -649,10 +665,9 @@ export class EventBus {
   }
 
   /**
-   * Who is asking for handles right now. The app sets this before each
-   * system and handler runs, which is what gives each of them its own
-   * place in the events, and starts a run: what a reader emits in it, it
-   * reads on its next. Undefined means outside code.
+   * The system or handler that is asking for handles, or undefined for code
+   * outside the simulation. The app sets it before each one runs, and
+   * setting it starts a run.
    * @internal
    */
   get reader(): string | undefined {
@@ -665,12 +680,12 @@ export class EventBus {
   }
 
   /**
-   * Returns a handle for whoever is running. A system and a handler get the
-   * same handle every time. A system of the tick and a handler read from the
-   * oldest event still kept; a system of the frame stage or the input stage
-   * reads what the ticks emitted since its stage last ran, and can't emit.
-   * Any other caller gets a new handle, which reads what is emitted once
-   * the code that emits it has ended, from now on.
+   * Returns a handle to an event type for the code that is running. A system
+   * and a handler get the same handle every time. A system of the tick and a
+   * handler read from the oldest event still kept. A system of the frame or
+   * input stage reads what the ticks emitted since its stage last ran, and
+   * can't emit. Any other caller gets a new handle, which reads each event
+   * emitted from now on, once the code that emitted it has ended.
    */
   handle<P>(def: EventDef<P>): EventHandle<P> {
     const channel = this.waiting.channel(def);
@@ -710,11 +725,11 @@ export class EventBus {
   }
 
   /**
-   * Emits an event, for the code of the simulation that has the bus and no
-   * handle: a system, a handler or a plugin's setup. It throws from anywhere
-   * else. An event is in no log, so one emitted from outside the simulation
-   * is one no replay and no other peer would have: issue an action whose
-   * handler emits it.
+   * Emits an event without a handle, from the code of the simulation: a
+   * system, a handler or a plugin's setup. It throws when called from
+   * anywhere else, since no log holds an event, and no replay or other peer
+   * would have it. Code outside the simulation issues an action whose
+   * handler emits the event.
    */
   emit<P>(def: EventDef<P>, payload: P): void {
     const channel = this.waiting.channel(def);
@@ -733,7 +748,10 @@ export class EventBus {
     this.waiting.emit(this.waiting.channel(def), payload);
   }
 
-  /** Returns the number of events of a type the tick can still read. For tests and tooling. */
+  /**
+   * Returns how many events of a type the tick can still read, for tests and
+   * tools.
+   */
   pending<P>(def: EventDef<P>): number {
     return this.waiting.channel(def).values.length;
   }

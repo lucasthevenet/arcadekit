@@ -2,19 +2,19 @@
  * Going back in a game: a moment of it, captured in memory, and the rewind
  * that puts the same app back to it.
  *
- *   const moment = Timeline.capture(app)          // Exit<Moment, SaveRefused>
+ *   const moment = yield* Timeline.capture(app)   // fails with Save.SaveRefused
  *   app.tick(1 / 60)
- *   Timeline.rewind(app, moment.value)            // the same app, as it was
+ *   Timeline.rewind(app, moment)                  // the same app, as it was
  *
- * It is what an undo, a search ahead or a rewind mechanic keeps, and what a
- * rollback session goes back with. A game that never goes back imports none
+ * An undo, a search ahead or a rewind mechanic keeps moments, and a session
+ * that runs ahead rewinds to them. A game that never goes back imports none
  * of it.
  *
- * A moment holds what a save holds, and no more: the world, which holds the
- * game's time, the actions queued for the next tick and the events waiting to
- * be read, and what change queries haven't visited yet. It isn't a save. It
- * holds the queued actions and the events as they are, so none of them is put
- * through its schema, and it belongs to one app in one run of the program.
+ * A moment holds what a save holds, and no more: the world, with the game's
+ * time, the actions queued for the next tick and the events waiting to be
+ * read, and what change queries haven't visited yet. It isn't a save. It
+ * holds the queued actions and the events as they are, without encoding
+ * them, and it belongs to one app in one run of the program.
  */
 import { Exit } from "effect";
 
@@ -27,8 +27,8 @@ import * as Save from "./Save";
 import { READER } from "./Stage";
 
 /**
- * A game at one moment, held in memory: what `Timeline.capture` returns and
- * `Timeline.rewind` takes. It exposes its tick; the rest is the module's own.
+ * A game at one moment, held in memory, which `Timeline.capture` returns and
+ * `Timeline.rewind` takes. Only its tick is public.
  *
  * @category Models
  */
@@ -71,15 +71,16 @@ const between = (app: Game, call: string, rule: string): void => {
 };
 
 /**
- * Captures a game as it is, to return to with `rewind`. Only between ticks.
+ * Captures a game as it is, to return to with `rewind`. Call it between
+ * ticks: it throws during a tick, a stage or a handler.
  *
- * With `stages`, the moment also holds the place of the frame and input
- * stages in what changed, for a rewind that comes before they run again:
- * `Session.syncTest` runs each tick twice that way. Without it, their change
- * queries visit everything again after the rewind.
+ * With `stages`, the moment also holds where the change queries of the frame
+ * and input stages had got to, for a rewind that comes before those stages
+ * run again. `Session.syncTest` runs each tick twice that way. Without it,
+ * their change queries visit everything again after the rewind.
  *
- * Fails with `SaveRefused` when the world can't be captured: a field holds a
- * value that can't be saved, or commands are queued but not applied.
+ * Fails with `Save.SaveRefused` when the world can't be captured: a field
+ * holds a value that can't be saved, or commands are queued but not applied.
  *
  * @category Running
  */
@@ -110,25 +111,25 @@ export const capture = (
 };
 
 /**
- * Puts a game back, in place, to a moment `capture` took of it: the same
- * app, world and services, holding what they held then. Its log is taken
- * back to the length it had. Only between ticks, and only with a moment of
- * this app.
+ * Puts a game back, in place, to a moment `capture` took of it. The app, its
+ * world and its services stay the same objects, and hold what they held
+ * then. Its log goes back to the length it had. Call it between ticks, with
+ * a moment of this app: it throws otherwise.
  *
- * The game plays on from there, as a new one would. The frame and input
- * stages hear every event it emits from then on, one they heard before the
- * rewind among them, and nothing of the future that was given up before
- * they had read it.
+ * The game plays on from there. The frame and input stages hear every event
+ * it emits from then on, including one they heard before the rewind. Of the
+ * future the rewind gives up, they hear nothing they hadn't read already.
  *
  * With `again`, the game goes back to run the same ticks again with what is
- * now known of them, as a rollback session does. The two stages then hear
- * each event once: one a tick emits again, with the same payload, isn't heard
- * twice, and only what the tick now does otherwise is.
+ * now known of them, as a session that runs ahead does. The two stages then
+ * hear each event once. An event a tick emits again with the same payload
+ * isn't heard twice, and only what the tick now does differently is heard.
  *
  * **Gotchas**
  *
- * - State kept outside the world, in a variable of a module that a system
- *   reads, is left as it is: `Session.syncTest` finds a tick that reads it.
+ * - State kept outside the world, such as a module's variable that a system
+ *   reads, stays as it is. `Session.syncTest` finds a tick that reads such
+ *   state.
  * - A `transient` field is undefined afterwards.
  *
  * @category Running

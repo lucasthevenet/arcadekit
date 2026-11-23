@@ -10,8 +10,9 @@ import { corrupt } from "./snapshot";
 import type { World } from "./world";
 
 /**
- * What a change query visits: entities whose component was written, added or
- * removed.
+ * A kind of change to a component that a world logs: `"changed"` for a write,
+ * `"added"` or `"removed"`. A change query visits the entities of the first
+ * two, and `World.removed` reads the third.
  *
  * @category Models
  */
@@ -35,12 +36,15 @@ export interface ChangeCursor {
 }
 
 /**
- * One component's changes of one kind, as a save holds them.
+ * One component's changes of one kind, as `World.saveChanges` returns them
+ * and a save holds them.
  *
  * @category Models
  */
 export interface SavedChanges {
+  /** The component's name. */
   readonly component: string;
+  /** The kind of change. */
   readonly kind: ChangeKind;
   /**
    * What some reader has yet to visit, oldest first: entity indexes for
@@ -424,8 +428,14 @@ export class ChangeLog {
 }
 
 /**
- * The entities that lost a component since this reader last read, by `remove`
- * or by being despawned. Each removal is reported once, oldest first.
+ * A reader of the entities that lost one component, by `remove` or by being
+ * despawned. `World.removed` returns one. Each `read` returns the removals
+ * since the last, oldest first, so the reader sees each removal once.
+ *
+ * **Gotchas**
+ *
+ * A reader obtained before `World.restore` throws when it is read. Obtain it
+ * again, as a system does every tick.
  *
  * @category Models
  */
@@ -443,8 +453,9 @@ export class RemovedReader {
 
   /**
    * Returns the ids of the entities that lost the component since the last
-   * call. An id whose entity was despawned is no longer alive; one that only
-   * had the component removed still is.
+   * call. An id whose entity was despawned refers to no entity. An id whose
+   * component was only removed still refers to its entity, unless the entity
+   * was despawned since.
    */
   read(): Entity[] {
     if (this.restored !== this.world._restored) {

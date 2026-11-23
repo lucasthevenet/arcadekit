@@ -1,15 +1,15 @@
 /**
- * A game's inbox: how an action enters it. An action is queued for the next
- * tick or applied now, and either way its handler runs in a transaction of
- * the world: one that is refused leaves the game as it was.
+ * A game's inbox is how an action enters the game. An action is queued for the
+ * next tick or applied now. Either way its handler runs in a transaction of
+ * the world, and a refused action leaves the game as it was.
  *
- * Where an action is issued from says what it is. From the simulation, which
- * is a tick, a handler or a plugin's setup, it is the game's own doing and
- * isn't logged, since a replay does it again. From anywhere else it is input:
- * it is logged in its JSON form, and a session that has taken the app over
- * is handed it in place of the queue.
+ * Where an action is issued from says what it is. An action the simulation
+ * issues, from a tick, a handler or a plugin's setup, is the game's own doing.
+ * It isn't logged, since a replay issues it again. An action issued from
+ * anywhere else is input. It is logged in its JSON form, and a session that
+ * has taken the app over is handed it in place of the queue.
  *
- * It is the other side of `Outbox`, which is what a game sends out.
+ * The inbox is the other side of `Outbox`, which holds what a game sends out.
  */
 import { Cause, Exit, Schema } from "effect";
 import type { Effect, Fiber } from "effect";
@@ -47,8 +47,8 @@ export interface Parts {
 }
 
 /**
- * A game's handlers by the name of their action, which is what an inbox
- * finds them by. Two for one action is a mistake of the program.
+ * Returns a game's handlers by the name of their action, which is how an inbox
+ * finds them. It throws for two handlers of one action.
  *
  * @category Constructors
  */
@@ -90,9 +90,9 @@ const refusal = (error: unknown): { _tag: string; message: string } => {
  */
 export class Inbox {
   /**
-   * Who has taken over what comes from outside, if anyone has: a session.
-   * It is handed each action issued from outside, by name and in its JSON
-   * form, in place of the queue.
+   * Whoever has taken over what comes from outside, which is a session, or
+   * undefined. It is handed each action issued from outside, by name and in
+   * its JSON form, in place of the queue.
    */
   diverted: ((name: string, payload: unknown) => void) | undefined;
   private readonly parts: Parts;
@@ -107,8 +107,8 @@ export class Inbox {
   }
 
   /**
-   * Queues an action that arrived as data for the next tick, and logs it:
-   * what came from outside, and what a session hands back.
+   * Queues an action that arrived as data for the next tick, and logs it. It
+   * takes what came from outside, and what a session hands back.
    */
   deliver(name: string, payload: unknown, from?: string): void {
     const { intake, log } = this.parts;
@@ -122,8 +122,11 @@ export class Inbox {
   }
 
   /**
-   * `app.enqueue` and `Actions.enqueue`: an action with its payload as a
-   * value, for the next tick. Where it is called from says what it is.
+   * Queues an action with its payload as a value for the next tick, as
+   * `app.enqueue` and `Actions.enqueue` do. Where it is called from says what
+   * it is. Outside the simulation, a payload the action's schema can't encode
+   * fails with `Action.InvalidPayload`. An action the game has no handler for
+   * throws.
    */
   enqueue(
     action: Action.AnyActionDef,
@@ -175,8 +178,9 @@ export class Inbox {
   }
 
   /**
-   * `Actions.enqueue`, whose payload the compiler has checked. Outside the
-   * simulation, that is only the frame and input stages.
+   * Queues an action for `Actions.enqueue`, whose payload the compiler has
+   * checked. Outside the simulation, `Actions.enqueue` is called only from the
+   * frame and input stages, and a payload the schema can't encode throws there.
    */
   issue(action: Action.AnyActionDef, payload: unknown): void {
     const exit = this.enqueue(action, payload);
@@ -187,7 +191,9 @@ export class Inbox {
     }
   }
 
-  /** `app.enqueueByName`: an action as data, for the next tick. */
+  /**
+   * Queues an action as data for the next tick, as `app.enqueueByName` does.
+   */
   enqueueByName(name: string, payload: unknown, from?: string): void {
     const { intake, runner } = this.parts;
     if (runner.simulating) {
@@ -218,9 +224,10 @@ export class Inbox {
   }
 
   /**
-   * `app.dispatch`: applies an action now, between ticks, with its payload
-   * as a value, and logs it if it is accepted. Returns what its handler
-   * returned or failed with.
+   * Applies an action now, between ticks, with its payload as a value, as
+   * `app.dispatch` does, and logs it if it is accepted. Returns what its
+   * handler returned or failed with. It throws during a tick, a stage or a
+   * handler, and on an app that a session has taken over.
    */
   dispatch(
     action: Action.AnyActionDef,
@@ -234,7 +241,10 @@ export class Inbox {
     return this.apply(action.name, payload, "value", true, undefined);
   }
 
-  /** `app.dispatchByName`: the same, with the action as data. */
+  /**
+   * Applies an action now, with the action as data, as `app.dispatchByName`
+   * does. It otherwise works as `dispatch` does.
+   */
   dispatchByName(
     name: string,
     payload: unknown,
@@ -245,9 +255,8 @@ export class Inbox {
   }
 
   /**
-   * Applies every action queued, for the tick that begins. One that is
-   * refused is told to the game as `Action.Rejected`, and its log entry
-   * says why.
+   * Applies every queued action, for the tick that begins. For each refused
+   * action it emits `Action.Rejected`, and the action's log entry says why.
    */
   drain(): void {
     const { events, intake } = this.parts;

@@ -10,14 +10,15 @@ import { NOT_PLACED } from "./records";
 import type { World } from "./world";
 
 /**
- * The id `Commands.spawn` returns, of an entity that is placed, with its
- * components, when the system or handler that spawned it finishes. Until
- * then the world holds no such entity, so the world's reads don't take it:
- * `Commands` does, to add to it, remove from it or despawn it, and so does a
- * component's value, to point an entity field or a relation at it.
+ * The id that `Commands.spawn` returns. The entity is placed, with its
+ * components, when the system or handler that spawned it finishes. Until then
+ * the world holds no such entity, so the world's reads don't take a `Spawned`
+ * id.
  *
- * An action's handler that returns one hands it to `app.dispatch` as an
- * `Entity`, since the handler has finished by then.
+ * `Commands` takes one, to add to the entity, remove from it or despawn it. A
+ * component's value takes one too, to point an entity field or a relation at
+ * the entity. An action's handler that returns one hands it to `app.dispatch`
+ * as an `Entity`, since the handler has finished by then.
  *
  * @category Models
  */
@@ -25,8 +26,8 @@ export type Spawned = number & { readonly _spawned: "Spawned" };
 
 /**
  * A value as it is handed on once the spawns before it are applied, such as
- * what a handler returns, which `app.dispatch` gives back: each `Spawned` id
- * in it, alone, in an array or in an object, is an `Entity`.
+ * what a handler returns and `app.dispatch` gives back. Each `Spawned` id in
+ * it becomes an `Entity`, whether alone, in an array or in an object.
  *
  * @category Type-level
  */
@@ -39,9 +40,9 @@ export type Placed<A> = A extends Spawned
       : A;
 
 /**
- * A value as the simulation hands it on to be read after its spawns are
- * applied, such as an event's payload or an action it enqueues: each
- * `Entity` in it may be a `Spawned` id too.
+ * A value that the simulation hands on to be read after its spawns are
+ * applied, such as an event's payload or an action it enqueues. Each `Entity`
+ * in it may also be a `Spawned` id.
  *
  * @category Type-level
  */
@@ -56,9 +57,17 @@ type Unplaced<P> = P extends Entity
       : P;
 
 /**
- * The entity of an id `Commands.spawn` returned, once its spawn is applied,
- * and undefined before then, or if it never was: the commands of a system are
- * applied when it finishes.
+ * Returns the entity of an id that `Commands.spawn` returned, once its spawn
+ * is applied. Returns undefined before then, once the entity is despawned, and
+ * for a spawn that was never applied. The commands of a system are applied
+ * when the system finishes.
+ *
+ * **When to use**
+ *
+ * Use with the storage core alone. In a game, the `World` service's `placed`
+ * does the same.
+ *
+ * @category Utilities
  */
 export const placed = (world: World, id: Spawned): Entity | undefined => {
   // The same number: a spawn reserves the id it gives.

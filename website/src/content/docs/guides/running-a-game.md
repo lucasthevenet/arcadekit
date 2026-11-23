@@ -3,9 +3,9 @@ title: "Running a game"
 description: "Start a game with Driver.run and your platform's runMain. Learn how to run in a page and under Node, tick only when needed, and step an app by hand."
 ---
 
-You start a game with `Driver.run`, passed to your platform's `runMain`. This guide covers running in a page and under Node, games that tick only when needed, and stepping an app by hand.
+**`Driver.run`** runs a game until it is interrupted. Your platform's `runMain` starts it: `Browser.runMain` in a page, and `NodeRuntime.runMain` under Node.
 
-## In a page
+## Run a game in a page
 
 ```ts
 import { Action, App, Driver, Plugin } from "arcadekit";
@@ -34,45 +34,53 @@ Browser.runMain(
 );
 ```
 
-`Driver.run` runs the app that `App.make` makes, until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame stage. It never completes on its own, and when it is interrupted or a tick throws, it closes the app.
+`App.make` makes the app from two things:
 
-`App.make` takes the game and how this run of it starts:
+- The game, which `App.define` makes from its plugins, systems, and handlers. It is the same every time it is played.
+- How this run of it starts: a `seed` for a new game, or a `save` to continue one.
 
-- the game, from `App.define`: its plugins, systems and handlers, which are the same every time it is played;
-- a `seed` for a new game, or a `save` to continue one.
+`Driver.run` takes the effect that `App.make` returns, without yielding it. On each repaint, it runs the ticks that are due at `hz`, then the frame stage. It never completes on its own. When it is interrupted, or a tick or a frame throws, it closes the app. Its options:
 
-`Driver.run` takes the effect `App.make` returns, without yielding it, and how the app is driven: `hz`, and the options below.
+| Option | Default | Description |
+| --- | --- | --- |
+| `hz` | Required | The ticks per second, whatever the frame rate |
+| `ticks` | `"always"` | `"whenNeeded"` ticks only while the game changes. See [tick only when needed](#tick-only-when-needed) |
+| `maxStepsPerCall` | `5` | The most ticks that one frame runs after a freeze. The loop drops the ticks still owed |
 
-`Browser.runMain` starts it in the page. It is the platform's `runMain`, which reports failures and interrupts the program cleanly, and it provides the page's display and devices to the whole program: the loop follows `requestAnimationFrame`, and the input stage receives the keyboard, pointer and gamepads. Its options:
+`Browser.runMain` is the page's `runMain`. It reports failures, and it provides the page's display and devices to the whole program. The loop follows `requestAnimationFrame`, and the input stage reads the keyboard, the pointer, and the gamepads. Its options:
 
-| Option | Description |
-| --- | --- |
-| `target` | The element the pointer is pressed on and measured from |
-| `preventDefault` | Keys that must not scroll the page |
-| `deadzone` | How far a stick must move to register, `0.1` by default |
-| `sounds` | The page's sounds by name, available for the page's lifetime. See [sound](sound.md) |
-| `volume` | The master volume |
+| Option | Default | Description |
+| --- | --- | --- |
+| `target` | The window | The element the pointer is pressed on and measured from |
+| `preventDefault` | None | The codes of the keys whose default action is prevented, such as the arrows and the space bar, which scroll the page |
+| `deadzone` | `0.1` | How far a stick must move to register |
+| `sounds` | None | The page's sounds by name, for the page's lifetime. `false` opens no sound at all. See [playing sound in a page](sound-in-a-page.md) |
+| `volume` | `1` | The master volume |
 
-When the page is closed, the game is interrupted: the loop stops requesting frames, `Driver.run` closes the app, and the plugins' resources are released.
+When the page closes, `Browser.runMain` interrupts the game. The loop stops requesting frames, `Driver.run` closes the app, and the plugins release their resources.
 
-- The first frame draws the game as it is and runs no tick. Time is counted from it.
-- While the tab is hidden, the loop requests no frames, and that time doesn't count. When the tab returns, the game resumes where it was.
-- After a freeze without the tab being hidden, the loop runs at most `maxStepsPerCall` ticks, 5 by default, and drops the rest.
-- To connect anything outside the game to the app before its first frame, add a step to the effect that makes it, as `Effect.tap` does above. What the step acquires is released when the run ends. A step that can fail holds the app with `Effect.acquireRelease(App.make(game), (app) => app.close)`, so that the app is closed when the step fails. A UI doesn't need the app: it receives [the view bridge](ui.md).
-- An app made from a `save` resumes from it instead of starting fresh, and making it can fail with `Save.LoadRefused`. See [saving and loading](saving-and-loading.md).
-- `Driver.run` fails with whatever making the app can fail with. If a tick or frame throws, the loop stops and the program dies with the thrown error.
+The loop keeps to these rules:
 
-Provide any services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`; a missing one is a compile error. Provide them to `Driver.run` as a whole, not to a part of it, so they last as long as the game: what a layer acquires is released with whatever it was provided to. `Browser.layer` acquires nothing itself: the app opens the page's devices, and with `Sound.plugin` its sound, in a scope of its own, and lets go of them when it is closed.
+- The first frame draws the game as it is and runs no tick. The loop counts time from it.
+- While the tab is hidden, the loop requests no frames, and the hidden time doesn't count. When the tab returns, the game resumes where it was.
+- After a freeze while the tab stays visible, the loop runs at most `maxStepsPerCall` ticks and drops the rest.
+- If a tick or a frame throws, the loop stops and the program dies with the thrown error.
 
-`Effect.runSync` and `Effect.runPromise` are for tests. Inside a program, yield an Effect rather than running it.
+To connect something outside the game to the app before its first frame, add a step to the effect that makes the app, as `Effect.tap` does above. What the step acquires is released when the run ends. If the step can fail, hold the app with `Effect.acquireRelease(App.make(game), (app) => app.close)`, so that the app is closed when the step fails. A UI doesn't need the app, because it receives [the view bridge](ui.md).
 
-## Under a Content Security Policy
+An app made from a `save` resumes from it instead of starting fresh. Making it can fail with `Save.LoadRefused`, and `Driver.run` fails with whatever making the app fails with. See [saving and loading](saving-and-loading.md).
 
-arcadekit never generates code from strings: it uses no `eval` and no `new Function`. A page whose policy omits `'unsafe-eval'` runs a game unchanged.
+Provide the services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`. A missing service is a compile error. Provide them to `Driver.run` as a whole, not to a part of it. A layer releases what it acquires when the effect it was provided to ends, so a layer provided to the whole program lasts as long as the game. `Browser.layer` acquires nothing itself. The app opens the page's devices in a scope of its own, and `Sound.plugin` opens the page's sound there too. The app lets go of both when it is closed.
 
-## Under Node
+Use `Effect.runSync` and `Effect.runPromise` only in tests. Inside a program, yield an Effect instead of running it.
 
-The same game runs under Node, importing nothing but `arcadekit`. There, the display is a timer:
+## Run a game under a Content Security Policy
+
+arcadekit generates no code from strings. It uses no `eval` and no `new Function`, so a page whose policy omits `'unsafe-eval'` runs a game unchanged.
+
+## Run a game under Node
+
+The same game runs under Node without `arcadekit/Browser`. There, the display is a timer:
 
 ```ts
 import { NodeRuntime } from "@effect/platform-node";
@@ -85,11 +93,11 @@ NodeRuntime.runMain(
 );
 ```
 
-`NodeRuntime.runMain` interrupts the game when the process is asked to stop, and `Driver.run` closes the app as it does in a page. A server, a replay or a test never imports `arcadekit/Browser`, so it installs no browser packages.
+`NodeRuntime.runMain` interrupts the game when the process is told to stop, and `Driver.run` closes the app as it does in a page. A server, a replay, or a test never imports `arcadekit/Browser`, so it needs no `@effect/platform-browser`.
 
-## Ticking only when needed
+## Tick only when needed
 
-A turn-based game, a puzzle or a menu has nothing to do between moves. Ticking sixty times a second regardless runs its systems, advances its time and fills its log with checkpoints for nothing. With `ticks: "whenNeeded"`, the loop draws every frame but only ticks while the game changes:
+A turn-based game, a puzzle, or a menu has nothing to do between moves. Ticking 60 times a second anyway runs its systems, advances its time, and fills its log with checkpoints for nothing. With `ticks: "whenNeeded"`, the loop draws every frame but ticks only while the game changes:
 
 ```ts
 import { App, Driver, Field, Plugin, Singleton, System, Time } from "arcadekit";
@@ -120,20 +128,21 @@ Browser.runMain(
 );
 ```
 
-- The input stage runs every frame, so a key press, a UI button or a network message is received in the frame it arrives, and the tick it requests runs then.
-- The app ticks at `hz` while it isn't settled. Then it rests: no tick runs and game time stands still.
-- `app.settled` is false while the last tick changed more than the game's time, or while anything is pending: an action to apply or one dispatched since the last tick, a state to enter, a fiber that is due, or an event some system hasn't read. A countdown or a body in flight keeps the game ticking for as long as it moves, with nothing to declare, and the game rests after the first tick that changes nothing.
-- To tell, the app hashes its world after each tick, from the first time `app.settled` is read: about 10 µs for a thousand entities and 0.9 ms for a hundred thousand. A game that ticks in real time never reads it, and pays nothing.
+- The input stage runs every frame. A key press, a UI button, or a network message is received in the frame it arrives, and the tick it requests runs in that frame.
+- The app ticks at `hz` while `app.settled` is false. Then it rests. No tick runs, and game time doesn't advance.
+- `app.settled` is false while the last tick changed more than the game's time. It is also false while work is pending: an action to apply, an action dispatched since the last tick, a state to enter, a fiber that is due, or an event that some system hasn't read.
+- A running countdown or a body in flight keeps the game ticking for as long as it moves, and the game declares nothing for it. The game rests after the first tick that changes nothing.
+- From the first time `app.settled` is read, the app hashes its world after each tick to tell whether the tick changed it. The hash costs about 10 µs for a thousand entities and 0.9 ms for a hundred thousand. A game that ticks in real time never reads `app.settled`, and pays nothing.
 - A newly created or loaded app isn't settled. It runs one tick, and rests after it if that tick changed nothing.
-- The frame stage runs every frame, including at rest, with a `Frame.alpha` of 1, so interpolated rendering draws the game where it is.
-- Resting isn't part of the game. A recording holds the actions, their ticks and the tick the game had reached, and a replay runs them back to back and ends on the same hash.
-- A frame of a game at rest costs about 5 µs with device input, a state and a view: reading the devices, checking the app, and the frame stage.
+- The frame stage runs every frame, at rest too, with a `Frame.alpha` of 1, so interpolated drawing draws the game where it is.
+- Resting isn't part of the game. A recording holds the actions, their ticks, and the tick the game had reached. A replay runs them back to back and ends on the same hash.
+- A frame of a game at rest, with device input, a state, and a view, costs about 5 µs. It reads the devices, checks the app, and runs the frame stage.
 - A system that draws from `Random` every tick changes the world every tick, so the game never rests. Draw only when something happens.
-- Game time stands still at rest, so a system that waits for a moment of game time by comparing it with `Time` alone, writing nothing while it waits, is never reached. Count down in the world instead, as `Countdown` does.
+- Game time doesn't advance at rest. A system that waits for a moment of game time by comparing it with `Time`, and writes nothing while it waits, never reaches that moment. Count down in the world instead, as `Countdown` does.
 
-## Stepping by hand
+## Step an app by hand
 
-A test, a tool or a turn-based game can step its app itself:
+A test, a tool, or a turn-based game can step its app itself:
 
 ```ts
 import { App, Driver, Plugin } from "arcadekit";
@@ -155,14 +164,14 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 ```
 
-An app has a scope of its own, in which it opens the devices, the sound and what its plugins' layers acquire, and `app.close` lets go of them. A program that steps its app closes it when done: held with `Effect.acquireRelease`, as above, it is closed with the program's scope. An app that is never closed holds what it opened until the program ends.
+An app has a scope of its own. It opens the devices, the sound, and what its plugins' layers acquire there, and `app.close` lets go of them. Close an app you step when you are done with it. Held with `Effect.acquireRelease`, as above, it is closed with the program's scope. An app that is never closed holds what it opened until the program ends.
 
-- A tick reads no device. Call `app.input()` before each tick that receives the devices and the UI, as a driver does. A tool that re-runs a game from its log by hand doesn't, since the log already holds what they reported. See [replays](replays.md).
-- Nothing ticks a game that steps itself: when its UI sends something, the game runs a tick.
+- A tick reads no device. Call `app.input()` before each tick that should receive the devices and the UI, as a driver does. A tool that re-runs a game from its log skips that call, because the log already holds what the devices reported. See [replays](replays.md).
+- No driver ticks an app that you step. When its UI sends something, run a tick.
 
-`Driver.frames(app, { hz })` is the loop `Driver.run` uses, for a program that creates its app itself, and `Driver.interval(app, { hz })` steps the same way on a timer. Neither closes the app, which is the program's. Each is interrupted with the fiber that runs it, so one started with `Effect.forkScoped` stops when its scope closes, leaving no frame requested.
+A program that makes its app itself can run `Driver.frames(app, { hz })`, the loop that `Driver.run` uses. `Driver.interval(app, { hz })` steps the same way on a timer. Neither closes the app, which belongs to the program. Each stops when the fiber that runs it is interrupted. One started with `Effect.forkScoped` stops when its scope closes, and leaves no frame requested.
 
-`Driver.frames` reaches the screen through `Driver.Display`: `Browser.display` in a page, and by default a 60 fps timer that is never hidden, which is what Node uses. A test drives one by hand with `Driver.makeManualDisplay()`. See [testing](testing.md).
+`Driver.frames` reaches the screen through the `Driver.Display` service. In a page it is `Browser.display`. Elsewhere, such as under Node, the default is a timer at 60 frames a second that is never hidden. A test advances a display by hand with `Driver.makeManualDisplay()`. See [testing](testing.md).
 
 ## Read more
 

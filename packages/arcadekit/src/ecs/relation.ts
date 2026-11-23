@@ -13,13 +13,14 @@ import type {
 } from "./component";
 
 /**
- * A relation's `target` field: an entity the world keeps track of, read like
- * any field and never written like one. What sets it apart from a
- * `Field.entity` exists only in the type.
+ * A relation's `target` field, the id of an entity that the world keeps track
+ * of. A loop reads it like any field and cannot assign it. It differs from a
+ * `Field.entity` only in its type.
  *
  * @category Models
  */
 export interface TargetField extends FieldDef<Entity, ReadonlyColumn<Entity>> {
+  /** Never set: it tells the field apart from a `Field.entity` in the type. */
   readonly _target: true;
 }
 
@@ -29,16 +30,17 @@ export type RelationSchema<S extends Schema> = {
 } & S;
 
 /**
- * A relation, as `Component.relation` defines it: a component whose `target`
- * the world keeps track of.
+ * A relation's definition, as `Component.relation` returns it. It is a
+ * component whose `target` the world keeps track of, and `World.sources`
+ * takes one.
  *
  * @category Models
  */
 export type RelationDef = ComponentDef<{ readonly target: TargetField }>;
 
 /**
- * The fields `set` writes of a component: any of them, but a relation's
- * `target`, which is changed by adding the relation again.
+ * The fields of a component that `World.set` takes: any of them, except a
+ * relation's `target`. A relation gets a new target when it is added again.
  *
  * @category Type-level
  */

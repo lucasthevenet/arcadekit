@@ -1,22 +1,21 @@
 /**
- * Saved games: the world as a snapshot, plus everything else that determines
- * what the next tick does.
+ * A save is a game captured between two ticks, to continue later: its world
+ * as a snapshot, which holds everything that decides what the next tick does.
  *
- *   const saved = app.save()                       // Exit<Save, SaveRefused>
+ *   const save = yield* app.save()                 // fails with Save.SaveRefused
  *   const bytes = Save.encode(save)                // for a file or the network
  *
- *   const loaded = Save.decode(bytes)              // Exit<Save, LoadRefused>
- *   const app = yield* App.make(game, { save }) // the game, where it was
+ *   const loaded = yield* Save.decode(bytes)       // fails with Save.LoadRefused
+ *   const again = yield* App.make(game, { save: loaded }) // the game, where it was
  *
- * A save is taken between two ticks. It holds the world, which holds the game
- * time, the actions queued for the next tick, the events waiting to be read
- * with where each system had read to, and what change queries haven't visited
- * yet. Everything a game is in the middle of is in the world, so the save
- * holds all of it.
+ * Its world holds the game's time, the actions queued for the next tick, the
+ * events waiting to be read with where each system had read to, and what
+ * change queries haven't visited yet. Everything a game is in the middle of
+ * is in the world, so the save holds all of it.
  *
- * Everything logged after a save is the game's tail. A game that keeps what
- * it recorded since its last save can return to the present by replaying only
- * that tail, which holds the save, however long it has been running:
+ * Everything logged after a save is the game's tail, and `app.record(save)`
+ * records it with the save. Replaying that recording brings the game back to
+ * the present, however long it has run:
  *
  *   const tail = app.record(save)
  *   const present = yield* Journal.replay(tail, game)
@@ -34,38 +33,36 @@ import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 
 /**
- * A game captured between two ticks, made by `app.save()`: its world as a
- * snapshot, which holds its time, what was queued for the next tick, the
- * events waiting to be read and each system's place in them and in what
- * changed, and the length of its log. `Save.encode` turns it into bytes, and
- * `App.make` continues from it.
+ * A game captured between two ticks, which `app.save()` makes: the game's
+ * version, its world as a snapshot, and the length of its log. `Save.encode`
+ * turns it into bytes, and `App.make` continues the game from it.
  *
  * @category Models
  */
 export interface Save {
   /**
-   * The version of the game that wrote the save: the `version` its app was
-   * created with, defaulting to 0. Increment it when you change the game's
-   * components, and give the game a migration from each older version.
+   * The `version` of the game that wrote the save, as `App.define` was given
+   * it, 0 by default. When you change the game's components, increment it and
+   * give the game a migration from the version before.
    */
   readonly version: number;
   /**
-   * `world.snapshot()`, which holds the game's time, the actions queued for
-   * the next tick, the events waiting to be read and what change queries
-   * haven't visited yet with the rest of it.
+   * The world, as `world.snapshot()` writes it. Beside the entities, it holds
+   * the game's time, the actions queued for the next tick, the events waiting
+   * to be read, and what change queries haven't visited yet.
    */
   readonly world: Uint8Array;
   /**
-   * The number of entries in the app's action log. Everything logged after that
-   * is the tail to replay after loading this save.
+   * The number of entries the app's action log held when the save was taken.
+   * Everything logged after them is the tail that `app.record(save)` records.
    */
   readonly logLength: number;
 }
 
 /**
- * The game can't be saved in its current state. The message names what is in
- * the way: a queued action or a waiting event whose payload its schema doesn't
- * take, a field holding a value that can't be saved, or a command still queued.
+ * The game can't be saved as it is. Its message names the cause: a queued
+ * action or a waiting event whose payload its schema doesn't take, a field
+ * that holds a value that can't be saved, or a command still queued.
  *
  * @category Errors
  */
@@ -74,9 +71,9 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
 }> {}
 
 /**
- * A save couldn't be loaded. `problem` identifies the kind of failure:
+ * A save couldn't be loaded. `problem` names the kind of failure:
  *
- * - one of a snapshot's problems;
+ * - one of a snapshot's problems, such as `"corrupt"` or `"unknown component"`;
  * - `"not a save"`: the bytes aren't a saved game at all;
  * - `"newer version"`: a later version of the game wrote the save;
  * - `"no migration"`: an earlier version wrote it, and the game has no
@@ -99,10 +96,10 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
 }> {}
 
 /**
- * A save in a plain, self-describing form, for a migration to edit. The world
- * is listed as the snapshot describes it, components by name with their fields,
- * so it can be read whatever the game's current components are. `Migrate`
- * provides the common changes.
+ * A save in a plain form that describes itself, for a migration to edit. Its
+ * world lists components by name with their fields, as the snapshot describes
+ * them, so a migration can read it whatever the game's components are now.
+ * `Migrate` makes the common changes.
  *
  * @category Models
  */
@@ -124,17 +121,17 @@ export interface Contents {
 }
 
 /**
- * Turns a save written by version `from` of a game into one of version `from +
- * 1`, by editing the contents it receives in place.
+ * Turns a save written by version `from` of a game into one of version
+ * `from + 1`, by editing in place the contents it receives.
  *
  * **Gotchas**
  *
- * - A migration turns an old save into a new game: the log recorded before it
- *   no longer replays against it.
- * - A migration that accompanies a schema change updates the payloads in
- *   `world.stores` too. A waiting event that its schema no longer takes refuses
- *   the save as it is loaded; a queued action is refused when it is applied,
- *   as an `Action.Rejected` event.
+ * - A migration turns an old save into a new game, and the log recorded
+ *   before it no longer replays against it.
+ * - A migration that comes with a schema change updates the payloads in
+ *   `world.stores` too. A waiting event that its schema no longer takes makes
+ *   the load fail with `"store changed"`. A queued action that its schema no
+ *   longer takes is refused when it is applied, as an `Action.Rejected` event.
  *
  * @category Models
  */
@@ -246,11 +243,11 @@ const refuse = (
   Exit.fail(new LoadRefused({ problem, message }));
 
 /**
- * Decodes a save from bytes. It checks the save's own structure; the world
+ * Decodes a save from bytes. It checks the save's own structure. The world
  * inside is checked when the save is loaded.
  *
- * Fails with `LoadRefused`: `"not a save"`, `"newer format"` for a save written
- * by a later version of arcadekit, `"truncated"` or `"corrupt"`.
+ * Fails with `LoadRefused`: `"not a save"`, `"newer format"` for a save in a
+ * format this version of arcadekit doesn't read, `"truncated"` or `"corrupt"`.
  *
  * @category Codecs
  */
@@ -411,9 +408,9 @@ export const singleton = (
 /**
  * The name of the store that holds what an app's change queries have yet to
  * visit, as a snapshot has it: `readSnapshot(save.world).stores`. It holds
- * one entry per component and kind of change, `{ component, kind, entries,
- * readers }`: `world.saveChanges()`, for the systems of the tick and the
- * handlers.
+ * what `world.saveChanges()` returns for the systems of the tick and the
+ * handlers: one entry per component and kind of change,
+ * `{ component, kind, entries, readers }`.
  *
  * @category Constants
  */

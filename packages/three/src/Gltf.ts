@@ -5,6 +5,7 @@
  *
  *   const Fleet = Assets.bundle("game/Fleet", {
  *     ship: Gltf.model("/ship.glb"),
+ *     rock: Gltf.model("/rocks/rock.gltf"),
  *   })
  *
  *   // One object per entity, made from the model while the bundle is loaded.
@@ -15,23 +16,22 @@
  *     make: (entity, { ship }) => ship.scene.clone(),
  *   })
  *
- *   // Or a crowd, each entity an instance of one of the model's meshes.
+ *   // Or a crowd, each entity an instance of one of a model's meshes.
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
  *     transform: Transform3d,
  *     from: Fleet,
- *     look: ({ ship }) => Gltf.mesh(ship, "Hull"),
+ *     look: ({ rock }) => Gltf.mesh(rock, "Boulder"),
  *   })
  *
- * A model loads like any asset: with its bundle, through `Assets.Loader`, and
- * is released with the scope it was loaded in, which disposes of its
- * geometries, materials and textures. The same applies to the files a `.gltf`
- * references alongside it, its buffers and images: this module fetches them
- * through the same loader and hands them to Three.js with the model, so
- * Three.js fetches nothing itself.
+ * A model loads like any asset, with its bundle and through `Assets.Loader`.
+ * When the scope it was loaded in closes, its geometries, materials and
+ * textures are disposed of. The buffers and images a `.gltf` file references
+ * load the same way. This module fetches them through `Assets.Loader` and
+ * hands them to Three.js with the model, so Three.js fetches nothing itself.
  *
- * It is a separate entry point because it pulls in Three.js's glTF loader,
- * which a game without models doesn't need.
+ * It is a separate entry point because it imports Three.js's glTF loader,
+ * which a game without models doesn't need to ship.
  */
 import * as Assets from "arcadekit/Assets";
 import { Effect, Schema } from "effect";
@@ -42,6 +42,12 @@ import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
 /**
  * A loaded model, as Three.js's glTF loader returns it. `scene` is its default
  * scene, `scenes` all of them, and `animations` its clips.
+ *
+ * **Gotchas**
+ *
+ * - Its animations are loaded, and nothing plays them.
+ * - `scene.clone()` doesn't copy a skinned model correctly. Use Three.js's
+ *   `SkeletonUtils.clone` for one.
  *
  * @category Models
  */
@@ -54,9 +60,10 @@ export type Model = GLTF;
  */
 export interface ModelOptions {
   /**
-   * Receives the loader before it reads the model, once per load. Use it to
-   * configure what a compressed model needs, with `setDRACOLoader`,
-   * `setKTX2Loader` or `setMeshoptDecoder`, which your game supplies.
+   * Receives the loader once per load, before it parses the model. Use it to
+   * set the decoders a compressed model needs, with `setDRACOLoader`,
+   * `setKTX2Loader` or `setMeshoptDecoder`. Your game supplies the decoders. A
+   * decoder that fetches files of its own fetches them outside `Assets.Loader`.
    */
   readonly prepare?: (loader: GLTFLoader) => void;
 }
@@ -372,27 +379,34 @@ const dispose = (model: Model): void => {
 // --- the asset -----------------------------------------------------------------------
 
 /**
- * Makes a model asset: a glTF file, `.glb` or `.gltf`, loaded with its bundle
- * and disposed of with the scope it was loaded in.
+ * Makes a model asset from a glTF file, `.glb` or `.gltf`. It loads with its
+ * bundle, and is disposed of when the scope it was loaded in closes.
  *
  *   const Fleet = Assets.bundle("game/Fleet", {
  *     ship: Gltf.model("/ship.glb"),
- *     rock: Gltf.model("/rocks/rock.gltf"),   // with rock.bin and rock.png alongside it
+ *     rock: Gltf.model("/rocks/rock.gltf"),   // with rock.bin and rock.png beside it
  *   })
  *
- * - The buffers and images a `.gltf` references are fetched through
+ * **Details**
+ *
+ * - The buffers and images a `.gltf` file references are fetched through
  *   `Assets.Loader`, relative to the model, in parallel. A test's in-memory
- *   files serve them, a missing one fails the bundle with its own URL, and
- *   leaving a level while its model is still loading cancels those requests.
+ *   files therefore serve them. A missing file fails the bundle with its own
+ *   URL. Leaving a level while its model is still loading cancels those
+ *   requests.
  * - A file that isn't a valid model fails the bundle with `Assets.AssetFailed`,
  *   which says what was wrong.
- * - Configure what a compressed model needs on the loader in `prepare`.
- * - A bundle loads each model once: objects made from it share its geometries
- *   and materials, so `model.scene.clone()` is cheap and there is nothing to
- *   free, but changing one copy's material changes them all.
- * - Its images are decoded by the page, as `Three.texture`'s are, and closed
- *   when the model is released: a model with images requires a page, and one
- *   without loads anywhere.
+ * - Set what a compressed model needs on the loader, in `prepare`.
+ * - A bundle loads each model once. Copies made with `model.scene.clone()`
+ *   share its geometries and materials, so a copy is cheap and has nothing to
+ *   free.
+ *
+ * **Gotchas**
+ *
+ * - Changing one copy's material changes it for every copy.
+ * - The page decodes the model's images, as it does `Three.texture`'s, and
+ *   they are closed when the model is released. A model with images therefore
+ *   loads only in a page, and a model without images loads anywhere.
  *
  * @category Constructors
  */
@@ -425,16 +439,23 @@ export const model = (
   );
 
 /**
- * Returns a model's mesh by name, or its first mesh. This is what
- * `Three.instances` takes as a look, since a mesh has a geometry and a
- * material.
+ * Returns a model's mesh by name, or its first mesh when given no name. A mesh
+ * has a geometry and a material, so it is a look that `Three.instances`
+ * accepts.
  *
  *   look: ({ rock }) => Gltf.mesh(rock, "Boulder")
  *
+ * **Details**
+ *
  * The name is the name of the node the mesh is on, as an editor shows it, or
- * the mesh's own name when its node has none. A mesh with several materials is
- * several meshes under that name, and the first is returned. Throws, listing
- * the available meshes, when none has the name.
+ * the mesh's own name when its node has none. It searches every scene of the
+ * model. A mesh with several materials is several meshes under that name, and
+ * `Gltf.mesh` returns the first.
+ *
+ * **Gotchas**
+ *
+ * - It throws when no mesh has the name, and the error lists the model's
+ *   meshes. It also throws for a model with no mesh.
  *
  * @category Utilities
  */

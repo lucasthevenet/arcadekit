@@ -1,6 +1,6 @@
 /**
- * Position, rotation and scale in three dimensions. These components serve
- * everything that needs to know where things are: the rules that move them, the
+ * Position, rotation and scale in three dimensions. Everything that needs to
+ * know where things are reads these components: the rules that move them, the
  * renderer that draws them, and the sound that plays from them. For a 2D game,
  * use `Transform2d`.
  *
@@ -10,15 +10,15 @@
  *     Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2))
  *   )
  *
- * They are ordinary components: columns of 32-bit floats that the game's
+ * They are ordinary components, columns of 32-bit floats that the game's
  * systems write, and that are saved, hashed and replayed. Nothing here draws. A
- * renderer reads them: `@arcadekit/three` draws an entity at its `Position`,
+ * renderer reads them. `@arcadekit/three` draws an entity at its `Position`,
  * rotated and scaled by its `Rotation` and `Scale` if it has them.
  *
- * Give an entity only the components it needs: `Position` alone for something
- * that only has a location, plus `Rotation` and `Scale` for things that turn or
- * have a size of their own. A save names each by module and component, as the
- * world does: `"arcadekit/Transform3d.Position"`.
+ * Give an entity only the components it needs. `Position` alone is enough for
+ * something that only has a location. Add `Rotation` and `Scale` for things
+ * that turn or have a size of their own. A save names each by module and
+ * component, as the world does, such as `"arcadekit/Transform3d.Position"`.
  */
 import { Component, Field } from "./ecs/component";
 
@@ -35,11 +35,11 @@ export const Position = Component.define("arcadekit/Transform3d.Position", {
 });
 
 /**
- * An entity's rotation, as a quaternion. `axisAngle` creates one.
+ * An entity's rotation, as a quaternion. `Transform3d.axisAngle` makes one.
  *
  * Only the direction of the quaternion matters, not its length. A quaternion of
  * any length represents the same rotation as the unit quaternion in its
- * direction, and everything that reads a `Rotation` normalizes it, so one that
+ * direction. Everything that reads a `Rotation` normalizes it, so one that
  * drifts from length 1 still draws as the same rotation. All four fields at 0,
  * which is a `Rotation` added without a value, means no rotation.
  *
@@ -65,14 +65,17 @@ export const Scale = Component.define(
 );
 
 /**
- * Returns the `Rotation` that turns by `angle` radians about an axis:
- * `Transform3d.axisAngle(0, 1, 0, Math.PI)`. The axis is a direction of any
- * non-zero length; a zero axis gives no rotation. The result has length 1.
+ * Returns the `Rotation` that turns by `angle` radians about an axis.
+ *
+ *   Transform3d.axisAngle(0, 1, 0, Math.PI)   // half a turn about y
+ *
+ * The axis is a direction of any non-zero length, and a zero axis gives no
+ * rotation. The result has length 1.
  *
  * **Gotchas**
  *
- * It allocates an object, so use it for a spawn or a `world.set`, not in a loop
- * over columns.
+ * - It allocates an object, so use it for a spawn or a `world.set`, not in a
+ *   loop over columns.
  *
  * @category Utilities
  */

@@ -1,8 +1,8 @@
 /**
- * Puts an app together from a game and how one run of it starts: its world
- * and the stores the world holds for it, the save it continues from, its
- * services, its runner, its inbox and its loop. `App.make` makes its app
- * here.
+ * Builds an app from a game and how one run of it starts. It makes the app's
+ * world and the stores the world holds for it, loads the save the run
+ * continues from, and makes the app's services, runner, inbox and loop.
+ * `App.make` makes its app here.
  */
 import { Cause, Context, Effect, Exit, Layer, Metric, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
@@ -46,14 +46,16 @@ import { TickDispatcher, TickScheduler } from "./TickScheduler";
  */
 export interface Reins<E = never> {
   /**
-   * Queues an action for the next tick and logs it, as `enqueueByName` did: by
-   * name, with its payload in JSON form, and with its issuer.
+   * Queues an action for the next tick and logs it, as `app.enqueueByName`
+   * does on an app nobody has taken over. It takes the action by name, with
+   * its payload in JSON form, and with its issuer.
    */
   readonly deliver: (name: string, payload: unknown, from?: string) => void;
   /**
-   * Runs one tick, as `tickExit` did. `observe` is told when the tick's
-   * systems are about to run, with no name, and after each system has run
-   * and its commands are applied, with the system's name.
+   * Runs one tick, as `app.tickExit` does on an app nobody has taken over.
+   * `observe` is called with undefined before the tick's systems run, and
+   * with each system's name once that system has run and its commands are
+   * applied.
    */
   readonly tickExit: (
     delta: number,
@@ -62,8 +64,8 @@ export interface Reins<E = never> {
 }
 
 /**
- * An app as it is put together, with the way to take it over: what
- * `App.make` returns the app of, and what a session takes over.
+ * An app as it is built, with the way to take it over. `App.make` returns its
+ * `app`, and a session takes it over with `take`.
  *
  * @category Models
  */
@@ -71,28 +73,30 @@ export interface Built<E = never, HU = never> {
   readonly app: App<E, HU>;
   /**
    * Takes over the app, for code that decides on which tick an action is
-   * applied and when a tick runs: a session, where every peer must apply the
-   * same actions on the same ticks.
+   * applied and when a tick runs. A session does, since every peer must apply
+   * the same actions on the same ticks.
    *
    * From then on, an action enqueued from outside isn't queued for the next
    * tick. It is passed to `issued`, by name and with its payload in JSON
-   * form: any action given to `enqueue` or `enqueueByName`, and any issued
-   * with `Actions.enqueue` in the input or frame stage, so key bindings and
-   * UI buttons are covered too. What the simulation issues itself isn't
-   * passed on, since every peer's simulation issues it.
+   * form. `issued` gets every action given to `enqueue` or `enqueueByName`,
+   * and every action issued with `Actions.enqueue` in the input or frame
+   * stage, such as from key bindings and UI buttons. What the simulation
+   * issues itself isn't passed on, since every peer's simulation issues it.
    *
    * The reins are the only remaining way to queue an action and to run a
    * tick. The app's `tick`, `tickExit`, `dispatch` and `dispatchByName` throw
    * from then on, since each would advance this machine's game and no one
-   * else's. An app is taken over once.
+   * else's. Taking an app over a second time throws.
    */
   readonly take: (issued: (name: string, payload: unknown) => void) => Reins<E>;
 }
 
 /**
- * Makes the app of a game, from a seed or from a save, in a scope of its
- * own, which the app's `close` closes, and which is closed at once when the
- * making fails. It fails with `LoadRefused` only when it is given a save.
+ * Makes the app of a game, from a seed or from a save, with the way to take it
+ * over. The app has a scope of its own, which its `close` closes. When the
+ * making fails, that scope is closed at once. It fails with what a plugin's
+ * setup fails with, and with `Save.LoadRefused` only when it is given a save.
+ * It throws when it is given both a save and a seed.
  *
  * @category Constructors
  */

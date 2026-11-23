@@ -3,17 +3,17 @@ title: "Drawing with Three.js"
 description: "arcadekit draws nothing itself. @arcadekit/three is a plugin, in its own package, that renders your game with Three.js."
 ---
 
-arcadekit draws nothing itself. [`@arcadekit/three`](/reference/three) is a plugin, published as its own package, that renders your game with [Three.js](https://threejs.org). A game that renders with something else leaves it out, and the game itself doesn't know whether it is there. It runs in the frame stage, between ticks, and reads the world without changing it, so a rendered game has the same hash, log and save as one that isn't rendered.
+**[`@arcadekit/three`](/reference/three)** is the plugin, in a package of its own, that draws a game with [Three.js](https://threejs.org). arcadekit draws nothing itself. A game that draws with something else leaves this plugin out, and the game's rules can't tell whether it is there. The plugin runs in the frame stage, between ticks, and reads the world without changing it. A drawn game has the same hash, log, and save as one that isn't drawn.
 
 ```sh
 pnpm add arcadekit @arcadekit/three effect three
 ```
 
-`arcadekit`, `effect` and `three` are peer dependencies: your game has one copy of each, so arcadekit's components and services are the same objects here as in your game.
+`arcadekit`, `effect`, and `three` are peer dependencies. Your game has one copy of each, so arcadekit's components and services are the same objects in the plugin as in your game.
 
-## Rules decide where, the page decides how
+## Place entities in the rules, draw them in the page
 
-Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`, and give an instance its colour with its `Color`. `@arcadekit/three` has no components of its own and only reads these, each kind of entity from the transform it names. The plugins that hold your rules import nothing from it, so a server or a replay installs neither it nor Three.js.
+Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`, and colour an instance with arcadekit's `Color`. `@arcadekit/three` has no components of its own. It only reads these, and reads each kind of entity from the transform the kind names. The plugins that hold your rules import nothing from it, so a server or a replay installs neither it nor Three.js.
 
 ```ts title="rules.ts"
 import { Commands, Component, Plugin, Transform3d } from "arcadekit";
@@ -40,7 +40,7 @@ export const Rules = Plugin.make("game/Rules", {
 });
 ```
 
-Only page code imports `@arcadekit/three`: the plugin that defines how each kind of entity looks, and the module that starts the game and provides a renderer.
+Only the page's code imports `@arcadekit/three`: the plugin that says how each kind of entity looks, and the module that starts the game and provides a renderer.
 
 ```ts title="main.ts"
 import { Three } from "@arcadekit/three";
@@ -81,32 +81,32 @@ Browser.runMain(
 );
 ```
 
-Each kind of entity is drawn by a frame-stage system of one of two types:
+A frame-stage system of one of two types draws each kind of entity:
 
 - `Three.instances` draws every entity of a kind as an instance of one mesh. Use it for crowds.
 - `Three.objects` keeps one `Object3D` per entity, for the few entities that are more than a copy of one mesh.
 
-[Instances and objects](instances-and-objects.md) covers both. Looks built from a level's files are covered in [textures and models](textures-and-models.md), and smooth motion at any screen refresh rate in [interpolation](between-two-ticks.md).
+[Instances and objects](instances-and-objects.md) covers both. [Textures and models](textures-and-models.md) covers looks built from a level's files, and [interpolation](between-two-ticks.md) covers smooth motion at any refresh rate.
 
-## Entry points
+## Choose an entry point
 
 | Entry | Contents | Imports |
 | --- | --- | --- |
 | `@arcadekit/three` | Both modules below, as `import { Gltf, Three } from "@arcadekit/three"` | `arcadekit`, `effect`, `three` |
-| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances`, `objects` and `texture` | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances`, `objects`, and `texture` | `arcadekit`, `effect`, `three` |
 | `@arcadekit/three/Gltf` | `model`, the glTF asset, and `mesh` | `arcadekit`, `effect`, `three`, and Three.js's glTF loader from `three/addons` |
 
-Models have their own module because they bring Three.js's glTF loader with them, which a game without models doesn't need to ship. Nothing in `Three` imports it.
+Models have their own module because they bring Three.js's glTF loader, which a game without models doesn't need to ship. Nothing in `Three` imports the loader.
 
-## Position, rotation and scale
+## Place, rotate, and scale an entity
 
-Each kind names the module that places its entities, `transform: Transform3d` above, and reads no other. An entity of a kind of `Transform3d` is drawn at its `Transform3d.Position`, in scene units.
+Each kind names the module that places its entities, as `transform: Transform3d` does above, and reads no other. A kind of `Transform3d` draws an entity at its `Transform3d.Position`, in scene units.
 
-- `Transform3d.Rotation`, a quaternion, and `Transform3d.Scale`, where 1 is the geometry's own size, are for entities that rotate or have a size of their own. An entity without them is drawn upright at the geometry's size, and costs less to draw.
-- A `Rotation` is drawn as the rotation it represents, whatever its length: one your rules let drift from length 1, or never normalised, is neither skewed nor scaled by it. Normalising costs an instance about 3 ns, one division.
-- A `Rotation` whose four fields are 0, which is what one added without a value is, is drawn as no rotation.
+- `Transform3d.Rotation` is a quaternion, and `Transform3d.Scale` is 1 at the geometry's own size. Give them to entities that rotate or have a size of their own. An entity without them is drawn upright at the geometry's size, and costs less to draw.
+- A `Rotation` is drawn as the rotation it represents, whatever its length. A rotation that your rules let drift from length 1, or never normalised, neither skews nor scales the entity. Normalising costs about 3 ns per instance, one division.
+- A `Rotation` whose four fields are 0, as one added without a value is, draws as no rotation.
 
-## Flat games
+## Draw a flat game
 
 A flat game places its entities with `Transform2d`, and a kind that names it draws them the same way.
 
@@ -125,14 +125,14 @@ const Cards = Three.instances("game/Cards", {
 });
 ```
 
-- An entity of a kind of `Transform2d` is drawn at its `Transform2d.Position`, in the x–y plane at 0 on the third axis, rotated about that axis by its `Transform2d.Rotation`, and scaled along x and y by its `Transform2d.Scale`.
-- Draw order is set per kind, not per entity: `prepare: (mesh) => { mesh.position.z = 1 }` for instances, and wherever `make` places an object for objects. Nothing sorts entities within a kind.
-- An orthographic camera shows the plane flat: set the `camera` of `Three.Scene` to an `OrthographicCamera`.
-- A game can draw flat and 3D entities side by side, with a kind for each. A kind reads nothing of the other module, so an entity with both positions is drawn by a kind of each, each from its own.
+- A kind of `Transform2d` draws an entity at its `Transform2d.Position`, in the x-y plane at z = 0. It rotates the entity about the z axis by its `Transform2d.Rotation`, and scales it along x and y by its `Transform2d.Scale`.
+- Set the draw order per kind, not per entity. For instances, use `prepare: (mesh) => { mesh.position.z = 1 }`. For objects, place the object in `make`. Nothing sorts entities within a kind.
+- To show the plane flat, set the `camera` of `Three.Scene` to an `OrthographicCamera`.
+- A game can draw flat and 3D entities side by side, with a kind for each. A kind reads nothing of the other module. An entity with both positions is drawn by a kind of each, from that kind's own position.
 
-## Scene, camera and renderer
+## Set up the scene, the camera, and the renderer
 
-`Three.plugin` gives an app a scene and renders it once per frame. A plugin's layer sets up lights once, as `Look` does above. A frame system of your own moves the camera every frame:
+`Three.plugin` gives an app a scene and draws it once per frame. Set up lights once in a plugin's layer, as `Look` does above. Move the camera every frame in a frame system of your own:
 
 ```ts
 import { Three } from "@arcadekit/three";
@@ -147,33 +147,42 @@ const Follow = System.frame("game/Follow", function* () {
 });
 ```
 
-- `Three.Scene` is the service: `scene`, a Three.js `Scene`, and `camera`, a perspective camera at (0, 0, 10) until you move or replace it; `camera` is assignable, to an `OrthographicCamera` for example. It belongs to rendering, not to the game: no tick reads it, and none of it is saved.
-- `Three.Render` is the system that renders. It runs in `"postFrame"`, so every frame-stage system has run before it, wherever each is listed and with no ordering needed: `Three.instances`, `Three.objects`, and your own frame systems that move the camera or anything else.
-- `Three.Renderer` draws the scene, and comes from outside the app, since it needs a canvas. A game that installs `Three.plugin` without providing one doesn't compile.
-- `Three.layerWebGL({ canvas, antialias: true })` provides a `WebGLRenderer` for a page, with the parameters Three.js accepts. `Three.layerRenderer(() => new WebGPURenderer({ canvas }))` provides a renderer you create yourself, ready to draw: initialise a `WebGPURenderer` before providing it. Either is disposed when the scope it is provided to closes, so provide it to the whole program, as `Driver.run` is above.
-- The output follows the canvas's size on the page: when it changes, the renderer is resized without touching the canvas's style, and a perspective camera gets the new aspect ratio. `fit: false` turns this off, and you are responsible for fitting other camera types. `pixelRatio` defaults to the page's own, capped at 2.
+- `Three.Scene` is the service. It holds `scene`, a Three.js `Scene`, and `camera`, a perspective camera at (0, 0, 10) until you move or replace it. You can assign `camera`, for example to an `OrthographicCamera`. The service belongs to drawing, not to the game. No tick reads it, and none of it is saved.
+- `Three.Render` is the system that draws the scene. It runs in `"postFrame"`, so every frame-stage system has run before it, wherever each is listed and with no order declared. Those systems include `Three.instances`, `Three.objects`, and your own frame systems that move the camera or anything else.
+- `Three.Renderer` draws the scene, and comes from outside the app, because it needs a canvas. A game that installs `Three.plugin` without providing a renderer doesn't compile.
+- `Three.layerWebGL({ canvas, antialias: true })` provides a `WebGLRenderer` for a page, with the parameters Three.js accepts. `Three.layerRenderer(() => new WebGPURenderer({ canvas }))` provides a renderer that you create yourself, ready to draw. Initialise a `WebGPURenderer` before you provide it.
+- Each layer disposes of its renderer when the scope it is provided to closes. Provide it to the whole program, as the example above does with `Driver.run`.
 
-## In a test
+Both layers take these options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `fit` | `true` | Whether the image follows the canvas's size on the page. When the size changes, the layer resizes the renderer without touching the canvas's style, and gives a perspective camera the new aspect ratio |
+| `pixelRatio` | The page's `devicePixelRatio`, capped at 2 | How many pixels are drawn per CSS pixel |
+
+A layer fits only a perspective camera. Fit any other kind of camera yourself when the canvas's size changes.
+
+## Test without a canvas
 
 A test provides a renderer that draws nothing, `Layer.succeed(Three.Renderer, { render(scene, camera) {} })`. Three.js builds scenes and meshes under Node as it does in a page, so you can inspect what was added to the scene. See [testing](testing.md).
 
-## Writing your own renderer
+## Write a plugin for another renderer
 
-A game is drawn by frame-stage systems, in a plugin that only the page installs. A plugin of your own for another renderer follows the same principles as this one:
+Frame-stage systems draw a game, in a plugin that only the page installs. A plugin of your own for another renderer keeps to the same rules as this one:
 
-- It decides what to draw from the components an entity has, and where from `Transform3d` or `Transform2d`, whichever the kind names. The rules say what an entity is, never how it looks.
-- It draws crowds from raw columns into one buffer, allocating nothing per entity per frame.
-- It keeps state across frames, such as a mesh, a scene, or where an entity was a tick ago, in a service built in the plugin's `layer` and released when the app is closed, never in the world.
-- Its output target, a renderer or a canvas, comes from outside, as a service the game provides.
+- It decides what to draw from the components an entity has, and where to draw it from `Transform3d` or `Transform2d`, whichever the kind names. The rules say what an entity is, never how it looks.
+- It draws crowds from raw columns into one buffer, and allocates nothing per entity per frame.
+- It keeps state across frames, such as a mesh, a scene, or where an entity was a tick ago, in a service. The plugin's `layer` builds the service, and closing the app releases it. That state is never in the world.
+- What it draws to, a renderer or a canvas, comes from outside, as a service the game provides.
 
-## Names
+## Find a service or system by name
 
 - The services are named `"arcadekit/three/Scene"` and `"arcadekit/three/Renderer"`.
-- The plugin is `"arcadekit/three"`, and the rendering system `"arcadekit/three/Render"`.
-- A system created by `Three.instances` or `Three.objects` has the name you give it, which is also its mesh's name.
+- The plugin is `"arcadekit/three"`, and the system that draws the scene is `"arcadekit/three/Render"`.
+- A system made by `Three.instances` or `Three.objects` has the name you give it, which is also its mesh's name. The name must be unique among the app's systems.
 
 ## Read more
 
-- [Instances and objects](instances-and-objects.md), [textures and models](textures-and-models.md) and [interpolation](between-two-ticks.md).
+- [Instances and objects](instances-and-objects.md), [textures and models](textures-and-models.md), [interpolation](between-two-ticks.md), and [drawing performance](drawing-performance.md).
 - [`@arcadekit/three`](/reference/three) in the API reference, with [`Three`](/reference/three/Three) and [`Gltf`](/reference/three/Gltf).
 - [`packages/three/examples/page`](../../../../../packages/three/examples/page): ten thousand moving objects, run with `pnpm --filter @arcadekit/three page`.

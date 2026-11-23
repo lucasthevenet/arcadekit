@@ -1,38 +1,44 @@
 /**
- * Actions are the rules layer: actions in, events out.
+ * Actions are requests to change the game, such as a player's move, a network
+ * message or a bot's decision.
  *
- * An action is a request to change the game from outside the simulation: a
- * player's move, a network message, an AI decision. A handler validates it
- * against the current state, and either applies it or refuses it with a typed
- * error.
+ * An action's handler checks it against the current state, then applies it
+ * or refuses it with a typed error. A dispatched action returns the refusal
+ * to its caller as a typed failure, and a queued one becomes an
+ * `Action.Rejected` event.
  *
- *   const PlayCard = Action.define("PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
+ *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Turn
  *     if (turn.player !== owner) return yield* new NotYourTurn()
- *     (yield* Commands).despawn(card)
- *     (yield* CardPlayed.emits).emit({ card, target })
+ *     const commands = yield* Commands
+ *     commands.despawn(card)
+ *     const played = yield* CardPlayed.emits
+ *     played.emit({ card, target })
  *   })
  *
- *   const result = app.dispatch(PlayCard, { card, target })   // Exit<void, NotYourTurn>
+ *   app.dispatch(PlayCard, { card, target })  // Exit<void, NotYourTurn | Action.InvalidPayload>
  *
- * A refused action changes nothing. Its handler runs in a world transaction, so
- * a refusal at any point rolls back the component writes, the random numbers
- * drawn, the commands queued, the events emitted and the actions enqueued, and
- * marks the events it read as unread. A handler spawns and despawns entities
- * through `Commands`; calling `world.spawn` and similar methods in one throws.
+ * A refused action changes nothing. Its handler runs in a world transaction,
+ * so a refusal at any point rolls back the component writes, the random
+ * numbers drawn, the commands queued, the events emitted and the actions
+ * enqueued. The events the handler read are unread again. A handler spawns
+ * and despawns entities through `Commands`, since the `World` it is handed
+ * has no `spawn`, and an `EcsWorld`'s `spawn` and similar methods throw while
+ * a handler runs.
  *
- * An action's schema validates its payload on every path into the game, and
- * gives the payload the JSON form that the log, a save and the other peers
- * hold.
+ * An action's schema validates its payload on every path into the game. It
+ * also gives the payload the JSON form that the log, a save and the other
+ * peers hold.
  *
- * Every action from outside the simulation goes into `app.actionLog`, except a
- * dispatched action that was refused, which changed nothing, along with a
- * checkpoint of the world's hash at a regular interval of ticks. An action a
- * system or a handler issues itself, with the `Actions` service, isn't logged: a
- * replay's own simulation issues it again. Replaying the log into a fresh app
- * reproduces the game, and stops at the first checkpoint that doesn't match.
+ * `app.actionLog` holds every action from outside the simulation, except a
+ * dispatched action that was refused, which changed nothing. Among the
+ * actions, it holds a checkpoint of the world's hash at a regular interval of
+ * ticks. An action that a system or a handler issues with the `Actions`
+ * service isn't logged, since a replay's own simulation issues it again.
+ * Replaying the log into a fresh app reproduces the game, and stops at the
+ * first checkpoint that doesn't match.
  */
 import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
 
@@ -65,8 +71,11 @@ export class UnknownAction extends Data.TaggedError("UnknownAction")<{
 }> {}
 
 /**
- * @param N the action's name
- * @param P the payload a handler receives
+ * An action type, as `Action.define` makes it: its name, and the codec of its
+ * payload.
+ *
+ * @typeParam N the action's name
+ * @typeParam P the payload a handler receives
  *
  * @category Models
  */
@@ -77,19 +86,22 @@ export interface ActionDef<N extends string, P> {
    * action's schema.
    */
   readonly codec: Schema.Codec<P, unknown>;
-  /** Type-only: keeps the payload type attached and invariant. */
+  /** Holds no value. It keeps the payload type on the action, invariant. */
   readonly _P?: (payload: P) => P;
 }
 
 /**
  * Defines an action, with the schema of its payload. The payload type is
- * inferred from the schema, and every payload is validated:
- * `Action.define("Strike", Schema.Struct({ ... }))`. The log and saves hold the
- * payload in its JSON form, and that form is what other peers receive, so a
- * bigint or a date in it is converted along the way.
+ * inferred from the schema, and every payload is validated against it:
+ * `Action.define("duel/Strike", Schema.Struct({ ... }))`. An action with no
+ * payload takes only its name, `Action.define("duel/Pass")`, and is issued
+ * with `undefined`.
  *
- * An action with no payload takes only its name, `Action.define("Pass")`, and
- * is issued with `undefined`, which its JSON form holds as `null`.
+ * **Details**
+ *
+ * The log and a save hold a payload in its JSON form, and the other peers
+ * receive that form, so a bigint or a date in it is converted along the way.
+ * The JSON form of an action with no payload is `null`.
  *
  * @category Constructors
  */
@@ -110,9 +122,11 @@ export function define(
 /**
  * Where an action came from, which a handler receives alongside its payload.
  *
- * Whatever delivered the action stamps it on the way in. It isn't part of the
- * payload, so the issuer can't claim another identity: a session stamps each
- * peer's actions with that peer's name.
+ * **Details**
+ *
+ * Whatever delivered the action stamps its origin on the way in. The origin
+ * isn't part of the payload, so the issuer can't claim another identity in
+ * it. A session stamps each peer's actions with that peer's name.
  *
  * @category Models
  */
@@ -127,8 +141,8 @@ export interface Origin {
 }
 
 /**
- * How an action is applied: the action, and what it does with a payload and its
- * issuer. Made with `Action.handler`.
+ * How an action is applied, as `Action.handler` makes it: the action, and
+ * what the handler does with a payload and its origin.
  *
  * @category Models
  */
@@ -138,8 +152,8 @@ export interface Handler<N extends string, P, A, E, R> {
 }
 
 /**
- * Any action, whatever its name and payload: what a question about the action
- * itself, such as whether it has a handler, takes.
+ * Any action, whatever its name and payload. A function that asks about the
+ * action itself takes it, such as `handles` of the `Actions` service.
  *
  * @category Type-level
  */
@@ -150,8 +164,8 @@ export interface AnyActionDef {
 
 /**
  * Any handler, whatever its action, result and requirements. Its payload is
- * `never`, since only whoever checked a payload against the handler's action
- * may hand it one.
+ * `never`, since only code that checked a payload against the handler's
+ * action may hand it one.
  *
  * @category Type-level
  */
@@ -164,13 +178,12 @@ export interface AnyHandler {
 }
 
 /**
- * Defines how an action is validated against the rules and applied. It must
- * complete synchronously. The payload it receives is already validated, and a
- * payload the action's schema refuses fails with `InvalidPayload` before it
- * runs.
- *
- * Alongside the payload, it receives where the action came from, `{ from }`: in
- * a multiplayer game, the peer that issued it.
+ * Defines how an action is checked against the game's rules and applied. The
+ * handler must finish synchronously. It receives a payload that is already
+ * validated, since a payload that the action's schema refuses fails with
+ * `InvalidPayload` before the handler runs. Alongside the payload, it
+ * receives the action's `Origin`, `{ from }`, which in a multiplayer game
+ * names the peer that issued the action.
  *
  *   const pass = Action.handler(Pass, function* (_, { from }) {
  *     const turn = yield* Turn
@@ -180,12 +193,13 @@ export interface AnyHandler {
  *
  * **Gotchas**
  *
- * - A handler can't dispatch another action, which throws. It issues one with
- *   `Actions.enqueue` instead, and a refusal rolls that back too.
- * - A refusal rolls back what the handler did to the world, and nothing outside
- *   it: not a call to your game's own service, and not a fiber it forked. A
- *   value a field holds is read-only, so it is replaced, and the refusal puts
- *   it back.
+ * - A handler can't dispatch another action, since `dispatch` throws there.
+ *   It issues one with `Actions.enqueue` instead, and a refusal rolls that
+ *   back too.
+ * - A refusal rolls back what the handler did to the world, and nothing
+ *   outside it, such as a variable of a module that the handler changed. A
+ *   value a field holds is read-only, so the handler replaces it, and the
+ *   refusal puts the old value back.
  *
  * @category Constructors
  */
@@ -255,13 +269,13 @@ export interface Logged {
    */
   readonly from?: string;
   /**
-   * Present on an enqueued action: it was applied at the start of the next
-   * tick, and a replay enqueues it again. Absent on a dispatched one.
+   * Present on an enqueued action, which was applied at the start of the next
+   * tick and which a replay enqueues again. Absent on a dispatched one.
    */
   readonly queued?: true;
   /**
-   * Present on an enqueued action that was refused when its turn came, with a
-   * short reason. A dispatched action that was refused isn't logged.
+   * Present on an enqueued action that was refused when it was applied, with
+   * a short reason. A dispatched action that was refused isn't logged.
    */
   readonly refused?: string;
 }
@@ -296,8 +310,12 @@ export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
   "hash" in entry;
 
 /**
- * Emitted when a queued action is refused. A directly dispatched action returns
- * its failure to the caller instead.
+ * Emitted when a queued action is refused. A dispatched action returns its
+ * failure to the caller instead.
+ *
+ * **Details**
+ *
+ * The event's payload has these fields:
  *
  * - `action`: the action's name.
  * - `payload`: the payload in its JSON form, or `null` when its schema didn't
@@ -319,20 +337,25 @@ export const Rejected = Event.define(
 );
 
 /**
- * Lets systems and handlers issue actions, so AI plays by the same
- * rules as players. The action is applied at the start of the next tick.
- * `enqueue` is `app.enqueue`, for code that has no app at hand.
+ * The service through which systems and handlers issue actions, so a bot
+ * plays by the same rules as players. An action it enqueues is applied at the
+ * start of the next tick. Its `enqueue` is `app.enqueue`, for code that has no
+ * app at hand.
  *
- * Where it is called decides whether it is logged, as for `app.enqueue`. From
- * a tick, a handler or a plugin's setup, it is the simulation's own
- * doing and isn't logged, since a replay does it again. From a frame-stage or
- * input-stage system, which a replay runs neither of, it is input, and is
- * logged.
+ * **Details**
+ *
+ * Where `enqueue` is called decides whether the action is logged, as for
+ * `app.enqueue`. From a system of the tick, a handler or a plugin's setup, the
+ * action is the simulation's own and isn't logged, since a replay issues it
+ * again. From a system of the frame or input stage, the action is input and
+ * is logged, since a replay runs neither stage.
  *
  * **Gotchas**
  *
- * A payload its schema does not take throws in the frame or input stage, where
- * `app.enqueue` returns the failure.
+ * - In the frame or input stage, `enqueue` throws on a payload that the
+ *   action's schema does not take, where `app.enqueue` returns the failure.
+ * - `enqueue` throws for an action that the game has no handler for, and
+ *   `handles` says whether it has one.
  *
  * @category Services
  */
@@ -417,9 +440,9 @@ interface IntakeMoment {
 
 /**
  * The name of the store that holds an app's queued actions, as a snapshot
- * has it: `readSnapshot(save.world).stores`. It holds `{ queued }`: the
- * actions queued for the next tick, each `{ name, payload, from? }` with its
- * payload in JSON form.
+ * lists it in `readSnapshot(save.world).stores`. The store holds
+ * `{ queued }`, the actions queued for the next tick, each
+ * `{ name, payload, from? }` with its payload in JSON form.
  *
  * @category Constants
  */

@@ -1,13 +1,15 @@
 /**
- * Plugins bundle everything a feature needs into a single value.
+ * Plugins bundle everything a feature needs into a single value: its systems,
+ * its action handlers, the services it provides, and what it spawns when a
+ * game starts.
  *
- *   const Physics = Plugin.make("Physics", {
+ *   const Physics = Plugin.make("physics/Physics", {
  *     systems: [Movement, Collision, Draw],
  *     layer: RendererLive,                // services its frame systems use
- *     setup: spawnWalls                    // runs once when the app starts
+ *     setup: spawnWalls                    // runs when a game starts fresh
  *   })
  *
- *   const Combat = Plugin.make("Combat", {
+ *   const Combat = Plugin.make("combat/Combat", {
  *     plugins: [Physics],                  // dependencies come first
  *     systems: [Damage],
  *     handlers: [strike]
@@ -15,18 +17,14 @@
  *
  *   const app = yield* App.make(App.define({ plugins: [Combat, Audio] }))
  *
- * A plugin that several others depend on is installed once: its systems are
- * registered once and its layer is built once.
+ * A plugin that several others depend on is installed once. Its systems are
+ * registered once, and its layer is built once.
  *
  * Components, events and actions are plain values, which a plugin's module
- * exports like anything else. A save finds its components and events by their
- * names, so a plugin doesn't list them. What it spawns when a game starts
- * fresh is its `setup`, which a load doesn't run, since the save already holds
- * what it spawned:
- *
- *   const Weather = Plugin.make("Weather", {
- *     setup: spawnTheFirstClouds
- *   })
+ * exports like anything else. A save finds its components and events by
+ * their names, so a plugin doesn't list them. What a plugin spawns when a
+ * game starts fresh is its `setup`. Loading a save doesn't run it, since the
+ * save already holds what it spawned.
  */
 import type { Effect, Layer } from "effect";
 
@@ -50,17 +48,17 @@ export type AnyHandler = Action.AnyHandler;
 /**
  * A plugin, as `Plugin.make` returns it and `App.make` installs it.
  *
- * @param TickE    what the plugin's systems can fail with
- * @param Han      the plugin's action handlers (so `dispatch` can be typed)
- * @param Provided services its layer provides to the whole app
- * @param E        what building its layer or running its setup can fail with
- * @param RIn      what its layer requires that its dependencies don't provide
- * @param Needs    what its systems, handlers and setup require
- * @param Sys      its systems, dependencies first, in the order a tick runs them
- * @param Id       its name
- * @param Deps     the plugins it depends on
- * @param Own      its own systems, not its dependencies'
- * @param Hands    its own handlers
+ * @typeParam TickE    what the plugin's systems can fail with
+ * @typeParam Han      the plugin's action handlers, from which `dispatch` is typed
+ * @typeParam Provided services its layer provides to the whole app
+ * @typeParam E        what building its layer or running its setup can fail with
+ * @typeParam RIn      what its layer requires that its dependencies don't provide
+ * @typeParam Needs    what its systems, handlers and setup require
+ * @typeParam Sys      its systems, dependencies first, in the order a tick runs them
+ * @typeParam Id       its name
+ * @typeParam Deps     the plugins it depends on
+ * @typeParam Own      its own systems, not its dependencies'
+ * @typeParam Hands    its own handlers
  *
  * @category Models
  */
@@ -84,7 +82,7 @@ export interface Plugin<
   readonly setup: Effect.Effect<void, unknown, unknown> | undefined;
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
-  /** Type-only. */
+  /** Holds no value. It carries the plugin's types. */
   readonly _types?: {
     readonly TickE: TickE;
     readonly Han: Han;
@@ -164,9 +162,9 @@ export type NeedsOf<T> =
     : never;
 
 /**
- * The systems of a list of plugins in the order an app runs them, each plugin's
- * dependencies ahead of its own, as far as the compiler knows it: what
- * `System.Misordered` checks.
+ * The systems of a list of plugins, in the order an app runs them, with each
+ * plugin's dependencies ahead of its own, as far as the compiler knows them.
+ * `System.Misordered` checks this list.
  *
  * @category Type-level
  */
@@ -352,13 +350,14 @@ export type Clashes<
  *     handlers: [Attack],
  *   })
  *
- * A plugin that two others depend on is installed once. Two different plugins
- * with the same name are refused when the app is created. If a layer or a setup
- * fails, `App.make` fails with that error.
+ * **Details**
  *
- * Its systems run in the order they are listed, after those of the plugins it
- * depends on. A list in which a system watches a component ahead of one that
- * writes it doesn't compile: see `System.Misordered`.
+ * - A plugin that two others depend on is installed once. Two different
+ *   plugins with the same name are refused when the app is made.
+ * - If a layer or a setup fails, `App.make` fails with that error.
+ * - Its systems run in the order they are listed, after those of the plugins
+ *   it depends on. A list in which a system watches a component ahead of one
+ *   that writes it doesn't compile. See `System.Misordered`.
  *
  * @category Constructors
  */
@@ -377,20 +376,21 @@ export const make = <
     readonly systems?: readonly [...S];
     readonly handlers?: readonly [...H];
     /**
-     * Services for the whole app, which its frame and input systems require:
-     * the code of the tick requires only the built-in services and resources,
-     * since what a service keeps is no part of the world. While it builds, it
-     * can use the built-in services and anything the plugins listed above
-     * provide. What it acquires is released when the app is closed.
+     * Services for the whole app, which its frame and input systems require.
+     * The code of the tick requires only the built-in services and
+     * resources, since what a service keeps is no part of the world. While
+     * the layer builds, it can use the built-in services and whatever the
+     * plugins in `plugins` provide. What it acquires is released when the
+     * app is closed.
      */
     readonly layer?: L;
     /**
-     * Runs once when a game starts fresh, after every plugin's layer is built,
-     * to spawn the initial entities. It must not wait, nor leave a fiber running
-     * when it ends: `App.make` dies if it does. It doesn't run when the
-     * app is loaded from a save, which already holds those entities. It runs
-     * as a system of the tick does: real time, `Frame`, sound, a view and the
-     * devices do not compile here.
+     * Runs once when a game starts fresh, after every plugin's layer is
+     * built, to spawn the initial entities. It must not wait or leave a fiber
+     * running when it ends, or `App.make` dies. It doesn't run when the app
+     * is loaded from a save, which already holds those entities. It runs as a
+     * system of the tick does, so real time, `Frame`, sound, a view and the
+     * devices don't compile here.
      */
     readonly setup?: System.TickEffect<SU>;
   } & System.Ordered<System.Listing<SystemsOf<P>, S>, Clashes<P, H, S>>

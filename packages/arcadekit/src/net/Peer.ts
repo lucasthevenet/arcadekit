@@ -2,12 +2,13 @@
  * One peer of a game played on several machines: what it holds of what every
  * peer said, when it runs a tick, and how it goes back.
  *
- * Every peer runs the same simulation, and peers only exchange the actions
+ * Every peer runs the same simulation, and peers exchange only the actions
  * their players issue, each stamped with the tick it applies on. Every peer
  * applies the same actions on the same ticks in the same order, and stays in
  * the same game. A peer runs a tick once it knows what every peer issued for
- * it, or up to `ahead` ticks before, predicting that the peers it hasn't
- * heard from did nothing and going back when one had.
+ * it. With `ahead`, it runs up to that many ticks sooner, predicting that the
+ * peers it hasn't heard from did nothing, and goes back when one did
+ * something.
  *
  *   session.receive(message)                  // a message from another peer
  *   session.tick()                            // true if the tick ran, false if it waits
@@ -16,24 +17,23 @@
  * A peer holds no socket and no timer. It receives the messages that arrived
  * and returns the ones to send, and a transport carries them, as text in the
  * form `Message.encode` writes. Every message says how far its peer has heard
- * the others, and a peer keeps what it sent until every other peer has heard
- * it, to send again with `resend` when a peer comes back after its socket
- * dropped.
+ * the others. A peer keeps what it sent until every other peer has heard it,
+ * and `resend` returns it to send again when a peer comes back after its
+ * socket dropped.
  *
  * A peer's first message says what it was made with, `Message.Made`: the game
  * it simulates, its `delta`, the names of every peer and the tick it begins
- * at. A peer that hears another made otherwise stops, and its tick fails with
- * `Drift.Unlike`, which says what differs. A peer the others don't name is
- * told apart this way too, since its names are other ones.
+ * at. A peer that hears another was made otherwise stops, and its tick fails
+ * with `Drift.Unlike`, which says what differs. A peer the others don't name
+ * is found this way too, since the names it was made with differ.
  *
- * Peers also exchange the checkpoints their logs record: the world's hash at a
+ * Peers also exchange the checkpoints their logs record, the world's hash at a
  * tick. A peer that receives a different hash than its own for the same tick
  * stops, and its tick fails with `Drift.Drifted`, which reports the tick,
- * every peer's hash, and when they last agreed. The starting state is
- * compared before anyone's first tick, whatever the app's `checkpointEvery`,
- * since a peer records a checkpoint when it begins. After that, peers compare
- * the ticks every peer's log records, and with `checkpointEvery: 0`, nothing
- * more.
+ * every peer's hash, and when they last agreed. Peers compare the world each
+ * begins with, whatever the app's `checkpointEvery`, since a peer records a
+ * checkpoint when it begins. After that, peers compare the ticks every peer's
+ * log records, and with `checkpointEvery: 0`, nothing more.
  *
  * `Session.make` makes a peer with its app.
  */
@@ -66,12 +66,12 @@ export interface Options {
 }
 
 /**
- * One peer of a multiplayer game, without its app: what a driver steps and a
- * transport carries the messages of. A driver steps it at its own `delta`:
- * `Driver.frames(session)`. `Session.Session` is a peer with its app.
+ * One peer of a multiplayer game, without its app: what a driver steps, and
+ * what a transport carries messages for. A driver steps it at its own
+ * `delta`, as in `Driver.frames(session)`. `Session.Session` is a peer with
+ * its app.
  *
- * @param E what a tick of its app can fail with
- *
+ * @typeParam E What a tick of its app can fail with.
  * @category Models
  */
 export interface Peer<E = never> extends Paced {
@@ -90,45 +90,49 @@ export interface Peer<E = never> extends Paced {
   readonly ahead: number;
   /**
    * Receives a message from another peer. Messages may arrive in any order and
-   * more than once: a duplicate, a message for a tick that already ran, or one
-   * from a name that isn't a peer of the game is dropped. What a first message
-   * says the peer was made with is compared with this one's, whoever sent it.
+   * more than once. It drops a message it already has, and one from a name
+   * that isn't a peer of the game. A message with actions for a tick that ran
+   * without it makes the next tick go back and run again from there. What a
+   * first message says its peer was made with is compared with what this one
+   * was made with, whoever sent it.
    */
   readonly receive: (message: Message) => void;
   /**
-   * Returns the messages to send to every other peer, and removes them: the
-   * next call returns only newer ones. Every message must arrive, in any order.
+   * Returns the messages to send to every other peer, and removes them, so
+   * the next call returns only newer ones. Every message must arrive, in any
+   * order.
    */
   readonly outgoing: () => readonly Message[];
   /**
    * Returns every message this peer has sent that some other peer hasn't said
-   * it heard, to send again: when a peer joined the room again after its
-   * socket dropped, or this one did. They stay kept until every other peer
-   * has heard them. A message that arrives twice is dropped.
+   * it heard, to send again when a peer joins the room again after its socket
+   * dropped, or this one does. It keeps them until every other peer has heard
+   * them. A peer drops a message that arrives twice.
    */
   readonly resend: () => readonly Message[];
   /** How many messages this peer keeps that some other peer hasn't heard. */
   readonly unheard: number;
   /**
    * Runs the next tick if this peer has every peer's message for it, and
-   * returns whether it ran. First it reads the devices, as an app's own tick
-   * does, and what they issue goes into the message for the tick `delay` ticks
-   * ahead. Input issued while the session waits for a peer goes into its next
-   * message.
+   * returns whether it ran. First it runs the input stage, as a driver does
+   * before an app's tick, and what the devices issue goes into the message
+   * for the tick `delay` ticks ahead. Input issued while the session waits
+   * for a peer goes into its next message.
    *
-   * A session that runs ahead runs the tick before every message for it is
-   * in, up to `ahead` ticks past what every peer has sent, and first goes
-   * back over the ticks a message has since arrived for.
+   * A session that runs ahead runs a tick before every message for it is in,
+   * up to `ahead` ticks past what every peer has sent. Before that, it goes
+   * back over the ticks that a message with actions has since arrived for.
    *
-   * The tick simulates the session's `delta`. Throws if a system fails, or if
-   * the peers have drifted apart.
+   * The tick simulates the session's `delta`. It throws what `tickExit` fails
+   * with.
    */
   readonly tick: () => boolean;
   /**
-   * Like `tick`, but returns a failure, typed: a system's error, `Unlike`
-   * once a peer has said it was made otherwise, `Drifted` once the peers have
-   * drifted apart, or `Save.SaveRefused` when the game can't be captured
-   * before a tick that runs ahead, in which case the tick doesn't run.
+   * Runs the next tick as `tick` does, and returns a failure instead of
+   * throwing it: a system's error, `Drift.Unlike` once a peer has said it was
+   * made otherwise, `Drift.Drifted` once the peers have drifted apart, or
+   * `Save.SaveRefused` when the game can't be captured before a tick it runs
+   * ahead. The tick doesn't run then.
    */
   readonly tickExit: () => Exit.Exit<
     boolean,
@@ -143,8 +147,8 @@ export interface Peer<E = never> extends Paced {
   /** The peers whose message the next tick is still waiting for. */
   readonly waitingFor: readonly string[];
   /**
-   * How many messages it holds for ticks that haven't run, including its own:
-   * how far ahead of the game the peers have sent.
+   * How many messages it holds, its own among them, for ticks that haven't
+   * run or aren't final yet.
    */
   readonly held: number;
   /**

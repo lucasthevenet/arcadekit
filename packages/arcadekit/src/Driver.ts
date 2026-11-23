@@ -1,6 +1,6 @@
 /**
- * Drivers decide when the app ticks. The app itself only exposes `tick(delta)`,
- * which is what lets the same game run in real time, turn by turn, or as fast
+ * A driver decides when an app ticks. An app advances only through
+ * `tick(delta)`, so the same game runs in real time, turn by turn, or as fast
  * as possible in a test.
  *
  *   Driver.run(App.make(Duel), { hz: 60 })           // the usual entry point
@@ -8,50 +8,53 @@
  *   yield* Driver.frames(app, { hz: 60 })            // in a page, once per repaint
  *   yield* Driver.interval(app, { hz: 60 })          // on a timer
  *
- * A session ticks by the `delta` every peer of it is made with, so a driver
- * given one is given no rate: `Driver.frames(session)`.
+ * A session ticks by the `delta` all its peers are made with, so its driver
+ * takes no `hz`: `Driver.frames(session)`.
  */
 import { Clock, Context, Duration, Effect, Schedule } from "effect";
 import type { Scope } from "effect";
 
 /**
- * Anything with a `tick` that is given how long a tick is, so drivers work
- * with every kind of app.
+ * Anything with a `tick` that takes the length of the tick in seconds. A
+ * driver takes a `Tickable`, so it works with every kind of app.
  *
  * @category Models
  */
 export interface Tickable {
   readonly tick: (delta: number) => void;
   /**
-   * An app's input stage, run just before each tick if present: a tick reads
-   * no device, so this is where the game hears them.
+   * An app's input stage, which a driver runs just before each tick when
+   * present. A tick reads no device, so the game reads them here.
    */
   readonly input?: () => void;
-  /** An app's frame stage, run after each call's ticks if present. */
+  /**
+   * An app's frame stage, which a driver runs after each call's ticks when
+   * present.
+   */
   readonly frame?: (alpha: number, delta?: number) => void;
   /**
-   * Whether nothing is waiting for a tick, as the app reports it. Only read
-   * when ticking when needed; a tickable without it is treated as needing every
-   * tick.
+   * Whether nothing is waiting for a tick, as `app.settled` reports it. A
+   * driver reads it only with `ticks: "whenNeeded"`, and ticks a tickable
+   * without it on every tick.
    */
   readonly settled?: boolean;
-  /** None: what ticks by a `delta` of its own is `Paced`. */
+  /** Absent. Something that ticks by a `delta` of its own is `Paced`. */
   readonly delta?: never;
 }
 
 /**
  * Anything that ticks by a `delta` of its own: a session, or a session
  * connected to a transport. A driver runs it at `1 / delta` ticks a second,
- * and is given neither `hz` nor `ticks`.
+ * and takes neither `hz` nor `ticks` for it.
  *
  * @category Models
  */
 export interface Paced {
   /** The seconds each of its ticks simulates. */
   readonly delta: number;
-  /** Runs its next tick: its input stage, then the tick, if it can run. */
+  /** Runs its input stage, then its next tick if that tick can run. */
   readonly tick: () => void;
-  /** Its frame stage, run after each call's ticks. */
+  /** Its frame stage, which a driver runs after each call's ticks. */
   readonly frame: (alpha: number, delta?: number) => void;
 }
 
@@ -64,25 +67,21 @@ export interface StepOptions {
   /** The ticks per second the game runs at, whatever the frame rate. */
   readonly hz: number;
   /**
-   * The maximum ticks one call runs after a stall. Defaults to 5. Ticks still
-   * owed after that are dropped, so a page that froze doesn't race to catch up.
+   * The most ticks one call runs, after a stall. Defaults to 5. The ticks
+   * still owed after that are dropped, so a page that froze doesn't run a
+   * burst of ticks to catch up.
    */
   readonly maxStepsPerCall?: number;
   /**
-   * When the game ticks.
+   * When the game ticks. `"always"`, the default, ticks at `hz` in real time.
+   * `"whenNeeded"` ticks at `hz` only while `app.settled` is false, for a
+   * game that moves only when its player does, and rests in between.
    *
-   * `"always"`, the default: at `hz`, in real time.
-   *
-   * `"whenNeeded"`: only while the game changes, for a game that moves only
-   * when its player does. The input stage runs every frame, so a key press, a
-   * UI button or a message is handled immediately. While the app isn't
-   * settled (its last tick changed more than its time, an action is queued or
-   * was dispatched, a state transition is pending, or an event hasn't been read
-   * by every system) it ticks at `hz` like any game. Then it rests: no tick
-   * runs, game time stands still, and the frame stage keeps drawing, with the
-   * frame at the last tick (`Frame.alpha` of 1). Telling whether a tick
-   * changed the game costs a hash of the world each tick: about 10 µs for a
-   * thousand entities.
+   * At rest, no tick runs and game time stands still. The input stage still
+   * runs every frame, so a key press, a UI button or a message is handled in
+   * the frame it arrives in. The frame stage draws the game at its last tick,
+   * with a `Frame.alpha` of 1. Telling whether a tick changed the game costs
+   * a hash of the world each tick, about 10 µs for a thousand entities.
    */
   readonly ticks?: "always" | "whenNeeded";
 }
@@ -94,11 +93,14 @@ export interface StepOptions {
  * @category Options
  */
 export interface PacedOptions {
-  /** As for an app: see `StepOptions`. */
+  /**
+   * The most ticks one call runs, after a stall, as in `StepOptions`.
+   * Defaults to 5.
+   */
   readonly maxStepsPerCall?: number;
-  /** None, and its type is what the compiler says of one. */
+  /** Absent. Its type is the compiler's error for a driver given one. */
   readonly hz?: "A session ticks 1 / delta times a second, the same on every peer: give its driver no hz.";
-  /** None, and its type is what the compiler says of one. */
+  /** Absent. Its type is the compiler's error for a driver given one. */
   readonly ticks?: "A session ticks continuously, since the other peers wait for its messages: give its driver no ticks.";
 }
 
@@ -183,24 +185,24 @@ const stepper = ({
 };
 
 /**
- * Steps an app on a fixed timestep. Call it once per frame with the real
- * elapsed seconds; it runs zero or more ticks of exactly `1 / hz`, each after
- * the app's input stage, then runs the app's frame stage, and returns the
- * number of ticks it ran.
+ * Returns a function that steps an app on a fixed timestep. Call it once per
+ * frame with the real seconds elapsed. Each call runs zero or more ticks of
+ * exactly `1 / hz`, each after the app's input stage. Then it runs the app's
+ * frame stage, and returns the number of ticks it ran.
  *
  * The input stage reads the devices once per tick, so each tick sees one
- * consistent state of them, and a frame with no tick due reads nothing: input
- * from that frame is there for the next tick.
+ * consistent state of them. A frame with no tick due reads nothing, and its
+ * input waits for the next tick.
  *
- * The simulation ticks at a fixed rate whatever the frame rate, and the frame
- * stage receives how far its frame is between the last tick and the next
- * (`Frame.alpha`), so it can interpolate what moves.
+ * The game ticks at a fixed rate whatever the frame rate. The frame stage
+ * receives `Frame.alpha`, how far its frame is between the last tick and the
+ * next, to interpolate what moves.
  *
- * With `ticks: "whenNeeded"`, it ticks only while the app has pending work, and
- * rests in between: see `StepOptions`.
+ * With `ticks: "whenNeeded"`, it ticks only while the app isn't settled, and
+ * rests in between, as `StepOptions` says.
  *
- * A session is stepped the same way, with ticks of its own `delta`, and is
- * given neither `hz` nor `ticks`: `Driver.fixedStep(session)`.
+ * A session steps the same way, with ticks of its own `delta`, and takes
+ * neither `hz` nor `ticks`: `Driver.fixedStep(session)`.
  *
  * @category Running
  */
@@ -237,14 +239,18 @@ const beat = (pace: Pace): Effect.Effect<never> =>
   });
 
 /**
- * Ticks on a timer until interrupted, then stops the timer. In a page, use
- * `frames`, which follows the display.
+ * Steps an app on a timer until interrupted, then stops the timer.
  *
- * Each beat of the timer is one `fixedStep` call: the input stage and the ticks
- * that are due, then the frame stage. If a tick or a frame throws, the timer
- * stops and the effect dies with the thrown error. The timer runs on Effect's
- * `Clock`, so a test moves it on with `TestClock`. A session beats once per
- * tick of its own `delta`, and is given neither `hz` nor `ticks`.
+ * Each time the timer fires, it makes one `fixedStep` call: the input stage
+ * and the ticks that are due, then the frame stage. If a tick or a frame
+ * throws, the timer stops and the effect dies with the thrown error. A
+ * session's timer fires once per tick of its own `delta`, and `interval`
+ * takes neither `hz` nor `ticks` for it.
+ *
+ * **When to use**
+ *
+ * Use when the app steps on Effect's `Clock`, which a test advances with
+ * `TestClock`. In a page, use `frames`, which follows the display.
  *
  * @category Running
  */
@@ -298,11 +304,12 @@ const timerDisplay: DisplayShape = {
 };
 
 /**
- * The screen a frame loop follows. Nothing has to provide it: the default is a
- * 60 frames per second timer, which is all there is under Node, in a worker or
- * on a server. A page provides its own, based on `requestAnimationFrame` and
- * the document's visibility, with `Browser.layer()` or `Browser.runMain` from
- * `arcadekit/Browser`. A test provides one it advances by hand:
+ * The screen a frame loop follows. Nothing has to provide it. By default it
+ * is a timer at 60 frames per second, the only display under Node, in a
+ * worker or on a server. A page provides `Browser.display`, which follows
+ * `requestAnimationFrame` and the document's visibility, with
+ * `Browser.layer()` or `Browser.runMain`. A test provides one it advances by
+ * hand:
  *
  *   const display = Driver.makeManualDisplay()
  *   Driver.frames(app, { hz: 60 }).pipe(Effect.provideService(Driver.Display, display))
@@ -321,12 +328,12 @@ export const Display: Context.Reference<DisplayShape> =
  */
 export interface ManualDisplay extends DisplayShape {
   /**
-   * Signals that a frame is due at `now` milliseconds: calls every pending
-   * callback, and returns how many it called. Callbacks requested meanwhile
-   * wait for the next frame.
+   * Says that a frame is due at `now` milliseconds. It calls every pending
+   * callback and returns how many it called. A callback requested meanwhile
+   * waits for the next frame.
    */
   readonly frame: (now: number) => number;
-  /** Hides the tab: `hidden` returns true, and listeners are notified. */
+  /** Hides the tab. `hidden` then returns true, and every listener is called. */
   readonly hide: () => void;
   /** Shows the tab again. */
   readonly show: () => void;
@@ -452,10 +459,10 @@ const loop = Effect.fnUntraced(function* (pace: Pace) {
 });
 
 /**
- * Runs the frame loop: follows the display until interrupted. Each time a frame
- * is due, it runs the ticks that are due at a fixed `hz`, then the app's frame
- * stage, as `fixedStep` does. In a page, with the page's display, a frame is
- * due once per repaint (`requestAnimationFrame`).
+ * Runs the frame loop, which follows the display until interrupted. Each time
+ * a frame is due, it runs the ticks due at a fixed `hz`, then the app's frame
+ * stage, as `fixedStep` does. In a page, a frame is due once per repaint, with
+ * `requestAnimationFrame`.
  *
  *   const app = yield* Effect.acquireRelease(
  *     App.make(App.define({ plugins: [Game] })),
@@ -463,21 +470,20 @@ const loop = Effect.fnUntraced(function* (pace: Pace) {
  *   )
  *   yield* Driver.frames(app, { hz: 60 })
  *
- * It does not close the app it is given, which is its maker's: `Driver.run`
- * is the loop that makes its app and closes it.
+ * It does not close the app it is given, which belongs to whatever made it.
+ * `Driver.run` is the loop that makes its app and closes it.
  *
- * A session runs the ticks that are due at its own `delta`, and is given
- * neither `hz` nor `ticks`:
+ * A session runs the ticks due at its own `delta`, and `frames` takes neither
+ * `hz` nor `ticks` for it:
  *
  *   yield* Driver.frames(yield* Transport.connect(session))
  *
- * - The first frame draws the game as it is and runs no tick: time is measured
- *   from it.
+ * - The first frame draws the game as it is and runs no tick. Time is
+ *   measured from it.
  * - While the tab is hidden, the loop requests no frames, and the hidden time
- *   doesn't count: a game that becomes visible again resumes where it was.
- * - Interrupting it cancels its pending frame request and stops watching the
- *   tab, so nothing is left running. It is interrupted with the fiber that runs
- *   it.
+ *   doesn't count. A game that becomes visible again resumes where it was.
+ * - Interrupting the fiber that runs it cancels its pending frame request and
+ *   stops watching the tab, so nothing is left running.
  * - If a tick or a frame throws, it stops the same way and dies with the thrown
  *   error.
  * - With `ticks: "whenNeeded"`, for a game that moves only when its player
@@ -518,42 +524,42 @@ export interface Closes {
 
 /**
  * Runs an app until interrupted, from the effect that makes it, and closes
- * it when it ends. This is the usual entry point.
+ * the app when it ends. It is a game's usual entry point.
  *
  *   const Duel = App.define({ plugins: [Game] })
  *   Browser.runMain(Driver.run(App.make(Duel, { seed: 1 }), { hz: 60 }), {
  *     target: canvas,
  *   })
  *
- * It is `frames` on the app it makes: the frame loop follows the display,
- * running the ticks that are due at `hz`, then the frame stage, once per
- * repaint. It never ends on its own. `frames` is the same loop for a program
- * that makes its app itself, and closes it itself.
+ * It runs `frames` on the app it makes: once per repaint, the ticks due at
+ * `hz`, then the frame stage. It never ends on its own. A program that makes
+ * its app itself runs `frames` instead, and closes the app itself.
  *
- * Interrupting it stops the loop and closes the app, so nothing is left
- * running: no pending frame, no device listened to, and everything the
- * plugins' layers acquired is released. It closes the app as well when a
- * tick throws. The platform's `runMain` interrupts it when the page closes
- * or the process is told to stop.
+ * Interrupting it stops the loop and closes the app. No frame is left
+ * requested, no device is listened to, and everything the plugins' layers
+ * acquired is released. It also closes the app when a tick or a frame
+ * throws. The platform's `runMain` interrupts it when the page closes or the
+ * process is told to stop.
  *
- * What is to be connected to the app before its first frame, a button that
- * dispatches or a menu that saves, is a step of the effect that makes it:
- * `App.make(Duel).pipe(Effect.tap((app) => ...))`. What that step acquires in
- * its scope is released when the run ends, after the app is closed. A step
- * that can fail holds the app in that scope, so that it is closed when the
- * step fails, before the run has it: `Effect.acquireRelease(App.make(Duel),
- * (app) => app.close).pipe(Effect.tap(...))`.
+ * To connect something to the app before its first frame, such as a button
+ * that dispatches or a menu that saves, add a step to the effect that makes
+ * it: `App.make(Duel).pipe(Effect.tap((app) => ...))`. What that step
+ * acquires in its scope is released when the run ends, after the app is
+ * closed. If the step can fail, hold the app in that scope, so that the app
+ * is closed when the step fails, before the run has it:
+ * `Effect.acquireRelease(App.make(Duel), (app) => app.close).pipe(Effect.tap(...))`.
  *
- * Provide what the game needs from outside to `Driver.run` as a whole, so
- * that it stays provided for as long as the game runs. It fails with what
- * making the app fails with, and dies with whatever a tick throws.
+ * Provide what the game needs from outside to `Driver.run` as a whole, so it
+ * stays provided for as long as the game runs. It fails with what making the
+ * app fails with, and dies with whatever a tick or a frame throws.
  *
- * It runs wherever there is a display, which outside a page is a timer:
+ * Outside a page, the display is a timer, so
  * `NodeRuntime.runMain(Driver.run(...))` runs the same game under Node.
  *
- * An effect that makes a session, connected to its transport, runs at the
- * session's own `delta`, and is given neither `hz` nor `ticks`. Closing the
- * connection closes the session.
+ * Given an effect that makes a session connected to its transport, it runs
+ * at the session's own `delta`, and takes neither `hz` nor `ticks`. It
+ * closes the connection when it ends, and the connection's `close` closes
+ * the session.
  *
  * @category Running
  */

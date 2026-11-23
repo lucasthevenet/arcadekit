@@ -77,7 +77,9 @@ class Handed implements WritingWorld<string> {
 }
 
 /**
- * The same world, to set the components named `N`: what `World.writes` gives.
+ * The same world, to set the components named `N`, as `World.writes` gives it.
+ *
+ * @internal
  */
 export const writing = <N extends string>(world: object): WritingWorld<N> => {
   if (!(world instanceof Handed)) {
@@ -88,13 +90,19 @@ export const writing = <N extends string>(world: object): WritingWorld<N> => {
   return world;
 };
 
-/** The world a game's code is handed, for this world. */
+/**
+ * Returns the world a game's code is handed, for this world.
+ *
+ * @internal
+ */
 export const handed = (world: EcsWorld): WritingWorld<never> =>
   new Handed(world);
 
 /**
- * The world behind one `handed` made, or the world itself: what the package's
- * own code reads and writes through.
+ * Returns the world behind one that `handed` made, which the package's own
+ * code reads and writes through.
+ *
+ * @internal
  */
 export const whole = (world: object): EcsWorld => {
   const behind = Handed.whole(world);

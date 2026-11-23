@@ -15,11 +15,11 @@
  *   const writing = yield* Phase.sets    // a tick system or a handler
  *   writing.set("playing")               // entered at the start of the next tick
  *
- * A state is a singleton of the world: it is saved with the game, including any
- * pending transition, included in the world's hash, and rolled back when the
- * action that set it is refused.
+ * A state is a singleton of the world. A save holds it with any pending
+ * transition, the world's hash covers it, and a refused action that set it
+ * rolls it back.
  *
- * A state makes at most one transition per tick, and when several states have
+ * A state makes at most one transition per tick. When several states have
  * pending transitions, they are entered in order of name.
  */
 import { Effect, Effectable } from "effect";
@@ -43,9 +43,9 @@ type Fields = {
 };
 
 /**
- * What every stage gets from `yield* SomeState`: the current value, and
- * whether it is one of a list. Setting it is `yield* SomeState.sets`, and
- * only a system of the tick or a handler can ask for that.
+ * What `yield* SomeState` returns in any stage: the current value, the value
+ * requested next, and whether it is one of a list. Only a system of the tick
+ * or a handler can set the state, with `yield* SomeState.sets`.
  *
  * @category Models
  */
@@ -60,15 +60,15 @@ export interface StateView<V extends string> {
 }
 
 /**
- * A tick system's handle to a state, from `yield* SomeState.sets`: the current
- * value, and a way to request another.
+ * A tick system's handle to a state, from `yield* SomeState.sets`. It reads the
+ * current value, and requests another.
  *
  * @category Models
  */
 export interface StateHandle<V extends string> extends StateView<V> {
   // A method, so that a handle of any state is a `StateHandle<string>`.
   /**
-   * Requests a state. The game enters it at the start of the next tick: the
+   * Requests a state. The game enters it at the start of the next tick. The
    * exit hooks of the old state run, then the enter hooks of the new one, and
    * from that tick on systems run according to the new state. There is one
    * transition per tick, so the last request before it wins. Requesting the
@@ -85,8 +85,9 @@ const definitions = new Map<string, State<string>>();
 export const defined = (): Iterable<State<string>> => definitions.values();
 
 /**
- * A state's definition. It is an Effect, so `yield*` returns a handle to the
- * world's value. It is also the singleton that holds that value.
+ * A state's definition. It is an Effect, and `yield*` on it returns a
+ * `StateView` of the world's value. It is also the singleton that holds that
+ * value.
  *
  * @category Models
  */
@@ -137,8 +138,9 @@ export class State<V extends string>
   }
 
   /**
-   * The same state, with `set`. Requiring it puts `Sim` in the system's
-   * requirements, which a frame or input system does not accept.
+   * The state's `StateHandle`, which can also `set` it. Requiring it puts `Sim`
+   * in the system's requirements, which a frame or input system doesn't
+   * accept.
    */
   get sets(): Effect.Effect<StateHandle<V>, never, World | Sim> {
     return (this.writing ??= Effect.map(Effect.service(World), (world) =>
@@ -148,8 +150,8 @@ export class State<V extends string>
 }
 
 /**
- * Defines a state: its name, its possible values, and the one a game starts in,
- * which defaults to the first.
+ * Defines a state from its name, its possible values, and the value a game
+ * starts in, which defaults to the first.
  *
  * The name is one of the world's component names, and a save that holds the
  * state finds it by that name.
@@ -254,7 +256,9 @@ export const handleOf = <V extends string>(
  * @category Models
  */
 export interface Move {
+  /** The value the state leaves, or undefined on a game's first tick. */
   readonly from: string | undefined;
+  /** The value the state enters. */
   readonly to: string;
   /**
    * On a game's first tick, the state requested before it, which is entered
@@ -348,9 +352,10 @@ const hook = <
  * Makes a system that runs once when the game enters a state, at the start of
  * that tick, before the tick's other systems.
  *
- * The enter hooks of the initial state run on the game's first tick, before any
- * transition requested ahead of it, which happens in the same tick. They don't
- * run again when a saved game is loaded, since the save holds their effects.
+ * The enter hooks of the initial state run on the game's first tick. A
+ * transition requested before that tick happens in the same tick, after them.
+ * The hooks don't run again when a saved game is loaded, since the save holds
+ * their effects.
  *
  * Hooks for the same transition run in the order they are listed, and each
  * hook's commands are applied before the next runs. A state a hook requests

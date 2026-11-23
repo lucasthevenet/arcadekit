@@ -1,7 +1,7 @@
 /**
  * Functions that update an old save's world to match the game's current
- * components. A migration receives the save in a plain, self-describing form
- * (`Save.Contents`), and these functions edit its world:
+ * components. A migration receives the save as `Save.Contents`, a plain form
+ * that describes itself, and these functions edit its world:
  *
  *   const migrations: Save.Migration[] = [
  *     {
@@ -13,10 +13,11 @@
  *     },
  *   ]
  *
- * Each function edits the contents in place, and entities keep their ids. Each
- * throws when the component or field it targets doesn't exist, so a migration
- * that doesn't match its save says so. Singletons are migrated the same way, by
- * name, and are present in the save only if the game wrote them.
+ * The functions edit the contents in place, and entities keep their ids. A
+ * function throws when the component or field it names doesn't exist, and
+ * the load fails with `"migration failed"`, so a migration that doesn't match
+ * its save says so. A singleton is migrated the same way, by name, and a save
+ * holds one only if the game wrote it.
  */
 import { makeColumn } from "./ecs/column";
 import type { Column } from "./ecs/column";
@@ -143,7 +144,13 @@ const columnOf = (
 };
 
 /**
- * Renames a component. Its data is unchanged.
+ * Renames a component. Its data is unchanged. It throws when the save already
+ * holds a component named `to`.
+ *
+ * **Gotchas**
+ *
+ * - It leaves the component's entries under `Save.VISITS` with the old name,
+ *   so the load drops them, as `Save.Contents` says.
  *
  * @category Migrations
  */
@@ -200,9 +207,11 @@ export const renameField = (
 /**
  * Adds a field to a component, with the same value for every entity that has
  * the component. The field goes after the existing ones, or before the field
- * named in `before`: a component's fields are in definition order. A field of
- * a number type throws for a value it cannot hold: anything but a number, and
- * for a whole-number type, a fraction or a number out of its range.
+ * named in `before`. Put it where the component's definition does: a save
+ * whose fields are in another order fails to load with `"component changed"`.
+ * For a field of a number type, it throws on a value the type can't hold:
+ * anything but a number, and, for a whole-number type, a fraction or a number
+ * out of its range.
  *
  * @category Migrations
  */
@@ -253,10 +262,13 @@ export const removeField = (
 
 /**
  * Changes a field's type, and computes each new value from the old one:
- * `mapField(world, "game/Hp", "points", "f32", (hp: number) => hp / 2)`. The
- * save doesn't know the old value's type, so `map` names it. For a `ref` field,
- * the old value is its encoded form. A field of a number type throws for a
- * value it cannot hold, as `addField` does.
+ *
+ *   Migrate.mapField(world, "game/Hp", "points", "f32", (hp: number) => hp / 2)
+ *
+ * The save doesn't record the old value's TypeScript type, so the parameter
+ * of `map` declares it. A `ref` field gives `map` its encoded form, and a
+ * `transient` field gives it undefined. For a field of a number type, it
+ * throws on a value the type can't hold, as `addField` does.
  *
  * @category Migrations
  */

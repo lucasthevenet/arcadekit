@@ -1,13 +1,14 @@
 /**
- * A game's outbox: the events its ticks emitted, sent out in the order they
- * were emitted, for the frame stage, the input stage and outside code to
- * read. It is how sound and a UI follow a game.
+ * A game's outbox holds the events its ticks emitted, in the order they were
+ * emitted, for the frame stage, the input stage and outside code to read.
+ * Sound and a UI follow a game through it.
  *
- * It is the other side of `Event`. The events the simulation has yet to read
- * are the game's, and its world holds them. What has been sent out is not:
- * no snapshot holds it, the hash doesn't cover it, and a rewind doesn't take
- * it back. A game that goes back to play on is heard afresh, and one that a
- * session takes back to run the same ticks again is heard once.
+ * The outbox is the other side of `Event`. The events the simulation has yet
+ * to read belong to the game, and its world holds them. What the outbox has
+ * sent out doesn't. No snapshot holds it, the hash doesn't cover it, and a
+ * rewind doesn't take it back. After a game goes back and plays on, its events
+ * are heard afresh. After a session takes a game back to run the same ticks
+ * again, each event of those ticks is heard once.
  */
 import type { Emitted, EventDef, EventHandle } from "./Event";
 
@@ -49,8 +50,8 @@ export interface Told {
 export type Stage = "frame" | "input";
 
 /**
- * A place in what was told, of one event: a system of a stage, or outside
- * code. It reads, and can't emit.
+ * A reader's place in what the outbox has told of one event. The reader is a
+ * system of a stage between ticks, or outside code. It reads, and can't emit.
  *
  * @category Models
  */
@@ -59,12 +60,12 @@ export class Listener<P> implements EventHandle<P> {
   readonly def: EventDef<P>;
   /** The stage it is a system of, or undefined for outside code. */
   readonly stage: Stage | undefined;
-  /** The last it has read. */
+  /** The last of what was told that it has read. */
   after: Told;
   /**
-   * After a rewind to run ticks again, the events it had heard of them, by
-   * tick: as a tick emits one of them again, it is taken out here and not
-   * heard twice.
+   * After a rewind to run the same ticks again, the events it had heard of
+   * them, by tick. When a tick emits one of them again, it is taken out of
+   * here and isn't heard twice.
    */
   echo: Map<number, P[]> | undefined;
 
@@ -133,10 +134,10 @@ const same = (a: unknown, b: unknown): boolean => {
 };
 
 /**
- * What a game's ticks have sent out for the frame stage, the input stage and
- * outside code to read: the events they emitted, in order. It is not the
- * game's. No snapshot holds it and the hash doesn't cover it, and a rewind
- * doesn't take it back: what a stage heard, it heard.
+ * The events a game's ticks emitted, in order, sent out for the frame stage,
+ * the input stage and outside code to read. It doesn't belong to the game. No
+ * snapshot holds it, the hash doesn't cover it, and a rewind doesn't take back
+ * what a stage has heard.
  *
  * @category Models
  */
@@ -169,9 +170,9 @@ export class Outbox {
   private last: Record<string, readonly unknown[]> = {};
 
   /**
-   * Told once which of the two stages an app has systems in: events are kept
-   * for those from now on, so that such a system hears the events of the
-   * ticks before it first ran.
+   * Keeps events from now on for a stage that the app has systems in, so that
+   * such a system hears the events of the ticks before it first ran. An app
+   * calls it once for each such stage.
    */
   expect(stage: Stage, tick: number): void {
     this.seen.set(stage, { told: this.tail, tick });
@@ -196,7 +197,11 @@ export class Outbox {
     }
   }
 
-  /** A tick has ended. */
+  /**
+   * Marks the end of a tick. A stage that hasn't run for more than 600 ticks,
+   * ten seconds at 60 Hz, is taken to be gone, and its systems skip what was
+   * told before.
+   */
   ticked(tick: number): void {
     const last: Record<string, unknown[]> = {};
     for (const { def, payload } of this.since) {
@@ -212,7 +217,7 @@ export class Outbox {
     }
   }
 
-  /** A stage has run: its systems have had their chance at everything told. */
+  /** Marks that a stage has run, and moves its systems past everything told. */
   ended(stage: Stage, tick: number): void {
     this.pass(stage, tick);
   }
@@ -232,7 +237,10 @@ export class Outbox {
     }
   }
 
-  /** The place of a system of a stage in one event: always the same one. */
+  /**
+   * Returns the place of a system of a stage in one event, the same one each
+   * time.
+   */
   listener<P>(system: string, def: EventDef<P>, stage: Stage): Listener<P> {
     let mine = this.listeners.get(system);
     if (mine === undefined) {
@@ -252,11 +260,12 @@ export class Outbox {
     return listener;
   }
 
-  /** A place for outside code, which hears what is told from now on. */
+  /** Returns a place for outside code, which hears what is told from now on. */
   outside<P>(def: EventDef<P>): Listener<P> {
     return new Listener(this, def, undefined, this.tail);
   }
 
+  /** Returns what was told of a listener's event since it last read. */
   read<P>(listener: Listener<P>): readonly P[] {
     // Outside code, which nothing keeps track of, hears what is told from a
     // rewind on. A system of a stage was moved by the rewind.
@@ -305,20 +314,23 @@ export class Outbox {
     return out.length === 0 ? EMPTY : out;
   }
 
-  /** The last that was told: where a moment of the game is, in what was told. */
+  /**
+   * Returns the last that was told, which is where a moment of the game is in
+   * what was told.
+   */
   mark(): Told {
     return this.tail;
   }
 
   /**
-   * The game went back to where `to` was the last told. What was told after
-   * it is given up.
+   * Takes the outbox back to where `to` was the last told, after the game went
+   * back. What was told after it is given up.
    *
-   * With `again`, the game goes back to run the same ticks again, as a
-   * session does when a peer's actions arrive late: what a system of a stage
-   * had heard of those ticks, it doesn't hear a second time when they emit
-   * it again, and only what they now do otherwise is new to it. Without, the
-   * game goes on from there as a new one would, and every event is new.
+   * With `again`, the game goes back to run the same ticks again, as a session
+   * does when a peer's actions arrive late. A system of a stage doesn't hear a
+   * second time what it had heard of those ticks, and hears only what they now
+   * do differently. Without `again`, the game goes on from there as a new one
+   * would, and every event is new.
    */
   rewound(to: Told, again: boolean): void {
     this.rewinds++;
@@ -367,8 +379,8 @@ export class Outbox {
   }
 
   /**
-   * The events told in the last tick, and between it and the one before, by
-   * event name, in the order they were emitted.
+   * Returns the events told in the last tick, and between it and the one
+   * before, by event name, in the order they were emitted.
    */
   lastTick(): Record<string, readonly unknown[]> {
     return this.last;

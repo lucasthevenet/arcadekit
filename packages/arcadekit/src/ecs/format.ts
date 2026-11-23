@@ -48,13 +48,14 @@ export interface Shape {
 }
 
 /**
- * What one store of a world held, in a snapshot: state the world keeps for
- * its owner beside its components.
+ * What one store of a world held, as a snapshot keeps it. A store is state
+ * that a world keeps for its owner beside its components, such as an app's
+ * queued actions and waiting events.
  *
  * @category Models
  */
 export interface SnapshotStore {
-  /** The store's name. */
+  /** The store's name, unique among the world's stores. */
   name: string;
   /** What it held, as plain data, in a form that is the store's own. */
   data: unknown;

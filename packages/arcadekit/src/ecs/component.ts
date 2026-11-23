@@ -1,8 +1,7 @@
 /**
  * Component and field definitions.
  *
- * No Effect dependency: this file and world.ts are the storage core, and are
- * plain synchronous TypeScript by design.
+ * No Effect dependency.
  */
 import type { Column } from "./column";
 import type { Frozen, JsonValue } from "./frozen";
@@ -14,27 +13,29 @@ import type { Spawned } from "./spawned";
 // ---------------------------------------------------------------------------
 
 /**
- * An entity id, an integer below 2^53: the low 22 bits are its index, the slot
- * it occupies, and the bits above are its generation, which counts how many
- * times the slot was reused before. A reused slot gets the next generation, so
- * an id held across the reuse refers to no entity.
+ * An entity's id, an integer below 2^53 that packs two numbers. The low 22
+ * bits are its index, the slot the entity occupies. The bits above are its
+ * generation, which counts how many times the slot was used before. A reused
+ * slot gets the next generation, so an id kept across the reuse refers to no
+ * entity.
  *
- * The generation has 31 bits. A slot reused every tick at sixty ticks a second
- * lasts over a year, and once its generations run out it is retired, so an id
- * never refers to any entity but its own.
+ * The generation has 31 bits. A slot reused every tick, at sixty ticks a
+ * second, lasts more than a year. Once its generations run out, the slot is
+ * retired, so an id never refers to another entity.
  *
- * An id is an ordinary number. It is stored in arrays of 64-bit floats, which
- * hold every integer below 2^53 exactly, and is an integer in JSON.
+ * An id is an ordinary number. The world keeps ids in `Float64Array`s, which
+ * hold every integer below 2^53 exactly, and JSON writes an id as an integer.
  *
  * **Gotchas**
  *
- * - A world holds at most 4,194,304 entities at a time, which is what 22 bits
- *   of index allow. A spawn beyond that throws.
+ * - A world holds at most 4,194,304 entities at a time, the range of a 22-bit
+ *   index. A spawn beyond that throws.
  * - Store ids in a `Float64Array`. A `Uint32Array` truncates the id of an
- *   entity whose slot was reused more than 1,023 times, and keeps the remainder
- *   as if it were a valid id.
- * - Read the two parts with `entityIndex` and `entityGeneration`: a bit shift
- *   only sees 32 bits.
+ *   entity whose slot was reused more than 1,023 times, with no error. The
+ *   number read back is the id of an earlier generation of the same slot, and
+ *   refers to no entity.
+ * - Read the two parts with `entityIndex` and `entityGeneration`. A bitwise
+ *   operator sees only the low 32 bits of an id.
  *
  * @category Models
  */
@@ -52,15 +53,16 @@ export const GENERATIONS = 2 ** (53 - INDEX_BITS);
 
 // `&` takes a number's low 32 bits, whatever is above them: the index.
 /**
- * Returns an entity's index: its slot in the world, which a successor reuses
- * after the entity is despawned.
+ * Returns an entity's index, the slot it occupies in the world. Once the
+ * entity is despawned, a new entity reuses the slot under the next
+ * generation.
  *
  * @category Utilities
  */
 export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
 /**
- * Returns an entity's generation: how many entities held its index before it,
- * which distinguishes it from them.
+ * Returns an entity's generation, the number of entities that held its index
+ * before it. The generation tells the entity apart from them.
  *
  * @category Utilities
  */
@@ -74,8 +76,9 @@ export const makeEntity = (index: number, generation: number): Entity =>
 // ---------------------------------------------------------------------------
 
 /**
- * How a field is stored: a typed array of numbers, an entity, or a value of any
- * type.
+ * How a field is stored: a number in a typed array, an entity's id, or a
+ * value of any type. `json`, `ref` and `transient` all hold any value, and
+ * differ in what a snapshot and the hash do with it.
  *
  * @category Models
  */
@@ -108,6 +111,15 @@ export const isBoxed = (kind: FieldKind): boolean =>
  * something JSON can serialize, and `decode` takes what JSON parsed back.
  * Either may throw for a value it rejects.
  *
+ * **Gotchas**
+ *
+ * - When `encode` throws, `World.snapshot` throws a `SnapshotError` whose
+ *   problem is `"cannot be saved"` and names the field. `World.hash` throws
+ *   the codec's own error.
+ * - When `decode` throws, the load throws a `SnapshotError` whose problem is
+ *   `"component changed"`.
+ * - `World.hash` calls `encode` once for every value of the field.
+ *
  * @category Models
  */
 export interface RefCodec<T> {
@@ -117,57 +129,83 @@ export interface RefCodec<T> {
 }
 
 /**
- * A field of a component. `T` is the value you read and write, and `C` the
- * column type that stores it.
+ * A field type, as `Field` gives them: how one field of a component is
+ * stored, saved and hashed.
+ *
+ * @typeParam T the value a loop reads and writes
+ * @typeParam C the column that stores the field's values
  *
  * @category Models
  */
 export interface FieldDef<T, C> {
+  /** How the field is stored. */
   readonly kind: FieldKind;
-  /** Present on a `ref` field. */
+  /** The codec of a `ref` field, and undefined on any other. */
   readonly codec?: RefCodec<T>;
+  /** Never set: it carries `T` in the type. */
   readonly _T?: T;
+  /** Never set: it carries `C` in the type. */
   readonly _C?: C;
 }
 
 const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
 
 /**
- * The field types a component is made of. Numbers go in typed arrays; any other
- * field type defines what snapshots and the hash do with it.
+ * The field types a component is made of. A number field is a column of a
+ * typed array. Any other field type says what a snapshot and the hash do with
+ * its values.
+ *
+ *   const Hero = Component.define("game/Hero", { hp: Field.i32, name: Field.json<string>() })
+ *
+ * **When to use**
+ *
+ * Use with `Component.define` and `Component.singleton`. In a game, the
+ * `Field` module of `arcadekit` gives the same field types, and
+ * `Field.schema` besides.
  *
  * @category Fields
  */
 export const Field = {
+  /** A 32-bit float, in a `Float32Array`. */
   f32: field<number, Float32Array>("f32"),
+  /** A 64-bit float, in a `Float64Array`. */
   f64: field<number, Float64Array>("f64"),
+  /** A signed 32-bit integer, in an `Int32Array`. */
   i32: field<number, Int32Array>("i32"),
+  /** An unsigned 32-bit integer, in a `Uint32Array`. */
   u32: field<number, Uint32Array>("u32"),
+  /** An unsigned 16-bit integer, in a `Uint16Array`. */
   u16: field<number, Uint16Array>("u16"),
+  /** An unsigned 8-bit integer, in a `Uint8Array`. */
   u8: field<number, Uint8Array>("u8"),
+  /**
+   * An entity's id, in a `Float64Array`. It holds whatever id was written,
+   * and is stale once its entity is despawned. For a reference the world
+   * keeps correct, use `Component.relation`.
+   */
   entity: field<Entity, Float64Array>("entity"),
   /**
    * Plain data: a string, number, boolean, bigint, null or undefined, or an
    * array or object of strings, numbers, booleans and null. It is saved in
    * snapshots and included in the hash. An array or an object is saved and
-   * hashed as its `JSON.stringify` text, so it is loaded as whatever
-   * `JSON.parse` makes of that text.
+   * hashed as its `JSON.stringify` text, so it loads as whatever `JSON.parse`
+   * makes of that text.
    */
   json: <T extends JsonValue>(): FieldDef<Frozen<T>, Frozen<T>[]> =>
     field<Frozen<T>, Frozen<T>[]>("json"),
   /**
-   * Any value, with a codec that converts it to plain data and back: a Date, a
-   * Map, a class instance. Snapshots and the hash use its encoded form, so it
-   * is encoded once per value on every hash.
+   * Any value, such as a `Date`, a `Map` or a class instance, with a codec
+   * that converts it to plain data and back. Snapshots and the hash use its
+   * encoded form, so every hash encodes each value once.
    */
   ref: <T>(codec: RefCodec<T>): FieldDef<Frozen<T>, Frozen<T>[]> => ({
     kind: "ref",
     codec: codec as RefCodec<Frozen<T>>,
   }),
   /**
-   * A value that isn't part of the game's state, such as a handle, a cache, or
-   * something another system can recreate. It is neither saved nor hashed, and
-   * is undefined in a world loaded from a snapshot.
+   * A value that isn't part of the game's state, such as a handle, a cache,
+   * or something another system can rebuild. It is neither saved nor hashed,
+   * and is undefined in a world loaded from a snapshot.
    */
   transient: <T>(): FieldDef<
     Frozen<T> | undefined,
@@ -182,7 +220,9 @@ export const Field = {
 export type Schema = Record<string, FieldDef<unknown, unknown>>;
 
 /**
- * The plain-object shape of a component: `{ x: number, y: number }`.
+ * A component's value as a plain object, with one property per field:
+ * `{ x: number; y: number }` for `{ x: Field.f32, y: Field.f32 }`. `World.get`
+ * returns one.
  *
  * @category Type-level
  */
@@ -194,8 +234,9 @@ export type ValueOf<S extends Schema> = {
 type InputField<T> = [T] extends [Entity] ? Entity | Spawned : T;
 
 /**
- * The shape of the value a component's `of` takes: its `ValueOf`, where an
- * entity field takes an id that `Commands.spawn` returned as well.
+ * The value a component's `of` takes. It is the component's `ValueOf`, except
+ * that an entity field also takes a `Spawned` id, one that `Commands.spawn`
+ * returned.
  *
  * @category Type-level
  */
@@ -266,25 +307,28 @@ export type Chunked<D extends readonly ComponentDef[]> = [
     };
 
 /**
- * How a component is stored: in the tables of the entities that have it, or
- * `"sparse"`, in a set of its own, for a component that is added and removed
- * often.
+ * Where a component's data is stored. `"table"` keeps it in the tables of the
+ * entities that have it, one column per field. `"sparse"` keeps it in a set
+ * of its own, so that adding or removing it doesn't move the entity to
+ * another table.
  *
  * @category Models
  */
 export type Storage = "table" | "sparse";
 
 /**
- * What happens to a relation when its target entity is despawned: the entity
- * that holds it is despawned too, or the relation is removed from it.
+ * What a relation does when its target is despawned. With `"despawn"`, the
+ * entity that holds the relation is despawned too. With `"remove"`, the
+ * relation is removed from it.
  *
  * @category Models
  */
 export type OnTargetDespawn = "despawn" | "remove";
 
 /**
- * A read-only column: a relation's `target`, which the world tracks and so must
- * see every change to.
+ * A column that a loop reads and cannot assign. `eachChunk` hands one out for
+ * each field of a term the query only reads, and for a relation's `target`,
+ * since the world must see every change of target.
  *
  * @category Models
  */
@@ -338,9 +382,16 @@ export interface Accessor {
 export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
 
 /**
- * @param S  the component's fields
- * @param St where its data is stored
- * @param N  its name. Two components can have the same fields, and the compiler distinguishes them by name: for example, to know which of a query's terms `Query.writes` was given. A name built at run time is just `string`, and such a component is indistinguishable from others.
+ * A component's definition, as `Component.define`, `Component.tag` and
+ * `Component.relation` return it. A query names it as a term, and
+ * `Position.of({ x: 0, y: 0 })` pairs it with a value for `spawn` and `add`.
+ *
+ * @typeParam S its fields, by name
+ * @typeParam St where its data is stored
+ * @typeParam N its name. The compiler tells apart two components with the
+ *   same fields by their names, for example to know which of a query's terms
+ *   `Query.writes` was given. A name built at run time has the type `string`,
+ *   and the compiler cannot tell such a component from another.
  *
  * @category Models
  */
@@ -349,34 +400,43 @@ export interface ComponentDef<
   St extends Storage = Storage,
   N extends string = string,
 > {
+  /** A number that tells definitions apart in this program. It is never saved. */
   readonly id: number;
+  /** Its identity in a world and in a save, such as `"physics/Position"`. */
   readonly name: N;
+  /** Its fields, as `Component.define` was given them. */
   readonly schema: S;
+  /** The names of its fields, in the order they were defined. */
   readonly fields: readonly string[];
+  /** How each field is stored, in the order of `fields`. */
   readonly kinds: readonly FieldKind[];
   /** For each field, the codec of a `ref` field, or undefined for any other. */
   readonly codecs: readonly (RefCodec<unknown> | undefined)[];
-  /** Tracked in the type, so queries know which terms have row-aligned columns. */
+  /**
+   * Where its data is stored. The type carries it too, so that a query knows
+   * which of its terms are in the table's rows.
+   */
   readonly storage: St;
+  /** Whether it has no fields, as a tag has none. */
   readonly isTag: boolean;
   /**
-   * True for the fields of a singleton, which the world holds once and no
-   * entity has: see `Component.singleton`.
+   * Whether it is a singleton's, which the world holds once and no entity
+   * has. See `Component.singleton`.
    */
   readonly single: boolean;
   /**
-   * For a relation, what happens to it when its target is despawned; undefined
-   * for any other component. See `Component.relation`.
+   * For a relation, what its target's despawn does to it, and undefined for
+   * any other component. See `Component.relation`.
    */
   readonly relation: OnTargetDespawn | undefined;
   /**
-   * The value of a component added or spawned bare, with no value: see
-   * `Component.define`. Undefined for one whose bare value is all zeros.
+   * Its value when it is added or spawned bare, with no value, and undefined
+   * when that value is all zeros. See `Component.define`.
    */
   readonly initial: Readonly<ValueOf<S>> | undefined;
   /**
-   * Pairs this component with a value, for `spawn` and `add`. A method, so
-   * that any component is a `ComponentDef`.
+   * Pairs this component with a value, for `spawn` and `add`. It is a method,
+   * so that a component of any fields is a `ComponentDef`.
    */
   of(value: InputOf<S>): ComponentValue<S, N>;
 }
@@ -391,15 +451,17 @@ export interface ComponentValue<
   S extends Schema = Schema,
   N extends string = string,
 > {
+  /** The component. */
   readonly def: ComponentDef<S, Storage, N>;
+  /** Its value. */
   readonly value: InputOf<S>;
 }
 
 /**
- * What `spawn` and `add` accept: a value, or a bare component (zeroed, or a
- * tag).
+ * What `spawn` and `add` take: a component with its value, or a component
+ * given bare. A bare component gets its `initial` value, or all zeros.
  *
- * @category Type-level
+ * @category Models
  */
 export type ComponentInput = ComponentValue | ComponentDef;
 
@@ -407,12 +469,19 @@ export const isComponentDef = (u: ComponentInput): u is ComponentDef =>
   "id" in u;
 
 /**
- * Data that exists once per world, such as whose turn it is, the score, or the
- * current level. `world.singleton(spec)` returns the value, which you read and
- * write like an object, and which belongs to the world: saved in snapshots,
+ * The definition of a singleton, data that exists once per world, such as the
+ * score, whose turn it is or the current level. `Component.singleton` makes
+ * one. `world.singleton(spec)` returns the world's value, an object whose
+ * fields you read and write in place.
+ *
+ * The value belongs to the world. Once written, it is saved in snapshots,
  * included in the hash, and restored when a transaction rolls back.
  *
- * Any object with this shape works; the Effect layer provides a yieldable one.
+ * **When to use**
+ *
+ * Use with the storage core alone. In a game, `Singleton.define` from
+ * `arcadekit` makes a definition that a system can also `yield*`. The world
+ * takes any object of this shape.
  *
  * @category Models
  */
@@ -802,23 +871,25 @@ const define = <
 };
 
 /**
- * Defines components: data, a tag, or a relation to another entity.
+ * Defines components: a component with data, a tag, a relation to another
+ * entity, or a singleton.
  *
  * @category Constructors
  */
 export const Component = {
   /**
-   * Defines a data component. Numeric fields become typed-array columns.
+   * Defines a component with data. Each numeric field is a column of a typed
+   * array.
    *
-   * `name` is its identity in a world and in a save, prefixed with the feature
-   * it belongs to: `"physics/Position"`. A world that encounters two different
-   * components with the same name refuses the second. With `storage: "sparse"`,
-   * it is stored in a set of its own, for a component that is added and removed
-   * often or that few entities have.
+   * `name` is the component's identity in a world and in a save. Prefix it
+   * with the feature it belongs to, as in `"physics/Position"`. A world that
+   * meets two different components with the same name throws when it meets
+   * the second. `storage: "sparse"` keeps the component in a set of its own,
+   * for one that is added and removed often or that few entities have.
    *
-   * Added or spawned bare, with no value, a component is `initial`, or all
-   * zeros without it: give `initial` to a component whose zeros are wrong, such
-   * as a size, `{ initial: { x: 1, y: 1 } }`.
+   * A component added or spawned bare, with no value, is all zeros. Give
+   * `initial` to a component whose zeros are wrong, such as a size:
+   * `{ initial: { x: 1, y: 1 } }`.
    */
   define: <
     const N extends string,
@@ -830,9 +901,10 @@ export const Component = {
     options?: { readonly storage?: St; readonly initial?: ValueOf<S> }
   ): ComponentDef<S, St, N> => define(name, schema, options),
   /**
-   * Defines a singleton: data the world holds once, with its value until it is
-   * written. Its name is one of the world's component names. No entity has it:
-   * spawning or adding it throws.
+   * Defines a singleton, data the world holds once, which has the value
+   * `initial` until it is written. A world registers its name as a
+   * component's, so no component of the world can share it. No entity has
+   * it, and spawning or adding it throws.
    */
   singleton: <S extends Schema>(
     name: string,
@@ -843,28 +915,29 @@ export const Component = {
     initial,
   }),
   /**
-   * Defines a relation: a component that points at another entity, its
+   * Defines a relation, a component that points at another entity, its
    * `target`, and stays correct when that entity is despawned.
    *
    *   const ChildOf = Component.relation("scene/ChildOf", { onTargetDespawn: "despawn" })
    *   world.spawn(Position.of({ x: 0, y: 0 }), ChildOf.of({ target: parent }))
    *
-   * `onTargetDespawn` sets what a target's despawn does to the entities
-   * pointing at it: `"despawn"` despawns them too (a parent and its children),
-   * and `"remove"` removes the relation from them (a target, an owner). Either
-   * way, nothing is left pointing at a despawned entity.
+   * `onTargetDespawn` says what a target's despawn does to the entities that
+   * point at it. `"despawn"` despawns them too, as children go with their
+   * parent. `"remove"` removes the relation from them and leaves them alive,
+   * as for a relation to a target or an owner. Either way, nothing is left
+   * pointing at a despawned entity.
    *
-   * `fields` are the relation's own fields, alongside `target`, and are written
-   * like any others. The target isn't:
+   * `fields` are the relation's own fields, beside `target`, and are written
+   * like any others. The target is not:
    *
-   * - To change it, add the relation again: `add(entity, ChildOf.of({ target
-   *   }))`. It is read-only in `each`, in `set` and in its raw column, so an
-   *   assignment doesn't compile.
-   * - It must be alive. A relation given bare, with no target, doesn't
-   *   compile, on `Commands` or on the world.
-   *   Given a target that is already gone, whatever that entity's despawn
-   *   would have done happens at once: the holder is despawned, or the
-   *   relation isn't added.
+   * - To change the target, add the relation again, as in
+   *   `add(entity, ChildOf.of({ target }))`. The target is read-only in
+   *   `each`, in `set` and in its raw column, so an assignment doesn't
+   *   compile.
+   * - The target must be alive. A relation given bare, with no target,
+   *   doesn't compile, on `Commands` or on the world. Given a target that is
+   *   already despawned, the world does at once what that despawn would have
+   *   done: the holder is despawned, or the relation isn't added.
    * - An entity has one target per relation. For another kind of link, define
    *   another relation.
    */
@@ -890,7 +963,10 @@ export const Component = {
         ? { relation: options.onTargetDespawn }
         : { storage: options.storage, relation: options.onTargetDespawn }
     ),
-  /** Defines a component with no data, used only for filtering. */
+  /**
+   * Defines a tag, a component with no fields. A query uses a tag only to
+   * filter entities.
+   */
   tag: <const N extends string, St extends Storage = "table">(
     name: N,
     options?: { readonly storage?: St }

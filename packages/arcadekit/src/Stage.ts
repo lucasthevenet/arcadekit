@@ -1,15 +1,15 @@
 /**
- * The stages a game's code runs in, and what each is given. A system asks
- * for the same services wherever it runs, and gets them by its stage:
+ * The stages a game's code runs in, and what each is given. A system asks for
+ * the same services wherever it runs, and gets them by its stage.
  *
- * - in the tick, the world to change, the game's time and the game's random
- *   generator, and neither a frame nor the devices;
- * - in the frame stage, the frame being drawn, and a random generator that is
- *   not the game's;
- * - in the input stage, what the devices say, and no frame.
+ * - In the tick, it gets the world to change, the game's time and the game's
+ *   random generator. It gets neither a frame nor the devices.
+ * - In the frame stage, it gets the frame being drawn, and a random generator
+ *   that isn't the game's.
+ * - In the input stage, it gets what the devices say, and no frame.
  *
- * A service a stage may not use is absent there. The types already refuse
- * the request. `Loop` runs the stages.
+ * A service a stage may not use is absent there, and the types refuse a
+ * request for it. `Loop` runs the stages.
  */
 import { Context, Data, Random as EffectRandom } from "effect";
 
@@ -35,10 +35,10 @@ import { handed } from "./services/handed";
 export const READER = "frame:";
 
 /**
- * A frame-stage or input-stage system changed the world, which it must not do,
- * as detected by an app created with `verifyFrames`. It is a defect, not a
- * failure to handle: those stages run between ticks, and a game that depends on
- * having been drawn, or on its devices having been read, doesn't replay.
+ * A frame-stage or input-stage system changed the world, which it must not do.
+ * An app made with `verifyFrames` detects it. It is a defect, not a failure to
+ * handle. Those stages run between ticks, and a game that depends on having
+ * been drawn, or on its devices having been read, doesn't replay.
  *
  * @category Errors
  */
@@ -47,7 +47,10 @@ export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
   readonly stage: "frame" | "input";
   /** The system after which the world had changed. */
   readonly system: string;
-  /** The frame number, counted from 1: for the input stage, the last frame drawn. */
+  /**
+   * The frame number, counted from 1. For the input stage, it is the last
+   * frame drawn.
+   */
   readonly frame: number;
 }> {
   override get message(): string {
@@ -94,9 +97,9 @@ const effectRandom = (
 });
 
 /**
- * The services an app provides itself, as the tick is given them: what a
- * system of the tick, an action's handler and a plugin's setup read. A
- * plugin's layer is built on them.
+ * Makes the services an app provides itself, as the tick is given them. A
+ * system of the tick, an action's handler and a plugin's setup read them, and
+ * a plugin's layer is built on them.
  *
  * @category Constructors
  */
@@ -120,10 +123,10 @@ export const tick = (parts: {
 };
 
 /**
- * What the frame stage is given, from what the tick is: its systems get the
- * world to read and nothing to change it with. What is random there comes
- * from a generator of its own, seeded with `seed`, which is no part of the
- * world; and an action issued there is input from outside.
+ * Makes what the frame stage is given from what the tick is given. Its systems
+ * get the world to read and nothing to change it with. What is random there
+ * comes from a generator of its own, seeded with `seed`, which is no part of
+ * the world. An action issued there is input from outside.
  *
  * @category Constructors
  */
@@ -146,9 +149,9 @@ export const frame = (
 };
 
 /**
- * What the input stage is given, from what the frame stage is: what the
- * devices say, one picture of them that is taken when the stage begins, and
- * no frame.
+ * Makes what the input stage is given from what the frame stage is given. It
+ * adds what the devices say, one sample of them taken when the stage begins,
+ * and leaves out the frame.
  *
  * @category Constructors
  */
