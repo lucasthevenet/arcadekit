@@ -253,10 +253,77 @@ export interface ReadonlyColumn<T> {
   readonly length: number;
 }
 
+/**
+ * A relation's `target` field: an entity the world keeps track of, read like
+ * any field and never written like one. What sets it apart from a
+ * `Field.entity` exists only in the type.
+ *
+ * @category Models
+ */
+export interface TargetField extends FieldDef<Entity, ReadonlyColumn<Entity>> {
+  readonly _target: true;
+}
+
 /** A relation's fields: its target, then any of its own. */
 export type RelationSchema<S extends Schema> = {
-  readonly target: FieldDef<Entity, ReadonlyColumn<Entity>>;
+  readonly target: TargetField;
 } & S;
+
+/**
+ * A relation, as `Component.relation` defines it: a component whose `target`
+ * the world keeps track of.
+ *
+ * @category Models
+ */
+export type RelationDef = ComponentDef<{ readonly target: TargetField }>;
+
+/**
+ * The fields `set` writes of a component: any of them, but a relation's
+ * `target`, which is changed by adding the relation again.
+ *
+ * @category Type-level
+ */
+export type PatchOf<S extends Schema> = {
+  -readonly [K in keyof S]?: S[K] extends TargetField
+    ? Retarget
+    : S[K] extends FieldDef<infer T, unknown>
+      ? T
+      : never;
+};
+
+/** What `set` is told of a relation's `target`: a message, which no value is. */
+type Retarget =
+  "A relation's target is not set like a field: add the relation again, with its .of({ target }), on Commands or on the world." & {
+    readonly _retarget: true;
+  };
+
+/**
+ * The row `each` hands out of a component a query writes: its value, with a
+ * relation's `target` read-only.
+ */
+export type RowOf<S extends Schema> = {
+  -readonly [
+    K in keyof S as S[K] extends TargetField ? never : K
+  ]: S[K] extends FieldDef<infer T, unknown> ? T : never;
+} & {
+  readonly [K in keyof S as S[K] extends TargetField ? K : never]: Entity;
+};
+
+/** The last part of a component's name: `Owes` of `"bank/Owes"`. */
+type LastPart<N extends string> = N extends `${string}/${infer R}`
+  ? LastPart<R>
+  : N;
+
+/**
+ * What `spawn` and `add` are told of a relation given bare, with no target,
+ * and `unknown` for any other input.
+ */
+export type Targeted<I> = I extends {
+  readonly schema: { readonly target: TargetField };
+  readonly name: infer N extends string;
+}
+  ? `"${N}" is a relation, and a relation needs a target: give it as ${LastPart<N>}.of({ target }).`
+  : unknown;
 
 /** @internal What an accessor that notices writes tells: `ChangeLog` in world.ts. */
 export interface WriteLog {
@@ -414,6 +481,20 @@ export const frozenWrite = (what: string): string =>
 /** Explains what to do instead of writing a relation's target. */
 export const retarget = (name: string): string =>
   `"${name}" is a relation, and its target is not written like a field: the world keeps track of who points at whom. Give it another target by adding it again, with add(entity, ${name.split("/").pop()}.of({ target })) on Commands or on the world.`;
+
+/**
+ * Refuses a relation's target given to `set`, which only a cast lets through:
+ * an undefined, like any number not given, is left as it was.
+ */
+export const refuseRetarget = (def: ComponentDef, value: object): void => {
+  if (
+    def.relation !== undefined &&
+    "target" in value &&
+    value.target !== undefined
+  ) {
+    throw new Error(retarget(def.name));
+  }
+};
 
 /** Explains that a relation was given without a value, and so has no target. */
 export const targetless = (def: ComponentDef): Error =>
@@ -809,12 +890,13 @@ export const Component = {
    * like any others. The target isn't:
    *
    * - To change it, add the relation again: `add(entity, ChildOf.of({ target
-   *   }))`. Assigning to it, in `each` or with `set`, throws, and its raw
-   *   column is typed as read-only.
-   * - It must be alive. A relation without a target is refused at the call
-   *   site. Given a target that is already gone, whatever that entity's despawn
-   *   would have done happens at once: the holder is despawned, or the relation
-   *   isn't added.
+   *   }))`. It is read-only in `each`, in `set` and in its raw column, so an
+   *   assignment doesn't compile.
+   * - It must be alive. A relation given bare, with no target, doesn't
+   *   compile on `Commands`, and the world refuses it where it is given.
+   *   Given a target that is already gone, whatever that entity's despawn
+   *   would have done happens at once: the holder is despawned, or the
+   *   relation isn't added.
    * - An entity has one target per relation. For another kind of link, define
    *   another relation.
    */

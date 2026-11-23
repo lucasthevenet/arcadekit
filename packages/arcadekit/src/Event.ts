@@ -7,7 +7,7 @@
  *   // in a system of the tick
  *   const collided = yield* Collided.emits
  *   collided.emit({ a, b })                 // plain call, fine inside loops
- *   for (const hit of collided.read()) ...  // everything this system has not seen
+ *   for (const hit of collided.read()) ...  // unseen ones, from before this run
  *
  *   // reading is every stage's
  *   for (const hit of (yield* Collided).read()) ...
@@ -15,12 +15,15 @@
  * Every system sees every event exactly once, whatever order the systems run
  * in. An earlier system sees an event emitted by a later one on the next tick,
  * so an event emitted while systems are running is kept until the end of the
- * following tick. An event emitted between ticks, by the handler of an action
- * dispatched there, is dropped at the end of the next tick. Only the
- * simulation emits: an event is in no log, so code outside it issues an action
- * whose handler emits the event. Events aren't kept for a system that `System.runIf` has disabled:
- * when it runs again, the events from the ticks it skipped are gone, as are
- * the changes its change queries would have seen in them.
+ * following tick. So does the emitter itself, on its next run: a system or a
+ * handler reads only what was emitted before it began to run, so an entity
+ * an event names is spawned by the time the event is read. An event emitted
+ * between ticks, by the handler of an action dispatched there, is dropped at
+ * the end of the next tick. Only the simulation emits: an event is in no log,
+ * so code outside it issues an action whose handler emits the event. Events
+ * aren't kept for a system that `System.runIf` has disabled: when it runs
+ * again, the events from the ticks it skipped are gone, as are the changes
+ * its change queries would have seen in them.
  *
  * The payload type is inferred from the event's schema. Emitting is a plain
  * call with no validation: the schema is only used when the event leaves the
@@ -47,19 +50,25 @@ import type { Sim } from "./Services";
  * @category Models
  */
 export interface EventReader<P> {
-  /** Returns the events not yet seen through this handle, oldest first. */
+  /**
+   * Returns the events not yet seen through this handle, oldest first. In the
+   * tick, they are those emitted before the code reading them began to run.
+   */
   readonly read: () => readonly P[];
 }
 
 /**
  * A payload as its readers get it: an event is read once the spawns of the
  * code that emitted it are applied, so an id it spawned is an entity by then.
+ * The code that emitted it reads it on its next run, and other code once it
+ * has ended, when its commands have been applied.
  */
 const placedLater = <P>(payload: WithSpawned<P>): P => payload as P;
 
 /**
  * A tick system's handle to one event type, from `yield* SomeEvent.emits`: it
- * emits events, and reads the ones it hasn't seen yet.
+ * emits events, and reads the ones it hasn't seen yet. What it emits, it reads
+ * on its next run.
  *
  * @category Models
  */
@@ -235,6 +244,10 @@ class Channel<P> {
   mark = 0;
   /** Where it ended when the transaction began. */
   txEnd = 0;
+  /** The last run that emitted to it, by `Waiting`'s count. */
+  emittedIn = -1;
+  /** Where it ended when that run first emitted to it: what the run reads up to. */
+  endBefore = 0;
 
   constructor(def: EventDef<P>) {
     this.def = def;
@@ -306,6 +319,13 @@ class Waiting implements Store<WaitingMoment> {
   private emitted: Emitted[] = [];
   private recording = false;
   private emittedMark = 0;
+  /**
+   * Counts the runs of the game's code: each system, handler and setup that
+   * runs begins one. What a run emits, it reads on its next: until it has
+   * ended, the spawns of its commands are not applied, and an id a payload
+   * holds is no entity yet.
+   */
+  private run = 0;
   /** In a transaction, the readers that moved, and where each was. */
   private readonly moved: {
     readonly channel: Channel<unknown>;
@@ -343,13 +363,27 @@ class Waiting implements Store<WaitingMoment> {
         `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
       );
     }
+    if (channel.emittedIn !== this.run) {
+      channel.emittedIn = this.run;
+      channel.endBefore = channel.end;
+    }
     channel.values.push(payload);
     this.emitted.push({ def: channel.def, payload });
   }
 
-  /** What `reader` has yet to read, oldest first, which it has then read. */
+  /** Starts a run of the game's code: a system's, a handler's or a setup's. */
+  startRun(): void {
+    this.run += 1;
+  }
+
+  /**
+   * What `reader` has yet to read, oldest first, which it has then read: what
+   * was emitted before its run began.
+   */
   read<P>(channel: Channel<P>, reader: string): readonly P[] {
-    const { base, end, readers } = channel;
+    const { base, readers } = channel;
+    const end =
+      channel.emittedIn === this.run ? channel.endBefore : channel.end;
     const at = readers.get(reader);
     if (at === end) {
       return EMPTY;
@@ -363,7 +397,7 @@ class Waiting implements Store<WaitingMoment> {
     // No further back than what is kept: what was dropped since it last read
     // is gone, and so is what a refused action emitted.
     const from = at === undefined || at < base ? base : Math.min(at, end);
-    return from === end ? EMPTY : channel.values.slice(from - base);
+    return from === end ? EMPTY : channel.values.slice(from - base, end - base);
   }
 
   /**
@@ -593,19 +627,13 @@ const outside = (def: EventDef<unknown>): Error =>
  */
 export class EventBus {
   /**
-   * Who is asking for handles right now. The app sets this before each
-   * system and handler runs, which is what gives each of them its own
-   * place in the events. Undefined means outside code.
-   * @internal
-   */
-  reader: string | undefined;
-  /**
    * The stage between ticks that is running, if one is. Its systems read
    * what was told and can't emit.
    * @internal
    */
   stage: Stage | undefined;
 
+  private running: string | undefined;
   private readonly waiting: Waiting;
   private readonly outbox = new Outbox();
   /** The handles of the tick's systems and of handlers, by reader and event. */
@@ -618,6 +646,22 @@ export class EventBus {
   constructor(world: World) {
     this.waiting = new Waiting(world);
     world._attach(this.waiting);
+  }
+
+  /**
+   * Who is asking for handles right now. The app sets this before each
+   * system and handler runs, which is what gives each of them its own
+   * place in the events, and starts a run: what a reader emits in it, it
+   * reads on its next. Undefined means outside code.
+   * @internal
+   */
+  get reader(): string | undefined {
+    return this.running;
+  }
+
+  set reader(reader: string | undefined) {
+    this.running = reader;
+    this.waiting.startRun();
   }
 
   /**

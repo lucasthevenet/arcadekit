@@ -85,6 +85,27 @@ describe("events", () => {
     });
   });
 
+  it("reach the system that emits them on its next run, once what they name is spawned", () => {
+    const Shot = Event.define("ru/Shot", Schema.Struct({ shot: EntityId }));
+    const heard: (Readonly<{ hp: number }> | undefined)[][] = [];
+    const Shoot = System.tick("Shoot", function* () {
+      const { tick } = yield* Time;
+      const commands = yield* Commands.spawns(Health);
+      const world = yield* App_World;
+      const shots = yield* Shot.emits;
+      shots.emit({ shot: commands.spawn(Health.of({ hp: tick })) });
+      heard.push(shots.read().map(({ shot }) => world.get(shot, Health)));
+    });
+    withApp(App.make(App.define({ systems: [Shoot] })), (app) => {
+      for (let i = 0; i < 3; i++) {
+        app.tick(1);
+      }
+      // Each of its own once, on the tick after, as a system listed ahead of
+      // it hears them: by then the entity is spawned.
+      expect(heard).toEqual([[], [{ hp: 1 }], [{ hp: 2 }]]);
+    });
+  });
+
   it("can be emitted from inside a query loop and are read in order", () => {
     const Hit = System.tick("Hit", function* () {
       const damaged = yield* Damaged.emits;

@@ -22,6 +22,7 @@ export {
   type FieldDef,
   type OnTargetDespawn,
   type RefCodec,
+  type RelationDef,
   type SingletonSpec,
 } from "./ecs/component";
 export type { JsonValue } from "./ecs/frozen";

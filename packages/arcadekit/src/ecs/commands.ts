@@ -5,7 +5,12 @@
  * No Effect dependency.
  */
 import { frozenWrite } from "./component";
-import type { ComponentDef, ComponentInput, Entity } from "./component";
+import type {
+  ComponentDef,
+  ComponentInput,
+  Entity,
+  Targeted,
+} from "./component";
 import type { Spawned } from "./spawned";
 import type { World } from "./world";
 
@@ -51,7 +56,9 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
   }
 
   /** Returns the new entity's id immediately; it receives its components on apply. */
-  spawn(...inputs: readonly ComponentInput[]): Id {
+  spawn<const I extends readonly ComponentInput[]>(
+    ...inputs: { readonly [K in keyof I]: I[K] & Targeted<I[K]> }
+  ): Id {
     // Checked here, where the mistake is, and not when the queue is applied.
     this.world._registerAll(inputs);
     const entity = this.world._reserve();
@@ -70,7 +77,10 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
     this.ops.push({ op: "despawn", entity: applied(entity) });
   }
 
-  add(entity: Entity | Id, input: ComponentInput): void {
+  add<const I extends ComponentInput>(
+    entity: Entity | Id,
+    input: I & Targeted<I>
+  ): void {
     this.refuseFrozen("add");
     this.world._registerAll([input]);
     this.ops.push({ op: "add", entity: applied(entity), input });

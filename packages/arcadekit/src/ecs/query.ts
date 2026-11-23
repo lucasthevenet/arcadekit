@@ -15,9 +15,9 @@ import type {
   ReadOnlyTerm,
   ReadonlyColumnsOf,
   Row,
+  RowOf,
   Schema,
   Storage,
-  ValueOf,
 } from "./component";
 import { SparseSet, Table } from "./table";
 import type { World } from "./world";
@@ -76,8 +76,8 @@ export interface QuerySpec<D extends Terms = Terms> {
 export type AccessorsOf<D extends Terms> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, Storage>
     ? D[K] extends ReadOnlyTerm
-      ? Readonly<ValueOf<S>>
-      : ValueOf<S>
+      ? Readonly<RowOf<S>>
+      : RowOf<S>
     : never;
 };
 

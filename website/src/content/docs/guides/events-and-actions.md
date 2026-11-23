@@ -35,7 +35,7 @@ const Dust = System.tick("fx/Dust", function* () {
 });
 ```
 
-- Every system sees every event exactly once, whatever order systems run in. A system that runs before the emitter sees the event on the next tick.
+- Every system sees every event exactly once, whatever order systems run in. A system that runs before the emitter sees the event on the next tick, and so does the emitter itself: a system reads only what was emitted before it began to run, so the entities its own events name are spawned by the time it reads them.
 - An event is dropped once every system has had a chance to read it.
 - The frame and input stages also see every event once, however many ticks ran between two frames. That is how sound and UI follow the game.
 - A system never waits for an event: it reads what is there and finishes within its tick.

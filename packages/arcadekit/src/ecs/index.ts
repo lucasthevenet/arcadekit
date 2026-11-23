@@ -27,10 +27,13 @@ export type {
   FieldKind,
   InputOf,
   OnTargetDespawn,
+  PatchOf,
   ReadonlyColumn,
   RefCodec,
+  RelationDef,
   SingletonSpec,
   Storage,
+  TargetField,
   ValueOf,
 } from "./component";
 export { Rng } from "./random";

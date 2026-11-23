@@ -1,6 +1,8 @@
 import type {
   ComponentDef,
   Entity,
+  PatchOf,
+  RelationDef,
   Schema,
   SingletonSpec,
   ValueOf,
@@ -62,14 +64,14 @@ class Handed implements WritingWorld<string> {
     return this.#world.singleton(spec);
   }
 
-  sources(target: Entity, def: ComponentDef): Entity[] {
+  sources(target: Entity, def: RelationDef): Entity[] {
     return this.#world.sources(target, def);
   }
 
   set<S extends Schema>(
     entity: Entity,
     def: ComponentDef<S>,
-    value: Partial<ValueOf<S>>
+    value: PatchOf<S>
   ): boolean {
     return this.#world.set(entity, def, value);
   }

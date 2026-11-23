@@ -21,7 +21,7 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+import type { Entity, RelationDef } from "../src/index";
 
 const Body = Component.define("rl/Body", { x: Field.f32 });
 /** A child goes with its parent. */
@@ -52,14 +52,7 @@ const childOf = (world: EcsWorld, parent: Entity): Entity =>
   world.spawn(Body.of({ x: 0 }), ChildOf.of({ target: parent }));
 
 // Any of them: what a loop over the four of them reads is `target`.
-const all = [
-  ChildOf,
-  Targets,
-  Owes,
-  HeldBy,
-] as unknown as readonly ComponentDef<{
-  target: typeof Field.entity;
-}>[];
+const all: readonly RelationDef[] = [ChildOf, Targets, Owes, HeldBy];
 
 /** Every relation of a world points at a live entity, and `sources` agrees. */
 const expectNoDangling = (world: EcsWorld): void => {
@@ -88,6 +81,13 @@ describe("a relation", () => {
     expect(world.sources(parent, ChildOf)).toEqual([first, second]);
     expect(world.sources(other, ChildOf)).toEqual([]);
     expect(world.sources(parent, Targets)).toEqual([]);
+    expect(
+      world.sources(
+        parent,
+        // @ts-expect-error only a relation has sources
+        Body
+      )
+    ).toEqual([]);
     // In a query it is read like any component.
     const seen: [Entity, Entity][] = [];
     world.view(Query.all(Body, ChildOf)).each((_, child, entity) => {
@@ -227,15 +227,26 @@ describe("a relation", () => {
       owes.amount += 1;
     });
     expect(world.get(debtor, Owes)).toEqual({ target: b, amount: 4 });
-    // Its target is not: the world would lose track of who points at whom.
-    expect(() => world.set(debtor, Owes, { target: a })).toThrow(
+    // Its target is not, and doesn't compile: the world would lose track of
+    // who points at whom. Past the type, it throws.
+    expect(() =>
+      world.set(debtor, Owes, {
+        // @ts-expect-error a relation's target is not set like a field
+        target: a,
+      })
+    ).toThrow(
       /"rl\/Owes" is a relation.*add\(entity, .*\.of\(\{ target \}\)\)/
     );
     expect(() =>
       world.view(Query.all(Owes).pipe(Query.writes(Owes))).each((owes) => {
+        // @ts-expect-error a relation's target is read-only in a loop that writes
         owes.target = a;
       })
     ).toThrow(/is a relation/);
+    // An undefined, which the type takes without exactOptionalPropertyTypes,
+    // is left as it was, like a number not given.
+    expect(world.set(debtor, Owes, { target: undefined } as never)).toBe(true);
+    expect(world.get(debtor, Owes)).toEqual({ target: b, amount: 4 });
     expect(world.sources(b, Owes)).toEqual([debtor]);
 
     // The old target's despawn is nothing to it now; the new one's is.
@@ -250,12 +261,25 @@ describe("a relation", () => {
     const world = new EcsWorld();
     const parent = body(world);
     const commands = new CommandBuffer(world);
+    // The world refuses a relation given bare where it is given.
     expect(() => world.spawn(Body, ChildOf)).toThrow(
       /"rl\/ChildOf" is a relation, and a relation needs a target/
     );
     expect(() => world.add(parent, Targets)).toThrow(/needs a target/);
-    expect(() => commands.spawn(ChildOf)).toThrow(/needs a target/);
-    expect(() => commands.add(parent, ChildOf)).toThrow(/needs a target/);
+    // Commands don't compile with one. Past the type, they throw.
+    expect(() =>
+      commands.spawn(
+        // @ts-expect-error a relation needs a target
+        ChildOf
+      )
+    ).toThrow(/needs a target/);
+    expect(() =>
+      commands.add(
+        parent,
+        // @ts-expect-error a relation needs a target
+        ChildOf
+      )
+    ).toThrow(/needs a target/);
     expect(commands.size).toBe(0);
     expect(world.entityCount).toBe(1);
 
@@ -620,6 +644,61 @@ const orchard = Effect.gen(function* () {
 });
 
 describe("relations in an app", () => {
+  it("are handed to a system with a target it reads, and its other fields to write", () => {
+    const Accrue = System.tick("rl/Accrue", function* () {
+      const world = yield* World.writes(Owes);
+      const commands = yield* Commands.spawns(Body, Owes);
+      (yield* Query.all(Owes).pipe(Query.writes(Owes))).each((owes, debtor) => {
+        owes.amount += 1;
+        if (owes.amount < 0) {
+          // Never run: it is the compiler that refuses each of these.
+          // @ts-expect-error a relation's target is read-only in a loop that writes
+          owes.target = debtor;
+          world.set(debtor, Owes, {
+            // @ts-expect-error a relation's target is not set like a field
+            target: debtor,
+          });
+          commands.spawn(
+            Body,
+            // @ts-expect-error a relation needs a target
+            Owes
+          );
+          commands.add(
+            debtor,
+            // @ts-expect-error a relation needs a target
+            Owes
+          );
+          world.sources(
+            debtor,
+            // @ts-expect-error only a relation has sources
+            Body
+          );
+        }
+      });
+      const lender = commands.spawn(Body);
+      commands.spawn(Body, Owes.of({ target: lender, amount: 0 }));
+    });
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ systems: [Accrue] }));
+        const world = yield* app.read(World);
+        app.tick(1);
+        app.tick(1);
+        const lenders = (yield* app.read(
+          Query.all(Body).pipe(Query.without(Owes))
+        )).entities();
+        expect(
+          lenders.map((lender) => world.sources(lender, Owes).length)
+        ).toEqual([1, 1]);
+        const [first] = lenders;
+        assert(first !== undefined);
+        const [debtor] = world.sources(first, Owes);
+        assert(debtor !== undefined);
+        expect(world.get(debtor, Owes)).toEqual({ target: first, amount: 1 });
+      })
+    );
+  });
+
   it("are kept through actions and systems, and a game with them replays", () => {
     run(
       Effect.gen(function* () {

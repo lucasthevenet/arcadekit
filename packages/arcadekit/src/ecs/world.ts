@@ -38,7 +38,7 @@ import {
   isBoxed,
   isComponentDef,
   makeEntity,
-  retarget,
+  refuseRetarget,
   targetless,
 } from "./component";
 import type {
@@ -46,6 +46,8 @@ import type {
   ComponentInput,
   ComponentValue,
   Entity,
+  PatchOf,
+  RelationDef,
   Schema,
   SingletonSpec,
   ValueOf,
@@ -732,20 +734,17 @@ export class World {
 
   /**
    * Writes some or all fields of a component the entity already has. A
-   * relation's `target` can't be written this way, and throws: add the relation
-   * again.
+   * relation's `target` is not one of them: add the relation again.
    */
   set<S extends Schema>(
     entity: Entity,
     def: ComponentDef<S>,
-    value: Partial<ValueOf<S>>
+    value: PatchOf<S>
   ): boolean {
     if (!this.has(entity, def)) {
       return false;
     }
-    if (def.relation !== undefined && "target" in value) {
-      throw new Error(retarget(def.name));
-    }
+    refuseRetarget(def, value);
     if (this._frozen) {
       throw new Error(frozenWrite("World.set()"));
     }
@@ -782,7 +781,7 @@ export class World {
    * index: a parent's children, or whatever is aiming at something. Finding
    * them doesn't examine any other entity.
    */
-  sources(target: Entity, def: ComponentDef): Entity[] {
+  sources(target: Entity, def: RelationDef): Entity[] {
     const relation = this.relations[def.id];
     if (relation === undefined || !this.isAlive(target)) {
       return [];
