@@ -19,13 +19,13 @@
  * `System.Misordered`.
  */
 import { Effect } from "effect";
-import type { Scope } from "effect";
+import type { Layer, Scope } from "effect";
 import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
 import type { Actions } from "./Action";
-import type { Devices } from "./Input";
+import type { Devices, Gamepads, Keyboard, Pointer } from "./Input";
 import type { Access, Adds, Writes } from "./Query";
 import { Sim } from "./Services";
 import type { Commands, Events, Frame, Random, Time, World } from "./Services";
@@ -196,12 +196,23 @@ type Refused<R, Ban> =
 
 /**
  * What the tick may require: the built-in services of the simulation, and
- * what yielding a query, a singleton, a state or an event puts there. A
- * resource requires nothing. A service of the game's own would keep what no
+ * what yielding a query, a singleton, a state or an event puts there, and
+ * the devices' state that `Input.plugin` keeps in the world. A resource
+ * requires nothing. A service of the game's own would keep what no
  * save, rewind or refused action sees.
  */
 type TickBan = Only<
-  World | Time | Commands | Events | Actions | Random | Access | Sim
+  | World
+  | Time
+  | Commands
+  | Events
+  | Actions
+  | Random
+  | Access
+  | Sim
+  | Keyboard
+  | Pointer
+  | Gamepads
 >;
 type FrameBan =
   | Sim
@@ -220,6 +231,7 @@ type InputBan =
   | Player
   | Port
   | Scope.Scope;
+type LayerBan = Sim | Commands | Writes<string> | Adds<string>;
 
 const TICK_MSG =
   "A tick reads and changes the simulation, and requires only its built-in services, queries, singletons, states, events and resources. Keep the game's state in the world (a cache that is rebuilt in a transient field of a singleton), make configuration a Resource, draw and play with System.frame, and read the devices with System.input." as const;
@@ -227,6 +239,8 @@ const FRAME_MSG =
   "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit or state set. Read Input.Devices from System.input. It has no scope to load into: hold a bundle with Assets.during." as const;
 const INPUT_MSG =
   "An input system reads the devices and enqueues actions. It cannot change the game, and it cannot read Frame, play sound or publish a view. It has no scope to load into: hold a bundle with Assets.during." as const;
+const LAYER_MSG =
+  "A plugin's layer is built again when a save is loaded, so it cannot change the game: no commands, world.set or query writes. Spawn what a game starts with in the plugin's setup, which a load does not run." as const;
 
 type Body<Eff, Ban, Msg extends string, A = void> = [
   Refused<GenServices<Eff>, Ban>,
@@ -296,6 +310,18 @@ type EffectBody<Eff, Ban, Msg extends string> = [
 export type TickEffect<Eff extends Effect.Effect<unknown, unknown, unknown>> =
   EffectBody<Eff, TickBan, typeof TICK_MSG>;
 
+/**
+ * A plugin's `layer`, which reads the game and cannot change it.
+ *
+ * @internal
+ */
+export type LayerGated<L extends Layer.Layer<never, unknown, unknown>> =
+  L extends Layer.Layer<never, unknown, infer R>
+    ? [Refused<R, LayerBan>] extends [never]
+      ? L
+      : { readonly [K in typeof LAYER_MSG]: Refused<R, LayerBan> }
+    : never;
+
 /** What `Sim` stands for. A system provides it, and nothing reads it. */
 const simulation = { "~arcadekit/Sim": true } as const;
 
@@ -329,8 +355,10 @@ const define = <
  * Defines a system of the tick, in the `"update"` stage.
  *
  * The body can require what a tick provides: `World`, `Time`, `Commands`,
- * `Events`, `Actions` and `Random`, and the queries, singletons, states,
- * events and resources it yields. Anything else does not compile. `Frame`,
+ * `Events`, `Actions` and `Random`, the queries, singletons, states, events
+ * and resources it yields, and `Input.Keyboard`, `Input.Pointer` and
+ * `Input.Gamepads`, which `Input.plugin` provides. Anything else does not
+ * compile. `Frame`,
  * `Sound`, `View`, `Assets` and `Input.Devices` are real time, and belong to
  * `System.frame` or `System.input`. A service of the game's own would hold
  * what no save, rewind or refused action sees. Keep the game's state in the

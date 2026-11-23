@@ -379,11 +379,13 @@ export const make = <
      * Services for the whole app, which its frame and input systems require.
      * The code of the tick requires only the built-in services and
      * resources, since what a service keeps is no part of the world. While
-     * the layer builds, it can use the built-in services and whatever the
-     * plugins in `plugins` provide. What it acquires is released when the
+     * the layer builds, it can read the built-in services and use whatever
+     * the plugins in `plugins` provide. It is built again when a save is
+     * loaded, so commands, `World.writes` and a query that writes don't
+     * compile here: spawn in `setup`. What it acquires is released when the
      * app is closed.
      */
-    readonly layer?: L;
+    readonly layer?: System.LayerGated<L>;
     /**
      * Runs once when a game starts fresh, after every plugin's layer is
      * built, to spawn the initial entities. It must not wait or leave a fiber

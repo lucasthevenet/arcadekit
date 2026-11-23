@@ -52,11 +52,8 @@ type Command =
  * - `spawn` reserves the id at once. `isAlive` and `entityCount` count the
  *   entity before `apply`, and it has no component until then.
  * - A spawn left unapplied makes `World.snapshot` and `World.restore` throw.
- * - Call `apply` outside any query's loop and transaction, in a world that
- *   isn't frozen. Inside a loop or a transaction, or in a frozen world, a
- *   queued despawn, add or remove throws, and the queue is empty afterwards,
- *   so that command and the ones after it are lost. A queued spawn is made
- *   there with no error, and a rollback doesn't undo it.
+ * - `apply` throws while a query is iterating, inside a transaction, and in a
+ *   frozen world, and keeps the queue whole for a later `apply`.
  *
  * @typeParam Id the type of the ids `spawn` returns, `Entity` by default, and
  *   `Spawned` in an app's buffer
@@ -152,15 +149,29 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
   /**
    * Makes the queued commands in order, empties the queue, and returns how
    * many commands it ran. A command whose entity is gone by then does nothing,
-   * and still counts.
+   * and still counts. It throws, and keeps every command queued, while a query
+   * is iterating, inside a transaction, and in a frozen world.
    */
   apply(): number {
+    const { world } = this;
+    if (world._frozen) {
+      throw new Error(frozenWrite("CommandBuffer.apply()"));
+    }
+    if (world._recording) {
+      throw new Error(
+        "CommandBuffer.apply() was called inside a transaction, where a rollback could not undo what it makes. Commit or roll back first."
+      );
+    }
+    if (world._iterating > 0) {
+      throw new Error(
+        "CommandBuffer.apply() was called while a query is iterating. Apply it after the loop."
+      );
+    }
     if (this.ops.length === 0) {
       return 0;
     }
     const { ops } = this;
     this.ops = [];
-    const { world } = this;
     for (let i = 0; i < ops.length; i++) {
       const cmd = ops[i]!;
       switch (cmd.op) {

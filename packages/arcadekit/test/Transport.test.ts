@@ -36,7 +36,8 @@ interface Seat extends Peer {
 const seated = (
   names: readonly string[],
   layerOf: (name: string) => ReturnType<typeof Transport.layer>,
-  ahead: number | undefined
+  ahead: number | undefined,
+  options?: Transport.ConnectOptions
 ) =>
   Effect.gen(function* () {
     const seats: Seat[] = [];
@@ -53,7 +54,7 @@ const seated = (
       // Provided to the one line that connects, and held in the scope of
       // the program, which closes it.
       const connected = yield* Effect.acquireRelease(
-        Transport.connect(session).pipe(Effect.provide(layerOf(name))),
+        Transport.connect(session, options).pipe(Effect.provide(layerOf(name))),
         (made) => made.close
       );
       const services = yield* Effect.context();
@@ -375,6 +376,59 @@ describe("a session joined to a transport", () => {
         )
       );
     }
+  });
+
+  it("fails the tick with the peers that stayed away longer than awayFor", () => {
+    const hub = Transport.makeHub();
+    Effect.runSync(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const [ada, grace] = (yield* seated(
+            ["ada", "grace"],
+            (name) => hub.layer(name),
+            undefined,
+            { awayFor: 1000 }
+          )) as [Seat, Seat];
+          const frame = (): void => {
+            hub.step();
+            ada.connected.tick();
+            grace.connected.tick();
+          };
+          for (let i = 0; i < 10; i++) {
+            frame();
+          }
+          // Back before a second has passed: the wait starts over.
+          hub.disconnect("grace");
+          for (let i = 0; i < 20; i++) {
+            frame();
+          }
+          hub.reconnect("grace");
+          for (let i = 0; i < 40; i++) {
+            frame();
+          }
+          expect(ada.connected.away).toEqual([]);
+          hub.disconnect("grace");
+          // A second is 30 ticks of 1 / 30: the tick that hears she left,
+          // and 29 more.
+          for (let i = 0; i < 30; i++) {
+            hub.step();
+            ada.connected.tick();
+          }
+          expect(ada.connected.away).toEqual(["grace"]);
+          const ticked = Result.try(() => ada.connected.tick());
+          const thrown = Result.isFailure(ticked)
+            ? ticked.failure
+            : "it did not throw";
+          expect(thrown).toEqual(
+            new Transport.Left({ peers: ["grace"], awayFor: 1000 })
+          );
+          expect(thrown).toBeInstanceOf(Transport.Left);
+          expect(String(thrown)).toContain(
+            "grace left and did not come back within 1000 ms, so the game cannot go on."
+          );
+        })
+      )
+    );
   });
 
   it("sends a stopped session's last word, so that every peer stops", () => {

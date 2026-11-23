@@ -98,6 +98,42 @@ describe.runIf(built)("a module's page", () => {
     );
   });
 
+  const signatureOf = (name: string, exported: string, file = `${name}.ts`) =>
+    readModule(
+      REPO_ROOT,
+      "packages/arcadekit",
+      "arcadekit",
+      name,
+      `packages/arcadekit/src/${file}`
+    )
+      .exports.find((item) => item.name === exported)
+      ?.parts.map((part) => part.signature)
+      .join("\n") ?? "";
+
+  it("leaves private and @internal members out of a class, with their comments", () => {
+    const bus = signatureOf("Event", "EventBus");
+    expect(bus).toContain("emit<P>(def: EventDef<P>, payload: P): void;");
+    expect(bus).not.toMatch(/private|#private|@internal|_emit|reader|settled/u);
+    const world = signatureOf("ecs", "World", "ecs/index.ts");
+    expect(world).toContain("class World");
+    expect(world).not.toMatch(/private|@internal|_recTable|_reserve/u);
+  });
+
+  it("leaves @internal members out of an interface", () => {
+    const player = signatureOf("Sound", "PlayerShape");
+    expect(player).toContain("readonly play:");
+    expect(player).not.toMatch(/_flush|@internal/u);
+  });
+
+  it("shows the members of a class that a base factory makes", () => {
+    const actions = signatureOf("Action", "Actions");
+    expect(actions).not.toContain("Actions_base");
+    expect(actions).toContain("readonly enqueue:");
+    expect(actions).toContain(
+      "readonly handles: (action: AnyActionDef) => boolean;"
+    );
+  });
+
   it("starts with the module's comment and how to import it", () => {
     const page = renderModule(readSound(), "https://github.com/o/r", "main");
     expect(page.startsWith("Sound plays named cues")).toBe(true);

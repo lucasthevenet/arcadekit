@@ -595,6 +595,9 @@ describe("a save that cannot be loaded", () => {
     const newer = Uint8Array.from(bytes);
     new DataView(newer.buffer).setUint32(4, 9, true);
     expect(problem(newer)).toBe("newer format");
+    const older = Uint8Array.from(bytes);
+    new DataView(older.buffer).setUint32(4, 2, true);
+    expect(problem(older)).toBe("older format");
     // Cut inside the text that comes before the world.
     expect(problem(bytes.subarray(0, 20))).toBe("truncated");
     // The text between the header and the world: no longer JSON, then JSON

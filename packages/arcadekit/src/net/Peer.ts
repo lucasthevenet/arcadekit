@@ -160,7 +160,9 @@ export interface Peer<E = never> extends Paced {
   /**
    * The number of final ticks: every peer's messages for them have arrived, and
    * the game has run with them. Later ticks are predictions, and may be
-   * resimulated differently.
+   * resimulated differently. The frame stage draws and plays every tick as
+   * it runs, final or not: a system of it that must show only what is final
+   * checks this.
    */
   readonly confirmed: number;
   /** How many times the session has rewound. */

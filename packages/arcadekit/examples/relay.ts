@@ -6,6 +6,10 @@
  * hosting the relay where a process stays in memory. Where one does not,
  * a Durable Object or a function behind a gateway, the host keeps who is
  * connected and calls `Relay.join` and `Relay.forward` itself.
+ *
+ * It proves nothing of who connects, `Relay.anyone`, which suits a network
+ * of machines that trust each other. A relay open to strangers proves each
+ * peer's name from the request and passes that name instead.
  */
 import { Cause, Exit } from "effect";
 import { WebSocketServer } from "ws";
@@ -17,7 +21,7 @@ const relay = Relay.make();
 const server = new WebSocketServer({ port });
 
 server.on("connection", (socket, request) => {
-  const connection = relay.connect(request.url ?? "", (text) =>
+  const connection = relay.connect(request.url ?? "", Relay.anyone, (text) =>
     socket.send(text)
   );
   if (Exit.isFailure(connection)) {

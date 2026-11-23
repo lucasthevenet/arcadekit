@@ -588,6 +588,9 @@ describe("a lockstep session", () => {
         // @ts-expect-error a session ticks 1 / delta times a second
         { hz: 30 }
       );
+      void Driver.run(Effect.succeed(ada.session), {
+        ready: (session) => Effect.log(session.delta),
+      });
       // Its tick simulates its delta, and is given none.
       const told = [
         // @ts-expect-error a session's tick takes no delta
