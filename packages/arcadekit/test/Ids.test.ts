@@ -11,8 +11,9 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/ecs/index";
-import type { Entity, QuerySpec, Terms } from "../src/ecs/index";
+import type { Entity, Terms } from "../src/ecs/index";
 import { EntityId, Migrate } from "../src/index";
+import { Query } from "../src/Query";
 
 const Body = Component.define("id/Body", { x: Field.f32 });
 const Owned = Component.define("id/Owned", { by: Field.entity, n: Field.u16 });
@@ -33,8 +34,22 @@ const all = [Body, Owned, ChildOf, Mark, Count.component];
 
 const query = <const D extends Terms>(
   terms: D,
-  more: Partial<QuerySpec<D>> = {}
-): QuerySpec<D> => ({ terms, withDefs: [], withoutDefs: [], ...more });
+  more: {
+    readonly withDefs?: Terms;
+    readonly withoutDefs?: Terms;
+    readonly changedDefs?: Terms;
+    readonly addedDefs?: Terms;
+    readonly readDefs?: Terms;
+  } = {}
+): Query<D> =>
+  new Query(
+    terms,
+    more.withDefs ?? [],
+    more.withoutDefs ?? [],
+    more.changedDefs,
+    more.addedDefs,
+    terms.filter((def) => more.readDefs?.includes(def) !== true)
+  );
 
 /** What an id's generation is multiplied by: 2^22, the number of slots. */
 const SLOTS = 2 ** 22;

@@ -305,11 +305,10 @@ describe("arcadekit/ecs", () => {
     y: Ecs.Field.f32,
   });
   const Tired = Ecs.Component.tag("en/Tired", { storage: "sparse" });
-  const moving: Ecs.QuerySpec<readonly [typeof Position]> = {
-    terms: [Position],
-    withDefs: [],
-    withoutDefs: [Tired],
-  };
+  const moving = Main.Query.all(Position).pipe(
+    Main.Query.without(Tired),
+    Main.Query.writes(Position)
+  );
 
   it("is a world to spawn into, query, change through commands, hash and save, with no Effect", () => {
     const world = new Ecs.World({ seed: 7 });

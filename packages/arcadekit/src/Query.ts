@@ -22,7 +22,7 @@ import { dual } from "effect/Function";
 
 import type { RemovedReader } from "./ecs/changes";
 import type { ComponentDef, ReadOnlyTerm, WatchedTerm } from "./ecs/component";
-import type { QuerySpec, QueryView, Terms } from "./ecs/query";
+import type { Described, QuerySpec, QueryView, Terms } from "./ecs/query";
 import { World } from "./Services";
 import { whole } from "./services/handed";
 
@@ -43,6 +43,7 @@ export class Query<D extends Terms, W extends Watching = Watching>
   extends Effectable.Class<QueryView<D>, never, Needs<D, W>>
   implements QuerySpec<D>
 {
+  declare readonly [Described]: true;
   private effect: Effect.Effect<QueryView<D>, never, World> | undefined;
 
   constructor(

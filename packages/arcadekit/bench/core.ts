@@ -21,7 +21,8 @@
 import { pathToFileURL } from "node:url";
 
 import { Component, Field, World } from "../src/ecs/index";
-import type { Entity, QuerySpec, Terms } from "../src/ecs/index";
+import type { Entity, Terms } from "../src/ecs/index";
+import { Query } from "../src/Query";
 
 // Not exported: a loop that reads an exported constant reads it through the
 // module each time, which measured a tenth slower over these loops.
@@ -48,11 +49,24 @@ const Heat = Component.define(
 const Aims = Component.relation("bench/Aims", { onTargetDespawn: "remove" });
 const Child = Component.relation("bench/Child", { onTargetDespawn: "despawn" });
 
-/** A query's description, written out as the storage core takes one. */
 const query = <const D extends Terms>(
   terms: D,
-  more: Partial<Omit<QuerySpec<D>, "terms">> = {}
-): QuerySpec<D> => ({ terms, withDefs: [], withoutDefs: [], ...more });
+  more: {
+    readonly withDefs?: Terms;
+    readonly withoutDefs?: Terms;
+    readonly changedDefs?: Terms;
+    readonly addedDefs?: Terms;
+    readonly readDefs?: Terms;
+  } = {}
+): Query<D> =>
+  new Query(
+    terms,
+    more.withDefs ?? [],
+    more.withoutDefs ?? [],
+    more.changedDefs,
+    more.addedDefs,
+    terms.filter((def) => more.readDefs?.includes(def) !== true)
+  );
 
 const Moving = query([Position, Velocity]);
 /** Visits only the entities whose position was written since its last visit. */

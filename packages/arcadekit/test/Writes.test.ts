@@ -304,8 +304,7 @@ describe("a query, which writes only what it names", () => {
     expect(
       world.view(plain.pipe(Query.writes(Velocity, Position)), "reader")
     ).not.toBe(world.view(built[0]!, "reader"));
-    // Said in two steps, it writes both; and a description that is not a
-    // Query, with the same components in another order, is the same query.
+    // Said in two steps, it writes both.
     const twice = Query.all(Position, Velocity).pipe(
       Query.changed(Position),
       Query.writes(Velocity),
@@ -315,24 +314,6 @@ describe("a query, which writes only what it names", () => {
     expect(twice.readDefs).toEqual([]);
     const reading = Query.all(Position, Velocity).pipe(Query.changed(Position));
     expect(reading.readDefs).toEqual([Position, Velocity]);
-    const byHand = {
-      terms: [Position, Velocity] as const,
-      withDefs: [],
-      withoutDefs: [],
-      changedDefs: [Position],
-      readDefs: [Velocity, Position],
-    };
-    expect(world.view(byHand, "reader")).toBe(world.view(reading, "reader"));
-    expect(() =>
-      world.view({
-        terms: [Position] as const,
-        withDefs: [],
-        withoutDefs: [],
-        readDefs: [Velocity],
-      })
-    ).toThrow(
-      /A query says it only reads "rd\/Velocity", which is not one of its terms: rd\/Position/
-    );
     world.view(built[0]!, "reader").entities();
     expect(Object.keys(world.saveChanges()[0]!.readers)).toContain(
       "reader\nall(rd/Position,rd/Velocity) with(rd/Heat) without(rd/Boss) changed(rd/Position) added(rd/Heat) reads(rd/Velocity)"

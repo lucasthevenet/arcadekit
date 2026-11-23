@@ -1394,13 +1394,6 @@ export class World {
         return view as QueryView<D>;
       }
     }
-    for (const def of spec.readDefs ?? []) {
-      if (!spec.terms.includes(def)) {
-        throw new Error(
-          `A query says it only reads "${def.name}", which is not one of its terms: ${spec.terms.map((term) => term.name).join(", ") || "it has none"}.`
-        );
-      }
-    }
     for (const defs of [
       spec.terms,
       spec.withDefs,

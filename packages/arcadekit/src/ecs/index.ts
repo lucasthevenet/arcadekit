@@ -2,10 +2,11 @@
  * The storage core on its own: components, entities and the world that holds
  * them, as plain synchronous TypeScript.
  *
+ *   import { Query } from "arcadekit"
  *   import { Component, Field, World } from "arcadekit/ecs"
  *
  *   const Position = Component.define("physics/Position", { x: Field.f32, y: Field.f32 })
- *   const Positioned = { terms: [Position] as const, withDefs: [], withoutDefs: [] }
+ *   const Positioned = Query.all(Position).pipe(Query.writes(Position))
  *
  *   const world = new World({ seed: 7 })
  *   const rock = world.spawn(Position.of({ x: 0, y: 0 }))

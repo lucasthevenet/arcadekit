@@ -34,7 +34,7 @@ import {
   World,
   readSnapshot,
 } from "../src/index";
-import type { Entity, Rng } from "../src/index";
+import type { ComponentDef, Entity, Rng } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
@@ -175,15 +175,12 @@ describe("a frozen world", () => {
 
   it("counts nothing as written, so a change query can read what it watches raw", () => {
     const { ball, world } = populated();
-    // Thawed, a query that watches and writes Ball has no raw loop: put
-    // together by hand, it throws, as it would take its own visit for a change.
+    // Thawed, a query that watches and writes Ball has no raw loop: watching
+    // a Ball known only as a ComponentDef, it throws, as it would take its own
+    // visit for a change.
+    const widened: ComponentDef = Ball;
     const moved = world.view(
-      {
-        terms: [Ball] as const,
-        withDefs: [],
-        withoutDefs: [],
-        changedDefs: [Ball],
-      },
+      Query.all(Ball).pipe(Query.changed(widened), Query.writes(Ball)),
       "drawer"
     );
     const other = world.view(Moved, "other");
