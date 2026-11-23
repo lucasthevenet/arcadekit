@@ -111,7 +111,7 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 
 | Store | Holds |
 | --- | --- |
-| `Action.INTAKE` | `{ queued, heard }`: the pending actions, each as `{ name, payload, from? }` with its payload in JSON form, and whether the input stage had run since the last tick |
+| `Action.INTAKE` | `{ queued }`: the pending actions, each as `{ name, payload, from? }` with its payload in JSON form |
 | `Event.STORE` | One `{ name, waiting, read }` per event with events pending: the events in JSON form, and how many of them each system had read |
 | `Save.VISITS` | What change queries haven't visited, one entry per component and kind of change |
 

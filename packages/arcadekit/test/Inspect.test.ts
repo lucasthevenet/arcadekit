@@ -149,7 +149,7 @@ describe("app.inspect", () => {
   it("copies every singleton the world holds, by name", () => {
     const app = run(game);
     app.enqueue(Strike, { by: 7 });
-    app.tick(1 / 60, { input: false });
+    app.tick(1 / 60);
     expect(app.inspect().singletons["in/Score"]).toEqual({ points: 7 });
   });
 
@@ -164,7 +164,6 @@ describe("app.inspect", () => {
     expect(stores).toEqual({
       [Action.INTAKE]: {
         queued: [{ name: "in/Strike", payload: { by: 6 }, from: null }],
-        heard: false,
       },
       [Event.STORE]: { "in/Hit": [{ by: 5 }] },
     });
@@ -173,8 +172,8 @@ describe("app.inspect", () => {
       "in/Hit"
     ]![0]!.by = 100;
     expect(world.hash()).toBe(hash);
-    app.tick(1 / 60, { input: false });
-    app.tick(1 / 60, { input: false });
+    app.tick(1 / 60);
+    app.tick(1 / 60);
     expect(app.inspect().stores).toEqual({});
   });
 
@@ -220,6 +219,7 @@ describe("app.inspect", () => {
     // No system has had a turn yet.
     expect(before.every(({ ms, ran }) => !ran && ms === 0)).toBe(true);
 
+    app.input();
     app.tick(1 / 60);
     app.frame(0.5);
     const after = Object.fromEntries(

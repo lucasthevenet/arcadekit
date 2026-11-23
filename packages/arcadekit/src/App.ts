@@ -213,13 +213,11 @@ export interface Any {
    * `Effect.forkIn` or into a scope of its own, which would change the game at
    * a moment no replay repeats.
    *
-   * A tick reads the devices first: if the input stage hasn't run since the
-   * previous tick, it runs now, as a driver would have run it, so a game that
-   * steps its app by hand doesn't need to call `app.input()`. `{ input: false
-   * }` runs a tick that reads nothing, for re-running a game from its log,
-   * where every action is already recorded: `Journal.replay` ticks this way.
+   * A tick reads no device. The input stage, `input`, is what reads them, and
+   * a driver runs it before each tick: code that steps its app by hand calls
+   * `app.input()` before a tick that is to hear the devices.
    */
-  readonly tick: (delta: number, options?: TickOptions) => void;
+  readonly tick: (delta: number) => void;
   /**
    * Whether the game is at rest: its last tick changed nothing but its
    * time, and a tick now would find no pending work. It is false while an
@@ -370,7 +368,7 @@ export interface Inspection {
   /**
    * What the game holds beside its entities and singletons, as plain data,
    * by the name of the store that holds it: under `Action.INTAKE`, the actions
-   * queued for the next tick, as `{ queued, heard }`, and under
+   * queued for the next tick, as `{ queued }`, and under
    * `Event.STORE`, the events waiting to be read, by event name. A store that
    * holds nothing isn't listed.
    */
@@ -397,20 +395,6 @@ export interface Inspection {
 }
 
 /**
- * Options for running a tick.
- *
- * @category Options
- */
-export interface TickOptions {
-  /**
-   * Whether the tick first runs the input stage, if it hasn't run since the
-   * previous tick. Defaults to true. False for a tick that must read no device
-   * and receive no UI input: a replay's, or a simulation re-run from a log.
-   */
-  readonly input?: boolean;
-}
-
-/**
  * A running game: its world, its time, the actions queued for the next tick,
  * and what runs a tick and a frame. Made with `App.make`, and run in a page
  * with `Driver.run`.
@@ -424,10 +408,7 @@ export interface App<E = never, HU = never> extends Any {
    * Runs one tick and returns the outcome, with system failures as a typed
    * `Exit`.
    */
-  readonly tickExit: (
-    delta: number,
-    options?: TickOptions
-  ) => Exit.Exit<void, E>;
+  readonly tickExit: (delta: number) => Exit.Exit<void, E>;
   /** Like `frame`, but returns the outcome, with a system's failure typed. */
   readonly frameExit: (alpha: number, delta?: number) => Exit.Exit<void, E>;
   /** Like `input`, but returns the outcome, with a system's failure typed. */

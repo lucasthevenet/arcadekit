@@ -357,7 +357,7 @@ describe("a game that is put back to a moment", () => {
   });
 });
 
-describe("the input stage across a rewind and a save", () => {
+describe("what the input stage issues, across a rewind and a save", () => {
   // The stage issues one shot each time it runs, and the tick applies it.
   const Fire = Action.define("rw/Fire", Schema.Struct({}));
   const pressing = () => {
@@ -374,26 +374,24 @@ describe("the input stage across a rewind and a save", () => {
     };
   };
 
-  it("runs again for a tick it ran for after the moment", () => {
+  it("is taken back by a rewind to a moment before the stage ran", () => {
     const { fired, game: Pressed } = pressing();
     withApp(App.make(Pressed), (app) => {
       app.tick(DELTA);
       fired.length = 0;
       const moment = captured(app);
-      // What the stage issues now is taken back with the rest.
       app.input();
       Timeline.rewind(app, moment);
       app.tick(DELTA);
-      expect(fired).toEqual([1]);
+      expect(fired).toEqual([]);
     });
   });
 
-  it("does not run again for a tick it ran for before the moment", () => {
+  it("is kept by a moment taken after the stage ran", () => {
     const { fired, game: Pressed } = pressing();
     withApp(App.make(Pressed), (app) => {
       app.tick(DELTA);
       fired.length = 0;
-      // The moment holds what the stage issued, and that it ran.
       app.input();
       const moment = captured(app);
       Timeline.rewind(app, moment);
@@ -402,7 +400,7 @@ describe("the input stage across a rewind and a save", () => {
     });
   });
 
-  it("does not run again in a game loaded from a save taken after it ran", () => {
+  it("is kept by a save taken after the stage ran", () => {
     const { fired, game: Pressed } = pressing();
     const saved = withApp(App.make(Pressed), (app) => {
       app.tick(DELTA);
@@ -420,20 +418,17 @@ describe("the input stage across a rewind and a save", () => {
     });
   });
 
-  it("leaves the hash as it was: that the devices were heard is no part of the game", () => {
+  it("is all the stage leaves: a stage that issues nothing changes neither the hash nor a save", () => {
     const Idle = System.input("rw/Idle", function* () {});
     withApp(App.make(App.define({ systems: [Idle] })), (app, world) => {
       const before = world.hash();
       app.input();
       expect(world.hash()).toBe(before);
-      // A save holds that it ran, all the same.
       const save = app.save();
       if (Exit.isFailure(save)) {
         throw new Error("the game could not be saved");
       }
-      expect(readSnapshot(save.value.world).stores).toEqual([
-        { name: Action.INTAKE, data: { queued: [], heard: true } },
-      ]);
+      expect(readSnapshot(save.value.world).stores).toEqual([]);
     });
   });
 });

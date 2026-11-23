@@ -45,7 +45,7 @@ Messages from other peers go to `session.receive(message)`. Usually a [transport
 - Every peer sends one message per tick, usually empty: it is also how a peer says it has nothing more for that tick.
 - Messages can arrive in any order and more than once. A duplicate, a message for a tick that already ran, or one from a name that isn't a peer of the game is dropped. Every message must eventually arrive.
 - A session's peers are fixed when it is made. `session.waitingFor` names the peers a tick is waiting for, and a peer that stops is waited for.
-- A tick reads the devices first, as an app's own tick does. A key pressed while the peer waits for another goes into its next message.
+- A session's tick runs the input stage first, as a driver does before an app's tick. A key pressed while the peer waits for another goes into its next message.
 
 ## Running ahead of the network
 
