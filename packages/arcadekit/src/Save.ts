@@ -77,6 +77,8 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  *
  * - one of a snapshot's problems, such as `"corrupt"` or `"unknown component"`;
  * - `"not a save"`: the bytes aren't a saved game at all;
+ * - `"older format"`: an earlier version of arcadekit wrote the save, in a
+ *   format this version doesn't read;
  * - `"newer version"`: a later version of the game wrote the save;
  * - `"no migration"`: an earlier version wrote it, and the game has no
  *   migration from that version;
@@ -91,6 +93,7 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
   readonly problem:
     | SnapshotProblem
     | "not a save"
+    | "older format"
     | "newer version"
     | "no migration"
     | "migration failed";
@@ -248,8 +251,9 @@ const refuse = (
  * Decodes a save from bytes. It checks the save's own structure. The world
  * inside is checked when the save is loaded.
  *
- * Fails with `LoadRefused`: `"not a save"`, `"newer format"` for a save in a
- * format this version of arcadekit doesn't read, `"truncated"` or `"corrupt"`.
+ * Fails with `LoadRefused`: `"not a save"`, `"older format"` or
+ * `"newer format"` for a save written by an earlier or a later version of
+ * arcadekit, `"truncated"` or `"corrupt"`.
  *
  * @category Codecs
  */
@@ -261,7 +265,7 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
   const format = view.getUint32(4, true);
   if (format !== FORMAT) {
     return refuse(
-      "newer format",
+      format < FORMAT ? "older format" : "newer format",
       `The save is in format ${format}, and this version reads format ${FORMAT}.`
     );
   }
@@ -418,8 +422,11 @@ export const singleton = (
  */
 export const VISITS = "arcadekit/changes";
 
-/** What a snapshot holds of the visits: `world.saveChanges()`. */
-const VisitsData = Schema.Array(
+/**
+ * What a snapshot holds of the visits: `world.saveChanges()`.
+ * @internal
+ */
+export const VisitsData = Schema.Array(
   Schema.Struct({
     component: Schema.String,
     kind: Schema.Literals(["changed", "added", "removed"]),

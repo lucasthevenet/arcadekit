@@ -40,7 +40,7 @@ const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
 
 Whatever the version, a load compares each component in the save with the game's: its storage, and its fields' names, order and kinds. A save that differs is refused with `"component changed"`, unless a migration makes it match. A change that keeps all of those is not seen. If a field now holds metres where it held pixels, or a `json` field holds objects of another shape, a save of the same version loads with no error and the game reads the old values as new ones. Increment the version with each such change, and convert the values in its migration with `Migrate.mapField`.
 
-`Migrate.renameComponent` renames the component in the save's tables, sparse sets and singletons, but not its entries under `Save.VISITS`, what change queries had yet to visit. After the load, every change query on the renamed component starts over. Its first visit covers every entity with the component, so an `added` query sees all of them as added.
+`Migrate.renameComponent` renames the component in the save's tables, sparse sets and singletons, and in its entries under `Save.VISITS`, what change queries had yet to visit. After the load, a change query on the renamed component goes on from where the same query on the old name was.
 
 ## Read a save's contents
 

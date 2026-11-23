@@ -109,8 +109,9 @@ export interface Connected extends Paced {
   readonly frame: (alpha: number, delta?: number) => void;
   /**
    * The peers a relay has said left the room and that haven't joined it
-   * again, in order of name. The session waits for them, so tell the player.
-   * A transport that reports no peer leaving keeps it empty.
+   * again, in order of name. The session waits for them, for as long as
+   * `awayFor` says, so tell the player. A transport that reports no peer
+   * leaving keeps it empty.
    */
   readonly away: readonly string[];
   /**
@@ -123,6 +124,39 @@ export interface Connected extends Paced {
 }
 
 /**
+ * Options for a session connected to a transport.
+ *
+ * @category Options
+ */
+export interface ConnectOptions {
+  /**
+   * How long a peer may be away, in milliseconds of the connection's ticks,
+   * before a tick fails with `Transport.Left`. Defaults to 60,000, longer
+   * than a WebSocket's `reconnectFor`, so a peer that is connecting again is
+   * waited for. With 0 a tick fails as soon as a peer leaves.
+   */
+  readonly awayFor?: number;
+}
+
+/**
+ * Peers left the room and did not join it again within `awayFor`. The tick
+ * that finds it throws this error and its driver stops, instead of the game
+ * waiting for ever for peers that are gone.
+ *
+ * @category Errors
+ */
+export class Left extends Data.TaggedError("TransportLeft")<{
+  /** The peers that stayed away too long, in order of name. */
+  readonly peers: readonly string[];
+  /** How long, in milliseconds, a peer was allowed to be away. */
+  readonly awayFor: number;
+}> {
+  override get message(): string {
+    return `${this.peers.join(", ")} left and did not come back within ${this.awayFor} ms, so the game cannot go on.`;
+  }
+}
+
+/**
  * Listens on the transport, and connects a session to it. Each tick of the
  * result passes the session every message that has arrived, runs the
  * session's tick, and sends what the session produced, whether the tick ran,
@@ -132,7 +166,9 @@ export interface Connected extends Paced {
  * A relay says a peer joined the room when it comes back after its socket
  * dropped, and tells that peer of each peer already there. On such a notice,
  * the session sends again what some peer hasn't heard. A peer the relay says
- * left is in `away` until it joins again.
+ * left is in `away` until it joins again. A tick that finds a peer away for
+ * as long as `options.awayFor` throws `Transport.Left`, naming every such
+ * peer, so the driver stops.
  *
  *   yield* Driver.frames(yield* Transport.connect(session))
  *
@@ -147,14 +183,20 @@ export const connect = (
   session: Pick<
     Session<unknown>,
     "close" | "delta" | "frame" | "outgoing" | "receive" | "resend" | "tick"
-  >
+  >,
+  options: ConnectOptions = {}
 ): Effect.Effect<Connected, never, Transport> =>
   Effect.flatMap(Transport, ({ listen: open }) =>
     Effect.suspend(() => {
       const scope = Scope.makeUnsafe();
       return Effect.onError(
         Effect.map(Scope.provide(open, scope), (transport) =>
-          joined(session, transport, Scope.close(scope, Exit.void))
+          joined(
+            session,
+            transport,
+            Scope.close(scope, Exit.void),
+            options.awayFor ?? 60_000
+          )
         ),
         (cause) => Scope.close(scope, Exit.failCause(cause))
       );
@@ -165,9 +207,15 @@ export const connect = (
 const joined = (
   session: Parameters<typeof connect>[0],
   transport: Listener,
-  stop: Effect.Effect<void>
+  stop: Effect.Effect<void>,
+  awayFor: number
 ): Connected => {
-  const away = new Set<string>();
+  // Per peer away, the connection's tick it was said to leave at.
+  const away = new Map<string, number>();
+  const allowed = awayFor / 1000 / session.delta;
+  let ticks = 0;
+  const names = (peers: Iterable<string>): string[] =>
+    Array.from(peers).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return {
     delta: session.delta,
     tick() {
@@ -180,10 +228,19 @@ const joined = (
         } else if ("joined" in arrived) {
           away.delete(arrived.joined);
           again = true;
-        } else {
-          away.add(arrived.left);
+        } else if (!away.has(arrived.left)) {
+          away.set(arrived.left, ticks);
         }
       }
+      const gone = names(
+        Array.from(away)
+          .filter(([, since]) => ticks - since >= allowed)
+          .map(([peer]) => peer)
+      );
+      if (gone.length > 0) {
+        throw new Left({ peers: gone, awayFor });
+      }
+      ticks++;
       if (again) {
         for (const message of session.resend()) {
           transport.send(message);
@@ -199,7 +256,7 @@ const joined = (
     },
     frame: session.frame,
     get away() {
-      return Array.from(away).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      return names(away.keys());
     },
     close: Effect.andThen(stop, session.close),
   };

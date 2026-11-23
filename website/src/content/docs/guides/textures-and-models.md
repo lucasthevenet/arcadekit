@@ -114,10 +114,25 @@ const Rocks = Three.instances("game/Rocks", {
 - A model is shared across the whole bundle. An object made with `scene.clone()` shares the model's geometries and materials. A clone is cheap and leaves nothing to `free`, but changing one copy's material changes them all.
 - `Gltf.mesh(model, name)` returns one of the model's meshes. It finds the mesh by the name of its node, as an editor shows it, or by the mesh's own name when its node has none. Without a name, it returns the first mesh. A mesh with several materials is several meshes under that name, and `Gltf.mesh` returns the first.
 - A mesh has a geometry and a material, which is exactly what `Three.instances` accepts from `look`. When no mesh has the name, `Gltf.mesh` throws an error that lists the meshes the model has.
-- `Gltf.model(url, { prepare })` passes the loader to `prepare` before the model is parsed, for what compressed models need: `loader.setDRACOLoader(...)`, `setKTX2Loader`, or `setMeshoptDecoder`. Those decoders fetch their own files, outside `Assets.Loader`.
+- `Gltf.model(url, { files, prepare })` passes the loader to `prepare` before the model is parsed, for what compressed models need: `loader.setDRACOLoader(...)`, `setKTX2Loader`, or `setMeshoptDecoder`. A DRACO or KTX2 loader fetches files of its own, so make it in `prepare` with the manager `prepare` receives, and list its files in `files`. `Assets.Loader` fetches them, and the decoder is disposed of once the model is parsed. A decoder made without that manager fails the bundle, and a file missing from `files` fails it with that file's URL.
+
 - A model's animations are loaded but not played. `scene.clone()` doesn't copy a skinned model correctly, so clone one with Three.js's `SkeletonUtils.clone`.
 - The page decodes a model's images, as it does for `Three.texture`, so a model with images is for pages. A model without images loads anywhere.
 - A file that isn't a model fails the bundle with an `Assets.AssetFailed` that says what was wrong with it.
+
+A model compressed with DRACO, with the decoder's files in `/draco/`:
+
+```ts
+import * as Gltf from "@arcadekit/three/Gltf";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+
+export const ship = Gltf.model("/ship.glb", {
+  files: ["/draco/draco_decoder.wasm", "/draco/draco_wasm_wrapper.js"],
+  prepare: (loader, manager) => {
+    loader.setDRACOLoader(new DRACOLoader(manager).setDecoderPath("/draco/"));
+  },
+});
+```
 
 ## Build objects from a bundle
 
@@ -130,7 +145,21 @@ Objects name the bundle they come `from` as instances do. `make` receives the bu
 
 Make a font, or any file that Three.js has a loader for, an asset of your own with `Assets.make(url, decode)`. Use `Effect.acquireRelease` for anything that needs disposing of.
 
-A Three.js loader that fetches files itself bypasses `Assets.Loader`. A test's in-memory files don't serve it, and cancelling a load doesn't cancel its requests. An asset you build around another loader, such as the FBX loader, has the same limits.
+A Three.js loader that fetches files itself, such as the FBX loader for its textures, fetches them through `Assets.Loader` when it is made with `Three.manager(files)`. The manager serves the files listed, and refuses any other URL with an error that names it, which the loader passes on. A test's in-memory files then serve the loader, and leaving a level while it loads cancels its requests.
+
+```ts
+import { Three } from "@arcadekit/three";
+import { Assets } from "arcadekit";
+import { Effect } from "effect";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+
+export const fbx = (url: string, textures: ReadonlyArray<string>) =>
+  Assets.make(url, (data) =>
+    Effect.map(Three.manager(textures), (manager) =>
+      new FBXLoader(manager).parse(data.slice().buffer, "")
+    )
+  );
+```
 
 ## Read more
 
