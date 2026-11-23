@@ -648,16 +648,19 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
    */
   readonly checkpointEvery?: number;
   /**
-   * Verifies that the frame and input stages leave the world unchanged. The
-   * app hashes the world before the stage and after each of its systems,
-   * without the actions queued for the next tick, which those stages are
-   * there to issue. If two hashes differ, `frame` or `input` dies with
-   * `Stage.FrameChangedWorld`, which names the system. Most ways to change
-   * the world from those stages already throw where they happen, and the end
-   * of the frame detects a draw from `world.random` either way. This option
-   * catches the remaining way, a write through raw columns, and names the
-   * system responsible for either. It costs one world hash per frame system
-   * per frame, so use it in development and tests.
+   * Checks what the compiler was told to let through. Use it in development
+   * and tests.
+   *
+   * - `eachChunk` copies each column it hands out read-only, the fields of a
+   *   term the query only reads and a relation's `target`, and compares it
+   *   when the loop returns. A loop that wrote one throws, and the column is
+   *   put back. This holds in every stage, the tick and an action's handler
+   *   as much as the frame. It costs a copy and a comparison of each column.
+   * - The app hashes the world before the frame or input stage and after each
+   *   of its systems, without the actions queued for the next tick, which
+   *   those stages are there to issue. If two hashes differ, `frame` or
+   *   `input` dies with `Stage.FrameChangedWorld`, which names the system. It
+   *   costs one world hash per system per frame.
    */
   readonly verifyFrames?: boolean;
 }

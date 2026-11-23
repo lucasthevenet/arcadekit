@@ -75,7 +75,7 @@ The frame stage draws and plays sound while the world is read-only. A drawn game
 
 The type checker and the default checks at run time miss these ways to break determinism:
 
-- A write through a raw column during the frame or input stage is detected only by an app created with `verifyFrames`.
+- A write forced through a raw column that `eachChunk` hands out read-only, in any stage, is refused only by an app created with `verifyFrames`.
 - State a tick reads from outside the world, in a service, a plugin or a module, isn't put back by a rewind, so a rollback session runs the tick again differently. Only `Session.syncTest` detects it, by running each tick twice from the same moment. See [testing](../guides/testing.md#check-that-a-rewind-runs-the-same).
 - The hash doesn't cover [where each reader is](#the-worlds-hash-covers-what-a-simulation-can-observe), so two games with the same hash can still diverge.
 

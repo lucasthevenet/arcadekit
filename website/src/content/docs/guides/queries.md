@@ -108,7 +108,7 @@ A query only reads its terms. `Query.writes(Position)` names the ones it writes,
 - In an action handler, the app copies the columns of what the query writes for rollback, and no others.
 - The compiler tells two components with the same fields apart by their names, which are part of their types. Above, `position.x` is writable and `velocity.x` is not, although both are `{ x, y }`.
 
-A write forced past the compiler into the raw column of a term the query only reads is a bug that nothing catches. No change query sees the write, and no refusal undoes it.
+A write forced past the compiler into the raw column of a term the query only reads, or into a relation's `target`, is seen by no change query, and no refusal undoes it. An app made with `App.make(game, { verifyFrames: true })` refuses it: `eachChunk` copies each column it hands out read-only, compares it when the loop returns, puts it back if it changed, and throws with the component and field it names. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
 
 ## Visit only what changed
 

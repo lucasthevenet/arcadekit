@@ -6,7 +6,8 @@
  */
 import { ChangeLog } from "./changes";
 import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
-import { INDEX_MASK, makeAccessor } from "./component";
+import type { Column } from "./column";
+import { INDEX_MASK, makeAccessor, retarget } from "./component";
 import type {
   Accessor,
   AccessorsOf,
@@ -151,6 +152,14 @@ export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
   readonly indexOf: (entity: number) => number;
 }
 
+/** A column `eachChunk` hands out as read-only, and what it held before the loop. */
+interface ReadOnlyCopy {
+  readonly term: number;
+  readonly field: string;
+  readonly column: Column;
+  readonly copy: Column;
+}
+
 /**
  * The ids of a table's entities, one per row, as `eachChunk` hands them out.
  * An element reads as an `Entity`.
@@ -265,6 +274,11 @@ export class QueryView<D extends Terms = Terms> {
   private readonly sparseTerms: number[] = [];
   /** For each term, true when the query only reads it. */
   private readonly termRead: boolean[] = [];
+  /**
+   * For each term, the fields `eachChunk` hands out as read-only columns: every
+   * field of a term the query only reads, and a relation's `target`.
+   */
+  private readonly readOnlyFields: (readonly string[])[] = [];
   private readonly hasSparseTerms: boolean;
 
   private readonly requiredIds: number[] = [];
@@ -328,7 +342,11 @@ export class QueryView<D extends Terms = Terms> {
       return set;
     };
     for (const def of spec.terms) {
-      this.termRead.push(spec.readDefs?.includes(def) === true);
+      const read = spec.readDefs?.includes(def) === true;
+      this.termRead.push(read);
+      this.readOnlyFields.push(
+        read ? def.fields : def.relation === undefined ? [] : ["target"]
+      );
       if (def.storage === "table") {
         this.requiredIds.push(def.id);
         this.termTableId.push(def.id);
@@ -1025,6 +1043,9 @@ export class QueryView<D extends Terms = Terms> {
    * it. A query made with `Query.changed` and `Query.writes` of the same
    * component doesn't compile, and a description written by hand throws. In a
    * frozen world nothing counts as written, so neither applies.
+   *
+   * In an app made with `verifyFrames`, a loop that wrote a column it was handed
+   * read-only throws when it returns, and the column is put back.
    */
   eachChunk(
     this: Chunked<D> & QueryView<D>,
@@ -1052,6 +1073,7 @@ export class QueryView<D extends Terms = Terms> {
       if (world._recording) {
         this.saveSparseTerms();
       }
+      const kept = world._checkReads ? this.keepReadOnly() : undefined;
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
@@ -1084,6 +1106,9 @@ export class QueryView<D extends Terms = Terms> {
           f(start, end, ...cols, ents);
         }
       });
+      if (kept !== undefined) {
+        this.refuseReadOnlyWrites(kept);
+      }
     } finally {
       this.leave();
     }
@@ -1104,6 +1129,62 @@ export class QueryView<D extends Terms = Terms> {
         );
       }
     }
+  }
+
+  /** Copies every column `eachChunk` is about to hand out as read-only. */
+  private keepReadOnly(): ReadOnlyCopy[] {
+    const kept: ReadOnlyCopy[] = [];
+    for (let k = 0; k < this.n; k++) {
+      const set = this.termSet[k];
+      const id = this.termTableId[k]!;
+      const held =
+        set === undefined
+          ? this.tables.map((table) => ({
+              columns: table.columns[id]!,
+              count: table.count,
+            }))
+          : [set];
+      for (const { columns, count } of held) {
+        for (const field of this.readOnlyFields[k]!) {
+          const column = columns[field]!;
+          kept.push({ term: k, field, column, copy: column.slice(0, count) });
+        }
+      }
+    }
+    return kept;
+  }
+
+  /**
+   * Refuses a loop that wrote a column it was handed as read-only, which only
+   * a cast lets through, and puts back what the column held.
+   */
+  private refuseReadOnlyWrites(kept: readonly ReadOnlyCopy[]): void {
+    const written = kept.find(({ column, copy }) => {
+      for (let i = 0; i < copy.length; i++) {
+        if (!Object.is(column[i], copy[i])) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (written === undefined) {
+      return;
+    }
+    for (const { column, copy } of kept) {
+      if (Array.isArray(column)) {
+        for (let i = 0; i < copy.length; i++) {
+          column[i] = copy[i];
+        }
+      } else if (!Array.isArray(copy)) {
+        column.set(copy);
+      }
+    }
+    const def = this.spec.terms[written.term]!;
+    throw new Error(
+      this.termRead[written.term]
+        ? `eachChunk() wrote "${def.name}.${written.field}", which the query only reads, through its raw column. No change query would see the write, and no refusal would undo it, so it has been put back. Name "${def.name}" in Query.writes to write it, or write it with each().`
+        : `eachChunk() wrote the target of "${def.name}" through its raw column, and it has been put back. ${retarget(def.name)}`
+    );
   }
 
   // --- conveniences -----------------------------------------------------------
