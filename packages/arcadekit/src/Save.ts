@@ -416,8 +416,11 @@ export const singleton = (
  */
 export const VISITS = "arcadekit/changes";
 
-/** What a snapshot holds of the visits: `world.saveChanges()`. */
-const VisitsData = Schema.Array(
+/**
+ * What a snapshot holds of the visits: `world.saveChanges()`.
+ * @internal
+ */
+export const VisitsData = Schema.Array(
   Schema.Struct({
     component: Schema.String,
     kind: Schema.Literals(["changed", "added", "removed"]),
