@@ -50,10 +50,11 @@ const seated = (
         delta: DELTA,
         ahead: ahead ?? 0,
       }).pipe(Effect.provide(Input.layer(source)));
-      // Provided to the one line that connects: the transport is opened
-      // in the scope of the program, and lasts as long as it does.
-      const connected = yield* Transport.connect(session).pipe(
-        Effect.provide(layerOf(name))
+      // Provided to the one line that connects, and held in the scope of
+      // the program, which closes it.
+      const connected = yield* Effect.acquireRelease(
+        Transport.connect(session).pipe(Effect.provide(layerOf(name))),
+        (made) => made.close
       );
       const services = yield* Effect.context();
       seats.push({
@@ -418,60 +419,56 @@ describe("a session joined to a transport", () => {
   it("draws the game through the session", () => {
     const hub = Transport.makeHub();
     Effect.runSync(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* Session.make(CoinGame, {
-            seed: 5,
-            checkpointEvery: 1,
-            me: "ada",
-            others: [],
-            delta: DELTA,
-            ahead: 0,
-          });
-          let drawn = 0;
-          const connected = yield* Transport.connect({
-            ...session,
-            frame: () => {
-              drawn++;
-            },
-          }).pipe(Effect.provide(hub.layer("ada")));
-          Driver.fixedStep(connected)(DELTA);
-          expect(drawn).toBe(1);
-          expect(session.app.time.tick).toBe(1);
-        })
-      )
+      Effect.gen(function* () {
+        const session = yield* Session.make(CoinGame, {
+          seed: 5,
+          checkpointEvery: 1,
+          me: "ada",
+          others: [],
+          delta: DELTA,
+          ahead: 0,
+        });
+        let drawn = 0;
+        const connected = yield* Transport.connect({
+          ...session,
+          frame: () => {
+            drawn++;
+          },
+        }).pipe(Effect.provide(hub.layer("ada")));
+        Driver.fixedStep(connected)(DELTA);
+        expect(drawn).toBe(1);
+        expect(session.app.time.tick).toBe(1);
+      })
     );
   });
 
   it("does not compile without a transport", () => {
     Effect.runSync(
-      Effect.scoped(
-        Effect.map(
-          Session.make(CoinGame, {
-            seed: 5,
-            checkpointEvery: 1,
-            me: "ada",
-            others: [],
-            delta: DELTA,
-            ahead: 0,
-          }),
-          (session) => {
-            expect(() =>
-              Effect.runSync(
-                // @ts-expect-error A game of several peers is given a transport.
-                Transport.connect(session)
-              )
-            ).toThrow(/Transport/u);
-            const hub = Transport.makeHub();
-            // It needs no scope: the connection listens in one of its own.
-            const made = Effect.runSync(
-              Transport.connect(session).pipe(
-                Effect.provide(Transport.layer(hub.port("ada")))
-              )
-            );
-            expect(made.tick()).toBe(true);
-          }
-        )
+      Effect.map(
+        Session.make(CoinGame, {
+          seed: 5,
+          checkpointEvery: 1,
+          me: "ada",
+          others: [],
+          delta: DELTA,
+          ahead: 0,
+        }),
+        (session) => {
+          expect(() =>
+            Effect.runSync(
+              // @ts-expect-error A game of several peers is given a transport.
+              Transport.connect(session)
+            )
+          ).toThrow(/Transport/u);
+          const hub = Transport.makeHub();
+          // It needs no scope: the connection listens in one of its own.
+          const made = Effect.runSync(
+            Transport.connect(session).pipe(
+              Effect.provide(Transport.layer(hub.port("ada")))
+            )
+          );
+          expect(made.tick()).toBe(true);
+        }
       )
     );
   });
@@ -639,37 +636,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     }
   });
 
-  it("lasts as long as the program that opened it, whatever its layer is provided to", async () => {
-    const name = nextRoom();
-    const outside = new BroadcastChannel(name);
-    const heard: unknown[] = [];
-    outside.onmessage = (event: MessageEvent<unknown>) => {
-      heard.push(event.data);
-    };
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          // Provided to the one line that connects, and open after it.
-          const session = yield* Session.make(CoinGame, {
-            seed: 5,
-            me: "ada",
-            others: ["grace"],
-            delta: DELTA,
-          });
-          const connected = yield* Transport.connect(session).pipe(
-            Effect.provide(Transport.layerBroadcastChannel(name))
-          );
-          expect(connected.tick()).toBe(true);
-          yield* Effect.promise(() =>
-            until(() => heard.length > 0, "the first message was heard")
-          );
-        })
-      )
-    );
-    outside.close();
-  });
-
-  it("stops hearing, and closes the session it connected, when its connection is closed, and says so when used after", async () => {
+  it("lasts as long as its connection, whatever its layer is provided to, and closes the session with it, saying so when used after", async () => {
     const name = nextRoom();
     const outside = new BroadcastChannel(name);
     const heard: unknown[] = [];
@@ -685,8 +652,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         )
       ),
     });
-    // Connected in a scope that is gone once the line has run: it lasts
-    // all the same.
+    // Provided to the one line that connects, in a scope that is gone once
+    // the line has run: it lasts all the same.
     const connected = await Effect.runPromise(
       Effect.scoped(
         Effect.flatMap(

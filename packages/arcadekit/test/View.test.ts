@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Schema, Scope } from "effect";
+import { Data, Effect, Exit, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
@@ -18,9 +18,6 @@ import {
   View,
   World,
 } from "../src/index";
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 // --- a game with a heads-up display and a menu -------------------------------------
 const Coin = Component.define("vw/Coin", { value: Field.i32 });
@@ -113,7 +110,7 @@ const play = (
     seed,
     checkpointEvery: 1,
   });
-  return run(
+  return Effect.runSync(
     ui === undefined ? made : made.pipe(Effect.provide(View.layer(ui)))
   );
 };
@@ -226,7 +223,9 @@ describe("a view", () => {
     const Boards = App.define({ plugins: [View.plugin], systems: [Show] });
     const ui = View.makeBridge(Boards);
     const { heard } = listen(ui, Board);
-    const app = run(App.make(Boards).pipe(Effect.provide(View.layer(ui))));
+    const app = Effect.runSync(
+      App.make(Boards).pipe(Effect.provide(View.layer(ui)))
+    );
     for (frame = 0; frame < values.length; frame++) {
       app.frame(0);
     }
@@ -256,7 +255,9 @@ describe("a view", () => {
     const ui = View.makeBridge(Lucky);
     const a = listen(ui, Hud);
     const b = listen(ui, Hud);
-    const app = run(App.make(Lucky).pipe(Effect.provide(View.layer(ui))));
+    const app = Effect.runSync(
+      App.make(Lucky).pipe(Effect.provide(View.layer(ui)))
+    );
     app.dispatch(Find, { value: 1 });
     app.frame(0);
     expect(a.heard).toEqual([{ gold: 0, coins: 1 }]);
@@ -338,7 +339,9 @@ describe("a view", () => {
     const Gated = App.define({ plugins: [Rules, begun({ gold: 9 })] });
     const ui = View.makeBridge(Gated);
     const { heard } = listen(ui, Hud);
-    const app = run(App.make(Gated).pipe(Effect.provide(View.layer(ui))));
+    const app = Effect.runSync(
+      App.make(Gated).pipe(Effect.provide(View.layer(ui)))
+    );
     app.frame(0);
     expect(heard).toEqual([]);
     expect(ui.get(Hud)).toBe(Hud.initial);
@@ -374,7 +377,7 @@ describe("a view", () => {
     const ui = View.makeBridge(Reset);
     const { heard } = listen(ui, Hud);
     const made = App.make(Reset);
-    const app = run(made.pipe(Effect.provide(View.layer(ui))));
+    const app = Effect.runSync(made.pipe(Effect.provide(View.layer(ui))));
     const step = (action?: typeof Start | typeof Quit): void => {
       if (action !== undefined) {
         app.dispatch(action, {});
@@ -399,7 +402,7 @@ describe("a view", () => {
     expect(heard.at(-1)).toEqual({ gold: 9, coins: 0 });
     // Where no UI is there, it publishes to nobody and asks nothing more
     // than the port.
-    const alone = run(made);
+    const alone = Effect.runSync(made);
     alone.dispatch(Start, {});
     alone.tick(1);
     alone.frame(0);
@@ -420,7 +423,9 @@ describe("a view", () => {
     const Owned = App.define({ plugins: [View.plugin], systems: [Own] });
     const ui = View.makeBridge(Owned);
     const { heard } = listen(ui, Hud);
-    const app = run(App.make(Owned).pipe(Effect.provide(View.layer(ui))));
+    const app = Effect.runSync(
+      App.make(Owned).pipe(Effect.provide(View.layer(ui)))
+    );
     app.frame(0);
     app.tick(1);
     app.frame(0);
@@ -456,7 +461,7 @@ describe("what the UI sends", () => {
     // The game, begun with gold to spend.
     const Funded = App.define({ plugins: [Game, begun({ gold: 5 })] });
     const ui = View.makeBridge(Funded);
-    const app = run(
+    const app = Effect.runSync(
       App.make(Funded, { seed: 1, checkpointEvery: 1 }).pipe(
         Effect.provide(View.layer(ui))
       )
@@ -481,7 +486,7 @@ describe("what the UI sends", () => {
     const other = View.makeBridge(Funded);
     other.send(Buy, { price: 1 });
     other.send(Buy, { price: 1 });
-    const again = run(
+    const again = Effect.runSync(
       Journal.replay(recording, Funded, { checkpointEvery: 1 }).pipe(
         Effect.provide(View.layer(other))
       )
@@ -581,7 +586,9 @@ describe("what the UI sends", () => {
     const Kept = App.define({ plugins: [Game, begun({ coins: [1] })] });
     const start = { seed: 11, checkpointEvery: 1 } as const;
     const ui = View.makeBridge(Kept);
-    const app = run(App.make(Kept, start).pipe(Effect.provide(View.layer(ui))));
+    const app = Effect.runSync(
+      App.make(Kept, start).pipe(Effect.provide(View.layer(ui)))
+    );
     const hashes: number[] = [];
     const step = (): void => {
       app.input();
@@ -601,11 +608,13 @@ describe("what the UI sends", () => {
 
     // No bridge, no input stage and no frame: a server, or a replay.
     const played = app.record();
-    const again = run(Journal.replay(played, Kept, { checkpointEvery: 1 }));
+    const again = Effect.runSync(
+      Journal.replay(played, Kept, { checkpointEvery: 1 })
+    );
     expect(hashOf(again)).toBe(hashes.at(-1));
     expect(coinsOf(again)).toBe(2);
     // And the same game with no UI at all, given nothing, differs.
-    const idle = run(App.make(Kept, start));
+    const idle = Effect.runSync(App.make(Kept, start));
     for (let i = 0; i < 5; i++) {
       idle.input();
       idle.tick(1);
@@ -667,7 +676,7 @@ describe("what the UI sends", () => {
       }
       return System.tick(name, body);
     };
-    const app = run(
+    const app = Effect.runSync(
       App.make(
         App.define({
           plugins: [Game],
@@ -690,7 +699,7 @@ describe("what the UI sends", () => {
     const Spy = System.frame("vw/Spy", function* () {
       seen.push(yield* View.Bridge);
     });
-    const app = run(
+    const app = Effect.runSync(
       App.make(App.define({ plugins: [View.plugin], systems: [Spy] }))
     );
     app.frame(0);
@@ -716,7 +725,7 @@ describe("the bridge", () => {
       checkpointEvery: 1,
       verifyFrames: true,
     }).pipe(Effect.provide(View.layer(ui)));
-    const watched = run(seen);
+    const watched = Effect.runSync(seen);
     const alone = play(undefined, { seed: 4, coins: [3] });
     for (const app of [watched, alone]) {
       app.dispatch(Start, {});
@@ -762,10 +771,10 @@ describe("the bridge", () => {
   it("is what a plugin's systems need: a game that publishes and leaves out View.plugin does not compile", () => {
     // View.Port is still needed: View.plugin provides it.
     expectTypeOf(App.make(App.define({ systems: [ShowHud] }))).not.toExtend<
-      Effect.Effect<unknown, never, Scope.Scope>
+      Effect.Effect<unknown, never>
     >();
     expectTypeOf(
       App.make(App.define({ plugins: [View.plugin], systems: [ShowHud] }))
-    ).toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
+    ).toExtend<Effect.Effect<unknown, never>>();
   });
 });

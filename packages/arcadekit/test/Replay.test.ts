@@ -1,5 +1,4 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -129,32 +128,24 @@ const game = (options: Options = {}) =>
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
 const withApp = <T extends Pick<App.Any, "read">, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+  make: Effect.Effect<T, never>,
   use: (app: T, world: Effect.Success<typeof World>) => A
 ): A =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.flatMap(make, (app) =>
-        Effect.map(app.read(World), (world) => use(app, world))
-      )
+    Effect.flatMap(make, (app) =>
+      Effect.map(app.read(World), (world) => use(app, world))
     )
   );
 
 /** What stopped a replay that the test expects to diverge. */
 const stoppedBy = <A extends App.Any>(
-  replay: Effect.Effect<
-    A,
-    Journal.ReplayDiverged<A> | Save.LoadRefused,
-    Scope.Scope
-  >
+  replay: Effect.Effect<A, Journal.ReplayDiverged<A> | Save.LoadRefused>
 ): Journal.ReplayDiverged<A> =>
   Effect.runSync(
-    Effect.scoped(
-      replay.pipe(
-        Effect.flatMap(() => Effect.die("it went the way the game went")),
-        Effect.catchTag("ReplayDiverged", Effect.succeed),
-        Effect.orDie
-      )
+    replay.pipe(
+      Effect.flatMap(() => Effect.die("it went the way the game went")),
+      Effect.catchTag("ReplayDiverged", Effect.succeed),
+      Effect.orDie
     )
   );
 
@@ -227,29 +218,27 @@ const replayInto = (
   ticks: number
 ) =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const recording = recordingOf(log, ticks, 1 / 60, options.seed ?? 1);
-        // A replay that stops holds its app where it stopped.
-        const { app, stopped } = yield* Journal.replay(
-          recording,
-          coinGame(options.faulty, options.coins),
-          checkpointing(options)
-        ).pipe(
-          Effect.map((app) => ({ app, stopped: undefined })),
-          Effect.catchTag("ReplayDiverged", (diverged) =>
-            Effect.succeed({ app: diverged.app, stopped: diverged })
-          ),
-          Effect.orDie
-        );
-        return {
-          stopped,
-          tick: app.time.tick,
-          hash: (yield* app.read(World)).hash(),
-          log: [...app.actionLog],
-        };
-      })
-    )
+    Effect.gen(function* () {
+      const recording = recordingOf(log, ticks, 1 / 60, options.seed ?? 1);
+      // A replay that stops holds its app where it stopped.
+      const { app, stopped } = yield* Journal.replay(
+        recording,
+        coinGame(options.faulty, options.coins),
+        checkpointing(options)
+      ).pipe(
+        Effect.map((app) => ({ app, stopped: undefined })),
+        Effect.catchTag("ReplayDiverged", (diverged) =>
+          Effect.succeed({ app: diverged.app, stopped: diverged })
+        ),
+        Effect.orDie
+      );
+      return {
+        stopped,
+        tick: app.time.tick,
+        hash: (yield* app.read(World)).hash(),
+        log: [...app.actionLog],
+      };
+    })
   );
 
 describe("checkpoints", () => {
@@ -479,34 +468,32 @@ describe("a replay that checks itself", () => {
   it("fails with its app where it stopped, an app of its game to look at", () => {
     const recorded = record({ ticks: 60, checkpointEvery: 1 });
     const looked = Effect.runSync(
-      Effect.scoped(
-        Journal.replay(recorded.recording, coinGame(fault(20, "lose")), {
-          checkpointEvery: 1,
-        }).pipe(
-          Effect.flatMap(() => Effect.die("it went the way the game went")),
-          Effect.catchTag("ReplayDiverged", (diverged) =>
-            Effect.gen(function* () {
-              const { app, reason } = diverged;
-              assert(reason instanceof Journal.HashMismatch);
-              const seen = {
-                stoppedAt: diverged.tick,
-                tick: app.time.tick,
-                hash: (yield* app.read(World)).hash(),
-                coins: (yield* app.read(Lying)).count(),
-                reason,
-              };
-              // It is a live app of the game: it takes the game's actions,
-              // and no other.
-              const dropped = app.dispatch(Drop, { value: 1 });
-              // @ts-expect-error the game has no handler for `Add`
-              expect(() => app.dispatch(Add, { by: 1 })).toThrow(/No handler/);
-              return {
-                ...seen,
-                dropped: Exit.isSuccess(dropped),
-                after: (yield* app.read(Lying)).count(),
-              };
-            })
-          )
+      Journal.replay(recorded.recording, coinGame(fault(20, "lose")), {
+        checkpointEvery: 1,
+      }).pipe(
+        Effect.flatMap(() => Effect.die("it went the way the game went")),
+        Effect.catchTag("ReplayDiverged", (diverged) =>
+          Effect.gen(function* () {
+            const { app, reason } = diverged;
+            assert(reason instanceof Journal.HashMismatch);
+            const seen = {
+              stoppedAt: diverged.tick,
+              tick: app.time.tick,
+              hash: (yield* app.read(World)).hash(),
+              coins: (yield* app.read(Lying)).count(),
+              reason,
+            };
+            // It is a live app of the game: it takes the game's actions,
+            // and no other.
+            const dropped = app.dispatch(Drop, { value: 1 });
+            // @ts-expect-error the game has no handler for `Add`
+            expect(() => app.dispatch(Add, { by: 1 })).toThrow(/No handler/);
+            return {
+              ...seen,
+              dropped: Exit.isSuccess(dropped),
+              after: (yield* app.read(Lying)).count(),
+            };
+          })
         )
       )
     );

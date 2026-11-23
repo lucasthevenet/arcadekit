@@ -215,9 +215,11 @@ const fighter = (app: App.Any, name: string): Effect.Effect<Entity> =>
 const program = Effect.gen(function* () {
   // One tick per move, so a checkpoint of the world's hash after every tick
   // costs nothing and lets a replay say exactly where it went another way.
-  const app = yield* App.make(App.define({ plugins: [Commentary] }), {
-    checkpointEvery: 1,
-  });
+  // Held in the program's scope, which closes it when the program ends.
+  const app = yield* Effect.acquireRelease(
+    App.make(App.define({ plugins: [Commentary] }), { checkpointEvery: 1 }),
+    (made) => made.close
+  );
   const knight = yield* fighter(app, "Knight");
   const rogue = yield* fighter(app, "Rogue");
 
@@ -283,7 +285,7 @@ const program = Effect.gen(function* () {
   // silent.
   const saved = Journal.encode(app.record());
   yield* Console.log(`saved: ${saved}`);
-  // A fresh app in a scope of its own, closed when the replay is over.
+  // A fresh app, held in a scope that closes it when the replay is over.
   const replay = Effect.fnUntraced(function* (text: string) {
     const loaded = Journal.decode(text);
     if (Exit.isFailure(loaded)) {
@@ -292,10 +294,11 @@ const program = Effect.gen(function* () {
     // The replay makes its app from how the game began, its seed, and that
     // app seats the fighters as the game did, in its setup. A replay that
     // goes another way fails, and says where.
-    return yield* Journal.replay(
-      loaded.value,
-      App.define({ plugins: [Rules] }),
-      { checkpointEvery: 1 }
+    return yield* Effect.acquireRelease(
+      Journal.replay(loaded.value, App.define({ plugins: [Rules] }), {
+        checkpointEvery: 1,
+      }),
+      (replayed) => replayed.close
     ).pipe(
       Effect.flatMap(standing),
       Effect.map(
@@ -324,9 +327,10 @@ const program = Effect.gen(function* () {
     const file = Save.encode(save.value);
     const read = Save.decode(file);
     if (Exit.isSuccess(read)) {
-      const loaded = yield* App.make(App.define({ plugins: [Rules] }), {
-        save: read.value,
-      });
+      const loaded = yield* Effect.acquireRelease(
+        App.make(App.define({ plugins: [Rules] }), { save: read.value }),
+        (made) => made.close
+      );
       const held = yield* standing(loaded);
       yield* Console.log(
         `saved (${file.length} bytes) and loaded -> ${held} at tick ${loaded.time.tick} (${held === end ? "identical" : "DIFFERENT"})`
@@ -336,5 +340,6 @@ const program = Effect.gen(function* () {
 });
 
 // The entry point: runMain runs the program, reports a failure, and
-// interrupts it (closing the app's scope) when the process is told to stop.
+// interrupts it (closing its scope, and the apps it holds) when the process
+// is told to stop.
 NodeRuntime.runMain(Effect.scoped(program));

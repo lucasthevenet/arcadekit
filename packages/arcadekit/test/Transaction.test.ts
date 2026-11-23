@@ -1,5 +1,4 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import type { JsonValue, Spawned } from "../src/index";
@@ -591,13 +590,10 @@ const Hear = System.tick("Hear", function* () {
   }
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
-
 const withApp = <T, A, E = never>(
-  make: Effect.Effect<T, E, Scope.Scope>,
+  make: Effect.Effect<T, E>,
   use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): A => Effect.runSync(Effect.map(make, use));
 
 /** What the game begins with: bodies of every shape, and two freed slots. */
 const Scene = Plugin.make("tx/Scene", {
@@ -931,7 +927,7 @@ describe("an action that is accepted", () => {
       return [world.get(target, Body)!.x, total] as const;
     });
     const { ids, plugin } = bodiesAt({ x: 1, y: 5 }, { x: 1, y: 5 });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({ plugins: [plugin], handlers: [twice] })
@@ -959,7 +955,7 @@ describe("an action that is accepted", () => {
       (yield* Commands).despawn(target);
     });
     const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({ plugins: [plugin], handlers: [direct] })
@@ -984,7 +980,7 @@ describe("an action that is accepted", () => {
       app!.dispatchByName("tx/Echo", { by: 1 });
     });
     const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const made = yield* App.make(
           App.define({ plugins: [plugin], handlers: [outer, echo] })

@@ -1,5 +1,4 @@
 import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -69,7 +68,7 @@ const Game = App.define({
   handlers: [damage, rename, reset],
 });
 /** An app, its world, and the thing to damage, which the game begins with. */
-const begin = <A extends App.Any, E>(make: Effect.Effect<A, E, Scope.Scope>) =>
+const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
   Effect.gen(function* () {
     const app = yield* make;
     const [target] = (yield* app.read(Query.all(Health))).entities();
@@ -80,9 +79,9 @@ const begin = <A extends App.Any, E>(make: Effect.Effect<A, E, Scope.Scope>) =>
 const game = begin(App.make(Game));
 
 const withApp = <A, T, E = never>(
-  make: Effect.Effect<A, E, Scope.Scope>,
+  make: Effect.Effect<A, E>,
   use: (made: A) => T
-): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): T => Effect.runSync(Effect.map(make, use));
 
 /** The applied actions of a log, without the checkpoints recorded among them. */
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>

@@ -38,12 +38,15 @@ const seatAt = (url: string, name: string) =>
       others: ["ada", "grace"].filter((other) => other !== name),
       delta: DELTA,
     }).pipe(Effect.provide(Input.layer(source)));
-    const connected = yield* Transport.connect(session).pipe(
-      Effect.provide(
-        Transport.layerWebSocket(
-          Relay.address(url, { room: "match", peer: name })
+    const connected = yield* Effect.acquireRelease(
+      Transport.connect(session).pipe(
+        Effect.provide(
+          Transport.layerWebSocket(
+            Relay.address(url, { room: "match", peer: name })
+          )
         )
-      )
+      ),
+      (made) => made.close
     );
     const services = yield* Effect.context();
     const seat: Seat = {
@@ -741,10 +744,13 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             delta: DELTA,
             ahead: 0,
           });
-          const connected = yield* Transport.connect(session).pipe(
-            Effect.provide(
-              Transport.layerWebSocket(Relay.address(served.url, ada))
-            )
+          const connected = yield* Effect.acquireRelease(
+            Transport.connect(session).pipe(
+              Effect.provide(
+                Transport.layerWebSocket(Relay.address(served.url, ada))
+              )
+            ),
+            (made) => made.close
           );
           // Grace comes, and goes for good: her transport gives up at once.
           yield* Effect.scoped(

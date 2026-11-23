@@ -1,5 +1,4 @@
 import { Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Spawned } from "../src/index";
@@ -21,9 +20,6 @@ import * as Entry from "../src/Transform2d";
 import { placedIn } from "./placed";
 
 const { Position, Rotation, Scale } = Transform2d;
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const Card = Component.tag("t2/Card");
 
@@ -51,7 +47,7 @@ describe("Transform2d", () => {
         );
       }),
     });
-    const bare = run(
+    const bare = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Bare] }));
         const world = yield* app.read(World);
@@ -103,7 +99,7 @@ describe("Transform2d", () => {
         commands.remove(entity, Position);
       });
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({ plugins: [Both], handlers: [slide, lift] })
@@ -161,7 +157,7 @@ describe("Transform2d", () => {
         );
       }),
     });
-    const moved = run(
+    const moved = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({ plugins: [Deal], systems: [Drift] })
@@ -203,7 +199,7 @@ describe("Transform2d", () => {
       }),
     });
     const Flat = App.define({ plugins: [Deal] });
-    const { made, save } = run(
+    const { made, save } = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Flat);
         return { made: (yield* app.read(World)).hash(), save: app.save() };
@@ -216,7 +212,7 @@ describe("Transform2d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(
+    const loaded = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Flat, { save: read.value });
         const world = yield* app.read(World);

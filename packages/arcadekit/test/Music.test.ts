@@ -528,7 +528,7 @@ describe("Sound.music", () => {
     });
     const made = App.make(App.define({ plugins: [Rules], systems: [Score] }));
     // @ts-expect-error the app still needs the player, which Sound.plugin gives
-    void (() => Effect.runSync(Effect.scoped(made)));
+    void (() => Effect.runSync(made));
     expect(Score.name).toBe("mu/Score");
     expect(Score.stage).toBe("frame");
   });

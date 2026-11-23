@@ -1,5 +1,4 @@
 import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -671,14 +670,12 @@ const KNOWN_HASH = 2_316_040_553;
 // --- through an app --------------------------------------------------------------
 
 const withApp = <T extends Pick<App.Any, "read">, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+  make: Effect.Effect<T, never>,
   use: (app: T, world: Effect.Success<typeof World>) => A
 ): A =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.flatMap(make, (app) =>
-        Effect.map(app.read(World), (world) => use(app, world))
-      )
+    Effect.flatMap(make, (app) =>
+      Effect.map(app.read(World), (world) => use(app, world))
     )
   );
 
@@ -703,7 +700,7 @@ describe("the hash of an app's world", () => {
     });
     commands.spawn(Body.of({ x: 0, y: random.next() }));
   });
-  const hashes = (make: Effect.Effect<App.Any, never, Scope.Scope>) =>
+  const hashes = (make: Effect.Effect<App.Any, never>) =>
     withApp(make, (app, world) => {
       const out: number[] = [];
       for (let i = 0; i < 100; i++) {

@@ -241,12 +241,10 @@ describe("a page's display", () => {
     };
     let app: App.Any | undefined;
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          app = yield* App.make(App.define({ systems: [Roll] }));
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      ).pipe(Effect.provideService(Driver.Display, Browser.display))
+      Effect.gen(function* () {
+        app = yield* App.make(App.define({ systems: [Roll] }));
+        return yield* Driver.frames(app, { hz: 60 });
+      }).pipe(Effect.provideService(Driver.Display, Browser.display))
     );
     expect(requested.size).toBe(1);
     expect(listeners.size).toBe(1);

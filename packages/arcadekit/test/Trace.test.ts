@@ -1,5 +1,4 @@
 import { Data, Effect, Exit, Option, Schema, Tracer } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -29,13 +28,8 @@ const recorder = () => {
   return { spans, tracer };
 };
 
-const traced = <A, E>(
-  tracer: Tracer.Tracer,
-  effect: Effect.Effect<A, E, Scope.Scope>
-): A =>
-  Effect.runSync(
-    Effect.scoped(effect).pipe(Effect.provideService(Tracer.Tracer, tracer))
-  );
+const traced = <A, E>(tracer: Tracer.Tracer, effect: Effect.Effect<A, E>): A =>
+  Effect.runSync(effect.pipe(Effect.provideService(Tracer.Tracer, tracer)));
 
 const parentOf = (span: Tracer.NativeSpan): string | undefined =>
   Option.getOrUndefined(span.parent)?.spanId;
@@ -219,7 +213,7 @@ describe("tracing an app", () => {
   it("plays the same game as an app that doesn't trace", () => {
     const { spans, tracer } = recorder();
     const tracing = traced(tracer, game());
-    const quiet = Effect.runSync(Effect.scoped(game()));
+    const quiet = Effect.runSync(game());
     const tracingWorld = Effect.runSync(tracing.read(World));
     const quietWorld = Effect.runSync(quiet.read(World));
     for (let tick = 0; tick < 30; tick++) {
@@ -252,9 +246,7 @@ describe("whether an app traces", () => {
     });
     const made = wrap(App.make(App.define({ systems: [Look] })));
     const app =
-      tracer === undefined
-        ? Effect.runSync(Effect.scoped(made))
-        : traced(tracer, made);
+      tracer === undefined ? Effect.runSync(made) : traced(tracer, made);
     app.tick(1 / 60);
     return seen!;
   };

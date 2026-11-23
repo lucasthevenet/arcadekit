@@ -144,12 +144,10 @@ describe("the frame loop", () => {
       deltas.push((yield* Frame).delta);
     });
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const app = yield* App.make(App.define({ systems: [Draw] }));
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      ).pipe(withDisplay(display))
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ systems: [Draw] }));
+        return yield* Driver.frames(app, { hz: 60 });
+      }).pipe(withDisplay(display))
     );
     display.frame(100);
     display.frame(125);
@@ -253,12 +251,10 @@ describe("the frame loop", () => {
     const display = Driver.makeManualDisplay();
     let app: App.Any | undefined;
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          app = yield* App.make(App.define({ systems: [Roll] }));
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      ).pipe(withDisplay(display))
+      Effect.gen(function* () {
+        app = yield* App.make(App.define({ systems: [Roll] }));
+        return yield* Driver.frames(app, { hz: 60 });
+      }).pipe(withDisplay(display))
     );
     turn(display, 5, 0);
     expect(app!.time.tick).toBe(4);
@@ -298,12 +294,10 @@ describe("the frame loop", () => {
     };
     let app: App.Any | undefined;
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          app = yield* App.make(App.define({ systems: [Roll] }));
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      ).pipe(withDisplay(display))
+      Effect.gen(function* () {
+        app = yield* App.make(App.define({ systems: [Roll] }));
+        return yield* Driver.frames(app, { hz: 60 });
+      }).pipe(withDisplay(display))
     );
     callbacks.shift()!(0);
     callbacks.shift()!(20);
@@ -383,12 +377,10 @@ describe("the frame loop", () => {
     });
     const display = Driver.makeManualDisplay();
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const app = yield* App.make(App.define({ systems: [Jam] }));
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      ).pipe(withDisplay(display))
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ systems: [Jam] }));
+        return yield* Driver.frames(app, { hz: 60 });
+      }).pipe(withDisplay(display))
     );
     turn(display, 3, 0);
     expect(fiber.pollUnsafe()).toBeUndefined();
@@ -410,12 +402,10 @@ describe("the frame loop", () => {
     });
     const display = Driver.makeManualDisplay();
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const app = yield* App.make(App.define({ systems: [Smear] }));
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      ).pipe(withDisplay(display))
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ systems: [Smear] }));
+        return yield* Driver.frames(app, { hz: 60 });
+      }).pipe(withDisplay(display))
     );
     turn(display, 2, 0);
     const exit = await Effect.runPromise(Fiber.await(fiber));
@@ -432,12 +422,10 @@ describe("the frame loop", () => {
     const display = Driver.makeManualDisplay();
     let app: App.Any | undefined;
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          app = yield* App.make(App.define({ systems: [Roll] }));
-          return yield* Driver.frames(app, { hz: 60, maxStepsPerCall: 3 });
-        })
-      ).pipe(withDisplay(display))
+      Effect.gen(function* () {
+        app = yield* App.make(App.define({ systems: [Roll] }));
+        return yield* Driver.frames(app, { hz: 60, maxStepsPerCall: 3 });
+      }).pipe(withDisplay(display))
     );
     display.frame(0);
     // The page froze for two seconds without being hidden.
@@ -472,12 +460,10 @@ describe("the display when none is provided", () => {
     });
     let app: App.Any | undefined;
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          app = yield* App.make(App.define({ systems: [Roll] }));
-          return yield* Driver.frames(app, { hz: 200 });
-        })
-      )
+      Effect.gen(function* () {
+        app = yield* App.make(App.define({ systems: [Roll] }));
+        return yield* Driver.frames(app, { hz: 200 });
+      })
     );
     await new Promise((resolve) => setTimeout(resolve, 120));
     await Effect.runPromise(Fiber.interrupt(fiber));

@@ -1,5 +1,4 @@
 import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -171,14 +170,12 @@ const start = { seed: 21, checkpointEvery: 1 } as const;
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
 const withApp = <T extends Pick<App.Any, "read">, E, A>(
-  make: Effect.Effect<T, E, Scope.Scope>,
+  make: Effect.Effect<T, E>,
   use: (app: T, world: Effect.Success<typeof World>) => A
 ): A =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.flatMap(make, (app) =>
-        Effect.map(app.read(World), (world) => use(app, world))
-      )
+    Effect.flatMap(make, (app) =>
+      Effect.map(app.read(World), (world) => use(app, world))
     )
   );
 
@@ -552,11 +549,7 @@ describe("a game that cannot be saved as it stands", () => {
 describe("a save that cannot be loaded", () => {
   const load = (save: Save.Save, game: object = Played) =>
     Effect.runSync(
-      Effect.scoped(
-        Effect.exit(
-          App.make(game as typeof Played, { save, checkpointEvery: 1 })
-        )
-      )
+      Effect.exit(App.make(game as typeof Played, { save, checkpointEvery: 1 }))
     );
 
   it("says how a component has changed since the save was taken", () => {

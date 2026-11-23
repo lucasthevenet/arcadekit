@@ -44,8 +44,8 @@ mount(document.querySelector("#ui")!, ui);
 // interrupted. Browser.runMain starts it in the page: the frame loop follows
 // the page's repaints, the page's devices are listened to, and when the page
 // goes away the game is interrupted: the loop takes its frame request back,
-// the app's scope closes, what was loaded is let go, and nobody listens any
-// more.
+// Driver.run closes the app, what was loaded is let go, and nobody listens
+// any more.
 Browser.runMain(
   Driver.run(App.make(Catch, { seed: Date.now() }), { hz: 60 }).pipe(
     Effect.provide(Layer.mergeAll(Screen.layer, View.layer(ui)))

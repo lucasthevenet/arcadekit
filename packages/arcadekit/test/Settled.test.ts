@@ -1,5 +1,4 @@
 import { Effect, Layer, Scheduler, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -22,8 +21,6 @@ import {
   World,
 } from "../src/index";
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 /** The world of an app, as `app.read(World)` gives it. */
 const worldOf = (app: Pick<App.Any, "read">) => Effect.runSync(app.read(World));
 
@@ -91,7 +88,9 @@ const Rules = Plugin.make("st/Rules", {
 
 describe("app.settled", () => {
   it("is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked", () => {
-    const app = run(App.make(App.define({}), { checkpointEvery: 0 }));
+    const app = Effect.runSync(
+      App.make(App.define({}), { checkpointEvery: 0 })
+    );
     // A game that has not ticked yet has not been asked whether it has
     // anything to do.
     expect(app.settled).toBe(false);
@@ -108,7 +107,7 @@ describe("app.settled", () => {
 
   it("is false while a state waits to be entered: the one a game starts in, and one that was asked for", () => {
     entered.length = 0;
-    const app = run(App.make(App.define({ plugins: [Rules] })));
+    const app = Effect.runSync(App.make(App.define({ plugins: [Rules] })));
     // The state it starts in is entered by its first tick, which changes
     // the game: the next finds nothing to do.
     expect(app.settled).toBe(false);
@@ -127,7 +126,7 @@ describe("app.settled", () => {
   });
 
   it("is false while an action waits to be applied", () => {
-    const app = run(App.make(App.define({ plugins: [Rules] })));
+    const app = Effect.runSync(App.make(App.define({ plugins: [Rules] })));
     expect(app.settled).toBe(false);
     app.tick(1);
     entered.length = 0;
@@ -144,7 +143,7 @@ describe("app.settled", () => {
   });
 
   it("is false while an event waits that a system has not had its chance at, and no longer", () => {
-    const app = run(App.make(App.define({ plugins: [Rules] })));
+    const app = Effect.runSync(App.make(App.define({ plugins: [Rules] })));
     const world = worldOf(app);
     expect(app.settled).toBe(false);
     app.dispatch(Begin, {});
@@ -187,7 +186,7 @@ describe("app.settled", () => {
     const Watch = System.frame("st/Watch", function* () {
       heard.push((yield* Moved).read().length + (yield* Landed).read().length);
     });
-    const app = run(
+    const app = Effect.runSync(
       App.make(App.define({ plugins: [Rules], systems: [Watch] }))
     );
     expect(app.settled).toBe(false);
@@ -211,7 +210,7 @@ describe("app.settled", () => {
     const Keep = System.tick("st/Keep", function* () {
       kept.push((yield* Scheduler.Scheduler).makeDispatcher());
     });
-    const app = run(App.make(App.define({ systems: [Keep] })));
+    const app = Effect.runSync(App.make(App.define({ systems: [Keep] })));
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(true);
@@ -230,7 +229,7 @@ describe("app.settled", () => {
   });
 
   it("is not changed by looking, nor by the stages between ticks", () => {
-    const app = run(
+    const app = Effect.runSync(
       App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
     );
     const world = worldOf(app);
@@ -276,7 +275,7 @@ describe("a game that ticks when its player moves", () => {
     frames = 0;
     const ui = View.makeBridge(Played);
     const source = Input.makeManualSource();
-    const app = run(
+    const app = Effect.runSync(
       App.make(Played, {
         checkpointEvery: 1,
         seed: 5,
@@ -354,7 +353,9 @@ describe("a game that ticks when its player moves", () => {
     expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
     // The same game with no UI, no devices and no rest: tick after tick.
     const played = app.record();
-    const again = run(Journal.replay(played, Played, { checkpointEvery: 1 }));
+    const again = Effect.runSync(
+      Journal.replay(played, Played, { checkpointEvery: 1 })
+    );
     const replayed = worldOf(again);
     expect(replayed.hash()).toBe(worldOf(app).hash());
     expect(again.time.tick).toBe(app.time.tick);
@@ -385,7 +386,9 @@ describe("a game that changes", () => {
   const options = { handlers: [wind] };
 
   it("is not settled after a tick that changed more than its time, and is after one that did not", () => {
-    const app = run(App.make(App.define({ ...options, systems: [RunDown] })));
+    const app = Effect.runSync(
+      App.make(App.define({ ...options, systems: [RunDown] }))
+    );
     // Asked once, the app watches from then on.
     expect(app.settled).toBe(false);
     app.tick(1);
@@ -412,7 +415,9 @@ describe("a game that changes", () => {
 
   it("keeps a game that ticks when it is needed going while it changes, and no longer", () => {
     ran = 0;
-    const app = run(App.make(App.define({ ...options, systems: [RunDown] })));
+    const app = Effect.runSync(
+      App.make(App.define({ ...options, systems: [RunDown] }))
+    );
     const world = worldOf(app);
     const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
     const frames = (count: number): void => {
@@ -437,7 +442,9 @@ describe("a game that changes", () => {
   });
 
   it("is not settled after an action dispatched between ticks, for the tick that follows it up", () => {
-    const app = run(App.make(App.define({ ...options, systems: [] })));
+    const app = Effect.runSync(
+      App.make(App.define({ ...options, systems: [] }))
+    );
     expect(app.settled).toBe(false);
     app.tick(1);
     app.tick(1);
@@ -459,7 +466,7 @@ describe("a game that changes", () => {
         return yield* Effect.fail("refused" as const);
       }
     });
-    const app = run(App.make(App.define({ handlers: [ask] })));
+    const app = Effect.runSync(App.make(App.define({ handlers: [ask] })));
     expect(app.settled).toBe(false);
     app.tick(1);
     app.tick(1);
@@ -472,7 +479,7 @@ describe("a game that changes", () => {
 
   it("runs the first tick of a game that was loaded, and goes on while it changes", () => {
     const made = App.make(App.define({ ...options, systems: [RunDown] }));
-    const app = run(made);
+    const app = Effect.runSync(made);
     app.enqueue(Wind, { ticks: 6 });
     app.tick(1);
     app.tick(1);
@@ -482,7 +489,7 @@ describe("a game that changes", () => {
     if (save._tag !== "Success") {
       return;
     }
-    const loaded = run(
+    const loaded = Effect.runSync(
       App.make(App.define({ ...options, systems: [RunDown] }), {
         save: save.value,
       })

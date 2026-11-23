@@ -1,5 +1,4 @@
 import { Effect, Exit } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Spawned } from "../src/index";
@@ -19,9 +18,6 @@ import * as Entry from "../src/Transform3d";
 import { placedIn } from "./placed";
 
 const { Position, Rotation, Scale } = Transform3d;
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const Rock = Component.tag("tf/Rock");
 
@@ -49,7 +45,7 @@ describe("Transform3d", () => {
         );
       }),
     });
-    const bare = run(
+    const bare = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Bare] }));
         const world = yield* app.read(World);
@@ -91,7 +87,7 @@ describe("Transform3d", () => {
         );
       }),
     });
-    const moved = run(
+    const moved = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({ plugins: [Rocks], systems: [Drift] })
@@ -158,7 +154,7 @@ describe("Transform3d", () => {
         (yield* Commands.spawns(Rotation)).spawn(Rotation.of(quarter));
       }),
     });
-    const turned = run(
+    const turned = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Turned] }));
         const world = yield* app.read(World);
@@ -205,7 +201,7 @@ describe("Transform3d", () => {
           ]),
       };
     });
-    const { made, save } = run(
+    const { made, save } = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Game);
         return { made: yield* app.read(rocks), save: app.save() };
@@ -218,7 +214,7 @@ describe("Transform3d", () => {
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
-    const loaded = run(
+    const loaded = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Game, { save: read.value });
         return yield* app.read(rocks);

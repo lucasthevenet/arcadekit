@@ -1,5 +1,4 @@
 import { Effect, Exit } from "effect";
-import type { Scope } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -38,9 +37,9 @@ import type { Network, Peer } from "./peers";
 
 /** Runs `use` with what `make` makes: a session. */
 const withMade = <T, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+  make: Effect.Effect<T, never>,
   use: (made: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): A => Effect.runSync(Effect.map(make, use));
 
 /**
  * Lets a game come to rest: rounds in which nobody issues anything, long
@@ -281,38 +280,36 @@ describe("a rollback session", () => {
 
   it("captures the game only before a tick it is not sure of", () => {
     Effect.runSync(
-      Effect.scoped(
-        Effect.gen(function* () {
-          // A session of its own each time it is asked for, no tick run yet.
-          const counted = Effect.map(
-            Session.make(CoinGame, {
-              seed: 5,
-              checkpointEvery: 1,
-              me: "ada",
-              others: ["grace"],
-              delta: DELTA,
-            }),
-            (session) => session
-          );
-          // Grace says everything before ada runs: ada is sure of every tick.
-          const sure = yield* counted;
-          const start = sure.peers.length;
-          expect(start).toBe(2);
-          for (let tick = 0; tick < 20; tick++) {
-            sure.receive({ from: "grace", tick, actions: [] });
-            expect(sure.tick()).toBe(true);
-            expect(sure.kept).toBe(0);
-          }
-          expect(sure.confirmed).toBe(20);
-          // Grace says nothing: every tick is a guess, and is captured.
-          const unsure = yield* counted;
-          for (let tick = 0; tick < 5; tick++) {
-            expect(unsure.tick()).toBe(true);
-            expect(unsure.kept).toBe(tick + 1);
-          }
-          expect(unsure.confirmed).toBe(0);
-        })
-      )
+      Effect.gen(function* () {
+        // A session of its own each time it is asked for, no tick run yet.
+        const counted = Effect.map(
+          Session.make(CoinGame, {
+            seed: 5,
+            checkpointEvery: 1,
+            me: "ada",
+            others: ["grace"],
+            delta: DELTA,
+          }),
+          (session) => session
+        );
+        // Grace says everything before ada runs: ada is sure of every tick.
+        const sure = yield* counted;
+        const start = sure.peers.length;
+        expect(start).toBe(2);
+        for (let tick = 0; tick < 20; tick++) {
+          sure.receive({ from: "grace", tick, actions: [] });
+          expect(sure.tick()).toBe(true);
+          expect(sure.kept).toBe(0);
+        }
+        expect(sure.confirmed).toBe(20);
+        // Grace says nothing: every tick is a guess, and is captured.
+        const unsure = yield* counted;
+        for (let tick = 0; tick < 5; tick++) {
+          expect(unsure.tick()).toBe(true);
+          expect(unsure.kept).toBe(tick + 1);
+        }
+        expect(unsure.confirmed).toBe(0);
+      })
     );
   });
 
