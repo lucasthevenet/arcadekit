@@ -226,10 +226,29 @@ const start = <A extends App.Any, E>(
   };
 };
 
-const Rocks = Three.instances("th/Rocks", { of: Rock, geometry, material });
+/** Which module places the entities of a kind. */
+type Transform = Three.Which["transform"];
+
+const Rocks = Three.instances("th/Rocks", {
+  of: Rock,
+  transform: Transform3d,
+  geometry,
+  material,
+});
 const Look = Plugin.make("th/Look", {
   plugins: [Three.plugin, Hand],
   systems: [Rocks],
+});
+/** The same rocks, placed as a flat game places them. */
+const FlatRocks = Three.instances("th/FlatRocks", {
+  of: Rock,
+  transform: Transform2d,
+  geometry,
+  material,
+});
+const FlatLook = Plugin.make("th/FlatLook", {
+  plugins: [Three.plugin, Hand],
+  systems: [FlatRocks],
 });
 
 const meshOf = (scene: Scene | undefined, name: string): InstancedMesh => {
@@ -252,6 +271,12 @@ const drawn = (mesh: InstancedMesh): string[] => {
   }
   return out.toSorted();
 };
+
+/** The sixteen numbers of each instance a mesh draws, in the order it draws them. */
+const rowsOf = (mesh: InstancedMesh): number[][] =>
+  Array.from({ length: mesh.count }, (_, i) =>
+    Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
+  );
 
 /** What Three.js itself makes of an entity's place: the matrix it should be drawn with. */
 const matrixOf = (world: ReadingWorld, entity: Entity): string => {
@@ -303,12 +328,16 @@ const expectTurned = (
 };
 
 /**
- * The sixteen numbers an entity should be drawn with, whichever transform
- * places it, as Three.js composes them. A flat one is in the plane of x
+ * The sixteen numbers an entity should be drawn with by a kind of this
+ * transform, as Three.js composes them. A flat one is in the plane of x
  * and y, turned about the axis that comes out of it.
  */
-const placeOf = (world: ReadingWorld, entity: Entity): number[] => {
-  if (world.has(entity, Position)) {
+const placeOf = (
+  world: ReadingWorld,
+  entity: Entity,
+  transform: Transform
+): number[] => {
+  if (transform === Transform3d) {
     return matrixOf(world, entity)
       .split(" ")
       .map((text) => Number(text));
@@ -339,24 +368,22 @@ const byPlace = (rows: number[][]): number[][] =>
   );
 
 /**
- * Checks that a mesh draws exactly these entities, each where it is. To
- * six decimals: a turn in the plane is a sine and a cosine here and a
- * quaternion in Three.js, which agree to the last bit but one.
+ * Checks that a mesh of a kind of this transform draws exactly these
+ * entities, each where it is. To six decimals: a turn in the plane is a
+ * sine and a cosine here and a quaternion in Three.js, which agree to the
+ * last bit but one.
  */
 const expectDrawn = (
   mesh: InstancedMesh,
   world: ReadingWorld,
-  entities: readonly Entity[]
+  entities: readonly Entity[],
+  transform: Transform
 ): void => {
   expect(mesh.count).toBe(entities.length);
-  const rows: number[][] = [];
-  for (let i = 0; i < mesh.count; i++) {
-    rows.push(
-      Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
-    );
-  }
-  const drawnRows = byPlace(rows);
-  const wanted = byPlace(entities.map((entity) => placeOf(world, entity)));
+  const drawnRows = byPlace(rowsOf(mesh));
+  const wanted = byPlace(
+    entities.map((entity) => placeOf(world, entity, transform))
+  );
   for (let i = 0; i < wanted.length; i++) {
     for (let k = 0; k < 16; k++) {
       expect(drawnRows[i]![k], `instance ${i}, element ${k}`).toBeCloseTo(
@@ -447,13 +474,46 @@ describe("Three.instances", () => {
     expect(mesh.geometry).toBe(geometry);
     expect(mesh.material).toBe(material);
     expect(mesh.count).toBe(4);
-    expectDrawn(mesh, world, rocks);
+    expectDrawn(mesh, world, rocks, Transform3d);
     // One by hand, so that the test does not only agree with Three.js: a
     // rock that is only somewhere is drawn there, upright.
     expect(drawn(mesh)).toContain("1 0 0 0 0 1 0 0 0 0 1 0 1 2 3 1");
     // It is the one mesh of the scene, and it is not culled.
     expect(renderer.scene?.children).toEqual([mesh]);
     expect(mesh.frustumCulled).toBe(false);
+  });
+
+  it("does not compile unless it is told which transform places its entities, one of the two modules", () => {
+    const make = () => new Object3D();
+    // A position of a flat game's and a turn in three dimensions.
+    const mixed = { ...Transform2d, Rotation: Transform3d.Rotation };
+    const kinds = (): void => {
+      // @ts-expect-error which transform is not said
+      Three.instances("th/Unsaid", { of: Rock, geometry, material });
+      // @ts-expect-error nor for objects
+      Three.objects("th/UnsaidObjects", { of: Ship, make });
+      Three.instances("th/Mixed", {
+        of: Rock,
+        // @ts-expect-error a mix of the two is neither
+        transform: mixed,
+        geometry,
+        material,
+      });
+      // @ts-expect-error a component of one is not the module
+      Three.objects("th/Part", { of: Ship, transform: Position, make });
+    };
+    void kinds;
+    expect(
+      [
+        Three.instances("th/Flat", {
+          of: Rock,
+          transform: Transform2d,
+          geometry,
+          material,
+        }),
+        Three.objects("th/Solid", { of: Ship, transform: Transform3d, make }),
+      ].map((system) => system.name)
+    ).toEqual(["th/Flat", "th/Solid"]);
   });
 
   it("draws a rotation left at zero as no turn at all", () => {
@@ -506,7 +566,7 @@ describe("Three.instances", () => {
     app.frame(0);
     const mesh = meshOf(renderer.scene, "th/Rocks");
     // As Three.js draws the same turns made of length 1.
-    expectDrawn(mesh, world, rocks);
+    expectDrawn(mesh, world, rocks, Transform3d);
     // And by hand. A quarter turn about z takes x to y and y to the
     // opposite of x, and leaves z: at the size it has, and no other.
     const rows = byPlace(
@@ -580,7 +640,7 @@ describe("Three.instances", () => {
       app.frame(0);
       const mesh = meshOf(renderer.scene, "th/Rocks");
       expect(mesh.count).toBe(alive.length);
-      expectDrawn(mesh, world, alive);
+      expectDrawn(mesh, world, alive, Transform3d);
     }
     // All four kinds of table were drawn from along the way.
     expect(
@@ -600,6 +660,7 @@ describe("Three.instances", () => {
   it("draws only the entities that have every component it was given and none of those it was told to leave out", () => {
     const Heavies = Three.instances("th/Heavies", {
       of: [Rock, Heavy],
+      transform: Transform3d,
       without: [Hidden],
       geometry,
       material,
@@ -654,6 +715,7 @@ describe("Three.instances", () => {
     const prepared: InstancedMesh[] = [];
     const Shadows = Three.instances("th/Shadows", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
       prepare: (mesh) => {
@@ -685,6 +747,7 @@ describe("Three.instances", () => {
   it("doubles its room when it runs out, lets the renderer drop the old buffer, and keeps what it drew", () => {
     const Few = Three.instances("th/Few", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
       capacity: 4,
@@ -808,24 +871,36 @@ describe("Three.instances", () => {
           }
         });
       });
-      const Crowd = Three.instances("th/Crowd", {
-        of: Rock,
-        geometry,
-        material,
-        capacity: 16_384,
-        smooth,
-        ...(colored ? { color: Color.Srgb } : {}),
-      });
+      // Half of them in three dimensions, and half in the plane: a kind of
+      // each transform.
+      const crowd = (name: string, transform: Transform) =>
+        Three.instances(name, {
+          of: Rock,
+          transform,
+          geometry,
+          material,
+          capacity: 8192,
+          smooth,
+          ...(colored ? { color: Color.Srgb } : {}),
+        });
       const renderer = makeRenderer();
       const { app, hand, world } = start(
         App.make(
-          App.define({ plugins: [Three.plugin, Hand], systems: [Move, Crowd] })
+          App.define({
+            plugins: [Three.plugin, Hand],
+            systems: [
+              Move,
+              crowd("th/Crowd", Transform3d),
+              crowd("th/FlatCrowd", Transform2d),
+            ],
+          })
         ),
         renderer
       );
       const random = makeRandom(5);
       const count = 10_000;
       const rocks: Entity[] = [];
+      const flatRocks: Entity[] = [];
       for (let i = 0; i < count; i++) {
         // Of every kind: an eighth each only placed, sized, turned, and
         // both, in three dimensions and in two.
@@ -865,7 +940,7 @@ describe("Three.instances", () => {
               : Scale.of({ x: 2, y: 2, z: 2 })
           );
         }
-        rocks.push(hand.spawn(...parts));
+        (flat ? flatRocks : rocks).push(hand.spawn(...parts));
       }
       const step = (): void => {
         app.tick(1 / 60);
@@ -873,16 +948,18 @@ describe("Three.instances", () => {
       };
       const startedAt = [
         world.get(rocks[0]!, Position)!.x,
-        world.get(rocks[4]!, Transform2d.Position)!.x,
+        world.get(flatRocks[0]!, Transform2d.Position)!.x,
       ];
       // Until the loops are compiled, and whatever is made once is made.
       for (let i = 0; i < 200; i++) {
         step();
       }
-      const mesh = meshOf(renderer.scene, "th/Crowd");
-      const attribute = mesh.instanceMatrix;
-      const buffer = attribute.array;
-      const [range] = attribute.updateRanges;
+      const meshes = ["th/Crowd", "th/FlatCrowd"].map((name) =>
+        meshOf(renderer.scene, name)
+      );
+      const attributes = meshes.map((mesh) => mesh.instanceMatrix);
+      const buffers = attributes.map((attribute) => attribute.array);
+      const ranges = attributes.map((attribute) => attribute.updateRanges[0]);
       // How much the heap grew over one tick and one frame, many times: the
       // middle one, since now and then the collector runs in between.
       const grown: number[] = [];
@@ -895,23 +972,26 @@ describe("Three.instances", () => {
       // The smallest thing that can be allocated, a number, is 12 bytes or
       // more. One of those per object would be 120,000 bytes a frame.
       expect(typical).toBeLessThan(count * 4);
-      // And what it draws into is what it drew into: the same buffer, the
+      // And what each draws into is what it drew into: the same buffer, the
       // same attribute, the same range.
-      expect(mesh.instanceMatrix).toBe(attribute);
-      expect(attribute.array).toBe(buffer);
-      expect(attribute.updateRanges[0]).toBe(range);
+      for (const [k, mesh] of meshes.entries()) {
+        expect(mesh.instanceMatrix).toBe(attributes[k]);
+        expect(mesh.instanceMatrix.array).toBe(buffers[k]);
+        expect(mesh.instanceMatrix.updateRanges[0]).toBe(ranges[k]);
+      }
       // They did move, and they were drawn where they are.
       expect(renderer.frames).toBe(301);
-      expect(renderer.counts).toEqual([count]);
+      expect(renderer.counts).toEqual([count / 2, count / 2]);
       // All the way to the tick they are at, which is where both draw them.
       app.frame(1);
       expect(world.get(rocks[0]!, Position)!.x).toBeGreaterThan(
         startedAt[0]! + 0.01
       );
-      expect(world.get(rocks[4]!, Transform2d.Position)!.x).toBeGreaterThan(
+      expect(world.get(flatRocks[0]!, Transform2d.Position)!.x).toBeGreaterThan(
         startedAt[1]! + 0.01
       );
-      expectDrawn(mesh, world, rocks);
+      expectDrawn(meshes[0]!, world, rocks, Transform3d);
+      expectDrawn(meshes[1]!, world, flatRocks, Transform2d);
     }
   );
 
@@ -939,10 +1019,10 @@ describe("a flat game's Transform2d", () => {
   const Flat = Transform2d;
   const at = (x: number, y: number) => Flat.Position.of({ x, y });
 
-  it("is drawn by Three.instances in the plane of x and y, turned about the axis that comes out of it", () => {
+  it("is drawn by a kind of Three.instances that names it in the plane of x and y, turned about the axis that comes out of it", () => {
     const renderer = makeRenderer();
     const { app, hand, world } = start(
-      App.make(App.define({ plugins: [Look] })),
+      App.make(App.define({ plugins: [FlatLook] })),
       renderer
     );
     const rocks = [
@@ -961,17 +1041,13 @@ describe("a flat game's Transform2d", () => {
     hand.spawn(Ship, at(8, 8), Flat.Rotation, Flat.Scale);
     hand.spawn(Rock, Flat.Rotation.of({ angle: 1 }));
     app.frame(0);
-    const mesh = meshOf(renderer.scene, "th/Rocks");
-    expectDrawn(mesh, world, rocks);
+    const mesh = meshOf(renderer.scene, "th/FlatRocks");
+    expectDrawn(mesh, world, rocks, Transform2d);
     // By hand, so that the test does not only agree with Three.js. Only
     // somewhere; sized; and a quarter turn, which takes x to y.
     expect(drawn(mesh)).toContain("1 0 0 0 0 1 0 0 0 0 1 0 3 4 0 1");
     expect(drawn(mesh)).toContain("2 0 0 0 0 5 0 0 0 0 1 0 -1 2 0 1");
-    const quarter = byPlace(
-      Array.from({ length: 4 }, (_, i) =>
-        Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
-      )
-    ).find((row) => row[12] === 6)!;
+    const quarter = byPlace(rowsOf(mesh)).find((row) => row[12] === 6)!;
     expect(quarter[0]).toBeCloseTo(0, 6);
     expect(quarter[1]).toBeCloseTo(1, 6);
     expect(quarter[4]).toBeCloseTo(-1, 6);
@@ -979,11 +1055,60 @@ describe("a flat game's Transform2d", () => {
     expect(quarter.slice(8)).toEqual([0, 0, 1, 0, 6, -7, 0, 1]);
   });
 
-  it("is drawn beside entities placed in three dimensions, and an entity with both positions once, from that one", () => {
+  it("is all that a kind of it reads of an entity with both positions, and none of what a kind of Transform3d reads", () => {
+    const renderer = makeRenderer();
+    const { app, hand, world } = start(
+      App.make(
+        App.define({
+          plugins: [Three.plugin, Hand],
+          systems: [Rocks, FlatRocks],
+        })
+      ),
+      renderer
+    );
+    // Both positions, and a turn and a size of each module.
+    const both = hand.spawn(
+      Rock,
+      Position.of({ x: 1, y: 2, z: 3 }),
+      Rotation.of(Transform3d.axisAngle(1, 0, 0, Math.PI / 2)),
+      Scale.of({ x: 4, y: 4, z: 4 }),
+      at(10, 20),
+      Flat.Rotation.of({ angle: Math.PI / 2 }),
+      Flat.Scale.of({ x: 2, y: 3 })
+    );
+    const solid = hand.spawn(Rock, Position.of({ x: 5, y: 6, z: 7 }));
+    const flat = hand.spawn(Rock, at(30, 40));
+    app.frame(0);
+    const rocks = meshOf(renderer.scene, "th/Rocks");
+    const flatRocks = meshOf(renderer.scene, "th/FlatRocks");
+    expectDrawn(rocks, world, [both, solid], Transform3d);
+    expectDrawn(flatRocks, world, [both, flat], Transform2d);
+    // By hand, so that the test does not only agree with Three.js: in the
+    // plane, a quarter turn about the axis out of it, at its flat size, and
+    // nothing of its place, turn or size in three dimensions.
+    const inPlane = byPlace(rowsOf(flatRocks))[0]!;
+    const wanted = [0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 1, 0, 10, 20, 0, 1];
+    for (let k = 0; k < 16; k++) {
+      expect(inPlane[k], `element ${k}`).toBeCloseTo(wanted[k]!, 6);
+    }
+    // A change to either is drawn by its own kind and by no other.
+    hand.set(both, Flat.Position, { x: 11 });
+    hand.set(both, Position, { z: 9 });
+    app.frame(0);
+    expect(byPlace(rowsOf(flatRocks))[0]!.slice(12)).toEqual([11, 20, 0, 1]);
+    expect(byPlace(rowsOf(rocks))[0]!.slice(12)).toEqual([1, 2, 9, 1]);
+  });
+
+  it("is drawn by a kind of its own beside a kind of Transform3d, each from its own, whatever an entity has of the other", () => {
     const random = makeRandom(404);
     const renderer = makeRenderer();
     const { app, hand, world } = start(
-      App.make(App.define({ plugins: [Look] })),
+      App.make(
+        App.define({
+          plugins: [Three.plugin, Hand],
+          systems: [Rocks, FlatRocks],
+        })
+      ),
       renderer
     );
     const alive: Entity[] = [];
@@ -1021,6 +1146,9 @@ describe("a flat game's Transform2d", () => {
             const { w, x, y, z } = random.quaternion();
             parts.push(Rotation.of({ x, y, z, w }));
           }
+          if (random.next() < 0.2) {
+            parts.push(Scale.of({ x: 2, y: 3, z: 4 }));
+          }
           alive.push(hand.spawn(...parts));
         } else if (roll === 3) {
           hand.despawn(one);
@@ -1045,7 +1173,18 @@ describe("a flat game's Transform2d", () => {
         }
       }
       app.frame(0);
-      expectDrawn(meshOf(renderer.scene, "th/Rocks"), world, alive);
+      expectDrawn(
+        meshOf(renderer.scene, "th/Rocks"),
+        world,
+        alive.filter((one) => world.has(one, Position)),
+        Transform3d
+      );
+      expectDrawn(
+        meshOf(renderer.scene, "th/FlatRocks"),
+        world,
+        alive.filter((one) => world.has(one, Flat.Position)),
+        Transform2d
+      );
     }
     // All of it was drawn from along the way.
     const has = (...parts: Parameters<typeof world.has>[1][]) =>
@@ -1067,6 +1206,7 @@ describe("a flat game's Transform2d", () => {
   it("is drawn only for the entities that have every component it was given and none of those it was told to leave out", () => {
     const Heavies = Three.instances("th/FlatHeavies", {
       of: [Rock, Heavy],
+      transform: Transform2d,
       without: [Hidden],
       geometry,
       material,
@@ -1101,7 +1241,7 @@ describe("a flat game's Transform2d", () => {
     }
     app.frame(0);
     const mesh = meshOf(renderer.scene, "th/FlatHeavies");
-    expectDrawn(mesh, world, shown);
+    expectDrawn(mesh, world, shown, Transform2d);
     for (const one of hidden) {
       hand.remove(one, Hidden);
     }
@@ -1109,7 +1249,7 @@ describe("a flat game's Transform2d", () => {
       hand.add(one, Hidden);
     }
     app.frame(0);
-    expectDrawn(mesh, world, hidden);
+    expectDrawn(mesh, world, hidden, Transform2d);
   });
 
   it("places an object of Three.objects in the plane, and leaves the rest of it as it was made", () => {
@@ -1117,6 +1257,7 @@ describe("a flat game's Transform2d", () => {
     const freed: Entity[] = [];
     const Cards = Three.objects("th/Cards", {
       of: Ship,
+      transform: Transform2d,
       without: [Hidden],
       make: (entity) => {
         const object = new Group();
@@ -1185,10 +1326,15 @@ describe("a flat game's Transform2d", () => {
     app.frame(0);
     expect(objectOf(whole).rotation.z).toBe(2);
     expect(objectOf(whole).scale.x).toBe(7);
-    // Lifted out of the plane, it is placed in three dimensions.
+    // Given a place in three dimensions as well, it stays where its flat
+    // one puts it: its kind reads nothing of Transform3d.
     hand.add(plain, Position.of({ x: 7, y: 8, z: 9 }));
+    hand.add(plain, Rotation.of(Transform3d.axisAngle(1, 0, 0, 1)));
+    hand.add(plain, Scale.of({ x: 6, y: 6, z: 6 }));
     app.frame(0);
-    expect(objectOf(plain).position.toArray()).toEqual([7, 8, 9]);
+    expect(objectOf(plain).position.toArray()).toEqual([1, 2, 5]);
+    expect(objectOf(plain).rotation.toArray()).toEqual([0.25, 0, 0, "XYZ"]);
+    expect(objectOf(plain).scale.toArray()).toEqual([1, 1, 4]);
     expect(made.length).toBe(2);
     // And it goes with its entity like any other.
     hand.despawn(plain);
@@ -1204,6 +1350,7 @@ describe("a flat game's Transform2d", () => {
     const made = new Map<Entity, Object3D>();
     const Cards = Three.objects("th/ManyCards", {
       of: Ship,
+      transform: Transform2d,
       make: (entity) => {
         const object = new Group();
         object.rotation.x = 0.25;
@@ -1234,7 +1381,7 @@ describe("a flat game's Transform2d", () => {
   it("is listed by Three.plugin, so that a flat game that is drawn saves and loads", () => {
     const Flatland = Plugin.make("th/Flatland", {
       plugins: [Three.plugin, Hand],
-      systems: [Rocks],
+      systems: [FlatRocks],
     });
     const first = start(
       App.make(App.define({ plugins: [Flatland] })),
@@ -1257,7 +1404,12 @@ describe("a flat game's Transform2d", () => {
     );
     expect(world.hash()).toBe(first.world.hash());
     app.frame(0);
-    expectDrawn(meshOf(renderer.scene, "th/Rocks"), world, [rock]);
+    expectDrawn(
+      meshOf(renderer.scene, "th/FlatRocks"),
+      world,
+      [rock],
+      Transform2d
+    );
   });
 });
 
@@ -1276,13 +1428,18 @@ describe("an entity drawn between two ticks", () => {
       }
     );
   });
-  const Smoothed = Three.instances("th/Smoothed", {
-    of: Rock,
-    without: [Hidden],
-    geometry,
-    material,
-    smooth: true,
-  });
+  const smoothed = (name: string, transform: Transform) =>
+    Three.instances(name, {
+      of: Rock,
+      transform,
+      without: [Hidden],
+      geometry,
+      material,
+      smooth: true,
+    });
+  const Smoothed = smoothed("th/Smoothed", Transform3d);
+  /** The same rocks of a flat game, drawn so. */
+  const SmoothedFlat = smoothed("th/SmoothedFlat", Transform2d);
   const play = (
     ...systems: readonly System.System<never, BuiltIn | Three.Scene>[]
   ) => {
@@ -1302,6 +1459,7 @@ describe("an entity drawn between two ticks", () => {
       world,
       renderer,
       mesh: () => meshOf(renderer.scene, "th/Smoothed"),
+      flatMesh: () => meshOf(renderer.scene, "th/SmoothedFlat"),
     };
   };
   /** The sixteen numbers of the instance that is at this height: no two of a test share one. */
@@ -1442,40 +1600,45 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("is drawn where it is when it went further in a tick than it was told an entity can", () => {
-    const Wrapping = Three.instances("th/Smoothed", {
-      of: Rock,
-      geometry,
-      material,
-      smooth: true,
-      snap: 50,
-    });
-    const { app, hand, mesh } = play(Wrapping);
+    const wrapping = (name: string, transform: Transform) =>
+      Three.instances(name, {
+        of: Rock,
+        transform,
+        geometry,
+        material,
+        smooth: true,
+        snap: 50,
+      });
+    const { app, flatMesh, hand, mesh } = play(
+      wrapping("th/Smoothed", Transform3d),
+      wrapping("th/SmoothedFlat", Transform2d)
+    );
     const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     const card = hand.spawn(Rock, Flat.Position.of({ x: 0, y: 2 }));
     app.frame(0);
     app.tick(1);
     app.frame(0.5);
     expect(xAt(mesh(), 1)).toBe(5);
-    expect(xAt(mesh(), 2)).toBe(5);
+    expect(xAt(flatMesh(), 2)).toBe(5);
     // Off one edge and in at the other: not drawn crossing the screen.
     hand.set(rock, Position, { x: -400 });
     hand.set(card, Flat.Position, { x: 300 });
     app.tick(1);
     app.frame(0.5);
     expect(xAt(mesh(), 1)).toBe(-390);
-    expect(xAt(mesh(), 2)).toBe(310);
+    expect(xAt(flatMesh(), 2)).toBe(310);
     // And on its way again from there.
     app.tick(1);
     app.frame(0.5);
     expect(xAt(mesh(), 1)).toBe(-385);
-    expect(xAt(mesh(), 2)).toBe(315);
+    expect(xAt(flatMesh(), 2)).toBe(315);
     // Wherever it went: up and away as well as along.
     hand.set(rock, Position, { x: -380, y: 91, z: 60 });
     hand.set(card, Flat.Position, { x: 320, y: 92 });
     app.tick(1);
     app.frame(0.5);
     expect(rowAt(mesh(), 91).slice(12, 15)).toEqual([-370, 91, 60]);
-    expect(rowAt(mesh(), 92).slice(12, 15)).toEqual([330, 92, 0]);
+    expect(rowAt(flatMesh(), 92).slice(12, 15)).toEqual([330, 92, 0]);
     hand.set(rock, Position, { y: 1, z: 0 });
     app.tick(1);
     app.frame(1);
@@ -1493,7 +1656,7 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("draws an entity in a slot that was another's turned and sized as it is, not on the way from the other's", () => {
-    const { app, hand, mesh, world } = play(Smoothed);
+    const { app, flatMesh, hand, mesh, world } = play(Smoothed, SmoothedFlat);
     const olds = [
       hand.spawn(
         Rock,
@@ -1531,7 +1694,8 @@ describe("an entity drawn between two ticks", () => {
     ).toEqual(olds.map((one) => one & 0x3f_ff_ff).toSorted((a, b) => a - b));
     app.tick(1);
     app.frame(0.5);
-    expectDrawn(mesh(), world, [flat, solid]);
+    expectDrawn(mesh(), world, [solid], Transform3d);
+    expectDrawn(flatMesh(), world, [flat], Transform2d);
   });
 
   it("turns by the shorter way and grows evenly, in three dimensions", () => {
@@ -1593,7 +1757,7 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("turns by the shorter way round and grows evenly, in the plane", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, flatMesh: mesh, hand } = play(SmoothedFlat);
     const card = hand.spawn(
       Rock,
       Flat.Position.of({ x: 0, y: 1 }),
@@ -1637,7 +1801,7 @@ describe("an entity drawn between two ticks", () => {
 
   it("agrees, over a long run of ticks and frames that do not line up, with a model of what was last drawn", () => {
     const random = makeRandom(1612);
-    const { app, hand, mesh, world } = play(Smoothed);
+    const { app, flatMesh, hand, mesh, world } = play(Smoothed, SmoothedFlat);
     // Each entity at a height of its own, by which its instance is found.
     let heights = 0;
     const alive: {
@@ -1688,7 +1852,8 @@ describe("an entity drawn between two ticks", () => {
       const alpha = random.next();
       app.frame(alpha);
       const shown = alive.filter((one) => !world.has(one.entity, Hidden));
-      expect(mesh().count).toBe(shown.length);
+      expect(mesh().count).toBe(shown.filter((one) => !one.flat).length);
+      expect(flatMesh().count).toBe(shown.filter((one) => one.flat).length);
       for (const one of shown) {
         const x = xOf(one);
         const last = model.get(one.entity);
@@ -1697,10 +1862,10 @@ describe("an entity drawn between two ticks", () => {
           from = ticks > 0 ? last.to : last.from;
         }
         model.set(one.entity, { from, to: x, frame });
-        expect(xAt(mesh(), one.y), `frame ${frame}`).toBeCloseTo(
-          from + (x - from) * alpha,
-          2
-        );
+        expect(
+          xAt(one.flat ? flatMesh() : mesh(), one.y),
+          `frame ${frame}`
+        ).toBeCloseTo(from + (x - from) * alpha, 2);
       }
     }
     // More of them than the room it started with, and of both kinds.
@@ -1787,18 +1952,23 @@ describe("an entity drawn between two ticks", () => {
 
   it("places an object of Three.objects the same way", () => {
     const made = new Map<Entity, Object3D>();
-    const Ships = Three.objects("th/SmoothShips", {
-      of: Ship,
-      make: (entity) => {
-        const object = new Group();
-        object.position.z = 9;
-        made.set(entity, object);
-        return object;
-      },
-      smooth: true,
-      snap: 200,
-    });
-    const { app, hand } = play(Ships);
+    const ships = (name: string, transform: Transform) =>
+      Three.objects(name, {
+        of: Ship,
+        transform,
+        make: (entity) => {
+          const object = new Group();
+          object.position.z = 9;
+          made.set(entity, object);
+          return object;
+        },
+        smooth: true,
+        snap: 200,
+      });
+    const { app, hand } = play(
+      ships("th/SmoothShips", Transform3d),
+      ships("th/SmoothCards", Transform2d)
+    );
     const ship = hand.spawn(
       Ship,
       Position.of({ x: 0, y: 1, z: 2 }),
@@ -1910,6 +2080,7 @@ describe("an entity drawn between two ticks", () => {
   it("is not done unless it is asked for: an entity is drawn where the last tick left it", () => {
     const Plain = Three.instances("th/Smoothed", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
     });
@@ -1930,12 +2101,13 @@ describe("an entity drawn between two ticks", () => {
     });
     const Ships = Three.objects("th/SmoothShips", {
       of: Ship,
+      transform: Transform3d,
       make: () => new Object3D(),
       smooth: true,
     });
     const Drawn = Plugin.make("th/SmoothDrawn", {
       plugins: [Three.plugin, Rules],
-      systems: [Smoothed, Ships],
+      systems: [Smoothed, SmoothedFlat, Ships],
     });
     const drawnGame = start(
       App.make(App.define({ plugins: [Drawn] }), {
@@ -1978,21 +2150,32 @@ describe("an entity drawn between two ticks", () => {
 
 describe("a colour per instance", () => {
   const Flat = Transform2d;
-  const Painted = Three.instances("th/Painted", {
-    of: Rock,
-    without: [Hidden],
-    geometry,
-    material,
-    // The renderer's own numbers, handed over as they are: what these
-    // tests follow is which instance has which.
-    color: Color.Linear,
-    capacity: 4,
-  });
-  const play = (system: ReturnType<typeof Three.instances> = Painted) => {
+  const painted = (name: string, transform: Transform) =>
+    Three.instances(name, {
+      of: Rock,
+      transform,
+      without: [Hidden],
+      geometry,
+      material,
+      // The renderer's own numbers, handed over as they are: what these
+      // tests follow is which instance has which.
+      color: Color.Linear,
+      capacity: 4,
+    });
+  const Painted = painted("th/Painted", Transform3d);
+  /** The same of a flat game's rocks. */
+  const PaintedFlat = painted("th/PaintedFlat", Transform2d);
+  const play = (
+    system: ReturnType<typeof Three.instances> = Painted,
+    ...others: readonly ReturnType<typeof Three.instances>[]
+  ) => {
     const renderer = makeRenderer();
     const { app, close, hand, world } = start(
       App.make(
-        App.define({ plugins: [Three.plugin, Hand], systems: [system] })
+        App.define({
+          plugins: [Three.plugin, Hand],
+          systems: [system, ...others],
+        })
       ),
       renderer
     );
@@ -2002,6 +2185,7 @@ describe("a colour per instance", () => {
       hand,
       world,
       mesh: () => meshOf(renderer.scene, "th/Painted"),
+      flatMesh: () => meshOf(renderer.scene, "th/PaintedFlat"),
     };
   };
   const paint = (r: number, g: number, b: number) =>
@@ -2019,14 +2203,14 @@ describe("a colour per instance", () => {
   };
 
   it("is the colour its entity has, or white, for every kind of entity, beside the matrix of the same entity", () => {
-    const { app, hand, mesh, world } = play();
+    const { app, flatMesh, hand, mesh, world } = play(Painted, PaintedFlat);
     const turn = Rotation.of(Transform3d.axisAngle(0, 1, 0, 1));
     const size = Scale.of({ x: 2, y: 2, z: 2 });
     const flatTurn = Flat.Rotation.of({ angle: 1 });
     const flatSize = Flat.Scale.of({ x: 2, y: 2 });
     const at = (y: number) => Position.of({ x: 0, y, z: 0 });
     const flat = (y: number) => Flat.Position.of({ x: 0, y });
-    // One of each of the eight, each of a colour of its own.
+    // One of each of the four of either transform, each of a colour of its own.
     const rocks = [
       hand.spawn(Rock, at(1), paint(0.125, 0, 0)),
       hand.spawn(Rock, at(2), size, paint(0.25, 0, 0)),
@@ -2052,15 +2236,29 @@ describe("a colour per instance", () => {
     hand.spawn(Ship, at(20), paint(1, 1, 1));
     hand.spawn(Rock, Hidden, at(20), paint(1, 1, 1));
     app.frame(0);
-    expectDrawn(mesh(), world, [...rocks, ...bare]);
+    expectDrawn(
+      mesh(),
+      world,
+      [...rocks.slice(0, 4), ...bare.slice(0, 4)],
+      Transform3d
+    );
+    expectDrawn(
+      flatMesh(),
+      world,
+      [...rocks.slice(4), ...bare.slice(4)],
+      Transform2d
+    );
     for (let y = 1; y <= 4; y++) {
       expect(colorAt(mesh(), y)).toEqual([y / 8, 0, 0]);
     }
     for (let y = 5; y <= 8; y++) {
-      expect(colorAt(mesh(), y)).toEqual([0, (y - 4) / 8, 0.75]);
+      expect(colorAt(flatMesh(), y)).toEqual([0, (y - 4) / 8, 0.75]);
     }
-    for (let y = 9; y <= 16; y++) {
+    for (let y = 9; y <= 12; y++) {
       expect(colorAt(mesh(), y)).toEqual([1, 1, 1]);
+    }
+    for (let y = 13; y <= 16; y++) {
+      expect(colorAt(flatMesh(), y)).toEqual([1, 1, 1]);
     }
     // Three numbers an instance, in a buffer of its own that changes often.
     const colors = mesh().instanceColor!;
@@ -2073,7 +2271,8 @@ describe("a colour per instance", () => {
     hand.add(bare[0]!, paint(0.5, 0.5, 0.5));
     hand.remove(rocks[2]!, Color.Linear);
     app.frame(0);
-    expect(mesh().count).toBe(15);
+    expect(mesh().count).toBe(7);
+    expect(flatMesh().count).toBe(8);
     expect(colorAt(mesh(), 1)).toEqual([0, 1, 0.5]);
     expect(colorAt(mesh(), 3)).toEqual([1, 1, 1]);
     expect(colorAt(mesh(), 9)).toEqual([0.5, 0.5, 0.5]);
@@ -2081,21 +2280,27 @@ describe("a colour per instance", () => {
 
   it("keeps each colour with its instance while they come, go and change, and the room for them grows", () => {
     const random = makeRandom(88);
-    const { app, hand, mesh, world } = play();
+    const { app, flatMesh, hand, mesh, world } = play(Painted, PaintedFlat);
     let heights = 0;
-    const alive: { readonly entity: Entity; readonly y: number }[] = [];
-    let dropped = 0;
+    const alive: {
+      readonly entity: Entity;
+      readonly y: number;
+      readonly flat: boolean;
+    }[] = [];
+    /** How many times each kind's mesh let go of its buffers, to grow them. */
+    const dropped = [0, 0];
     for (let frame = 0; frame < 120; frame++) {
       for (let step = 0; step < 6; step++) {
         const roll = random.int(8);
         const one = alive[random.int(alive.length)];
         if (roll < 4 || one === undefined) {
           const y = ++heights;
+          const flat = random.next() < 0.5;
           const parts = [
             Rock,
-            random.next() < 0.5
-              ? Position.of({ x: random.int(50), y, z: 0 })
-              : Flat.Position.of({ x: random.int(50), y }),
+            flat
+              ? Flat.Position.of({ x: random.int(50), y })
+              : Position.of({ x: random.int(50), y, z: 0 }),
             paint(random.next(), random.next(), random.next()),
           ] as ComponentInput[];
           if (random.next() < 0.3) {
@@ -2104,7 +2309,7 @@ describe("a colour per instance", () => {
               Flat.Scale.of({ x: 2, y: 2 })
             );
           }
-          alive.push({ entity: hand.spawn(...parts), y });
+          alive.push({ entity: hand.spawn(...parts), y, flat });
         } else if (roll === 4) {
           hand.despawn(one.entity);
           alive.splice(alive.indexOf(one), 1);
@@ -2122,28 +2327,36 @@ describe("a colour per instance", () => {
       }
       app.frame(0);
       if (frame === 0) {
-        mesh().addEventListener("dispose", () => {
-          dropped++;
-        });
+        for (const [k, kind] of [mesh(), flatMesh()].entries()) {
+          kind.addEventListener("dispose", () => {
+            dropped[k] = dropped[k]! + 1;
+          });
+        }
       }
       // Each in its colour, or white while it has none.
-      expect(mesh().count).toBe(alive.length);
+      expect(mesh().count).toBe(alive.filter((one) => !one.flat).length);
+      expect(flatMesh().count).toBe(alive.filter((one) => one.flat).length);
       for (const one of alive) {
         const { b, g, r } = world.get(one.entity, Color.Linear) ?? {
           r: 1,
           g: 1,
           b: 1,
         };
-        expect(colorAt(mesh(), one.y), `frame ${frame}`).toEqual([r, g, b]);
+        expect(
+          colorAt(one.flat ? flatMesh() : mesh(), one.y),
+          `frame ${frame}`
+        ).toEqual([r, g, b]);
       }
     }
-    // It started with room for four, and outgrew it several times over:
+    // Each started with room for four, and outgrew it several times over:
     // both buffers together, each time.
-    expect(alive.length).toBeGreaterThan(64);
-    expect(dropped).toBeGreaterThanOrEqual(5);
-    expect(mesh().instanceColor!.array.length).toBe(
-      (mesh().instanceMatrix.array.length / 16) * 3
-    );
+    for (const [k, kind] of [mesh(), flatMesh()].entries()) {
+      expect(kind.count).toBeGreaterThan(32);
+      expect(dropped[k]).toBeGreaterThanOrEqual(4);
+      expect(kind.instanceColor!.array.length).toBe(
+        (kind.instanceMatrix.array.length / 16) * 3
+      );
+    }
   });
 
   it("tells the renderer to send the colours that are drawn and no more, each frame something is", () => {
@@ -2180,6 +2393,7 @@ describe("a colour per instance", () => {
   it("changes evenly between two ticks when the kind is drawn so, however far it changes", () => {
     const Fading = Three.instances("th/Painted", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
       color: Color.Linear,
@@ -2208,6 +2422,7 @@ describe("a colour per instance", () => {
   it("is a hex code's numbers in a Color.Srgb, converted for the renderer as Three.js converts them", () => {
     const Coded = Three.instances("th/Painted", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
       color: Color.Srgb,
@@ -2259,6 +2474,7 @@ describe("a colour per instance", () => {
   it("takes every colour there is: any three numbers from 0 to 1, together", () => {
     const Coded = Three.instances("th/Painted", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
       color: Color.Srgb,
@@ -2295,6 +2511,7 @@ describe("a colour per instance", () => {
   it("refuses a number that is no colour, and says which entity has it", () => {
     const Coded = Three.instances("th/Painted", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
       color: Color.Srgb,
@@ -2338,6 +2555,7 @@ describe("a colour per instance", () => {
   it("changes evenly between two ticks in the numbers the game has, and is converted then", () => {
     const Fading = Three.instances("th/Painted", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
       color: Color.Srgb,
@@ -2366,6 +2584,7 @@ describe("a colour per instance", () => {
   it("is not there unless it is asked for: the mesh has no colours, and an entity needs none to be drawn", () => {
     const Plain = Three.instances("th/Painted", {
       of: Rock,
+      transform: Transform3d,
       geometry,
       material,
     });
@@ -2378,7 +2597,7 @@ describe("a colour per instance", () => {
   });
 
   it("is one of arcadekit's two: a component of the game's own does not compile as one, whatever its fields", () => {
-    const base = { of: Rock, geometry, material };
+    const base = { of: Rock, transform: Transform3d, geometry, material };
     const Paint = Component.define("th/Paint", {
       r: Field.f32,
       g: Field.f32,
@@ -2445,6 +2664,7 @@ describe("Three.objects", () => {
   let tilted = false;
   const Ships = Three.objects("th/Ships", {
     of: Ship,
+    transform: Transform3d,
     without: [Hidden],
     make: (entity) => {
       const object = new Group();
@@ -2801,6 +3021,7 @@ describe("Three.plugin", () => {
     });
     const Ships = Three.objects("th/Flagships", {
       of: Ship,
+      transform: Transform3d,
       make: () => {
         order.push("make");
         return new Object3D();
@@ -2888,6 +3109,7 @@ describe("Three.plugin", () => {
     });
     const Flagships = Three.objects("th/Flagships", {
       of: Ship,
+      transform: Transform3d,
       make: () => new Object3D(),
     });
     const Drawn = Plugin.make("th/Drawn", {
@@ -3106,11 +3328,13 @@ describe("the geometries and materials a system draws with", () => {
       systems: [
         Three.instances("th/Boulders", {
           of: Rock,
+          transform: Transform3d,
           geometry: shared,
           material: own,
         }),
         Three.instances("th/Pebbles", {
           of: Rock,
+          transform: Transform3d,
           geometry: shared,
           material: other,
         }),
@@ -3136,6 +3360,7 @@ describe("the geometries and materials a system draws with", () => {
       systems: [
         Three.objects("th/Fleet", {
           of: Ship,
+          transform: Transform3d,
           make: () => {
             const paint = new MeshBasicMaterial();
             paints.push(paint);

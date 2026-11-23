@@ -9,13 +9,14 @@ With `smooth: true`, `Three.instances` and `Three.objects` **interpolate** each 
 
 ```ts
 import { Three } from "@arcadekit/three";
-import { Component } from "arcadekit";
+import { Component, Transform3d } from "arcadekit";
 import { IcosahedronGeometry, MeshStandardMaterial } from "three";
 
 const Rock = Component.tag("game/Rock");
 
 const Rocks = Three.instances("game/Rocks", {
   of: Rock,
+  transform: Transform3d,
   geometry: new IcosahedronGeometry(1),
   material: new MeshStandardMaterial({ color: "#8a8f98" }),
   smooth: true,

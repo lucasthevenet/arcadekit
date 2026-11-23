@@ -10,6 +10,7 @@
  *   // One object per entity, made from the model while the bundle is loaded.
  *   const Ships = Three.objects("game/Ships", {
  *     of: Ship,
+ *     transform: Transform3d,
  *     from: Fleet,
  *     make: (entity, { ship }) => ship.scene.clone(),
  *   })
@@ -17,6 +18,7 @@
  *   // Or a crowd, each entity an instance of one of the model's meshes.
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
+ *     transform: Transform3d,
  *     from: Fleet,
  *     look: ({ ship }) => Gltf.mesh(ship, "Hull"),
  *   })

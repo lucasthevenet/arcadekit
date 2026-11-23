@@ -216,6 +216,7 @@ const Rules = Plugin.make("page/Rules", {
 // --- how it looks: only the page has this --------------------------------------------
 const Motes = Three.instances("page/Motes", {
   of: Mote,
+  transform: Transform3d,
   geometry: new BoxGeometry(1, 1, 1),
   // White, which each mote's own colour multiplies.
   material: new MeshStandardMaterial({ color: "#ffffff" }),
@@ -246,6 +247,7 @@ const KeepDeck = Assets.during(
 
 const Cards = Three.instances("page/Cards", {
   of: Card,
+  transform: Transform2d,
   from: Deck,
   look: ({ face }) => ({
     geometry: new PlaneGeometry(4, 4),
@@ -268,6 +270,7 @@ const Fleet = Assets.bundle("page/Fleet", {
 const KeepFleet = Assets.during(Effect.succeed(true), Fleet);
 const Ships = Three.objects("page/Ships", {
   of: Ship,
+  transform: Transform3d,
   from: Fleet,
   make: (_entity, { ship }) => ship.scene.clone(),
   smooth: true,
