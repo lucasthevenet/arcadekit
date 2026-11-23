@@ -15,17 +15,18 @@ import {
   Field,
   Plugin,
   Query,
+  Resource,
   System,
   Time,
 } from "arcadekit";
-import { Context, Effect, Layer } from "effect";
+import { Effect } from "effect";
 
 const Position = Component.define("physics/Position", { x: Field.f32 });
 const Velocity = Component.define("physics/Velocity", { x: Field.f32 });
 
-class Bounds extends Context.Service<Bounds, { readonly width: number }>()(
-  "physics/Bounds"
-) {}
+const Bounds = Resource.make("physics/Bounds", {
+  defaultValue: () => ({ width: 10 }),
+});
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
@@ -40,7 +41,6 @@ const Movement = System.tick("physics/Movement", function* () {
 export const Physics = Plugin.make("physics/Physics", {
   // so saves containing them load
   systems: [Movement],
-  layer: Layer.succeed(Bounds, { width: 10 }), // services for the whole app
   setup: Effect.gen(function* () {
     // runs once, on a fresh start
     (yield* Commands.spawns(Position, Velocity)).spawn(
@@ -74,9 +74,16 @@ Components, events and actions are plain values, exported from the plugin's modu
 
 A service is how your game's code reaches the outside world: sound, storage, the network. A system asks for the service and never imports the module that does the work, so a test can swap it.
 
+A service is for the [frame and input stages](../concepts/ticks-and-frames.md). The code of the tick, a system of the tick, a handler or a plugin's `setup`, requires only the built-in services, queries, singletons, states, events and resources: one that requires a service of yours doesn't compile, since what a service keeps is no part of the world, and no save, rewind or refused action would see it. Instead:
+
+- keep the game's state in the world, as a component or a singleton;
+- keep a cache that is rebuilt from the world, such as a spatial index, in a `Field.transient` field of a singleton. A save doesn't hold it and a rewind leaves it undefined, so the system that reads it rebuilds it when it finds it undefined, and a refused action puts back the one it replaced;
+- make configuration a [`Resource`](#configuration), which the tick may read;
+- play, draw, log and call the network from `System.frame`, which hears what the tick's events said.
+
 A plugin's `layer` builds its services. While building, it can use the built-in services and whatever the plugin's dependencies provide: a layer that needs another plugin's service lists that plugin in `plugins`. Acquire resources that need releasing with `Effect.acquireRelease` inside `Layer.effect`; they are released when the app's scope closes.
 
-Anything your systems, handlers and setups need that no plugin provides remains a requirement of `App.make`. Provide it the usual Effect way, and a missing one is the usual compile error:
+Anything your frame and input systems need that no plugin provides remains a requirement of `App.make`. Provide it the usual Effect way, and a missing one is the usual compile error:
 
 ```ts sketch
 App.make(App.define({ plugins: [Sfx] })).pipe(Effect.provide(AudioLive));

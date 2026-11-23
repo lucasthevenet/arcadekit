@@ -277,13 +277,20 @@ describe("systems", () => {
     expect(given.difficulty).toBe(3);
   });
 
-  it("get their services the usual Effect way, and a missing one does not compile", () => {
+  it("get their services the usual Effect way in the frame, and a missing one does not compile", () => {
     class Audio extends Context.Service<
       Audio,
       { readonly play: (sound: string) => void }
     >()("rt/Audio") {}
     const played: string[] = [];
-    const Beep = System.tick("Beep", function* () {
+    System.tick(
+      "rt/TickBeep",
+      // @ts-expect-error a tick requires no service of the game's own
+      function* () {
+        (yield* Audio).play("beep");
+      }
+    );
+    const Beep = System.frame("Beep", function* () {
       const audio = yield* Audio;
       const things = yield* Query.all(Position);
       audio.play(`beep x${things.count()}`);
@@ -301,7 +308,7 @@ describe("systems", () => {
       })
     );
     withApp(make, (app) => {
-      app.tick(1);
+      app.frame(0);
     });
     expect(played).toEqual(["beep x1"]);
 
@@ -310,7 +317,7 @@ describe("systems", () => {
       withApp(
         // @ts-expect-error Audio is not provided
         App.make(App.define({ systems: [Beep] })),
-        (app) => app.tick(1)
+        (app) => app.frame(0)
       )
     ).toThrow(/Service not found: .*Audio/);
   });
@@ -379,25 +386,27 @@ describe("the built-in services", () => {
     ]);
   });
 
-  it("leave a game free to define a service called World", () => {
-    class GameWorld extends Context.Service<
-      GameWorld,
-      { readonly size: number }
-    >()("World") {}
+  it("leave a game free to define a resource called World", () => {
+    const GameWorld = Resource.make("World", {
+      defaultValue: () => ({ size: 0 }),
+    });
+    const sizes: number[] = [];
     const Probe = System.tick("Probe", function* () {
       const world = yield* World;
       const mine = yield* GameWorld;
+      sizes.push(mine.size);
       (yield* Commands.spawns(Lifetime)).spawn(
         Lifetime.of({ seconds: mine.size + world.entityCount })
       );
     });
     withApp(
       App.make(App.define({ systems: [Probe] })).pipe(
-        Effect.provideService(GameWorld, { size: 7 })
+        Effect.provide(Resource.layer(GameWorld, { size: 7 }))
       ),
       (app, world) => {
         app.tick(1);
         expect(world.entityCount).toBe(1);
+        expect(sizes).toEqual([7]);
       }
     );
   });

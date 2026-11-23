@@ -645,8 +645,8 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
  *
  * **Gotchas**
  *
- * - State held by your game's own services isn't in a save, and a `transient`
- *   field is undefined after one is loaded.
+ * - State kept outside the world, in a variable of a module, isn't in a save,
+ *   and a `transient` field is undefined after one is loaded.
  *
  * @category Constructors
  */

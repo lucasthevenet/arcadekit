@@ -7,6 +7,7 @@ import {
   Action,
   App,
   CommandBuffer,
+  Commands,
   Component,
   EcsWorld,
   Field,
@@ -18,6 +19,7 @@ import {
   Singleton,
   SnapshotError,
   System,
+  Timeline,
   World,
   readSnapshot,
   writeSnapshot,
@@ -701,6 +703,90 @@ describe("a singleton in an app", () => {
           { save: read.value }
         );
         expect((yield* bare.read(World)).hash()).toBe(savedHash);
+      })
+    );
+  });
+});
+
+describe("a cache rebuilt from the world, kept in a transient field of a singleton", () => {
+  const Spot = Component.define("sg/Spot", { x: Field.i32 });
+  /** Which spots are where: what a system would otherwise keep in a service. */
+  const Index = Singleton.define(
+    "sg/Index",
+    { byX: Field.transient<Record<number, number>>() },
+    { byX: undefined }
+  );
+  const Spots = Query.all(Spot);
+  let built = 0;
+  /** Reads the index, and builds it from the world when it has none. */
+  const Look = System.tick("sg/Look", function* () {
+    const index = yield* Index.writes;
+    if (index.byX === undefined) {
+      built++;
+      const byX: Record<number, number> = {};
+      (yield* Spots).each((spot) => {
+        byX[spot.x] = (byX[spot.x] ?? 0) + 1;
+      });
+      index.byX = byX;
+    }
+  });
+  const Clear = Action.define(
+    "sg/Clear",
+    Schema.Struct({ refuse: Schema.Boolean })
+  );
+  class Refused extends Data.TaggedError("sg/Refused")<{}> {}
+  const clear = Action.handler(Clear, function* ({ refuse }) {
+    (yield* Index.writes).byX = {};
+    if (refuse) {
+      return yield* new Refused();
+    }
+  });
+  const Spotted = Plugin.make("sg/Spotted", {
+    handlers: [clear],
+    systems: [Look],
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Spot);
+      commands.spawn(Spot.of({ x: 1 }));
+      commands.spawn(Spot.of({ x: 1 }));
+      commands.spawn(Spot.of({ x: 2 }));
+    }),
+  });
+  const Game = App.define({ plugins: [Spotted] });
+
+  it("is built once, put back by a refused action, and built again after a load and a rewind", () => {
+    built = 0;
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make(Game);
+        const byX = () => Effect.map(app.read(Index), (index) => index.byX);
+        app.tick(1);
+        app.tick(1);
+        expect(built).toBe(1);
+        expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
+        // A refused action's replacement is undone with the rest of it.
+        expect(Exit.isFailure(app.dispatch(Clear, { refuse: true }))).toBe(
+          true
+        );
+        expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
+        const moment = Timeline.capture(app);
+        expect(Exit.isSuccess(moment)).toBe(true);
+        // A save doesn't hold it: the loaded game builds it again.
+        const save = app.save();
+        expect(Exit.isSuccess(save)).toBe(true);
+        if (Exit.isFailure(save) || Exit.isFailure(moment)) {
+          return;
+        }
+        const loaded = yield* App.make(Game, { save: save.value });
+        expect((yield* loaded.read(Index)).byX).toBeUndefined();
+        loaded.tick(1);
+        expect(built).toBe(2);
+        expect((yield* loaded.read(Index)).byX).toEqual({ 1: 2, 2: 1 });
+        // Nor does a rewind put it back: the next tick builds it again.
+        Timeline.rewind(app, moment.value);
+        expect(yield* byX()).toBeUndefined();
+        app.tick(1);
+        expect(built).toBe(3);
+        expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
       })
     );
   });

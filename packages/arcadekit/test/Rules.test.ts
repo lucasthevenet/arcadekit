@@ -15,6 +15,7 @@ import {
   Journal,
   Plugin,
   Query,
+  Random,
   System,
   Time,
 } from "../src/index";
@@ -528,27 +529,30 @@ describe("actions", () => {
       { systems: [], handlers: [endTurn, endTurn] }
     );
 
+    // A handler runs as the tick does: a service of the game's own, which
+    // keeps what a refused action does not take back, does not compile, and
+    // its randomness is the built-in Random.
     class Rng extends Context.Service<Rng, { readonly next: () => number }>()(
       "ru/Rng"
     ) {}
+    Action.handler(
+      Unhandled,
+      // @ts-expect-error the handler needs Rng, which is no part of the world
+      function* () {
+        return (yield* Rng).next();
+      }
+    );
     const roll = Action.handler(Unhandled, function* () {
-      return (yield* Rng).next();
+      return (yield* Random).int(1, 6);
     });
-    const unprovided = withApp(
-      // @ts-expect-error the handler needs Rng and nothing provides it
-      App.make(App.define({ systems: [], handlers: [roll] })),
-      (app) => app.dispatch(Unhandled, {})
-    );
-    // Forced past the compiler, it surfaces as a defect rather than a crash.
-    expect(Exit.isFailure(unprovided as Exit.Exit<unknown, unknown>)).toBe(
-      true
-    );
-    withApp(
-      App.make(App.define({ systems: [], handlers: [roll] })).pipe(
-        Effect.provideService(Rng, { next: () => 4 })
-      ),
-      (app) => expect(app.dispatch(Unhandled, {})).toEqual(Exit.succeed(4))
-    );
+    const rolls = () =>
+      withApp(App.make(App.define({ systems: [], handlers: [roll] })), (app) =>
+        [1, 2, 3].map(() => app.dispatch(Unhandled, {}))
+      );
+    const rolled = rolls();
+    expect(rolled.every(Exit.isSuccess)).toBe(true);
+    // Seeded by the app, so another app of the game rolls the same.
+    expect(rolls()).toEqual(rolled);
   });
 
   it("cannot be dispatched in the middle of a tick", () => {
