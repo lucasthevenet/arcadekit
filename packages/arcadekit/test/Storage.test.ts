@@ -1056,6 +1056,67 @@ describe("structural changes during iteration", () => {
     expect(world.isAlive(doomed)).toBe(false);
     expect(world.entityCount).toBe(1);
   });
+
+  const refusing: [string, (world: World, apply: () => unknown) => void][] = [
+    [
+      "while a query is iterating",
+      (world, apply) => {
+        world.view(query([Health])).each(() => {
+          apply();
+        });
+      },
+    ],
+    [
+      "inside a transaction",
+      (world, apply) => {
+        world.begin();
+        try {
+          apply();
+        } finally {
+          world.rollback();
+        }
+      },
+    ],
+    [
+      "in a frozen world",
+      (world, apply) => {
+        world.freeze();
+        try {
+          apply();
+        } finally {
+          world.thaw();
+        }
+      },
+    ],
+  ];
+
+  it.each(refusing)(
+    "refuses to apply %s, and keeps every command for a later apply",
+    (_, inside) => {
+      const world = new World();
+      const commands = new CommandBuffer(world);
+      const kept = world.spawn(Health.of({ hp: 1 }), Enemy);
+      const gone = world.spawn(Health.of({ hp: 2 }));
+      const spawned = commands.spawn(Health.of({ hp: 3 }));
+      commands.despawn(gone);
+      commands.add(kept, Stunned);
+      commands.remove(kept, Enemy);
+      const before = world.hash();
+
+      expect(() => inside(world, () => commands.apply())).toThrow(
+        /CommandBuffer\.apply\(\)/
+      );
+      expect(commands.size).toBe(4);
+      expect(world.hash()).toBe(before);
+      expect(world.has(spawned, Health)).toBe(false);
+
+      expect(commands.apply()).toBe(4);
+      expect(world.get(spawned, Health)).toEqual({ hp: 3 });
+      expect(world.isAlive(gone)).toBe(false);
+      expect(world.has(kept, Stunned)).toBe(true);
+      expect(world.has(kept, Enemy)).toBe(false);
+    }
+  );
 });
 
 describe("randomized comparison against a simple model", () => {

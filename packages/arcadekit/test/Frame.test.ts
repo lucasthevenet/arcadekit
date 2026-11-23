@@ -132,6 +132,7 @@ describe("a frozen world", () => {
       ["Commands.despawn()", () => commands.despawn(ball)],
       ["Commands.add()", () => commands.add(ball, Glow)],
       ["Commands.remove()", () => commands.remove(ball, Glow)],
+      ["CommandBuffer.apply()", () => commands.apply()],
       ["World.begin()", () => world.begin()],
       ["World.restore()", () => world.restore(bytes)],
       [
