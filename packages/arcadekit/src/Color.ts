@@ -38,9 +38,10 @@ import type { FieldDef } from "./ecs/component";
  *
  * **Gotchas**
  *
- * A number below 0 or over 1, or NaN, is not a colour, and `@arcadekit/three`
- * fails the frame that draws it with an error that names the entity. Divide a
- * byte, such as 255, by 255 first.
+ * `@arcadekit/three` draws a number below 0 as 0 and one over 1 as 1, as CSS
+ * clamps an sRGB colour, so a byte that wasn't divided by 255 is drawn as 1.
+ * NaN or an infinity is not a colour, and fails the frame that draws it with an
+ * error that names the entity.
  *
  * @category Spaces
  */
