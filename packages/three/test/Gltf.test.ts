@@ -603,7 +603,6 @@ describe("a level's models", () => {
         scene = drawn;
       },
     });
-    const scope = Scope.makeUnsafe();
     const app = Effect.runSync(
       App.make(
         App.define({
@@ -621,8 +620,7 @@ describe("a level's models", () => {
             makeLoader({ "/tri.glb": file }).layer,
             Logger.layer([])
           )
-        ),
-        Scope.provide(scope)
+        )
       )
     );
     const travel = async (to: "dock" | "space"): Promise<void> => {
@@ -657,6 +655,6 @@ describe("a level's models", () => {
     await travel("dock");
     expect(scene!.children).toEqual([]);
     expect(disposed).toBe(1);
-    Effect.runSync(Scope.close(scope, Exit.void));
+    Effect.runSync(app.close);
   });
 });

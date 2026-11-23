@@ -457,8 +457,11 @@ const loop = Effect.fnUntraced(function* (pace: Pace) {
  * stage, as `fixedStep` does. In a page, with the page's display, a frame is
  * due once per repaint (`requestAnimationFrame`).
  *
- *   const app = yield* App.make(App.define({ plugins: [Game] }))
+ *   const app = yield* Effect.acquireRelease(App.make(Game), (app) => app.close)
  *   yield* Driver.frames(app, { hz: 60 })
+ *
+ * It does not close the app it is given, which is its maker's: `Driver.run`
+ * is the loop that makes its app and closes it.
  *
  * A session runs the ticks that are due at its own `delta`, and is given
  * neither `hz` nor `ticks`:
@@ -471,7 +474,7 @@ const loop = Effect.fnUntraced(function* (pace: Pace) {
  *   doesn't count: a game that becomes visible again resumes where it was.
  * - Interrupting it cancels its pending frame request and stops watching the
  *   tab, so nothing is left running. It is interrupted with the fiber that runs
- *   it, which is how closing a scope stops it.
+ *   it.
  * - If a tick or a frame throws, it stops the same way and dies with the thrown
  *   error.
  * - With `ticks: "whenNeeded"`, for a game that moves only when its player
@@ -500,56 +503,76 @@ export function frames(
 }
 
 /**
- * Runs an app until interrupted, from the effect that makes it. This is the
- * usual entry point.
+ * What `Driver.run` closes when it ends: an app, a session, or a session
+ * connected to a transport.
+ *
+ * @category Models
+ */
+export interface Closes {
+  /** Lets go of everything it opened. */
+  readonly close: Effect.Effect<void>;
+}
+
+/**
+ * Runs an app until interrupted, from the effect that makes it, and closes
+ * it when it ends. This is the usual entry point.
  *
  *   const Duel = App.define({ plugins: [Game] })
  *   Browser.runMain(Driver.run(App.make(Duel, { seed: 1 }), { hz: 60 }), {
  *     target: canvas,
  *   })
  *
- * It is `frames` on the app, in a scope of the app's own: the app is made,
- * and the frame loop follows the display, running the ticks that are due at
- * `hz`, then the frame stage, once per repaint. It never ends on its own.
- * `frames` is the same loop for a program that makes its app itself, and
- * keeps it in a scope of its own.
+ * It is `frames` on the app it makes: the frame loop follows the display,
+ * running the ticks that are due at `hz`, then the frame stage, once per
+ * repaint. It never ends on its own. `frames` is the same loop for a program
+ * that makes its app itself, and closes it itself.
  *
- * Interrupting it stops the loop and closes that scope, so nothing is left
- * running: no pending frame, and everything the plugins' layers acquired is
- * released. The platform's `runMain` interrupts it when the page closes or
- * the process is told to stop.
+ * Interrupting it stops the loop and closes the app, so nothing is left
+ * running: no pending frame, no device listened to, and everything the
+ * plugins' layers acquired is released. It closes the app as well when a
+ * tick throws. The platform's `runMain` interrupts it when the page closes
+ * or the process is told to stop.
  *
  * What is to be connected to the app before its first frame, a button that
  * dispatches or a menu that saves, is a step of the effect that makes it:
- * `App.make(Duel).pipe(Effect.tap((app) => ...))`. What that step acquires is
- * released with the app.
+ * `App.make(Duel).pipe(Effect.tap((app) => ...))`. What that step acquires in
+ * its scope is released when the run ends, after the app is closed. A step
+ * that can fail holds the app in that scope, so that it is closed when the
+ * step fails, before the run has it: `Effect.acquireRelease(App.make(Duel),
+ * (app) => app.close).pipe(Effect.tap(...))`.
  *
- * Provide what the game needs from outside to `Driver.run` as a whole; it
- * stays provided for as long as the game runs, which is what a listening
- * layer such as `Browser.layer` needs. It fails with what making the app
- * fails with, and dies with whatever a tick throws.
+ * Provide what the game needs from outside to `Driver.run` as a whole, so
+ * that it stays provided for as long as the game runs. It fails with what
+ * making the app fails with, and dies with whatever a tick throws.
  *
  * It runs wherever there is a display, which outside a page is a timer:
  * `NodeRuntime.runMain(Driver.run(...))` runs the same game under Node.
  *
  * An effect that makes a session, connected to its transport, runs at the
- * session's own `delta`, and is given neither `hz` nor `ticks`.
+ * session's own `delta`, and is given neither `hz` nor `ticks`. Closing the
+ * connection closes the session.
  *
  * @category Running
  */
-export function run<A extends Tickable, E, R>(
+export function run<A extends Tickable & Closes, E, R>(
   app: Effect.Effect<A, E, R>,
   options: StepOptions
 ): Effect.Effect<never, E, Exclude<R, Scope.Scope>>;
-export function run<A extends Paced, E, R>(
+export function run<A extends Paced & Closes, E, R>(
   session: Effect.Effect<A, E, R>,
   options?: PacedOptions
 ): Effect.Effect<never, E, Exclude<R, Scope.Scope>>;
 export function run<E, R>(
-  made: Effect.Effect<Tickable | Paced, E, R>,
+  made: Effect.Effect<(Tickable | Paced) & Closes, E, R>,
   options?: StepOptions | PacedOptions
 ): Effect.Effect<never, E, Exclude<R, Scope.Scope>> {
+  // Closed however the loop ends, with nothing between the making and the
+  // loop that an interruption could slip into.
   return Effect.scoped(
-    Effect.flatMap(made, (target) => loop(paceOf(target, options)))
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(restore(made), (target) =>
+        Effect.ensuring(restore(loop(paceOf(target, options))), target.close)
+      )
+    )
   );
 }

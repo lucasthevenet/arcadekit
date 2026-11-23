@@ -191,12 +191,15 @@ describe("Driver.run", () => {
     class NoSound extends Data.TaggedError("NoSound")<{}> {}
     const { Game, log } = makeGame();
     const display = Driver.makeManualDisplay();
+    // A step that can fail holds the app in the run's scope, which closes
+    // it when the step fails: the run never had it to close.
     const failed = await Effect.runPromise(
       Effect.exit(
         Driver.run(
-          App.make(App.define({ plugins: [Game] })).pipe(
-            Effect.tap(() => Effect.fail(new NoCanvas()))
-          ),
+          Effect.acquireRelease(
+            App.make(App.define({ plugins: [Game] })),
+            (app) => app.close
+          ).pipe(Effect.tap(() => Effect.fail(new NoCanvas()))),
           { hz: 60 }
         )
       ).pipe(Effect.provideService(Driver.Display, display))

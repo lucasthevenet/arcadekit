@@ -1,7 +1,7 @@
 import { Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Driver, Input, Journal, World } from "../src/index";
+import { App, Driver, Input, Journal, Plugin, World } from "../src/index";
 import { Drift, Message, Session, Transport } from "../src/net/index";
 import {
   CoinGame,
@@ -463,22 +463,13 @@ describe("a session joined to a transport", () => {
               )
             ).toThrow(/Transport/u);
             const hub = Transport.makeHub();
+            // It needs no scope: the connection listens in one of its own.
             const made = Effect.runSync(
-              Effect.scoped(
-                Transport.connect(session).pipe(
-                  Effect.provide(Transport.layer(hub.port("ada")))
-                )
-              )
-            );
-            expect(made.tick()).toBe(true);
-            // Nor without the scope the transport is opened in. A hand-made
-            // transport is open already, so this one runs all the same.
-            Effect.runSync(
-              // @ts-expect-error A transport is opened in a scope.
               Transport.connect(session).pipe(
                 Effect.provide(Transport.layer(hub.port("ada")))
               )
             );
+            expect(made.tick()).toBe(true);
           }
         )
       )
@@ -678,10 +669,55 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     outside.close();
   });
 
-  it("stops hearing when the scope it was opened in has closed, and says so", async () => {
+  it("stops hearing, and closes the session it connected, when its connection is closed, and says so when used after", async () => {
     const name = nextRoom();
     const outside = new BroadcastChannel(name);
-    // Opened in a scope that is gone once the line has run.
+    const heard: unknown[] = [];
+    outside.onmessage = (event: MessageEvent<unknown>) => {
+      heard.push(event.data);
+    };
+    const log: string[] = [];
+    const Held = Plugin.make("tr/Held", {
+      layer: Layer.effectDiscard(
+        Effect.acquireRelease(
+          Effect.sync(() => log.push("acquired")),
+          () => Effect.sync(() => log.push("released"))
+        )
+      ),
+    });
+    // Connected in a scope that is gone once the line has run: it lasts
+    // all the same.
+    const connected = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flatMap(
+          Session.make(App.define({ plugins: [Held] }), {
+            seed: 5,
+            me: "ada",
+            others: ["grace"],
+            delta: DELTA,
+          }),
+          (session) =>
+            Transport.connect(session).pipe(
+              Effect.provide(Transport.layerBroadcastChannel(name))
+            )
+        )
+      )
+    );
+    expect(connected.tick()).toBe(true);
+    await until(() => heard.length > 0, "the first message was heard");
+    expect(log).toEqual(["acquired"]);
+    await Effect.runPromise(connected.close);
+    expect(log).toEqual(["acquired", "released"]);
+    // Closing it again does nothing.
+    await Effect.runPromise(connected.close);
+    expect(log).toEqual(["acquired", "released"]);
+    outside.postMessage(Message.encode(message("grace", 0)));
+    await later(20);
+    // It says so, in place of a game that waits for ever.
+    expect(() => connected.tick()).toThrow(
+      /The transport "arcadekit-test\/.*" was used after it was let go, and its channel closed: the connection Transport\.connect made was closed/u
+    );
+    // As one listened on in a scope does once the scope has closed.
     const kept = await Effect.runPromise(
       Effect.scoped(
         Transport.listen.pipe(
@@ -689,14 +725,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         )
       )
     );
-    outside.postMessage(Message.encode(message("grace", 0)));
-    await later(20);
-    // It says so, in place of a game that waits for ever.
-    expect(() => kept.receive()).toThrow(
-      /was used after the scope it was opened in had closed.*drive the session in that program/u
-    );
     expect(() => kept.send(message("ada", 0))).toThrow(
-      /was used after the scope it was opened in had closed/u
+      /or the scope Transport\.listen ran in had ended/u
     );
     outside.close();
   });

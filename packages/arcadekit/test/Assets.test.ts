@@ -355,7 +355,10 @@ describe("a level's assets", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const app = yield* App.make(App.define({ plugins: [Game] }));
+          const app = yield* Effect.acquireRelease(
+            App.make(App.define({ plugins: [Game] })),
+            (made) => made.close
+          );
           const frame = (): string => {
             app.frame(0);
             return drawn.at(-1)!;
@@ -409,7 +412,8 @@ describe("a level's assets", () => {
         })
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
-    // The app's scope has closed: what was still loaded went with it.
+    // The program's scope has closed the app: what was still loaded went
+    // with it.
     expect(log.at(-1)).toBe("close /forest.png");
     expect(log.filter((line) => line.startsWith("open")).length).toBe(
       log.filter((line) => line.startsWith("close")).length
@@ -580,13 +584,11 @@ describe("a level's assets", () => {
     );
   });
 
-  it("go with the app's scope, loaded or still loading", async () => {
+  it("go with the app when it is closed, loaded or still loading", async () => {
     const { Game, Go, log } = makeGame();
     const slow = makeSlowLoader();
-    const scope = Scope.makeUnsafe();
     const app = await Effect.runPromise(
       App.make(App.define({ plugins: [Game] })).pipe(
-        Scope.provide(scope),
         Effect.provideService(Assets.Loader, slow.loader)
       )
     );
@@ -597,7 +599,7 @@ describe("a level's assets", () => {
     await settle();
     expect(log).toEqual(["open /forest.png"]);
     expect(slow.givenUp).toEqual([]);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await Effect.runPromise(app.close);
     // The file that had not arrived is given up, and the one that had is let go.
     expect(slow.givenUp).toEqual(["/forest.json"]);
     expect(log).toEqual(["open /forest.png", "close /forest.png"]);
@@ -1018,15 +1020,13 @@ describe("a level's assets", () => {
     const Ui = Plugin.make("Ui", {
       layer: Layer.effect(Fonts, Assets.load(Common)),
     });
-    const scope = Scope.makeUnsafe();
-    await Effect.runPromise(
+    const app = await Effect.runPromise(
       App.make(App.define({ plugins: [Ui] })).pipe(
-        Scope.provide(scope),
         Effect.provide(Assets.layerMemory(files))
       )
     );
     expect(log).toEqual(["open /forest.png"]);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await Effect.runPromise(app.close);
     expect(log).toEqual(["open /forest.png", "close /forest.png"]);
   });
 });

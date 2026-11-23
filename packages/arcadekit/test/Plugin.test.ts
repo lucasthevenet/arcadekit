@@ -33,11 +33,18 @@ const Health = Component.define("pl/Health", { hp: Field.i32 });
 
 const Bumped = Event.define("pl/Bumped", Schema.Struct({ entity: EntityId }));
 
-/** Builds an app, hands it to `use`, then closes its scope. */
-const withApp = <A, E, T>(
-  make: Effect.Effect<A, E, Scope.Scope>,
+/** Builds an app, hands it to `use`, then closes it. */
+const withApp = <A extends { readonly close: Effect.Effect<void> }, E, T>(
+  make: Effect.Effect<A, E>,
   use: (app: A) => T
-): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): T =>
+  Effect.runSync(
+    Effect.acquireUseRelease(
+      make,
+      (app) => Effect.sync(() => use(app)),
+      (app) => app.close
+    )
+  );
 
 // --- a "physics" plugin: a resource, two systems, some setup -------------------
 
@@ -409,7 +416,7 @@ describe("plugins", () => {
     const Play = System.frame("pl/FrameAudio", function* () {
       (yield* Audio).play("boing");
     });
-    const needs: Effect.Effect<App.Any, never, Scope.Scope | Audio> = App.make(
+    const needs: Effect.Effect<App.App, never, Audio> = App.make(
       App.define({ systems: [Play] })
     );
     const played: string[] = [];

@@ -127,7 +127,7 @@ export interface Parts {
   readonly spans: Spans;
   /** What the tick's code runs with: the app's services and the game's own. */
   readonly context: Context.Context<unknown>;
-  /** The devices, listened to in the scope the app is made in. */
+  /** The devices, listened to until the app is closed. */
   readonly listener: Input.Listener;
   readonly actions: Stage.Actions;
   /** Where the frame stage's own random sequence starts. */

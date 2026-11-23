@@ -69,7 +69,7 @@ const withDisplay =
 
 /**
  * An app with a ball rolling at each of `speeds`, and a frame loop over it,
- * both in the scope the caller closes.
+ * both held in the scope the caller closes.
  */
 const started = Effect.fnUntraced(function* (
   display: Driver.ManualDisplay,
@@ -80,8 +80,11 @@ const started = Effect.fnUntraced(function* (
   const Draw = System.frame("Draw", function* () {
     drawn.push((yield* Frame).alpha);
   });
-  const app = yield* App.make(
-    App.define({ plugins: [rolling(...speeds)], systems: [Roll, Draw] })
+  const app = yield* Effect.acquireRelease(
+    App.make(
+      App.define({ plugins: [rolling(...speeds)], systems: [Roll, Draw] })
+    ),
+    (made) => made.close
   );
   const fiber = yield* Effect.forkScoped(
     Driver.frames(app, { hz }).pipe(withDisplay(display)),
@@ -319,7 +322,7 @@ describe("the frame loop", () => {
     expect(callbacks.length).toBe(0);
   });
 
-  it("stops with the app's scope: closing it leaves nothing running", async () => {
+  it("stops with the program's scope, which closes the app it holds: closing it leaves nothing running", async () => {
     const display = Driver.makeManualDisplay();
     const log: string[] = [];
     const Engine = Plugin.make("Engine", {
@@ -335,7 +338,10 @@ describe("the frame loop", () => {
     const { app, fiber } = await Effect.runPromise(
       Scope.provide(
         Effect.gen(function* () {
-          const made = yield* App.make(App.define({ plugins: [Engine] }));
+          const made = yield* Effect.acquireRelease(
+            App.make(App.define({ plugins: [Engine] })),
+            (app) => app.close
+          );
           const loop = yield* Effect.forkScoped(
             Driver.frames(made, { hz: 60 }).pipe(withDisplay(display)),
             { startImmediately: true }

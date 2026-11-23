@@ -80,7 +80,8 @@ type Provided<P extends Plugins> = Plugin.ProvidedOf<P[number]>;
 /**
  * What must come from outside: whatever systems, handlers and setups need that
  * neither a plugin nor the app provides, plus whatever plugin layers need that
- * their declared dependencies don't provide.
+ * their declared dependencies don't provide. A scope is never among them: the
+ * app has its own.
  *
  * @internal
  */
@@ -93,7 +94,7 @@ export type External<
       | SystemNeeds<S[number]>
       | HandlerNeeds<H[number]>
       | Plugin.NeedsOf<P[number]>,
-      Provided<P> | BuiltIn
+      Provided<P> | BuiltIn | Scope.Scope
     >
   | Exclude<Plugin.LayerNeedsOf<P[number]>, BuiltIn>;
 
@@ -448,15 +449,27 @@ export interface App<E = never, HU = never> extends Any {
     action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<void, Action.InvalidPayload>;
+  /**
+   * Closes the app: lets go of everything it opened when it was made, its
+   * plugins' layers, the devices it listens to and the output it plays
+   * through. A page's devices and its sound refuse to be used after, and say
+   * that the app was closed. Closing it again does nothing.
+   *
+   * Whatever runs the app closes it: `Driver.run` closes the app it made
+   * when it ends or is interrupted, and a program that makes an app itself
+   * closes it when it is done with it.
+   */
+  readonly close: Effect.Effect<void>;
 }
 
 /**
  * An app that something else steps: a session's, which runs a tick when
  * every peer may, or a sync test's. It is the app without what would move
  * this machine's game alone: `tick`, `tickExit`, `dispatch` and
- * `dispatchByName`. Its world, its time, its frame and input stages, its
- * log, its saves and its recordings are an app's, and an action given to
- * `enqueue` is applied when the one that steps it says.
+ * `dispatchByName`, and without `close`, which is the session's. Its world,
+ * its time, its frame and input stages, its log, its saves and its
+ * recordings are an app's, and an action given to `enqueue` is applied when
+ * the one that steps it says.
  *
  * `E` is what a tick can fail with, and `HU` the actions its handlers accept.
  *
@@ -464,7 +477,7 @@ export interface App<E = never, HU = never> extends Any {
  */
 export type Steered<E = never, HU = never> = Omit<
   App<E, HU>,
-  "dispatch" | "dispatchByName" | "tick" | "tickExit"
+  "close" | "dispatch" | "dispatchByName" | "tick" | "tickExit"
 >;
 
 /**
@@ -622,15 +635,25 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
  * is from another version of the game and the game's `migrations` don't bring
  * it up to this one: see `Save.migrate`.
  *
- * It listens to the devices of `Input.Source`, and with `Sound.plugin` opens
- * `Sound.Output`, in the scope it runs in, wherever their layers are provided,
- * and lets go of both when that scope closes: run the app in the program that
- * made it.
+ * The app has a scope of its own, which `app.close` closes, and making it
+ * requires none. There it builds its plugins' layers, listens to the devices
+ * of `Input.Source` and, with `Sound.plugin`, opens `Sound.Output`, wherever
+ * their layers are provided: all of them last until the app is closed, and
+ * not until the effect that made it ends. When the making fails, what it had
+ * opened is let go at once.
+ *
+ * `Driver.run` closes the app it runs. A program that makes and runs an app
+ * itself closes it when it is done with it:
+ *
+ *   const app = yield* Effect.acquireRelease(App.make(Duel), (app) => app.close)
  *
  * **Gotchas**
  *
  * - State kept outside the world, in a variable of a module, isn't in a save,
  *   and a `transient` field is undefined after one is loaded.
+ * - An app that is never closed holds what it opened for as long as the
+ *   program runs: in a page, the devices stay listened to and the page's
+ *   audio stays open.
  *
  * @category Constructors
  */
@@ -645,7 +668,7 @@ export const make = <
 ): Effect.Effect<
   App<TickError<S, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
-  Scope.Scope | External<S, H, P>
+  External<S, H, P>
 > => {
   const given: StartOptions<SV> = start ?? {};
   return Effect.map(build(game, given), (built) => built.app);
