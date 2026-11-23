@@ -988,8 +988,8 @@ export class World {
    * Freezes the world. Until `thaw`, it can be read and not changed. Anything
    * that would change it throws and says why: `spawn`, `despawn`, `add`,
    * `remove`, `set`, `begin`, `restore`, a write to a singleton, a command
-   * queued on a `CommandBuffer`, and an assignment through the accessors of
-   * `each`. `freeze` throws inside a transaction.
+   * queued on a `CommandBuffer` or applied from one, and an assignment through
+   * the accessors of `each`. `freeze` throws inside a transaction.
    *
    * An app freezes its world for the frame stage, which draws the game between
    * two ticks and must leave it unchanged.
@@ -998,8 +998,7 @@ export class World {
    * `world.random`, restores the generator, and throws. Nothing detects a
    * write through the raw columns that `eachChunk` hands out: compare
    * `world.hash()` before and after to find one. A check on either would slow
-   * every loop and every draw. A spawn that a `CommandBuffer` queued before
-   * the freeze, and applies during it, isn't stopped either.
+   * every loop and every draw.
    *
    * In a frozen world, `eachChunk` counts nothing as written, so a change query
    * can hand out a component it watches.
