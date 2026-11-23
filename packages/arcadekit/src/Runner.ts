@@ -1,9 +1,9 @@
 /**
- * What runs a game's code to its end, now, and knows what is running. A tick,
- * a stage between ticks, an action's handler and a plugin's setup each start
- * a fiber that has to have ended by the time it is started, and that may
- * leave no fiber of its own running: one that outlived it would change the
- * game later, at a moment no replay repeats.
+ * A runner runs a game's code to its end at once, and knows what is running.
+ * A tick, a stage between ticks, an action's handler and a plugin's setup each
+ * start a fiber, which must have ended by the time starting it returns. That
+ * fiber may leave no fiber of its own running. A fiber that outlived it would
+ * change the game later, at a moment no replay repeats.
  */
 import type { Exit, Fiber, Metric } from "effect";
 
@@ -30,9 +30,9 @@ export class Runner {
   // setup.
   private own = 0;
   /**
-   * Counts every fiber started with the app's services when it starts and
-   * when it ends, and passes both on to the metrics the app was given. While
-   * a stage runs, the systems that start fibers are noted, for the message.
+   * Counts each fiber started with the app's services, when it starts and
+   * when it ends, and passes both on to the metrics the app was given. While a
+   * stage runs, it notes the systems that start fibers, for the error message.
    */
   readonly metrics: Metric.FiberRuntimeMetricsService;
   private fibers = 0;
@@ -64,14 +64,14 @@ export class Runner {
     };
   }
 
-  /** How much work fibers have queued for the next flush. */
+  /** How many tasks fibers have queued for the next flush. */
   get pending(): number {
     return this.dispatcher.pending;
   }
 
   /**
-   * What the app is running: `app.phase`. A handler a tick runs is part of
-   * the tick: the stage wins.
+   * What the app is running, as `app.phase` says it. A handler that a tick
+   * runs is part of the tick, so the phase is `"tick"` then.
    */
   get phase(): Phase {
     return this.ticking
@@ -100,8 +100,8 @@ export class Runner {
   }
 
   /**
-   * Refuses a call that is for between ticks while the app is running
-   * something. `said` makes the message, given what it is running.
+   * Throws for a call that belongs between ticks when the app is running
+   * something. `said` makes the message from what the app is running.
    */
   whileIdle(said: (busy: string) => string): void {
     const now = this.phase;
@@ -144,11 +144,11 @@ export class Runner {
   }
 
   /**
-   * Runs the game's code to its end, now: `fork` starts it, and it has to
-   * have ended by the time `fork` returns. Throws when it has not, with what
-   * `waited` says, and when it left a fiber running, as `what` did. With
-   * `noting`, the systems that start fibers while it runs are noted, for
-   * that message.
+   * Runs the game's code to its end at once. `fork` starts it, and the code
+   * must have ended by the time `fork` returns. It throws with what `waited`
+   * says when the code hasn't ended, and with a message that names `what` when
+   * the code left a fiber running. With `noting`, that message also names the
+   * systems that started fibers while the code ran.
    */
   finish<A, E>(
     fork: () => Fiber.Fiber<A, E>,

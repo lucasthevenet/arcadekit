@@ -1,7 +1,6 @@
 /**
- * Assets are the files a game loads to be drawn and heard. Loading is a scoped
- * resource: loaded assets are released when the scope they were loaded in
- * closes.
+ * Assets are the files a game loads to be drawn and heard. Loading is scoped,
+ * and loaded assets are released when the scope they were loaded in closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     backdrop: Browser.image("/forest.png"),    // from "arcadekit/Browser"
@@ -13,7 +12,7 @@
  *   const { backdrop, layout } = yield* Assets.load(Forest)
  *
  * For a level, the scope is the level's. `Assets.during` loads a bundle while a
- * condition holds, typically a state of the game, and releases it when the
+ * condition holds, such as a state of the game, and releases it when the
  * condition no longer holds:
  *
  *   const Game = Plugin.make("Game", {
@@ -26,11 +25,11 @@
  *     if (forest._tag === "Ready") draw(forest.assets.backdrop)
  *   })
  *
- * Loading takes real time, so it isn't part of the simulation: nothing in a
+ * Loading takes real time, so it isn't part of the simulation. Nothing in a
  * tick waits for an asset or can tell whether one is loaded. What the game
- * itself needs from a file, such as where the walls are, enters as an action,
- * issued by an input-stage system once the asset is ready, and is in the log
- * from then on.
+ * itself needs from a file, such as where the walls are, enters as an action.
+ * An input-stage system issues the action once the asset is ready, and the
+ * log holds it from then on.
  */
 import {
   Cause,
@@ -54,8 +53,8 @@ import { Commands, Events, Frame, Random, Time, World } from "./Services";
 import * as System from "./System";
 
 /**
- * An asset couldn't be loaded: it is missing, or it isn't what it claimed to
- * be.
+ * An asset couldn't be loaded, because it is missing or isn't what it claimed
+ * to be.
  *
  * @category Errors
  */
@@ -77,9 +76,10 @@ const describe = (error: unknown): string =>
  * @category Models
  */
 export interface Asset<out A> {
+  /** Where its bytes are. */
   readonly url: string;
   /**
-   * Decodes the asset from its bytes, in the scope it is loaded in: anything
+   * Decodes the asset from its bytes, in the scope it is loaded in. Anything
    * that must be released is released when that scope closes.
    */
   readonly decode: (
@@ -88,8 +88,8 @@ export interface Asset<out A> {
 }
 
 /**
- * Makes an asset of a custom type. `decode` builds it from its bytes; use
- * `Effect.acquireRelease` if what it builds must be released.
+ * Makes an asset of a custom type. `decode` builds it from its bytes. Use
+ * `Effect.acquireRelease` when what it builds must be released.
  *
  *   const sound = (url: string) => Assets.make(url, (bytes, at) =>
  *     Effect.acquireRelease(decodeAudio(bytes, at), (buffer) => free(buffer))
@@ -137,8 +137,9 @@ export const text = (url: string): Asset<string> =>
   );
 
 /**
- * Makes an asset of a JSON file that a schema describes. It comes from outside
- * the program, so it is validated: a file that doesn't match fails to load.
+ * Makes an asset of a JSON file that a schema describes. The file comes from
+ * outside the program, so it is validated, and a file that doesn't match
+ * fails to load with `AssetFailed`.
  *
  * @category Constructors
  */
@@ -177,7 +178,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
 
 /**
  * Fetches an asset's bytes. In a page it uses Effect's `HttpClient`, over
- * `fetch`; a test provides one that reads from memory.
+ * `fetch`. A test provides one that reads from memory.
  *
  * @category Services
  */
@@ -228,11 +229,11 @@ export const fetchingFrom = (
 export const fetching: LoaderShape = fetchingFrom((url) => url);
 
 /**
- * Where asset bytes come from. Nothing has to provide it: the default is
+ * Where asset bytes come from. Nothing has to provide it. The default is
  * Effect's `HttpClient` over `fetch`, available in pages and Node alike, which
- * reads a path against the page's address. `Browser.layer` reads it against
- * the document's base instead, as `fetch` does. A test provides its own files
- * with `Assets.layerMemory`.
+ * reads a path against the page's address. `Browser.layer` reads a path
+ * against the document's base instead, as `fetch` does. A test provides its
+ * own files with `Assets.layerMemory`.
  *
  * @category Services
  */
@@ -286,13 +287,16 @@ export type Loaded<B extends Entries> = {
  * @category Models
  */
 export type Status<A> =
-  /** No one has requested it. */
+  /** No one holds it. */
   | { readonly _tag: "Absent" }
+  /** It is loading. */
   | { readonly _tag: "Loading" }
+  /** It is loaded, and `assets` holds each asset under its name. */
   | { readonly _tag: "Ready"; readonly assets: A }
   /**
-   * It couldn't be loaded, which is logged once. Nothing that did load is kept,
-   * and it is retried the next time it is requested afresh.
+   * It couldn't be loaded, which is logged once. Nothing that did load is
+   * kept. It is loaded again when it is next held after every holder has
+   * dropped it.
    */
   | { readonly _tag: "Failed"; readonly error: AssetFailed };
 
@@ -329,8 +333,8 @@ export class Bundle<B extends Entries> extends Effectable.Class<
 
 /**
  * Groups assets that belong together. The name identifies the bundle in the
- * app's log and names the system that loads it, so prefix it with the feature
- * it belongs to.
+ * error logged when it fails to load, and names the system that
+ * `Assets.during` makes for it, so prefix it with the feature it belongs to.
  *
  * @category Constructors
  */
@@ -338,9 +342,9 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
   new Bundle(name, assets);
 
 /**
- * Loads a bundle into the scope it runs in: every asset in parallel, all
- * released when that scope closes. It fails with the first asset that fails,
- * cancelling the rest.
+ * Loads a bundle into the scope it runs in. It loads every asset in parallel,
+ * and releases them all when that scope closes. It fails with the first asset
+ * that fails, and cancels the rest.
  *
  *   const level = Effect.scoped(Effect.gen(function*() {
  *     const { layout } = yield* Assets.load(Forest)
@@ -355,8 +359,10 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
  *
  * **Gotchas**
  *
- * Don't use it in a system, though nothing prevents it: a system that waits
- * for a file doesn't finish within its tick, and the tick throws.
+ * - Don't use it in a system. A system of the tick that yields it doesn't
+ *   compile. A frame or input system that yields it compiles, and throws when
+ *   a file takes real time to load, since the system doesn't finish within
+ *   its stage.
  *
  * @category Running
  */
@@ -390,8 +396,8 @@ export const load: <B extends Entries>(
 
 /**
  * An app's store of bundles. All three operations are for the stages between
- * ticks, the frame and input stages: during the tick each throws, since what is
- * loaded, and when, isn't part of the game.
+ * ticks, the frame and input stages. A system of the tick can't require
+ * `Assets.Store`, since what is loaded, and when, isn't part of the game.
  *
  * @category Services
  */
@@ -405,24 +411,25 @@ export interface StoreShape {
   readonly hold: (bundle: Bundle<Entries>, holder: string) => void;
   /**
    * Releases `holder`'s use of the bundle. When no holder remains, its scope
-   * closes: loaded assets are released, and pending loads are cancelled.
+   * closes. Loaded assets are released, and pending loads are cancelled.
    */
   readonly drop: (bundle: Bundle<Entries>, holder: string) => void;
 }
 
 /**
  * The bundles an app has loaded. `Assets.plugin` provides it, `Assets.during`
- * drives it, and `yield*` on a bundle reads it. Your own frame-stage or
- * input-stage system can hold a bundle too: it stays loaded while anyone holds
- * it.
+ * holds and drops bundles in it, and `yield*` on a bundle reads it. Your own
+ * frame-stage or input-stage system can hold a bundle too. A bundle stays
+ * loaded while anyone holds it.
  *
  *   const store = yield* Assets.Store
  *   store.hold(Forest, "game/Map")    // starts loading, if nobody held it
  *   store.drop(Forest, "game/Map")    // released, if nobody else holds it
  *
- * A load receives the services provided to the app from outside, but none of
- * the app's own, so nothing it does affects the game: the random numbers a
- * loader draws, to back off before retrying, don't come from the world.
+ * A load receives the services provided to the app from outside, and none of
+ * the app's own, so nothing it does changes the game. The random numbers a
+ * loader draws, such as to back off before retrying, don't come from the
+ * world.
  *
  * @category Services
  */
@@ -585,17 +592,17 @@ export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
  *
  *   Assets.during(State.is(Level, "forest"), Forest)
  *
- * The condition is the same as `System.runIf`'s: an Effect that returns a
+ * The condition is the same as `System.runIf`'s, an Effect that returns a
  * boolean. From the frame after it starts holding, the bundle loads in a scope
- * of its own. From the frame after it stops, that scope closes: loaded assets
+ * of its own. From the frame after it stops, that scope closes. Loaded assets
  * are released, and pending loads are cancelled. A level's assets therefore
  * last as long as the level, and leaving it frees them.
  *
- * It is a frame system, since assets serve what draws the game: a replay or a
- * server, which run no frames, load nothing. It runs in the first of a frame's
+ * It is a frame system, since assets serve what draws the game. A replay or a
+ * server runs no frames, and loads nothing. It runs in the first of a frame's
  * three stages, `"preFrame"`, so every system that draws with the bundle sees
  * the same status within a frame, whatever order they are listed in. Use one
- * per bundle; to keep a bundle loaded across several states, give a condition
+ * per bundle. To keep a bundle loaded across several states, give a condition
  * that holds in each.
  *
  * @category Systems

@@ -1,5 +1,5 @@
 /**
- * An Effect scheduler driven by the game loop.
+ * An Effect scheduler that runs queued work only when the game loop asks.
  *
  * Effect's default scheduler does two things a game tick can't allow:
  *
@@ -23,12 +23,13 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
   private flushing = false;
 
   /**
-   * Caps the rounds of a flush, since a fiber that keeps rescheduling itself
-   * (for example `Effect.forever(Effect.yieldNow)`) would otherwise hang the
-   * tick.
+   * The most rounds a flush runs before it throws. A fiber that keeps
+   * rescheduling itself, such as `Effect.forever(Effect.yieldNow)`, would
+   * otherwise hang the tick.
    */
   maxRounds = 10_000;
 
+  /** How many tasks are queued. */
   get pending(): number {
     let total = 0;
     for (const bucket of this.buckets) {
@@ -37,7 +38,10 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
     return total;
   }
 
-  /** Lower priority numbers run first, as in Effect's own scheduler. */
+  /**
+   * Queues a task. Lower priority numbers run first, as in Effect's own
+   * scheduler.
+   */
   scheduleTask(task: () => void, priority: number): void {
     const { buckets } = this;
     let index = 0;
@@ -54,7 +58,10 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
     buckets.splice(index, 0, [priority, [task]]);
   }
 
-  /** Runs queued tasks, including any they queue, until nothing is left. */
+  /**
+   * Runs queued tasks, including any they queue, until nothing is left. It
+   * throws after `maxRounds` rounds.
+   */
   flush(): void {
     if (this.flushing) {
       return;
@@ -99,12 +106,15 @@ export class TickScheduler implements Scheduler.Scheduler {
     this.dispatcher = dispatcher;
   }
 
-  /** Never pauses a fiber in the middle of a tick. */
+  /** Returns false, so a fiber is never paused in the middle of a tick. */
   shouldYield(): boolean {
     return false;
   }
 
-  /** Every fiber shares one dispatcher, so a single flush drains them all. */
+  /**
+   * Returns the one dispatcher that every fiber shares, so one flush runs all
+   * their work.
+   */
   makeDispatcher(): TickDispatcher {
     return this.dispatcher;
   }

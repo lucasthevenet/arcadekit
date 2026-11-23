@@ -9,16 +9,16 @@
  *     Transform2d.Rotation.of({ angle: Math.PI / 6 })
  *   )
  *
- * They are ordinary components: columns of 32-bit floats that the game's
+ * They are ordinary components, columns of 32-bit floats that the game's
  * systems write, and that are saved, hashed and replayed. Nothing here draws. A
- * renderer reads them: `@arcadekit/three` draws the entity in the x-y plane,
+ * renderer reads them. `@arcadekit/three` draws the entity in the x-y plane,
  * rotated about the axis perpendicular to it.
  *
  * Use one module or the other for an entity, not both. They are distinct
- * components with distinct names, and nothing keeps them in sync: a system that
- * queries `Transform3d.Position` doesn't find an entity that only has
+ * components with distinct names, and nothing keeps them in sync. A system
+ * that queries `Transform3d.Position` doesn't find an entity that only has
  * `Transform2d.Position`. A save names each by module and component, as the
- * world does: `"arcadekit/Transform2d.Position"`.
+ * world does, such as `"arcadekit/Transform2d.Position"`.
  */
 import { Component, Field } from "./ecs/component";
 

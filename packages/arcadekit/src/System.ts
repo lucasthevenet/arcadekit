@@ -1,6 +1,6 @@
 /**
- * Systems are one Effect per system per tick, with plain synchronous loops
- * inside.
+ * Systems are a game's logic. Each is one Effect that runs once per tick, or
+ * once per frame, with plain synchronous loops inside.
  *
  *   const Movement = System.tick("Movement", function*() {
  *     const moving = yield* Moving
@@ -8,13 +8,15 @@
  *     moving.each((pos, vel) => { pos.x += vel.x * delta })
  *   })
  *
- * Systems run stage by stage, and within a stage in the order they are listed:
- * those of a plugin's dependencies, then the plugin's own, then the app's.
+ * Systems run stage by stage. Within a stage they run in the order they are
+ * listed, those of a plugin's dependencies first, then the plugin's own, then
+ * the app's.
  *
- * A system declares nothing of what it reads and writes. What its queries write
- * and watch is in its requirements, from each query it yields, and `App.define`
- * and `Plugin.make` read it there: a list in which a system would react a tick
- * late to another doesn't compile. See `System.Misordered`.
+ * A system declares nothing of what it reads and writes. Each query it yields
+ * puts what the query writes and watches in the system's requirements.
+ * `App.define` and `Plugin.make` read them there, and a list in which one
+ * system would react a tick late to another doesn't compile. See
+ * `System.Misordered`.
  */
 import { Effect } from "effect";
 import { dual } from "effect/Function";
@@ -36,20 +38,20 @@ import type { Intake, Port } from "./View";
  */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
 /**
- * The stages of a frame, in the order they run, mirroring the three of a tick:
- * `"preFrame"` for what a frame's systems depend on, such as which assets are
- * loaded; `"frame"`, where the game is drawn and heard; and `"postFrame"` for
- * what must come after all of that, such as presenting the image on screen.
+ * The stages of a frame, in the order they run. `"preFrame"` is for what a
+ * frame's systems depend on, such as which assets are loaded. `"frame"` is
+ * where the game is drawn and heard. `"postFrame"` is for what needs
+ * everything drawn first, such as presenting the image on screen.
  *
  * @category Constants
  */
 export const frameStages = ["preFrame", "frame", "postFrame"] as const;
 /**
- * A stage of the tick, or one of the stages that run between ticks and must not
- * change the world: `"input"`, which reads the devices and turns their input
- * into actions just before a tick, when `app.input` is called; and the three
- * frame stages, `"preFrame"`, `"frame"` and `"postFrame"`, which draw the game
- * when `app.frame` is called.
+ * A stage that systems run in. The tick's stages are `"preUpdate"`,
+ * `"update"` and `"postUpdate"`. The other stages run between ticks and must
+ * not change the world. `"input"` reads the devices and turns their input into
+ * actions just before a tick, when `app.input` is called. `"preFrame"`,
+ * `"frame"` and `"postFrame"` draw the game when `app.frame` is called.
  *
  * @category Models
  */
@@ -75,26 +77,34 @@ type FrameStage = (typeof frameStages)[number];
 const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
 
 /**
- * What triggers a hook: entering or leaving a state. `State.onEnter` and
- * `State.onExit` create one.
+ * What triggers a hook, the game entering or leaving one value of a state.
+ * `State.onEnter` and `State.onExit` make one.
  *
  * @category Models
  */
 export interface Trigger {
   /** The state, as `State.define` returned it. */
   readonly state: { readonly name: string };
+  /** Whether the hook runs when the game enters the value or leaves it. */
   readonly on: "enter" | "exit";
+  /** The value of the state that the hook is for. */
   readonly value: string;
 }
 
 /**
- * A system: one Effect that runs once per tick, or once per frame, in its
- * stage. Made with `System.tick`, `System.frame` or `System.input`; `E` is its
- * error and `R` its requirements.
+ * A system, one Effect that runs once per tick or once per frame, in its
+ * stage. `System.tick`, `System.frame` and `System.input` make one.
  *
- * `N` is its name, `St` its stage and `Tr` what triggers it if it is a hook,
- * each as the compiler knows it, so that the order of a list of systems can be
- * checked: see `System.Misordered`.
+ * The compiler knows a system's name, stage and trigger from its type, and
+ * `App.define` and `Plugin.make` check the order of a list of systems with
+ * them. See `System.Misordered`.
+ *
+ * @typeParam E what its run can fail with
+ * @typeParam R what its run requires
+ * @typeParam N its name
+ * @typeParam St its stage
+ * @typeParam Tr what triggers it, for a hook, and `undefined` for any other
+ *   system
  *
  * @category Models
  */
@@ -105,24 +115,26 @@ export interface System<
   out St extends Stage = Stage,
   out Tr extends Trigger | undefined = Trigger | undefined,
 > extends Pipeable {
+  /** Its name, which no other system of the app has. */
   readonly name: N;
   readonly stage: St;
+  /** The Effect that runs on each of its turns. */
   readonly run: Effect.Effect<void, E, R>;
   /**
-   * Whether the system runs this tick, checked just before it would: every
-   * condition given with `runIf`, in order. Undefined for a system that runs
-   * every tick, which checks nothing.
+   * Whether the system runs, checked each time just before it would. It checks
+   * every condition given to `System.runIf`, in order. It is undefined for a
+   * system that always runs, which checks nothing.
    */
   readonly condition: Effect.Effect<boolean, E, R> | undefined;
   /**
-   * What the system does instead of running, each time its condition doesn't
-   * hold, as `System.otherwise` sets it. Undefined for a system that does
+   * What the system does in place of running, each time its condition doesn't
+   * hold, as `System.otherwise` sets it. It is undefined for a system that does
    * nothing then, as most do.
    */
   readonly idle: Effect.Effect<void, E, R> | undefined;
   /**
-   * For a hook, what triggers it. A hook runs when that happens, at the start
-   * of a tick, separately from the tick's other systems.
+   * What triggers the system, for a hook. A hook runs when that happens, at
+   * the start of a tick, before the tick's other systems.
    */
   readonly trigger: Tr;
 }
@@ -313,23 +325,23 @@ const define = <
 /**
  * Defines a system of the tick, in the `"update"` stage.
  *
- * The body is wrapped with `Effect.gen` once, and the same Effect value runs
- * again every tick. It doesn't use `Effect.fn`, which captures a stack trace on
- * every call: that suits a request handler, but not something that runs sixty
- * times a second.
- *
- * A system must finish within its tick: one that waits throws, and the error
- * names it. Work that spans many ticks keeps its place in the world, in a
- * component or a state, and a system moves it on each tick.
- *
  * The body can require what a tick provides: `World`, `Time`, `Commands`,
  * `Events`, `Actions` and `Random`, and the queries, singletons, states,
- * events and resources it yields. Anything else does not compile: `Frame`,
+ * events and resources it yields. Anything else does not compile. `Frame`,
  * `Sound`, `View`, `Assets` and `Input.Devices` are real time, and belong to
- * `System.frame` or `System.input`, and a service of the game's own keeps
+ * `System.frame` or `System.input`. A service of the game's own would hold
  * what no save, rewind or refused action sees. Keep the game's state in the
  * world, and a cache rebuilt from it in a `Field.transient` field of a
  * singleton.
+ *
+ * The body is wrapped with `Effect.gen` once, and the same Effect runs on
+ * every tick.
+ *
+ * **Gotchas**
+ *
+ * - A system must finish within its tick. One that waits throws, and the error
+ *   names it. Work that spans many ticks keeps its place in the world, in a
+ *   component or a state, and a system moves it on each tick.
  *
  * @category Constructors
  */
@@ -351,12 +363,13 @@ export function tick<
 }
 
 /**
- * Defines a system of the frame, in the `"frame"` stage. It draws and plays,
+ * Defines a system of the frame, in the `"frame"` stage. It draws and plays
  * between ticks, and leaves the world as it found it.
  *
- * `System.inStage("preFrame")` or `"postFrame"` moves it within the frame.
- * Requiring commands, a writing query, an event's `emits`, a state's `sets`,
- * a singleton's `writes` or `Input.Devices` does not compile.
+ * `System.inStage("preFrame")` or `System.inStage("postFrame")` moves it
+ * within the frame. Requiring `Commands`, `World.writes`, a writing query, an
+ * event's `emits`, a state's `sets`, a singleton's `writes` or `Input.Devices`
+ * does not compile.
  *
  * @category Constructors
  */
@@ -402,11 +415,12 @@ export const raw = <
 
 /**
  * Defines a system of the input stage. It reads `Input.Devices` and enqueues
- * actions, just before a tick, and leaves the world as it found it.
+ * actions just before a tick, and leaves the world as it found it.
  *
- * Requiring commands, a writing query, an event's `emits`, a state's `sets`,
- * a singleton's `writes`, `Frame`, `Sound` or `View` does not compile.
- * Loading assets does: an input system can issue an action once they are there.
+ * Requiring `Commands`, `World.writes`, a writing query, an event's `emits`, a
+ * state's `sets`, a singleton's `writes`, `Frame`, `Sound` or `View` does not
+ * compile. Reading a bundle of `Assets` does, so an input system can issue an
+ * action once the assets are there.
  *
  * @category Constructors
  */
@@ -443,17 +457,21 @@ type SameGroup<St extends string, S extends string> =
     : `System.inStage("${S}") cannot move a system of "${St}". System.inStage stays inside the tick or inside the frame. A frame system is System.frame, an input system is System.input.`;
 
 /**
- * Moves a system within the group it was made in.
+ * Moves a system to another stage of the group it was made in.
  *
  * A tick system moves among `"preUpdate"`, `"update"` and `"postUpdate"`. A
- * frame system moves among `"preFrame"`, `"frame"` and `"postFrame"`. The
- * input stage is `System.input`. Write the stage out: a stage the compiler
- * can't read is refused beside a system that writes what this one watches, or
- * watches what this one writes. See `System.Misordered`.
+ * frame system moves among `"preFrame"`, `"frame"` and `"postFrame"`. A system
+ * of the input stage is made with `System.input`, and doesn't move.
  *
- * `"preFrame"` runs before every `"frame"` system, for what they depend on:
+ * `"preFrame"` runs before every `"frame"` system, for what they depend on.
  * `Assets.during` runs there, so all of a frame's systems see the same assets
  * loaded. `"postFrame"` runs after them all, for what needs everything drawn.
+ *
+ * **Gotchas**
+ *
+ * - Write the stage out. A system whose stage the compiler can't read is
+ *   refused in a list where another system writes what it watches, or watches
+ *   what it writes. See `System.Misordered`.
  *
  * @category Combinators
  */
@@ -489,26 +507,6 @@ export const inStage: {
   ): System<E, R, N, S, Tr> => build({ ...self, stage })
 );
 
-/**
- * Runs a system only on ticks when a condition holds:
- *
- *   System.tick("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
- *
- * The condition is an Effect that returns a boolean, checked each tick just
- * before the system would run. `State.is` creates one from a state; any other
- * condition can read whatever a system can. Given several, the system runs when
- * all of them hold, and they are checked in order until one fails.
- *
- * - A system without a condition checks nothing, and costs nothing extra.
- * - A system that doesn't run doesn't read, and sees nothing of what happened
- *   while it was off. The events from the ticks it skipped are gone when it
- *   runs again, and its change queries and `Query.removed` readers skip what
- *   changed in them: they see what changed after its last skipped turn. A
- *   change query it has never visited still visits everything that matches.
- * - The condition's requirements and errors become the system's.
- *
- * @category Combinators
- */
 type Gate<R, Ban, Msg extends string> = [Refused<R, Ban>] extends [never]
   ? unknown
   : { readonly [K in Msg]: Refused<R, Ban> };
@@ -525,6 +523,29 @@ type StageGate<St, R2> = St extends TickStage
       ? unknown
       : Gate<R2, InputBan, typeof INPUT_MSG>;
 
+/**
+ * Runs a system only when a condition holds.
+ *
+ *   System.tick("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
+ *
+ * The condition is an Effect that returns a boolean, checked each time just
+ * before the system would run. `State.is` makes one from a state, and any
+ * other condition can read whatever the system can. Given several, the system
+ * runs when all of them hold, and they are checked in order until one fails.
+ *
+ * - A system without a condition checks nothing, and costs nothing extra.
+ * - The condition's requirements and errors become the system's.
+ *
+ * **Gotchas**
+ *
+ * - A system that doesn't run reads nothing, and sees nothing of what happened
+ *   while it was off. The events of the ticks it skipped are gone when it runs
+ *   again. Its change queries and `Query.removed` readers skip what changed in
+ *   those ticks, and see only what changed after its last skipped turn. A
+ *   change query it has never visited still visits everything that matches.
+ *
+ * @category Combinators
+ */
 export const runIf: {
   <E2, R2>(
     condition: Effect.Effect<boolean, E2, R2>
@@ -581,17 +602,21 @@ export const triggered = <E, R, N extends string, St extends Stage>(
 ): System<E, R, N, St, Trigger> => build({ ...self, trigger });
 
 /**
- * Gives a system something to do instead of running, each time its condition
- * doesn't hold:
+ * Gives a system something to do in place of running, each time its condition
+ * doesn't hold.
  *
  *   const Hud = System.frame("Hud", drawHud).pipe(
  *     System.runIf(State.is(Phase, "playing")),
  *     System.otherwise(hideHud)
  *   )
  *
- * A system that maintains something outside itself, such as an image on screen
- * or a playing track, leaves it as it last was when it doesn't run. This sets
- * what that thing should be instead.
+ * **When to use**
+ *
+ * Use when a system keeps something outside itself up to date, such as an
+ * image on screen or a playing track. A system that doesn't run leaves that
+ * thing as it last was, and `System.otherwise` sets what it should be instead.
+ *
+ * **Details**
  *
  * - It runs in the system's place, in its stage and as the system, with its
  *   positions in events and changes. In a tick its commands are applied, and in
@@ -645,6 +670,11 @@ export const otherwise: {
 
 export type { Duplicated, Listing, Misordered, Ordered } from "./system/order";
 
+/**
+ * The level of the spans an app makes, as a program's
+ * `Tracer.MinimumTraceLevel` sees them.
+ * @internal
+ */
 export const spanLevel = "Debug";
 
 /**

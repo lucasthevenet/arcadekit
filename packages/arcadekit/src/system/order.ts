@@ -182,16 +182,26 @@ type Unplaced<U, All> =
     : never;
 
 /**
- * What is wrong with the order of a list of systems, as a union of messages,
- * and `never` when nothing is: a system that watches a component with
- * `Query.changed` or `Query.added`, listed ahead of one that writes it, spawns
- * it or adds it in the same tick, sees that a tick late. `App.define` and `Plugin.make` refuse such a list
- * with this message, so the mistake doesn't compile.
+ * What is wrong with the order of a list of systems, as a union of messages, or
+ * `never` when nothing is. `App.define` and `Plugin.make` refuse a list with
+ * these messages, so the mistake doesn't compile.
+ *
+ * A system that watches a component reacts a tick late when it is listed ahead
+ * of a system that changes the component in the same tick. With
+ * `Query.changed` it watches for writes, spawns and adds, and with
+ * `Query.added` for spawns and adds.
  *
  * What a system writes, adds and watches is in its requirements, from what it
  * yields: a query, `World.writes` and `Commands.spawns`. Nothing is declared
- * beside them. Hooks and systems of the frame and input stages
- * run at another moment, and are not checked against the tick's.
+ * beside them. Hooks and systems of the frame and input stages run at another
+ * moment, and are not checked against the tick's.
+ *
+ * **Gotchas**
+ *
+ * - The compiler can't read the order of a list that isn't written out as a
+ *   tuple, or the place of a system whose type allows more than one stage.
+ *   Such a system is refused when another system of the list writes what it
+ *   watches, or watches what it writes.
  *
  * @category Type-level
  */
@@ -246,9 +256,14 @@ type Dup<
   : Found;
 
 /**
- * The duplicate names in a list, as a union of messages, and `never` when
- * every name is its own. A name the compiler only knows as `string` is left
- * out. `App.define` and `Plugin.make` refuse the list with `System.Ordered`.
+ * The duplicate names in a list, as a union of messages, or `never` when every
+ * name is its own. `App.define` and `Plugin.make` refuse a list of systems, of
+ * handlers or of plugins with a duplicate name, so the mistake doesn't
+ * compile. A name the compiler only knows as `string`, and a list that isn't a
+ * tuple, are left out.
+ *
+ * @typeParam What what the list holds, `"system"`, `"handler"` or
+ *   `"plugin"`, which picks the message
  *
  * @category Type-level
  */
@@ -269,9 +284,3 @@ export type Ordered<S extends readonly Any[], Extra = never> = [
 ] extends [never]
   ? unknown
   : { readonly order: Misordered<S> | Extra };
-
-/**
- * The level of the spans an app makes, as a program's
- * `Tracer.MinimumTraceLevel` sees them.
- * @internal
- */

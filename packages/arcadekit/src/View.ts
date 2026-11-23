@@ -28,18 +28,18 @@
  *
  * A view is a value the game exposes to the UI. It is published from the frame
  * stage, once per frame, and only when it differs from the value the UI already
- * has, so an unchanged value costs the UI nothing.
+ * has. An unchanged value costs the UI nothing.
  *
  * The UI acts by sending actions, like any other input source. A bridge is made
- * from its game, and sends only the actions the game has a handler for: any
- * other does not compile. What it sends is issued in the input stage, before
- * the next tick, and is logged, so a replay needs no UI.
+ * from its game, and sends only the actions the game has a handler for. Any
+ * other action doesn't compile. What the bridge sends is issued in the input
+ * stage, before the next tick, and is logged, so a replay needs no UI.
  *
  * Neither side holds the other. The UI holds the bridge, which holds values but
- * no world; the game publishes to whoever is listening, and when no one is, on
- * a server or in a replay, it publishes and computes nothing. A game with a UI
- * and the same game without one have the same hash, log and save, given the
- * same actions.
+ * no world. The game publishes to whoever is listening. When no one is, on a
+ * server or in a replay, it publishes and computes nothing. Given the same
+ * actions, a game with a UI and the same game without one have the same hash,
+ * log and save.
  */
 import { Context, Effect, Equal, Layer } from "effect";
 
@@ -68,9 +68,9 @@ export interface View<A> {
  * A view is only a key, with no part of the game in it, so the UI can import
  * the module that declares it, along with the actions it may send.
  *
- * Its value is plain data (strings, numbers, booleans, and arrays and objects
- * of them), and two values are compared as data. Its name is its identity on a
- * bridge, which refuses two different views with the same name.
+ * Its value is plain data, made of strings, numbers, booleans, and arrays and
+ * objects of them. Two values are compared as data. Its name is its identity on
+ * a bridge, which refuses two different views with the same name.
  *
  * @category Constructors
  */
@@ -124,8 +124,8 @@ export interface Bridge<
   /**
    * Calls `listener` each time a view is published with a new value, and
    * returns a function that unsubscribes. It isn't called with the current
-   * value: read that with `get`. A listener that throws fails the frame, like
-   * any bug in the frame stage, after every other listener has been called.
+   * value, which `get` reads. A listener that throws fails the frame, like any
+   * bug in the frame stage, after every other listener has been called.
    */
   readonly subscribe: <A>(
     view: View<A>,
@@ -175,8 +175,8 @@ interface Slot {
  *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(View.layer(ui)))
  *   )
  *
- * The game gives the bridge its type: it sends every action the game has a
- * handler for, its plugins' among them, and no other. It holds the views'
+ * The game gives the bridge its type. The bridge sends every action the game
+ * has a handler for, its plugins' among them, and no other. It holds the views'
  * values, their listeners and the actions waiting to be issued, and nothing of
  * the game or its world. A UI can mount on it before the app is made, and sees
  * every view at its initial value until then.
@@ -281,10 +281,10 @@ const noBridge: Bridge = {
 };
 
 /**
- * The bridge a game publishes to and receives actions from. A
- * `Context.Reference` whose default is no UI at all, which is the case on a
- * server, in a replay and in most tests: nothing is published, and no view is
- * even computed. A page provides one with `View.layer`.
+ * The bridge a game publishes to and receives actions from. It is a
+ * `Context.Reference` whose default stands for no UI, as on a server, in a
+ * replay and in most tests. With the default, nothing is published, and no
+ * view is computed. A page provides a bridge with `View.layer`.
  */
 export const Bridge: Context.Reference<Bridge> = Context.Reference<Bridge>(
   "arcadekit/View.Bridge",
@@ -312,9 +312,9 @@ export interface PortShape {
   /** Whether a UI is listening. False on a server, in a replay, and in most tests. */
   readonly connected: boolean;
   /**
-   * Publishes a view: sets its value and notifies the UI, unless the value is
-   * unchanged. Returns whether it was published. A system of the frame stage
-   * publishes; a system of the tick cannot require `View.Port`.
+   * Publishes a view. It sets the view's value and notifies the UI, unless the
+   * value is unchanged, and returns whether it published. A system of the frame
+   * stage publishes, and a system of the tick can't require `View.Port`.
    */
   readonly publish: <A>(view: View<A>, value: A) => boolean;
 }
@@ -335,9 +335,10 @@ interface PortValue extends PortShape {
 }
 
 /**
- * An app's end of the bridge. `View.plugin` provides it, `View.publish` drives
- * it, and your own frame system can publish through it: `(yield*
- * View.Port).publish(Hud, value)`.
+ * An app's end of the bridge. `View.plugin` provides it, `View.publish`
+ * publishes through it, and so can your own frame system.
+ *
+ *   (yield* View.Port).publish(Hud, value)
  *
  * @category Services
  */
@@ -391,8 +392,8 @@ export const plugin = Plugin.make("arcadekit/View", {
 });
 
 /**
- * Makes a frame-stage system that publishes a view: each frame it computes the
- * value and, if it differs from the UI's, publishes it.
+ * Makes a frame-stage system that publishes a view. Each frame it computes the
+ * value, and publishes it if it differs from the UI's.
  *
  *   const ShowHud = View.publish(Hud, function*() {
  *     const score = yield* Score
@@ -407,9 +408,9 @@ export const plugin = Plugin.make("arcadekit/View", {
  * - Several ticks within one frame produce one publication, of the latest
  *   value.
  * - When no UI is listening, the body doesn't run at all.
- * - It accepts `System.runIf` like any system: a view that isn't published
+ * - It accepts `System.runIf` like any system. A view that isn't published
  *   keeps its last value, which suits a view that is expensive to compute and
- *   is refreshed occasionally. For a view that belongs to one part of the game
+ *   refreshed occasionally. For a view that belongs to one part of the game
  *   and shouldn't show elsewhere, add `System.otherwise(View.reset(view))`.
  * - The system is named `View.publish(<the view's name>)`. Use one per view.
  *
@@ -449,8 +450,8 @@ export function publish<
 }
 
 /**
- * Publishes a view's initial value again: what a UI should show for a view
- * whose part of the game isn't active.
+ * Publishes a view's initial value again, which is what a UI should show for a
+ * view whose part of the game isn't active.
  *
  *   const ShowHud = View.publish(Hud, readHud).pipe(
  *     System.runIf(State.is(Phase, "playing")),
@@ -460,8 +461,8 @@ export function publish<
  * A view that isn't published keeps its last value, so the score of a level the
  * player left would stay on screen. Passed to `System.otherwise`, this
  * publishes the initial value instead while the system doesn't run. The UI is
- * notified once, as for any value: after that, the value is unchanged. Like
- * publishing, it is for the stages between ticks.
+ * notified once, as for any value, since after that the value is unchanged.
+ * Like publishing, it is for the stages between ticks.
  *
  * @category Utilities
  */

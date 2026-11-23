@@ -1,8 +1,8 @@
 /**
- * The loop of an app: how its stages run. A tick applies the actions queued
- * for it, moves time on and gives each system its turn. The frame stage and
- * the input stage run between two ticks, with the world frozen. `Stage` says
- * what the systems of each are given.
+ * An app's loop runs its stages. A tick applies the actions queued for it,
+ * moves time on, and gives each system its turn. The frame stage and the input
+ * stage run between two ticks, with the world frozen. `Stage` says what the
+ * systems of each stage are given.
  */
 import {
   Clock,
@@ -30,18 +30,18 @@ import * as State from "./State";
 import * as System from "./System";
 
 /**
- * The spans of an app that traces. A tick's span is opened by hand, before
- * its actions are applied each in a fiber of its own, so that their spans
- * and the systems' are its children.
+ * The spans of an app that traces. A tick's span is opened before the tick
+ * applies its actions, each in a fiber of its own, so that the actions' spans
+ * and the systems' spans are its children.
  *
  * @category Models
  */
 export class Spans {
   /**
-   * Whether the app traces. Chosen once, so an app that doesn't runs what it
-   * would without. The default tracer makes spans and sends them nowhere:
-   * Effect compares with it to tell that no tracer is installed. A span the
-   * minimum level leaves out would be made and not sent, so none is made.
+   * Whether the app traces, chosen once, so an app that doesn't trace runs no
+   * tracing code. An app traces when a tracer other than Effect's default is
+   * provided, tracing is enabled, and `Tracer.MinimumTraceLevel` lets "Debug"
+   * spans through.
    */
   readonly enabled: boolean;
   /** The span of the tick that is running, in an app that traces. */
@@ -75,7 +75,7 @@ export class Spans {
     return made.value;
   }
 
-  /** Ends a span `open` made, with how what it covers ended. */
+  /** Ends a span that `open` made, with the exit of what it covers. */
   end(span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): void {
     const { context } = this;
     span.end(
@@ -87,8 +87,9 @@ export class Spans {
   }
 
   /**
-   * What an action's handler returned, in a span of its own when the app
-   * traces: the tick's child, for an action a tick applies.
+   * Returns what an action's handler returned, in a span of its own when the
+   * app traces. For an action that a tick applies, the span is the tick's
+   * child.
    */
   action<A, E, R>(
     name: string,
@@ -137,24 +138,29 @@ export interface Parts {
 }
 
 /**
- * The three runs of an app. Each returns how it ended, with what the game's
- * systems failed with left as unknown: the app, which knows them, says what
- * it is.
+ * What runs an app's tick, its two stages between ticks and a plugin's setup,
+ * and says whether the game has come to rest. Each run returns its exit. The
+ * error is unknown here, and the app, which knows what the game's systems fail
+ * with, gives it its type.
  *
  * @category Models
  */
 export interface Loop {
   /**
-   * Runs a tick. With `observe`, whoever stepped it is told before the
-   * tick's first system, with undefined, and after each one, with its name.
+   * Runs a tick. `observe` is called with undefined before the tick's first
+   * system, and with each system's name once that system has run and its
+   * commands are applied.
    */
   readonly tick: (
     delta: number,
     observe?: (system: string | undefined) => void
   ) => Exit.Exit<void, unknown>;
-  /** Runs the frame stage, for a frame `alpha` of the way to the next tick. */
+  /**
+   * Runs the frame stage, for a frame `alpha` of the way to the next tick and
+   * `delta` real seconds after the previous frame.
+   */
   readonly frame: (alpha: number, delta?: number) => Exit.Exit<void, unknown>;
-  /** Runs the input stage, with one picture of the devices. */
+  /** Runs the input stage, with one sample of the devices. */
   readonly input: () => Exit.Exit<void, unknown>;
   /**
    * Runs a plugin's setup, as the game's own code between ticks, and applies
@@ -174,7 +180,7 @@ export interface Loop {
 }
 
 /**
- * Makes the loop of an app: its tick, and its two stages between ticks.
+ * Makes the loop of an app from the app's parts.
  *
  * @category Constructors
  */

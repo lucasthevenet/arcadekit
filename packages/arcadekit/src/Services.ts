@@ -1,5 +1,11 @@
 /**
- * The services every system and handler can access with `yield*`.
+ * The services that systems and handlers ask for with `yield*`.
+ *
+ *   const { delta } = yield* Time
+ *   const commands = yield* Commands.spawns(Bullet)
+ *
+ * Which of them a system can require depends on its stage. See `System.tick`,
+ * `System.frame` and `System.input`.
  */
 import { Context, Effect } from "effect";
 
@@ -23,10 +29,10 @@ import type { Access, AddsOf, NameOf, WritesOf } from "./Query";
 import { writing } from "./services/handed";
 
 /**
- * In a system's requirements, says that it changes the game by a road that is
- * not a component: it emits an event, sets a state, or writes a singleton.
- * A frame or input system cannot require it. A system provides it for itself,
- * so an app never asks for it from outside.
+ * In a system's requirements, says that the system changes the game other than
+ * through a component, by emitting an event, setting a state or writing a
+ * singleton. A frame or input system can't require it. A system provides it
+ * for itself, so an app never asks for it from outside.
  *
  * @category Type-level
  */
@@ -43,7 +49,7 @@ type Settable<C extends string, N extends string> = [N] extends [never]
     : `World.writes was not given "${C}". Add it where the world is asked for: yield* World.writes(...), with every component this system sets.`;
 
 /**
- * What every world a system or a handler is handed can do: read.
+ * The reads of every world that a system or a handler is handed.
  *
  * @category Models
  */
@@ -52,39 +58,45 @@ export interface ReadingWorld extends Pick<
   "entityCount" | "has" | "hash" | "holds" | "isAlive" | "sources"
 > {
   /**
-   * The entity of an id `Commands.spawn` returned, once its spawn is applied,
-   * and undefined before: the world's reads take an `Entity`.
+   * Returns the entity of an id that `Commands.spawn` returned, once its spawn
+   * is applied, and undefined before. The world's reads take an `Entity`, not
+   * a `Spawned` id.
    */
   placed(id: Spawned): Entity | undefined;
-  /** A copy of an entity's component, or undefined if it doesn't have it. */
+  /**
+   * Returns a copy of an entity's component, or undefined if it doesn't have
+   * it.
+   */
   get<S extends Schema>(
     entity: Entity,
     def: ComponentDef<S>
   ): Readonly<ValueOf<S>> | undefined;
   /**
-   * A singleton, read-only: a system writes one with `yield* Score.writes`.
+   * Returns a singleton, read-only. A system writes one with
+   * `yield* Score.writes`.
    */
   singleton<S extends Schema>(spec: SingletonSpec<S>): Readonly<ValueOf<S>>;
 }
 
 /**
- * The world as a system or a handler is handed it: it reads, and it sets the
- * components named `N`, those `World.writes` was given.
+ * The world as a system or a handler is handed it. It reads, and it sets the
+ * components named `N`, those that `World.writes` was given.
  *
  *   const world = yield* World                  // reads
  *   const world = yield* World.writes(Health)   // reads, and sets Health
  *
  * - `get`, `has`, `isAlive` and `sources` read an entity, `singleton` and
  *   `holds` a singleton, and `entityCount` and `hash` the world.
- *   `sources(target, ChildOf)` gives the entities that point at `target` with
- *   a relation, and takes no component that is not one.
- * - `placed` gives the entity of an id `Commands.spawn` returned, once its
- *   spawn is applied, and undefined before: the world's reads take an
- *   `Entity`, and not a `Spawned` id.
- * - `set` writes the fields given of one entity's component, and returns false
- *   for an entity that doesn't have it. A component the world was not asked for
- *   doesn't compile, and the error says where to name it, nor does a
- *   relation's `target`: `Commands` adds the relation again to change it.
+ *   `sources(target, ChildOf)` returns the entities that point at `target` with
+ *   a relation, and takes no component that isn't a relation.
+ * - `placed` returns the entity of an id that `Commands.spawn` returned, once
+ *   its spawn is applied, and undefined before. The world's reads take an
+ *   `Entity`, not a `Spawned` id.
+ * - `set` writes the given fields of one entity's component, and returns false
+ *   for an entity that doesn't have it. A component the world wasn't asked for
+ *   doesn't compile, and the error says where to name it. A relation's
+ *   `target` doesn't compile either. To change it, add the relation again with
+ *   `Commands`.
  * - The set of entities changes through `Commands` alone.
  *
  * @category Models
@@ -109,15 +121,16 @@ export interface WritingWorld<N extends string> extends ReadingWorld {
  *   const world = yield* World.writes(Health)
  *   world.set(target, Health, { hp: 3 })
  *
- * Naming the components puts them in the system's requirements, as a query's
- * `Query.writes` does, so that the order of a list of systems can be checked:
- * see `System.Misordered`.
+ * Naming the components puts them in the system's requirements, as
+ * `Query.writes` does, so that the order of a list of systems can be checked.
+ * See `System.Misordered`.
  *
  * @category Services
  */
 export class World extends Context.Service<World, WritingWorld<never>>()(
   "arcadekit/World"
 ) {
+  /** Returns the world with a `set` for these components. */
   static readonly writes = <const D extends readonly ComponentDef[]>(
     ..._defs: D
   ): Effect.Effect<
@@ -145,9 +158,9 @@ export interface TimeState {
 }
 
 /**
- * Game time. The tick drives it, not the wall clock, so it is deterministic.
- * The world holds it, as the singleton `arcadekit/Time`, so its snapshot, a
- * save and its hash cover it.
+ * The game's time. The tick moves it on, not the wall clock, so it is
+ * deterministic. The world holds it as the singleton `arcadekit/Time`, so a
+ * snapshot, a save and the world's hash cover it.
  *
  * @category Services
  */
@@ -198,17 +211,19 @@ type Spawnable<I, N extends string> =
     : unknown;
 
 /**
- * The commands of a system or a handler: changes to the set of entities,
- * queued, and applied when it finishes. They despawn and remove, and they
- * spawn and add the components named `N`, those `Commands.spawns` was given.
+ * The commands of a system or a handler, which change the set of entities.
+ * They are queued, and applied when the system or handler finishes. They
+ * despawn and remove, and they spawn and add the components named `N`, those
+ * that `Commands.spawns` was given.
  *
  * @category Models
  */
 export interface Spawning<N extends string> {
   /**
-   * Queues a new entity with these components, and returns its id at once:
-   * a `Spawned` id, since the entity is placed when the system finishes. The
-   * commands and a component's value take it, and the world's reads don't.
+   * Queues a new entity with these components, and returns its id at once.
+   * The id is a `Spawned` id, since the entity is placed when the system
+   * finishes. The commands and a component's value take it, and the world's
+   * reads don't.
    */
   spawn<const I extends readonly ComponentInput[]>(
     ...inputs: {
@@ -240,15 +255,16 @@ export interface Spawning<N extends string> {
  *   commands.spawn(Bullet, Position.of({ x: 0, y: 0 }))
  *
  * Naming the components puts them in the system's requirements, so that the
- * order of a list of systems can be checked: a system that watches a component
- * with `Query.added` or `Query.changed` is listed after the ones that spawn it.
- * See `System.Misordered`.
+ * order of a list of systems can be checked. A system that watches a component
+ * with `Query.added` or `Query.changed` is listed after the systems that spawn
+ * it. See `System.Misordered`.
  *
  * @category Services
  */
 export class Commands extends Context.Service<Commands, Spawning<never>>()(
   "arcadekit/Commands"
 ) {
+  /** Returns the commands with a `spawn` and an `add` for these components. */
   static readonly spawns = <const D extends readonly ComponentDef[]>(
     ..._defs: D
   ): Effect.Effect<
@@ -259,7 +275,9 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
 }
 
 /**
- * The app's event channels. Usually accessed by yielding an event definition.
+ * The app's event channels. A system usually reaches them through an event's
+ * definition, with `yield* SomeEvent` to read and `yield* SomeEvent.emits` to
+ * emit.
  *
  * @category Services
  */
@@ -277,18 +295,18 @@ export class Events extends Context.Service<Events, EventBus>()(
  *   random.shuffle(items)  // in place
  *
  * Its methods are plain calls, cheap enough for a loop. Seed the app with
- * `App.make(game, { seed })`; the same seed produces the same numbers on every
- * machine. The generator's state is part of the world, so it is included in the
- * world's hash and a replay draws the same numbers.
+ * `App.make(game, { seed })`. The same seed produces the same numbers on every
+ * machine. The generator's state is part of the world, so the world's hash
+ * covers it and a replay draws the same numbers.
  *
  * - It is the only source of randomness in a simulation. The seed defaults to
  *   0, so a game is repeatable until you seed it from outside.
  * - Inside an app, Effect's own `Random` module is seeded from the same
  *   generator, so `Random.next` from `"effect"`, and anything built on it,
- *   replays too. It costs an Effect per draw, so avoid it in loops.
+ *   replays too. It costs an Effect per draw, so don't use it in loops.
  * - In the frame and input stages it is the app's own generator, separate from
  *   the world, so drawing can be random without changing the game.
- * - It is not suitable for secrets: a few outputs reveal the rest.
+ * - It isn't suitable for secrets, since a few outputs reveal the rest.
  *
  * @category Services
  */
