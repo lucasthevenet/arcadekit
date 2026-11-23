@@ -861,7 +861,7 @@ export const Component = {
    *   }))`. It is read-only in `each`, in `set` and in its raw column, so an
    *   assignment doesn't compile.
    * - It must be alive. A relation given bare, with no target, doesn't
-   *   compile on `Commands`, and the world refuses it where it is given.
+   *   compile, on `Commands` or on the world.
    *   Given a target that is already gone, whatever that entity's despawn
    *   would have done happens at once: the holder is despawned, or the
    *   relation isn't added.

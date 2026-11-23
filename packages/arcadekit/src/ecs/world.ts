@@ -66,7 +66,7 @@ import type { QuerySpec, Terms } from "./query";
 import { Rng } from "./random";
 import { NOT_PLACED, WHOLE } from "./records";
 import type { Saved, Single } from "./records";
-import type { PatchOf, RelationDef } from "./relation";
+import type { PatchOf, RelationDef, Targeted } from "./relation";
 import { STORAGES, SnapshotError, WIDTH, corrupt } from "./snapshot";
 import type { Store } from "./store";
 import type { Columns } from "./table";
@@ -414,7 +414,9 @@ export class World {
    * structural change, it throws while a query is iterating and inside a
    * transaction: queue it on a `CommandBuffer` there.
    */
-  spawn(...inputs: readonly ComponentInput[]): Entity {
+  spawn<const I extends readonly ComponentInput[]>(
+    ...inputs: { readonly [K in keyof I]: I[K] & Targeted<I[K]> }
+  ): Entity {
     this.assertNotIterating("spawn");
     // Before an id is reserved, so a refused component leaves nothing behind.
     this._registerAll(inputs);
@@ -528,7 +530,10 @@ export class World {
    * entity is gone, or when a relation's target is: whatever that target's
    * despawn would have done then happens at once.
    */
-  add(entity: Entity, input: ComponentInput): boolean {
+  add<const I extends ComponentInput>(
+    entity: Entity,
+    input: I & Targeted<I>
+  ): boolean {
     this.assertNotIterating("add");
     if (!this.isAlive(entity)) {
       return false;

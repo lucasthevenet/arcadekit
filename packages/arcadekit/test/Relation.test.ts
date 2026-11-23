@@ -261,12 +261,22 @@ describe("a relation", () => {
     const world = new EcsWorld();
     const parent = body(world);
     const commands = new CommandBuffer(world);
-    // The world refuses a relation given bare where it is given.
-    expect(() => world.spawn(Body, ChildOf)).toThrow(
-      /"rl\/ChildOf" is a relation, and a relation needs a target/
-    );
-    expect(() => world.add(parent, Targets)).toThrow(/needs a target/);
-    // Commands don't compile with one. Past the type, they throw.
+    // Neither the world nor commands compile with a relation given bare.
+    // Past the type, they throw where it is given.
+    expect(() =>
+      world.spawn(
+        Body,
+        // @ts-expect-error a relation needs a target
+        ChildOf
+      )
+    ).toThrow(/"rl\/ChildOf" is a relation, and a relation needs a target/);
+    expect(() =>
+      world.add(
+        parent,
+        // @ts-expect-error a relation needs a target
+        Targets
+      )
+    ).toThrow(/needs a target/);
     expect(() =>
       commands.spawn(
         // @ts-expect-error a relation needs a target

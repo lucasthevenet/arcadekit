@@ -229,7 +229,7 @@ export const Rules = Plugin.make("game/Rules", { handlers: [swap], setup });
 - Either way, nothing is left pointing at a despawned entity, so a dangling reference can never be read as a live one. A plain `Field.entity` gets no such guarantee: it holds whatever id was written, and readers check `world.isAlive` themselves.
 - `world.sources(target, ChildOf)` returns the entities pointing at a target, ordered by index. The world tracks these links, so neither this call nor a despawn scans other entities. It takes a relation, and any other component doesn't compile.
 - To change a target, add the relation again. `target` is read-only in `each`, in `world.set` and in its raw column, so assigning to it doesn't compile. A relation's own fields are written like any others.
-- A relation requires a live target. Given bare, as `ChildOf` and not `ChildOf.of({ target })`, it doesn't compile on `Commands`, and the world refuses it where it is given. With a target that is already despawned, the despawn behaviour applies immediately: the child doesn't survive the call, or the relation isn't added.
+- A relation requires a live target. Given bare, as `ChildOf` and not `ChildOf.of({ target })`, it doesn't compile, on `Commands` or on the world. With a target that is already despawned, the despawn behaviour applies immediately: the child doesn't survive the call, or the relation isn't added.
 - An entity has one target per relation. A different kind of link is a different relation.
 - A despawn follows relations ordered by name and the pointing entities ordered by index, so the same world always loses the same entities in the same order.
 - In a system or an action handler, add, remove and retarget relations through `Commands`, like any other structural change.
