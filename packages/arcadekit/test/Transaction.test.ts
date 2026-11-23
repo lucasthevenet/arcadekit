@@ -880,9 +880,9 @@ describe("an action that is refused", () => {
       return { recording: app.record(), hash: world.hash() };
     });
     const replayed = withApp(
-      Journal.replay(recording, (start) =>
-        App.make(Game, { ...start, checkpointEvery: 1 })
-      ).pipe(Effect.flatMap((app) => app.read(World))),
+      Journal.replay(recording, Game, { checkpointEvery: 1 }).pipe(
+        Effect.flatMap((app) => app.read(World))
+      ),
       (world) => world.hash()
     );
     expect(replayed).toBe(hash);
@@ -1047,9 +1047,9 @@ describe("a game full of refused actions", () => {
       expect(recorded.refusedCount).toBeGreaterThan(20);
 
       const replayed = withApp(
-        Journal.replay(recorded.recording, (start) =>
-          App.make(Game, { ...start, checkpointEvery: 1 })
-        ).pipe(Effect.flatMap((app) => app.read(World))),
+        Journal.replay(recorded.recording, Game, { checkpointEvery: 1 }).pipe(
+          Effect.flatMap((app) => app.read(World))
+        ),
         (world) => world.hash()
       );
       expect(replayed).toBe(recorded.hash);

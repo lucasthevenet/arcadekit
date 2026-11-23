@@ -116,9 +116,7 @@ describe("a lockstep session", () => {
       const recording = ada.app.record();
       expect(recording.end).toBe(ticks);
       withApp(
-        Journal.replay(recording, (start) =>
-          App.make(CoinGame, { ...start, checkpointEvery: 1 })
-        ),
+        Journal.replay(recording, CoinGame, { checkpointEvery: 1 }),
         (_, alone) => {
           expect(alone.hash()).toBe(ada.world.hash());
         }

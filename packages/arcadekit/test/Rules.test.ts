@@ -640,7 +640,7 @@ describe("replay", () => {
     expect(original.state[0]).toBe("tick=7 entities=3");
 
     const replayed = withApp(
-      Journal.replay(original.recording, (start) => App.make(duelOf(), start)),
+      Journal.replay(original.recording, duelOf()),
       (app) => ({ log: [...app.actionLog], state: snapshot(app) })
     );
     expect(replayed.state).toEqual(original.state);

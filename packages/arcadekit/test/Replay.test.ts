@@ -140,13 +140,23 @@ const withApp = <T extends Pick<App.Any, "read">, A>(
     )
   );
 
-/**
- * Replays a recording in an app the test has made already, to look at the app
- * afterwards, or to make it another way than the recording says.
- */
-const replayIn = (app: App.Any, recording: Journal.Recording): void => {
-  Effect.runSync(Journal.replay(recording, () => Effect.succeed(app)));
-};
+/** What stopped a replay that the test expects to diverge. */
+const stoppedBy = <A extends App.Any>(
+  replay: Effect.Effect<
+    A,
+    Journal.ReplayDiverged<A> | Save.LoadRefused,
+    Scope.Scope
+  >
+): Journal.ReplayDiverged<A> =>
+  Effect.runSync(
+    Effect.scoped(
+      replay.pipe(
+        Effect.flatMap(() => Effect.die("it went the way the game went")),
+        Effect.catchTag("ReplayDiverged", Effect.succeed),
+        Effect.orDie
+      )
+    )
+  );
 
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
   log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
@@ -220,34 +230,18 @@ const replayInto = (
     Effect.scoped(
       Effect.gen(function* () {
         const recording = recordingOf(log, ticks, 1 / 60, options.seed ?? 1);
-        // Kept as it is made, to look at where a replay that fails stopped.
-        let kept: App.Any | undefined;
-        const exit = yield* Effect.exit(
-          Journal.replay(recording, (start) =>
-            App.make(coinGame(options.faulty, options.coins), {
-              ...start,
-              ...checkpointing(options),
-            }).pipe(
-              Effect.tap((made) =>
-                Effect.sync(() => {
-                  kept = made;
-                })
-              )
-            )
-          )
+        // A replay that stops holds its app where it stopped.
+        const { app, stopped } = yield* Journal.replay(
+          recording,
+          coinGame(options.faulty, options.coins),
+          checkpointing(options)
+        ).pipe(
+          Effect.map((app) => ({ app, stopped: undefined })),
+          Effect.catchTag("ReplayDiverged", (diverged) =>
+            Effect.succeed({ app: diverged.app, stopped: diverged })
+          ),
+          Effect.orDie
         );
-        const app = kept!;
-        let stopped: Journal.ReplayDiverged | undefined;
-        if (Exit.isFailure(exit)) {
-          const error = Cause.squash(exit.cause);
-          if (!(error instanceof Journal.ReplayDiverged)) {
-            throw error;
-          }
-          stopped = error;
-        } else {
-          // It succeeds with the app it was given the making of.
-          expect(exit.value).toBe(app);
-        }
         return {
           stopped,
           tick: app.time.tick,
@@ -482,6 +476,50 @@ describe("a replay that checks itself", () => {
     );
   });
 
+  it("fails with its app where it stopped, an app of its game to look at", () => {
+    const recorded = record({ ticks: 60, checkpointEvery: 1 });
+    const looked = Effect.runSync(
+      Effect.scoped(
+        Journal.replay(recorded.recording, coinGame(fault(20, "lose")), {
+          checkpointEvery: 1,
+        }).pipe(
+          Effect.flatMap(() => Effect.die("it went the way the game went")),
+          Effect.catchTag("ReplayDiverged", (diverged) =>
+            Effect.gen(function* () {
+              const { app, reason } = diverged;
+              assert(reason instanceof Journal.HashMismatch);
+              const seen = {
+                stoppedAt: diverged.tick,
+                tick: app.time.tick,
+                hash: (yield* app.read(World)).hash(),
+                coins: (yield* app.read(Lying)).count(),
+                reason,
+              };
+              // It is a live app of the game: it takes the game's actions,
+              // and no other.
+              const dropped = app.dispatch(Drop, { value: 1 });
+              // @ts-expect-error the game has no handler for `Add`
+              expect(() => app.dispatch(Add, { by: 1 })).toThrow(/No handler/);
+              return {
+                ...seen,
+                dropped: Exit.isSuccess(dropped),
+                after: (yield* app.read(Lying)).count(),
+              };
+            })
+          )
+        )
+      )
+    );
+    // Where the build that loses a coin on tick 20 stopped: at that tick's
+    // checkpoint, with the world whose hash it compared.
+    expect(looked.stoppedAt).toBe(20);
+    expect(looked.tick).toBe(20);
+    expect(looked.hash).toBe(looked.reason.actual);
+    expect(looked.hash).not.toBe(recorded.hashes[19]);
+    expect(looked.dropped).toBe(true);
+    expect(looked.after).toBe(looked.coins + 1);
+  });
+
   it("would otherwise run on until an action happened to be refused, or to the end", () => {
     // The same recording with its checkpoints taken out, as a log was before
     // it had any. The faulty build loses the oldest coin on tick 40, and the
@@ -560,14 +598,9 @@ describe("a replay that checks itself", () => {
     expect(moves(otherSeed.log)).toEqual([]);
 
     // The right seed, but something in the world that the game did not have.
-    const crowded = withApp(game({ seed: 5, coins: [1] }), (app) => {
-      try {
-        replayIn(app, recordingOf(recorded.log, 30, 1 / 60));
-      } catch (error) {
-        return error as Journal.ReplayDiverged;
-      }
-    });
-    expect(crowded!.tick).toBe(0);
+    const crowded = replayInto({ seed: 5, coins: [1] }, recorded.log, 30);
+    expect(crowded.stopped!.tick).toBe(0);
+    expect(crowded.tick).toBe(0);
     expect(replayInto({ seed: 5 }, recorded.log, 30).stopped).toBeUndefined();
   });
 
@@ -808,15 +841,16 @@ const Heckler = System.tick("Heckler", function* () {
   patience.left = random.int(1, 3);
 });
 
+const busyGame = (value = 1) =>
+  App.define({
+    plugins: [counting(value)],
+    systems: [Bot, Referee, Heckler],
+    handlers: [double, add, chain],
+  });
 const busy = (checkpointEvery = 1, value = 1) =>
-  App.make(
-    App.define({
-      plugins: [counting(value)],
-      systems: [Bot, Referee, Heckler],
-      handlers: [double, add, chain],
-    }),
-    { seed: 4, checkpointEvery }
-  );
+  App.make(busyGame(value), { seed: 4, checkpointEvery });
+const replayBusy = (recording: Journal.Recording) =>
+  Journal.replay(recording, busyGame(), { checkpointEvery: 1 });
 
 describe("the action log", () => {
   it("holds what came from outside, as it arrived, and not what the simulation issued itself", () => {
@@ -918,14 +952,34 @@ describe("app.enqueue from inside the simulation", () => {
     };
     return app;
   });
+  /**
+   * The same game, whose system and handler enqueue through `Actions`, which
+   * `app.enqueue` is from inside the simulation. A replay makes its own app,
+   * which no variable of the game's holds.
+   */
+  const Relaying = App.define({
+    plugins: [counting(0)],
+    systems: [
+      System.tick("Clock", function* () {
+        (yield* Action.Actions).enqueue(Add, { by: 1 });
+      }),
+    ],
+    handlers: [
+      add,
+      Action.handler(Relay, function* ({ by }) {
+        (yield* Action.Actions).enqueue(Add, { by });
+      }),
+    ],
+  });
   const replayed = (log: readonly Action.LogEntry[], ticks: number) =>
-    withApp(holding, (app, world) => {
-      replayIn(app, recordingOf(log, ticks, 1));
-      return {
-        value: tallyOf(app).value,
-        hash: world.hash(),
-      };
-    });
+    withApp(
+      Effect.orDie(
+        Journal.replay(recordingOf(log, ticks, 1, 0), Relaying, {
+          checkpointEvery: 1,
+        })
+      ),
+      (app, world) => ({ value: tallyOf(app).value, hash: world.hash() })
+    );
 
   it("is the simulation's own move from a system, so a replay makes it once", () => {
     const recorded = withApp(holding, (app, world) => {
@@ -1036,14 +1090,14 @@ describe("a game whose simulation issues actions itself", () => {
       moves(recorded.log).some((entry) => entry.refused !== undefined)
     ).toBe(true);
 
-    const replayed = withApp(busy(), (app, world) => {
-      replayIn(app, recorded.recording);
-      return {
+    const replayed = withApp(
+      Effect.orDie(replayBusy(recorded.recording)),
+      (app, world) => ({
         log: [...app.actionLog],
         hash: world.hash(),
         tally: tallyOf(app),
-      };
-    });
+      })
+    );
     expect(replayed.hash).toBe(recorded.hash);
     expect(replayed.tally).toEqual(recorded.tally);
     // The replay's own log is the game's, entry for entry, marks included.
@@ -1070,18 +1124,12 @@ describe("a game whose simulation issues actions itself", () => {
       name: "rp/Add",
       payload: { by: 7 },
     });
-    const stopped = withApp(busy(), (app) => {
-      try {
-        replayIn(app, recordingOf(withBotMoves, 9, 1));
-      } catch (error) {
-        return error as Journal.ReplayDiverged;
-      }
-    });
-    expect(stopped!.reason).toBeInstanceOf(Journal.HashMismatch);
-    expect(stopped!.tick).toBe(4);
+    const stopped = stoppedBy(replayBusy(recordingOf(withBotMoves, 9, 1, 4)));
+    expect(stopped.reason).toBeInstanceOf(Journal.HashMismatch);
+    expect(stopped.tick).toBe(4);
     // And as it is recorded, it replays.
-    withApp(busy(), (app) => {
-      replayIn(app, recordingOf(recorded, 9, 1));
+    withApp(Effect.orDie(replayBusy(recordingOf(recorded, 9, 1, 4))), (app) => {
+      expect(app.time.tick).toBe(9);
     });
   });
 
@@ -1090,10 +1138,11 @@ describe("a game whose simulation issues actions itself", () => {
     // and an addition enqueued by the handler of a dispatched action. They do
     // not commute, so each order of arrival is its own game, and each has to
     // replay as itself.
-    const make = App.make(
-      App.define({ plugins: [counting(1)], handlers: [double, add, chain] }),
-      { checkpointEvery: 1 }
-    );
+    const Ordered = App.define({
+      plugins: [counting(1)],
+      handlers: [double, add, chain],
+    });
+    const make = App.make(Ordered, { checkpointEvery: 1 });
     const play = (first: "enqueue" | "dispatch") =>
       withApp(make, (app) => {
         if (first === "enqueue") {
@@ -1110,10 +1159,14 @@ describe("a game whose simulation issues actions itself", () => {
         };
       });
     const replay = (log: readonly Action.LogEntry[]) =>
-      withApp(make, (app) => {
-        replayIn(app, recordingOf(log, 1, 1));
-        return tallyOf(app).value;
-      });
+      withApp(
+        Effect.orDie(
+          Journal.replay(recordingOf(log, 1, 1, 0), Ordered, {
+            checkpointEvery: 1,
+          })
+        ),
+        (app) => tallyOf(app).value
+      );
 
     const doubledFirst = play("enqueue");
     const addedFirst = play("dispatch");
@@ -1147,10 +1200,14 @@ describe("a recording", () => {
       commands.spawn(Walker.of({ x: 0 }));
     }),
   });
-  const walking = App.make(
-    App.define({ plugins: [Start], systems: [Walk], handlers: [drop] }),
-    { checkpointEvery: 1 }
-  );
+  const Walking = App.define({
+    plugins: [Start],
+    systems: [Walk],
+    handlers: [drop],
+  });
+  const walking = App.make(Walking, { checkpointEvery: 1 });
+  const replayWalking = (recording: Journal.Recording) =>
+    Effect.orDie(Journal.replay(recording, Walking, { checkpointEvery: 1 }));
   const steps = [1 / 60, 1 / 60, 1 / 60, 1 / 30, 1 / 30, 1 / 60];
 
   it("holds how long each tick was, so a replay takes the same steps to the same end", () => {
@@ -1172,8 +1229,7 @@ describe("a recording", () => {
     });
     const decoded = Journal.decode(Journal.encode(recorded.recording));
     expect(decoded).toEqual(Exit.succeed(recorded.recording));
-    withApp(walking, (app, world) => {
-      replayIn(app, recorded.recording);
+    withApp(replayWalking(recorded.recording), (app, world) => {
       expect(app.time.tick).toBe(6);
       expect(app.time.elapsed).toBeCloseTo(steps.reduce((a, b) => a + b));
       expect(world.hash()).toBe(recorded.hash);
@@ -1219,16 +1275,42 @@ describe("a recording", () => {
     });
   });
 
-  it("is refused into an app that isn't where it begins, and records only a save of its own app", () => {
-    const recording = withApp(walking, (app) => {
+  it("is refused when how its game began isn't where it begins, and records only a save of its own app", () => {
+    const recorded = withApp(walking, (app) => {
       app.tick(1 / 60);
-      return app.record();
+      app.tick(1 / 60);
+      const save = app.save();
+      assert(Exit.isSuccess(save));
+      app.tick(1 / 60);
+      return { whole: app.record(), tail: app.record(save.value) };
     });
+    // Written by hand, a tick off: one from a seed that begins at tick 1,
+    // and one whose save, of tick 2, is said to begin at tick 1.
+    const offByOne = (recording: Journal.Recording): Journal.Recording => ({
+      ...recording,
+      start: 1,
+      deltas: [{ tick: 1, delta: 1 / 60 }],
+      log: [],
+    });
+    for (const { recording, said } of [
+      {
+        recording: offByOne(recorded.whole),
+        said: "begins at tick 1, with a seed, and a game begins at tick 0",
+      },
+      {
+        recording: offByOne(recorded.tail),
+        said: "begins at tick 1, and its save was made at tick 2",
+      },
+    ]) {
+      expect(() => withApp(replayWalking(recording), () => {})).toThrow(
+        `Journal.replay was given a recording that ${said}. Decode a recording with Journal.decode, which checks it.`
+      );
+      expect(Exit.isFailure(Journal.decode(Journal.encode(recording)))).toBe(
+        true
+      );
+    }
     withApp(walking, (app) => {
       app.tick(1 / 60);
-      expect(() => replayIn(app, recording)).toThrow(
-        "Journal.replay was given a recording that begins at tick 0, and made an app that has run 1 ticks. Make the app from the start it hands over, (start) => App.make(game, start)"
-      );
       // Not a save of this app: it is of a tick this one hasn't reached.
       const ahead = withApp(walking, (other) => {
         for (let i = 0; i < 5; i++) {
@@ -1263,20 +1345,50 @@ describe("how a recorded game began", () => {
     const recorded = record({ ticks: 40, seed: 5, checkpointEvery: 1 });
     expect(recorded.recording.seed).toBe(5);
     expect(recorded.recording.save).toBeUndefined();
-    // The game and the recording, and no seed said again: the replay hands
-    // over how the game began, and nothing else of the recording.
-    let handed: Journal.Origin | undefined;
+    // The game and the recording, and no seed said again: the replay makes
+    // its app from how the game began, and its own recording says so.
     const replayed = withApp(
-      Effect.orDie(
-        Journal.replay(recorded.recording, (start) => {
-          handed = start;
-          return App.make(coinGame(), start);
-        })
-      ),
-      (app, world) => ({ tick: app.time.tick, hash: world.hash() })
+      Effect.orDie(Journal.replay(recorded.recording, coinGame())),
+      (app, world) => ({
+        tick: app.time.tick,
+        hash: world.hash(),
+        seed: app.record().seed,
+      })
     );
-    expect(handed).toEqual({ seed: 5 });
-    expect(replayed).toEqual({ tick: 40, hash: recorded.hashes.at(-1) });
+    expect(replayed).toEqual({
+      tick: 40,
+      hash: recorded.hashes.at(-1),
+      seed: 5,
+    });
+    // Nor can another beginning be given: a replay's options are the rest of
+    // what `App.make` takes.
+    const { save } = withApp(game(), (app) => {
+      const saved = app.save();
+      assert(Exit.isSuccess(saved));
+      return { save: saved.value };
+    });
+    const origin: Journal.Origin = { seed: 6 };
+    const options = { seed: 6, checkpointEvery: 1 };
+    void Journal.replay(
+      recorded.recording,
+      coinGame(),
+      // @ts-expect-error the recording holds its seed
+      { seed: 6 }
+    );
+    void Journal.replay(
+      recorded.recording,
+      coinGame(),
+      // @ts-expect-error the recording holds its seed or its save
+      { save }
+    );
+    void Journal.replay(
+      recorded.recording,
+      coinGame(),
+      // @ts-expect-error nor spread from how a game began
+      { ...origin, checkpointEvery: 1 }
+    );
+    // @ts-expect-error nor in a variable
+    void Journal.replay(recorded.recording, coinGame(), options);
     // A game made with no seed began with seed 0, and its recording says so.
     withApp(App.make(coinGame()), (app) => {
       expect(app.record().seed).toBe(0);
@@ -1315,18 +1427,17 @@ describe("how a recorded game began", () => {
     const read = Journal.decode(Journal.encode(tail));
     assert(Exit.isSuccess(read));
     expect(read.value).toEqual(tail);
-    let handed: Journal.Origin | undefined;
     const present = withApp(
       Effect.orDie(
-        Journal.replay(read.value, (start) => {
-          handed = start;
-          return App.make(coinGame(), { ...start, checkpointEvery: 1 });
-        })
+        Journal.replay(read.value, coinGame(), { checkpointEvery: 1 })
       ),
-      (app, world) => ({ tick: app.time.tick, hash: world.hash() })
+      (app, world) => ({
+        tick: app.time.tick,
+        hash: world.hash(),
+        save: app.record().save,
+      })
     );
-    expect(handed).toEqual({ save });
-    expect(present).toEqual({ tick: 30, hash: played.hash });
+    expect(present).toEqual({ tick: 30, hash: played.hash, save });
 
     // An app made from a save began there, and its recording says so.
     withApp(Effect.orDie(App.make(coinGame(), { save })), (app) => {

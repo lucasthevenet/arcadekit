@@ -71,7 +71,7 @@ A save records the log's length at the time, `save.logLength`. A game that keeps
 
 ```ts sketch
 const tail = game.record(save); // from the save's tick to now
-const app = yield * Journal.replay(tail, (start) => App.make(Game, start));
+const app = yield * Journal.replay(tail, Game);
 ```
 
 `app.record(save)` takes a save the app made itself, and throws for one whose tick its log doesn't reach. An app made from a save starts its own log empty, and a recording of it begins at that save.

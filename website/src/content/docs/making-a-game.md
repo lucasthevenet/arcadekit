@@ -232,9 +232,7 @@ it("plays the same game again from its log", () =>
       }
 
       const recording = game.record();
-      const again = yield* Journal.replay(recording, (start) =>
-        App.make(Catch, start)
-      );
+      const again = yield* Journal.replay(recording, Catch);
       const hash = (app: App.Any) =>
         Effect.map(app.read(World), (world) => world.hash());
       expect(yield* hash(again)).toBe(yield* hash(game));

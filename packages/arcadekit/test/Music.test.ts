@@ -299,9 +299,7 @@ describe("Sound.music", () => {
     const replayed = Sound.makeRecorder();
     const played = heard.app.record();
     const other = start(
-      Journal.replay(played, (start) =>
-        App.make(game([Score]), { ...start, checkpointEvery: 1 })
-      ),
+      Journal.replay(played, game([Score]), { checkpointEvery: 1 }),
       replayed
     );
     expect(hashOf(other.app)).toBe(hashOf(heard.app));

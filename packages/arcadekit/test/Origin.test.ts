@@ -109,9 +109,7 @@ describe("who issued an action", () => {
     expect(read).toEqual(Exit.succeed(recorded.recording));
     assert(Exit.isSuccess(read));
     withApp(
-      Journal.replay(read.value, (start) =>
-        App.make(CoinGame, { ...start, checkpointEvery: 1 })
-      ),
+      Journal.replay(read.value, CoinGame, { checkpointEvery: 1 }),
       (_, world) => {
         expect(world.hash()).toBe(recorded.hash);
         expect(purseOf(world)).toEqual({ ada: 2, grace: 5 });
@@ -129,9 +127,7 @@ describe("who issued an action", () => {
     const diverged = Effect.runSync(
       Effect.scoped(
         Effect.flip(
-          Journal.replay(alteredRecording, (start) =>
-            App.make(CoinGame, { ...start, checkpointEvery: 1 })
-          )
+          Journal.replay(alteredRecording, CoinGame, { checkpointEvery: 1 })
         )
       )
     );

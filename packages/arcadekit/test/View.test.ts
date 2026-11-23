@@ -521,9 +521,9 @@ describe("what the UI sends", () => {
     other.send(Buy, { price: 1 });
     other.send(Buy, { price: 1 });
     const again = run(
-      Journal.replay(recording, (start) =>
-        App.make(Funded, { ...start, checkpointEvery: 1 })
-      ).pipe(Effect.provide(View.layer(other)))
+      Journal.replay(recording, Funded, { checkpointEvery: 1 }).pipe(
+        Effect.provide(View.layer(other))
+      )
     );
     expect(hashOf(again)).toBe(hashOf(app));
     expect(coinsOf(again)).toBe(1);
@@ -640,11 +640,7 @@ describe("what the UI sends", () => {
 
     // No bridge, no input stage and no frame: a server, or a replay.
     const played = app.record();
-    const again = run(
-      Journal.replay(played, (start) =>
-        App.make(Kept, { ...start, checkpointEvery: 1 })
-      )
-    );
+    const again = run(Journal.replay(played, Kept, { checkpointEvery: 1 }));
     expect(hashOf(again)).toBe(hashes.at(-1));
     expect(coinsOf(again)).toBe(2);
     // And the same game with no UI at all, given nothing, differs.

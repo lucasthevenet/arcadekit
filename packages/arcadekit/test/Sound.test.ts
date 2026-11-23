@@ -490,9 +490,9 @@ describe("a game with sound", () => {
     const again = Sound.makeRecorder();
     const recording = app.record();
     const replayed = run(
-      Journal.replay(recording, (start) =>
-        App.make(Noisy, { ...start, checkpointEvery: 1 })
-      ).pipe(Effect.provide(Sound.layer(again)))
+      Journal.replay(recording, Noisy, { checkpointEvery: 1 }).pipe(
+        Effect.provide(Sound.layer(again))
+      )
     );
     expect(run(replayed.read(World)).hash()).toBe(run(app.read(World)).hash());
     expect(again.played).toEqual([]);
