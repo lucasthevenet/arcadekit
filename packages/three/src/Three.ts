@@ -61,12 +61,13 @@ import type { World } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Scope } from "effect";
 import {
   BufferGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
   InstancedMesh,
+  LoadingManager,
   PerspectiveCamera,
   SRGBColorSpace,
   Texture,
@@ -1044,6 +1045,77 @@ export const texture = (
     )
   );
 };
+
+/**
+ * Makes a Three.js `LoadingManager` that serves the files given, fetched
+ * through `Assets.Loader`, to any Three.js loader made with it. Give it to a
+ * loader that fetches for itself, such as a decoder of compressed models or
+ * the FBX loader, so that a test's in-memory files serve that loader too, and
+ * leaving a level while it loads cancels its requests.
+ *
+ *   const fbx = (url: string, textures: ReadonlyArray<string>) =>
+ *     Assets.make(url, (data) =>
+ *       Effect.map(Three.manager(textures), (manager) =>
+ *         new FBXLoader(manager).parse(data.slice().buffer, "")
+ *       )
+ *     )
+ *
+ * **Details**
+ *
+ * - The files are fetched in parallel, and the manager is made once they have
+ *   all arrived. A missing file fails with `Assets.AssetFailed`, which names it.
+ * - A loader asks for a file by the URL it resolved: its path, then the name it
+ *   was given. The manager matches that URL exactly against the files given.
+ * - The files are held until the scope closes.
+ *
+ * **Gotchas**
+ *
+ * - A loader made with it that asks for any other URL is refused with an error
+ *   that names the URL, which the loader passes on as its own. Add the URL to
+ *   the files. A `blob:` or `data:` URL is served as it is, since it holds its
+ *   bytes.
+ *
+ * @category Constructors
+ */
+export const manager = (
+  files: ReadonlyArray<string>
+): Effect.Effect<LoadingManager, Assets.AssetFailed, Scope.Scope> =>
+  Effect.gen(function* () {
+    const loader = yield* Assets.Loader;
+    const fetched = yield* Effect.forEach(files, loader.bytes, {
+      concurrency: "unbounded",
+    });
+    const served = yield* Effect.acquireRelease(
+      Effect.sync(
+        () =>
+          new Map(
+            files.map((url, i) => [
+              url,
+              // A copy: a Blob wants bytes that nothing else can change.
+              URL.createObjectURL(new Blob([fetched[i]!.slice()])),
+            ])
+          )
+      ),
+      (urls) =>
+        Effect.sync(() => {
+          for (const url of urls.values()) {
+            URL.revokeObjectURL(url);
+          }
+        })
+    );
+    return new LoadingManager().setURLModifier((url) => {
+      const blob = served.get(url);
+      if (blob !== undefined) {
+        return blob;
+      }
+      if (url.startsWith("blob:") || url.startsWith("data:")) {
+        return url;
+      }
+      throw new Error(
+        `A Three.js loader asked for "${url}", which is not one of the files its manager serves. Add it to them.`
+      );
+    });
+  });
 
 // --- instances -------------------------------------------------------------------
 
