@@ -19,6 +19,7 @@
  * `System.Misordered`.
  */
 import { Effect } from "effect";
+import type { Layer } from "effect";
 import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
@@ -217,6 +218,7 @@ type InputBan =
   | Frame
   | Player
   | Port;
+type LayerBan = Sim | Commands | Writes<string> | Adds<string>;
 
 const TICK_MSG =
   "A tick reads and changes the simulation, and requires only its built-in services, queries, singletons, states, events and resources. Keep the game's state in the world (a cache that is rebuilt in a transient field of a singleton), make configuration a Resource, draw and play with System.frame, and read the devices with System.input." as const;
@@ -224,6 +226,8 @@ const FRAME_MSG =
   "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit or state set. Read Input.Devices from System.input." as const;
 const INPUT_MSG =
   "An input system reads the devices and enqueues actions. It cannot change the game, and it cannot read Frame, play sound or publish a view." as const;
+const LAYER_MSG =
+  "A plugin's layer is built again when a save is loaded, so it cannot change the game: no commands, world.set or query writes. Spawn what a game starts with in the plugin's setup, which a load does not run." as const;
 
 type Body<Eff, Ban, Msg extends string, A = void> = [
   Refused<GenServices<Eff>, Ban>,
@@ -292,6 +296,18 @@ type EffectBody<Eff, Ban, Msg extends string> = [
  */
 export type TickEffect<Eff extends Effect.Effect<unknown, unknown, unknown>> =
   EffectBody<Eff, TickBan, typeof TICK_MSG>;
+
+/**
+ * A plugin's `layer`, which reads the game and cannot change it.
+ *
+ * @internal
+ */
+export type LayerGated<L extends Layer.Layer<never, unknown, unknown>> =
+  L extends Layer.Layer<never, unknown, infer R>
+    ? [Refused<R, LayerBan>] extends [never]
+      ? L
+      : { readonly [K in typeof LAYER_MSG]: Refused<R, LayerBan> }
+    : never;
 
 /** What `Sim` stands for. A system provides it, and nothing reads it. */
 const simulation = { "~arcadekit/Sim": true } as const;
