@@ -70,16 +70,17 @@ const Spin = Component.define("page/Spin", {
 
 // A mote's colour is the game's to say, as where it is: one that comes off
 // a wall takes that wall's.
-const Drifting = Query.all(Position, Velocity, Color.Srgb).pipe(
-  Query.writes(Position, Velocity, Color.Srgb)
+const Drifting = Query.all(Position, Velocity, Color.Rgb).pipe(
+  Query.writes(Position, Velocity, Color.Rgb)
 );
 const Spinning = Query.all(Rotation, Spin).pipe(Query.writes(Rotation, Spin));
 
-/** A hex code's three bytes, each over 255: what a `Color.Srgb` holds. */
+/** A hex code's three bytes, each over 255, in the space a hex code is in. */
 const code = (hex: number) => ({
   r: (hex >> 16) / 255,
   g: ((hex >> 8) & 255) / 255,
   b: (hex & 255) / 255,
+  space: Color.Srgb,
 });
 
 // The rules know a colour as three numbers and nothing else. What draws
@@ -175,7 +176,7 @@ const Rules = Plugin.make("page/Rules", {
       Rotation,
       Spin,
       Scale,
-      Color.Srgb,
+      Color.Rgb,
       Card,
       Transform2d.Position,
       Transform2d.Rotation,
@@ -194,7 +195,7 @@ const Rules = Plugin.make("page/Rules", {
         Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
         Spin.of({ rate: speed() / 4, angle: 0 }),
         Scale.of({ x: size, y: size, z: size }),
-        Color.Srgb.of(code(0xcb_cb_cb))
+        Color.Rgb.of(code(0xcb_cb_cb))
       );
     }
     for (let i = 0; i < CARDS; i++) {
@@ -220,7 +221,7 @@ const Motes = Three.instances("page/Motes", {
   geometry: new BoxGeometry(1, 1, 1),
   // White, which each mote's own colour multiplies.
   material: new MeshStandardMaterial({ color: "#ffffff" }),
-  color: Color.Srgb,
+  color: Color.Rgb,
   capacity: COUNT,
   // Sixty ticks a second and as many frames as the screen shows: each mote
   // is drawn between its last two places, so that it moves evenly, and
