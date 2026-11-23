@@ -372,6 +372,18 @@ describe("queries", () => {
     expect(world.view(view.spec)).toBe(view);
   });
 
+  it("keeps one view per description, however many objects say it", () => {
+    const world = new World();
+    const first = world.view(query([Position], [Enemy], [Stunned]));
+    for (let i = 0; i < 1000; i++) {
+      expect(world.view(query([Position], [Enemy], [Stunned]))).toBe(first);
+    }
+    expect(world.view(query([Position], [Enemy]))).not.toBe(first);
+    expect(
+      world.view({ ...query([Position, Velocity]), readDefs: [Velocity] })
+    ).not.toBe(world.view(query([Position, Velocity])));
+  });
+
   it("filters by table and sparse components", () => {
     const world = new World();
     const plain = world.spawn(Position.of({ x: 0, y: 0 }));

@@ -99,9 +99,6 @@ export type Terms = readonly ComponentDef[];
  * - A term that `readDefs` doesn't name is written. In a description written
  *   by hand, `readDefs` makes an assignment throw, and the compiler still
  *   allows it. `Query.writes` makes one the compiler checks.
- * - `World.view` keeps one view per description object. Keep a description
- *   in a constant: a new object on every call makes a new view, and the world
- *   keeps every one.
  *
  * @category Models
  */
@@ -330,13 +327,6 @@ export class QueryView<D extends Terms = Terms> {
       }
       return set;
     };
-    for (const def of spec.readDefs ?? []) {
-      if (!spec.terms.includes(def)) {
-        throw new Error(
-          `A query says it only reads "${def.name}", which is not one of its terms: ${spec.terms.map((term) => term.name).join(", ") || "it has none"}.`
-        );
-      }
-    }
     for (const def of spec.terms) {
       this.termRead.push(spec.readDefs?.includes(def) === true);
       if (def.storage === "table") {
