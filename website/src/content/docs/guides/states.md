@@ -13,19 +13,24 @@ import { Data, Effect, Schema } from "effect";
 
 const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
 
-const Movement = System.make("game/Movement", function* () {
+const Movement = System.tick("game/Movement", function* () {
   // only while playing
 }).pipe(System.runIf(State.is(Phase, "playing")));
 
-const StartLevel = System.make("game/StartLevel", function* () {
-  // once, each time the game enters "playing"
-}).pipe(State.onEnter(Phase, "playing"));
+const StartLevel = State.onEnter(
+  Phase,
+  "playing",
+  "game/StartLevel",
+  function* () {
+    // once, each time the game enters "playing"
+  }
+);
 
 const Resume = Action.define("game/Resume", Schema.Struct({}));
 class NotPaused extends Data.TaggedError("NotPaused")<{}> {}
 
 const resume = Action.handler(Resume, function* () {
-  const phase = yield* Phase;
+  const phase = yield* Phase.sets;
   if (!phase.is("paused")) {
     return yield* new NotPaused();
   }
@@ -42,7 +47,7 @@ The game starts in the first value, or in the one passed as the third argument t
 
 ## Changing state
 
-`yield* Phase` gives you a handle with `value`, `is(...values)`, `set(value)`, and `next`, the requested state that hasn't been entered.
+`yield* Phase` gives you `value`, `is(...values)`, and `next`, the requested state that hasn't been entered. Setting it is `yield* Phase.sets`, then `set`, and only a system of the tick or a handler can ask for that.
 
 `set` requests a change, and the game enters the new state at the start of the next tick:
 
@@ -55,7 +60,7 @@ There is one transition per tick, and the last request before it wins. Requestin
 
 ## Hooks
 
-`State.onEnter(Phase, "playing")` and `State.onExit(Phase, "playing")` turn a system into a hook: it runs at that moment instead of every tick. Hooks for the same moment run in the order they are listed, and each hook's commands are applied before the next runs.
+`State.onEnter(Phase, "playing", name, body)` and `State.onExit(Phase, "playing", name, body)` make a system that runs at that moment instead of every tick. Hooks for the same moment run in the order they are listed, and each hook's commands are applied before the next runs.
 
 On the game's first tick, the enter hooks of the initial state run, followed in the same tick by any transition requested before it. A game loaded from a save doesn't run them again, since the save already holds their effects.
 

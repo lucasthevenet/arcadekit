@@ -557,7 +557,7 @@ class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
 class Caught extends Data.TaggedError("Caught")<{}> {}
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
-  const turn = yield* Turn;
+  const turn = yield* Turn.writes;
   if (turn.player !== player) {
     return yield* new NotYourTurn({ waitingFor: turn.player });
   }
@@ -566,16 +566,16 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
   return turn.round;
 });
 const cheat = Action.handler(Cheat, function* () {
-  const turn = yield* Turn;
-  const score = yield* Score;
+  const turn = yield* Turn.writes;
+  const score = yield* Score.writes;
   turn.round += 100;
   score.points += 1000;
   score.best = "the cheat";
   return yield* new Caught();
 });
-const Reward = System.make("Reward", function* () {
-  const turn = yield* Turn;
-  const score = yield* Score;
+const Reward = System.tick("Reward", function* () {
+  const turn = yield* Turn.writes;
+  const score = yield* Score.writes;
   if (turn.round > 0 && turn.round % 2 === 0) {
     score.points += turn.round;
     score.best = `player ${turn.player}`;
@@ -591,7 +591,7 @@ describe("a singleton in an app", () => {
     run(
       Effect.gen(function* () {
         const rounds: number[] = [];
-        const Watch = System.make("Watch", function* () {
+        const Watch = System.tick("Watch", function* () {
           rounds.push((yield* Turn).round);
         });
         const app = yield* App.make(

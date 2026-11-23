@@ -26,10 +26,10 @@ import {
   readSnapshot,
 } from "../src/index";
 import { whole } from "../src/Services";
-import type { BuiltIn } from "../src/Services";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
+const Seen = Query.all(Ship);
 const Score = Singleton.define(
   "in/Score",
   { points: Field.i32 },
@@ -60,7 +60,7 @@ const told = (devices: Input.Sample) => ({
 });
 
 // A game steered with the keyboard: the picture in the world, read in the tick.
-const Steer = System.make("Steer", function* () {
+const Steer = System.tick("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
   (yield* Ships).each((ship) => {
@@ -102,10 +102,24 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
-        const note = (name: string, stage: System.Stage) =>
-          System.make(name, function* () {
+        const note = (name: string, stage: System.Stage) => {
+          const body = function* () {
             ran.push(name);
-          }).pipe(System.inStage(stage));
+          };
+          if (stage === "input") {
+            return System.input(name, body);
+          }
+          if (stage === "frame") {
+            return System.frame(name, body);
+          }
+          if (stage === "preFrame" || stage === "postFrame") {
+            return System.frame(name, body).pipe(System.inStage(stage));
+          }
+          if (stage === "preUpdate" || stage === "postUpdate") {
+            return System.tick(name, body).pipe(System.inStage(stage));
+          }
+          return System.tick(name, body);
+        };
         const Second = note("Second", "input");
         const First = note("First", "input");
         const Sometimes = note("Sometimes", "input").pipe(
@@ -188,14 +202,14 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const seen: unknown[] = [];
-        const A = System.make("A", function* () {
+        const A = System.input("A", function* () {
           seen.push(told(yield* Input.Devices));
-        }).pipe(System.inStage("input"));
-        const B = System.make("B", function* () {
+        });
+        const B = System.input("B", function* () {
           // Pressed while the stage runs: not in this run's sample.
           source.press("KeyZ");
           seen.push(told(yield* Input.Devices));
-        }).pipe(System.inStage("input"));
+        });
         const app = yield* App.make(App.define({ systems: [A, B] }));
         source.press("KeyA");
         source.tap("Space");
@@ -227,9 +241,9 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const seen: unknown[] = [];
-        const A = System.make("A", function* () {
+        const A = System.input("A", function* () {
           seen.push(told(yield* Input.Devices));
-        }).pipe(System.inStage("input"));
+        });
         const app = yield* App.make(App.define({ systems: [A] }));
         app.input();
         expect(seen).toEqual([
@@ -250,14 +264,14 @@ describe("the input stage", () => {
     };
     run(
       Effect.gen(function* () {
-        const Tick = System.make("Tick", function* () {});
+        const Tick = System.tick("Tick", function* () {});
         const app = yield* App.make(App.define({ systems: [Tick] }));
         app.input();
         app.tick(1);
         expect(samples).toBe(0);
-        const Listen = System.make("Listen", function* () {
+        const Listen = System.input("Listen", function* () {
           yield* Input.Devices;
-        }).pipe(System.inStage("input"));
+        });
         const listening = yield* App.make(App.define({ systems: [Listen] }));
         listening.input();
         listening.input();
@@ -267,74 +281,37 @@ describe("the input stage", () => {
   });
 
   it("keeps the devices from the simulation and from what draws it", () => {
-    run(
-      Effect.gen(function* () {
-        for (const stage of ["update", "frame"] as const) {
-          const Peek = System.make("Peek", function* () {
-            return (yield* Input.Devices).down.size > 0 ? undefined : undefined;
-          }).pipe(System.inStage(stage));
-          const app = yield* App.make(App.define({ systems: [Peek] }));
-          const peek = (): void =>
-            stage === "frame" ? app.frame(0) : app.tick(1);
-          expect(peek, stage).toThrow(
-            /Input\.Devices was read outside the input stage/
-          );
-          expect(peek, stage).toThrow(/Input\.Keyboard/);
-        }
-        // And the input stage is not told about a frame.
-        const Blink = System.make("Blink", function* () {
-          return (yield* Frame).alpha > 0 ? undefined : undefined;
-        }).pipe(System.inStage("input"));
-        const app = yield* App.make(App.define({ systems: [Blink] }));
-        expect(() => app.input()).toThrow(
-          /Frame was read by a system of the input stage/
-        );
-        // Every field of both says so.
-        for (const field of ["pressed", "released", "axes", "moved"] as const) {
-          const Peek = System.make("Peek", function* () {
-            return (yield* Input.Devices)[field] === undefined
-              ? undefined
-              : undefined;
-          });
-          const one = yield* App.make(App.define({ systems: [Peek] }));
-          expect(() => one.tick(1), field).toThrow(/outside the input stage/);
-        }
-        for (const field of ["delta", "count"] as const) {
-          const Peek = System.make("Peek", function* () {
-            return (yield* Frame)[field] === 0 ? undefined : undefined;
-          }).pipe(System.inStage("input"));
-          const one = yield* App.make(App.define({ systems: [Peek] }));
-          expect(() => one.input(), field).toThrow(/of the input stage/);
-        }
-      })
+    System.tick(
+      "Peek",
+      // @ts-expect-error the devices are the input stage's
+      function* () {
+        return (yield* Input.Devices).down.size > 0 ? undefined : undefined;
+      }
     );
+    System.frame(
+      "PeekFrame",
+      // @ts-expect-error the devices are the input stage's
+      function* () {
+        return (yield* Input.Devices).down.size > 0 ? undefined : undefined;
+      }
+    );
+    System.input(
+      "Blink",
+      // @ts-expect-error the input stage has no frame
+      function* () {
+        return (yield* Frame).alpha > 0 ? undefined : undefined;
+      }
+    );
+    expect(System.input("Ok", function* () {}).stage).toBe("input");
   });
 
   it("cannot change the game: whatever would throws, and names what did", () => {
     const Pinged = Event.define("in/Pinged", Schema.Struct({}));
     const Bump = Action.define("in/Bump", Schema.Struct({}));
     const bump = Action.handler(Bump, function* () {
-      (yield* Score).points += 1;
+      (yield* Score.writes).points += 1;
     });
-    const attempts: Record<string, Effect.Effect<unknown, never, BuiltIn>> = {
-      'assignment to "in/Ship.x"': Effect.map(Ships, (ships) =>
-        ships.each((one) => {
-          one.x = 99;
-        })
-      ),
-      "World.set()": Effect.gen(function* () {
-        const [first] = (yield* Ships).entities();
-        (yield* World.writes(Ship)).set(first!, Ship, { x: 99 });
-      }),
-      "A spawn": Effect.map(Commands.spawns(Ship), (commands) =>
-        commands.spawn(Ship)
-      ),
-      'singleton "in/Score"': Effect.map(Score, (score) => {
-        score.points = 1;
-      }),
-      'singleton "in/Phase"': Effect.map(Phase, (phase) => phase.set("paused")),
-      'event "in/Pinged" was emitted in the frame stage or the input stage':
-        Effect.map(Pinged, (pinged) => pinged.emit({})),
+    const attempts: Record<string, Effect.Effect<unknown, never, World>> = {
       "A draw from world.random": Effect.map(World, (world) =>
         whole(world).random.next()
       ),
@@ -342,9 +319,9 @@ describe("the input stage", () => {
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
         Effect.gen(function* () {
-          const Vandal = System.make("Vandal", function* () {
+          const Vandal = System.input("Vandal", function* () {
             yield* attempt;
-          }).pipe(System.inStage("input"));
+          });
           const app = yield* App.make(
             App.define({ handlers: [bump], systems: [Vandal] }),
             { checkpointEvery: 1, seed: 3 }
@@ -368,9 +345,9 @@ describe("the input stage", () => {
       Effect.gen(function* () {
         let app: App.App<never, typeof bump> | undefined;
         let reach: () => unknown = () => undefined;
-        const Reach = System.make("Reach", function* () {
+        const Reach = System.input("Reach", function* () {
           reach();
-        }).pipe(System.inStage("input"));
+        });
         app = yield* App.make(
           App.define({ handlers: [bump], systems: [Reach] })
         );
@@ -398,7 +375,7 @@ describe("the input stage", () => {
         expect(made.world.singleton(Score).points).toBe(0);
         // And the input stage is not run from inside a tick.
         let nested: App.Any | undefined;
-        const Nested = System.make("Nested", function* () {
+        const Nested = System.tick("Nested", function* () {
           nested?.input();
         });
         nested = yield* App.make(App.define({ systems: [Nested, Reach] }));
@@ -412,13 +389,14 @@ describe("the input stage", () => {
   it("is checked by verifyFrames, which names the system that wrote through raw columns", () => {
     run(
       Effect.gen(function* () {
-        const Scribble = System.make("Scribble", function* () {
-          (yield* Ships).eachChunk((start, end, ships) => {
+        const Scribble = System.input("Scribble", function* () {
+          (yield* Seen).eachChunk((start, end, ships) => {
             for (let i = start; i < end; i++) {
+              // @ts-expect-error a read query's columns are not assigned
               ships.x[i] = 99;
             }
           });
-        }).pipe(System.inStage("input"));
+        });
         const app = yield* App.make(App.define({ systems: [Scribble] }), {
           verifyFrames: true,
         });
@@ -434,13 +412,14 @@ describe("the input stage", () => {
         expect(error.message).toMatch(/^The input stage changed the world/);
         expect(error.message).toMatch(/reads the devices before a tick/);
         // A frame system that does the same is still called a frame system.
-        const Smudge = System.make("Smudge", function* () {
-          (yield* Ships).eachChunk((start, end, ships) => {
+        const Smudge = System.frame("Smudge", function* () {
+          (yield* Seen).eachChunk((start, end, ships) => {
             for (let i = start; i < end; i++) {
+              // @ts-expect-error a read query's columns are not assigned
               ships.x[i] = 7;
             }
           });
-        }).pipe(System.inStage("frame"));
+        });
         const drawn = yield* App.make(App.define({ systems: [Smudge] }), {
           verifyFrames: true,
         });
@@ -464,14 +443,14 @@ describe("the input stage", () => {
           Schema.Struct({ by: Schema.Int })
         );
         const bump = Action.handler(Bump, function* ({ by }) {
-          (yield* Score).points += by;
+          (yield* Score.writes).points += by;
         });
-        const Press = System.make("Press", function* () {
+        const Press = System.input("Press", function* () {
           (yield* Action.Actions).enqueue(Bump, { by: 2 });
-        }).pipe(System.inStage("input"));
-        const Point = System.make("Point", function* () {
+        });
+        const Point = System.frame("Point", function* () {
           (yield* Action.Actions).enqueue(Bump, { by: 3 });
-        }).pipe(System.inStage("frame"));
+        });
         const app = yield* App.make(
           App.define({ handlers: [bump], systems: [Press, Point] }),
           { verifyFrames: true }
@@ -495,16 +474,16 @@ describe("the input stage", () => {
           Schema.Struct({ by: Schema.Int })
         );
         const bump = Action.handler(Bump, function* ({ by }) {
-          (yield* Score).points += by;
+          (yield* Score.writes).points += by;
         });
-        const Press = System.make("Press", function* () {
+        const Press = System.input("Press", function* () {
           const devices = yield* Input.Devices;
           if (devices.pressed.includes("Enter")) {
             (yield* Action.Actions).enqueue(Bump, { by: 5 });
           }
-        }).pipe(System.inStage("input"));
+        });
         const seen: number[] = [];
-        const Look = System.make("Look", function* () {
+        const Look = System.tick("Look", function* () {
           seen.push((yield* Score).points);
         });
         const app = yield* App.make(
@@ -533,15 +512,15 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const order: string[] = [];
-        const Listen = System.make("Listen", function* () {
+        const Listen = System.input("Listen", function* () {
           order.push(`input ${told(yield* Input.Devices).pressed.join("+")}`);
-        }).pipe(System.inStage("input"));
-        const Tick = System.make("Tick", function* () {
+        });
+        const Tick = System.tick("Tick", function* () {
           order.push(`tick ${(yield* Time).tick}`);
         });
-        const Draw = System.make("Draw", function* () {
+        const Draw = System.frame("Draw", function* () {
           order.push("frame");
-        }).pipe(System.inStage("frame"));
+        });
         const app = yield* App.make(
           App.define({ systems: [Listen, Tick, Draw] })
         );
@@ -577,18 +556,26 @@ describe("the input stage", () => {
           "in/Landed",
           Schema.Struct({ at: Schema.Int })
         );
-        const Land = System.make("Land", function* () {
-          (yield* Landed).emit({ at: (yield* Time).tick });
+        const Land = System.tick("Land", function* () {
+          (yield* Landed.emits).emit({ at: (yield* Time).tick });
         });
         const heard: number[] = [];
         const also: number[] = [];
         const drawn: number[] = [];
-        const hear = (name: string, into: number[], stage: System.Stage) =>
-          System.make(name, function* () {
+        const hear = (
+          name: string,
+          into: number[],
+          stage: "input" | "frame"
+        ) => {
+          const body = function* () {
             for (const landed of (yield* Landed).read()) {
               into.push(landed.at);
             }
-          }).pipe(System.inStage(stage));
+          };
+          return stage === "input"
+            ? System.input(name, body)
+            : System.frame(name, body);
+        };
         const app = yield* App.make(
           App.define({
             systems: [
@@ -640,22 +627,26 @@ describe("the input stage", () => {
       if (by > 5) {
         return yield* new TooMuch();
       }
-      (yield* Done).emit({ by });
+      (yield* Done.emits).emit({ by });
     });
     const hear = (
       name: string,
-      stage: System.Stage,
+      stage: "input" | "frame",
       done: number[],
       refused: string[]
-    ) =>
-      System.make(name, function* () {
+    ) => {
+      const body = function* () {
         for (const event of (yield* Done).read()) {
           done.push(event.by);
         }
         for (const event of (yield* Action.Rejected).read()) {
           refused.push(`${event.action} ${(event.error as TooMuch)._tag}`);
         }
-      }).pipe(System.inStage(stage));
+      };
+      return stage === "input"
+        ? System.input(name, body)
+        : System.frame(name, body);
+    };
     run(
       Effect.gen(function* () {
         // An app with an input stage and no frame stage; one with both;
@@ -732,22 +723,26 @@ describe("the input stage", () => {
     const Done = Event.define("in/Once", Schema.Struct({ at: Schema.Int }));
     const Emit = Action.define("in/EmitOnce", Schema.Struct({}));
     const emit = Action.handler(Emit, function* () {
-      (yield* Done).emit({ at: (yield* Time).tick + 1 });
+      (yield* Done.emits).emit({ at: (yield* Time).tick + 1 });
     });
     // A system that first listens late hears what is still kept: only
     // what its stage has not yet had its chance at.
     const late = (
-      stage: System.Stage,
+      stage: "input" | "frame",
       listening: () => boolean,
       heard: number[]
-    ) =>
-      System.make("Late", function* () {
+    ) => {
+      const body = function* () {
         if (listening()) {
           for (const event of (yield* Done).read()) {
             heard.push(event.at);
           }
         }
-      }).pipe(System.inStage(stage));
+      };
+      return stage === "input"
+        ? System.input("Late", body)
+        : System.frame("Late", body);
+    };
     run(
       Effect.gen(function* () {
         for (const stage of ["input", "frame"] as const) {
@@ -779,14 +774,14 @@ describe("the input stage", () => {
     const Done = Event.define("in/Kept", Schema.Struct({}));
     const Emit = Action.define("in/Emit", Schema.Struct({}));
     const emit = Action.handler(Emit, function* () {
-      (yield* Done).emit({});
+      (yield* Done.emits).emit({});
     });
     run(
       Effect.gen(function* () {
         let heard = 0;
-        const Hear = System.make("Hear", function* () {
+        const Hear = System.input("Hear", function* () {
           heard += (yield* Done).read().length;
-        }).pipe(System.inStage("input"));
+        });
         const ticked = function* (ticks: number) {
           const app = yield* App.make(
             App.define({ handlers: [emit], systems: [Hear] })
@@ -858,14 +853,14 @@ describe("the input stage", () => {
       Effect.gen(function* () {
         let broken = true;
         let ran = 0;
-        const Read = System.make("Read", function* () {
+        const Read = System.input("Read", function* () {
           ran++;
           if (broken) {
             return yield* new NoKeyboard();
           }
-        }).pipe(System.inStage("input"));
+        });
         let ticked = 0;
-        const Tick = System.make("Tick", function* () {
+        const Tick = System.tick("Tick", function* () {
           ticked++;
         });
         const app = yield* App.make(App.define({ systems: [Read, Tick] }));
@@ -929,9 +924,9 @@ describe("the input stage", () => {
     class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
     run(
       Effect.gen(function* () {
-        const Fail = System.make("Fail", function* () {
+        const Fail = System.input("Fail", function* () {
           return yield* new NoKeyboard();
-        }).pipe(System.inStage("input"));
+        });
         const app = yield* App.make(App.define({ systems: [Fail] }));
         const exit = app.inputExit();
         expect(Exit.isFailure(exit)).toBe(true);
@@ -941,9 +936,9 @@ describe("the input stage", () => {
         expect(() => app.input()).toThrow(NoKeyboard);
         expect(app.world.frozen).toBe(false);
         // A system that waits has not finished within the stage.
-        const Wait = System.make("Wait", function* () {
+        const Wait = System.input("Wait", function* () {
           yield* Effect.never;
-        }).pipe(System.inStage("input"));
+        });
         const waiting = yield* App.make(App.define({ systems: [Wait] }));
         expect(() => waiting.input()).toThrow(
           /System "Wait" did not finish within the input stage/
@@ -954,31 +949,18 @@ describe("the input stage", () => {
   });
 
   it("refuses a hook, which runs when a tick enters a state", () => {
-    run(
-      Effect.gen(function* () {
-        const Hook = System.make("Hook", function* () {}).pipe(
-          System.inStage("input"),
-          State.onEnter(Phase, "paused")
-        );
-        const exit = yield* Effect.exit(
-          App.make(App.define({ systems: [Hook] }))
-        );
-        expect(Exit.isFailure(exit)).toBe(true);
-        expect(
-          (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
-            .message
-        ).toMatch(/System "Hook" is a hook and is in the input stage/);
-      })
-    );
+    const hook = State.onEnter(Phase, "paused", "Hook", function* () {});
+    expect(hook.stage).toBe("update");
+    expect(hook.trigger?.on).toBe("enter");
   });
 
   it("draws its random numbers from a generator that is not the world's", () => {
     run(
       Effect.gen(function* () {
         const drawn: number[] = [];
-        const Jitter = System.make("Jitter", function* () {
+        const Jitter = System.input("Jitter", function* () {
           drawn.push((yield* Random).next());
-        }).pipe(System.inStage("input"));
+        });
         const app = yield* App.make(App.define({ systems: [Jitter] }), {
           seed: 5,
         });
@@ -999,7 +981,7 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const seen: string[] = [];
         const look = (name: string) =>
-          System.make(name, function* () {
+          System.tick(name, function* () {
             const keys = yield* Input.Keyboard;
             seen.push(
               `${name} ${(yield* Time).tick}:${keys.down("KeyA") ? " down" : ""}${keys.pressed("KeyA") ? " pressed" : ""}${keys.released("KeyA") ? " released" : ""}`
@@ -1119,7 +1101,7 @@ describe("the picture of the devices in the world", () => {
     run(
       Effect.gen(function* () {
         let seen: unknown;
-        const Look = System.make("Look", function* () {
+        const Look = System.tick("Look", function* () {
           const pointer = yield* Input.Pointer;
           const pad = yield* Input.Gamepad();
           const other = yield* Input.Gamepad(1);
@@ -1360,7 +1342,7 @@ describe("the picture of the devices in the world", () => {
         held.tick(1);
         expect(repressed.world.hash()).not.toBe(held.world.hash());
         let seen = "";
-        const Look = System.make("Look", function* () {
+        const Look = System.tick("Look", function* () {
           const keys = yield* Input.Keyboard;
           seen = `${keys.down("KeyA")} ${keys.pressed("KeyA")} ${keys.released("KeyA")}`;
         });
@@ -1612,7 +1594,7 @@ describe("the picture of the devices in the world", () => {
         `handler ${(yield* Time).tick + 1}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
       );
     });
-    const Look = System.make("Look", function* () {
+    const Look = System.tick("Look", function* () {
       const keys = yield* Input.Keyboard;
       seen.push(
         `system ${(yield* Time).tick}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
@@ -1702,16 +1684,16 @@ describe("the picture of the devices in the world", () => {
       if (!(yield* Input.Keyboard).down("Space")) {
         return yield* new NotHeld();
       }
-      (yield* Score).points += 1;
+      (yield* Score.writes).points += 1;
     });
     const source = Input.makeManualSource();
     run(
       Effect.gen(function* () {
         const drawn: string[] = [];
-        const Draw = System.make("Draw", function* () {
+        const Draw = System.frame("Draw", function* () {
           const pointer = yield* Input.Pointer;
           drawn.push(`${pointer.x},${pointer.y} ${pointer.down()}`);
-        }).pipe(System.inStage("frame"));
+        });
         const app = yield* App.make(
           App.define({
             plugins: [Input.plugin],

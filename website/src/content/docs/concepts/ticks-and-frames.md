@@ -13,7 +13,7 @@ Your game's simulation ticks at a fixed rate, while the screen repaints at its o
 | Tick | At a fixed rate, such as 60 per second | Your rules | Yes |
 | Frame | Once per repaint, between ticks | Rendering, sound and UI updates | No |
 
-A system runs in the tick unless you place it elsewhere with `System.inStage("frame")` or `System.inStage("input")`.
+A system of the tick is `System.tick`. A system that draws or plays is `System.frame`, and one that reads the devices is `System.input`. `System.inStage` only moves a system inside the group it was made in: `"preUpdate"` and `"postUpdate"` for a tick, `"preFrame"` and `"postFrame"` for a frame.
 
 ## The tick
 
@@ -47,7 +47,7 @@ const Moving = Query.all(Position, Velocity);
 
 const context = document.querySelector("canvas")!.getContext("2d")!;
 
-const Draw = System.make("game/Draw", function* () {
+const Draw = System.frame("game/Draw", function* () {
   const { alpha } = yield* Frame; // how far this frame is between two ticks
   const { delta } = yield* Time; // the length of a tick
   const ahead = delta * alpha;
@@ -58,10 +58,10 @@ const Draw = System.make("game/Draw", function* () {
       context.fillRect(x, y, 4, 4);
     }
   });
-}).pipe(System.inStage("frame"));
+});
 ```
 
-The world is read-only during the frame stage. Anything that would change the game throws where it happens, with an explanation: spawning or despawning, adding or removing a component, `world.set`, writing a singleton or a state, a command, an assignment in `each`, emitting an event, or dispatching an action.
+The world is read-only during the frame stage. A frame system cannot spawn, set a component, write a singleton or a state, run a command, assign in `each`, or emit an event: those do not compile. It reads queries, singletons, states, `Time`, events and change queries.
 
 A frame system can read anything: queries, singletons, states, `Time`, events and change queries. `yield* Frame` describes the current frame:
 
@@ -71,7 +71,7 @@ A frame system can read anything: queries, singletons, states, `Time`, events an
 | `delta` | Real seconds since the previous frame |
 | `count` | How many frames have run, including this one |
 
-These are real-time values, so tick systems can't read them: accessing a field of `Frame` in a tick throws and points you to `Time`.
+These are real-time values, so a system of the tick or the input stage cannot require `Frame`. A system of the tick reads `Time`.
 
 This is the rule everything else depends on: **drawing never changes the game.** A game that is drawn has the same hash, log and save as one that isn't, so a replay or a server runs no frame stage at all and ends on the same world. The frame stage is isolated from the simulation in four more ways:
 

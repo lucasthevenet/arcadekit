@@ -50,7 +50,7 @@ const told = (devices: Input.Sample) => ({
 });
 
 // A game steered with the keyboard, through the picture in the world.
-const Steer = System.make("Steer", function* () {
+const Steer = System.tick("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
   (yield* Ships).each((ship) => {
@@ -198,7 +198,7 @@ describe("a page's display", () => {
     vi.unstubAllGlobals();
   });
 
-  const Roll = System.make("Roll", function* () {});
+  const Roll = System.tick("Roll", function* () {});
 
   it("is requestAnimationFrame and the document's visibility", async () => {
     const requested = new Map<number, (now: number) => void>();
@@ -2022,9 +2022,9 @@ describe("a page's sound", () => {
 
   it("is part of Browser.layer unless the page is told it has none, and a game's events are heard through it", async () => {
     const Scored = Event.define("br/Scored", Schema.Struct({}));
-    const Score = System.make("br/Score", function* () {
+    const Score = System.tick("br/Score", function* () {
       if ((yield* Time).tick === 2) {
-        (yield* Scored).emit({});
+        (yield* Scored.emits).emit({});
       }
     });
     const Cues = Sound.cues(
@@ -2038,9 +2038,9 @@ describe("a page's sound", () => {
     const page = makePage();
     const audio = makeAudio();
     const audible: boolean[] = [];
-    const Ask = System.make("br/Ask", function* () {
+    const Ask = System.frame("br/Ask", function* () {
       audible.push((yield* Sound.Player).audible);
-    }).pipe(System.inStage("frame"));
+    });
     const start = (options: Browser.Options) =>
       Effect.runFork(
         Driver.run(App.make(App.define({ plugins: [Game], systems: [Ask] })), {

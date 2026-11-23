@@ -18,7 +18,7 @@ const Mortal = Query.all(Lifetime).pipe(Query.writes(Lifetime));
 
 // It despawns from a callback per entity, through `Commands`: that is not
 // a raw loop, so it stays here and not in a module of loops.
-const Expiry = System.make("Expiry", function* () {
+const Expiry = System.tick("Expiry", function* () {
   const mortal = yield* Mortal;
   const commands = yield* Commands;
   const { delta } = yield* Time;

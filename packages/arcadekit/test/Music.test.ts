@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Schema, Scope } from "effect";
+import { Effect, Exit, Schema, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -38,13 +38,13 @@ const Step = Action.define("mu/Step", Schema.Struct({ hard: Schema.Boolean }));
 const Rules = Plugin.make("mu/Rules", {
   handlers: [
     Action.handler(Go, function* ({ to }) {
-      (yield* Level).set(to);
+      (yield* Level.sets).set(to);
     }),
     Action.handler(SetHush, function* ({ on }) {
-      (yield* Hush).on = on ? 1 : 0;
+      (yield* Hush.writes).on = on ? 1 : 0;
     }),
     Action.handler(Step, function* ({ hard }) {
-      (yield* Stepped).emit({ hard });
+      (yield* Stepped.emits).emit({ hard });
     }),
   ],
 });
@@ -538,51 +538,35 @@ describe("Sound.music", () => {
 });
 
 describe("Sound.Player.music", () => {
-  it("is never called by the simulation: in the tick it throws", () => {
-    const Loud = System.make("mu/Loud", function* () {
-      (yield* Sound.Player).music("mu/Loud", "theme");
-    });
-    const sound = Sound.makeRecorder();
-    const { app } = start(
-      App.make(App.define({ plugins: [Sound.plugin], systems: [Loud] })),
-      sound
+  it("is never called by the simulation: a tick system or a handler cannot play", () => {
+    System.tick(
+      "mu/Loud",
+      // @ts-expect-error sound is the frame's
+      function* () {
+        (yield* Sound.Player).music("mu/Loud", "theme");
+      }
     );
-    expect(() => app.tick(0.1)).toThrow(
-      'The music of "mu/Loud" was set in the tick'
-    );
-    expect(sound.scored).toEqual([]);
-    // Nor by an action's handler, which is the simulation too.
     const Bang = Action.define("mu/Bang", Schema.Struct({}));
-    const other = start(
-      App.make(
-        App.define({
-          plugins: [Sound.plugin],
-          handlers: [
-            Action.handler(Bang, function* () {
-              (yield* Sound.Player).music("mu/Bang", undefined);
-            }),
-          ],
-        })
-      ),
-      sound
+    Action.handler(
+      Bang,
+      // @ts-expect-error sound is the frame's
+      function* () {
+        (yield* Sound.Player).music("mu/Bang", undefined);
+      }
     );
-    const exit = other.app.dispatch(Bang, {});
-    expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toContain(
-      'The music of "mu/Bang" was set in the tick'
-    );
-    expect(sound.scored).toEqual([]);
+    expect(Bang.name).toBe("mu/Bang");
   });
 
   it("makes one thing of what a frame says of a channel: a track over silence, and the fade of the one that is heard", () => {
     const sound = Sound.makeRecorder();
     let says: (readonly [string, string | undefined, Sound.MusicOptions?])[] =
       [];
-    const Say = System.make("mu/Say", function* () {
+    const Say = System.frame("mu/Say", function* () {
       const player = yield* Sound.Player;
       for (const [channel, track, options] of says) {
         player.music(channel, track, options);
       }
-    }).pipe(System.inStage("frame"));
+    });
     const { app } = start(
       App.make(App.define({ plugins: [Sound.plugin], systems: [Say] })),
       sound
@@ -650,11 +634,11 @@ describe("Sound.Player.music", () => {
   it("is heard in the same frame as the frame's cues, each as it was asked", () => {
     const sound = Sound.makeRecorder();
     let on = false;
-    const Both = System.make("mu/Both", function* () {
+    const Both = System.frame("mu/Both", function* () {
       const player = yield* Sound.Player;
       player.play("click", { volume: 0.5 });
       player.music("ui", on ? "hum" : undefined);
-    }).pipe(System.inStage("frame"));
+    });
     const { app } = start(
       App.make(App.define({ plugins: [Sound.plugin], systems: [Both] })),
       sound
@@ -673,11 +657,11 @@ describe("Sound.Player.music", () => {
     ]);
   });
 
-  it("tells the output of a change and of nothing else, for a system of the frame stage or the input stage", () => {
+  it("tells the output of a change and of nothing else, for a system of the frame stage", () => {
     const sound = Sound.makeRecorder();
     const said: (readonly [string | undefined, Sound.MusicOptions?])[] = [];
     let next: readonly [string | undefined, Sound.MusicOptions?] | undefined;
-    const Hum = System.make("mu/Hum", function* () {
+    const Hum = System.frame("mu/Hum", function* () {
       if (next !== undefined) {
         said.push(next);
         (yield* Sound.Player).music("ui", next[0], next[1]);
@@ -687,7 +671,7 @@ describe("Sound.Player.music", () => {
       App.make(
         App.define({
           plugins: [Sound.plugin],
-          systems: [Hum.pipe(System.inStage("input"))],
+          systems: [Hum],
         })
       ),
       sound
@@ -698,11 +682,8 @@ describe("Sound.Player.music", () => {
     ): number => {
       next = options === undefined ? [track] : [track, options];
       const before = sound.scored.length;
-      app.input();
-      // Said in the input stage, it is heard with the frame that follows.
-      expect(sound.scored.length).toBe(before);
-      next = undefined;
       app.frame(0);
+      next = undefined;
       return sound.scored.length - before;
     };
     // Silence, said to a channel that never played, is said to nobody.
@@ -801,17 +782,15 @@ describe("a clip", () => {
     expect(sound.played[1]!.clip).toBe(other);
   });
 
-  it("is named when it is played or set in the tick, which throws as for any sound", () => {
-    const Loud = System.make("mu/LoudClip", function* () {
-      (yield* Sound.Player).play(Sound.clip("/bang.wav"));
-    });
-    const { app } = start(
-      App.make(App.define({ plugins: [Sound.plugin], systems: [Loud] })),
-      Sound.makeRecorder()
+  it("is named when it is played or set in the tick, which does not compile", () => {
+    System.tick(
+      "mu/LoudClip",
+      // @ts-expect-error sound is the frame's
+      function* () {
+        (yield* Sound.Player).play(Sound.clip("/bang.wav"));
+      }
     );
-    expect(() => app.tick(0.1)).toThrow(
-      'The cue "/bang.wav" was played in the tick'
-    );
+    expect(Sound.clip("/bang.wav").name).toBe("/bang.wav");
   });
 });
 
@@ -890,14 +869,14 @@ describe("a level's cues", () => {
     });
     // A system of the game's own keeps the forest, and can load it afresh.
     let afresh = false;
-    const Keep = System.make("mu/Keep", function* () {
+    const Keep = System.frame("mu/Keep", function* () {
       const store = yield* Assets.Store;
       if (afresh) {
         afresh = false;
         store.drop(Forest, "mu/Keep");
       }
       store.hold(Forest, "mu/Keep");
-    }).pipe(System.inStage("frame"));
+    });
     const { app } = start(
       App.make(
         App.define({

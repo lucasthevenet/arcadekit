@@ -97,7 +97,7 @@ const WALLS = [
   ["z", code(0xff_61_88)],
 ] as const;
 
-const Drift = System.make("Drift", function* () {
+const Drift = System.tick("Drift", function* () {
   const { delta } = yield* Time;
   (yield* Drifting).eachChunk((start, end, position, velocity, tint) => {
     for (const [axis, wall] of WALLS) {
@@ -119,7 +119,7 @@ const Drift = System.make("Drift", function* () {
   });
 });
 
-const Turn = System.make("Turn", function* () {
+const Turn = System.tick("Turn", function* () {
   const { delta } = yield* Time;
   (yield* Spinning).eachChunk((start, end, rotation, spin) => {
     for (let i = start; i < end; i++) {
@@ -138,7 +138,7 @@ const Carded = Query.all(Transform2d.Position, Transform2d.Rotation).pipe(
   Query.writes(Transform2d.Position, Transform2d.Rotation),
   Query.with(Card)
 );
-const Wheel = System.make("Wheel", function* () {
+const Wheel = System.tick("Wheel", function* () {
   const { delta } = yield* Time;
   const cos = Math.cos(delta * 0.3);
   const sin = Math.sin(delta * 0.3);
@@ -153,7 +153,7 @@ const Wheel = System.make("Wheel", function* () {
   });
 });
 
-const Steer = System.make("Steer", function* () {
+const Steer = System.tick("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
   const x =
@@ -282,17 +282,17 @@ const Ships = Three.objects("page/Ships", {
 
 // The camera goes round the box, in real time: it is no part of the game.
 let angle = 0;
-const Orbit = System.make("Orbit", function* () {
+const Orbit = System.frame("Orbit", function* () {
   const { camera } = yield* Three.Scene;
   angle += (yield* Frame).delta * 0.1;
   camera.position.set(Math.sin(angle) * 170, 40, Math.cos(angle) * 170);
   camera.lookAt(0, 0, 0);
-}).pipe(System.inStage("frame"));
+});
 
 const hud = document.querySelector("#hud") as HTMLElement;
 let shown = 0;
 let frames = 0;
-const Hud = System.make("Hud", function* () {
+const Hud = System.frame("Hud", function* () {
   const { tick } = yield* Time;
   frames++;
   const now = performance.now();
@@ -302,7 +302,7 @@ const Hud = System.make("Hud", function* () {
     shown = now;
     frames = 0;
   }
-}).pipe(System.inStage("frame"));
+});
 
 const Look = Plugin.make("page/Look", {
   plugins: [Three.plugin, Assets.plugin, Rules],

@@ -4,9 +4,10 @@
  *
  *   const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 })
  *
- *   const turn = yield* Turn          // in a system or a handler
+ *   const turn = yield* Turn              // read, in any stage
  *   if (turn.player !== mine) return yield* new NotYourTurn()
- *   turn.player = turn.player === 1 ? 2 : 1
+ *   const writing = yield* Turn.writes    // a tick system or a handler
+ *   writing.player = writing.player === 1 ? 2 : 1
  *
  * The value belongs to the world: it is saved with it and included in its hash,
  * and a refused action's writes to it are rolled back with everything else. For
@@ -23,18 +24,22 @@ import type {
   ValueOf,
 } from "./ecs/component";
 import { World } from "./Services";
+import type { Sim } from "./Services";
 
 /**
  * A singleton's definition. It is an Effect, so `yield*` returns the world's
- * value: an object whose fields you read and write in place.
+ * value to be read. `yield* SomeSingleton.writes` returns the same value with
+ * fields that can be assigned, and only a system of the tick or a handler can
+ * ask for it.
  *
  * @category Models
  */
 export class Singleton<S extends Schema>
-  extends Effectable.Class<ValueOf<S>, never, World>
+  extends Effectable.Class<Readonly<ValueOf<S>>, never, World>
   implements SingletonSpec<S>
 {
-  private effect: Effect.Effect<ValueOf<S>, never, World> | undefined;
+  private effect: Effect.Effect<Readonly<ValueOf<S>>, never, World> | undefined;
+  private writing: Effect.Effect<ValueOf<S>, never, World | Sim> | undefined;
 
   constructor(
     readonly component: ComponentDef<S>,
@@ -48,8 +53,19 @@ export class Singleton<S extends Schema>
     return this.component.name;
   }
 
-  asEffect(): Effect.Effect<ValueOf<S>, never, World> {
+  asEffect(): Effect.Effect<Readonly<ValueOf<S>>, never, World> {
     return (this.effect ??= Effect.map(Effect.service(World), (world) =>
+      world.singleton(this)
+    ));
+  }
+
+  /**
+   * The same value, with fields that can be assigned. Requiring it puts `Sim`
+   * in the system's requirements, which a frame or input system does not
+   * accept.
+   */
+  get writes(): Effect.Effect<ValueOf<S>, never, World | Sim> {
+    return (this.writing ??= Effect.map(Effect.service(World), (world) =>
       world.singleton(this)
     ));
   }

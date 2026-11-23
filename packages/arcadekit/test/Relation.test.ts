@@ -582,7 +582,7 @@ const graft = Action.handler(Graft, function* ({ branch, onto }) {
   return world.sources(onto, ChildOf).length;
 });
 /** Every tick, each tree that has branches grows one more. */
-const Grow = System.make("Grow", function* () {
+const Grow = System.tick("Grow", function* () {
   const world = yield* World;
   const commands = yield* Commands.spawns(Body, ChildOf);
   (yield* Query.all(Body).pipe(Query.without(ChildOf))).each((_, tree) => {

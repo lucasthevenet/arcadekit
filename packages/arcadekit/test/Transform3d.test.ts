@@ -46,7 +46,7 @@ describe("Transform3d", () => {
   });
 
   it("is moved by a system with a loop over its columns, like any component", () => {
-    const Drift = System.make("tf/Drift", function* () {
+    const Drift = System.tick("tf/Drift", function* () {
       const { delta } = yield* Time;
       (yield* Query.all(Position).pipe(Query.writes(Position))).eachChunk(
         (start, end, position) => {

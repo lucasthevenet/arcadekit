@@ -97,35 +97,34 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   // Every check has passed. Only now does anything change.
   world.set(attacker, Fighter, { energy: me.energy - STRIKE_COST });
   world.set(target, Fighter, { hp: them.hp - STRIKE_DAMAGE });
-  (yield* Struck).emit({ target, amount: STRIKE_DAMAGE });
+  (yield* Struck.emits).emit({ target, amount: STRIKE_DAMAGE });
   return them.hp - STRIKE_DAMAGE;
 });
 
 const pass = Action.handler(Pass, function* ({ player }) {
-  const turn = yield* Turn;
+  const turn = yield* Turn.writes;
   if (player !== turn.player) {
     return yield* new NotYourTurn({ waitingFor: turn.player });
   }
   const next = player === 1 ? 2 : 1;
   turn.player = next;
-  (yield* TurnEnded).emit({ next });
+  (yield* TurnEnded.emits).emit({ next });
 });
 
 // --- how the world reacts --------------------------------------------------------
-const Casualties = System.make("Casualties", function* () {
+const Casualties = System.tick("Casualties", function* () {
   const world = yield* World;
   const commands = yield* Commands;
-  const fell = yield* Fell;
   for (const { target } of (yield* Struck).read()) {
     const fighter = world.get(target, Fighter);
     if (fighter !== undefined && fighter.hp <= 0) {
       commands.despawn(target);
-      fell.emit({ entity: target });
+      (yield* Fell.emits).emit({ entity: target });
     }
   }
 });
 
-const Rest = System.make("Rest", function* () {
+const Rest = System.tick("Rest", function* () {
   const fighters = yield* Fighters;
   for (const { next } of (yield* TurnEnded).read()) {
     fighters.each((fighter) => {
@@ -158,7 +157,7 @@ const Commentary = Plugin.make("Commentary", {
   systems: [
     // In the stage before the rules' own system, while the fighter that was hit
     // still exists.
-    System.make("CallHits", function* () {
+    System.tick("CallHits", function* () {
       const narrator = yield* Narrator;
       const world = yield* World;
       for (const { amount, target } of (yield* Struck).read()) {
@@ -166,7 +165,7 @@ const Commentary = Plugin.make("Commentary", {
       }
     }).pipe(System.inStage("preUpdate")),
     // Listed after the rules' own system, when the fighter that fell is gone.
-    System.make("CallEnd", function* () {
+    System.tick("CallEnd", function* () {
       const narrator = yield* Narrator;
       for (const _ of (yield* Fell).read()) {
         (yield* Standing).each((name) => {

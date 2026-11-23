@@ -29,7 +29,7 @@ class Bounds extends Context.Service<Bounds, { readonly width: number }>()(
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
-const Movement = System.make("physics/Movement", function* () {
+const Movement = System.tick("physics/Movement", function* () {
   const { width } = yield* Bounds;
   const { delta } = yield* Time;
   (yield* Moving).each((position, velocity) => {
@@ -144,7 +144,7 @@ export const Falling = Query.all(Position, Velocity).pipe(
   Query.writes(Position)
 );
 
-export const Fall = System.make("physics/Fall", function* () {
+export const Fall = System.tick("physics/Fall", function* () {
   const { delta } = yield* Time;
   (yield* Falling).eachChunk((start, end, position, velocity) =>
     fall(start, end, position.y, velocity.y, delta)

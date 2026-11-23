@@ -93,7 +93,7 @@ const Sounded = Event.define(
 );
 
 let ticksRun = 0;
-const Listen = System.make("Listen", function* () {
+const Listen = System.tick("Listen", function* () {
   ticksRun++;
   const sounded = (yield* Sounded).read();
   const refused = (yield* Action.Rejected).read().length;
@@ -105,7 +105,7 @@ const Listen = System.make("Listen", function* () {
     tally.rejections += refused;
   });
 });
-const Drift = System.make("Drift", function* () {
+const Drift = System.tick("Drift", function* () {
   const random = yield* Random;
   const commands = yield* Commands;
   (yield* Motes).each((mote, entity) => {
@@ -116,7 +116,7 @@ const Drift = System.make("Drift", function* () {
   });
 });
 /** An AI: it issues actions of its own, which wait for the next tick. */
-const Bot = System.make("Bot", function* () {
+const Bot = System.tick("Bot", function* () {
   const { tick } = yield* Time;
   const actions = yield* Action.Actions;
   if (tick % 3 === 0) {
@@ -126,9 +126,9 @@ const Bot = System.make("Bot", function* () {
     actions.enqueue(Double, {});
   }
 });
-const Sound = System.make("Sound", function* () {
+const Sound = System.tick("Sound", function* () {
   const { tick } = yield* Time;
-  const sounded = yield* Sounded;
+  const sounded = yield* Sounded.emits;
   sounded.emit({ tick, at: new Date(tick * 1000) });
   // Read by this system at once, and by Listen on the next tick: the two
   // have read different amounts when a save is taken. Each event is counted
@@ -141,7 +141,7 @@ const Sound = System.make("Sound", function* () {
 
 let setups = 0;
 /** Fires a pulse every fifth tick: what it does follows from the time. */
-const Pulsing = System.make("Pulsing", function* () {
+const Pulsing = System.tick("Pulsing", function* () {
   if ((yield* Time).tick % 5 === 0) {
     (yield* Action.Actions).enqueue(Pulse, {});
   }
@@ -326,7 +326,7 @@ describe("a saved game", () => {
     const stamp = Action.handler(Stamp, function* ({ at, big }) {
       stamps.push([at instanceof Date && at.getTime(), typeof big, big]);
     });
-    const Issue = System.make("Issue", function* () {
+    const Issue = System.tick("Issue", function* () {
       (yield* Action.Actions).enqueue(Stamp, {
         at: new Date(86_400_000),
         big: 5n,
@@ -464,7 +464,7 @@ describe("a game that cannot be saved as it stands", () => {
       })
     );
     const small = Action.handler(Small, function* () {});
-    const Issue = System.make("Issue", function* () {
+    const Issue = System.tick("Issue", function* () {
       (yield* Action.Actions).enqueue(Small, { n: 9 });
     });
     withApp(
@@ -496,7 +496,7 @@ describe("a game that cannot be saved as it stands", () => {
   it("is not saved in the middle of a tick", () => {
     let app: App.Any | undefined;
     let thrown: unknown;
-    const Greedy = System.make("Greedy", function* () {
+    const Greedy = System.tick("Greedy", function* () {
       try {
         app!.save();
       } catch (error) {

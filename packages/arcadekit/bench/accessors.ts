@@ -56,6 +56,7 @@ if (N !== sizes.entities || DT !== sizes.step) {
 }
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
+const Seen = Query.all(Position, Velocity);
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
 
@@ -142,15 +143,13 @@ const idling = (power: "on" | "off"): number =>
     Effect.scoped(
       Effect.gen(function* () {
         const systems = Array.from({ length: 10 }, (_, i) =>
-          System.make(`Idle${i}`, function* () {
+          System.tick(`Idle${i}`, function* () {
             yield* Moving;
             yield* Time;
           }).pipe(System.runIf(State.is(Power, "on")))
         );
         const app = yield* App.make(App.define({ systems }));
-        yield* Effect.map(Power, (held) => held.set(power)).pipe(
-          Effect.provideService(WorldService, app.world)
-        );
+        State.handleOf(app.world, Power).set(power);
         return measure(() => app.tick(DT), 50_000, 20_000);
       })
     )
@@ -267,9 +266,9 @@ const sounding = (happening: boolean): number =>
       Effect.gen(function* () {
         const Scored = Event.define("bench/Scored", Schema.Struct({}));
         const Bounced = Event.define("bench/Bounced", Schema.Struct({}));
-        const Score = System.make("bench/Score", function* () {
+        const Score = System.tick("bench/Score", function* () {
           if (happening) {
-            (yield* Scored).emit({});
+            (yield* Scored.emits).emit({});
           }
         });
         const Cues = Sound.cues(
@@ -360,7 +359,7 @@ const rewinding = (back: boolean): number =>
   Effect.runSync(
     Effect.scoped(
       Effect.gen(function* () {
-        const Movement = System.make("Movement", function* () {
+        const Movement = System.tick("Movement", function* () {
           (yield* Moving).eachChunk((start, end, pos, vel) => {
             for (let n = start; n < end; n++) {
               pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
@@ -395,8 +394,8 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
       Effect.gen(function* () {
         let sink = 0;
         const systems = Array.from({ length: count }, (_, i) =>
-          System.make(`Draw${i}`, function* () {
-            const moving = yield* Moving;
+          System.frame(`Draw${i}`, function* () {
+            const moving = yield* Seen;
             yield* Time;
             if (reading) {
               moving.eachChunk((start, end, pos, vel) => {
@@ -407,7 +406,7 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
                 }
               });
             }
-          }).pipe(System.inStage("frame"))
+          })
         );
         const app = yield* App.make(App.define({ systems }), {
           verifyFrames: verify,
@@ -438,7 +437,7 @@ const scanned = (handler: typeof scanPlain): number =>
     )
   );
 
-const Movement = System.make("Movement", function* () {
+const Movement = System.tick("Movement", function* () {
   const moving = yield* Moving;
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
@@ -447,7 +446,7 @@ const Movement = System.make("Movement", function* () {
   });
 });
 
-const MovementRaw = System.make("MovementRaw", function* () {
+const MovementRaw = System.tick("MovementRaw", function* () {
   const moving = yield* Moving;
   const { delta } = yield* Time;
   moving.eachChunk((start, end, pos, vel) => {
@@ -549,7 +548,7 @@ const variants: Record<string, Variant> = {
         Effect.scoped(
           Effect.gen(function* () {
             const systems = Array.from({ length: 10 }, (_, i) =>
-              System.make(`Idle${i}`, function* () {
+              System.tick(`Idle${i}`, function* () {
                 yield* Moving;
                 yield* Time;
               })

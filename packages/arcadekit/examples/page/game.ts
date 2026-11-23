@@ -62,10 +62,10 @@ const playing = System.runIf(State.is(Phase, "playing"));
 
 // The devices, as the game has them this tick: the same picture for every
 // system, and the same in a replay, which has no keyboard.
-const Steer = System.make("Steer", function* () {
+const Steer = System.tick("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const pointer = yield* Input.Pointer;
-  const basket = yield* Basket;
+  const basket = yield* Basket.writes;
   const { delta } = yield* Time;
   let { x } = basket;
   if (keys.down("ArrowLeft")) {
@@ -83,10 +83,10 @@ const Steer = System.make("Steer", function* () {
   }
 }).pipe(playing);
 
-const Fall = System.make("Fall", function* () {
+const Fall = System.tick("Fall", function* () {
   const { delta } = yield* Time;
   const random = yield* Random;
-  const basket = yield* Basket;
+  const basket = yield* Basket.writes;
   let caught = 0;
   (yield* Falling).each((star) => {
     const before = star.y;
@@ -106,7 +106,7 @@ const Fall = System.make("Fall", function* () {
   });
   if (caught > 0) {
     basket.caught += caught;
-    (yield* Caught).emit({ stars: caught });
+    (yield* Caught.emits).emit({ stars: caught });
   }
 }).pipe(playing);
 
@@ -128,14 +128,14 @@ const Scatter = Action.define("page/Scatter", Layout);
 
 const handlers = [
   Action.handler(Start, function* () {
-    const phase = yield* Phase;
+    const phase = yield* Phase.sets;
     if (phase.is("title")) {
       phase.set("playing");
-      (yield* Started).emit({});
+      (yield* Started.emits).emit({});
     }
   }),
   Action.handler(Quit, function* () {
-    const phase = yield* Phase;
+    const phase = yield* Phase.sets;
     if (phase.is("title")) {
       return;
     }
@@ -143,13 +143,13 @@ const handlers = [
     for (const star of (yield* Stars).entities()) {
       commands.despawn(star);
     }
-    const basket = yield* Basket;
+    const basket = yield* Basket.writes;
     basket.x = WIDTH / 2;
     basket.caught = 0;
     phase.set("title");
   }),
   Action.handler(TogglePause, function* () {
-    const phase = yield* Phase;
+    const phase = yield* Phase.sets;
     if (!phase.is("title")) {
       phase.set(phase.is("playing") ? "paused" : "playing");
     }
@@ -189,12 +189,12 @@ const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 
 // A system of the input stage: once the level's file is there, and the sky
 // is still empty, it issues the action that fills it.
-const Begin = System.make("Begin", function* () {
+const Begin = System.input("Begin", function* () {
   const level = yield* Level;
   if (level._tag === "Ready" && (yield* Stars).count() === 0) {
     (yield* Action.Actions).enqueue(Scatter, level.assets.layout);
   }
-}).pipe(System.inStage("input"), System.runIf(State.is(Phase, "playing")));
+}).pipe(System.runIf(State.is(Phase, "playing")));
 
 // --- drawing: the frame stage ----------------------------------------------------
 // What a frame system keeps from one frame to the next is in a service of
@@ -210,7 +210,7 @@ export class Screen extends Context.Service<
   }));
 }
 
-const Draw = System.make("Draw", function* () {
+const Draw = System.frame("Draw", function* () {
   const { canvas } = yield* Screen;
   const { delta } = yield* Time;
   const basket = yield* Basket;
@@ -241,7 +241,7 @@ const Draw = System.make("Draw", function* () {
     canvas.fillStyle = phase.is("paused") ? "#5c6370" : "#78dce8";
     canvas.fillRect(basket.x - BASKET.width / 2, BASKET.y, BASKET.width, 8);
   }
-}).pipe(System.inStage("frame"));
+});
 
 // --- what it sounds like: the frame stage too --------------------------------------
 // Each event of the ticks since the last frame is played as a cue. The

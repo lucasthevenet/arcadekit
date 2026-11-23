@@ -59,10 +59,8 @@ import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { OtlpSerialization, OtlpTracer } from "effect/observability";
 
-const Move = System.make("game/Move", function* () {});
-const Draw = System.make("game/Draw", function* () {}).pipe(
-  System.inStage("frame")
-);
+const Move = System.tick("game/Move", function* () {});
+const Draw = System.frame("game/Draw", function* () {});
 
 const Tracing = OtlpTracer.layer({
   url: "http://localhost:4318/v1/traces",

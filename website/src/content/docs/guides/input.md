@@ -45,7 +45,7 @@ const Game = Plugin.make("game/Game", {
 ```ts
 import { Input, Plugin, System } from "arcadekit";
 
-const Steer = System.make("game/Steer", function* () {
+const Steer = System.tick("game/Steer", function* () {
   const keys = yield* Input.Keyboard;
   const pointer = yield* Input.Pointer;
   const left = keys.down("ArrowLeft"); // held
@@ -100,7 +100,7 @@ const PlayCard = Action.define(
   Schema.Struct({ card: EntityId })
 );
 
-const Pick = System.make("game/Pick", function* () {
+const Pick = System.input("game/Pick", function* () {
   const devices = yield* Input.Devices;
   if (!devices.pressed.includes(Input.pointerButton())) {
     return;
@@ -112,10 +112,10 @@ const Pick = System.make("game/Pick", function* () {
       actions.enqueue(PlayCard, { card: entity });
     }
   });
-}).pipe(System.inStage("input"));
+});
 ```
 
-`Input.Devices` is the current sample, the same for every system of the stage: the buttons that are `down`, those `pressed` and `released` since the previous sample, the `axes`, and those that `moved`. It isn't part of the game, so its fields throw in the tick and in the frame stage, where systems read the device state instead.
+`Input.Devices` is the current sample, the same for every system of the stage: the buttons that are `down`, those `pressed` and `released` since the previous sample, the `axes`, and those that `moved`. It isn't part of the game, so a system of the tick or the frame stage cannot require it. Those read the device state the game keeps, `Input.Keyboard`, `Input.Pointer` and `Input.Gamepad`.
 
 ## The input stage
 

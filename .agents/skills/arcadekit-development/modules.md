@@ -2,9 +2,9 @@
 
 Effect's convention, kept as it is:
 
-- **One module per concept, named in PascalCase**, imported as a namespace: `src/Query.ts` is used as `Query.all(...)`, `Query.without(...)`. A module's functions are named for how they read after the namespace, so `System.make`, not `System.makeSystem`.
+- **One module per concept, named in PascalCase**, imported as a namespace: `src/Query.ts` is used as `Query.all(...)`, `Query.without(...)`. A module's functions are named for how they read after the namespace, so `System.tick`, not `System.makeSystem`.
 - **Functions, not methods**, for anything a user composes. A function tree-shakes and takes part in `.pipe()`; a method does neither. Methods are for the plain objects a hot loop touches (`view.each`, `commands.spawn`).
-- **Constructors are `make`** (`System.make`, `Plugin.make`, `App.make`). A declaration the user writes once at module level, with a name that identifies it at run time, is `define` (`Component.define`, `Event.define`, `Action.define`). So is the game, `App.define`, which has no name: `App.make` is taken by the app that runs it.
+- **Constructors are `make`** (`Plugin.make`, `App.make`). A system is `System.tick`, `System.frame` or `System.input`, one for each group of stages. A declaration the user writes once at module level, with a name that identifies it at run time, is `define` (`Component.define`, `Event.define`, `Action.define`). So is the game, `App.define`, which has no name: `App.make` is taken by the app that runs it.
 - **Suffixes mean what they mean in Effect**: `Unsafe` for a call that can throw or skips a check (`fiber.pollUnsafe`), `Option` for a result that may be absent, `Exit` for a result returned as a value, where the plain name throws (`app.tickExit` beside `app.tick`).
 - **`ByName`** for the variant of a typed call that takes data from outside (`app.dispatchByName`).
 - **A file that is no module is camelCase, and `index.ts` is lower case.** They are not namespaces: the storage core's files under `src/ecs/`, and what a module keeps to itself in a folder.

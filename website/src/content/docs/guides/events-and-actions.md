@@ -19,8 +19,8 @@ const Landed = Event.define(
   Schema.Struct({ entity: EntityId })
 );
 
-const Ground = System.make("physics/Ground", function* () {
-  const landed = yield* Landed;
+const Ground = System.tick("physics/Ground", function* () {
+  const landed = yield* Landed.emits;
   (yield* Bodies).each((body, entity) => {
     if (body.y <= 0) {
       landed.emit({ entity }); // a plain call, fine inside a loop
@@ -28,7 +28,7 @@ const Ground = System.make("physics/Ground", function* () {
   });
 });
 
-const Dust = System.make("fx/Dust", function* () {
+const Dust = System.tick("fx/Dust", function* () {
   for (const { entity } of (yield* Landed).read()) {
     // every event this system hasn't seen
   }

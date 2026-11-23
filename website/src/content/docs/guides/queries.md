@@ -25,7 +25,7 @@ const Moving = Query.all(Position, Velocity).pipe(
   Query.writes(Position)
 );
 
-const Movement = System.make("game/Movement", function* () {
+const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
   (yield* Moving).each((position, velocity, entity) => {
     position.x += velocity.x * delta;
@@ -56,7 +56,7 @@ const Velocity = Component.define("game/Velocity", {
 });
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
-const Movement = System.make("game/Movement", function* () {
+const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
   (yield* Moving).eachChunk((start, end, position, velocity) => {
     for (let i = start; i < end; i++) {
@@ -86,7 +86,7 @@ const Burning = Component.define(
 );
 const OnFire = Query.all(Position, Burning).pipe(Query.writes(Burning));
 
-const Burn = System.make("game/Burn", function* () {
+const Burn = System.tick("game/Burn", function* () {
   const { delta } = yield* Time;
   (yield* OnFire).eachChunk((start, end, position, burning, entities) => {
     for (let i = start; i < end; i++) {
@@ -127,7 +127,7 @@ const Born = Query.all(Sprite).pipe(Query.added(Sprite));
 const Moved = Query.all(Position, Sprite).pipe(Query.changed(Position));
 const Gone = Query.removed(Sprite);
 
-const Track = System.make("game/Track", function* () {
+const Track = System.tick("game/Track", function* () {
   (yield* Born).each((sprite, entity) => {}); // added a Sprite since last run
   (yield* Moved).each((position, sprite) => {}); // had its Position written since
   for (const entity of (yield* Gone).read()) {

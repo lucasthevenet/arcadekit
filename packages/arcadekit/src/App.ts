@@ -207,7 +207,7 @@ export interface Any {
    */
   readonly settled: boolean;
   /**
-   * Runs the frame stage once: the systems made with `System.inStage("frame")`,
+   * Runs the frame stage once: the systems made with `System.frame`,
    * which draw the game as it is between two ticks. `alpha` is how far between
    * them the frame is, from 0 just after a tick up to 1 just before the next,
    * and `delta` the real seconds since the previous frame; both reach the
@@ -220,7 +220,7 @@ export interface Any {
    */
   readonly frame: (alpha: number, delta?: number) => void;
   /**
-   * Runs the input stage once: the systems made with `System.inStage("input")`,
+   * Runs the input stage once: the systems made with `System.input`,
    * which turn the devices' state into actions. The devices are read once,
    * here, and the systems receive that single sample as `Input.Devices`. What
    * they issue with `Actions.enqueue` is logged and applied at the start of the
@@ -528,7 +528,10 @@ export const define = <
   P extends Plugins = readonly [],
 >(
   options: Options<S, H, P> &
-    System.Ordered<System.Listing<Plugin.SystemsOf<P>, S>>
+    System.Ordered<
+      System.Listing<Plugin.SystemsOf<P>, S>,
+      Plugin.Clashes<P, H, S>
+    >
 ): Game<S, H, P> => ({
   plugins: options.plugins ?? ([] as unknown as readonly [...P]),
   systems: options.systems ?? ([] as unknown as readonly [...S]),

@@ -50,39 +50,35 @@ const Refuse = Action.define("in/Refuse", Schema.Struct({}));
 class NotNow extends Data.TaggedError("in/NotNow") {}
 
 const Moved = Query.all(Position).pipe(Query.writes(Position));
-const Move = System.make("in/Move", function* () {
+const Move = System.tick("in/Move", function* () {
   (yield* Moved).each((position) => {
     position.x += 1;
   });
 });
-const Scorer = System.make("in/Scorer", function* () {
+const Scorer = System.tick("in/Scorer", function* () {
   const hits = (yield* Hit).read();
   for (const { by } of hits) {
-    (yield* Score).points += by;
+    (yield* Score.writes).points += by;
   }
 });
-const Asleep = System.make("in/Asleep", function* () {}).pipe(
+const Asleep = System.tick("in/Asleep", function* () {}).pipe(
   System.runIf(Effect.succeed(false))
 );
-const Opening = System.make("in/Opening", function* () {
-  (yield* Spawned).emit({});
-}).pipe(State.onEnter(Phase, "playing"));
-const Draw = System.make("in/Draw", function* () {}).pipe(
-  System.inStage("frame")
-);
-const Read = System.make("in/Read", function* () {}).pipe(
-  System.inStage("input")
-);
+const Opening = State.onEnter(Phase, "playing", "in/Opening", function* () {
+  (yield* Spawned.emits).emit({});
+});
+const Draw = System.frame("in/Draw", function* () {});
+const Read = System.input("in/Read", function* () {});
 
 const handlers = [
   Action.handler(Strike, function* ({ by }) {
-    (yield* Hit).emit({ by });
+    (yield* Hit.emits).emit({ by });
   }),
   Action.handler(Begin, function* () {
-    (yield* Phase).set("playing");
+    (yield* Phase.sets).set("playing");
   }),
   Action.handler(Refuse, function* () {
-    (yield* Hit).emit({ by: 1000 });
+    (yield* Hit.emits).emit({ by: 1000 });
     return yield* new NotNow();
   }),
 ];
@@ -225,7 +221,7 @@ describe("app.inspect", () => {
       span: (options) => new Tracer.NativeSpan(options),
     });
     let traced = false;
-    const Look = System.make("in/Look", function* () {
+    const Look = System.tick("in/Look", function* () {
       traced = Option.isSome(yield* Effect.option(Effect.currentSpan));
     });
     const app = run(
@@ -243,7 +239,7 @@ describe("app.inspect", () => {
   });
 
   it("times each system's turn", () => {
-    const Slow = System.make("in/Slow", function* () {
+    const Slow = System.tick("in/Slow", function* () {
       const until = performance.now() + 5;
       while (performance.now() < until) {
         // Busy, for the clock to see.
@@ -309,7 +305,7 @@ describe("app.inspect", () => {
 
   it("is refused during a tick", () => {
     let app: App.Any | undefined;
-    const Peek = System.make("in/Peek", function* () {
+    const Peek = System.tick("in/Peek", function* () {
       yield* World;
       app!.inspect();
     });
@@ -318,7 +314,7 @@ describe("app.inspect", () => {
   });
 
   it("works on an app that spawns through commands", () => {
-    const Spawner = System.make("in/Spawner", function* () {
+    const Spawner = System.tick("in/Spawner", function* () {
       (yield* Commands.spawns(Position)).spawn(Position.of({ x: 5, y: 5 }));
     });
     const app = run(App.make(App.define({ systems: [Spawner] })));

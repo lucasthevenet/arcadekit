@@ -20,12 +20,12 @@ const Forest = Assets.bundle("game/Forest", {
   layout: Assets.json("/forest.json", Layout), // validated against the schema
 });
 
-const Draw = System.make("game/Draw", function* () {
+const Draw = System.frame("game/Draw", function* () {
   const forest = yield* Forest; // the bundle's current status
   if (forest._tag === "Ready") {
     const picture: ImageBitmap = forest.assets.backdrop;
   }
-}).pipe(System.inStage("frame"));
+});
 
 const Game = Plugin.make("game/Game", {
   plugins: [Assets.plugin],
@@ -43,19 +43,19 @@ const Game = Plugin.make("game/Game", {
 
 ## Loading happens outside the simulation
 
-Loading takes real time, so a bundle can only be requested from the frame and input stages; in a tick it throws. A replay or a server, which draws nothing, loads nothing, and runs the same game.
+Loading takes real time, so a bundle can only be requested from the frame and input stages. A system of the tick cannot require `Assets.Store`. A replay or a server, which draws nothing, loads nothing, and runs the same game.
 
 A load receives what the app was given from outside, but none of the app's own services, so nothing it does counts as part of the game: the random numbers a loader draws to back off before retrying aren't the world's.
 
 When the rules need something from a file, such as where the walls are, it reaches them as an action. An input-stage system issues the action once the file has loaded, with its contents as the payload. From then on it is in the log, and a replay has it without the file:
 
 ```ts sketch
-const Begin = System.make("game/Begin", function* () {
+const Begin = System.input("game/Begin", function* () {
   const forest = yield* Forest;
   if (forest._tag === "Ready" && (yield* Walls).count() === 0) {
     (yield* Action.Actions).enqueue(Build, forest.assets.layout);
   }
-}).pipe(System.inStage("input"));
+});
 ```
 
 ## Asset types
@@ -99,7 +99,7 @@ Load anything that needs releasing into a scope, never into a module-level varia
 
 ## Holding a bundle yourself
 
-A frame or input-stage system of your own can keep a bundle loaded with `(yield* Assets.Store).hold(bundle, name)` and `drop(bundle, name)`: the bundle stays loaded while anyone holds it. In a tick, the store throws whatever you ask of it, as a bundle does.
+A frame or input-stage system of your own can keep a bundle loaded with `(yield* Assets.Store).hold(bundle, name)` and `drop(bundle, name)`: the bundle stays loaded while anyone holds it. A system of the tick cannot require the store.
 
 ## Where files come from
 

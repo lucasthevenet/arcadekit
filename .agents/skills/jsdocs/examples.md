@@ -18,7 +18,7 @@ An example is a run of lines indented by two spaces under a blank line, with opt
  */
 ```
 
-- Write the module as a game imports it, by its namespace: `State.define`, `System.make`.
+- Write the module as a game imports it, by its namespace: `State.define`, `System.tick`.
 - Arrange nontrivial examples as setup, operation, then what is seen of it, as a comment at the end of the line.
 - Show a part of a game, not a whole program: a body that is not the point is `function*() { ... }`.
 - Nothing compiles or runs an example of a doc comment. Check each against the signature it shows and against a test that does the same, and change it with the export.

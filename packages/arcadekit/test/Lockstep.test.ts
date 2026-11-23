@@ -454,7 +454,7 @@ describe("a lockstep session", () => {
 
   it("returns a system's failure, and throws it from tick", () => {
     class Blown extends Data.TaggedError("Blown")<{ readonly at: number }> {}
-    const Fuse = System.make("ls/Fuse", function* () {
+    const Fuse = System.tick("ls/Fuse", function* () {
       const { tick } = yield* Time;
       if (tick === 2) {
         return yield* new Blown({ at: tick });
@@ -483,11 +483,11 @@ describe("a lockstep session", () => {
   it("does not run a tick whose input stage failed", () => {
     class Jammed extends Data.TaggedError("Jammed")<{}> {}
     let jam = true;
-    const Keys = System.make("ls/Keys", function* () {
+    const Keys = System.input("ls/Keys", function* () {
       if (jam) {
         return yield* new Jammed();
       }
-    }).pipe(System.inStage("input"));
+    });
     withApp(
       Session.make(App.define({ systems: [Keys] }), {
         peer: "ada",
@@ -1208,12 +1208,8 @@ describe("peers that were not made alike", () => {
       );
     }
     // What a peer draws, plays or reads from its devices is its own.
-    const Paint = System.make("ls/Paint", function* () {}).pipe(
-      System.inStage("frame")
-    );
-    const Listen = System.make("ls/Listen", function* () {}).pipe(
-      System.inStage("input")
-    );
+    const Paint = System.frame("ls/Paint", function* () {});
+    const Listen = System.input("ls/Listen", function* () {});
     const drawn = App.define({
       systems: [...CoinGame.systems, Paint, Listen] as const,
       handlers,

@@ -27,7 +27,7 @@ const Velocity = Component.define("game/Velocity", {
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
-const Movement = System.make("game/Movement", function* () {
+const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
   (yield* Moving).each((position, velocity) => {
     position.x += velocity.x * delta;
@@ -97,7 +97,7 @@ import { Commands, Component, Field, Query, System, Time } from "arcadekit";
 const Lifetime = Component.define("game/Lifetime", { seconds: Field.f32 });
 const Mortal = Query.all(Lifetime).pipe(Query.writes(Lifetime));
 
-const Expiry = System.make("game/Expiry", function* () {
+const Expiry = System.tick("game/Expiry", function* () {
   const commands = yield* Commands;
   const { delta } = yield* Time;
   (yield* Mortal).each((life, entity) => {

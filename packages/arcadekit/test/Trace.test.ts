@@ -53,29 +53,23 @@ const Begin = Action.define("tr/Begin", Schema.Struct({}));
 
 class NotNow extends Data.TaggedError("tr/NotNow") {}
 
-const Grow = System.make("tr/Grow", function* () {
+const Grow = System.tick("tr/Grow", function* () {
   (yield* Counted).each((count) => {
     count.n += 1;
   });
 });
-const Roll = System.make("tr/Roll", function* () {
+const Roll = System.tick("tr/Roll", function* () {
   const random = yield* Random;
   (yield* Counted).each((count) => {
     count.n += random.int(0, 10);
   });
 });
-const Asleep = System.make("tr/Asleep", function* () {}).pipe(
+const Asleep = System.tick("tr/Asleep", function* () {}).pipe(
   System.runIf(Effect.succeed(false))
 );
-const Opening = System.make("tr/Opening", function* () {}).pipe(
-  State.onEnter(Phase, "playing")
-);
-const Draw = System.make("tr/Draw", function* () {}).pipe(
-  System.inStage("frame")
-);
-const Read = System.make("tr/Read", function* () {}).pipe(
-  System.inStage("input")
-);
+const Opening = State.onEnter(Phase, "playing", "tr/Opening", function* () {});
+const Draw = System.frame("tr/Draw", function* () {});
+const Read = System.input("tr/Read", function* () {});
 
 const handlers = [
   Action.handler(Add, function* ({ by }) {
@@ -87,7 +81,7 @@ const handlers = [
     return yield* new NotNow();
   }),
   Action.handler(Begin, function* () {
-    (yield* Phase).set("playing");
+    (yield* Phase.sets).set("playing");
   }),
 ];
 
@@ -201,7 +195,7 @@ describe("tracing an app", () => {
 
   it("ends a tick's span with the failure of the system that failed it", () => {
     const { spans, tracer } = recorder();
-    const Fails = System.make("tr/Fails", function* () {
+    const Fails = System.tick("tr/Fails", function* () {
       return yield* new NotNow();
     });
     const app = traced(tracer, App.make(App.define({ systems: [Fails] })));
@@ -245,7 +239,7 @@ describe("whether an app traces", () => {
     ) => Effect.Effect<A, E, R> = (effect) => effect
   ): boolean => {
     let seen: boolean | undefined;
-    const Look = System.make("tr/Look", function* () {
+    const Look = System.tick("tr/Look", function* () {
       seen = Option.isSome(yield* Effect.option(Effect.currentSpan));
     });
     const made = wrap(App.make(App.define({ systems: [Look] })));

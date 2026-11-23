@@ -21,10 +21,10 @@
  *     systems: [Assets.during(State.is(Level, "forest"), Forest), Draw],
  *   })
  *
- *   const Draw = System.make("Draw", function*() {
+ *   const Draw = System.frame("Draw", function*() {
  *     const forest = yield* Forest               // the bundle's current status
  *     if (forest._tag === "Ready") draw(forest.assets.backdrop)
- *   }).pipe(System.inStage("frame"))
+ *   })
  *
  * Loading takes real time, so it isn't part of the simulation: nothing in a
  * tick waits for an asset or can tell whether one is loaded. What the game
@@ -50,15 +50,7 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 import * as Action from "./Action";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
-import {
-  Commands,
-  Events,
-  Frame,
-  Random,
-  Time,
-  World,
-  whole,
-} from "./Services";
+import { Commands, Events, Frame, Random, Time, World } from "./Services";
 import * as System from "./System";
 
 /**
@@ -469,16 +461,6 @@ const storeLayer = Layer.effect(
     )(yield* Effect.context<never>()) as Context.Context<never>;
     const runFork = Effect.runForkWith(context);
     const held = new Map<Bundle<Entries>, Held>();
-    // Between ticks an app's world is frozen: that is how the stages that
-    // may know about assets are told from the tick.
-    const world = whole(yield* World);
-    const betweenTicks = (bundle: Bundle<Entries>, what: string): void => {
-      if (!world.frozen) {
-        throw new Error(
-          `The assets "${bundle.name}" were ${what} in the tick. Whether an asset has been loaded depends on real time, which a simulation must not: a replay loads nothing. Do it from a system of the frame stage, System.inStage("frame"), which draws with them, or of the input stage, which can issue an action once they are there.`
-        );
-      }
-    };
 
     const entryOf = (bundle: Bundle<Entries>): Held => {
       let entry = held.get(bundle);
@@ -563,11 +545,9 @@ const storeLayer = Layer.effect(
 
     return {
       status<B extends Entries>(bundle: Bundle<B>) {
-        betweenTicks(bundle, "asked for");
         return (held.get(bundle)?.status ?? ABSENT) as Status<Loaded<B>>;
       },
       hold(bundle, holder) {
-        betweenTicks(bundle, "held");
         const entry = entryOf(bundle);
         if (entry.holders.has(holder)) {
           return;
@@ -578,7 +558,6 @@ const storeLayer = Layer.effect(
         }
       },
       drop(bundle, holder) {
-        betweenTicks(bundle, "let go of");
         const entry = held.get(bundle);
         if (entry === undefined || !entry.holders.delete(holder)) {
           return;
@@ -622,16 +601,16 @@ export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
  * @category Systems
  */
 export const during = <E, R, B extends Entries>(
-  condition: Effect.Effect<boolean, E, R>,
+  condition: System.FrameOk<boolean, E, R>,
   bundle: Bundle<B>
-): System.System<E, R | Store> => {
+): System.System<E, R | Store, string, "preFrame"> => {
   const name = `Assets.during(${bundle.name})`;
-  return System.make(name, function* () {
+  return System.raw(name, "preFrame", function* () {
     const store = yield* Store;
     if (yield* condition) {
       store.hold(bundle, name);
     } else {
       store.drop(bundle, name);
     }
-  }).pipe(System.inStage("preFrame"));
+  });
 };

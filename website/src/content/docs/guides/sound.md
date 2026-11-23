@@ -46,7 +46,7 @@ Browser.runMain(
 - A cue plays once, to its end.
 - Events emitted by a refused action are rolled back with everything else, so they are never heard.
 
-`Sound.Player` is the service that plays sounds, provided by `Sound.plugin`. A frame system plays a sound that no event stands for through it: `(yield* Sound.Player).play("click", { volume: 0.5 })`. It plays with the rest of its frame, merged with any other request for the same cue. Requested in the input stage, it plays with the following frame. In a tick it throws and explains what to do instead, and an action handler that plays a sound dies with the same error.
+`Sound.Player` is the service that plays sounds, provided by `Sound.plugin`. A frame system plays a sound that no event stands for through it: `(yield* Sound.Player).play("click", { volume: 0.5 })`. It plays with the rest of its frame, merged with any other request for the same cue. A system of the tick or the input stage, and an action handler, cannot require it.
 
 ## Music
 
@@ -87,7 +87,7 @@ Two systems returning different tracks for the same channel in one frame, or the
 
 Music that plays alongside the main score gets its own channel, with any name: `Sound.music("game/Wind", body, { channel: "wind" })`. Different channels play together, and several systems can share a channel.
 
-`(yield* Sound.Player).music(channel, track, { volume, fade })` is the call `Sound.music` is built on, for a frame system of your own. It only sends the output changes, so you can call it every frame. In a tick it throws, as `play` does. The output receives it at the end of the frame, like a cue; called from the input stage, with the following frame.
+`(yield* Sound.Player).music(channel, track, { volume, fade })` is the call `Sound.music` is built on, for a frame system of your own. It only sends the output changes, so you can call it every frame. The output receives it at the end of the frame, like a cue.
 
 ## A level's own sounds
 

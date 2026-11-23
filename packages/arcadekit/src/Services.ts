@@ -18,6 +18,19 @@ import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query";
 
+/**
+ * In a system's requirements, says that it changes the game by a road that is
+ * not a component: it emits an event, sets a state, or writes a singleton.
+ * A frame or input system cannot require it. A system provides it for itself,
+ * so an app never asks for it from outside.
+ *
+ * @category Type-level
+ */
+export class Sim extends Context.Service<
+  Sim,
+  { readonly "~arcadekit/Sim": true }
+>()("arcadekit/Sim") {}
+
 /** What `set` is told of a component its world was not asked for. */
 type Settable<C extends string, N extends string> = [N] extends [never]
   ? "This world was asked for with yield* World, which reads. To set a component, ask for it with yield* World.writes(...), naming each component this system sets."
@@ -153,9 +166,9 @@ export interface FrameState {
 }
 
 /**
- * The frame a frame-stage system is drawing. It is real time, so keep it out of
- * the simulation: a system that runs in the tick reads `Time`, and reading a
- * field of this there throws.
+ * The frame a frame-stage system is drawing. It is real time, so a system of
+ * the tick or the input stage cannot require it. A system of the tick reads
+ * `Time`.
  *
  * @category Services
  */
@@ -234,7 +247,7 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
  * Lets a system tell a driver that ticks only when needed that the game has
  * more to do.
  *
- *   const Countdown = System.make("Countdown", function*() {
+ *   const Countdown = System.tick("Countdown", function*() {
  *     const clock = yield* Clock
  *     if (clock.left > 0) {
  *       clock.left -= (yield* Time).delta
@@ -320,4 +333,5 @@ export type BuiltIn =
   | Actions
   | Random
   | Devices
-  | Access;
+  | Access
+  | Sim;

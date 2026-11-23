@@ -49,8 +49,8 @@ const ShowMenu = View.publish(Menu, function* () {
 });
 
 /** A coin is worth one more gold each tick it is kept, while the game is played. */
-const Earn = System.make("vw/Earn", function* () {
-  const purse = yield* Purse;
+const Earn = System.tick("vw/Earn", function* () {
+  const purse = yield* Purse.writes;
   let earned = 0;
   (yield* Coins).each((coin) => {
     earned += coin.value;
@@ -66,10 +66,10 @@ const Game = Plugin.make("vw/Game", {
   systems: [Earn, ShowHud, ShowMenu],
   handlers: [
     Action.handler(Start, function* () {
-      (yield* Phase).set("playing");
+      (yield* Phase.sets).set("playing");
     }),
     Action.handler(Buy, function* ({ price }) {
-      const purse = yield* Purse;
+      const purse = yield* Purse.writes;
       if (purse.gold < price) {
         return yield* new TooPoor();
       }
@@ -322,7 +322,7 @@ describe("a view", () => {
       systems: [Shown],
       handlers: [
         Action.handler(Start, function* () {
-          (yield* Phase).set("playing");
+          (yield* Phase.sets).set("playing");
         }),
       ],
     });
@@ -358,10 +358,10 @@ describe("a view", () => {
       systems: [Shown],
       handlers: [
         Action.handler(Start, function* () {
-          (yield* Phase).set("playing");
+          (yield* Phase.sets).set("playing");
         }),
         Action.handler(Quit, function* () {
-          (yield* Phase).set("title");
+          (yield* Phase.sets).set("title");
         }),
       ],
     });
@@ -407,11 +407,11 @@ describe("a view", () => {
 
   it("can be published by a frame system of the game's own, through the port, and not from the tick", () => {
     const told: boolean[] = [];
-    const Own = System.make("vw/Own", function* () {
+    const Own = System.frame("vw/Own", function* () {
       const port = yield* View.Port;
       const { tick } = yield* Time;
       told.push(port.publish(Hud, { gold: tick, coins: 0 }));
-    }).pipe(System.inStage("frame"));
+    });
     const ui = View.makeBridge();
     const { heard } = listen(ui, Hud);
     const app = run(
@@ -427,19 +427,13 @@ describe("a view", () => {
     expect(told).toEqual([false, true, false]);
     expect(heard).toEqual([{ gold: 1, coins: 0 }]);
 
-    const InTick = System.make("vw/InTick", function* () {
-      (yield* View.Port).publish(Hud, { gold: 1, coins: 1 });
-    });
-    const other = View.makeBridge();
-    const wrong = run(
-      App.make(App.define({ plugins: [View.plugin], systems: [InTick] })).pipe(
-        Effect.provide(View.layer(other))
-      )
+    System.tick(
+      "vw/InTick",
+      // @ts-expect-error a view is published from the frame
+      function* () {
+        (yield* View.Port).publish(Hud, { gold: 1, coins: 1 });
+      }
     );
-    expect(() => wrong.tick(1)).toThrow(
-      'The view "vw/Hud" was published in the tick'
-    );
-    expect(other.get(Hud)).toBe(Hud.initial);
   });
 
   it("is known by its name: a bridge refuses two different views with one", () => {
@@ -463,7 +457,7 @@ describe("what the UI sends", () => {
         Game,
         Plugin.make("vw/Funded", {
           setup: Effect.gen(function* () {
-            (yield* Purse).gold = 5;
+            (yield* Purse.writes).gold = 5;
           }),
         }),
       ],
@@ -704,11 +698,19 @@ describe("what the UI sends", () => {
 
   it("is what a system can ask too: Actions.handles says whether an action can be issued", () => {
     const said: boolean[] = [];
-    const Ask = (name: string, stage: System.Stage) =>
-      System.make(name, function* () {
+    const Ask = (name: string, stage: "input" | "update" | "frame") => {
+      const body = function* () {
         const { handles } = yield* Action.Actions;
         said.push(handles(Start), handles(Unknown));
-      }).pipe(System.inStage(stage));
+      };
+      if (stage === "input") {
+        return System.input(name, body);
+      }
+      if (stage === "frame") {
+        return System.frame(name, body);
+      }
+      return System.tick(name, body);
+    };
     const app = run(
       App.make(
         App.define({
@@ -728,9 +730,9 @@ describe("what the UI sends", () => {
 
   it("cannot be sent to the bridge that stands for no UI", () => {
     const seen: View.Bridge[] = [];
-    const Spy = System.make("vw/Spy", function* () {
+    const Spy = System.frame("vw/Spy", function* () {
       seen.push(yield* View.Bridge);
-    }).pipe(System.inStage("frame"));
+    });
     const app = run(
       App.make(App.define({ plugins: [View.plugin], systems: [Spy] }))
     );

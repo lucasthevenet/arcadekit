@@ -44,12 +44,14 @@ const Score = Singleton.define(
 );
 const Phase = State.define("fr/Phase", ["playing", "paused"]);
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
+const Seen = Query.all(Ball);
 const Moved = Query.all(Ball).pipe(Query.changed(Ball), Query.writes(Ball));
+const Watched = Query.all(Ball).pipe(Query.changed(Ball));
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
-const Roll = System.make("Roll", function* () {
+const Roll = System.tick("Roll", function* () {
   const { delta } = yield* Time;
   (yield* Balls).each((ball) => {
     ball.x += ball.vx * delta;
@@ -206,18 +208,28 @@ describe("the frame stage", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
-        const noting = (name: string) =>
-          System.make(name, function* () {
+        const noting = (
+          name: string,
+          stage: "tick" | "frame" | "input" = "tick"
+        ) => {
+          const body = function* () {
             ran.push(name);
-          });
+          };
+          if (stage === "frame") {
+            return System.frame(name, body);
+          }
+          if (stage === "input") {
+            return System.input(name, body);
+          }
+          return System.tick(name, body);
+        };
         const app = yield* App.make(
           App.define({
             systems: [
-              noting("Clear").pipe(System.inStage("frame")),
+              noting("Clear", "frame"),
               noting("Tick"),
-              noting("Draw").pipe(System.inStage("frame")),
-              noting("Hud").pipe(
-                System.inStage("frame"),
+              noting("Draw", "frame"),
+              noting("Hud", "frame").pipe(
                 System.runIf(State.is(Phase, "paused"))
               ),
             ],
@@ -231,9 +243,7 @@ describe("the frame stage", () => {
         app.tick(1);
         expect(ran).toEqual(["Clear", "Draw", "Tick", "Tick"]);
         ran.length = 0;
-        yield* Effect.map(Phase, (phase) => phase.set("paused")).pipe(
-          Effect.provideService(World, app.world)
-        );
+        State.handleOf(app.world, Phase).set("paused");
         app.frame(0.5);
         // A state is entered by a tick, not by a frame.
         expect(ran).toEqual(["Clear", "Draw"]);
@@ -249,22 +259,29 @@ describe("the frame stage", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
-        const noting = (name: string, stage: System.Stage) =>
-          System.make(name, function* () {
+        const drawing = (
+          name: string,
+          stage: "preFrame" | "frame" | "postFrame"
+        ) =>
+          System.frame(name, function* () {
             // Each is told the frame, as any system that draws is.
             ran.push(`${name} ${(yield* Frame).alpha}`);
           }).pipe(System.inStage(stage));
         const app = yield* App.make(
           App.define({
             systems: [
-              noting("Fit", "postFrame"),
-              noting("Clear", "frame"),
-              noting("Show", "postFrame"),
-              noting("Draw", "frame"),
-              noting("Tick", "update"),
-              noting("Load", "preFrame"),
-              noting("Hud", "frame"),
-              noting("Listen", "input"),
+              drawing("Fit", "postFrame"),
+              drawing("Clear", "frame"),
+              drawing("Show", "postFrame"),
+              drawing("Draw", "frame"),
+              System.tick("Tick", function* () {
+                ran.push("Tick");
+              }),
+              drawing("Load", "preFrame"),
+              drawing("Hud", "frame"),
+              System.input("Listen", function* () {
+                ran.push("Listen");
+              }),
             ],
           })
         );
@@ -303,39 +320,20 @@ describe("the frame stage", () => {
   });
 
   it("is the frame stage in all three as far as what a system may do goes: none changes the game, and none is a hook", () => {
-    for (const stage of ["preFrame", "postFrame"] as const) {
-      const made = App.make(
-        App.define({
-          systems: [
-            System.make("Vandal", function* () {
-              (yield* Score).points = 1;
-            }).pipe(System.inStage(stage)),
-          ],
-        })
-      );
-      const app = run(made);
-      expect(() => app.frame(0), stage).toThrow('singleton "fr/Score"');
-      expect(app.world.singleton(Score).points).toBe(0);
-      // A tick does not run it.
-      app.tick(1);
-      expect(app.world.singleton(Score).points).toBe(0);
-      expect(
-        () =>
-          run(
-            App.make(
-              App.define({
-                systems: [
-                  System.make("Splash", function* () {}).pipe(
-                    System.inStage(stage),
-                    State.onEnter(Phase, "paused")
-                  ),
-                ],
-              })
-            )
-          ),
-        stage
-      ).toThrow(/System "Splash" is a hook and is in the frame stage/);
-    }
+    System.frame(
+      "Vandal",
+      // @ts-expect-error a frame system cannot write a singleton
+      function* () {
+        (yield* Score.writes).points = 1;
+      }
+    );
+    const pre = System.frame("Pre", function* () {}).pipe(
+      System.inStage("preFrame")
+    );
+    const post = System.frame("Post", function* () {}).pipe(
+      System.inStage("postFrame")
+    );
+    expect([pre.stage, post.stage]).toEqual(["preFrame", "postFrame"]);
   });
 
   it("is told how far the frame is between two ticks", () => {
@@ -343,15 +341,15 @@ describe("the frame stage", () => {
       Effect.gen(function* () {
         const frames: unknown[] = [];
         const drawn: number[] = [];
-        const Draw = System.make("Draw", function* () {
+        const Draw = System.frame("Draw", function* () {
           const frame = yield* Frame;
           const { delta } = yield* Time;
           frames.push({ ...frame });
           // Where the ball is now: where the last tick left it, and on.
-          (yield* Balls).each((ball) => {
+          (yield* Seen).each((ball) => {
             drawn.push(ball.x + ball.vx * delta * frame.alpha);
           });
-        }).pipe(System.inStage("frame"));
+        });
         const app = yield* App.make(App.define({ systems: [Roll, Draw] }));
         app.world.spawn(Ball.of({ x: 0, vx: 10 }));
         app.tick(0.5);
@@ -373,9 +371,9 @@ describe("the frame stage", () => {
     run(
       Effect.gen(function* () {
         const alphas: number[] = [];
-        const Draw = System.make("Draw", function* () {
+        const Draw = System.frame("Draw", function* () {
           alphas.push(Math.round((yield* Frame).alpha * 100) / 100);
-        }).pipe(System.inStage("frame"));
+        });
         const app = yield* App.make(App.define({ systems: [Roll, Draw] }));
         const step = Driver.fixedStep(app, { hz: 10 });
         // Frames of 40 ms against ticks of 100 ms.
@@ -396,69 +394,93 @@ describe("the frame stage", () => {
     );
   });
 
-  it("cannot change the game: whatever would throws, and names what did", () => {
+  it("cannot change the game: the ways that would are refused where they are written", () => {
     const Pinged = Event.define("fr/Pinged", Schema.Struct({}));
-    const attempts: Record<string, Effect.Effect<unknown, never, BuiltIn>> = {
-      'assignment to "fr/Ball.x"': Effect.map(Balls, (balls) =>
-        balls.each((ball) => {
+    System.frame(
+      "Assign",
+      // @ts-expect-error a frame system cannot write a query
+      function* () {
+        (yield* Balls).each((ball) => {
           ball.x = 99;
-        })
-      ),
-      "World.set()": Effect.gen(function* () {
-        const [first] = (yield* Balls).entities();
+        });
+      }
+    );
+    System.frame(
+      "Set",
+      // @ts-expect-error a frame system cannot set a component
+      function* () {
+        const [first] = (yield* Seen).entities();
         (yield* World.writes(Ball)).set(first!, Ball, { x: 99 });
-      }),
-      "A spawn": Effect.map(Commands.spawns(Ball), (commands) =>
-        commands.spawn(Ball)
-      ),
-      "Commands.despawn()": Effect.gen(function* () {
-        (yield* Commands).despawn((yield* Balls).entities()[0]!);
-      }),
-      'singleton "fr/Score"': Effect.map(Score, (score) => {
-        score.points = 1;
-      }),
-      'singleton "fr/Phase"': Effect.map(Phase, (phase) => phase.set("paused")),
-      'event "fr/Pinged" was emitted in the frame stage': Effect.map(
-        Pinged,
-        (pinged) => pinged.emit({})
-      ),
-      // Around a system's handle, through the bus an app also hands out.
-      'The event "fr/Pinged" was emitted in the frame stage or the input stage':
-        Effect.map(Effect.service(Events), (events) => events.emit(Pinged, {})),
-    };
-    for (const [what, attempt] of Object.entries(attempts)) {
-      run(
-        Effect.gen(function* () {
-          const Vandal = System.make("Vandal", function* () {
-            yield* attempt;
-          }).pipe(System.inStage("frame"));
-          const app = yield* App.make(App.define({ systems: [Roll, Vandal] }), {
-            checkpointEvery: 1,
-          });
-          app.world.spawn(Ball.of({ x: 1, vx: 1 }));
-          app.tick(1);
-          const before = app.world.hash();
-          expect(() => app.frame(0), what).toThrow(what);
-          expect(app.world.hash(), what).toBe(before);
-          expect(app.commands.size, what).toBe(0);
-          expect(app.events.pending(Pinged), what).toBe(0);
-          // And the app is not left frozen, or in the middle of a frame.
-          app.tick(1);
-          expect(app.world.frozen).toBe(false);
-          const exit = app.frameExit(0);
-          expect(Exit.isFailure(exit), what).toBe(true);
-        })
-      );
-    }
+      }
+    );
+    System.frame(
+      "Spawn",
+      // @ts-expect-error a frame system cannot spawn
+      function* () {
+        (yield* Commands.spawns(Ball)).spawn(Ball);
+      }
+    );
+    System.frame(
+      "Despawn",
+      // @ts-expect-error a frame system cannot despawn
+      function* () {
+        (yield* Commands).despawn((yield* Seen).entities()[0]!);
+      }
+    );
+    System.frame(
+      "Score",
+      // @ts-expect-error a frame system cannot write a singleton
+      function* () {
+        (yield* Score.writes).points = 1;
+      }
+    );
+    System.frame(
+      "Phase",
+      // @ts-expect-error a frame system cannot set a state
+      function* () {
+        (yield* Phase.sets).set("paused");
+      }
+    );
+    System.frame(
+      "Ping",
+      // @ts-expect-error a frame system cannot emit
+      function* () {
+        (yield* Pinged.emits).emit({});
+      }
+    );
+    // The bus still throws: a frame has it, and emitting there is refused.
+    run(
+      Effect.gen(function* () {
+        const Vandal = System.frame("Vandal", function* () {
+          (yield* Events).emit(Pinged, {});
+        });
+        const app = yield* App.make(App.define({ systems: [Roll, Vandal] }), {
+          checkpointEvery: 1,
+        });
+        app.world.spawn(Ball.of({ x: 1, vx: 1 }));
+        app.tick(1);
+        const before = app.world.hash();
+        expect(() => app.frame(0)).toThrow(
+          /was emitted in the frame stage or the input stage/
+        );
+        expect(app.world.hash()).toBe(before);
+        expect(app.commands.size).toBe(0);
+        expect(app.events.pending(Pinged)).toBe(0);
+        app.tick(1);
+        expect(app.world.frozen).toBe(false);
+        const exit = app.frameExit(0);
+        expect(Exit.isFailure(exit)).toBe(true);
+      })
+    );
   });
 
   it("draws its random numbers from a generator of its own, not the world's", () => {
     run(
       Effect.gen(function* () {
         const drawn: number[] = [];
-        const Sparkle = System.make("Sparkle", function* () {
+        const Sparkle = System.frame("Sparkle", function* () {
           drawn.push((yield* Random).next(), yield* EffectRandom.next);
-        }).pipe(System.inStage("frame"));
+        });
         const app = yield* App.make(App.define({ systems: [Sparkle, Roll] }), {
           seed: 5,
         });
@@ -495,14 +517,14 @@ describe("the frame stage", () => {
       Effect.gen(function* () {
         let cheat = true;
         const drawn: string[] = [];
-        const Cheat = System.make("Cheat", function* () {
+        const Cheat = System.frame("Cheat", function* () {
           if (cheat) {
             whole(yield* World).random.next();
           }
-        }).pipe(System.inStage("frame"));
-        const After = System.make("After", function* () {
+        });
+        const After = System.frame("After", function* () {
           drawn.push("After");
-        }).pipe(System.inStage("frame"));
+        });
         // Not checked with verifyFrames: this is found either way.
         const app = yield* App.make(
           App.define({ systems: [Cheat, After, Roll] }),
@@ -540,11 +562,11 @@ describe("the frame stage", () => {
     run(
       Effect.gen(function* () {
         // A button in the picture: pressed in the third frame.
-        const Button = System.make("Button", function* () {
+        const Button = System.frame("Button", function* () {
           if ((yield* Frame).count === 3) {
             (yield* Action.Actions).enqueue(Kick, { by: 4 });
           }
-        }).pipe(System.inStage("frame"));
+        });
         const Begin = Plugin.make("fr/Begin", {
           setup: Effect.map(Commands.spawns(Ball), (commands) => {
             commands.spawn(Ball.of({ x: 0, vx: 1 }));
@@ -575,9 +597,9 @@ describe("the frame stage", () => {
         expect(headless.world.hash()).toBe(app.world.hash());
         // Nor may a frame dispatch: that would change the game there and then.
         let own: App.Any | undefined;
-        const Hasty = System.make("Hasty", function* () {
+        const Hasty = System.frame("Hasty", function* () {
           own?.dispatchByName("fr/Kick", { by: 1 });
-        }).pipe(System.inStage("frame"));
+        });
         const hasty = yield* make([Hasty]);
         own = hasty;
         expect(() => hasty.frame(0)).toThrow(
@@ -593,11 +615,11 @@ describe("the frame stage", () => {
         let inFrame: (() => unknown) | undefined;
         let inTick: (() => unknown) | undefined;
         const drawn: number[] = [];
-        const Reenter = System.make("Reenter", function* () {
+        const Reenter = System.frame("Reenter", function* () {
           drawn.push((yield* Frame).count);
           inFrame?.();
-        }).pipe(System.inStage("frame"));
-        const InTick = System.make("InTick", function* () {
+        });
+        const InTick = System.tick("InTick", function* () {
           inTick?.();
         });
         const app: App.Any = yield* App.make(
@@ -629,31 +651,15 @@ describe("the frame stage", () => {
   });
 
   it("keeps real time out of the simulation, and hooks out of the frame stage", () => {
-    run(
-      Effect.gen(function* () {
-        const Peek = System.make("Peek", function* () {
-          void (yield* Frame).alpha;
-        });
-        const app = yield* App.make(App.define({ systems: [Peek] }));
-        expect(() => app.tick(1)).toThrow(
-          /Frame was read by a system that runs in the tick.*read Time instead/
-        );
-      })
+    System.tick(
+      "Peek",
+      // @ts-expect-error Frame is the frame stage's
+      function* () {
+        void (yield* Frame).alpha;
+      }
     );
-    expect(() =>
-      run(
-        App.make(
-          App.define({
-            systems: [
-              System.make("Splash", function* () {}).pipe(
-                System.inStage("frame"),
-                State.onEnter(Phase, "paused")
-              ),
-            ],
-          })
-        )
-      )
-    ).toThrow(/System "Splash" is a hook and is in the frame stage/);
+    const splash = State.onEnter(Phase, "paused", "Splash", function* () {});
+    expect(splash.stage).toBe("update");
   });
 });
 
@@ -665,20 +671,20 @@ describe("what the frame stage reads", () => {
       Effect.gen(function* () {
         const heard: number[] = [];
         const late: number[] = [];
-        const Listen = System.make("Listen", function* () {
+        const Listen = System.frame("Listen", function* () {
           for (const { at } of (yield* Bounced).read()) {
             heard.push(at);
           }
-        }).pipe(System.inStage("frame"));
-        const Late = System.make("Late", function* () {
+        });
+        const Late = System.tick("Late", function* () {
           if ((yield* Time).tick >= 4) {
             for (const { at } of (yield* Bounced).read()) {
               late.push(at);
             }
           }
         });
-        const Emit = System.make("Emit", function* () {
-          (yield* Bounced).emit({ at: (yield* Time).tick });
+        const Emit = System.tick("Emit", function* () {
+          (yield* Bounced.emits).emit({ at: (yield* Time).tick });
         });
         const app = yield* App.make(
           App.define({ systems: [Late, Emit, Listen] })
@@ -721,7 +727,7 @@ describe("what the frame stage reads", () => {
         // A system that sat ticks out is no different: when it reads
         // again it goes no further back than it could with no frame stage.
         const sat: number[] = [];
-        const Sometimes = System.make("Sometimes", function* () {
+        const Sometimes = System.tick("Sometimes", function* () {
           for (const { at } of (yield* Bounced).read()) {
             sat.push(at);
           }
@@ -768,11 +774,11 @@ describe("what the frame stage reads", () => {
     run(
       Effect.gen(function* () {
         const heard: number[] = [];
-        const Listen = System.make("Listen", function* () {
+        const Listen = System.frame("Listen", function* () {
           heard.push((yield* Bounced).read().length);
-        }).pipe(System.inStage("frame"));
-        const Emit = System.make("Emit", function* () {
-          (yield* Bounced).emit({ at: (yield* Time).tick });
+        });
+        const Emit = System.tick("Emit", function* () {
+          (yield* Bounced.emits).emit({ at: (yield* Time).tick });
         });
         const app = yield* App.make(App.define({ systems: [Emit, Listen] }));
         // A frame stage that keeps running is kept for, however long.
@@ -810,18 +816,18 @@ describe("what the frame stage reads", () => {
       Effect.gen(function* () {
         const drawn: number[] = [];
         const counted: number[] = [];
-        const Draw = System.make("Draw", function* () {
+        const Draw = System.frame("Draw", function* () {
           let rows = 0;
           // Raw columns of what it watches: nothing is written in a frame.
-          (yield* Moved).eachChunk((start, end) => {
+          (yield* Watched).eachChunk((start, end) => {
             rows += end - start;
           });
           drawn.push(rows);
-        }).pipe(System.inStage("frame"));
-        const Count = System.make("Count", function* () {
+        });
+        const Count = System.tick("Count", function* () {
           counted.push((yield* Moved).entities().length);
         });
-        const Nudge = System.make("Nudge", function* () {
+        const Nudge = System.tick("Nudge", function* () {
           const { tick } = yield* Time;
           (yield* Balls).each((ball, entity) => {
             if (entity === tick % 3) {
@@ -881,25 +887,25 @@ describe("what the frame stage reads", () => {
   it("changes nothing: a game drawn every frame is the game that was never drawn", () => {
     run(
       Effect.gen(function* () {
-        const Watch = System.make("Watch", function* () {
+        const Watch = System.frame("Watch", function* () {
           let sum = 0;
-          (yield* Balls).each((ball) => {
+          (yield* Seen).each((ball) => {
             sum += ball.x;
           });
-          (yield* Moved).each(() => {});
+          (yield* Watched).each(() => {});
           (yield* Bounced).read();
           void (yield* Score).points;
           void (yield* Phase).value;
           void (yield* Random).next();
           void sum;
-        }).pipe(System.inStage("frame"));
-        const Tally = System.make("Tally", function* () {
-          (yield* Score).points += (yield* Bounced).read().length;
+        });
+        const Tally = System.tick("Tally", function* () {
+          (yield* Score.writes).points += (yield* Bounced).read().length;
           const random = yield* Random;
           (yield* Balls).each((ball) => {
             ball.x += random.next();
           });
-          (yield* Bounced).emit({ at: 0 });
+          (yield* Bounced.emits).emit({ at: 0 });
         });
         const make = (systems: readonly System.System<never, BuiltIn>[]) =>
           Effect.gen(function* () {
@@ -935,20 +941,21 @@ describe("what the frame stage reads", () => {
 
 describe("a frame stage that is checked", () => {
   const Sneak = (how: "raw" | "random" | "none") =>
-    System.make("Sneak", function* () {
+    System.frame("Sneak", function* () {
       if (how === "raw") {
-        (yield* Balls).eachChunk((start, end, balls) => {
+        (yield* Seen).eachChunk((start, end, balls) => {
           for (let i = start; i < end; i++) {
+            // @ts-expect-error a read query's columns are not assigned
             balls.x[i]! += 1;
           }
         });
       } else if (how === "random") {
         whole(yield* World).random.next();
       }
-    }).pipe(System.inStage("frame"));
-  const Honest = System.make("Honest", function* () {
-    void (yield* Balls).count();
-  }).pipe(System.inStage("frame"));
+    });
+  const Honest = System.frame("Honest", function* () {
+    void (yield* Seen).count();
+  });
 
   it("holds what a system does in place of running to the same, and names that system", () => {
     run(
@@ -957,9 +964,10 @@ describe("a frame stage that is checked", () => {
         const Idle = Honest.pipe(
           System.runIf(Effect.succeed(false)),
           System.otherwise(
-            Effect.map(Balls, (balls) => {
+            Effect.map(Seen, (balls) => {
               balls.eachChunk((start, end, ball) => {
                 for (let i = start; i < end; i++) {
+                  // @ts-expect-error a read query's columns are not assigned
                   ball.x[i] = 99;
                 }
               });

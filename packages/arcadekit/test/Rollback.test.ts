@@ -495,7 +495,7 @@ describe("a rollback session", () => {
     const Holder = Component.define("rb/Holder", {
       thing: Field.json<unknown>(),
     });
-    const Spoil = System.make("rb/Spoil", function* () {
+    const Spoil = System.tick("rb/Spoil", function* () {
       if ((yield* Time).tick === 2) {
         (yield* Query.all(Holder).pipe(Query.writes(Holder))).each((holder) => {
           // Not plain data: no snapshot can hold it.

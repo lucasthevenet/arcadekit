@@ -51,7 +51,7 @@ const take = Action.handler(Take, function* ({ coin }) {
   return held.value;
 });
 
-const Drift = System.make("Drift", function* () {
+const Drift = System.tick("Drift", function* () {
   const random = yield* Random;
   (yield* Coins).each((coin) => {
     coin.x += random.next() - 0.5;
@@ -63,7 +63,7 @@ const Drift = System.make("Drift", function* () {
  * recorded game did not do.
  */
 const fault = (onTick: number, kind: "nudge" | "lose") =>
-  System.make("Fault", function* () {
+  System.tick("Fault", function* () {
     if ((yield* Time).tick !== onTick) {
       return;
     }
@@ -266,7 +266,7 @@ describe("checkpoints", () => {
 
   it("are taken when a tick is over, after the commands its systems queued are applied", () => {
     // The last system's commands are the last thing a tick applies.
-    const Mint = System.make("Mint", function* () {
+    const Mint = System.tick("Mint", function* () {
       (yield* Commands.spawns(Coin)).spawn(Coin.of({ value: 1, x: 0 }));
     });
     withApp(game({ checkpointEvery: 1, faulty: Mint }), (app) => {
@@ -359,7 +359,7 @@ describe("checkpoints", () => {
     });
 
     let inside: unknown;
-    const Asks = System.make("Asks", function* () {
+    const Asks = System.tick("Asks", function* () {
       try {
         asking!.checkpoint();
       } catch (error) {
@@ -702,7 +702,7 @@ const chain = Action.handler(Chain, function* ({ by }) {
 });
 
 /** An AI: a system that makes a move of its own every few ticks. */
-const Bot = System.make("Bot", function* () {
+const Bot = System.tick("Bot", function* () {
   const { tick } = yield* Time;
   const actions = yield* Action.Actions;
   if (tick % 3 === 0) {
@@ -713,7 +713,7 @@ const Bot = System.make("Bot", function* () {
   }
 });
 /** Counts refusals in the world, so that a refusal a replay misses shows. */
-const Referee = System.make("Referee", function* () {
+const Referee = System.tick("Referee", function* () {
   const refused = (yield* Action.Rejected).read().length;
   (yield* Tallies).each((tally) => {
     tally.rejections += refused;
@@ -726,9 +726,9 @@ const Patience = Singleton.define(
   { left: 0 }
 );
 /** A system that makes a move of its own now and then. */
-const Heckler = System.make("Heckler", function* () {
+const Heckler = System.tick("Heckler", function* () {
   const random = yield* Random;
-  const patience = yield* Patience;
+  const patience = yield* Patience.writes;
   if (patience.left > 1) {
     patience.left -= 1;
     return;
@@ -839,7 +839,7 @@ describe("app.enqueue from inside the simulation", () => {
     const relay = Action.handler(Relay, function* ({ by }) {
       enqueue?.(by);
     });
-    const Clock = System.make("Clock", function* () {
+    const Clock = System.tick("Clock", function* () {
       enqueue?.(1);
     });
     const app = yield* App.make(
@@ -1074,7 +1074,7 @@ describe("a recording", () => {
   // A walker whose stride is the tick's delta: a tick of another length
   // leaves it somewhere else.
   const Walker = Component.define("rp/Walker", { x: Field.f64 });
-  const Walk = System.make("rp/Walk", function* () {
+  const Walk = System.tick("rp/Walk", function* () {
     const { delta } = yield* Time;
     (yield* Query.all(Walker).pipe(Query.writes(Walker))).each((walker) => {
       walker.x += delta;

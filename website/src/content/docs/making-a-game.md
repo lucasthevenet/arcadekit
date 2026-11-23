@@ -61,13 +61,13 @@ const BASKET_SPEED = 6;
 
 const Coins = Query.all(Position, Fall).pipe(Query.writes(Position));
 
-const Steer = System.make("catch/Steer", function* () {
-  const basket = yield* Basket;
+const Steer = System.tick("catch/Steer", function* () {
+  const basket = yield* Basket.writes;
   const { delta } = yield* Time;
   basket.x += basket.dx * BASKET_SPEED * delta;
 });
 
-const Drop = System.make("catch/Drop", function* () {
+const Drop = System.tick("catch/Drop", function* () {
   const { delta } = yield* Time;
   (yield* Coins).each((position, fall) => {
     position.y -= fall.speed * delta;
@@ -83,10 +83,10 @@ export const Caught = Event.define(
   Schema.Struct({ total: Schema.Int })
 );
 
-const Land = System.make("catch/Land", function* () {
-  const basket = yield* Basket;
+const Land = System.tick("catch/Land", function* () {
+  const basket = yield* Basket.writes;
   const commands = yield* Commands;
-  const caught = yield* Caught;
+  const caught = yield* Caught.emits;
   (yield* Coins).each((position, _fall, coin) => {
     if (position.y > 0) {
       return;
@@ -119,7 +119,7 @@ export const Move = Action.define(
 export class GameOver extends Data.TaggedError("GameOver")<{}> {}
 
 const move = Action.handler(Move, function* ({ dx }) {
-  const basket = yield* Basket;
+  const basket = yield* Basket.writes;
   if (basket.lives === 0) {
     return yield* new GameOver();
   }
@@ -134,8 +134,8 @@ A coin falls every second. A system runs to the end of its tick and waits for no
 ```ts title="rules.ts"
 const Cloud = Singleton.define("catch/Cloud", { wait: Field.f32 }, { wait: 0 });
 
-const Rain = System.make("catch/Rain", function* () {
-  const cloud = yield* Cloud;
+const Rain = System.tick("catch/Rain", function* () {
+  const cloud = yield* Cloud.writes;
   cloud.wait -= (yield* Time).delta;
   if (cloud.wait > 0) {
     return;
@@ -263,7 +263,7 @@ class Screen extends Context.Service<
 const Coins = Query.all(Position, Fall);
 const scale = 40;
 
-const Draw = System.make("catch/Draw", function* () {
+const Draw = System.frame("catch/Draw", function* () {
   const { context } = yield* Screen;
   const basket = yield* Basket;
   context.clearRect(0, 0, canvas.width, canvas.height);
@@ -274,7 +274,7 @@ const Draw = System.make("catch/Draw", function* () {
   });
   context.fillRect(toX(basket.x) - scale / 2, toY(0), scale, 6);
   context.fillText(`${basket.caught} caught, ${basket.lives} left`, 10, 20);
-}).pipe(System.inStage("frame"));
+});
 
 const Game = Plugin.make("catch/Game", {
   plugins: [Rules],

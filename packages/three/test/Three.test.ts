@@ -650,7 +650,7 @@ describe("Three.instances", () => {
       const MovingFlat = Query.all(Transform2d.Position, Velocity).pipe(
         Query.writes(Transform2d.Position)
       );
-      const Move = System.make("th/Move", function* () {
+      const Move = System.tick("th/Move", function* () {
         const { delta } = yield* Time;
         (yield* Moving).eachChunk((from, to, position, velocity) => {
           for (let i = from; i < to; i++) {
@@ -1126,7 +1126,7 @@ describe("a flat game's Transform2d", () => {
 describe("an entity drawn between two ticks", () => {
   const Flat = Transform2d;
   /** Moves every rock ten along x a tick, and every flat one too. */
-  const Slide = System.make("th/Slide", function* () {
+  const Slide = System.tick("th/Slide", function* () {
     (yield* Query.all(Position).pipe(Query.writes(Position))).each(
       (position) => {
         position.x += 10;
@@ -2765,12 +2765,12 @@ describe("Three.plugin", () => {
   it("draws the scene once per frame, after everything that fills it, through the camera the game left it", () => {
     const camera = new OrthographicCamera(-1, 1, 1, -1);
     const order: string[] = [];
-    const Aim = System.make("th/Aim", function* () {
+    const Aim = System.frame("th/Aim", function* () {
       const three = yield* Three.Scene;
       order.push("aim");
       three.camera = camera;
       // Nothing said of when: what draws the scene is of a later stage.
-    }).pipe(System.inStage("frame"));
+    });
     const Ships = Three.objects("th/Flagships", {
       of: Ship,
       make: () => {
@@ -2839,7 +2839,7 @@ describe("Three.plugin", () => {
   });
 
   it("leaves the game as it found it: a game that is drawn is the same game as one that is not", () => {
-    const Spin = System.make("th/Spin", function* () {
+    const Spin = System.tick("th/Spin", function* () {
       const { delta, tick } = yield* Time;
       const commands = yield* Commands.spawns(Rock, Position, Ship, Rotation);
       (yield* Query.all(Position).pipe(Query.writes(Position))).each(

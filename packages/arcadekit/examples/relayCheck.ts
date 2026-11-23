@@ -37,7 +37,7 @@ const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
     return yield* new NotSeated({ from });
   }
-  (yield* Purse)[from] += amount;
+  (yield* Purse.writes)[from] += amount;
 });
 
 const wait = (ms: number) =>

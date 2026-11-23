@@ -138,7 +138,7 @@ describe("a game that is put back to a moment", () => {
 
   it("is as settled as it was", () => {
     // A clock that runs for three ticks, and asks for each of them.
-    const Clock = System.make("rw/Clock", function* () {
+    const Clock = System.tick("rw/Clock", function* () {
       if ((yield* Time).tick < 3) {
         (yield* Ticks).more();
       }
@@ -199,11 +199,11 @@ describe("a game that is put back to a moment", () => {
     const Rang = Event.define("rw/Rang", Schema.Struct({ n: Schema.Int }));
     const heard: number[][] = [];
     // Listed before the system that emits: it hears each event a tick late.
-    const Listen = System.make("rw/Listen", function* () {
+    const Listen = System.tick("rw/Listen", function* () {
       heard.push((yield* Rang).read().map((rang) => rang.n));
     });
-    const Ring = System.make("rw/Ring", function* () {
-      (yield* Rang).emit({ n: (yield* Time).tick });
+    const Ring = System.tick("rw/Ring", function* () {
+      (yield* Rang.emits).emit({ n: (yield* Time).tick });
     });
     withApp(App.make(App.define({ systems: [Listen, Ring] })), (app) => {
       app.tick(DELTA);
@@ -225,13 +225,13 @@ describe("a game that is put back to a moment", () => {
     const Dot = Component.define("rw/Dot", { x: Field.f32 });
     const NewDots = Query.all(Dot).pipe(Query.added(Dot));
     const seen = { tick: [] as number[], frame: [] as number[] };
-    const Count = System.make("rw/Count", function* () {
+    const Count = System.tick("rw/Count", function* () {
       seen.tick.push((yield* NewDots).entities().length);
     });
-    const Draw = System.make("rw/Draw", function* () {
+    const Draw = System.frame("rw/Draw", function* () {
       seen.frame.push((yield* NewDots).entities().length);
-    }).pipe(System.inStage("frame"));
-    const Grow = System.make("rw/Grow", function* () {
+    });
+    const Grow = System.tick("rw/Grow", function* () {
       (yield* Commands.spawns(Dot)).spawn(Dot.of({ x: 1 }));
     });
     // Listed ahead of what it watches, so that a dot is waiting for it when the
@@ -305,7 +305,7 @@ describe("a game that is put back to a moment", () => {
       );
     });
     let inside: App.Any | undefined;
-    const Meddle = System.make("rw/Meddle", function* () {
+    const Meddle = System.tick("rw/Meddle", function* () {
       yield* Effect.sync(() => {
         if (inside !== undefined && inside.time.tick === 2) {
           Timeline.capture(inside);
@@ -320,7 +320,7 @@ describe("a game that is put back to a moment", () => {
       );
     });
     const taken: Timeline.Moment[] = [];
-    const Undo = System.make("rw/Undo", function* () {
+    const Undo = System.tick("rw/Undo", function* () {
       yield* Effect.sync(() => {
         if (inside !== undefined && taken.length > 0) {
           Timeline.rewind(inside, taken[0]!);
@@ -389,9 +389,9 @@ describe("the input stage across a rewind and a save", () => {
     const fire = Action.handler(Fire, function* () {
       yield* Effect.sync(() => fired.push(1));
     });
-    const Press = System.make("rw/Press", function* () {
+    const Press = System.input("rw/Press", function* () {
       (yield* Action.Actions).enqueue(Fire, {});
-    }).pipe(System.inStage("input"));
+    });
     return {
       fired,
       game: App.define({ systems: [Press], handlers: [fire] }),
@@ -445,9 +445,7 @@ describe("the input stage across a rewind and a save", () => {
   });
 
   it("leaves the hash as it was: that the devices were heard is no part of the game", () => {
-    const Idle = System.make("rw/Idle", function* () {}).pipe(
-      System.inStage("input")
-    );
+    const Idle = System.input("rw/Idle", function* () {});
     withApp(App.make(App.define({ systems: [Idle] })), (app) => {
       const before = app.world.hash();
       app.input();
@@ -476,11 +474,11 @@ describe("what the stages between ticks hear across a rewind", () => {
   const Chimed = Event.define("rw/Chimed", Schema.Struct({ n: Schema.Int }));
   const Chime = Action.define("rw/Chime", Schema.Struct({ n: Schema.Int }));
   const chime = Action.handler(Chime, function* ({ n }) {
-    (yield* Chimed).emit({ n });
+    (yield* Chimed.emits).emit({ n });
   });
   // Each tick rings its number twice, and once more for each bell.
-  const Ring = System.make("rw/Ring", function* () {
-    const rang = yield* Rang;
+  const Ring = System.tick("rw/Ring", function* () {
+    const rang = yield* Rang.emits;
     const { tick } = yield* Time;
     rang.emit({ n: tick });
     rang.emit({ n: tick });
@@ -489,12 +487,12 @@ describe("what the stages between ticks hear across a rewind", () => {
   /** A game whose stages between ticks listen to one of the two events. */
   const listening = (to: typeof Rang = Rang) => {
     const heard = { frame: [] as number[], input: [] as number[] };
-    const Draw = System.make("rw/Draw", function* () {
+    const Draw = System.frame("rw/Draw", function* () {
       heard.frame.push(...(yield* to).read().map((rang) => rang.n));
-    }).pipe(System.inStage("frame"));
-    const Keys = System.make("rw/Keys", function* () {
+    });
+    const Keys = System.input("rw/Keys", function* () {
       heard.input.push(...(yield* to).read().map((rang) => rang.n));
-    }).pipe(System.inStage("input"));
+    });
     const game = App.define({
       systems: [Ring, Draw, Keys],
       handlers: [louder, chime],
@@ -719,7 +717,7 @@ describe("what the stages between ticks hear across a rewind", () => {
 describe("Session.syncTest", () => {
   const Mark = Component.define("vr/Mark", { n: Field.i32 });
   const Marks = Query.all(Mark);
-  const Steady = System.make("vr/Steady", function* () {
+  const Steady = System.tick("vr/Steady", function* () {
     (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: (yield* Time).tick }));
   });
   const failure = (run: () => void): unknown => {
@@ -733,11 +731,11 @@ describe("Session.syncTest", () => {
 
   it("names the system that keeps what it reads outside the world", () => {
     let outside = 0;
-    const Leaky = System.make("vr/Leaky", function* () {
+    const Leaky = System.tick("vr/Leaky", function* () {
       outside++;
       (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: outside }));
     });
-    const After = System.make("vr/After", function* () {
+    const After = System.tick("vr/After", function* () {
       (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: 0 }));
     });
     withApp(
@@ -773,7 +771,7 @@ describe("Session.syncTest", () => {
 
   it("names the system that fails on one run and not the other", () => {
     let runs = 0;
-    const Once = System.make("vr/Once", function* () {
+    const Once = System.tick("vr/Once", function* () {
       runs++;
       if (runs === 2) {
         return yield* Effect.fail("the second time");
@@ -830,16 +828,16 @@ describe("Session.syncTest", () => {
     const New = Query.all(Mark).pipe(Query.added(Mark));
     const seen = { heard: [] as number[], added: [] as number[] };
     const keys: number[] = [];
-    const Ring = System.make("vr/Ring", function* () {
-      (yield* Rang).emit({ n: (yield* Time).tick });
+    const Ring = System.tick("vr/Ring", function* () {
+      (yield* Rang.emits).emit({ n: (yield* Time).tick });
     });
-    const Draw = System.make("vr/Draw", function* () {
+    const Draw = System.frame("vr/Draw", function* () {
       seen.heard.push(...(yield* Rang).read().map((rang) => rang.n));
       seen.added.push((yield* New).entities().length);
-    }).pipe(System.inStage("frame"));
-    const Keys = System.make("vr/Keys", function* () {
+    });
+    const Keys = System.input("vr/Keys", function* () {
       keys.push(...(yield* Rang).read().map((rang) => rang.n));
-    }).pipe(System.inStage("input"));
+    });
     withApp(
       Session.syncTest(App.define({ systems: [Steady, Ring, Draw, Keys] })),
       (test) => {
@@ -859,7 +857,7 @@ describe("Session.syncTest", () => {
     const Held = Component.define("vr/Held", {
       thing: Field.json<unknown>(),
     });
-    const Hold = System.make("vr/Hold", function* () {
+    const Hold = System.tick("vr/Hold", function* () {
       (yield* Commands.spawns(Held)).spawn(Held.of({ thing: () => 1 }));
     });
     withApp(Session.syncTest(App.define({ systems: [Hold] })), (test) => {

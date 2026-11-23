@@ -97,8 +97,8 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
     return yield* new NoSuchCoin({ coin });
   }
   (yield* Commands).despawn(coin);
-  (yield* Taken).emit({ value: held.value });
-  const purse = yield* Purse;
+  (yield* Taken.emits).emit({ value: held.value });
+  const purse = yield* Purse.writes;
   purse.taken += 1;
   if (by === "ada") {
     purse.ada += held.value;
@@ -111,7 +111,7 @@ export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
     return yield* new Stranger({ from });
   }
-  (yield* Purse)[from] += amount;
+  (yield* Purse.writes)[from] += amount;
   return from;
 });
 export const fire = Action.handler(Fire, function* () {
@@ -126,7 +126,7 @@ export const whisper = Action.handler(Whisper, function* () {
   // Nothing: it is here to be enqueued.
 });
 
-export const Drift = System.make("ls/Drift", function* () {
+export const Drift = System.tick("ls/Drift", function* () {
   const random = yield* Random;
   (yield* Coins).each((coin) => {
     coin.x += random.next() - 0.5;
@@ -137,8 +137,8 @@ export const Drift = System.make("ls/Drift", function* () {
  * be from a change query: both have a place of their own in what they
  * read, which a tick that is run again has to find where it was.
  */
-export const Tally = System.make("ls/Tally", function* () {
-  const purse = yield* Purse;
+export const Tally = System.tick("ls/Tally", function* () {
+  const purse = yield* Purse.writes;
   for (const taken of (yield* Taken).read()) {
     purse.tallied += taken.value;
   }
@@ -148,7 +148,7 @@ export const Tally = System.make("ls/Tally", function* () {
   }
 });
 /** The simulation's own player: it drops a coin now and then. */
-export const Bot = System.make("ls/Bot", function* () {
+export const Bot = System.tick("ls/Bot", function* () {
   if ((yield* Time).tick % 7 === 3) {
     (yield* Action.Actions).enqueue(Drop, {
       by: "edsger" as const,
@@ -165,7 +165,7 @@ let glitch: { tick: number; worlds: Set<EcsWorld> | "all" } | undefined;
 export const setGlitch = (to: typeof glitch): void => {
   glitch = to;
 };
-export const Fault = System.make("ls/Fault", function* () {
+export const Fault = System.tick("ls/Fault", function* () {
   if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
     return;
   }
@@ -182,11 +182,11 @@ export const Fault = System.make("ls/Fault", function* () {
 });
 /** What each app's input stage heard refused, in the order it heard it. */
 export const refusals: string[] = [];
-export const Hear = System.make("ls/Hear", function* () {
+export const Hear = System.input("ls/Hear", function* () {
   for (const refusal of (yield* Action.Rejected).read()) {
     refusals.push(refusal.action);
   }
-}).pipe(System.inStage("input"));
+});
 export const Controls = Input.bind(
   "ls/Controls",
   Input.onPress("Space", Fire, {})

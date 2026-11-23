@@ -49,7 +49,6 @@ import { Context, Effect, Layer } from "effect";
 import * as Assets from "./Assets";
 import type * as Event from "./Event";
 import * as Plugin from "./Plugin";
-import { World, whole } from "./Services";
 import type { Events } from "./Services";
 import * as System from "./System";
 
@@ -344,9 +343,6 @@ const playerLayer = Layer.effect(
   Player,
   Effect.gen(function* () {
     const output = yield* Output;
-    // Between ticks an app's world is frozen: that is how the stages that
-    // may play are told from the tick.
-    const world = whole(yield* World);
     // What each channel was last told: the output hears of a change only.
     // And what this frame's systems have said of it so far, if any has:
     // kept in the same record, so that a frame makes none.
@@ -383,11 +379,6 @@ const playerLayer = Layer.effect(
     return {
       audible: output !== silent,
       play(cue, options) {
-        if (!world.frozen) {
-          throw new Error(
-            `The cue "${nameOf(cue)}" was played in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Emit an event for what happened, and play what it sounds like from a system of the frame stage, which Sound.cues makes.`
-          );
-        }
         const volume = Math.max(0, options?.volume ?? 1);
         const already = asked.get(cue);
         if (already === undefined) {
@@ -425,11 +416,6 @@ const playerLayer = Layer.effect(
         asked.clear();
       },
       music(channel, track, options) {
-        if (!world.frozen) {
-          throw new Error(
-            `The music of "${channel}" was set in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Say what should be playing from a system of the frame stage, which Sound.music makes, from the game as it is.`
-          );
-        }
         const volume =
           track === undefined ? 0 : Math.max(0, options?.volume ?? 1);
         const once = track !== undefined && options?.once === true;
@@ -492,7 +478,7 @@ const playerLayer = Layer.effect(
  * plugin whose systems are made with `Sound.cues` lists it in `plugins`.
  */
 /** Plays what the frame's systems asked to hear, once they have all run. */
-const Flush = System.make("arcadekit/Sound.Flush", function* () {
+const Flush = System.frame("arcadekit/Sound.Flush", function* () {
   (yield* Player)._flush();
 }).pipe(System.inStage("postFrame"));
 
@@ -648,7 +634,7 @@ export function cues(
     PlayerShape,
     { readonly assets: unknown; readonly lines: Heard }
   >();
-  return System.make(name, function* () {
+  return System.frame(name, function* () {
     const player = yield* Player;
     if (!player.audible) {
       return;
@@ -688,7 +674,7 @@ export function cues(
         }
       }
     }
-  }).pipe(System.inStage("frame"));
+  });
 }
 
 // --- music: what should be heard, for as long as the game is as it is ----------------
@@ -756,14 +742,19 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *
  * @category Systems
  */
-export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
+export function music<Eff extends Effect.Effect<unknown, unknown, unknown>>(
+  name: string,
+  body: System.FrameBody<Eff, TrackOf>,
+  options?: { readonly fade?: number; readonly channel?: string }
+): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player>;
+export function music<Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, TrackOf, never>,
   options: { readonly fade?: number; readonly channel?: string } = {}
-): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player> => {
+): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player> {
   const pick = Effect.gen(body);
   const channel = options.channel ?? MUSIC;
-  return System.make(name, function* () {
+  return System.raw(name, "frame", function* () {
     const player = yield* Player;
     if (!player.audible) {
       return;
@@ -781,12 +772,11 @@ export const music = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
       player.music(channel, picked, options);
     }
   }).pipe(
-    System.inStage("frame"),
     // Not run, it is not asked, and there is nothing it says should play.
     System.otherwise(
       Effect.map(Player, (player) => {
         player.music(channel, undefined, options);
       })
     )
-  ) as System.System<System.GenError<Eff>, System.GenServices<Eff> | Player>;
-};
+  );
+}

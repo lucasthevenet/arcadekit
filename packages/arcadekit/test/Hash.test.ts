@@ -673,7 +673,7 @@ const withApp = <T, A>(
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
 describe("the hash of an app's world", () => {
-  const Drift = System.make("Drift", function* () {
+  const Drift = System.tick("Drift", function* () {
     const random = yield* Random;
     const commands = yield* Commands.spawns(Body);
     const bodies = yield* Query.all(Body).pipe(Query.writes(Body));
@@ -712,7 +712,7 @@ describe("the hash of an app's world", () => {
   it("shows the first tick at which one of them does something else", () => {
     // The same game, but on tick 40 one machine rounds a number differently.
     let tick = 0;
-    const Wrong = System.make("Wrong", function* () {
+    const Wrong = System.tick("Wrong", function* () {
       tick++;
       if (tick === 40) {
         let first = true;
@@ -757,14 +757,14 @@ describe("the hash of an app's world", () => {
     const push = Action.handler(Push, function* () {});
     // A number the world doesn't keep: only the event tells it apart.
     let ringing: number | undefined;
-    const Ring = System.make("hash/Ring", function* () {
+    const Ring = System.tick("hash/Ring", function* () {
       if (ringing !== undefined) {
-        (yield* Rang).emit({ n: ringing });
+        (yield* Rang.emits).emit({ n: ringing });
       }
     });
-    const Watch = System.make("hash/Watch", function* () {
+    const Watch = System.frame("hash/Watch", function* () {
       (yield* Rang).read();
-    }).pipe(System.inStage("frame"));
+    });
     const make = () =>
       App.make(App.define({ systems: [Ring, Watch], handlers: [push] }), {
         seed: 5,
@@ -818,14 +818,14 @@ describe("the hash of an app's world", () => {
     });
     let ringing = true;
     // Before the system that rings: it hears a ring on the tick after.
-    const Hear = System.make("hash/Hear", function* () {
+    const Hear = System.tick("hash/Hear", function* () {
       for (const { n } of (yield* Rang).read()) {
         heard.push(n);
       }
     });
-    const Ring = System.make("hash/Ring2", function* () {
+    const Ring = System.tick("hash/Ring2", function* () {
       if (ringing) {
-        (yield* Rang).emit({ n: 1 });
+        (yield* Rang.emits).emit({ n: 1 });
       }
     });
     withApp(

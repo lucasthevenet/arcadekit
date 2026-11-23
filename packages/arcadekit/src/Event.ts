@@ -4,10 +4,13 @@
  *
  *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
  *
- *   // in a system
- *   const collided = yield* Collided
+ *   // in a system of the tick
+ *   const collided = yield* Collided.emits
  *   collided.emit({ a, b })                 // plain call, fine inside loops
  *   for (const hit of collided.read()) ...  // everything this system has not seen
+ *
+ *   // reading is every stage's
+ *   for (const hit of (yield* Collided).read()) ...
  *
  * Every system sees every event exactly once, whatever order the systems run
  * in. An earlier system sees an event emitted by a later one on the next tick,
@@ -33,21 +36,32 @@ import type { World } from "./ecs/world";
 import { Outbox } from "./Outbox";
 import type { Stage, Told } from "./Outbox";
 import { Events } from "./Services";
+import type { Sim } from "./Services";
 
 /**
- * A system's handle to one event type, from `yield* SomeEvent`: it emits
- * events, and reads the ones it hasn't seen yet.
+ * What every stage gets from `yield* SomeEvent`: the events it has not seen
+ * yet. Emitting is `yield* SomeEvent.emits`, and only a system of the tick
+ * can ask for that.
  *
  * @category Models
  */
-export interface EventHandle<P> {
-  /**
-   * Queues an event. Synchronous, so it can be called inside query loops. A
-   * method, so that any event is an `EventDef<unknown>`.
-   */
-  emit(payload: P): void;
+export interface EventReader<P> {
   /** Returns the events not yet seen through this handle, oldest first. */
   readonly read: () => readonly P[];
+}
+
+/**
+ * A tick system's handle to one event type, from `yield* SomeEvent.emits`: it
+ * emits events, and reads the ones it hasn't seen yet.
+ *
+ * @category Models
+ */
+export interface EventHandle<P> extends EventReader<P> {
+  /**
+   * Queues an event. Synchronous, so it can be called inside query loops. A
+   * method, so that any event is an `EventHandle<unknown>`.
+   */
+  emit(payload: P): void;
 }
 
 // Every event this program has defined, by name, so that an app can load a
@@ -63,14 +77,17 @@ const defined = new Map<string, EventDef<unknown>>();
  * @category Models
  */
 export class EventDef<P> extends Effectable.Class<
-  EventHandle<P>,
+  EventReader<P>,
   never,
   Events
 > {
   readonly name: string;
   /** Converts a payload to and from JSON. Derived from the event's schema. */
   readonly codec: Schema.Codec<P, unknown>;
-  private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
+  private effect: Effect.Effect<EventReader<P>, never, Events> | undefined;
+  private emitting:
+    | Effect.Effect<EventHandle<P>, never, Events | Sim>
+    | undefined;
 
   constructor(name: string, codec: Schema.Codec<P, unknown>) {
     super();
@@ -79,8 +96,19 @@ export class EventDef<P> extends Effectable.Class<
     defined.set(name, this as EventDef<unknown>);
   }
 
-  asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
-    return (this.effect ??= Effect.map(Effect.service(Events), (bus) =>
+  asEffect(): Effect.Effect<EventReader<P>, never, Events> {
+    return (this.effect ??= Effect.map(Effect.service(Events), (bus) => {
+      const handle = bus.handle(this);
+      return { read: () => handle.read() };
+    }));
+  }
+
+  /**
+   * The same events, with `emit`. Requiring it puts `Sim` in the system's
+   * requirements, which a frame or input system does not accept.
+   */
+  get emits(): Effect.Effect<EventHandle<P>, never, Events | Sim> {
+    return (this.emitting ??= Effect.map(Effect.service(Events), (bus) =>
       bus.handle(this)
     ));
   }

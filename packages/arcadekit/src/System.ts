@@ -2,7 +2,7 @@
  * Systems are one Effect per system per tick, with plain synchronous loops
  * inside.
  *
- *   const Movement = System.make("Movement", function*() {
+ *   const Movement = System.tick("Movement", function*() {
  *     const moving = yield* Moving
  *     const { delta } = yield* Time
  *     moving.each((pos, vel) => { pos.x += vel.x * delta })
@@ -21,7 +21,13 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
-import type { Access, Adds, Watches, WatchesAdded, Writes } from "./Query";
+import type { Store } from "./Assets";
+import type { Devices } from "./Input";
+import type { Adds, Writes } from "./Query";
+import { Sim } from "./Services";
+import type { Commands, Frame, Ticks } from "./Services";
+import type { Player } from "./Sound";
+import type { Intake, Port } from "./View";
 
 /**
  * The stages of a tick, in the order they run.
@@ -63,6 +69,7 @@ export const isFrameStage = (
   (frameStages as readonly string[]).includes(stage);
 
 /** Every stage, in the order they run when several run together. */
+type TickStage = (typeof stages)[number];
 type FrameStage = (typeof frameStages)[number];
 
 const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
@@ -82,7 +89,8 @@ export interface Trigger {
 
 /**
  * A system: one Effect that runs once per tick, or once per frame, in its
- * stage. Made with `System.make`; `E` is its error and `R` its requirements.
+ * stage. Made with `System.tick`, `System.frame` or `System.input`; `E` is its
+ * error and `R` its requirements.
  *
  * `N` is its name, `St` its stage and `Tr` what triggers it if it is a hook,
  * each as the compiler knows it, so that the order of a list of systems can be
@@ -156,8 +164,131 @@ export type GenServices<Eff> = [Eff] extends [never]
     ? R
     : never;
 
+type TickBan = Frame | Player | Port | Intake | Store | Devices;
+type FrameBan =
+  | Sim
+  | Ticks
+  | Commands
+  | Writes<string>
+  | Adds<string>
+  | Devices
+  | Intake;
+type InputBan =
+  | Sim
+  | Ticks
+  | Commands
+  | Writes<string>
+  | Adds<string>
+  | Frame
+  | Player
+  | Port;
+
+const TICK_MSG =
+  "A tick reads and changes the simulation. Frame, Sound, View, Assets and Input.Devices are real time: draw and play with System.frame, read the devices with System.input." as const;
+const FRAME_MSG =
+  "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit, state set or Ticks.more. Read Input.Devices from System.input." as const;
+const INPUT_MSG =
+  "An input system reads the devices and enqueues actions. It cannot change the game, and it cannot read Frame, play sound or publish a view." as const;
+
+type Body<Eff, Ban, Msg extends string, A = void> = [
+  Extract<GenServices<Eff>, Ban>,
+] extends [never]
+  ? () => Generator<Eff, A, never>
+  : { readonly [K in Msg]: Extract<GenServices<Eff>, Ban> };
+
 /**
- * Defines a system from a generator.
+ * `Ok` when a tick may require `Eff`, and the refusal otherwise. `System.tick`,
+ * `State.onEnter`, `Action.handler` and a plugin's `setup` use it.
+ *
+ * @internal
+ */
+export type TickGated<
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  Ok,
+> =
+  Body<Eff, TickBan, typeof TICK_MSG> extends () => Generator<Eff, void, never>
+    ? Ok
+    : Body<Eff, TickBan, typeof TICK_MSG>;
+
+/**
+ * The body of a system of the tick.
+ *
+ * @internal
+ */
+export type TickBody<Eff extends Effect.Effect<unknown, unknown, unknown>> =
+  TickGated<Eff, () => Generator<Eff, void, never>>;
+
+type Open<R> = Exclude<R, Sim>;
+
+type Checked<R, Ban, Msg extends string> =
+  Extract<R, Ban> extends never
+    ? unknown
+    : { readonly [K in Msg]: Extract<R, Ban> };
+
+/**
+ * An effect a frame system may yield. A requirement the frame refuses is an
+ * error at the argument, which is how `Assets.during` checks its condition.
+ *
+ * @internal
+ */
+export type FrameOk<A, E, R> = Effect.Effect<A, E, R> &
+  Checked<R, FrameBan, typeof FRAME_MSG>;
+
+/**
+ * The body of a frame system, as `Sound.music` and `View.publish` take it.
+ *
+ * @internal
+ */
+export type FrameBody<
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  A = void,
+> = Body<Eff, FrameBan, typeof FRAME_MSG, A>;
+
+type EffectBody<Eff, Ban, Msg extends string> = [
+  Extract<GenServices<Eff>, Ban>,
+] extends [never]
+  ? Eff
+  : { readonly [K in Msg]: Extract<GenServices<Eff>, Ban> };
+
+/**
+ * A plugin's `setup`, or any other Effect that runs as the tick does.
+ *
+ * @internal
+ */
+export type TickEffect<Eff extends Effect.Effect<unknown, unknown, unknown>> =
+  EffectBody<Eff, TickBan, typeof TICK_MSG>;
+
+/** What `Sim` stands for. A system provides it, and nothing reads it. */
+const simulation = { "~arcadekit/Sim": true } as const;
+
+const generate = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
+  body: () => Generator<Eff, void, never>
+): Effect.Effect<void, GenError<Eff>, Open<GenServices<Eff>>> =>
+  Effect.provideService(Effect.gen(body), Sim, simulation);
+
+const define = <
+  E,
+  R,
+  N extends string,
+  St extends Stage,
+  Tr extends Trigger | undefined,
+>(
+  name: N,
+  stage: St,
+  run: Effect.Effect<void, E, R>,
+  trigger: Tr
+): System<E, R, N, St, Tr> =>
+  build({
+    name,
+    stage,
+    run,
+    condition: undefined,
+    idle: undefined,
+    trigger,
+  });
+
+/**
+ * Defines a system of the tick, in the `"update"` stage.
  *
  * The body is wrapped with `Effect.gen` once, and the same Effect value runs
  * again every tick. It doesn't use `Effect.fn`, which captures a stack trace on
@@ -168,80 +299,164 @@ export type GenServices<Eff> = [Eff] extends [never]
  * names it. Work that spans many ticks keeps its place in the world, in a
  * component or a state, and a system moves it on each tick.
  *
+ * The body can require anything a tick provides, and a plugin's own services.
+ * Requiring `Frame`, `Sound`, `View`, `Assets` or `Input.Devices` does not
+ * compile: those are real time, and belong to `System.frame` or `System.input`.
+ *
  * @category Constructors
  */
-export const make = <
+export function tick<
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  name: N,
+  body: TickBody<Eff>
+): System<GenError<Eff>, Open<GenServices<Eff>>, N, "update", undefined>;
+export function tick<
   const N extends string,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
 >(
   name: N,
   body: () => Generator<Eff, void, never>
-): System<GenError<Eff>, GenServices<Eff>, N, "update", undefined> =>
-  build({
-    name,
-    stage: "update",
-    run: Effect.gen(body),
-    condition: undefined,
-    idle: undefined,
-    trigger: undefined,
-  });
+): System<GenError<Eff>, Open<GenServices<Eff>>, N, "update", undefined> {
+  return define(name, "update", generate(body), undefined);
+}
 
 /**
- * Moves a system to another stage.
+ * Defines a system of the frame, in the `"frame"` stage. It draws and plays,
+ * between ticks, and leaves the world as it found it.
  *
- * `System.inStage("frame")` makes it a frame-stage system, for drawing: it runs
- * once per `app.frame`, between ticks, with the world frozen. It reads the
- * world through queries, events and change queries, each tracking its own
- * position, and `yield* Frame` tells it how far the frame is between two ticks.
- * Anything that would change the game throws there.
+ * `System.inStage("preFrame")` or `"postFrame"` moves it within the frame.
+ * Requiring commands, a writing query, an event's `emits`, a state's `sets`,
+ * a singleton's `writes`, `Ticks` or `Input.Devices` does not compile.
  *
- * Like a tick, a frame has three stages. `"preFrame"` runs before every
- * `"frame"` system, for what they depend on: `Assets.during` runs there, so all
- * of a frame's systems see the same assets loaded. `"postFrame"` runs after
- * them all, for what needs everything drawn: a renderer presents the image
- * there. All three follow the frame stage's rules for what a system may do.
+ * @category Constructors
+ */
+export function frame<
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  name: N,
+  body: Body<Eff, FrameBan, typeof FRAME_MSG>
+): System<GenError<Eff>, Open<GenServices<Eff>>, N, "frame", undefined>;
+export function frame<
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  name: N,
+  body: () => Generator<Eff, void, never>
+): System<GenError<Eff>, Open<GenServices<Eff>>, N, "frame", undefined> {
+  return define(name, "frame", generate(body), undefined);
+}
+
+/**
+ * A system whose body was checked by the caller. `Assets.during`,
+ * `Sound.music` and `View.publish` check a generic effect, then build the
+ * system here so the check is not repeated on the type parameter.
  *
- * `System.inStage("input")` makes it an input-stage system, for bringing
- * outside input in: it runs once per `app.input`, just before a tick, with the
- * world frozen. `yield* Input.Devices` gives it the current state of the
- * keyboard, the pointer and gamepads, and it issues whatever it derives from
- * that as actions with `Actions.enqueue`, which are logged and applied at the
- * start of the tick. A replay runs no input stage, since the actions are in its
- * log.
+ * @internal
+ */
+export const raw = <
+  const N extends string,
+  const St extends Stage,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  name: N,
+  stage: St,
+  body: () => Generator<Eff, void, never>
+): System<GenError<Eff>, Open<GenServices<Eff>>, N, St, undefined> =>
+  define<GenError<Eff>, Open<GenServices<Eff>>, N, St, undefined>(
+    name,
+    stage,
+    generate(body),
+    undefined
+  );
+
+/**
+ * Defines a system of the input stage. It reads `Input.Devices` and enqueues
+ * actions, just before a tick, and leaves the world as it found it.
  *
- * Write the stage out, `System.inStage("postUpdate")`. The stage is part of the
- * system's type, which is how the order of a list is checked, and a system
- * whose stage the compiler can't read is refused beside one that writes what
- * it watches, or watches what it writes: see `System.Misordered`.
+ * Requiring commands, a writing query, an event's `emits`, a state's `sets`,
+ * a singleton's `writes`, `Ticks`, `Frame`, `Sound` or `View` does not compile.
+ * Loading assets does: an input system can issue an action once they are there.
+ *
+ * @category Constructors
+ */
+export function input<
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  name: N,
+  body: Body<Eff, InputBan, typeof INPUT_MSG>
+): System<GenError<Eff>, Open<GenServices<Eff>>, N, "input", undefined>;
+export function input<
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  name: N,
+  body: () => Generator<Eff, void, never>
+): System<GenError<Eff>, Open<GenServices<Eff>>, N, "input", undefined> {
+  return define(name, "input", generate(body), undefined);
+}
+
+type Group<St> = St extends TickStage
+  ? TickStage
+  : St extends FrameStage
+    ? FrameStage
+    : never;
+
+type StageArg<S extends string> = S extends TickStage | FrameStage
+  ? S
+  : `The input stage is System.input(name, body). System.inStage only moves a system within the tick or within the frame.`;
+
+type SameGroup<St extends string, S extends string> =
+  S extends Group<St>
+    ? unknown
+    : `System.inStage("${S}") cannot move a system of "${St}". System.inStage stays inside the tick or inside the frame. A frame system is System.frame, an input system is System.input.`;
+
+/**
+ * Moves a system within the group it was made in.
+ *
+ * A tick system moves among `"preUpdate"`, `"update"` and `"postUpdate"`. A
+ * frame system moves among `"preFrame"`, `"frame"` and `"postFrame"`. The
+ * input stage is `System.input`. Write the stage out: a stage the compiler
+ * can't read is refused beside a system that writes what this one watches, or
+ * watches what this one writes. See `System.Misordered`.
+ *
+ * `"preFrame"` runs before every `"frame"` system, for what they depend on:
+ * `Assets.during` runs there, so all of a frame's systems see the same assets
+ * loaded. `"postFrame"` runs after them all, for what needs everything drawn.
  *
  * @category Combinators
  */
 export const inStage: {
-  <const S extends Stage>(
-    stage: S
-  ): <E, R, N extends string, Tr extends Trigger | undefined>(
-    self: System<E, R, N, Stage, Tr>
-  ) => System<E, R, N, S, Tr>;
+  <const S extends string>(
+    stage: StageArg<S>
+  ): <E, R, N extends string, St extends Stage, Tr extends Trigger | undefined>(
+    self: System<E, R, N, St, Tr> & SameGroup<St, S>
+  ) => System<E, R, N, S extends Group<St> ? S : never, Tr>;
   <
     E,
     R,
     N extends string,
+    St extends Stage,
     Tr extends Trigger | undefined,
-    const S extends Stage,
+    const S extends string,
   >(
-    self: System<E, R, N, Stage, Tr>,
-    stage: S
-  ): System<E, R, N, S, Tr>;
+    self: System<E, R, N, St, Tr> & SameGroup<St, S>,
+    stage: StageArg<S>
+  ): System<E, R, N, S extends Group<St> ? S : never, Tr>;
 } = dual(
   2,
   <
     E,
     R,
     N extends string,
+    St extends Stage,
     Tr extends Trigger | undefined,
-    const S extends Stage,
+    const S extends TickStage | FrameStage,
   >(
-    self: System<E, R, N, Stage, Tr>,
+    self: System<E, R, N, St, Tr>,
     stage: S
   ): System<E, R, N, S, Tr> => build({ ...self, stage })
 );
@@ -249,7 +464,7 @@ export const inStage: {
 /**
  * Runs a system only on ticks when a condition holds:
  *
- *   System.make("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
+ *   System.tick("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
  *
  * The condition is an Effect that returns a boolean, checked each tick just
  * before the system would run. `State.is` creates one from a state; any other
@@ -266,12 +481,29 @@ export const inStage: {
  *
  * @category Combinators
  */
+type Gate<R, Ban, Msg extends string> =
+  Extract<R, Ban> extends never
+    ? unknown
+    : { readonly [K in Msg]: Extract<R, Ban> };
+
+type StageGate<St, R2> = St extends TickStage
+  ? [R2] extends [Gate<R2, TickBan, typeof TICK_MSG>]
+    ? unknown
+    : Gate<R2, TickBan, typeof TICK_MSG>
+  : St extends FrameStage
+    ? [R2] extends [Gate<R2, FrameBan, typeof FRAME_MSG>]
+      ? unknown
+      : Gate<R2, FrameBan, typeof FRAME_MSG>
+    : [R2] extends [Gate<R2, InputBan, typeof INPUT_MSG>]
+      ? unknown
+      : Gate<R2, InputBan, typeof INPUT_MSG>;
+
 export const runIf: {
   <E2, R2>(
     condition: Effect.Effect<boolean, E2, R2>
   ): <E, R, N extends string, St extends Stage, Tr extends Trigger | undefined>(
-    self: System<E, R, N, St, Tr>
-  ) => System<E | E2, R | R2, N, St, Tr>;
+    self: System<E, R, N, St, Tr> & StageGate<St, R2>
+  ) => System<E | E2, R | Open<R2>, N, St, Tr>;
   <
     E,
     R,
@@ -281,9 +513,9 @@ export const runIf: {
     E2,
     R2,
   >(
-    self: System<E, R, N, St, Tr>,
+    self: System<E, R, N, St, Tr> & StageGate<St, R2>,
     condition: Effect.Effect<boolean, E2, R2>
-  ): System<E | E2, R | R2, N, St, Tr>;
+  ): System<E | E2, R | Open<R2>, N, St, Tr>;
 } = dual(
   2,
   <
@@ -297,17 +529,16 @@ export const runIf: {
   >(
     self: System<E, R, N, St, Tr>,
     condition: Effect.Effect<boolean, E2, R2>
-  ): System<E | E2, R | R2, N, St, Tr> => {
+  ): System<E | E2, R | Open<R2>, N, St, Tr> => {
     const earlier = self.condition;
-    return build<E | E2, R | R2, N, St, Tr>({
+    const opened = Effect.provideService(condition, Sim, simulation);
+    return build<E | E2, R | Open<R2>, N, St, Tr>({
       ...self,
       condition:
         earlier === undefined
-          ? condition
-          : Effect.flatMap(
-              earlier,
-              (holds): Effect.Effect<boolean, E | E2, R | R2> =>
-                holds ? condition : Effect.succeed(false)
+          ? opened
+          : Effect.flatMap(earlier, (holds) =>
+              holds ? opened : Effect.succeed(false)
             ),
     });
   }
@@ -326,8 +557,7 @@ export const triggered = <E, R, N extends string, St extends Stage>(
  * Gives a system something to do instead of running, each time its condition
  * doesn't hold:
  *
- *   const Hud = System.make("Hud", drawHud).pipe(
- *     System.inStage("frame"),
+ *   const Hud = System.frame("Hud", drawHud).pipe(
  *     System.runIf(State.is(Phase, "playing")),
  *     System.otherwise(hideHud)
  *   )
@@ -349,8 +579,8 @@ export const otherwise: {
   <E2, R2>(
     idle: Effect.Effect<void, E2, R2>
   ): <E, R, N extends string, St extends Stage, Tr extends Trigger | undefined>(
-    self: System<E, R, N, St, Tr>
-  ) => System<E | E2, R | R2, N, St, Tr>;
+    self: System<E, R, N, St, Tr> & StageGate<St, R2>
+  ) => System<E | E2, R | Open<R2>, N, St, Tr>;
   <
     E,
     R,
@@ -360,9 +590,9 @@ export const otherwise: {
     E2,
     R2,
   >(
-    self: System<E, R, N, St, Tr>,
+    self: System<E, R, N, St, Tr> & StageGate<St, R2>,
     idle: Effect.Effect<void, E2, R2>
-  ): System<E | E2, R | R2, N, St, Tr>;
+  ): System<E | E2, R | Open<R2>, N, St, Tr>;
 } = dual(
   2,
   <
@@ -376,244 +606,18 @@ export const otherwise: {
   >(
     self: System<E, R, N, St, Tr>,
     idle: Effect.Effect<void, E2, R2>
-  ): System<E | E2, R | R2, N, St, Tr> =>
-    build<E | E2, R | R2, N, St, Tr>({
+  ): System<E | E2, R | Open<R2>, N, St, Tr> => {
+    const opened = Effect.provideService(idle, Sim, simulation);
+    return build<E | E2, R | Open<R2>, N, St, Tr>({
       ...self,
-      idle: self.idle === undefined ? idle : Effect.andThen(self.idle, idle),
-    })
+      idle:
+        self.idle === undefined ? opened : Effect.andThen(self.idle, opened),
+    });
+  }
 );
 
-// --- the order of a list, as the compiler sees it ---------------------------
+export type { Duplicated, Listing, Misordered, Ordered } from "./system/order";
 
-/** A system of any type. */
-type Any = System<unknown, unknown>;
-
-// A name the compiler only knows as `string` says nothing of which component
-// it is, as in the requirements of a system typed as any system: left out.
-type Named<C extends string> = string extends C ? never : C;
-type WrittenBy<R> = R extends Writes<infer C> ? Named<C> : never;
-type AddedBy<R> = R extends Adds<infer C> ? Named<C> : never;
-/** What a system watches with `Query.changed`. */
-type WatchedBy<R> = R extends Watches<infer C> ? Named<C> : never;
-/** What a system watches with `Query.added`. */
-type AwaitedBy<R> = R extends WatchesAdded<infer C> ? Named<C> : never;
-
-// Distributive on purpose: one for each component of a union.
-type Did<C, N extends string, How extends string> = C extends string
-  ? readonly [C, N, How]
-  : never;
-
-/** Each component a system writes or adds, with its name and which it does. */
-type Wrote<R, N extends string> =
-  | Did<WrittenBy<R>, N, "writes">
-  | Did<AddedBy<R>, N, "spawns or adds">;
-
-/** The systems of a union that write or watch something. */
-type Touching<U> =
-  U extends System<unknown, infer R>
-    ? [Extract<R, Access>] extends [never]
-      ? never
-      : U
-    : never;
-
-/** The systems of a union that the tick runs in the order of the list. */
-type Ticking<U> = U extends Any
-  ? [U["trigger"]] extends [Trigger]
-    ? never
-    : [U["stage"]] extends [FrameStage | "input"]
-      ? never
-      : U
-  : never;
-
-/**
- * A list whose order the compiler knows, or one that says nothing of order:
- * a list that isn't a tuple is left out when none of its systems writes or
- * watches anything, and is otherwise kept as it is, in no order.
- */
-type Listed<S extends readonly Any[]> = number extends S["length"]
-  ? [Touching<S[number]>] extends [never]
-    ? readonly []
-    : S
-  : S;
-
-/** The systems of a tuple, each name once: the first to be listed stays. */
-type Once<
-  T extends readonly Any[],
-  Seen extends string = never,
-  Out extends readonly Any[] = readonly [],
-> = T extends readonly [
-  infer H extends Any,
-  ...infer Rest extends readonly Any[],
-]
-  ? string extends H["name"]
-    ? Once<Rest, Seen, readonly [...Out, H]>
-    : H["name"] extends Seen
-      ? Once<Rest, Seen, Out>
-      : Once<Rest, Seen | H["name"], readonly [...Out, H]>
-  : Out;
-
-/**
- * The systems of a tuple in the order a tick runs them: stage by stage, as
- * listed. A hook and a system of the frame or input stage run at another
- * moment and are left out, and `loose` holds those whose stage the compiler
- * doesn't know.
- */
-type Staged<
-  T extends readonly Any[],
-  Pre extends readonly Any[] = readonly [],
-  Upd extends readonly Any[] = readonly [],
-  Post extends readonly Any[] = readonly [],
-  Loose = never,
-> = T extends readonly [
-  infer H extends Any,
-  ...infer Rest extends readonly Any[],
-]
-  ? [H["trigger"]] extends [Trigger]
-    ? Staged<Rest, Pre, Upd, Post, Loose>
-    : [H["stage"]] extends ["preUpdate"]
-      ? Staged<Rest, readonly [...Pre, H], Upd, Post, Loose>
-      : [H["stage"]] extends ["update"]
-        ? Staged<Rest, Pre, readonly [...Upd, H], Post, Loose>
-        : [H["stage"]] extends ["postUpdate"]
-          ? Staged<Rest, Pre, Upd, readonly [...Post, H], Loose>
-          : [H["stage"]] extends [FrameStage | "input"]
-            ? Staged<Rest, Pre, Upd, Post, Loose>
-            : Staged<Rest, Pre, Upd, Post, Loose | H>
-  : {
-      readonly order: readonly [...Pre, ...Upd, ...Post];
-      readonly loose: Loose;
-    };
-
-/** What is said of a system that watches what a later one writes or adds. */
-type Late<
-  N extends string,
-  C extends string,
-  By extends string,
-  With extends string,
-  How extends string,
-> = `"${N}" watches "${C}" with ${With}, and "${By}" ${How} it later in the tick, so "${N}" would react a tick late. List "${N}" after "${By}", or place it in a later stage.`;
-
-// A component that is written or gained fires `Query.changed`, and one that is
-// gained alone fires `Query.added`.
-type Clash<N extends string, Watched, Awaited, Later> = Later extends readonly [
-  infer C extends string,
-  infer By extends string,
-  infer How extends string,
-]
-  ? | (C extends Watched ? Late<N, C, By, "Query.changed", How> : never)
-    | (How extends "spawns or adds"
-        ? C extends Awaited
-          ? Late<N, C, By, "Query.added", How>
-          : never
-        : never)
-  : never;
-
-/** From the last system to the first, with what those after it write and add. */
-type Behind<
-  T extends readonly Any[],
-  Later = never,
-  Found = never,
-> = T extends readonly [
-  ...infer Init extends readonly Any[],
-  infer Last extends Any,
-]
-  ? Last extends System<unknown, infer R, infer N>
-    ? Behind<
-        Init,
-        Later | Wrote<R, N>,
-        Found | Clash<N, WatchedBy<R>, AwaitedBy<R>, Later>
-      >
-    : never
-  : Found;
-
-type SameName<A extends string, B extends string> = string extends A
-  ? false
-  : [A] extends [B]
-    ? [B] extends [A]
-      ? true
-      : false
-    : false;
-
-/** What is said of two systems whose order the compiler doesn't know. */
-type Unknown<
-  N extends string,
-  C extends string,
-  By extends string,
-> = `One of "${N}" and "${By}" watches "${C}" and the other writes, spawns or adds it, and the compiler cannot tell which runs first. Write the list of systems out where it is given, and give System.inStage a stage it can read.`;
-
-/** What one system watches that the other writes or adds. */
-type Between<R, R2> =
-  | Extract<WatchedBy<R>, WrittenBy<R2> | AddedBy<R2>>
-  | Extract<AwaitedBy<R>, AddedBy<R2>>;
-
-/** A system whose place isn't known, against every other. */
-type Unplaced<U, All> =
-  U extends System<unknown, infer R, infer N>
-    ? All extends System<unknown, infer R2, infer N2>
-      ? SameName<N, N2> extends true
-        ? never
-        : Between<R, R2> | Between<R2, R> extends infer C
-          ? C extends string
-            ? Unknown<N, C, N2>
-            : never
-          : never
-      : never
-    : never;
-
-/**
- * What is wrong with the order of a list of systems, as a union of messages,
- * and `never` when nothing is: a system that watches a component with
- * `Query.changed` or `Query.added`, listed ahead of one that writes it, spawns
- * it or adds it in the same tick, sees that a tick late. `App.define` and `Plugin.make` refuse such a list
- * with this message, so the mistake doesn't compile.
- *
- * What a system writes, adds and watches is in its requirements, from what it
- * yields: a query, `World.writes` and `Commands.spawns`. Nothing is declared
- * beside them. Hooks and systems of the frame and input stages
- * run at another moment, and are not checked against the tick's.
- *
- * @category Type-level
- */
-export type Misordered<S extends readonly Any[]> =
-  Listed<S> extends infer L extends readonly Any[]
-    ? number extends L["length"]
-      ? Unplaced<Ticking<L[number]>, Ticking<L[number]>>
-      : Staged<Once<L>> extends {
-            readonly order: infer O extends readonly Any[];
-            readonly loose: infer Loose;
-          }
-        ? Behind<O> | Unplaced<Loose, O[number] | Loose>
-        : never
-    : never;
-
-/**
- * Two lists of systems, one after the other, as `Misordered` takes them: a
- * list that isn't a tuple and whose systems write and watch nothing is left
- * out.
- *
- * @internal
- */
-export type Listing<
-  A extends readonly Any[],
-  B extends readonly Any[],
-> = readonly [...Listed<A>, ...Listed<B>];
-
-/**
- * What `App.define` and `Plugin.make` add to their options: nothing for a list
- * in an order that works, and otherwise a property nobody can give, whose type
- * is the message.
- *
- * @internal
- */
-export type Ordered<S extends readonly Any[]> = [Misordered<S>] extends [never]
-  ? unknown
-  : { readonly order: Misordered<S> };
-
-/**
- * The level of the spans an app makes, as a program's
- * `Tracer.MinimumTraceLevel` sees them.
- * @internal
- */
 export const spanLevel = "Debug";
 
 /**

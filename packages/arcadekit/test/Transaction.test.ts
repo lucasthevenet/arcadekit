@@ -479,7 +479,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
   const world = yield* World.writes(Body);
   const commands = yield* Commands.spawns(Body, Sheet, Aura, Marked);
   const random = yield* Random;
-  const noted = yield* Noted;
+  const noted = yield* Noted.emits;
   const actions = yield* Action.Actions;
   for (const step of steps) {
     switch (step) {
@@ -551,7 +551,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
       }
       case "ring": {
         // An event of the kind it reads, so that it can read twice.
-        (yield* Rung).emit({ at: 0 });
+        (yield* Rung.emits).emit({ at: 0 });
         break;
       }
       case "bug": {
@@ -574,17 +574,17 @@ const echo = Action.handler(Echo, function* ({ by }) {
 });
 
 const notes: string[] = [];
-const Listen = System.make("Listen", function* () {
+const Listen = System.tick("Listen", function* () {
   for (const { step } of (yield* Noted).read()) {
     notes.push(step);
   }
 });
-const Ring = System.make("Ring", function* () {
-  (yield* Rung).emit({ at: (yield* Time).tick });
+const Ring = System.tick("Ring", function* () {
+  (yield* Rung.emits).emit({ at: (yield* Time).tick });
 });
 /** Hears each ring in the tick it is rung in: once, whatever is refused. */
 const rings: number[] = [];
-const Hear = System.make("Hear", function* () {
+const Hear = System.tick("Hear", function* () {
   for (const { at } of (yield* Rung).read()) {
     rings.push(at);
   }

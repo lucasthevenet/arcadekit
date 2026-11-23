@@ -1279,14 +1279,14 @@ const cull = Action.handler(Cull, function* ({ slot }) {
 });
 
 /** Runs before the system that writes, so it sees those writes a tick late. */
-const Early = System.make("Early", function* () {
+const Early = System.tick("Early", function* () {
   const moved = (yield* Moved).count();
   (yield* Moved).entities();
   (yield* Tallies).each((tally) => {
     tally.early += moved;
   });
 });
-const Drift = System.make("Drift", function* () {
+const Drift = System.tick("Drift", function* () {
   const { tick } = yield* Time;
   (yield* Positions).each((pos, entity) => {
     if ((entity + tick) % 3 === 0) {
@@ -1294,7 +1294,7 @@ const Drift = System.make("Drift", function* () {
     }
   });
 });
-const Count = System.make("Count", function* () {
+const Count = System.tick("Count", function* () {
   let moved = 0;
   (yield* Moved).each(() => {
     moved++;
@@ -1405,7 +1405,7 @@ describe("change queries in an app", () => {
     run(
       Effect.gen(function* () {
         const watched: number[] = [];
-        const Watch = System.make("Watch", function* () {
+        const Watch = System.tick("Watch", function* () {
           watched.push((yield* Moved).entities().length);
         });
         const app = yield* App.make(

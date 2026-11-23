@@ -45,7 +45,7 @@ const Velocity = Component.define("game/Velocity", {
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
-const Movement = System.make("game/Movement", function* () {
+const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
   (yield* Moving).each((position, velocity) => {
     position.x += velocity.x * delta;

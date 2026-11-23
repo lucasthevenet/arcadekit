@@ -389,7 +389,7 @@ export const layerWebGL = (
  * each is listed and without any ordering: `Three.instances` and
  * `Three.objects`, and your own system that moves the camera.
  *
- *   System.make("Follow", ...).pipe(System.inStage("frame"))
+ *   System.frame("Follow", ...)
  *
  * Just before drawing, it checks whether the assets of every kind built from a
  * bundle are still loaded, and removes from the scene whatever isn't: nothing
@@ -398,7 +398,7 @@ export const layerWebGL = (
  *
  * @category Systems
  */
-export const Render = System.make("arcadekit/three/Render", function* () {
+export const Render = System.frame("arcadekit/three/Render", function* () {
   const { _kept, camera, scene } = yield* Scene;
   for (const one of _kept.values()) {
     one.settle?.();
@@ -1895,17 +1895,17 @@ type Needs = Frame | Scene | Time | World;
 export function instances<B extends Entries, L extends Look = Look>(
   name: string,
   options: InstancesFromOptions<B, L>
-): System.System<never, Needs | Assets.Store>;
+): System.System<never, Needs | Assets.Store, string, "frame">;
 export function instances(
   name: string,
   options: InstancesOptions
-): System.System<never, Needs>;
+): System.System<never, Needs, string, "frame">;
 // One body for both: the system of a look that is there asks for no store of
 // assets, which the second signature says.
 export function instances(
   name: string,
   options: InstancesOptions | InstancesFromOptions<Entries>
-): System.System<never, Needs | Assets.Store> {
+): System.System<never, Needs | Assets.Store, string, "frame"> {
   const from = "from" in options ? options : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
@@ -2013,7 +2013,7 @@ export function instances(
     query: kind(own, absent),
     plain: plain(own, absent),
   }));
-  return System.make(name, function* () {
+  return System.frame(name, function* () {
     const kept = yield* Scene;
     // Which tick the game is at and how far towards the next the frame is:
     // asked only by a system that draws between the two.
@@ -2082,7 +2082,7 @@ export function instances(
       }
     }
     drawn.finish();
-  }).pipe(System.inStage("frame"));
+  });
 }
 
 // --- objects ---------------------------------------------------------------------
@@ -2474,16 +2474,16 @@ class Objects<O extends Object3D> implements Kept {
 export function objects<B extends Entries, O extends Object3D = Object3D>(
   name: string,
   options: ObjectsFromOptions<B, O>
-): System.System<never, Needs | Assets.Store>;
+): System.System<never, Needs | Assets.Store, string, "frame">;
 export function objects<O extends Object3D = Object3D>(
   name: string,
   options: ObjectsOptions<O>
-): System.System<never, Needs>;
+): System.System<never, Needs, string, "frame">;
 // One body for both, as for `instances`.
 export function objects<O extends Object3D>(
   name: string,
   options: ObjectsOptions<O> | ObjectsFromOptions<Entries, O>
-): System.System<never, Needs | Assets.Store> {
+): System.System<never, Needs | Assets.Store, string, "frame"> {
   const from = "from" in options ? options.from : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
@@ -2514,7 +2514,7 @@ export function objects<O extends Object3D>(
     Query.with(Transform2d.Position, ...marked),
     Query.without(...flat)
   );
-  return System.make(name, function* () {
+  return System.frame(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
     const turned = yield* Turned;
@@ -2564,5 +2564,5 @@ export function objects<O extends Object3D>(
     turnedFlat.eachChunk(held.turnedFlat);
     sizedFlat.eachChunk(held.sizedFlat);
     held.finish();
-  }).pipe(System.inStage("frame"));
+  });
 }
