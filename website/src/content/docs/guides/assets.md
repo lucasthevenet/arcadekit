@@ -95,7 +95,7 @@ const Game = Plugin.make("game/Game", {
 
 Load anything that needs releasing into a scope. Never load it into a module-level variable, because no scope closes one.
 
-`Assets.load` waits in real time, so a system can't use it. A system that waits throws, and the error names the system. The rules get what a file holds as an action, as [above](#pass-a-files-contents-to-the-rules).
+A system can't use `Assets.load`, and one that yields it doesn't compile. A system has no scope to load into but the app's, which would keep what every frame loaded until the app closed. The rules get what a file holds as an action, as [above](#pass-a-files-contents-to-the-rules).
 
 ## Hold a bundle yourself
 
