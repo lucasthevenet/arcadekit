@@ -370,7 +370,11 @@ describe("Sound.Player", () => {
     ).toEqual([{ cue: "click", volume: 0.9, rate: 3 }]);
     // And nothing is left of a frame for the next.
     expect(frame()).toEqual([]);
-    expect(app.frameOrder).toEqual(["sd/Click", "arcadekit/Sound.Flush"]);
+    expect(app.frameOrder).toEqual([
+      "arcadekit/Sound.Begin",
+      "sd/Click",
+      "arcadekit/Sound.Flush",
+    ]);
   });
 
   it("makes one sound of a cue that several systems play in one frame, whichever they are", () => {
@@ -403,6 +407,26 @@ describe("Sound.Player", () => {
     ]);
     expect(sound.played[0]).toEqual({ cue: "whoosh", volume: 1, rate: 1 });
     expect(sound.played[1]!.volume).toBeGreaterThan(0.3);
+  });
+
+  it("plays nothing that a failed frame asked for", () => {
+    const sound = Sound.makeRecorder();
+    let failing = true;
+    const Click = System.frame("sd/Click", function* () {
+      if (failing) {
+        (yield* Sound.Player).play("click");
+        return yield* Effect.fail("broken");
+      }
+    });
+    const app = Effect.runSync(
+      App.make(App.define({ plugins: [Sound.plugin], systems: [Click] })).pipe(
+        Effect.provide(Sound.layer(sound))
+      )
+    );
+    expect(() => app.frame(0)).toThrow("broken");
+    failing = false;
+    app.frame(0);
+    expect(sound.played).toEqual([]);
   });
 
   it("says whether sound goes anywhere", () => {
