@@ -1,5 +1,4 @@
 import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import type { Spawned } from "../src/index";
@@ -52,18 +51,16 @@ const Movement = System.tick("Movement", function* () {
 });
 
 /**
- * Builds an app, hands it to `use` with its world, as `app.read(World)` gives
- * it, then closes its scope.
+ * Builds an app, and hands it to `use` with its world, as `app.read(World)`
+ * gives it.
  */
 const withApp = <T extends Pick<App.Any, "read">, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+  make: Effect.Effect<T, never>,
   use: (app: T, world: ReadingWorld) => A
 ): A =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.flatMap(make, (app) =>
-        Effect.map(app.read(World), (world) => use(app, world))
-      )
+    Effect.flatMap(make, (app) =>
+      Effect.map(app.read(World), (world) => use(app, world))
     )
   );
 

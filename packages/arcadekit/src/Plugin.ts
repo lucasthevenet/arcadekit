@@ -381,7 +381,7 @@ export const make = <
      * the code of the tick requires only the built-in services and resources,
      * since what a service keeps is no part of the world. While it builds, it
      * can use the built-in services and anything the plugins listed above
-     * provide. What it acquires is released when the app's scope closes.
+     * provide. What it acquires is released when the app is closed.
      */
     readonly layer?: L;
     /**

@@ -1,5 +1,4 @@
 import { Data, Effect, Option, Schema, Tracer } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Spawned } from "../src/index";
@@ -19,9 +18,6 @@ import {
   World,
 } from "../src/index";
 import { placedIn } from "./placed";
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const Position = Component.define("in/Position", {
   x: Field.f64,
@@ -120,7 +116,7 @@ describe("app.inspect", () => {
         ids.push(parent, child, bare);
       }),
     });
-    const app = run(App.make(App.define({ plugins: [Seed] })));
+    const app = Effect.runSync(App.make(App.define({ plugins: [Seed] })));
     const world = worldOf(app);
     const [parent, child, bare] = ids.map((id) => placedIn(world, id));
 
@@ -147,14 +143,14 @@ describe("app.inspect", () => {
   });
 
   it("copies every singleton the world holds, by name", () => {
-    const app = run(game);
+    const app = Effect.runSync(game);
     app.enqueue(Strike, { by: 7 });
     app.tick(1 / 60);
     expect(app.inspect().singletons["in/Score"]).toEqual({ points: 7 });
   });
 
   it("shows the actions queued for the next tick and the events waiting to be read, as plain data", () => {
-    const app = run(game);
+    const app = Effect.runSync(game);
     expect(app.inspect().stores).toEqual({});
     app.dispatch(Strike, { by: 5 });
     app.enqueue(Strike, { by: 6 });
@@ -183,7 +179,7 @@ describe("app.inspect", () => {
         (yield* Commands.spawns(Position)).spawn(Position.of({ x: 1, y: 2 }));
       }),
     });
-    const app = run(
+    const app = Effect.runSync(
       App.make(App.define({ plugins: [Seed], systems: [Scorer], handlers }))
     );
     app.enqueue(Strike, { by: 3 });
@@ -206,7 +202,7 @@ describe("app.inspect", () => {
   });
 
   it("lists every system in the order it runs, with whether its last turn ran it and how long it took", () => {
-    const app = run(game);
+    const app = Effect.runSync(game);
     const before = app.inspect().systems;
     expect(before.map(({ name, stage }) => [name, stage])).toEqual([
       ["in/Move", "update"],
@@ -253,7 +249,7 @@ describe("app.inspect", () => {
     const Look = System.tick("in/Look", function* () {
       traced = Option.isSome(yield* Effect.option(Effect.currentSpan));
     });
-    const app = run(
+    const app = Effect.runSync(
       App.make(App.define({ systems: [Move, Asleep, Look] })).pipe(
         Effect.provideService(Tracer.Tracer, tracer)
       )
@@ -274,7 +270,7 @@ describe("app.inspect", () => {
         // Busy, for the clock to see.
       }
     });
-    const app = run(App.make(App.define({ systems: [Slow] })));
+    const app = Effect.runSync(App.make(App.define({ systems: [Slow] })));
     app.tick(1 / 60);
     const [slow] = app.inspect().systems;
     expect(slow!.ms).toBeGreaterThanOrEqual(5);
@@ -282,7 +278,7 @@ describe("app.inspect", () => {
   });
 
   it("holds the events of the last tick by name, from actions, hooks and systems alike, and not those of the tick before", () => {
-    const app = run(game);
+    const app = Effect.runSync(game);
     app.enqueue(Strike, { by: 2 });
     app.enqueue(Begin, {});
     app.enqueue(Strike, { by: 3 });
@@ -296,7 +292,7 @@ describe("app.inspect", () => {
   });
 
   it("holds a refusal, and not what the refused handler emitted", () => {
-    const app = run(game);
+    const app = Effect.runSync(game);
     app.enqueue(Refuse, {});
     app.tick(1 / 60);
     const { events } = app.inspect();
@@ -312,7 +308,7 @@ describe("app.inspect", () => {
   });
 
   it("counts an event emitted between two ticks as the next tick's", () => {
-    const app = run(game);
+    const app = Effect.runSync(game);
     app.tick(1 / 60);
     app.dispatch(Strike, { by: 4 });
     expect(app.inspect().events).toEqual({});
@@ -321,7 +317,7 @@ describe("app.inspect", () => {
   });
 
   it("forgets the last tick's events when the game is rewound", () => {
-    const app = run(game);
+    const app = Effect.runSync(game);
     const moment = Timeline.capture(app);
     if (moment._tag !== "Success") {
       throw new Error("not captured");
@@ -338,7 +334,7 @@ describe("app.inspect", () => {
       yield* World;
       app!.inspect();
     });
-    app = run(App.make(App.define({ systems: [Peek] })));
+    app = Effect.runSync(App.make(App.define({ systems: [Peek] })));
     expect(() => app.tick(1 / 60)).toThrow(/between ticks/);
   });
 
@@ -346,7 +342,7 @@ describe("app.inspect", () => {
     const Spawner = System.tick("in/Spawner", function* () {
       (yield* Commands.spawns(Position)).spawn(Position.of({ x: 5, y: 5 }));
     });
-    const app = run(App.make(App.define({ systems: [Spawner] })));
+    const app = Effect.runSync(App.make(App.define({ systems: [Spawner] })));
     app.tick(1 / 60);
     expect(app.inspect().entities.map((e) => e.components)).toEqual([
       { "in/Position": { x: 5, y: 5 } },

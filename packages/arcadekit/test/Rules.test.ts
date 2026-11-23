@@ -1,5 +1,4 @@
 import { Context, Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import type { Spawned } from "../src/index";
@@ -42,11 +41,11 @@ const say = Action.handler(Say, function* ({ n }) {
   (yield* Ping.emits).emit(n);
 });
 
-/** Builds an app, hands it to `use`, then closes its scope. */
+/** Builds an app, and hands it to `use`. */
 const withApp = <A, T, E = never>(
-  make: Effect.Effect<A, E, Scope.Scope>,
+  make: Effect.Effect<A, E>,
   use: (app: A) => T
-): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): T => Effect.runSync(Effect.map(make, use));
 
 /** The events waiting to be read, by name, as `app.inspect()` copies them. */
 const waiting = (app: App.Any): unknown => app.inspect().stores[Event.STORE];
@@ -338,7 +337,7 @@ const duelOf = (...more: System.System<never, BuiltIn>[]) =>
   });
 
 /** An app of a game the board begins, its world, and each player's fighter. */
-const begin = <A extends App.Any, E>(make: Effect.Effect<A, E, Scope.Scope>) =>
+const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
   Effect.gen(function* () {
     const app = yield* make;
     const fighters = new Map<number, Entity>();

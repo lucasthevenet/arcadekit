@@ -23,7 +23,7 @@ import {
 import { System } from "arcadekit";
 import type { Frame, Spawned, Time } from "arcadekit";
 import type { ComponentDef, ComponentInput } from "arcadekit/ecs";
-import { Effect, Layer, Scope } from "effect";
+import { Effect, Layer } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 
 import { Three } from "../src/index";
@@ -84,14 +84,13 @@ const variant = (
   // What else the frame runs, for a variant that needs it.
   also: readonly System.System<never, Assets.Store>[] = []
 ): void => {
-  const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
     App.make(
       App.define({
         plugins: [Three.plugin, Assets.plugin, crowd(parts)],
         systems: [...also, system],
       })
-    ).pipe(Effect.provide(noRenderer), Scope.provide(scope))
+    ).pipe(Effect.provide(noRenderer))
   );
   const { bytes, ns } = measure(() => app.frame(0));
   console.log(
@@ -274,7 +273,6 @@ variant(
 // What the loops above replace: an Object3D per entity, its matrix worked
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
-  const scope = Scope.makeUnsafe();
   const spawned: Spawned[] = [];
   const world = Effect.runSync(
     Effect.gen(function* () {
@@ -284,7 +282,7 @@ variant(
         })
       );
       return yield* app.read(World);
-    }).pipe(Scope.provide(scope))
+    })
   );
   const entities = spawned.map((id) => {
     const entity = world.placed(id);

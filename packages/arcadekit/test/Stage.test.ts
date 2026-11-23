@@ -54,9 +54,7 @@ describe("a system's stage", () => {
   it("emits from the tick and reads that event from the frame", () => {
     seen.length = 0;
     const app = Effect.runSync(
-      Effect.scoped(
-        App.make(App.define({ plugins: [Start], systems: [Move, Read] }))
-      )
+      App.make(App.define({ plugins: [Start], systems: [Move, Read] }))
     );
     app.tick(1);
     app.frame(0);

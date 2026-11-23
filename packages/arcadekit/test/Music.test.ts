@@ -1,4 +1,4 @@
-import { Effect, Exit, Schema, Scope } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -72,21 +72,17 @@ const Score = Sound.music(
   { fade: 1 }
 );
 
-/** An app in a scope of its own, which the test closes when it likes. */
-const start = <A, E>(
-  make: Effect.Effect<A, E, Scope.Scope>,
+/** An app, which the test closes when it likes. */
+const start = <A extends { readonly close: Effect.Effect<void> }, E>(
+  make: Effect.Effect<A, E>,
   output?: Sound.Speaker
 ) => {
-  const scope = Scope.makeUnsafe();
   const provided =
     output === undefined
       ? make
       : make.pipe(Effect.provide(Sound.layer(output)));
-  const app = Effect.runSync(provided.pipe(Scope.provide(scope)));
-  return {
-    app,
-    close: () => Effect.runSync(Scope.close(scope, Exit.void)),
-  };
+  const app = Effect.runSync(provided);
+  return { app, close: () => Effect.runSync(app.close) };
 };
 
 /** The game of levels, with what plays its sound. */
@@ -532,7 +528,7 @@ describe("Sound.music", () => {
     });
     const made = App.make(App.define({ plugins: [Rules], systems: [Score] }));
     // @ts-expect-error the app still needs the player, which Sound.plugin gives
-    void (() => Effect.runSync(Effect.scoped(made)));
+    void (() => Effect.runSync(made));
     expect(Score.name).toBe("mu/Score");
     expect(Score.stage).toBe("frame");
   });

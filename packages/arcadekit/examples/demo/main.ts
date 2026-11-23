@@ -171,7 +171,7 @@ const program = Effect.gen(function* () {
     Effect.provide(Resource.layer(Gravity, -20)),
     // A game runs until its page or its process goes away. This one is
     // interrupted after a quarter of a second, which stops the frame loop
-    // and closes the app's scope.
+    // and closes the app.
     Effect.timeoutOption("250 millis")
   );
   yield* Console.log(

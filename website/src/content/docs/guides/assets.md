@@ -37,7 +37,7 @@ const Game = Plugin.make("game/Game", {
 
 - There is one system per bundle. To keep a bundle loaded across several states, give a condition that holds in each.
 - It runs in `"preFrame"`, the stage before the frame's own, so every frame system sees the bundle in the same status, wherever the two are listed.
-- Anything still loaded when the app's scope closes is released with it.
+- Anything still loaded when the app is closed is released with it.
 
 `yield*` on a bundle gives its current status: `Absent`, `Loading`, `Ready` with the `assets`, each under its name and with its type, or `Failed` with the error. A failed bundle is logged once, keeps nothing of what did load, and is retried the next time its level is entered.
 

@@ -241,52 +241,50 @@ export const generates = (): boolean => {
 /** Plays the game and says how it went, as plain data. */
 export const play = (): Record<string, unknown> =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        refusals.length = 0;
-        noticed = 0;
-        drawn = 0;
-        const app = yield* App.make(Game, { seed: 7, checkpointEvery: 1 });
-        const world = yield* app.read(World);
-        const outcomes: string[] = [];
-        for (let tick = 0; tick < 6; tick++) {
-          app.tick(1 / 60);
-          app.frame(0.5);
-          if (tick === 1 || tick === 3) {
-            // The first is paid; the second cannot be, and is taken back.
-            const exit = app.dispatch(Tax, { amount: tick === 1 ? 1 : 1000 });
-            outcomes.push(Exit.isSuccess(exit) ? "paid" : "refused");
-          }
-        }
-        const saved = app.save();
-        if (Exit.isFailure(saved)) {
-          return { failed: "save" };
-        }
-        const bytes = Save.encode(saved.value);
-        const read = Save.decode(bytes);
-        if (Exit.isFailure(read)) {
-          return { failed: "decode" };
-        }
-        const again = yield* App.make(Game, {
-          save: read.value,
-          checkpointEvery: 1,
-        });
-        again.tick(1 / 60);
+    Effect.gen(function* () {
+      refusals.length = 0;
+      noticed = 0;
+      drawn = 0;
+      const app = yield* App.make(Game, { seed: 7, checkpointEvery: 1 });
+      const world = yield* app.read(World);
+      const outcomes: string[] = [];
+      for (let tick = 0; tick < 6; tick++) {
         app.tick(1 / 60);
-        return {
-          hash: world.hash(),
-          loaded: (yield* again.read(World)).hash(),
-          bytes: bytes.length,
-          stats: { ...world.singleton(Stats) },
-          sheets: (yield* app.read(Ledger)).entities().map((entity) => {
-            const sheet = world.get(entity, Sheet)!;
-            return [sheet.hp, sheet.gold, sheet.name, sheet.born.getTime()];
-          }),
-          noticed,
-          drawn,
-          outcomes,
-          refusals,
-        };
-      })
-    )
+        app.frame(0.5);
+        if (tick === 1 || tick === 3) {
+          // The first is paid; the second cannot be, and is taken back.
+          const exit = app.dispatch(Tax, { amount: tick === 1 ? 1 : 1000 });
+          outcomes.push(Exit.isSuccess(exit) ? "paid" : "refused");
+        }
+      }
+      const saved = app.save();
+      if (Exit.isFailure(saved)) {
+        return { failed: "save" };
+      }
+      const bytes = Save.encode(saved.value);
+      const read = Save.decode(bytes);
+      if (Exit.isFailure(read)) {
+        return { failed: "decode" };
+      }
+      const again = yield* App.make(Game, {
+        save: read.value,
+        checkpointEvery: 1,
+      });
+      again.tick(1 / 60);
+      app.tick(1 / 60);
+      return {
+        hash: world.hash(),
+        loaded: (yield* again.read(World)).hash(),
+        bytes: bytes.length,
+        stats: { ...world.singleton(Stats) },
+        sheets: (yield* app.read(Ledger)).entities().map((entity) => {
+          const sheet = world.get(entity, Sheet)!;
+          return [sheet.hp, sheet.gold, sheet.name, sheet.born.getTime()];
+        }),
+        noticed,
+        drawn,
+        outcomes,
+        refusals,
+      };
+    })
   );

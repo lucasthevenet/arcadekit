@@ -1,5 +1,4 @@
 import { Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot";
@@ -65,9 +64,6 @@ const Everything = Singleton.define(
   }
 );
 const Body = Component.define("sg/Body", { x: Field.f32 });
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const problemOf = (attempt: () => unknown): SnapshotError => {
   try {
@@ -593,7 +589,7 @@ const Rules = Plugin.make("sg/Rules", {
 
 describe("a singleton in an app", () => {
   it("is what `yield*` gives a handler and a system, to read and to write", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const rounds: number[] = [];
         const Watch = System.tick("Watch", function* () {
@@ -628,7 +624,7 @@ describe("a singleton in an app", () => {
   });
 
   it("is as it was after a refused action, and the game replays", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const game = App.define({ plugins: [Rules] });
         const app = yield* App.make(game, { checkpointEvery: 1 });
@@ -658,7 +654,7 @@ describe("a singleton in an app", () => {
   });
 
   it("is saved with the game, and loaded by a game with no list of its components", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }), {
           checkpointEvery: 1,
@@ -755,7 +751,7 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
 
   it("is built once, put back by a refused action, and built again after a load and a rewind", () => {
     built = 0;
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Game);
         const byX = () => Effect.map(app.read(Index), (index) => index.byX);

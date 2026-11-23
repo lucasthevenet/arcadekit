@@ -78,10 +78,14 @@ const check = Effect.gen(function* () {
       others: [peer === "ada" ? "grace" : "ada"],
       delta: 1 / 30,
     });
-    const connected = yield* Transport.connect(session).pipe(
-      Effect.provide(
-        Transport.layerWebSocket(Relay.address(base, { room, peer }))
-      )
+    // Held in the check's scope, which closes each when the check ends.
+    const connected = yield* Effect.acquireRelease(
+      Transport.connect(session).pipe(
+        Effect.provide(
+          Transport.layerWebSocket(Relay.address(base, { room, peer }))
+        )
+      ),
+      (made) => made.close
     );
     seats.push({ peer, app: session.app, session, connected });
   }

@@ -1,14 +1,10 @@
 import { Effect } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as Entry from "../src/Color";
 import type { Spawned } from "../src/index";
 import { App, Color, Commands, Plugin, World } from "../src/index";
 import { placedIn } from "./placed";
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 describe("Color", () => {
   it("is two components of three 32-bit floats, one for each way of writing a colour, each known by its name", () => {
@@ -38,7 +34,7 @@ describe("Color", () => {
         );
       }),
     });
-    const colours = run(
+    const colours = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Paint] }));
         const world = yield* app.read(World);

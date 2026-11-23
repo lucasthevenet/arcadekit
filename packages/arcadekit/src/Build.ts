@@ -4,8 +4,7 @@
  * services, its runner, its inbox and its loop. `App.make` makes its app
  * here.
  */
-import { Cause, Context, Effect, Exit, Layer, Metric } from "effect";
-import type { Scope } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Metric, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
@@ -91,8 +90,9 @@ export interface Built<E = never, HU = never> {
 }
 
 /**
- * Makes the app of a game, from a seed or from a save. It fails with
- * `LoadRefused` only when it is given a save.
+ * Makes the app of a game, from a seed or from a save, in a scope of its
+ * own, which the app's `close` closes, and which is closed at once when the
+ * making fails. It fails with `LoadRefused` only when it is given a save.
  *
  * @category Constructors
  */
@@ -107,7 +107,29 @@ export const build = <
 ): Effect.Effect<
   Built<TickError<S, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
-  Scope.Scope | External<S, H, P>
+  External<S, H, P>
+> =>
+  Effect.suspend(() => {
+    const scope = Scope.makeUnsafe();
+    return Effect.onError(assemble(game, start, scope), (cause) =>
+      Scope.close(scope, Exit.failCause(cause))
+    );
+  });
+
+/** Puts an app together in `scope`, which is the app's. */
+const assemble = <
+  S extends Systems,
+  H extends Handlers,
+  P extends Plugins,
+  SV extends Save.Save | undefined = undefined,
+>(
+  game: Game<S, H, P>,
+  start: StartOptions<SV>,
+  scope: Scope.Closeable
+): Effect.Effect<
+  Built<TickError<S, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
+  External<S, H, P>
 > =>
   Effect.gen(function* () {
     const { save: given, seed } = start;
@@ -184,10 +206,13 @@ export const build = <
         layer = Layer.provideMerge(plugin.layer, layer);
       }
     }
-    const built = yield* Layer.build(layer);
-    // Everything the caller provided (their services, resource overrides, the
-    // scope) is captured once here and handed to every system and handler.
-    const provided = yield* Effect.context<External<S, H, P>>();
+    const built = yield* Layer.buildWithScope(layer, scope);
+    // Everything the caller provided (their services, resource overrides) is
+    // captured once here and handed to every system and handler, with the
+    // app's own scope in place of any the caller had.
+    const provided = (yield* Effect.context<External<S, H, P>>()).pipe(
+      Context.add(Scope.Scope, scope)
+    );
     const runner = new Runner.Runner(
       dispatcher,
       Context.get(Context.merge(provided, built), Metric.FiberRuntimeMetrics),
@@ -204,9 +229,12 @@ export const build = <
       Context.add(Metric.FiberRuntimeMetrics, runner.metrics)
     ) as Context.Context<unknown>;
     const runFork = Effect.runForkWith(context);
-    // In the scope the app is made in, wherever its layer was provided: the
-    // devices are heard for as long as the program that made the app.
-    const listener = yield* Context.get(context, Input.Source).listen;
+    // In the app's scope, wherever its layer was provided: the devices are
+    // heard until the app is closed.
+    const listener = yield* Scope.provide(
+      Context.get(context, Input.Source).listen,
+      scope
+    );
 
     const spans = new Loop.Spans(context);
     const inbox = new Inbox.Inbox({
@@ -268,7 +296,10 @@ export const build = <
       return loop.tick(delta) as Ran;
     };
 
-    yield* Effect.addFinalizer(() => Effect.sync(() => dispatcher.flush()));
+    yield* Scope.addFinalizer(
+      scope,
+      Effect.sync(() => dispatcher.flush())
+    );
 
     const reading = Context.make(World, Context.get(builtIns, World)).pipe(
       Context.add(Time, time)
@@ -340,6 +371,7 @@ export const build = <
         );
         return log.checkpoint();
       },
+      close: Scope.close(scope, Exit.void),
       tickExit,
       tick: (delta) => {
         orThrow(tickExit(delta));
@@ -396,5 +428,5 @@ export const build = <
     Built<TickError<S, P>, AllHandlers<H, P>>,
     | Plugin.ErrorOf<P[number]>
     | (SV extends Save.Save ? Save.LoadRefused : never),
-    Scope.Scope | External<S, H, P>
+    External<S, H, P>
   >;

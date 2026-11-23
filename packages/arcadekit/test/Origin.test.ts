@@ -125,10 +125,8 @@ describe("who issued an action", () => {
     });
     const alteredRecording = { ...recorded.recording, log: anonymous };
     const diverged = Effect.runSync(
-      Effect.scoped(
-        Effect.flip(
-          Journal.replay(alteredRecording, CoinGame, { checkpointEvery: 1 })
-        )
+      Effect.flip(
+        Journal.replay(alteredRecording, CoinGame, { checkpointEvery: 1 })
       )
     );
     expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
@@ -178,17 +176,15 @@ describe("who issued an action", () => {
       throw new Error("the save could not be read");
     }
     Effect.runSync(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const app = yield* App.make(CoinGame, {
-            save: read.value,
-            checkpointEvery: 1,
-          });
-          app.tick(DELTA);
-          const { ada, grace } = yield* app.read(Purse);
-          expect({ ada, grace }).toEqual({ ada: 0, grace: 6 });
-        })
-      )
+      Effect.gen(function* () {
+        const app = yield* App.make(CoinGame, {
+          save: read.value,
+          checkpointEvery: 1,
+        });
+        app.tick(DELTA);
+        const { ada, grace } = yield* app.read(Purse);
+        expect({ ada, grace }).toEqual({ ada: 0, grace: 6 });
+      })
     );
   });
 

@@ -1,5 +1,4 @@
 import { Cause, Context, Data, Effect, Exit, Layer, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import {
@@ -41,9 +40,6 @@ const Phase = State.define("in/Phase", ["playing", "paused"]);
 const waitingIn = (save: Save.Save): unknown =>
   readSnapshot(save.world).stores.find((store) => store.name === Event.STORE)
     ?.data;
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const withSource =
   (source: Input.Listener) =>
@@ -122,7 +118,7 @@ const reports = (app: App.Any): unknown[] =>
 
 describe("the input stage", () => {
   it("runs when whoever steps the app runs it, in order, and never in a tick or a frame", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const note = (name: string, stage: System.Stage) => {
@@ -196,7 +192,7 @@ describe("the input stage", () => {
 
   it("is told what the devices say: one sample for every system of a run, and a new one the next", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const seen: unknown[] = [];
         const A = System.input("A", function* () {
@@ -235,7 +231,7 @@ describe("the input stage", () => {
   });
 
   it("has no devices unless a source is provided", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const seen: unknown[] = [];
         const A = System.input("A", function* () {
@@ -259,7 +255,7 @@ describe("the input stage", () => {
         return inner.sample();
       },
     };
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Tick = System.tick("Tick", function* () {});
         const app = yield* App.make(App.define({ systems: [Tick] }));
@@ -313,7 +309,7 @@ describe("the input stage", () => {
       ),
     };
     for (const [what, attempt] of Object.entries(attempts)) {
-      run(
+      Effect.runSync(
         Effect.gen(function* () {
           const Vandal = System.input("Vandal", function* () {
             yield* attempt;
@@ -343,7 +339,7 @@ describe("the input stage", () => {
       );
     }
     // Nor can it be reached around: the app says where it is.
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         let app: App.App<never, typeof bump> | undefined;
         let reach: () => unknown = () => undefined;
@@ -389,7 +385,7 @@ describe("the input stage", () => {
   });
 
   it("is checked by verifyFrames, which names the system that wrote through raw columns", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Scribble = System.input("Scribble", function* () {
           (yield* Seen).eachChunk((start, end, ships) => {
@@ -438,7 +434,7 @@ describe("the input stage", () => {
   });
 
   it("is not tripped by verifyFrames when a system between ticks issues an action, which the world's hash still covers", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Bump = Action.define(
           "in/VerifiedBump",
@@ -469,7 +465,7 @@ describe("the input stage", () => {
 
   it("issues actions that are logged as input from outside and applied at the start of the next tick", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Bump = Action.define(
           "in/Bump",
@@ -511,7 +507,7 @@ describe("the input stage", () => {
 
   it("is run by the fixed step just before each tick, and not at all when no tick is due", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const order: string[] = [];
         const Listen = System.input("Listen", function* () {
@@ -552,7 +548,7 @@ describe("the input stage", () => {
   });
 
   it("reads events and changes from a place of its own, which is not saved", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Landed = Event.define(
           "in/Landed",
@@ -649,7 +645,7 @@ describe("the input stage", () => {
         ? System.input(name, body)
         : System.frame(name, body);
     };
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         // An app with an input stage and no frame stage; one with both;
         // and one with neither, which is the game they must not change.
@@ -748,7 +744,7 @@ describe("the input stage", () => {
         ? System.input("Late", body)
         : System.frame("Late", body);
     };
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         for (const stage of ["input", "frame"] as const) {
           let listening = false;
@@ -781,7 +777,7 @@ describe("the input stage", () => {
     const emit = Action.handler(Emit, function* () {
       (yield* Done.emits).emit({});
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         let heard = 0;
         const Hear = System.input("Hear", function* () {
@@ -820,7 +816,7 @@ describe("the input stage", () => {
 
   it("is not run by a tick: a game stepped by hand hears its keys when it runs the stage", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           checkpointEvery: 0,
@@ -859,7 +855,7 @@ describe("the input stage", () => {
 
   it("fails on its own: whoever ran it is told, and a tick runs without it", () => {
     class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         let broken = true;
         let ran = 0;
@@ -894,7 +890,7 @@ describe("the input stage", () => {
     const source = Input.makeManualSource();
     let recording: Journal.Recording | undefined;
     let hash = 0;
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           checkpointEvery: 1,
@@ -912,7 +908,7 @@ describe("the input stage", () => {
     const here = Input.makeManualSource();
     here.press("ArrowLeft");
     here.tap("Space");
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const again = yield* Journal.replay(
           recording!,
@@ -932,7 +928,7 @@ describe("the input stage", () => {
 
   it("gives a system's failure back typed, and a stopped app runs none of it", () => {
     class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Fail = System.input("Fail", function* () {
           return yield* new NoKeyboard();
@@ -972,7 +968,7 @@ describe("the input stage", () => {
   });
 
   it("draws its random numbers from a generator that is not the world's", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const drawn: number[] = [];
         const Jitter = System.input("Jitter", function* () {
@@ -995,7 +991,7 @@ describe("the input stage", () => {
 describe("the picture of the devices in the world", () => {
   it("says what is held, and what went down or up in this tick, the same to every system", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const seen: string[] = [];
         const look = (name: string) =>
@@ -1116,7 +1112,7 @@ describe("the picture of the devices in the world", () => {
 
   it("has the pointer and the gamepads, each by its own name", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         let seen: unknown;
         const Look = System.tick("Look", function* () {
@@ -1203,7 +1199,7 @@ describe("the picture of the devices in the world", () => {
 
   it("goes through the action log, so a replay needs no devices at all", () => {
     const source = Input.makeManualSource();
-    const { hashes, played, text, ticks } = run(
+    const { hashes, played, text, ticks } = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           checkpointEvery: 1,
@@ -1253,7 +1249,7 @@ describe("the picture of the devices in the world", () => {
     expect(ticks).toBe(7);
 
     // The replay is given no source, and its input stage is never run.
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const decoded = Journal.decode(text);
         assert(Exit.isSuccess(decoded));
@@ -1290,7 +1286,7 @@ describe("the picture of the devices in the world", () => {
 
   it("is untouched while nothing changes: no action, and the hash of a game that has no input", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           checkpointEvery: 0,
@@ -1325,7 +1321,7 @@ describe("the picture of the devices in the world", () => {
   });
 
   it("holds the same data for the same buttons, in whatever order they went down", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const one = yield* App.make(App.define({ plugins: [Input.plugin] }));
         const two = yield* App.make(App.define({ plugins: [Input.plugin] }));
@@ -1396,7 +1392,7 @@ describe("the picture of the devices in the world", () => {
   });
 
   it("forgets a button that went up once the tick it went up in is over", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Input.plugin] }));
         const never = yield* App.make(App.define({ plugins: [Input.plugin] }));
@@ -1425,7 +1421,7 @@ describe("the picture of the devices in the world", () => {
   it("is left as it is where there are no devices: reports from elsewhere drive a game through a driver", () => {
     // A game played from a keyboard, through a driver, and its reports.
     const source = Input.makeManualSource();
-    const { hashes, log } = run(
+    const { hashes, log } = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           checkpointEvery: 0,
@@ -1450,7 +1446,7 @@ describe("the picture of the devices in the world", () => {
     // The same game with no devices, given those reports as they came,
     // and run by the same driver, which runs its input stage too: as a
     // peer on another machine is, or a recording played back at speed.
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           checkpointEvery: 0,
@@ -1480,7 +1476,7 @@ describe("the picture of the devices in the world", () => {
 
   it("is what the devices say: a report made by hand lasts until they are next read", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           checkpointEvery: 0,
@@ -1517,7 +1513,7 @@ describe("the picture of the devices in the world", () => {
   });
 
   it("refuses a report that is not one, as any action's payload is checked", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Input.plugin] }));
         const before = hashOf(app);
@@ -1544,7 +1540,7 @@ describe("the picture of the devices in the world", () => {
 
   it("is saved with a game, and brought up to date by the devices when it is loaded", () => {
     const source = Input.makeManualSource();
-    const save = run(
+    const save = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }));
         source.press("ArrowRight");
@@ -1558,7 +1554,7 @@ describe("the picture of the devices in the world", () => {
       }).pipe(withSource(source))
     );
     // Loaded with no devices and never asked to read any: the key is held.
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           save,
@@ -1571,7 +1567,7 @@ describe("the picture of the devices in the world", () => {
     // Loaded where the key is no longer down: the first read lets it go.
     const later = Input.makeManualSource();
     later.move(Input.pointerX, 50);
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           save,
@@ -1586,7 +1582,7 @@ describe("the picture of the devices in the world", () => {
       }).pipe(withSource(later))
     );
     // Loaded where there is no pointer either: its place goes back to 0.
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Flying] }), {
           save,
@@ -1622,7 +1618,7 @@ describe("the picture of the devices in the world", () => {
       Input.onRelease("Space", Probe, {})
     );
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({
@@ -1669,7 +1665,7 @@ describe("the picture of the devices in the world", () => {
   it("is each world's own", () => {
     const left = Input.makeManualSource();
     const right = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const one = yield* App.make(App.define({ plugins: [Flying] })).pipe(
           withSource(left)
@@ -1700,7 +1696,7 @@ describe("the picture of the devices in the world", () => {
       (yield* Score.writes).points += 1;
     });
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const drawn: string[] = [];
         const Draw = System.frame("Draw", function* () {
@@ -1784,7 +1780,7 @@ describe("bindings", () => {
       }))
     );
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({
@@ -1804,7 +1800,7 @@ describe("bindings", () => {
 
   it("issue the game's own actions when their moment comes, once each, in the order they were given", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         done.length = 0;
         const app = yield* App.make(App.define({ plugins: [Game] }), {
@@ -1860,7 +1856,7 @@ describe("bindings", () => {
 
   it("are in the log as those actions, so a replay has them and reads no device", () => {
     const source = Input.makeManualSource();
-    const recording = run(
+    const recording = Effect.runSync(
       Effect.gen(function* () {
         done.length = 0;
         const app = yield* App.make(App.define({ plugins: [Game] }), {
@@ -1884,7 +1880,7 @@ describe("bindings", () => {
       { tick: 0, name: "in/Aim", payload: { x: 7 }, queued: true },
       { tick: 1, name: "in/Fire", payload: { x: 7, y: 0 }, queued: true },
     ]);
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         done.length = 0;
         // The same handlers, and nothing that listens to a device.
@@ -1901,7 +1897,7 @@ describe("bindings", () => {
 
   it("say so when the action they are bound to has no handler", () => {
     const source = Input.makeManualSource();
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ systems: [Controls] }));
         app.input();

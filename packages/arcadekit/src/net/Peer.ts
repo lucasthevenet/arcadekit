@@ -38,6 +38,7 @@
  * `Session.make` makes a peer with its app.
  */
 import { Cause, Exit } from "effect";
+import type { Effect } from "effect";
 
 import * as Action from "../Action";
 import type * as App from "../App";
@@ -182,7 +183,7 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  */
 export type PeerApp<E> = Pick<
   App.App<E>,
-  "actionLog" | "checkpoint" | "frame" | "inputExit"
+  "actionLog" | "checkpoint" | "close" | "frame" | "inputExit"
 > &
   Timeline.Game;
 
@@ -190,7 +191,7 @@ export type PeerApp<E> = Pick<
  * Makes the peer of an app that has been taken over for it: `take` is given
  * what receives each action issued from outside, and returns the reins of
  * the app. It is the one session there is: one that predicts no tick has an
- * `ahead` of 0.
+ * `ahead` of 0. Its `close` closes the app.
  *
  * @internal
  */
@@ -198,7 +199,10 @@ export const build = <E, A extends PeerApp<E>>(
   app: A,
   take: (issued: (name: string, payload: unknown) => void) => Reins<E>,
   options: Options
-): Peer<E> & { readonly app: A } => {
+): Peer<E> & {
+  readonly app: A;
+  readonly close: Effect.Effect<void>;
+} => {
   const { ahead, delay, delta, game, me: peer } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
@@ -455,6 +459,7 @@ export const build = <E, A extends PeerApp<E>>(
 
   return {
     app,
+    close: app.close,
     me: peer,
     peers,
     delta,

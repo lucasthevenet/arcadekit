@@ -170,10 +170,10 @@ const noSource: Source = {
  * test that simulates input provides one it controls,
  * `Input.layer(Input.makeManualSource())`.
  *
- * It listens to nothing itself. `App.make` runs `listen` in the scope the app
- * is made in, and the listening stops when that scope closes, so whatever the
- * layer is provided to, the devices are heard for as long as the program that
- * made the app. Each app listens for itself.
+ * It listens to nothing itself. `App.make` runs `listen` in the app's own
+ * scope, and the listening stops when the app is closed, so whatever the
+ * layer is provided to, the devices are heard for as long as the app is open.
+ * Each app listens for itself.
  *
  * @category Services
  */
@@ -183,8 +183,8 @@ export const Source: Context.Reference<Source> = Context.Reference<Source>(
 );
 
 /**
- * Listens to the devices in the current scope, as `App.make` does: for a
- * program that samples them itself.
+ * Listens to the devices in the current scope, until that scope closes: for a
+ * program that samples them itself. `App.make` listens in the app's own scope.
  *
  * @category Running
  */

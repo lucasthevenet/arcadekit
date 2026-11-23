@@ -1,5 +1,4 @@
 import { Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -39,9 +38,9 @@ import type { Game, SteeredGame } from "./peers";
 
 /** Runs `use` with what `make` makes: a build, a sync test. */
 const withMade = <T, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
+  make: Effect.Effect<T, never>,
   use: (made: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): A => Effect.runSync(Effect.map(make, use));
 
 /** A stretch of a game, played by a seed: the same moves for the same seed. */
 const stretch = (app: Game, seed: number, ticks: number): number[] => {
