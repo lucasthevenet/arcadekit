@@ -106,10 +106,9 @@ const Arcade = App.define({ plugins: [Game] });
 
 const ui = View.layer(Arcade, (bridge) => mount(document.body, bridge));
 
-Browser.runMain(
-  Driver.run(App.make(Arcade), { hz: 60 }).pipe(Effect.provide(ui)),
-  { target: document.querySelector("canvas")! }
-);
+Browser.runMain(Driver.run(Arcade, { hz: 60 }).pipe(Effect.provide(ui)), {
+  target: document.querySelector("canvas")!,
+});
 ```
 
 `View.layer(game, mount)` gives the app a UI. When the app is made, `View.plugin` makes the bridge and calls `mount` with it. If `mount` returns a function, the app calls it when it closes, to take the UI off the page. Each app made under the layer hands out a bridge of its own. A game that doesn't list `View.plugin`, itself or through one of its plugins, doesn't compile here, since its app would hand out no bridge.

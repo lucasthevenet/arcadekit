@@ -53,12 +53,9 @@ const Movement = System.tick("game/Movement", function* () {
   });
 });
 
-Browser.runMain(
-  Driver.run(App.make(App.define({ systems: [Movement] })), { hz: 60 }),
-  {
-    target: canvas,
-  }
-);
+Browser.runMain(Driver.run(App.define({ systems: [Movement] }), { hz: 60 }), {
+  target: canvas,
+});
 ```
 
 <div class="links">

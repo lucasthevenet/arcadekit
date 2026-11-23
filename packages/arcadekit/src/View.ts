@@ -24,7 +24,7 @@
  *   }
  *
  *   Browser.runMain(
- *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(
+ *     Driver.run(Arcade, { hz: 60 }).pipe(
  *       Effect.provide(View.layer(Arcade, mount))
  *     )
  *   )
@@ -353,7 +353,7 @@ type Listed<P extends readonly Plugin.Any[]> = [Port] extends [
  *
  *   const Arcade = App.define({ plugins: [Game] })
  *   Browser.runMain(
- *     Driver.run(App.make(Arcade), { hz: 60 }).pipe(
+ *     Driver.run(Arcade, { hz: 60 }).pipe(
  *       Effect.provide(View.layer(Arcade, (ui) => mountMenu(document.body, ui)))
  *     )
  *   )

@@ -57,7 +57,7 @@ const program = Effect.gen(function* () {
 
 `Save.encode` writes a short header and a little JSON text, then the snapshot unchanged. For 100,000 entities with four float fields, a save is 2.8 MB and takes about 0.7 ms.
 
-`App.make(game, { save })` continues a game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds what each setup spawned. To start a page from a save, give that app to `Driver.run`. A save holds where the game's random sequence had got to, so `App.make` takes `save` or `seed`, not both.
+`App.make(game, { save })` continues a game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds what each setup spawned. To start a page from a save, give it to `Driver.run`, as in `Driver.run(game, { hz: 60, save })`. A save holds where the game's random sequence had got to, so `App.make` takes `save` or `seed`, not both.
 
 To return the same app to an earlier moment in the same run, use `Timeline.capture(app)` and `Timeline.rewind(app, moment)`, which work in memory. See [capturing and rewinding](capturing-and-rewinding.md).
 
