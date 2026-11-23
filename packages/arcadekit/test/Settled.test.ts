@@ -274,7 +274,7 @@ describe("a game that ticks when its player moves", () => {
   const Played = App.define({ plugins: [Game] });
   const play = () => {
     frames = 0;
-    const ui = View.makeBridge();
+    const ui = View.makeBridge(Played);
     const source = Input.makeManualSource();
     const app = run(
       App.make(Played, {

@@ -250,15 +250,13 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
             phase: "playing",
           };
         });
-        const ui = View.makeBridge();
+        const WithHud = App.define({ plugins: [View.plugin], systems: [Show] });
+        const ui = View.makeBridge(WithHud);
         let heard = 0;
         ui.subscribe(Hud, () => {
           heard++;
         });
-        const made = App.make(
-          App.define({ plugins: [View.plugin], systems: [Show] }),
-          { checkpointEvery: 0 }
-        );
+        const made = App.make(WithHud, { checkpointEvery: 0 });
         const app = yield* mode === "nobody"
           ? made
           : made.pipe(Effect.provide(View.layer(ui)));
@@ -350,12 +348,16 @@ const atRest = (): number =>
           return { phase: (yield* Phase).value as string };
         });
         const source = Input.makeManualSource();
-        const app = yield* App.make(
-          App.define({ plugins: [Input.plugin, View.plugin], systems: [Show] }),
-          { checkpointEvery: 0 }
-        ).pipe(
+        const Resting = App.define({
+          plugins: [Input.plugin, View.plugin],
+          systems: [Show],
+        });
+        const app = yield* App.make(Resting, { checkpointEvery: 0 }).pipe(
           Effect.provide(
-            Layer.merge(Input.layer(source), View.layer(View.makeBridge()))
+            Layer.merge(
+              Input.layer(source),
+              View.layer(View.makeBridge(Resting))
+            )
           )
         );
         const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });

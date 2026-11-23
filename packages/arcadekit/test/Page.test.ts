@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Game, Screen } from "../examples/page/game";
 import { Hud, Menu, Start } from "../examples/page/protocol";
+import type { Requests } from "../examples/page/protocol";
 import { mount as mountDom } from "../examples/page/uiDom";
 import { mount as mountReact } from "../examples/page/uiReact";
 import { App, Assets, Input, Sound, View } from "../src/index";
@@ -47,7 +48,11 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
+const Catch = App.define({ plugins: [Game] });
+
+const play = async (
+  mount: (root: Element, ui: View.Bridge<Requests>) => () => void
+) => {
   vi.stubGlobal("createImageBitmap", async () => ({ close() {} }));
   // The level's sound is decoded as a page decodes it.
   vi.stubGlobal(
@@ -58,15 +63,14 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
       }
     }
   );
-  const ui = View.makeBridge();
+  const ui = View.makeBridge(Catch);
   // What the UI is handed: the bridge, counting how often it is told.
   let told = 0;
-  const handed: View.Bridge = {
+  const handed: typeof ui = {
     get: ui.get,
     send: ui.send,
     _publish: ui._publish,
     _take: ui._take,
-    _connect: ui._connect,
     subscribe: (view, listener) =>
       ui.subscribe(view, (value) => {
         told++;
@@ -100,7 +104,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   const sound = Sound.makeRecorder();
   const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
-    App.make(App.define({ plugins: [Game] }), { seed: 3 }).pipe(
+    App.make(Catch, { seed: 3 }).pipe(
       Effect.provide(
         Layer.mergeAll(
           View.layer(ui),
@@ -298,9 +302,14 @@ describe("the page's UI", () => {
   };
 
   it("holds no reference to the world: it imports the views and actions it may use, and the type of the bridge", () => {
-    expect(imported("uiDom.ts")).toEqual(["../../src/View", "./protocol"]);
+    expect(imported("uiDom.ts")).toEqual([
+      "../../src/View",
+      "./protocol",
+      "./protocol",
+    ]);
     expect(imported("uiReact.ts")).toEqual([
       "../../src/View",
+      "./protocol",
       "./protocol",
       "react",
       "react",
