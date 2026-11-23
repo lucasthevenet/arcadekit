@@ -92,7 +92,7 @@ const variant = (
       })
     ).pipe(Effect.provide(noRenderer))
   );
-  const { bytes, ns } = measure(() => app.frame(0));
+  const { bytes, ns } = measure(() => app.frame());
   console.log(
     `${name.padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
   );

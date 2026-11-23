@@ -283,7 +283,7 @@ describe("the frame stage", () => {
         );
         expect(app.systemOrder).toEqual(["Tick"]);
         expect(app.frameOrder).toEqual(["Clear", "Draw", "Hud"]);
-        app.frame(0);
+        app.frame();
         expect(ran).toEqual(["Clear", "Draw"]);
         app.tick(1);
         app.tick(1);
@@ -514,7 +514,7 @@ describe("the frame stage", () => {
         const world = yield* app.read(World);
         app.tick(1);
         const before = world.hash();
-        expect(() => app.frame(0)).toThrow(
+        expect(() => app.frame()).toThrow(
           /was emitted in the frame stage or the input stage/
         );
         expect(world.hash()).toBe(before);
@@ -543,8 +543,8 @@ describe("the frame stage", () => {
         });
         const world = yield* app.read(World);
         const before = world.hash();
-        app.frame(0);
-        app.frame(0);
+        app.frame();
+        app.frame();
         expect(new Set(drawn).size).toBe(4);
         // The hash holds the state of the world's generator.
         expect(world.hash()).toBe(before);
@@ -554,16 +554,16 @@ describe("the frame stage", () => {
           { seed: 5 }
         );
         drawn.length = 0;
-        again.frame(0);
-        again.frame(0);
+        again.frame();
+        again.frame();
         const first = [...drawn];
         drawn.length = 0;
         const third = yield* App.make(
           App.define({ systems: [Sparkle, Roll] }),
           { seed: 5 }
         );
-        third.frame(0);
-        third.frame(0);
+        third.frame();
+        third.frame();
         expect(drawn).toEqual(first);
       })
     );
@@ -593,7 +593,7 @@ describe("the frame stage", () => {
         const world = yield* app.read(World);
         app.tick(1);
         const before = world.hash();
-        expect(() => app.frame(0)).toThrow(
+        expect(() => app.frame()).toThrow(
           /A draw from world\.random was made while the world is frozen/
         );
         expect(world.hash()).toBe(before);
@@ -607,7 +607,7 @@ describe("the frame stage", () => {
         app.tick(1);
         expect(world.hash()).not.toBe(before);
         cheat = false;
-        app.frame(0);
+        app.frame();
         expect(Exit.isSuccess(app.frameExit(0))).toBe(true);
       })
     );
@@ -640,7 +640,7 @@ describe("the frame stage", () => {
         const app = yield* make([Roll, Button]);
         for (let n = 0; n < 5; n++) {
           app.tick(1);
-          app.frame(0);
+          app.frame();
         }
         expect(ballsOf(app)).toEqual([{ x: 1 + 1 + 1 + 5 + 5, vx: 5 }]);
         expect(
@@ -663,7 +663,7 @@ describe("the frame stage", () => {
         });
         const hasty = yield* make([Hasty]);
         own = hasty;
-        expect(() => hasty.frame(0)).toThrow(
+        expect(() => hasty.frame()).toThrow(
           /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/
         );
       })
@@ -687,17 +687,17 @@ describe("the frame stage", () => {
           App.define({ systems: [Reenter, InTick] })
         );
         inFrame = () => app.tick(1);
-        expect(() => app.frame(0)).toThrow(
+        expect(() => app.frame()).toThrow(
           /App\.tick was called from inside a frame/
         );
-        inFrame = () => app.frame(0);
-        expect(() => app.frame(0)).toThrow(
+        inFrame = () => app.frame();
+        expect(() => app.frame()).toThrow(
           /App\.frame was called from inside a frame/
         );
         inFrame = () => app.save();
-        expect(() => app.frame(0)).toThrow(/save\(\) was called during/);
+        expect(() => app.frame()).toThrow(/save\(\) was called during/);
         inFrame = undefined;
-        inTick = () => app.frame(0);
+        inTick = () => app.frame();
         drawn.length = 0;
         expect(() => app.tick(1)).toThrow(
           /App\.frame was called from inside a tick/
@@ -706,7 +706,7 @@ describe("the frame stage", () => {
         expect(drawn).toEqual([]);
         inTick = undefined;
         app.tick(1);
-        app.frame(0);
+        app.frame();
       })
     );
   });
@@ -751,15 +751,15 @@ describe("what the frame stage reads", () => {
           App.define({ systems: [Late, Emit, Listen] })
         );
         app.tick(1);
-        app.frame(0);
+        app.frame();
         expect(heard).toEqual([1]);
         // Four ticks with no frame between them, as after a hitch.
         for (let n = 0; n < 4; n++) {
           app.tick(1);
         }
-        app.frame(0);
+        app.frame();
         expect(heard).toEqual([1, 2, 3, 4, 5]);
-        app.frame(0);
+        app.frame();
         expect(heard).toEqual([1, 2, 3, 4, 5]);
         // The simulation cannot tell that anything was kept for the frame
         // stage: a system that first reads on tick 4 hears what it would
@@ -777,7 +777,7 @@ describe("what the frame stage reads", () => {
           App.define({ systems: [Late, Emit, Listen] })
         );
         again.tick(1);
-        again.frame(0);
+        again.frame();
         for (let n = 0; n < 4; n++) {
           again.tick(1);
         }
@@ -801,7 +801,7 @@ describe("what the frame stage reads", () => {
             sat.length = 0;
             const each = yield* App.make(App.define({ systems }));
             each.tick(1);
-            each.frame(0);
+            each.frame();
             for (let n = 0; n < 5; n++) {
               each.tick(1);
             }
@@ -843,26 +843,26 @@ describe("what the frame stage reads", () => {
         // A frame stage that keeps running is kept for, however long.
         for (let n = 0; n < 700; n++) {
           app.tick(1);
-          app.frame(0);
+          app.frame();
         }
         for (let n = 0; n < 4; n++) {
           app.tick(1);
         }
-        app.frame(0);
+        app.frame();
         expect(heard.at(-1)).toBe(4);
         heard.length = 0;
         app.tick(1);
-        app.frame(0);
+        app.frame();
         for (let n = 0; n < 500; n++) {
           app.tick(1);
         }
-        app.frame(0);
+        app.frame();
         // All 500 were kept.
         expect(heard).toEqual([1, 500]);
         for (let n = 0; n < 2000; n++) {
           app.tick(1);
         }
-        app.frame(0);
+        app.frame();
         // After 600 ticks without a frame the app stopped keeping them:
         // what is left is what any reader would find.
         expect(heard.at(-1)).toBeLessThan(5);
@@ -899,11 +899,11 @@ describe("what the frame stage reads", () => {
           systems: [Nudge, Count, Draw],
         });
         const app = yield* App.make(BallGame, { checkpointEvery: 1 });
-        app.frame(0);
+        app.frame();
         app.tick(1);
         app.tick(1);
-        app.frame(0);
-        app.frame(0);
+        app.frame();
+        app.frame();
         // The first frame draws everything; the next, the two that moved.
         expect(drawn).toEqual([3, 2, 0]);
         // The simulation's own reader saw each change once.
@@ -933,7 +933,7 @@ describe("what the frame stage reads", () => {
         });
         drawn.length = 0;
         counted.length = 0;
-        loaded.frame(0);
+        loaded.frame();
         loaded.tick(1);
         // A loaded game has everything still to draw, and its simulation
         // goes on from where it was.
@@ -1088,7 +1088,7 @@ describe("a frame stage that is checked", () => {
           // of the system that made it, and taken back as ever. A write
           // through a raw column is not taken back: #195.
           const before = world.hash();
-          expect(() => app.frame(0)).toThrow(Stage.FrameChangedWorld);
+          expect(() => app.frame()).toThrow(Stage.FrameChangedWorld);
           expect(world.hash() === before).toBe(how === "random");
         })
       );
@@ -1106,7 +1106,7 @@ describe("a frame stage that is checked", () => {
           { verifyFrames: true }
         );
         checked.tick(1);
-        checked.frame(0);
+        checked.frame();
         // The world a frame is held to is the one it found, not the last one.
         checked.tick(1);
         checked.frame(0.5);
@@ -1117,7 +1117,7 @@ describe("a frame stage that is checked", () => {
             systems: [Sneak("raw"), Roll],
           })
         );
-        unchecked.frame(0);
+        unchecked.frame();
         expect(ballsOf(unchecked)).toEqual([{ x: 2, vx: 1 }]);
       })
     );

@@ -62,7 +62,7 @@ describe("an app", () => {
     const app = Effect.runSync(
       Effect.scoped(App.make(App.define({ systems: [Opens] })))
     );
-    app.frame(0);
+    app.frame();
     expect(log).toEqual(["opened"]);
     Effect.runSync(app.close);
     expect(log).toEqual(["opened", "closed"]);

@@ -176,7 +176,7 @@ const play = (
     enter: (to: "menu" | "forest") => {
       done(app.dispatch(Go, { to }));
       app.tick(1);
-      app.frame(0);
+      app.frame();
     },
     /** A tree or a deer arrives, at once. */
     spawn: (
@@ -286,8 +286,8 @@ describe("instances whose look is made of assets", () => {
     spawn("deer", 9);
     // In the menu the forest is not loaded: there is nothing to draw with.
     app.tick(1);
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(renderer.drew).toEqual([]);
     expect(log).toEqual([]);
 
@@ -305,10 +305,10 @@ describe("instances whose look is made of assets", () => {
     // that come and go are drawn as any are.
     const more = spawn("tree", 3);
     app.tick(1);
-    app.frame(0);
+    app.frame();
     expect(xs(mesh()!)).toEqual([1, 2, 3]);
     despawn(more);
-    app.frame(0);
+    app.frame();
     expect(xs(mesh()!)).toEqual([1, 2]);
     expect(mesh()).toBe(drawn);
     expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
@@ -339,8 +339,8 @@ describe("instances whose look is made of assets", () => {
     expect(disposed).toBe(1);
     // And it stays away, with nothing made or freed again.
     app.tick(1);
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(renderer.drew).toEqual([]);
     expect(log).toEqual(["close 1", "free 1"]);
     expect(renderer.stale).toBe(0);
@@ -411,7 +411,7 @@ describe("instances whose look is made of assets", () => {
     spawn("tree", 1);
     enter("forest");
     expect(renderer.drew).toEqual([]);
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual(["ta/Trees"]);
     log.length = 0;
     // The frame the level is left in, the trees saw their bark, and then
@@ -420,12 +420,12 @@ describe("instances whose look is made of assets", () => {
     expect(log).toEqual(["close 2", "free 2"]);
     expect(renderer.drew).toEqual([]);
     expect(renderer.stale).toBe(0);
-    app.frame(0);
+    app.frame();
     expect(log).toEqual(["close 2", "free 2"]);
 
     // In again, and out again.
     enter("forest");
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual(["ta/Trees"]);
     enter("menu");
     expect(renderer.drew).toEqual([]);
@@ -449,13 +449,13 @@ describe("instances whose look is made of assets", () => {
     });
     const { app, mesh, renderer, spawn } = play([Keep, Trees]);
     spawn("tree", 1);
-    app.frame(0);
+    app.frame();
     const first = mesh()!;
     expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
     log.length = 0;
 
     afresh = true;
-    app.frame(0);
+    app.frame();
     // Between one look and the next the bark became other bark: the old
     // look is freed and the new made, and the trees are drawn all the while.
     expect(log).toEqual([
@@ -488,14 +488,14 @@ describe("instances whose look is made of assets", () => {
     const { app, enter, renderer, spawn } = play([during(Forest), Trees], slow);
     spawn("tree", 1);
     enter("forest");
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual([]);
     expect(log).toEqual([]);
     // The file arrives.
     waiting[0]!(Exit.succeed(new Uint8Array([7])));
     await settle();
     expect(renderer.drew).toEqual([]);
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual(["ta/Trees"]);
     expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
 
@@ -507,8 +507,8 @@ describe("instances whose look is made of assets", () => {
     );
     await settle();
     log.length = 0;
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(renderer.drew).toEqual([]);
     expect(log).toEqual([]);
     expect(renderer.stale).toBe(0);
@@ -547,7 +547,7 @@ describe("instances whose look is made of assets", () => {
     log.length = 0;
     const never = play(systems);
     never.app.tick(1);
-    never.app.frame(0);
+    never.app.frame();
     never.close();
     expect(log).toEqual([]);
   });
@@ -666,7 +666,7 @@ describe("instances whose look is made of assets", () => {
         })
       ).pipe(Effect.provide(renderer.layer))
     );
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual(["ta/Plain"]);
     Effect.runSync(app.close);
   });
@@ -705,7 +705,7 @@ describe("objects made of assets", () => {
     const two = spawn("deer", 2);
     spawn("tree", 9);
     app.tick(1);
-    app.frame(0);
+    app.frame();
     // No bark, no deer.
     expect(log).toEqual([]);
     expect(renderer.drew).toEqual([]);
@@ -721,7 +721,7 @@ describe("objects made of assets", () => {
     moveTo(one, 5);
     despawn(two);
     const three = spawn("deer", 3);
-    app.frame(0);
+    app.frame();
     expect(log.slice(3)).toEqual([`free ${two} of 1`, `make ${three} of 1`]);
     expect(renderer.scene!.children.map((child) => child.position.x)).toEqual([
       5, 3,
@@ -736,7 +736,7 @@ describe("objects made of assets", () => {
     expect(log[0]).toBe("close 1");
     expect(renderer.drew).toEqual([]);
     const four = spawn("deer", 4);
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual([]);
     log.length = 0;
 
@@ -770,7 +770,7 @@ describe("objects made of assets", () => {
     const one = spawn("deer", 1);
     spawn("tree", 2);
     enter("forest");
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual(["ta/Trees", `deer ${one} of 1`]);
     enter("menu");
     expect(renderer.drew).toEqual([]);
@@ -778,7 +778,7 @@ describe("objects made of assets", () => {
     expect(log.slice(-2)).toEqual(["close 1", `free ${one} of 1`]);
 
     enter("forest");
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual(["ta/Trees", `deer ${one} of 2`]);
     const made = renderer.scene!.children[1]!;
     log.length = 0;
@@ -1007,7 +1007,7 @@ describe("a texture", () => {
     // A picture is decoded in its own time.
     expect(renderer.drew).toEqual([]);
     await settle();
-    app.frame(0);
+    app.frame();
     expect(renderer.drew).toEqual(["ta/Trees"]);
     const material = mesh()!.material as MeshBasicMaterial;
     expect(material.map).toBeInstanceOf(Texture);

@@ -166,7 +166,7 @@ describe("the input stage", () => {
         // A tick reads no device, and a frame doesn't either.
         app.tick(1);
         expect(Exit.isSuccess(app.tickExit(1))).toBe(true);
-        app.frame(0);
+        app.frame();
         expect(ran).toEqual(["Tick", "Tick", "Draw"]);
         // Whoever steps the app runs it before a tick, as a driver does.
         ran.length = 0;
@@ -362,7 +362,7 @@ describe("the input stage", () => {
         expect(() => made.input()).toThrow(
           /App\.input was called from inside a run of the input stage/
         );
-        reach = () => made.frame(0);
+        reach = () => made.frame();
         expect(() => made.input()).toThrow(
           /App\.frame was called from inside a run of the input stage/
         );
@@ -685,7 +685,7 @@ describe("the input stage", () => {
             app.input();
             app.enqueue(Try, { by });
             app.tick(1);
-            app.frame(0);
+            app.frame();
           }
         }
         alone.input();
@@ -760,7 +760,7 @@ describe("the input stage", () => {
             app.input();
             app.enqueue(Emit, {});
             app.tick(1);
-            app.frame(0);
+            app.frame();
           }
           app.input();
           // The input stage runs before a tick, so what it has not had
@@ -1717,7 +1717,7 @@ describe("the picture of the devices in the world", () => {
         app.input();
         app.tick(1);
         const before = hashOf(app);
-        app.frame(0);
+        app.frame();
         expect(drawn).toEqual(["3,0 true"]);
         expect(hashOf(app)).toBe(before);
         expect(Exit.isSuccess(app.dispatch(Shoot, {}))).toBe(true);

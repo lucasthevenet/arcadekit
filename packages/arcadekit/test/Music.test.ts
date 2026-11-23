@@ -112,7 +112,7 @@ const play = (
     step: (action: Action.AnyActionDef, payload: unknown): void => {
       app.dispatch(action as never, payload as never);
       app.tick(0.1);
-      app.frame(0);
+      app.frame();
     },
   };
 };
@@ -123,8 +123,8 @@ describe("Sound.music", () => {
     const { app, step } = play([Score], sound);
     // The menu is silent, and a channel that was told nothing is not told so.
     app.tick(0.1);
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(sound.scored).toEqual([]);
     expect(asked).toBe(2);
 
@@ -136,7 +136,7 @@ describe("Sound.music", () => {
     // It goes on, and nothing is said again, however many frames and ticks.
     for (let i = 0; i < 5; i++) {
       app.tick(0.1);
-      app.frame(0);
+      app.frame();
       app.frame(0.5);
     }
     expect(sound.scored.length).toBe(1);
@@ -157,8 +157,8 @@ describe("Sound.music", () => {
 
     // And silence, said once.
     step(Go, { to: "menu" });
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(sound.scored.slice(4)).toEqual([
       { channel: "music", track: undefined, volume: 0, fade: 1 },
     ]);
@@ -175,15 +175,15 @@ describe("Sound.music", () => {
       return wanted;
     });
     const { app } = play([Plain], sound);
-    app.frame(0);
+    app.frame();
     wanted = { track: "a", volume: -3 };
-    app.frame(0);
+    app.frame();
     wanted = { track: "b", fade: -1 };
-    app.frame(0);
+    app.frame();
     wanted = { track: "b", volume: 0.25, fade: 0 };
-    app.frame(0);
+    app.frame();
     wanted = undefined;
-    app.frame(0);
+    app.frame();
     expect(sound.scored).toEqual([
       { channel: "music", track: "a", volume: 1, fade: 0.5 },
       { channel: "music", track: "a", volume: 0, fade: 0.5 },
@@ -219,7 +219,7 @@ describe("Sound.music", () => {
     // However long after: it has ended by now, and is not begun again.
     for (let i = 0; i < 20; i++) {
       app.tick(0.1);
-      app.frame(0);
+      app.frame();
     }
     expect(sound.scored.length).toBe(1);
     // Over and over is another thing to be told, of the same track.
@@ -235,7 +235,7 @@ describe("Sound.music", () => {
     });
     const other = Sound.makeRecorder();
     const second = play([Twice], other);
-    second.app.frame(0);
+    second.app.frame();
     second.step(SetHush, { on: true });
     expect(other.scored.map((one) => one.once)).toEqual([undefined, true]);
     // Left and come back to, it plays again from its start.
@@ -266,7 +266,7 @@ describe("Sound.music", () => {
       app.dispatch(SetHush, { on: true });
       app.tick(0.1);
     }
-    heard.app.frame(0);
+    heard.app.frame();
     const hashOf = (app: App.Any): number =>
       Effect.runSync(app.read(World)).hash();
     expect(hashOf(heard.app)).toBe(hashOf(deaf.app));
@@ -287,7 +287,7 @@ describe("Sound.music", () => {
       again
     );
     expect(again.scored).toEqual([]);
-    loaded.app.frame(0);
+    loaded.app.frame();
     expect(again.scored).toEqual([
       { channel: "music", track: "theme", volume: 0.2, fade: 1 },
     ]);
@@ -319,7 +319,7 @@ describe("Sound.music", () => {
     ]) {
       const sound = Sound.makeRecorder();
       const { app, step } = play(systems, sound);
-      app.frame(0);
+      app.frame();
       expect(sound.scored).toEqual([
         { channel: "music", track: "theme", volume: 1, fade: 0.5 },
       ]);
@@ -350,14 +350,14 @@ describe("Sound.music", () => {
     const { app, step } = play([One, Two], sound);
     const refused = (first: string, second: string) =>
       `The channel "music" was told to play two things in one frame: ${first} and ${second}. A channel plays one track at a time. The systems made with Sound.music share the channel "music" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`;
-    expect(() => app.frame(0)).toThrow(refused('"theme"', '"wind"'));
+    expect(() => app.frame()).toThrow(refused('"theme"', '"wind"'));
     // One track at two volumes is two things, and so is once and over and over.
     other = { track: "theme", volume: 0.2 };
-    expect(() => app.frame(0)).toThrow(refused('"theme"', '"theme" at 0.2'));
+    expect(() => app.frame()).toThrow(refused('"theme"', '"theme" at 0.2'));
     other = { track: "theme", once: true };
-    expect(() => app.frame(0)).toThrow(refused('"theme"', '"theme", once'));
+    expect(() => app.frame()).toThrow(refused('"theme"', '"theme", once'));
     other = Sound.clip("/theme.ogg");
-    expect(() => app.frame(0)).toThrow(refused('"theme"', '"/theme.ogg"'));
+    expect(() => app.frame()).toThrow(refused('"theme"', '"/theme.ogg"'));
     // Nothing of it reached the output.
     expect(sound.scored).toEqual([]);
     // Put right, the next frame is heard, and what the failed one said is
@@ -394,7 +394,7 @@ describe("Sound.music", () => {
       { channel: "wind", fade: 4 }
     );
     const { app, step } = play([Score, Wind, Breeze], sound);
-    app.frame(0);
+    app.frame();
     expect(sound.scored).toEqual([
       { channel: "wind", track: "breeze", volume: 1, fade: 4 },
     ]);
@@ -442,12 +442,12 @@ describe("Sound.music", () => {
   it("works nothing out where sound goes nowhere", () => {
     const { app, step } = play([Score]);
     step(Go, { to: "forest" });
-    app.frame(0);
+    app.frame();
     expect(asked).toBe(0);
     // Somewhere to go, it is asked each frame.
     const heard = play([Score], Sound.makeRecorder());
-    heard.app.frame(0);
-    heard.app.frame(0);
+    heard.app.frame();
+    heard.app.frame();
     expect(asked).toBe(2);
   });
 
@@ -464,8 +464,8 @@ describe("Sound.music", () => {
     // not asked.
     const before = asked;
     step(SetHush, { on: true });
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(asked).toBe(before);
     expect(sound.scored).toEqual([
       { channel: "music", track: "theme", volume: 1, fade: 1 },
@@ -571,7 +571,7 @@ describe("Sound.Player.music", () => {
     const frame = (...said: typeof says) => {
       says = said;
       const before = sound.scored.length;
-      app.frame(0);
+      app.frame();
       return sound.scored.slice(before);
     };
     // Silence first or last, the track is what the channel plays, as the
@@ -641,13 +641,13 @@ describe("Sound.Player.music", () => {
       sound
     );
     // A cue alone, while the channel has never played.
-    app.frame(0);
+    app.frame();
     expect(sound.played).toEqual([{ cue: "click", volume: 0.5, rate: 1 }]);
     expect(sound.scored).toEqual([]);
     // A cue and a track; and a cue while the track goes on.
     on = true;
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(sound.played.length).toBe(3);
     expect(sound.scored).toEqual([
       { channel: "ui", track: "hum", volume: 1, fade: 0.5 },
@@ -679,7 +679,7 @@ describe("Sound.Player.music", () => {
     ): number => {
       next = options === undefined ? [track] : [track, options];
       const before = sound.scored.length;
-      app.frame(0);
+      app.frame();
       next = undefined;
       return sound.scored.length - before;
     };
@@ -755,7 +755,7 @@ describe("a clip", () => {
     app.dispatch(Step, { hard: false });
     app.dispatch(Step, { hard: false });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     // Two steps of one frame are one creak and one tap.
     expect(sound.played).toEqual([
       { cue: "creak", volume: 1, rate: 1, clip: creak },
@@ -766,7 +766,7 @@ describe("a clip", () => {
     app.dispatch(Step, { hard: true });
     app.dispatch(Step, { hard: false });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     // The louder of the two asks for the one clip wins; another clip of
     // the same name is another sound.
     expect(sound.played.map((one) => [one.clip, one.volume, one.rate])).toEqual(
@@ -818,7 +818,7 @@ describe("a level's cues", () => {
     const step = (action: Action.AnyActionDef, payload: unknown): void => {
       app.dispatch(action as never, payload as never);
       app.tick(0.1);
-      app.frame(0);
+      app.frame();
     };
     // In the menu the forest's sounds are not loaded.
     step(Step, { hard: true });
@@ -834,8 +834,8 @@ describe("a level's cues", () => {
       { cue: "/creak.wav", volume: 1, rate: 1, clip: clips[0] },
     ]);
     step(Step, { hard: false });
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     expect(sound.played.slice(1)).toEqual([
       { cue: "/creak.wav", volume: 0.4, rate: 1, clip: clips[0] },
     ]);
@@ -885,7 +885,7 @@ describe("a level's cues", () => {
     );
     app.dispatch(Step, { hard: true });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(made).toBe(1);
     expect(sound.played.at(-1)!.clip).toBe(clips[0]);
     // Between two frames the creak became another creak: the lines that
@@ -893,7 +893,7 @@ describe("a level's cues", () => {
     afresh = true;
     app.dispatch(Step, { hard: true });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(made).toBe(2);
     expect(clips.length).toBe(4);
     expect(sound.played.at(-1)!.clip).toBe(clips[2]);
@@ -923,7 +923,7 @@ describe("a level's cues", () => {
     );
     app.dispatch(Step, { hard: true });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played).toEqual([{ cue: "tap", volume: 1, rate: 1 }]);
   });
 });
@@ -950,12 +950,12 @@ describe("a level's music", () => {
     const go = (to: "menu" | "forest" | "cave"): void => {
       app.dispatch(Go, { to });
       app.tick(0.1);
-      app.frame(0);
+      app.frame();
     };
-    app.frame(0);
+    app.frame();
     expect(sound.scored).toEqual([]);
     go("forest");
-    app.frame(0);
+    app.frame();
     expect(sound.scored).toEqual([
       {
         channel: "music",
@@ -989,7 +989,7 @@ describe("a level's music", () => {
       return (yield* Level).value === "menu" ? hum : undefined;
     });
     const { app, step } = play([Hum], sound);
-    app.frame(0);
+    app.frame();
     expect(sound.scored).toEqual([
       { channel: "music", track: "hum", volume: 1, fade: 0.5, clip: hum },
     ]);

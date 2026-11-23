@@ -256,12 +256,12 @@ const program = Effect.gen(function* () {
     );
     yield* Console.log(`${who} strikes: ${outcome}`);
     app.tick(1);
-    app.frame(1);
+    app.frame();
   });
   const passTurn = Effect.fnUntraced(function* (player: 1 | 2) {
     app.dispatch(Pass, { player });
     app.tick(1);
-    app.frame(1);
+    app.frame();
     yield* Console.log(`player ${player} passes -> ${yield* standing(app)}`);
   });
 

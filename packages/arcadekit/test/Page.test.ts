@@ -152,7 +152,7 @@ const play = async (
         for (let i = 0; i < times; i++) {
           app.input();
           app.tick(1 / 60);
-          app.frame(0);
+          app.frame();
         }
       });
     },

@@ -82,7 +82,7 @@ it("plays nothing when nothing happens", () =>
         App.define({ plugins: [Rules, Sound.plugin] })
       ).pipe(Effect.provide(Sound.layer(sound)));
       app.tick(1 / 60);
-      app.frame(1);
+      app.frame();
       expect(sound.played).toEqual([]);
     })
   ));
@@ -94,7 +94,7 @@ In a test, replace a sound that a page loads with `Browser.sound(url)` by an ass
 
 ## Run the frame stage by hand
 
-`app.frame(alpha)` runs the frame stage. With `App.make(game, { verifyFrames: true })`, the app hashes the world before the stage and after each of its systems, and `frame` dies with `Stage.FrameChangedWorld` if a system changed the game through a raw column. It costs a hash per system, so use it in tests.
+`app.frame()` runs the frame stage, and draws the game where its last tick left it. `app.frame(alpha)` draws it `alpha` of the way between its last two ticks, which a kind drawn with `smooth` shows. With `App.make(game, { verifyFrames: true })`, the app hashes the world before the stage and after each of its systems, and `frame` dies with `Stage.FrameChangedWorld` if a system changed the game through a raw column. It costs a hash per system, so use it in tests.
 
 To test a program that runs its own frame loop, provide `Driver.makeManualDisplay()` as `Driver.Display`, a display you drive by hand instead of real timers. `display.frame(ms)` signals that a frame is due, and `display.hide()` and `display.show()` act as the tab being hidden and shown again. `display.pending` and `display.watching` count the requested frames and the listeners on the tab, so a test can check that a stopped loop left nothing behind.
 

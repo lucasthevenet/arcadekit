@@ -135,27 +135,27 @@ describe("Sound.cues", () => {
     const session = steered(built);
     const { app } = session;
     session.tick(0.1);
-    app.frame(0);
+    app.frame();
     const moment = session.capture();
     app.enqueue(Drop, { height: 5 });
     session.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
     // A session goes back, and runs the tick again with the same drop: it
     // was heard already, so it isn't played twice.
     session.rewind(moment);
     app.enqueue(Drop, { height: 5 });
     session.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
     // Gone back again, the tick runs without it: nothing to play. Then a drop
     // of its own, past where the game had got to, is heard.
     session.rewind(moment);
     session.tick(0.1);
-    app.frame(0);
+    app.frame();
     app.enqueue(Drop, { height: 5 });
     session.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "whoosh"]);
   });
 
@@ -167,29 +167,29 @@ describe("Sound.cues", () => {
     expect(sound.played).toEqual([]);
     app.tick(0.1);
     expect(sound.played).toEqual([]);
-    app.frame(0);
+    app.frame();
     expect(sound.played).toEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
     // Heard once: the next frames have nothing new to play.
     app.frame(0.5);
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played.length).toBe(1);
 
     // A payload decides the cue, how loud, and how fast.
     about(app, 5);
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played.at(-1)).toEqual({ cue: "thud", volume: 0.6, rate: 1 });
     about(app, 20);
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played.at(-1)).toEqual({ cue: "thud", volume: 1, rate: 2 });
     // Or that there is nothing to hear.
     const before = sound.played.length;
     const lines = asked;
     about(app, 0.5);
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(asked).toBe(lines + 1);
     expect(sound.played.length).toBe(before);
   });
@@ -197,19 +197,19 @@ describe("Sound.cues", () => {
   it("hears every event of every tick since the last frame, and none twice", () => {
     const sound = Sound.makeRecorder();
     const app = play(sound);
-    app.frame(0);
+    app.frame();
     // Three ticks and then one frame: a drop in the first, a bounce in the last.
     app.enqueue(Drop, { height: 0.001 });
     app.tick(0.1);
     app.tick(0.1);
     about(app, 6);
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "thud"]);
     // A frame with no tick before it, and ticks with nothing to say.
     app.frame(0.4);
     app.tick(0.001);
-    app.frame(0);
+    app.frame();
     expect(sound.played.length).toBe(2);
   });
 
@@ -222,7 +222,7 @@ describe("Sound.cues", () => {
     app.enqueue(Drop, { height: 50 });
     app.enqueue(Drop, { height: 60 });
     app.tick(0.01);
-    app.frame(0);
+    app.frame();
     // Four bounces and two drops: two sounds. The loudest bounce was the
     // fast one, and it is played at its own rate.
     expect(asked).toBe(4);
@@ -234,7 +234,7 @@ describe("Sound.cues", () => {
     // The next frame's events are another frame's: played again.
     about(app, 3);
     app.tick(0.01);
-    app.frame(0);
+    app.frame();
     expect(sound.played.length).toBe(3);
     expect(sound.played[2]!.cue).toBe("thud");
     expect(sound.played[2]!.rate).toBe(1);
@@ -246,7 +246,7 @@ describe("Sound.cues", () => {
     expect(Exit.isFailure(app.dispatch(Drop, { height: 500 }))).toBe(true);
     app.enqueue(Drop, { height: 500 });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played).toEqual([]);
   });
 
@@ -264,15 +264,15 @@ describe("Sound.cues", () => {
     app.tick(0.1);
     app.dispatch(Drop, { height: 1 });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played).toEqual([]);
     app.dispatch(Mute, { on: false });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played).toEqual([]);
     app.dispatch(Drop, { height: 1 });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(sound.played).toEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
     expect(Quiet.name).toBe("sd/Quiet");
     expect(Quiet.stage).toBe("frame");
@@ -283,13 +283,13 @@ describe("Sound.cues", () => {
     about(app, 5);
     app.dispatch(Drop, { height: 1 });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     expect(asked).toBe(0);
     // With an output, the same frame asks.
     const heard = play(Sound.makeRecorder());
     about(heard, 5);
     heard.tick(0.1);
-    heard.frame(0);
+    heard.frame();
     expect(asked).toBe(1);
   });
 
@@ -347,7 +347,7 @@ describe("Sound.Player", () => {
     const frame = (...asked: (Sound.Options | undefined)[]): Sound.Played[] => {
       clicks = asked;
       sound.played.length = 0;
-      app.frame(0);
+      app.frame();
       return [...sound.played];
     };
     // As it is, and as it is told.
@@ -392,7 +392,7 @@ describe("Sound.Player", () => {
     about(app, 5);
     app.dispatch(Drop, { height: 50 });
     app.tick(0.1);
-    app.frame(0);
+    app.frame();
     // The game's own cues ask for a whoosh and a thud, the second system
     // for both again, and the third for a whoosh: one of each, each as
     // the loudest asked, in the order they were first asked for.
@@ -413,10 +413,10 @@ describe("Sound.Player", () => {
       (yield* Sound.Player).play("anything");
     });
     const Asking = App.define({ plugins: [Sound.plugin], systems: [Ask] });
-    Effect.runSync(App.make(Asking)).frame(0);
+    Effect.runSync(App.make(Asking)).frame();
     Effect.runSync(
       App.make(Asking).pipe(Effect.provide(Sound.layer(Sound.makeRecorder())))
-    ).frame(0);
+    ).frame();
     expect(seen).toEqual([false, true]);
   });
 
@@ -480,7 +480,7 @@ describe("a game with sound", () => {
     app.dispatch(Drop, { height: 1 });
     for (let i = 0; i < 30; i++) {
       app.tick(0.05);
-      app.frame(0);
+      app.frame();
     }
     expect(sound.played.length).toBeGreaterThan(1);
     const again = Sound.makeRecorder();

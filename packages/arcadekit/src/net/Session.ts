@@ -340,8 +340,8 @@ export interface SyncTest<E = never, HU = never> {
   readonly tickExit: (delta: number) => Exit.Exit<void, E | Save.SaveRefused>;
   /** Runs the tick as `tickExit` does, and throws what it fails with. */
   readonly tick: (delta: number) => void;
-  /** The app's frame stage. */
-  readonly frame: (alpha: number, delta?: number) => void;
+  /** The app's frame stage, as `app.frame` runs it. */
+  readonly frame: (alpha?: number, delta?: number) => void;
   /** How many ticks it has run twice. */
   readonly checked: number;
   /** Closes its app, as `app.close` closes an app. */

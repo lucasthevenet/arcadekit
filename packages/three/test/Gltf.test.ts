@@ -626,12 +626,12 @@ describe("a level's models", () => {
     const travel = async (to: "dock" | "space"): Promise<void> => {
       app.enqueue(Go, { to });
       app.tick(1);
-      app.frame(0);
+      app.frame();
       // A model is read in its own time.
       await new Promise((resolve) => setTimeout(resolve, 0));
-      app.frame(0);
+      app.frame();
     };
-    app.frame(0);
+    app.frame();
     expect(scene!.children).toEqual([]);
     await travel("space");
     const [one, two] = scene!.children.filter(

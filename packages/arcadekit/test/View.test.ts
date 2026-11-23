@@ -145,14 +145,14 @@ describe("a view", () => {
     const app = play(ui, { coins: [5] });
     // Making the app publishes nothing: a frame does.
     expect(ui.get(Hud)).toBe(Hud.initial);
-    app.frame(0);
+    app.frame();
     expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
     expect(ui.get(Menu)).toEqual({ phase: "title" });
     app.dispatch(Start, {});
     app.tick(1);
     // A tick publishes nothing either.
     expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
-    app.frame(0);
+    app.frame();
     expect(ui.get(Hud)).toEqual({ gold: 5, coins: 1 });
     expect(ui.get(Menu)).toEqual({ phase: "playing" });
   });
@@ -162,7 +162,7 @@ describe("a view", () => {
     const hud = listen(ui, Hud);
     const menu = listen(ui, Menu);
     const app = play(ui, { coins: [2] });
-    app.frame(0);
+    app.frame();
     // The menu is as it was at first: nobody is told. The display is not.
     expect(menu.heard).toEqual([]);
     expect(hud.heard).toEqual([{ gold: 0, coins: 1 }]);
@@ -171,7 +171,7 @@ describe("a view", () => {
     // Frames, and ticks of a game that is not played yet: nothing changes.
     for (let i = 0; i < 20; i++) {
       app.tick(1);
-      app.frame(0);
+      app.frame();
       app.frame(0.5);
     }
     expect(hud.heard.length).toBe(1);
@@ -187,7 +187,7 @@ describe("a view", () => {
     app.tick(1);
     app.tick(1);
     app.tick(1);
-    app.frame(0);
+    app.frame();
     expect(hud.heard).toEqual([
       { gold: 0, coins: 1 },
       { gold: 6, coins: 1 },
@@ -227,7 +227,7 @@ describe("a view", () => {
       App.make(Boards).pipe(Effect.provide(View.layer(ui)))
     );
     for (frame = 0; frame < values.length; frame++) {
-      app.frame(0);
+      app.frame();
     }
     expect(heard).toEqual([values[2], values[4], values[5], values[6]]);
     expect(heard[0]).toBe(values[2]);
@@ -259,14 +259,14 @@ describe("a view", () => {
       App.make(Lucky).pipe(Effect.provide(View.layer(ui)))
     );
     app.dispatch(Find, { value: 1 });
-    app.frame(0);
+    app.frame();
     expect(a.heard).toEqual([{ gold: 0, coins: 1 }]);
     expect(b.heard).toEqual(a.heard);
     a.stop();
     // Stopping twice is stopping once.
     a.stop();
     app.dispatch(Lose, {});
-    app.frame(0);
+    app.frame();
     expect(a.heard.length).toBe(1);
     expect(b.heard).toEqual([
       { gold: 0, coins: 1 },
@@ -283,9 +283,9 @@ describe("a view", () => {
       order.push("later");
     });
     app.dispatch(Find, { value: 1 });
-    app.frame(0);
+    app.frame();
     app.dispatch(Find, { value: 1 });
-    app.frame(0);
+    app.frame();
     expect(order).toEqual(["once"]);
     expect(b.heard.length).toBe(4);
   });
@@ -301,11 +301,11 @@ describe("a view", () => {
       throw new Error("and so is the button");
     });
     const app = play(ui, { coins: [1] });
-    expect(() => app.frame(0)).toThrow("the label is gone");
+    expect(() => app.frame()).toThrow("the label is gone");
     expect(after.heard).toEqual([{ gold: 0, coins: 1 }]);
     // The value was published: the next frame has nothing new to say.
     expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
-    app.frame(0);
+    app.frame();
     expect(after.heard.length).toBe(1);
   });
 
@@ -313,13 +313,13 @@ describe("a view", () => {
     const app = play(undefined, { coins: [1] });
     for (let i = 0; i < 5; i++) {
       app.tick(1);
-      app.frame(0);
+      app.frame();
     }
     expect(worked).toEqual({ hud: 0, menu: 0 });
     // With one, once per frame.
     const withUi = play(View.makeBridge(Played));
-    withUi.frame(0);
-    withUi.frame(0);
+    withUi.frame();
+    withUi.frame();
     expect(worked).toEqual({ hud: 2, menu: 2 });
   });
 
@@ -342,12 +342,12 @@ describe("a view", () => {
     const app = Effect.runSync(
       App.make(Gated).pipe(Effect.provide(View.layer(ui)))
     );
-    app.frame(0);
+    app.frame();
     expect(heard).toEqual([]);
     expect(ui.get(Hud)).toBe(Hud.initial);
     app.dispatch(Start, {});
     app.tick(1);
-    app.frame(0);
+    app.frame();
     expect(heard).toEqual([{ gold: 9, coins: 0 }]);
     expect(Shown.name).toBe("View.publish(vw/Hud)");
     expect(Shown.stage).toBe("frame");
@@ -383,7 +383,7 @@ describe("a view", () => {
         app.dispatch(action, {});
       }
       app.tick(1);
-      app.frame(0);
+      app.frame();
     };
     // At the title it is what it was defined as, and nobody is told so.
     step();
@@ -405,10 +405,10 @@ describe("a view", () => {
     const alone = Effect.runSync(made);
     alone.dispatch(Start, {});
     alone.tick(1);
-    alone.frame(0);
+    alone.frame();
     alone.dispatch(Quit, {});
     alone.tick(1);
-    alone.frame(0);
+    alone.frame();
     const needs: Effect.Effect<void, never, View.Port> = View.reset(Hud);
     expect(Effect.isEffect(needs)).toBe(true);
   });
@@ -426,10 +426,10 @@ describe("a view", () => {
     const app = Effect.runSync(
       App.make(Owned).pipe(Effect.provide(View.layer(ui)))
     );
-    app.frame(0);
+    app.frame();
     app.tick(1);
-    app.frame(0);
-    app.frame(0);
+    app.frame();
+    app.frame();
     // Whether each was news: the first is what the view was at first.
     expect(told).toEqual([false, true, false]);
     expect(heard).toEqual([{ gold: 1, coins: 0 }]);
@@ -522,7 +522,7 @@ describe("what the UI sends", () => {
     expect(coinsOf(app)).toBe(1);
     // Three spent, and one earned by the coin it bought, once the game began.
     expect(goldOf(app)).toBe(3);
-    app.frame(0);
+    app.frame();
     expect(ui.get(Menu)).toEqual({ phase: "playing" });
     const logged = app.actionLog.filter(
       (entry): entry is Action.Logged => !Action.isCheckpoint(entry)
@@ -562,7 +562,7 @@ describe("what the UI sends", () => {
     const menu = listen(ui, Menu);
     app.input();
     app.tick(1);
-    app.frame(0);
+    app.frame();
     expect(menu.heard).toEqual([{ phase: "playing" }]);
   });
 
@@ -593,7 +593,7 @@ describe("what the UI sends", () => {
     const step = (): void => {
       app.input();
       app.tick(1);
-      app.frame(0);
+      app.frame();
       hashes.push(hashOf(app));
     };
     step();
@@ -618,7 +618,7 @@ describe("what the UI sends", () => {
     for (let i = 0; i < 5; i++) {
       idle.input();
       idle.tick(1);
-      idle.frame(0);
+      idle.frame();
     }
     expect(hashOf(idle)).not.toBe(hashes.at(-1));
   });
@@ -632,7 +632,7 @@ describe("what the UI sends", () => {
     expect(app.actionLog.filter(isAction).map((e) => e.name)).toEqual([
       "vw/Start",
     ]);
-    app.frame(0);
+    app.frame();
     expect(ui.get(Menu)).toEqual({ phase: "playing" });
     // @ts-expect-error the game has no handler for vw/Unknown
     ui.send(Unknown, {});
@@ -690,7 +690,7 @@ describe("what the UI sends", () => {
     );
     app.input();
     app.tick(1);
-    app.frame(0);
+    app.frame();
     expect(said).toEqual([true, false, true, false, true, false]);
   });
 
@@ -702,7 +702,7 @@ describe("what the UI sends", () => {
     const app = Effect.runSync(
       App.make(App.define({ plugins: [View.plugin], systems: [Spy] }))
     );
-    app.frame(0);
+    app.frame();
     const none = seen[0]!;
     expect(none.get(Hud)).toBe(Hud.initial);
     none.subscribe(Hud, () => {

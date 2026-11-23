@@ -333,7 +333,7 @@ describe("a run condition", () => {
         const tick = (): string[] => {
           ran.length = 0;
           app.tick(1);
-          app.frame(0);
+          app.frame();
           return [...ran];
         };
         expect(tick()).toEqual([
@@ -498,7 +498,7 @@ describe("a run condition", () => {
         );
         const tick = () => {
           app.tick(1);
-          app.frame(0);
+          app.frame();
         };
         app.dispatch(Go, { to: "playing", refuse: false });
         tick();
@@ -750,7 +750,7 @@ describe("hooks", () => {
         for (let tick = 1; tick <= 5; tick++) {
           looked.tick(1);
           drawn.tick(1);
-          drawn.frame(0);
+          drawn.frame();
           unseen.tick(1);
           // A look changes nothing from the frame, which a replay doesn't
           // run.

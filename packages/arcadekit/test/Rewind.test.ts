@@ -255,17 +255,17 @@ describe("a game that is put back to a moment", () => {
     withApp(App.make(App.define({ systems })), (app) => {
       for (let i = 0; i < 3; i++) {
         app.tick(DELTA);
-        app.frame(0);
+        app.frame();
       }
       const moment = captured(app);
       app.tick(DELTA);
-      app.frame(0);
+      app.frame();
       expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
       Timeline.rewind(app, moment);
       seen.tick.length = 0;
       seen.frame.length = 0;
       app.tick(DELTA);
-      app.frame(0);
+      app.frame();
       // The system of the tick sees the one dot it had yet to see. What
       // draws sees every dot again: all four are new to it.
       expect(seen).toEqual({ tick: [1], frame: [4] });
@@ -477,11 +477,11 @@ describe("what the stages between ticks hear across a rewind", () => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         const back = session.capture();
         session.tick(DELTA);
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([1, 1, 2, 2, 3, 3]);
         heard.frame.length = 0;
         heard.input.length = 0;
@@ -490,13 +490,13 @@ describe("what the stages between ticks hear across a rewind", () => {
         session.tick(DELTA);
         app.enqueue(Louder, { by: 7 });
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([307]);
         // Past where the game had got to, every event is new again. The input
         // stage runs before each tick, so it had not heard the third tick's
         // events before the rewind, and hears them now, before the fourth.
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard).toEqual({ frame: [307, 4, 4, 407], input: [3, 3, 307] });
       });
     });
@@ -507,12 +507,12 @@ describe("what the stages between ticks hear across a rewind", () => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         const back = session.capture();
         // Every stage hears each tick, so each tick drops the one before.
         for (let i = 0; i < 4; i++) {
           session.tick(DELTA);
-          app.frame(0);
+          app.frame();
         }
         expect(app.inspect().stores[Event.STORE]).toEqual({
           "rw/Rang": [{ n: 5 }, { n: 5 }],
@@ -521,7 +521,7 @@ describe("what the stages between ticks hear across a rewind", () => {
         session.rewind(back);
         for (let i = 0; i < 4; i++) {
           session.tick(DELTA);
-          app.frame(0);
+          app.frame();
         }
         expect(heard.frame).toEqual([]);
       });
@@ -536,12 +536,12 @@ describe("what the stages between ticks hear across a rewind", () => {
         const back = session.capture();
         session.tick(DELTA);
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         const first = [...heard.frame];
         session.rewind(back);
         session.tick(DELTA);
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(first).toEqual([1, 1, 2, 2]);
         expect(heard.frame).toEqual([1, 1, 2, 2]);
         // The input stage runs before each tick, and heard what came before
@@ -556,7 +556,7 @@ describe("what the stages between ticks hear across a rewind", () => {
         const session = steered(built);
         const { app } = session;
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         const back = session.capture();
         // Ticks run with no frame: the frame stage heard none of them.
         session.tick(DELTA);
@@ -564,7 +564,7 @@ describe("what the stages between ticks hear across a rewind", () => {
         session.rewind(back);
         session.tick(DELTA);
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([1, 1, 2, 2, 3, 3]);
       });
     });
@@ -580,14 +580,14 @@ describe("what the stages between ticks hear across a rewind", () => {
         app.enqueue(Chime, { n: 5 });
         session.tick(DELTA);
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([5]);
         // As it was: the second tick has none, and the third rings the same.
         session.rewind(back);
         session.tick(DELTA);
         app.enqueue(Chime, { n: 5 });
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([5, 5]);
       });
     });
@@ -603,14 +603,14 @@ describe("what the stages between ticks hear across a rewind", () => {
         session.tick(DELTA);
         app.enqueue(Chime, { n: 5 });
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([5]);
         // As it was: on the second, which is not the tick it was heard of.
         session.rewind(back);
         app.enqueue(Chime, { n: 5 });
         session.tick(DELTA);
         session.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([5, 5]);
       });
     });
@@ -623,16 +623,16 @@ describe("what the stages between ticks hear across a rewind", () => {
           const session = steered(built);
           const back = session.app;
           session.tick(DELTA);
-          back.frame(0);
+          back.frame();
           const at = session.capture();
           session.tick(DELTA);
-          back.frame(0);
+          back.frame();
           session.rewind(at);
           session.tick(DELTA);
-          back.frame(0);
+          back.frame();
           for (let i = 0; i < 2; i++) {
             straight.tick(DELTA);
-            straight.frame(0);
+            straight.frame();
           }
           expect(Effect.runSync(back.read(World)).hash()).toBe(
             Effect.runSync(straight.read(World)).hash()
@@ -652,18 +652,18 @@ describe("what the stages between ticks hear across a rewind", () => {
         const back = captured(app);
         app.enqueue(Chime, { n: 5 });
         app.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([5]);
         // The move is undone, and made again: it is a new one.
         Timeline.rewind(app, back);
         app.enqueue(Chime, { n: 5 });
         app.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([5, 5]);
         // Between two ticks as well.
         Timeline.rewind(app, back);
         app.dispatch(Chime, { n: 5 });
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([5, 5, 5]);
       });
     });
@@ -672,16 +672,16 @@ describe("what the stages between ticks hear across a rewind", () => {
       const { heard, make } = listening();
       withApp(make, (app) => {
         app.tick(DELTA);
-        app.frame(0);
+        app.frame();
         const back = captured(app);
         // Run ahead with no frame, as a search does, and come back.
         app.tick(DELTA);
         app.tick(DELTA);
         Timeline.rewind(app, back);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([1, 1]);
         app.tick(DELTA);
-        app.frame(0);
+        app.frame();
         expect(heard.frame).toEqual([1, 1, 2, 2]);
       });
     });
@@ -818,7 +818,7 @@ describe("Session.syncTest", () => {
       (test) => {
         for (let i = 0; i < 3; i++) {
           test.tick(DELTA);
-          test.frame(0);
+          test.frame();
         }
         expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
         // The input stage runs before each tick: it has heard the first two.

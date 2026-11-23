@@ -305,7 +305,7 @@ describe("systems", () => {
       })
     );
     withApp(make, (app) => {
-      app.frame(0);
+      app.frame();
     });
     expect(played).toEqual(["beep x1"]);
 
@@ -314,7 +314,7 @@ describe("systems", () => {
       withApp(
         // @ts-expect-error Audio is not provided
         App.make(App.define({ systems: [Beep] })),
-        (app) => app.frame(0)
+        (app) => app.frame()
       )
     ).toThrow(/Service not found: .*Audio/);
   });
@@ -454,7 +454,7 @@ describe("a fiber the game starts", () => {
       yield* leave;
     });
     withApp(App.make(App.define({ systems: [Look] })), (app) => {
-      expect(() => app.frame(0)).toThrow(
+      expect(() => app.frame()).toThrow(
         /The frame left a fiber running \(started while "Look" ran\)/
       );
     });

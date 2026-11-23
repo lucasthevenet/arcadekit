@@ -360,7 +360,7 @@ describe("a level's assets", () => {
             (made) => made.close
           );
           const frame = (): string => {
-            app.frame(0);
+            app.frame();
             return drawn.at(-1)!;
           };
           app.tick(1);
@@ -454,9 +454,9 @@ describe("a level's assets", () => {
           Effect.sync(() => {
             app.dispatch(Visit, { to });
             app.tick(1);
-            app.frame(0);
+            app.frame();
           });
-        app.frame(0);
+        app.frame();
         yield* go("forest");
         yield* go("menu");
         expect(seen).toEqual(["Absent", "Ready", "Absent"]);
@@ -472,7 +472,7 @@ describe("a level's assets", () => {
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Game] }));
         const frame = (): string => {
-          app.frame(0);
+          app.frame();
           return drawn.at(-1)!;
         };
         app.dispatch(Go, { to: "forest" });
@@ -530,7 +530,7 @@ describe("a level's assets", () => {
           App.define({ plugins: [Game], systems: [Peek] })
         );
         const frame = (): string => {
-          app.frame(0);
+          app.frame();
           return drawn.at(-1)!;
         };
         app.dispatch(Go, { to: "forest" });
@@ -585,7 +585,7 @@ describe("a level's assets", () => {
     );
     app.dispatch(Go, { to: "forest" });
     app.tick(1);
-    app.frame(0);
+    app.frame();
     slow.waiting.get("/forest.png")!.arrive(new Uint8Array(2));
     await settle();
     expect(log).toEqual(["open /forest.png"]);
@@ -619,7 +619,7 @@ describe("a level's assets", () => {
           seen.dispatch(drawnGame.Go, { to });
           unseen.dispatch(bare.Go, { to });
           seen.tick(1);
-          seen.frame(0);
+          seen.frame();
           unseen.tick(1);
           expect((yield* seen.read(World)).hash()).toBe(
             (yield* unseen.read(World)).hash()
@@ -693,10 +693,10 @@ describe("a level's assets", () => {
         }
         // The loader draws at once, while the frame stage is running:
         // not from the world, which is frozen and would say so.
-        seen.frame(0);
+        seen.frame();
         yield* Effect.promise(settle);
         yield* Effect.promise(settle);
-        seen.frame(0);
+        seen.frame();
         expect(drawnGame.drawn.at(-1)).toBe(
           "forest: forest Ready (Drawn, 26 bytes), cave Absent"
         );
@@ -844,14 +844,14 @@ describe("a level's assets", () => {
         const app = yield* App.make(App.define({ plugins: [Game] }));
         app.dispatch(Go, { to: "forest" });
         app.tick(1);
-        app.frame(0);
+        app.frame();
         const save = app.save();
         assert(Exit.isSuccess(save));
         const loaded = yield* App.make(App.define({ plugins: [Game] }), {
           save: save.value,
         });
         drawn.length = 0;
-        loaded.frame(0);
+        loaded.frame();
         expect(drawn).toEqual([
           "forest: forest Ready (Forest, 3 bytes), cave Absent",
         ]);
@@ -893,12 +893,12 @@ describe("a level's assets", () => {
         for (const to of ["forest", "cave", "forest"] as const) {
           app.dispatch(Go, { to });
           app.tick(1);
-          app.frame(0);
+          app.frame();
         }
         expect(log).toEqual(["open /cave.png"]);
         app.dispatch(Go, { to: "menu" });
         app.tick(1);
-        app.frame(0);
+        app.frame();
         expect(log).toEqual(["open /cave.png", "close /cave.png"]);
       }).pipe(Effect.provide(Assets.layerMemory(files)))
     );
@@ -922,7 +922,7 @@ describe("a level's assets", () => {
           App.define({ plugins: [Game], systems: [Keep] })
         );
         const frame = (): string => {
-          app.frame(0);
+          app.frame();
           return drawn.at(-1)!;
         };
         // Nobody holds it, and dropping what is not held does nothing.
@@ -971,7 +971,7 @@ describe("a level's assets", () => {
             systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
           })
         );
-        app.frame(0);
+        app.frame();
         expect(status?._tag).toBe("Failed");
         expectFailed((status as { error: unknown }).error, "", "boom");
       }).pipe(Effect.provide(Layer.mergeAll(Assets.layerMemory(files), quiet)))
