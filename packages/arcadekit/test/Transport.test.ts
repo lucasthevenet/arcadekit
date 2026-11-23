@@ -445,7 +445,7 @@ describe("a session joined to a transport", () => {
               (name) => hub.layer(name),
               undefined
             );
-            setGlitch({ tick: 9, worlds: "all" });
+            setGlitch({ tick: 9, apps: "all" });
             seats[0]!.app.enqueue(Drop, { by: "ada", value: 1 });
             const stopped = new Map<string, unknown>();
             for (let i = 0; i < 200 && stopped.size < 2; i++) {

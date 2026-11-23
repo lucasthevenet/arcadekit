@@ -499,37 +499,11 @@ describe("the frame stage", () => {
         (yield* Pinged.emits).emit({});
       }
     );
-    // The bus still throws: a frame has it, and emitting there is refused.
-    Effect.runSync(
-      Effect.gen(function* () {
-        const Vandal = System.frame("Vandal", function* () {
-          (yield* Events).emit(Pinged, {});
-        });
-        const app = yield* App.make(
-          App.define({
-            plugins: [racked({ x: 1, vx: 1 })],
-            systems: [Roll, Vandal],
-          }),
-          { checkpointEvery: 1 }
-        );
-        const world = yield* app.read(World);
-        app.tick(1);
-        const before = world.hash();
-        expect(() => app.frame()).toThrow(
-          /was emitted in the frame stage or the input stage/
-        );
-        expect(world.hash()).toBe(before);
-        // No event waits to be read, and no command to be applied: a save
-        // would be refused for one.
-        expect(app.inspect().stores).toEqual({});
-        expect(Exit.isSuccess(app.save())).toBe(true);
-        // The world is not left frozen: the tick moves the ball.
-        app.tick(1);
-        expect(world.hash()).not.toBe(before);
-        const exit = app.frameExit(0);
-        expect(Exit.isFailure(exit)).toBe(true);
-      })
-    );
+    const Bus = System.frame("Bus", function* () {
+      // @ts-expect-error the frame's events read, and have no emit
+      (yield* Events).emit(Pinged, {});
+    });
+    expect(Bus.stage).toBe("frame");
   });
 
   it("draws its random numbers from a generator of its own, not the world's", () => {

@@ -316,7 +316,10 @@ export const make = (parts: Parts): Loop => {
   // The stages between ticks. The input stage is told what the devices say:
   // one picture of them, taken when the stage begins.
   const frameContext = Stage.frame(context, {
+    world,
+    time,
     frame: drawing,
+    events,
     actions: parts.actions,
     seed: parts.seed,
   });

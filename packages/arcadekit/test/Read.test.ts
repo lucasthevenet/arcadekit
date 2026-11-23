@@ -177,8 +177,12 @@ describe("the world a system is handed", () => {
         for (const world of seen) {
           expect(world).not.toBeInstanceOf(EcsWorld);
         }
-        // One world, whoever asks: a system, with or without writes, and app.read.
-        expect(new Set([...seen, yield* app.read(World)]).size).toBe(1);
+        // One world, whoever asks in the tick, with or without writes.
+        expect(new Set(seen).size).toBe(1);
+        // app.read hands a world of its own, which only reads.
+        const read = yield* app.read(World);
+        expect(read).not.toBeInstanceOf(EcsWorld);
+        expect(seen).not.toContain(read);
       })
     );
     // What unwraps it is no export of the entry.

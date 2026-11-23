@@ -791,7 +791,7 @@ describe("peers that have come apart", () => {
             ["ada", "grace"],
             { delay, checkpointEvery: { ada: every, grace: every } },
             (peers) => {
-              setGlitch({ tick: at, worlds: "all" });
+              setGlitch({ tick: at, apps: "all" });
               const net = network(every * 10 + delay, lag);
               peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
               const stopped = untilStopped(peers, net, 600);
@@ -837,7 +837,7 @@ describe("peers that have come apart", () => {
 
   it("stop for good, and say so in words", () => {
     withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
-      setGlitch({ tick: 9, worlds: "all" });
+      setGlitch({ tick: 9, apps: "all" });
       const net = network(1, { min: 0, max: 0 });
       const [ada] = peers as [Peer];
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
@@ -955,7 +955,7 @@ describe("peers that have come apart", () => {
       ["ada", "grace"],
       { checkpointEvery: { ada: 0, grace: 0 } },
       (peers) => {
-        setGlitch({ tick: 9, worlds: "all" });
+        setGlitch({ tick: 9, apps: "all" });
         peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
         const stopped = untilStopped(peers, network(1, { min: 0, max: 0 }), 50);
         expect(stopped.size).toBe(0);
@@ -967,7 +967,7 @@ describe("peers that have come apart", () => {
   it("are all stopped when one of three has gone its own way, and the report says which", () => {
     withPeers(["ada", "grace", "edsger"], { delay: 2 }, (peers) => {
       const [ada, grace, edsger] = peers as [Peer, Peer, Peer];
-      setGlitch({ tick: 12, worlds: new Set([grace.world]) });
+      setGlitch({ tick: 12, apps: new Set([grace.app]) });
       const net = network(6, { min: 0, max: 3 });
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       const stopped = untilStopped(peers, net, 300);
@@ -1012,7 +1012,7 @@ describe("peers that have come apart", () => {
         expect(grace.session.drifted).toBeUndefined();
         expect(ada.app.time.tick).toBeGreaterThan(40);
         const at = ada.app.time.tick + 3;
-        setGlitch({ tick: at, worlds: "all" });
+        setGlitch({ tick: at, apps: "all" });
         const stopped = untilStopped(peers, net, 100);
         // Caught at the first tick both record: a multiple of 6.
         const drifted = stopped.get("grace") as Drift.Drifted;

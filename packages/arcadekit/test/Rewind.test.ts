@@ -5,7 +5,7 @@ import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { partsOf } from "../src/app/parts";
-import type { EventBus } from "../src/Event";
+import type { ReadingEvents } from "../src/Event";
 import {
   Action,
   App,
@@ -696,7 +696,7 @@ describe("what the stages between ticks hear across a rewind", () => {
   describe("code outside the game, which hears as the stages do", () => {
     /** A game whose bus is kept for code outside it, once it has ticked. */
     const kept = () => {
-      let bus: EventBus | undefined;
+      let bus: ReadingEvents | undefined;
       const Keep = System.tick("rw/Keep", function* () {
         bus = yield* Effect.service(Events);
       });

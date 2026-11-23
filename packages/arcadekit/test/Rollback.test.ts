@@ -509,7 +509,7 @@ describe("a rollback session", () => {
         ["ada", "grace"],
         { ahead, delay, checkpointEvery: { ada: every, grace: every } },
         (peers) => {
-          setGlitch({ tick: at, worlds: "all" });
+          setGlitch({ tick: at, apps: "all" });
           const net = network(every + delay + ahead, lag);
           peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
           const stopped = untilStopped(peers, net, 800);
