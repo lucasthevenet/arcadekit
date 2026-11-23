@@ -34,10 +34,10 @@ const program = Effect.gen(function* () {
   const text = Journal.encode(game.record()); // for a file
 
   const recording = yield* Journal.decode(text); // fails on text that isn't one
-  // The replay hands over how the recorded game began: here, its seed.
-  const again = yield* Journal.replay(recording, (start) =>
-    App.make(Game, { ...start, checkpointEvery: 1 })
-  ); // fails with Journal.ReplayDiverged
+  // The replay makes its app from how the recorded game began: its seed.
+  const again = yield* Journal.replay(recording, Game, {
+    checkpointEvery: 1,
+  }); // fails with Journal.ReplayDiverged
 }).pipe(Effect.scoped);
 ```
 
@@ -49,9 +49,7 @@ const program = Effect.gen(function* () {
 
 `app.record()` returns a recording: how the game began, that log, the ticks it begins and ends at, and the `delta` of every tick in between, kept as runs of ticks that took the same delta. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes.
 
-`Journal.replay(recording, (start) => App.make(game, start))` hands that start to the function that makes the app, plays the recording in the app, and returns it where the recording ends. An app made from `start` begins as the recorded game did, so a replay can't be given the wrong seed. It starts from the same state too, since what a game starts with is what its plugins' `setup` spawns, and code outside the game has no way to spawn anything. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A replay in an app that isn't at the recording's first tick throws.
-
-The function is also where the app gets its other options, `App.make(game, { ...start, checkpointEvery: 1 })`, and where you keep or prepare it before the replay begins, with `.pipe(Effect.tap((app) => ...))`. An app kept that way is the one to look at when a replay has stopped.
+`Journal.replay(recording, game)` makes an app of the game from how the recorded game began, plays the recording in it, and returns it where the recording ends. It takes no seed and no save, so a replay begins as the recorded game did. It starts from the same state too, since what a game starts with is what its plugins' `setup` spawns, and code outside the game has no way to spawn anything. Each tick takes the delta it took when it was recorded, up to the tick the recording ends at, so a replay can't be given the wrong tick length or stop short. A third argument gives the app the rest of what `App.make` takes, such as `{ checkpointEvery: 1 }`.
 
 `Journal.encode` and `Journal.decode` turn a recording into text and back. Decoding refuses one that doesn't say how its game began, whose save doesn't read or is of another tick than it begins at, or whose log or runs of deltas are out of order or outside it. A recording made since a save holds the save, which is most of its text.
 
@@ -59,13 +57,23 @@ The function is also where the app gets its other options, `App.make(game, { ...
 
 The app records a checkpoint before the first action or tick, then at the end of every tick whose number is a multiple of `checkpointEvery`. `app.checkpoint()` records an extra one, for a moment the game wants verified, such as when it is saved.
 
-A replay compares its own world at each checkpoint, and stops at the first mismatch, before applying anything recorded after it. It throws `Journal.ReplayDiverged`, whose `tick` is that checkpoint's tick. Its `reason` is an `Journal.HashMismatch` with the `expected` hash, the `actual` one, and `agreedAt`, the tick of the last matching checkpoint. With a checkpoint every tick, `tick` is the exact tick the replay diverged on.
+A replay compares its own world at each checkpoint, and stops at the first mismatch, before applying anything recorded after it. It fails with `Journal.ReplayDiverged`, whose `tick` is that checkpoint's tick. Its `reason` is a `Journal.HashMismatch` with the `expected` hash, the `actual` one, and `agreedAt`, the tick of the last matching checkpoint. With a checkpoint every tick, `tick` is the exact tick the replay diverged on.
 
 - `checkpointEvery` defaults to 60. A checkpoint costs one hash of the world, 0.8 ms for 100,000 entities, plus one log entry. A smaller value catches divergence closer to where it happened, at that cost. A turn-based game, which ticks once per move, wants 1.
 - With 0, the app records no checkpoints, and a replay can only check itself against its actions. A replay that has gone wrong continues until an action happens to be refused, or, if the fault broke no rule, runs to the end and produces a different game.
-- A replay with a different seed, or into a world that doesn't start with what the game's held, stops before its first tick.
+- A replay whose world doesn't start as the recorded game's did, from a seed edited in the recording or a setup that spawns something else, stops before its first tick.
 - A dispatched action the replay refuses, where the game accepted it, also stops the replay, with the refusal as the `reason`.
 - An enqueued action is enqueued again at the point it arrived, so it takes its turn among the actions the replay's own simulation issues. If the replay refuses what the game accepted, or the other way round, it stops after the tick that applied it.
+
+Whatever stops a replay, the error's `app` is the replay's app where it stopped, to look at while the scope the replay ran in is open:
+
+```ts sketch
+yield* Journal.replay(recording, Game).pipe(
+  Effect.catchTag("ReplayDiverged", (diverged) =>
+    Effect.map(diverged.app.read(World), (world) => /* … */)
+  )
+);
+```
 
 ## The world's hash
 

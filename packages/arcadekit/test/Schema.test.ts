@@ -513,7 +513,7 @@ describe("saving and replaying", () => {
     // Whatever the file says: the replay is what checks it.
     const written = recording as Journal.Recording;
     return withApp(
-      begin(Journal.replay(written, (start) => App.make(Game, start))),
+      begin(Journal.replay(written, Game)),
       ({ world, target }) => world.get(target, Health)!.hp
     );
   };

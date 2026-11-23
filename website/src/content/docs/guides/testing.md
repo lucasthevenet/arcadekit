@@ -209,7 +209,7 @@ The rest of the game sees each tick once: the frame and input stages, the action
 
 ## Replays as tests
 
-Play a game in a test, replay its recording with `Journal.replay(recording, (start) => App.make(game, start))`, and assert that both end on the same hash. This catches a system that reads the clock or `Math.random`, at the tick it does so. See [replays](replays.md).
+Play a game in a test, replay its recording with `Journal.replay(recording, game)`, and assert that both end on the same hash. This catches a system that reads the clock or `Math.random`, at the tick it does so. See [replays](replays.md).
 
 ## Read more
 

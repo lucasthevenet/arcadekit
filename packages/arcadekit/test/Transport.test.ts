@@ -1,7 +1,7 @@
 import { Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App, Driver, Input, Journal, World } from "../src/index";
+import { Driver, Input, Journal, World } from "../src/index";
 import { Drift, Message, Session, Transport } from "../src/net/index";
 import {
   CoinGame,
@@ -280,9 +280,9 @@ describe("a session joined to a transport", () => {
             // Only a game played with rollback goes back.
             expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
             const whole = ada.app.record();
-            const alone = yield* Journal.replay(whole, (start) =>
-              App.make(CoinGame, { ...start, checkpointEvery: 1 })
-            );
+            const alone = yield* Journal.replay(whole, CoinGame, {
+              checkpointEvery: 1,
+            });
             expect((yield* alone.read(World)).hash()).toBe(ada.world.hash());
           })
         )

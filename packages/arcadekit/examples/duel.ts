@@ -289,14 +289,13 @@ const program = Effect.gen(function* () {
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
-    // The replay hands over how the game began, its seed, and the app made
-    // from it seats the fighters as the game did, in its setup. A replay that
+    // The replay makes its app from how the game began, its seed, and that
+    // app seats the fighters as the game did, in its setup. A replay that
     // goes another way fails, and says where.
-    return yield* Journal.replay(loaded.value, (start) =>
-      App.make(App.define({ plugins: [Rules] }), {
-        ...start,
-        checkpointEvery: 1,
-      })
+    return yield* Journal.replay(
+      loaded.value,
+      App.define({ plugins: [Rules] }),
+      { checkpointEvery: 1 }
     ).pipe(
       Effect.flatMap(standing),
       Effect.map(

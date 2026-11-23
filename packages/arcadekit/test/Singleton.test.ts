@@ -649,9 +649,9 @@ describe("a singleton in an app", () => {
         });
         expect(world.singleton(Score).points).toBe(42);
         const played = app.record();
-        const again = yield* Journal.replay(played, (start) =>
-          App.make(game, { ...start, checkpointEvery: 1 })
-        );
+        const again = yield* Journal.replay(played, game, {
+          checkpointEvery: 1,
+        });
         expect((yield* again.read(World)).hash()).toBe(world.hash());
       })
     );

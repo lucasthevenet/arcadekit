@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -273,9 +273,7 @@ describe("a saved game", () => {
       // What the game logged after the save is replayed from the save, which
       // the recording holds, against the checkpoints it took after every tick.
       const resumed = withApp(
-        Journal.replay(recorded.tail, (start) =>
-          App.make(Played, { ...start, checkpointEvery: 1 })
-        ),
+        Journal.replay(recorded.tail, Played, { checkpointEvery: 1 }),
         (app, world) => ({
           hash: world.hash(),
           tally: talliesOf(app),
@@ -442,9 +440,7 @@ describe("a saved game", () => {
       const recorded = record(ticks, saveAt);
       ticksRun = 0;
       withApp(
-        Journal.replay(recorded.tail, (start) =>
-          App.make(Played, { ...start, checkpointEvery: 1 })
-        ),
+        Journal.replay(recorded.tail, Played, { checkpointEvery: 1 }),
         (_, world) => {
           expect(world.hash()).toBe(recorded.hashes.at(-1));
         }
@@ -465,10 +461,12 @@ describe("a saved game", () => {
     expect(bytes.length).toBeLessThan(recorded.save.world.length + 600);
     // The game goes on from the save that was read as it did from the one
     // that was written.
+    const { tail } = recorded;
+    assert(tail.save !== undefined);
     withApp(
-      Journal.replay(recorded.tail, () =>
-        App.make(Played, { save: decoded, checkpointEvery: 1 })
-      ),
+      Journal.replay({ ...tail, save: decoded }, Played, {
+        checkpointEvery: 1,
+      }),
       (_, world) => {
         expect(world.hash()).toBe(recorded.hashes.at(-1));
       }
