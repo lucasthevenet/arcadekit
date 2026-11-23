@@ -1,0 +1,530 @@
+#!/usr/bin/env node
+/**
+ * Verification harness for the arcadekit docs site (arcadekit.dev).
+ *
+ * Invocations are shown in `.cursor/skills/verify-arcadekit-docs/SKILL.md`.
+ * Requires Playwright Chromium: from the repo root,
+ *   pnpm --filter @arcadekit/website exec playwright install chromium
+ */
+import { spawn } from "node:child_process";
+import {
+  accessSync,
+  closeSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SKILL_ROOT = resolve(__dirname, "..");
+const REPO_ROOT = resolve(SKILL_ROOT, "../../..");
+const WEBSITE_DIR = join(REPO_ROOT, "website");
+const RUN_DIR = process.env.ARCADEKIT_DOCS_VERIFY_DIR ?? join(SKILL_ROOT, ".run");
+const STATE_PATH = join(RUN_DIR, "state.json");
+const DEFAULT_PORT = 4321;
+const DEFAULT_CDP = 9333;
+
+const require = createRequire(join(WEBSITE_DIR, "package.json"));
+const { chromium } = require("playwright");
+
+const usage = () => {
+  console.error(`Usage:
+  control-docs launch [--port <n>] [--cdp-port <n>] [--skip-build]
+  control-docs doctor
+  control-docs stop
+  control-docs browser goto --path <path>
+  control-docs browser click --role <role> --name <name>
+  control-docs browser fill --placeholder <text> --value <value>
+  control-docs browser press --key <key>
+  control-docs browser wait --text <text> [--timeout <ms>]
+  control-docs browser url
+  control-docs browser title
+  control-docs browser text --role <role> --name <name>
+  control-docs browser snapshot --aria --path <file>
+  control-docs browser screenshot --path <file>
+`);
+  process.exit(2);
+};
+
+const ensureDir = (path) => {
+  mkdirSync(path, { recursive: true });
+};
+
+const readState = () => {
+  if (!existsSync(STATE_PATH)) {
+    throw new Error(
+      `No verification instance. Run: control-docs launch\n(missing ${STATE_PATH})`
+    );
+  }
+  return JSON.parse(readFileSync(STATE_PATH, "utf8"));
+};
+
+const writeState = (state) => {
+  ensureDir(RUN_DIR);
+  writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitForHttp = async (url, { timeoutMs = 60_000, readyText = "arcadekit" } = {}) => {
+  const start = Date.now();
+  let last = "";
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url, { redirect: "manual" });
+      const body = await res.text();
+      last = `HTTP ${res.status}, ${body.length} bytes`;
+      if (res.ok && body.includes(readyText)) return;
+    } catch (err) {
+      last = String(err.message ?? err);
+    }
+    await sleep(250);
+  }
+  throw new Error(`Timed out waiting for ${url} (${last})`);
+};
+
+const resolveArtifactPath = (path) => {
+  if (isAbsolute(path)) return path;
+  return resolve(SKILL_ROOT, path);
+};
+
+const parseArgs = (argv) => {
+  const out = { _: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith("--")) {
+      const key = a.slice(2);
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith("--")) {
+        out[key] = true;
+      } else {
+        out[key] = next;
+        i++;
+      }
+    } else {
+      out._.push(a);
+    }
+  }
+  return out;
+};
+
+const buildDocs = () =>
+  new Promise((resolvePromise, reject) => {
+    const child = spawn("pnpm", ["build:docs"], {
+      cwd: REPO_ROOT,
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("exit", (code) => {
+      if (code === 0) resolvePromise();
+      else reject(new Error(`pnpm build:docs exited ${code}`));
+    });
+  });
+
+const startPreview = (port) => {
+  const logPath = join(RUN_DIR, "preview.log");
+  ensureDir(RUN_DIR);
+  const fd = openSync(logPath, "w");
+  const child = spawn(
+    join(WEBSITE_DIR, "node_modules/.bin/astro"),
+    ["preview", "--host", "127.0.0.1", "--port", String(port)],
+    {
+      cwd: WEBSITE_DIR,
+      stdio: ["ignore", fd, fd],
+      env: process.env,
+      detached: true,
+    }
+  );
+  child.unref();
+  closeSync(fd);
+  return { pid: child.pid, logPath };
+};
+
+const writeBrowserHolder = (cdpPort, url) => {
+  const holderPath = join(RUN_DIR, "browser-holder.mjs");
+  const playwrightPath = require.resolve("playwright");
+  writeFileSync(
+    holderPath,
+    `import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { chromium } = require(${JSON.stringify(playwrightPath)});
+const browser = await chromium.launch({
+  headless: true,
+  args: ["--remote-debugging-port=${cdpPort}", "--remote-allow-origins=*"],
+});
+const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+const page = await context.newPage();
+await page.goto(${JSON.stringify(url)}, { waitUntil: "domcontentloaded" });
+const stop = async () => {
+  try { await browser.close(); } catch {}
+  process.exit(0);
+};
+process.on("SIGTERM", stop);
+process.on("SIGINT", stop);
+console.log(JSON.stringify({ ready: true, cdp: "http://127.0.0.1:${cdpPort}" }));
+setInterval(() => {}, 1 << 30);
+`
+  );
+  return holderPath;
+};
+
+const startBrowserHolder = (cdpPort, url) => {
+  const holderPath = writeBrowserHolder(cdpPort, url);
+  const logPath = join(RUN_DIR, "browser.log");
+  const fd = openSync(logPath, "w");
+  const child = spawn(process.execPath, [holderPath], {
+    cwd: WEBSITE_DIR,
+    stdio: ["ignore", fd, fd],
+    env: process.env,
+    detached: true,
+  });
+  child.unref();
+  closeSync(fd);
+  return { pid: child.pid, logPath };
+};
+
+const waitForCdp = async (cdpPort, timeoutMs = 30_000) => {
+  const start = Date.now();
+  let last = "";
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${cdpPort}/json/version`);
+      if (res.ok) {
+        const body = await res.json();
+        if (body.webSocketDebuggerUrl) return body;
+      }
+      last = `HTTP ${res.status}`;
+    } catch (err) {
+      last = String(err.message ?? err);
+    }
+    await sleep(200);
+  }
+  throw new Error(`Timed out waiting for CDP on ${cdpPort} (${last})`);
+};
+
+const withPage = async (fn) => {
+  const state = readState();
+  if (!alive(state.browserPid)) {
+    throw new Error(
+      `Browser holder pid ${state.browserPid} is not running. Re-run control-docs launch.`
+    );
+  }
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${state.cdpPort}`);
+  try {
+    const context = browser.contexts()[0];
+    if (!context) throw new Error("No browser context on CDP connection");
+    const page = context.pages()[0];
+    if (!page) throw new Error("No open page on CDP connection");
+    return await fn(page, state);
+  } finally {
+    // Disconnect this client only; leave the holder's browser running.
+    await browser.close().catch(() => {});
+  }
+};
+
+const locatorFor = (page, args) => {
+  if (args.role && args.name !== undefined) {
+    return page.getByRole(args.role, {
+      name: args.name,
+      exact: args.exact === true,
+    });
+  }
+  if (args.placeholder !== undefined) {
+    return page.getByPlaceholder(args.placeholder, { exact: true });
+  }
+  if (args["test-id"] !== undefined) {
+    return page.getByTestId(args["test-id"]);
+  }
+  throw new Error("Need --role/--name, --placeholder, or --test-id");
+};
+
+const cmdLaunch = async (args) => {
+  const port = Number(args.port ?? DEFAULT_PORT);
+  const cdpPort = Number(args["cdp-port"] ?? DEFAULT_CDP);
+  if (existsSync(STATE_PATH)) {
+    const existing = JSON.parse(readFileSync(STATE_PATH, "utf8"));
+    if (alive(existing.previewPid) || alive(existing.browserPid)) {
+      throw new Error(
+        `A verification instance is already running (port ${existing.port}, pids preview=${existing.previewPid} browser=${existing.browserPid}). Run control-docs stop first, or set ARCADEKIT_DOCS_VERIFY_DIR to an empty directory for a side-by-side instance.`
+      );
+    }
+  }
+  ensureDir(RUN_DIR);
+
+  const distIndex = join(WEBSITE_DIR, "dist", "index.html");
+  if (!args["skip-build"] || !existsSync(distIndex)) {
+    console.error("Building docs (pnpm build:docs)…");
+    await buildDocs();
+  }
+  if (!existsSync(distIndex)) {
+    throw new Error(`Build produced no ${distIndex}`);
+  }
+
+  accessSync(require.resolve("playwright"), constants.R_OK);
+
+  const preview = startPreview(port);
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    await waitForHttp(url, { readyText: "arcadekit" });
+  } catch (err) {
+    try {
+      process.kill(preview.pid, "SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+
+  const browser = startBrowserHolder(cdpPort, url);
+  try {
+    await waitForCdp(cdpPort);
+    await sleep(400);
+    const browserConn = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+    const page = browserConn.contexts()[0]?.pages()[0];
+    if (!page) throw new Error("Browser opened with no page");
+    const title = await page.title();
+    const brand = await page.locator("a.site-title").count();
+    if (!/arcadekit/i.test(title) && brand === 0) {
+      throw new Error(`Docs page not usable yet (title=${title})`);
+    }
+    await browserConn.close().catch(() => {});
+  } catch (err) {
+    try {
+      process.kill(browser.pid, "SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    try {
+      process.kill(preview.pid, "SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+
+  const state = {
+    url,
+    port,
+    cdpPort,
+    previewPid: preview.pid,
+    browserPid: browser.pid,
+    repoRoot: REPO_ROOT,
+    skillRoot: SKILL_ROOT,
+    previewLog: preview.logPath,
+    browserLog: browser.logPath,
+    startedAt: new Date().toISOString(),
+  };
+  writeState(state);
+  console.log(JSON.stringify({ ok: true, ...state }, null, 2));
+};
+
+const cmdDoctor = async () => {
+  const state = readState();
+  const problems = [];
+  if (!alive(state.previewPid)) problems.push(`preview pid ${state.previewPid} not running`);
+  if (!alive(state.browserPid)) problems.push(`browser pid ${state.browserPid} not running`);
+  let http = null;
+  try {
+    const res = await fetch(state.url);
+    const body = await res.text();
+    http = { status: res.status, hasBrand: body.includes("arcadekit") };
+    if (!res.ok) problems.push(`HTTP ${res.status} at ${state.url}`);
+    if (!body.includes("arcadekit")) problems.push("response HTML lacks brand string arcadekit");
+  } catch (err) {
+    problems.push(`fetch ${state.url}: ${err.message}`);
+  }
+  let cdp = null;
+  try {
+    const res = await fetch(`http://127.0.0.1:${state.cdpPort}/json/version`);
+    cdp = await res.json();
+    if (!res.ok) problems.push(`CDP HTTP ${res.status}`);
+  } catch (err) {
+    problems.push(`CDP: ${err.message}`);
+  }
+  const report = {
+    ok: problems.length === 0,
+    url: state.url,
+    port: state.port,
+    previewPid: state.previewPid,
+    browserPid: state.browserPid,
+    http,
+    cdpBrowser: cdp?.Browser ?? null,
+    problems,
+  };
+  console.log(JSON.stringify(report, null, 2));
+  if (!report.ok) process.exit(1);
+};
+
+const cmdStop = async () => {
+  if (!existsSync(STATE_PATH)) {
+    console.log(JSON.stringify({ ok: true, stopped: false, reason: "no state file" }));
+    return;
+  }
+  const state = readState();
+  for (const pid of [state.browserPid, state.previewPid]) {
+    if (pid && alive(pid)) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  await sleep(400);
+  for (const pid of [state.browserPid, state.previewPid]) {
+    if (pid && alive(pid)) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  unlinkSync(STATE_PATH);
+  console.log(JSON.stringify({ ok: true, stopped: true, url: state.url }));
+};
+
+const cmdBrowser = async (sub, args) => {
+  switch (sub) {
+    case "goto": {
+      const path = args.path ?? "/";
+      await withPage(async (page, state) => {
+        const target = path.startsWith("http")
+          ? path
+          : `${state.url}${path.startsWith("/") ? path : `/${path}`}`;
+        await page.goto(target, { waitUntil: "domcontentloaded" });
+        console.log(JSON.stringify({ ok: true, url: page.url(), title: await page.title() }));
+      });
+      return;
+    }
+    case "click": {
+      await withPage(async (page) => {
+        const loc = locatorFor(page, args).first();
+        await Promise.all([
+          page.waitForLoadState("domcontentloaded").catch(() => {}),
+          loc.click({ timeout: Number(args.timeout ?? 10_000) }),
+        ]);
+        // Same-document navigations (hash) and soft navigations need a tick.
+        await page.waitForLoadState("networkidle").catch(() => {});
+        console.log(JSON.stringify({ ok: true, url: page.url() }));
+      });
+      return;
+    }
+    case "fill": {
+      await withPage(async (page) => {
+        if (args.value === undefined) throw new Error("--value is required");
+        const loc = locatorFor(page, args).first();
+        await loc.fill(String(args.value), { timeout: Number(args.timeout ?? 10_000) });
+        console.log(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+    case "press": {
+      await withPage(async (page) => {
+        if (!args.key) throw new Error("--key is required");
+        await page.keyboard.press(String(args.key));
+        console.log(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+    case "wait": {
+      await withPage(async (page) => {
+        if (!args.text) throw new Error("--text is required");
+        await page
+          .getByText(String(args.text), { exact: args.exact === true })
+          .first()
+          .waitFor({ timeout: Number(args.timeout ?? 10_000) });
+        console.log(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+    case "url": {
+      await withPage(async (page) => {
+        console.log(JSON.stringify({ ok: true, url: page.url() }));
+      });
+      return;
+    }
+    case "title": {
+      await withPage(async (page) => {
+        console.log(JSON.stringify({ ok: true, title: await page.title() }));
+      });
+      return;
+    }
+    case "text": {
+      await withPage(async (page) => {
+        const loc = locatorFor(page, args).first();
+        const text = await loc.innerText({ timeout: Number(args.timeout ?? 10_000) });
+        console.log(JSON.stringify({ ok: true, text: text.trim() }));
+      });
+      return;
+    }
+    case "snapshot": {
+      await withPage(async (page) => {
+        if (!args.path) throw new Error("--path is required");
+        const out = resolveArtifactPath(String(args.path));
+        ensureDir(dirname(out));
+        const snap = await page.locator("body").ariaSnapshot();
+        writeFileSync(out, `${snap}\n`);
+        console.log(JSON.stringify({ ok: true, path: out, bytes: snap.length }));
+      });
+      return;
+    }
+    case "screenshot": {
+      await withPage(async (page) => {
+        if (!args.path) throw new Error("--path is required");
+        const out = resolveArtifactPath(String(args.path));
+        ensureDir(dirname(out));
+        await page.screenshot({ path: out, fullPage: Boolean(args["full-page"]) });
+        console.log(JSON.stringify({ ok: true, path: out }));
+      });
+      return;
+    }
+    default:
+      usage();
+  }
+};
+
+const main = async () => {
+  const argv = process.argv.slice(2);
+  if (argv.length === 0) usage();
+  const cmd = argv[0];
+  if (cmd === "launch") {
+    await cmdLaunch(parseArgs(argv.slice(1)));
+    return;
+  }
+  if (cmd === "doctor") {
+    await cmdDoctor();
+    return;
+  }
+  if (cmd === "stop") {
+    await cmdStop();
+    return;
+  }
+  if (cmd === "browser") {
+    if (argv.length < 2) usage();
+    await cmdBrowser(argv[1], parseArgs(argv.slice(2)));
+    return;
+  }
+  usage();
+};
+
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
+});
