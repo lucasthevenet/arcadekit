@@ -45,7 +45,7 @@ A real-time game wants interpolation. It is off by default because the picture i
 
 The system stores the previous value of each component per entity, outside the world. A game drawn this way has the same hash, log, and save as one that isn't drawn at all.
 
-Interpolation costs about 18 ns more per entity per frame for a position, and 63 ns more for a position, a rotation, and a scale.
+Interpolation costs about 17 ns more per entity per frame for a position, and 54 ns more for a position, a rotation, and a scale.
 
 ## Interpolate in your own frame system
 

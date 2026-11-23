@@ -58,7 +58,7 @@ const Fountain = System.tick("game/Fountain", function* () {
 });
 ```
 
-The fountain's progress is in the world, so a [save](saving-and-loading.md) holds it, a replay or a rewind picks it up where it was, and the world's hash covers it. A game that [ticks only when needed](running-a-game.md#ticking-only-when-needed) keeps ticking while the fountain counts down, because each tick changes the world.
+The fountain's progress is in the world, so a [save](saving-and-loading.md) holds it, a replay or a rewind picks it up where it was, and the world's hash covers it. A game that [ticks only when needed](running-a-game.md#tick-only-when-needed) keeps ticking while the fountain counts down, because each tick changes the world.
 
 ## Order systems
 
