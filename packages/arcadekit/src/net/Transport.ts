@@ -5,20 +5,19 @@
  * and returns the ones to send, and the transport is the service that carries
  * them:
  *
- *   const program = Effect.gen(function* () {
- *     const session = yield* Session.make(Duel, { seed, me, others, delta: 1 / 60 })
- *     return yield* Driver.frames(yield* Transport.connect(session))
- *   }).pipe(
- *     Effect.scoped,
- *     Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
- *   )
+ *   const program = Driver.run(
+ *     Effect.gen(function* () {
+ *       const session = yield* Session.make(Duel, { seed, me, others, delta: 1 / 60 })
+ *       return yield* Transport.connect(session)
+ *     })
+ *   ).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7")))
  *
- * `Transport.connect` listens on the transport in the scope of the program
- * that calls it, and returns what a driver steps. Each tick, it passes the
- * session what has arrived, runs the session's tick, and sends what the
- * session produced. The service holds no channel, only how to listen on one,
- * so its layer can be provided anywhere, and the channel lasts as long as the
- * program that drives the session.
+ * `Transport.connect` listens on the transport and returns what a driver
+ * steps. Each tick, it passes the session what has arrived, runs the
+ * session's tick, and sends what the session produced. The service holds no
+ * channel, only how to listen on one, so its layer can be provided anywhere.
+ * The channel lasts until the connection is closed, which closes the session
+ * too. `Driver.run` closes the connection when the game ends.
  *
  * A transport needs only that every message arrives, in any order. A game
  * gets one from these:
@@ -31,13 +30,12 @@
  * - `Transport.makeHub` is an in-memory network for tests, which delays and
  *   reorders messages as it is told.
  */
-import { Context, Data, Effect, Exit, Layer } from "effect";
-import type { Scope } from "effect";
+import { Context, Data, Effect, Exit, Layer, Scope } from "effect";
 
 import type { Paced } from "../Driver";
 import { Rng } from "../ecs/random";
 import * as Message from "./Message";
-import type { Peer } from "./Peer";
+import type { Session } from "./Session";
 
 /**
  * A transport being listened on. Its two calls don't wait, so a tick that
@@ -65,8 +63,9 @@ export interface Listener {
  * since every way of reaching the other peers is an explicit choice.
  *
  * It holds no channel. `listen` opens one in the scope it is run in, and closes
- * it with that scope, so whatever the layer is provided to, the channel lasts
- * as long as the program that listens on it.
+ * it with that scope. Whatever the layer is provided to, the channel lasts as
+ * long as what listens on it. For a connection that `Transport.connect` made,
+ * that is until the connection is closed.
  *
  * @category Services
  */
@@ -76,8 +75,8 @@ export class Transport extends Context.Service<
 >()("arcadekit/Transport") {}
 
 /**
- * Listens on this peer's transport in the current scope, as
- * `Transport.connect` does.
+ * Listens on this peer's transport in the current scope, and stops when that
+ * scope closes. `Transport.connect` listens in a scope of its own instead.
  *
  * **When to use**
  *
@@ -114,14 +113,21 @@ export interface Connected extends Paced {
    * A transport that reports no peer leaving keeps it empty.
    */
   readonly away: readonly string[];
+  /**
+   * Stops listening on the transport, then closes the session it connected.
+   * A transport of the package throws when used after, and says that its
+   * connection was closed. Closing it again does nothing. `Driver.run`
+   * closes it when it ends.
+   */
+  readonly close: Effect.Effect<void>;
 }
 
 /**
- * Listens on the transport in the current scope, and connects a session to
- * it. Each tick of the result passes the session every message that has
- * arrived, runs the session's tick, and sends what the session produced,
- * whether the tick ran, waited or failed. So a session that stops because
- * the peers drifted apart tells the others first.
+ * Listens on the transport, and connects a session to it. Each tick of the
+ * result passes the session every message that has arrived, runs the
+ * session's tick, and sends what the session produced, whether the tick ran,
+ * waited or failed. So a session that stops because the peers drifted apart
+ * tells the others first.
  *
  * A relay says a peer joined the room when it comes back after its socket
  * dropped, and tells that peer of each peer already there. On such a notice,
@@ -130,57 +136,74 @@ export interface Connected extends Paced {
  *
  *   yield* Driver.frames(yield* Transport.connect(session))
  *
- * The transport closes with the scope, so drive the session in the program
- * that connected it.
+ * The connection listens in a scope of its own, as an app does, and stands
+ * in for the session. Its `close` stops listening and closes the session,
+ * and `Driver.run` closes it when it ends. The scope of the program that
+ * connects has no effect on how long the transport lasts.
  *
  * @category Running
  */
-export const connect: (
+export const connect = (
   session: Pick<
-    Peer<unknown>,
-    "delta" | "frame" | "outgoing" | "receive" | "resend" | "tick"
+    Session<unknown>,
+    "close" | "delta" | "frame" | "outgoing" | "receive" | "resend" | "tick"
   >
-) => Effect.Effect<Connected, never, Transport | Scope.Scope> =
-  Effect.fnUntraced(function* (session) {
-    const transport = yield* listen;
-    const away = new Set<string>();
-    return {
-      delta: session.delta,
-      tick() {
-        let again = false;
-        for (const arrived of transport.receive()) {
-          if ("from" in arrived) {
-            // Whoever speaks is there, whatever the relay said before.
-            away.delete(arrived.from);
-            session.receive(arrived);
-          } else if ("joined" in arrived) {
-            away.delete(arrived.joined);
-            again = true;
-          } else {
-            away.add(arrived.left);
-          }
+): Effect.Effect<Connected, never, Transport> =>
+  Effect.flatMap(Transport, ({ listen: open }) =>
+    Effect.suspend(() => {
+      const scope = Scope.makeUnsafe();
+      return Effect.onError(
+        Effect.map(Scope.provide(open, scope), (transport) =>
+          joined(session, transport, Scope.close(scope, Exit.void))
+        ),
+        (cause) => Scope.close(scope, Exit.failCause(cause))
+      );
+    })
+  );
+
+/** A session joined to a transport listened on, which `stop` stops. */
+const joined = (
+  session: Parameters<typeof connect>[0],
+  transport: Listener,
+  stop: Effect.Effect<void>
+): Connected => {
+  const away = new Set<string>();
+  return {
+    delta: session.delta,
+    tick() {
+      let again = false;
+      for (const arrived of transport.receive()) {
+        if ("from" in arrived) {
+          // Whoever speaks is there, whatever the relay said before.
+          away.delete(arrived.from);
+          session.receive(arrived);
+        } else if ("joined" in arrived) {
+          away.delete(arrived.joined);
+          again = true;
+        } else {
+          away.add(arrived.left);
         }
-        if (again) {
-          for (const message of session.resend()) {
-            transport.send(message);
-          }
+      }
+      if (again) {
+        for (const message of session.resend()) {
+          transport.send(message);
         }
-        try {
-          return session.tick();
-        } finally {
-          for (const message of session.outgoing()) {
-            transport.send(message);
-          }
+      }
+      try {
+        return session.tick();
+      } finally {
+        for (const message of session.outgoing()) {
+          transport.send(message);
         }
-      },
-      frame: session.frame,
-      get away() {
-        return Array.from(away).toSorted((a, b) =>
-          a < b ? -1 : a > b ? 1 : 0
-        );
-      },
-    };
-  });
+      }
+    },
+    frame: session.frame,
+    get away() {
+      return Array.from(away).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    },
+    close: Effect.andThen(stop, session.close),
+  };
+};
 
 /**
  * A channel that carries text to the other peers: a WebSocket to a relay that
@@ -237,7 +260,7 @@ export const text = (wire: Wire): TextTransport => {
   const use = (): void => {
     if (!open) {
       throw new Error(
-        "A transport over text was used after it was closed. Close it when the session it carries is done with it: with the scope of the program that drives the session, as Transport.connect does."
+        "A transport over text was used after it was closed. Close it when the session it carries is done with it, as the close of a connection Transport.connect made closes the transports of the package."
       );
     }
   };
@@ -284,7 +307,7 @@ export const text = (wire: Wire): TextTransport => {
  * machines.
  *
  * The channel opens when `Transport.connect` listens on the transport, and
- * closes with the scope it was opened in. A transport used after that throws
+ * closes when the connection is closed. A transport used after that throws
  * and says so.
  *
  * Unlike a relay, nothing authenticates the sender here. A peer can send a
@@ -324,7 +347,7 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
         const use = (): TextTransport => {
           if (!held.open) {
             throw new Error(
-              `The transport "${name}" was used after the scope it was opened in had closed, and its channel with it. Transport.connect listens on it in the scope of the program that calls it: drive the session in that program.`
+              `The transport "${name}" was used after it was let go, and its channel closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
             );
           }
           return held.over;
@@ -399,7 +422,7 @@ const refused = (code: number, reason: string, again: boolean): boolean =>
  *
  * - The socket opens when `Transport.connect` listens on the transport. Messages
  *   sent before it opens are buffered and sent once it does.
- * - It closes with the scope it was opened in. A transport used after that
+ * - It closes when the connection is closed. A transport used after that
  *   throws and says so.
  * - When a socket that was open drops, it connects again, waiting longer each
  *   time, up to two seconds, for as long as `reconnectFor` says. What is sent
@@ -537,7 +560,7 @@ export const layerWebSocket = (
         const use = (): TextTransport => {
           if (!held.open) {
             throw new Error(
-              `The transport to ${url} was used after the scope it was opened in had closed, and its socket with it. Transport.connect listens on it in the scope of the program that calls it: drive the session in that program.`
+              `The transport to ${url} was used after it was let go, and its socket closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
             );
           }
           if (held.closed !== undefined) {

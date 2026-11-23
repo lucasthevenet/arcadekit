@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { Effect, Exit, Layer, Scope } from "effect";
+import { Effect, Layer } from "effect";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -102,7 +102,6 @@ const play = async (
   });
   const source = Input.makeManualSource();
   const sound = Sound.makeRecorder();
-  const scope = Scope.makeUnsafe();
   const app = Effect.runSync(
     App.make(Catch, { seed: 3 }).pipe(
       Effect.provide(
@@ -113,8 +112,7 @@ const play = async (
         )
       ),
       Effect.provideService(Screen, { canvas }),
-      Effect.provide(Input.layer(source)),
-      Scope.provide(scope)
+      Effect.provide(Input.layer(source))
     )
   );
   return {
@@ -163,7 +161,7 @@ const play = async (
         unmount();
       });
     },
-    close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+    close: () => Effect.runPromise(app.close),
   };
 };
 

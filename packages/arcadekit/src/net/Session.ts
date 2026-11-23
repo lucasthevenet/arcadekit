@@ -56,7 +56,6 @@
  * each other, and `Drift` how they find that they have drifted apart.
  */
 import { Cause, Data, Effect, Exit } from "effect";
-import type { Scope } from "effect";
 
 import type * as App from "../App";
 import { partsOf } from "../app/parts";
@@ -179,6 +178,12 @@ export interface Session<E = never, HU = never> extends Peer.Peer<E> {
    * `enqueue` for what this peer's player does, its saves and its recordings.
    */
   readonly app: App.Steered<E, HU>;
+  /**
+   * Closes the session's app, as `app.close` closes an app. Whatever runs
+   * the session closes it. The connection that `Transport.connect` makes
+   * closes it when the connection is closed.
+   */
+  readonly close: Effect.Effect<void>;
 }
 
 /** Orders text by code unit, which is the same on every machine. */
@@ -266,23 +271,26 @@ export const make = <
 ): Effect.Effect<
   Session<App.TickError<S, P>, App.AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
-  Scope.Scope | App.External<S, H, P>
+  App.External<S, H, P>
 > =>
-  Effect.map(
-    build(game, options),
-    ({ app, take }): Session<App.TickError<S, P>, App.AllHandlers<H, P>> => {
-      const ahead = options.ahead ?? 8;
-      return Peer.build(app, take, {
-        game: simulates(game, app.systemOrder),
-        me: options.me,
-        others: options.others,
-        delta: options.delta,
-        // A session that predicts nothing would wait for the network on
-        // every tick with no delay.
-        delay: options.delay ?? (ahead === 0 ? 2 : 0),
-        ahead,
-      });
-    }
+  Effect.flatMap(build(game, options), ({ app, take }) =>
+    // Options that describe no game throw, and the app made for them goes.
+    Effect.onError(
+      Effect.sync((): Session<App.TickError<S, P>, App.AllHandlers<H, P>> => {
+        const ahead = options.ahead ?? 8;
+        return Peer.build(app, take, {
+          game: simulates(game, app.systemOrder),
+          me: options.me,
+          others: options.others,
+          delta: options.delta,
+          // A session that predicts nothing would wait for the network on
+          // every tick with no delay.
+          delay: options.delay ?? (ahead === 0 ? 2 : 0),
+          ahead,
+        });
+      }),
+      () => app.close
+    )
   );
 
 /**
@@ -336,6 +344,8 @@ export interface SyncTest<E = never, HU = never> {
   readonly frame: (alpha: number, delta?: number) => void;
   /** How many ticks it has run twice. */
   readonly checked: number;
+  /** Closes its app, as `app.close` closes an app. */
+  readonly close: Effect.Effect<void>;
 }
 
 /** Steps an app that was taken over, each tick twice. */
@@ -402,6 +412,7 @@ const twice = <E, HU>(
     get checked() {
       return checked;
     },
+    close: app.close,
   };
 };
 
@@ -442,7 +453,7 @@ export const syncTest = <
 ): Effect.Effect<
   SyncTest<App.TickError<S, P>, App.AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
-  Scope.Scope | App.External<S, H, P>
+  App.External<S, H, P>
 > => {
   const given: App.StartOptions<SV> = start ?? {};
   return Effect.map(build(game, given), ({ app, take }) => {

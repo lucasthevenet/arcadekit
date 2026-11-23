@@ -157,10 +157,9 @@ const nowhere: Output = { open: Effect.succeed(silent) };
  * `sounds` option of `Browser.runMain`. A test provides a speaker that records
  * what it was asked, `Sound.layer(Sound.makeRecorder())`.
  *
- * An output opens nothing itself. `Sound.plugin` runs `open` in the scope the
- * app is made in, and lets go of the speaker when that scope closes. Wherever
- * the layer is provided, the app is heard for as long as the program that made
- * it runs.
+ * An output opens nothing itself. `Sound.plugin` runs `open` in the app's own
+ * scope, and lets go of the speaker when the app is closed. Wherever the
+ * layer is provided, the app is heard for as long as it is open.
  *
  * @category Services
  */
@@ -170,8 +169,9 @@ export const Output: Context.Reference<Output> = Context.Reference<Output>(
 );
 
 /**
- * Opens `Sound.Output` in the current scope, as `Sound.plugin` does, and
- * returns its speaker.
+ * Opens `Sound.Output` in the current scope, and returns its speaker. The
+ * speaker is let go when that scope closes. `Sound.plugin` opens the output
+ * in the app's own scope instead.
  *
  * **When to use**
  *
@@ -540,10 +540,9 @@ const Flush = System.frame("arcadekit/Sound.Flush", function* () {
  *
  * It provides `Sound.Player`. It also adds a system in `"postFrame"`, the stage
  * after the frame's own, that passes the frame's requests to the speaker once
- * all the frame's systems have run. It opens `Sound.Output` in the scope the
- * app is made in, wherever the output was provided. When that scope closes,
- * every playing channel is silenced at once, and the plugin lets go of the
- * speaker.
+ * all the frame's systems have run. It opens `Sound.Output` when the app is
+ * made, wherever the output was provided. When the app is closed, every
+ * playing channel is silenced at once, and the plugin lets go of the speaker.
  *
  * @category Plugins
  */

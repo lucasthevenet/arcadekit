@@ -1,5 +1,4 @@
 import { Data, Effect, Random as EffectRandom, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { Rng } from "../src/ecs/random";
@@ -20,9 +19,9 @@ import {
 } from "../src/index";
 
 const withApp = <T, A, E = never>(
-  make: Effect.Effect<T, E, Scope.Scope>,
+  make: Effect.Effect<T, E>,
   use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): A => Effect.runSync(Effect.map(make, use));
 
 const draws = (rng: Rng, count: number): number[] =>
   Array.from({ length: count }, () => rng.bits());

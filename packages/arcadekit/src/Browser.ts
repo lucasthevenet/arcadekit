@@ -284,7 +284,7 @@ const listen = (
       sample() {
         if (stopped) {
           throw new Error(
-            "The page's devices were read after the scope they were listened to in had closed: they would say nothing for ever. App.make listens to them in the scope of the program that makes the app: run the app in that program."
+            "The page's devices were read after they were let go: the app that listened to them was closed, or the scope Input.listen ran in had ended. They would say nothing for ever: read them through an app that is open."
           );
         }
         readPads();
@@ -322,13 +322,13 @@ const listen = (
  * - An asset's path is read against the document's base, its `<base href>`,
  *   as `fetch` reads it, unless a loader of the game's own, such as
  *   `Assets.layerMemory`, is provided around this layer.
- * - Each app listens to the devices for itself, from when `App.make` starts
- *   listening until the scope the app was made in closes, wherever the layer
- *   is provided. Reading the devices after that scope has closed throws, with
- *   an error that says so.
+ * - Each app listens to the devices for itself, from when `App.make` makes
+ *   the app until the app is closed, wherever the layer is provided. Reading
+ *   the devices after the app is closed throws, with an error that says so.
  * - Unless `sounds` is `false`, its sound is that of `Browser.layerSound`.
- *   `Sound.plugin` opens it in the scope the app is made in, wherever the
- *   layer is provided, and the apps made under the layer share it.
+ *   `Sound.plugin` opens it when the app is made, wherever the layer is
+ *   provided, and keeps it open until the app is closed. The apps made under
+ *   the layer share it.
  *
  * @category Layers
  */
@@ -503,6 +503,12 @@ interface Held {
   readonly close: Effect.Effect<void>;
   /** How many have it open. */
   holders: number;
+}
+
+/** One holder's hold on the page's audio, which it lets go of once. */
+interface Hold {
+  readonly page: Held;
+  open: boolean;
 }
 
 /**
@@ -755,13 +761,12 @@ const openPage = (
     speaker: {
       play(cue, volume, rate) {
         const buffer = bufferOf(cue);
-        // Before the first touch, before the file is here, or after
-        // the audio was closed, which empties the buffers.
+        // Before the first touch, or before the file is here.
         if (audio === undefined || buffer === undefined) {
           // Before the first touch, on a page that could play it after:
           // said once, since nothing else tells why a game that opens
           // with a sound is not heard.
-          if (audio === undefined && !closed && make !== undefined && !early) {
+          if (audio === undefined && make !== undefined && !early) {
             early = true;
             fork(
               Effect.logInfo(
@@ -845,15 +850,15 @@ const openPage = (
  *
  * **Details**
  *
- * - It opens nothing when it is built. `Sound.plugin` opens it in the scope
- *   the app is made in, wherever the layer is provided, and the page is heard
- *   for as long as the program that made the app.
+ * - It opens nothing when it is built. `Sound.plugin` opens it when the app
+ *   is made, wherever the layer is provided, and the page is heard until the
+ *   app is closed. Playing it after that throws, with an error that says so.
  * - The page's audio belongs to the page, not to one app. The apps made under
  *   one `Effect.provide` of the layer share one audio context, since a
  *   browser lets a page have only a few, and each file is fetched once. The
- *   audio starts when the first of those apps opens it. When the last lets
- *   go, the audio context is closed, pending file requests are cancelled, and
- *   the page is no longer listened to.
+ *   audio starts when the first of those apps opens it. When the last is
+ *   closed, the audio context is closed, pending file requests are
+ *   cancelled, and the page is no longer listened to.
  * - The files are fetched through `Assets.Loader` when the audio starts, and
  *   decoded as they arrive.
  * - A page can't play sound before the user interacts with it. The audio
@@ -900,13 +905,15 @@ export const layerSound = (
       return {
         open: Effect.map(
           Effect.acquireRelease(
-            Effect.sync(() => {
+            Effect.sync((): Hold => {
               held ??= openPage(files, options, loader, display, fork);
               held.holders += 1;
-              return held;
+              return { page: held, open: true };
             }),
-            (page) =>
+            (hold) =>
               Effect.suspend(() => {
+                hold.open = false;
+                const { page } = hold;
                 page.holders -= 1;
                 if (page.holders > 0) {
                   return Effect.void;
@@ -915,7 +922,21 @@ export const layerSound = (
                 return page.close;
               })
           ),
-          (page) => page.speaker
+          (hold): Sound.Speaker => {
+            const use = (): Sound.Speaker => {
+              if (!hold.open) {
+                throw new Error(
+                  "The page's sound was played after it was let go: the app that opened it was closed, or the scope Sound.open ran in had ended. Nothing would be heard: play it through an app that is open."
+                );
+              }
+              return hold.page.speaker;
+            };
+            return {
+              play: (cue, volume, rate) => use().play(cue, volume, rate),
+              music: (channel, track, volume, fade, once) =>
+                use().music(channel, track, volume, fade, once),
+            };
+          }
         ),
       };
     })
@@ -1004,7 +1025,8 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
  * - A failure is reported through Effect's logger.
  * - When the page is closed for good, on a `pagehide` that doesn't enter the
  *   browser's back-forward cache, the game is interrupted. The frame loop
- *   stops, the app's scope closes, and the page is no longer listened to.
+ *   stops, `Driver.run` closes the app, and the page is no longer listened
+ *   to.
  *
  * @category Running
  */

@@ -1,5 +1,4 @@
 import { Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
@@ -22,9 +21,6 @@ import {
   World,
 } from "../src/index";
 import { steered } from "./peers";
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 // --- a game that makes noise -------------------------------------------------------
 // Balls fall and bounce off the floor. The simulation says so with an
@@ -118,7 +114,7 @@ const Noisy = App.define({ plugins: [Game] });
 const play = (output: Sound.Speaker | undefined, seed = 1) => {
   asked = 0;
   const made = App.make(Noisy, { seed, checkpointEvery: 1 });
-  return run(
+  return Effect.runSync(
     output === undefined ? made : made.pipe(Effect.provide(Sound.layer(output)))
   );
 };
@@ -131,7 +127,7 @@ const about = (app: ReturnType<typeof play>, speed: number): void => {
 describe("Sound.cues", () => {
   it("plays a cue once when a rewind runs its tick again, and what the tick now does", () => {
     const sound = Sound.makeRecorder();
-    const built = run(
+    const built = Effect.runSync(
       Build.build(Noisy, { seed: 1, checkpointEvery: 1 }).pipe(
         Effect.provide(Sound.layer(sound))
       )
@@ -259,7 +255,7 @@ describe("Sound.cues", () => {
       System.runIf(State.is(Phase, "playing"))
     );
     const sound = Sound.makeRecorder();
-    const app = run(
+    const app = Effect.runSync(
       App.make(
         App.define({ plugins: [Rules, Sound.plugin], systems: [Quiet] })
       ).pipe(Effect.provide(Sound.layer(sound)))
@@ -343,7 +339,7 @@ describe("Sound.Player", () => {
       // Asked for, and not played yet: the frame is not over.
       heard.push(sound.played.length);
     });
-    const app = run(
+    const app = Effect.runSync(
       App.make(App.define({ plugins: [Sound.plugin], systems: [Click] })).pipe(
         Effect.provide(Sound.layer(sound))
       )
@@ -388,7 +384,7 @@ describe("Sound.Player", () => {
       (yield* Sound.Player).play("whoosh", { volume: 0.2, rate: 2 });
       (yield* Sound.Player).play("ping");
     });
-    const app = run(
+    const app = Effect.runSync(
       App.make(App.define({ plugins: [Game], systems: [Theirs, Mine] })).pipe(
         Effect.provide(Sound.layer(sound))
       )
@@ -417,8 +413,8 @@ describe("Sound.Player", () => {
       (yield* Sound.Player).play("anything");
     });
     const Asking = App.define({ plugins: [Sound.plugin], systems: [Ask] });
-    run(App.make(Asking)).frame(0);
-    run(
+    Effect.runSync(App.make(Asking)).frame(0);
+    Effect.runSync(
       App.make(Asking).pipe(Effect.provide(Sound.layer(Sound.makeRecorder())))
     ).frame(0);
     expect(seen).toEqual([false, true]);
@@ -428,9 +424,9 @@ describe("Sound.Player", () => {
     // Sound.Player is still needed: Sound.plugin provides it.
     expectTypeOf(
       App.make(App.define({ plugins: [Rules], systems: [Cues] }))
-    ).not.toExtend<Effect.Effect<unknown, never, Scope.Scope>>();
+    ).not.toExtend<Effect.Effect<unknown, never>>();
     expectTypeOf(App.make(App.define({ plugins: [Game] }))).toExtend<
-      Effect.Effect<unknown, never, Scope.Scope>
+      Effect.Effect<unknown, never>
     >();
   });
 });
@@ -438,7 +434,7 @@ describe("Sound.Player", () => {
 describe("a game with sound", () => {
   it("is the same game as one with none: the same hash, log and save, tick for tick", () => {
     const sound = Sound.makeRecorder();
-    const heard = run(
+    const heard = Effect.runSync(
       App.make(App.define({ plugins: [Game] }), {
         seed: 9,
         checkpointEvery: 1,
@@ -446,7 +442,7 @@ describe("a game with sound", () => {
       }).pipe(Effect.provide(Sound.layer(sound)))
     );
     // No output, and no system that plays: the rules alone.
-    const deaf = run(
+    const deaf = Effect.runSync(
       App.make(App.define({ plugins: [Rules] }), {
         seed: 9,
         checkpointEvery: 1,
@@ -456,8 +452,8 @@ describe("a game with sound", () => {
       app.dispatch(Drop, { height: 2 });
       app.dispatch(Drop, { height: 0.5 });
     }
-    const heardWorld = run(heard.read(World));
-    const deafWorld = run(deaf.read(World));
+    const heardWorld = Effect.runSync(heard.read(World));
+    const deafWorld = Effect.runSync(deaf.read(World));
     for (let i = 0; i < 80; i++) {
       heard.tick(0.05);
       heard.frame(0.5);
@@ -471,7 +467,7 @@ describe("a game with sound", () => {
     expect(saves[0]).toBeDefined();
     expect(saves[0]).toEqual(saves[1]);
     // And it was heard: every bounce that was fast enough.
-    expect(run(heard.read(Bounces)).count).toBeGreaterThan(5);
+    expect(Effect.runSync(heard.read(Bounces)).count).toBeGreaterThan(5);
     expect(
       sound.played.filter((one) => one.cue === "thud").length
     ).toBeGreaterThan(5);
@@ -489,12 +485,14 @@ describe("a game with sound", () => {
     expect(sound.played.length).toBeGreaterThan(1);
     const again = Sound.makeRecorder();
     const recording = app.record();
-    const replayed = run(
+    const replayed = Effect.runSync(
       Journal.replay(recording, Noisy, { checkpointEvery: 1 }).pipe(
         Effect.provide(Sound.layer(again))
       )
     );
-    expect(run(replayed.read(World)).hash()).toBe(run(app.read(World)).hash());
+    expect(Effect.runSync(replayed.read(World)).hash()).toBe(
+      Effect.runSync(app.read(World)).hash()
+    );
     expect(again.played).toEqual([]);
   });
 });

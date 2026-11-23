@@ -381,7 +381,7 @@ export const make = <
      * resources, since what a service keeps is no part of the world. While
      * the layer builds, it can use the built-in services and whatever the
      * plugins in `plugins` provide. What it acquires is released when the
-     * app's scope closes.
+     * app is closed.
      */
     readonly layer?: L;
     /**

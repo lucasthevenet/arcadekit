@@ -1,5 +1,4 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import type { JsonValue, Spawned } from "../src/index";
@@ -24,14 +23,12 @@ import { placedIn } from "./placed";
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
 const withApp = <T extends Pick<App.Any, "read">, E, A>(
-  make: Effect.Effect<T, E, Scope.Scope>,
+  make: Effect.Effect<T, E>,
   use: (app: T, world: Effect.Success<typeof World>) => A
 ): A =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.flatMap(make, (app) =>
-        Effect.map(app.read(World), (world) => use(app, world))
-      )
+    Effect.flatMap(make, (app) =>
+      Effect.map(app.read(World), (world) => use(app, world))
     )
   );
 const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
@@ -415,7 +412,7 @@ describe("a save from another version of the game", () => {
       (app) => unwrap(app.save())
     );
     const error = refusal(
-      Effect.runSync(Effect.scoped(Effect.exit(App.make(Version2, { save }))))
+      Effect.runSync(Effect.exit(App.make(Version2, { save })))
     );
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("newer version");
@@ -429,12 +426,10 @@ describe("a save from another version of the game", () => {
     const load = (given: readonly Save.Migration[], version = 2) =>
       refusal(
         Effect.runSync(
-          Effect.scoped(
-            Effect.exit(
-              App.make(
-                App.define({ plugins: [Game2], version, migrations: given }),
-                { save }
-              )
+          Effect.exit(
+            App.make(
+              App.define({ plugins: [Game2], version, migrations: given }),
+              { save }
             )
           )
         )
@@ -454,10 +449,8 @@ describe("a save from another version of the game", () => {
     expect(
       refusal(
         Effect.runSync(
-          Effect.scoped(
-            Effect.exit(
-              App.make(App.define({ plugins: [Game2], version: 2 }), { save })
-            )
+          Effect.exit(
+            App.make(App.define({ plugins: [Game2], version: 2 }), { save })
           )
         )
       ).problem
@@ -579,16 +572,14 @@ describe("a save from another version of the game", () => {
     const { save } = savedByVersion0();
     const error = refusal(
       Effect.runSync(
-        Effect.scoped(
-          Effect.exit(
-            App.make(
-              App.define({
-                plugins: [Game2],
-                version: 1,
-                migrations: [migrations[0]!],
-              }),
-              { save }
-            )
+        Effect.exit(
+          App.make(
+            App.define({
+              plugins: [Game2],
+              version: 1,
+              migrations: [migrations[0]!],
+            }),
+            { save }
           )
         )
       )

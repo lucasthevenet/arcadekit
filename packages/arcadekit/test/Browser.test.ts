@@ -36,6 +36,10 @@ const Flown = Query.all(Ship);
 const run = <A, E>(effect: Effect.Effect<A, E, ScopeType.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
+/** What the page's devices say when they are read after they were let go. */
+const DEVICES_LET_GO =
+  /The page's devices were read after they were let go: the app that listened to them was closed, or the scope Input\.listen ran in had ended/u;
+
 /** Lets what is waiting on a promise or a timer run. */
 const settle = (): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, 0));
@@ -237,12 +241,10 @@ describe("a page's display", () => {
     };
     let app: App.Any | undefined;
     const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          app = yield* App.make(App.define({ systems: [Roll] }));
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      ).pipe(Effect.provideService(Driver.Display, Browser.display))
+      Effect.gen(function* () {
+        app = yield* App.make(App.define({ systems: [Roll] }));
+        return yield* Driver.frames(app, { hz: 60 });
+      }).pipe(Effect.provideService(Driver.Display, Browser.display))
     );
     expect(requested.size).toBe(1);
     expect(listeners.size).toBe(1);
@@ -604,26 +606,29 @@ describe("a page's devices", () => {
     );
   });
 
-  it("lasts as long as the program that made the app, whatever its layer is provided to", () => {
+  it("lasts as long as the app, whatever its layer is provided to, and refuses to be read once the app is closed", () => {
     const page = new Listened();
-    run(
-      Effect.gen(function* () {
-        // Provided to the one line that makes the app, and heard after it.
-        const app = yield* App.make(App.define({ plugins: [Flying] })).pipe(
+    // Provided to the one line that makes the app, in a scope that ends
+    // with it, and heard after it.
+    const app = Effect.runSync(
+      Effect.scoped(
+        App.make(App.define({ plugins: [Flying] })).pipe(
           Effect.provide(
             Browser.layer({ window: page, gamepads: () => [], sounds: false })
           )
-        );
-        expect(page.total).toBe(7);
-        page.send("keydown", { code: "Space", repeat: false });
-        page.send("keyup", { code: "Space" });
-        app.input();
-        app.tick(0.1);
-        expect(ship(app).shots).toBe(1);
-      })
+        )
+      )
     );
-    // The program's scope has closed, and nobody is listening.
+    expect(page.total).toBe(7);
+    page.send("keydown", { code: "Space", repeat: false });
+    page.send("keyup", { code: "Space" });
+    app.input();
+    app.tick(0.1);
+    expect(ship(app).shots).toBe(1);
+    // Closed, nobody is listening, and a read says so.
+    Effect.runSync(app.close);
     expect(page.total).toBe(0);
+    expect(() => app.input()).toThrow(DEVICES_LET_GO);
   });
 
   it("listens to nothing when its layer is built, and says so when read after the scope it was listened to in has closed", () => {
@@ -644,17 +649,12 @@ describe("a page's devices", () => {
       })
     );
     expect(page.total).toBe(0);
-    expect(() => listener.sample()).toThrow(
-      /read after the scope they were listened to in had closed/u
-    );
-    expect(() => listener.sample()).toThrow(
-      /App\.make listens to them in the scope of the program that makes the app/u
-    );
+    expect(() => listener.sample()).toThrow(DEVICES_LET_GO);
   });
 
   it("is heard by each app for itself, as two apps of one page are", () => {
     const page = new Listened();
-    run(
+    const [one, two] = Effect.runSync(
       Effect.gen(function* () {
         const one = yield* App.make(App.define({ plugins: [Flying] }));
         const two = yield* App.make(App.define({ plugins: [Flying] }));
@@ -667,12 +667,22 @@ describe("a page's devices", () => {
         two.tick(0.1);
         expect(ship(one).shots).toBe(1);
         expect(ship(two).shots).toBe(1);
+        return [one, two] as const;
       }).pipe(
         Effect.provide(
           Browser.layer({ window: page, gamepads: () => [], sounds: false })
         )
       )
     );
+    // One goes, and the other still hears the page.
+    Effect.runSync(one.close);
+    expect(page.total).toBe(7);
+    page.send("keydown", { code: "Space", repeat: false });
+    two.input();
+    two.tick(0.1);
+    expect(ship(two).shots).toBe(2);
+    expect(() => one.input()).toThrow(DEVICES_LET_GO);
+    Effect.runSync(two.close);
     expect(page.total).toBe(0);
   });
 
@@ -1238,6 +1248,10 @@ describe("a page's sound", () => {
     };
   };
 
+  /** What the page's sound says when it is played after it was let go. */
+  const LET_GO =
+    /The page's sound was played after it was let go: the app that opened it was closed, or the scope Sound\.open ran in had ended/u;
+
   /** What is said, once, of a cue that came before the page was touched. */
   const UNTOUCHED = (cue: string): string =>
     `The cue "${cue}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`;
@@ -1304,15 +1318,15 @@ describe("a page's sound", () => {
     output.play("coin", 1, 1);
     expect(audio.started.length).toBe(1);
     expect(logged.length).toBe(2);
-    // Let go, the page's audio plays nothing and says nothing.
+    // Let go, the page's audio refuses to play, and has nothing to note.
     await close();
-    output.play("coin", 1, 1);
+    expect(() => output.play("coin", 1, 1)).toThrow(LET_GO);
     expect(logged.length).toBe(2);
 
-    // Let go before it was ever touched, it has nothing to say either.
+    // Let go before it was ever touched, it refuses all the same.
     const gone = await build({ coin: "/coin.wav" });
     await gone.close();
-    gone.output.play("coin", 1, 1);
+    expect(() => gone.output.play("coin", 1, 1)).toThrow(LET_GO);
     expect(gone.logged).toEqual([]);
   });
 
@@ -1432,7 +1446,7 @@ describe("a page's sound", () => {
     expect(givenUp).toEqual(["/thud.wav"]);
   });
 
-  it("closes the audio and stops listening when its scope closes, and plays nothing after", async () => {
+  it("closes the audio and stops listening when its scope closes, and refuses to play after", async () => {
     const { audio, close, made, output, page } = await build({
       coin: "/coin.wav",
     });
@@ -1443,13 +1457,14 @@ describe("a page's sound", () => {
     await close();
     expect(audio.closed).toBe(1);
     expect(page.total).toBe(0);
-    output.play("coin", 1, 1);
+    expect(() => output.play("coin", 1, 1)).toThrow(LET_GO);
+    expect(() => output.music("score", "coin", 1, 0)).toThrow(LET_GO);
     expect(audio.started.length).toBe(1);
     page.send("pointerdown");
     expect(made()).toBe(1);
 
-    // A file that is still being decoded when the audio is let go is not
-    // kept when it is done.
+    // A file that is still being decoded when the audio is let go starts
+    // nothing when it is done, not even the track that waited for it.
     let done = (_sound: unknown): void => {};
     const late = await build(
       { coin: "/coin.wav" },
@@ -1461,11 +1476,12 @@ describe("a page's sound", () => {
       }
     );
     late.page.send("pointerdown");
+    late.output.music("score", "coin", 1, 0);
     await late.close();
     done({ samples: 3 });
     await settle();
-    late.output.play("coin", 1, 1);
     expect(late.audio.started).toEqual([]);
+    expect(late.audio.loops).toEqual([]);
 
     // One that was never touched made no audio, and has none to close.
     const untouched = await build({ coin: "/coin.wav" });
@@ -1734,7 +1750,7 @@ describe("a page's sound", () => {
       before.map((pauses) => pauses + 1)
     );
     // Nothing is left waiting to stop one, and nothing is started after.
-    output.music("score", "other", 1, 0);
+    expect(() => output.music("score", "other", 1, 0)).toThrow(LET_GO);
     display.show();
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(streamed.length).toBe(2);
@@ -1937,18 +1953,22 @@ describe("a page's sound", () => {
     expect(logged).toEqual([]);
   });
 
-  it("plays no music after its scope closes, and none in a page that has no audio", async () => {
+  it("refuses to play music after its scope closes, and plays none in a page that has no audio", async () => {
     const { audio, close, output, page } = await build({ theme: "/coin.wav" });
     page.send("pointerdown");
     output.music("score", "theme", 1, 1);
     expect(audio.loops.length).toBe(1);
     await close();
     expect(audio.closed).toBe(1);
-    output.music("score", "theme", 0.5, 1);
-    output.music("other", "theme", 1, 1);
+    expect(() => output.music("score", "theme", 0.5, 1)).toThrow(LET_GO);
+    expect(() => output.music("other", "theme", 1, 1)).toThrow(LET_GO);
     // Nor a clip, which the page never held and so did not let go of.
-    output.music("air", Sound.clip("wind", { samples: 1 }), 1, 1);
-    output.play(Sound.clip("chirp", { samples: 1 }), 1, 1);
+    expect(() =>
+      output.music("air", Sound.clip("wind", { samples: 1 }), 1, 1)
+    ).toThrow(LET_GO);
+    expect(() =>
+      output.play(Sound.clip("chirp", { samples: 1 }), 1, 1)
+    ).toThrow(LET_GO);
     expect(audio.loops.length).toBe(1);
     expect(audio.loops[0]!.levels.length).toBe(2);
     expect(audio.started).toEqual([]);
@@ -2119,22 +2139,67 @@ describe("a page's sound", () => {
     ],
   });
 
-  it("lasts as long as the program that made the app, wherever it is provided", async () => {
+  it("is heard, and the devices read, by an app carried out of the scope it was made in, until the app is closed", async () => {
+    const Plink = System.frame("br/Plink", function* () {
+      if ((yield* Input.Keyboard).down("Space")) {
+        (yield* Sound.Player).play("coin");
+      }
+    });
+    const Game = App.define({
+      plugins: [Input.plugin, Sound.plugin],
+      systems: [Plink],
+    });
+    const page = makePage();
+    const audio = makeAudio();
+    // Made in a scope that has closed by the time the app is used.
+    const app = Effect.runSync(
+      Effect.scoped(
+        App.make(Game).pipe(
+          Effect.provide(
+            Browser.layer({
+              gamepads: () => [],
+              sounds: { coin: "/coin.wav" },
+              audio: () => audio,
+              decode: decodeInto([]),
+            }).pipe(Layer.provideMerge(Assets.layerMemory(sounds)))
+          )
+        )
+      )
+    );
+    await settle();
+    page.window.send("keydown", { code: "Space", repeat: false });
+    app.input();
+    app.tick(1 / 60);
+    app.frame(0);
+    expect(audio.started).toEqual([
+      { buffer: { samples: 3 }, rate: 1, volume: 1, into: audio.destination },
+    ]);
+    // Closed, it lets go of the page, and what is used after says so.
+    Effect.runSync(app.close);
+    expect(page.window.total).toBe(0);
+    expect(audio.closed).toBe(1);
+    expect(() => app.input()).toThrow(DEVICES_LET_GO);
+    expect(() => app.frame(1)).toThrow(LET_GO);
+    expect(audio.started.length).toBe(1);
+  });
+
+  it("lasts as long as the app, wherever it is provided, and refuses to play once the app is closed", async () => {
     const page = new Listened();
     const audio = makeAudio();
-    const scope = Scope.makeUnsafe();
-    // Provided to the making of the app alone, which ends here.
+    // Provided to the making of the app alone, in a scope of its own: both
+    // end here.
     const app = await Effect.runPromise(
-      App.make(Clinking).pipe(
-        Effect.provide(
-          Browser.layerSound(
-            { coin: "/coin.wav" },
-            { window: page, audio: () => audio, decode: decodeInto([]) }
-          )
-        ),
-        Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
-        Effect.provide(Assets.layerMemory(sounds)),
-        Scope.provide(scope)
+      Effect.scoped(
+        App.make(Clinking).pipe(
+          Effect.provide(
+            Browser.layerSound(
+              { coin: "/coin.wav" },
+              { window: page, audio: () => audio, decode: decodeInto([]) }
+            )
+          ),
+          Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
+          Effect.provide(Assets.layerMemory(sounds))
+        )
       )
     );
     await settle();
@@ -2144,9 +2209,16 @@ describe("a page's sound", () => {
       { buffer: { samples: 3 }, rate: 1, volume: 1, into: audio.destination },
     ]);
     expect(audio.closed).toBe(0);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await Effect.runPromise(app.close);
     expect(audio.closed).toBe(1);
     expect(page.total).toBe(0);
+    // A frame that plays a cue after that says so, where it would be heard
+    // by nobody.
+    expect(() => app.frame(1)).toThrow(LET_GO);
+    expect(audio.started.length).toBe(1);
+    // Closing it again does nothing.
+    await Effect.runPromise(app.close);
+    expect(audio.closed).toBe(1);
   });
 
   it("is one audio for every app made under it, each file fetched once, and closed with the last of them", async () => {
@@ -2176,17 +2248,10 @@ describe("a page's sound", () => {
       )
     );
     const start = async () => {
-      const scope = Scope.makeUnsafe();
       const app = await Effect.runPromise(
-        App.make(Clinking).pipe(
-          Effect.provideContext(provided),
-          Scope.provide(scope)
-        )
+        App.make(Clinking).pipe(Effect.provideContext(provided))
       );
-      return {
-        app,
-        close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
-      };
+      return { app, close: () => Effect.runPromise(app.close) };
     };
     const one = await start();
     const two = await start();
@@ -2201,10 +2266,13 @@ describe("a page's sound", () => {
     one.app.frame(0);
     two.app.frame(0);
     expect(audio.started.length).toBe(2);
-    // The first app goes; the other still plays through the same audio.
+    // The first app goes; the other still plays through the same audio, and
+    // the one that went refuses to.
     await one.close();
     expect(audio.closed).toBe(0);
     two.app.frame(1);
+    expect(audio.started.length).toBe(3);
+    expect(() => one.app.frame(1)).toThrow(LET_GO);
     expect(audio.started.length).toBe(3);
     await two.close();
     expect(audio.closed).toBe(1);

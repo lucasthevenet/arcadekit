@@ -1,13 +1,9 @@
-import { Effect, Exit } from "effect";
-import type { Scope } from "effect";
+import { Effect, Exit, Layer } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { App, Build, Save, World } from "../src/index";
+import { App, Build, Plugin, Save, World } from "../src/index";
 import { Session } from "../src/net/index";
 import { CoinGame, DELTA, Drop, game } from "./peers";
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const alone = { me: "ada", others: [], delta: DELTA } as const;
 
@@ -25,7 +21,7 @@ const OTHER_TWICE =
 
 describe("a session", () => {
   it("makes the app it steps, from the game and how it starts", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const session = yield* Session.make(CoinGame, {
           ...alone,
@@ -50,7 +46,7 @@ describe("a session", () => {
   });
 
   it("is told this peer apart from the others, and a name given twice does not compile", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const session = yield* Session.make(CoinGame, {
           seed: 5,
@@ -90,7 +86,7 @@ describe("a session", () => {
   });
 
   it("begins where a save every peer loads was made, and fails as a load does", () => {
-    const save = run(
+    const save = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* game(5, 1);
         app.enqueue(Drop, { by: "ada", value: 2 });
@@ -102,7 +98,7 @@ describe("a session", () => {
         return { save: saved.value, hash: (yield* app.read(World)).hash() };
       })
     );
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const session = yield* Session.make(CoinGame, {
           ...alone,
@@ -120,22 +116,20 @@ describe("a session", () => {
       world: save.save.world.slice(0, 20),
     };
     const refused = Effect.runSync(
-      Effect.scoped(
-        Effect.exit(Session.make(CoinGame, { ...alone, save: damaged }))
-      )
+      Effect.exit(Session.make(CoinGame, { ...alone, save: damaged }))
     );
     const typed: Exit.Exit<unknown, Save.LoadRefused> = refused;
     expect(Exit.isFailure(typed)).toBe(true);
     // From a seed there is nothing to refuse.
-    const fresh: Effect.Effect<unknown, never, Scope.Scope> = Session.make(
-      CoinGame,
-      { ...alone, seed: 1 }
-    );
+    const fresh: Effect.Effect<unknown, never> = Session.make(CoinGame, {
+      ...alone,
+      seed: 1,
+    });
     void fresh;
   });
 
   it("runs 8 ticks ahead with no delay unless told, and with a delay of 2 when it runs none ahead", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ahead = yield* Session.make(CoinGame, alone);
         expect([ahead.ahead, ahead.delay]).toEqual([8, 0]);
@@ -156,11 +150,44 @@ describe("a session", () => {
       })
     );
   });
+
+  it("closes its app when it is closed, and at once the one made for options that describe no game", () => {
+    const held: string[] = [];
+    const Held = Plugin.make("se/Held", {
+      layer: Layer.effectDiscard(
+        Effect.acquireRelease(
+          Effect.sync(() => held.push("acquired")),
+          () => Effect.sync(() => held.push("released"))
+        )
+      ),
+    });
+    const Holding = App.define({ plugins: [Held] });
+    const session = Effect.runSync(Session.make(Holding, alone));
+    expect(held).toEqual(["acquired"]);
+    // Its app is closed with it, and by nothing else.
+    // @ts-expect-error a session's app has no close: the session's closes it
+    void session.app.close;
+    Effect.runSync(session.close);
+    expect(held).toEqual(["acquired", "released"]);
+
+    held.length = 0;
+    expect(() =>
+      Effect.runSync(Session.make(Holding, { ...alone, delay: 1.5 }))
+    ).toThrow(/A session's delay is a whole number of ticks/u);
+    expect(held).toEqual(["acquired", "released"]);
+
+    // A sync test's too.
+    held.length = 0;
+    const test = Effect.runSync(Session.syncTest(Holding));
+    test.tick(DELTA);
+    Effect.runSync(test.close);
+    expect(held).toEqual(["acquired", "released"]);
+  });
 });
 
 describe("taking an app over", () => {
   it("is no member of an app: only what builds it hands it over, once", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(CoinGame, { seed: 5 });
         // @ts-expect-error an app is taken over by what builds it, not by itself
@@ -180,7 +207,7 @@ describe("taking an app over", () => {
   });
 
   it("is what a sync test does to the app it makes", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const test = yield* Session.syncTest(CoinGame, { seed: 5 });
         test.app.enqueue(Drop, { by: "ada", value: 1 });

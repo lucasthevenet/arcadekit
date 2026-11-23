@@ -135,7 +135,7 @@ The simulation can't tell whether its devices are read. A game played from a key
 - Having no devices differs from having devices with nothing pressed. With no source, the device state stays as last reported. A game fed its reports from a log or from another machine can therefore run under a driver, input stage included, and plays out the same way.
 - In a page, `Browser.runMain` provides the page's keyboard, pointer, and gamepads. The pointer is a mouse, a pen, or a finger. `Browser.layer(options)` provides the same devices to a program that starts itself. [Run a game in a page](running-a-game.md#run-a-game-in-a-page) lists the options.
 - A held key goes down once, and everything held is released when the page loses focus. Mouse buttons held together are tracked one by one.
-- `App.make` listens to the devices in the scope it runs in, and stops when that scope closes. Where `Browser.layer` is provided doesn't change how long the app listens. Each app listens for itself. Reading the devices after their scope has closed throws an error that says so.
+- `App.make` listens to the devices in the app's own scope, and stops when the app is closed. The devices are heard for as long as the app is open, wherever `Browser.layer` is provided. Each app listens for itself. Reading the devices after the app is closed throws an error that says so.
 - A test, a tool, or on-screen controls use `Input.makeManualSource()`. Drive it by hand with `press`, `release`, `tap`, and `move`, and provide it with `Input.layer(source)`. See [testing](testing.md).
 
 Reading the devices when nothing changed costs 1.4 µs per tick. A tick in which a key went down or up costs 5.2 µs in total, for the read, the action, and the tick that applies it.

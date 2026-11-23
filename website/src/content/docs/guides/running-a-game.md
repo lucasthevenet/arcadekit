@@ -39,7 +39,7 @@ Browser.runMain(
 - The game, which `App.define` makes from its plugins, systems, and handlers. It is the same every time it is played.
 - How this run of it starts: a `seed` for a new game, or a `save` to continue one.
 
-`Driver.run` takes the effect that `App.make` returns, without yielding it. On each repaint, it runs the ticks that are due at `hz`, then the frame stage. It never completes on its own. Its options:
+`Driver.run` takes the effect that `App.make` returns, without yielding it. On each repaint, it runs the ticks that are due at `hz`, then the frame stage. It never completes on its own. When it is interrupted, or a tick or a frame throws, it closes the app. Its options:
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -57,7 +57,7 @@ Browser.runMain(
 | `sounds` | None | The page's sounds by name, for the page's lifetime. `false` opens no sound at all. See [playing sound in a page](sound-in-a-page.md) |
 | `volume` | `1` | The master volume |
 
-When the page closes, `Browser.runMain` interrupts the game. The loop stops requesting frames, the app's scope closes, and the plugins release their resources.
+When the page closes, `Browser.runMain` interrupts the game. The loop stops requesting frames, `Driver.run` closes the app, and the plugins release their resources.
 
 The loop keeps to these rules:
 
@@ -66,11 +66,11 @@ The loop keeps to these rules:
 - After a freeze while the tab stays visible, the loop runs at most `maxStepsPerCall` ticks and drops the rest.
 - If a tick or a frame throws, the loop stops and the program dies with the thrown error.
 
-To connect something outside the game to the app before its first frame, add a step to the effect that makes the app, as `Effect.tap` does above. What the step acquires is released with the app. A UI doesn't need the app, because it receives [the view bridge](ui.md).
+To connect something outside the game to the app before its first frame, add a step to the effect that makes the app, as `Effect.tap` does above. What the step acquires is released when the run ends. If the step can fail, hold the app with `Effect.acquireRelease(App.make(game), (app) => app.close)`, so that the app is closed when the step fails. A UI doesn't need the app, because it receives [the view bridge](ui.md).
 
 An app made from a `save` resumes from it instead of starting fresh. Making it can fail with `Save.LoadRefused`, and `Driver.run` fails with whatever making the app fails with. See [saving and loading](saving-and-loading.md).
 
-Provide the services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`. A missing service is a compile error. Provide them to `Driver.run` as a whole, not to a part of it. A layer releases what it acquires when the effect it was provided to ends, so a layer provided to the whole program lasts as long as the game. `Browser.layer` acquires nothing itself. The app opens the page's devices in the scope it is made in, and `Sound.plugin` opens the page's sound there too.
+Provide the services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`. A missing service is a compile error. Provide them to `Driver.run` as a whole, not to a part of it. A layer releases what it acquires when the effect it was provided to ends, so a layer provided to the whole program lasts as long as the game. `Browser.layer` acquires nothing itself. The app opens the page's devices in a scope of its own, and `Sound.plugin` opens the page's sound there too. The app lets go of both when it is closed.
 
 Use `Effect.runSync` and `Effect.runPromise` only in tests. Inside a program, yield an Effect instead of running it.
 
@@ -93,7 +93,7 @@ NodeRuntime.runMain(
 );
 ```
 
-`NodeRuntime.runMain` interrupts the game when the process is told to stop, and the app's scope closes as it does in a page. A server, a replay, or a test never imports `arcadekit/Browser`, so it needs no `@effect/platform-browser`.
+`NodeRuntime.runMain` interrupts the game when the process is told to stop, and `Driver.run` closes the app as it does in a page. A server, a replay, or a test never imports `arcadekit/Browser`, so it needs no `@effect/platform-browser`.
 
 ## Tick only when needed
 
@@ -151,7 +151,10 @@ import { Effect } from "effect";
 const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make(App.define({ plugins: [Game] }));
+  const app = yield* Effect.acquireRelease(
+    App.make(App.define({ plugins: [Game] })),
+    (made) => made.close
+  );
   app.input(); // the input stage: reads the devices and the UI
   app.tick(1 / 60); // one tick
   app.frame(1, 1 / 60); // the frame stage: alpha, then real seconds
@@ -161,12 +164,12 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 ```
 
-Run an app you step in a scope, with `Effect.scoped`. Closing the scope releases everything the app holds.
+An app has a scope of its own. It opens the devices, the sound, and what its plugins' layers acquire there, and `app.close` lets go of them. Close an app you step when you are done with it. Held with `Effect.acquireRelease`, as above, it is closed with the program's scope. An app that is never closed holds what it opened until the program ends.
 
 - A tick reads no device. Call `app.input()` before each tick that should receive the devices and the UI, as a driver does. A tool that re-runs a game from its log skips that call, because the log already holds what the devices reported. See [replays](replays.md).
 - No driver ticks an app that you step. When its UI sends something, run a tick.
 
-A program that makes its app itself can run `Driver.frames(app, { hz })`, the loop that `Driver.run` uses. `Driver.interval(app, { hz })` steps the same way on a timer. Each stops when the fiber that runs it is interrupted. One started with `Effect.forkScoped` stops when its scope closes, and leaves no frame requested.
+A program that makes its app itself can run `Driver.frames(app, { hz })`, the loop that `Driver.run` uses. `Driver.interval(app, { hz })` steps the same way on a timer. Neither closes the app, which belongs to the program. Each stops when the fiber that runs it is interrupted. One started with `Effect.forkScoped` stops when its scope closes, and leaves no frame requested.
 
 `Driver.frames` reaches the screen through the `Driver.Display` service. In a page it is `Browser.display`. Elsewhere, such as under Node, the default is a timer at 60 frames a second that is never hidden. A test advances a display by hand with `Driver.makeManualDisplay()`. See [testing](testing.md).
 

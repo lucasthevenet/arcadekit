@@ -64,7 +64,7 @@ const program = Effect.gen(function* () {
 | `plugins` | The plugins this one depends on. Each is installed once, however many plugins depend on it | None |
 | `systems` | Its systems, which run after its dependencies' systems | None |
 | `handlers` | Its action handlers, from which `app.dispatch` is typed | None |
-| `layer` | Services for the whole app, built once. What it acquires is released when the app's scope closes | None |
+| `layer` | Services for the whole app, built once. What it acquires is released when the app is closed | None |
 | `setup` | An Effect that runs on a fresh start, but not on a load, because the save already holds what it spawned | None |
 
 Components, events and actions are plain values, exported from the plugin's module. A plugin doesn't list them, because a save finds each by its name. See [saving and loading](saving-and-loading.md#keep-a-game-savable).
@@ -80,7 +80,7 @@ Only the systems of the [frame and input stages](../concepts/ticks-and-frames.md
 - Make configuration a [`Resource`](#configure-a-plugin-with-a-resource), which the tick may read.
 - Play, draw, log and call the network from `System.frame`, which hears what the tick's events said.
 
-A plugin's `layer` builds its services. While it builds, it can use the built-in services and whatever the plugin's dependencies provide. A layer that needs another plugin's service lists that plugin in `plugins`. Acquire what needs releasing with `Effect.acquireRelease` inside `Layer.effect`, and the app releases it when its scope closes.
+A plugin's `layer` builds its services. While it builds, it can use the built-in services and whatever the plugin's dependencies provide. A layer that needs another plugin's service lists that plugin in `plugins`. Acquire what needs releasing with `Effect.acquireRelease` inside `Layer.effect`, and the app releases it when it is closed.
 
 Anything your frame and input systems need that no plugin provides remains a requirement of `App.make`. Provide it the usual Effect way, and a missing one is the usual compile error:
 

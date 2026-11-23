@@ -1,5 +1,4 @@
 import { Cause, Context, Data, Effect, Exit, Result, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -26,9 +25,6 @@ const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
 
 const Ball = Component.define("st/Ball", { x: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 /** A system that notes its name every time it runs. */
 const noting = <const N extends string>(name: N, into: string[]) =>
@@ -59,7 +55,7 @@ const go = Action.handler(Go, function* ({ refuse, to }) {
 });
 describe("a state", () => {
   it("starts in its first value, or the one it is given, and is asked for by name", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ handlers: [go] }));
         const read = yield* app.read(
@@ -84,7 +80,7 @@ describe("a state", () => {
   });
 
   it("is entered at the start of the tick after it was asked for", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const seen: string[] = [];
         const asked: unknown[] = [];
@@ -136,7 +132,7 @@ describe("a state", () => {
   });
 
   it("is as it was after a refused action", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const app = yield* App.make(
@@ -175,7 +171,7 @@ describe("a state", () => {
 
 describe("a run condition", () => {
   it("runs a system only on the ticks when it holds", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const app = yield* App.make(
@@ -228,7 +224,7 @@ describe("a run condition", () => {
       }
       return (yield* Switch).on === 1;
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: number[] = [];
         const Both = System.tick("Both", function* () {
@@ -277,7 +273,7 @@ describe("a run condition", () => {
       System.tick("PulledFirst", function* () {}),
       pulled
     );
-    const needs: Effect.Effect<unknown, never, Scope.Scope | Lever> = App.make(
+    const needs: Effect.Effect<unknown, never, Lever> = App.make(
       App.define({
         systems: [
           System.frame("Needy", function* () {}).pipe(System.runIf(pulled)),
@@ -288,7 +284,7 @@ describe("a run condition", () => {
   });
 
   it("lets a system say what it does in place of running, each time it does not hold", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const say = (what: string) =>
@@ -417,7 +413,7 @@ describe("a run condition", () => {
   });
 
   it("lets a hook say the same of the time it is set off and its condition does not hold", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const app = yield* App.make(
@@ -453,7 +449,7 @@ describe("a run condition", () => {
       "st/Bounced",
       Schema.Struct({ at: Schema.Int })
     );
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const heard: number[] = [];
         const moved: number[] = [];
@@ -555,7 +551,7 @@ describe("hooks", () => {
     );
 
   it("run once when a state is left and entered, before the tick's systems", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const app = yield* game(ran);
@@ -602,7 +598,7 @@ describe("hooks", () => {
   });
 
   it("see the state being left, then the state being entered, and can change the world", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const seen: string[] = [];
         const Leaving = State.onExit(Phase, "menu", "Leaving", function* () {
@@ -641,7 +637,7 @@ describe("hooks", () => {
   });
 
   it("run in the order they are listed, and only if their condition holds", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const First = State.onEnter(Phase, "playing", "First", function* () {
@@ -680,7 +676,7 @@ describe("hooks", () => {
   });
 
   it("let a hook ask for another state, which is entered a tick later", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const SkipIntro = State.onEnter(
@@ -712,7 +708,7 @@ describe("hooks", () => {
   });
 
   it("let a first hook overrule what was asked for before the first tick", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const Overrule = State.onEnter(Phase, "menu", "Overrule", function* () {
@@ -732,7 +728,7 @@ describe("hooks", () => {
   });
 
   it("leave a state alone that no hook waits for, wherever it is looked at from, until a value is asked for", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Late = System.tick("Late", function* () {
           const phase = yield* Phase.sets;
@@ -774,7 +770,7 @@ describe("hooks", () => {
 
   it("enter two states in order of name, whatever order they were asked for in", () => {
     for (const weatherFirst of [true, false]) {
-      run(
+      Effect.runSync(
         Effect.gen(function* () {
           const ran: string[] = [];
           const hooks = [
@@ -823,7 +819,9 @@ describe("hooks", () => {
       on: "enter",
       value: "flying",
     });
-    expect(() => run(App.make(App.define({ systems: [Flying] })))).toThrow(
+    expect(() =>
+      Effect.runSync(App.make(App.define({ systems: [Flying] })))
+    ).toThrow(
       /System "Flying" is a hook for "flying", which is not a value of the state "st\/Phase"/
     );
     App.define(
@@ -876,7 +874,7 @@ describe("a state in a save", () => {
     });
 
   it("is saved with what was asked for, and its first hooks do not run again", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }), {
           checkpointEvery: 1,
@@ -940,7 +938,7 @@ describe("a state in a save", () => {
     const prop = Action.handler(Prop, function* () {
       (yield* Before.sets).set("ajar");
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ handlers: [prop] }));
         expect(app.dispatch(Prop, {})).toEqual(Exit.void);
@@ -960,7 +958,7 @@ describe("a state in a save", () => {
   });
 
   it("goes on after a load into a game that never looks at it, with what was asked for", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }));
         app.tick(1);

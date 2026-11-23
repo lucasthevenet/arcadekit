@@ -1,5 +1,4 @@
 import { Cause, Data, Effect, Exit } from "effect";
-import type { Scope } from "effect";
 import { afterEach, assert, describe, expect, it } from "vitest";
 
 import {
@@ -49,11 +48,11 @@ import {
 } from "./peers";
 import type { Peer } from "./peers";
 
-/** Runs `use` with what `make` makes, then closes its scope. */
+/** Runs `use` with what `make` makes. */
 const withMade = <T, A, E = never>(
-  make: Effect.Effect<T, E, Scope.Scope>,
+  make: Effect.Effect<T, E>,
   use: (made: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): A => Effect.runSync(Effect.map(make, use));
 
 describe("a lockstep session", () => {
   it("keeps two peers hash-equal at every tick, over a network that delays and reorders", () => {
@@ -637,31 +636,29 @@ describe("a lockstep session", () => {
 
   it("is handed the reins of its app: a tick that reads no device", () => {
     Effect.runSync(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const source = Input.makeManualSource();
-          const { app, take } = yield* Build.build(CoinGame, {
-            seed: 5,
-            checkpointEvery: 1,
-          }).pipe(Effect.provide(Input.layer(source)));
-          const taken: string[] = [];
-          const reins = take((name) => {
-            taken.push(name);
-          });
-          source.tap("Space");
-          // The tick is the session's to run, and the session has heard
-          // the devices already when it does.
-          expect(reins.tickExit(DELTA)).toEqual(Exit.void);
-          expect(app.time.tick).toBe(1);
-          expect(taken).toEqual([]);
-          app.input();
-          expect(taken).toEqual(["ls/Fire"]);
-          reins.deliver("ls/Fire", {});
-          expect(moves(app.actionLog)).toEqual([
-            { tick: 1, name: "ls/Fire", payload: {}, queued: true },
-          ]);
-        })
-      )
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        const { app, take } = yield* Build.build(CoinGame, {
+          seed: 5,
+          checkpointEvery: 1,
+        }).pipe(Effect.provide(Input.layer(source)));
+        const taken: string[] = [];
+        const reins = take((name) => {
+          taken.push(name);
+        });
+        source.tap("Space");
+        // The tick is the session's to run, and the session has heard
+        // the devices already when it does.
+        expect(reins.tickExit(DELTA)).toEqual(Exit.void);
+        expect(app.time.tick).toBe(1);
+        expect(taken).toEqual([]);
+        app.input();
+        expect(taken).toEqual(["ls/Fire"]);
+        reins.deliver("ls/Fire", {});
+        expect(moves(app.actionLog)).toEqual([
+          { tick: 1, name: "ls/Fire", payload: {}, queued: true },
+        ]);
+      })
     );
   });
 
@@ -713,65 +710,63 @@ describe("a lockstep session", () => {
 
   it("starts from wherever its game is: at the save every peer loads", () => {
     Effect.runSync(
-      Effect.scoped(
-        Effect.gen(function* () {
-          // A game that has been going for a while, saved for every peer.
-          const going = yield* game();
-          const world = yield* going.read(World);
-          going.dispatch(Drop, { by: "ada", value: 2 });
-          for (let i = 0; i < 9; i++) {
-            going.tick(DELTA);
-          }
-          const saved = going.save();
-          assert(Exit.isSuccess(saved));
-          const peerOf = (me: string) =>
-            Session.make(CoinGame, {
-              save: saved.value,
-              checkpointEvery: 1,
-              me,
-              others: [me === "ada" ? "grace" : "ada"],
-              delta: DELTA,
-              delay: 1,
-              ahead: 0,
-            });
-          const ada = yield* peerOf("ada");
-          const grace = yield* peerOf("grace");
-          expect(ada.app.time.tick).toBe(9);
-          expect((yield* ada.app.read(World)).hash()).toBe(world.hash());
-          // A loaded game's log starts empty.
-          expect(ada.app.actionLog).toEqual([]);
-          expect(ada.tick()).toBe(false);
-          const said = ada.outgoing();
-          expect(said.map((message) => message.tick)).toEqual([9, 10]);
-          // Where it starts is the first thing it says: the session takes
-          // the checkpoint, once.
-          const start = { tick: 9, hash: world.hash() };
-          expect(said[0]!.checkpoints).toEqual([start]);
-          expect(ada.app.actionLog).toEqual([start]);
-          grace.tick();
-          for (const message of grace.outgoing()) {
-            ada.receive(message);
-          }
-          expect(ada.tick()).toBe(true);
-          expect(ada.app.time.tick).toBe(10);
-          // The tick took none for where it started: the log has the one.
-          expect(
-            ada.app.actionLog.filter(
-              (entry) => Action.isCheckpoint(entry) && entry.tick === 9
-            )
-          ).toEqual([start]);
+      Effect.gen(function* () {
+        // A game that has been going for a while, saved for every peer.
+        const going = yield* game();
+        const world = yield* going.read(World);
+        going.dispatch(Drop, { by: "ada", value: 2 });
+        for (let i = 0; i < 9; i++) {
+          going.tick(DELTA);
+        }
+        const saved = going.save();
+        assert(Exit.isSuccess(saved));
+        const peerOf = (me: string) =>
+          Session.make(CoinGame, {
+            save: saved.value,
+            checkpointEvery: 1,
+            me,
+            others: [me === "ada" ? "grace" : "ada"],
+            delta: DELTA,
+            delay: 1,
+            ahead: 0,
+          });
+        const ada = yield* peerOf("ada");
+        const grace = yield* peerOf("grace");
+        expect(ada.app.time.tick).toBe(9);
+        expect((yield* ada.app.read(World)).hash()).toBe(world.hash());
+        // A loaded game's log starts empty.
+        expect(ada.app.actionLog).toEqual([]);
+        expect(ada.tick()).toBe(false);
+        const said = ada.outgoing();
+        expect(said.map((message) => message.tick)).toEqual([9, 10]);
+        // Where it starts is the first thing it says: the session takes
+        // the checkpoint, once.
+        const start = { tick: 9, hash: world.hash() };
+        expect(said[0]!.checkpoints).toEqual([start]);
+        expect(ada.app.actionLog).toEqual([start]);
+        grace.tick();
+        for (const message of grace.outgoing()) {
+          ada.receive(message);
+        }
+        expect(ada.tick()).toBe(true);
+        expect(ada.app.time.tick).toBe(10);
+        // The tick took none for where it started: the log has the one.
+        expect(
+          ada.app.actionLog.filter(
+            (entry) => Action.isCheckpoint(entry) && entry.tick === 9
+          )
+        ).toEqual([start]);
 
-          // A checkpoint the game took itself where it starts is the one
-          // sent, and the session takes no second.
-          const edsger = yield* peerOf("ada");
-          const own = edsger.app.checkpoint();
-          expect(edsger.tick()).toBe(false);
-          expect(edsger.outgoing()[0]!.checkpoints).toEqual([
-            { tick: 9, hash: own },
-          ]);
-          expect(edsger.app.actionLog).toEqual([{ tick: 9, hash: own }]);
-        })
-      )
+        // A checkpoint the game took itself where it starts is the one
+        // sent, and the session takes no second.
+        const edsger = yield* peerOf("ada");
+        const own = edsger.app.checkpoint();
+        expect(edsger.tick()).toBe(false);
+        expect(edsger.outgoing()[0]!.checkpoints).toEqual([
+          { tick: 9, hash: own },
+        ]);
+        expect(edsger.app.actionLog).toEqual([{ tick: 9, hash: own }]);
+      })
     );
   });
 });
@@ -1039,42 +1034,40 @@ interface Seat {
 const madeApart = (
   makers: readonly (readonly [
     name: string,
-    make: Effect.Effect<Seat, Save.LoadRefused, Scope.Scope>,
+    make: Effect.Effect<Seat, Save.LoadRefused>,
   ])[],
   rounds = 60
 ) =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const seats = new Map<string, Seat>();
-        for (const [name, make] of makers) {
-          seats.set(name, yield* make);
-        }
-        const net = network(2, { min: 0, max: 3 });
-        const stopped = new Map<string, unknown>();
-        for (let i = 0; i < rounds && stopped.size < seats.size; i++) {
-          net.round();
-          for (const [name, seat] of seats) {
-            for (const message of net.arrivals(name)) {
-              seat.receive(message);
-            }
-            const exit = seat.tickExit();
-            if (Exit.isFailure(exit)) {
-              stopped.set(name, Cause.squash(exit.cause));
-            }
-            net.send(
-              [...seats.keys()].filter((other) => other !== name),
-              seat.outgoing()
-            );
+    Effect.gen(function* () {
+      const seats = new Map<string, Seat>();
+      for (const [name, make] of makers) {
+        seats.set(name, yield* make);
+      }
+      const net = network(2, { min: 0, max: 3 });
+      const stopped = new Map<string, unknown>();
+      for (let i = 0; i < rounds && stopped.size < seats.size; i++) {
+        net.round();
+        for (const [name, seat] of seats) {
+          for (const message of net.arrivals(name)) {
+            seat.receive(message);
           }
+          const exit = seat.tickExit();
+          if (Exit.isFailure(exit)) {
+            stopped.set(name, Cause.squash(exit.cause));
+          }
+          net.send(
+            [...seats.keys()].filter((other) => other !== name),
+            seat.outgoing()
+          );
         }
-        return {
-          stopped,
-          ticks: Array.from(seats.values(), (seat) => seat.app.time.tick),
-          confirmed: Array.from(seats.values(), (seat) => seat.confirmed),
-        };
-      })
-    )
+      }
+      return {
+        stopped,
+        ticks: Array.from(seats.values(), (seat) => seat.app.time.tick),
+        confirmed: Array.from(seats.values(), (seat) => seat.confirmed),
+      };
+    })
   );
 
 /** How each peer of these tests is made, unless it is told otherwise. */

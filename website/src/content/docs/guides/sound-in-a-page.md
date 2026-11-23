@@ -9,7 +9,7 @@ In a page, cues and music play through **Web Audio**. A sound comes from one of 
 
 `Browser.runMain` and `Browser.layer` provide the Web Audio output. Their `sounds` option maps the names that cues and tracks play by to the files that the page keeps for its lifetime. Their `volume` option sets the master volume. `Browser.layerSound(files)` provides the same sound layer on its own.
 
-- The page's sound opens with the first app that has `Sound.plugin`, in the scope the app is made in, wherever the layer is provided. The apps made under one `Browser.layer` share one audio context, because a browser allows a page only a few. They fetch each file once.
+- The page's sound opens with the first app that has `Sound.plugin`, wherever the layer is provided, and is heard until that app is closed. The apps made under one `Browser.layer` share one audio context, because a browser allows a page only a few. They fetch each file once.
 - `Assets.Loader` fetches the files when the page's sound opens, and each file is decoded on arrival.
 - A browser lets a page make no sound until the user interacts with it. The page creates the audio context on the first key or pointer press, and cues requested from the next frame on play. A cue requested before that, or before its file has loaded, is dropped, because a late sound is worse than none. The first cue dropped before the first interaction is logged once by name, through Effect's logger, so a game that opens with a sound learns why it isn't heard.
 - Cues play only while the audio is running. Resuming takes a moment when the page becomes visible again or a laptop lid opens. While the audio is suspended or resuming, cues are dropped, because otherwise they would queue up and all play at once.
@@ -17,7 +17,8 @@ In a page, cues and music play through **Web Audio**. A sound comes from one of 
 - A cue or track with no file, or whose file couldn't be fetched or decoded, is logged once and plays nothing.
 - While the page is hidden, its audio is suspended, music included, as the frame loop is. The audio resumes when the page is visible again.
 - A page without sounds of its own still has audio, for its levels' clips. `sounds: false` turns audio off. The page creates no audio context, and `audible` on `Sound.Player` is false.
-- When the scope of the last app that plays through the page's sound closes, or the page closes, the audio context closes and pending requests are cancelled. An app made after that opens the page's sound again, and the page waits for another touch.
+- When the last app that plays through the page's sound is closed, or the page closes, the audio context closes and pending requests are cancelled. An app made after that opens the page's sound again, and the page waits for another touch.
+- An app that plays after it was closed throws, with an error that says so.
 
 ## Play a level's own sounds
 

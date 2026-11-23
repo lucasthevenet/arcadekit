@@ -3,7 +3,6 @@
  * process, and a network made by hand that delays and reorders.
  */
 import { Cause, Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 
 import {
   Action,
@@ -251,41 +250,39 @@ export const withPeers = <A>(
   use: (peers: Peer[]) => A
 ): A =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const peers: Peer[] = [];
-        const services = yield* Effect.context<never>();
-        for (const name of names) {
-          const source = Input.makeManualSource();
-          const others = names.filter((other) => other !== name);
-          const session = yield* Session.make(CoinGame, {
-            seed: setup.seeds?.[name] ?? 5,
-            checkpointEvery: setup.checkpointEvery?.[name] ?? 1,
-            me: name,
-            others:
-              setup.shuffled === true && peers.length % 2 === 1
-                ? others.toReversed()
-                : others,
-            delta: DELTA,
-            ...(setup.delay === undefined ? {} : { delay: setup.delay }),
-            ahead: setup.ahead ?? 0,
-          }).pipe(Effect.provide(Input.layer(source)));
-          const { app } = session;
-          peers.push({
-            name,
-            app,
-            world: yield* app.read(World),
-            get coins() {
-              return Effect.runSyncWith(services)(app.read(Lying));
-            },
-            session,
-            hashes: [],
-            source,
-          });
-        }
-        return use(peers);
-      })
-    )
+    Effect.gen(function* () {
+      const peers: Peer[] = [];
+      const services = yield* Effect.context<never>();
+      for (const name of names) {
+        const source = Input.makeManualSource();
+        const others = names.filter((other) => other !== name);
+        const session = yield* Session.make(CoinGame, {
+          seed: setup.seeds?.[name] ?? 5,
+          checkpointEvery: setup.checkpointEvery?.[name] ?? 1,
+          me: name,
+          others:
+            setup.shuffled === true && peers.length % 2 === 1
+              ? others.toReversed()
+              : others,
+          delta: DELTA,
+          ...(setup.delay === undefined ? {} : { delay: setup.delay }),
+          ahead: setup.ahead ?? 0,
+        }).pipe(Effect.provide(Input.layer(source)));
+        const { app } = session;
+        peers.push({
+          name,
+          app,
+          world: yield* app.read(World),
+          get coins() {
+            return Effect.runSyncWith(services)(app.read(Lying));
+          },
+          session,
+          hashes: [],
+          source,
+        });
+      }
+      return use(peers);
+    })
   );
 
 /**
@@ -322,14 +319,12 @@ export const steered = <E, HU>({ app, take }: Build.Built<E, HU>) => {
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
 export const withApp = <T extends Pick<App.Any, "read">, A, E = never>(
-  make: Effect.Effect<T, E, Scope.Scope>,
+  make: Effect.Effect<T, E>,
   use: (app: T, world: ReadingWorld) => A
 ): A =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.flatMap(make, (app) =>
-        Effect.map(app.read(World), (world) => use(app, world))
-      )
+    Effect.flatMap(make, (app) =>
+      Effect.map(app.read(World), (world) => use(app, world))
     )
   );
 

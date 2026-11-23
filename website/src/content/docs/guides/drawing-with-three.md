@@ -172,7 +172,7 @@ Frame-stage systems draw a game, in a plugin that only the page installs. A plug
 
 - It decides what to draw from the components an entity has, and where to draw it from `Transform3d` or `Transform2d`, whichever the kind names. The rules say what an entity is, never how it looks.
 - It draws crowds from raw columns into one buffer, and allocates nothing per entity per frame.
-- It keeps state across frames, such as a mesh, a scene, or where an entity was a tick ago, in a service. The plugin's `layer` builds the service, and the app's scope releases it. That state is never in the world.
+- It keeps state across frames, such as a mesh, a scene, or where an entity was a tick ago, in a service. The plugin's `layer` builds the service, and closing the app releases it. That state is never in the world.
 - What it draws to, a renderer or a canvas, comes from outside, as a service the game provides.
 
 ## Find a service or system by name

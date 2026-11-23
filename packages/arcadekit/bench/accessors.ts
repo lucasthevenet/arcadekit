@@ -134,19 +134,17 @@ const dispatching = <P>(
   warmup = 5000
 ): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        // No checkpoints: this measures the action, not the hash.
-        const app = yield* App.make(
-          App.define({ plugins: [Populated], handlers: [nudge, sweep] }),
-          { checkpointEvery: 0 }
-        );
-        const target = (yield* app.read(Seen)).entities()[N >> 1]!;
-        const given = payload(target);
-        const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
-        return measure(() => dispatch(action, given), runs, warmup);
-      })
-    )
+    Effect.gen(function* () {
+      // No checkpoints: this measures the action, not the hash.
+      const app = yield* App.make(
+        App.define({ plugins: [Populated], handlers: [nudge, sweep] }),
+        { checkpointEvery: 0 }
+      );
+      const target = (yield* app.read(Seen)).entities()[N >> 1]!;
+      const given = payload(target);
+      const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
+      return measure(() => dispatch(action, given), runs, warmup);
+    })
   );
 
 const Power = State.define("bench/Power", ["on", "off"]);
@@ -154,25 +152,21 @@ const Power = State.define("bench/Power", ["on", "off"]);
 /** Median milliseconds of a tick of ten idle systems that run when the power is on. */
 const idling = (power: "on" | "off"): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const systems = Array.from({ length: 10 }, (_, i) =>
-          System.tick(`Idle${i}`, function* () {
-            yield* Moving;
-            yield* Time;
-          }).pipe(System.runIf(State.is(Power, "on")))
-        );
-        const Switched = Plugin.make("bench/Switched", {
-          setup: Effect.gen(function* () {
-            (yield* Power.sets).set(power);
-          }),
-        });
-        const app = yield* App.make(
-          App.define({ plugins: [Switched], systems })
-        );
-        return measure(() => app.tick(DT), 50_000, 20_000);
-      })
-    )
+    Effect.gen(function* () {
+      const systems = Array.from({ length: 10 }, (_, i) =>
+        System.tick(`Idle${i}`, function* () {
+          yield* Moving;
+          yield* Time;
+        }).pipe(System.runIf(State.is(Power, "on")))
+      );
+      const Switched = Plugin.make("bench/Switched", {
+        setup: Effect.gen(function* () {
+          (yield* Power.sets).set(power);
+        }),
+      });
+      const app = yield* App.make(App.define({ plugins: [Switched], systems }));
+      return measure(() => app.tick(DT), 50_000, 20_000);
+    })
   );
 
 /**
@@ -183,40 +177,38 @@ const idling = (power: "on" | "off"): number =>
  */
 const listening = (changing: boolean): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const source = Input.makeManualSource();
-        const app = yield* App.make(App.define({ plugins: [Input.plugin] }), {
-          checkpointEvery: 0,
-        }).pipe(Effect.provide(Input.layer(source)));
-        for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
-          source.press(code);
-        }
-        source.move(Input.pointerX, 120);
-        source.move(Input.pointerY, 80);
-        app.input();
-        app.tick(DT);
-        let down = false;
-        return changing
-          ? measure(
-              () => {
-                down = !down;
-                if (down) {
-                  source.press("Space");
-                } else {
-                  source.release("Space");
-                }
-                app.input();
-                app.tick(DT);
-                // The log is the game's to keep; here it would only grow.
-                (app.actionLog as unknown[]).length = 0;
-              },
-              20_000,
-              5000
-            )
-          : measure(() => app.input(), 50_000, 20_000);
-      })
-    )
+    Effect.gen(function* () {
+      const source = Input.makeManualSource();
+      const app = yield* App.make(App.define({ plugins: [Input.plugin] }), {
+        checkpointEvery: 0,
+      }).pipe(Effect.provide(Input.layer(source)));
+      for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
+        source.press(code);
+      }
+      source.move(Input.pointerX, 120);
+      source.move(Input.pointerY, 80);
+      app.input();
+      app.tick(DT);
+      let down = false;
+      return changing
+        ? measure(
+            () => {
+              down = !down;
+              if (down) {
+                source.press("Space");
+              } else {
+                source.release("Space");
+              }
+              app.input();
+              app.tick(DT);
+              // The log is the game's to keep; here it would only grow.
+              (app.actionLog as unknown[]).length = 0;
+            },
+            20_000,
+            5000
+          )
+        : measure(() => app.input(), 50_000, 20_000);
+    })
   );
 
 /**
@@ -227,49 +219,47 @@ const listening = (changing: boolean): number =>
  */
 const showing = (mode: "same" | "new" | "nobody"): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const Stats = Singleton.define(
-          "bench/Stats",
-          { score: Field.i32, lives: Field.i32, level: Field.i32 },
-          { score: 0, lives: 3, level: 1 }
-        );
-        const Hud = View.define("bench/Hud", {
-          score: 0,
-          lives: 3,
-          level: 1,
+    Effect.gen(function* () {
+      const Stats = Singleton.define(
+        "bench/Stats",
+        { score: Field.i32, lives: Field.i32, level: Field.i32 },
+        { score: 0, lives: 3, level: 1 }
+      );
+      const Hud = View.define("bench/Hud", {
+        score: 0,
+        lives: 3,
+        level: 1,
+        phase: "playing",
+      });
+      let frames = 0;
+      const Show = View.publish(Hud, function* () {
+        const stats = yield* Stats;
+        return {
+          score: mode === "new" ? frames : stats.score,
+          lives: stats.lives,
+          level: stats.level,
           phase: "playing",
-        });
-        let frames = 0;
-        const Show = View.publish(Hud, function* () {
-          const stats = yield* Stats;
-          return {
-            score: mode === "new" ? frames : stats.score,
-            lives: stats.lives,
-            level: stats.level,
-            phase: "playing",
-          };
-        });
-        const WithHud = App.define({ plugins: [View.plugin], systems: [Show] });
-        const ui = View.makeBridge(WithHud);
-        let heard = 0;
-        ui.subscribe(Hud, () => {
-          heard++;
-        });
-        const made = App.make(WithHud, { checkpointEvery: 0 });
-        const app = yield* mode === "nobody"
-          ? made
-          : made.pipe(Effect.provide(View.layer(ui)));
-        return measure(
-          () => {
-            frames++;
-            app.frame(0);
-          },
-          50_000,
-          20_000
-        );
-      })
-    )
+        };
+      });
+      const WithHud = App.define({ plugins: [View.plugin], systems: [Show] });
+      const ui = View.makeBridge(WithHud);
+      let heard = 0;
+      ui.subscribe(Hud, () => {
+        heard++;
+      });
+      const made = App.make(WithHud, { checkpointEvery: 0 });
+      const app = yield* mode === "nobody"
+        ? made
+        : made.pipe(Effect.provide(View.layer(ui)));
+      return measure(
+        () => {
+          frames++;
+          app.frame(0);
+        },
+        50_000,
+        20_000
+      );
+    })
   );
 
 /**
@@ -280,32 +270,30 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
  */
 const sounding = (happening: boolean): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const Scored = Event.define("bench/Scored", Schema.Struct({}));
-        const Bounced = Event.define("bench/Bounced", Schema.Struct({}));
-        const Score = System.tick("bench/Score", function* () {
-          if (happening) {
-            (yield* Scored.emits).emit({});
-          }
-        });
-        const Cues = Sound.cues(
-          "bench/Cues",
-          Sound.on(Scored, "coin"),
-          Sound.on(Bounced, { cue: "thud", volume: 0.5 })
-        );
-        const app = yield* App.make(
-          App.define({ plugins: [Sound.plugin], systems: [Score, Cues] }),
-          { checkpointEvery: 0 }
-        ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
-        return measure(
-          () => app.frame(0),
-          50_000,
-          20_000,
-          () => app.tick(DT)
-        );
-      })
-    )
+    Effect.gen(function* () {
+      const Scored = Event.define("bench/Scored", Schema.Struct({}));
+      const Bounced = Event.define("bench/Bounced", Schema.Struct({}));
+      const Score = System.tick("bench/Score", function* () {
+        if (happening) {
+          (yield* Scored.emits).emit({});
+        }
+      });
+      const Cues = Sound.cues(
+        "bench/Cues",
+        Sound.on(Scored, "coin"),
+        Sound.on(Bounced, { cue: "thud", volume: 0.5 })
+      );
+      const app = yield* App.make(
+        App.define({ plugins: [Sound.plugin], systems: [Score, Cues] }),
+        { checkpointEvery: 0 }
+      ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+      return measure(
+        () => app.frame(0),
+        50_000,
+        20_000,
+        () => app.tick(DT)
+      );
+    })
   );
 
 /**
@@ -315,21 +303,19 @@ const sounding = (happening: boolean): number =>
  */
 const scoring = (): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const Phase = State.define("bench/MusicPhase", ["playing", "title"]);
-        const Score = Sound.music("bench/Music", function* () {
-          return (yield* Phase).value === "playing"
-            ? { track: "theme", volume: 0.5 }
-            : undefined;
-        });
-        const app = yield* App.make(
-          App.define({ plugins: [Sound.plugin], systems: [Score] }),
-          { checkpointEvery: 0 }
-        ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
-        return measure(() => app.frame(0), 50_000, 20_000);
-      })
-    )
+    Effect.gen(function* () {
+      const Phase = State.define("bench/MusicPhase", ["playing", "title"]);
+      const Score = Sound.music("bench/Music", function* () {
+        return (yield* Phase).value === "playing"
+          ? { track: "theme", volume: 0.5 }
+          : undefined;
+      });
+      const app = yield* App.make(
+        App.define({ plugins: [Sound.plugin], systems: [Score] }),
+        { checkpointEvery: 0 }
+      ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+      return measure(() => app.frame(0), 50_000, 20_000);
+    })
   );
 
 /**
@@ -340,122 +326,109 @@ const scoring = (): number =>
  */
 const atRest = (): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const Phase = State.define("bench/RestPhase", ["title", "playing"]);
-        const Shown = View.define("bench/Shown", { phase: "title" });
-        const Show = View.publish(Shown, function* () {
-          return { phase: (yield* Phase).value as string };
-        });
-        const source = Input.makeManualSource();
-        const Resting = App.define({
-          plugins: [Input.plugin, View.plugin],
-          systems: [Show],
-        });
-        const app = yield* App.make(Resting, { checkpointEvery: 0 }).pipe(
-          Effect.provide(
-            Layer.merge(
-              Input.layer(source),
-              View.layer(View.makeBridge(Resting))
-            )
-          )
-        );
-        const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
-        // The first tick enters the state, and one more follows it.
-        for (let i = 0; i < 10; i++) {
-          advance(DT);
-        }
-        if (app.time.tick !== 2) {
-          throw new Error(
-            `The game did not come to rest: tick ${app.time.tick}`
-          );
-        }
-        return measure(() => advance(DT), 50_000, 20_000);
-      })
-    )
+    Effect.gen(function* () {
+      const Phase = State.define("bench/RestPhase", ["title", "playing"]);
+      const Shown = View.define("bench/Shown", { phase: "title" });
+      const Show = View.publish(Shown, function* () {
+        return { phase: (yield* Phase).value as string };
+      });
+      const source = Input.makeManualSource();
+      const Resting = App.define({
+        plugins: [Input.plugin, View.plugin],
+        systems: [Show],
+      });
+      const app = yield* App.make(Resting, { checkpointEvery: 0 }).pipe(
+        Effect.provide(
+          Layer.merge(Input.layer(source), View.layer(View.makeBridge(Resting)))
+        )
+      );
+      const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
+      // The first tick enters the state, and one more follows it.
+      for (let i = 0; i < 10; i++) {
+        advance(DT);
+      }
+      if (app.time.tick !== 2) {
+        throw new Error(`The game did not come to rest: tick ${app.time.tick}`);
+      }
+      return measure(() => advance(DT), 50_000, 20_000);
+    })
   );
 
 /** Median milliseconds of a frame of `count` systems that read the world or do nothing. */
 /** A game of 100,000 moving entities, captured or put back. */
 const rewinding = (back: boolean): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const Movement = System.tick("Movement", function* () {
-          (yield* Moving).eachChunk((start, end, pos, vel) => {
-            for (let n = start; n < end; n++) {
-              pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
-            }
-          });
+    Effect.gen(function* () {
+      const Movement = System.tick("Movement", function* () {
+        (yield* Moving).eachChunk((start, end, pos, vel) => {
+          for (let n = start; n < end; n++) {
+            pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
+          }
         });
-        const app = yield* App.make(
-          App.define({ plugins: [Populated], systems: [Movement] })
-        );
-        app.tick(DT);
-        const moment = Timeline.capture(app);
-        if (Exit.isFailure(moment)) {
-          throw new Error("the game could not be captured");
-        }
-        let sink = 0;
-        const ms = back
-          ? measure(() => {
-              Timeline.rewind(app, moment.value);
-              sink += app.time.tick;
-            })
-          : measure(() => {
-              sink += Exit.isSuccess(Timeline.capture(app)) ? 1 : 0;
-            });
-        void sink;
-        return ms;
-      })
-    )
+      });
+      const app = yield* App.make(
+        App.define({ plugins: [Populated], systems: [Movement] })
+      );
+      app.tick(DT);
+      const moment = Timeline.capture(app);
+      if (Exit.isFailure(moment)) {
+        throw new Error("the game could not be captured");
+      }
+      let sink = 0;
+      const ms = back
+        ? measure(() => {
+            Timeline.rewind(app, moment.value);
+            sink += app.time.tick;
+          })
+        : measure(() => {
+            sink += Exit.isSuccess(Timeline.capture(app)) ? 1 : 0;
+          });
+      void sink;
+      return ms;
+    })
   );
 
 const drawing = (count: number, reading: boolean, verify: boolean): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        let sink = 0;
-        const systems = Array.from({ length: count }, (_, i) =>
-          System.frame(`Draw${i}`, function* () {
-            const moving = yield* Seen;
-            yield* Time;
-            if (reading) {
-              moving.eachChunk((start, end, pos, vel) => {
-                const px = pos.x;
-                const vx = vel.x;
-                for (let n = start; n < end; n++) {
-                  sink += px[n]! + vx[n]! * DT;
-                }
-              });
-            }
-          })
-        );
-        const app = yield* App.make(
-          App.define({ plugins: [reading ? Populated : Empty], systems }),
-          { verifyFrames: verify }
-        );
-        const ms = reading
-          ? measure(() => app.frame(0.5))
-          : measure(() => app.frame(0.5), 50_000, 20_000);
-        void sink;
-        return ms;
-      })
-    )
+    Effect.gen(function* () {
+      let sink = 0;
+      const systems = Array.from({ length: count }, (_, i) =>
+        System.frame(`Draw${i}`, function* () {
+          const moving = yield* Seen;
+          yield* Time;
+          if (reading) {
+            moving.eachChunk((start, end, pos, vel) => {
+              const px = pos.x;
+              const vx = vel.x;
+              for (let n = start; n < end; n++) {
+                sink += px[n]! + vx[n]! * DT;
+              }
+            });
+          }
+        })
+      );
+      const app = yield* App.make(
+        App.define({ plugins: [reading ? Populated : Empty], systems }),
+        { verifyFrames: verify }
+      );
+      const ms = reading
+        ? measure(() => app.frame(0.5))
+        : measure(() => app.frame(0.5), 50_000, 20_000);
+      void sink;
+      return ms;
+    })
   );
 
 /** Median milliseconds of a dispatch whose handler looks at every entity. */
 const scanned = (handler: typeof scanPlain): number =>
   Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({ plugins: [Populated], handlers: [handler] }),
-          { checkpointEvery: 0 }
-        );
-        return measure(() => app.dispatch(Scan, {}), 300, 80);
-      })
-    )
+    Effect.gen(function* () {
+      const app = yield* App.make(
+        App.define({ plugins: [Populated], handlers: [handler] }),
+        { checkpointEvery: 0 }
+      );
+      return measure(() => app.dispatch(Scan, {}), 300, 80);
+    })
   );
 
 const Movement = System.tick("Movement", function* () {
@@ -536,14 +509,12 @@ const variants: Record<string, Variant> = {
     label: "app.tick: one Effect per system, accessors inside",
     run: () =>
       Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const app = yield* App.make(
-              App.define({ plugins: [Populated], systems: [Movement] })
-            );
-            return measure(() => app.tick(DT));
-          })
-        )
+        Effect.gen(function* () {
+          const app = yield* App.make(
+            App.define({ plugins: [Populated], systems: [Movement] })
+          );
+          return measure(() => app.tick(DT));
+        })
       ),
   },
 
@@ -551,14 +522,12 @@ const variants: Record<string, Variant> = {
     label: "app.tick: one Effect per system, raw columns inside",
     run: () =>
       Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const app = yield* App.make(
-              App.define({ plugins: [Populated], systems: [MovementRaw] })
-            );
-            return measure(() => app.tick(DT));
-          })
-        )
+        Effect.gen(function* () {
+          const app = yield* App.make(
+            App.define({ plugins: [Populated], systems: [MovementRaw] })
+          );
+          return measure(() => app.tick(DT));
+        })
       ),
   },
 
@@ -568,18 +537,16 @@ const variants: Record<string, Variant> = {
     label: "app.tick: 10 systems that do no work",
     run: () =>
       Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const systems = Array.from({ length: 10 }, (_, i) =>
-              System.tick(`Idle${i}`, function* () {
-                yield* Moving;
-                yield* Time;
-              })
-            );
-            const app = yield* App.make(App.define({ systems }));
-            return measure(() => app.tick(DT), 50_000, 20_000);
-          })
-        )
+        Effect.gen(function* () {
+          const systems = Array.from({ length: 10 }, (_, i) =>
+            System.tick(`Idle${i}`, function* () {
+              yield* Moving;
+              yield* Time;
+            })
+          );
+          const app = yield* App.make(App.define({ systems }));
+          return measure(() => app.tick(DT), 50_000, 20_000);
+        })
       ),
   },
   idleConditioned: {

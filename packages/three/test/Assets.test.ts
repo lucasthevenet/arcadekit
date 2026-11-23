@@ -156,7 +156,6 @@ const play = (
   loader: Layer.Layer<never> = files
 ) => {
   const renderer = makeRenderer();
-  const scope = Scope.makeUnsafe();
   const made = App.make(
     App.define({
       plugins: [Three.plugin, Assets.plugin],
@@ -166,14 +165,13 @@ const play = (
   );
   const app = Effect.runSync(
     made.pipe(
-      Effect.provide(Layer.mergeAll(renderer.layer, loader, Logger.layer([]))),
-      Scope.provide(scope)
+      Effect.provide(Layer.mergeAll(renderer.layer, loader, Logger.layer([])))
     )
   );
   return {
     app,
     renderer,
-    close: () => Effect.runSync(Scope.close(scope, Exit.void)),
+    close: () => Effect.runSync(app.close),
     /** The game goes to a level, and a frame is drawn. */
     enter: (to: "menu" | "forest") => {
       done(app.dispatch(Go, { to }));
@@ -642,7 +640,6 @@ describe("instances whose look is made of assets", () => {
 
   it("ask nothing of an app's assets when their look is there: such an app needs no Assets.plugin", () => {
     const renderer = makeRenderer();
-    const scope = Scope.makeUnsafe();
     const material = new MeshBasicMaterial();
     const Grove = Plugin.make("ta/Grove", {
       setup: Effect.gen(function* () {
@@ -667,11 +664,11 @@ describe("instances whose look is made of assets", () => {
             }),
           ],
         })
-      ).pipe(Effect.provide(renderer.layer), Scope.provide(scope))
+      ).pipe(Effect.provide(renderer.layer))
     );
     app.frame(0);
     expect(renderer.drew).toEqual(["ta/Plain"]);
-    Effect.runSync(Scope.close(scope, Exit.void));
+    Effect.runSync(app.close);
   });
 });
 

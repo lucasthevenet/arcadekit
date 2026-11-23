@@ -38,12 +38,15 @@ const seatAt = (url: string, name: string) =>
       others: ["ada", "grace"].filter((other) => other !== name),
       delta: DELTA,
     }).pipe(Effect.provide(Input.layer(source)));
-    const connected = yield* Transport.connect(session).pipe(
-      Effect.provide(
-        Transport.layerWebSocket(
-          Relay.address(url, { room: "match", peer: name })
+    const connected = yield* Effect.acquireRelease(
+      Transport.connect(session).pipe(
+        Effect.provide(
+          Transport.layerWebSocket(
+            Relay.address(url, { room: "match", peer: name })
+          )
         )
-      )
+      ),
+      (made) => made.close
     );
     const services = yield* Effect.context();
     const seat: Seat = {
@@ -741,10 +744,13 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             delta: DELTA,
             ahead: 0,
           });
-          const connected = yield* Transport.connect(session).pipe(
-            Effect.provide(
-              Transport.layerWebSocket(Relay.address(served.url, ada))
-            )
+          const connected = yield* Effect.acquireRelease(
+            Transport.connect(session).pipe(
+              Effect.provide(
+                Transport.layerWebSocket(Relay.address(served.url, ada))
+              )
+            ),
+            (made) => made.close
           );
           // Grace comes, and goes for good: her transport gives up at once.
           yield* Effect.scoped(
@@ -961,16 +967,38 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     );
   });
 
-  it("says so when it is used after its scope has closed", async () => {
+  it("says so when it is used after its connection was closed, or the scope it was listened on in", async () => {
     const served = await serve();
     stop = served.stop;
     const url = Relay.address(served.url, ada);
-    const kept = await Effect.runPromise(Effect.scoped(listenOn(url)));
-    expect(() => kept.receive()).toThrow(
-      /was used after the scope it was opened in had closed, and its socket with it.*drive the session in that program/u
+    const session = Effect.runSync(
+      Session.make(CoinGame, {
+        seed: 5,
+        me: "ada",
+        others: ["grace"],
+        delta: DELTA,
+      })
     );
+    const connected = await Effect.runPromise(
+      Transport.connect(session).pipe(
+        Effect.provide(Transport.layerWebSocket(url))
+      )
+    );
+    await until(() => served.relay.members("blue").length === 1, "ada is in");
+    await Effect.runPromise(connected.close);
+    await until(
+      () => served.relay.members("blue").length === 0,
+      "ada has left"
+    );
+    expect(() => connected.tick()).toThrow(
+      new RegExp(
+        `The transport to ${url.replaceAll(/[.?]/gu, "\\$&")} was used after it was let go, and its socket closed: the connection Transport\\.connect made was closed`,
+        "u"
+      )
+    );
+    const kept = await Effect.runPromise(Effect.scoped(listenOn(url)));
     expect(() => kept.send(message("ada", 0))).toThrow(
-      /after the scope it was opened in/u
+      /or the scope Transport\.listen ran in had ended/u
     );
   });
 });

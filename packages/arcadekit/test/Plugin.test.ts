@@ -1,5 +1,4 @@
 import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Spawned } from "../src/index";
@@ -33,11 +32,18 @@ const Health = Component.define("pl/Health", { hp: Field.i32 });
 
 const Bumped = Event.define("pl/Bumped", Schema.Struct({ entity: EntityId }));
 
-/** Builds an app, hands it to `use`, then closes its scope. */
-const withApp = <A, E, T>(
-  make: Effect.Effect<A, E, Scope.Scope>,
+/** Builds an app, hands it to `use`, then closes it. */
+const withApp = <A extends { readonly close: Effect.Effect<void> }, E, T>(
+  make: Effect.Effect<A, E>,
   use: (app: A) => T
-): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+): T =>
+  Effect.runSync(
+    Effect.acquireUseRelease(
+      make,
+      (app) => Effect.sync(() => use(app)),
+      (app) => app.close
+    )
+  );
 
 // --- a "physics" plugin: a resource, two systems, some setup -------------------
 
@@ -163,7 +169,7 @@ describe("plugins", () => {
       // So is the tick's failure type.
       const exit: Exit.Exit<void, Fragile> = app.tickExit(1);
       expect(Exit.isSuccess(exit)).toBe(true);
-    }).pipe(Effect.scoped, Effect.runSync);
+    }).pipe(Effect.runSync);
   });
 
   it("can be combined with systems and handlers the app defines itself", () => {
@@ -409,7 +415,7 @@ describe("plugins", () => {
     const Play = System.frame("pl/FrameAudio", function* () {
       (yield* Audio).play("boing");
     });
-    const needs: Effect.Effect<App.Any, never, Scope.Scope | Audio> = App.make(
+    const needs: Effect.Effect<App.App, never, Audio> = App.make(
       App.define({ systems: [Play] })
     );
     const played: string[] = [];
@@ -454,23 +460,18 @@ describe("plugins", () => {
       layer: Layer.effectDiscard(Effect.fail(new BadConfig())),
     });
 
-    const make: Effect.Effect<unknown, NoSaveFile | BadConfig, Scope.Scope> =
-      App.make(App.define({ plugins: [Loader, Config] }));
-    expect(Effect.runSyncExit(Effect.scoped(make))).toEqual(
-      Exit.fail(new BadConfig())
+    const make: Effect.Effect<unknown, NoSaveFile | BadConfig> = App.make(
+      App.define({ plugins: [Loader, Config] })
     );
+    expect(Effect.runSyncExit(make)).toEqual(Exit.fail(new BadConfig()));
     expect(
-      Effect.runSyncExit(
-        Effect.scoped(App.make(App.define({ plugins: [Loader] })))
-      )
+      Effect.runSyncExit(App.make(App.define({ plugins: [Loader] })))
     ).toEqual(Exit.fail(new NoSaveFile({ path: "slot1" })));
 
     const Slow = Plugin.make("Slow", {
       setup: Effect.sleep("1 second"),
     });
-    const exit = Effect.runSyncExit(
-      Effect.scoped(App.make(App.define({ plugins: [Slow] })))
-    );
+    const exit = Effect.runSyncExit(App.make(App.define({ plugins: [Slow] })));
     expect(Exit.isFailure(exit)).toBe(true);
     expect(String(exit)).toMatch(
       /setup of plugin \\?"Slow\\?" did not finish synchronously/
@@ -480,7 +481,7 @@ describe("plugins", () => {
   it("take no scripts: what runs across ticks keeps its place in the world, and a system moves it", () => {
     // @ts-expect-error a plugin has no scripts
     void Plugin.make("Scripted", { scripts: [] });
-    const app = Effect.runSync(Effect.scoped(App.make(App.define({}))));
+    const app = Effect.runSync(App.make(App.define({})));
     expect("spawnScript" in app).toBe(false);
   });
 
@@ -493,9 +494,7 @@ describe("plugins", () => {
     );
     const different: readonly Plugin.Plugin[] = [one, two];
     expect(() =>
-      Effect.runSync(
-        Effect.scoped(App.make(App.define({ plugins: different })))
-      )
+      Effect.runSync(App.make(App.define({ plugins: different })))
     ).toThrow(/both named "Twin"/);
     const again: readonly Plugin.Plugin[] = [one, one];
     withApp(App.make(App.define({ plugins: again })), (app) =>

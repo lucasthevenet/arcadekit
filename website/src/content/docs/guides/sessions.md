@@ -20,12 +20,15 @@ const Game = Plugin.make("game/Game", { handlers: [move] });
 const Duel = App.define({ plugins: [Game] });
 
 const program = Effect.gen(function* () {
-  const session = yield* Session.make(Duel, {
-    seed: 1, // or a save: how the game starts, as App.make takes it
-    me: "ada", // this machine's player
-    others: ["grace"], // everyone else: grace's machine has me: "grace", others: ["ada"]
-    delta: 1 / 60, // the seconds a tick simulates, the same everywhere
-  });
+  const session = yield* Effect.acquireRelease(
+    Session.make(Duel, {
+      seed: 1, // or a save: how the game starts, as App.make takes it
+      me: "ada", // this machine's player
+      others: ["grace"], // everyone else: grace's machine has me: "grace", others: ["ada"]
+      delta: 1 / 60, // the seconds a tick simulates, the same everywhere
+    }),
+    (made) => made.close // closes its app with the program's scope
+  );
 
   session.app.enqueue(Move, { dx: 1 }); // as in a single-player game
 
@@ -37,7 +40,7 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 ```
 
-Everything a multiplayer game needs is in `arcadekit/net`, not in `arcadekit`, so a single-player game loads none of it. `Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` has no `tick` and no `dispatch`, since either would move this machine's game alone, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's.
+Everything a multiplayer game needs is in `arcadekit/net`, not in `arcadekit`, so a single-player game loads none of it. `Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` has no `tick` and no `dispatch`, since either would move this machine's game alone, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's. It has no `close` either. `session.close` closes it, as `app.close` closes an app.
 
 Pass each message from another peer to `session.receive(message)`. Usually a [transport](transports-and-relays.md) carries messages both ways and a driver steps the session, so your game never calls these itself. To carry messages some other way, turn them into text with `Message.encode` and back with `Message.decode`. `Message.decode` returns an `Exit`, which fails for text that isn't a message.
 
@@ -85,22 +88,22 @@ Before each tick it isn't sure of, the session captures the game with [`Timeline
 ## Drive a session
 
 ```ts sketch
-const program = Effect.gen(function* () {
-  const session = yield* Session.make(Duel, {
-    seed,
-    me,
-    others,
-    delta: 1 / 60,
-  });
-  return yield* Driver.frames(yield* Transport.connect(session));
-}).pipe(
-  Effect.scoped,
-  Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
-);
+const program = Driver.run(
+  Effect.gen(function* () {
+    const session = yield* Session.make(Duel, {
+      seed,
+      me,
+      others,
+      delta: 1 / 60,
+    });
+    return yield* Transport.connect(session);
+  })
+).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7")));
 ```
 
 `Transport.connect` connects the session to a transport and returns what a driver steps in the session's place. The driver ticks it `1 / delta` times a second, the rate every peer is made with, and draws the game through it. A driver of a session takes neither `hz` nor `ticks`, and giving it either doesn't compile.
 
+- `Transport.connect(session)` stands in for the session. Its `close` stops listening on the transport and closes the session. `Driver.run` closes it when it ends, as it closes an app.
 - Key presses, the UI and `session.app.enqueue` all feed this peer's next message, as in a single-player game.
 - `session.tick()` takes no delta. Each tick simulates the session's `delta`.
 

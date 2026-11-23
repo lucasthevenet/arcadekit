@@ -1,5 +1,4 @@
 import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -46,12 +45,9 @@ const Rules = Plugin.make("rd/Rules", {
 });
 const Game = App.define({ plugins: [Rules] });
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
-
 describe("a game, from outside it", () => {
   it("is read with app.read: the world, a query that reads, a singleton, a state and the time", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Game);
         app.tick(1 / 60);
@@ -74,7 +70,7 @@ describe("a game, from outside it", () => {
   });
 
   it("is changed by an action alone: the app has no world to write, and app.read takes nothing that writes", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Game);
         // @ts-expect-error the app hands out no world
@@ -120,7 +116,7 @@ describe("a game, from outside it", () => {
   });
 
   it("is replayed to the same world, since what changed it is in the log", () => {
-    const { count, recording } = run(
+    const { count, recording } = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(Game, { checkpointEvery: 0 });
         for (let n = 0; n < 5; n++) {
@@ -137,7 +133,7 @@ describe("a game, from outside it", () => {
       })
     );
     expect(count).toBe(2);
-    const replayed = run(
+    const replayed = Effect.runSync(
       Effect.gen(function* () {
         const app = yield* Journal.replay(recording, Game, {
           checkpointEvery: 0,
@@ -156,7 +152,7 @@ describe("a game, from outside it", () => {
       }
     });
     expect(() =>
-      run(
+      Effect.runSync(
         Effect.gen(function* () {
           const app = yield* App.make(App.define({ systems: [Peek] }));
           outside.app = app;
@@ -173,7 +169,7 @@ describe("the world a system is handed", () => {
     const Look = System.tick("rd/Look", function* () {
       seen.push(yield* World, yield* World.writes(Position));
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ systems: [Look] }));
         app.tick(1 / 60);

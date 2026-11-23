@@ -1,5 +1,4 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import type { Terms } from "../src/ecs/query";
@@ -65,9 +64,6 @@ const Warmed = Query.all(Heat).pipe(Query.changed(Heat));
 /** What a save knows the query `Moved` by, after its reader's name. */
 const MOVED =
   "all(ch/Position) with() without() changed(ch/Position) added() reads()";
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 /**
  * A world of `count` entities with a position, the first half of them with
@@ -1349,8 +1345,7 @@ const game = (
   options: { checkpointEvery?: number } = {}
 ): Effect.Effect<
   App.App<never, typeof push | typeof spawn | typeof cull>,
-  never,
-  Scope.Scope
+  never
 > => App.make(Game, { checkpointEvery: options.checkpointEvery ?? 1 });
 
 /** A game with a move every tick, some of them refused. */
@@ -1369,7 +1364,7 @@ const play = (app: App.Any, from: number, to: number): void => {
 
 describe("change queries in an app", () => {
   it("give every system its own place: the same changes, each once", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* game();
         app.tick(1);
@@ -1392,7 +1387,7 @@ describe("change queries in an app", () => {
   });
 
   it("do not show a refused action's writes to anyone", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const One = Plugin.make("ch/One", {
           setup: Effect.map(Commands.spawns(Tally, Position), (commands) => {
@@ -1422,7 +1417,7 @@ describe("change queries in an app", () => {
     const inspect = Action.handler(Inspect, function* () {
       return (yield* Moved).entities().length;
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const watched: number[] = [];
         const Watch = System.tick("Watch", function* () {
@@ -1455,7 +1450,7 @@ describe("change queries in an app", () => {
   });
 
   it("replay, with refused actions among them, checkpoint by checkpoint", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* game();
         play(app, 0, 40);
@@ -1475,7 +1470,7 @@ describe("change queries in an app", () => {
 
   it("are saved with a game: loaded, each system goes on from where it was", () => {
     for (const savedAt of [0, 1, 2, 9, 23]) {
-      run(
+      Effect.runSync(
         Effect.gen(function* () {
           const app = yield* game();
           play(app, 0, savedAt);
@@ -1539,7 +1534,7 @@ describe("change queries in an app", () => {
         }
       }),
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({ plugins: [Four], handlers: [before, hit] })
@@ -1582,7 +1577,7 @@ describe("change queries in an app", () => {
   });
 
   it("make a load fail, with the reason, when the changes of a save are damaged", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* game();
         play(app, 0, 3);

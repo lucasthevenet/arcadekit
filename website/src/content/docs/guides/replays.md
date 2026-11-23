@@ -26,7 +26,10 @@ const Rules = Plugin.make("game/Rules", {
 const Game = App.define({ plugins: [Rules] });
 
 const program = Effect.gen(function* () {
-  const game = yield* App.make(Game, { seed: 42, checkpointEvery: 1 });
+  const game = yield* Effect.acquireRelease(
+    App.make(Game, { seed: 42, checkpointEvery: 1 }),
+    (app) => app.close
+  );
   game.enqueue(Add, { points: 3 });
   for (let i = 0; i < 10; i++) {
     game.tick(1 / 60);
@@ -35,9 +38,10 @@ const program = Effect.gen(function* () {
 
   const recording = yield* Journal.decode(text); // fails on text that isn't one
   // The replay makes its app from how the recorded game began: its seed.
-  const again = yield* Journal.replay(recording, Game, {
-    checkpointEvery: 1,
-  }); // fails with Journal.ReplayDiverged
+  const again = yield* Effect.acquireRelease(
+    Journal.replay(recording, Game, { checkpointEvery: 1 }), // fails with Journal.ReplayDiverged
+    (app) => app.close
+  );
 }).pipe(Effect.scoped);
 ```
 
@@ -56,6 +60,7 @@ Each action holds its payload in JSON form and the tick it arrived at. Actions t
 - It takes no seed and no save, so a replay begins as the recorded game did. It also starts from the same state, since a game starts with what its plugins' `setup` spawns, and code outside the game can't spawn anything.
 - Each tick takes the delta it took when recorded, up to the recording's last tick, so a replay can't be given the wrong tick length or stop short.
 - A third argument gives the replay's app the rest of what `App.make` takes, such as `{ checkpointEvery: 1 }`.
+- The app it returns belongs to the caller, as one that `App.make` makes does. Close it when you are done with it.
 - It runs no frame or input stage, so it reads no device and draws nothing. What the devices said is in the log.
 - In the recorded game, a frame or input stage that wrote through a raw column changed the game with no error, unless the app was made with `verifyFrames`. The replay runs neither stage, so it diverges. See [testing](testing.md#run-the-frame-stage-by-hand).
 
@@ -85,7 +90,7 @@ yield* Journal.replay(recording, Game).pipe(
 );
 ```
 
-Whatever stops a replay, the error's `app` is the replay's app where it stopped. Look at it while the scope the replay ran in is open.
+Whatever stops a replay, the error's `app` is the replay's app where it stopped. The replay has closed that app, but its world, its log and its time are still there to read.
 
 ## Read more
 

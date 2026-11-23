@@ -1,5 +1,4 @@
 import { Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -43,9 +42,6 @@ const HeldBy = Component.relation("rl/HeldBy", {
   onTargetDespawn: "despawn",
   storage: "sparse",
 });
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const body = (world: EcsWorld, x = 0): Entity => world.spawn(Body.of({ x }));
 const childOf = (world: EcsWorld, parent: Entity): Entity =>
@@ -688,7 +684,7 @@ describe("relations in an app", () => {
       const lender = commands.spawn(Body);
       commands.spawn(Body, Owes.of({ target: lender, amount: 0 }));
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ systems: [Accrue] }));
         const world = yield* app.read(World);
@@ -710,7 +706,7 @@ describe("relations in an app", () => {
   });
 
   it("are kept through actions and systems, and a game with them replays", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const {
           app,
@@ -747,7 +743,7 @@ describe("relations in an app", () => {
   });
 
   it("are saved with a game, and the loaded game goes on the same", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const {
           app,

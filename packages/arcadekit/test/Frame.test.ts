@@ -7,7 +7,6 @@ import {
   Layer,
   Schema,
 } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -54,9 +53,6 @@ const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 const Seen = Query.all(Ball);
 const Moved = Query.all(Ball).pipe(Query.changed(Ball), Query.writes(Ball));
 const Watched = Query.all(Ball).pipe(Query.changed(Ball));
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 /**
  * The tick's generator, which is the world's, kept by a plugin's layer as a
@@ -250,7 +246,7 @@ describe("a frozen world", () => {
 
 describe("the frame stage", () => {
   it("runs its systems when a frame is asked for, and the tick's when a tick is", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const noting = (
@@ -306,7 +302,7 @@ describe("the frame stage", () => {
   });
 
   it("has a stage before it and one after, as a tick has, and each runs whole before the next, however its systems are listed", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const ran: string[] = [];
         const drawing = (
@@ -387,7 +383,7 @@ describe("the frame stage", () => {
   });
 
   it("is told how far the frame is between two ticks", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const frames: unknown[] = [];
         const drawn: number[] = [];
@@ -422,7 +418,7 @@ describe("the frame stage", () => {
   });
 
   it("is driven at the rate of frames while the simulation ticks at its own", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const alphas: number[] = [];
         const Draw = System.frame("Draw", function* () {
@@ -503,7 +499,7 @@ describe("the frame stage", () => {
       }
     );
     // The bus still throws: a frame has it, and emitting there is refused.
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Vandal = System.frame("Vandal", function* () {
           (yield* Events).emit(Pinged, {});
@@ -536,7 +532,7 @@ describe("the frame stage", () => {
   });
 
   it("draws its random numbers from a generator of its own, not the world's", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const drawn: number[] = [];
         const Sparkle = System.frame("Sparkle", function* () {
@@ -574,7 +570,7 @@ describe("the frame stage", () => {
   });
 
   it("finds a draw from the world's generator when the frame ends, and takes it back", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         let cheat = true;
         const drawn: string[] = [];
@@ -624,7 +620,7 @@ describe("the frame stage", () => {
         ball.vx += by;
       });
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         // A button in the picture: pressed in the third frame.
         const Button = System.frame("Button", function* () {
@@ -675,7 +671,7 @@ describe("the frame stage", () => {
   });
 
   it("refuses a tick, a frame or a save from inside a frame, and a frame from inside a tick", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         let inFrame: (() => unknown) | undefined;
         let inTick: (() => unknown) | undefined;
@@ -732,7 +728,7 @@ describe("what the frame stage reads", () => {
   const Bounced = Event.define("fr/Bounced", Schema.Struct({ at: Schema.Int }));
 
   it("sees every event once, however many ticks ran since the last frame", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const heard: number[] = [];
         const late: number[] = [];
@@ -834,7 +830,7 @@ describe("what the frame stage reads", () => {
   });
 
   it("stops keeping events for a frame stage that has stopped running", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const heard: number[] = [];
         const Listen = System.frame("Listen", function* () {
@@ -875,7 +871,7 @@ describe("what the frame stage reads", () => {
   });
 
   it("has a place of its own in what changed, which is not the simulation's and not saved", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const drawn: number[] = [];
         const counted: number[] = [];
@@ -948,7 +944,7 @@ describe("what the frame stage reads", () => {
   });
 
   it("changes nothing: a game drawn every frame is the game that was never drawn", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const Watch = System.frame("Watch", function* () {
           let sum = 0;
@@ -1034,7 +1030,7 @@ describe("a frame stage that is checked", () => {
   });
 
   it("holds what a system does in place of running to the same, and names that system", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         // It does not run, and what it does then writes a raw column.
         const Idle = Honest.pipe(
@@ -1066,7 +1062,7 @@ describe("a frame stage that is checked", () => {
 
   it("finds the two changes that are not stopped where they are made, and names the system", () => {
     for (const how of ["raw", "random"] as const) {
-      run(
+      Effect.runSync(
         Effect.gen(function* () {
           const app = yield* App.make(
             App.define({
@@ -1100,7 +1096,7 @@ describe("a frame stage that is checked", () => {
   });
 
   it("passes a frame stage that leaves the world alone, and is off unless asked for", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const checked = yield* App.make(
           App.define({

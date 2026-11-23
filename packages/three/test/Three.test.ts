@@ -207,22 +207,19 @@ const makeRenderer = () => {
 };
 
 /**
- * An app in a scope of its own, which the test closes when it likes, with
- * the world it reads and the hand it changes the game with.
+ * An app, which the test closes when it likes, with the world it reads and
+ * the hand it changes the game with.
  */
-const start = <A extends App.Any, E>(
-  make: Effect.Effect<A, E, Scope.Scope | Three.Renderer>,
+const start = <A extends App.Any & { readonly close: Effect.Effect<void> }, E>(
+  make: Effect.Effect<A, E, Three.Renderer>,
   renderer: { readonly layer: Layer.Layer<Three.Renderer> }
 ) => {
-  const scope = Scope.makeUnsafe();
-  const app = Effect.runSync(
-    make.pipe(Effect.provide(renderer.layer), Scope.provide(scope))
-  );
+  const app = Effect.runSync(make.pipe(Effect.provide(renderer.layer)));
   return {
     app,
     world: Effect.runSync(app.read(World)),
     hand: handOf(app),
-    close: () => Effect.runSync(Scope.close(scope, Exit.void)),
+    close: () => Effect.runSync(app.close),
   };
 };
 
@@ -2116,11 +2113,8 @@ describe("an entity drawn between two ticks", () => {
       }),
       makeRenderer()
     );
-    const scope = Scope.makeUnsafe();
     const bareApp = Effect.runSync(
-      App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 }).pipe(
-        Scope.provide(scope)
-      )
+      App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
     );
     const bare = {
       app: bareApp,
@@ -3126,12 +3120,11 @@ describe("Three.plugin", () => {
       }),
       renderer
     );
-    const scope = Scope.makeUnsafe();
     const bare = Effect.runSync(
       App.make(App.define({ plugins: [Rules] }), {
         seed: 3,
         checkpointEvery: 1,
-      }).pipe(Scope.provide(scope))
+      })
     );
     const bareWorld = Effect.runSync(bare.read(World));
     for (let tick = 0; tick < 60; tick++) {
@@ -3148,12 +3141,10 @@ describe("Three.plugin", () => {
 
   it("does not compile without a renderer", () => {
     const made = App.make(App.define({ plugins: [Look] }));
-    // Three.Renderer is still needed.
-    expectTypeOf(made).not.toExtend<
-      Effect.Effect<unknown, never, Scope.Scope>
-    >();
+    // Three.Renderer is still needed, and nothing else.
+    expectTypeOf(made).not.toExtend<Effect.Effect<unknown, never, never>>();
     expectTypeOf(made.pipe(Effect.provide(makeRenderer().layer))).toExtend<
-      Effect.Effect<unknown, never, Scope.Scope>
+      Effect.Effect<unknown, never, never>
     >();
   });
 });

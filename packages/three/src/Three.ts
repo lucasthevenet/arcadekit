@@ -1147,7 +1147,7 @@ export interface InstancesFromOptions<
   readonly look: (assets: Assets.Loaded<B>) => L;
   /**
    * Called with what `look` returned, after the mesh is removed from the scene,
-   * when the assets are released or the app's scope closes. Use it to dispose
+   * when the assets are released or the app is closed. Use it to dispose
    * of anything `look` created besides the geometry and the material, which are
    * disposed of for you. The bundle releases the assets themselves.
    */
@@ -1841,7 +1841,7 @@ type Needs = Frame | Scene | Time | World;
  *   are 0, as one added without a value is, means no rotation.
  * - Entities are drawn where the last tick left them, unless `smooth` is set.
  * - The mesh is created on the first frame, named after the system, and added
- *   to the scene. When the app's scope closes, the mesh is removed and disposed
+ *   to the scene. When the app is closed, the mesh is removed and disposed
  *   of. So are the geometry and the material, once no other system draws with
  *   them, so share them between systems freely.
  * - It requires `Three.plugin`, and its name must be unique among the app's
@@ -1886,7 +1886,7 @@ type Needs = Frame | Scene | Time | World;
  *   `Assets.during` or a system of your own manages. At any other time, no
  *   mesh of the kind is in the scene.
  * - `look` is called once each time the bundle loads. When the bundle is
- *   released or the app's scope closes, the mesh is disposed of, with the
+ *   released or the app is closed, the mesh is disposed of, with the
  *   geometry and the material once no other system draws with them. Then
  *   `free` receives what `look` returned. A mesh built from a reloaded bundle
  *   starts with the room the previous one had grown to.
@@ -2042,11 +2042,11 @@ export function instances(
 export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
   /**
    * Called with an entity's object after it is removed from the scene, when
-   * the entity stops matching, its bundle is released, or the app's scope
-   * closes. Use it to dispose of what `make` created for this object alone,
+   * the entity stops matching, its bundle is released, or the app
+   * is closed. Use it to dispose of what `make` created for this object alone,
    * such as its own material, as soon as the object goes. Every object's
    * geometries and materials are disposed of when the bundle they were made
-   * from is released or the app's scope closes, once no other system draws
+   * from is released or the app is closed, once no other system draws
    * with them.
    */
   readonly free?: (object: O, entity: Entity) => void;
@@ -2402,7 +2402,7 @@ class Objects<O extends Object3D> implements Kept {
  *   tilt and depth scale stay as `make` set them. Set the z position in `make`
  *   to layer one kind in front of another.
  * - An entity that reuses a despawned entity's slot gets its own object.
- * - When the app's scope closes, or the bundle is released, every object is
+ * - When the app is closed, or the bundle is released, every object is
  *   removed and passed to `free`. The geometries and materials the objects
  *   were made with are disposed of, once no other system draws with them.
  * - Nothing is kept in the world. A game loaded from a save, or an app that

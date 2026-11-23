@@ -179,10 +179,10 @@ const noSource: Source = {
  * as it is. That state holds whatever was last reported to it, from a log or
  * from another machine.
  *
- * A source listens to nothing itself. `App.make` runs `listen` in the scope the
- * app is made in, and the listening stops when that scope closes. Wherever the
- * layer is provided, the devices are heard for as long as the program that
- * made the app runs. Each app listens for itself.
+ * A source listens to nothing itself. `App.make` runs `listen` in the app's
+ * own scope, and the listening stops when the app is closed. Wherever the
+ * layer is provided, the devices are heard for as long as the app is open.
+ * Each app listens for itself.
  *
  * @category Services
  */
@@ -192,8 +192,8 @@ export const Source: Context.Reference<Source> = Context.Reference<Source>(
 );
 
 /**
- * Listens to the devices of `Input.Source` in the current scope, as `App.make`
- * does, and stops when that scope closes.
+ * Listens to the devices of `Input.Source` in the current scope, and stops
+ * when that scope closes. `App.make` listens in the app's own scope instead.
  *
  * **When to use**
  *

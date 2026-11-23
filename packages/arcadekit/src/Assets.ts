@@ -543,7 +543,7 @@ const storeLayer = Layer.effect(
         );
       });
 
-    // Whatever is still loaded when the app's scope closes goes with it.
+    // Whatever is still loaded when the app is closed goes with it.
     yield* Effect.addFinalizer(() =>
       Effect.forEach(Array.from(held.values()), (entry) => letGo(entry), {
         discard: true,
@@ -581,7 +581,7 @@ const storeLayer = Layer.effect(
  * Gives an app a store for the bundles it loads. A plugin whose systems use
  * `Assets.during`, or read a bundle, lists it in `plugins`.
  *
- * Anything still loaded when the app's scope closes is released with it.
+ * Anything still loaded when the app is closed is released with it.
  *
  * @category Plugins
  */

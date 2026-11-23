@@ -18,7 +18,6 @@
  * doesn't match.
  */
 import { Cause, Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
@@ -475,8 +474,8 @@ export class ReplayDiverged<
    */
   readonly reason: unknown;
   /**
-   * The replay's app, where the replay stopped. It lives as long as the
-   * scope the replay ran in.
+   * The replay's app, where the replay stopped. The replay has closed it.
+   * Its world, its log and its time are there to read.
    */
   readonly app: A;
 }> {
@@ -652,9 +651,13 @@ export interface ReplayOptions extends Omit<App.StartOptions, "seed" | "save"> {
  * end. With the same systems and the same beginning, the result is the same
  * game.
  *
+ * The app it returns belongs to the caller, as one `App.make` returns does.
+ * Close it with `app.close` when you are done with it.
+ *
  * The replay checks itself against the log. It fails with `ReplayDiverged`
  * at the first entry that doesn't match, and the error holds the app where
- * the replay stopped. An entry doesn't match when it is one of these:
+ * the replay stopped. The replay has closed that app already, and it is
+ * there to read. An entry doesn't match when it is one of these:
  *
  * - A checkpoint whose hash differs from the replay's world. The replay stops
  *   at that tick, before applying anything recorded after it. With a checkpoint
@@ -700,18 +703,21 @@ export const replay = <
   | Plugin.ErrorOf<P[number]>
   | Save.LoadRefused
   | ReplayDiverged<App.App<App.TickError<S, P>, App.AllHandlers<H, P>>>,
-  Scope.Scope | App.External<S, H, P>
+  App.External<S, H, P>
 > => {
   const origin: Origin =
     recording.save === undefined
       ? { seed: recording.seed }
       : { save: recording.save };
   return Effect.flatMap(App.make(game, { ...options, ...origin }), (made) =>
-    Effect.suspend(() => {
-      const diverged = play(made, recording);
-      return diverged === undefined
-        ? Effect.succeed(made)
-        : Effect.fail(diverged);
-    })
+    Effect.onError(
+      Effect.suspend(() => {
+        const diverged = play(made, recording);
+        return diverged === undefined
+          ? Effect.succeed(made)
+          : Effect.fail(diverged);
+      }),
+      () => made.close
+    )
   );
 };

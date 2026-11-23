@@ -169,15 +169,11 @@ A test creates an app and steps it by hand, one tick at a time, to play the game
 ```ts title="rules.test.ts"
 import { App, Commands, Journal, Plugin, World } from "arcadekit";
 import { Effect, Exit } from "effect";
-import type { Scope } from "effect";
 import { expect, it } from "vitest";
 
 import { Basket, Fall, Move, Position, Rules } from "./rules";
 
 const Catch = App.define({ plugins: [Rules] });
-
-const play = <A>(body: Effect.Effect<A, unknown, Scope.Scope>) =>
-  Effect.runSync(Effect.scoped(body));
 
 /** A coin just above the basket. */
 const OneCoin = Plugin.make("catch/OneCoin", {
@@ -197,7 +193,7 @@ const Over = Plugin.make("catch/Over", {
 });
 
 it("catches a coin that lands in the basket", () =>
-  play(
+  Effect.runSync(
     Effect.gen(function* () {
       const app = yield* App.make(App.define({ plugins: [Rules, OneCoin] }));
       for (let i = 0; i < 60; i++) {
@@ -208,7 +204,7 @@ it("catches a coin that lands in the basket", () =>
   ));
 
 it("refuses a move once the game is over", () =>
-  play(
+  Effect.runSync(
     Effect.gen(function* () {
       const app = yield* App.make(App.define({ plugins: [Rules, Over] }));
       const moved = app.dispatch(Move, { dx: 1 });
@@ -223,7 +219,7 @@ A game that changes only through its actions, its systems and its seed can be re
 
 ```ts title="rules.test.ts"
 it("plays the same game again from its log", () =>
-  play(
+  Effect.runSync(
     Effect.gen(function* () {
       const game = yield* App.make(Catch, { seed: 7 });
       game.enqueue(Move, { dx: 1 });
@@ -306,7 +302,7 @@ Browser.runMain(
 );
 ```
 
-`App.make` creates the app, and `Driver.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
+`App.make` creates the app, and `Driver.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. Then `Driver.run` closes the app. `Browser.runMain` starts the game in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
 Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas width="480" height="480">`. At that size the whole field fits on the canvas. Coins fall toward the basket, the arrow keys move it, and the top-left corner counts the coins caught and the lives left.
 

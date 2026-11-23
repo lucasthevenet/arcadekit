@@ -1,5 +1,4 @@
 import { Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -40,9 +39,6 @@ const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 const Looking = Query.all(Position, Velocity, Heat);
 const Moved = Query.all(Position).pipe(Query.changed(Position));
 const Turned = Query.all(Velocity).pipe(Query.changed(Velocity));
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
-  Effect.runSync(Effect.scoped(effect));
 
 const populated = (count = 6): { world: EcsWorld; entities: Entity[] } => {
   const world = new EcsWorld();
@@ -386,7 +382,7 @@ const survey = Action.handler(Survey, function* ({ limit }) {
 
 describe("a query, which writes only what it names, in an app", () => {
   it("is what a system and a handler ask for, and a refusal still leaves nothing", () => {
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const turned: number[] = [];
         const Move = System.tick("Move", function* () {
@@ -467,7 +463,7 @@ describe("an id Commands.spawn returns", () => {
         heard.push(shot);
       }
     });
-    run(
+    Effect.runSync(
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({ handlers: [fire], systems: [Hear] })

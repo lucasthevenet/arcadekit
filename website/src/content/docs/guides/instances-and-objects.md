@@ -42,7 +42,7 @@ const Rocks = Three.instances("game/Rocks", {
 - Entities are drawn where the last tick left them or, with `smooth: true`, [interpolated between their last two positions](between-two-ticks.md).
 - A geometry and a material passed this way exist when the system is made. A level's geometry and material are [built from its assets](textures-and-models.md) while its bundle is loaded.
 
-When the app's scope closes, the mesh is removed from the scene and disposed of. So are its geometry and material, once no other system draws with them, so you can share them between kinds.
+When the app is closed, the mesh is removed from the scene and disposed of. So are its geometry and material, once no other system draws with them, so you can share them between kinds.
 
 ## Colour each instance
 
@@ -87,7 +87,7 @@ const Ships = Three.objects("game/Ships", {
 
 `Three.objects` keeps one `Object3D` per entity of a kind, such as a model with parts, a light, or something that carries the camera. Like `Three.instances`, it accepts `of`, `transform`, `without`, `smooth`, and `snap`.
 
-- The system calls `make` on the first frame an entity belongs to the kind, and adds its object to the scene. On the frame the entity no longer belongs or is despawned, the system removes the object and passes it to `free`. Anything left when the app's scope closes is freed then.
+- The system calls `make` on the first frame an entity belongs to the kind, and adds its object to the scene. On the frame the entity no longer belongs or is despawned, the system removes the object and passes it to `free`. Anything left when the app is closed is freed then.
 - Each frame, every object receives its entity's `Position`, and its `Rotation` and `Scale` if the entity has them. A rotation of any length is applied as a unit quaternion. An entity that loses one is drawn as if it never had it.
 - Set everything else about an object, its colour included, in `make` or in a frame system of your own. An object's colour is its material's.
 - For a kind of `Transform2d`, an object gets x and y, its rotation about the z axis, and its scale along x and y. Its z position, its tilt, and its scale along z stay as `make` left them.
@@ -96,7 +96,7 @@ const Ships = Three.objects("game/Ships", {
 - None of this is stored in the world. A game loaded from a save, or an app that starts with entities, creates its objects on the first frame.
 - The system finds new and removed entities by visiting every entity of the kind each frame, as it does anyway to place them. It watches no component for changes, so it adds nothing to the cost of a tick.
 
-The system disposes of the geometries and materials of what `make` creates when the app's scope closes or the bundle they were made from is released, once no other system draws with them. Use `free` to dispose of what one entity's object alone uses as soon as the entity goes, such as a material made for it. Use it also for anything else that `make` created, such as a texture.
+The system disposes of the geometries and materials of what `make` creates when the app is closed or the bundle they were made from is released, once no other system draws with them. Use `free` to dispose of what one entity's object alone uses as soon as the entity goes, such as a material made for it. Use it also for anything else that `make` created, such as a texture.
 
 Objects built from a level's assets, such as a model, name the bundle they come `from`. See [textures and models](textures-and-models.md).
 

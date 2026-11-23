@@ -14,7 +14,10 @@ import { Effect, Exit } from "effect";
 const Game = Plugin.make("game/Game", {});
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make(App.define({ plugins: [Game] }));
+  const app = yield* Effect.acquireRelease(
+    App.make(App.define({ plugins: [Game] })),
+    (made) => made.close
+  );
   const moment = Timeline.capture(app); // Exit<Timeline.Moment, Save.SaveRefused>
   app.tick(1 / 60);
   if (Exit.isSuccess(moment)) {
