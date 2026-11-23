@@ -1033,22 +1033,16 @@ describe("a frame stage that is checked", () => {
   it("holds what a system does in place of running to the same, and names that system", () => {
     Effect.runSync(
       Effect.gen(function* () {
-        // It does not run, and what it does then writes a raw column.
+        // It does not run, and what it does then draws from the world's generator.
         const Idle = Honest.pipe(
           System.runIf(Effect.succeed(false)),
-          System.otherwise(
-            Effect.map(Seen, (balls) => {
-              balls.eachChunk((start, end, ball) => {
-                for (let i = start; i < end; i++) {
-                  // @ts-expect-error a read query's columns are not assigned
-                  ball.x[i] = 99;
-                }
-              });
-            })
-          )
+          System.otherwise(Effect.map(Dice, (dice) => void dice.next()))
         );
         const app = yield* App.make(
-          App.define({ plugins: [racked({ x: 1, vx: 1 })], systems: [Idle] }),
+          App.define({
+            plugins: [racked({ x: 1, vx: 1 }), Kept],
+            systems: [Idle],
+          }),
           { verifyFrames: true }
         );
         const exit = app.frameExit(0);
@@ -1061,39 +1055,58 @@ describe("a frame stage that is checked", () => {
     );
   });
 
-  it("finds the two changes that are not stopped where they are made, and names the system", () => {
-    for (const how of ["raw", "random"] as const) {
-      Effect.runSync(
-        Effect.gen(function* () {
-          const app = yield* App.make(
-            App.define({
-              plugins: [racked({ x: 1, vx: 1 }), Kept],
-              systems: [Honest, Sneak(how), Roll],
-            }),
-            { verifyFrames: true }
-          );
-          const world = yield* app.read(World);
-          app.tick(1);
-          const exit = app.frameExit(0.5);
-          const error = Exit.isFailure(exit)
-            ? Cause.squash(exit.cause)
-            : undefined;
-          expect(error).toBeInstanceOf(Stage.FrameChangedWorld);
-          expect(error).toMatchObject({ system: "Sneak", frame: 1 });
-          expect((error as Error).message).toMatch(
-            /after system "Sneak" ran in frame 1.*raw columns of eachChunk.*world\.random/
-          );
-          // It is a defect: nothing in the error channel to handle.
-          expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
-          // Checked, a draw from the world's generator is laid at the door
-          // of the system that made it, and taken back as ever. A write
-          // through a raw column is not taken back: #195.
-          const before = world.hash();
-          expect(() => app.frame(0)).toThrow(Stage.FrameChangedWorld);
-          expect(world.hash() === before).toBe(how === "random");
-        })
-      );
-    }
+  it("finds a draw from the world's generator, names the system, and takes it back", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({
+            plugins: [racked({ x: 1, vx: 1 }), Kept],
+            systems: [Honest, Sneak("random"), Roll],
+          }),
+          { verifyFrames: true }
+        );
+        const world = yield* app.read(World);
+        app.tick(1);
+        const exit = app.frameExit(0.5);
+        const error = Exit.isFailure(exit)
+          ? Cause.squash(exit.cause)
+          : undefined;
+        expect(error).toBeInstanceOf(Stage.FrameChangedWorld);
+        expect(error).toMatchObject({ system: "Sneak", frame: 1 });
+        expect((error as Error).message).toMatch(
+          /after system "Sneak" ran in frame 1.*world\.random/
+        );
+        // It is a defect: nothing in the error channel to handle.
+        expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+        const before = world.hash();
+        expect(() => app.frame(0)).toThrow(Stage.FrameChangedWorld);
+        expect(world.hash()).toBe(before);
+      })
+    );
+  });
+
+  it("refuses a write through a raw column where it is made, and puts it back", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({
+            plugins: [racked({ x: 1, vx: 1 }), Kept],
+            systems: [Honest, Sneak("raw"), Roll],
+          }),
+          { verifyFrames: true }
+        );
+        const world = yield* app.read(World);
+        app.tick(1);
+        const before = world.hash();
+        const exit = app.frameExit(0.5);
+        expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
+          new Error(
+            'eachChunk() wrote "fr/Ball.x", which the query only reads, through its raw column. No change query would see the write, and no refusal would undo it, so it has been put back. Name "fr/Ball" in Query.writes to write it, or write it with each().'
+          )
+        );
+        expect(world.hash()).toBe(before);
+      })
+    );
   });
 
   it("passes a frame stage that leaves the world alone, and is off unless asked for", () => {

@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -430,6 +430,138 @@ describe("a query, which writes only what it names, in an app", () => {
         expect(world.hash()).not.toBe(before);
         app.tick(1);
         expect(turned.at(-1)).toBe(0);
+      })
+    );
+  });
+});
+
+describe("a raw column a loop is handed read-only, in an app made with verifyFrames", () => {
+  const Pointing = Component.relation("rd/Pointing", {
+    onTargetDespawn: "remove",
+  });
+  const Bodies = Plugin.make("rd/Bodies", {
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Position, Velocity, Pointing);
+      const first = commands.spawn(
+        Position.of({ x: 0, y: 0 }),
+        Velocity.of({ x: 1, y: 2 })
+      );
+      commands.spawn(
+        Position.of({ x: 1, y: 0 }),
+        Velocity.of({ x: 1, y: 2 }),
+        Pointing.of({ target: first })
+      );
+    }),
+  });
+  const Move = System.tick("Move", function* () {
+    (yield* Moving).eachChunk((start, end, pos, vel) => {
+      for (let i = start; i < end; i++) {
+        pos.x[i] = pos.x[i]! + vel.x[i]!;
+      }
+    });
+  });
+  const Brake = System.tick("Brake", function* () {
+    (yield* Moving).eachChunk((start, end, _, vel) => {
+      for (let i = start; i < end; i++) {
+        // @ts-expect-error Velocity is only read by this query
+        vel.x[i] = 0;
+      }
+    });
+  });
+  const Turn = System.tick("Turn", function* () {
+    (yield* Query.all(Pointing).pipe(Query.writes(Pointing))).eachChunk(
+      (start, end, pointing) => {
+        for (let i = start; i < end; i++) {
+          // @ts-expect-error a relation's target is the world's to change
+          pointing.target[i] = 99;
+        }
+      }
+    );
+  });
+  const Halt = Action.define("rd/Halt", Schema.Struct({}));
+  const halt = Action.handler(Halt, function* () {
+    (yield* Moving).eachChunk((start, end, _, vel) => {
+      for (let i = start; i < end; i++) {
+        // @ts-expect-error Velocity is only read by this query
+        vel.y[i] = 0;
+      }
+    });
+  });
+  /** Every field of every body, as a query that only reads finds them. */
+  const bodies = (app: App.Any): number[] =>
+    Effect.runSync(
+      app.read(
+        Effect.map(Query.all(Position, Velocity, Pointing), (query) => {
+          const values: number[] = [];
+          query.each((pos, vel, pointing) => {
+            values.push(pos.x, pos.y, vel.x, vel.y, pointing.target);
+          });
+          return values;
+        })
+      )
+    );
+  const refusal = (field: string): Error =>
+    new Error(
+      `eachChunk() wrote "rd/Velocity.${field}", which the query only reads, through its raw column. No change query would see the write, and no refusal would undo it, so it has been put back. Name "rd/Velocity" in Query.writes to write it, or write it with each().`
+    );
+
+  it("lets a loop write what its query writes", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ plugins: [Bodies], systems: [Move] }),
+          { verifyFrames: true }
+        );
+        app.tick(1);
+        app.tick(1);
+        expect(bodies(app).slice(0, 4)).toEqual([3, 0, 1, 2]);
+      })
+    );
+  });
+
+  it("refuses a write to it in a tick, in a handler, and to a relation's target, and puts it back", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const ticked = yield* App.make(
+          App.define({ plugins: [Bodies], systems: [Brake] }),
+          { verifyFrames: true }
+        );
+        const before = bodies(ticked);
+        expect(() => ticked.tick(1)).toThrow(refusal("x"));
+        expect(bodies(ticked)).toEqual(before);
+
+        const handled = yield* App.make(
+          App.define({ plugins: [Bodies], handlers: [halt] }),
+          { verifyFrames: true }
+        );
+        const unhalted = bodies(handled);
+        const exit = handled.dispatch(Halt, {});
+        expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
+          refusal("y")
+        );
+        expect(bodies(handled)).toEqual(unhalted);
+
+        const turned = yield* App.make(
+          App.define({ plugins: [Bodies], systems: [Turn] }),
+          { verifyFrames: true }
+        );
+        const unturned = bodies(turned);
+        expect(() => turned.tick(1)).toThrow(
+          /^eachChunk\(\) wrote the target of "rd\/Pointing" through its raw column, and it has been put back\. "rd\/Pointing" is a relation/
+        );
+        expect(bodies(turned)).toEqual(unturned);
+      })
+    );
+  });
+
+  it("is not checked in an app made without it", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ plugins: [Bodies], systems: [Brake] })
+        );
+        app.tick(1);
+        expect(bodies(app).slice(0, 4)).toEqual([1, 0, 0, 2]);
       })
     );
   });

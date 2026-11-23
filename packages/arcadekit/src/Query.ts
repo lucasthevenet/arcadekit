@@ -197,7 +197,7 @@ export const without: {
  *   change. Iterate with `each`.
  * - Raw columns are typed arrays all the same. A write to the column of a term
  *   the query only reads, past the compiler, is seen by no change query and by
- *   no check of the order.
+ *   no check of the order. An app made with `verifyFrames` refuses it.
  *
  * @category Combinators
  */
@@ -502,7 +502,8 @@ export type OwnTerms<D extends Terms, W extends ComponentDef> = [
  *   component without its data, use `Query.with`.
  * - Raw columns are typed arrays all the same. A loop that writes one past the
  *   compiler has still written it. No change query sees that write, and no
- *   refusal rolls it back.
+ *   refusal rolls it back, unless the app was made with `verifyFrames`, which
+ *   refuses the loop and puts the column back.
  *
  * @category Combinators
  */
