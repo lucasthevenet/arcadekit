@@ -9,6 +9,8 @@ import type { ChangeCursor, ChangeKind } from "./changes";
 import { INDEX_MASK, makeAccessor } from "./component";
 import type {
   Accessor,
+  AccessorsOf,
+  Chunked,
   ColumnsOf,
   ComponentDef,
   Entity,
@@ -16,8 +18,6 @@ import type {
   ReadonlyColumnsOf,
   Row,
   Schema,
-  Storage,
-  ValueOf,
 } from "./component";
 import { SparseSet, Table } from "./table";
 import type { World } from "./world";
@@ -72,14 +72,6 @@ export interface QuerySpec<D extends Terms = Terms> {
    */
   readonly readDefs?: readonly ComponentDef[];
 }
-
-export type AccessorsOf<D extends Terms> = {
-  [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, Storage>
-    ? D[K] extends ReadOnlyTerm
-      ? Readonly<ValueOf<S>>
-      : ValueOf<S>
-    : never;
-};
 
 /**
  * The columns of a sparse component. They aren't aligned with table rows, so
@@ -957,10 +949,12 @@ export class QueryView<D extends Terms = Terms> {
    * watches one of this query's terms, every row handed out counts as written,
    * unless the query declares the term read-only (`readDefs`). For the same
    * reason, a change query can't hand out a component it watches unless it
-   * declares it read-only: that throws. In a frozen world nothing is written,
-   * so neither applies.
+   * declares it read-only: a query made with `Query.changed` and `Query.writes`
+   * doesn't compile, and a description put together by hand throws. In a
+   * frozen world nothing is written, so neither applies.
    */
   eachChunk(
+    this: Chunked<D> & QueryView<D>,
     fn: (
       start: number,
       end: number,

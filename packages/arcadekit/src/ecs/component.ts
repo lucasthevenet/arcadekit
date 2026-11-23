@@ -225,6 +225,45 @@ export interface ReadOnlyTerm {
   readonly _reads: true;
 }
 
+/** What `each` hands out for each term: read-only for a term the query only reads. */
+export type AccessorsOf<D extends readonly ComponentDef[]> = {
+  [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, Storage>
+    ? D[K] extends ReadOnlyTerm
+      ? Readonly<ValueOf<S>>
+      : ValueOf<S>
+    : never;
+};
+
+/**
+ * What the type of a query term carries when the query also watches it for
+ * writes. It exists only in the type, and takes `eachChunk` away from a query
+ * that writes a term it watches.
+ */
+export interface WatchedTerm {
+  readonly _watched: true;
+}
+
+/** The names of the terms a query both watches for writes and writes. */
+type WatchedAndWritten<D extends readonly ComponentDef[]> = {
+  [K in keyof D]: D[K] extends WatchedTerm
+    ? D[K] extends ReadOnlyTerm
+      ? never
+      : D[K]["name"]
+    : never;
+}[number];
+
+/**
+ * What `eachChunk` asks of its view: any view, unless the query writes a term
+ * it watches, which raw columns would count as a change at every visit.
+ */
+export type Chunked<D extends readonly ComponentDef[]> = [
+  WatchedAndWritten<D>,
+] extends [never]
+  ? unknown
+  : {
+      readonly "eachChunk can't hand out a component the query watches and writes: visit it with each, or leave it out of Query.writes if the loop only reads it": WatchedAndWritten<D>;
+    };
+
 /**
  * How a component is stored: in the tables of the entities that have it, or
  * `"sparse"`, in a set of its own, for a component that is added and removed
