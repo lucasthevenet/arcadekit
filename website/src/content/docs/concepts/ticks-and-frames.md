@@ -3,19 +3,19 @@ title: "Ticks and frames"
 description: "Your simulation ticks at a fixed rate and the screen repaints at its own. arcadekit keeps the two apart, with a third stage for device input."
 ---
 
-Your game's simulation ticks at a fixed rate, while the screen repaints at its own rate. arcadekit keeps the two apart, and adds a third stage for what the input devices report.
+A **tick** advances your game's simulation by one fixed step, and a **frame** draws the game once per repaint of the screen. arcadekit keeps the two apart, and adds a third stage, the **input stage**, for what the input devices report.
 
 ## The three stages
 
 | Stage | When it runs | What runs there | Can change the game |
 | --- | --- | --- | --- |
-| Input | Just before a tick | Systems that read the devices and issue actions | No: it issues actions, which the tick applies |
+| Input | Just before a tick | Systems that read the devices and issue actions | No. It issues actions, which the tick applies |
 | Tick | At a fixed rate, such as 60 per second | Your rules | Yes |
 | Frame | Once per repaint, between ticks | Rendering, sound and UI updates | No |
 
-A system of the tick is `System.tick`. A system that draws or plays is `System.frame`, and one that reads the devices is `System.input`. `System.inStage` only moves a system inside the group it was made in: `"preUpdate"` and `"postUpdate"` for a tick, `"preFrame"` and `"postFrame"` for a frame.
+`System.tick`, `System.frame` and `System.input` make a system of each stage. [Place a system in a stage](../guides/systems.md#place-a-system-in-a-stage) shows how.
 
-## The tick
+## A tick is one fixed step
 
 Each tick runs these steps in order:
 
@@ -24,11 +24,11 @@ Each tick runs these steps in order:
 3. Enter any states that were requested, running their hooks.
 4. Run every system in order, applying each one's commands when it finishes.
 
-Every tick has the same length, `delta`, whatever the machine is doing, and systems read it from `Time`. This fixed timestep is what makes a tick produce the same result from the same inputs on any machine.
+Every tick has the same length, `delta`, however busy the machine is. Systems read it from `Time`. The fixed step lets a tick produce the same result from the same inputs on any machine.
 
-A tick has three stages of its own, `"preUpdate"`, `"update"` and `"postUpdate"`, each run in full before the next. Systems run in `"update"` by default.
+A tick has three stages of its own, `"preUpdate"`, `"update"` and `"postUpdate"`, and runs each in full before the next. Systems run in `"update"` by default. Inside a stage, systems run in the order they are listed, after those of the plugins they depend on. The other two stages let a system run before or after every system of `"update"`, a dependency's included.
 
-## The frame
+## Drawing never changes the game
 
 A frame draws the game between two ticks:
 
@@ -61,59 +61,57 @@ const Draw = System.frame("game/Draw", function* () {
 });
 ```
 
-The world is read-only during the frame stage. A frame system cannot spawn, set a component, write a singleton or a state, run a command, assign in `each`, or emit an event: those do not compile. It reads queries, singletons, states, `Time`, events and change queries.
-
-A frame system can read anything: queries, singletons, states, `Time`, events and change queries. `yield* Frame` describes the current frame:
+The world is read-only during the frame stage. A frame system reads queries, singletons, states, `Time`, events and change queries. Code that spawns, sets a component, writes a singleton or a state, runs a command, assigns in `each` or emits an event doesn't compile there. `yield* Frame` describes the current frame:
 
 | Field | Description |
 | --- | --- |
-| `alpha` | How far the frame is between the last tick and the next, from 0 to 1, for interpolating a moving entity between its last position and its next |
+| `alpha` | How far the frame is between the last tick and the next, from 0 to 1, for drawing a moving entity between its last position and its next |
 | `delta` | Real seconds since the previous frame |
 | `count` | How many frames have run, including this one |
 
-These are real-time values, so a system of the tick or the input stage cannot require `Frame`. A system of the tick reads `Time`.
+`Frame` holds real-time values, so a system of the tick or the input stage cannot require it. A system of the tick reads `Time`.
 
-This is the rule everything else depends on: **drawing never changes the game.** A game that is drawn has the same hash, log and save as one that isn't, so a replay or a server runs no frame stage at all and ends on the same world. The frame stage is isolated from the simulation in four more ways:
+Everything else depends on one rule: **drawing never changes the game.** A game that is drawn has the same hash, log and save as one that isn't. A replay or a server therefore runs no frame stage at all, and ends on the same world. The frame stage is kept apart from the simulation in four more ways:
 
-- It tracks events and change queries separately from the tick. Events are kept until the frame stage has run, so it sees each event once however many ticks ran since the last frame. They are kept for up to 600 ticks, after which a frame stage that never runs is assumed gone. This tracking isn't saved, so a loaded game redraws everything.
+- It tracks events and change queries apart from the tick. Events are kept until the frame stage has run, so it sees each event once, however many ticks ran since the last frame. After 600 ticks without a frame, the app takes the frame stage to be gone and stops keeping events for it. A save doesn't hold this tracking, so a loaded game redraws everything.
 - Its random numbers come from a separate generator, seeded like the world's but not part of it. Visual effects can be random without changing the game.
-- An action it issues with `Actions.enqueue` counts as outside input, like a button press: it is logged, applied at the start of the next tick, and replayed without a frame being drawn.
+- An action it issues with `Actions.enqueue` counts as outside input, like a button press. The app logs it and applies it at the start of the next tick, and a replay applies it again without drawing a frame.
 - State it keeps between frames, such as a mesh or a playing sound, lives in a service of its own, not in the world.
 
 Sound plays from the frame stage too, driven by the events the ticks emitted. The simulation never plays sound.
 
-### Frame stages
+### A frame's stages run before and after drawing
 
-Like a tick, a frame has three stages, each run in full before the next: `"preFrame"`, `"frame"` and `"postFrame"`. Your systems run in `"frame"`.
+Like a tick, a frame has three stages and runs each in full before the next: `"preFrame"`, `"frame"` and `"postFrame"`. Your systems run in `"frame"`.
 
 - `"preFrame"` is for what every frame system depends on. [`Assets.during`](../guides/assets.md) runs there, so every frame system sees the same set of loaded assets, wherever it is listed.
 - `"postFrame"` is for what needs everything drawn first. [`@arcadekit/three`](../guides/drawing-with-three.md) renders the scene there, so a system that moves the camera needs no ordering.
 
-All three are part of the frame stage in every other way, and `app.frameOrder` lists their systems in running order. `System.before` and `System.after` order a system within its stage; frame systems and tick systems are never ordered against each other. A frame system accepts `System.runIf` like any other. State hooks don't belong there, since states are entered by ticks.
+In every other way, all three are part of the frame stage. A frame system and a tick system are never ordered against each other.
 
-### What the frame stage doesn't block
+### Two changes are caught after they happen
 
 Two kinds of change aren't refused where they happen:
 
-- A draw from `world.random` is detected when the frame ends: the generator is restored, so the game is unchanged, and `frame` throws.
-- A write through the raw columns of `eachChunk` is only detected when you ask for it. `App.make(game, { verifyFrames: true })` hashes the world before the stage and after each of its systems, and `frame` dies with `Stage.FrameChangedWorld`, which names the system. This costs one hash of the world per system, so use it in development and tests. It checks the input stage the same way.
+- A draw from `world.random` is detected when the frame ends. The app restores the generator, so the game is unchanged, and `frame` throws.
+- A write through the raw columns of `eachChunk` is detected only when you ask for it. `App.make(game, { verifyFrames: true })` hashes the world before the stage and after each of its systems. When a hash differs, `frame` dies with `Stage.FrameChangedWorld`, which names the system. Each check costs one hash of the world per system, so use it in development and tests. It checks the input stage the same way.
 
-## The input stage
+## Input reaches the game as actions
 
-The keyboard, pointer and gamepads are outside the game. Before each tick, the input stage reads them once, and its systems turn what they report into your game's own actions: `Fire`, `Jump`, `Move`. Those actions are logged and applied at the start of the tick. The world is read-only here, as in the frame stage.
+The keyboard, pointer and gamepads are outside the game. Before each tick, the input stage reads them once. Its systems turn what the devices report into your game's own actions, such as `Fire`, `Jump` and `Move`. The app logs those actions and applies them at the start of the tick. The world is read-only here, as in the frame stage.
 
-So a replay reads no device: the log already holds what the devices reported, as actions. See [input](../guides/input.md).
+A replay therefore reads no device, because the log already holds what the devices reported, as actions. See [input](../guides/input.md).
 
-## What drives the stages
+## A driver runs the stages
 
-- **`Driver.run`** runs the app `App.make` makes until interrupted: on each repaint, the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`; under Node it uses a timer.
-- **`app.tick(delta)`** runs one tick by hand, for a test or a game that steps itself. A tick reads no device: `app.input()` runs the input stage, and `app.frame(alpha, delta)` runs the frame stage.
+- **`Driver.run`** runs the app that `App.make` makes until it is interrupted. On each repaint it runs the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`, and under Node it uses a timer.
+- **`app.tick(delta)`** runs one tick by hand, for a test or a game that steps itself. A tick reads no device. `app.input()` runs the input stage, and `app.frame(alpha, delta)` runs the frame stage.
 - **`Driver.fixedStep`** runs the ticks that are due for a given amount of real time, each after the input stage, then the frame.
-- **`Driver.frames`** is the loop `Driver.run` uses, for a program that creates its app itself, and **`Driver.interval`** does the same on a timer.
+- **`Driver.frames`** is the loop that `Driver.run` uses, for a program that creates its app itself. **`Driver.interval`** does the same on a timer.
 
-A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `Driver.run` still draws every frame but only ticks while something is pending: an action, a state change, a system that asked for another tick, an unread event. See [running a game](../guides/running-a-game.md).
+A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `Driver.run` still draws every frame, but ticks only while something is pending: an action, a state change, a system that asked for another tick, or an unread event. See [running a game](../guides/running-a-game.md).
 
-To draw a moving entity between two ticks in a frame system of your own, compute its position from a velocity or a previous position the simulation keeps, as `Draw` does above. [`@arcadekit/three`](../guides/drawing-with-three.md) does this for what it draws, with `smooth: true`.
+Ticks and frames don't line up, so an entity drawn where the last tick left it stutters. A frame system of your own draws it between two ticks from a velocity or a previous position the simulation keeps, as `Draw` does above. [Interpolation](../guides/between-two-ticks.md) shows how `@arcadekit/three` does the same with `smooth: true`.
 
 ## Read more
 

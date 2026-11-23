@@ -3,9 +3,9 @@ title: "Linking entities with relations"
 description: "A relation is a component that points at another entity and stays consistent when that entity is despawned: a parent and its children, a target, an owner."
 ---
 
-A **relation** is a component that points at another entity, its `target`, and stays consistent when that entity is despawned: a parent and its children, a target, an owner. Use a relation rather than a bare `Field.entity` for any reference that must never dangle. [Components](components.md) covers components in general.
+A **relation** is a component that points at another entity, its `target`, and stays consistent when that entity is despawned. A parent and its children, a target, and an owner are relations. Use a relation, not a bare `Field.entity`, for any reference that must never dangle. [Components](components.md) covers components in general.
 
-## Linking entities
+## Link one entity to another
 
 ```ts
 import {
@@ -58,21 +58,21 @@ const swap = Action.handler(Swap, function* ({ turret, truck }) {
 export const Rules = Plugin.make("game/Rules", { handlers: [swap], setup });
 ```
 
-- `world.sources(target, ChildOf)` returns the entities pointing at a target, ordered by index. The world tracks these links, so neither this call nor a despawn scans other entities. It takes a relation, and any other component doesn't compile.
-- To change a target, add the relation again. `target` is read-only in `each`, in `world.set` and in its raw column, so assigning to it doesn't compile. A relation's own fields are written like any others.
-- A relation requires a live target. Given bare, as `ChildOf` and not `ChildOf.of({ target })`, it doesn't compile, on `Commands` or on the world. With a target that is already despawned, the despawn behaviour applies immediately: the child doesn't survive the call, or the relation isn't added.
-- An entity has one target per relation. A different kind of link is a different relation.
+- `world.sources(target, ChildOf)` returns the entities that point at a target, ordered by index. The world tracks these links, so neither this call nor a despawn scans other entities. It takes a relation, and any other component doesn't compile.
+- To change a target, add the relation again. `target` is read-only in `each`, in `world.set` and in its raw column, so an assignment to it doesn't compile. A relation's own fields are written like any others.
+- A relation requires a live target. Given bare, as `ChildOf` and not `ChildOf.of({ target })`, it doesn't compile, on `Commands` or on the world. Given a target that is already despawned, the relation's `onTargetDespawn` applies at once. With `"despawn"`, the entity doesn't survive the call, and with `"remove"`, the relation isn't added.
+- An entity has one target per relation. For a different kind of link, define a different relation.
 - In a system or an action handler, add, remove and retarget relations through `Commands`, like any other structural change.
 
-## When a target is despawned
+## Choose what happens when a target is despawned
 
-- `onTargetDespawn` controls what happens to the entities pointing at a target when it is despawned. `"despawn"` despawns them too, along with whatever points at them, at any depth. `"remove"` removes the relation from them and leaves them otherwise untouched.
-- Either way, nothing is left pointing at a despawned entity, so a dangling reference can never be read as a live one. A plain `Field.entity` gets no such guarantee: it holds whatever id was written, and readers check `world.isAlive` themselves.
-- A despawn follows relations ordered by name and the pointing entities ordered by index, so the same world always loses the same entities in the same order.
+- `onTargetDespawn` sets what happens to the entities that point at a target when the target is despawned. `"despawn"` despawns them too, along with whatever points at them, at any depth. `"remove"` removes the relation from them and leaves them otherwise untouched.
+- Either way, nothing is left pointing at a despawned entity, so a stale id can never be read as a live one. A plain `Field.entity` gets no such guarantee. It holds whatever id was written, and the code that reads it checks `world.isAlive` itself.
+- A despawn follows relations in order of name, and the entities that point at a target in order of index. The same world therefore always loses the same entities in the same order.
 
-## A relation is a component
+## Query, watch and save a relation like a component
 
-In every other way, a relation is a component: stored in tables or a sparse set, read in queries, watched with `Query.added` and `Query.removed`, saved in snapshots and included in the hash. The links between entities are derived from it, and rebuilt when a world loads a snapshot, which refuses a relation pointing at no entity.
+In every other way, a relation is a component. It is stored in tables or a sparse set, read in queries, watched with `Query.added` and `Query.removed`, saved in snapshots and included in the hash. The world derives the links between entities from it, and rebuilds them when it loads a snapshot. Loading refuses a snapshot with a relation that points at no entity.
 
 ## Read more
 

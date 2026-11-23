@@ -3,13 +3,13 @@ title: "States"
 description: "A state is one of a few named values, such as menu, playing or paused. Systems run only in some states, and hooks run when the game enters or leaves one."
 ---
 
-A game is in a menu, playing or paused, and many of its systems should only run in some of those. A **state** is one of a few named values. A system declares when it runs with a condition, and work that happens once, on entering or leaving a state, is a **hook**.
+A **state** is one of a few named values the game is in, such as `"menu"`, `"playing"` or `"paused"`. A system runs only in some states when it is given a condition. Work that happens once, on entering or leaving a state, is a **hook**.
 
-## Defining a state
+## Define a state
 
 ```ts
 import { Action, Plugin, State, System } from "arcadekit";
-import { Data, Effect, Schema } from "effect";
+import { Data, Schema } from "effect";
 
 const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
 
@@ -45,40 +45,32 @@ const Rules = Plugin.make("game/Rules", {
 
 The game starts in the first value, or in the one passed as the third argument to `State.define`.
 
-## Changing state
+A state is a singleton in the world. It is saved along with any pending request, hashed, and restored when an action that set it is refused.
 
-`yield* Phase` gives you `value`, `is(...values)`, and `next`, the requested state that hasn't been entered. Setting it is `yield* Phase.sets`, then `set`, and only a system of the tick or a handler can ask for that.
+## Change state
+
+`yield* Phase` gives you a view of the state, with `value`, `is(...values)`, and `next`, the requested state that hasn't been entered yet. To change the state, ask for `yield* Phase.sets` and call `set`. Only the simulation can ask for `sets`: a system of the tick, an action handler or a plugin's `setup`.
 
 `set` requests a change, and the game enters the new state at the start of the next tick:
 
-1. the exit hooks of the old state run, still seeing the old state;
-2. the state changes;
-3. the enter hooks of the new state run;
-4. the tick's systems run, according to the new state.
+1. The exit hooks of the old state run, still seeing the old state.
+2. The state changes.
+3. The enter hooks of the new state run.
+4. The tick's systems run, according to the new state.
 
-There is one transition per tick, and the last request before it wins. Requesting the current state cancels an earlier request and isn't a transition. With several states, the requested ones are entered in order of name.
+There is one transition per tick, and the last request before it wins. Requesting the current state cancels an earlier request, and isn't a transition. With several states, the requested ones are entered in order of name.
 
-## Hooks
+## Run a hook on entering or leaving a state
 
-`State.onEnter(Phase, "playing", name, body)` and `State.onExit(Phase, "playing", name, body)` make a system that runs at that moment instead of every tick. Hooks for the same moment run in the order they are listed, and each hook's commands are applied before the next runs.
+`State.onEnter(Phase, "playing", name, body)` and `State.onExit(Phase, "playing", name, body)` make a system that runs at that moment instead of every tick. Hooks for the same moment run in the order they are listed, and each hook's commands are applied before the next hook runs.
 
-On the game's first tick, the enter hooks of the initial state run, followed in the same tick by any transition requested before it. A game loaded from a save doesn't run them again, since the save already holds their effects.
+On the game's first tick, the enter hooks of the initial state run, followed in the same tick by any transition requested before it. A game loaded from a save doesn't run them again, because the save already holds their effects.
 
 A transition requested by a hook waits for the next tick.
 
-## Conditions
+## Run a system only in some states
 
-`System.runIf(condition)` runs a system only when the condition holds. `State.is(Phase, "playing", "paused")` is one condition; any Effect that returns a boolean is another, and can read anything a system can. With several conditions, the system runs when all hold. A condition's requirements and errors become the system's.
-
-A system without conditions is never asked. A condition costs about 0.35 µs per tick, and a system that doesn't run costs that and nothing more.
-
-A system that doesn't run doesn't read, and sees nothing of what happened while it was off: the events from the ticks it skipped are gone when it runs again, and its change queries skip what changed in them. So a system that can be switched off reads the state it needs when it runs again, with an ordinary query or a singleton, rather than counting on hearing of every change.
-
-`System.otherwise(effect)` gives a system something to do instead of running, on each tick its condition fails. A system that keeps something outside itself up to date leaves it as it last was when it doesn't run, and `otherwise` declares what it should be instead. Music uses it so that unrequested music stops, and a view uses it to return to its initial value. It runs as the system, in its stage: in a tick its commands are applied, and in a frame it can change nothing.
-
-## Saving
-
-A state is a singleton in the world: saved along with any pending request, hashed, and restored when an action that set it is refused.
+`System.runIf(State.is(Phase, "playing", "paused"))` runs a system only while the game is in one of those states. `State.is` makes one condition among others. [Run a system only when a condition holds](systems.md#run-a-system-only-when-a-condition-holds) covers conditions, what a system misses while it doesn't run, and `System.otherwise`.
 
 ## Read more
 

@@ -5,7 +5,7 @@ description: "Build a small game from scratch: coins fall, a basket catches them
 
 In this walkthrough you build a small game from scratch: coins fall, a basket catches them, and three missed coins end the game. You run it in a test first, then in a page.
 
-Along the way you use most of arcadekit: components, a singleton, systems, an action and its refusal, an event, a plugin, a replay, input, and a frame stage that draws. Each has its own guide, linked at the end.
+Along the way you use most of arcadekit: components, a singleton, systems, an action and its refusal, an event, a plugin, a replay, input, and a frame stage that draws. Each part has a guide of its own.
 
 ## Install
 
@@ -75,7 +75,7 @@ const Drop = System.tick("catch/Drop", function* () {
 });
 ```
 
-When a coin reaches the ground, it is either caught or missed, and despawned in both cases. You despawn an entity through `Commands`, which applies the change after the system finishes, so the world never changes under a running loop.
+When a coin reaches the ground, it is caught or missed, and despawned either way. You despawn an entity through `Commands`, which applies the change after the system finishes, so the world never changes under a running loop.
 
 ```ts title="rules.ts"
 export const Caught = Event.define(
@@ -102,11 +102,11 @@ const Land = System.tick("catch/Land", function* () {
 });
 ```
 
-`Caught` is an event: a record that something happened, for any system that wants to react. The rules don't play sounds themselves; the sound plugin reads this event later.
+`Caught` is an event, a record that something happened, for any system that wants to react. The rules play no sound themselves. A [sound](guides/sound.md) plugin can play a cue from this event in the frame stage.
 
 ## What a player can do
 
-Players change the game only through actions. An action has a name and a payload, which is validated against a schema before its handler runs: here, a direction of -1, 0 or 1. The handler either applies the action or refuses it with a typed error, and a refused action changes nothing.
+Players change the game only through actions. An action has a name and a payload. The app validates the payload against a schema before the handler runs, and here the schema takes a direction of -1, 0 or 1. The handler applies the action or refuses it with a typed error, and a refused action changes nothing.
 
 ```ts title="rules.ts"
 export const Move = Action.define(
@@ -129,7 +129,7 @@ const move = Action.handler(Move, function* ({ dx }) {
 
 ## Coins that keep coming
 
-A coin falls every second. A system runs to the end of its tick and waits for nothing, so the time until the next coin is kept in the world, in a singleton, and a system counts it down. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
+A coin falls every second. A system runs to the end of its tick and waits for nothing. The time until the next coin is therefore kept in the world, in a singleton, and a system counts it down. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
 
 ```ts title="rules.ts"
 const Cloud = Singleton.define("catch/Cloud", { wait: Field.f32 }, { wait: 0 });
@@ -164,7 +164,7 @@ Systems run in the order they are listed.
 
 ## Test it
 
-You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page. `App.define` says what the game is, and `App.make` starts one run of it. A test sets the scene with a plugin of its own, whose `setup` runs when the app is made, and reads the game with `app.read`.
+A test creates an app and steps it by hand, one tick at a time, to play the game under Node, without a page. `App.define` says what the game is, and `App.make` starts one run of it. A test sets the scene with a plugin of its own, whose `setup` runs when the app is made. It reads the game with `app.read`.
 
 ```ts title="rules.test.ts"
 import { App, Commands, Journal, Plugin, World } from "arcadekit";
@@ -217,9 +217,9 @@ it("refuses a move once the game is over", () =>
   ));
 ```
 
-`app.dispatch` applies an action immediately and returns its outcome. `app.enqueue` queues the action for the start of the next tick instead, which is what a real-time game needs. Code outside the game has no other way to change it: `app.read` takes nothing that writes.
+`app.dispatch` applies an action immediately and returns its outcome. `app.enqueue` instead queues the action for the start of the next tick, as a real-time game needs. Code outside the game has no other way to change it, because `app.read` takes nothing that writes.
 
-A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation, `app.record()` returns that log with the seed the game began with and how long each tick was, and `Journal.replay` plays the recording in an app made from that seed, verifying the world's hash along the way:
+A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation. `app.record()` returns that log with the seed the game began with and how long each tick was. `Journal.replay` plays the recording in an app made from that seed, and checks the world's hash along the way:
 
 ```ts title="rules.test.ts"
 it("plays the same game again from its log", () =>
@@ -240,7 +240,9 @@ it("plays the same game again from its log", () =>
   ));
 ```
 
-If anything in the rules read the clock or called `Math.random`, the replay would stop at the first tick where the two worlds differ, with `Journal.ReplayDiverged`.
+Run `pnpm vitest run`, and the three tests pass.
+
+If anything in the rules read the clock or called `Math.random`, the replay would fail with `Journal.ReplayDiverged` at the first checkpoint where the two worlds differ. The app takes a checkpoint every 60 ticks by default.
 
 ## Play it in a page
 
@@ -306,7 +308,7 @@ Browser.runMain(
 
 `App.make` creates the app, and `Driver.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
-Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`.
+Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`. Coins fall toward the basket, the arrow keys move it, and the top-left corner counts the coins caught and the lives left.
 
 ## Where to go next
 

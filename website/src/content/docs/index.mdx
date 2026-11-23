@@ -13,7 +13,7 @@ editUrl: false
 eyebrow: An entity component system on Effect 4 · Alpha
 hero:
   title: Effect for browser <span class="accent">games.</span>
-  tagline: arcadekit is a framework for browser games of any genre. You write your game as entities, components and systems, and Effect runs them one fixed tick at a time. The same inputs always produce the same game, so saves, replays and online play work out of the box.
+  tagline: arcadekit is a framework for browser games of any genre. You write your game as entities, components and systems, and arcadekit runs them on Effect, one fixed tick at a time. The same inputs always produce the same game, so every game can save, replay and play online.
   actions:
     - text: Get started
       link: /making-a-game
@@ -31,7 +31,7 @@ import KitStats from "../../components/kit-stats.astro";
 
 ## Systems are Effects. Loops are plain.
 
-A system is one Effect per tick. It gets the time, random numbers and your services with `yield*`, and fails with typed errors. Inside it, the loop over entities is a plain function over typed arrays, which runs about 25 times faster than an Effect per entity.
+A system is one Effect per tick. It gets the time, random numbers and the game's data with `yield*`, and fails with typed errors. Inside it, the loop over entities is a plain function over typed arrays, which runs about 25 times faster than an Effect per entity.
 
 ```ts
 const Position = Component.define("game/Position", {
@@ -75,12 +75,12 @@ Browser.runMain(
 
 ## The same inputs, the same game.
 
-A tick reads its time from `Time`, its randomness from a seeded `Random`, and its input from logged actions, and nothing else. The world's hash after each tick is identical on every machine, and the features below are built on that guarantee.
+A tick reads its time from `Time`, its randomness from a seeded `Random`, and its input from logged actions, and nothing else. The world's hash after each tick is the same on every machine, and the features below depend on it.
 
 <CardGrid>
   <Card title="Replays">
-    Play a game's log back in a fresh app. The replay verifies the world's hash
-    as it runs, and reports the exact tick where a system read the clock.
+    Play a game's log back in a fresh app. The replay checks the world's hash as
+    it runs, and stops at the first checkpoint where the two worlds differ.
     [Explore replays](/guides/replays)
   </Card>
   <Card title="Saves">
@@ -90,9 +90,9 @@ A tick reads its time from `Time`, its randomness from a seeded `Random`, and it
     saves](/guides/saving-and-loading)
   </Card>
   <Card title="Several players">
-    Peers exchange only their players' actions. Lockstep waits for every peer;
-    rollback predicts ahead and resimulates when a prediction was wrong.
-    [Explore several players](/concepts/several-players)
+    Peers exchange only their players' actions. Lockstep waits for every peer.
+    Rollback predicts ahead, and runs the ticks again when a prediction was
+    wrong. [Explore several players](/concepts/several-players)
   </Card>
 </CardGrid>
 
@@ -133,7 +133,7 @@ Each one is a plugin that your rules never import.
     with crossfades. [Explore sound](/guides/sound)
   </Card>
   <Card title="A UI">
-    Use any UI library through a bridge: the game publishes views, and the UI
+    Use any UI library through a bridge. The game publishes views, and the UI
     sends actions. [Explore the bridge](/guides/ui)
   </Card>
   <Card title="Assets">
@@ -150,14 +150,14 @@ Each one is a plugin that your rules never import.
 
 ## Is it a fit?
 
-arcadekit expects a particular shape: your rules as systems over a world, with Effect around them.
+arcadekit expects your rules as systems over a world, with Effect around them.
 
 <div class="fit">
 <div>
 
 ### A strong fit
 
-- **Games that need replays, saves or online play.** Determinism is the default, so all three come with the shape.
+- **Games that need replays, saves or online play.** Every game is deterministic, so every game can have all three.
 - **Games with many moving things.** Typed-array columns and raw loops move a hundred thousand entities in a quarter of a millisecond.
 - **Developers who already use Effect.** Services, layers, schemas and typed errors structure the whole game.
 
@@ -167,7 +167,7 @@ arcadekit expects a particular shape: your rules as systems over a world, with E
 ### Think twice when
 
 - **You want a visual editor.** arcadekit is code-first, with no scene editor and no asset pipeline.
-- **Your game needs physics.** arcadekit has no physics engine: your systems compute collisions.
+- **Your game needs physics.** arcadekit has no physics engine, so your systems compute collisions.
 - **You need a stable API.** arcadekit is alpha, and its API changes between minor versions.
 
 </div>
