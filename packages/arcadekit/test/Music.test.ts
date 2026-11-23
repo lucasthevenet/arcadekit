@@ -75,7 +75,7 @@ const Score = Sound.music(
 /** An app in a scope of its own, which the test closes when it likes. */
 const start = <A, E>(
   make: Effect.Effect<A, E, Scope.Scope>,
-  output?: Sound.OutputShape
+  output?: Sound.Speaker
 ) => {
   const scope = Scope.makeUnsafe();
   const provided =
@@ -102,7 +102,7 @@ const play = (
     never,
     BuiltIn | Sound.Player | Assets.Store
   >[],
-  output?: Sound.OutputShape
+  output?: Sound.Speaker
 ) => {
   asked = 0;
   const { app, close } = start(

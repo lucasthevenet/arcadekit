@@ -78,7 +78,7 @@ To test what a game does with a key, you don't need a device. Dispatch the actio
 
 ## Sound
 
-`Sound.makeRecorder()` is an output that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each is playing now in `playing`.
+`Sound.makeRecorder()` is a speaker that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each is playing now in `playing`.
 
 ```ts title="rules.test.ts"
 import { Sound } from "arcadekit";

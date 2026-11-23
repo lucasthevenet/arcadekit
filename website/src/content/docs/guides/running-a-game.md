@@ -62,7 +62,7 @@ When the page is closed, the game is interrupted: the loop stops requesting fram
 - An app made from a `save` resumes from it instead of starting fresh, and making it can fail with `Save.LoadRefused`. See [saving and loading](saving-and-loading.md).
 - `Driver.run` fails with whatever making the app can fail with. If a tick or frame throws, the loop stops and the program dies with the thrown error.
 
-Provide any services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`; a missing one is a compile error. Provide them to `Driver.run` as a whole, not to a part of it, so they last as long as the game: a layer that listens, as `Browser.layer` does, is released with whatever it was provided to.
+Provide any services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`; a missing one is a compile error. Provide them to `Driver.run` as a whole, not to a part of it, so they last as long as the game: what a layer acquires is released with whatever it was provided to. `Browser.layer` acquires nothing itself: the app opens the page's devices, and with `Sound.plugin` its sound, in the scope it is made in.
 
 `Effect.runSync` and `Effect.runPromise` are for tests. Inside a program, yield an Effect rather than running it.
 

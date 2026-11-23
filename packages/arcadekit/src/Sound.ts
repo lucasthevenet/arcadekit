@@ -45,6 +45,7 @@
  * which run no frame stage, play nothing, and the game they run is the same.
  */
 import { Context, Effect, Layer } from "effect";
+import type { Scope } from "effect";
 
 import * as Assets from "./Assets";
 import type * as Event from "./Event";
@@ -98,12 +99,12 @@ const nameOf = (sound: Playable): string =>
 // --- where sound goes ------------------------------------------------------------
 
 /**
- * What plays sound: an output, such as a page's Web Audio. The player tells it
- * what to play once a frame has run.
+ * What plays sound, opened: a page's Web Audio, or a recorder in a test. The
+ * player tells it what to play once a frame has run.
  *
- * @category Services
+ * @category Models
  */
-export interface OutputShape {
+export interface Speaker {
   /**
    * Starts a cue now, at `volume`, where 1 is the cue as recorded, and at
    * `rate` times its normal speed, which also sets its pitch.
@@ -124,29 +125,62 @@ export interface OutputShape {
   ) => void;
 }
 
-const silent: OutputShape = { play() {}, music() {} };
-
 /**
- * Where sound goes. A `Context.Reference` whose default is nowhere, which suits
- * a server, a replay and most tests. A page provides its own:
- * `Browser.layerSound(files)`, or the `sounds` option of `Browser.runMain`. A
- * test provides one that records what it was asked, `Sound.makeRecorder()`.
+ * Where sound goes: how to open a speaker, and not a speaker.
  *
  * @category Services
  */
-export const Output: Context.Reference<OutputShape> =
-  Context.Reference<OutputShape>("arcadekit/Sound.Output", {
-    defaultValue: () => silent,
-  });
+export interface Output {
+  /**
+   * Opens a speaker in the current scope, and lets go of it when that scope
+   * closes.
+   */
+  readonly open: Effect.Effect<Speaker, never, Scope.Scope>;
+}
+
+const silent: Speaker = { play() {}, music() {} };
+
+const nowhere: Output = { open: Effect.succeed(silent) };
 
 /**
- * Returns a layer that provides an output to the game:
- * `Effect.provide(Sound.layer(output))`.
+ * Where an app's sound goes. A `Context.Reference` whose default is nowhere,
+ * which suits a server, a replay and most tests. A page provides its own:
+ * `Browser.layerSound(files)`, or the `sounds` option of `Browser.runMain`. A
+ * test provides a speaker that records what it was asked,
+ * `Sound.layer(Sound.makeRecorder())`.
+ *
+ * It opens nothing itself. `Sound.plugin` runs `open` in the scope the app is
+ * made in, and lets go when that scope closes, so whatever the layer is
+ * provided to, the app is heard for as long as the program that made it.
+ *
+ * @category Services
+ */
+export const Output: Context.Reference<Output> = Context.Reference<Output>(
+  "arcadekit/Sound.Output",
+  { defaultValue: () => nowhere }
+);
+
+/**
+ * Opens the output in the current scope, as `Sound.plugin` does: for a program
+ * that plays to it itself.
+ *
+ * @category Running
+ */
+export const open: Effect.Effect<Speaker, never, Scope.Scope> = Effect.flatMap(
+  Output,
+  (output) => output.open
+);
+
+/**
+ * Returns a layer that provides a speaker made by hand, open already, such as
+ * `Sound.makeRecorder()`.
+ *
+ *   App.make(game).pipe(Effect.provide(Sound.layer(sound)))
  *
  * @category Layers
  */
-export const layer = (output: OutputShape): Layer.Layer<never> =>
-  Layer.succeed(Output, output) as Layer.Layer<never>;
+export const layer = (speaker: Speaker): Layer.Layer<never> =>
+  Layer.succeed(Output, { open: Effect.succeed(speaker) });
 
 /**
  * A played cue, as a recorder records it.
@@ -180,12 +214,12 @@ export interface Scored {
 }
 
 /**
- * An output that records what it is told and plays nothing, from
+ * A speaker that records what it is told and plays nothing, from
  * `Sound.makeRecorder()`.
  *
  * @category Testing
  */
-export interface Recorder extends OutputShape {
+export interface Recorder extends Speaker {
   /** Every cue it was asked to play, oldest first. */
   readonly played: Played[];
   /** Everything a channel was told, oldest first. */
@@ -195,7 +229,7 @@ export interface Recorder extends OutputShape {
 }
 
 /**
- * Makes an output that plays nothing and records what it was asked, for a test
+ * Makes a speaker that plays nothing and records what it was asked, for a test
  * or a tool:
  *
  *   const sound = Sound.makeRecorder()
@@ -342,8 +376,8 @@ export class Player extends Context.Service<Player, PlayerShape>()(
 const playerLayer = Layer.effect(
   Player,
   Effect.gen(function* () {
-    const output = yield* Output;
-    // What each channel was last told: the output hears of a change only.
+    const speaker = yield* open;
+    // What each channel was last told: the speaker hears of a change only.
     // And what this frame's systems have said of it so far, if any has:
     // kept in the same record, so that a frame makes none.
     const channels = new Map<
@@ -361,12 +395,12 @@ const playerLayer = Layer.effect(
     >();
     const describe = (track: Playable, volume: number, once: boolean) =>
       `"${nameOf(track)}"${volume === 1 ? "" : ` at ${volume}`}${once ? ", once" : ""}`;
-    // An app that goes leaves nothing playing in an output that stays.
+    // An app that goes leaves nothing playing in a speaker that stays.
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         for (const [channel, told] of channels) {
           if (told.track !== undefined) {
-            output.music(channel, undefined, 0, 0, false);
+            speaker.music(channel, undefined, 0, 0, false);
           }
         }
         channels.clear();
@@ -377,7 +411,7 @@ const playerLayer = Layer.effect(
     // each, however many asked and whichever system they were.
     const asked = new Map<Playable, { volume: number; rate: number }>();
     return {
-      audible: output !== silent,
+      audible: speaker !== silent,
       play(cue, options) {
         const volume = Math.max(0, options?.volume ?? 1);
         const already = asked.get(cue);
@@ -405,13 +439,13 @@ const playerLayer = Layer.effect(
           told.track = next;
           told.volume = nextVolume;
           told.once = nextOnce;
-          output.music(channel, next, nextVolume, told.nextFade, nextOnce);
+          speaker.music(channel, next, nextVolume, told.nextFade, nextOnce);
         }
         if (asked.size === 0) {
           return;
         }
         for (const [cue, how] of asked) {
-          output.play(cue, how.volume, how.rate);
+          speaker.play(cue, how.volume, how.rate);
         }
         asked.clear();
       },
@@ -473,10 +507,6 @@ const playerLayer = Layer.effect(
   })
 );
 
-/**
- * Gives an app a cue player that plays to the output the app was given. A
- * plugin whose systems are made with `Sound.cues` lists it in `plugins`.
- */
 /** Plays what the frame's systems asked to hear, once they have all run. */
 const Flush = System.frame("arcadekit/Sound.Flush", function* () {
   (yield* Player)._flush();
@@ -487,9 +517,10 @@ const Flush = System.frame("arcadekit/Sound.Flush", function* () {
  * among its plugins.
  *
  * It provides `Sound.Player`, and a system in the stage after a frame's own,
- * `"postFrame"`, that passes the frame's requests to the output once all its
- * systems have run. When the app's scope closes, every playing channel is
- * silenced at once.
+ * `"postFrame"`, that passes the frame's requests to the speaker once all its
+ * systems have run. It opens `Sound.Output` in the scope the app is made in,
+ * wherever the output was provided. When that scope closes, every playing
+ * channel is silenced at once, and the speaker is let go.
  *
  * @category Plugins
  */
