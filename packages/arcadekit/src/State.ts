@@ -28,7 +28,12 @@
 import { Effect, Effectable, Exit } from "effect";
 
 import { Component, Field, entityIndex } from "./ecs/component";
-import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
+import type {
+  ComponentDef,
+  FieldDef,
+  LiteralName,
+  SingletonSpec,
+} from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
 import * as Query from "./Query";
 import { LoadRefused } from "./Save";
@@ -84,10 +89,10 @@ export interface StateHandle<V extends string> extends StateView<V> {
 }
 
 /** A value's tag, and the query of the entities that have it. */
-interface Scope<V extends string> {
-  readonly tag: ComponentDef<{}, "table", `${string}.Scoped.${V}`>;
+interface Scope<V extends string, N extends string> {
+  readonly tag: ComponentDef<{}, "table", `${N}.Scoped.${V}`>;
   readonly holders: Query.Query<
-    readonly [ComponentDef<{}, "table", `${string}.Scoped.${V}`>],
+    readonly [ComponentDef<{}, "table", `${N}.Scoped.${V}`>],
     never
   >;
 }
@@ -110,21 +115,21 @@ export const defined = (): Iterable<State<string>> => definitions.values();
  *
  * @category Models
  */
-export class State<V extends string>
+export class State<V extends string, N extends string = string>
   extends Effectable.Class<StateView<V>, never, World>
   implements SingletonSpec<Fields>
 {
   readonly component: ComponentDef<Fields>;
   readonly initial: { value: string; next: string | null; entered: number };
   /** @internal Each value's tag, which `scoped` gives out, and its holders. */
-  readonly scopes: ReadonlyMap<V, Scope<V>>;
+  readonly scopes: ReadonlyMap<V, Scope<V, N>>;
   private effect: Effect.Effect<StateView<V>, never, World> | undefined;
   private writing:
     | Effect.Effect<StateHandle<V>, never, World | Sim>
     | undefined;
 
   constructor(
-    readonly name: string,
+    readonly name: N,
     readonly values: readonly V[],
     first: V
   ) {
@@ -184,16 +189,17 @@ export class State<V extends string>
  * Defines a state from its name, its possible values, and the value a game
  * starts in, which defaults to the first.
  *
- * The name is one of the world's component names, and a save that holds the
- * state finds it by that name.
+ * The name is one of the world's component names, a literal the compiler
+ * reads, as `Component.define`'s is: a name typed `string` doesn't compile. A
+ * save that holds the state finds it by that name.
  *
  * @category Constructors
  */
-export const define = <const V extends string>(
-  name: string,
+export const define = <const N extends string, const V extends string>(
+  name: LiteralName<N>,
   values: readonly [V, ...V[]],
   initial?: NoInfer<V>
-): State<V> => {
+): State<V, N> => {
   const first = initial ?? values[0];
   if (!values.includes(first)) {
     throw new Error(
@@ -438,17 +444,17 @@ export const refuseRemovedScopes = (
  *
  * @category Components
  */
-export const scoped = <V extends string>(
-  state: State<V>,
-  value: NoInfer<V>
-): ComponentDef<{}, "table", `${string}.Scoped.${V}`> => {
+export const scoped = <V extends string, N extends string, S extends V>(
+  state: State<V, N>,
+  value: S
+): ComponentDef<{}, "table", `${N}.Scoped.${S}`> => {
   const scope = state.scopes.get(value);
   if (scope === undefined) {
     throw new Error(
       `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`
     );
   }
-  return scope.tag;
+  return scope.tag as ComponentDef<{}, "table", `${N}.Scoped.${S}`>;
 };
 
 /**

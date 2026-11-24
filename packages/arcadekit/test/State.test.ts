@@ -79,6 +79,9 @@ describe("a state", () => {
     const _flying = State.is(Phase, "flying");
     // @ts-expect-error a hook for a value the state does not have
     State.onEnter(Phase, "flying");
+    const named: string = "st/Named";
+    // @ts-expect-error a name known only as string
+    const _unnamed = State.define(named, ["a"]);
   });
 
   it("is entered at the start of the tick after it was asked for", () => {
@@ -1318,5 +1321,44 @@ describe("an entity scoped to a state", () => {
       // @ts-expect-error not one of the state's values
       State.scoped(Phase, "flying")
     ).toThrow(/has no value "flying"/);
+  });
+
+  it("is named after its state, so the scope of another state's same value is not named with it", () => {
+    const Level = State.define("st/Level", ["menu", "playing"]);
+    System.tick("OnlyPhase", function* () {
+      const commands = yield* Commands.spawns(Wall, playing);
+      commands.spawn(Wall.of({ n: 1 }), playing);
+      commands.spawn(
+        Wall.of({ n: 2 }),
+        // @ts-expect-error the scope of another state's "playing" is not named
+        State.scoped(Level, "playing")
+      );
+      commands.spawn(
+        Wall.of({ n: 3 }),
+        // @ts-expect-error nor that of the state's other values
+        State.scoped(Phase, "menu")
+      );
+    });
+    const Spawn = System.tick("Spawn", function* () {
+      (yield* Commands.spawns(Wall, playing)).spawn(Wall.of({ n: 1 }), playing);
+    });
+    const NewInLevel = Query.all(State.scoped(Level, "playing")).pipe(
+      Query.added(State.scoped(Level, "playing"))
+    );
+    const Count = System.tick("Count", function* () {
+      (yield* NewInLevel).count();
+    });
+    const said: [
+      System.Misordered<readonly [typeof Count, typeof Spawn]>,
+    ] extends [never]
+      ? "nothing"
+      : "misordered" = "nothing";
+    const NewInPhase = Query.all(playing).pipe(Query.added(playing));
+    const Late = System.tick("Late", function* () {
+      (yield* NewInPhase).count();
+    });
+    const late: System.Misordered<readonly [typeof Late, typeof Spawn]> =
+      '"Late" watches "st/Phase.Scoped.playing" with Query.added, and "Spawn" spawns or adds it later in the tick, so "Late" would react a tick late. List "Late" after "Spawn", or place it in a later stage.';
+    expect([said, late]).toHaveLength(2);
   });
 });
