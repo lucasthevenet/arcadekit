@@ -108,12 +108,12 @@ new RuleTester().run("entry-imports", plugin.rules["entry-imports"], {
     {
       name: "arcadekit/Browser imports its folder and the browser platform",
       filename: arcadekit("Browser.ts"),
-      code: `import { listen } from "./browser/devices";\nimport * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";`,
+      code: `import { listen } from "./browser/Devices";\nimport * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";`,
     },
     {
       name: "a file of src/browser/ imports the game's modules, its folder and the browser platform",
-      filename: arcadekit("browser/audio.ts"),
-      code: `import * as Sound from "../Sound";\nimport { describe } from "./media";\nimport * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";`,
+      filename: arcadekit("browser/Audio.ts"),
+      code: `import * as Sound from "../Sound";\nimport { describe } from "./Media";\nimport * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";`,
     },
   ],
   invalid: [
@@ -126,12 +126,12 @@ new RuleTester().run("entry-imports", plugin.rules["entry-imports"], {
     {
       name: "another entry imports a file of src/browser/",
       filename: arcadekit("Input.ts"),
-      code: `import { listen } from "./browser/devices";`,
+      code: `import { listen } from "./browser/Devices";`,
       errors: 1,
     },
     {
       name: "a file of src/browser/ imports a package arcadekit/Browser may not",
-      filename: arcadekit("browser/audio.ts"),
+      filename: arcadekit("browser/Audio.ts"),
       code: `import * as THREE from "three";`,
       errors: 1,
     },
@@ -147,7 +147,7 @@ new RuleTester().run("no-page", plugin.rules["no-page"], {
     },
     {
       name: "a file of src/browser/ names what only a page has",
-      filename: arcadekit("browser/devices.ts"),
+      filename: arcadekit("browser/Devices.ts"),
       code: "const pads = navigator.getGamepads();",
     },
   ],

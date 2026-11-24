@@ -3,8 +3,8 @@ import { Effect, Fiber, Layer } from "effect";
 import * as Assets from "../Assets";
 import * as Driver from "../Driver";
 import * as Sound from "../Sound";
-import { Streamed, decodeOffline, describe } from "./media";
-import type { AudioLike, MediaLike, Options } from "./options";
+import { Streamed, decodeOffline, describe } from "./Media";
+import type { AudioLike, MediaLike, Options } from "./Options";
 
 const audioElement = (url: string): MediaLike => {
   const element = new Audio();
