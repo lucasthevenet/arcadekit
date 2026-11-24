@@ -28,8 +28,10 @@ const migrations: Save.Migration[] = [
   },
 ];
 
-const load = (save: Save.Save, plugins: readonly Plugin.Any[]) =>
-  App.make(App.define({ plugins, version: 2, migrations }), { save });
+const Game = Plugin.make("game/Game", {});
+const Duel = App.define({ plugins: [Game], version: 2, migrations });
+
+const load = (save: Save.Save) => App.make(Duel, { save });
 ```
 
 `App.define` takes the game's `version`, an integer that defaults to 0. Increment it whenever you change the game's components or what its saves hold. A save records the version that wrote it:

@@ -9,15 +9,16 @@ import type { PatchOf, RelationDef } from "../ecs/relation";
 import { placed } from "../ecs/spawned";
 import type { Spawned } from "../ecs/spawned";
 import type { World as EcsWorld } from "../ecs/world";
-import type { WritingWorld } from "../Services";
+import type { EventBus, EventDef, EventReader, ReadingEvents } from "../Event";
+import type { ReadingWorld, WritingWorld } from "../Services";
 
 /**
- * The world as a game's code is handed it, by `yield* World` and by
- * `app.read`: an object of its own, which reads and sets the world behind it.
- * No entry exports this class, so no `instanceof` and no public type reaches
- * that world, which spawns, despawns and restores.
+ * The world as the frame stage, the input stage and `app.read` are handed it:
+ * an object of its own, which reads the world behind it and has nothing that
+ * changes it. No entry exports this class, so no `instanceof` and no public
+ * type reaches that world, which spawns, despawns and restores.
  */
-class Handed implements WritingWorld<string> {
+class Read implements ReadingWorld {
   readonly #world: EcsWorld;
 
   constructor(world: EcsWorld) {
@@ -25,7 +26,7 @@ class Handed implements WritingWorld<string> {
   }
 
   static whole(world: object): EcsWorld | undefined {
-    return #world in world ? (world as Handed).#world : undefined;
+    return #world in world ? (world as Read).#world : undefined;
   }
 
   get entityCount(): number {
@@ -66,6 +67,16 @@ class Handed implements WritingWorld<string> {
   sources(target: Entity, def: RelationDef): Entity[] {
     return this.#world.sources(target, def);
   }
+}
+
+/** The world as the tick is handed it, by `yield* World`: it reads, and sets. */
+class Handed extends Read implements WritingWorld<string> {
+  readonly #world: EcsWorld;
+
+  constructor(world: EcsWorld) {
+    super(world);
+    this.#world = world;
+  }
 
   set<S extends Schema>(
     entity: Entity,
@@ -84,14 +95,14 @@ class Handed implements WritingWorld<string> {
 export const writing = <N extends string>(world: object): WritingWorld<N> => {
   if (!(world instanceof Handed)) {
     throw new Error(
-      "The World service was provided something that is not a world. An app provides its own."
+      "World.writes was asked for outside the tick. The frame stage, the input stage and app.read are handed a world that only reads."
     );
   }
   return world;
 };
 
 /**
- * Returns the world a game's code is handed, for this world.
+ * Returns the world the tick is handed, for this world.
  *
  * @internal
  */
@@ -99,13 +110,21 @@ export const handed = (world: EcsWorld): WritingWorld<never> =>
   new Handed(world);
 
 /**
- * Returns the world behind one that `handed` made, which the package's own
- * code reads and writes through.
+ * Returns the world the frame stage, the input stage and `app.read` are
+ * handed, for this world.
+ *
+ * @internal
+ */
+export const reading = (world: EcsWorld): ReadingWorld => new Read(world);
+
+/**
+ * Returns the world behind one that `handed` or `reading` made, which the
+ * package's own code reads and writes through.
  *
  * @internal
  */
 export const whole = (world: object): EcsWorld => {
-  const behind = Handed.whole(world);
+  const behind = Read.whole(world);
   if (behind === undefined) {
     throw new Error(
       "The World service was provided something that is not a world. An app provides its own: to read a game from outside one, use app.read(World)."
@@ -113,3 +132,29 @@ export const whole = (world: object): EcsWorld => {
   }
   return behind;
 };
+
+/**
+ * The events as the frame stage and the input stage are handed them: an
+ * object of its own, which reads the bus behind it and has nothing that
+ * emits.
+ */
+class Heard implements ReadingEvents {
+  readonly #bus: EventBus;
+
+  constructor(bus: EventBus) {
+    this.#bus = bus;
+  }
+
+  handle<P>(def: EventDef<P>): EventReader<P> {
+    const handle = this.#bus.handle(def);
+    return { read: () => handle.read() };
+  }
+}
+
+/**
+ * Returns the events the frame stage and the input stage are handed, for
+ * this bus.
+ *
+ * @internal
+ */
+export const hearing = (bus: EventBus): ReadingEvents => new Heard(bus);

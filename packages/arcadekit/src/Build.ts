@@ -34,6 +34,7 @@ import * as Save from "./Save";
 import * as Schedule from "./Schedule";
 import { Time, World } from "./Services";
 import type { TimeState } from "./Services";
+import { reading } from "./services/handed";
 import * as Stage from "./Stage";
 import * as State from "./State";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
@@ -306,7 +307,7 @@ const assemble = <
       Effect.sync(() => dispatcher.flush())
     );
 
-    const reading = Context.make(World, Context.get(builtIns, World)).pipe(
+    const read = Context.make(World, reading(world)).pipe(
       Context.add(Time, time)
     );
     const app: App<TickError<S, P>, AllHandlers<H, P>> = {
@@ -317,14 +318,14 @@ const assemble = <
             (busy) =>
               `app.read() was run during a ${busy}. A game is read from outside it between ticks.`
           );
-          // `Readable` holds the requirements to what `reading` provides.
+          // `Readable` holds the requirements to what `read` provides.
           return Effect.provideContext(
             effect as Effect.Effect<
               Effect.Success<typeof effect>,
               Effect.Error<typeof effect>,
               World | Time
             >,
-            reading
+            read
           );
         }),
       plugins: plugins.map((plugin) => plugin.name),

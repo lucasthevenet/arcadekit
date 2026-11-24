@@ -79,31 +79,21 @@ export const renameInChanges = (
  */
 export type Terms = readonly ComponentDef[];
 
+/** @internal What only `Query` has, so that nothing else is a `QuerySpec`. */
+export declare const Described: unique symbol;
+
 /**
- * A description of a query, independent of any world. `World.view` resolves
- * it against a world, which takes any object of this shape. In a game,
- * `Query.all` from `arcadekit` makes one that a system can also `yield*`.
+ * A description of a query, independent of any world, which `World.view`
+ * resolves against a world. `Query` alone makes one: `Query.all` from
+ * `arcadekit`, which a system can also `yield*`.
  *
- *   const Moving = {
- *     terms: [Position, Velocity] as const,
- *     withDefs: [],
- *     withoutDefs: [Stunned],
- *     readDefs: [Velocity],
- *   }
+ *   const Moving = Query.all(Position, Velocity).pipe(Query.without(Stunned), Query.writes(Position))
  *   world.view(Moving).each((position, velocity) => { position.x += velocity.x })
- *
- * **Gotchas**
- *
- * - Write `terms` as a tuple, with `as const`. With an array of components,
- *   each argument of the loop's callback has the type of any term, or of an
- *   `Entity`.
- * - A term that `readDefs` doesn't name is written. In a description written
- *   by hand, `readDefs` makes an assignment throw, and the compiler still
- *   allows it. `Query.writes` makes one the compiler checks.
  *
  * @category Models
  */
 export interface QuerySpec<D extends Terms = Terms> {
+  readonly [Described]: true;
   /**
    * The components whose data the query hands to its loop, table or sparse.
    * An entity must have each of them.
@@ -126,8 +116,7 @@ export interface QuerySpec<D extends Terms = Terms> {
    * The terms the query only reads. An assignment to one of them through
    * `each` throws. `eachChunk` doesn't count their rows as written for the
    * change queries that watch them. A transaction doesn't save their columns,
-   * since there is nothing to restore. Each must be one of `terms`, or
-   * `World.view` throws.
+   * since there is nothing to restore. Each is one of `terms`.
    */
   readonly readDefs?: readonly ComponentDef[];
 }
@@ -1041,8 +1030,9 @@ export class QueryView<D extends Terms = Terms> {
    * unless the query only reads the term (`readDefs`). For the same reason, a
    * change query can't hand out a component it watches unless it only reads
    * it. A query made with `Query.changed` and `Query.writes` of the same
-   * component doesn't compile, and a description written by hand throws. In a
-   * frozen world nothing counts as written, so neither applies.
+   * component doesn't compile, and one that names it as a `ComponentDef`,
+   * whose name the compiler knows only as `string`, throws. In a frozen world
+   * nothing counts as written, so neither applies.
    *
    * In an app made with `verifyFrames`, a loop that wrote a column it was handed
    * read-only throws when it returns, and the column is put back.

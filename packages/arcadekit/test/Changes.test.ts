@@ -23,12 +23,12 @@ import {
   writeSnapshot,
 } from "../src/index";
 import type {
+  ComponentDef,
   Entity,
   EntityColumn,
   SavedChanges,
   SnapshotContents,
 } from "../src/index";
-import type { BuiltIn } from "../src/Services";
 import { expectChecked, makeChecks } from "./checks";
 import { placedIn } from "./placed";
 
@@ -178,13 +178,12 @@ describe("a change query", () => {
     void (() =>
       // @ts-expect-error raw columns would count its own visit as a change
       moved.eachChunk(() => {}));
-    // A description put together by hand is refused when it runs.
-    const byHand = world.view({
-      terms: [Position],
-      withDefs: [],
-      withoutDefs: [],
-      changedDefs: [Position],
-    });
+    // Watched as a component the compiler knows only as a ComponentDef, it
+    // is refused when it runs.
+    const widened: ComponentDef = Position;
+    const byHand = world.view(
+      Query.all(Position).pipe(Query.changed(widened), Query.writes(Position))
+    );
     expect(() => byHand.eachChunk(() => {})).toThrow(
       /watches "ch\/Position" for changes and also hands it out.*Visit it with each\(\)/
     );
@@ -1332,14 +1331,14 @@ const Begin = Plugin.make("ch/Begin", {
     }
   }),
 });
-// Typed as any systems, which is the one way to list a watcher ahead of what
-// it watches: the compiler refuses that order where it can see it.
-const systems: readonly System.System<never, BuiltIn>[] = [Early, Drift, Count];
-const Game = App.define({
-  plugins: [Begin],
-  systems,
-  handlers: [push, spawn, cull],
-});
+const Game = App.define(
+  // @ts-expect-error a watcher listed ahead of what it watches, on purpose
+  {
+    plugins: [Begin],
+    systems: [Early, Drift, Count],
+    handlers: [push, spawn, cull],
+  }
+);
 
 const game = (
   options: { checkpointEvery?: number } = {}

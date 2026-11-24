@@ -15,9 +15,10 @@
  * its game began, its `seed` or the `save` it was recorded since, as
  * `App.make` takes them. A replay makes an app of the game from that start,
  * applies the log to it, and stops at the first action or checkpoint that
- * doesn't match.
+ * doesn't match, or at its end on a world with another hash than the
+ * recorded game ended on.
  */
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Brand, Cause, Data, Effect, Exit, Schema } from "effect";
 import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
@@ -51,6 +52,8 @@ export interface Played {
   readonly start: number;
   /** The number of ticks the game had run where it ends. */
   readonly end: number;
+  /** The world's hash at `end`, which a replay ends on. */
+  readonly endHash: number;
   /**
    * The delta of every tick from `start` to `end`, in runs. Every tick from a
    * run's `tick` up to the next run took the run's `delta`. The first run
@@ -67,11 +70,14 @@ export interface Played {
 /**
  * A game as it was played, which `app.record()` returns and `Journal.replay`
  * plays again: how it began, and what was played of it. With the game, it is
- * everything a replay needs.
+ * everything a replay needs. Only `app.record()` and `Journal.decode` make
+ * one, so a recording is one that a game played or that was checked.
  *
  * @category Models
  */
-export type Recording = Played & Origin;
+export type Recording = Played & Origin & Brand.Brand<"arcadekit/Recording">;
+
+const Recording = Brand.nominal<Recording>();
 
 /** The tick a save was made at, which its world holds. */
 const tickOf = (save: Save.Save): number => {
@@ -112,6 +118,9 @@ const originHolds = (recording: {
 };
 
 const Tick = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const Hash = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
+);
 
 const RecordingSchema = Schema.fromJsonString(
   Schema.Struct({
@@ -119,6 +128,10 @@ const RecordingSchema = Schema.fromJsonString(
     save: Schema.optionalKey(Schema.Uint8ArrayFromBase64),
     start: Tick,
     end: Tick,
+    endHash: Hash.annotateKey({
+      messageMissingKey:
+        "older format: it holds no endHash, the hash its game ended on, which this version of arcadekit replays to",
+    }),
     deltas: Schema.Array(Schema.Struct({ tick: Tick, delta: Schema.Finite })),
     log: Schema.Array(
       Schema.Union([
@@ -132,9 +145,7 @@ const RecordingSchema = Schema.fromJsonString(
         }),
         Schema.Struct({
           tick: Tick,
-          hash: Schema.Int.check(
-            Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
-          ),
+          hash: Hash,
         }),
       ])
     ),
@@ -196,7 +207,10 @@ export const encode = (recording: Recording): string =>
  * how its game began, that a save it holds decodes and was made at the tick
  * the recording begins at, and that its log and its runs of deltas are in
  * order and within it. A replay checks the rest: each payload against its
- * action's schema, and each checkpoint against the world.
+ * action's schema, and each checkpoint and its `endHash` against the world.
+ *
+ * A recording that an earlier version of arcadekit wrote, with no `endHash`,
+ * is refused with a message that begins `older format`.
  *
  * @category Codecs
  */
@@ -209,11 +223,11 @@ export const decode = (
   }
   const { save, seed, ...played } = read.value;
   if (save === undefined) {
-    return Exit.succeed({ ...played, seed: seed ?? 0 });
+    return Exit.succeed(Recording({ ...played, seed: seed ?? 0 }));
   }
   // The schema read the save once already, to check it.
   return Exit.match(Save.decode(save), {
-    onSuccess: (loaded) => Exit.succeed({ ...played, save: loaded }),
+    onSuccess: (loaded) => Exit.succeed(Recording({ ...played, save: loaded })),
     onFailure: (cause) => Exit.die(Cause.squash(cause)),
   });
 };
@@ -405,10 +419,11 @@ export class Log implements Store<Since> {
     while (first + 1 < deltas.length && deltas[first + 1]!.tick <= start) {
       first++;
     }
-    return {
+    return Recording({
       ...(since === undefined ? this.origin : { save: since }),
       start,
       end: time.tick,
+      endHash: this.world.hash(),
       deltas:
         start === time.tick
           ? []
@@ -418,7 +433,7 @@ export class Log implements Store<Since> {
             })),
       // Copies: an enqueued action's entry is told its fate later.
       log: entries.slice(from).map((entry) => ({ ...entry })),
-    };
+    });
   }
 }
 
@@ -463,14 +478,20 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
 export class ReplayDiverged<
   A extends App.Any = App.Any,
 > extends Data.TaggedError("ReplayDiverged")<{
-  /** The position in the log of the entry that failed to match. */
+  /**
+   * The position in the log of the entry that failed to match, or the log's
+   * length when the replay ended on another world than the recording did.
+   */
   readonly index: number;
-  /** The entry that failed to match. */
+  /**
+   * The entry that failed to match. Where the replay ended on another world,
+   * a checkpoint of the recording's `end` and `endHash`.
+   */
   readonly entry: Action.LogEntry;
   /**
    * Why it failed to match: a `HashMismatch` for a checkpoint, the error a
    * dispatched action was refused with, or text that says how an enqueued
-   * action, or an entry the replay never reached, went otherwise.
+   * action went otherwise.
    */
   readonly reason: unknown;
   /**
@@ -493,10 +514,7 @@ export class ReplayDiverged<
     const what = Action.isCheckpoint(entry)
       ? `a checkpoint at tick ${entry.tick}`
       : `"${entry.name}" at tick ${entry.tick}`;
-    if (Action.isCheckpoint(entry)) {
-      return `Log entry ${this.index} (${what}) was not reached on replay: ${text}`;
-    }
-    return text.startsWith("the game refused it") || text.startsWith("its tick")
+    return text.startsWith("the game refused it")
       ? `Log entry ${this.index} (${what}) did not replay: ${text}`
       : `Log entry ${this.index} (${what}) was refused on replay: ${text}`;
   }
@@ -510,20 +528,31 @@ const play = <A extends App.Any>(
   app: A,
   recording: Recording
 ): ReplayDiverged<A> | undefined => {
-  const { deltas, end, log, start } = recording;
-  if (app.time.tick !== start) {
-    const began =
-      recording.save === undefined
-        ? "with a seed, and a game begins at tick 0"
-        : `and its save was made at tick ${app.time.tick}`;
-    throw new Error(
-      `Journal.replay was given a recording that begins at tick ${start}, ${began}. Decode a recording with Journal.decode, which checks it.`
-    );
-  }
+  const { deltas, end, endHash, log, start } = recording;
   const diverged = (index: number, entry: Action.LogEntry, reason: unknown) =>
     new ReplayDiverged({ index, entry, reason, app });
   let next = 0;
   let agreedAt: number | undefined;
+  const checkHash = (
+    index: number,
+    entry: Action.Checkpoint
+  ): ReplayDiverged<A> | undefined => {
+    const actual = partsOf(app).world.hash();
+    if (actual !== entry.hash) {
+      return diverged(
+        index,
+        entry,
+        new HashMismatch({
+          tick: entry.tick,
+          expected: entry.hash,
+          actual,
+          agreedAt,
+        })
+      );
+    }
+    agreedAt = entry.tick;
+    return undefined;
+  };
   // Enqueued entries the next tick will apply, each with the entry the
   // replaying app logged for it.
   const waiting: {
@@ -538,20 +567,10 @@ const play = <A extends App.Any>(
       entry = log[next]
     ) {
       if (Action.isCheckpoint(entry)) {
-        const actual = partsOf(app).world.hash();
-        if (actual !== entry.hash) {
-          return diverged(
-            next,
-            entry,
-            new HashMismatch({
-              tick: entry.tick,
-              expected: entry.hash,
-              actual,
-              agreedAt,
-            })
-          );
+        const mismatch = checkHash(next, entry);
+        if (mismatch !== undefined) {
+          return mismatch;
         }
-        agreedAt = entry.tick;
       } else if (entry.queued === true) {
         // Enqueued again at the point it arrived, so that it takes its turn
         // among the actions the replay's own simulation issues.
@@ -594,12 +613,7 @@ const play = <A extends App.Any>(
     while ((deltas[run + 1]?.tick ?? end) <= tick) {
       run++;
     }
-    const delta = deltas[run]?.delta;
-    if (delta === undefined || deltas[0]!.tick !== start) {
-      throw new Error(
-        `Journal.replay was given a recording with no delta for tick ${tick}: a recording's first run of deltas begins where it does. Decode a recording with Journal.decode, which checks it.`
-      );
-    }
+    const { delta } = deltas[run]!;
     const due = applyDue();
     if (due !== undefined) {
       return due;
@@ -610,18 +624,7 @@ const play = <A extends App.Any>(
       return queued;
     }
   }
-  const due = applyDue();
-  if (due !== undefined) {
-    return due;
-  }
-  const unreached = log[next];
-  return unreached === undefined
-    ? undefined
-    : diverged(
-        next,
-        unreached,
-        `its tick (${unreached.tick}) was never reached; the log is out of order or past the recording's end, tick ${end}`
-      );
+  return applyDue() ?? checkHash(log.length, { tick: end, hash: endHash });
 };
 
 /**
@@ -662,6 +665,10 @@ export interface ReplayOptions extends Omit<App.StartOptions, "seed" | "save"> {
  * - A checkpoint whose hash differs from the replay's world. The replay stops
  *   at that tick, before applying anything recorded after it. With a checkpoint
  *   every tick, that is the tick it diverged on.
+ * - The recording's `endHash`, once the replay has reached the recording's
+ *   end, when the replay's world has another hash. So a replay that succeeds
+ *   ended on the world the recorded game ended on, however few checkpoints
+ *   the recording holds.
  * - A dispatched action that is refused. The log holds only dispatched
  *   actions that were accepted, so either the log was altered or the game
  *   changed since.
@@ -681,12 +688,8 @@ export interface ReplayOptions extends Omit<App.StartOptions, "seed" | "save"> {
  * - It runs neither the frame stage nor the input stage. What the devices
  *   reported is already in the log.
  * - A recording from an app made with `checkpointEvery: 0` has no
- *   checkpoints, so the replay checks it by its actions alone. A replay that
- *   has diverged then runs until an action happens to be refused, or to the
- *   end.
- * - It throws on a recording that `Journal.decode` refuses: one whose `start`
- *   isn't the tick its seed or save begins at, or whose first run of deltas
- *   doesn't begin at its `start`.
+ *   checkpoints but its `endHash`. A replay that has diverged runs until an
+ *   action happens to be refused, or to the end, and fails there.
  *
  * @category Running
  */

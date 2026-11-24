@@ -3,7 +3,7 @@
  * `tick(delta)`, so the same game runs in real time, turn by turn, or as fast
  * as possible in a test.
  *
- *   Driver.run(App.make(Duel), { hz: 60 })           // the usual entry point
+ *   Driver.run(Duel, { hz: 60 })                     // the usual entry point
  *   const step = Driver.fixedStep(app, { hz: 60 })   // by hand: step(seconds)
  *   yield* Driver.frames(app, { hz: 60 })            // in a page, once per repaint
  *   yield* Driver.interval(app, { hz: 60 })          // on a timer
@@ -13,6 +13,10 @@
  */
 import { Clock, Context, Duration, Effect, Schedule } from "effect";
 import type { Scope } from "effect";
+
+import * as App from "./App";
+import type * as Plugin from "./Plugin";
+import type * as Save from "./Save";
 
 /**
  * Anything with a `tick` that takes the length of the tick in seconds. A
@@ -512,8 +516,8 @@ export function frames(
 }
 
 /**
- * What `Driver.run` closes when it ends: an app, a session, or a session
- * connected to a transport.
+ * What `Driver.run` closes when it ends, beside the app it makes: a session,
+ * or a session connected to a transport.
  *
  * @category Models
  */
@@ -535,18 +539,42 @@ export interface Ready<A, E, R> {
   readonly ready?: (app: A) => Effect.Effect<unknown, E, R>;
 }
 
+/** Runs what `made` makes until interrupted, and closes it however it ends. */
+const runMade = <A extends (Tickable | Paced) & Closes, E, R, E2, R2>(
+  made: Effect.Effect<A, E, R>,
+  options: ((StepOptions | PacedOptions) & Ready<A, E2, R2>) | undefined
+): Effect.Effect<never, E | E2, Exclude<R | R2, Scope.Scope>> =>
+  // Closed however `ready` or the loop ends, with nothing between the making
+  // and them that an interruption could slip into.
+  Effect.scoped(
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(restore(made), (target) =>
+        Effect.ensuring(
+          restore(
+            Effect.andThen(
+              options?.ready?.(target) ?? Effect.void,
+              loop(paceOf(target, options))
+            )
+          ),
+          target.close
+        )
+      )
+    )
+  );
+
 /**
- * Runs an app until interrupted, from the effect that makes it, and closes
- * the app when it ends. It is a game's usual entry point.
+ * Runs a game until interrupted: makes its app, runs it, and closes the app
+ * when it ends. It is a game's usual entry point.
  *
  *   const Duel = App.define({ plugins: [Game] })
- *   Browser.runMain(Driver.run(App.make(Duel, { seed: 1 }), { hz: 60 }), {
+ *   Browser.runMain(Driver.run(Duel, { hz: 60, seed: 1 }), {
  *     target: canvas,
  *   })
  *
- * It runs `frames` on the app it makes: once per repaint, the ticks due at
- * `hz`, then the frame stage. It never ends on its own. A program that makes
- * its app itself runs `frames` instead, and closes the app itself.
+ * It takes the options of `App.make` beside its own, `seed` or `save` among
+ * them, and runs `frames` on the app it makes: once per repaint, the ticks
+ * due at `hz`, then the frame stage. It never ends on its own. A program that
+ * makes its app itself runs `frames` instead, and closes the app itself.
  *
  * Interrupting it stops the loop and closes the app. No frame is left
  * requested, no device is listened to, and everything the plugins' layers
@@ -556,9 +584,9 @@ export interface Ready<A, E, R> {
  *
  * To connect something to the app before its first frame, such as a button
  * that dispatches or a menu that saves, give it as `ready`:
- * `Driver.run(App.make(Duel), { hz: 60, ready: (app) => ... })`. What `ready`
- * acquires in its scope is released when the run ends, after the app is
- * closed. When `ready` fails, the run closes the app and fails with it.
+ * `Driver.run(Duel, { hz: 60, ready: (app) => ... })`. What `ready` acquires
+ * in its scope is released when the run ends, after the app is closed. When
+ * `ready` fails, the run closes the app and fails with it.
  *
  * Provide what the game needs from outside to `Driver.run` as a whole, so it
  * stays provided for as long as the game runs. It fails with what making the
@@ -574,33 +602,47 @@ export interface Ready<A, E, R> {
  *
  * @category Running
  */
-export function run<A extends Tickable & Closes, E, R, E2 = never, R2 = never>(
-  app: Effect.Effect<A, E, R>,
-  options: StepOptions & Ready<A, E2, R2>
-): Effect.Effect<never, E | E2, Exclude<R | R2, Scope.Scope>>;
+export function run<
+  S extends App.Systems = readonly [],
+  H extends App.Handlers = readonly [],
+  P extends App.Plugins = readonly [],
+  SV extends Save.Save | undefined = undefined,
+  E2 = never,
+  R2 = never,
+>(
+  game: App.Game<S, H, P>,
+  options: StepOptions &
+    App.StartOptions<SV> &
+    Ready<App.App<App.TickError<S, P>, App.AllHandlers<H, P>>, E2, R2>
+): Effect.Effect<
+  never,
+  | Plugin.ErrorOf<P[number]>
+  | (SV extends Save.Save ? Save.LoadRefused : never)
+  | E2,
+  Exclude<App.External<S, H, P> | R2, Scope.Scope>
+>;
 export function run<A extends Paced & Closes, E, R, E2 = never, R2 = never>(
   session: Effect.Effect<A, E, R>,
   options?: PacedOptions & Ready<A, E2, R2>
 ): Effect.Effect<never, E | E2, Exclude<R | R2, Scope.Scope>>;
-export function run<A extends (Tickable | Paced) & Closes, E, R, E2, R2>(
-  made: Effect.Effect<A, E, R>,
-  options?: (StepOptions | PacedOptions) & Ready<A, E2, R2>
-): Effect.Effect<never, E | E2, Exclude<R | R2, Scope.Scope>> {
-  // Closed however `ready` or the loop ends, with nothing between the making
-  // and them that an interruption could slip into.
-  return Effect.scoped(
-    Effect.uninterruptibleMask((restore) =>
-      Effect.flatMap(restore(made), (target) =>
-        Effect.ensuring(
-          restore(
-            Effect.andThen(
-              options?.ready?.(target) ?? Effect.void,
-              loop(paceOf(target, options))
-            )
-          ),
-          target.close
-        )
-      )
-    )
-  );
+export function run<
+  S extends App.Systems,
+  H extends App.Handlers,
+  P extends App.Plugins,
+  E,
+  R,
+  E2,
+  R2,
+>(
+  target: App.Game<S, H, P> | Effect.Effect<Paced & Closes, E, R>,
+  options?: (StepOptions | PacedOptions) &
+    App.StartOptions<Save.Save | undefined> & {
+      // A method, which the compiler compares both ways, so that both
+      // signatures' `ready` fit this one.
+      ready?(made: (Tickable | Paced) & Closes): Effect.Effect<unknown, E2, R2>;
+    }
+) {
+  return Effect.isEffect(target)
+    ? runMade(target, options)
+    : runMade(App.make(target, options), options);
 }

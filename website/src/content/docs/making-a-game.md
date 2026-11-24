@@ -295,14 +295,15 @@ const Game = Plugin.make("catch/Game", {
 });
 
 Browser.runMain(
-  Driver.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+  Driver.run(App.define({ plugins: [Game] }), {
+    seed: Date.now(),
     hz: 60,
   }).pipe(Effect.provide(Screen.layer)),
   { target: canvas, preventDefault: ["ArrowLeft", "ArrowRight"] }
 );
 ```
 
-`App.make` creates the app, and `Driver.run` runs it at sixty ticks a second, drawing once per repaint, until the page closes. Then `Driver.run` closes the app. `Browser.runMain` starts the game in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
+`Driver.run` creates the app and runs it at sixty ticks a second, drawing once per repaint, until the page closes. Then `Driver.run` closes the app. `Browser.runMain` starts the game in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
 Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas width="480" height="480">`. At that size the whole field fits on the canvas. Coins fall toward the basket, the arrow keys move it, and the top-left corner counts the coins caught and the lives left.
 

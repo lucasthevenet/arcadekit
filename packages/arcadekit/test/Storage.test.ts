@@ -5,6 +5,7 @@ import { Component, Field } from "../src/ecs/component";
 import type { ComponentDef, Entity } from "../src/ecs/component";
 import type { QuerySpec, Terms } from "../src/ecs/query";
 import { World } from "../src/ecs/world";
+import { Query } from "../src/Query";
 import { expectChecked, makeChecks } from "./checks";
 
 const Position = Component.define("st/Position", {
@@ -28,9 +29,18 @@ const Burning = Component.define(
 
 const query = <const D extends Terms>(
   terms: D,
-  withDefs: QuerySpec["withDefs"] = [],
-  withoutDefs: QuerySpec["withoutDefs"] = []
-): QuerySpec<D> => ({ terms, withDefs, withoutDefs });
+  withDefs: Terms = [],
+  withoutDefs: Terms = [],
+  more: { readonly changedDefs?: Terms; readonly readDefs?: Terms } = {}
+): Query<D> =>
+  new Query(
+    terms,
+    withDefs,
+    withoutDefs,
+    more.changedDefs,
+    [],
+    terms.filter((def) => more.readDefs?.includes(def) !== true)
+  );
 
 describe("entities and components", () => {
   it("spawns, reads, writes and despawns", () => {
@@ -299,9 +309,33 @@ describe("entities and components", () => {
     expect(world.component("st/Name")).toBe(Name);
     expect(world.component("st/Nothing")).toBeUndefined();
   });
+
+  it("makes no component of a name the compiler knows only as a string", () => {
+    const name: string = "st/Computed";
+    void (() => [
+      // @ts-expect-error a component's name is a literal
+      Component.define(name, { v: Field.f32 }),
+      // @ts-expect-error a component's name is a literal
+      Component.tag(name),
+      // @ts-expect-error a component's name is a literal
+      Component.relation(name, { onTargetDespawn: "remove" }),
+    ]);
+    const variant = (n: 1 | 2) => Component.tag(`st/Variant${n}`);
+    expect(variant(1).name).toBe("st/Variant1");
+  });
 });
 
 describe("queries", () => {
+  it("resolves only a description that Query made", () => {
+    const world = new World();
+    void (() =>
+      world.view(
+        // @ts-expect-error only Query makes a description
+        { terms: [Position] as const, withDefs: [], withoutDefs: [] }
+      ));
+    expect(world.view(query([Position])).count()).toBe(0);
+  });
+
   it("iterates every matching table with accessors and writes through them", () => {
     const world = new World();
     const a = world.spawn(
@@ -380,7 +414,7 @@ describe("queries", () => {
     }
     expect(world.view(query([Position], [Enemy]))).not.toBe(first);
     expect(
-      world.view({ ...query([Position, Velocity]), readDefs: [Velocity] })
+      world.view(query([Position, Velocity], [], [], { readDefs: [Velocity] }))
     ).not.toBe(world.view(query([Position, Velocity])));
   });
 
@@ -821,17 +855,16 @@ describe("what each hands its callback", () => {
       ]);
       const plain = query([Health, def]);
       expect(read(plain)).toEqual(expected);
-      expect(read({ ...query([Health, def]), readDefs: [def] })).toEqual(
+      expect(read(query([Health, def], [], [], { readDefs: [def] }))).toEqual(
         expected
       );
       world.freeze();
       expect(read(plain)).toEqual(expected);
       world.thaw();
       // A query that watches the component: from now on its writes are noted.
-      const watching = world.view({
-        ...query([Health]),
-        changedDefs: [def],
-      });
+      const watching = world.view(
+        query([Health], [], [], { changedDefs: [def] })
+      );
       watching.entities();
       expect(read(plain)).toEqual(expected);
       // And every field's assignment is one, noted for the entity it was.

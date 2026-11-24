@@ -34,7 +34,7 @@ import {
   World,
   readSnapshot,
 } from "../src/index";
-import type { Entity, Rng } from "../src/index";
+import type { ComponentDef, Entity, Rng } from "../src/index";
 import type { BuiltIn } from "../src/Services";
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
@@ -175,15 +175,12 @@ describe("a frozen world", () => {
 
   it("counts nothing as written, so a change query can read what it watches raw", () => {
     const { ball, world } = populated();
-    // Thawed, a query that watches and writes Ball has no raw loop: put
-    // together by hand, it throws, as it would take its own visit for a change.
+    // Thawed, a query that watches and writes Ball has no raw loop: watching
+    // a Ball known only as a ComponentDef, it throws, as it would take its own
+    // visit for a change.
+    const widened: ComponentDef = Ball;
     const moved = world.view(
-      {
-        terms: [Ball] as const,
-        withDefs: [],
-        withoutDefs: [],
-        changedDefs: [Ball],
-      },
+      Query.all(Ball).pipe(Query.changed(widened), Query.writes(Ball)),
       "drawer"
     );
     const other = world.view(Moved, "other");
@@ -499,37 +496,11 @@ describe("the frame stage", () => {
         (yield* Pinged.emits).emit({});
       }
     );
-    // The bus still throws: a frame has it, and emitting there is refused.
-    Effect.runSync(
-      Effect.gen(function* () {
-        const Vandal = System.frame("Vandal", function* () {
-          (yield* Events).emit(Pinged, {});
-        });
-        const app = yield* App.make(
-          App.define({
-            plugins: [racked({ x: 1, vx: 1 })],
-            systems: [Roll, Vandal],
-          }),
-          { checkpointEvery: 1 }
-        );
-        const world = yield* app.read(World);
-        app.tick(1);
-        const before = world.hash();
-        expect(() => app.frame()).toThrow(
-          /was emitted in the frame stage or the input stage/
-        );
-        expect(world.hash()).toBe(before);
-        // No event waits to be read, and no command to be applied: a save
-        // would be refused for one.
-        expect(app.inspect().stores).toEqual({});
-        expect(Exit.isSuccess(app.save())).toBe(true);
-        // The world is not left frozen: the tick moves the ball.
-        app.tick(1);
-        expect(world.hash()).not.toBe(before);
-        const exit = app.frameExit(0);
-        expect(Exit.isFailure(exit)).toBe(true);
-      })
-    );
+    const Bus = System.frame("Bus", function* () {
+      // @ts-expect-error the frame's events read, and have no emit
+      (yield* Events).emit(Pinged, {});
+    });
+    expect(Bus.stage).toBe("frame");
   });
 
   it("draws its random numbers from a generator of its own, not the world's", () => {
@@ -634,11 +605,14 @@ describe("the frame stage", () => {
             commands.spawn(Ball.of({ x: 0, vx: 1 }));
           }),
         });
-        const game = (systems: readonly System.System<never, BuiltIn>[]) =>
-          App.define({ plugins: [Begin], systems, handlers: [kick] });
-        const make = (systems: readonly System.System<never, BuiltIn>[]) =>
-          App.make(game(systems), { checkpointEvery: 1 });
-        const app = yield* make([Roll, Button]);
+        const app = yield* App.make(
+          App.define({
+            plugins: [Begin],
+            systems: [Roll, Button],
+            handlers: [kick],
+          }),
+          { checkpointEvery: 1 }
+        );
         for (let n = 0; n < 5; n++) {
           app.tick(1);
           app.frame();
@@ -651,9 +625,11 @@ describe("the frame stage", () => {
         ]);
         // The replay has no button and draws no frame.
         const played = app.record();
-        const headless = yield* Journal.replay(played, game([Roll]), {
-          checkpointEvery: 1,
-        });
+        const headless = yield* Journal.replay(
+          played,
+          App.define({ plugins: [Begin], systems: [Roll], handlers: [kick] }),
+          { checkpointEvery: 1 }
+        );
         expect((yield* headless.read(World)).hash()).toBe(
           (yield* app.read(World)).hash()
         );
@@ -662,7 +638,10 @@ describe("the frame stage", () => {
         const Hasty = System.frame("Hasty", function* () {
           own?.dispatchByName("fr/Kick", { by: 1 });
         });
-        const hasty = yield* make([Hasty]);
+        const hasty = yield* App.make(
+          App.define({ plugins: [Begin], systems: [Hasty], handlers: [kick] }),
+          { checkpointEvery: 1 }
+        );
         own = hasty;
         expect(() => hasty.frame()).toThrow(
           /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/
@@ -794,23 +773,19 @@ describe("what the frame stage reads", () => {
         }).pipe(
           System.runIf(Effect.map(Time, ({ tick }) => tick === 1 || tick === 6))
         );
-        const runs = [
-          [Sometimes, Emit, Listen],
-          [Sometimes, Emit],
-        ].map((systems) =>
-          Effect.gen(function* () {
-            sat.length = 0;
-            const each = yield* App.make(App.define({ systems }));
+        const run = (each: App.Any) => {
+          sat.length = 0;
+          each.tick(1);
+          each.frame();
+          for (let n = 0; n < 5; n++) {
             each.tick(1);
-            each.frame();
-            for (let n = 0; n < 5; n++) {
-              each.tick(1);
-            }
-            return [...sat];
-          })
-        );
-        expect(yield* runs[0]!).toEqual([5]);
-        expect(yield* runs[1]!).toEqual([5]);
+          }
+          return [...sat];
+        };
+        const all = App.define({ systems: [Sometimes, Emit, Listen] });
+        expect(run(yield* App.make(all))).toEqual([5]);
+        const unheard = App.define({ systems: [Sometimes, Emit] });
+        expect(run(yield* App.make(unheard))).toEqual([5]);
         // Nor can a save: it holds what the simulation has yet to read, and
         // nothing that was only kept for the frame stage, or of its readers.
         const saves = [again, headless].map((each) => {
@@ -967,33 +942,33 @@ describe("what the frame stage reads", () => {
           });
           (yield* Bounced.emits).emit({ at: 0 });
         });
-        const make = (systems: readonly System.System<never, BuiltIn>[]) =>
+        const Rack = racked(
+          { x: 0, vx: 1 },
+          { x: 1, vx: 1 },
+          { x: 2, vx: 1 },
+          { x: 3, vx: 1 }
+        );
+        const make = (
+          game: App.Game<
+            readonly System.System<never, BuiltIn>[],
+            readonly [],
+            readonly [typeof Rack]
+          >
+        ) =>
           Effect.gen(function* () {
-            const app = yield* App.make(
-              App.define({
-                plugins: [
-                  racked(
-                    { x: 0, vx: 1 },
-                    { x: 1, vx: 1 },
-                    { x: 2, vx: 1 },
-                    { x: 3, vx: 1 }
-                  ),
-                ],
-                systems,
-              }),
-              { checkpointEvery: 1, seed: 3, verifyFrames: true }
-            );
+            const app = yield* App.make(game, {
+              checkpointEvery: 1,
+              seed: 3,
+              verifyFrames: true,
+            });
             return { app, world: yield* app.read(World) };
           });
-        const { app: drawn, world: drawnWorld } = yield* make([
-          Roll,
-          Tally,
-          Watch,
-        ]);
-        const { app: undrawn, world: undrawnWorld } = yield* make([
-          Roll,
-          Tally,
-        ]);
+        const { app: drawn, world: drawnWorld } = yield* make(
+          App.define({ plugins: [Rack], systems: [Roll, Tally, Watch] })
+        );
+        const { app: undrawn, world: undrawnWorld } = yield* make(
+          App.define({ plugins: [Rack], systems: [Roll, Tally] })
+        );
         for (let n = 0; n < 20; n++) {
           drawn.tick(1 / 60);
           for (let f = 0; f < n % 3; f++) {

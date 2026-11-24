@@ -190,36 +190,30 @@ const record = (options: Options & { readonly ticks: number }) =>
   });
 
 /**
- * A recording of a game from its start, of `ticks` ticks of `delta` seconds
- * each, that holds `log`: a log as it was recorded, or altered. `seed` is the
- * seed of the game that wrote the log.
+ * `recording` with `fields` changed in its text, as a file edited by hand,
+ * and read back.
  */
-const recordingOf = (
-  log: readonly Action.LogEntry[],
-  ticks: number,
-  delta: number,
-  seed = 1
-): Journal.Recording => ({
-  seed,
-  start: 0,
-  end: ticks,
-  deltas: ticks === 0 ? [] : [{ tick: 0, delta }],
-  log,
-});
+const altered = (
+  recording: Journal.Recording,
+  fields: Readonly<Record<string, unknown>>
+): Journal.Recording => {
+  const read = Journal.decode(
+    JSON.stringify({
+      ...(JSON.parse(Journal.encode(recording)) as object),
+      ...fields,
+    })
+  );
+  assert(Exit.isSuccess(read));
+  return read.value;
+};
 
 /**
- * Replays a log into a game made from its recording, and returns what stopped
- * it, if anything did, with the app as the replay left it. The recording
- * says its game began with `options.seed`, whatever seed wrote the log.
+ * Replays a recording into the coin game `options` make, and returns what
+ * stopped it, if anything did, with the app as the replay left it.
  */
-const replayInto = (
-  options: Options,
-  log: readonly Action.LogEntry[],
-  ticks: number
-) =>
+const replayInto = (options: Options, recording: Journal.Recording) =>
   Effect.runSync(
     Effect.gen(function* () {
-      const recording = recordingOf(log, ticks, 1 / 60, options.seed ?? 1);
       // A replay that stops holds its app where it stopped.
       const { app, stopped } = yield* Journal.replay(
         recording,
@@ -393,9 +387,9 @@ describe("checkpoints", () => {
       tick: 0,
       hash: recorded.starting,
     });
-    /** A recording of one tick that holds `log`, as text. */
+    /** The recording, as text, holding `log`. */
     const holding = (log: readonly unknown[]): string =>
-      JSON.stringify({ ...recordingOf([], 1, 1), log });
+      JSON.stringify({ ...(JSON.parse(text) as object), log });
 
     for (const entry of [
       { tick: 0, hash: -1 },
@@ -421,14 +415,14 @@ describe("a replay that checks itself", () => {
   it("passes every checkpoint when it goes the way the game went", () => {
     for (const checkpointEvery of [1, 7, 60]) {
       const recorded = record({ ticks: 150, checkpointEvery });
-      const replayed = replayInto({}, recorded.log, recorded.ticks);
+      const replayed = replayInto({}, recorded.recording);
       expect(replayed.stopped).toBeUndefined();
       expect(replayed.tick).toBe(150);
       expect(replayed.hash).toBe(recorded.hashes.at(-1));
     }
     // Recording as it replays, it writes the same log again.
     const recorded = record({ ticks: 40, checkpointEvery: 1 });
-    expect(replayInto({ checkpointEvery: 1 }, recorded.log, 40).log).toEqual(
+    expect(replayInto({ checkpointEvery: 1 }, recorded.recording).log).toEqual(
       recorded.log
     );
   });
@@ -440,8 +434,7 @@ describe("a replay that checks itself", () => {
     const recorded = record({ ticks: 120, checkpointEvery: 1 });
     const replayed = replayInto(
       { faulty: fault(40, "nudge") },
-      recorded.log,
-      recorded.ticks
+      recorded.recording
     );
     const stopped = replayed.stopped!;
     expect(stopped).toBeInstanceOf(Journal.ReplayDiverged);
@@ -459,7 +452,7 @@ describe("a replay that checks itself", () => {
     expect(reason.actual).toBe(replayed.hash);
     expect(reason.actual).not.toBe(reason.expected);
     expect(stopped.entry).toEqual({ tick: 40, hash: recorded.hashes[39] });
-    expect(recorded.log[stopped.index]).toBe(stopped.entry);
+    expect(recorded.log[stopped.index]).toEqual(stopped.entry);
     expect(stopped.message).toBe(
       `The replay diverged from its log (entry ${stopped.index}): the world's hash at tick 40 is ${reason.actual}, and ${reason.expected} was recorded. The last checkpoint that matched was at tick 39.`
     );
@@ -544,17 +537,20 @@ describe("a replay that checks itself", () => {
     expect(held).toEqual(["acquired", "released"]);
   });
 
-  it("would otherwise run on until an action happened to be refused, or to the end", () => {
-    // The same recording with its checkpoints taken out, as a log was before
-    // it had any. The faulty build loses the oldest coin on tick 40, and the
-    // game takes that coin on tick 100.
+  it("without them runs on until an action happens to be refused, or to its end, where it fails", () => {
+    // The same recording with its checkpoints taken out. The faulty build
+    // loses the oldest coin on tick 40, and the game takes that coin on tick
+    // 100.
     const recorded = record({ ticks: 100, checkpointEvery: 1 });
     const oldest = recorded.coins[0]!;
     const log = [
       ...recorded.log,
       { tick: 100, name: "rp/Take", payload: { coin: oldest } },
     ];
-    const blind = replayInto({ faulty: fault(40, "lose") }, moves(log), 110);
+    const blind = replayInto(
+      { faulty: fault(40, "lose") },
+      altered(recorded.recording, { log: moves(log), end: 110 })
+    );
     // Somewhere after the fault: at the first move that named a coin the
     // faulty game no longer had, by tick 100 at the latest.
     expect(blind.stopped!.tick).toBeGreaterThan(40);
@@ -564,26 +560,41 @@ describe("a replay that checks itself", () => {
       /\("rp\/Take" at tick \d+\) was refused on replay/
     );
     // With them, sixty ticks earlier, where it went wrong.
-    const checked = replayInto({ faulty: fault(40, "lose") }, log, 110);
+    const checked = replayInto(
+      { faulty: fault(40, "lose") },
+      altered(recorded.recording, { log, end: 110 })
+    );
     expect(checked.stopped!.tick).toBe(40);
     expect(checked.stopped!.reason).toBeInstanceOf(Journal.HashMismatch);
 
-    // And a fault that breaks no rule is never noticed without them.
+    // A fault that breaks no rule, in a game recorded with no checkpoints,
+    // shows at the end: the replay's world isn't the one the game ended on.
+    const unchecked = record({ ticks: 100, checkpointEvery: 0 });
+    expect(checkpoints(unchecked.log)).toEqual([]);
+    expect(unchecked.recording.endHash).toBe(unchecked.hashes.at(-1));
+    expect(replayInto({}, unchecked.recording).stopped).toBeUndefined();
     const silent = replayInto(
       { faulty: fault(40, "nudge") },
-      moves(recorded.log),
-      100
+      unchecked.recording
     );
-    expect(silent.stopped).toBeUndefined();
-    expect(silent.hash).not.toBe(recorded.hashes.at(-1));
+    expect(silent.tick).toBe(100);
+    expect(silent.stopped!.index).toBe(unchecked.log.length);
+    expect(silent.stopped!.entry).toEqual({
+      tick: 100,
+      hash: unchecked.hashes.at(-1),
+    });
+    const reason = silent.stopped!.reason as Journal.HashMismatch;
+    expect(reason).toBeInstanceOf(Journal.HashMismatch);
+    expect(reason.expected).toBe(unchecked.hashes.at(-1));
+    expect(reason.actual).toBe(silent.hash);
+    expect(reason.agreedAt).toBeUndefined();
   });
 
   it("stops at the first checkpoint after it diverged when they are further apart, and names the last that matched", () => {
     const recorded = record({ ticks: 120, checkpointEvery: 10 });
     const replayed = replayInto(
       { faulty: fault(43, "nudge") },
-      recorded.log,
-      recorded.ticks
+      recorded.recording
     );
     expect(replayed.stopped!.tick).toBe(50);
     expect(replayed.tick).toBe(50);
@@ -591,16 +602,11 @@ describe("a replay that checks itself", () => {
     expect(reason.agreedAt).toBe(40);
     expect(reason.expected).toBe(recorded.hashes[49]);
     // A fault on a checkpoint's own tick is caught by that checkpoint.
-    const onIt = replayInto(
-      { faulty: fault(50, "nudge") },
-      recorded.log,
-      recorded.ticks
-    );
+    const onIt = replayInto({ faulty: fault(50, "nudge") }, recorded.recording);
     expect(onIt.stopped!.tick).toBe(50);
     const after = replayInto(
       { faulty: fault(51, "nudge") },
-      recorded.log,
-      recorded.ticks
+      recorded.recording
     );
     expect(after.stopped!.tick).toBe(60);
     expect((after.stopped!.reason as Journal.HashMismatch).agreedAt).toBe(50);
@@ -608,7 +614,7 @@ describe("a replay that checks itself", () => {
 
   it("stops before its first tick when it does not start where the game started", () => {
     const recorded = record({ ticks: 30, seed: 5 });
-    const otherSeed = replayInto({ seed: 6 }, recorded.log, recorded.ticks);
+    const otherSeed = replayInto({}, altered(recorded.recording, { seed: 6 }));
     expect(otherSeed.stopped!.tick).toBe(0);
     expect(otherSeed.tick).toBe(0);
     expect(otherSeed.stopped!.index).toBe(0);
@@ -622,10 +628,10 @@ describe("a replay that checks itself", () => {
     expect(moves(otherSeed.log)).toEqual([]);
 
     // The right seed, but something in the world that the game did not have.
-    const crowded = replayInto({ seed: 5, coins: [1] }, recorded.log, 30);
+    const crowded = replayInto({ coins: [1] }, recorded.recording);
     expect(crowded.stopped!.tick).toBe(0);
     expect(crowded.tick).toBe(0);
-    expect(replayInto({ seed: 5 }, recorded.log, 30).stopped).toBeUndefined();
+    expect(replayInto({}, recorded.recording).stopped).toBeUndefined();
   });
 
   it("catches a log that was edited into another game the rules allow", () => {
@@ -633,7 +639,7 @@ describe("a replay that checks itself", () => {
     const edit = (change: (log: Action.LogEntry[]) => void) => {
       const log = [...recorded.log];
       change(log);
-      return replayInto({}, log, recorded.ticks).stopped;
+      return replayInto({}, altered(recorded.recording, { log })).stopped;
     };
     const drops = recorded.log.flatMap((entry, index) =>
       !Action.isCheckpoint(entry) && entry.name === "rp/Drop" && entry.tick > 5
@@ -669,7 +675,7 @@ describe("a replay that checks itself", () => {
         (entry) => entry.tick === 20 && Action.isCheckpoint(entry)
       );
       const checkpoint = log[index] as Action.Checkpoint;
-      log[index] = { ...checkpoint, hash: checkpoint.hash ^ 1 };
+      log[index] = { ...checkpoint, hash: (checkpoint.hash ^ 1) >>> 0 };
     });
     expect(forged!.tick).toBe(20);
     expect((forged!.reason as Journal.HashMismatch).agreedAt).toBe(19);
@@ -696,27 +702,12 @@ describe("a replay that checks itself", () => {
           app.dispatch(Drop, { value: 1 });
           app.tick(1 / 60);
         }
-        return [...app.actionLog];
+        return app.record();
       }
     );
-    const replayed = replayInto({}, recorded, 20);
+    const replayed = replayInto({}, recorded);
     expect(replayed.stopped!.tick).toBe(9);
     expect((replayed.stopped!.reason as Journal.HashMismatch).agreedAt).toBe(8);
-  });
-
-  it("says so when the log has a checkpoint the replay never reaches", () => {
-    const recorded = record({ ticks: 30, checkpointEvery: 10 });
-    // The moves of the first 25 ticks, and every checkpoint, the one at 30 too.
-    const log = recorded.log.filter(
-      (entry) => Action.isCheckpoint(entry) || entry.tick <= 25
-    );
-    const short = replayInto({}, log, 25);
-    expect(short.stopped!.tick).toBe(30);
-    expect(Action.isCheckpoint(short.stopped!.entry)).toBe(true);
-    expect(short.stopped!.message).toMatch(
-      /\(a checkpoint at tick 30\) was not reached on replay: its tick \(30\) was never reached/
-    );
-    expect(short.tick).toBe(25);
   });
 
   it("says so when a queued action meets another fate than the log records", () => {
@@ -728,20 +719,23 @@ describe("a replay that checks itself", () => {
       app.enqueue(Take, { coin }); // refused: the coin is gone by then
       app.tick(1 / 60);
       app.tick(1 / 60);
-      return [...app.actionLog];
+      return app.record();
     });
-    expect(moves(recorded).map((entry) => entry.refused)).toEqual([
+    expect(moves(recorded.log).map((entry) => entry.refused)).toEqual([
       undefined,
       undefined,
       "NoSuchCoin",
     ]);
-    expect(replayInto({}, recorded, 3).stopped).toBeUndefined();
+    expect(replayInto({}, recorded).stopped).toBeUndefined();
 
     // The game accepted the first take, and in this log it names no coin.
-    const refusedNow = [...recorded];
+    const refusedNow = [...recorded.log];
     const take = refusedNow[1] as Action.Logged;
     refusedNow[1] = { ...take, payload: { coin: 4000 } };
-    const first = replayInto({}, refusedNow, 3).stopped!;
+    const first = replayInto(
+      {},
+      altered(recorded, { log: refusedNow })
+    ).stopped!;
     expect(first.index).toBe(1);
     expect(first.reason).toBe("NoSuchCoin");
     expect(first.message).toBe(
@@ -750,9 +744,12 @@ describe("a replay that checks itself", () => {
 
     // The game refused the second take, and here the first is gone, so the
     // second finds its coin.
-    const acceptedNow = [...recorded];
+    const acceptedNow = [...recorded.log];
     acceptedNow.splice(1, 1);
-    const second = replayInto({}, acceptedNow, 3).stopped!;
+    const second = replayInto(
+      {},
+      altered(recorded, { log: acceptedNow })
+    ).stopped!;
     expect(second.index).toBe(1);
     expect(second.message).toBe(
       'Log entry 1 ("rp/Take" at tick 1) did not replay: the game refused it (NoSuchCoin) and the replay accepted it'
@@ -931,7 +928,8 @@ describe("the action log", () => {
       { tick: 0, name: "b", payload: null, queued: true },
       { tick: 1, name: "c", payload: [1], queued: true, refused: "Because" },
     ];
-    const recording = recordingOf(log, 2, 1);
+    const recording = altered(record({ ticks: 2 }).recording, { log });
+    expect(recording.log).toEqual(log);
     const loaded = Journal.decode(Journal.encode(recording));
     expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recording);
     for (const entry of [
@@ -941,7 +939,10 @@ describe("the action log", () => {
       { tick: 0, name: "a", payload: 1, refused: 5 },
     ]) {
       const refused = Journal.decode(
-        Journal.encode({ ...recording, log: [entry as Action.Logged] })
+        JSON.stringify({
+          ...(JSON.parse(Journal.encode(recording)) as object),
+          log: [entry],
+        })
       );
       expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
     }
@@ -995,10 +996,10 @@ describe("app.enqueue from inside the simulation", () => {
       }),
     ],
   });
-  const replayed = (log: readonly Action.LogEntry[], ticks: number) =>
+  const replayed = (recording: Journal.Recording) =>
     withApp(
       Effect.orDie(
-        Journal.replay(recordingOf(log, ticks, 1, 0), Relaying, {
+        Journal.replay(recording, Relaying, {
           checkpointEvery: 1,
         })
       ),
@@ -1011,15 +1012,15 @@ describe("app.enqueue from inside the simulation", () => {
         app.tick(1);
       }
       return {
-        log: [...app.actionLog],
+        recording: app.record(),
         value: tallyOf(app).value,
         hash: world.hash(),
       };
     });
     // The first tick's move is applied on the second, and so on.
     expect(recorded.value).toBe(2);
-    expect(moves(recorded.log)).toEqual([]);
-    expect(replayed(recorded.log, 3)).toEqual({
+    expect(moves(recorded.recording.log)).toEqual([]);
+    expect(replayed(recorded.recording)).toEqual({
       value: recorded.value,
       hash: recorded.hash,
     });
@@ -1030,16 +1031,16 @@ describe("app.enqueue from inside the simulation", () => {
       expect(Exit.isSuccess(app.dispatch(Relay, { by: 100 }))).toBe(true);
       app.tick(1);
       return {
-        log: [...app.actionLog],
+        recording: app.record(),
         value: tallyOf(app).value,
         hash: world.hash(),
       };
     });
     expect(recorded.value).toBe(100);
-    expect(moves(recorded.log)).toEqual([
+    expect(moves(recorded.recording.log)).toEqual([
       { tick: 0, name: "rp/Relay", payload: { by: 100 } },
     ]);
-    expect(replayed(recorded.log, 1)).toEqual({
+    expect(replayed(recorded.recording)).toEqual({
       value: recorded.value,
       hash: recorded.hash,
     });
@@ -1136,10 +1137,10 @@ describe("a game whose simulation issues actions itself", () => {
       for (let i = 0; i < 9; i++) {
         app.tick(1);
       }
-      return [...app.actionLog];
+      return app.record();
     });
-    expect(moves(recorded)).toEqual([]);
-    const withBotMoves = [...recorded];
+    expect(moves(recorded.log)).toEqual([]);
+    const withBotMoves = [...recorded.log];
     const at = withBotMoves.findIndex(
       (entry) => Action.isCheckpoint(entry) && entry.tick === 3
     );
@@ -1148,11 +1149,13 @@ describe("a game whose simulation issues actions itself", () => {
       name: "rp/Add",
       payload: { by: 7 },
     });
-    const stopped = stoppedBy(replayBusy(recordingOf(withBotMoves, 9, 1, 4)));
+    const stopped = stoppedBy(
+      replayBusy(altered(recorded, { log: withBotMoves }))
+    );
     expect(stopped.reason).toBeInstanceOf(Journal.HashMismatch);
     expect(stopped.tick).toBe(4);
     // And as it is recorded, it replays.
-    withApp(Effect.orDie(replayBusy(recordingOf(recorded, 9, 1, 4))), (app) => {
+    withApp(Effect.orDie(replayBusy(recorded)), (app) => {
       expect(app.time.tick).toBe(9);
     });
   });
@@ -1179,13 +1182,13 @@ describe("a game whose simulation issues actions itself", () => {
         app.tick(1);
         return {
           value: tallyOf(app).value,
-          log: [...app.actionLog],
+          recording: app.record(),
         };
       });
-    const replay = (log: readonly Action.LogEntry[]) =>
+    const replay = (recording: Journal.Recording) =>
       withApp(
         Effect.orDie(
-          Journal.replay(recordingOf(log, 1, 1, 0), Ordered, {
+          Journal.replay(recording, Ordered, {
             checkpointEvery: 1,
           })
         ),
@@ -1196,16 +1199,15 @@ describe("a game whose simulation issues actions itself", () => {
     const addedFirst = play("dispatch");
     expect(doubledFirst.value).toBe(1 * 2 + 10);
     expect(addedFirst.value).toBe((1 + 10) * 2);
-    expect(moves(doubledFirst.log).map((entry) => entry.name)).toEqual([
-      "rp/Double",
+    expect(
+      moves(doubledFirst.recording.log).map((entry) => entry.name)
+    ).toEqual(["rp/Double", "rp/Chain"]);
+    expect(moves(addedFirst.recording.log).map((entry) => entry.name)).toEqual([
       "rp/Chain",
-    ]);
-    expect(moves(addedFirst.log).map((entry) => entry.name)).toEqual([
-      "rp/Chain",
       "rp/Double",
     ]);
-    expect(replay(doubledFirst.log)).toBe(doubledFirst.value);
-    expect(replay(addedFirst.log)).toBe(addedFirst.value);
+    expect(replay(doubledFirst.recording)).toBe(doubledFirst.value);
+    expect(replay(addedFirst.recording)).toBe(addedFirst.value);
   });
 });
 
@@ -1299,40 +1301,7 @@ describe("a recording", () => {
     });
   });
 
-  it("is refused when how its game began isn't where it begins, and records only a save of its own app", () => {
-    const recorded = withApp(walking, (app) => {
-      app.tick(1 / 60);
-      app.tick(1 / 60);
-      const save = app.save();
-      assert(Exit.isSuccess(save));
-      app.tick(1 / 60);
-      return { whole: app.record(), tail: app.record(save.value) };
-    });
-    // Written by hand, a tick off: one from a seed that begins at tick 1,
-    // and one whose save, of tick 2, is said to begin at tick 1.
-    const offByOne = (recording: Journal.Recording): Journal.Recording => ({
-      ...recording,
-      start: 1,
-      deltas: [{ tick: 1, delta: 1 / 60 }],
-      log: [],
-    });
-    for (const { recording, said } of [
-      {
-        recording: offByOne(recorded.whole),
-        said: "begins at tick 1, with a seed, and a game begins at tick 0",
-      },
-      {
-        recording: offByOne(recorded.tail),
-        said: "begins at tick 1, and its save was made at tick 2",
-      },
-    ]) {
-      expect(() => withApp(replayWalking(recording), () => {})).toThrow(
-        `Journal.replay was given a recording that ${said}. Decode a recording with Journal.decode, which checks it.`
-      );
-      expect(Exit.isFailure(Journal.decode(Journal.encode(recording)))).toBe(
-        true
-      );
-    }
+  it("records only a save of its own app", () => {
     withApp(walking, (app) => {
       app.tick(1 / 60);
       // Not a save of this app: it is of a tick this one hasn't reached.
@@ -1495,6 +1464,24 @@ describe("how a recorded game began", () => {
     expect(typeof fromSave["save"]).toBe("string");
     const text = (recording: Record<string, unknown>): string =>
       JSON.stringify(recording);
+
+    // Only `app.record()` and `Journal.decode` make a recording.
+    const written: Journal.Played & Journal.Origin = {
+      seed: 3,
+      start: 0,
+      end: 0,
+      endHash: 0,
+      deltas: [],
+      log: [],
+    };
+    // @ts-expect-error a recording written by hand is not one
+    void (() => Journal.replay(written, coinGame()));
+
+    // A recording from before one held the hash its game ended on.
+    const { endHash: _endHash, ...older } = fromSeed;
+    expect(refusal(text(older))).toMatch(
+      /older format: it holds no endHash, the hash its game ended on/
+    );
 
     const { seed: _, ...neither } = fromSeed;
     expect(refusal(text(neither))).toMatch(

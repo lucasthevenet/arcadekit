@@ -20,7 +20,7 @@
  *   })
  *
  *   Browser.runMain(
- *     Driver.run(App.make(App.define({ plugins: [Rules, Look] })), { hz: 60 }).pipe(
+ *     Driver.run(App.define({ plugins: [Rules, Look] }), { hz: 60 }).pipe(
  *       Effect.provide(Three.layerWebGL({ canvas }))
  *     )
  *   )

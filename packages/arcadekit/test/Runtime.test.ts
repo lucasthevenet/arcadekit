@@ -107,7 +107,7 @@ describe("systems", () => {
       sys("a"),
       sys("input").pipe(System.inStage("preUpdate")),
       sys("c"),
-    ];
+    ] as const;
     withApp(App.make(App.define({ systems })), (app) => {
       expect(app.systemOrder).toEqual(["input", "b", "a", "c", "render"]);
       app.tick(1);

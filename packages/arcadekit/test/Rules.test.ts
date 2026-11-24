@@ -70,7 +70,7 @@ describe("events", () => {
         ping.emit(tick * 10 + 1);
       }
     });
-    const systems = [reader("Before"), Emitter, reader("After")];
+    const systems = [reader("Before"), Emitter, reader("After")] as const;
     withApp(App.make(App.define({ systems })), (app) => {
       for (let i = 0; i < 4; i++) {
         app.tick(1);
@@ -170,9 +170,11 @@ describe("events", () => {
     let bus: { emit(def: typeof Ping, n: number): void } | undefined;
     const Keeper = System.tick("Keeper", function* () {
       kept = yield* Ping.emits;
-      // A system that has the bus and no handle emits through it.
-      bus = yield* Effect.service(Events);
-      bus.emit(Ping, 7);
+      // A system of the tick that has the bus and no handle emits through it.
+      const events = yield* Effect.service(Events);
+      assert(events instanceof Event.EventBus);
+      events.emit(Ping, 7);
+      bus = events;
     });
     withApp(
       App.make(App.define({ systems: [Keeper], handlers: [say] })),
@@ -329,12 +331,11 @@ const Board = Plugin.make("ru/Board", {
 });
 
 /** The duel as a game, which a recording of it is replayed in. */
-const duelOf = (...more: System.System<never, BuiltIn>[]) =>
-  App.define({
-    plugins: [Board],
-    systems: [Death, Recharge, ...more],
-    handlers: [attack, endTurn, summon],
-  });
+const Duel = App.define({
+  plugins: [Board],
+  systems: [Death, Recharge],
+  handlers: [attack, endTurn, summon],
+});
 
 /** An app of a game the board begins, its world, and each player's fighter. */
 const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
@@ -354,8 +355,13 @@ const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
   });
 
 /** An app of the duel as it begins, with each player's fighter. */
-const duel = (...more: System.System<never, BuiltIn>[]) =>
-  begin(App.make(duelOf(...more)));
+const duel = (
+  game: App.Game<
+    readonly System.System<never, BuiltIn>[],
+    typeof Duel.handlers,
+    typeof Duel.plugins
+  > = Duel
+) => begin(App.make(game));
 
 const Turns = Query.all(Turn);
 const look = Effect.gen(function* () {
@@ -439,7 +445,12 @@ describe("actions", () => {
     const Mourn = System.tick("Mourn", function* () {
       for (const event of (yield* Died).read()) deaths.push(event.entity);
     });
-    withApp(duel(Mourn), ({ app, world, one, two }) => {
+    const Mourning = App.define({
+      plugins: [Board],
+      systems: [Death, Recharge, Mourn],
+      handlers: [attack, endTurn, summon],
+    });
+    withApp(duel(Mourning), ({ app, world, one, two }) => {
       app.dispatch(Attack, { attacker: one, target: two });
       app.tick(1);
       expect(world.isAlive(two)).toBe(true);
@@ -639,7 +650,7 @@ describe("replay", () => {
     expect(original.state[0]).toBe("tick=7 entities=3");
 
     const replayed = withApp(
-      Journal.replay(original.recording, duelOf()),
+      Journal.replay(original.recording, Duel),
       (app) => ({ log: [...app.actionLog], state: snapshot(app) })
     );
     expect(replayed.state).toEqual(original.state);

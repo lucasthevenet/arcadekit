@@ -5,7 +5,7 @@ import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { partsOf } from "../src/app/parts";
-import type { EventBus } from "../src/Event";
+import type { ReadingEvents } from "../src/Event";
 import {
   Action,
   App,
@@ -27,7 +27,6 @@ import {
 } from "../src/index";
 import type { Entity, JsonValue } from "../src/index";
 import { Session } from "../src/net/index";
-import type { BuiltIn } from "../src/Services";
 import {
   CoinGame,
   DELTA,
@@ -251,14 +250,12 @@ describe("a game that is put back to a moment", () => {
       (yield* Commands.spawns(Dot)).spawn(Dot.of({ x: 1 }));
     });
     // Listed ahead of what it watches, so that a dot is waiting for it when the
-    // game goes back. Typed as any systems, which is the one way to list it
-    // so: the compiler refuses that order where it can see it.
-    const systems: readonly System.System<never, BuiltIn>[] = [
-      Count,
-      Draw,
-      Grow,
-    ];
-    withApp(App.make(App.define({ systems })), (app) => {
+    // game goes back: an order the compiler refuses.
+    const game = App.define(
+      // @ts-expect-error a watcher listed ahead of what it watches, on purpose
+      { systems: [Count, Draw, Grow] }
+    );
+    withApp(App.make(game), (app) => {
       for (let i = 0; i < 3; i++) {
         app.tick(DELTA);
         app.frame();
@@ -696,7 +693,7 @@ describe("what the stages between ticks hear across a rewind", () => {
   describe("code outside the game, which hears as the stages do", () => {
     /** A game whose bus is kept for code outside it, once it has ticked. */
     const kept = () => {
-      let bus: EventBus | undefined;
+      let bus: ReadingEvents | undefined;
       const Keep = System.tick("rw/Keep", function* () {
         bus = yield* Effect.service(Events);
       });

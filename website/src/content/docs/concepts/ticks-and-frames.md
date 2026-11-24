@@ -61,7 +61,7 @@ const Draw = System.frame("game/Draw", function* () {
 });
 ```
 
-The world is read-only during the frame stage. A frame system reads queries, singletons, states, `Time`, events and change queries. Code that spawns, sets a component, writes a singleton or a state, runs a command, assigns in `each` or emits an event doesn't compile there. `yield* Frame` describes the current frame:
+The world is read-only during the frame stage. A frame system reads queries, singletons, states, `Time`, events and change queries. Code that spawns, sets a component, writes a singleton or a state, runs a command, assigns in `each` or emits an event doesn't compile there, and a cast finds nothing to call: its world has no `set`, its events have no `emit`, and it has no `Commands`. The input stage and `app.read` are handed the same. `yield* Frame` describes the current frame:
 
 | Field | Description |
 | --- | --- |
@@ -104,7 +104,7 @@ A replay therefore reads no device, because the log already holds what the devic
 
 ## A driver runs the stages
 
-- **`Driver.run`** runs the app that `App.make` makes until it is interrupted. On each repaint it runs the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`, and under Node it uses a timer.
+- **`Driver.run`** makes an app of a game and runs it until it is interrupted. On each repaint it runs the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`, and under Node it uses a timer.
 - **`app.tick(delta)`** runs one tick by hand, for a test or a game that steps itself. A tick reads no device. `app.input()` runs the input stage, and `app.frame(alpha, delta)` runs the frame stage. Without an `alpha`, `app.frame()` draws the game where its last tick left it, at an `alpha` of 1.
 - **`Driver.fixedStep`** runs the ticks that are due for a given amount of real time, each after the input stage, then the frame.
 - **`Driver.frames`** is the loop that `Driver.run` uses, for a program that creates its app itself. **`Driver.interval`** does the same on a timer.

@@ -74,7 +74,7 @@ const Look = Plugin.make("game/Look", {
 });
 
 Browser.runMain(
-  Driver.run(App.make(App.define({ plugins: [Look] })), { hz: 60 }).pipe(
+  Driver.run(App.define({ plugins: [Look] }), { hz: 60 }).pipe(
     Effect.provide(Three.layerWebGL({ canvas }))
   ),
   { target: canvas }

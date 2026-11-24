@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,6 +8,7 @@ import {
   Commands,
   Component,
   Event,
+  Events,
   Field,
   Frame,
   Input,
@@ -209,5 +210,51 @@ describe("a system's stage", () => {
     );
     expect(one.name).toBe(two.name);
     expect(left.name).toBe(right.name);
+  });
+
+  it("hands the frame stage, the input stage and app.read nothing that changes the game, even to a cast", () => {
+    const handed = new Map<string, object>();
+    const look = (place: string) =>
+      Effect.gen(function* () {
+        const world = yield* World;
+        const commands = yield* Effect.serviceOption(Commands);
+        const events = yield* Effect.serviceOption(Events);
+        handed.set(place, {
+          set: "set" in world,
+          commands: Option.isSome(commands),
+          emit: Option.match(events, {
+            onNone: () => false,
+            onSome: (bus) => "emit" in bus || "emit" in bus.handle(Moved),
+          }),
+        });
+      });
+    const app = Effect.runSync(
+      App.make(
+        App.define({
+          systems: [
+            System.tick("stg/LookTick", function* () {
+              yield* look("tick");
+            }),
+            System.frame("stg/LookFrame", function* () {
+              yield* look("frame");
+            }),
+            System.input("stg/LookInput", function* () {
+              yield* look("input");
+            }),
+          ],
+        })
+      )
+    );
+    app.input();
+    app.tick(1);
+    app.frame();
+    Effect.runSync(app.read(look("read")));
+    const nothing = { set: false, commands: false, emit: false };
+    expect(Object.fromEntries(handed)).toEqual({
+      tick: { set: true, commands: true, emit: true },
+      frame: nothing,
+      input: nothing,
+      read: nothing,
+    });
   });
 });

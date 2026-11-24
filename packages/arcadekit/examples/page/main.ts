@@ -48,7 +48,7 @@ const ui = View.layer(Catch, (bridge) =>
 // Driver.run closes the app, what was loaded is let go, and nobody listens
 // any more.
 Browser.runMain(
-  Driver.run(App.make(Catch, { seed: Date.now() }), { hz: 60 }).pipe(
+  Driver.run(Catch, { seed: Date.now(), hz: 60 }).pipe(
     Effect.provide(Layer.mergeAll(Screen.layer, ui))
   ),
   {

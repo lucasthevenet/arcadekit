@@ -97,7 +97,7 @@ describe("Driver.run", () => {
     const display = Driver.makeManualDisplay();
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game] })), {
+      Driver.run(App.define({ plugins: [Game] }), {
         hz: 60,
         ready: (app) =>
           Effect.sync(() => {
@@ -135,7 +135,7 @@ describe("Driver.run", () => {
     >()("run/Menu") {}
     let press = (): void => {};
     const fiber = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game] })), {
+      Driver.run(App.define({ plugins: [Game] }), {
         hz: 60,
         ready: (app) =>
           Effect.gen(function* () {
@@ -165,7 +165,7 @@ describe("Driver.run", () => {
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(log.includes("menu unwired")).toBe(true);
     // Not providing it does not compile.
-    const unprovided = Driver.run(App.make(App.define({ plugins: [Game] })), {
+    const unprovided = Driver.run(App.define({ plugins: [Game] }), {
       hz: 60,
       ready: () => Effect.asVoid(Effect.service(Menu)),
     });
@@ -173,9 +173,7 @@ describe("Driver.run", () => {
     void (() => Effect.runFork(unprovided));
     // A game that needs nothing from outside runs as it is.
     void (() =>
-      Effect.runFork(
-        Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 })
-      ));
+      Effect.runFork(Driver.run(App.define({ plugins: [Game] }), { hz: 60 })));
   });
 
   it("fails with what making the app fails with, a step before the first frame included, holding on to nothing", async () => {
@@ -184,7 +182,7 @@ describe("Driver.run", () => {
     const { Game, log } = makeGame();
     const display = Driver.makeManualDisplay();
     const fiber = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game] })), {
+      Driver.run(App.define({ plugins: [Game] }), {
         hz: 60,
         ready: () => Effect.fail(new NoCanvas()),
       }).pipe(Effect.provideService(Driver.Display, display))
@@ -203,7 +201,7 @@ describe("Driver.run", () => {
     let reached = false;
     const exit = await Effect.runPromise(
       Effect.exit(
-        Driver.run(App.make(App.define({ plugins: [Silent] })), {
+        Driver.run(App.define({ plugins: [Silent] }), {
           hz: 60,
           ready: () =>
             Effect.sync(() => {
@@ -219,6 +217,16 @@ describe("Driver.run", () => {
     );
     expect(reached).toBe(false);
     expect(display.pending).toBe(0);
+
+    // A step tapped onto the making, which would leave the app open when it
+    // fails, has nowhere to go.
+    void Driver.run(
+      // @ts-expect-error it takes the game, and makes the app itself
+      App.make(App.define({ plugins: [Game] })).pipe(
+        Effect.tap(() => Effect.fail(new NoCanvas()))
+      ),
+      { hz: 60 }
+    );
   });
 
   it("goes on from a save when given one, and says why when the save cannot be loaded", async () => {
@@ -230,10 +238,9 @@ describe("Driver.run", () => {
         made = app;
       });
     const first = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game] })), {
-        hz: 60,
-        ready: keep,
-      }).pipe(Effect.provideService(Driver.Display, display))
+      Driver.run(App.define({ plugins: [Game] }), { hz: 60, ready: keep }).pipe(
+        Effect.provideService(Driver.Display, display)
+      )
     );
     turn(display, 6);
     const taken = made!.save();
@@ -244,7 +251,8 @@ describe("Driver.run", () => {
 
     log.length = 0;
     const second = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game] }), { save }), {
+      Driver.run(App.define({ plugins: [Game] }), {
+        save,
         hz: 60,
         ready: keep,
       }).pipe(Effect.provideService(Driver.Display, display))
@@ -261,12 +269,10 @@ describe("Driver.run", () => {
     // A save of a game that this is not.
     const exit = await Effect.runPromise(
       Effect.exit(
-        Driver.run(
-          App.make(App.define({ systems: [] }), {
-            save: { ...save, world: new Uint8Array([1, 2, 3]) },
-          }),
-          { hz: 60 }
-        )
+        Driver.run(App.define({ systems: [] }), {
+          save: { ...save, world: new Uint8Array([1, 2, 3]) },
+          hz: 60,
+        })
       ).pipe(Effect.provideService(Driver.Display, display))
     );
     const typed: Exit.Exit<never, Save.LoadRefused> = exit;
@@ -277,7 +283,7 @@ describe("Driver.run", () => {
     expect(display.pending).toBe(0);
     // Without a save, loading is not among what can go wrong.
     const fresh: Effect.Effect<never, never> = Driver.run(
-      App.make(App.define({ systems: [] })),
+      App.define({ systems: [] }),
       { hz: 60 }
     );
     void fresh;
@@ -293,7 +299,7 @@ describe("Driver.run", () => {
     });
     const display = Driver.makeManualDisplay();
     const fiber = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game], systems: [Jam] })), {
+      Driver.run(App.define({ plugins: [Game], systems: [Jam] }), {
         hz: 60,
       }).pipe(Effect.provideService(Driver.Display, display))
     );
@@ -317,7 +323,7 @@ describe("Driver.run", () => {
     let made: App.Any | undefined;
     let ask = (_by: number): void => {};
     const fiber = Effect.runFork(
-      Driver.run(App.make(App.define({ handlers: [add], systems: [Count] })), {
+      Driver.run(App.define({ handlers: [add], systems: [Count] }), {
         hz: 60,
         ticks: "whenNeeded",
         ready: (app) =>
@@ -356,7 +362,7 @@ describe("Driver.run", () => {
     const display = Driver.makeManualDisplay();
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game] })), {
+      Driver.run(App.define({ plugins: [Game] }), {
         hz: 60,
         maxStepsPerCall: 2,
         ready: (app) =>
@@ -399,10 +405,9 @@ describe("Driver.run", () => {
       seen.push((yield* Input.Keyboard).down("KeyA"));
     });
     const fiber = Effect.runFork(
-      Driver.run(
-        App.make(App.define({ plugins: [Input.plugin], systems: [Watch] })),
-        { hz: 60 }
-      ).pipe(
+      Driver.run(App.define({ plugins: [Input.plugin], systems: [Watch] }), {
+        hz: 60,
+      }).pipe(
         // The page's devices, and a display turned by hand in place of the
         // page's: what is provided nearer the game is the one it gets.
         Effect.provideService(Driver.Display, display),
@@ -426,7 +431,7 @@ describe("Driver.run", () => {
     const { Game, log } = makeGame();
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
-      Driver.run(App.make(App.define({ plugins: [Game] })), {
+      Driver.run(App.define({ plugins: [Game] }), {
         hz: 200,
         ready: (app) =>
           Effect.sync(() => {

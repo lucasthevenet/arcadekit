@@ -1437,19 +1437,17 @@ describe("an entity drawn between two ticks", () => {
   const Smoothed = smoothed("th/Smoothed", Transform3d);
   /** The same rocks of a flat game, drawn so. */
   const SmoothedFlat = smoothed("th/SmoothedFlat", Transform2d);
+  const plugins = [Three.plugin, Hand] as const;
+  /** A game whose rocks slide, and the systems that draw them. */
   const play = (
-    ...systems: readonly System.System<never, BuiltIn | Three.Scene>[]
+    game: App.Game<
+      readonly System.System<never, BuiltIn | Three.Scene>[],
+      readonly [],
+      typeof plugins
+    >
   ) => {
     const renderer = makeRenderer();
-    const { app, hand, world } = start(
-      App.make(
-        App.define({
-          plugins: [Three.plugin, Hand],
-          systems: [Slide, ...systems],
-        })
-      ),
-      renderer
-    );
+    const { app, hand, world } = start(App.make(game), renderer);
     return {
       app,
       hand,
@@ -1474,7 +1472,9 @@ describe("an entity drawn between two ticks", () => {
   const xAt = (mesh: InstancedMesh, y: number): number => rowAt(mesh, y)[12]!;
 
   it("is where it is the first frame it is seen, and from then on between where it was a tick ago and where it is", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Smoothed] })
+    );
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     // Never drawn before: there is nowhere to come from, whatever the frame.
     app.frame(0.5);
@@ -1503,7 +1503,9 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("is where the last tick left it in a frame run by hand without an alpha", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Smoothed] })
+    );
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     app.frame();
     app.tick(1);
@@ -1515,7 +1517,9 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("is drawn between its last two places when its id is past what 32 bits hold", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Smoothed] })
+    );
     // A slot given out 1,100 times: the next entity in it has such an id.
     for (let n = 0; n < 1100; n++) {
       hand.despawn(hand.spawn(Rock));
@@ -1533,7 +1537,9 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("comes from where it was last drawn when several ticks ran since, and stays between the two when none did", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Smoothed] })
+    );
     const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     app.frame();
     app.tick(1);
@@ -1558,7 +1564,9 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("draws an entity it has not been drawing where it is: a new one, one in a slot that was another's, one that was hidden", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Smoothed] })
+    );
     const old = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     const hidden = hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }));
     app.frame();
@@ -1592,7 +1600,9 @@ describe("an entity drawn between two ticks", () => {
   it("starts over when its system did not run for a frame", () => {
     const Phase = { on: true };
     const Gated = Smoothed.pipe(System.runIf(Effect.sync(() => Phase.on)));
-    const { app, hand, mesh } = play(Gated);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Gated] })
+    );
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     app.frame();
     app.tick(1);
@@ -1619,8 +1629,14 @@ describe("an entity drawn between two ticks", () => {
         snap: 50,
       });
     const { app, flatMesh, hand, mesh } = play(
-      wrapping("th/Smoothed", Transform3d),
-      wrapping("th/SmoothedFlat", Transform2d)
+      App.define({
+        plugins,
+        systems: [
+          Slide,
+          wrapping("th/Smoothed", Transform3d),
+          wrapping("th/SmoothedFlat", Transform2d),
+        ],
+      })
     );
     const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     const card = hand.spawn(Rock, Flat.Position.of({ x: 0, y: 2 }));
@@ -1665,7 +1681,9 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("draws an entity in a slot that was another's turned and sized as it is, not on the way from the other's", () => {
-    const { app, flatMesh, hand, mesh, world } = play(Smoothed, SmoothedFlat);
+    const { app, flatMesh, hand, mesh, world } = play(
+      App.define({ plugins, systems: [Slide, Smoothed, SmoothedFlat] })
+    );
     const olds = [
       hand.spawn(
         Rock,
@@ -1708,7 +1726,9 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("turns by the shorter way and grows evenly, in three dimensions", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Smoothed] })
+    );
     // About an axis that leans, so that every number of the turn changes.
     const quarter = Transform3d.axisAngle(0.6, 0, 0.8, Math.PI / 2);
     const rock = hand.spawn(
@@ -1766,7 +1786,11 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("turns by the shorter way round and grows evenly, in the plane", () => {
-    const { app, flatMesh: mesh, hand } = play(SmoothedFlat);
+    const {
+      app,
+      flatMesh: mesh,
+      hand,
+    } = play(App.define({ plugins, systems: [Slide, SmoothedFlat] }));
     const card = hand.spawn(
       Rock,
       Flat.Position.of({ x: 0, y: 1 }),
@@ -1810,7 +1834,9 @@ describe("an entity drawn between two ticks", () => {
 
   it("agrees, over a long run of ticks and frames that do not line up, with a model of what was last drawn", () => {
     const random = makeRandom(1612);
-    const { app, flatMesh, hand, mesh, world } = play(Smoothed, SmoothedFlat);
+    const { app, flatMesh, hand, mesh, world } = play(
+      App.define({ plugins, systems: [Slide, Smoothed, SmoothedFlat] })
+    );
     // Each entity at a height of its own, by which its instance is found.
     let heights = 0;
     const alive: {
@@ -1884,7 +1910,9 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("blends two rotations of any length into a turn, drawn neither skewed nor sized by them", () => {
-    const { app, hand, mesh } = play(Smoothed);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Smoothed] })
+    );
     const quarter = Transform3d.axisAngle(0.6, 0, 0.8, Math.PI / 2);
     const rock = hand.spawn(
       Rock,
@@ -1975,8 +2003,14 @@ describe("an entity drawn between two ticks", () => {
         snap: 200,
       });
     const { app, hand } = play(
-      ships("th/SmoothShips", Transform3d),
-      ships("th/SmoothCards", Transform2d)
+      App.define({
+        plugins,
+        systems: [
+          Slide,
+          ships("th/SmoothShips", Transform3d),
+          ships("th/SmoothCards", Transform2d),
+        ],
+      })
     );
     const ship = hand.spawn(
       Ship,
@@ -2093,7 +2127,9 @@ describe("an entity drawn between two ticks", () => {
       geometry,
       material,
     });
-    const { app, hand, mesh } = play(Plain);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Slide, Plain] })
+    );
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     app.frame();
     app.tick(1);
@@ -2171,20 +2207,17 @@ describe("a colour per instance", () => {
   const Painted = painted("th/Painted", Transform3d);
   /** The same of a flat game's rocks. */
   const PaintedFlat = painted("th/PaintedFlat", Transform2d);
+  const plugins = [Three.plugin, Hand] as const;
+  /** A game whose rocks are painted, and the systems that draw them. */
   const play = (
-    system: ReturnType<typeof Three.instances> = Painted,
-    ...others: readonly ReturnType<typeof Three.instances>[]
+    game: App.Game<
+      readonly ReturnType<typeof Three.instances>[],
+      readonly [],
+      typeof plugins
+    > = App.define({ plugins, systems: [Painted] })
   ) => {
     const renderer = makeRenderer();
-    const { app, close, hand, world } = start(
-      App.make(
-        App.define({
-          plugins: [Three.plugin, Hand],
-          systems: [system, ...others],
-        })
-      ),
-      renderer
-    );
+    const { app, close, hand, world } = start(App.make(game), renderer);
     return {
       app,
       close,
@@ -2210,7 +2243,9 @@ describe("a colour per instance", () => {
   };
 
   it("is the colour its entity has, or white, for every kind of entity, beside the matrix of the same entity", () => {
-    const { app, flatMesh, hand, mesh, world } = play(Painted, PaintedFlat);
+    const { app, flatMesh, hand, mesh, world } = play(
+      App.define({ plugins, systems: [Painted, PaintedFlat] })
+    );
     const turn = Rotation.of(Transform3d.axisAngle(0, 1, 0, 1));
     const size = Scale.of({ x: 2, y: 2, z: 2 });
     const flatTurn = Flat.Rotation.of({ angle: 1 });
@@ -2287,7 +2322,9 @@ describe("a colour per instance", () => {
 
   it("keeps each colour with its instance while they come, go and change, and the room for them grows", () => {
     const random = makeRandom(88);
-    const { app, flatMesh, hand, mesh, world } = play(Painted, PaintedFlat);
+    const { app, flatMesh, hand, mesh, world } = play(
+      App.define({ plugins, systems: [Painted, PaintedFlat] })
+    );
     let heights = 0;
     const alive: {
       readonly entity: Entity;
@@ -2408,7 +2445,9 @@ describe("a colour per instance", () => {
       // How far an entity may go: a colour is not a place, and is never too far.
       snap: 0.1,
     });
-    const { app, hand, mesh } = play(Fading);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Fading] })
+    );
     const rock = hand.spawn(
       Rock,
       Position.of({ x: 0, y: 1, z: 0 }),
@@ -2434,7 +2473,7 @@ describe("a colour per instance", () => {
       material,
       color: Color.Rgb,
     });
-    const { app, hand, mesh } = play(Coded);
+    const { app, hand, mesh } = play(App.define({ plugins, systems: [Coded] }));
     const codes = ["#ff6188", "#000000", "#ffffff", "#0a141e", "#7f8081"];
     // The same colours with no byte behind them, a little off each one.
     const between = [0.003, 0.0401, 0.0409, 0.2, 0.5173, 0.9999];
@@ -2486,7 +2525,7 @@ describe("a colour per instance", () => {
       material,
       color: Color.Rgb,
     });
-    const { app, hand, mesh } = play(Coded);
+    const { app, hand, mesh } = play(App.define({ plugins, systems: [Coded] }));
     const random = makeRandom(20_261_117);
     const colours: (readonly [number, number, number])[] = [
       // One that a benchmark came across, and the corners.
@@ -2606,7 +2645,9 @@ describe("a colour per instance", () => {
       color: Color.Rgb,
       smooth: true,
     });
-    const { app, hand, mesh } = play(Fading);
+    const { app, hand, mesh } = play(
+      App.define({ plugins, systems: [Fading] })
+    );
     const rock = hand.spawn(
       Rock,
       Position.of({ x: 0, y: 1, z: 0 }),
@@ -2633,7 +2674,7 @@ describe("a colour per instance", () => {
       geometry,
       material,
     });
-    const { app, hand, mesh } = play(Plain);
+    const { app, hand, mesh } = play(App.define({ plugins, systems: [Plain] }));
     hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), paint(1, 0, 0));
     app.frame();

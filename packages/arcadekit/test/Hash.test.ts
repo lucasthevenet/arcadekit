@@ -296,7 +296,7 @@ describe("the hash of a world", () => {
 
   it("knows a component by its name and its fields, not by when it was defined", () => {
     const define = (
-      names: readonly string[],
+      names: readonly ("hash/order/A" | "hash/order/B" | "hash/order/C")[],
       second: Record<string, (typeof Field)["f32" | "i32"]>
     ) => {
       // Defined in the order given, so the ids differ from one call to the next.

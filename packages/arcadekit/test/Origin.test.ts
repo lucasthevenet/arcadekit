@@ -123,10 +123,15 @@ describe("who issued an action", () => {
       const { from: _, ...rest } = entry;
       return rest;
     });
-    const alteredRecording = { ...recorded.recording, log: anonymous };
+    const alteredRecording = Journal.decode(
+      JSON.stringify({ ...(JSON.parse(text) as object), log: anonymous })
+    );
+    assert(Exit.isSuccess(alteredRecording));
     const diverged = Effect.runSync(
       Effect.flip(
-        Journal.replay(alteredRecording, CoinGame, { checkpointEvery: 1 })
+        Journal.replay(alteredRecording.value, CoinGame, {
+          checkpointEvery: 1,
+        })
       )
     );
     expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
@@ -277,6 +282,7 @@ describe("who issued an action, in a session", () => {
     withPeers(["ada", "grace"], {}, (peers) => {
       const [ada] = peers as [Peer];
       expect(() =>
+        // @ts-expect-error a session's app takes no issuer
         ada.app.enqueueByName("ls/Tip", { amount: 1 }, "grace")
       ).toThrow(
         /was given who issued it, "grace", on an app that a session has taken over.*nobody speaks for another/u

@@ -15,7 +15,6 @@ import {
   Time,
   World,
 } from "../src/index";
-import type { BuiltIn } from "../src/Services";
 import { withApp } from "./peers";
 import { placedIn } from "./placed";
 
@@ -60,6 +59,9 @@ type Said<S extends readonly System.System<unknown, unknown>[]> = [
 const LATE =
   '"Trail" watches "or/Position" with Query.changed, and "Move" writes it later in the tick, so "Trail" would react a tick late. List "Trail" after "Move", or place it in a later stage.';
 
+const NOT_TUPLE =
+  "List systems, handlers and plugins as a literal list, [a, b], so the compiler can read their names and order.";
+
 describe("the order of systems", () => {
   it("has a system that watches a component react in the tick it is written, and a list the other way round does not compile", () => {
     // Three ticks of one entity, moved on the second.
@@ -92,14 +94,14 @@ describe("the order of systems", () => {
     const fine: Said<readonly [typeof Move, typeof Trail]> = "nothing";
     expect([said, fine]).toEqual([LATE, "nothing"]);
 
-    // What it refuses is what happens: the same list, typed as any systems so
-    // that the compiler cannot read it, runs the watcher a tick behind.
+    // What it refuses is what happens: the same list runs the watcher a tick
+    // behind.
     const late: number[] = [];
-    const unread: readonly System.System<never, BuiltIn>[] = [
-      trail(late),
-      Move,
-    ];
-    withApp(App.make(App.define({ plugins: [One], systems: unread })), play);
+    const refused = App.define(
+      // @ts-expect-error a watcher listed ahead of what it watches
+      { plugins: [One], systems: [trail(late), Move] }
+    );
+    withApp(App.make(refused), play);
     expect(late).toEqual([1, 0, 1]);
   });
 
@@ -228,21 +230,38 @@ describe("the order of systems", () => {
     expect(Trails.systems).toEqual([Trail]);
   });
 
-  it("refuses a list it cannot read the order of, when the order would matter", () => {
-    // A list that is not written out where it is given is in no order the
-    // compiler knows.
-    const listed = [Trail, Move];
-    App.define(
-      // @ts-expect-error one watches what the other writes, in an order unknown
-      { systems: listed }
-    );
-    // The order of systems that write and watch nothing of each other's
-    // does not matter, and is not asked for.
+  it("refuses a list of systems, handlers or plugins that is not written out where it is given", () => {
+    // Its names and order are unknown to the compiler, even when they would
+    // not matter.
     const harmless = [Bleed, Move];
-    App.define({ systems: harmless });
-    const atPost = Trail.pipe(System.inStage("postUpdate"));
-    App.define({ systems: [Move, atPost] });
-    expect(listed.length + harmless.length).toBe(4);
+    App.define(
+      // @ts-expect-error a list of systems that is not a tuple
+      { systems: harmless }
+    );
+    Plugin.make(
+      "or/Harmless",
+      // @ts-expect-error in a plugin too
+      { systems: harmless }
+    );
+    const Tap = Action.define("or/Tapped", Schema.Struct({}));
+    const handlers = [Action.handler(Tap, function* () {})];
+    App.define(
+      // @ts-expect-error a list of handlers that is not a tuple
+      { handlers }
+    );
+    const plugins = [Plugin.make("or/Lone", {})];
+    App.define(
+      // @ts-expect-error a list of plugins that is not a tuple
+      { plugins }
+    );
+    Plugin.make(
+      "or/Above",
+      // @ts-expect-error a plugin's own plugins too
+      { plugins }
+    );
+    const said: Said<typeof harmless> = NOT_TUPLE;
+    expect(said).toBe(NOT_TUPLE);
+    App.define({ systems: [Bleed, Move] });
   });
 
   it("reads a list of hundreds of systems", () => {
@@ -331,11 +350,11 @@ describe("what a system spawns and sets", () => {
     expect(said).toContain('"Grow" spawns or adds it');
     // What it refuses is what happens.
     const late: number[] = [];
-    const unread: readonly System.System<never, BuiltIn>[] = [
-      count(late),
-      Grow,
-    ];
-    withApp(App.make(App.define({ systems: unread })), tick3);
+    const refused = App.define(
+      // @ts-expect-error a watcher of what is added, listed ahead of what spawns it
+      { systems: [count(late), Grow] }
+    );
+    withApp(App.make(refused), tick3);
     expect(late).toEqual([0, 1, 1]);
 
     // A component an entity gains counts as written, so Query.changed
@@ -371,12 +390,8 @@ describe("what a system spawns and sets", () => {
       assert(target !== undefined);
       const patient = placedIn(world, target);
       world.get(patient, Health);
-      world.set(
-        patient,
-        // @ts-expect-error and sets nothing
-        Health,
-        { hp: 0 }
-      );
+      // @ts-expect-error and has no set: World.writes gives one
+      world.set(patient, Health, { hp: 0 });
       // @ts-expect-error The set of entities changes through Commands alone.
       world.spawn(Dot);
       // @ts-expect-error And a query is asked for, not taken from the world.
