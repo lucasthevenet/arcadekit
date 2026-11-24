@@ -750,7 +750,7 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
   });
   const Game = App.define({ plugins: [Spotted] });
 
-  it("is built once, put back by a refused action, and built again after a load and a rewind", () => {
+  it("is built once, put back by a refused action, built again after a load, and kept by a rewind unless written since", () => {
     built = 0;
     Effect.runSync(
       Effect.gen(function* () {
@@ -778,7 +778,16 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
         loaded.tick(1);
         expect(built).toBe(2);
         expect((yield* loaded.read(Index)).byX).toEqual({ 1: 2, 2: 1 });
-        // Nor does a rewind put it back: the next tick builds it again.
+        // A rewind keeps it, since nothing wrote the singleton since.
+        Timeline.rewind(app, moment.value);
+        expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
+        app.tick(1);
+        expect(built).toBe(2);
+        // Written since the moment, it is put back empty: the next tick
+        // builds it again.
+        expect(Exit.isSuccess(app.dispatch(Clear, { refuse: false }))).toBe(
+          true
+        );
         Timeline.rewind(app, moment.value);
         expect(yield* byX()).toBeUndefined();
         app.tick(1);

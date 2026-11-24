@@ -9,9 +9,33 @@ import { growColumn, makeColumn } from "./column";
 import type { Column } from "./column";
 import { entityIndex, entityOf, idOf, isBoxed } from "./component";
 import type { ComponentDef, Entity } from "./component";
+import { refuseUnsaved } from "./format";
 
 /** A component's columns, by field. @internal */
 export type Columns = Record<string, Column>;
+
+/**
+ * The world's version. A table, a sparse set, a relation index or a singleton
+ * notes it when it is changed, or handed out to be written. Whatever keeps
+ * something of the world (a moment, a cached hash) takes the version and moves
+ * it on first, so what is changed later has a later version.
+ * @internal
+ */
+export interface Versions {
+  now: number;
+}
+
+/**
+ * A table as a moment holds it: copies of its rows, which are never written,
+ * so a later moment shares those that did not change. @internal
+ */
+export interface Kept {
+  readonly table: Table;
+  readonly count: number;
+  readonly entities: Float64Array;
+  /** By component id. A `transient` field has no copy. */
+  readonly columns: readonly (Readonly<Record<string, Column>> | undefined)[];
+}
 
 /** @internal */
 export const makeColumns = (def: ComponentDef, capacity: number): Columns => {
@@ -112,6 +136,19 @@ export class Table {
    */
   readonly defsByName: readonly ComponentDef[];
 
+  /** The version when a row was last pushed or removed. */
+  shaped = 0;
+  /** By component id: the version when its columns were last handed out to be written. */
+  readonly versions: number[] = [];
+  /** The last copy a moment took, and the version it was taken at. */
+  kept: Kept | undefined;
+  keptAt = -1;
+  /** By component id: the hash of its columns, and the version it was taken at. */
+  readonly hashes: number[] = [];
+  readonly hashedAt: number[] = [];
+  entitiesHash = 0;
+  entitiesHashedAt = -1;
+
   /** Its components as a snapshot lists them, in order of name. */
   get components(): readonly ComponentDef[] {
     return this.defsByName;
@@ -120,6 +157,7 @@ export class Table {
   constructor(
     readonly index: number,
     readonly defs: readonly ComponentDef[],
+    readonly version: Versions,
     capacity = 16
   ) {
     this.capacity = capacity;
@@ -128,7 +166,112 @@ export class Table {
     for (const def of defs) {
       this.ids.add(def.id);
       this.columns[def.id] = makeColumns(def, capacity);
+      this.versions[def.id] = 0;
+      this.hashedAt[def.id] = -1;
+      this.hashes[def.id] = 0;
     }
+  }
+
+  /** The version when a component's rows last changed, by a write or a move. */
+  changedAt(id: number): number {
+    const written = this.versions[id]!;
+    return written > this.shaped ? written : this.shaped;
+  }
+
+  /**
+   * Puts back the columns of a moment that changed since `since`, so that it
+   * holds the moment's rows again. A `transient` field of a component that is
+   * put back is left `undefined`, and one of a component that is not keeps
+   * its values.
+   */
+  putBack(kept: Kept, since: number): void {
+    const now = this.version.now;
+    const was = this.count;
+    const { count } = kept;
+    if (this.shaped > since) {
+      this.entities.set(kept.entities);
+      this.count = count;
+    }
+    for (const def of this.defs) {
+      const id = def.id;
+      const cols = this.columns[id]!;
+      const restore = this.changedAt(id) > since;
+      for (let f = 0; f < def.fields.length; f++) {
+        const kind = def.kinds[f]!;
+        const col = cols[def.fields[f]!]!;
+        if (!restore) {
+          continue;
+        }
+        if (kind === "transient") {
+          (col as unknown[]).fill(undefined, 0, Math.max(was, count));
+        } else {
+          const from = kept.columns[id]![def.fields[f]!]!;
+          if (isBoxed(kind)) {
+            const to = col as unknown[];
+            for (let r = 0; r < count; r++) {
+              to[r] = from[r];
+            }
+            to.fill(undefined, count, Math.max(was, count));
+          } else {
+            (col as Float32Array).set(from as Float32Array);
+          }
+        }
+      }
+      if (restore) {
+        this.versions[id] = now;
+      }
+    }
+    if (this.shaped > since) {
+      this.shaped = now;
+    }
+    this.kept = kept;
+    this.keptAt = now;
+  }
+
+  /** What a moment keeps of it, sharing what has not changed since the last. */
+  keep(at: number): Kept {
+    const last = this.kept;
+    const since = last === undefined ? -1 : this.keptAt;
+    const { count, defs } = this;
+    let clean = last !== undefined && this.shaped <= since;
+    if (clean) {
+      for (const def of defs) {
+        if (this.versions[def.id]! > since) {
+          clean = false;
+          break;
+        }
+      }
+    }
+    if (clean && last !== undefined) {
+      this.keptAt = at;
+      return last;
+    }
+    const columns: (Record<string, Column> | undefined)[] = [];
+    for (const def of defs) {
+      const id = def.id;
+      if (last !== undefined && this.changedAt(id) <= since) {
+        columns[id] = last.columns[id];
+        continue;
+      }
+      const cols = this.columns[id]!;
+      refuseUnsaved(def, cols, count);
+      const copy: Record<string, Column> = {};
+      for (let f = 0; f < def.fields.length; f++) {
+        if (def.kinds[f] !== "transient") {
+          const name = def.fields[f]!;
+          copy[name] = cols[name]!.slice(0, count);
+        }
+      }
+      columns[id] = copy;
+    }
+    const entities =
+      last !== undefined && this.shaped <= since
+        ? last.entities
+        : this.entities.slice(0, count);
+    const kept = { table: this, count, entities, columns };
+    this.kept = kept;
+    this.keptAt = at;
+    return kept;
   }
 
   /** Appends a row. The caller must write every component of the new row. */
@@ -144,6 +287,7 @@ export class Table {
       this.capacity = capacity;
     }
     this.entities[this.count] = idOf(entity);
+    this.shaped = this.version.now;
     return this.count++;
   }
 
@@ -168,6 +312,7 @@ export class Table {
       }
     }
     this.count = last;
+    this.shaped = this.version.now;
     return moved;
   }
 }
@@ -176,15 +321,30 @@ export class Table {
 // Sparse set (one per sparse component)
 // ---------------------------------------------------------------------------
 
+/** A sparse set as a moment holds it. @internal */
+export interface KeptSet {
+  readonly set: SparseSet;
+  readonly count: number;
+  readonly members: Uint32Array;
+  readonly columns: Readonly<Record<string, Column>>;
+}
+
 /** @internal */
 export class SparseSet {
   dense: Uint32Array;
   sparse: Int32Array;
   count = 0;
   readonly columns: Columns;
+  /** The version when a member last joined or left, or its columns were handed out to be written. */
+  changed = 0;
+  kept: KeptSet | undefined;
+  keptAt = -1;
+  hash = 0;
+  hashedAt = -1;
 
   constructor(
     readonly def: ComponentDef,
+    readonly version: Versions,
     capacity = 16
   ) {
     this.dense = new Uint32Array(capacity);
@@ -204,6 +364,7 @@ export class SparseSet {
     index: number,
     value: Readonly<Record<string, unknown>> | undefined
   ): void {
+    this.changed = this.version.now;
     if (index >= this.sparse.length) {
       let size = this.sparse.length;
       while (size <= index) {
@@ -231,10 +392,71 @@ export class SparseSet {
     }
   }
 
+  /**
+   * Puts back what a moment kept of it, or empties it when the moment had
+   * none. Its `transient` fields are left `undefined`.
+   */
+  putBack(kept: KeptSet | undefined): void {
+    const { def, dense, sparse } = this;
+    for (let i = 0; i < this.count; i++) {
+      sparse[dense[i]!] = -1;
+    }
+    const was = this.count;
+    const count = kept?.count ?? 0;
+    if (kept !== undefined) {
+      dense.set(kept.members);
+      for (let i = 0; i < count; i++) {
+        sparse[kept.members[i]!] = i;
+      }
+    }
+    for (let f = 0; f < def.fields.length; f++) {
+      const kind = def.kinds[f]!;
+      const name = def.fields[f]!;
+      const col = this.columns[name]!;
+      if (kind === "transient") {
+        (col as unknown[]).fill(undefined, 0, Math.max(was, count));
+      } else if (isBoxed(kind)) {
+        const to = col as unknown[];
+        const from = kept?.columns[name];
+        for (let r = 0; r < count; r++) {
+          to[r] = from?.[r];
+        }
+        to.fill(undefined, count, Math.max(was, count));
+      } else if (kept !== undefined) {
+        (col as Float32Array).set(kept.columns[name] as Float32Array);
+      }
+    }
+    this.count = count;
+    this.changed = this.version.now;
+    this.kept = kept;
+    this.keptAt = this.version.now;
+  }
+
+  /** What a moment keeps of it: the last copy, when nothing changed since. */
+  keep(at: number): KeptSet {
+    let kept = this.kept;
+    if (kept === undefined || this.changed > this.keptAt) {
+      const { count, def } = this;
+      refuseUnsaved(def, this.columns, count);
+      const columns: Record<string, Column> = {};
+      for (let f = 0; f < def.fields.length; f++) {
+        if (def.kinds[f] !== "transient") {
+          const name = def.fields[f]!;
+          columns[name] = this.columns[name]!.slice(0, count);
+        }
+      }
+      kept = { set: this, count, members: this.dense.slice(0, count), columns };
+      this.kept = kept;
+    }
+    this.keptAt = at;
+    return kept;
+  }
+
   remove(index: number): boolean {
     if (!this.has(index)) {
       return false;
     }
+    this.changed = this.version.now;
     const pos = this.sparse[index]!;
     const last = this.count - 1;
     const { def } = this;
@@ -282,15 +504,27 @@ export class RelationIndex {
   private prev: Int32Array;
   /** For each source index, the target it points at, or -1. */
   private target: Int32Array;
+  /** The version when a link was last made or undone. */
+  changed = 0;
 
   constructor(
     readonly def: ComponentDef,
+    readonly version: Versions,
     size: number
   ) {
     this.head = new Int32Array(size).fill(-1);
     this.next = new Int32Array(size).fill(-1);
     this.prev = new Int32Array(size).fill(-1);
     this.target = new Int32Array(size).fill(-1);
+  }
+
+  /** Points nobody at anyone. */
+  clear(): void {
+    this.changed = this.version.now;
+    this.head.fill(-1);
+    this.next.fill(-1);
+    this.prev.fill(-1);
+    this.target.fill(-1);
   }
 
   /** Makes room for `size` entities. */
@@ -304,6 +538,7 @@ export class RelationIndex {
 
   /** Makes `source` point at `target`, and at nothing else. */
   link(source: number, target: number): void {
+    this.changed = this.version.now;
     this.unlink(source);
     const first = this.head[target]!;
     this.next[source] = first;
@@ -320,6 +555,7 @@ export class RelationIndex {
     if (target === -1) {
       return;
     }
+    this.changed = this.version.now;
     const next = this.next[source]!;
     const prev = this.prev[source]!;
     if (prev === -1) {

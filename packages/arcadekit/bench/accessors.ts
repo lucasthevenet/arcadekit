@@ -375,7 +375,10 @@ const atRest = (): number =>
   );
 
 /** Median milliseconds of a frame of `count` systems that read the world or do nothing. */
-/** A game of 100,000 moving entities, captured or put back. */
+/**
+ * A game of 100,000 moving entities, captured or put back after a tick that
+ * moved every one of them, as a rollback session captures and rewinds.
+ */
 const rewinding = (back: boolean): number =>
   Effect.runSync(
     Effect.gen(function* () {
@@ -396,13 +399,23 @@ const rewinding = (back: boolean): number =>
       }
       let sink = 0;
       const ms = back
-        ? measure(() => {
-            Timeline.rewind(app, moment.value);
-            sink += app.time.tick;
-          })
-        : measure(() => {
-            sink += Exit.isSuccess(Timeline.capture(app)) ? 1 : 0;
-          });
+        ? measure(
+            () => {
+              Timeline.rewind(app, moment.value);
+              sink += app.time.tick;
+            },
+            300,
+            80,
+            () => app.tick(DT)
+          )
+        : measure(
+            () => {
+              sink += Exit.isSuccess(Timeline.capture(app)) ? 1 : 0;
+            },
+            300,
+            80,
+            () => app.tick(DT)
+          );
       void sink;
       return ms;
     })

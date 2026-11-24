@@ -5,7 +5,7 @@
  * No Effect dependency.
  */
 import type { ComponentDef } from "./component";
-import type { Columns } from "./table";
+import type { Columns, SparseSet, Table } from "./table";
 
 /** Where the record of an entity whose spawn is not applied yet points. */
 export const NOT_PLACED = -1;
@@ -29,11 +29,17 @@ export interface Single {
   written: boolean;
   /** What `World.singleton` returns: reads and writes go to `columns`. */
   readonly value: object;
+  /** The world's version when it was last written, and its cached hash. */
+  version: number;
+  hash: number;
+  hashedAt: number;
 }
 
 /** What a transaction saved before a write: one row, or whole columns. */
 export interface Saved {
   readonly cols: Columns;
+  /** Whose columns they are: a rollback notes that it wrote them. */
+  readonly owner: Table | SparseSet | Single;
   readonly def: ComponentDef;
   /** `WHOLE`, or the one row that was saved. */
   readonly row: number;

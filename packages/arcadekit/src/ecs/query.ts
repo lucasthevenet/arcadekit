@@ -258,6 +258,9 @@ export class QueryView<D extends Terms = Terms> {
   private readonly n: number;
   /** Per term: its table component id, or -1 when the term is sparse. */
   private readonly termTableId: number[] = [];
+  /** The table components a loop is handed to write, by id, and the sparse sets. */
+  private readonly writesIds: number[] = [];
+  private readonly writesSets: SparseSet[] = [];
   /** Per term: its sparse set, or undefined when the term is a table component. */
   private readonly termSet: (SparseSet | undefined)[] = [];
   /** The indexes of the sparse terms among the terms. */
@@ -341,11 +344,18 @@ export class QueryView<D extends Terms = Terms> {
         this.requiredIds.push(def.id);
         this.termTableId.push(def.id);
         this.termSet.push(undefined);
+        if (!read) {
+          this.writesIds.push(def.id);
+        }
       } else {
         // Reading a sparse component's data implies requiring it.
         this.sparseTerms.push(this.termTableId.length);
         this.termTableId.push(-1);
-        this.termSet.push(requireSparse(def));
+        const set = requireSparse(def);
+        this.termSet.push(set);
+        if (!read) {
+          this.writesSets.push(set);
+        }
       }
     }
     for (const def of spec.withDefs) {
@@ -848,9 +858,26 @@ export class QueryView<D extends Terms = Terms> {
         this.world._saveColumns(
           this.spec.terms[k]!,
           table.columns[id]!,
-          table.count
+          table.count,
+          table
         );
       }
+    }
+  }
+
+  /** Notes that a loop was handed this table's columns to write: once per table, never per entity. */
+  private wroteTableTerms(table: Table, now: number): void {
+    const ids = this.writesIds;
+    for (let i = 0; i < ids.length; i++) {
+      table.versions[ids[i]!] = now;
+    }
+  }
+
+  /** Notes that a loop was handed the sparse terms' columns to write. */
+  private wroteSparseTerms(now: number): void {
+    const sets = this.writesSets;
+    for (let i = 0; i < sets.length; i++) {
+      sets[i]!.changed = now;
     }
   }
 
@@ -859,7 +886,7 @@ export class QueryView<D extends Terms = Terms> {
     for (let k = 0; k < this.n; k++) {
       const set = this.termSet[k];
       if (set !== undefined && !this.termRead[k]) {
-        this.world._saveColumns(set.def, set.columns, set.count);
+        this.world._saveColumns(set.def, set.columns, set.count, set);
       }
     }
   }
@@ -897,6 +924,10 @@ export class QueryView<D extends Terms = Terms> {
       if (world._recording) {
         this.saveSparseTerms();
       }
+      const now = world._now;
+      if (!world._frozen) {
+        this.wroteSparseTerms(now);
+      }
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
@@ -913,6 +944,9 @@ export class QueryView<D extends Terms = Terms> {
           // Once per table, never per entity.
           if (world._recording) {
             this.saveTableTerms(table);
+          }
+          if (!world._frozen) {
+            this.wroteTableTerms(table, now);
           }
           bound = table;
         }
@@ -1064,6 +1098,10 @@ export class QueryView<D extends Terms = Terms> {
       if (world._recording) {
         this.saveSparseTerms();
       }
+      const now = world._now;
+      if (!world._frozen) {
+        this.wroteSparseTerms(now);
+      }
       const kept = world._checkReads ? this.keepReadOnly() : undefined;
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
@@ -1076,6 +1114,9 @@ export class QueryView<D extends Terms = Terms> {
           }
           if (world._recording) {
             this.saveTableTerms(table);
+          }
+          if (!world._frozen) {
+            this.wroteTableTerms(table, now);
           }
           bound = table;
         }

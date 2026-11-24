@@ -319,6 +319,34 @@ describe("a game that is put back to a moment", () => {
     });
   });
 
+  it("keeps a transient field where nothing was written since the moment, and empties it where something was", () => {
+    const Sprite = Component.define("rw/Sprite", {
+      x: Field.f32,
+      handle: Field.transient<string>(),
+    });
+    const Lamp = Component.define("rw/Lamp", {
+      on: Field.u8,
+      handle: Field.transient<string>(),
+    });
+    const Move = Action.define("rw/Move", Schema.Struct({}));
+    const Sprites = Query.all(Sprite).pipe(Query.writes(Sprite));
+    const move = Action.handler(Move, function* () {
+      (yield* Sprites).each((sprite) => {
+        sprite.x += 1;
+      });
+    });
+    withApp(App.make(App.define({ handlers: [move] })), (app) => {
+      const world = partsOf(app).world;
+      const sprite = world.spawn(Sprite.of({ x: 0, handle: "sprite" }));
+      const lamp = world.spawn(Lamp.of({ on: 1, handle: "lamp" }));
+      const moment = captured(app);
+      app.dispatch(Move, {});
+      Timeline.rewind(app, moment);
+      expect(world.get(sprite, Sprite)).toEqual({ x: 0, handle: undefined });
+      expect(world.get(lamp, Lamp)).toEqual({ on: 1, handle: "lamp" });
+    });
+  });
+
   it("cannot be captured with a field that cannot be saved", () => {
     const Holder = Component.define("rw/Holder", {
       thing: Field.json<JsonValue>(),

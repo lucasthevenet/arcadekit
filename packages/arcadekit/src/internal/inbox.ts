@@ -404,7 +404,7 @@ export class Inbox {
         intake.wanted = true;
         // The next tick is held to the game as the action left it.
         if (intake.rest !== undefined) {
-          intake.rest = world._frameHash(GameTime.component);
+          intake.rest = world._frameHash(false, GameTime.component);
         }
       }
       if (dispatched) {
