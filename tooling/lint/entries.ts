@@ -46,7 +46,7 @@ const browser: EntryRule = {
 const rest: EntryRule = {
   may: isEffect,
   page: false,
-  says: "every entry of arcadekit but arcadekit/Browser imports Effect and nothing else, and does not reach src/Browser.ts: what only a page can use goes there",
+  says: "every entry of arcadekit but arcadekit/Browser imports Effect and nothing else, and does not reach src/Browser.ts or src/browser/: what only a page can use goes there",
 };
 const three: EntryRule = {
   may: (name) => isArcadekit(name) || isEffect(name) || isThree(name),
@@ -81,7 +81,9 @@ export const packages: readonly PackageRules[] = [
       if (/^src\/ecs(?:\/|$)/u.test(file)) {
         return ecs;
       }
-      return /^src\/Browser(?:\.ts)?$/u.test(file) ? browser : rest;
+      return /^src\/(?:Browser(?:\.ts)?$|browser\/)/u.test(file)
+        ? browser
+        : rest;
     },
   },
   { dir: "three", ofFile: () => three },
