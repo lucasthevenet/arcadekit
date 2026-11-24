@@ -45,7 +45,7 @@ const Game = Plugin.make("game/Game", {
 
 Bundles that are held at the same time share what they load. A file named by two of them is fetched once, and kept while either is loaded. An asset that two of them have, the same value in each, is decoded once, and released when the last of them is let go. An asset made twice, such as `Browser.image("/forest.png")` written in two bundles, is decoded once for each, from the one fetch.
 
-A fetch that may succeed if tried again is tried again, up to three times, 200, 400 and 800 milliseconds later. That is a request that got no answer, or a server that answered 500 or more. Its bundle stays `Loading` meanwhile, and becomes `Ready` if one of them succeeds, with no need to enter its level again. A missing file, an answer of 404, or a file that doesn't decode fails at once.
+A fetch that may succeed if tried again is tried again, up to three times, 200, 400 and 800 milliseconds later. That is a request that got no answer, a download that was cut off, or a server that answered 500 or more. Its bundle stays `Loading` meanwhile, and becomes `Ready` if one of them succeeds, with no need to enter its level again. A missing file, an answer of 404, or a file that doesn't decode fails at once.
 
 ## Pass a file's contents to the rules
 

@@ -66,8 +66,9 @@ export class AssetFailed extends Data.TaggedError("AssetFailed")<{
   /** What went wrong. */
   readonly message: string;
   /**
-   * Fetching it again may succeed: the request got no answer, or the server
-   * answered with an error of its own, a status of 500 or more.
+   * Fetching it again may succeed: the request got no answer, its download
+   * was cut off, or the server answered with an error of its own, a status of
+   * 500 or more.
    */
   readonly transient?: boolean;
 }> {}
@@ -227,7 +228,9 @@ export const fetchingFrom = (
           new AssetFailed({
             url,
             message: unanswered(error),
-            ...(error.reason._tag === "TransportError"
+            // The request got no answer, or its body stopped arriving.
+            ...(error.reason._tag === "TransportError" ||
+            error.reason._tag === "DecodeError"
               ? { transient: true }
               : {}),
           })

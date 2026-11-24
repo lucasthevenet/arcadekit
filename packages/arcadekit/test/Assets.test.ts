@@ -316,6 +316,15 @@ describe("an asset", () => {
         () => new Response("no", { status: 404, statusText: "Not Found" }),
       ],
       ["/busy.txt", () => new Response("later", { status: 503 })],
+      [
+        "/cut.txt",
+        () =>
+          new Response(
+            new ReadableStream({
+              pull: (controller) => controller.error(new Error("reset")),
+            })
+          ),
+      ],
     ]);
     // A page asks for a file by its path, from where the page is.
     vi.stubGlobal("location", new URL("https://game.test/play/"));
@@ -354,6 +363,15 @@ describe("an asset", () => {
         transient: true,
       })
     );
+    // So may a file whose download was cut off.
+    const cut = await Effect.runPromiseExit(one("/cut.txt"));
+    expect(
+      (
+        Cause.squash(
+          (cut as Exit.Failure<never, unknown>).cause
+        ) as Assets.AssetFailed
+      ).transient
+    ).toBe(true);
     // A request that never answers, and a load that is interrupted.
     const fiber = Effect.runFork(one("/slow.txt"));
     await settle();
