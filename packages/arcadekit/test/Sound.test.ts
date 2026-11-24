@@ -1,7 +1,7 @@
 import { Data, Effect, Exit, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import * as Build from "../src/app/Build";
+import * as Build from "../src/app/build";
 import {
   Action,
   App,

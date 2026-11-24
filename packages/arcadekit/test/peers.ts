@@ -4,7 +4,7 @@
  */
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 
-import type * as Build from "../src/app/Build";
+import type * as Build from "../src/app/build";
 import {
   Action,
   App,

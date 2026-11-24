@@ -63,8 +63,8 @@
 import { Cause, Data, Effect, Exit } from "effect";
 
 import type * as App from "../App";
-import { build } from "../app/Build";
-import type { Reins } from "../app/Build";
+import { build } from "../app/build";
+import type { Reins } from "../app/build";
 import { partsOf } from "../app/parts";
 import { add, addString, finish } from "../ecs/hash";
 import * as Plugin from "../Plugin";

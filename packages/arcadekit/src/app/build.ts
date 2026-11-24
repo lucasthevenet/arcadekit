@@ -31,13 +31,13 @@ import { Time, World } from "../Services";
 import type { TimeState } from "../Services";
 import { reading } from "../services/handed";
 import * as State from "../State";
-import * as Inbox from "./Inbox";
-import * as Loop from "./Loop";
+import * as Inbox from "./inbox";
+import * as Loop from "./loop";
 import { hold } from "./parts";
-import * as Runner from "./Runner";
-import * as Schedule from "./Schedule";
-import * as Stage from "./Stage";
-import { TickDispatcher, TickScheduler } from "./TickScheduler";
+import * as Runner from "./runner";
+import * as Schedule from "./schedule";
+import * as Stage from "./stage";
+import { TickDispatcher, TickScheduler } from "./tick-scheduler";
 
 /**
  * What the code that took over an app holds: the two operations the app no

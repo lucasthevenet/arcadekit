@@ -4,7 +4,7 @@ import { runInNewContext } from "node:vm";
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import * as Build from "../src/app/Build";
+import * as Build from "../src/app/build";
 import { partsOf } from "../src/app/parts";
 import { entityOf, idOf } from "../src/ecs/component";
 import type { ReadingEvents } from "../src/Event";
