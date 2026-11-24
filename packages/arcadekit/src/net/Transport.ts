@@ -30,7 +30,19 @@
  * - `Transport.makeHub` is an in-memory network for tests, which delays and
  *   reorders messages as it is told.
  */
-import { Context, Data, Effect, Exit, Layer, Scope } from "effect";
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Queue,
+  Schedule,
+  Scope,
+} from "effect";
+import { Socket } from "effect/socket";
 
 import type { Paced } from "../Driver";
 import { Rng } from "../ecs/random";
@@ -465,9 +477,8 @@ export interface WebSocketOptions {
   readonly reconnectFor?: number;
 }
 
-/** How long it waits before it connects again, at first and at most. */
-const FIRST_WAIT = 50;
-const LONGEST_WAIT = 2000;
+/** How long it waits before it connects again to a relay it has heard from. */
+const FIRST_WAIT = "50 millis";
 
 /**
  * Whether a relay refused a socket for a reason a new one would meet too. A
@@ -478,6 +489,14 @@ const refused = (code: number, reason: string, again: boolean): boolean =>
   code === 1007 ||
   code === 1009 ||
   (code === 1008 && !(again && reason === "name taken"));
+
+/** The close code and reason a socket ended with: 1006 when it was lost. */
+const endOf = (
+  error: Socket.SocketError
+): { readonly code: number; readonly reason: string } =>
+  error.reason._tag === "SocketCloseError"
+    ? { code: error.reason.code, reason: error.reason.closeReason ?? "" }
+    : { code: 1006, reason: "" };
 
 /**
  * The transport between machines: a WebSocket to a relay, which forwards each
@@ -496,7 +515,8 @@ const refused = (code: number, reason: string, again: boolean): boolean =>
  *   time, up to two seconds, for as long as `reconnectFor` says. What is sent
  *   meanwhile is buffered. The relay tells the room it joined again, and the
  *   sessions send each other again what was lost, as `Transport.connect`
- *   says.
+ *   says. Once it hears from the relay again, a later drop is given the whole
+ *   of `reconnectFor` again.
  * - A name that is taken is tried again too, since the relay may not have
  *   seen the old socket close yet.
  * - `send` and `receive` throw `Transport.Closed`, with the close code and the
@@ -504,7 +524,9 @@ const refused = (code: number, reason: string, again: boolean): boolean =>
  *   when the relay refused it for any other reason, or when it could not
  *   connect again in time.
  *
- * It uses the standard `WebSocket`, available in pages, workers and Node 22.
+ * It opens its sockets with the `Socket.WebSocketConstructor` of
+ * `effect/socket` where one is provided, and otherwise with the standard
+ * `WebSocket`, available in pages, workers and Node 22.
  *
  * @category Layers
  */
@@ -513,135 +535,118 @@ export const layerWebSocket = (
   options: WebSocketOptions = {}
 ): Layer.Layer<Transport> => {
   const reconnectFor = options.reconnectFor ?? 30_000;
+  const backoff = Schedule.min([
+    Schedule.exponential("100 millis"),
+    Schedule.spaced("2 seconds"),
+  ]).pipe(Schedule.upTo({ duration: reconnectFor }));
   return Layer.succeed(Transport, {
-    listen: Effect.map(
-      Effect.acquireRelease(
+    listen: Effect.gen(function* () {
+      const made = yield* Effect.serviceOption(Socket.WebSocketConstructor);
+      const socket = yield* Option.match(made, {
+        onNone: () =>
+          Effect.provide(
+            Socket.makeWebSocket(url),
+            Socket.layerWebSocketConstructorGlobal
+          ),
+        onSome: (construct) =>
+          Effect.provideService(
+            Socket.makeWebSocket(url),
+            Socket.WebSocketConstructor,
+            construct
+          ),
+      });
+      const outbox = yield* Queue.unbounded<string>();
+      let hear: (text: string) => void = () => {};
+      const over = text({
+        send(sent) {
+          Queue.offerUnsafe(outbox, sent);
+        },
+        listen(onText) {
+          hear = onText;
+          return () => {
+            hear = () => {};
+          };
+        },
+      });
+      let listening = true;
+      // What `send` and `receive` throw once the socket closed for good.
+      let failure: unknown;
+      yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
-          const held: {
-            socket: WebSocket | undefined;
-            over: TextTransport | undefined;
-            open: boolean;
-            closed: Closed | undefined;
-            timer: ReturnType<typeof setTimeout> | undefined;
-          } = {
-            socket: undefined,
-            over: undefined,
-            open: true,
-            closed: undefined,
-            timer: undefined,
-          };
-          // What was sent while no socket was open.
-          let waiting: string[] | undefined = [];
-          let hear: (text: string) => void = () => {};
-          let opened = false;
-          // When it stops trying to connect again, while it tries.
-          let until: number | undefined;
-          let tries = 0;
+          listening = false;
+          over.close();
+        })
+      );
 
-          // `again` for a socket that connects again after one dropped.
-          const dial = (again: boolean): void => {
-            held.timer = undefined;
-            const socket = new WebSocket(url);
-            held.socket = socket;
-            const dropped = (code: number, reason: string): void => {
-              socket.onopen = null;
-              socket.onclose = null;
-              socket.onerror = null;
-              socket.onmessage = null;
-              waiting ??= [];
-              if (!held.open) {
-                return;
-              }
-              until ??= Date.now() + reconnectFor;
-              if (
-                !opened ||
-                refused(code, reason, again) ||
-                Date.now() >= until
-              ) {
-                held.closed = new Closed({ url, code, reason });
-                return;
-              }
-              held.timer = setTimeout(
-                () => dial(true),
-                Math.min(FIRST_WAIT * 2 ** tries++, LONGEST_WAIT)
-              );
-            };
-            socket.onopen = () => {
-              opened = true;
-              const kept = waiting ?? [];
-              waiting = undefined;
-              for (const sent of kept) {
-                socket.send(sent);
-              }
-            };
-            socket.onmessage = (event: MessageEvent<unknown>) => {
-              // Heard from: the relay let it in, and it is connected again.
-              until = undefined;
-              tries = 0;
-              // A frame that is not text is dropped as what is not a message.
-              hear(event.data as string);
-            };
-            socket.onclose = (event: CloseEvent) => {
-              dropped(event.code, event.reason);
-            };
-            // A connection that could not be made, or was cut, may say so
-            // here alone: not every platform follows it with a close.
-            socket.onerror = () => {
-              dropped(1006, "");
-            };
-          };
+      const writer = yield* socket.writer;
+      yield* Queue.takeAll(outbox).pipe(
+        Effect.flatMap(writer.writeAll),
+        Effect.ignore,
+        Effect.forever,
+        Effect.forkScoped
+      );
 
-          held.over = text({
-            send(sent) {
-              if (waiting === undefined) {
-                held.socket!.send(sent);
-              } else {
-                waiting.push(sent);
+      let opened = false;
+      // Whether this socket connects again after one dropped, and whether
+      // the relay has said anything to it.
+      let again = false;
+      let heard = false;
+      const reconnects = (error: Socket.SocketError): boolean => {
+        const { code, reason } = endOf(error);
+        return opened && reconnectFor > 0 && !refused(code, reason, again);
+      };
+      const dial = Effect.scoped(
+        Effect.gen(function* () {
+          again = opened;
+          heard = false;
+          const pull = yield* Socket.readerString(socket);
+          opened = true;
+          return yield* Effect.forever(
+            Effect.map(pull, (texts) => {
+              heard = true;
+              for (const arrived of texts) {
+                hear(arrived);
               }
-            },
-            listen(onText) {
-              hear = onText;
-              return () => {
-                hear = () => {};
-              };
-            },
-          });
-          dial(false);
-          return held;
+            })
+          );
+        })
+      );
+      yield* dial.pipe(
+        Effect.retry({
+          schedule: backoff,
+          while: (error) => !heard && reconnects(error),
         }),
-        (held) =>
+        Effect.retry({
+          schedule: Schedule.spaced(FIRST_WAIT),
+          while: (error) => heard && reconnects(error),
+        }),
+        Effect.catchCause((cause) =>
           Effect.sync(() => {
-            held.open = false;
-            held.over?.close();
-            clearTimeout(held.timer);
-            const { socket } = held;
-            if (socket !== undefined) {
-              socket.onopen = null;
-              socket.onclose = null;
-              socket.onerror = null;
-              socket.onmessage = null;
-              socket.close(1000);
-            }
+            const squashed = Cause.squash(cause);
+            failure = Socket.isSocketError(squashed)
+              ? new Closed({ url, ...endOf(squashed) })
+              : squashed;
           })
-      ),
-      (held): Listener => {
-        const use = (): TextTransport => {
-          if (!held.open) {
-            throw new Error(
-              `The transport to ${url} was used after it was let go, and its socket closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
-            );
-          }
-          if (held.closed !== undefined) {
-            throw held.closed;
-          }
-          return held.over!;
-        };
-        return {
-          send: (message) => use().send(message),
-          receive: () => use().receive(),
-        };
-      }
-    ),
+        ),
+        Effect.forkScoped
+      );
+
+      const use = (): TextTransport => {
+        if (!listening) {
+          throw new Error(
+            `The transport to ${url} was used after it was let go, and its socket closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
+          );
+        }
+        if (failure !== undefined) {
+          throw failure;
+        }
+        return over;
+      };
+      return {
+        send: (message) => use().send(message),
+        receive: () => use().receive(),
+      } satisfies Listener;
+    }),
   });
 };
 
