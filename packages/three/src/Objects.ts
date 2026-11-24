@@ -18,9 +18,9 @@ import type { Entity } from "arcadekit/ecs";
 import type * as System from "arcadekit/System";
 import type { Object3D } from "three";
 
-import type { Entries } from "./internals/assets";
-import type { Needs } from "./internals/kind";
-import * as internal from "./internals/objects";
+import type { Entries } from "./internal/assets";
+import type { Needs } from "./internal/kind";
+import * as internal from "./internal/objects";
 import type { Which } from "./Three";
 
 /**

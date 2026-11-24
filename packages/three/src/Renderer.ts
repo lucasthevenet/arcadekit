@@ -22,8 +22,8 @@ import type {
   WebGLRendererParameters,
 } from "three";
 
-import { fitted } from "./internals/fit";
-import { sceneLayer } from "./internals/scene-layer";
+import { fitted } from "./internal/fit";
+import { sceneLayer } from "./internal/sceneLayer";
 import { Scene } from "./Scene";
 
 /**

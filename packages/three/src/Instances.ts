@@ -18,9 +18,9 @@ import type * as Color from "arcadekit/Color";
 import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
-import type { Entries } from "./internals/assets";
-import * as internal from "./internals/instances";
-import type { Needs } from "./internals/kind";
+import type { Entries } from "./internal/assets";
+import * as internal from "./internal/instances";
+import type { Needs } from "./internal/kind";
 import type { Which } from "./Three";
 
 /**

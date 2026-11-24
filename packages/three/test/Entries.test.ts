@@ -130,10 +130,10 @@ describe("the entries of @arcadekit/three", () => {
     };
     for (const file of Object.keys(sources)) {
       // A module is PascalCase, as it is imported, wherever its file is.
-      // What the modules keep to themselves is in src/internals/,
-      // kebab-case, and no entry.
+      // What the modules keep to themselves is in src/internal/, camelCase,
+      // and no entry.
       const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
-      if (module !== null) {
+      if (module !== null && !file.includes("/internal/")) {
         expected[`./${module[1]}`] = {
           source: `./src/${module[1]}.ts`,
           types: `./dist/${module[1]}.d.ts`,
@@ -152,10 +152,10 @@ describe("the entries of @arcadekit/three", () => {
       "./Scene",
       "./Three",
     ]);
-    // Nothing in internals/ is named as a module is.
+    // Nothing in internal/ is named as a module is.
     expect(
       Object.keys(sources).filter((file) =>
-        /\/internals\/(?:[\w-]+\/)*[A-Z][\w-]*\.ts$/u.test(file)
+        /\/internal\/(?:\w+\/)*[A-Z]\w*\.ts$/u.test(file)
       )
     ).toEqual([]);
     // Every source file is behind some entry.

@@ -17,7 +17,7 @@
 import { Context } from "effect";
 import type { Camera, Scene as ThreeScene } from "three";
 
-import type { Kept, Owned } from "./internals/holdings";
+import type { Kept, Owned } from "./internal/holdings";
 
 /**
  * The scene and its camera, as a system gets them from `yield* Three.Scene`.
