@@ -12,7 +12,7 @@ import {
 import type { Scope as ScopeType } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as Browser from "../src/Browser";
+import * as Browser from "../src/browser/Browser";
 import {
   App,
   Assets,

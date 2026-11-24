@@ -126,7 +126,7 @@ const noPage: Rule = {
           found.add(node.start);
           context.report({
             node,
-            message: `${file} must not name ${node.name}, which only a page has: it is behind an entry that runs in Node too. What only a page can use goes in src/Browser.ts.`,
+            message: `${file} must not name ${node.name}, which only a page has: it is behind an entry that runs in Node too. What only a page can use goes in src/browser/.`,
           });
         }
       },

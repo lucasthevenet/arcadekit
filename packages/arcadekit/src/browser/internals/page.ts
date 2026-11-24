@@ -1,0 +1,68 @@
+import { Effect, Layer } from "effect";
+
+import * as Assets from "../../Assets";
+import * as Driver from "../../Driver";
+import * as Input from "../../Input";
+import type { Options } from "../Browser";
+import { layerSound } from "./audio";
+import { listen } from "./devices";
+
+/**
+ * The page's display, `Browser.display`.
+ *
+ * @internal
+ */
+export const display: Driver.DisplayShape = {
+  request(callback) {
+    const id = requestAnimationFrame(callback);
+    return () => cancelAnimationFrame(id);
+  },
+  hidden: () => document.visibilityState === "hidden",
+  onVisibilityChange(listener) {
+    document.addEventListener("visibilitychange", listener);
+    return () => document.removeEventListener("visibilitychange", listener);
+  },
+};
+
+/**
+ * The page's display and devices, and its sound unless `sounds` is `false`:
+ * `Browser.layer`.
+ *
+ * @internal
+ */
+export const layer = (options: Options): Layer.Layer<never> => {
+  // A path is read against the document's base, as `fetch` reads it, where
+  // HttpClient reads it against the page's address. A loader of the game's
+  // own, provided around this layer, is kept.
+  const loader = Layer.effect(
+    Assets.Loader,
+    Effect.map(Assets.Loader, (given) =>
+      given === Assets.fetching
+        ? Assets.fetchingFrom((url) => new URL(url, document.baseURI).href)
+        : given
+    )
+  );
+  const page = Layer.mergeAll(
+    loader,
+    Layer.succeed(Driver.Display, display),
+    Layer.succeed(Input.Source, {
+      listen: Effect.map(
+        Effect.acquireRelease(
+          Effect.sync(() => listen(options)),
+          (listening) => Effect.sync(listening.stop)
+        ),
+        (listening) => listening.listener
+      ),
+    })
+  ) as Layer.Layer<never>;
+  return options.sounds === false
+    ? page
+    : Layer.merge(
+        page,
+        // Its sound sleeps while the page's own document is hidden.
+        Layer.provide(
+          layerSound(options.sounds ?? {}, options),
+          Layer.merge(Layer.succeed(Driver.Display, display), loader)
+        )
+      );
+};

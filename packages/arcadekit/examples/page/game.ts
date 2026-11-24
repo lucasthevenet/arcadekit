@@ -10,7 +10,7 @@
 import { Context, Layer, Schema } from "effect";
 
 // In a game of your own these are "arcadekit/Browser" and "arcadekit".
-import * as Browser from "../../src/Browser";
+import * as Browser from "../../src/browser/Browser";
 import {
   Action,
   Assets,
