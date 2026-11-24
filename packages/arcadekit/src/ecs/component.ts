@@ -41,6 +41,19 @@ import type { Spawned } from "./spawned";
  */
 export type Entity = number & { readonly _brand: "Entity" };
 
+export declare namespace Entity {
+  /**
+   * An entity's id as a `Field.entity` keeps it, which may outlive its
+   * entity. An `Entity` is a `Ref`, so a field takes one as it is, but a
+   * `Ref` is not an `Entity`: no call of the world takes one. `world.live`
+   * returns the entity a `Ref` refers to while it is alive.
+   *
+   *   const target = world.live(hunter.target)
+   *   if (target !== undefined) world.get(target, Health)
+   */
+  export type Ref = number & { readonly _brand: "Entity" | "Entity.Ref" };
+}
+
 export const INDEX_BITS = 22;
 export const INDEX_MASK = (1 << INDEX_BITS) - 1;
 /** The number of indexes: what an id's generation is multiplied by. */
@@ -59,14 +72,14 @@ export const GENERATIONS = 2 ** (53 - INDEX_BITS);
  *
  * @category Utilities
  */
-export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
+export const entityIndex = (entity: Entity.Ref): number => entity & INDEX_MASK;
 /**
  * Returns an entity's generation, the number of entities that held its index
  * before it. The generation tells the entity apart from them.
  *
  * @category Utilities
  */
-export const entityGeneration = (entity: Entity): number =>
+export const entityGeneration = (entity: Entity.Ref): number =>
   Math.floor(entity / INDEX_RANGE);
 export const makeEntity = (index: number, generation: number): Entity =>
   (generation * INDEX_RANGE + index) as Entity;
@@ -180,10 +193,11 @@ export const Field = {
   u8: field<number, Uint8Array>("u8"),
   /**
    * An entity's id, in a `Float64Array`. It holds whatever id was written,
-   * and is stale once its entity is despawned. For a reference the world
-   * keeps correct, use `Component.relation`.
+   * and is stale once its entity is despawned, so it reads as an
+   * `Entity.Ref`, which `world.live` turns back into an `Entity`. For a
+   * reference the world keeps correct, use `Component.relation`.
    */
-  entity: field<Entity, Float64Array>("entity"),
+  entity: field<Entity.Ref, Float64Array>("entity"),
   /**
    * Plain data: a string, number, boolean, bigint, null or undefined, or an
    * array or object of strings, numbers, booleans and null. It is saved in
@@ -231,7 +245,7 @@ export type ValueOf<S extends Schema> = {
 };
 
 /** A field of a value given to `of`: an entity field takes a spawned id too. */
-type InputField<T> = [T] extends [Entity] ? Entity | Spawned : T;
+type InputField<T> = [T] extends [Entity.Ref] ? T | Spawned : T;
 
 /**
  * The value a component's `of` takes. It is the component's `ValueOf`, except

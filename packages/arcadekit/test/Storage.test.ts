@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CommandBuffer } from "../src/ecs/commands";
-import { Component, Field } from "../src/ecs/component";
+import { Component, Field, entityIndex } from "../src/ecs/component";
 import type { ComponentDef, Entity } from "../src/ecs/component";
 import type { QuerySpec, Terms } from "../src/ecs/query";
 import { World } from "../src/ecs/world";
@@ -230,9 +230,30 @@ describe("entities and components", () => {
       Target.of({ entity: a })
     );
     expect(world.get(b, Name)).toEqual({ value: "archer" });
-    const target = world.get(b, Target)!.entity;
+    const target = world.live(world.get(b, Target)!.entity)!;
     expect(target).toBe(a);
     expect(world.get(target, Name)).toEqual({ value: "goblin" });
+  });
+
+  it("turns a stored reference back into its entity while it lives, and never after its slot is reused", () => {
+    const world = new World();
+    const goblin = world.spawn(Name.of({ value: "goblin" }));
+    const archer = world.spawn(Target.of({ entity: goblin }));
+    const ref = world.get(archer, Target)!.entity;
+    // @ts-expect-error a stored reference is no entity until live says it is
+    world.get(ref, Name);
+    // A field takes a reference as it is, and an entity.
+    const scout = world.spawn(Target.of({ entity: ref }));
+    expect(world.live(world.get(scout, Target)!.entity)).toBe(goblin);
+    expect(world.live(ref)).toBe(goblin);
+
+    world.despawn(goblin);
+    expect(world.live(ref)).toBeUndefined();
+    const ogre = world.spawn(Name.of({ value: "ogre" }));
+    expect(entityIndex(ogre)).toBe(entityIndex(goblin));
+    expect(world.live(ref)).toBeUndefined();
+    world.set(archer, Target, { entity: ogre });
+    expect(world.live(world.get(archer, Target)!.entity)).toBe(ogre);
   });
 
   it("keeps data when adding and removing components moves an entity between tables", () => {

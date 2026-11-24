@@ -56,7 +56,7 @@ type Settable<C extends string, N extends string> = C extends N
  */
 export interface ReadingWorld extends Pick<
   EcsWorld,
-  "entityCount" | "has" | "hash" | "holds" | "isAlive" | "sources"
+  "entityCount" | "has" | "hash" | "holds" | "isAlive" | "live" | "sources"
 > {
   /**
    * Returns the entity of an id that `Commands.spawn` returned, once its spawn
@@ -90,6 +90,9 @@ export interface ReadingWorld extends Pick<
  *   `holds` a singleton, and `entityCount` and `hash` the world.
  *   `sources(target, ChildOf)` returns the entities that point at `target` with
  *   a relation, and takes no component that isn't a relation.
+ * - `live` returns the entity a `Field.entity` value refers to while it is
+ *   alive, and undefined once it is despawned. The world's reads take an
+ *   `Entity`, not the `Entity.Ref` a field holds.
  * - `placed` returns the entity of an id that `Commands.spawn` returned, once
  *   its spawn is applied, and undefined before. The world's reads take an
  *   `Entity`, not a `Spawned` id.

@@ -351,7 +351,7 @@ export class World {
    * despawned, it returns false for good, since the slot is reused under
    * another generation, and so under another id.
    */
-  isAlive(entity: Entity): boolean {
+  isAlive(entity: Entity.Ref): boolean {
     const index = entityIndex(entity);
     // The generation, compared without rounding it down: a number that is
     // no id, which has a part below its index's bits or none at all, is the
@@ -361,6 +361,18 @@ export class World {
       this.recTable[index] !== FREE &&
       this.gens[index] === (entity - index) / SLOTS
     );
+  }
+
+  /**
+   * Returns the entity a `Field.entity` value refers to while it is alive, and
+   * undefined once it is despawned, even after another entity takes its slot.
+   */
+  live(ref: Entity.Ref): Entity | undefined {
+    if (!this.isAlive(ref)) {
+      return undefined;
+    }
+    const index = entityIndex(ref);
+    return makeEntity(index, this.gens[index]!);
   }
 
   /**

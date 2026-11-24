@@ -52,8 +52,12 @@ class Read implements ReadingWorld {
     return this.#world.holds(spec);
   }
 
-  isAlive(entity: Entity): boolean {
+  isAlive(entity: Entity.Ref): boolean {
     return this.#world.isAlive(entity);
+  }
+
+  live(ref: Entity.Ref): Entity | undefined {
+    return this.#world.live(ref);
   }
 
   placed(id: Spawned): Entity | undefined {

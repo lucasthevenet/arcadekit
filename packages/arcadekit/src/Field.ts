@@ -60,14 +60,19 @@ export const u8 = Field.u8;
  *
  * **When to use**
  *
- * Use when the code that reads the id checks it. For a reference that must
- * never dangle, use `Component.relation`, which the world keeps up to date.
+ * Use when the code that reads the id can do without its entity. For a
+ * reference that must never dangle, use `Component.relation`, which the world
+ * keeps up to date.
+ *
+ *   const target = world.live(hunter.target)
+ *   if (target !== undefined) world.get(target, Health)
  *
  * **Gotchas**
  *
- * - The field holds whatever id was written to it. Once its entity is
- *   despawned the id is stale, and the code that reads it has to check it with
- *   `isAlive`.
+ * - The field holds whatever id was written to it, which is stale once its
+ *   entity is despawned. It reads as an `Entity.Ref`, which no call of the
+ *   world takes: `world.live` returns the entity while it is alive, and
+ *   undefined after.
  *
  * @category Fields
  */
