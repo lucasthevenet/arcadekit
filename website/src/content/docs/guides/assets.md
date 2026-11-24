@@ -41,6 +41,12 @@ const Game = Plugin.make("game/Game", {
 
 `yield*` on a bundle gives its current status: `Absent`, `Loading`, `Ready`, or `Failed`. `Ready` holds the `assets`, each under its name and with its type, and `Failed` holds the error. The store logs a failed bundle once, keeps nothing of what did load, and retries it the next time its level is entered.
 
+## Share files between bundles
+
+Bundles that are held at the same time share what they load. A file named by two of them is fetched once, and kept while either is loaded. An asset that two of them have, the same value in each, is decoded once, and released when the last of them is let go. An asset made twice, such as `Browser.image("/forest.png")` written in two bundles, is decoded once for each, from the one fetch.
+
+A fetch that may succeed if tried again is tried again, up to three times, 200, 400 and 800 milliseconds later. That is a request that got no answer, a download that was cut off, or a server that answered 500 or more. Its bundle stays `Loading` meanwhile, and becomes `Ready` if one of them succeeds, with no need to enter its level again. A missing file, an answer of 404, or a file that doesn't decode fails at once.
+
 ## Pass a file's contents to the rules
 
 Loading takes real time, so only the frame and input stages can request a bundle. A system of the tick can't require `Assets.Store`. A replay or a server draws nothing, loads nothing, and runs the same game.
@@ -103,7 +109,7 @@ A frame or input-stage system of your own can keep a bundle loaded with `(yield*
 
 ## Choose where files come from
 
-`Assets.Loader` fetches the files. By default it uses `fetch`, and cancels the request when the load is interrupted. In a page, `Browser.runMain` and `Browser.layer` read a path against the document's base, as `fetch` does, so a page with a `<base href>` loads from there. A test serves its files from memory with `Assets.layerMemory({ "/forest.json": "..." })`.
+`Assets.Loader` fetches the files. By default it uses `fetch`, and cancels the request when the load is interrupted. In a page, `Browser.runMain` and `Browser.layer` read a path against the document's base, as `fetch` does, so a page with a `<base href>` loads from there. A test serves its files from memory with `Assets.layerMemory({ "/forest.json": "..." })`. A loader of your own marks a failure worth trying again with `transient: true` on its `Assets.AssetFailed`.
 
 ## Read more
 
