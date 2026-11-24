@@ -7,7 +7,7 @@
  *   import { App, Driver } from "arcadekit"
  *   import * as Browser from "arcadekit/Browser"
  *
- *   Browser.runMain(Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }), {
+ *   Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), {
  *     target: canvas,
  *     preventDefault: ["Space", "ArrowUp", "ArrowDown"],
  *   })
@@ -1016,7 +1016,7 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
  * `BrowserRuntime.runMain`, and with `Browser.layer(options)` provided to the
  * whole program.
  *
- *   Browser.runMain(Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }), { target: canvas })
+ *   Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), { target: canvas })
  *
  * **Details**
  *

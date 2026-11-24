@@ -20,7 +20,8 @@ const canvas = document.querySelector("canvas")!;
 const button = document.querySelector("button")!;
 
 Browser.runMain(
-  Driver.run(App.make(App.define({ plugins: [Game] }), { seed: Date.now() }), {
+  Driver.run(App.define({ plugins: [Game] }), {
+    seed: Date.now(),
     hz: 60,
     ready: (app) =>
       Effect.sync(() => {
@@ -31,15 +32,17 @@ Browser.runMain(
 );
 ```
 
-`App.make` makes the app from two things:
+`Driver.run` makes the app from two things:
 
 - The game, which `App.define` makes from its plugins, systems, and handlers. It is the same every time it is played.
-- How this run of it starts: a `seed` for a new game, or a `save` to continue one.
+- How this run of it starts: a `seed` for a new game, or a `save` to continue one, among its options as `App.make` takes them.
 
-`Driver.run` takes the effect that `App.make` returns, without yielding it. On each repaint, it runs the ticks that are due at `hz`, then the frame stage. It never completes on its own. When it is interrupted, or a tick or a frame throws, it closes the app. Its options:
+On each repaint, it runs the ticks that are due at `hz`, then the frame stage. It never completes on its own. When it is interrupted, or a tick or a frame throws, it closes the app. Its options:
 
 | Option | Default | Description |
 | --- | --- | --- |
+| `seed` | `0` | Where the game's random sequence starts, for a new game |
+| `save` | None | A save to continue from, in place of a `seed` |
 | `hz` | Required | The ticks per second, whatever the frame rate |
 | `ticks` | `"always"` | `"whenNeeded"` ticks only while the game changes. See [tick only when needed](#tick-only-when-needed) |
 | `maxStepsPerCall` | `5` | The most ticks that one frame runs after a freeze. The loop drops the ticks still owed |
@@ -66,7 +69,7 @@ The loop keeps to these rules:
 
 To connect something outside the game to the app before its first frame, give it as `ready`, as above. What `ready` acquires is released when the run ends. When `ready` fails, `Driver.run` closes the app and fails with what `ready` failed with. A UI doesn't need the app, because the app hands it [the view bridge](ui.md).
 
-An app made from a `save` resumes from it instead of starting fresh. Making it can fail with `Save.LoadRefused`, and `Driver.run` fails with whatever making the app fails with. See [saving and loading](saving-and-loading.md).
+Given a `save`, the app resumes from it instead of starting fresh. Making it can fail with `Save.LoadRefused`, and `Driver.run` fails with whatever making the app fails with. See [saving and loading](saving-and-loading.md).
 
 Provide the services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`. A missing service is a compile error. Provide them to `Driver.run` as a whole, not to a part of it. A layer releases what it acquires when the effect it was provided to ends, so a layer provided to the whole program lasts as long as the game. `Browser.layer` acquires nothing itself. The app opens the page's devices in a scope of its own, and `Sound.plugin` opens the page's sound there too. The app lets go of both when it is closed.
 
@@ -86,9 +89,7 @@ import { App, Driver, Plugin } from "arcadekit";
 
 const Game = Plugin.make("game/Game", {});
 
-NodeRuntime.runMain(
-  Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 })
-);
+NodeRuntime.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }));
 ```
 
 `NodeRuntime.runMain` interrupts the game when the process is told to stop, and `Driver.run` closes the app as it does in a page. A server, a replay, or a test never imports `arcadekit/Browser`, so it needs no `@effect/platform-browser`.
@@ -118,10 +119,7 @@ const Chess = Plugin.make("chess/Chess", {
 const board = document.querySelector("canvas")!;
 
 Browser.runMain(
-  Driver.run(App.make(App.define({ plugins: [Chess] })), {
-    hz: 60,
-    ticks: "whenNeeded",
-  }),
+  Driver.run(App.define({ plugins: [Chess] }), { hz: 60, ticks: "whenNeeded" }),
   { target: board }
 );
 ```

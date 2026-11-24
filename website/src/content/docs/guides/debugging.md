@@ -15,7 +15,7 @@ import { Effect } from "effect";
 const Game = Plugin.make("game/Game", {});
 
 Browser.runMain(
-  Driver.run(App.make(App.define({ plugins: [Game] })), {
+  Driver.run(App.define({ plugins: [Game] }), {
     hz: 60,
     ready: (app) =>
       Effect.sync(() => {
@@ -64,7 +64,7 @@ const Tracing = OtlpTracer.layer({
 );
 
 Browser.runMain(
-  Driver.run(App.make(App.define({ systems: [Move, Draw] })), { hz: 60 }).pipe(
+  Driver.run(App.define({ systems: [Move, Draw] }), { hz: 60 }).pipe(
     Effect.provide(Tracing)
   ),
   { target: document.querySelector("canvas")! }
@@ -94,7 +94,7 @@ Tracing doesn't change what the game does. A span reads the real clock, and its 
 ```ts sketch
 import { Tracer } from "effect";
 
-Driver.run(App.make(App.define({ plugins: [Game] })), { hz: 60 }).pipe(
+Driver.run(App.define({ plugins: [Game] }), { hz: 60 }).pipe(
   Effect.provideService(Tracer.MinimumTraceLevel, "Info"),
   Effect.provide(Tracing)
 );

@@ -106,13 +106,14 @@ const Demo = Plugin.make("Demo", {
 });
 
 // --- the entry point -------------------------------------------------------------
-// Driver.run runs the app that App.make makes until it is interrupted: sixty
+// Driver.run makes an app of the game and runs it until it is interrupted: sixty
 // ticks a second, and the frame stage each time the display is due, which
 // under Node is a timer. Before its first frame, its ready step has the app,
 // where this demo steps the same app by hand.
 const program = Effect.gen(function* () {
   const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
-  yield* Driver.run(App.make(App.define({ plugins: [Demo] }), { seed: 7 }), {
+  yield* Driver.run(App.define({ plugins: [Demo] }), {
+    seed: 7,
     hz: 60,
     ready: (app) =>
       Effect.gen(function* () {
