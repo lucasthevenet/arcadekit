@@ -159,7 +159,7 @@ describe("an entity's id", () => {
     world.add(wide, Mark.of({ to: wide }));
     world.add(anchor, Mark.of({ to: owned }));
     expect(world.get(wide, Mark)).toEqual({ to: wide });
-    const marked: [Entity, Entity][] = [];
+    const marked: [Entity, Entity.Ref][] = [];
     world.view(query([Mark])).each((mark, entity) => {
       marked.push([entity, mark.to]);
     });

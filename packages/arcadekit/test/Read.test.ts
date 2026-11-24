@@ -21,6 +21,7 @@ import {
 import * as Services from "../src/Services";
 
 const Position = Component.define("rd/Position", { x: Field.f32 });
+const Aim = Component.define("rd/Aim", { at: Field.entity });
 const Score = Singleton.define(
   "rd/Score",
   { points: Field.u32 },
@@ -164,6 +165,37 @@ describe("a game, from outside it", () => {
 });
 
 describe("the world a system is handed", () => {
+  it("turns a Field.entity back into its entity with live, as the world app.read hands out does", () => {
+    const seen: unknown[] = [];
+    const Aimed = Query.all(Aim);
+    const Look = System.tick("rd/Look", function* () {
+      const world = yield* World;
+      (yield* Aimed).each((aim) => {
+        seen.push(world.live(aim.at));
+      });
+    });
+    const Setup = Plugin.make("rd/Aims", {
+      systems: [Look],
+      setup: Effect.gen(function* () {
+        const commands = yield* Commands.spawns(Position, Aim);
+        const rock = commands.spawn(Position.of({ x: 1 }));
+        commands.spawn(Aim.of({ at: rock }));
+      }),
+    });
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [Setup] }));
+        app.tick(1 / 60);
+        const world = yield* app.read(World);
+        const [rock] = (yield* app.read(Placed)).entities();
+        const [aim] = (yield* app.read(Aimed)).entities();
+        const ref = world.get(aim!, Aim)!.at;
+        expect(seen).toEqual([rock]);
+        expect(world.live(ref)).toBe(rock);
+      })
+    );
+  });
+
   it("is not the world itself, so no check of its class reaches spawn or despawn", () => {
     const seen: unknown[] = [];
     const Look = System.tick("rd/Look", function* () {

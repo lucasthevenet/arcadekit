@@ -67,7 +67,7 @@ export const Rules = Plugin.make("game/Rules", { handlers: [swap], setup });
 ## Choose what happens when a target is despawned
 
 - `onTargetDespawn` sets what happens to the entities that point at a target when the target is despawned. `"despawn"` despawns them too, along with whatever points at them, at any depth. `"remove"` removes the relation from them and leaves them otherwise untouched.
-- Either way, nothing is left pointing at a despawned entity, so a stale id can never be read as a live one. A plain `Field.entity` gets no such guarantee. It holds whatever id was written, and the code that reads it checks `world.isAlive` itself.
+- Either way, nothing is left pointing at a despawned entity, so a stale id can never be read as a live one. A plain `Field.entity` gets no such guarantee. It holds whatever id was written and reads as an `Entity.Ref`, which the world's calls take only once `world.live` has turned it back into an entity.
 - A despawn follows relations in order of name, and the entities that point at a target in order of index. The same world therefore always loses the same entities in the same order.
 
 ## Query, watch and save a relation like a component

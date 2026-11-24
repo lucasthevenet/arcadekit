@@ -48,6 +48,7 @@ Other values use a field type that declares how snapshots and the hash treat the
 - A snapshot fails, naming the field, when it meets a value it can't encode: a non-plain value in a `json` field, or one a codec or schema rejects. Loading fails the same way when a codec rejects a value.
 - A `json` field takes only a type that JSON holds. `Field.json<Date>()`, or an object with a `Map` in it, doesn't compile. Give such values a schema instead.
 - The value of a `json`, `ref`, `schema` or `transient` field is read-only all the way down. Replace it with `world.set` or by assigning the field in `each`. A change in place doesn't compile, because no change query would see it and no refused action would undo it.
+- An `entity` field takes an entity and reads as an `Entity.Ref`, an id whose entity may be gone. The world's calls take an `Entity`, so pass the field through `world.live(hero.target)` first: it returns the entity while it is alive, and `undefined` once it is despawned.
 - Every hash encodes each `schema` and `ref` value, and stringifies each array or object in a `json` field. Use these fields for small or rarely changing data, and keep numbers that change every tick in numeric fields.
 
 ## Create and change entities
@@ -105,7 +106,7 @@ Inside the simulation, you name the components where you request what changes th
 | Spawn an entity, or add a component | `yield* Commands.spawns(Bullet, Position)` | `commands.spawn(Bullet, Position.of({ x: 0, y: 0 }))`, `commands.add(entity, Bullet)` |
 | Despawn an entity, or remove a component | `yield* Commands` | `commands.despawn(entity)`, `commands.remove(entity, Bullet)` |
 | Set a component of one entity by id | `yield* World.writes(Health)` | `world.set(target, Health, { hp: 3 })` |
-| Read one entity by id | `yield* World` | `world.get(target, Health)`, `world.has(target, Health)`, `world.isAlive(target)` |
+| Read one entity by id | `yield* World` | `world.get(target, Health)`, `world.has(target, Health)`, `world.isAlive(target)`, `world.live(hero.target)` |
 | Write every entity that matches | A query with [`Query.writes`](queries.md#name-what-a-query-writes) | `view.each((health) => { health.hp -= 1 })` |
 
 - Spawning, adding or setting a component you didn't name doesn't compile, and the error says where to name it.
