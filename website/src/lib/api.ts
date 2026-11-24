@@ -531,7 +531,13 @@ export const readModule = (
     );
   }
   const parsed = readDeclarations(entry);
-  const exports: Export[] = [];
+  // An entry that gives the exports of files of its own lists them in the order it imports
+  // those files, and each file's in the order they are written.
+  const files = [
+    entry,
+    ...new Set([...parsed.imports.values()].map((one) => one.file)),
+  ];
+  const exports: { readonly item: Export; readonly file: number }[] = [];
   for (const exported of parsed.exports.keys()) {
     const found = resolve(entry, exported);
     if (found === undefined) {
@@ -571,7 +577,10 @@ export const readModule = (
       };
     });
     if (parts.length > 0 && !parts.some((part) => part.internal)) {
-      exports.push({ name: exported, parts });
+      exports.push({
+        item: { name: exported, parts },
+        file: files.indexOf(found.parsed.file),
+      });
     }
   }
   const sourceText = readFileSync(path.join(root, sourceFile), "utf-8");
@@ -590,10 +599,14 @@ export const readModule = (
     inRoot,
     file: sourceFile,
     comment,
-    exports: exports.toSorted(
-      (a, b) =>
-        (a.parts[0]?.source?.line ?? 0) - (b.parts[0]?.source?.line ?? 0)
-    ),
+    exports: exports
+      .toSorted(
+        (a, b) =>
+          a.file - b.file ||
+          (a.item.parts[0]?.source?.line ?? 0) -
+            (b.item.parts[0]?.source?.line ?? 0)
+      )
+      .map(({ item }) => item),
   };
 };
 

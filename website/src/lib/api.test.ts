@@ -98,6 +98,28 @@ describe.runIf(built)("a module's page", () => {
     );
   });
 
+  it("lists the exports an entry gives from its files file by file, each in the order it is written", () => {
+    const written = readModule(
+      REPO_ROOT,
+      "packages/arcadekit",
+      "arcadekit",
+      "ecs",
+      "packages/arcadekit/src/ecs/index.ts"
+    ).exports.map((item) => item.parts[0]?.source);
+    const files = written.map((source) => source?.file);
+    // Each file's exports together: once another file's start, none follows.
+    expect(files.filter((file, i) => file !== files[i - 1])).toStrictEqual([
+      ...new Set(files),
+    ]);
+    expect(new Set(files).size).toBeGreaterThan(1);
+    for (const file of new Set(files)) {
+      const lines = written
+        .filter((source) => source?.file === file)
+        .map((source) => source!.line);
+      expect(lines).toStrictEqual(lines.toSorted((a, b) => a - b));
+    }
+  });
+
   const signatureOf = (name: string, exported: string, file = `${name}.ts`) =>
     readModule(
       REPO_ROOT,
