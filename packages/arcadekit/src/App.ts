@@ -504,7 +504,8 @@ export interface App<E = never, HU = never> extends Any {
  * `dispatchByName`. It has no `close` either, because whatever steps it
  * closes it. Its world, time, frame and input stages, log, saves and
  * recordings are an app's. An action given to `enqueue` is applied when
- * whatever steps the app says.
+ * whatever steps the app says. Its `enqueueByName` takes no `from`, since
+ * whatever steps the app stamps who issued each action.
  *
  * @typeParam E what a tick can fail with
  * @typeParam HU the app's handlers, as a union, which say what actions it
@@ -514,8 +515,16 @@ export interface App<E = never, HU = never> extends Any {
  */
 export type Steered<E = never, HU = never> = Omit<
   App<E, HU>,
-  "close" | "dispatch" | "dispatchByName" | "tick" | "tickExit"
->;
+  | "close"
+  | "dispatch"
+  | "dispatchByName"
+  | "tick"
+  | "tickExit"
+  | "enqueueByName"
+> & {
+  /** Like `App.enqueueByName`. A session stamps who issued it. */
+  readonly enqueueByName: (name: string, payload: unknown) => void;
+};
 
 /**
  * What a game is, as `App.define` takes it: its plugins, its own systems and

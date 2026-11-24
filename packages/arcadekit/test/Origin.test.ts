@@ -277,6 +277,7 @@ describe("who issued an action, in a session", () => {
     withPeers(["ada", "grace"], {}, (peers) => {
       const [ada] = peers as [Peer];
       expect(() =>
+        // @ts-expect-error a session's app takes no issuer
         ada.app.enqueueByName("ls/Tip", { amount: 1 }, "grace")
       ).toThrow(
         /was given who issued it, "grace", on an app that a session has taken over.*nobody speaks for another/u
