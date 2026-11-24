@@ -1,9 +1,9 @@
 // What each entry of each published package may import: the promise an entry makes is about
 // what a program that imports it has to have installed.
 //
-//   arcadekit/ecs                imports no package at all
-//   arcadekit/Browser            imports Effect, and may import @effect/platform-browser
-//   every other entry of it      imports Effect and nothing else
+//   arcadekit/ecs                         imports no package at all
+//   arcadekit/browser, browser/<Module>   imports Effect, and may import @effect/platform-browser
+//   every other entry of it               imports Effect and nothing else
 //
 //   every entry of @arcadekit/three imports arcadekit, Effect and Three.js, and nothing else
 //
@@ -41,12 +41,12 @@ const ecs: EntryRule = {
 const browser: EntryRule = {
   may: (name) => isEffect(name) || isPlatformBrowser(name),
   page: true,
-  says: "arcadekit/Browser imports Effect, and may import @effect/platform-browser",
+  says: "arcadekit/browser and arcadekit/browser/* import Effect, and may import @effect/platform-browser",
 };
 const rest: EntryRule = {
   may: isEffect,
   page: false,
-  says: "every entry of arcadekit but arcadekit/Browser imports Effect and nothing else, and does not reach src/browser/: what only a page can use goes there",
+  says: "every entry of arcadekit but arcadekit/browser and arcadekit/browser/* imports Effect and nothing else, and does not reach src/browser/: what only a page can use goes there",
 };
 const three: EntryRule = {
   may: (name) => isArcadekit(name) || isEffect(name) || isThree(name),

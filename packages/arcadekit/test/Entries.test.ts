@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import * as BrowserEntry from "../src/browser/index";
 import * as Ecs from "../src/ecs/index";
 import * as Main from "../src/index";
 import * as Net from "../src/net/index";
@@ -33,6 +34,9 @@ const sources = import.meta.glob("../src/**/*.ts", {
 });
 const modules = import.meta.glob("../src/*.ts", { eager: true });
 const netModules = import.meta.glob("../src/net/*.ts", { eager: true });
+const browserModules = import.meta.glob("../src/browser/*.ts", {
+  eager: true,
+});
 interface Target {
   readonly source: string;
   readonly types: string;
@@ -131,23 +135,15 @@ describe("the package's entries", () => {
     };
     entry(".", "../src/index.ts");
     for (const file of Object.keys(sources)) {
-      // A module is PascalCase, as it is imported, wherever its file is,
-      // and a folder is an entry by its index. The module a folder is named
-      // for is named as the folder's own entry would be: src/browser/Browser.ts
-      // is "./Browser". Any other file, and any file of an internals/ folder,
-      // is what a module keeps to itself, and no entry.
-      if (file.includes("/internals/")) {
+      // A module is PascalCase, as it is imported, at its path, and a folder
+      // is an entry by its index. Any other file, and any file of an
+      // internal/ folder, is what a module keeps to itself, and no entry.
+      if (file.includes("/internal/")) {
         continue;
       }
-      const module = /^\.\.\/src\/((?:\w+\/)*)([A-Z]\w*)\.ts$/u.exec(file);
+      const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
       const folder = /^\.\.\/src\/((?:\w+\/)*\w+)\/index\.ts$/u.exec(file);
-      const path = (module?.[1] ?? "").split("/").slice(0, -1);
-      const name =
-        module === null
-          ? folder?.[1]
-          : path.at(-1) === module[2]!.toLowerCase()
-            ? [...path.slice(0, -1), module[2]].join("/")
-            : `${module[1]}${module[2]}`;
+      const name = (module ?? folder)?.[1];
       if (name !== undefined) {
         entry(`./${name}`, file);
       }
@@ -159,15 +155,13 @@ describe("the package's entries", () => {
     expect(entries).toContain("./App");
     expect(entries).toContain("./Input");
     expect(entries).toContain("./TickScheduler");
-    expect(entries).toContain("./Browser");
-    expect(manifest.exports["./Browser"]!.source).toBe(
-      "./src/browser/Browser.ts"
-    );
+    expect(entries).toContain("./browser");
+    expect(entries).toContain("./browser/Browser");
     expect(entries).toContain("./browser/Audio");
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(43);
+    expect(entries.length).toBe(44);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -180,7 +174,7 @@ describe("the package's entries", () => {
   // What a source may import or name, by the entry it is behind, is held by
   // the Oxlint rules of tooling/lint/plugin.ts, file by file: arcadekit/ecs
   // imports no package and nothing outside src/ecs, no entry but
-  // arcadekit/Browser imports anything but Effect, reaches its files or
+  // arcadekit/browser's imports anything but Effect, reaches their files or
   // names what only a page has, and no source makes code from text.
 
   it("arcadekit/ecs is all of the storage core", () => {
@@ -191,13 +185,13 @@ describe("the package's entries", () => {
     );
   });
 
-  // What only a page can use: arcadekit/Browser's folder, internals/ with
+  // What only a page can use: arcadekit/browser's folder, internal/ with
   // it, and no other entry's.
   const browserFiles = Object.keys(sources)
     .filter((file) => file.startsWith("../src/browser/"))
     .toSorted();
 
-  it("the package's own entry reaches every source but arcadekit/Browser's, the storage core's index and src/net", () => {
+  it("the package's own entry reaches every source but arcadekit/browser's, the storage core's index and src/net", () => {
     const main = reach(sourceOf(".")).files;
     expect(
       Object.keys(sources)
@@ -220,8 +214,8 @@ describe("the package's entries", () => {
     ]);
   });
 
-  it("arcadekit/Browser is the one entry that imports a browser package, which is an optional peer", () => {
-    const { files, packages } = reach(sourceOf("./Browser"));
+  it("arcadekit/browser is the one entry that imports a browser package, which is an optional peer", () => {
+    const { files, packages } = reach(sourceOf("./browser"));
     expect(packages.filter((one) => !isEffect(one))).toEqual([
       "@effect/platform-browser/BrowserRuntime",
     ]);
@@ -231,7 +225,7 @@ describe("the package's entries", () => {
     ).toBe(true);
     // Only its own files are its own: the rest is the game's, shared.
     expect(browserFiles).toContain("../src/browser/Browser.ts");
-    expect(browserFiles).toContain("../src/browser/internals/audio.ts");
+    expect(browserFiles).toContain("../src/browser/internal/audio.ts");
     const main = reach(sourceOf(".")).files;
     expect(files.filter((file) => !main.includes(file)).toSorted()).toEqual(
       browserFiles
@@ -290,6 +284,7 @@ describe("the package's entries", () => {
         .toSorted()
     ).toEqual(["Schemas", "Services", "TickScheduler"]);
     expect("Browser" in main).toBe(false);
+    expect("browser" in main).toBe(false);
   });
 });
 
@@ -319,6 +314,21 @@ describe("arcadekit/net", () => {
         entry
       ).toEqual([]);
     }
+  });
+});
+
+describe("arcadekit/browser", () => {
+  it("gives every module of its folder as the module's own entry does, and the package's own entry none of them", () => {
+    const browser = BrowserEntry as Record<string, unknown>;
+    const names = ["Audio", "Browser"];
+    for (const name of names) {
+      expect(browser[name], name).toBe(
+        browserModules[`../src/browser/${name}.ts`]
+      );
+      expect(name in (Main as Record<string, unknown>), name).toBe(false);
+      expect(sourceOf(`./browser/${name}`)).toBe(`../src/browser/${name}.ts`);
+    }
+    expect(Object.keys(browser).toSorted()).toEqual(names);
   });
 });
 

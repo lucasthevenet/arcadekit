@@ -9,7 +9,7 @@ An **asset** is a file the game loads, such as an image, a sound, or a data file
 
 ```ts
 import { Assets, Plugin, State, System } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Schema } from "effect";
 
 const Layout = Schema.Struct({ walls: Schema.Array(Schema.Int) });

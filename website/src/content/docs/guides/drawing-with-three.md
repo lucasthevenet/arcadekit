@@ -45,7 +45,7 @@ Only the page's code imports `@arcadekit/three`: the plugin that says how each k
 ```ts title="main.ts"
 import { Three } from "@arcadekit/three";
 import { App, Driver, Plugin, Transform3d } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Effect, Layer } from "effect";
 import { AmbientLight, IcosahedronGeometry, MeshStandardMaterial } from "three";
 

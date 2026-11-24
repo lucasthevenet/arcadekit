@@ -36,7 +36,7 @@
  * `Input.Source` supplies the devices. A page's keyboard, pointer and gamepads
  * come from the package's other entry point, which only a page imports:
  *
- *   import * as Browser from "arcadekit/Browser"
+ *   import { Browser } from "arcadekit/browser"
  *   Browser.runMain(Driver.run(...), { target: canvas })
  *
  * Nothing provides a source to a replay or a server, and no devices are read
@@ -171,7 +171,7 @@ const noSource: Source = {
  * **Details**
  *
  * A page provides its own source with `Browser.layer()` from
- * `arcadekit/Browser`. A test that simulates input provides one it controls,
+ * `arcadekit/browser`. A test that simulates input provides one it controls,
  * `Input.layer(Input.makeManualSource())`.
  *
  * Without devices, the input stage leaves the state that `Input.plugin` keeps

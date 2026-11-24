@@ -32,7 +32,7 @@ import {
   Transform2d,
   Transform3d,
 } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import * as Browser from "arcadekit/browser/Browser";
 import { Effect, Layer } from "effect";
 import {
   AmbientLight,
