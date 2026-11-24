@@ -63,6 +63,8 @@ const Mood = Component.singleton(
 const Bodies = Query.all(Body).pipe(Query.writes(Body));
 const Sheets = Query.all(Sheet).pipe(Query.writes(Sheet));
 const Auras = Query.all(Aura).pipe(Query.writes(Aura));
+/** Sheets where a body has one: half the bodies don't. */
+const Patchy = Query.all(Body, Query.maybe(Sheet)).pipe(Query.writes(Sheet));
 const Both = Query.all(Body, Aura).pipe(
   Query.writes(Body, Aura),
   Query.without(Chilled)
@@ -133,6 +135,19 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
     world.view(Both).each((body, aura) => {
       body.x = -1;
       aura.byte = 9;
+    });
+  },
+  "each and eachChunk over a term an entity may lack": (world) => {
+    world.view(Patchy).each((_body, row) => {
+      if (row !== undefined) {
+        row.signed = 5;
+        row.note = "patched";
+      }
+    });
+    world.view(Patchy).eachChunk((start, end, _body, row) => {
+      for (let i = start; row !== undefined && i < end; i++) {
+        row.unsigned[i] = 6;
+      }
     });
   },
   "eachChunk over raw columns": (world) => {

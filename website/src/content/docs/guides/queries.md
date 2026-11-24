@@ -1,6 +1,6 @@
 ---
 title: "Queries"
-description: "A query finds the entities that have certain components and passes their data to a loop. Learn the two ways to loop, filters, sparse components, what a query writes, and change detection."
+description: "A query finds the entities that have certain components and passes their data to a loop. Learn the two ways to loop, filters, sparse components, components an entity may lack, what a query writes, and change detection."
 ---
 
 A **query** finds the entities that have certain components and passes their data to a loop.
@@ -97,6 +97,43 @@ const Burn = System.tick("game/Burn", function* () {
 ```
 
 Used as a filter, with `Query.with` or `Query.without`, a sparse component needs no lookup in a raw loop. `eachChunk` is called once for each run of consecutive matching rows. A filter that splits a table into many short runs slows the loop. See [performance](performance.md).
+
+## Take a component an entity may lack
+
+`Query.maybe` makes a term that an entity may lack. The loop gets the component's data when the entity has it, and `undefined` when it doesn't:
+
+```ts
+import { Component, Field, Query, System } from "arcadekit";
+
+const Position = Component.define("game/Position", {
+  x: Field.f32,
+  y: Field.f32,
+});
+const Scale = Component.define("game/Scale", { factor: Field.f32 });
+
+const Drawn = Query.all(Position, Query.maybe(Scale));
+
+const Draw = System.frame("game/Draw", function* () {
+  (yield* Drawn).eachChunk((start, end, position, scale) => {
+    if (scale === undefined) {
+      for (let i = start; i < end; i++) {
+        // drawn at its own size, from position.x[i]! and position.y[i]!
+      }
+      return;
+    }
+    for (let i = start; i < end; i++) {
+      // drawn at scale.factor[i]!
+    }
+  });
+});
+```
+
+- A maybe term doesn't decide which entities match. `Drawn` visits every entity with a `Position`, with a scale or without one, in the usual order.
+- Whether an entity has a component is the same for its whole table. A run of `eachChunk` gets the columns or `undefined` for every row, so test it once per run, as above. In `each`, a test such as `scale?.factor` runs once per entity, which costs more in a hot loop.
+- It replaces a query for each combination: `Query.all(Position, Scale)` and `Query.all(Position).pipe(Query.without(Scale))` are one query here.
+- `Query.writes` takes a maybe term as it takes any other. The loop writes it where it was handed out, and only those columns count as written.
+- It takes only a component stored in tables. A sparse component's presence differs from entity to entity, so read it with `world.get`, or require it in a query of its own.
+- `Query.changed` and `Query.added` require what they watch, and don't take a maybe term.
 
 ## Name what a query writes
 

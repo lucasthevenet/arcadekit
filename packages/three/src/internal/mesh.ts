@@ -43,13 +43,6 @@ const onTable = (step: number): number =>
   step < 0 ? 0 : step < STEPS + 1 ? step : STEPS;
 
 /**
- * The four loops of a kind: positioned, scaled, rotated or all three.
- *
- * @internal
- */
-export type Loop = "placed" | "sized" | "turned" | "whole";
-
-/**
  * One instanced mesh, and the loops that fill its buffer from columns.
  *
  * @internal
@@ -70,16 +63,13 @@ export class Instances implements Kept {
   private readonly colorRange = { start: 0, count: 0 };
   private readonly name: string;
   /**
-   * The four loops of the kind's transform as the system passes them to its
-   * queries: as is, or, for a kind with a colour, each followed by the colours
-   * of its rows.
+   * The four loops of the kind's transform, for a position alone, with a
+   * scale, with a rotation, or with both.
    */
-  readonly loops: Record<Loop, Columns>;
-  /**
-   * For a kind with a colour, the four loops for the entities that have none:
-   * each followed by white for its rows.
-   */
-  readonly plain: Record<Loop, Columns>;
+  private readonly placedLoop: Columns;
+  private readonly sizedLoop: Columns;
+  private readonly turnedLoop: Columns;
+  private readonly wholeLoop: Columns;
 
   constructor(
     scene: ThreeScene,
@@ -94,36 +84,13 @@ export class Instances implements Kept {
     this.smooth = smoothOf(options);
     this.capacity = Math.max(1, Math.floor(options.capacity ?? 256));
     this.array = new Float32Array(this.capacity * 16);
-    const own: Record<Loop, Columns> = isFlat(options)
-      ? {
-          placed: this.placedFlat,
-          sized: this.sizedFlat,
-          turned: this.turnedFlat,
-          whole: this.wholeFlat,
-        }
-      : {
-          placed: this.placed,
-          sized: this.sized,
-          turned: this.turned,
-          whole: this.whole,
-        };
-    if (options.color === undefined) {
-      this.loops = own;
-      this.plain = own;
-    } else {
-      this.plain = {
-        placed: this.whitened(own.placed),
-        sized: this.whitened(own.sized),
-        turned: this.whitened(own.turned),
-        whole: this.whitened(own.whole),
-      };
+    const flat = isFlat(options);
+    this.placedLoop = flat ? this.placedFlat : this.placed;
+    this.sizedLoop = flat ? this.sizedFlat : this.sized;
+    this.turnedLoop = flat ? this.turnedFlat : this.turned;
+    this.wholeLoop = flat ? this.wholeFlat : this.whole;
+    if (options.color !== undefined) {
       this.colors = new Float32Array(this.capacity * 3);
-      this.loops = {
-        placed: this.painted1(own.placed),
-        sized: this.painted2(own.sized),
-        turned: this.painted2(own.turned),
-        whole: this.painted3(own.whole),
-      };
     }
     this.mesh = new InstancedMesh(options.geometry, options.material, 0);
     this.mesh.name = name;
@@ -146,83 +113,54 @@ export class Instances implements Kept {
     }
   }
 
-  // A kind with a colour is handed one more component by its queries, after
-  // the ones a loop reads: the loop runs as it is, and the colours of the
-  // same rows are written beside the matrices it wrote.
-
-  private painted1<A>(
-    loop: (start: number, end: number, a: A, entities: EntityColumn) => void
-  ) {
-    return (
-      start: number,
-      end: number,
-      a: A,
-      color: Rgb,
-      entities: EntityColumn
-    ): void => {
-      const from = this.count;
-      loop(start, end, a, entities);
-      this.paint(from, start, end, color, entities);
-    };
-  }
-
-  private painted2<A, B>(
-    loop: (
-      start: number,
-      end: number,
-      a: A,
-      b: B,
-      entities: EntityColumn
-    ) => void
-  ) {
-    return (
-      start: number,
-      end: number,
-      a: A,
-      b: B,
-      color: Rgb,
-      entities: EntityColumn
-    ): void => {
-      const from = this.count;
-      loop(start, end, a, b, entities);
-      this.paint(from, start, end, color, entities);
-    };
-  }
-
-  private painted3<A, B, C>(
-    loop: (
-      start: number,
-      end: number,
-      a: A,
-      b: B,
-      c: C,
-      entities: EntityColumn
-    ) => void
-  ) {
-    return (
-      start: number,
-      end: number,
-      a: A,
-      b: B,
-      c: C,
-      color: Rgb,
-      entities: EntityColumn
-    ): void => {
-      const from = this.count;
-      loop(start, end, a, b, c, entities);
-      this.paint(from, start, end, color, entities);
-    };
-  }
-
-  /** A loop of a kind with a colour, for entities that have none: white. */
-  private whitened(loop: Columns): Columns {
-    return (...columns: unknown[]): void => {
-      const from = this.count;
-      loop(...columns);
+  /**
+   * Fills the instances of a run of rows, with the loop for the components
+   * its table has, then their colours for a kind that has them: those of the
+   * rows, or white for a table without a colour.
+   */
+  readonly draw = (
+    start: number,
+    end: number,
+    position: unknown,
+    rotation: unknown,
+    scale: unknown,
+    color: Rgb | undefined,
+    entities: EntityColumn
+  ): void => {
+    const from = this.count;
+    if (rotation === undefined) {
+      if (scale === undefined) {
+        this.placedLoop(start, end, position, entities);
+      } else {
+        this.sizedLoop(start, end, position, scale, entities);
+      }
+    } else if (scale === undefined) {
+      this.turnedLoop(start, end, position, rotation, entities);
+    } else {
+      this.wholeLoop(start, end, position, rotation, scale, entities);
+    }
+    if (this.colors === undefined) {
+      return;
+    }
+    if (color === undefined) {
       // Read after the loop, which may have made more room.
-      this.colors!.fill(1, from * 3, this.count * 3);
-    };
-  }
+      this.colors.fill(1, from * 3, this.count * 3);
+    } else {
+      this.paint(from, start, end, color, entities);
+    }
+  };
+
+  /** `draw` for a kind with no colour, whose query hands out none. */
+  readonly drawPlain = (
+    start: number,
+    end: number,
+    position: unknown,
+    rotation: unknown,
+    scale: unknown,
+    entities: EntityColumn
+  ): void => {
+    this.draw(start, end, position, rotation, scale, undefined, entities);
+  };
 
   /** Writes the colours of these rows, for the instances from `from` on. */
   private paint(

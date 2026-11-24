@@ -300,12 +300,22 @@ export interface ReadOnlyTerm {
   readonly _reads: true;
 }
 
+/**
+ * What the type of a query term carries when an entity may lack it. It exists
+ * only in the type, and tells `each` and `eachChunk` to hand out `undefined`
+ * for a table that doesn't have it.
+ */
+export interface MaybeTerm {
+  readonly _maybe: true;
+}
+
+/** `undefined` for a term an entity may lack, and nothing for any other. */
+export type Absent<T> = T extends MaybeTerm ? undefined : never;
+
 /** What `each` hands out for each term: read-only for a term the query only reads, and a relation's `target` in any. */
 export type AccessorsOf<D extends readonly ComponentDef[]> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, Storage>
-    ? D[K] extends ReadOnlyTerm
-      ? Readonly<RowOf<S>>
-      : RowOf<S>
+    ? (D[K] extends ReadOnlyTerm ? Readonly<RowOf<S>> : RowOf<S>) | Absent<D[K]>
     : never;
 };
 

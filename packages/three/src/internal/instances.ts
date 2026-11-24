@@ -1,5 +1,4 @@
 import * as Assets from "arcadekit/Assets";
-import type { ComponentDef } from "arcadekit/ecs";
 import * as Query from "arcadekit/Query";
 import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
@@ -13,7 +12,6 @@ import type { Kept } from "./holdings";
 import type { Needs } from "./kind";
 import { required } from "./kind";
 import { Instances } from "./mesh";
-import type { Loop } from "./mesh";
 
 /** The instances of a look built from assets, while those assets are loaded. */
 interface Sourced extends Kept {
@@ -33,49 +31,24 @@ export const instances = (
   const marked = required(options);
   const excluded = options.without ?? [];
   const { color } = options;
-  // The terms of a query are a tuple in its type, and a kind with a colour
-  // has one more than one without, after the ones its loop reads: its type
-  // only says that they are components, and its loop takes any columns.
-  const kind = (
-    own: readonly ComponentDef[],
-    absent: readonly ComponentDef[]
-  ): Query.Query<Query.Reading<readonly ComponentDef[]>, never> =>
-    Query.all(...own, ...(color === undefined ? [] : [color])).pipe(
-      Query.with(...marked),
-      Query.without(...excluded, ...absent)
-    );
-  // With a colour, the same kinds once more for the entities without one,
-  // which are drawn white: a colour on some changes how those look, and
-  // hides nothing.
-  const plain = (
-    own: readonly ComponentDef[],
-    absent: readonly ComponentDef[]
-  ): Query.Query<Query.Reading<readonly ComponentDef[]>, never> | undefined =>
+  // An entity's table has a rotation or not, and a scale or not, and for a
+  // kind with a colour, a colour or not: one query hands out each run with
+  // the columns its table has, and the loop is chosen once per run.
+  const { Position, Rotation, Scale } = options.transform;
+  const Plain = Query.all(
+    Position,
+    Query.maybe(Rotation),
+    Query.maybe(Scale)
+  ).pipe(Query.with(...marked), Query.without(...excluded));
+  const Painted =
     color === undefined
       ? undefined
-      : Query.all(...own).pipe(
-          Query.with(...marked),
-          Query.without(...excluded, ...absent, color)
-        );
-  // An entity's table has a rotation or it does not, and a scale or not:
-  // four queries of the kind's transform, each handed exactly the columns
-  // its entities have.
-  const { Position, Rotation, Scale } = options.transform;
-  const shapes: readonly (readonly [
-    Loop,
-    readonly ComponentDef[],
-    readonly ComponentDef[],
-  ])[] = [
-    ["placed", [Position], [Rotation, Scale]],
-    ["sized", [Position, Scale], [Rotation]],
-    ["turned", [Position, Rotation], [Scale]],
-    ["whole", [Position, Rotation, Scale], []],
-  ];
-  const kinds = shapes.map(([loop, own, absent]) => ({
-    loop,
-    query: kind(own, absent),
-    plain: plain(own, absent),
-  }));
+      : Query.all(
+          Position,
+          Query.maybe(Rotation),
+          Query.maybe(Scale),
+          Query.maybe(color)
+        ).pipe(Query.with(...marked), Query.without(...excluded));
   return System.frame(name, function* () {
     const kept = yield* Scene;
     // Which tick the game is at and how far towards the next the frame is:
@@ -137,12 +110,10 @@ export const instances = (
     }
     // Plain loops from here on: one pass over the columns of each kind.
     drawn.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
-    const { loops, plain: white } = drawn;
-    for (const each of kinds) {
-      (yield* each.query).eachChunk(loops[each.loop]);
-      if (each.plain !== undefined) {
-        (yield* each.plain).eachChunk(white[each.loop]);
-      }
+    if (Painted === undefined) {
+      (yield* Plain).eachChunk(drawn.drawPlain);
+    } else {
+      (yield* Painted).eachChunk(drawn.draw);
     }
     drawn.finish();
   });
