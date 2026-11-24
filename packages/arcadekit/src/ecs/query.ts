@@ -9,6 +9,7 @@ import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
 import type { Column } from "./column";
 import { INDEX_MASK, entityOf, makeAccessor, retarget } from "./component";
 import type {
+  Absent,
   Accessor,
   AccessorsOf,
   Chunked,
@@ -35,7 +36,11 @@ export const describeSpec = (spec: QuerySpec): string => {
   const reads = spec.terms.filter(
     (def: ComponentDef) => spec.readDefs?.includes(def) === true
   );
-  return `all(${names(spec.terms)}) with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)}) reads(${names(reads)})`;
+  // Said only when there is one, so that the readers of a save made before
+  // there were any keep their keys.
+  const maybe =
+    (spec.maybeDefs?.length ?? 0) > 0 ? ` maybe(${names(spec.maybeDefs)})` : "";
+  return `all(${names(spec.terms)})${maybe} with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)}) reads(${names(reads)})`;
 };
 
 /**
@@ -97,7 +102,7 @@ export interface QuerySpec<D extends Terms = Terms> {
   readonly [Described]: true;
   /**
    * The components whose data the query hands to its loop, table or sparse.
-   * An entity must have each of them.
+   * An entity must have each of them, but those of `maybeDefs`.
    */
   readonly terms: D;
   /** More components an entity must have, whose data the loop doesn't get. */
@@ -120,6 +125,11 @@ export interface QuerySpec<D extends Terms = Terms> {
    * since there is nothing to restore. Each is one of `terms`.
    */
   readonly readDefs?: readonly ComponentDef[];
+  /**
+   * The terms an entity may lack. Each is one of `terms`, stored in tables.
+   * For a table without one, the loop gets `undefined` in its place.
+   */
+  readonly maybeDefs?: readonly ComponentDef[];
 }
 
 /**
@@ -160,14 +170,15 @@ export type EntityColumn = ReadonlyColumn<Entity>;
 
 export type ColumnSetsOf<D extends Terms> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, infer St>
-    ? St extends "sparse"
-      ? SparseColumns<
-          S,
-          D[K] extends ReadOnlyTerm ? ReadonlyColumnsOf<S> : ColumnsOf<S>
-        >
-      : D[K] extends ReadOnlyTerm
-        ? ReadonlyColumnsOf<S>
-        : ColumnsOf<S>
+    ? | (St extends "sparse"
+          ? SparseColumns<
+              S,
+              D[K] extends ReadOnlyTerm ? ReadonlyColumnsOf<S> : ColumnsOf<S>
+            >
+          : D[K] extends ReadOnlyTerm
+            ? ReadonlyColumnsOf<S>
+            : ColumnsOf<S>)
+      | Absent<D[K]>
     : never;
 };
 
@@ -193,7 +204,7 @@ const ROW_RANGE = 4_294_967_296; // 2^32: keys are `slot * ROW_RANGE + row`
 interface Loop {
   readonly accessors: Accessor[];
   /** For each term, what the callback of `each` receives. */
-  readonly fields: object[];
+  readonly fields: (object | undefined)[];
   /** The loop's current row, for every term whose rows are a table's. */
   readonly row: Row;
   /** For each term, the row it reads, which for a sparse term is its own. */
@@ -341,7 +352,10 @@ export class QueryView<D extends Terms = Terms> {
         read ? def.fields : def.relation === undefined ? [] : ["target"]
       );
       if (def.storage === "table") {
-        this.requiredIds.push(def.id);
+        // A term an entity may lack doesn't decide which tables match.
+        if (spec.maybeDefs?.includes(def) !== true) {
+          this.requiredIds.push(def.id);
+        }
         this.termTableId.push(def.id);
         this.termSet.push(undefined);
         if (!read) {
@@ -853,11 +867,13 @@ export class QueryView<D extends Terms = Terms> {
   private saveTableTerms(table: Table): void {
     for (let k = 0; k < this.n; k++) {
       const id = this.termTableId[k]!;
-      // What is only read is not written, and need not be put back.
-      if (id !== -1 && !this.termRead[k]) {
+      // What is only read is not written, and need not be put back, and a
+      // table without a term has nothing of it to put back.
+      const columns = id === -1 ? undefined : table.columns[id];
+      if (columns !== undefined && !this.termRead[k]) {
         this.world._saveColumns(
           this.spec.terms[k]!,
-          table.columns[id]!,
+          columns,
           table.count,
           table
         );
@@ -869,7 +885,11 @@ export class QueryView<D extends Terms = Terms> {
   private wroteTableTerms(table: Table, now: number): void {
     const ids = this.writesIds;
     for (let i = 0; i < ids.length; i++) {
-      table.versions[ids[i]!] = now;
+      const id = ids[i]!;
+      // A table without a term an entity may lack has nothing of it written.
+      if (table.columns[id] !== undefined) {
+        table.versions[id] = now;
+      }
     }
   }
 
@@ -896,7 +916,8 @@ export class QueryView<D extends Terms = Terms> {
   /**
    * Calls `fn` once for each matching entity, with an accessor for each term
    * and then the entity's id. An accessor has the fields of its component, and
-   * reads and writes them for the current entity.
+   * reads and writes them for the current entity. A term of `maybeDefs` is
+   * `undefined` instead for the entities of a table that doesn't have it.
    *
    * The loop reuses the accessors from one call to the next. Read and write
    * through them inside the callback, and don't keep them. An assignment
@@ -934,9 +955,15 @@ export class QueryView<D extends Terms = Terms> {
           // Unless they are pointed at it already, from the last time.
           if (loop.table !== table.entities) {
             for (let k = 0; k < this.n; k++) {
-              const id = this.termTableId[k];
+              const id = this.termTableId[k]!;
               if (id !== -1) {
-                acc[k]!.bind(table.columns[id!]!, table.entities, termLog[k]);
+                const columns = table.columns[id];
+                if (columns === undefined) {
+                  loop.fields[k] = undefined;
+                } else {
+                  acc[k]!.bind(columns, table.entities, termLog[k]);
+                  loop.fields[k] = acc[k]!.fields;
+                }
               }
             }
             loop.table = table.entities;
@@ -1053,7 +1080,8 @@ export class QueryView<D extends Terms = Terms> {
    * consecutive matching rows.
    *
    * A sparse term arrives as `{ columns, indexOf }`, since its rows are not
-   * the table's. After the terms comes `entities`, the ids of the table's
+   * the table's. A term of `maybeDefs` arrives as `undefined` for a table that
+   * doesn't have it. After the terms comes `entities`, the ids of the table's
    * rows.
    *
    * Under `noUncheckedIndexedAccess`, a read from a column is `number |
@@ -1125,7 +1153,9 @@ export class QueryView<D extends Terms = Terms> {
           // Raw columns cannot say which rows were written, so every row
           // that is handed out counts as written.
           for (let k = 0; k < n; k++) {
-            this.termLog[k]?.noteRows(ents, start, end);
+            if (cols[k] !== undefined) {
+              this.termLog[k]?.noteRows(ents, start, end);
+            }
           }
         }
         if (n === 1) {
@@ -1171,10 +1201,12 @@ export class QueryView<D extends Terms = Terms> {
       const id = this.termTableId[k]!;
       const held =
         set === undefined
-          ? this.tables.map((table) => ({
-              columns: table.columns[id]!,
-              count: table.count,
-            }))
+          ? this.tables.flatMap((table) => {
+              const columns = table.columns[id];
+              return columns === undefined
+                ? []
+                : [{ columns, count: table.count }];
+            })
           : [set];
       for (const { columns, count } of held) {
         for (const field of this.readOnlyFields[k]!) {

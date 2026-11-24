@@ -11,7 +11,7 @@ import {
 import type { ComponentDef, Entity } from "../src/ecs/component";
 import type { QuerySpec, Terms } from "../src/ecs/query";
 import { World } from "../src/ecs/world";
-import { Query } from "../src/Query";
+import { Query, all, maybe, without } from "../src/Query";
 import { expectChecked, makeChecks } from "./checks";
 
 const Position = Component.define("st/Position", {
@@ -1390,6 +1390,54 @@ describe("randomized comparison against a simple model", () => {
           }
         });
       expect(chunked.sort((a, b) => idOf(a) - idOf(b))).toEqual(awake);
+
+      // A term an entity may lack hands out its data or undefined, entity by
+      // entity as the model has it, and doesn't decide which entities match.
+      const valueOf = (entity: Entity, def: ComponentDef): unknown =>
+        model.get(entity)!.get(def.id);
+      for (const Maybes of [
+        all(Position, maybe(Velocity), maybe(Health)),
+        all(Position, maybe(Velocity), maybe(Health)).pipe(without(Stunned)),
+      ]) {
+        const expected = [...model]
+          .filter(
+            ([, values]) =>
+              values.has(Position.id) &&
+              (Maybes.withoutDefs.length === 0 || !values.has(Stunned.id))
+          )
+          .map(([entity]) => entity)
+          .sort((a, b) => idOf(a) - idOf(b));
+        const view = world.view(Maybes);
+        const visited: Entity[] = [];
+        view.each((_pos, velocity, health, entity) => {
+          expect(
+            velocity === undefined
+              ? undefined
+              : { x: velocity.x, y: velocity.y }
+          ).toEqual(valueOf(entity, Velocity));
+          expect(health === undefined ? undefined : { hp: health.hp }).toEqual(
+            valueOf(entity, Health)
+          );
+          visited.push(entity);
+        });
+        expect(visited.sort((a, b) => idOf(a) - idOf(b))).toEqual(expected);
+        const chunked: Entity[] = [];
+        view.eachChunk((start, end, _pos, velocity, health, entities) => {
+          for (let i = start; i < end; i++) {
+            const entity = entities[i]!;
+            expect(
+              velocity === undefined
+                ? undefined
+                : { x: velocity.x[i], y: velocity.y[i] }
+            ).toEqual(valueOf(entity, Velocity));
+            expect(
+              health === undefined ? undefined : { hp: health.hp[i] }
+            ).toEqual(valueOf(entity, Health));
+            chunked.push(entity);
+          }
+        });
+        expect(chunked.sort((a, b) => idOf(a) - idOf(b))).toEqual(expected);
+      }
     });
   }
 });

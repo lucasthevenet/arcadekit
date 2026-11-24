@@ -1,6 +1,6 @@
 import * as Assets from "arcadekit/Assets";
 import { entityIndex } from "arcadekit/ecs";
-import type { ComponentDef, Entity, EntityColumn } from "arcadekit/ecs";
+import type { Entity, EntityColumn } from "arcadekit/ecs";
 import * as Query from "arcadekit/Query";
 import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
@@ -48,8 +48,10 @@ class Objects<O extends Object3D> implements Kept {
   private readonly smooth: Smooth | undefined;
   /** Whether the kind is placed by a flat game's transform. */
   private readonly flat: boolean;
-  /** The three loops of the kind's transform, as the system passes them to its queries. */
-  readonly loops: Record<"placed" | "turned" | "sized", Columns>;
+  /** The three loops of the kind's transform, for a position, a rotation and a scale. */
+  private readonly placedLoop: Columns;
+  private readonly turnedLoop: Columns;
+  private readonly sizedLoop: Columns;
 
   constructor(
     scene: ThreeScene,
@@ -62,14 +64,31 @@ class Objects<O extends Object3D> implements Kept {
     this.assets = assets;
     this.smooth = smoothOf(options);
     this.flat = isFlat(options);
-    this.loops = this.flat
-      ? {
-          placed: this.placedFlat,
-          turned: this.turnedFlat,
-          sized: this.sizedFlat,
-        }
-      : { placed: this.placed, turned: this.turned, sized: this.sized };
+    this.placedLoop = this.flat ? this.placedFlat : this.placed;
+    this.turnedLoop = this.flat ? this.turnedFlat : this.turned;
+    this.sizedLoop = this.flat ? this.sizedFlat : this.sized;
   }
+
+  /**
+   * Places the objects of a run of rows, making the ones that are missing,
+   * then turns and sizes them when their table has a rotation and a scale.
+   */
+  readonly draw = (
+    start: number,
+    end: number,
+    position: unknown,
+    rotation: unknown,
+    scale: unknown,
+    entities: EntityColumn
+  ): void => {
+    this.placedLoop(start, end, position, entities);
+    if (rotation !== undefined) {
+      this.turnedLoop(start, end, rotation, entities);
+    }
+    if (scale !== undefined) {
+      this.sizedLoop(start, end, scale, entities);
+    }
+  };
 
   private grow(size: number): void {
     let length = Math.max(64, this.seen.length);
@@ -313,19 +332,16 @@ export const objects = <O extends Object3D>(
   const marked = required(options);
   const excluded = options.without ?? [];
   const { Position, Rotation, Scale } = options.transform;
-  const query = (term: ComponentDef, also: readonly ComponentDef[]) =>
-    Query.all(term).pipe(
-      Query.with(...also, ...marked),
-      Query.without(...excluded)
-    );
-  const Placed = query(Position, []);
-  const Turned = query(Rotation, [Position]);
-  const Sized = query(Scale, [Position]);
+  // One query for every entity of the kind, handed a rotation and a scale
+  // for the tables that have them.
+  const Placed = Query.all(
+    Position,
+    Query.maybe(Rotation),
+    Query.maybe(Scale)
+  ).pipe(Query.with(...marked), Query.without(...excluded));
   return System.frame(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
-    const turned = yield* Turned;
-    const sized = yield* Sized;
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
     let held: Objects<O> | undefined;
@@ -357,14 +373,10 @@ export const objects = <O extends Object3D>(
         return;
       }
     }
-    // Every entity that is one of these is found by the first loop, which
-    // makes the objects that are missing; whatever it did not find is let
-    // go at the end.
+    // Every entity that is one of these is found here, and its object made
+    // if it is missing; whatever was not found is let go at the end.
     held.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
-    const { loops } = held;
-    placed.eachChunk(loops.placed);
-    turned.eachChunk(loops.turned);
-    sized.eachChunk(loops.sized);
+    placed.eachChunk(held.draw);
     held.finish();
   });
 };

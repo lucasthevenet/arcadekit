@@ -646,6 +646,11 @@ const RawReader = Query.all(Position, Health).pipe(
   Query.without(Frozen)
 );
 
+/** A loop that writes health where an entity has it, and visits it either way. */
+const MaybeHealing = Query.all(Position, Query.maybe(Health)).pipe(
+  Query.writes(Health)
+);
+
 describe("changes against a simple model", () => {
   // Every reader is checked against a set of entities kept by hand: what
   // was written since it last visited, narrowed to what matches now, in
@@ -856,6 +861,18 @@ describe("changes against a simple model", () => {
           world.view(RawReader).eachChunk((start, end, _, __, ids) => {
             for (let i = start; i < end; i++) {
               fire("Health:changed", ids[i]!);
+            }
+          });
+          // Of a term an entity may lack, only the rows of a table that has it.
+          world.view(MaybeHealing).eachChunk((start, end, _, health, ids) => {
+            for (let i = start; health !== undefined && i < end; i++) {
+              fire("Health:changed", ids[i]!);
+            }
+          });
+          world.view(MaybeHealing).each((_, health, entity) => {
+            if (health !== undefined && entityIndex(entity) % 3 === 0) {
+              health.hp += 1;
+              fire("Health:changed", entity);
             }
           });
         } else {

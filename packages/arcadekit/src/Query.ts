@@ -21,7 +21,13 @@ import { Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
 
 import type { RemovedReader } from "./ecs/changes";
-import type { ComponentDef, ReadOnlyTerm, WatchedTerm } from "./ecs/component";
+import type {
+  ComponentDef,
+  MaybeTerm,
+  ReadOnlyTerm,
+  Schema,
+  WatchedTerm,
+} from "./ecs/component";
 import type { Described, QuerySpec, QueryView, Terms } from "./ecs/query";
 import { World } from "./Services";
 import { whole } from "./services/handed";
@@ -52,10 +58,19 @@ export class Query<D extends Terms, W extends Watching = Watching>
     readonly withoutDefs: readonly ComponentDef[],
     readonly changedDefs: readonly ComponentDef[] = [],
     readonly addedDefs: readonly ComponentDef[] = [],
-    readonly writeDefs: readonly ComponentDef[] = []
+    readonly writeDefs: readonly ComponentDef[] = [],
+    readonly maybeDefs: readonly ComponentDef[] = []
   ) {
     super();
     this.readDefs = terms.filter((def) => !writeDefs.includes(def));
+    const watched = [...changedDefs, ...addedDefs].find((def) =>
+      maybeDefs.includes(def)
+    );
+    if (watched !== undefined) {
+      throw new Error(
+        `Query.changed or Query.added was given "${watched.name}", which the query takes with Query.maybe. A change query requires what it watches: take "${watched.name}" in Query.all without Query.maybe.`
+      );
+    }
   }
 
   /** The terms it only reads: every one that `Query.writes` doesn't name. */
@@ -73,17 +88,120 @@ export class Query<D extends Terms, W extends Watching = Watching>
 
 /**
  * Matches entities that have all of these components, and passes their data to
- * the loop. The query only reads them, unless `Query.writes` names them.
+ * the loop. The query only reads them, unless `Query.writes` names them. A
+ * component given as `Query.maybe(Rotation)` is passed when an entity has it,
+ * and `undefined` when it doesn't, and doesn't decide which entities match.
  *
  *   const Drawn = Query.all(Position, Sprite)
  *   const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position))
+ *   const Placed = Query.all(Position, Query.maybe(Rotation), Query.maybe(Scale))
  *
  * @category Constructors
  */
-export const all = <const D extends Terms>(
+export const all = <const D extends readonly (ComponentDef | Maybe)[]>(
   ...terms: D
-): Query<Reading<D>, never> =>
-  new Query<Reading<D>, never>(terms as Terms as Reading<D>, [], []);
+): Query<Reading<Unwrapped<D>>, never> =>
+  new Query<Reading<Unwrapped<D>>, never>(
+    // The components, with the ones an entity may lack marked in the type.
+    terms.map((term) =>
+      term instanceof Maybe ? term.def : term
+    ) as Terms as Reading<Unwrapped<D>>,
+    [],
+    [],
+    [],
+    [],
+    [],
+    terms.flatMap((term) => (term instanceof Maybe ? [term.def] : []))
+  );
+
+/**
+ * A component that `Query.all` passes to the loop when an entity has it, and
+ * `undefined` when it doesn't. `Query.maybe` makes one.
+ *
+ * @typeParam C the component
+ *
+ * @category Models
+ */
+export class Maybe<C extends ComponentDef = ComponentDef> {
+  constructor(
+    /** The component. */
+    readonly def: C
+  ) {
+    if (def.storage !== "table") {
+      throw new Error(
+        `Query.maybe was given "${def.name}", a sparse component. Whether an entity has a table component is the same for its whole table, and is checked once per table; a sparse one would be checked once per entity. Take it in Query.all without Query.maybe, or read it with world.get.`
+      );
+    }
+  }
+}
+
+/**
+ * The terms of `Query.all`, with each `Maybe` replaced by its component,
+ * marked as one an entity may lack.
+ *
+ * @category Type-level
+ */
+export type Unwrapped<D extends readonly (ComponentDef | Maybe)[]> = {
+  [K in keyof D]: D[K] extends Maybe<infer C> ? C & MaybeTerm : D[K];
+} extends infer Marked extends Terms
+  ? Marked
+  : never;
+
+/**
+ * Makes a term of `Query.all` that an entity may lack. The loop gets the
+ * component's data when the entity has it, and `undefined` when it doesn't.
+ *
+ *   const Placed = Query.all(Position, Query.maybe(Rotation), Query.maybe(Scale))
+ *
+ *   (yield* Placed).eachChunk((start, end, position, rotation, scale) => {
+ *     if (rotation === undefined) { ... } // no entity of this run has one
+ *   })
+ *
+ * **When to use**
+ *
+ * Use when a loop handles entities with and without a component, in place of
+ * one query for each combination. A query that requires the component, or
+ * `Query.without` it, visits only one kind.
+ *
+ * **Details**
+ *
+ * - Whether an entity has a component is the same for its whole table, so a
+ *   run of `eachChunk` gets the columns or `undefined` for all its rows. The
+ *   check is made once per table, never per entity.
+ * - `Query.writes` takes it as it takes any term. The loop writes it only
+ *   where it was handed, and only those columns are saved for a rollback.
+ * - `Query.with` of the same component requires it after all, and
+ *   `Query.without` makes it always `undefined`.
+ *
+ * **Gotchas**
+ *
+ * - It takes only a component stored in tables. A sparse one doesn't
+ *   compile, and one the compiler knows only as a `ComponentDef` throws when
+ *   it is sparse.
+ * - `Query.changed` and `Query.added` require what they watch, so they don't
+ *   take it. Watching it doesn't compile, or throws for a `ComponentDef`.
+ * - In `each`, a test of the argument runs once per entity. In a hot loop,
+ *   use `eachChunk` and test once per run.
+ *
+ * @category Constructors
+ */
+export const maybe = <const C extends ComponentDef>(
+  def: C & Tabled<C>
+): Maybe<C> => new Maybe(def);
+
+/**
+ * What `Query.maybe` asks of the component it is given: nothing, unless its
+ * type says it is sparse. One known only as a `ComponentDef` is left to the
+ * check at run time.
+ *
+ * @category Type-level
+ */
+export type Tabled<C extends ComponentDef> =
+  C extends ComponentDef<Schema, "sparse">
+    ? {
+        readonly "Query.maybe takes only a component stored in tables: take it in Query.all without Query.maybe": NameOf<C>;
+      }
+    : unknown;
 
 /**
  * Narrows a query to entities that also have these components, without
@@ -113,7 +231,8 @@ const with_: {
       self.withoutDefs,
       self.changedDefs,
       self.addedDefs,
-      self.writeDefs
+      self.writeDefs,
+      self.maybeDefs
     )
 );
 
@@ -150,7 +269,8 @@ export const without: {
       [...self.withoutDefs, ...defs],
       self.changedDefs,
       self.addedDefs,
-      self.writeDefs
+      self.writeDefs,
+      self.maybeDefs
     )
 );
 
@@ -206,14 +326,14 @@ export const changed: {
   <const C extends readonly ComponentDef[]>(
     ...defs: C
   ): <D extends Terms, W extends Watching>(
-    self: Query<D, W>
+    self: Query<D, W> & Certain<D, C[number]>
   ) => Query<Watched<D, NameOf<C[number]>>, W | WatchesOf<NameOf<C[number]>>>;
   <
     D extends Terms,
     W extends Watching,
     const C extends readonly ComponentDef[],
   >(
-    self: Query<D, W>,
+    self: Query<D, W> & Certain<D, C[number]>,
     ...defs: C
   ): Query<Watched<D, NameOf<C[number]>>, W | WatchesOf<NameOf<C[number]>>>;
 } = dual(
@@ -233,7 +353,8 @@ export const changed: {
       self.withoutDefs,
       [...self.changedDefs, ...defs],
       self.addedDefs,
-      self.writeDefs
+      self.writeDefs,
+      self.maybeDefs
     )
 );
 
@@ -255,14 +376,14 @@ export const added: {
   <const C extends readonly ComponentDef[]>(
     ...defs: C
   ): <D extends Terms, W extends Watching>(
-    self: Query<D, W>
+    self: Query<D, W> & Certain<D, C[number]>
   ) => Query<D, W | WatchesAddedOf<NameOf<C[number]>>>;
   <
     D extends Terms,
     W extends Watching,
     const C extends readonly ComponentDef[],
   >(
-    self: Query<D, W>,
+    self: Query<D, W> & Certain<D, C[number]>,
     ...defs: C
   ): Query<D, W | WatchesAddedOf<NameOf<C[number]>>>;
 } = dual(
@@ -281,9 +402,31 @@ export const added: {
       self.withoutDefs,
       self.changedDefs,
       [...self.addedDefs, ...defs],
-      self.writeDefs
+      self.writeDefs,
+      self.maybeDefs
     )
 );
+
+/**
+ * What `Query.changed` and `Query.added` ask of the query they are given:
+ * nothing, unless it takes one of their components with `Query.maybe`.
+ *
+ * @category Type-level
+ */
+export type Certain<D extends Terms, C extends ComponentDef> = [
+  Extract<
+    {
+      [K in keyof D]: D[K] extends MaybeTerm ? NameOf<D[K]> : never;
+    }[number],
+    C extends unknown ? (string extends NameOf<C> ? never : NameOf<C>) : never
+  >,
+] extends [infer Uncertain]
+  ? [Uncertain] extends [never]
+    ? unknown
+    : {
+        readonly "Query.changed and Query.added require what they watch: take it in Query.all without Query.maybe": Uncertain;
+      }
+  : never;
 
 /**
  * In a system's requirements, says that the system writes the component named
@@ -435,7 +578,9 @@ type Unmarked<T, W> = W extends unknown ? (T extends W ? W : never) : never;
 export type Writing<D extends Terms, W> = {
   [K in keyof D]: D[K] extends ReadOnlyTerm
     ? D[K] extends W
-      ? Unmarked<D[K], W> & (D[K] extends WatchedTerm ? WatchedTerm : unknown)
+      ? Unmarked<D[K], W> &
+          (D[K] extends WatchedTerm ? WatchedTerm : unknown) &
+          (D[K] extends MaybeTerm ? MaybeTerm : unknown)
       : D[K]
     : D[K];
 } extends infer Marked extends Terms
@@ -553,7 +698,8 @@ export const writes: {
       // In the order of the terms, each once.
       self.terms.filter(
         (def) => defs.includes(def) || self.writeDefs.includes(def)
-      )
+      ),
+      self.maybeDefs
     );
   }
 );
