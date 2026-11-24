@@ -2,7 +2,7 @@ import { Effect, Exit, Layer } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { App, Plugin, Save, World } from "../src/index";
-import * as Build from "../src/internals/build";
+import * as Build from "../src/internal/build";
 import { Session } from "../src/net/index";
 import { CoinGame, DELTA, Drop, game } from "./peers";
 

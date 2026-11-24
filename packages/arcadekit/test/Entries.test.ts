@@ -134,9 +134,10 @@ describe("the package's entries", () => {
       // A module is PascalCase, as it is imported, wherever its file is,
       // and a folder is an entry by its index. The module a folder is named
       // for is named as the folder's own entry would be: src/browser/Browser.ts
-      // is "./Browser". Any other file, and any file of an internals/ folder,
-      // is what a module keeps to itself, and no entry.
-      if (file.includes("/internals/")) {
+      // is "./Browser". Any other file, and any file of an internal/ folder,
+      // as src/internal/build.ts, or of src/browser/internals/, is what a
+      // module keeps to itself, and no entry.
+      if (/\/internals?\//u.test(file)) {
         continue;
       }
       const module = /^\.\.\/src\/((?:\w+\/)*)([A-Z]\w*)\.ts$/u.exec(file);
@@ -299,7 +300,7 @@ describe("arcadekit/net", () => {
   });
 
   it("passes messages on without a session: a relay reaches no app, no peer and no session", () => {
-    const built = ["../src/internals/build.ts", "../src/App.ts"];
+    const built = ["../src/internal/build.ts", "../src/App.ts"];
     for (const entry of ["./net/Message", "./net/Relay"]) {
       const { files } = reach(sourceOf(entry));
       expect(

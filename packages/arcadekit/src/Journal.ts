@@ -25,8 +25,8 @@ import * as Action from "./Action";
 import * as App from "./App";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
-import { partsOf } from "./internals/parts";
-import { GameTime } from "./internals/stage";
+import { partsOf } from "./internal/parts";
+import { GameTime } from "./internal/stage";
 import type * as Plugin from "./Plugin";
 import * as Save from "./Save";
 

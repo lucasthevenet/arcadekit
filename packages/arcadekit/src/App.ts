@@ -52,7 +52,7 @@ import type { Scope } from "effect";
 import * as Action from "./Action";
 import type { Entity } from "./ecs/component";
 import type { Placed } from "./ecs/spawned";
-import { build } from "./internals/build";
+import { build } from "./internal/build";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";

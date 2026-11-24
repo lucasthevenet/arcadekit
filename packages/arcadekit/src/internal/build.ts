@@ -37,7 +37,7 @@ import { hold } from "./parts";
 import * as Runner from "./runner";
 import * as Schedule from "./schedule";
 import * as Stage from "./stage";
-import { TickDispatcher, TickScheduler } from "./tick-scheduler";
+import { TickDispatcher, TickScheduler } from "./tickScheduler";
 
 /**
  * What the code that took over an app holds: the two operations the app no

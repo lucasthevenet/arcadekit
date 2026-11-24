@@ -19,7 +19,7 @@ import {
   Time,
   World,
 } from "../src/index";
-import { TickScheduler } from "../src/internals/tick-scheduler";
+import { TickScheduler } from "../src/internal/tickScheduler";
 import type { ReadingWorld } from "../src/Services";
 import { placedIn } from "./placed";
 

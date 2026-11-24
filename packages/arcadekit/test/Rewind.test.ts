@@ -25,8 +25,8 @@ import {
   readSnapshot,
 } from "../src/index";
 import type { Entity, JsonValue } from "../src/index";
-import * as Build from "../src/internals/build";
-import { partsOf } from "../src/internals/parts";
+import * as Build from "../src/internal/build";
+import { partsOf } from "../src/internal/parts";
 import { Session } from "../src/net/index";
 import {
   CoinGame,

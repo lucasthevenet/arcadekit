@@ -21,9 +21,9 @@ import { Exit } from "effect";
 import type * as App from "./App";
 import type { SavedChanges } from "./ecs/changes";
 import type { World, Moment as WorldMoment } from "./ecs/world";
-import type { Told } from "./internals/outbox";
-import { partsOf } from "./internals/parts";
-import { READER } from "./internals/stage";
+import type { Told } from "./internal/outbox";
+import { partsOf } from "./internal/parts";
+import { READER } from "./internal/stage";
 import * as Save from "./Save";
 
 /**

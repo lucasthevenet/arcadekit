@@ -43,7 +43,7 @@ import type { Effect } from "effect";
 import * as Action from "../Action";
 import type * as App from "../App";
 import type { Paced } from "../Driver";
-import type { Reins } from "../internals/build";
+import type { Reins } from "../internal/build";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";
 import * as Drift from "./Drift";

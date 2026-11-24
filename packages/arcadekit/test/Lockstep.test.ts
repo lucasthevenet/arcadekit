@@ -12,7 +12,7 @@ import {
   Time,
   World,
 } from "../src/index";
-import * as Build from "../src/internals/build";
+import * as Build from "../src/internal/build";
 import { Drift, Message, Session } from "../src/net/index";
 import {
   Bot,
