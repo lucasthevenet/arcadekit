@@ -29,7 +29,6 @@ import type {
   SavedChanges,
   SnapshotContents,
 } from "../src/index";
-import type { BuiltIn } from "../src/Services";
 import { expectChecked, makeChecks } from "./checks";
 import { placedIn } from "./placed";
 
@@ -1332,14 +1331,14 @@ const Begin = Plugin.make("ch/Begin", {
     }
   }),
 });
-// Typed as any systems, which is the one way to list a watcher ahead of what
-// it watches: the compiler refuses that order where it can see it.
-const systems: readonly System.System<never, BuiltIn>[] = [Early, Drift, Count];
-const Game = App.define({
-  plugins: [Begin],
-  systems,
-  handlers: [push, spawn, cull],
-});
+const Game = App.define(
+  // @ts-expect-error a watcher listed ahead of what it watches, on purpose
+  {
+    plugins: [Begin],
+    systems: [Early, Drift, Count],
+    handlers: [push, spawn, cull],
+  }
+);
 
 const game = (
   options: { checkpointEvery?: number } = {}

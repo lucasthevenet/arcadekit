@@ -18,7 +18,6 @@ import {
   Time,
   World,
 } from "../src/index";
-import type { BuiltIn } from "../src/Services";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
@@ -477,14 +476,6 @@ describe("a run condition", () => {
             (yield* Query.all(Ball).pipe(Query.changed(Ball))).entities().length
           );
         }).pipe(System.runIf(State.is(Phase, "playing")));
-        // Typed as any systems, which is the one way to list a watcher ahead
-        // of what it watches: the compiler refuses that order where it can see
-        // it.
-        const systems: readonly System.System<never, BuiltIn>[] = [
-          Listen,
-          Emit,
-          Look,
-        ];
         const Three = Plugin.make("st/Three", {
           setup: Effect.gen(function* () {
             const commands = yield* Commands.spawns(Ball);
@@ -494,7 +485,10 @@ describe("a run condition", () => {
           }),
         });
         const app = yield* App.make(
-          App.define({ plugins: [Three], systems, handlers: [go] })
+          App.define(
+            // @ts-expect-error a watcher listed ahead of what it watches, on purpose
+            { plugins: [Three], systems: [Listen, Emit, Look], handlers: [go] }
+          )
         );
         const tick = () => {
           app.tick(1);
@@ -523,32 +517,31 @@ describe("a run condition", () => {
 });
 
 describe("hooks", () => {
-  const game = (ran: string[], extra: System.System<never, World>[] = []) =>
-    App.make(
-      App.define({
-        systems: [
-          noting("Tick", ran),
-          State.onEnter(Phase, "menu", "EnterMenu", function* () {
-            ran.push("EnterMenu");
-          }),
-          State.onExit(Phase, "menu", "ExitMenu", function* () {
-            ran.push("ExitMenu");
-          }),
-          State.onEnter(Phase, "playing", "EnterPlaying", function* () {
-            ran.push("EnterPlaying");
-          }),
-          State.onExit(Phase, "playing", "ExitPlaying", function* () {
-            ran.push("ExitPlaying");
-          }),
-          State.onEnter(Phase, "paused", "EnterPaused", function* () {
-            ran.push("EnterPaused");
-          }),
-          ...extra,
-        ],
-        handlers: [go],
+  /** A hook of each phase, and a system of the tick, each noting it ran. */
+  const hooks = (ran: string[]) =>
+    [
+      noting("Tick", ran),
+      State.onEnter(Phase, "menu", "EnterMenu", function* () {
+        ran.push("EnterMenu");
       }),
-      { checkpointEvery: 1 }
-    );
+      State.onExit(Phase, "menu", "ExitMenu", function* () {
+        ran.push("ExitMenu");
+      }),
+      State.onEnter(Phase, "playing", "EnterPlaying", function* () {
+        ran.push("EnterPlaying");
+      }),
+      State.onExit(Phase, "playing", "ExitPlaying", function* () {
+        ran.push("ExitPlaying");
+      }),
+      State.onEnter(Phase, "paused", "EnterPaused", function* () {
+        ran.push("EnterPaused");
+      }),
+    ] as const;
+  const start = (
+    game: App.Game<readonly System.System<never, World>[], readonly [typeof go]>
+  ) => App.make(game, { checkpointEvery: 1 });
+  const game = (ran: string[]) =>
+    start(App.define({ systems: hooks(ran), handlers: [go] }));
 
   it("run once when a state is left and entered, before the tick's systems", () => {
     Effect.runSync(
@@ -692,7 +685,12 @@ describe("hooks", () => {
           ran.push("Bail");
           (yield* Phase.sets).set("paused");
         });
-        const app = yield* game(ran, [SkipIntro, Bail]);
+        const app = yield* start(
+          App.define({
+            systems: [...hooks(ran), SkipIntro, Bail],
+            handlers: [go],
+          })
+        );
         app.tick(1);
         expect(ran).toEqual(["EnterMenu", "SkipIntro", "Tick"]);
         ran.length = 0;
@@ -715,7 +713,9 @@ describe("hooks", () => {
           ran.push("Overrule");
           (yield* Phase.sets).set("paused");
         });
-        const app = yield* game(ran, [Overrule]);
+        const app = yield* start(
+          App.define({ systems: [...hooks(ran), Overrule], handlers: [go] })
+        );
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
         // The hook asked last, and what a hook asks for waits a tick.
@@ -773,20 +773,18 @@ describe("hooks", () => {
       Effect.runSync(
         Effect.gen(function* () {
           const ran: string[] = [];
-          const hooks = [
-            State.onEnter(Weather, "wet", "Rain", function* () {
-              ran.push("Rain");
-            }),
-            State.onEnter(Weather, "dry", "Sun", function* () {
-              ran.push("Sun");
-            }),
-            State.onEnter(Phase, "menu", "Menu", function* () {
-              ran.push("Menu");
-            }),
-            State.onEnter(Phase, "playing", "Play", function* () {
-              ran.push("Play");
-            }),
-          ];
+          const Rain = State.onEnter(Weather, "wet", "Rain", function* () {
+            ran.push("Rain");
+          });
+          const Sun = State.onEnter(Weather, "dry", "Sun", function* () {
+            ran.push("Sun");
+          });
+          const Menu = State.onEnter(Phase, "menu", "Menu", function* () {
+            ran.push("Menu");
+          });
+          const Play = State.onEnter(Phase, "playing", "Play", function* () {
+            ran.push("Play");
+          });
           const Change = System.tick("Change", function* () {
             if ((yield* Time).tick !== 1) {
               return;
@@ -799,11 +797,11 @@ describe("hooks", () => {
               (yield* Weather.sets).set("dry");
             }
           });
-          const app = yield* App.make(
-            App.define({
-              systems: [...(weatherFirst ? hooks : hooks.toReversed()), Change],
-            })
-          );
+          const app: App.Any = yield* weatherFirst
+            ? App.make(App.define({ systems: [Rain, Sun, Menu, Play, Change] }))
+            : App.make(
+                App.define({ systems: [Play, Menu, Sun, Rain, Change] })
+              );
           app.tick(1);
           app.tick(1);
           // "st/Phase" before "st/Weather".

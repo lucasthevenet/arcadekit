@@ -83,16 +83,14 @@ const variant = (
     Frame | Three.Scene | Time | World | Assets.Store
   >,
   // What else the frame runs, for a variant that needs it.
-  also: readonly System.System<never, Assets.Store>[] = []
+  also?: System.System<never, Assets.Store>
 ): void => {
-  const app = Effect.runSync(
-    App.make(
-      App.define({
-        plugins: [Three.plugin, Assets.plugin, crowd(parts)],
-        systems: [...also, system],
-      })
-    ).pipe(Effect.provide(noRenderer))
-  );
+  const plugins = [Three.plugin, Assets.plugin, crowd(parts)] as const;
+  const made =
+    also === undefined
+      ? App.make(App.define({ plugins, systems: [system] }))
+      : App.make(App.define({ plugins, systems: [also, system] }));
+  const app = Effect.runSync(Effect.provide(made, noRenderer));
   const { bytes, ns } = measure(() => app.frame());
   console.log(
     `${name.padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
@@ -278,7 +276,7 @@ variant(
   "instances, a look made of assets: a position",
   () => [place()],
   Sourced,
-  [Assets.during(Effect.succeed(true), Level)]
+  Assets.during(Effect.succeed(true), Level)
 );
 
 // What the loops above replace: an Object3D per entity, its matrix worked

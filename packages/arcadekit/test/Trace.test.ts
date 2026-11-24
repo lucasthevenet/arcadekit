@@ -80,7 +80,7 @@ const handlers = [
   Action.handler(Begin, function* () {
     (yield* Phase.sets).set("playing");
   }),
-];
+] as const;
 
 const Start = Plugin.make("tr/Start", {
   setup: Effect.gen(function* () {

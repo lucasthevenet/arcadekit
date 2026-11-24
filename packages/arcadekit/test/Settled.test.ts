@@ -393,7 +393,7 @@ const RunDown = System.tick("st/RunDown", function* () {
 });
 
 describe("a game that changes", () => {
-  const options = { handlers: [wind] };
+  const options = { handlers: [wind] } as const;
 
   it("is not settled after a tick that changed more than its time, and is after one that did not", () => {
     const app = Effect.runSync(

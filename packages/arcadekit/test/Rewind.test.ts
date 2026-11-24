@@ -27,7 +27,6 @@ import {
 } from "../src/index";
 import type { Entity, JsonValue } from "../src/index";
 import { Session } from "../src/net/index";
-import type { BuiltIn } from "../src/Services";
 import {
   CoinGame,
   DELTA,
@@ -251,14 +250,12 @@ describe("a game that is put back to a moment", () => {
       (yield* Commands.spawns(Dot)).spawn(Dot.of({ x: 1 }));
     });
     // Listed ahead of what it watches, so that a dot is waiting for it when the
-    // game goes back. Typed as any systems, which is the one way to list it
-    // so: the compiler refuses that order where it can see it.
-    const systems: readonly System.System<never, BuiltIn>[] = [
-      Count,
-      Draw,
-      Grow,
-    ];
-    withApp(App.make(App.define({ systems })), (app) => {
+    // game goes back: an order the compiler refuses.
+    const game = App.define(
+      // @ts-expect-error a watcher listed ahead of what it watches, on purpose
+      { systems: [Count, Draw, Grow] }
+    );
+    withApp(App.make(game), (app) => {
       for (let i = 0; i < 3; i++) {
         app.tick(DELTA);
         app.frame();

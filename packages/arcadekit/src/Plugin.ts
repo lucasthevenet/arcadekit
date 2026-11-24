@@ -176,9 +176,7 @@ export type SystemsOf<
   ...infer Rest extends readonly Any[],
 ]
   ? SystemsOf<Rest, System.Listing<Out, Sys<H>>>
-  : number extends P["length"]
-    ? System.Listing<Out, readonly Sys<P[number]>[number][]>
-    : Out;
+  : Out;
 
 type Sys<T> =
   T extends Plugin<
@@ -262,60 +260,46 @@ type Walk<
   P extends readonly Any[],
   Seen extends string,
   Out extends readonly AnySystem[],
-> = number extends P["length"]
-  ? readonly [Seen, Out]
-  : P extends readonly [infer H, ...infer Rest extends readonly Any[]]
-    ? string extends NameOf<H>
-      ? Walk<Rest, Seen, readonly [...Out, ...OwnOf<H>]>
-      : NameOf<H> extends Seen
-        ? Walk<Rest, Seen, Out>
-        : Walk<Rest, Seen | NameOf<H>, readonly [...Out, ...OwnOf<H>]>
-    : readonly [Seen, Out];
+> = P extends readonly [infer H, ...infer Rest extends readonly Any[]]
+  ? string extends NameOf<H>
+    ? Walk<Rest, Seen, readonly [...Out, ...OwnOf<H>]>
+    : NameOf<H> extends Seen
+      ? Walk<Rest, Seen, Out>
+      : Walk<Rest, Seen | NameOf<H>, readonly [...Out, ...OwnOf<H>]>
+  : readonly [Seen, Out];
 
 type WalkHands<
   P extends readonly Any[],
   Seen extends string,
   Out extends readonly AnyHandler[],
-> = number extends P["length"]
-  ? readonly [Seen, Out]
-  : P extends readonly [infer H, ...infer Rest extends readonly Any[]]
-    ? string extends NameOf<H>
-      ? WalkHands<Rest, Seen, readonly [...Out, ...HandsOf<H>]>
-      : NameOf<H> extends Seen
-        ? WalkHands<Rest, Seen, Out>
-        : WalkHands<Rest, Seen | NameOf<H>, readonly [...Out, ...HandsOf<H>]>
-    : readonly [Seen, Out];
+> = P extends readonly [infer H, ...infer Rest extends readonly Any[]]
+  ? string extends NameOf<H>
+    ? WalkHands<Rest, Seen, readonly [...Out, ...HandsOf<H>]>
+    : NameOf<H> extends Seen
+      ? WalkHands<Rest, Seen, Out>
+      : WalkHands<Rest, Seen | NameOf<H>, readonly [...Out, ...HandsOf<H>]>
+  : readonly [Seen, Out];
 
-type NamedOf<H extends readonly AnyHandler[]> = H extends readonly [
-  infer Head,
-  ...infer Rest extends readonly AnyHandler[],
-]
-  ? [
-      {
-        readonly name: Head extends {
-          readonly action: { readonly name: infer N extends string };
-        }
-          ? N
-          : string;
-      },
-      ...NamedOf<Rest>,
-    ]
-  : [];
+type NamedOf<H extends readonly AnyHandler[]> = {
+  readonly [K in keyof H]: {
+    readonly name: H[K] extends {
+      readonly action: { readonly name: infer N extends string };
+    }
+      ? N
+      : string;
+  };
+};
 
-type PluginNames<P extends readonly Any[]> = P extends readonly [
-  infer H,
-  ...infer Rest extends readonly Any[],
-]
-  ? [{ readonly name: NameOf<H> }, ...PluginNames<Rest>]
-  : [];
+type PluginNames<P extends readonly Any[]> = {
+  readonly [K in keyof P]: { readonly name: NameOf<P[K]> };
+};
 
 /** Duplicate names of plugins in one list, and in each dependency list. */
-type PluginClashes<P extends readonly Any[]> = number extends P["length"]
-  ? never
-  : | System.Duplicated<PluginNames<P>, "plugin">
-    | (P extends readonly [infer H, ...infer Rest extends readonly Any[]]
-        ? PluginClashes<DepsOf<H>> | PluginClashes<Rest>
-        : never);
+type PluginClashes<P extends readonly Any[]> =
+  | System.Duplicated<PluginNames<P>, "plugin">
+  | (P extends readonly [infer H, ...infer Rest extends readonly Any[]]
+      ? PluginClashes<DepsOf<H>> | PluginClashes<Rest>
+      : never);
 
 type Gathered<P extends readonly Any[]> = Walk<P, never, readonly []>[1];
 type GatheredHands<P extends readonly Any[]> = WalkHands<

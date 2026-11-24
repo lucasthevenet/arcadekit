@@ -153,19 +153,23 @@ const makeRenderer = () => {
 /** What the systems that draw the game need, which the game provides. */
 type Drawing = BuiltIn | Assets.Store | Three.Scene;
 
-/** A game of a menu and a forest, drawn by the systems it is given. */
+/** A game of a menu and a forest, without the systems that draw it. */
+const forest = {
+  plugins: [Three.plugin, Assets.plugin],
+  handlers: [go, arrive, move, leave],
+} as const;
+
+/** A game of a menu and a forest, drawn by its systems. */
 const play = (
-  systems: readonly System.System<never, Drawing>[],
+  game: App.Game<
+    readonly System.System<never, Drawing>[],
+    typeof forest.handlers,
+    typeof forest.plugins
+  >,
   loader: Layer.Layer<never> = files
 ) => {
   const renderer = makeRenderer();
-  const made = App.make(
-    App.define({
-      plugins: [Three.plugin, Assets.plugin],
-      handlers: [go, arrive, move, leave],
-      systems,
-    })
-  );
+  const made = App.make(game);
   const app = Effect.runSync(
     made.pipe(
       Effect.provide(Layer.mergeAll(renderer.layer, loader, Logger.layer([])))
@@ -280,10 +284,9 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, looks } = makeTrees(Forest, log);
-    const { app, despawn, enter, mesh, renderer, spawn } = play([
-      during(Forest),
-      Trees,
-    ]);
+    const { app, despawn, enter, mesh, renderer, spawn } = play(
+      App.define({ ...forest, systems: [during(Forest), Trees] })
+    );
     spawn("tree", 1);
     spawn("tree", 2);
     spawn("deer", 9);
@@ -322,7 +325,9 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, freed, looks } = makeTrees(Forest, log);
-    const { app, enter, mesh, renderer, spawn } = play([during(Forest), Trees]);
+    const { app, enter, mesh, renderer, spawn } = play(
+      App.define({ ...forest, systems: [during(Forest), Trees] })
+    );
     spawn("tree", 1);
     enter("forest");
     const drawn = mesh()!;
@@ -353,7 +358,9 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, looks } = makeTrees(Forest, log);
-    const { despawn, enter, mesh, spawn } = play([during(Forest), Trees]);
+    const { despawn, enter, mesh, spawn } = play(
+      App.define({ ...forest, systems: [during(Forest), Trees] })
+    );
     const trees = [1, 2, 3, 4, 5].map((x) => spawn("tree", x));
     enter("forest");
     const first = mesh()!;
@@ -388,10 +395,12 @@ describe("instances whose look is made of assets", () => {
     // Listed after what draws, and nothing more said: `Assets.during` is
     // of the stage before a frame's own, so the trees find their bark in
     // the frame it is loaded, and find it gone in the frame it goes.
-    const listed = play([
-      Trees,
-      Assets.during(State.is(Level, "forest"), Forest),
-    ]);
+    const listed = play(
+      App.define({
+        ...forest,
+        systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+      })
+    );
     listed.spawn("tree", 1);
     listed.enter("forest");
     expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
@@ -410,7 +419,9 @@ describe("instances whose look is made of assets", () => {
     // the trees look, then the level lets its assets go, then the scene
     // is drawn.
     log.length = 0;
-    const { app, enter, renderer, spawn } = play([Trees, keepLate(Forest)]);
+    const { app, enter, renderer, spawn } = play(
+      App.define({ ...forest, systems: [Trees, keepLate(Forest)] })
+    );
     spawn("tree", 1);
     enter("forest");
     expect(renderer.drew).toEqual([]);
@@ -450,7 +461,9 @@ describe("instances whose look is made of assets", () => {
       }
       store.hold(Forest, "ta/Keep");
     });
-    const { app, mesh, renderer, spawn } = play([Keep, Trees]);
+    const { app, mesh, renderer, spawn } = play(
+      App.define({ ...forest, systems: [Keep, Trees] })
+    );
     spawn("tree", 1);
     app.frame();
     const first = mesh()!;
@@ -488,7 +501,10 @@ describe("instances whose look is made of assets", () => {
           waiting.push((exit) => resume(exit));
         }),
     }) as Layer.Layer<never>;
-    const { app, enter, renderer, spawn } = play([during(Forest), Trees], slow);
+    const { app, enter, renderer, spawn } = play(
+      App.define({ ...forest, systems: [during(Forest), Trees] }),
+      slow
+    );
     spawn("tree", 1);
     enter("forest");
     app.frame();
@@ -521,8 +537,8 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, freed } = makeTrees(Forest, log);
-    const systems = [during(Forest), Trees];
-    const loaded = play(systems);
+    const game = App.define({ ...forest, systems: [during(Forest), Trees] });
+    const loaded = play(game);
     loaded.spawn("tree", 1);
     loaded.enter("forest");
     const drawn = loaded.mesh()!;
@@ -533,7 +549,7 @@ describe("instances whose look is made of assets", () => {
 
     // An app that left the forest has nothing of it to free when it closes.
     log.length = 0;
-    const left = play(systems);
+    const left = play(game);
     left.enter("forest");
     left.enter("menu");
     expect(log).toEqual([
@@ -548,7 +564,7 @@ describe("instances whose look is made of assets", () => {
 
     // And one that never entered it made nothing.
     log.length = 0;
-    const never = play(systems);
+    const never = play(game);
     never.app.tick(1);
     never.app.frame();
     never.close();
@@ -562,7 +578,9 @@ describe("instances whose look is made of assets", () => {
       smooth: true,
       color: Color.Rgb,
     });
-    const { app, enter, mesh, moveTo, spawn } = play([during(Forest), Trees]);
+    const { app, enter, mesh, moveTo, spawn } = play(
+      App.define({ ...forest, systems: [during(Forest), Trees] })
+    );
     const tree = spawn("tree", 0, { r: 0.25, g: 0.5, b: 0.75 });
     // Not painted: drawn white, after the painted ones.
     spawn("tree", 99);
@@ -700,10 +718,9 @@ describe("objects made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const Herd = makeDeer(Forest, log);
-    const { app, despawn, enter, moveTo, renderer, spawn } = play([
-      during(Forest),
-      Herd,
-    ]);
+    const { app, despawn, enter, moveTo, renderer, spawn } = play(
+      App.define({ ...forest, systems: [during(Forest), Herd] })
+    );
     const one = spawn("deer", 1);
     const two = spawn("deer", 2);
     spawn("tree", 9);
@@ -765,11 +782,9 @@ describe("objects made of assets", () => {
     // assets go, then the scene is drawn.
     // And trees beside them, of the same bark: every kind is asked.
     const { Trees } = makeTrees(Forest, []);
-    const { app, close, enter, renderer, spawn } = play([
-      Trees,
-      Herd,
-      keepLate(Forest),
-    ]);
+    const { app, close, enter, renderer, spawn } = play(
+      App.define({ ...forest, systems: [Trees, Herd, keepLate(Forest)] })
+    );
     const one = spawn("deer", 1);
     spawn("tree", 2);
     enter("forest");
@@ -1001,10 +1016,12 @@ describe("a texture", () => {
         material: new MeshBasicMaterial({ map: bark }),
       }),
     });
-    const { app, enter, mesh, renderer, spawn } = play([
-      Trees,
-      Assets.during(State.is(Level, "forest"), Forest),
-    ]);
+    const { app, enter, mesh, renderer, spawn } = play(
+      App.define({
+        ...forest,
+        systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+      })
+    );
     spawn("tree", 1);
     enter("forest");
     // A picture is decoded in its own time.

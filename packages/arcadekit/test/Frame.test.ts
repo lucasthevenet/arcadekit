@@ -605,11 +605,14 @@ describe("the frame stage", () => {
             commands.spawn(Ball.of({ x: 0, vx: 1 }));
           }),
         });
-        const game = (systems: readonly System.System<never, BuiltIn>[]) =>
-          App.define({ plugins: [Begin], systems, handlers: [kick] });
-        const make = (systems: readonly System.System<never, BuiltIn>[]) =>
-          App.make(game(systems), { checkpointEvery: 1 });
-        const app = yield* make([Roll, Button]);
+        const app = yield* App.make(
+          App.define({
+            plugins: [Begin],
+            systems: [Roll, Button],
+            handlers: [kick],
+          }),
+          { checkpointEvery: 1 }
+        );
         for (let n = 0; n < 5; n++) {
           app.tick(1);
           app.frame();
@@ -622,9 +625,11 @@ describe("the frame stage", () => {
         ]);
         // The replay has no button and draws no frame.
         const played = app.record();
-        const headless = yield* Journal.replay(played, game([Roll]), {
-          checkpointEvery: 1,
-        });
+        const headless = yield* Journal.replay(
+          played,
+          App.define({ plugins: [Begin], systems: [Roll], handlers: [kick] }),
+          { checkpointEvery: 1 }
+        );
         expect((yield* headless.read(World)).hash()).toBe(
           (yield* app.read(World)).hash()
         );
@@ -633,7 +638,10 @@ describe("the frame stage", () => {
         const Hasty = System.frame("Hasty", function* () {
           own?.dispatchByName("fr/Kick", { by: 1 });
         });
-        const hasty = yield* make([Hasty]);
+        const hasty = yield* App.make(
+          App.define({ plugins: [Begin], systems: [Hasty], handlers: [kick] }),
+          { checkpointEvery: 1 }
+        );
         own = hasty;
         expect(() => hasty.frame()).toThrow(
           /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/
@@ -765,23 +773,19 @@ describe("what the frame stage reads", () => {
         }).pipe(
           System.runIf(Effect.map(Time, ({ tick }) => tick === 1 || tick === 6))
         );
-        const runs = [
-          [Sometimes, Emit, Listen],
-          [Sometimes, Emit],
-        ].map((systems) =>
-          Effect.gen(function* () {
-            sat.length = 0;
-            const each = yield* App.make(App.define({ systems }));
+        const run = (each: App.Any) => {
+          sat.length = 0;
+          each.tick(1);
+          each.frame();
+          for (let n = 0; n < 5; n++) {
             each.tick(1);
-            each.frame();
-            for (let n = 0; n < 5; n++) {
-              each.tick(1);
-            }
-            return [...sat];
-          })
-        );
-        expect(yield* runs[0]!).toEqual([5]);
-        expect(yield* runs[1]!).toEqual([5]);
+          }
+          return [...sat];
+        };
+        const all = App.define({ systems: [Sometimes, Emit, Listen] });
+        expect(run(yield* App.make(all))).toEqual([5]);
+        const unheard = App.define({ systems: [Sometimes, Emit] });
+        expect(run(yield* App.make(unheard))).toEqual([5]);
         // Nor can a save: it holds what the simulation has yet to read, and
         // nothing that was only kept for the frame stage, or of its readers.
         const saves = [again, headless].map((each) => {
@@ -938,33 +942,33 @@ describe("what the frame stage reads", () => {
           });
           (yield* Bounced.emits).emit({ at: 0 });
         });
-        const make = (systems: readonly System.System<never, BuiltIn>[]) =>
+        const Rack = racked(
+          { x: 0, vx: 1 },
+          { x: 1, vx: 1 },
+          { x: 2, vx: 1 },
+          { x: 3, vx: 1 }
+        );
+        const make = (
+          game: App.Game<
+            readonly System.System<never, BuiltIn>[],
+            readonly [],
+            readonly [typeof Rack]
+          >
+        ) =>
           Effect.gen(function* () {
-            const app = yield* App.make(
-              App.define({
-                plugins: [
-                  racked(
-                    { x: 0, vx: 1 },
-                    { x: 1, vx: 1 },
-                    { x: 2, vx: 1 },
-                    { x: 3, vx: 1 }
-                  ),
-                ],
-                systems,
-              }),
-              { checkpointEvery: 1, seed: 3, verifyFrames: true }
-            );
+            const app = yield* App.make(game, {
+              checkpointEvery: 1,
+              seed: 3,
+              verifyFrames: true,
+            });
             return { app, world: yield* app.read(World) };
           });
-        const { app: drawn, world: drawnWorld } = yield* make([
-          Roll,
-          Tally,
-          Watch,
-        ]);
-        const { app: undrawn, world: undrawnWorld } = yield* make([
-          Roll,
-          Tally,
-        ]);
+        const { app: drawn, world: drawnWorld } = yield* make(
+          App.define({ plugins: [Rack], systems: [Roll, Tally, Watch] })
+        );
+        const { app: undrawn, world: undrawnWorld } = yield* make(
+          App.define({ plugins: [Rack], systems: [Roll, Tally] })
+        );
         for (let n = 0; n < 20; n++) {
           drawn.tick(1 / 60);
           for (let f = 0; f < n % 3; f++) {
