@@ -1141,6 +1141,10 @@ const LINEAR = /* @__PURE__ */ (() => {
   return table;
 })();
 
+/** A finite step off the table, at the end of the table it is past. */
+const onTable = (step: number): number =>
+  step < 0 ? 0 : step < STEPS + 1 ? step : STEPS;
+
 /**
  * How an instance looks: its mesh's geometry and material.
  *
@@ -1169,7 +1173,8 @@ export interface InstancesShared extends Which {
    * - `Color.Srgb` is a colour as a hex code writes it. The renderer works in
    *   linear colour, so a lookup table converts each number: a hex code's byte
    *   over 255 exactly, and any other number to the nearest sixteenth of a
-   *   byte. A number below 0 or over 1, or NaN, isn't a colour, and fails the
+   *   byte. A number below 0 is drawn as 0 and one over 1 as 1, as CSS
+   *   clamps an sRGB colour. NaN or an infinity isn't a colour, and fails the
    *   frame with an error that names the entity.
    * - `Color.Linear` is the renderer's own numbers, passed through as they are.
    *   A number over 1 is brighter than white, which a renderer with bloom can
@@ -1439,10 +1444,11 @@ class Instances implements Kept {
         continue;
       }
       // A hex code's numbers, each looked up in the table at the nearest of
-      // its steps. One that is off either end of it, or NaN, is no colour.
-      const u = r[i]! * STEPS + 0.5;
-      const v = g[i]! * STEPS + 0.5;
-      const w = b[i]! * STEPS + 0.5;
+      // its steps. One off either end of it is clamped to that end, as CSS
+      // clamps an sRGB colour. NaN and an infinity are no colour.
+      let u = r[i]! * STEPS + 0.5;
+      let v = g[i]! * STEPS + 0.5;
+      let w = b[i]! * STEPS + 0.5;
       if (
         space[i] !== Color.Srgb ||
         !(
@@ -1454,7 +1460,15 @@ class Instances implements Kept {
           w < STEPS + 1
         )
       ) {
-        this.refuse(entities[i]!, r[i]!, g[i]!, b[i]!, space[i]!);
+        if (
+          space[i] !== Color.Srgb ||
+          !(Number.isFinite(u) && Number.isFinite(v) && Number.isFinite(w))
+        ) {
+          this.refuse(entities[i]!, r[i]!, g[i]!, b[i]!, space[i]!);
+        }
+        u = onTable(u);
+        v = onTable(v);
+        w = onTable(w);
       }
       out[at] = LINEAR[u | 0]!;
       out[at + 1] = LINEAR[v | 0]!;
@@ -1472,7 +1486,7 @@ class Instances implements Kept {
   ): never {
     const why =
       space === Color.Srgb
-        ? "each number of a colour in Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is in Color.Linear, the renderer's own numbers, which are drawn as they are."
+        ? "each number of a colour in Color.Srgb is finite. One below 0 is drawn as 0 and one over 1 as 1, but NaN and an infinity, such as a division by zero leaves, have no colour to be drawn as."
         : `its space is ${space}, and a colour's space is Color.Srgb (${Color.Srgb}) or Color.Linear (${Color.Linear}).`;
     throw new Error(
       `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: ${why}`

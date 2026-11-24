@@ -2554,43 +2554,34 @@ describe("a colour per instance", () => {
     }
   });
 
-  it("refuses a number that is no colour, and says which entity has it", () => {
-    const Coded = Three.instances("th/Painted", {
-      of: Rock,
-      transform: Transform3d,
-      geometry,
-      material,
-      color: Color.Rgb,
-    });
-    const { app, hand, mesh } = play(App.define({ plugins, systems: [Coded] }));
-    const fine = hand.spawn(
+  it("draws a number below 0 in Color.Srgb as 0, and one over 1 as 1, as CSS does", () => {
+    const { app, hand, mesh } = play();
+    const given = hand.spawn(
       Rock,
       Position.of({ x: 0, y: 1, z: 0 }),
-      // The ends themselves, and a hair past one as arithmetic leaves it.
-      srgb(0, 1, 1.00001)
+      srgb(0, 0, 0)
     );
-    app.frame();
-    expect(colorAt(mesh(), 1)).toEqual([0, 1, 1]);
-    // A hex code's bytes, not over 255: each channel is told from the others.
-    for (const [r, g, b] of [
-      [255, 0, 0],
-      [0, 97, 0],
-      [0, 0, 1.01],
-      [-0.01, 0.5, 0.5],
-      [0.5, -3, 0.5],
-      [0.5, 0.5, -200],
+    const clamped = hand.spawn(
+      Rock,
+      Position.of({ x: 0, y: 2, z: 0 }),
+      srgb(0, 0, 0)
+    );
+    // Each channel is clamped apart from the others.
+    for (const [r, g, b, same] of [
+      [255, 0, 0, [1, 0, 0]],
+      [0, 97, 0, [0, 1, 0]],
+      [0, 0, 1.00001, [0, 0, 1]],
+      [-0.01, 0.5, 0.5, [0, 0.5, 0.5]],
+      [0.5, -3, 0.5, [0.5, 0, 0.5]],
+      [0.5, 0.5, -200, [0.5, 0.5, 0]],
       // Past what a 32-bit integer holds, which would wrap back into range.
-      [1052689, 0.5, 0.5],
+      [1052689, 0.5, 0.5, [1, 0.5, 0.5]],
     ] as const) {
-      hand.set(fine, Color.Rgb, { r, g, b });
-      expect(() => app.frame()).toThrow(
-        `Three.instances("th/Painted") was given the colour (${Math.fround(r)}, ${Math.fround(g)}, ${Math.fround(b)}) by entity ${fine}, which is no colour: each number of a colour in Color.Srgb is from 0 to 1, as a hex code's bytes over 255 are. A colour brighter than white is in Color.Linear, the renderer's own numbers, which are drawn as they are.`
-      );
+      hand.set(given, Color.Rgb, { r, g, b });
+      hand.set(clamped, Color.Rgb, { r: same[0], g: same[1], b: same[2] });
+      app.frame();
+      expect(colorAt(mesh(), 1)).toEqual(colorAt(mesh(), 2));
     }
-    // Put right, it is drawn again.
-    hand.set(fine, Color.Rgb, { r: 1, g: 0, b: 0 });
-    app.frame();
-    expect(colorAt(mesh(), 1)).toEqual([1, 0, 0]);
   });
 
   it("refuses a colour that is no number, as a division by zero leaves it", () => {
@@ -2633,7 +2624,7 @@ describe("a colour per instance", () => {
       hand.set(rock, Color.Rgb, { r, g: 0.5, b: 0.5 });
       app.tick(1);
       expect(() => app.frame()).toThrow(
-        `Three.instances("th/Painted") was given the colour (${spoilt}, 0.5, 0.5) by entity ${rock},`
+        `Three.instances("th/Painted") was given the colour (${spoilt}, 0.5, 0.5) by entity ${rock}, which is no colour: each number of a colour in Color.Srgb is finite. One below 0 is drawn as 0 and one over 1 as 1, but NaN and an infinity, such as a division by zero leaves, have no colour to be drawn as.`
       );
     }
   });
