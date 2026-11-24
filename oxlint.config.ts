@@ -220,10 +220,10 @@ export default defineConfig({
     // Files are named as Effect names its own. A module, which an entry is,
     // is PascalCase, as it is imported: arcadekit/Query, and
     // arcadekit/net/Session in a folder. So is the test of one,
-    // test/Query.test.ts. Everything else is camelCase: what a module keeps
-    // to itself in a folder, as the storage core behind arcadekit/ecs is, a
-    // test's helpers, the benchmarks and the examples. index.ts and the
-    // files a tool names keep their names.
+    // test/Query.test.ts. Everything else is camelCase: a test's helpers,
+    // the benchmarks and the examples. What a module keeps to itself is in a
+    // folder of src/, below. index.ts and the files a tool names keep their
+    // names.
     {
       files: ["packages/**"],
       rules: {
@@ -249,9 +249,10 @@ export default defineConfig({
         ],
       },
     },
-    // A folder of src/ holds either: modules, and what a module keeps to
-    // itself. test/Entries.test.ts holds that each module is an entry and
-    // that every other file is behind one.
+    // A folder of src/ holds either: modules, in a folder that is an entry
+    // by its index, and what a module keeps to itself. test/Entries.test.ts
+    // holds that each module is an entry and that every other file is behind
+    // one.
     {
       files: ["packages/*/src/*/**/*.ts"],
       rules: {
@@ -298,14 +299,14 @@ export default defineConfig({
       files: [
         "packages/arcadekit/src/App.ts",
         // Where an app is put together, which was in App.ts.
-        "packages/arcadekit/src/app/build.ts",
+        "packages/arcadekit/src/app/Build.ts",
         "packages/arcadekit/src/Plugin.ts",
         // The turns of those systems, which were in App.ts.
-        "packages/arcadekit/src/app/schedule.ts",
+        "packages/arcadekit/src/app/Schedule.ts",
         // The run of a handler, which was in App.ts.
-        "packages/arcadekit/src/app/inbox.ts",
+        "packages/arcadekit/src/app/Inbox.ts",
         // The runs of the stages, which were in App.ts.
-        "packages/arcadekit/src/app/loop.ts",
+        "packages/arcadekit/src/app/Loop.ts",
       ],
       rules: {
         "effecttsgo/any-unknown-in-error-context": "off",

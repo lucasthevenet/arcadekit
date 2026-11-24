@@ -24,10 +24,10 @@ import type * as Journal from "../Journal";
 import type { FrameState, TimeState } from "../Services";
 import * as State from "../State";
 import * as System from "../System";
-import type { Inbox } from "./inbox";
-import type { Runner } from "./runner";
-import type * as Schedule from "./schedule";
-import * as Stage from "./stage";
+import type { Inbox } from "./Inbox";
+import type { Runner } from "./Runner";
+import type * as Schedule from "./Schedule";
+import * as Stage from "./Stage";
 
 /**
  * The spans of an app that traces. A tick's span is opened before the tick

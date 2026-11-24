@@ -131,12 +131,18 @@ describe("the package's entries", () => {
     };
     entry(".", "../src/index.ts");
     for (const file of Object.keys(sources)) {
-      // A module is PascalCase, as it is imported, wherever its file is,
-      // and a folder is an entry by its index. Any other file is what a
-      // module keeps to itself, and no entry.
+      // A module is PascalCase, as it is imported, in src/ or in a folder
+      // that is an entry by its index. Any other file is what a module
+      // keeps to itself, and no entry: a folder with no index, such as
+      // src/app/ behind arcadekit/App, holds only those.
       const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
       const folder = /^\.\.\/src\/((?:\w+\/)*\w+)\/index\.ts$/u.exec(file);
-      const name = module?.[1] ?? folder?.[1];
+      const inEntry =
+        module !== null &&
+        (!module[1]!.includes("/") ||
+          `../src/${module[1]!.slice(0, module[1]!.lastIndexOf("/"))}/index.ts` in
+            sources);
+      const name = (inEntry ? module[1] : undefined) ?? folder?.[1];
       if (name !== undefined) {
         entry(`./${name}`, file);
       }
@@ -272,7 +278,7 @@ describe("arcadekit/net", () => {
   });
 
   it("passes messages on without a session: a relay reaches no app, no peer and no session", () => {
-    const built = ["../src/app/build.ts", "../src/App.ts"];
+    const built = ["../src/app/Build.ts", "../src/App.ts"];
     for (const entry of ["./net/Message", "./net/Relay"]) {
       const { files } = reach(sourceOf(entry));
       expect(

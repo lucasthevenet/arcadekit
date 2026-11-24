@@ -20,10 +20,10 @@ import { Exit } from "effect";
 
 import type * as App from "./App";
 import { partsOf } from "./app/parts";
-import { READER } from "./app/stage";
+import { READER } from "./app/Stage";
 import type { SavedChanges } from "./ecs/changes";
 import type { World, Moment as WorldMoment } from "./ecs/world";
-import type { Told } from "./event/outbox";
+import type { Told } from "./event/Outbox";
 import * as Save from "./Save";
 
 /**

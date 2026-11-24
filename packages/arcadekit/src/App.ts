@@ -50,7 +50,7 @@ import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
 import * as Action from "./Action";
-import { build } from "./app/build";
+import { build } from "./app/Build";
 import type { Entity } from "./ecs/component";
 import type { Placed } from "./ecs/spawned";
 import * as Journal from "./Journal";
@@ -679,7 +679,7 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
   readonly verifyFrames?: boolean;
 }
 
-export { FrameChangedWorld } from "./app/stage";
+export { FrameChangedWorld } from "./app/Stage";
 
 /**
  * Makes an app that runs a game. A fresh app runs every plugin's `setup`, and
