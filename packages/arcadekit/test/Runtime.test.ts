@@ -16,10 +16,10 @@ import {
   Random,
   Resource,
   System,
-  TickScheduler,
   Time,
   World,
 } from "../src/index";
+import { TickScheduler } from "../src/internal/tickScheduler";
 import type { ReadingWorld } from "../src/Services";
 import { placedIn } from "./placed";
 

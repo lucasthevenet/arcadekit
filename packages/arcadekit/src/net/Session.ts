@@ -63,10 +63,10 @@
 import { Cause, Data, Effect, Exit } from "effect";
 
 import type * as App from "../App";
-import { partsOf } from "../app/parts";
-import { build } from "../Build";
-import type { Reins } from "../Build";
 import { add, addString, finish } from "../ecs/hash";
+import { build } from "../internal/build";
+import type { Reins } from "../internal/build";
+import { partsOf } from "../internal/parts";
 import * as Plugin from "../Plugin";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";

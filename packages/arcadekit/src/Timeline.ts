@@ -19,12 +19,12 @@
 import { Exit } from "effect";
 
 import type * as App from "./App";
-import { partsOf } from "./app/parts";
 import type { SavedChanges } from "./ecs/changes";
 import type { World, Moment as WorldMoment } from "./ecs/world";
-import type { Told } from "./Outbox";
+import type { Told } from "./internal/outbox";
+import { partsOf } from "./internal/parts";
+import { READER } from "./internal/stage";
 import * as Save from "./Save";
-import { READER } from "./Stage";
 
 /**
  * A game at one moment, held in memory, which `Timeline.capture` returns and

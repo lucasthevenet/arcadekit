@@ -46,13 +46,13 @@
  * provides `Tracer.MinimumTraceLevel` as "Info". A span reads the real clock
  * and draws its ids from `Math.random`, so tracing doesn't change the game.
  */
-import { Effect, Exit } from "effect";
+import { Data, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
 import * as Action from "./Action";
-import { build } from "./Build";
 import type { Entity } from "./ecs/component";
 import type { Placed } from "./ecs/spawned";
+import { build } from "./internal/build";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -673,10 +673,34 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
    * - The app hashes the world before the frame or input stage and after each
    *   of its systems, without the actions queued for the next tick, which
    *   those stages are there to issue. If two hashes differ, `frame` or
-   *   `input` dies with `Stage.FrameChangedWorld`, which names the system. It
+   *   `input` dies with `App.FrameChangedWorld`, which names the system. It
    *   costs one world hash per system per frame.
    */
   readonly verifyFrames?: boolean;
+}
+
+/**
+ * A frame-stage or input-stage system changed the world, which it must not do.
+ * An app made with `verifyFrames` detects it. It is a defect, not a failure to
+ * handle. Those stages run between ticks, and a game that depends on having
+ * been drawn, or on its devices having been read, doesn't replay.
+ *
+ * @category Errors
+ */
+export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
+  /** The stage the system belongs to. */
+  readonly stage: "frame" | "input";
+  /** The system after which the world had changed. */
+  readonly system: string;
+  /**
+   * The frame number, counted from 1. For the input stage, it is the last
+   * frame drawn.
+   */
+  readonly frame: number;
+}> {
+  override get message(): string {
+    return `The ${this.stage} stage changed the world: its hash was not the same after system "${this.system}" ran${this.stage === "frame" ? ` in frame ${this.frame}` : ""} as before. ${this.stage === "frame" ? "The frame stage draws the game between two ticks" : "The input stage reads the devices before a tick"} and must leave the world as it found it. Look for a draw from world.random, which is otherwise only found when the stage ends.`;
+  }
 }
 
 /**

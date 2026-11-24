@@ -23,12 +23,12 @@ import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
 import * as App from "./App";
-import { partsOf } from "./app/parts";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
+import { partsOf } from "./internal/parts";
+import { GameTime } from "./internal/stage";
 import type * as Plugin from "./Plugin";
 import * as Save from "./Save";
-import { GameTime } from "./Stage";
 
 /**
  * How a recorded game began: its `seed`, when it was recorded from its start,

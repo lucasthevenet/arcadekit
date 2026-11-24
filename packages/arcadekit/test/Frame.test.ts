@@ -28,7 +28,6 @@ import {
   Random,
   Save,
   Singleton,
-  Stage,
   State,
   System,
   Time,
@@ -1025,7 +1024,7 @@ describe("a frame stage that is checked", () => {
         const error = Exit.isFailure(exit)
           ? Cause.squash(exit.cause)
           : undefined;
-        expect(error).toBeInstanceOf(Stage.FrameChangedWorld);
+        expect(error).toBeInstanceOf(App.FrameChangedWorld);
         expect(error).toMatchObject({ system: "Honest" });
       })
     );
@@ -1047,7 +1046,7 @@ describe("a frame stage that is checked", () => {
         const error = Exit.isFailure(exit)
           ? Cause.squash(exit.cause)
           : undefined;
-        expect(error).toBeInstanceOf(Stage.FrameChangedWorld);
+        expect(error).toBeInstanceOf(App.FrameChangedWorld);
         expect(error).toMatchObject({ system: "Sneak", frame: 1 });
         expect((error as Error).message).toMatch(
           /after system "Sneak" ran in frame 1.*world\.random/
@@ -1055,7 +1054,7 @@ describe("a frame stage that is checked", () => {
         // It is a defect: nothing in the error channel to handle.
         expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
         const before = world.hash();
-        expect(() => app.frame()).toThrow(Stage.FrameChangedWorld);
+        expect(() => app.frame()).toThrow(App.FrameChangedWorld);
         expect(world.hash()).toBe(before);
       })
     );

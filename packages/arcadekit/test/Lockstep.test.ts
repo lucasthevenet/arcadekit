@@ -4,7 +4,6 @@ import { afterEach, assert, describe, expect, it } from "vitest";
 import {
   Action,
   App,
-  Build,
   Driver,
   Input,
   Journal,
@@ -13,6 +12,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import * as Build from "../src/internal/build";
 import { Drift, Message, Session } from "../src/net/index";
 import {
   Bot,

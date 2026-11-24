@@ -40,8 +40,8 @@ import type { WithSpawned } from "./ecs/spawned";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
-import { Outbox } from "./Outbox";
-import type { Stage, Told } from "./Outbox";
+import { Outbox } from "./internal/outbox";
+import type { Stage, Told } from "./internal/outbox";
 import { Events } from "./Services";
 import type { Sim } from "./Services";
 

@@ -4,7 +4,6 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   Action,
   App,
-  Build,
   Commands,
   Component,
   Driver,
@@ -20,6 +19,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import * as Build from "../src/internal/build";
 import { steered } from "./peers";
 
 // --- a game that makes noise -------------------------------------------------------

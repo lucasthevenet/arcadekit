@@ -7,7 +7,6 @@ import { Cause, Data, Effect, Exit, Schema } from "effect";
 import {
   Action,
   App,
-  Build,
   Commands,
   Component,
   EcsWorld,
@@ -24,6 +23,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity, QueryView } from "../src/index";
+import type * as Build from "../src/internal/build";
 import { Message, Session } from "../src/net/index";
 import type { ReadingWorld } from "../src/Services";
 

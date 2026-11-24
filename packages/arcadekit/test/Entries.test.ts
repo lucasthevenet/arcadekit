@@ -154,14 +154,13 @@ describe("the package's entries", () => {
     // A few by name, so that this test does not only agree with itself.
     expect(entries).toContain("./App");
     expect(entries).toContain("./Input");
-    expect(entries).toContain("./TickScheduler");
     expect(entries).toContain("./browser");
     expect(entries).toContain("./browser/Browser");
     expect(entries).toContain("./browser/Audio");
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(44);
+    expect(entries.length).toBe(36);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -238,26 +237,19 @@ describe("the package's entries", () => {
       "Action",
       "App",
       "Assets",
-      "Build",
       "Color",
       "Driver",
       "Event",
       "Field",
-      "Inbox",
       "Input",
       "Journal",
-      "Loop",
       "Migrate",
-      "Outbox",
       "Plugin",
       "Query",
       "Resource",
-      "Runner",
       "Save",
-      "Schedule",
       "Singleton",
       "Sound",
-      "Stage",
       "State",
       "System",
       "Timeline",
@@ -268,13 +260,10 @@ describe("the package's entries", () => {
     for (const name of namespaces) {
       expect(main[name], name).toBe(modules[`../src/${name}.ts`]);
     }
-    // The three it gives the names of, in place of the module.
+    // The two it gives the names of, in place of the module.
     expect(Main.EntityId).toBe(modules["../src/Schemas.ts"]!.EntityId);
     expect(Main.Time).toBe(modules["../src/Services.ts"]!.Time);
     expect(Main.World).toBe(modules["../src/Services.ts"]!.World);
-    expect(Main.TickScheduler).toBe(
-      modules["../src/TickScheduler.ts"]!.TickScheduler
-    );
     // Every module of src/ is one or the other. What only a page can use
     // is in src/browser/, which the package's own entry leaves out.
     expect(
@@ -282,7 +271,7 @@ describe("the package's entries", () => {
         .map((file) => file.slice("../src/".length, -".ts".length))
         .filter((name) => name !== "index" && !namespaces.includes(name))
         .toSorted()
-    ).toEqual(["Schemas", "Services", "TickScheduler"]);
+    ).toEqual(["Schemas", "Services"]);
     expect("Browser" in main).toBe(false);
     expect("browser" in main).toBe(false);
   });
@@ -301,7 +290,7 @@ describe("arcadekit/net", () => {
   });
 
   it("passes messages on without a session: a relay reaches no app, no peer and no session", () => {
-    const built = ["../src/Build.ts", "../src/App.ts"];
+    const built = ["../src/internal/build.ts", "../src/App.ts"];
     for (const entry of ["./net/Message", "./net/Relay"]) {
       const { files } = reach(sourceOf(entry));
       expect(

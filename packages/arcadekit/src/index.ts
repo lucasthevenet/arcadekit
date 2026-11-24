@@ -4,16 +4,15 @@
  *   import { App, Input, System } from "arcadekit"
  *
  * Each module is the same object as its own entry point,
- * `import * as Input from "arcadekit/Input"`. Three modules are exported as
- * their members instead: `EntityId` from `Schemas`, the services from
- * `Services`, and the two classes from `TickScheduler`. The storage core,
- * `arcadekit/ecs`, is exported as the members a game uses, with its world
- * class as `EcsWorld`, beside the `World` service.
+ * `import * as Input from "arcadekit/Input"`. Two modules are exported as
+ * their members instead: `EntityId` from `Schemas`, and the services from
+ * `Services`. The storage core, `arcadekit/ecs`, is exported as the members
+ * a game uses, with its world class as `EcsWorld`, beside the `World`
+ * service.
  */
 export * as Action from "./Action";
 export * as App from "./App";
 export * as Assets from "./Assets";
-export * as Build from "./Build";
 export * as Color from "./Color";
 export * as Driver from "./Driver";
 export {
@@ -53,26 +52,19 @@ export {
 export { World as EcsWorld } from "./ecs/world";
 export * as Event from "./Event";
 export * as Field from "./Field";
-export * as Inbox from "./Inbox";
 export * as Input from "./Input";
 export * as Journal from "./Journal";
-export * as Loop from "./Loop";
 export * as Migrate from "./Migrate";
-export * as Outbox from "./Outbox";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
-export * as Runner from "./Runner";
 export * as Save from "./Save";
-export * as Schedule from "./Schedule";
 export * as Singleton from "./Singleton";
 export * as Sound from "./Sound";
-export * as Stage from "./Stage";
 export * as State from "./State";
 export { EntityId } from "./Schemas";
 export { Commands, Events, Frame, Random, Time, World } from "./Services";
 export * as System from "./System";
-export { TickDispatcher, TickScheduler } from "./TickScheduler";
 export * as Timeline from "./Timeline";
 export * as Transform2d from "./Transform2d";
 export * as Transform3d from "./Transform3d";

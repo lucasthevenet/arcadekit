@@ -68,6 +68,6 @@ References: Schema [introduction](https://effect.website/docs/v4/schema/introduc
 
 ## What the tick replaces of Effect
 
-- **The scheduler.** `src/TickScheduler.ts` replaces Effect's, so a fiber only resumes when the tick flushes it. That is why a tick is deterministic, and why no other `Scheduler` is provided to code inside an app. What has to go on in real time while the game runs is forked by a service in a plugin's `layer`, with the context it found there less the app's own services, as `src/Assets.ts` does. API: [Scheduler](https://effect.website/docs/v4/api/effect/Scheduler), [Fiber](https://effect.website/docs/v4/api/effect/Fiber).
+- **The scheduler.** `src/internal/tickScheduler.ts` replaces Effect's, so a fiber only resumes when the tick flushes it. That is why a tick is deterministic, and why no other `Scheduler` is provided to code inside an app. What has to go on in real time while the game runs is forked by a service in a plugin's `layer`, with the context it found there less the app's own services, as `src/Assets.ts` does. API: [Scheduler](https://effect.website/docs/v4/api/effect/Scheduler), [Fiber](https://effect.website/docs/v4/api/effect/Fiber).
 - **Events.** `src/Event.ts` has its own implementation and does not use Effect's `PubSub`: each system keeps a read position from one tick to the next, and a refused action has to be able to take back the events it emitted and the reads it made.
 - **A test of what several peers must agree on** runs two apps side by side and compares their hashes, as `test/Lockstep.test.ts` does.
