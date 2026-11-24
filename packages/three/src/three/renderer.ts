@@ -4,12 +4,13 @@ import { Context, Effect, Layer } from "effect";
 import { WebGLRenderer } from "three";
 import type {
   Camera,
-  PerspectiveCamera,
   Scene as ThreeScene,
   WebGLRendererParameters,
 } from "three";
 
-import { Scene, sceneLayer } from "./scene";
+import { fitted } from "./internal/fit";
+import { sceneLayer } from "./internal/scene-layer";
+import { Scene } from "./scene";
 
 /**
  * The shape of `Three.Renderer`: a Three.js renderer, or a test's renderer that
@@ -80,9 +81,6 @@ export interface FitOptions {
   readonly pixelRatio?: number;
 }
 
-const isPerspective = (camera: Camera): camera is PerspectiveCamera =>
-  (camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera === true;
-
 /**
  * Returns a layer that provides `Three.Renderer` from a Three.js renderer you
  * create. The renderer is disposed of when the scope the layer is provided to
@@ -113,41 +111,7 @@ export const layerRenderer = (
         Effect.sync(() => make()),
         (renderer) => Effect.sync(() => renderer.dispose())
       ),
-      (renderer): RendererShape => {
-        const fit = options.fit !== false;
-        let width = 0;
-        let height = 0;
-        let ratio = 0;
-        return {
-          render(scene, camera) {
-            const w = renderer.domElement.clientWidth ?? 0;
-            const h = renderer.domElement.clientHeight ?? 0;
-            // A canvas that is not laid out has no size to fit.
-            if (fit && w > 0 && h > 0) {
-              const r =
-                options.pixelRatio ??
-                Math.min(
-                  (globalThis as { devicePixelRatio?: number })
-                    .devicePixelRatio ?? 1,
-                  2
-                );
-              if (w !== width || h !== height || r !== ratio) {
-                width = w;
-                height = h;
-                ratio = r;
-                renderer.setPixelRatio(r);
-                renderer.setSize(w, h, false);
-              }
-              // Asked of the camera each frame, since it can be replaced.
-              if (isPerspective(camera) && camera.aspect !== w / h) {
-                camera.aspect = w / h;
-                camera.updateProjectionMatrix();
-              }
-            }
-            renderer.render(scene, camera);
-          },
-        };
-      }
+      (renderer) => fitted(renderer, options)
     )
   );
 

@@ -63,9 +63,13 @@ export type { FitOptions, RendererLike, RendererShape } from "./three/renderer";
 export type { Which } from "./three/which";
 export { manager, texture } from "./three/assets";
 export type { TextureOptions } from "./three/assets";
-export type { InstancesOptions, InstancesShared, Look } from "./three/mesh";
 export { instances } from "./three/instances";
-export type { InstancesFromOptions } from "./three/instances";
+export type {
+  InstancesFromOptions,
+  InstancesOptions,
+  InstancesShared,
+  Look,
+} from "./three/instances";
 export { objects } from "./three/objects";
 export type {
   ObjectsFromOptions,

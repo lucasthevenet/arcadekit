@@ -6,14 +6,15 @@ import {
   InstancedBufferAttribute,
   InstancedMesh,
 } from "three";
-import type { BufferGeometry, Material, Scene as ThreeScene } from "three";
+import type { Scene as ThreeScene } from "three";
 
+import type { InstancesOptions } from "../instances";
+import type { Angle, Columns, Rgb, Xy, Xyz, Xyzw } from "./columns";
+import type { Holdings, Kept } from "./holdings";
+import { isFlat } from "./kind";
 import * as matrices from "./matrices";
-import type { Holdings, Kept } from "./scene";
 import { smoothOf } from "./smooth";
 import type { Smooth } from "./smooth";
-import { isFlat } from "./which";
-import type { Angle, Columns, Rgb, Which, Xy, Xyz, Xyzw } from "./which";
 
 /**
  * How finely a colour is converted; the table has one more entry than this.
@@ -40,69 +41,6 @@ const LINEAR = /* @__PURE__ */ (() => {
 /** A finite step off the table, at the end of the table it is past. */
 const onTable = (step: number): number =>
   step < 0 ? 0 : step < STEPS + 1 ? step : STEPS;
-
-/**
- * How an instance looks: its mesh's geometry and material.
- *
- * @category Models
- */
-export interface Look {
-  readonly geometry: BufferGeometry;
-  readonly material: Material | Material[];
-}
-
-/**
- * The options of `Three.instances`, wherever its look comes from.
- *
- * @category Options
- */
-export interface InstancesShared extends Which {
-  /**
-   * `Color.Rgb`, for each instance to have its entity's colour, which
-   * multiplies the material's own. An entity without one is drawn in the
-   * material's own colour, as if its colour were white.
-   *
-   *   Three.instances("game/Rocks", { of: Rock, transform: Transform3d, geometry, material, color: Color.Rgb })
-   *
-   * Each entity's colour is drawn by the space its `space` names:
-   *
-   * - `Color.Srgb` is a colour as a hex code writes it. The renderer works in
-   *   linear colour, so a lookup table converts each number: a hex code's byte
-   *   over 255 exactly, and any other number to the nearest sixteenth of a
-   *   byte. A number below 0 is drawn as 0 and one over 1 as 1, as CSS
-   *   clamps an sRGB colour. NaN or an infinity isn't a colour, and fails the
-   *   frame with an error that names the entity.
-   * - `Color.Linear` is the renderer's own numbers, passed through as they are.
-   *   A number over 1 is brighter than white, which a renderer with bloom can
-   *   show.
-   *
-   * With `smooth`, a colour is interpolated between two ticks like a position,
-   * however far it changes, since `snap` doesn't apply to it. It is
-   * interpolated in the game's numbers, then converted by the space it has at
-   * the later tick.
-   */
-  readonly color?: typeof Color.Rgb;
-  /**
-   * How many instances the mesh has room for at first. Defaults to 256. The
-   * room doubles when it runs out, which is the only time the system
-   * allocates.
-   */
-  readonly capacity?: number;
-  /**
-   * Called with the mesh each time one is created, to make it cast shadows or
-   * to put it on a layer, for example. The mesh isn't frustum culled, since its
-   * instances can be anywhere. A game that knows where they are can turn
-   * culling on here.
-   */
-  readonly prepare?: (mesh: InstancedMesh) => void;
-}
-
-/**
- * Options for instances whose look exists when the system is created.
- *
- * @category Options
- */
-export interface InstancesOptions extends InstancesShared, Look {}
 
 /**
  * The four loops of a kind: positioned, scaled, rotated or all three.

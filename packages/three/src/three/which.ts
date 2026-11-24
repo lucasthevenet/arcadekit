@@ -1,64 +1,6 @@
 import type { ComponentDef } from "arcadekit/ecs";
-import type { Frame, Time, World } from "arcadekit/Services";
-import * as Transform2d from "arcadekit/Transform2d";
+import type * as Transform2d from "arcadekit/Transform2d";
 import type * as Transform3d from "arcadekit/Transform3d";
-
-import type { Scene } from "./scene";
-
-/**
- * A numeric column, as a loop reads it.
- *
- * @internal
- */
-export interface Numbers {
-  readonly [row: number]: number;
-}
-/**
- * The columns of a three-number component, as a loop reads them.
- *
- * @internal
- */
-export interface Xyz {
-  readonly x: Numbers;
-  readonly y: Numbers;
-  readonly z: Numbers;
-}
-/**
- * The columns of a colour.
- *
- * @internal
- */
-export interface Rgb {
-  readonly r: Numbers;
-  readonly g: Numbers;
-  readonly b: Numbers;
-  readonly space: Numbers;
-}
-/**
- * The columns of a quaternion.
- *
- * @internal
- */
-export interface Xyzw extends Xyz {
-  readonly w: { readonly [row: number]: number };
-}
-/**
- * The columns of a 2D position or scale.
- *
- * @internal
- */
-export interface Xy {
-  readonly x: { readonly [row: number]: number };
-  readonly y: { readonly [row: number]: number };
-}
-/**
- * The column of a 2D rotation.
- *
- * @internal
- */
-export interface Angle {
-  readonly angle: { readonly [row: number]: number };
-}
 
 /**
  * Which entities a drawing system draws, and the transform it draws them from.
@@ -102,37 +44,3 @@ export interface Which {
    */
   readonly snap?: number;
 }
-
-/**
- * The components that mark an entity as one of the kind, as a list.
- *
- * @internal
- */
-export const required = (which: Which): readonly ComponentDef[] =>
-  "id" in which.of ? [which.of] : which.of;
-
-/**
- * Whether a kind is drawn from a flat game's transform, with the loops of the
- * plane.
- *
- * @internal
- */
-export const isFlat = (which: Which): boolean =>
-  which.transform.Position === Transform2d.Position;
-
-/**
- * A loop over the columns of a query, whichever its terms. Typed as a method's
- * type, whose parameters are compared both ways, so that each of the loops
- * below is one, and can be handed to the query it was written for.
- *
- * @internal
- */
-export type Columns = { loop(...columns: unknown[]): void }["loop"];
-
-/**
- * What a system of this module requires from an app, and what one that draws
- * from a bundle requires in addition.
- *
- * @internal
- */
-export type Needs = Frame | Scene | Time | World;
