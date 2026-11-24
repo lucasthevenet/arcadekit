@@ -10,7 +10,7 @@
  * the Node relay of `examples/relay.ts`, the Worker of
  * `examples/relay-cloudflare` with `/rooms` after it, or one of your own.
  */
-import { NodeRuntime } from "@effect/platform-node";
+import { NodeRuntime, NodeSocket } from "@effect/platform-node";
 import { Console, Data, Effect, Result, Schema } from "effect";
 
 import { Action, App, Field, Singleton, World } from "../src/index";
@@ -181,4 +181,8 @@ const check = Effect.gen(function* () {
   yield* Console.log(`The relay at ${base} does what a relay does.`);
 });
 
-NodeRuntime.runMain(Effect.scoped(check));
+NodeRuntime.runMain(
+  Effect.scoped(check).pipe(
+    Effect.provide(NodeSocket.layerWebSocketConstructor)
+  )
+);
