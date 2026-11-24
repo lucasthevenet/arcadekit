@@ -15,6 +15,9 @@
  *   const writing = yield* Phase.sets    // a tick system or a handler
  *   writing.set("playing")               // entered at the start of the next tick
  *
+ *   commands.spawn(Wall.of({ x: 0 }), State.scoped(Phase, "playing"))
+ *                                        // despawned when the game leaves "playing"
+ *
  * A state is a singleton of the world. A save holds it with any pending
  * transition, the world's hash covers it, and a refused action that set it
  * rolls it back.
@@ -22,11 +25,13 @@
  * A state makes at most one transition per tick. When several states have
  * pending transitions, they are entered in order of name.
  */
-import { Effect, Effectable } from "effect";
+import { Effect, Effectable, Exit } from "effect";
 
-import { Component, Field } from "./ecs/component";
+import { Component, Field, entityIndex } from "./ecs/component";
 import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
+import * as Query from "./Query";
+import { LoadRefused } from "./Save";
 import { World } from "./Services";
 import type { Sim } from "./Services";
 import { whole } from "./services/handed";
@@ -69,17 +74,31 @@ export interface StateHandle<V extends string> extends StateView<V> {
   // A method, so that a handle of any state is a `StateHandle<string>`.
   /**
    * Requests a state. The game enters it at the start of the next tick. The
-   * exit hooks of the old state run, then the enter hooks of the new one, and
-   * from that tick on systems run according to the new state. There is one
-   * transition per tick, so the last request before it wins. Requesting the
-   * current state cancels an earlier request, and isn't a transition.
+   * exit hooks of the old state run, the entities scoped to it are despawned,
+   * then the enter hooks of the new one run, and from that tick on systems run
+   * according to the new state. There is one transition per tick, so the last
+   * request before it wins. Requesting the current state cancels an earlier
+   * request, and isn't a transition.
    */
   set(value: V): void;
+}
+
+/** A value's tag, and the query of the entities that have it. */
+interface Scope<V extends string> {
+  readonly tag: ComponentDef<{}, "table", `${string}.Scoped.${V}`>;
+  readonly holders: Query.Query<
+    readonly [ComponentDef<{}, "table", `${string}.Scoped.${V}`>],
+    never
+  >;
 }
 
 // Every state this program has defined, by name, the newest of each: an app
 // loaded from a save goes on with the states it holds.
 const definitions = new Map<string, State<string>>();
+
+// The state that made each scope tag, by the tag's name. A state defined
+// again without a value leaves that value's tag here, made by the older one.
+const scopeMakers = new Map<string, State<string>>();
 
 /** @internal The states this program has defined, the newest of each name. */
 export const defined = (): Iterable<State<string>> => definitions.values();
@@ -97,6 +116,8 @@ export class State<V extends string>
 {
   readonly component: ComponentDef<Fields>;
   readonly initial: { value: string; next: string | null; entered: number };
+  /** @internal Each value's tag, which `scoped` gives out, and its holders. */
+  readonly scopes: ReadonlyMap<V, Scope<V>>;
   private effect: Effect.Effect<StateView<V>, never, World> | undefined;
   private writing:
     | Effect.Effect<StateHandle<V>, never, World | Sim>
@@ -119,7 +140,17 @@ export class State<V extends string>
     );
     this.component = spec.component;
     this.initial = spec.initial;
-    definitions.set(name, this as unknown as State<string>);
+    this.scopes = new Map(
+      values.map((value) => {
+        const tag = Component.tag(`${name}.Scoped.${value}` as const);
+        return [value, { tag, holders: Query.all(tag) }];
+      })
+    );
+    const made = this as unknown as State<string>;
+    for (const { tag } of this.scopes.values()) {
+      scopeMakers.set(tag.name, made);
+    }
+    definitions.set(name, made);
   }
 
   asEffect(): Effect.Effect<StateView<V>, never, World> {
@@ -317,6 +348,110 @@ export const enter = (
 };
 
 /**
+ * Despawns, in order of index, the entities scoped to the value a move leaves
+ * and not to the one it enters. It runs after the exit hooks and before the
+ * state has its new value.
+ * @internal
+ */
+export const despawnScoped = (
+  world: EcsWorld,
+  state: State<string>,
+  move: Move
+): void => {
+  if (move.from === undefined) {
+    return;
+  }
+  const leaving = state.scopes.get(move.from);
+  const entering = state.scopes.get(move.to);
+  // A tag the world never met is held by nothing.
+  if (
+    leaving === undefined ||
+    entering === undefined ||
+    world.component(leaving.tag.name) !== leaving.tag
+  ) {
+    return;
+  }
+  const doomed = world
+    .view(leaving.holders)
+    .entities()
+    .filter((entity) => !world.has(entity, entering.tag))
+    .toSorted((a, b) => entityIndex(a) - entityIndex(b));
+  for (const entity of doomed) {
+    world.despawn(entity);
+  }
+};
+
+/**
+ * Refuses a world loaded from a save that holds the scope tag of a value its
+ * state no longer has, which would otherwise never be despawned.
+ * @internal
+ */
+export const refuseRemovedScopes = (
+  world: EcsWorld
+): Exit.Exit<void, LoadRefused> => {
+  for (const [name, maker] of scopeMakers) {
+    const newest = definitions.get(maker.name);
+    if (newest !== maker && world.component(name) !== undefined) {
+      return Exit.fail(
+        new LoadRefused({
+          problem: "unknown component",
+          message: `The save holds "${name}", the tag of a value the state "${maker.name}" no longer has. Its values are: ${newest?.values.join(", ")}. A migration renames or removes a component in a save.`,
+        })
+      );
+    }
+  }
+  return Exit.void;
+};
+
+/**
+ * Returns the tag of an entity that lives only while the game is in this
+ * state. When the game leaves the state, the entities that have the tag are
+ * despawned, unless they also have the tag of the state it enters.
+ *
+ * **When to use**
+ *
+ * Use to tag what a level or a screen spawns, so that leaving it cleans it
+ * up, in place of a `State.onExit` hook that despawns each kind of entity.
+ *
+ * **Details**
+ *
+ * The entities are despawned after the exit hooks run and before the enter
+ * hooks, in order of index, and each despawn takes its relations with it as
+ * `Component.relation` says. The tag is a component named
+ * `"<state>.Scoped.<value>"`: it is saved, hashed and rewound as any other,
+ * and `Commands.spawns` names it, as any component a system spawns.
+ *
+ * **Gotchas**
+ *
+ * - An entity with the tags of two values of a state stays while the game
+ *   moves between them: tag a level with `"playing"` and `"paused"` to keep
+ *   it through a pause.
+ * - An entity with the tags of two states is despawned when the game leaves
+ *   either.
+ * - A save that holds the tag of a value the state no longer has fails to
+ *   load with `Save.LoadRefused`, `"unknown component"`. A migration renames
+ *   or removes the tag.
+ *
+ *   const playing = State.scoped(Phase, "playing")
+ *   const commands = yield* Commands.spawns(Wall, playing)
+ *   commands.spawn(Wall.of({ x: 0 }), playing)
+ *
+ * @category Components
+ */
+export const scoped = <V extends string>(
+  state: State<V>,
+  value: NoInfer<V>
+): ComponentDef<{}, "table", `${string}.Scoped.${V}`> => {
+  const scope = state.scopes.get(value);
+  if (scope === undefined) {
+    throw new Error(
+      `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`
+    );
+  }
+  return scope.tag;
+};
+
+/**
  * Returns a condition for `System.runIf` that holds while the game is in one of
  * these states.
  *
@@ -383,7 +518,8 @@ export const onEnter = <
 /**
  * Makes a system that runs once when the game leaves a state, at the start of
  * that tick, before the enter hooks of the next state. `yield*` on the state
- * still returns the one being left.
+ * still returns the one being left, and the entities scoped to it, which
+ * `State.scoped` tags, are still there.
  *
  * @category Constructors
  */

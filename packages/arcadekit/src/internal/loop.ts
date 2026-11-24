@@ -283,6 +283,7 @@ export const make = (parts: Parts): Loop => {
     if (move.from !== undefined) {
       yield* takeTurns(schedule.hooks(state, "exit", move.from), "tick", false);
     }
+    State.despawnScoped(world, state, move);
     State.enter(world, state, move);
     yield* takeTurns(schedule.hooks(state, "enter", move.to), "tick", false);
   });

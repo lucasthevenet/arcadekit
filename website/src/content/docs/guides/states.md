@@ -54,9 +54,10 @@ A state is a singleton in the world. It is saved along with any pending request,
 `set` requests a change, and the game enters the new state at the start of the next tick:
 
 1. The exit hooks of the old state run, still seeing the old state.
-2. The state changes.
-3. The enter hooks of the new state run.
-4. The tick's systems run, according to the new state.
+2. The entities scoped to the old state are despawned, as [Despawn a state's entities when the game leaves it](#despawn-a-states-entities-when-the-game-leaves-it) says.
+3. The state changes.
+4. The enter hooks of the new state run.
+5. The tick's systems run, according to the new state.
 
 There is one transition per tick, and the last request before it wins. Requesting the current state cancels an earlier request, and isn't a transition. With several states, the requested ones are entered in order of name.
 
@@ -67,6 +68,36 @@ There is one transition per tick, and the last request before it wins. Requestin
 On the game's first tick, the enter hooks of the initial state run, followed in the same tick by any transition requested before it. A game loaded from a save doesn't run them again, because the save already holds their effects.
 
 A transition requested by a hook waits for the next tick.
+
+## Despawn a state's entities when the game leaves it
+
+```ts
+import { Commands, Component, Field, Plugin, State } from "arcadekit";
+
+const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
+const Wall = Component.define("game/Wall", { x: Field.f32 });
+
+const playing = State.scoped(Phase, "playing");
+const paused = State.scoped(Phase, "paused");
+
+const BuildLevel = State.onEnter(
+  Phase,
+  "playing",
+  "game/BuildLevel",
+  function* () {
+    const commands = yield* Commands.spawns(Wall, playing, paused);
+    commands.spawn(Wall.of({ x: 0 }), playing, paused);
+  }
+);
+
+const Rules = Plugin.make("game/Rules", { systems: [BuildLevel] });
+```
+
+`State.scoped(Phase, "playing")` is a tag. An entity that has it is despawned when the game leaves `"playing"`, unless it also has the tag of the state the game enters. The wall above has the tags of `"playing"` and `"paused"`, so it stays while the game is paused, and is despawned when the game goes back to `"menu"`. Name the tags in `Commands.spawns`, as any component a system spawns.
+
+The entities are despawned after the exit hooks and before the enter hooks, in order of their index. An exit hook still sees them, and decides what leaves with the state: an entity it gives the tag of the next state, or takes the tag from, stays, and one it spawns with the tag of the old state is despawned with the others. Each despawn takes with it the entities that point at it with a relation, as [Relations](relations.md#choose-what-happens-when-a-target-is-despawned) says, and [`Query.removed`](queries.md#visit-only-what-changed) reads them in the tick's systems.
+
+An entity can have the tags of several states, and is despawned when the game leaves either. The tags are components like any other: they are saved, hashed and rewound. A save that holds the tag of a value the state no longer has fails to load with `Save.LoadRefused`, whose `problem` is `"unknown component"`: a migration renames or removes the tag, as [Migrating saves](migrating-saves.md) shows for any component.
 
 ## Run a system only in some states
 
