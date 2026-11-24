@@ -871,6 +871,17 @@ const define = <
 };
 
 /**
+ * A name the compiler reads, or the error that says to write one: a name known
+ * only as `string` makes no component.
+ *
+ * @category Type-level
+ */
+export type LiteralName<N extends string> = N &
+  (string extends N
+    ? 'A component\'s name is a literal, "game/Hero"'
+    : unknown);
+
+/**
  * Defines components: a component with data, a tag, a relation to another
  * entity, or a singleton.
  *
@@ -881,7 +892,8 @@ export const Component = {
    * Defines a component with data. Each numeric field is a column of a typed
    * array.
    *
-   * `name` is the component's identity in a world and in a save. Prefix it
+   * `name` is the component's identity in a world and in a save, a literal
+   * the compiler reads: a name typed `string` doesn't compile. Prefix it
    * with the feature it belongs to, as in `"physics/Position"`. A world that
    * meets two different components with the same name throws when it meets
    * the second. `storage: "sparse"` keeps the component in a set of its own,
@@ -896,7 +908,7 @@ export const Component = {
     S extends Schema,
     St extends Storage = "table",
   >(
-    name: N,
+    name: LiteralName<N>,
     schema: S,
     options?: { readonly storage?: St; readonly initial?: ValueOf<S> }
   ): ComponentDef<S, St, N> => define(name, schema, options),
@@ -946,7 +958,7 @@ export const Component = {
     S extends Schema = {},
     St extends Storage = "table",
   >(
-    name: N,
+    name: LiteralName<N>,
     options: {
       readonly onTargetDespawn: OnTargetDespawn;
       readonly storage?: St;
@@ -968,7 +980,7 @@ export const Component = {
    * filter entities.
    */
   tag: <const N extends string, St extends Storage = "table">(
-    name: N,
+    name: LiteralName<N>,
     options?: { readonly storage?: St }
   ): ComponentDef<{}, St, N> => define(name, {}, options),
 };

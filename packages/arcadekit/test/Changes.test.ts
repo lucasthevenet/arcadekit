@@ -23,6 +23,7 @@ import {
   writeSnapshot,
 } from "../src/index";
 import type {
+  ComponentDef,
   Entity,
   EntityColumn,
   SavedChanges,
@@ -178,13 +179,12 @@ describe("a change query", () => {
     void (() =>
       // @ts-expect-error raw columns would count its own visit as a change
       moved.eachChunk(() => {}));
-    // A description put together by hand is refused when it runs.
-    const byHand = world.view({
-      terms: [Position],
-      withDefs: [],
-      withoutDefs: [],
-      changedDefs: [Position],
-    });
+    // Watched as a component the compiler knows only as a ComponentDef, it
+    // is refused when it runs.
+    const widened: ComponentDef = Position;
+    const byHand = world.view(
+      Query.all(Position).pipe(Query.changed(widened), Query.writes(Position))
+    );
     expect(() => byHand.eachChunk(() => {})).toThrow(
       /watches "ch\/Position" for changes and also hands it out.*Visit it with each\(\)/
     );

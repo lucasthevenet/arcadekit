@@ -44,7 +44,9 @@ Entities with the same set of components share a table, and each field of a comp
 
 A component that is added and removed often, such as a `Stunned` tag, or that few entities have, can use `"sparse"` storage instead, in a set of its own. Adding or removing it then doesn't move the entity to another table.
 
-The storage core is `arcadekit/ecs`. It is plain synchronous TypeScript that imports nothing outside itself, not even Effect.
+The storage core is `arcadekit/ecs`. It is plain synchronous TypeScript that imports nothing outside itself, not even Effect. Its world's `view` takes a query made with `Query`, from `arcadekit`.
+
+A component's name is a literal the compiler reads, such as `"game/Hero"`. A name it knows only as `string` doesn't compile.
 
 ## An id is an index and a generation
 
