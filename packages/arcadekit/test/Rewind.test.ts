@@ -4,10 +4,8 @@ import { runInNewContext } from "node:vm";
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import * as Build from "../src/app/internals/build";
-import { partsOf } from "../src/app/internals/parts";
 import { entityOf, idOf } from "../src/ecs/component";
-import type { ReadingEvents } from "../src/event/Event";
+import type { ReadingEvents } from "../src/Event";
 import {
   Action,
   App,
@@ -27,6 +25,8 @@ import {
   readSnapshot,
 } from "../src/index";
 import type { Entity, JsonValue } from "../src/index";
+import * as Build from "../src/internals/build";
+import { partsOf } from "../src/internals/parts";
 import { Session } from "../src/net/index";
 import {
   CoinGame,

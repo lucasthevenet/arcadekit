@@ -4,7 +4,6 @@
  */
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 
-import type * as Build from "../src/app/internals/build";
 import {
   Action,
   App,
@@ -24,6 +23,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity, QueryView } from "../src/index";
+import type * as Build from "../src/internals/build";
 import { Message, Session } from "../src/net/index";
 import type { ReadingWorld } from "../src/Services";
 

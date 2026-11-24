@@ -14,17 +14,17 @@ import {
   Tracer,
 } from "effect";
 
-import type * as Action from "../../Action";
-import type { CommandBuffer } from "../../ecs/commands";
-import type { Spawned } from "../../ecs/spawned";
-import type { World as EcsWorld } from "../../ecs/world";
-import type { EventBus } from "../../event/Event";
-import * as Input from "../../Input";
-import type * as Journal from "../../Journal";
-import type { FrameState, TimeState } from "../../Services";
-import * as State from "../../State";
-import * as System from "../../System";
+import type * as Action from "../Action";
 import { FrameChangedWorld } from "../App";
+import type { CommandBuffer } from "../ecs/commands";
+import type { Spawned } from "../ecs/spawned";
+import type { World as EcsWorld } from "../ecs/world";
+import type { EventBus } from "../Event";
+import * as Input from "../Input";
+import type * as Journal from "../Journal";
+import type { FrameState, TimeState } from "../Services";
+import * as State from "../State";
+import * as System from "../System";
 import type { Inbox } from "./inbox";
 import type { Runner } from "./runner";
 import type * as Schedule from "./schedule";

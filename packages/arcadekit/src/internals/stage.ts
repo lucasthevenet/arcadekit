@@ -13,17 +13,17 @@
  */
 import { Context, Random as EffectRandom } from "effect";
 
-import * as Action from "../../Action";
-import type { CommandBuffer } from "../../ecs/commands";
-import { Component, Field } from "../../ecs/component";
-import { Rng } from "../../ecs/random";
-import type { Spawned } from "../../ecs/spawned";
-import type { World as EcsWorld } from "../../ecs/world";
-import type { EventBus } from "../../event/Event";
-import * as Input from "../../Input";
-import { Commands, Events, Frame, Random, Time, World } from "../../Services";
-import type { FrameState, TimeState } from "../../Services";
-import { handed, hearing, reading } from "../../services/handed";
+import * as Action from "../Action";
+import type { CommandBuffer } from "../ecs/commands";
+import { Component, Field } from "../ecs/component";
+import { Rng } from "../ecs/random";
+import type { Spawned } from "../ecs/spawned";
+import type { World as EcsWorld } from "../ecs/world";
+import type { EventBus } from "../Event";
+import * as Input from "../Input";
+import { Commands, Events, Frame, Random, Time, World } from "../Services";
+import type { FrameState, TimeState } from "../Services";
+import { handed, hearing, reading } from "../services/handed";
 
 /**
  * The prefix of a reader's name in the world's change logs when it is a

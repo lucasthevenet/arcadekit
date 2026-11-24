@@ -73,11 +73,11 @@ describe("a relative link in a page", () => {
     expect(
       rewrite(`${ROOT}packages/arcadekit/README.md#not-done-yet`, GUIDE)
     ).toBe(`${REPO_URL}/blob/main/packages/arcadekit/README.md#not-done-yet`);
-    expect(rewrite(`${ROOT}packages/arcadekit/src/app/App.ts`, GUIDE)).toBe(
-      `${REPO_URL}/blob/main/packages/arcadekit/src/app/App.ts`
+    expect(rewrite(`${ROOT}packages/arcadekit/src/App.ts`, GUIDE)).toBe(
+      `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts`
     );
-    expect(rewrite(`${ROOT}packages/arcadekit/src/app/App.ts#L10`, GUIDE)).toBe(
-      `${REPO_URL}/blob/main/packages/arcadekit/src/app/App.ts#L10`
+    expect(rewrite(`${ROOT}packages/arcadekit/src/App.ts#L10`, GUIDE)).toBe(
+      `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts#L10`
     );
     expect(rewrite(`${ROOT}packages/arcadekit/examples/demo/`, GUIDE)).toBe(
       `${REPO_URL}/tree/main/packages/arcadekit/examples/demo`
@@ -157,7 +157,7 @@ describe("a full link", () => {
   it("is left alone otherwise", () => {
     const { rewrite, deadLinks } = makeRewriter();
     for (const href of [
-      `${REPO_URL}/blob/main/packages/arcadekit/src/app/App.ts`,
+      `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts`,
       `${REPO_URL}/tree/main/.changeset`,
       // Another branch, which this checkout can't check.
       `${REPO_URL}/blob/next/packages/arcadekit/src/core/README.md`,

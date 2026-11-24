@@ -1,7 +1,6 @@
 import { Cause, Data, Effect, Exit } from "effect";
 import { afterEach, assert, describe, expect, it } from "vitest";
 
-import * as Build from "../src/app/internals/build";
 import {
   Action,
   App,
@@ -13,6 +12,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import * as Build from "../src/internals/build";
 import { Drift, Message, Session } from "../src/net/index";
 import {
   Bot,

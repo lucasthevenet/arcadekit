@@ -132,16 +132,20 @@ describe("the package's entries", () => {
     entry(".", "../src/index.ts");
     for (const file of Object.keys(sources)) {
       // A module is PascalCase, as it is imported. One named as its folder
-      // is the entry of its name, src/app/App.ts arcadekit/App, and any
-      // other is in its folder, src/net/Session.ts arcadekit/net/Session. A
-      // folder is an entry by its index. A file under internals/ is what a
-      // module keeps to itself, as any other file is, and no entry.
+      // is the entry of its name, src/browser/Browser.ts arcadekit/Browser,
+      // and any other is in its folder, src/net/Session.ts
+      // arcadekit/net/Session. A folder is an entry by its index. A file
+      // under an internals/ folder, src/internals/build.ts, is what a module
+      // keeps to itself, as any other file is, and no entry.
       const module = /^\.\.\/src\/((?:\w+\/)*)([A-Z]\w*)\.ts$/u.exec(file);
       const folder = /^\.\.\/src\/((?:\w+\/)*\w+)\/index\.ts$/u.exec(file);
       if (module !== null && !file.includes("/internals/")) {
         const [, dir = "", name = ""] = module;
-        const namesake = dir.endsWith(`${name.toLowerCase()}/`);
-        const at = namesake ? dir.slice(0, -name.length - 1) : dir;
+        const folders = dir.split("/").slice(0, -1);
+        const namesake = folders.at(-1) === name.toLowerCase();
+        const at = (namesake ? folders.slice(0, -1) : folders)
+          .map((one) => `${one}/`)
+          .join("");
         entry(`./${at}${name}`, file);
       } else if (folder !== null) {
         entry(`./${folder[1]}`, file);
@@ -151,8 +155,8 @@ describe("the package's entries", () => {
     // In order, the package first, so that the list reads.
     expect(entries).toEqual([".", ...entries.slice(1).toSorted()]);
     // A few by name, so that this test does not only agree with itself.
-    expect(sourceOf("./App")).toBe("../src/app/App.ts");
-    expect(sourceOf("./Event")).toBe("../src/event/Event.ts");
+    expect(sourceOf("./App")).toBe("../src/App.ts");
+    expect(sourceOf("./Event")).toBe("../src/Event.ts");
     expect(entries).toContain("./Input");
     expect(entries).toContain("./Browser");
     expect(entries).toContain("./net");
@@ -282,7 +286,7 @@ describe("arcadekit/net", () => {
   });
 
   it("passes messages on without a session: a relay reaches no app, no peer and no session", () => {
-    const built = ["../src/app/internals/build.ts", "../src/app/App.ts"];
+    const built = ["../src/internals/build.ts", "../src/App.ts"];
     for (const entry of ["./net/Message", "./net/Relay"]) {
       const { files } = reach(sourceOf(entry));
       expect(

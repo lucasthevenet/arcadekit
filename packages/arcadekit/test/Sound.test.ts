@@ -1,7 +1,6 @@
 import { Data, Effect, Exit, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import * as Build from "../src/app/internals/build";
 import {
   Action,
   App,
@@ -20,6 +19,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import * as Build from "../src/internals/build";
 import { steered } from "./peers";
 
 // --- a game that makes noise -------------------------------------------------------

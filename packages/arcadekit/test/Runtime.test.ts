@@ -1,7 +1,6 @@
 import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { TickScheduler } from "../src/app/internals/tick-scheduler";
 import { idOf } from "../src/ecs/component";
 import type { Spawned } from "../src/index";
 import {
@@ -20,6 +19,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import { TickScheduler } from "../src/internals/tick-scheduler";
 import type { ReadingWorld } from "../src/Services";
 import { placedIn } from "./placed";
 

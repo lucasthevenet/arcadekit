@@ -1,7 +1,7 @@
 // Makes a page's links to files of the repository work on the site.
 //
 // A page links to another file of the repository by its relative path (`../guides/input.md`,
-// `../../../../../packages/arcadekit/src/app/App.ts`) or by its full GitHub URL, as it would on
+// `../../../../../packages/arcadekit/src/App.ts`) or by its full GitHub URL, as it would on
 // GitHub. Here a page is served at another address than its file's, so neither kind would land
 // right. This plugin rewrites each one as the page is rendered:
 // - a link to a file that is a page of the site goes to that page;

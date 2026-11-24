@@ -14,12 +14,12 @@
 import { Cause, Exit, Schema } from "effect";
 import type { Effect, Fiber } from "effect";
 
-import * as Action from "../../Action";
-import type { CommandBuffer } from "../../ecs/commands";
-import type { Spawned } from "../../ecs/spawned";
-import type { World } from "../../ecs/world";
-import type { EventBus } from "../../event/Event";
-import type * as Journal from "../../Journal";
+import * as Action from "../Action";
+import type { CommandBuffer } from "../ecs/commands";
+import type { Spawned } from "../ecs/spawned";
+import type { World } from "../ecs/world";
+import type { EventBus } from "../Event";
+import type * as Journal from "../Journal";
 import type { Runner } from "./runner";
 import { GameTime } from "./stage";
 

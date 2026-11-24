@@ -22,11 +22,11 @@ import { Brand, Cause, Data, Effect, Exit, Schema } from "effect";
 import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
-import * as App from "./app/App";
-import { partsOf } from "./app/internals/parts";
-import { GameTime } from "./app/internals/stage";
+import * as App from "./App";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
+import { partsOf } from "./internals/parts";
+import { GameTime } from "./internals/stage";
 import type * as Plugin from "./Plugin";
 import * as Save from "./Save";
 

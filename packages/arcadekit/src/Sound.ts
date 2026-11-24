@@ -49,7 +49,7 @@ import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 
 import * as Assets from "./Assets";
-import type * as Event from "./event/Event";
+import type * as Event from "./Event";
 import * as Plugin from "./Plugin";
 import type { Events } from "./Services";
 import * as System from "./System";
