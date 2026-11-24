@@ -329,12 +329,12 @@ export interface Any {
   readonly actionLog: readonly Action.LogEntry[];
   /**
    * Returns the game as it was played, to play again with `Journal.replay`:
-   * how it began, the action log, the delta of every tick, and the ticks it
-   * begins and ends at. The recording begins where this app began, from its
-   * seed or from the save it was made from. With `since`, a save this app
-   * made, it begins at that save and holds it, and replaying it returns to
-   * the present from that save. Call it only between ticks, since it throws
-   * anywhere else.
+   * how it began, the action log, the delta of every tick, the ticks it
+   * begins and ends at, and the world's hash where it ends. The recording
+   * begins where this app began, from its seed or from the save it was made
+   * from. With `since`, a save this app made, it begins at that save and
+   * holds it, and replaying it returns to the present from that save. Call it
+   * only between ticks, since it throws anywhere else.
    *
    * An app made from a save keeps that save for as long as it lives, to
    * record from.

@@ -123,10 +123,15 @@ describe("who issued an action", () => {
       const { from: _, ...rest } = entry;
       return rest;
     });
-    const alteredRecording = { ...recorded.recording, log: anonymous };
+    const alteredRecording = Journal.decode(
+      JSON.stringify({ ...(JSON.parse(text) as object), log: anonymous })
+    );
+    assert(Exit.isSuccess(alteredRecording));
     const diverged = Effect.runSync(
       Effect.flip(
-        Journal.replay(alteredRecording, CoinGame, { checkpointEvery: 1 })
+        Journal.replay(alteredRecording.value, CoinGame, {
+          checkpointEvery: 1,
+        })
       )
     );
     expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
