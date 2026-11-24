@@ -158,14 +158,17 @@ describe("the entries of @arcadekit/three", () => {
     expect(packages).toContain("arcadekit/Transform3d");
     expect(packages).toContain("arcadekit/Transform2d");
     expect(packages).toContain("arcadekit/Color");
-    // It defines no component: it reads the game's. (Its comments show
-    // a game defining one.)
-    expect(
-      sources["../src/Three.ts"]!.replaceAll(
-        /\/\*[\s\S]*?\*\//gu,
-        ""
-      ).replaceAll(/^\s*\/\/.*$/gmu, "")
-    ).not.toMatch(/Component\.(?:define|tag|relation)\(/u);
+    // It defines no component, in any of its files: it reads the game's.
+    // (Its comments show a game defining one.)
+    for (const file of reach(sourceOf("./Three")).files) {
+      expect(
+        sources[file]!.replaceAll(/\/\*[\s\S]*?\*\//gu, "").replaceAll(
+          /^\s*\/\/.*$/gmu,
+          ""
+        ),
+        file
+      ).not.toMatch(/Component\.(?:define|tag|relation)\(/u);
+    }
     expect(Object.keys(Main.Three)).not.toContain("Position");
   });
 
