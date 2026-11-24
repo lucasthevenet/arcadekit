@@ -71,6 +71,11 @@ const files = {
   "/notes.txt": "héllo",
 };
 
+/** The loader `Assets.layerMemory` makes of `files`. */
+const memory = Effect.runSync(
+  Effect.provide(Effect.service(Assets.Loader), Assets.layerMemory(files))
+);
+
 /** A loader whose files arrive when the test says so. */
 const makeSlowLoader = () => {
   const waiting = new Map<
@@ -310,6 +315,7 @@ describe("an asset", () => {
         "/gone.txt",
         () => new Response("no", { status: 404, statusText: "Not Found" }),
       ],
+      ["/busy.txt", () => new Response("later", { status: 503 })],
     ]);
     // A page asks for a file by its path, from where the page is.
     vi.stubGlobal("location", new URL("https://game.test/play/"));
@@ -337,6 +343,16 @@ describe("an asset", () => {
       Cause.squash((gone as Exit.Failure<never, unknown>).cause),
       "/gone.txt",
       "The server answered 404"
+    );
+    // A server that failed may answer the next time, which one that said no
+    // won't.
+    const busy = await Effect.runPromiseExit(one("/busy.txt"));
+    expect(Cause.squash((busy as Exit.Failure<never, unknown>).cause)).toEqual(
+      new Assets.AssetFailed({
+        url: "/busy.txt",
+        message: "The server answered 503",
+        transient: true,
+      })
     );
     // A request that never answers, and a load that is interrupted.
     const fiber = Effect.runFork(one("/slow.txt"));
@@ -975,6 +991,137 @@ describe("a level's assets", () => {
         expect(log).toEqual(["open /forest.png", "close /forest.png"]);
       }).pipe(Effect.provide(Assets.layerMemory(files)))
     );
+  });
+
+  it("fetch a file once for every bundle that names it", async () => {
+    const log: string[] = [];
+    const asked: string[] = [];
+    const Level = State.define("as/Shared", ["menu", "forest"]);
+    const Forest = Assets.bundle("as/Forest", {
+      backdrop: tracked("/forest.png", log),
+    });
+    const Raw = Assets.bundle("as/Raw", {
+      backdrop: Assets.bytes("/forest.png"),
+    });
+    const seen: string[] = [];
+    const Look = System.frame("Look", function* () {
+      seen.push(`${(yield* Forest)._tag} ${(yield* Raw)._tag}`);
+    });
+    const Enter = Action.define("as/EnterShared", Schema.Struct({}));
+    const counting: Assets.LoaderShape = {
+      bytes: (url) =>
+        Effect.suspend(() => {
+          asked.push(url);
+          return memory.bytes(url);
+        }),
+    };
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({
+            plugins: [Assets.plugin],
+            handlers: [
+              Action.handler(Enter, function* () {
+                (yield* Level.sets).set("forest");
+              }),
+            ],
+            systems: [
+              Assets.during(State.is(Level, "forest"), Forest),
+              Assets.during(State.is(Level, "forest"), Raw),
+              Look,
+            ],
+          })
+        );
+        app.dispatch(Enter, {});
+        app.tick(1);
+        app.frame();
+        expect(seen.at(-1)).toBe("Ready Ready");
+        expect(asked).toEqual(["/forest.png"]);
+        expect(log).toEqual(["open /forest.png"]);
+      }).pipe(Effect.provideService(Assets.Loader, counting))
+    );
+  });
+
+  it("fetch again a file whose request got no answer, and are ready without the level being entered again", async () => {
+    const { Game, Go, drawn } = makeGame();
+    const asked: string[] = [];
+    const loader: Assets.LoaderShape = {
+      bytes: (url) =>
+        Effect.suspend(() => {
+          asked.push(url);
+          return url === "/forest.png" &&
+            asked.filter((one) => one === url).length === 1
+            ? Effect.fail(
+                new Assets.AssetFailed({
+                  url,
+                  message: "The server answered 503",
+                  transient: true,
+                })
+              )
+            : memory.bytes(url);
+        }),
+    };
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [Game] }));
+        const frame = (): string => {
+          app.frame();
+          return drawn.at(-1)!;
+        };
+        app.dispatch(Go, { to: "forest" });
+        app.tick(1);
+        expect(frame()).toBe("forest: forest Loading, cave Absent");
+        yield* Effect.promise(() =>
+          vi.waitFor(
+            () =>
+              expect(frame()).toBe(
+                "forest: forest Ready (Forest, 3 bytes), cave Absent"
+              ),
+            { timeout: 2000 }
+          )
+        );
+        expect(asked.filter((url) => url === "/forest.png")).toEqual([
+          "/forest.png",
+          "/forest.png",
+        ]);
+      }).pipe(Effect.provideService(Assets.Loader, loader))
+    );
+  });
+
+  it("are let go once, when the last bundle that has them is let go", async () => {
+    const log: string[] = [];
+    const backdrop = tracked("/forest.png", log);
+    const Forest = Assets.bundle("as/Forest", { backdrop });
+    const Grove = Assets.bundle("as/Grove", { backdrop });
+    const held = { forest: true, grove: true };
+    const Keep = System.frame("Keep", function* () {
+      const store = yield* Assets.Store;
+      for (const [bundle, keep] of [
+        [Forest, held.forest],
+        [Grove, held.grove],
+      ] as const) {
+        if (keep) {
+          store.hold(bundle, "Keep");
+        } else {
+          store.drop(bundle, "Keep");
+        }
+      }
+    });
+    const app = await Effect.runPromise(
+      App.make(App.define({ plugins: [Assets.plugin], systems: [Keep] })).pipe(
+        Effect.provide(Assets.layerMemory(files))
+      )
+    );
+    app.frame();
+    expect(log).toEqual(["open /forest.png"]);
+    held.forest = false;
+    app.frame();
+    expect(log).toEqual(["open /forest.png"]);
+    held.grove = false;
+    app.frame();
+    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+    await Effect.runPromise(app.close);
+    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
   });
 
   it("fail as assets that could not be loaded when what makes them dies", async () => {
