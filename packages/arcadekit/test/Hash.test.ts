@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { entityIndex, entityOf } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -44,7 +45,7 @@ const sheet = (n: number): SheetValue => ({
   unsigned: 3_000_000_000 + n,
   short: 60_000 + n,
   byte: 200 + (n % 50),
-  other: n as Entity,
+  other: entityOf(n),
   note: `note ${n}`,
 });
 
@@ -497,10 +498,10 @@ describe("the hash of a world", () => {
       // Members join the sparse sets in another order: the same members.
       const joining = noise ? entities.toReversed() : entities;
       for (const entity of joining) {
-        if (entity % 3 === 0) {
-          world.add(entity, Aura.of(sheet(entity)));
+        if (entityIndex(entity) % 3 === 0) {
+          world.add(entity, Aura.of(sheet(entityIndex(entity))));
         }
-        if (entity % 4 === 0) {
+        if (entityIndex(entity) % 4 === 0) {
           world.add(entity, Chilled);
         }
       }

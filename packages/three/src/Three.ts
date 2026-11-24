@@ -52,7 +52,7 @@
  */
 import * as Assets from "arcadekit/Assets";
 import * as Color from "arcadekit/Color";
-import { entityIndex } from "arcadekit/ecs";
+import { entityGeneration, entityIndex } from "arcadekit/ecs";
 import type { ComponentDef, Entity, EntityColumn } from "arcadekit/ecs";
 import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
@@ -563,8 +563,8 @@ interface Clock {
 abstract class Blend {
   protected readonly clock: Clock;
   private readonly width: number;
-  /** For each entity index, the id of the entity these values belong to. */
-  protected owner = new Float64Array(0);
+  /** For each entity index, the generation of the entity these values belong to. */
+  protected generations = new Uint32Array(0);
   /** For each entity index, the frame its entity was last drawn in. */
   protected seen = new Uint32Array(0);
   protected prev = new Float32Array(0);
@@ -586,14 +586,14 @@ abstract class Blend {
         most = index;
       }
     }
-    if (most >= this.owner.length) {
-      let length = Math.max(64, this.owner.length);
+    if (most >= this.generations.length) {
+      let length = Math.max(64, this.generations.length);
       while (length <= most) {
         length *= 2;
       }
-      const owner = new Float64Array(length);
-      owner.set(this.owner);
-      this.owner = owner;
+      const generations = new Uint32Array(length);
+      generations.set(this.generations);
+      this.generations = generations;
       const seen = new Uint32Array(length);
       seen.set(this.seen);
       this.seen = seen;
@@ -649,12 +649,13 @@ class Lerp3 extends Blend {
     entities: EntityColumn
   ): Xyz {
     this.fit(start, end, entities);
-    const { cur, out, owner, prev, seen, snap } = this;
+    const { cur, generations, out, prev, seen, snap } = this;
     const { alpha, shift, stamp } = this.clock;
     const { x: ox, y: oy, z: oz } = out;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      const generation = entityGeneration(entity);
       const at = index * 3;
       const a = x[i]!;
       const b = y[i]!;
@@ -663,7 +664,7 @@ class Lerp3 extends Blend {
       let py = b;
       let pz = c;
       // Drawn in the frame before this one: it has a place to come from.
-      if (owner[index] === entity && seen[index] === stamp - 1) {
+      if (generations[index] === generation && seen[index] === stamp - 1) {
         px = shift ? cur[at]! : prev[at]!;
         py = shift ? cur[at + 1]! : prev[at + 1]!;
         pz = shift ? cur[at + 2]! : prev[at + 2]!;
@@ -676,7 +677,7 @@ class Lerp3 extends Blend {
           pz = c;
         }
       }
-      owner[index] = entity;
+      generations[index] = generation;
       seen[index] = stamp;
       prev[at] = px;
       prev[at + 1] = py;
@@ -709,19 +710,20 @@ class Lerp2 extends Blend {
 
   blend(start: number, end: number, from: Xy, entities: EntityColumn): Xy {
     this.fit(start, end, entities);
-    const { cur, out, owner, prev, seen, snap } = this;
+    const { cur, generations, out, prev, seen, snap } = this;
     const { alpha, shift, stamp } = this.clock;
     const { x, y } = from;
     const { x: ox, y: oy } = out;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      const generation = entityGeneration(entity);
       const at = index * 2;
       const a = x[i]!;
       const b = y[i]!;
       let px = a;
       let py = b;
-      if (owner[index] === entity && seen[index] === stamp - 1) {
+      if (generations[index] === generation && seen[index] === stamp - 1) {
         px = shift ? cur[at]! : prev[at]!;
         py = shift ? cur[at + 1]! : prev[at + 1]!;
         const dx = a - px;
@@ -731,7 +733,7 @@ class Lerp2 extends Blend {
           py = b;
         }
       }
-      owner[index] = entity;
+      generations[index] = generation;
       seen[index] = stamp;
       prev[at] = px;
       prev[at + 1] = py;
@@ -769,13 +771,14 @@ class Nlerp4 extends Blend {
 
   blend(start: number, end: number, from: Xyzw, entities: EntityColumn): Xyzw {
     this.fit(start, end, entities);
-    const { cur, out, owner, prev, seen } = this;
+    const { cur, generations, out, prev, seen } = this;
     const { alpha, shift, stamp } = this.clock;
     const { x, y, z, w } = from;
     const { x: ox, y: oy, z: oz, w: ow } = out;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      const generation = entityGeneration(entity);
       const at = index * 4;
       const a = x[i]!;
       const b = y[i]!;
@@ -785,13 +788,13 @@ class Nlerp4 extends Blend {
       let py = b;
       let pz = c;
       let pw = d;
-      if (owner[index] === entity && seen[index] === stamp - 1) {
+      if (generations[index] === generation && seen[index] === stamp - 1) {
         px = shift ? cur[at]! : prev[at]!;
         py = shift ? cur[at + 1]! : prev[at + 1]!;
         pz = shift ? cur[at + 2]! : prev[at + 2]!;
         pw = shift ? cur[at + 3]! : prev[at + 3]!;
       }
-      owner[index] = entity;
+      generations[index] = generation;
       seen[index] = stamp;
       prev[at] = px;
       prev[at + 1] = py;
@@ -840,19 +843,20 @@ class Arc extends Blend {
     entities: EntityColumn
   ): Angle {
     this.fit(start, end, entities);
-    const { cur, owner, prev, seen } = this;
+    const { cur, generations, prev, seen } = this;
     const { alpha, shift, stamp } = this.clock;
     const { angle } = from;
     const out = this.out.angle;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      const generation = entityGeneration(entity);
       const a = angle[i]!;
       let before = a;
-      if (owner[index] === entity && seen[index] === stamp - 1) {
+      if (generations[index] === generation && seen[index] === stamp - 1) {
         before = shift ? cur[index]! : prev[index]!;
       }
-      owner[index] = entity;
+      generations[index] = generation;
       seen[index] = stamp;
       prev[index] = before;
       cur[index] = a;
@@ -1489,7 +1493,7 @@ class Instances implements Kept {
         ? "each number of a colour in Color.Srgb is finite. One below 0 is drawn as 0 and one over 1 as 1, but NaN and an infinity, such as a division by zero leaves, have no colour to be drawn as."
         : `its space is ${space}, and a colour's space is Color.Srgb (${Color.Srgb}) or Color.Linear (${Color.Linear}).`;
     throw new Error(
-      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: ${why}`
+      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by the entity of slot ${entityIndex(entity)}, generation ${entityGeneration(entity)}, which is no colour: ${why}`
     );
   }
 
@@ -2203,8 +2207,8 @@ class Objects<O extends Object3D> implements Kept {
   /** What the objects are built from, for a kind built from assets. */
   private readonly assets: unknown;
   private readonly objects: (O | undefined)[] = [];
-  /** For each entity index, the id of the entity its object was created for. */
-  private owner = new Float64Array(0);
+  /** For each entity index, the entity its object was created for. */
+  private readonly owner: (Entity | undefined)[] = [];
   /** For each entity index, the frame its entity was last found in, rotated, and scaled. */
   private seen = new Uint32Array(0);
   private turnedAt = new Uint32Array(0);
@@ -2244,10 +2248,6 @@ class Objects<O extends Object3D> implements Kept {
     while (length < size) {
       length *= 2;
     }
-    // An id is wider than a frame's number: an array of 64-bit floats.
-    const owner = new Float64Array(length);
-    owner.set(this.owner);
-    this.owner = owner;
     for (const name of ["seen", "turnedAt", "sizedAt"] as const) {
       const bigger = new Uint32Array(length);
       bigger.set(this[name]);
@@ -2259,7 +2259,7 @@ class Objects<O extends Object3D> implements Kept {
     const object = this.objects[index]!;
     this.objects[index] = undefined;
     this.scene.remove(object);
-    this.options.free?.(object, this.owner[index] as Entity);
+    this.options.free?.(object, this.owner[index]!);
   }
 
   /** Creates the object of an entity that has none, or whose slot held another entity's. */

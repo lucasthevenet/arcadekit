@@ -17,6 +17,7 @@ import {
   System,
   World,
 } from "../src/index";
+import type { Entity } from "../src/index";
 
 const withApp = <T, A, E = never>(
   make: Effect.Effect<T, E>,
@@ -317,7 +318,7 @@ const play = (seed: number | undefined, ticks: number) =>
   );
 
 const snapshot = (app: App.Any) => {
-  const sparks: [number, number, number][] = [];
+  const sparks: [Entity, number, number][] = [];
   const dice: [number, number][] = [];
   const hash = Effect.runSync(
     app.read(

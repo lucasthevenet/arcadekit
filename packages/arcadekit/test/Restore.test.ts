@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { idOf } from "../src/ecs/component";
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
 import {
   CommandBuffer,
@@ -347,7 +348,7 @@ describe("a world that is restored from a snapshot", () => {
       world
         .view(Moved, "watcher")
         .entities()
-        .toSorted((a, b) => a - b)
+        .toSorted((a, b) => idOf(a) - idOf(b))
     ).toEqual([second, third]);
 
     world.restore(bytes);
@@ -368,7 +369,7 @@ describe("a world that is restored from a snapshot", () => {
       world
         .view(Moved, "watcher")
         .entities()
-        .toSorted((a, b) => a - b)
+        .toSorted((a, b) => idOf(a) - idOf(b))
     ).toEqual([first, second, third]);
   });
 

@@ -7,7 +7,7 @@
  */
 import { growColumn, makeColumn } from "./column";
 import type { Column } from "./column";
-import { INDEX_MASK, isBoxed } from "./component";
+import { entityIndex, entityOf, idOf, isBoxed } from "./component";
 import type { ComponentDef, Entity } from "./component";
 
 /** A component's columns, by field. @internal */
@@ -143,7 +143,7 @@ export class Table {
       }
       this.capacity = capacity;
     }
-    this.entities[this.count] = entity;
+    this.entities[this.count] = idOf(entity);
     return this.count++;
   }
 
@@ -152,8 +152,8 @@ export class Table {
     const last = this.count - 1;
     let moved: Entity | undefined;
     if (row !== last) {
-      moved = this.entities[last] as Entity;
-      this.entities[row] = moved;
+      moved = entityOf(this.entities[last]!);
+      this.entities[row] = idOf(moved);
     }
     for (const def of this.defs) {
       const cols = this.columns[def.id]!;
@@ -197,8 +197,8 @@ export class SparseSet {
   }
 
   /** The row of an entity in `columns`. An arrow function, so it survives destructuring. */
-  readonly indexOf = (entity: number): number =>
-    this.sparse[entity & INDEX_MASK]!;
+  readonly indexOf = (entity: Entity): number =>
+    this.sparse[entityIndex(entity)]!;
 
   add(
     index: number,

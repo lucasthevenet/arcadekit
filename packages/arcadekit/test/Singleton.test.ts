@@ -1,6 +1,7 @@
 import { Data, Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { idOf } from "../src/ecs/component";
 import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot";
 import {
   Action,
@@ -130,7 +131,7 @@ describe("a singleton", () => {
       /is a singleton/
     );
     expect(commands.size).toBe(0);
-    expect(world.spawn(Body)).toBe(entity + 1);
+    expect(world.spawn(Body)).toBe(idOf(entity) + 1);
     world.singleton(Turn);
     expect(world.component("sg/Turn")).toBe(Turn.component);
     // A singleton and a component of one name, defined here alone, so that
@@ -437,7 +438,7 @@ describe("a singleton in a snapshot", () => {
     writer.u32(1);
     writer.u32(0);
     writer.u32(1);
-    writer.f64(body);
+    writer.f64(idOf(body));
     writer.numbers(new Float32Array([5]), 1, 4);
     // No sparse set, then the one singleton, sg/Turn.
     writer.u32(0);

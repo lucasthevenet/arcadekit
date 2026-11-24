@@ -4,7 +4,7 @@
  *
  * No Effect dependency.
  */
-import { frozenWrite } from "./component";
+import { frozenWrite, placedOf } from "./component";
 import type { ComponentDef, ComponentInput, Entity } from "./component";
 import type { Targeted } from "./relation";
 import type { Spawned } from "./spawned";
@@ -14,7 +14,7 @@ import type { World } from "./world";
  * The id a command applies to: one spawned by this buffer is placed by the
  * time a later command in it is applied, since they are applied in order.
  */
-const applied = (entity: Entity | Spawned): Entity => entity as Entity;
+const applied = (entity: Entity | Spawned): Entity => placedOf(entity);
 
 type Command =
   | {

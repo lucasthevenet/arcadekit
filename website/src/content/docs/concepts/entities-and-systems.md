@@ -7,7 +7,7 @@ An **entity component system** (ECS) keeps a game's data as components of number
 
 ## The parts
 
-- An **entity** is a number, its id. It has no data of its own.
+- An **entity** is an id, and has no data of its own.
 - A **component** is a kind of data an entity can have, such as `Position`, `Health` or `Burning`. An entity can have any set of components, and gains or loses them as the game runs.
 - A **system** is your game's logic. It uses a **query** to find the entities that have certain components, and visits each of them once per tick.
 - A **singleton** is data that exists once per world, such as the score or whose turn it is.
@@ -76,9 +76,9 @@ world.isAlive(rock); // false, permanently
 
 - **An id never refers to another entity.** The index has 22 bits and the generation 31. A slot reused every tick, as a bullet's is, lasts more than a year at sixty ticks a second. Once its generations run out, the world retires it.
 - A world holds at most 4,194,304 entities at a time, the range of a 22-bit index. Spawning past that throws.
-- An id is an integer below 2^53. It is an integer in JSON, in a save and in an action's payload, where [`EntityId`](/reference/arcadekit/Schemas) is its schema.
-- Arrays of ids are `Float64Array`s, which hold every id exactly. A table's `entities`, which `eachChunk` passes to your loop, is one, and so is the column of a `Field.entity`. A `Uint32Array` truncates the id of an entity whose slot was reused more than 1,023 times, with no error.
-- `entityIndex` and `entityGeneration`, from `arcadekit/ecs`, read the two parts. Bitwise operators see only 32 bits.
+- An id is an integer below 2^53 when the game runs. It is an integer in JSON, in a save and in an action's payload, where [`EntityId`](/reference/arcadekit/Schemas) is its schema.
+- To the compiler an id is not a number. Compare ids with `===` and key a `Map` or a `Set` with them, but no typed array, number field or arithmetic takes one: a `Uint32Array` or a bitwise operator would keep only an id's low 32 bits, and lose the generation of a slot reused more than 1,023 times. Keep an id in a `Field.entity` or a relation.
+- `entityIndex` and `entityGeneration`, from `arcadekit/ecs`, read the two parts, as numbers.
 
 ## Effect outside, plain loops inside
 

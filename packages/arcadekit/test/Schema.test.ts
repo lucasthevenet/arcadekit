@@ -1,6 +1,7 @@
 import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { entityOf } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -192,7 +193,7 @@ describe("actions with a schema", () => {
       );
 
       // A well-formed payload can still be refused by the rules.
-      const dead = 4000 as Entity;
+      const dead = entityOf(4000);
       expect(
         failure(
           app.dispatchByName("Damage", { target: dead, amount: 3, seed: "1" })
@@ -227,7 +228,7 @@ describe("actions with a schema", () => {
         Exit.void
       );
       // Refused by its handler: no such target.
-      app.enqueue(Damage, { target: 999 as Entity, amount: 3, seed: 7n });
+      app.enqueue(Damage, { target: entityOf(999), amount: 3, seed: 7n });
       // A payload its schema refuses has no JSON form to log or send: it is
       // refused where it is enqueued, and nothing is queued.
       expect(app.enqueue(Damage, { target, amount: -2, seed: 9n })).toEqual(
@@ -358,9 +359,9 @@ describe("events with a schema", () => {
     const Emit = System.tick("Emit", function* () {
       const hit = yield* Hit.emits;
       // The payload is typed by the schema: a string here would not compile.
-      hit.emit({ target: 1 as Entity, amount: 3, at: new Date(5), seed: 9n });
+      hit.emit({ target: entityOf(1), amount: 3, at: new Date(5), seed: 9n });
       hit.emit({
-        target: 1 as Entity,
+        target: entityOf(1),
         // @ts-expect-error the schema says a whole number
         amount: "three",
         at: new Date(5),
@@ -368,7 +369,7 @@ describe("events with a schema", () => {
       });
       // Out of the schema's range, which only the schema knows: emitting
       // checks nothing, so that it stays a plain call inside a loop.
-      hit.emit({ target: 1 as Entity, amount: 500, at: new Date(5), seed: 9n });
+      hit.emit({ target: entityOf(1), amount: 500, at: new Date(5), seed: 9n });
     });
     const Read = System.tick("Read", function* () {
       for (const hit of (yield* Hit).read()) {
@@ -386,7 +387,7 @@ describe("events with a schema", () => {
 
   it("are written as JSON and read back, checked against the schema", () => {
     const payload = {
-      target: 7 as Entity,
+      target: entityOf(7),
       amount: 3,
       at: new Date("2026-11-15T12:00:00.000Z"),
       seed: 12_345_678_901_234_567_890n,
@@ -441,7 +442,7 @@ describe("events with a schema", () => {
     const Twin = Event.define("sc/Hit", Schema.Number);
     const Both = System.tick("Both", function* () {
       (yield* Hit.emits).emit({
-        target: 1 as Entity,
+        target: entityOf(1),
         amount: 1,
         at: new Date(1),
         seed: 1n,
@@ -468,7 +469,7 @@ describe("events with a schema", () => {
     // An event that is only read is known by its name as well.
     const Shout = System.tick("Shout", function* () {
       (yield* Hit.emits).emit({
-        target: 1 as Entity,
+        target: entityOf(1),
         amount: 1,
         at: new Date(1),
         seed: 1n,

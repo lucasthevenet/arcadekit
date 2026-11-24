@@ -5,6 +5,7 @@ import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { partsOf } from "../src/app/parts";
+import { entityOf, idOf } from "../src/ecs/component";
 import type { ReadingEvents } from "../src/Event";
 import {
   Action,
@@ -193,7 +194,7 @@ describe("a game that is put back to a moment", () => {
     withApp(game(), (app) => {
       app.tick(DELTA);
       // No such coin: the tick that applies it will refuse it.
-      app.enqueue(Take, { by: "ada", coin: 77 as Entity });
+      app.enqueue(Take, { by: "ada", coin: entityOf(77) });
       const moment = captured(app);
       const entry = () => moves(app.actionLog).at(-1)!;
       expect(entry().refused).toBeUndefined();
@@ -836,7 +837,7 @@ describe("what the stages between ticks visit across a rewind", () => {
             const dots = Effect.runSync(app.read(Dots)).entities();
             for (const dot of dots) {
               if (shown.get(dot) !== world.get(dot, Dot)?.x) {
-                wrong.push(`seed ${seed}, step ${step}, dot ${dot}`);
+                wrong.push(`seed ${seed}, step ${step}, dot ${idOf(dot)}`);
               }
             }
           }

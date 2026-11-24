@@ -281,6 +281,16 @@ export default defineConfig({
       rules: { "arcadekit/no-outside-state": "error" },
     },
     {
+      // An id is converted to and from its number in one place, which the
+      // tests may call too.
+      files: ["packages/**"],
+      excludeFiles: [
+        "packages/arcadekit/src/ecs/component.ts",
+        "packages/*/test/**",
+      ],
+      rules: { "arcadekit/id-casts": "error" },
+    },
+    {
       // Where the app runs plugins, systems, handlers and scripts of any
       // type: their types can't follow them into one app, and a few casts
       // claim them back. Off until a second wave, with

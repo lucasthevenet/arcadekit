@@ -1,6 +1,7 @@
 import { Cause, Data, Effect, Exit, Layer, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { entityOf } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -713,7 +714,7 @@ describe("a replay that checks itself", () => {
   it("says so when a queued action meets another fate than the log records", () => {
     const recorded = withApp(game({ checkpointEvery: 0 }), (app) => {
       const dropped = app.dispatch(Drop, { value: 4 });
-      const coin = Exit.isSuccess(dropped) ? dropped.value : (0 as Entity);
+      const coin = Exit.isSuccess(dropped) ? dropped.value : entityOf(0);
       app.tick(1 / 60);
       app.enqueue(Take, { coin });
       app.enqueue(Take, { coin }); // refused: the coin is gone by then

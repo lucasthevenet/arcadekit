@@ -34,11 +34,14 @@ import {
   INDEX_MASK,
   definedComponent,
   entityIndex,
+  entityOf,
   frozenWrite,
+  idOf,
   isBoxed,
   isComponentDef,
   makeEntity,
   refuseRetarget,
+  targetOf,
   targetless,
 } from "./component";
 import type {
@@ -359,7 +362,7 @@ export class World {
     return (
       index < this.nextIndex &&
       this.recTable[index] !== FREE &&
-      this.gens[index] === (entity - index) / SLOTS
+      this.gens[index] === (idOf(entity) - index) / SLOTS
     );
   }
 
@@ -504,7 +507,7 @@ export class World {
     let gone = false;
     const dangling: ComponentDef[] = [];
     for (const { def, value } of related) {
-      const target = value.target as Entity;
+      const target = targetOf(value);
       if (this.isAlive(target)) {
         this.relationOf(def).link(index, entityIndex(target));
       } else if (def.relation === "despawn") {
@@ -608,7 +611,7 @@ export class World {
       const table = this.tables[tableIndex!]!;
       if (removedLogs.length > 0) {
         for (const def of table.defs) {
-          removedLogs[def.id]?.push(entity);
+          removedLogs[def.id]?.push(idOf(entity));
         }
       }
       const row = this.recRow[index]!;
@@ -619,7 +622,7 @@ export class World {
     }
     for (const set of this.sparseList) {
       if (set.remove(index)) {
-        removedLogs[set.def.id]?.push(entity);
+        removedLogs[set.def.id]?.push(idOf(entity));
       }
     }
     this.recTable[index] = FREE;
@@ -663,7 +666,7 @@ export class World {
     if (value === undefined) {
       throw targetless(def);
     }
-    const target = value.target as Entity;
+    const target = targetOf(value);
     if (!this.isAlive(target)) {
       // A target that is gone already: what its despawn would have done.
       if (def.relation === "despawn") {
@@ -740,7 +743,7 @@ export class World {
       if (!this._sparse(def).remove(index)) {
         return false;
       }
-      this.removedLogs[def.id]?.push(entity);
+      this.removedLogs[def.id]?.push(idOf(entity));
       return true;
     }
     const from = this.placedTable(index);
@@ -753,7 +756,7 @@ export class World {
       from.removeEdges.set(def.id, to);
     }
     this.move(entity, from, to);
-    this.removedLogs[def.id]?.push(entity);
+    this.removedLogs[def.id]?.push(idOf(entity));
     return true;
   }
 
@@ -951,7 +954,7 @@ export class World {
         count: number
       ): void => {
         for (let row = 0; row < count; row++) {
-          const target = targets[row] as Entity;
+          const target = entityOf(targets[row]!);
           if (!this.isAlive(target)) {
             throw corrupt(
               `"${def.name}" points at an entity that does not exist`
@@ -1996,7 +1999,7 @@ export class World {
     const { entities } = table;
     table.count = count;
     for (let row = 0; row < count; row++) {
-      const entity = entities[row] as Entity;
+      const entity = entityOf(entities[row]!);
       const index = entityIndex(entity);
       // Eight bytes can hold what is no id at all: a number that is not
       // whole, below nothing, or past the last id. None of those is its
@@ -2007,7 +2010,7 @@ export class World {
         index >= slots ||
         isFree[index] === 1 ||
         recTable[index] !== FREE ||
-        gens[index] !== (entity - index) / SLOTS
+        gens[index] !== (idOf(entity) - index) / SLOTS
       ) {
         throw corrupt(
           "an entity is in two places, or in a slot that is free or of another generation"

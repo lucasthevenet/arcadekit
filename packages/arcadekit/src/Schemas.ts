@@ -7,8 +7,9 @@
  * The root entry exports `EntityId` itself, with no namespace:
  * `import { EntityId } from "arcadekit"`.
  */
-import { Schema } from "effect";
+import { Schema, SchemaTransformation } from "effect";
 
+import { entityOf, idOf, isEntity } from "./ecs/component";
 import type { Entity } from "./ecs/component";
 
 /**
@@ -23,4 +24,9 @@ import type { Entity } from "./ecs/component";
  */
 export const EntityId: Schema.Codec<Entity, number> = Schema.Int.check(
   Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })
-) as unknown as Schema.Codec<Entity, number>;
+).pipe(
+  Schema.decodeTo(
+    Schema.declare(isEntity),
+    SchemaTransformation.transform({ decode: entityOf, encode: idOf })
+  )
+);

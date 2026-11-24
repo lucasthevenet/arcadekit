@@ -1,6 +1,7 @@
 import { Cause, Context, Data, Effect, Exit, Result, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { entityIndex } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -456,7 +457,7 @@ describe("a run condition", () => {
           const { tick } = yield* Time;
           (yield* Bounced.emits).emit({ at: tick });
           (yield* Balls).each((ball, entity) => {
-            if (entity === tick % 3) {
+            if (entityIndex(entity) === tick % 3) {
               ball.x = tick;
             }
           });

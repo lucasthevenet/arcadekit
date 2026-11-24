@@ -7,6 +7,7 @@
  */
 import { Data, DateTime, Effect, Exit, Schema } from "effect";
 
+import { entityOf } from "../src/ecs/component";
 import type { Spawned } from "../src/index";
 import {
   Action,
@@ -144,7 +145,7 @@ const Following = System.tick("policy/Following", function* () {
     if (tick === 2) {
       // A relation's target is the world's to change.
       refused(() => {
-        (follows as { target: Entity }).target = 0 as Entity;
+        (follows as { target: Entity }).target = entityOf(0);
       });
     }
   });
@@ -205,7 +206,7 @@ const Populate = Plugin.make("policy/Populate", {
                 gold: 2,
                 level: i,
                 flags: i & 255,
-                rival: 0 as Entity,
+                rival: entityOf(0),
                 name: `hero ${i}`,
                 born: DateTime.toDateUtc(DateTime.makeUnsafe(1_000_000 * i)),
                 cache: undefined,

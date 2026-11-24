@@ -1,6 +1,12 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import {
+  entityGeneration,
+  entityIndex,
+  entityOf,
+  idOf,
+} from "../src/ecs/component";
 import type { JsonValue, Spawned } from "../src/index";
 import {
   Action,
@@ -271,7 +277,7 @@ describe("a snapshot read without the program's components", () => {
       unsigned: 4_000_000_000 - n,
       short: 65_000 - n,
       byte: n % 256,
-      other: n as Entity,
+      other: entityOf(n),
       data: [n, { n }, `text ${n}`, null, undefined, 5n][n % 6],
       when: new Date(n * 1000),
       handle: { n },
@@ -354,8 +360,8 @@ describe("a save from another version of the game", () => {
       expect(
         Effect.runSync(app.read(Query.all(Health2)))
           .entities()
-          .toSorted((a, b) => a - b)
-      ).toEqual(entities.toSorted((a, b) => a - b));
+          .toSorted((a, b) => idOf(a) - idOf(b))
+      ).toEqual(entities.toSorted((a, b) => idOf(a) - idOf(b)));
 
       // The action that was waiting is applied under its new name.
       const before = world.get(entities[1]!, Health2)!.points;
@@ -373,8 +379,8 @@ describe("a save from another version of the game", () => {
       // The next entity gets the id the old game would have given.
       const next = app.dispatch(Recruit2, {});
       assert(Exit.isSuccess(next));
-      expect(next.value & 0x3f_ff_ff).toBe(4);
-      expect(next.value >>> 22).toBe(1);
+      expect(entityIndex(next.value)).toBe(4);
+      expect(entityGeneration(next.value)).toBe(1);
     });
   });
 
@@ -395,8 +401,8 @@ describe("a save from another version of the game", () => {
         "unit 8",
         "unit 6",
       ]);
-      expect(order.toSorted((a, b) => a - b)).toEqual(
-        entities.toSorted((a, b) => a - b)
+      expect(order.toSorted((a, b) => idOf(a) - idOf(b))).toEqual(
+        entities.toSorted((a, b) => idOf(a) - idOf(b))
       );
       let chunks = 0;
       named.eachChunk(() => {
@@ -711,7 +717,7 @@ describe("a save from another version of the game", () => {
       "f64",
       (b: string) => Number(b.slice(1)) / 2
     );
-    Migrate.addField(contents, "mg/Thing", "c", "entity", entities[0]!);
+    Migrate.addField(contents, "mg/Thing", "c", "entity", idOf(entities[0]!));
     Migrate.addField(contents, "mg/Thing", "d", "json", "new", "a");
     Migrate.addField(contents, "mg/Thing", "e", "u16", 500);
     Migrate.addField(contents, "mg/Thing", "f", "f32", 0.5);

@@ -75,3 +75,28 @@ new RuleTester().run("no-outside-state", plugin.rules["no-outside-state"], {
     }))
   ),
 });
+
+new RuleTester().run("id-casts", plugin.rules["id-casts"], {
+  valid: [
+    {
+      name: "an id from the world, and a number that is no id",
+      code: "const entity = world.spawn(); const n = 3 as number; const kept: Entity.Ref = entity;",
+      filename: "game.ts",
+    },
+  ],
+  invalid: [
+    "n as Entity",
+    "n as unknown as Entity",
+    "ref as Entity.Ref",
+    "ids as Entity[]",
+    "spawned as Spawned",
+    "column as EntityColumn",
+    "<Entity>n",
+    "schema as unknown as Schema.Codec<Entity, number>",
+  ].map((cast) => ({
+    name: cast,
+    code: `const id = ${cast};`,
+    filename: "game.ts",
+    errors: [{ message: /^This asserts that a value is an entity's id/u }],
+  })),
+});

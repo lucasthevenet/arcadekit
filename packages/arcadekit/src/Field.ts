@@ -56,7 +56,8 @@ export const u8 = Field.u8;
 /**
  * A reference to another entity, such as a target or a parent. The id is stored
  * in a `Float64Array`, eight bytes per row, and is saved and hashed as a
- * number.
+ * number. `eachChunk` hands out the column as a `WritableColumn` of
+ * `Entity.Ref`, so that no number is written as an id.
  *
  * **When to use**
  *
