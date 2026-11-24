@@ -42,7 +42,7 @@ import type { Effect } from "effect";
 
 import * as Action from "../Action";
 import type * as App from "../App";
-import type { Reins } from "../app/build";
+import type { Reins } from "../app/internal/build";
 import type { Paced } from "../Driver";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";

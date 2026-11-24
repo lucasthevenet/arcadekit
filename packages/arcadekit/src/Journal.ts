@@ -23,8 +23,8 @@ import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
 import * as App from "./App";
-import { partsOf } from "./app/parts";
-import { GameTime } from "./app/stage";
+import { partsOf } from "./app/internal/parts";
+import { GameTime } from "./app/internal/stage";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 import type * as Plugin from "./Plugin";

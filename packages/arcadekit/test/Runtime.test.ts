@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { TickScheduler } from "../src/app/tick-scheduler";
+import { TickScheduler } from "../src/app/internal/tick-scheduler";
 import { idOf } from "../src/ecs/component";
 import type { Spawned } from "../src/index";
 import {

@@ -46,11 +46,11 @@
  * provides `Tracer.MinimumTraceLevel` as "Info". A span reads the real clock
  * and draws its ids from `Math.random`, so tracing doesn't change the game.
  */
-import { Effect, Exit } from "effect";
+import { Data, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
 import * as Action from "./Action";
-import { build } from "./app/build";
+import { build } from "./app/internal/build";
 import type { Entity } from "./ecs/component";
 import type { Placed } from "./ecs/spawned";
 import * as Journal from "./Journal";
@@ -679,7 +679,29 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
   readonly verifyFrames?: boolean;
 }
 
-export { FrameChangedWorld } from "./app/stage";
+/**
+ * A frame-stage or input-stage system changed the world, which it must not do.
+ * An app made with `verifyFrames` detects it. It is a defect, not a failure to
+ * handle. Those stages run between ticks, and a game that depends on having
+ * been drawn, or on its devices having been read, doesn't replay.
+ *
+ * @category Errors
+ */
+export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
+  /** The stage the system belongs to. */
+  readonly stage: "frame" | "input";
+  /** The system after which the world had changed. */
+  readonly system: string;
+  /**
+   * The frame number, counted from 1. For the input stage, it is the last
+   * frame drawn.
+   */
+  readonly frame: number;
+}> {
+  override get message(): string {
+    return `The ${this.stage} stage changed the world: its hash was not the same after system "${this.system}" ran${this.stage === "frame" ? ` in frame ${this.frame}` : ""} as before. ${this.stage === "frame" ? "The frame stage draws the game between two ticks" : "The input stage reads the devices before a tick"} and must leave the world as it found it. Look for a draw from world.random, which is otherwise only found when the stage ends.`;
+  }
+}
 
 /**
  * Makes an app that runs a game. A fresh app runs every plugin's `setup`, and

@@ -7,7 +7,7 @@
  */
 import type { Exit, Fiber, Metric } from "effect";
 
-import type { Phase } from "../App";
+import type { Phase } from "../../App";
 import type { TickDispatcher } from "./tick-scheduler";
 
 /**

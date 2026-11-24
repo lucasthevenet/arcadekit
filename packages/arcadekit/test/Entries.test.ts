@@ -272,7 +272,7 @@ describe("arcadekit/net", () => {
   });
 
   it("passes messages on without a session: a relay reaches no app, no peer and no session", () => {
-    const built = ["../src/app/build.ts", "../src/App.ts"];
+    const built = ["../src/app/internal/build.ts", "../src/App.ts"];
     for (const entry of ["./net/Message", "./net/Relay"]) {
       const { files } = reach(sourceOf(entry));
       expect(
