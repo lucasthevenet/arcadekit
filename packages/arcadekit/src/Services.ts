@@ -23,7 +23,7 @@ import type { Rng } from "./ecs/random";
 import type { PatchOf, Targeted } from "./ecs/relation";
 import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
-import type { ReadingEvents } from "./Event";
+import type { ReadingEvents } from "./event/Event";
 import type { Devices } from "./Input";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query";
 import { writing } from "./services/handed";

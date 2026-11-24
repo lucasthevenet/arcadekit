@@ -14,7 +14,7 @@
 import { Clock, Context, Duration, Effect, Schedule } from "effect";
 import type { Scope } from "effect";
 
-import * as App from "./App";
+import * as App from "./app/App";
 import type * as Plugin from "./Plugin";
 import type * as Save from "./Save";
 

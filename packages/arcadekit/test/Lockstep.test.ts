@@ -1,7 +1,7 @@
 import { Cause, Data, Effect, Exit } from "effect";
 import { afterEach, assert, describe, expect, it } from "vitest";
 
-import * as Build from "../src/app/internal/build";
+import * as Build from "../src/app/internals/build";
 import {
   Action,
   App,

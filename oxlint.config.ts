@@ -218,12 +218,12 @@ export default defineConfig({
   },
   overrides: [
     // Files are named as Effect names its own. A module, which an entry is,
-    // is PascalCase, as it is imported: arcadekit/Query, and
-    // arcadekit/net/Session in a folder. So is the test of one,
-    // test/Query.test.ts. What a module keeps to itself in a folder is
-    // kebab-case: the storage core behind arcadekit/ecs, and a split
-    // module's implementation under internal/, as Effect keeps src/internal/:
-    // src/app/internal/tick-scheduler.ts. Everything else is camelCase: a
+    // is PascalCase, as it is imported: arcadekit/Query, arcadekit/App from
+    // src/app/App.ts in its namesake folder, and arcadekit/net/Session in a
+    // folder. So is the test of one, test/Query.test.ts. What a module keeps
+    // to itself in a folder is kebab-case: the storage core behind
+    // arcadekit/ecs, and a module's implementation under internals/,
+    // src/app/internals/tick-scheduler.ts. Everything else is camelCase: a
     // test's helpers, the benchmarks and the examples. index.ts and the files
     // a tool names keep their names.
     {
@@ -251,11 +251,11 @@ export default defineConfig({
         ],
       },
     },
-    // A folder of src/ holds either: modules, PascalCase, as in src/net/, and
-    // what a module keeps to itself, kebab-case, under internal/ for a module
-    // split out of its file, as in src/app/internal/. test/Entries.test.ts
-    // holds that each module is an entry and that every other file is behind
-    // one.
+    // A folder of src/ holds either: modules, PascalCase, as src/app/App.ts
+    // and src/net/Session.ts are, and what a module keeps to itself,
+    // kebab-case, under internals/, as src/app/internals/build.ts is.
+    // test/Entries.test.ts holds that each module is an entry and that every
+    // other file is behind one.
     {
       files: ["packages/*/src/*/**/*.ts"],
       rules: {
@@ -300,16 +300,16 @@ export default defineConfig({
       // claim them back. Off until a second wave, with
       // typescript/consistent-type-assertions.
       files: [
-        "packages/arcadekit/src/App.ts",
+        "packages/arcadekit/src/app/App.ts",
         // Where an app is put together, which was in App.ts.
-        "packages/arcadekit/src/app/internal/build.ts",
+        "packages/arcadekit/src/app/internals/build.ts",
         "packages/arcadekit/src/Plugin.ts",
         // The turns of those systems, which were in App.ts.
-        "packages/arcadekit/src/app/internal/schedule.ts",
+        "packages/arcadekit/src/app/internals/schedule.ts",
         // The run of a handler, which was in App.ts.
-        "packages/arcadekit/src/app/internal/inbox.ts",
+        "packages/arcadekit/src/app/internals/inbox.ts",
         // The runs of the stages, which were in App.ts.
-        "packages/arcadekit/src/app/internal/loop.ts",
+        "packages/arcadekit/src/app/internals/loop.ts",
       ],
       rules: {
         "effecttsgo/any-unknown-in-error-context": "off",

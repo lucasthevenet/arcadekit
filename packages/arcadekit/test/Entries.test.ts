@@ -31,7 +31,7 @@ const sources = import.meta.glob("../src/**/*.ts", {
   import: "default",
   eager: true,
 });
-const modules = import.meta.glob("../src/*.ts", { eager: true });
+const modules = import.meta.glob("../src/**/[A-Z]*.ts", { eager: true });
 const netModules = import.meta.glob("../src/net/*.ts", { eager: true });
 interface Target {
   readonly source: string;
@@ -131,21 +131,28 @@ describe("the package's entries", () => {
     };
     entry(".", "../src/index.ts");
     for (const file of Object.keys(sources)) {
-      // A module is PascalCase, as it is imported, wherever its file is,
-      // and a folder is an entry by its index. Any other file is what a
-      // module keeps to itself, and no entry.
-      const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
+      // A module is PascalCase, as it is imported. One named as its folder
+      // is the entry of its name, src/app/App.ts arcadekit/App, and any
+      // other is in its folder, src/net/Session.ts arcadekit/net/Session. A
+      // folder is an entry by its index. A file under internals/ is what a
+      // module keeps to itself, as any other file is, and no entry.
+      const module = /^\.\.\/src\/((?:\w+\/)*)([A-Z]\w*)\.ts$/u.exec(file);
       const folder = /^\.\.\/src\/((?:\w+\/)*\w+)\/index\.ts$/u.exec(file);
-      const name = module?.[1] ?? folder?.[1];
-      if (name !== undefined) {
-        entry(`./${name}`, file);
+      if (module !== null && !file.includes("/internals/")) {
+        const [, dir = "", name = ""] = module;
+        const namesake = dir.endsWith(`${name.toLowerCase()}/`);
+        const at = namesake ? dir.slice(0, -name.length - 1) : dir;
+        entry(`./${at}${name}`, file);
+      } else if (folder !== null) {
+        entry(`./${folder[1]}`, file);
       }
     }
     expect(manifest.exports).toEqual(expected);
     // In order, the package first, so that the list reads.
     expect(entries).toEqual([".", ...entries.slice(1).toSorted()]);
     // A few by name, so that this test does not only agree with itself.
-    expect(entries).toContain("./App");
+    expect(sourceOf("./App")).toBe("../src/app/App.ts");
+    expect(sourceOf("./Event")).toBe("../src/event/Event.ts");
     expect(entries).toContain("./Input");
     expect(entries).toContain("./Browser");
     expect(entries).toContain("./net");
@@ -241,18 +248,21 @@ describe("the package's entries", () => {
       "View",
     ];
     for (const name of namespaces) {
-      expect(main[name], name).toBe(modules[`../src/${name}.ts`]);
+      expect(main[name], name).toBe(modules[sourceOf(`./${name}`)]);
     }
     // The two it gives the names of, in place of the module.
     expect(Main.EntityId).toBe(modules["../src/Schemas.ts"]!.EntityId);
     expect(Main.Time).toBe(modules["../src/Services.ts"]!.Time);
     expect(Main.World).toBe(modules["../src/Services.ts"]!.World);
-    // Every module is one or the other, but for the one that only a page
-    // can use, which the package's own entry leaves out.
+    // Every module of a top-level entry is one or the other, but for the
+    // one that only a page can use, which the package's own entry leaves
+    // out.
     expect(
-      Object.keys(modules)
-        .map((file) => file.slice("../src/".length, -".ts".length))
-        .filter((name) => name !== "index" && !namespaces.includes(name))
+      entries
+        .map((name) => name.slice("./".length))
+        .filter(
+          (name) => /^[A-Z]\w*$/u.test(name) && !namespaces.includes(name)
+        )
         .toSorted()
     ).toEqual(["Browser", "Schemas", "Services"]);
     expect("Browser" in main).toBe(false);
@@ -272,7 +282,7 @@ describe("arcadekit/net", () => {
   });
 
   it("passes messages on without a session: a relay reaches no app, no peer and no session", () => {
-    const built = ["../src/app/internal/build.ts", "../src/App.ts"];
+    const built = ["../src/app/internals/build.ts", "../src/app/App.ts"];
     for (const entry of ["./net/Message", "./net/Relay"]) {
       const { files } = reach(sourceOf(entry));
       expect(

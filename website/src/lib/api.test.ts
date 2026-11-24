@@ -90,11 +90,11 @@ describe.runIf(built)("a module's page", () => {
       "packages/arcadekit",
       "arcadekit",
       "Event",
-      "packages/arcadekit/src/Event.ts"
+      "packages/arcadekit/src/event/Event.ts"
     );
     const define = event.exports.find((item) => item.name === "define");
     expect(define?.parts[0]?.source?.file).toBe(
-      "packages/arcadekit/src/Event.ts"
+      "packages/arcadekit/src/event/Event.ts"
     );
   });
 
@@ -111,7 +111,7 @@ describe.runIf(built)("a module's page", () => {
       .join("\n") ?? "";
 
   it("leaves private and @internal members out of a class, with their comments", () => {
-    const bus = signatureOf("Event", "EventBus");
+    const bus = signatureOf("Event", "EventBus", "event/Event.ts");
     expect(bus).toContain("emit<P>(def: EventDef<P>, payload: P): void;");
     expect(bus).not.toMatch(/private|#private|@internal|_emit|reader|settled/u);
     const world = signatureOf("ecs", "World", "ecs/index.ts");

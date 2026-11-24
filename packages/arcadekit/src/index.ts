@@ -11,7 +11,7 @@
  * service.
  */
 export * as Action from "./Action";
-export * as App from "./App";
+export * as App from "./app/App";
 export * as Assets from "./Assets";
 export * as Color from "./Color";
 export * as Driver from "./Driver";
@@ -50,7 +50,7 @@ export {
   type SparseColumns,
 } from "./ecs/query";
 export { World as EcsWorld } from "./ecs/world";
-export * as Event from "./Event";
+export * as Event from "./event/Event";
 export * as Field from "./Field";
 export * as Input from "./Input";
 export * as Journal from "./Journal";

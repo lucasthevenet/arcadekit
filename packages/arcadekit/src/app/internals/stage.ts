@@ -19,7 +19,7 @@ import { Component, Field } from "../../ecs/component";
 import { Rng } from "../../ecs/random";
 import type { Spawned } from "../../ecs/spawned";
 import type { World as EcsWorld } from "../../ecs/world";
-import type { EventBus } from "../../Event";
+import type { EventBus } from "../../event/Event";
 import * as Input from "../../Input";
 import { Commands, Events, Frame, Random, Time, World } from "../../Services";
 import type { FrameState, TimeState } from "../../Services";

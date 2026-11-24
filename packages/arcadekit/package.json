@@ -38,7 +38,7 @@
       "default": "./dist/Action.js"
     },
     "./App": {
-      "source": "./src/App.ts",
+      "source": "./src/app/App.ts",
       "types": "./dist/App.d.ts",
       "default": "./dist/App.js"
     },
@@ -63,7 +63,7 @@
       "default": "./dist/Driver.js"
     },
     "./Event": {
-      "source": "./src/Event.ts",
+      "source": "./src/event/Event.ts",
       "types": "./dist/Event.d.ts",
       "default": "./dist/Event.js"
     },

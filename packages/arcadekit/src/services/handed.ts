@@ -9,7 +9,12 @@ import type { PatchOf, RelationDef } from "../ecs/relation";
 import { placed } from "../ecs/spawned";
 import type { Spawned } from "../ecs/spawned";
 import type { World as EcsWorld } from "../ecs/world";
-import type { EventBus, EventDef, EventReader, ReadingEvents } from "../Event";
+import type {
+  EventBus,
+  EventDef,
+  EventReader,
+  ReadingEvents,
+} from "../event/Event";
 import type { ReadingWorld, WritingWorld } from "../Services";
 
 /**

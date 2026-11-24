@@ -22,9 +22,9 @@ import { Brand, Cause, Data, Effect, Exit, Schema } from "effect";
 import { Base64 } from "effect/encoding";
 
 import * as Action from "./Action";
-import * as App from "./App";
-import { partsOf } from "./app/internal/parts";
-import { GameTime } from "./app/internal/stage";
+import * as App from "./app/App";
+import { partsOf } from "./app/internals/parts";
+import { GameTime } from "./app/internals/stage";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 import type * as Plugin from "./Plugin";

@@ -46,7 +46,7 @@ import { SnapshotError } from "./ecs/snapshot";
 import type { WithSpawned } from "./ecs/spawned";
 import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
-import * as Event from "./Event";
+import * as Event from "./event/Event";
 import type { Sim } from "./Services";
 import type * as System from "./System";
 

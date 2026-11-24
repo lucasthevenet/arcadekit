@@ -18,12 +18,12 @@
  */
 import { Exit } from "effect";
 
-import type * as App from "./App";
-import { partsOf } from "./app/internal/parts";
-import { READER } from "./app/internal/stage";
+import type * as App from "./app/App";
+import { partsOf } from "./app/internals/parts";
+import { READER } from "./app/internals/stage";
 import type { SavedChanges } from "./ecs/changes";
 import type { World, Moment as WorldMoment } from "./ecs/world";
-import type { Told } from "./event/internal/outbox";
+import type { Told } from "./event/internals/outbox";
 import * as Save from "./Save";
 
 /**
