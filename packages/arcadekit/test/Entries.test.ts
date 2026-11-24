@@ -179,10 +179,10 @@ describe("the package's entries", () => {
   // What only a page can use: arcadekit/Browser's own files, and no other entry's.
   const browserFiles = [
     "../src/Browser.ts",
-    "../src/browser/audio.ts",
-    "../src/browser/devices.ts",
-    "../src/browser/media.ts",
-    "../src/browser/options.ts",
+    "../src/browser/internal/audio.ts",
+    "../src/browser/internal/devices.ts",
+    "../src/browser/internal/media.ts",
+    "../src/browser/internal/page.ts",
   ];
 
   it("the package's own entry reaches every source but arcadekit/Browser's, the storage core's index and src/net", () => {

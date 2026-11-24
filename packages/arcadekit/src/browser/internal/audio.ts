@@ -1,10 +1,27 @@
 import { Effect, Fiber, Layer } from "effect";
 
-import * as Assets from "../Assets";
-import * as Driver from "../Driver";
-import * as Sound from "../Sound";
-import { Streamed, decodeOffline, describe } from "./media";
-import type { AudioLike, MediaLike, Options } from "./options";
+import * as Assets from "../../Assets";
+import type { AudioLike, MediaLike, Options } from "../../Browser";
+import * as Driver from "../../Driver";
+import * as Sound from "../../Sound";
+import { decodeOffline, describe } from "./media";
+
+/**
+ * What a streamed clip holds: only its URL.
+ *
+ * @internal
+ */
+export class Streamed {
+  constructor(readonly url: string) {}
+}
+
+/**
+ * Makes a streamed track: `Browser.stream`.
+ *
+ * @internal
+ */
+export const stream = (url: string): Sound.Clip =>
+  Sound.clip(url, new Streamed(url));
 
 const audioElement = (url: string): MediaLike => {
   const element = new Audio();
@@ -387,57 +404,13 @@ const openPage = (
 };
 
 /**
- * Returns a layer that plays a page's sound with Web Audio: the page's named
- * sound files for its whole lifetime, and the clips in a level's bundle.
+ * The page's sound with Web Audio: `Browser.layerSound`.
  *
- *   Browser.layerSound({ coin: "/coin.wav", theme: "/theme.ogg" })
- *
- * **Details**
- *
- * - It opens nothing when it is built. `Sound.plugin` opens it when the app
- *   is made, wherever the layer is provided, and the page is heard until the
- *   app is closed. Playing it after that throws, with an error that says so.
- * - The page's audio belongs to the page, not to one app. The apps made under
- *   one `Effect.provide` of the layer share one audio context, since a
- *   browser lets a page have only a few, and each file is fetched once. The
- *   audio starts when the first of those apps opens it. When the last is
- *   closed, the audio context is closed, pending file requests are
- *   cancelled, and the page is no longer listened to.
- * - The files are fetched through `Assets.Loader` when the audio starts, and
- *   decoded as they arrive.
- * - A page can't play sound before the user interacts with it. The audio
- *   context is created on the first key or pointer press, and a cue requested
- *   in the very next frame plays. A cue requested before that, or before its
- *   file arrived, doesn't play, since a late sound is worse than none. The
- *   first cue requested before the first interaction is logged once through
- *   Effect's logger, so a game that opens with a sound learns why it isn't
- *   heard.
- * - A cue plays only while the audio is running. While the audio is
- *   suspended, or still resuming for a moment after the page becomes visible
- *   again, a cue is dropped, as one before the first interaction is. Started
- *   then, it would be delayed and play all at once with every other delayed
- *   cue.
- * - Music is never late, since it is what should be playing. A track
- *   requested before the first interaction, or before its file arrived,
- *   starts as soon as it can. It loops, or plays once to its end if
- *   requested, and a change of track or volume fades over the requested
- *   duration.
- * - A cue or a track without a file, or whose file couldn't be fetched or
- *   decoded, is logged once through Effect's logger, and plays nothing.
- * - While its display, `Driver.Display`, reports the page as hidden, the
- *   audio is suspended, music included, and it resumes when the page is
- *   visible again. The frame loop is paused then, and a frozen game should be
- *   silent. `Browser.layer` provides the page's display.
- * - A page without Web Audio plays nothing.
- *
- * @category Layers
+ * @internal
  */
 export const layerSound = (
-  files: Readonly<Record<string, string | Sound.Clip>> = {},
-  options: Pick<
-    Options,
-    "audio" | "decode" | "media" | "volume" | "window"
-  > = {}
+  files: Readonly<Record<string, string | Sound.Clip>>,
+  options: Pick<Options, "audio" | "decode" | "media" | "volume" | "window">
 ): Layer.Layer<never> =>
   Layer.effect(
     Sound.Output,
