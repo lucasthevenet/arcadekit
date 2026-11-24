@@ -165,7 +165,7 @@ describe("the package's entries", () => {
   // What a source may import or name, by the entry it is behind, is held by
   // the Oxlint rules of tooling/lint/plugin.ts, file by file: arcadekit/ecs
   // imports no package and nothing outside src/ecs, no entry but
-  // arcadekit/Browser imports anything but Effect, reaches src/Browser.ts or
+  // arcadekit/Browser imports anything but Effect, reaches its files or
   // names what only a page has, and no source makes code from text.
 
   it("arcadekit/ecs is all of the storage core", () => {
@@ -176,14 +176,23 @@ describe("the package's entries", () => {
     );
   });
 
-  it("the package's own entry reaches every source but src/Browser.ts, the storage core's index and src/net", () => {
+  // What only a page can use: arcadekit/Browser's own files, and no other entry's.
+  const browserFiles = [
+    "../src/Browser.ts",
+    "../src/browser/audio.ts",
+    "../src/browser/devices.ts",
+    "../src/browser/media.ts",
+    "../src/browser/options.ts",
+  ];
+
+  it("the package's own entry reaches every source but arcadekit/Browser's, the storage core's index and src/net", () => {
     const main = reach(sourceOf(".")).files;
     expect(
       Object.keys(sources)
         .filter((file) => !main.includes(file))
         .toSorted()
     ).toEqual([
-      "../src/Browser.ts",
+      ...browserFiles,
       "../src/ecs/index.ts",
       ...Object.keys(netModules).toSorted(),
     ]);
@@ -208,11 +217,11 @@ describe("the package's entries", () => {
     expect(
       manifest.peerDependenciesMeta["@effect/platform-browser"]?.optional
     ).toBe(true);
-    // Only its own file is its own: the rest is the game's, shared.
+    // Only its own files are its own: the rest is the game's, shared.
     const main = reach(sourceOf(".")).files;
-    expect(files.filter((file) => !main.includes(file))).toEqual([
-      "../src/Browser.ts",
-    ]);
+    expect(files.filter((file) => !main.includes(file)).toSorted()).toEqual(
+      browserFiles
+    );
   });
 
   it("the package's own entry gives every module as its entry does: the same module, not a copy", () => {
