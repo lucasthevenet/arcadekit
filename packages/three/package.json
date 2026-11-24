@@ -32,10 +32,35 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./Assets": {
+      "source": "./src/Assets.ts",
+      "types": "./dist/Assets.d.ts",
+      "default": "./dist/Assets.js"
+    },
     "./Gltf": {
       "source": "./src/Gltf.ts",
       "types": "./dist/Gltf.d.ts",
       "default": "./dist/Gltf.js"
+    },
+    "./Instances": {
+      "source": "./src/Instances.ts",
+      "types": "./dist/Instances.d.ts",
+      "default": "./dist/Instances.js"
+    },
+    "./Objects": {
+      "source": "./src/Objects.ts",
+      "types": "./dist/Objects.d.ts",
+      "default": "./dist/Objects.js"
+    },
+    "./Renderer": {
+      "source": "./src/Renderer.ts",
+      "types": "./dist/Renderer.d.ts",
+      "default": "./dist/Renderer.js"
+    },
+    "./Scene": {
+      "source": "./src/Scene.ts",
+      "types": "./dist/Scene.d.ts",
+      "default": "./dist/Scene.js"
     },
     "./Three": {
       "source": "./src/Three.ts",

@@ -130,9 +130,10 @@ describe("the entries of @arcadekit/three", () => {
     };
     for (const file of Object.keys(sources)) {
       // A module is PascalCase, as it is imported, wherever its file is.
-      // Any other file is what a module keeps to itself, and no entry.
+      // What the modules keep to themselves is in src/internal/, camelCase,
+      // and no entry.
       const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
-      if (module !== null) {
+      if (module !== null && !file.includes("/internal/")) {
         expected[`./${module[1]}`] = {
           source: `./src/${module[1]}.ts`,
           types: `./dist/${module[1]}.d.ts`,
@@ -141,7 +142,22 @@ describe("the entries of @arcadekit/three", () => {
       }
     }
     expect(manifest.exports).toEqual(expected);
-    expect(Object.keys(manifest.exports)).toEqual([".", "./Gltf", "./Three"]);
+    expect(Object.keys(manifest.exports)).toEqual([
+      ".",
+      "./Assets",
+      "./Gltf",
+      "./Instances",
+      "./Objects",
+      "./Renderer",
+      "./Scene",
+      "./Three",
+    ]);
+    // Nothing in internal/ is named as a module is.
+    expect(
+      Object.keys(sources).filter((file) =>
+        /\/internal\/(?:\w+\/)*[A-Z]\w*\.ts$/u.test(file)
+      )
+    ).toEqual([]);
     // Every source file is behind some entry.
     const reached = new Set(
       Object.keys(manifest.exports).flatMap(
@@ -158,14 +174,17 @@ describe("the entries of @arcadekit/three", () => {
     expect(packages).toContain("arcadekit/Transform3d");
     expect(packages).toContain("arcadekit/Transform2d");
     expect(packages).toContain("arcadekit/Color");
-    // It defines no component: it reads the game's. (Its comments show
-    // a game defining one.)
-    expect(
-      sources["../src/Three.ts"]!.replaceAll(
-        /\/\*[\s\S]*?\*\//gu,
-        ""
-      ).replaceAll(/^\s*\/\/.*$/gmu, "")
-    ).not.toMatch(/Component\.(?:define|tag|relation)\(/u);
+    // It defines no component, in any of its files: it reads the game's.
+    // (Its comments show a game defining one.)
+    for (const file of reach(sourceOf("./Three")).files) {
+      expect(
+        sources[file]!.replaceAll(/\/\*[\s\S]*?\*\//gu, "").replaceAll(
+          /^\s*\/\/.*$/gmu,
+          ""
+        ),
+        file
+      ).not.toMatch(/Component\.(?:define|tag|relation)\(/u);
+    }
     expect(Object.keys(Main.Three)).not.toContain("Position");
   });
 
@@ -203,6 +222,20 @@ describe("the entries of @arcadekit/three", () => {
         one.startsWith("three/")
       )
     ).toEqual([]);
+  });
+
+  it("gives from Three what each of its parts gives: the same values, so a game imports either", () => {
+    const three = modules["../src/Three.ts"]!;
+    const parts = Object.keys(manifest.exports).filter(
+      (name) => ![".", "./Gltf", "./Three"].includes(name)
+    );
+    expect(parts.length).toBeGreaterThan(0);
+    for (const name of parts) {
+      const part = modules[sourceOf(name)]!;
+      for (const [key, value] of Object.entries(part)) {
+        expect(three[key], `${name}.${key}`).toBe(value);
+      }
+    }
   });
 
   it("is built on the game's own arcadekit, not on a copy of it", () => {
