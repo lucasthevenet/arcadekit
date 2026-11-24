@@ -3,7 +3,7 @@ import type { Frame, Time, World } from "arcadekit/Services";
 import * as Transform2d from "arcadekit/Transform2d";
 
 import type { Scene } from "../Scene";
-import type { Which } from "../Which";
+import type { Which } from "../Three";
 
 /**
  * The components that mark an entity as one of the kind, as a list.

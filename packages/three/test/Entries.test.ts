@@ -30,7 +30,7 @@ const sources = import.meta.glob("../src/**/*.ts", {
   import: "default",
   eager: true,
 });
-const modules = import.meta.glob("../src/**/*.ts", { eager: true });
+const modules = import.meta.glob("../src/*.ts", { eager: true });
 interface Target {
   readonly source: string;
   readonly types: string;
@@ -129,36 +129,28 @@ describe("the entries of @arcadekit/three", () => {
       },
     };
     for (const file of Object.keys(sources)) {
-      // A module is PascalCase, as it is imported, and is the entry its
-      // path names: src/three/Scene.ts is ./three/Scene. A folder's
-      // namesake, src/three/Three.ts, is the entry of the folder's name,
-      // ./Three. What a module keeps to itself is in an internals/ folder,
+      // A module is PascalCase, as it is imported, wherever its file is.
+      // What the modules keep to themselves is in src/internals/,
       // kebab-case, and no entry.
-      const module = /^\.\.\/src\/((?:\w+\/)*)([A-Z]\w*)\.ts$/u.exec(file);
-      if (module !== null && !file.includes("/internals/")) {
-        const [, folder, name] = module;
-        const namesake = folder!
-          .toLowerCase()
-          .endsWith(`${name!.toLowerCase()}/`);
-        const entry = namesake ? name! : `${folder}${name}`;
-        expected[`./${entry}`] = {
-          source: `./src/${folder}${name}.ts`,
-          types: `./dist/${entry}.d.ts`,
-          default: `./dist/${entry}.js`,
+      const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
+      if (module !== null) {
+        expected[`./${module[1]}`] = {
+          source: `./src/${module[1]}.ts`,
+          types: `./dist/${module[1]}.d.ts`,
+          default: `./dist/${module[1]}.js`,
         };
       }
     }
     expect(manifest.exports).toEqual(expected);
     expect(Object.keys(manifest.exports)).toEqual([
       ".",
+      "./Assets",
       "./Gltf",
+      "./Instances",
+      "./Objects",
+      "./Renderer",
+      "./Scene",
       "./Three",
-      "./three/Instances",
-      "./three/Loading",
-      "./three/Objects",
-      "./three/Renderer",
-      "./three/Scene",
-      "./three/Which",
     ]);
     // Nothing in internals/ is named as a module is.
     expect(
@@ -218,7 +210,7 @@ describe("the entries of @arcadekit/three", () => {
   it("the package's own entry gives each module as its entry does: the same module, not a copy", () => {
     const main = Main as Record<string, unknown>;
     expect(Object.keys(main).toSorted()).toEqual(["Gltf", "Three"]);
-    expect(main.Three).toBe(modules["../src/three/Three.ts"]);
+    expect(main.Three).toBe(modules["../src/Three.ts"]);
     expect(main.Gltf).toBe(modules["../src/Gltf.ts"]);
     // The loader of models comes with the module of models, and with no
     // other: a game that has none need not carry it.
@@ -232,10 +224,10 @@ describe("the entries of @arcadekit/three", () => {
     ).toEqual([]);
   });
 
-  it("gives what each module of three/ gives from Three too: the same values, so a game imports either", () => {
-    const three = modules["../src/three/Three.ts"]!;
-    const parts = Object.keys(manifest.exports).filter((name) =>
-      name.startsWith("./three/")
+  it("gives from Three what each of its parts gives: the same values, so a game imports either", () => {
+    const three = modules["../src/Three.ts"]!;
+    const parts = Object.keys(manifest.exports).filter(
+      (name) => ![".", "./Gltf", "./Three"].includes(name)
     );
     expect(parts.length).toBeGreaterThan(0);
     for (const name of parts) {

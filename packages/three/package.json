@@ -32,45 +32,40 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./Assets": {
+      "source": "./src/Assets.ts",
+      "types": "./dist/Assets.d.ts",
+      "default": "./dist/Assets.js"
+    },
     "./Gltf": {
       "source": "./src/Gltf.ts",
       "types": "./dist/Gltf.d.ts",
       "default": "./dist/Gltf.js"
     },
+    "./Instances": {
+      "source": "./src/Instances.ts",
+      "types": "./dist/Instances.d.ts",
+      "default": "./dist/Instances.js"
+    },
+    "./Objects": {
+      "source": "./src/Objects.ts",
+      "types": "./dist/Objects.d.ts",
+      "default": "./dist/Objects.js"
+    },
+    "./Renderer": {
+      "source": "./src/Renderer.ts",
+      "types": "./dist/Renderer.d.ts",
+      "default": "./dist/Renderer.js"
+    },
+    "./Scene": {
+      "source": "./src/Scene.ts",
+      "types": "./dist/Scene.d.ts",
+      "default": "./dist/Scene.js"
+    },
     "./Three": {
-      "source": "./src/three/Three.ts",
+      "source": "./src/Three.ts",
       "types": "./dist/Three.d.ts",
       "default": "./dist/Three.js"
-    },
-    "./three/Instances": {
-      "source": "./src/three/Instances.ts",
-      "types": "./dist/three/Instances.d.ts",
-      "default": "./dist/three/Instances.js"
-    },
-    "./three/Loading": {
-      "source": "./src/three/Loading.ts",
-      "types": "./dist/three/Loading.d.ts",
-      "default": "./dist/three/Loading.js"
-    },
-    "./three/Objects": {
-      "source": "./src/three/Objects.ts",
-      "types": "./dist/three/Objects.d.ts",
-      "default": "./dist/three/Objects.js"
-    },
-    "./three/Renderer": {
-      "source": "./src/three/Renderer.ts",
-      "types": "./dist/three/Renderer.d.ts",
-      "default": "./dist/three/Renderer.js"
-    },
-    "./three/Scene": {
-      "source": "./src/three/Scene.ts",
-      "types": "./dist/three/Scene.d.ts",
-      "default": "./dist/three/Scene.js"
-    },
-    "./three/Which": {
-      "source": "./src/three/Which.ts",
-      "types": "./dist/three/Which.d.ts",
-      "default": "./dist/three/Which.js"
     }
   },
   "publishConfig": {

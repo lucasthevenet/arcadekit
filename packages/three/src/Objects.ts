@@ -2,7 +2,7 @@
  * Keeps one `Object3D` per entity of a kind, for the few entities that are
  * more than a copy of one mesh.
  *
- *   import * as Objects from "@arcadekit/three/three/Objects"
+ *   import * as Objects from "@arcadekit/three/Objects"
  *
  *   const Ships = Objects.objects("game/Ships", {
  *     of: Ship,
@@ -21,7 +21,7 @@ import type { Object3D } from "three";
 import type { Entries } from "./internals/assets";
 import type { Needs } from "./internals/kind";
 import * as internal from "./internals/objects";
-import type { Which } from "./Which";
+import type { Which } from "./Three";
 
 /**
  * The options of `Three.objects`, wherever its objects come from.

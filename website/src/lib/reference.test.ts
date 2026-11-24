@@ -21,7 +21,15 @@ const three: ReferencePackage = {
   folder: "three",
   name: "@arcadekit/three",
   description: "Draws a game with Three.js.",
-  modules: ["Three"],
+  modules: [
+    "Assets",
+    "Gltf",
+    "Instances",
+    "Objects",
+    "Renderer",
+    "Scene",
+    "Three",
+  ],
 };
 const physics: ReferencePackage = {
   folder: "physics",
@@ -37,8 +45,14 @@ describe("the reference's index", () => {
         "## Core",
         "### [arcadekit](/reference/arcadekit)\n\n2 modules\n\nGames on Effect.",
         "## Rendering",
-        "### [@arcadekit/three](/reference/three)\n\n1 module\n\nDraws a game with Three.js.",
+        "### [@arcadekit/three](/reference/three)\n\n7 modules\n\nDraws a game with Three.js.",
       ].join("\n\n")
+    );
+  });
+
+  it("counts one module as one", () => {
+    expect(renderIndex([{ ...physics, modules: ["Body"] }])).toContain(
+      "\n\n1 module\n\n"
     );
   });
 
@@ -53,9 +67,14 @@ describe("a package's page", () => {
     expect(renderPackage(three, REPO_URL, "main")).toBe(
       [
         "Draws a game with Three.js.",
-        `1 module · [npm](https://www.npmjs.com/package/@arcadekit/three) · [Source](${REPO_URL}/tree/main/packages/three)`,
+        `7 modules · [npm](https://www.npmjs.com/package/@arcadekit/three) · [Source](${REPO_URL}/tree/main/packages/three)`,
         "## Modules",
-        "- [Three](/reference/three/Three)",
+        "### Core",
+        "- [Renderer](/reference/three/Renderer)\n- [Scene](/reference/three/Scene)\n- [Three](/reference/three/Three)",
+        "### Drawing",
+        "- [Instances](/reference/three/Instances)\n- [Objects](/reference/three/Objects)",
+        "### Assets",
+        "- [Assets](/reference/three/Assets)\n- [Gltf](/reference/three/Gltf)",
       ].join("\n\n")
     );
   });

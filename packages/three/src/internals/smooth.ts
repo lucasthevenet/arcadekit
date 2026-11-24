@@ -1,7 +1,7 @@
 import { entityGeneration, entityIndex } from "arcadekit/ecs";
 import type { EntityColumn } from "arcadekit/ecs";
 
-import type { Which } from "../Which";
+import type { Which } from "../Three";
 import type { Angle, Numbers, Xy, Xyz, Xyzw } from "./columns";
 
 // What a system keeps to draw its entities between their last two places:

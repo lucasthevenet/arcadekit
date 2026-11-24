@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { Scope } from "effect";
 import { LoadingManager, SRGBColorSpace, Texture } from "three";
 
-import type { TextureOptions } from "../Loading";
+import type { TextureOptions } from "../Assets";
 import type { Kept } from "./holdings";
 
 /**

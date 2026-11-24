@@ -1,7 +1,7 @@
 /**
  * Draws every entity of a kind as one instance of one mesh, for crowds.
  *
- *   import * as Instances from "@arcadekit/three/three/Instances"
+ *   import * as Instances from "@arcadekit/three/Instances"
  *
  *   const Rocks = Instances.instances("game/Rocks", {
  *     of: Rock,
@@ -21,7 +21,7 @@ import type { BufferGeometry, InstancedMesh, Material } from "three";
 import type { Entries } from "./internals/assets";
 import * as internal from "./internals/instances";
 import type { Needs } from "./internals/kind";
-import type { Which } from "./Which";
+import type { Which } from "./Three";
 
 /**
  * How an instance looks: its mesh's geometry and material.

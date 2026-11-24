@@ -2,7 +2,7 @@
  * The scene an app draws into, and the camera it is seen through.
  * `Three.plugin` provides `Scene` to an app.
  *
- *   import * as Scene from "@arcadekit/three/three/Scene"
+ *   import * as Scene from "@arcadekit/three/Scene"
  *
  *   const Lights = Layer.effectDiscard(
  *     Effect.map(Scene.Scene, ({ scene }) => {

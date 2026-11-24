@@ -221,7 +221,7 @@ export default defineConfig({
     // is PascalCase, as it is imported: arcadekit/Query, and
     // arcadekit/net/Session in a folder. So is the test of one,
     // test/Query.test.ts. What a module keeps to itself in a folder, as the
-    // storage core behind arcadekit/ecs is, or src/three/internals/, is
+    // storage core behind arcadekit/ecs is, or a package's src/internals/, is
     // kebab-case. Everything else
     // is camelCase: a test's helpers, the benchmarks and the examples.
     // index.ts and the files a tool names keep their names.
@@ -251,7 +251,7 @@ export default defineConfig({
       },
     },
     // A folder of src/ holds either: modules, and what a module keeps to
-    // itself, as src/three/internals/ does for Three. test/Entries.test.ts
+    // itself, as @arcadekit/three's src/internals/ does. test/Entries.test.ts
     // holds that each module is an entry and that every other file is behind
     // one.
     {

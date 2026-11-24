@@ -2,7 +2,7 @@
  * What renders an app's scene each frame, and the layers that provide it from
  * a page's canvas.
  *
- *   import * as Renderer from "@arcadekit/three/three/Renderer"
+ *   import * as Renderer from "@arcadekit/three/Renderer"
  *
  *   Driver.run(app, { hz: 60 }).pipe(
  *     Effect.provide(Renderer.layerWebGL({ canvas }))

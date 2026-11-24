@@ -52,14 +52,13 @@ describe("the site's pages", () => {
       "@arcadekit/three",
     ]);
     expect(pages.packages[1]?.modules).toStrictEqual([
+      "Assets",
       "Gltf",
+      "Instances",
+      "Objects",
+      "Renderer",
+      "Scene",
       "Three",
-      "three/Instances",
-      "three/Loading",
-      "three/Objects",
-      "three/Renderer",
-      "three/Scene",
-      "three/Which",
     ]);
   });
 
@@ -148,14 +147,22 @@ describe("the sidebar", () => {
     ]);
     expect(groups[1]?.items).toStrictEqual([
       { label: "Overview", link: "/reference/three" },
-      "reference/three/Gltf",
-      "reference/three/Three",
-      "reference/three/three/Instances",
-      "reference/three/three/Loading",
-      "reference/three/three/Objects",
-      "reference/three/three/Renderer",
-      "reference/three/three/Scene",
-      "reference/three/three/Which",
+      {
+        label: "Core",
+        items: [
+          "reference/three/Renderer",
+          "reference/three/Scene",
+          "reference/three/Three",
+        ],
+      },
+      {
+        label: "Drawing",
+        items: ["reference/three/Instances", "reference/three/Objects"],
+      },
+      {
+        label: "Assets",
+        items: ["reference/three/Assets", "reference/three/Gltf"],
+      },
     ]);
   });
 

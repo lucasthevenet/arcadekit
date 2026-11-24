@@ -2,10 +2,11 @@
  * Three.js resources loaded with a bundle of `arcadekit/Assets`: a texture,
  * and a loading manager for a Three.js loader that fetches for itself.
  *
- *   import * as Loading from "@arcadekit/three/three/Loading"
+ *   import * as Assets from "arcadekit/Assets"
+ *   import * as ThreeAssets from "@arcadekit/three/Assets"
  *
  *   const Forest = Assets.bundle("game/Forest", {
- *     bark: Loading.texture("/bark.png"),
+ *     bark: ThreeAssets.texture("/bark.png"),
  *   })
  *
  * `@arcadekit/three/Three` gives the same exports. They fetch through
