@@ -138,7 +138,9 @@ export const capture = (
  * - State kept outside the world, such as a module's variable that a system
  *   reads, stays as it is. `Session.syncTest` finds a tick that reads such
  *   state.
- * - A `transient` field is undefined afterwards.
+ * - A `transient` field keeps its value where, since the moment, no loop or
+ *   `set` wrote its component and no entity joined or left its table, as in
+ *   a table no system touched. Elsewhere it is undefined.
  *
  * @category Running
  */

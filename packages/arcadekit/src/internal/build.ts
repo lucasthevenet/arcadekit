@@ -166,6 +166,10 @@ const assemble = <
       if (Exit.isFailure(loaded)) {
         return yield* loaded;
       }
+      const scoped = State.refuseRemovedScopes(world);
+      if (Exit.isFailure(scoped)) {
+        return yield* scoped;
+      }
       save = loaded.value;
     }
     // Loaded with the world, or written by the first tick.

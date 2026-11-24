@@ -1,10 +1,21 @@
+import { Exit, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { entityIndex } from "../src/ecs";
 import type { ReadonlyColumnsOf } from "../src/ecs/component";
 import type { RowOf } from "../src/ecs/relation";
-import { Component, EcsWorld, Field, Query } from "../src/index";
+import {
+  Action,
+  App,
+  Component,
+  EcsWorld,
+  Field,
+  Query,
+  Timeline,
+} from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
+import { partsOf } from "../src/internal/parts";
+import { withApp } from "./peers";
 
 const Position = Component.define("mb/Position", { x: Field.f32 });
 const Rotation = Component.define("mb/Rotation", { a: Field.f32 });
@@ -176,6 +187,41 @@ describe("a term an entity may lack", () => {
     expect(saved?.entries).toEqual(
       [entities[1]!, entities[3]!].map((entity) => entityIndex(entity))
     );
+  });
+
+  it("is put back by a rewind where a table has it, and hashed as a full hash is", () => {
+    const Turn = Action.define("mb/Turn", Schema.Struct({}));
+    const turn = Action.handler(Turn, function* () {
+      (yield* Spinning).each((_position, rotation) => {
+        if (rotation !== undefined) {
+          rotation.a += 10;
+        }
+      });
+      (yield* Spinning).eachChunk((start, end, _position, rotation) => {
+        for (let i = start; rotation !== undefined && i < end; i++) {
+          rotation.a[i] = rotation.a[i]! + 1;
+        }
+      });
+    });
+    withApp(App.make(App.define({ handlers: [turn] })), (app) => {
+      const { world } = partsOf(app);
+      const placed = world.spawn(Position.of({ x: 0 }));
+      const turned = world.spawn(Position.of({ x: 1 }), Rotation.of({ a: 1 }));
+      const before = world.hash();
+      const moment = Timeline.capture(app);
+      if (Exit.isFailure(moment)) {
+        throw new Error("the game could not be captured");
+      }
+      app.dispatch(Turn, {});
+      expect(world.get(turned, Rotation)).toEqual({ a: 12 });
+      expect(world.hash()).not.toBe(before);
+      expect(world.hash()).toBe(world._fullHash());
+      Timeline.rewind(app, moment.value);
+      expect(world.get(turned, Rotation)).toEqual({ a: 1 });
+      expect(world.get(placed, Rotation)).toBeUndefined();
+      expect(world.hash()).toBe(before);
+      expect(world.hash()).toBe(world._fullHash());
+    });
   });
 
   it("is checked for writes past the compiler where a table has it", () => {

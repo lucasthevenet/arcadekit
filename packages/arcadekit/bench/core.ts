@@ -68,7 +68,6 @@ const query = <const D extends Terms>(
     terms.filter((def) => more.readDefs?.includes(def) !== true)
   );
 
-const Moving = query([Position, Velocity]);
 /** Visits only the entities whose position was written since its last visit. */
 const Repositioned = query([Velocity], { changedDefs: [Position] });
 
@@ -89,6 +88,37 @@ export const populate = (world: World, fragmented = false): void => {
       ...extra
     );
   }
+};
+
+// Seven tags make 128 tables, of which `spread` fills 100.
+const spreadTags = [0, 1, 2, 3, 4, 5, 6].map((i) =>
+  Component.tag(`bench/Spread${i}`)
+);
+
+/** The same entities as `populate`, over 100 tables; the last has every tag. */
+const spread = (world: World): void => {
+  for (let i = 0; i < N; i++) {
+    const table = 28 + (i % 100);
+    world.spawn(
+      Position.of({ x: i, y: i }),
+      Velocity.of({ x: 1, y: 2 }),
+      ...spreadTags.filter((_, bit) => (table >> bit) & 1)
+    );
+  }
+};
+
+const Moving = query([Position, Velocity]);
+/** The entities of `spread`'s last table, and no others: 1 table in 100. */
+const OneTable = query([Position, Velocity], { withDefs: spreadTags });
+
+/** pos += vel * dt over what a query matches, written as a system would. */
+const step = (world: World, spec: typeof Moving): void => {
+  world.view(spec).eachChunk((start, end, pos, vel) => {
+    for (let i = start; i < end; i++) {
+      pos.x[i]! += vel.x[i]! * DT;
+      pos.y[i]! += vel.y[i]! * DT;
+    }
+  });
 };
 
 /**
@@ -446,28 +476,38 @@ export const variants: Record<string, Variant> = {
   hash: {
     // The same world as the first line: four float fields and an id per
     // entity, so five 32-bit words each.
-    label: "world.hash(): 100,000 entities in one table",
+    label: "world.hash(): 100,000 entities in one table, all written",
     run: () => {
       const world = new World();
       populate(world);
       let sink = 0;
-      const ms = measure(() => {
-        sink ^= world.hash();
-      });
+      const ms = measure(
+        () => {
+          sink ^= world.hash();
+        },
+        300,
+        80,
+        () => step(world, Moving)
+      );
       void sink;
       return ms;
     },
   },
 
   hashFragmented: {
-    label: "world.hash(): same entities spread over 32 tables",
+    label: "world.hash(): same entities spread over 32 tables, all written",
     run: () => {
       const world = new World();
       populate(world, true);
       let sink = 0;
-      const ms = measure(() => {
-        sink ^= world.hash();
-      });
+      const ms = measure(
+        () => {
+          sink ^= world.hash();
+        },
+        300,
+        80,
+        () => step(world, Moving)
+      );
       void sink;
       return ms;
     },
@@ -476,21 +516,117 @@ export const variants: Record<string, Variant> = {
   hashSparse: {
     // Every entity also has a sparse component with one float field, whose
     // members are hashed one by one so that their order does not matter.
-    label: "world.hash(): the same, plus a sparse field on each",
+    label: "world.hash(): the same, plus a sparse field on each, all written",
     run: () => {
       const world = new World();
       populate(world);
       for (const entity of world.view(query([Position])).entities()) {
         world.add(entity, Heat.of({ degrees: 1 }));
       }
+      const heat = world.view(query([Heat]));
       let sink = 0;
-      const ms = measure(() => {
-        sink ^= world.hash();
-      });
+      const ms = measure(
+        () => {
+          sink ^= world.hash();
+        },
+        300,
+        80,
+        () => {
+          step(world, Moving);
+          heat.each((h) => {
+            h.degrees += 1;
+          });
+        }
+      );
       void sink;
       return ms;
     },
   },
+  captureAll: {
+    label: "capture: every table written since the last",
+    run: () => {
+      const world = new World();
+      populate(world);
+      return measure(
+        () => {
+          world._capture();
+        },
+        300,
+        80,
+        () => step(world, Moving)
+      );
+    },
+  },
+
+  captureFew: {
+    label: "capture: 1 of 100 tables written since the last",
+    run: () => {
+      const world = new World();
+      spread(world);
+      return measure(
+        () => {
+          world._capture();
+        },
+        300,
+        80,
+        () => step(world, OneTable)
+      );
+    },
+  },
+
+  rewindAll: {
+    label: "rewind: every table written since the moment",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const moment = world._capture();
+      return measure(
+        () => {
+          world._rewind(moment, []);
+        },
+        300,
+        80,
+        () => step(world, Moving)
+      );
+    },
+  },
+
+  rewindFew: {
+    label: "rewind: 1 of 100 tables written since the moment",
+    run: () => {
+      const world = new World();
+      spread(world);
+      const moment = world._capture();
+      return measure(
+        () => {
+          world._rewind(moment, []);
+        },
+        300,
+        80,
+        () => step(world, OneTable)
+      );
+    },
+  },
+
+  hashFew: {
+    label: "world.hash(): 1 of 100 tables written since the last",
+    run: () => {
+      const world = new World();
+      spread(world);
+      let sink = 0;
+      const ms = measure(
+        () => {
+          sink ^= world.hash();
+        },
+        300,
+        80,
+        () => step(world, OneTable)
+      );
+      void sink;
+      return ms;
+    },
+  },
+
   snapshot: {
     // The same world as the first line: per entity an id, four floats and a
     // generation, 22 bytes.

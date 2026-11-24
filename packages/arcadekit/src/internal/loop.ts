@@ -261,7 +261,7 @@ export const make = (parts: Parts): Loop => {
           clock = performance.now();
         }
       } else if (verifyFrames) {
-        if (world._frameHash() !== frameHash) {
+        if (world._frameHash(true) !== frameHash) {
           return yield* Effect.die(
             new FrameChangedWorld({
               stage,
@@ -283,6 +283,7 @@ export const make = (parts: Parts): Loop => {
     if (move.from !== undefined) {
       yield* takeTurns(schedule.hooks(state, "exit", move.from), "tick", false);
     }
+    State.despawnScoped(world, state, move);
     State.enter(world, state, move);
     yield* takeTurns(schedule.hooks(state, "enter", move.to), "tick", false);
   });
@@ -362,7 +363,7 @@ export const make = (parts: Parts): Loop => {
     let drew: unknown;
     try {
       if (verifyFrames) {
-        frameHash = world._frameHash();
+        frameHash = world._frameHash(true);
       }
       runner.running = "";
       exit = runner.finish(
@@ -455,7 +456,7 @@ export const make = (parts: Parts): Loop => {
       log.ticked();
       // Hashed only once someone asks whether the game rests.
       intake.ticked(
-        resting ? world._frameHash(Stage.GameTime.component) : undefined
+        resting ? world._frameHash(false, Stage.GameTime.component) : undefined
       );
       return exit;
     } finally {
@@ -517,7 +518,7 @@ export const make = (parts: Parts): Loop => {
       if (!resting) {
         // What the next tick is compared with: the world as it is now.
         resting = true;
-        intake.rest = world._frameHash(Stage.GameTime.component);
+        intake.rest = world._frameHash(false, Stage.GameTime.component);
       }
       if (
         intake.wanted ||

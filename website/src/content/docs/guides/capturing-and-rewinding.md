@@ -29,7 +29,9 @@ const program = Effect.gen(function* () {
 - A moment holds what a [save](saving-and-loading.md) does: the world, the game time, the actions queued for the next tick, the events waiting to be read with every reader's place in them, what change queries haven't visited, and the log's length. `rewind` restores all of it in place, and takes the log back to that length. The app, its world and its services are the same objects as before.
 - A moment lives in memory and belongs to one app in one run of the program. It holds pending actions and events as they are, without encoding them. A game whose pending payload its schema doesn't take can't be saved, but it can be captured.
 - Capture and rewind only between ticks. Either call throws during a tick, a run of the frame or input stage, or a handler.
-- A rewind leaves state outside the world as it is, such as a variable of a module, and a `Field.transient` field is `undefined` afterwards. [Prepare a game for online play](sessions.md#prepare-a-game-for-online-play) says what to keep in the world.
+- A rewind leaves state outside the world as it is, such as a variable of a module. [Prepare a game for online play](sessions.md#prepare-a-game-for-online-play) says what to keep in the world.
+- A `Field.transient` field keeps its value through a rewind in a table that nothing changed since the moment: no loop or `world.set` wrote its component there, and no entity joined or left the table. Elsewhere it is `undefined`, and the system that builds it builds it again. A cache in a transient field survives a rewind past ticks that didn't touch what it caches.
+- Capture and rewind cost what changed since the last capture, not the size of the world. A table counts as changed for a component when a loop of a query that [writes](queries.md#name-what-a-query-writes) it visits the table, even if the loop writes nothing, or when `world.set` writes it, or when an entity joins or leaves the table. See [performance](performance.md#hashing-snapshots-and-rewinds).
 
 ## Control what the frame and input stages hear after a rewind
 

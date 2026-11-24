@@ -764,12 +764,12 @@ describe("the stores a world holds", () => {
 
   it("are left out of the frame's hash when the stages between ticks may change them", () => {
     const { asks, shouts, world } = held(3);
-    const before = world._frameHash();
+    const before = world._frameHash(false);
     asks.values.push("who");
-    expect(world._frameHash()).toBe(before);
+    expect(world._frameHash(false)).toBe(before);
     expect(world.hash()).not.toBe(before);
     shouts.values.push("hey");
-    expect(world._frameHash()).not.toBe(before);
+    expect(world._frameHash(false)).not.toBe(before);
   });
 
   it("are put back by a rewind as they captured themselves, without being saved", () => {

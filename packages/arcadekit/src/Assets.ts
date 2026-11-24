@@ -41,6 +41,8 @@ import {
   Exit,
   Fiber,
   Layer,
+  RcMap,
+  Schedule,
   Schema,
   Scope,
 } from "effect";
@@ -63,6 +65,12 @@ export class AssetFailed extends Data.TaggedError("AssetFailed")<{
   readonly url: string;
   /** What went wrong. */
   readonly message: string;
+  /**
+   * Fetching it again may succeed: the request got no answer, its download
+   * was cut off, or the server answered with an error of its own, a status of
+   * 500 or more.
+   */
+  readonly transient?: boolean;
 }> {}
 
 const describe = (error: unknown): string =>
@@ -210,12 +218,23 @@ export const fetchingFrom = (
         return yield* new AssetFailed({
           url,
           message: `The server answered ${response.status}`,
+          ...(response.status >= 500 ? { transient: true } : {}),
         });
       }
       return new Uint8Array(yield* response.arrayBuffer);
     }).pipe(
       Effect.catchTag("HttpClientError", (error) =>
-        Effect.fail(new AssetFailed({ url, message: unanswered(error) }))
+        Effect.fail(
+          new AssetFailed({
+            url,
+            message: unanswered(error),
+            // The request got no answer, or its body stopped arriving.
+            ...(error.reason._tag === "TransportError" ||
+            error.reason._tag === "DecodeError"
+              ? { transient: true }
+              : {}),
+          })
+        )
       ),
       Effect.provide(FetchHttpClient.layer)
     ),
@@ -341,6 +360,28 @@ export class Bundle<B extends Entries> extends Effectable.Class<
 export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
   new Bundle(name, assets);
 
+// Loads each asset of a bundle with `get`, in parallel, under its name.
+const loadEach = (
+  bundle: Bundle<Entries>,
+  get: (
+    asset: Asset<unknown>
+  ) => Effect.Effect<unknown, AssetFailed, Scope.Scope>
+): Effect.Effect<Record<string, unknown>, AssetFailed, Scope.Scope> => {
+  const names = Object.keys(bundle.assets);
+  return Effect.map(
+    Effect.forEach(names, (name) => get(bundle.assets[name]!), {
+      concurrency: "unbounded",
+    }),
+    (values) => {
+      const loaded: Record<string, unknown> = {};
+      for (let i = 0; i < names.length; i++) {
+        loaded[names[i]!] = values[i];
+      }
+      return loaded;
+    }
+  );
+};
+
 /**
  * Loads a bundle into the scope it runs in. It loads every asset in parallel,
  * and releases them all when that scope closes. It fails with the first asset
@@ -372,22 +413,9 @@ export const load: <B extends Entries>(
   "Assets.load"
 )(function* (bundle: Bundle<Entries>) {
   const loader = yield* Loader;
-  const names = Object.keys(bundle.assets);
-  const values = yield* Effect.forEach(
-    names,
-    (name) => {
-      const asset = bundle.assets[name]!;
-      return Effect.flatMap(loader.bytes(asset.url), (data) =>
-        asset.decode(data)
-      );
-    },
-    { concurrency: "unbounded" }
+  return yield* loadEach(bundle, (asset) =>
+    Effect.flatMap(loader.bytes(asset.url), asset.decode)
   );
-  const loaded: Record<string, unknown> = {};
-  for (let i = 0; i < names.length; i++) {
-    loaded[names[i]!] = values[i];
-  }
-  return loaded;
 }) as <B extends Entries>(
   bundle: Bundle<B>
 ) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope>;
@@ -405,13 +433,17 @@ export interface StoreShape {
   /** Returns a bundle's current status in the app. */
   readonly status: <B extends Entries>(bundle: Bundle<B>) => Status<Loaded<B>>;
   /**
-   * Registers `holder` as using the bundle. The first holder starts loading it,
-   * in a scope of its own.
+   * Registers `holder` as using the bundle. The first holder starts loading
+   * it. A file is fetched once for every held bundle that names it, and an
+   * asset is decoded once for every held bundle that has it. A fetch that
+   * failed with `transient` is tried again up to three times, after 200, 400
+   * and 800 milliseconds.
    */
   readonly hold: (bundle: Bundle<Entries>, holder: string) => void;
   /**
-   * Releases `holder`'s use of the bundle. When no holder remains, its scope
-   * closes. Loaded assets are released, and pending loads are cancelled.
+   * Releases `holder`'s use of the bundle. When no holder remains, its pending
+   * loads are cancelled, and each of its assets that no other held bundle has
+   * is released.
    */
   readonly drop: (bundle: Bundle<Entries>, holder: string) => void;
 }
@@ -438,13 +470,17 @@ export class Store extends Context.Service<Store, StoreShape>()(
 ) {}
 
 interface Held {
-  readonly bundle: Bundle<Entries>;
-  readonly holders: Set<string>;
   status: Status<unknown>;
-  /** The scope the bundle is loaded in, while it is loading or loaded. */
-  scope: Scope.Closeable | undefined;
-  fiber: Fiber.Fiber<unknown, AssetFailed> | undefined;
+  /**
+   * Each holder's load, which keeps what it loaded until it is interrupted.
+   * A holder that came while the bundle had failed has none.
+   */
+  readonly holders: Map<string, Fiber.Fiber<void> | undefined>;
 }
+
+const retries = Schedule.exponential("200 millis").pipe(
+  Schedule.upTo({ times: 3 })
+);
 
 const storeLayer = Layer.effect(
   Store,
@@ -465,112 +501,90 @@ const storeLayer = Layer.effect(
       Action.Actions,
       Input.Devices,
       EffectRandom.Random
-    )(yield* Effect.context<never>()) as Context.Context<never>;
+    )(yield* Effect.context<Scope.Scope>());
     const runFork = Effect.runForkWith(context);
+    const scope = yield* Effect.scope;
+    const loader = yield* Loader;
+    // A file is fetched once for every asset that names it, and kept while
+    // any of them is loaded.
+    const files = yield* RcMap.make({
+      lookup: (url: string) =>
+        Effect.retry(loader.bytes(url), {
+          schedule: retries,
+          while: (error) => error.transient === true,
+        }),
+    }).pipe(Effect.updateContext<never, Scope.Scope>(() => context));
+    // An asset is decoded once for every bundle that has it, in a scope that
+    // closes when the last of them is let go.
+    const values = yield* RcMap.make({
+      lookup: (asset: Asset<unknown>) =>
+        Effect.flatMap(RcMap.get(files, asset.url), asset.decode),
+    }).pipe(Effect.updateContext<never, Scope.Scope>(() => context));
     const held = new Map<Bundle<Entries>, Held>();
 
-    const entryOf = (bundle: Bundle<Entries>): Held => {
-      let entry = held.get(bundle);
-      if (entry === undefined) {
-        entry = {
-          bundle,
-          holders: new Set(),
-          status: ABSENT,
-          scope: undefined,
-          fiber: undefined,
-        };
-        held.set(bundle, entry);
-      }
-      return entry;
-    };
-
-    const start = (entry: Held): void => {
-      const scope = Scope.makeUnsafe();
-      entry.scope = scope;
-      entry.status = LOADING;
-      const fiber = runFork(Scope.provide(load(entry.bundle), scope));
-      entry.fiber = fiber;
-      const ended = (exit: Exit.Exit<unknown, AssetFailed>): void => {
-        // Let go while it was loading: nobody is waiting for this.
-        if (entry.fiber !== fiber) {
-          return;
-        }
-        if (Exit.isSuccess(exit)) {
-          entry.status = { _tag: "Ready", assets: exit.value };
-          return;
-        }
-        const error = Cause.squash(exit.cause);
-        entry.status = {
-          _tag: "Failed",
-          error:
-            error instanceof AssetFailed
-              ? error
-              : new AssetFailed({ url: "", message: describe(error) }),
-        };
-        // What did load is no use without the rest: it is let go now, and
-        // not when the bundle is.
-        runFork(
-          Effect.andThen(
-            Effect.logError(
-              `The assets "${entry.bundle.name}" could not be loaded`,
-              exit.cause
-            ),
-            Scope.close(scope, Exit.void)
-          )
-        );
-      };
-      const exit = fiber.pollUnsafe();
-      if (exit === undefined) {
-        fiber.addObserver(ended);
-      } else {
-        ended(exit);
-      }
-    };
-
-    /** Cancels pending loads, and releases loaded assets. */
-    const letGo = (entry: Held): Effect.Effect<void> =>
-      Effect.suspend(() => {
-        const { fiber, scope } = entry;
-        entry.fiber = undefined;
-        entry.scope = undefined;
-        entry.status = ABSENT;
-        if (scope === undefined) {
-          return Effect.void;
-        }
-        return Effect.andThen(
-          fiber === undefined ? Effect.void : Fiber.interrupt(fiber),
-          Scope.close(scope, Exit.void)
-        );
-      });
-
-    // Whatever is still loaded when the app is closed goes with it.
-    yield* Effect.addFinalizer(() =>
-      Effect.forEach(Array.from(held.values()), (entry) => letGo(entry), {
-        discard: true,
-      })
-    );
+    const holding = (
+      bundle: Bundle<Entries>,
+      entry: Held
+    ): Effect.Effect<void> =>
+      Effect.scoped(
+        Effect.flatMap(
+          loadEach(bundle, (asset) => RcMap.get(values, asset)),
+          (assets) => {
+            entry.status = { _tag: "Ready", assets };
+            return Effect.never;
+          }
+        )
+      ).pipe(
+        // What did load is no use without the rest: the scope has let it go.
+        Effect.catchCause((cause) => {
+          if (entry.status._tag === "Failed") {
+            return Effect.void;
+          }
+          const error = Cause.squash(cause);
+          entry.status = {
+            _tag: "Failed",
+            error:
+              error instanceof AssetFailed
+                ? error
+                : new AssetFailed({ url: "", message: describe(error) }),
+          };
+          return Effect.logError(
+            `The assets "${bundle.name}" could not be loaded`,
+            cause
+          );
+        })
+      );
 
     return {
       status<B extends Entries>(bundle: Bundle<B>) {
         return (held.get(bundle)?.status ?? ABSENT) as Status<Loaded<B>>;
       },
       hold(bundle, holder) {
-        const entry = entryOf(bundle);
+        let entry = held.get(bundle);
+        if (entry === undefined) {
+          entry = { status: LOADING, holders: new Map() };
+          held.set(bundle, entry);
+        }
         if (entry.holders.has(holder)) {
           return;
         }
-        entry.holders.add(holder);
-        if (entry.holders.size === 1) {
-          start(entry);
-        }
+        // Whatever is still loaded when the app is closed goes with it.
+        entry.holders.set(
+          holder,
+          entry.status._tag === "Failed"
+            ? undefined
+            : Fiber.runIn(runFork(holding(bundle, entry)), scope)
+        );
       },
       drop(bundle, holder) {
         const entry = held.get(bundle);
-        if (entry === undefined || !entry.holders.delete(holder)) {
+        if (entry === undefined || !entry.holders.has(holder)) {
           return;
         }
+        entry.holders.get(holder)?.interruptUnsafe();
+        entry.holders.delete(holder);
         if (entry.holders.size === 0) {
-          runFork(letGo(entry));
+          held.delete(bundle);
         }
       },
     };

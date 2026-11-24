@@ -17,8 +17,10 @@ import {
   State,
   System,
   Time,
+  Timeline,
   World,
 } from "../src/index";
+import type { Entity } from "../src/index";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
@@ -978,5 +980,343 @@ describe("a state in a save", () => {
         });
       })
     );
+  });
+});
+
+describe("an entity scoped to a state", () => {
+  const Dry = Action.define("st/Dry", Schema.Struct({}));
+  const dry = Action.handler(Dry, function* () {
+    (yield* Weather.sets).set("dry");
+  });
+
+  const Wall = Component.define("st/Wall", { n: Field.u8 });
+  const Walls = Query.all(Wall);
+  const ChildOf = Component.relation("st/ChildOf", {
+    onTargetDespawn: "despawn",
+  });
+  const Aims = Component.relation("st/Aims", { onTargetDespawn: "remove" });
+
+  const playing = State.scoped(Phase, "playing");
+  const paused = State.scoped(Phase, "paused");
+
+  /** Builds walls 1 to 3 scoped to playing, and 4 scoped to playing and paused. */
+  const Build = State.onEnter(Phase, "playing", "Build", function* () {
+    const commands = yield* Commands.spawns(Wall, playing, paused);
+    if ((yield* Query.all(Wall)).count() > 0) {
+      return;
+    }
+    for (const n of [1, 2, 3]) {
+      commands.spawn(Wall.of({ n }), playing);
+    }
+    commands.spawn(Wall.of({ n: 4 }), playing, paused);
+  });
+
+  const walls = (app: App.Any) =>
+    Effect.map(app.read(Walls), (view) => {
+      const out: number[] = [];
+      view.each((wall) => {
+        out.push(wall.n);
+      });
+      return out.toSorted((a, b) => a - b);
+    });
+
+  it("is despawned after the exit hooks, before the enter hooks, and its removal is read that tick", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Leaving = State.onExit(Phase, "playing", "Leaving", function* () {
+          log.push(`exit sees ${(yield* Walls).count()}`);
+        });
+        const Enter = State.onEnter(Phase, "menu", "Enter", function* () {
+          log.push(`enter sees ${(yield* Walls).count()}`);
+        });
+        const Gone = System.tick("Gone", function* () {
+          const gone = (yield* Query.removed(Wall)).read().length;
+          if (gone > 0) {
+            log.push(`removed ${gone}`);
+          }
+        });
+        const app = yield* App.make(
+          App.define({ systems: [Build, Leaving, Enter, Gone], handlers: [go] })
+        );
+        app.tick(1);
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([1, 2, 3, 4]);
+        app.dispatch(Go, { to: "menu", refuse: false });
+        app.tick(1);
+        expect(log).toEqual([
+          "enter sees 0",
+          "exit sees 4",
+          "enter sees 0",
+          "removed 4",
+        ]);
+        expect(yield* walls(app)).toEqual([]);
+      })
+    );
+  });
+
+  it("is despawned on the first tick, when a move asked for before it leaves the state it starts in", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const menu = State.scoped(Phase, "menu");
+        const Title = State.onEnter(Phase, "menu", "Title", function* () {
+          (yield* Commands.spawns(Wall, menu)).spawn(Wall.of({ n: 7 }), menu);
+        });
+        const app = yield* App.make(
+          App.define({ systems: [Title, Build], handlers: [go] })
+        );
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([1, 2, 3, 4]);
+      })
+    );
+  });
+
+  it("lives while the state is any of its values", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ systems: [Build], handlers: [go] })
+        );
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        app.dispatch(Go, { to: "paused", refuse: false });
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([4]);
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        // Build skips: a wall stands.
+        expect(yield* walls(app)).toEqual([4]);
+        app.dispatch(Go, { to: "menu", refuse: false });
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([]);
+      })
+    );
+  });
+
+  it("is what the exit hooks leave: one they despawn, spawn, retag or rescope", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const menu = State.scoped(Phase, "menu");
+        const Meddle = State.onExit(Phase, "playing", "Meddle", function* () {
+          const commands = yield* Commands.spawns(Wall, playing, menu);
+          const byN = new Map<number, Entity>();
+          (yield* Walls).each((wall, entity) => {
+            byN.set(wall.n, entity);
+          });
+          commands.despawn(byN.get(1)!);
+          // Retagged: no longer scoped at all.
+          commands.remove(byN.get(2)!, playing);
+          // Rescoped to the value entered.
+          commands.add(byN.get(3)!, menu);
+          // Spawned scoped to the value being left: it goes too.
+          commands.spawn(Wall.of({ n: 5 }), playing);
+          commands.spawn(Wall.of({ n: 6 }), menu);
+        });
+        const app = yield* App.make(
+          App.define({ systems: [Build, Meddle], handlers: [go] })
+        );
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        app.dispatch(Go, { to: "menu", refuse: false });
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([2, 3, 6]);
+      })
+    );
+  });
+
+  it("takes what points at it with a relation, as any despawn does", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const Hang = State.onEnter(Phase, "playing", "Hang", function* () {
+          const commands = yield* Commands.spawns(Wall, ChildOf, Aims, playing);
+          const parent = commands.spawn(Wall.of({ n: 1 }), playing);
+          commands.spawn(Wall.of({ n: 2 }), ChildOf.of({ target: parent }));
+          commands.spawn(Wall.of({ n: 3 }), Aims.of({ target: parent }));
+        });
+        const app = yield* App.make(
+          App.define({ systems: [Hang], handlers: [go] })
+        );
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        app.dispatch(Go, { to: "menu", refuse: false });
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([3]);
+        expect((yield* app.read(Query.all(Aims))).count()).toBe(0);
+      })
+    );
+  });
+
+  it("leaves the world as an exit hook that despawns the same entities in order of index does", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const ByHand = State.onExit(Phase, "playing", "ByHand", function* () {
+          const commands = yield* Commands;
+          const view = yield* Query.all(Wall);
+          for (const entity of view
+            .entities()
+            .toSorted((a, b) => entityIndex(a) - entityIndex(b))) {
+            commands.despawn(entity);
+          }
+        });
+        // Spawned so that the table's order is not the order of index.
+        const Shuffle = State.onEnter(
+          Phase,
+          "playing",
+          "Shuffle",
+          function* () {
+            const commands = yield* Commands;
+            const [first] = (yield* Query.all(Wall)).entities();
+            commands.despawn(first!);
+          }
+        );
+        const Again = State.onEnter(Phase, "playing", "Again", function* () {
+          const commands = yield* Commands.spawns(Wall, playing);
+          commands.spawn(Wall.of({ n: 9 }), playing);
+        });
+        const auto = yield* App.make(
+          App.define({ systems: [Build, Shuffle, Again], handlers: [go] })
+        );
+        const hand = yield* App.make(
+          App.define({
+            systems: [Build, Shuffle, Again, ByHand],
+            handlers: [go],
+          })
+        );
+        for (const app of [auto, hand]) {
+          app.dispatch(Go, { to: "playing", refuse: false });
+          app.tick(1);
+        }
+        const autoWorld = yield* auto.read(World);
+        const handWorld = yield* hand.read(World);
+        expect(autoWorld.hash()).toBe(handWorld.hash());
+        for (const app of [auto, hand]) {
+          app.dispatch(Go, { to: "menu", refuse: false });
+          app.tick(1);
+        }
+        expect(yield* walls(auto)).toEqual([]);
+        expect(autoWorld.hash()).toBe(handWorld.hash());
+      })
+    );
+  });
+
+  it("is saved and loaded as a tag, and leaves with its state after a load", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const game = App.define({ systems: [Build], handlers: [go] });
+        const app = yield* App.make(game);
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        const save = app.save();
+        if (Exit.isFailure(save)) {
+          throw new Error("the save was refused");
+        }
+        const read = Save.decode(Save.encode(save.value));
+        if (Exit.isFailure(read)) {
+          throw new Error("the save did not decode");
+        }
+        const loaded = yield* App.make(game, { save: read.value });
+        const world = yield* app.read(World);
+        const loadedWorld = yield* loaded.read(World);
+        expect(loadedWorld.hash()).toBe(world.hash());
+        for (const each of [app, loaded]) {
+          each.dispatch(Go, { to: "menu", refuse: false });
+          each.tick(1);
+        }
+        expect(yield* walls(loaded)).toEqual([]);
+        expect(loadedWorld.hash()).toBe(world.hash());
+      })
+    );
+  });
+
+  it("is back after a rewind across the transition, and leaves again", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ systems: [Build], handlers: [go] })
+        );
+        const world = yield* app.read(World);
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        app.enqueue(Go, { to: "menu", refuse: false });
+        const moment = Timeline.capture(app);
+        if (Exit.isFailure(moment)) {
+          throw new Error("the game could not be captured");
+        }
+        const before = world.hash();
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([]);
+        const after = world.hash();
+        Timeline.rewind(app, moment.value);
+        expect(world.hash()).toBe(before);
+        expect(yield* walls(app)).toEqual([1, 2, 3, 4]);
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([]);
+        expect(world.hash()).toBe(after);
+      })
+    );
+  });
+
+  it("is refused in a save that holds the tag of a value its state no longer has", () => {
+    const Before = State.define("st/Lever", ["up", "down", "gone"]);
+    const gone = State.scoped(Before, "gone");
+    const Pull = Action.define("st/Pull", Schema.Struct({}));
+    const pull = Action.handler(Pull, function* () {
+      (yield* Commands.spawns(gone)).spawn(gone);
+    });
+    Effect.runSync(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ handlers: [pull] }));
+        expect(app.dispatch(Pull, {})).toEqual(Exit.void);
+        const save = app.save();
+        assert(Exit.isSuccess(save));
+        const After = State.define("st/Lever", ["up", "down"]);
+        const loaded = yield* Effect.exit(
+          App.make(App.define({}), { save: save.value })
+        );
+        expect(loaded).toEqual(
+          Exit.fail(
+            new Save.LoadRefused({
+              problem: "unknown component",
+              message: `The save holds "st/Lever.Scoped.gone", the tag of a value the state "st/Lever" no longer has. Its values are: ${After.values.join(", ")}. A migration renames or removes a component in a save.`,
+            })
+          )
+        );
+      })
+    );
+  });
+
+  it("belongs to each of its states, and the first to leave takes it", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const wet = State.scoped(Weather, "wet");
+        const Both = State.onEnter(Phase, "playing", "Both", function* () {
+          const commands = yield* Commands.spawns(Wall, playing, wet);
+          commands.spawn(Wall.of({ n: 1 }), playing, wet);
+          commands.spawn(Wall.of({ n: 2 }), playing);
+        });
+        const app = yield* App.make(
+          App.define({ systems: [Both], handlers: [go, dry] })
+        );
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        app.dispatch(Dry, {});
+        app.tick(1);
+        expect(yield* walls(app)).toEqual([2]);
+      })
+    );
+  });
+
+  it("is named where its commands are asked for", () => {
+    System.tick("Unnamed", function* () {
+      const commands = yield* Commands.spawns(Wall);
+      // @ts-expect-error the scope is not named in Commands.spawns
+      commands.spawn(Wall.of({ n: 1 }), playing);
+    });
+    expect(() =>
+      // @ts-expect-error not one of the state's values
+      State.scoped(Phase, "flying")
+    ).toThrow(/has no value "flying"/);
   });
 });

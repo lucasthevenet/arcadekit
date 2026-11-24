@@ -39,19 +39,25 @@ Every variant does the same work, `pos += vel * dt`:
 
 | Variant | ns/entity |
 | --- | --- |
-| `world.hash()`, one table | 8.3 |
-| `world.hash()`, the same entities spread over 32 tables | 8.7 |
-| `world.hash()`, with a sparse one-field component on each | 15.0 |
+| `world.hash()`, one table, every entity written since the last hash | 4.3 |
+| `world.hash()`, the same entities spread over 32 tables | 4.2 |
+| `world.hash()`, with a sparse one-field component on each | 8.6 |
+| `world.hash()`, the same entities over 100 tables, one of them written | 0.09 |
 | `world.snapshot()`, one table (2.8 MB) | 6.7 |
 | `world.load()` of that snapshot, into a new world | 21.0 |
 | `world.restore()` of it, into the world it came from | 16.0 |
-| `Timeline.capture()`: a game of those entities, kept to go back to | 6.9 |
-| `Timeline.rewind()`: the game put back to that moment | 16.2 |
+| `Timeline.capture()` of a game of those entities, after a tick that moved every one | 0.8 |
+| `Timeline.rewind()` to that moment, after another such tick | 0.4 |
+| Capturing the world alone, 1 table in 100 written since the last capture | 0.09 |
+| Rewinding the world alone, 1 table in 100 written since the moment | 0.14 |
 
-- Hashing a world costs about three raw passes over it, 1.4 ns per 32-bit field per entity, with an entity's id counting as two fields. A sparse component's field costs about four times as much, because its members are hashed one by one so that their order doesn't matter.
+- The hash, a capture and a rewind cost what changed since the last hash or capture, not the size of the world. Each component of each table counts as changed once a loop of a query that [writes](queries.md#name-what-a-query-writes) it visits the table, or `world.set` writes it, or an entity joins or leaves the table. What did not change costs one step per component of each table.
+- Hashing what changed costs about 1.4 ns per 32-bit field per entity, with an entity's id counting as two fields when its table's rows changed. A sparse component's field costs about four times as much, because its members are hashed one by one so that their order doesn't matter.
+- A capture copies what changed and shares the rest with the moment before. Ten moments of a game that moves every entity each tick hold 10.5 MB, where ten snapshots hold 28 MB, and 2.7 MB when one table in a hundred moves.
+- A rewind copies back what changed since the moment. It also drops every query's view, which each system builds again when it next runs: about 6 µs per view, measured with 50 views over 100 tables.
 - An app's hash also encodes each queued action and each waiting event through its schema. Each costs about 0.6 µs for a payload of four fields, and 256 events cost 0.15 ms at every checkpoint.
-- A [checkpoint](replays.md) is one hash every `checkpointEvery` ticks, 60 by default. Over the world of 100,000 entities, checkpoints average 14 µs per tick.
-- A [rollback session](sessions.md) pays one capture per uncertain tick: 0.69 ms for 100,000 entities, and 7 µs for a thousand. A misprediction costs a rewind, 1.6 ms for 100,000 entities, plus running the ticks since then again.
+- A [checkpoint](replays.md) hashes every column, whatever changed, so that a write that went around `Query.writes` still shows up. It is one hash every `checkpointEvery` ticks, 60 by default: over the world of 100,000 entities, checkpoints average 14 µs per tick.
+- A [rollback session](sessions.md) pays one capture per uncertain tick: 0.08 ms for 100,000 entities when a tick moves all of them. A misprediction costs a rewind, 0.04 ms, plus running the ticks since then again.
 
 ## Change queries
 
