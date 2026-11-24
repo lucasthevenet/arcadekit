@@ -48,7 +48,7 @@
       "default": "./dist/Assets.js"
     },
     "./Browser": {
-      "source": "./src/Browser.ts",
+      "source": "./src/browser/Browser.ts",
       "types": "./dist/Browser.d.ts",
       "default": "./dist/Browser.js"
     },
@@ -156,6 +156,11 @@
       "source": "./src/View.ts",
       "types": "./dist/View.d.ts",
       "default": "./dist/View.js"
+    },
+    "./browser/Audio": {
+      "source": "./src/browser/Audio.ts",
+      "types": "./dist/browser/Audio.d.ts",
+      "default": "./dist/browser/Audio.js"
     },
     "./ecs": {
       "source": "./src/ecs/index.ts",

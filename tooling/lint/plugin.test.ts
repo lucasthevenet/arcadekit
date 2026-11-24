@@ -100,3 +100,63 @@ new RuleTester().run("id-casts", plugin.rules["id-casts"], {
     errors: [{ message: /^This asserts that a value is an entity's id/u }],
   })),
 });
+
+const arcadekit = (file: string) => `packages/arcadekit/src/${file}`;
+
+new RuleTester().run("entry-imports", plugin.rules["entry-imports"], {
+  valid: [
+    {
+      name: "arcadekit/Browser imports its folder and the browser platform",
+      filename: arcadekit("browser/Browser.ts"),
+      code: `import * as page from "./internals/page";\nimport * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";`,
+    },
+    {
+      name: "a file of src/browser/ imports the game's modules, its folder and the browser platform",
+      filename: arcadekit("browser/internals/audio.ts"),
+      code: `import * as Sound from "../../Sound";\nimport { describe } from "./decode";\nimport * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";`,
+    },
+  ],
+  invalid: [
+    {
+      name: "another entry imports arcadekit/Browser",
+      filename: arcadekit("Input.ts"),
+      code: `import * as Browser from "./browser/Browser";`,
+      errors: 1,
+    },
+    {
+      name: "another entry imports a file of src/browser/",
+      filename: arcadekit("Input.ts"),
+      code: `import { listen } from "./browser/internals/devices";`,
+      errors: 1,
+    },
+    {
+      name: "a file of src/browser/ imports a package arcadekit/Browser may not",
+      filename: arcadekit("browser/internals/audio.ts"),
+      code: `import * as THREE from "three";`,
+      errors: 1,
+    },
+  ],
+});
+
+new RuleTester().run("no-page", plugin.rules["no-page"], {
+  valid: [
+    {
+      name: "arcadekit/Browser names what only a page has",
+      filename: arcadekit("browser/Browser.ts"),
+      code: "const base = document.baseURI;",
+    },
+    {
+      name: "a file of src/browser/ names what only a page has",
+      filename: arcadekit("browser/internals/devices.ts"),
+      code: "const pads = navigator.getGamepads();",
+    },
+  ],
+  invalid: [
+    {
+      name: "a file behind another entry names what only a page has",
+      filename: arcadekit("Input.ts"),
+      code: "const pads = navigator.getGamepads();",
+      errors: 1,
+    },
+  ],
+});

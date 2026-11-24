@@ -10,7 +10,7 @@ import {
 } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import * as Browser from "../src/Browser";
+import * as Browser from "../src/browser/Browser";
 import {
   Action,
   App,
