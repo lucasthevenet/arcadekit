@@ -402,6 +402,23 @@ const writeFields = (
 };
 
 /**
+ * Throws the `SnapshotError` a snapshot would for rows `[0, count)` of a
+ * component's columns that are not numbers, so that what a moment holds in
+ * memory could also be saved.
+ *
+ * @internal
+ */
+export const refuseUnsaved = (
+  shape: Shape,
+  columns: Columns,
+  count: number
+): void => {
+  if (shape.kinds.some((kind) => kind === "json" || kind === "ref")) {
+    writeFields(new Writer(64), shape, columns, count);
+  }
+};
+
+/**
  * Writes a snapshot from a source, in the current format.
  *
  * @internal

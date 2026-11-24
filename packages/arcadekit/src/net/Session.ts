@@ -378,7 +378,7 @@ const twice = <E, HU>(
       const hashes: number[] = [];
       const systems: (string | undefined)[] = [];
       const exit = reins.tickExit(delta, (system) => {
-        hashes.push(partsOf(app).world.hash());
+        hashes.push(partsOf(app).world._fullHash());
         systems.push(system);
       });
       return { exit, hashes, systems };

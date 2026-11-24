@@ -105,6 +105,19 @@ describe("the hash of a world", () => {
     expect(new EcsWorld({ seed: 4 }).hash()).toBe(empty);
   });
 
+  it("is worked out again from every column by the full hash, which sees a write the world was not told of", () => {
+    const world = new EcsWorld();
+    world.spawn(Body.of({ x: 1, y: 2 }));
+    const before = world.hash();
+    expect(world._fullHash()).toBe(before);
+    world.view(Query.all(Body)).eachChunk((start, _end, body) => {
+      // What a cast lets through: the query only reads Body.
+      (body.x as unknown as Float32Array)[start] = 5;
+    });
+    expect(world.hash()).toBe(before);
+    expect(world._fullHash()).not.toBe(before);
+  });
+
   it("is the same number on every machine: the hash of this world is written down", () => {
     const world = new EcsWorld({ seed: 2026 });
     const a = world.spawn(
@@ -665,8 +678,9 @@ const history = (seed: number, steps: number): number[] => {
 };
 
 // It was 1,013,956,505 while an entity's id was 32 bits and hashed as one
-// word: an id is hashed as the 64 bits it is kept in now.
-const KNOWN_HASH = 2_316_040_553;
+// word, and 2,316,040,553 while all the columns were folded one after the
+// other: each column is hashed on its own now, and folded in as one word.
+const KNOWN_HASH = 522_063_573;
 
 // --- through an app --------------------------------------------------------------
 

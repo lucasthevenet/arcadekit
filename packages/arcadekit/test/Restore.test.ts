@@ -436,3 +436,102 @@ describe("a world that is restored from a snapshot", () => {
     expect((refused as SnapshotError).problem).toBe("unknown component");
   });
 });
+
+const Auras = Query.all(Aura).pipe(Query.writes(Aura));
+
+describe("a world rewound to a moment it captured", () => {
+  it("leaves what a restore of a snapshot taken then leaves, whatever the order of the moments", () => {
+    for (const seed of [11, 12, 13, 14]) {
+      const world = new EcsWorld({ seed });
+      world.singleton(Score);
+      world.singleton(Level);
+      const taken: {
+        readonly moment: ReturnType<EcsWorld["_capture"]>;
+        readonly bytes: Uint8Array;
+      }[] = [];
+      const take = (): void => {
+        taken.push({ moment: world._capture(), bytes: world.snapshot() });
+      };
+      for (let i = 0; i < 6; i++) {
+        play(world, seed * 10 + i, 40);
+        world.hash();
+        take();
+      }
+      for (const at of [5, 0, 3, 3, 1, 4, 2, 5, 0]) {
+        play(world, seed * 100 + at, 30);
+        if (at === 4) {
+          // Every table made anew: the moment's take their place again.
+          world.restore(taken[1]!.bytes);
+        }
+        world._rewind(taken[at]!.moment, []);
+        expect(contents(world), `seed ${seed}, moment ${at}`).toEqual(
+          contents(loaded(taken[at]!.bytes))
+        );
+        expect(world.snapshot()).toEqual(taken[at]!.bytes);
+        // Moments of a future given up can be gone back to as well.
+        play(world, seed * 1000 + at, 20);
+        take();
+      }
+      const last = taken.at(-1)!;
+      world._rewind(last.moment, []);
+      expect(future(world, seed + 7)).toEqual(
+        future(loaded(last.bytes), seed + 7)
+      );
+    }
+  });
+
+  it("goes back to a moment with more freed slots than a call takes arguments", () => {
+    const world = new EcsWorld();
+    const spawned = Array.from({ length: 200_000 }, () =>
+      world.spawn(Body.of({ x: 1, y: 1 }))
+    );
+    for (const entity of spawned) {
+      world.despawn(entity);
+    }
+    const moment = world._capture();
+    const bytes = world.snapshot();
+    world.spawn(Body.of({ x: 2, y: 2 }));
+    world._rewind(moment, []);
+    expect(world.snapshot()).toEqual(bytes);
+  });
+
+  it("hashes as the full hash does after every step, through captures and rewinds", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const world = new EcsWorld({ seed });
+      world.singleton(Score);
+      world.singleton(Level);
+      const moments: ReturnType<EcsWorld["_capture"]>[] = [];
+      // Each step's hash and full hash, and where it was taken.
+      const differ: string[] = [];
+      const compare = (where: string): void => {
+        if (world.hash() !== world._fullHash()) {
+          differ.push(where);
+        }
+      };
+      let step = 0;
+      play(world, seed, 400, () => {
+        compare(`step ${step}`);
+        step++;
+        if (step % 5 === 0) {
+          world.view(Bodies).eachChunk((start, end, body) => {
+            for (let i = start; i < end; i++) {
+              body.y[i]! += 1;
+            }
+          });
+          world.view(Auras).each((aura) => {
+            aura.power += 1;
+          });
+          compare(`step ${step}, after a loop`);
+        }
+        if (step % 7 === 0) {
+          moments.push(world._capture());
+        }
+        if (step % 23 === 0) {
+          world._rewind(moments[(step * 31) % moments.length]!, []);
+          compare(`step ${step}, after a rewind`);
+        }
+      });
+      expect(differ, `seed ${seed}`).toEqual([]);
+    }
+  });
+});

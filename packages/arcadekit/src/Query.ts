@@ -495,6 +495,10 @@ export type OwnTerms<D extends Terms, W extends ComponentDef> = [
  *   watch it, since raw columns can't tell a read from a write.
  * - In an action's handler, only the columns of what the query writes are
  *   copied for a rollback.
+ * - Each loop counts what it writes as changed in every table it visits, for
+ *   `world.hash()`, `Timeline.capture` and `Timeline.rewind`, which work
+ *   again only on what changed. A component it only reads costs them
+ *   nothing.
  *
  * **Gotchas**
  *

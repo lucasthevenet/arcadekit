@@ -289,7 +289,7 @@ export class Log implements Store<Since> {
 
   /** Records the world's hash now, and returns it. */
   checkpoint(): number {
-    const hash = this.world.hash();
+    const hash = this.world._fullHash();
     this.entries.push({ tick: this.time.tick, hash });
     return hash;
   }
@@ -423,7 +423,7 @@ export class Log implements Store<Since> {
       ...(since === undefined ? this.origin : { save: since }),
       start,
       end: time.tick,
-      endHash: this.world.hash(),
+      endHash: this.world._fullHash(),
       deltas:
         start === time.tick
           ? []
@@ -537,7 +537,7 @@ const play = <A extends App.Any>(
     index: number,
     entry: Action.Checkpoint
   ): ReplayDiverged<A> | undefined => {
-    const actual = partsOf(app).world.hash();
+    const actual = partsOf(app).world._fullHash();
     if (actual !== entry.hash) {
       return diverged(
         index,

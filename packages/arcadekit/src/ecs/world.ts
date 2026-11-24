@@ -72,7 +72,7 @@ import type { Saved, Single } from "./records";
 import type { PatchOf, RelationDef, Targeted } from "./relation";
 import { STORAGES, SnapshotError, WIDTH, corrupt } from "./snapshot";
 import type { Store } from "./store";
-import type { Columns } from "./table";
+import type { Columns, Kept, KeptSet, Versions } from "./table";
 import {
   RelationIndex,
   SparseSet,
@@ -89,6 +89,37 @@ const FREE = -2;
 const SLOTS = INDEX_MASK + 1;
 /** What `hash` folds in before each singleton, to distinguish it from a sparse set. */
 const SINGLETON = 0x53_49_4e_47;
+/** A singleton's row as a moment keeps it: without its `transient` fields. */
+const keptRow = (single: Single): Record<string, unknown> => {
+  const { def } = single;
+  const row: Record<string, unknown> = {};
+  for (let f = 0; f < def.fields.length; f++) {
+    if (def.kinds[f] !== "transient") {
+      row[def.fields[f]!] = single.columns[def.fields[f]!]![0];
+    }
+  }
+  return row;
+};
+
+/** The hash of rows `[0, count)` of a component's columns, on its own. */
+const rowsHash = (
+  def: ComponentDef,
+  columns: Columns,
+  count: number
+): number => {
+  let h = 0;
+  for (let f = 0; f < def.fields.length; f++) {
+    h = addColumn(
+      h,
+      def.kinds[f]!,
+      columns[def.fields[f]!]!,
+      count,
+      def.codecs[f]
+    );
+  }
+  return finish(h);
+};
+
 const storageOf = (def: ComponentDef): 0 | 1 | 2 =>
   def.single ? 2 : def.storage === "sparse" ? 1 : 0;
 
@@ -99,11 +130,26 @@ const storageOf = (def: ComponentDef): 0 | 1 | 2 =>
 /**
  * @internal
  * A world at one moment, held in memory: what `_capture` returns and `_rewind`
- * takes.
+ * takes. What did not change since the moment before is shared with it.
  */
 export interface Moment {
-  /** A snapshot without the stores. */
-  readonly world: Uint8Array;
+  /** The world's version when it was captured: what changed since is later. */
+  readonly at: number;
+  /** Every table there was, in order. */
+  readonly tables: readonly Kept[];
+  /** Every sparse set there was. */
+  readonly sets: readonly KeptSet[];
+  /** The singletons that had been written, with a copy of their one row. */
+  readonly singles: readonly (readonly [
+    Single,
+    Readonly<Record<string, unknown>>,
+  ])[];
+  /** The ids to come: `nextIndex`, and the freed slots with their generations. */
+  readonly slots: number;
+  readonly alive: number;
+  readonly freed: readonly number[];
+  readonly freedGens: Uint32Array;
+  readonly random: Uint32Array;
   /** What each store captured of itself. */
   readonly stores: readonly (readonly [Store, unknown])[];
   /** Where the trail was: what the change logs hold from then on. */
@@ -218,6 +264,12 @@ export class World {
 
   /** @internal */
   readonly tables: Table[] = [];
+  /** What every table, sparse set, relation index and singleton notes when it changes. */
+  private readonly version: Versions = { now: 1 };
+  /** @internal The version a write notes now. */
+  get _now(): number {
+    return this.version.now;
+  }
   private readonly tableByKey = new Map<string, Table>();
   private readonly sparseById = new Map<number, SparseSet>();
   private readonly sparseList: SparseSet[] = [];
@@ -704,6 +756,7 @@ export class World {
     const from = this.placedTable(index);
     if (from.ids.has(def.id)) {
       if (value !== undefined) {
+        from.versions[def.id] = this.version.now;
         writeRow(def, from.columns[def.id]!, this.recRow[index]!, value);
         this._changed[def.id]?.note(index);
       }
@@ -886,16 +939,22 @@ export class World {
     const index = entityIndex(entity);
     let cols: Columns;
     let row: number;
+    let owner: Saved["owner"];
     if (def.storage === "sparse") {
       const set = this._sparse(def);
+      set.changed = this.version.now;
       cols = set.columns;
       row = set.sparse[index]!;
+      owner = set;
     } else {
-      cols = this.tables[this.recTable[index]!]!.columns[def.id]!;
+      const table = this.tables[this.recTable[index]!]!;
+      table.versions[def.id] = this.version.now;
+      cols = table.columns[def.id]!;
       row = this.recRow[index]!;
+      owner = table;
     }
     if (this._recording) {
-      this.saveRow(def, cols, row);
+      this.saveRow(def, cols, row, owner);
     }
     for (const key in value) {
       const given = value[key];
@@ -930,7 +989,7 @@ export class World {
   private relationOf(def: ComponentDef): RelationIndex {
     let relation = this.relations[def.id];
     if (relation === undefined) {
-      relation = new RelationIndex(def, this.recTable.length);
+      relation = new RelationIndex(def, this.version, this.recTable.length);
       this.relations[def.id] = relation;
       this.relationList = [...this.relationList, relation].toSorted((a, b) =>
         byName(a.def, b.def)
@@ -945,39 +1004,43 @@ export class World {
    */
   private indexRelations(): void {
     for (const def of this.componentsByName.values()) {
-      if (def.relation === undefined) {
-        continue;
+      if (def.relation !== undefined) {
+        this.relink(def);
       }
-      const link = (
-        entities: Uint32Array | Float64Array,
-        targets: Float64Array,
-        count: number
-      ): void => {
-        for (let row = 0; row < count; row++) {
-          const target = entityOf(targets[row]!);
-          if (!this.isAlive(target)) {
-            throw corrupt(
-              `"${def.name}" points at an entity that does not exist`
-            );
-          }
-          this.relationOf(def).link(
-            entities[row]! & INDEX_MASK,
-            entityIndex(target)
+    }
+  }
+
+  /** Links the holders of one relation to their targets, from its columns. */
+  private relink(def: ComponentDef): void {
+    const link = (
+      entities: Uint32Array | Float64Array,
+      targets: Float64Array,
+      count: number
+    ): void => {
+      for (let row = 0; row < count; row++) {
+        const target = entityOf(targets[row]!);
+        if (!this.isAlive(target)) {
+          throw corrupt(
+            `"${def.name}" points at an entity that does not exist`
           );
         }
-      };
-      if (def.storage === "sparse") {
-        const set = this.sparseById.get(def.id);
-        if (set !== undefined) {
-          link(set.dense, set.columns.target as Float64Array, set.count);
-        }
-        continue;
+        this.relationOf(def).link(
+          entities[row]! & INDEX_MASK,
+          entityIndex(target)
+        );
       }
-      for (const table of this.tables) {
-        const columns = table.columns[def.id];
-        if (columns !== undefined) {
-          link(table.entities, columns.target as Float64Array, table.count);
-        }
+    };
+    if (def.storage === "sparse") {
+      const set = this.sparseById.get(def.id);
+      if (set !== undefined) {
+        link(set.dense, set.columns.target as Float64Array, set.count);
+      }
+      return;
+    }
+    for (const table of this.tables) {
+      const columns = table.columns[def.id];
+      if (columns !== undefined) {
+        link(table.entities, columns.target as Float64Array, table.count);
       }
     }
   }
@@ -1036,7 +1099,16 @@ export class World {
       this.register(def);
       const columns = makeColumns(def, 1);
       const value = {};
-      single = { def, columns, initial: undefined, written: false, value };
+      single = {
+        def,
+        columns,
+        initial: undefined,
+        written: false,
+        value,
+        version: this.version.now,
+        hash: 0,
+        hashedAt: -1,
+      };
       const made = single;
       for (const field of def.fields) {
         const column = columns[field]!;
@@ -1064,9 +1136,10 @@ export class World {
     }
     if (this._recording && !this.savedWhole.has(single.columns)) {
       this.savedSingles.push({ single, written: single.written });
-      this._saveColumns(single.def, single.columns, 1);
+      this._saveColumns(single.def, single.columns, 1, single);
     }
     single.written = true;
+    single.version = this.version.now;
   }
 
   /** Returns the singletons that have been written, in order of name. */
@@ -1205,8 +1278,16 @@ export class World {
     const { saved } = this;
     // Newest first, so that where a row was saved before its whole column,
     // the oldest value is the one left standing.
+    const { now } = this.version;
     for (let i = saved.length - 1; i >= 0; i--) {
-      const { cols, copies, count, def, row } = saved[i]!;
+      const { cols, copies, count, def, owner, row } = saved[i]!;
+      if (owner instanceof Table) {
+        owner.versions[def.id] = now;
+      } else if (owner instanceof SparseSet) {
+        owner.changed = now;
+      } else {
+        owner.version = now;
+      }
       for (let f = 0; f < def.fields.length; f++) {
         const column = cols[def.fields[f]!]!;
         if (row !== WHOLE) {
@@ -1277,7 +1358,12 @@ export class World {
    * transaction already has.
    * @internal
    */
-  _saveColumns(def: ComponentDef, cols: Columns, count: number): void {
+  _saveColumns(
+    def: ComponentDef,
+    cols: Columns,
+    count: number,
+    owner: Saved["owner"]
+  ): void {
     if (def.isTag || this.savedWhole.has(cols)) {
       return;
     }
@@ -1302,11 +1388,16 @@ export class World {
         (kept as Float32Array).set((column as Float32Array).subarray(0, count));
       }
     }
-    this.saved.push({ cols, copies, count, def, row: WHOLE });
+    this.saved.push({ cols, copies, count, def, owner, row: WHOLE });
   }
 
   /** Saves one row of a component's columns. */
-  private saveRow(def: ComponentDef, cols: Columns, row: number): void {
+  private saveRow(
+    def: ComponentDef,
+    cols: Columns,
+    row: number,
+    owner: Saved["owner"]
+  ): void {
     if (this.savedWhole.has(cols)) {
       return;
     }
@@ -1314,7 +1405,7 @@ export class World {
     for (let f = 0; f < def.fields.length; f++) {
       copies.push(cols[def.fields[f]!]![row]);
     }
-    this.saved.push({ cols, copies, count: 1, def, row });
+    this.saved.push({ cols, copies, count: 1, def, owner, row });
   }
 
   /**
@@ -1607,23 +1698,16 @@ export class World {
 
   /** `snapshot()`, with what the stores hold or without it. */
   private snapshotOf(withStores: boolean): Uint8Array {
+    this.refuseUnplaced();
     const { tables } = this;
-    let placed = 0;
     let estimate = 256 + this.nextIndex * 4 + this.freeList.length * 4;
     for (const table of tables) {
-      placed += table.count;
       estimate += 64 + table.count * 8;
       for (const def of table.defs) {
         for (const kind of def.kinds) {
           estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind as "f32"]);
         }
       }
-    }
-    if (placed !== this.alive) {
-      throw new SnapshotError(
-        "cannot be saved",
-        `${this.alive - placed} entities were spawned through a CommandBuffer that has not been applied yet. Apply it, or roll it back, and take the snapshot then.`
-      );
     }
     const sets = this.sparseSetsByName().filter((set) => set.count > 0);
     const singles = this.writtenSingles();
@@ -1705,26 +1789,11 @@ export class World {
 
   /** `restore`, with what the snapshot holds of the stores or with each empty. */
   private restoring(bytes: Uint8Array, withStores: boolean): void {
-    if (this._recording) {
-      throw new Error(
-        "World.restore() was called between begin() and commit() or rollback(). A transaction puts back what it wrote itself; restore a snapshot outside one."
-      );
-    }
-    // Not in a frozen world either, nor in the middle of a loop.
-    this.assertNotIterating("restore");
+    this.refuseRestore();
     if (withStores) {
       // A moment from before has no way to what changed since.
       this.trail = undefined;
       this.trails++;
-    }
-    let placed = 0;
-    for (const table of this.tables) {
-      placed += table.count;
-    }
-    if (placed !== this.alive) {
-      throw new Error(
-        `World.restore() was called while ${this.alive - placed} entities were spawned through a CommandBuffer that has not been applied. Their ids would outlive the world they were given in: apply the buffer, or roll it back, first.`
-      );
     }
     // The entities.
     this.recTable.fill(FREE);
@@ -1741,7 +1810,61 @@ export class World {
     this.sparseByName = undefined;
     this.relations.length = 0;
     this.relationList = [];
-    // What was made of those: views, and what they had yet to visit.
+    this.dropViews();
+    // The singletons stay the objects they are, as if never written, and the
+    // stores the ones that were attached, empty.
+    for (const single of this.singles) {
+      if (single !== undefined) {
+        single.written = false;
+        single.version = this.version.now;
+        writeRow(single.def, single.columns, 0, single.initial);
+      }
+    }
+    for (const store of this.stores) {
+      store.clear();
+    }
+    this.loading(bytes, withStores);
+  }
+
+  /** Throws where the world can't be put back to a snapshot or a moment. */
+  private refuseRestore(): void {
+    if (this._recording) {
+      throw new Error(
+        "World.restore() was called between begin() and commit() or rollback(). A transaction puts back what it wrote itself; restore a snapshot outside one."
+      );
+    }
+    // Not in a frozen world either, nor in the middle of a loop.
+    this.assertNotIterating("restore");
+    const unplaced = this.unplaced();
+    if (unplaced > 0) {
+      throw new Error(
+        `World.restore() was called while ${unplaced} entities were spawned through a CommandBuffer that has not been applied. Their ids would outlive the world they were given in: apply the buffer, or roll it back, first.`
+      );
+    }
+  }
+
+  /** How many live entities a `CommandBuffer` spawned and hasn't placed in a table. */
+  private unplaced(): number {
+    let placed = 0;
+    for (const table of this.tables) {
+      placed += table.count;
+    }
+    return this.alive - placed;
+  }
+
+  /** Throws the `SnapshotError` of a world that holds a spawn not applied yet. */
+  private refuseUnplaced(): void {
+    const unplaced = this.unplaced();
+    if (unplaced > 0) {
+      throw new SnapshotError(
+        "cannot be saved",
+        `${unplaced} entities were spawned through a CommandBuffer that has not been applied yet. Apply it, or roll it back, and take the snapshot then.`
+      );
+    }
+  }
+
+  /** Forgets what was made of the tables: views, and what they had yet to visit. */
+  private dropViews(): void {
     this._restored++;
     this.views = new WeakMap();
     this.watchViews = new WeakMap();
@@ -1754,18 +1877,6 @@ export class World {
     this.writeLogs.length = 0;
     this._watched = 0;
     this.lateLogs = [];
-    // The singletons stay the objects they are, as if never written, and the
-    // stores the ones that were attached, empty.
-    for (const single of this.singles) {
-      if (single !== undefined) {
-        single.written = false;
-        writeRow(single.def, single.columns, 0, single.initial);
-      }
-    }
-    for (const store of this.stores) {
-      store.clear();
-    }
-    this.loading(bytes, withStores);
   }
 
   /**
@@ -1902,6 +2013,7 @@ export class World {
         }
         loaded.add(single);
         single.written = true;
+        single.version = this.version.now;
         return single.columns;
       },
       stores: (held) => {
@@ -1928,7 +2040,12 @@ export class World {
         while (capacity < count) {
           capacity *= 2;
         }
-        const table = new Table(this.tables.length, sorted, capacity);
+        const table = new Table(
+          this.tables.length,
+          sorted,
+          this.version,
+          capacity
+        );
         this.tables.push(table);
         this.tableByKey.set(key, table);
         return {
@@ -2085,13 +2202,26 @@ export class World {
    * encoding of each value, and a `transient` field not at all, so the hash
    * covers exactly what a snapshot saves.
    *
-   * It costs about 1.4 ns per 32-bit field per entity in a table, measured,
-   * with an entity's id counting as two fields: 0.8 ms for 100,000 entities
-   * with four float fields. A field of a sparse component costs about four
+   * It hashes again only what changed since the last hash: a component's
+   * columns in a table where a loop or `set` was handed them to write, or a
+   * row was added or removed, and a sparse component that changed at all.
+   * The rest costs one step per component of each table. Hashing a column
+   * again costs about 1.4 ns per 32-bit field per entity, measured, with an
+   * entity's id counting as two fields: 0.8 ms for 100,000 entities with four
+   * float fields, all written. A field of a sparse component costs about four
    * times as much.
    */
   hash(): number {
-    return this.hashing(true);
+    return this.hashing(true, undefined, false);
+  }
+
+  /**
+   * @internal
+   * `hash()` worked out from every column again, with no cached part: what
+   * a write the world did not see, through a cast, would make differ.
+   */
+  _fullHash(): number {
+    return this.hashing(true, undefined, true);
   }
 
   /**
@@ -2100,11 +2230,17 @@ export class World {
    * those stages must leave as it was. Without the singleton `clock` too, it
    * is what a tick that changed nothing but its time leaves as it was.
    */
-  _frameHash(clock?: ComponentDef): number {
-    return this.hashing(false, clock);
+  _frameHash(full: boolean, clock?: ComponentDef): number {
+    return this.hashing(false, clock, full);
   }
 
-  private hashing(betweenTicks: boolean, clock?: ComponentDef): number {
+  private hashing(
+    betweenTicks: boolean,
+    clock: ComponentDef | undefined,
+    full: boolean
+  ): number {
+    // A write from here on is later than what is cached.
+    const at = full ? this.version.now : this.version.now++;
     const { shapes } = this;
     // The ids to come: the next unused index, then the freed slots in the
     // order they will be reused, each with the generation it will get.
@@ -2118,6 +2254,8 @@ export class World {
 
     // Tables, in the order queries visit them. An empty table is included:
     // where it stands decides where its future entities are visited.
+    // Each column is hashed on its own and folded in as one word, so a
+    // column that did not change since the last hash is not hashed again.
     const { tables } = this;
     h = add(h, tables.length);
     for (let t = 0; t < tables.length; t++) {
@@ -2125,19 +2263,29 @@ export class World {
       const { count, defsByName } = table;
       h = add(add(h, defsByName.length), count);
       // An entity's id carries its generation.
-      h = addColumn(h, "entity", table.entities, count);
+      if (full || table.shaped > table.entitiesHashedAt) {
+        const sub = finish(addColumn(0, "entity", table.entities, count));
+        if (!full) {
+          table.entitiesHash = sub;
+          table.entitiesHashedAt = at;
+        }
+        h = add(h, sub);
+      } else {
+        h = add(h, table.entitiesHash);
+      }
       for (let d = 0; d < defsByName.length; d++) {
         const def = defsByName[d]!;
-        h = add(h, shapes[def.id]!);
-        const columns = table.columns[def.id]!;
-        for (let f = 0; f < def.fields.length; f++) {
-          h = addColumn(
-            h,
-            def.kinds[f]!,
-            columns[def.fields[f]!]!,
-            count,
-            def.codecs[f]
-          );
+        const id = def.id;
+        h = add(h, shapes[id]!);
+        if (full || table.changedAt(id) > table.hashedAt[id]!) {
+          const sub = rowsHash(def, table.columns[id]!, count);
+          if (!full) {
+            table.hashes[id] = sub;
+            table.hashedAt[id] = at;
+          }
+          h = add(h, sub);
+        } else {
+          h = add(h, table.hashes[id]!);
         }
       }
     }
@@ -2152,13 +2300,17 @@ export class World {
       if (count === 0) {
         continue;
       }
+      const shape = shapes[def.id]!;
+      if (!full && set.changed <= set.hashedAt) {
+        h = add(add(add(h, shape), count), set.hash);
+        continue;
+      }
       if (this.memberStates.length < count) {
         this.memberStates = new Int32Array(
           Math.max(count, this.memberStates.length * 2)
         );
       }
       const states = this.memberStates;
-      const shape = shapes[def.id]!;
       const { dense } = set;
       for (let i = 0; i < count; i++) {
         states[i] = add(shape, dense[i]!);
@@ -2176,6 +2328,10 @@ export class World {
       for (let i = 0; i < count; i++) {
         members = (members + finish(states[i]!)) | 0;
       }
+      if (!full) {
+        set.hash = members;
+        set.hashedAt = at;
+      }
       h = add(add(add(h, shape), count), members);
     }
 
@@ -2183,19 +2339,21 @@ export class World {
     // only been read holds its initial value, which no simulation can tell
     // from its not being there.
     if (this.singles.length > 0) {
-      for (const { columns, def } of this.writtenSingles()) {
+      for (const single of this.writtenSingles()) {
+        const { columns, def } = single;
         if (def === clock) {
           continue;
         }
         h = add(add(h, SINGLETON), shapes[def.id]!);
-        for (let f = 0; f < def.fields.length; f++) {
-          h = addColumn(
-            h,
-            def.kinds[f]!,
-            columns[def.fields[f]!]!,
-            1,
-            def.codecs[f]
-          );
+        if (full || single.version > single.hashedAt) {
+          const sub = rowsHash(def, columns, 1);
+          if (!full) {
+            single.hash = sub;
+            single.hashedAt = at;
+          }
+          h = add(h, sub);
+        } else {
+          h = add(h, single.hash);
         }
       }
     }
@@ -2248,13 +2406,32 @@ export class World {
 
   /**
    * @internal
-   * The world as it is, in memory: `snapshot()` without the stores, and what
-   * each store captures of itself, so that capturing puts nothing of theirs
+   * The world as it is, in memory: copies of what `snapshot()` would save of
+   * it, sharing with the last moment those that did not change since, and
+   * what each store captures of itself, so that capturing puts nothing
    * through a codec. Fails as `snapshot()` does.
    */
   _capture(): Moment {
+    this.refuseUnplaced();
+    // A write from here on is later than the moment, even if it fails.
+    const at = this.version.now++;
+    const { freeList, gens } = this;
+    const freedGens = new Uint32Array(freeList.length);
+    for (let i = 0; i < freeList.length; i++) {
+      freedGens[i] = gens[freeList[i]!]!;
+    }
     const moment: Moment = {
-      world: this.snapshotOf(false),
+      at,
+      tables: this.tables.map((table) => table.keep(at)),
+      sets: this.sparseList.map((set) => set.keep(at)),
+      singles: this.writtenSingles().map(
+        (single) => [single, keptRow(single)] as const
+      ),
+      slots: this.nextIndex,
+      alive: this.alive,
+      freed: freeList.slice(),
+      freedGens,
+      random: this.random.state.slice(),
       stores: this.stores.map((store) => [store, store.capture()] as const),
       trail: this.follow(),
     };
@@ -2331,10 +2508,11 @@ export class World {
 
   /**
    * @internal
-   * Puts the world back to a moment it captured, as `restore` does, with
-   * what each store held then, and what `changes`, which `saveChanges`
-   * returned then, says the readers had yet to visit. A store attached since
-   * is left empty.
+   * Puts the world back to a moment it captured, copying back only what
+   * changed since, with what each store held then, and what `changes`, which
+   * `saveChanges` returned then, says the readers had yet to visit. A store
+   * attached since is left empty. Views made before throw when used, as
+   * after `restore`.
    *
    * A reader that `again` accepts, which `changes` doesn't hold, goes on to
    * visit what changed since it last visited and since the moment, in the
@@ -2354,7 +2532,7 @@ export class World {
     const { trail } = moment;
     const onTrail = !trail.dead && trail.run === this.trails;
     const given = onTrail ? this.givenUp(trail, again) : [];
-    this.restoring(moment.world, false);
+    this.putBack(moment);
     for (const [store, held] of moment.stores) {
       store.rewind(held);
     }
@@ -2363,6 +2541,149 @@ export class World {
     }
     this.trail = onTrail ? new WeakRef(trail) : undefined;
     this.restoreChanges(ahead(given, changes, this._slots));
+  }
+
+  /**
+   * Puts the world back to a moment, touching only what changed since: the
+   * tables are the moment's again, those made since are gone, and a column
+   * that was not written since is not copied.
+   */
+  private putBack(moment: Moment): void {
+    this.refuseRestore();
+    const { at } = moment;
+    const { gens, recRow, recTable, tables } = this;
+
+    // The slots that were free then, and those not used yet, are free.
+    for (let i = 0; i < moment.freed.length; i++) {
+      const index = moment.freed[i]!;
+      recTable[index] = FREE;
+      gens[index] = moment.freedGens[i]!;
+    }
+    for (let index = moment.slots; index < this.nextIndex; index++) {
+      recTable[index] = FREE;
+      recRow[index] = 0;
+      gens[index] = 0;
+    }
+    const { freeList } = this;
+    freeList.length = moment.freed.length;
+    for (let i = 0; i < moment.freed.length; i++) {
+      freeList[i] = moment.freed[i]!;
+    }
+    this.nextIndex = moment.slots;
+    this.alive = moment.alive;
+
+    // Tables are only ever added, so the moment's are the first of today's,
+    // unless a rewind cut them since: from the first that is not, the
+    // moment's take their place, and those made since are gone.
+    let cut = 0;
+    while (
+      cut < moment.tables.length &&
+      cut < tables.length &&
+      tables[cut] === moment.tables[cut]!.table
+    ) {
+      cut++;
+    }
+    if (cut < tables.length) {
+      for (let t = cut; t < tables.length; t++) {
+        this.tableByKey.delete(tableKey(tables[t]!.defs));
+      }
+      tables.length = cut;
+      for (const table of tables) {
+        for (const edges of [table.addEdges, table.removeEdges]) {
+          for (const [id, to] of edges) {
+            if (to.index >= cut) {
+              edges.delete(id);
+            }
+          }
+        }
+      }
+    }
+    for (let t = 0; t < moment.tables.length; t++) {
+      const kept = moment.tables[t]!;
+      const { table } = kept;
+      const back = t >= cut;
+      if (back) {
+        tables.push(table);
+        this.tableByKey.set(tableKey(table.defs), table);
+        table.addEdges.clear();
+        table.removeEdges.clear();
+      }
+      // A table whose rows did not move holds the same entities where they were.
+      const moved = back || table.shaped > at;
+      table.putBack(kept, back ? -1 : at);
+      if (!moved) {
+        continue;
+      }
+      const { entities } = table;
+      for (let row = 0; row < table.count; row++) {
+        const id = entities[row]!;
+        const index = id & INDEX_MASK;
+        recTable[index] = t;
+        recRow[index] = row;
+        gens[index] = (id - index) / SLOTS;
+      }
+    }
+
+    // Sparse sets are never taken away: one made since is emptied.
+    const keptSets = new Map(
+      moment.sets.map((kept) => [kept.set.def.id, kept])
+    );
+    const sets: SparseSet[] = moment.sets.map((kept) => kept.set);
+    for (const set of this.sparseList) {
+      const kept = keptSets.get(set.def.id);
+      if (kept === undefined) {
+        sets.push(set);
+        set.putBack(undefined);
+      }
+    }
+    for (const kept of moment.sets) {
+      const { set } = kept;
+      if (this.sparseById.get(set.def.id) !== set || set.changed > at) {
+        set.putBack(kept);
+      }
+      this.sparseById.set(set.def.id, set);
+    }
+    this.sparseList.splice(0, this.sparseList.length, ...sets);
+    this.sparseByName = undefined;
+
+    // Who points at whom, worked out again where a link changed.
+    for (const def of this.componentsByName.values()) {
+      if (def.relation === undefined) {
+        continue;
+      }
+      const relation = this.relations[def.id];
+      if (relation === undefined || relation.changed > at) {
+        relation?.clear();
+        this.relink(def);
+      }
+    }
+
+    // The singletons it held have their values, a `transient` field its
+    // initial value where the singleton was written since, and the others
+    // are as if never written.
+    const held = new Set<Single>();
+    for (const [single, row] of moment.singles) {
+      held.add(single);
+      if (single.written && single.version <= at) {
+        continue;
+      }
+      writeRow(single.def, single.columns, 0, { ...single.initial, ...row });
+      single.written = true;
+      single.version = this.version.now;
+    }
+    for (const single of this.singles) {
+      if (single !== undefined && single.written && !held.has(single)) {
+        single.written = false;
+        single.version = this.version.now;
+        writeRow(single.def, single.columns, 0, single.initial);
+      }
+    }
+    this.random.state.set(moment.random);
+    for (const store of this.stores) {
+      store.clear();
+    }
+    this.dropViews();
+    this.version.now++;
   }
 
   /**
@@ -2446,7 +2767,7 @@ export class World {
     if (set === undefined) {
       this.refuseSingle(def);
       this.register(def);
-      set = new SparseSet(def);
+      set = new SparseSet(def, this.version);
       this.sparseById.set(def.id, set);
       this.sparseList.push(set);
       this.sparseByName = undefined;
@@ -2462,7 +2783,7 @@ export class World {
         this.refuseSingle(def);
         this.register(def);
       }
-      table = new Table(this.tables.length, sortedDefs);
+      table = new Table(this.tables.length, sortedDefs, this.version);
       this.tables.push(table);
       this.tableByKey.set(key, table);
     }
