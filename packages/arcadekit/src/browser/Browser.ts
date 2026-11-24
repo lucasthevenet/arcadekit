@@ -1,11 +1,11 @@
 /**
  * Everything that only a page can use: its display, its input devices, its
- * images and sound, and the way a program starts in it. `arcadekit/Browser`
+ * images and sound, and the way a program starts in it. `arcadekit/browser`
  * is the only entry point that imports a browser package, so a server, a
  * replay or a test of the game imports `arcadekit` alone.
  *
  *   import { App, Driver } from "arcadekit"
- *   import * as Browser from "arcadekit/Browser"
+ *   import * as Browser from "arcadekit/browser/Browser"
  *
  *   Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), {
  *     target: canvas,
@@ -26,8 +26,8 @@ import type * as Assets from "../Assets";
 import type * as Driver from "../Driver";
 import type * as Sound from "../Sound";
 import type { AudioLike, MediaLike } from "./Audio";
-import * as decode from "./internals/decode";
-import * as page from "./internals/page";
+import * as decode from "./internal/decode";
+import * as page from "./internal/page";
 
 export {
   layerSound,

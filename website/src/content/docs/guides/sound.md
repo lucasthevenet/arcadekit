@@ -9,7 +9,7 @@ A **cue** is a named sound that plays because something happened. The simulation
 
 ```ts
 import { App, Driver, Event, Plugin, Sound } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Schema } from "effect";
 
 const Scored = Event.define("game/Scored", Schema.Struct({}));

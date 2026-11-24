@@ -9,7 +9,7 @@ description: "Start a game with Driver.run and your platform's runMain. Learn ho
 
 ```ts
 import { Action, App, Driver, Plugin } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Effect, Schema } from "effect";
 
 const NewGame = Action.define("game/NewGame", Schema.Struct({}));
@@ -81,7 +81,7 @@ arcadekit generates no code from strings. It uses no `eval` and no `new Function
 
 ## Run a game under Node
 
-The same game runs under Node without `arcadekit/Browser`. There, the display is a timer:
+The same game runs under Node without `arcadekit/browser`. There, the display is a timer:
 
 ```ts
 import { NodeRuntime } from "@effect/platform-node";
@@ -92,7 +92,7 @@ const Game = Plugin.make("game/Game", {});
 NodeRuntime.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }));
 ```
 
-`NodeRuntime.runMain` interrupts the game when the process is told to stop, and `Driver.run` closes the app as it does in a page. A server, a replay, or a test never imports `arcadekit/Browser`, so it needs no `@effect/platform-browser`.
+`NodeRuntime.runMain` interrupts the game when the process is told to stop, and `Driver.run` closes the app as it does in a page. A server, a replay, or a test never imports `arcadekit/browser`, so it needs no `@effect/platform-browser`.
 
 ## Tick only when needed
 
@@ -100,7 +100,7 @@ A turn-based game, a puzzle, or a menu has nothing to do between moves. Ticking 
 
 ```ts
 import { App, Driver, Field, Plugin, Singleton, System, Time } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 
 const Clock = Singleton.define("chess/Clock", { left: Field.f32 }, { left: 0 });
 
@@ -171,5 +171,5 @@ A program that makes its app itself can run `Driver.frames(app, { hz })`, the lo
 
 ## Read more
 
-- [`Browser`](/reference/arcadekit/Browser) and [`Driver`](/reference/arcadekit/Driver) in the API reference.
+- [`Browser`](/reference/arcadekit/browser/Browser) and [`Driver`](/reference/arcadekit/Driver) in the API reference.
 - [`examples/page`](../../../../../packages/arcadekit/examples/page), started with `Browser.runMain` and served by `pnpm --filter arcadekit page`, and [`examples/demo`](../../../../../packages/arcadekit/examples/demo), started under Node.

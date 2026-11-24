@@ -250,7 +250,7 @@ Drawing happens in the frame stage, between ticks, where the world is read-only.
 
 ```ts title="main.ts"
 import { App, Driver, Input, Plugin, Query, System } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Context, Effect, Layer } from "effect";
 
 import { Basket, Fall, Move, Position, Rules } from "./rules";

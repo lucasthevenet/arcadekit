@@ -143,5 +143,5 @@ Reading the devices when nothing changed costs 1.4 µs per tick. A tick in which
 
 ## Read more
 
-- [`Input`](/reference/arcadekit/Input) and [`Browser`](/reference/arcadekit/Browser) in the API reference.
+- [`Input`](/reference/arcadekit/Input) and [`Browser`](/reference/arcadekit/browser/Browser) in the API reference.
 - [Ticks and frames](../concepts/ticks-and-frames.md), for the three stages.

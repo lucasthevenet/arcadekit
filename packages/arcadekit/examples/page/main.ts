@@ -19,7 +19,7 @@
  */
 import { Effect, Layer } from "effect";
 
-// In a game of your own these are "arcadekit/Browser" and "arcadekit".
+// In a game of your own these are "arcadekit/browser/Browser" and "arcadekit".
 import * as Browser from "../../src/browser/Browser";
 import { App, Driver, View } from "../../src/index";
 import { Game, Screen } from "./game";

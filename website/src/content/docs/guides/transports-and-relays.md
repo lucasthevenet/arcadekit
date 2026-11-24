@@ -36,7 +36,7 @@ Every peer that opens `Transport.layerBroadcastChannel(name, me)` with the same 
 
 ```ts
 import { App, Driver, Plugin } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Relay, Session, Transport } from "arcadekit/net";
 import { Effect } from "effect";
 

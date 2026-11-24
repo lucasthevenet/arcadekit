@@ -3,7 +3,7 @@
  * and loaded assets are released when the scope they were loaded in closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
- *     backdrop: Browser.image("/forest.png"),    // from "arcadekit/Browser"
+ *     backdrop: Browser.image("/forest.png"),    // from "arcadekit/browser"
  *     layout: Assets.json("/forest.json", Layout),
  *   })
  *

@@ -26,7 +26,7 @@ Sounds that a page receives by name last for the page's lifetime. A level's own 
 
 ```ts
 import { Assets, Event, Sound } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Schema } from "effect";
 
 const Stepped = Event.define(
@@ -76,4 +76,4 @@ A file given by URL, and a `Browser.sound`, are downloaded in full and kept deco
 ## Read more
 
 - [Assets](assets.md), for a level's bundle.
-- [`Sound`](/reference/arcadekit/Sound) and [`Browser`](/reference/arcadekit/Browser) in the API reference.
+- [`Sound`](/reference/arcadekit/Sound) and [`Browser`](/reference/arcadekit/browser/Browser) in the API reference.
