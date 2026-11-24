@@ -249,10 +249,9 @@ export default defineConfig({
         ],
       },
     },
-    // A folder of src/ holds either: modules, in a folder that is an entry
-    // by its index, and what a module keeps to itself. test/Entries.test.ts
-    // holds that each module is an entry and that every other file is behind
-    // one.
+    // A folder of src/ holds either: modules, and what a module keeps to
+    // itself. test/Entries.test.ts holds that each module is an entry and
+    // that every other file is behind one.
     {
       files: ["packages/*/src/*/**/*.ts"],
       rules: {
@@ -263,13 +262,6 @@ export default defineConfig({
             ignore: [String.raw`^index\.ts$`],
           },
         ],
-      },
-    },
-    // What arcadekit/Browser keeps to itself is named as a module is.
-    {
-      files: ["packages/arcadekit/src/browser/**/*.ts"],
-      rules: {
-        "unicorn/filename-case": ["error", { case: "pascalCase" }],
       },
     },
     {

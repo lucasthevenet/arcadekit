@@ -131,16 +131,12 @@ describe("the package's entries", () => {
     };
     entry(".", "../src/index.ts");
     for (const file of Object.keys(sources)) {
-      // A module is PascalCase, as it is imported, in src/ or in a folder
-      // that is an entry by its index. Any other file is what a module
-      // keeps to itself, such as src/browser/'s, and no entry.
-      const module = /^\.\.\/src\/((?:\w+\/)*)([A-Z]\w*)\.ts$/u.exec(file);
+      // A module is PascalCase, as it is imported, wherever its file is,
+      // and a folder is an entry by its index. Any other file is what a
+      // module keeps to itself, and no entry.
+      const module = /^\.\.\/src\/((?:\w+\/)*[A-Z]\w*)\.ts$/u.exec(file);
       const folder = /^\.\.\/src\/((?:\w+\/)*\w+)\/index\.ts$/u.exec(file);
-      const name =
-        module !== null &&
-        (module[1] === "" || `../src/${module[1]}index.ts` in sources)
-          ? `${module[1]}${module[2]}`
-          : folder?.[1];
+      const name = module?.[1] ?? folder?.[1];
       if (name !== undefined) {
         entry(`./${name}`, file);
       }
@@ -183,10 +179,10 @@ describe("the package's entries", () => {
   // What only a page can use: arcadekit/Browser's own files, and no other entry's.
   const browserFiles = [
     "../src/Browser.ts",
-    "../src/browser/Audio.ts",
-    "../src/browser/Devices.ts",
-    "../src/browser/Media.ts",
-    "../src/browser/Options.ts",
+    "../src/browser/audio.ts",
+    "../src/browser/devices.ts",
+    "../src/browser/media.ts",
+    "../src/browser/options.ts",
   ];
 
   it("the package's own entry reaches every source but arcadekit/Browser's, the storage core's index and src/net", () => {

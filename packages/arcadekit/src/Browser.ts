@@ -23,21 +23,21 @@ import { Effect, Layer } from "effect";
 import type { Runtime } from "effect";
 
 import * as Assets from "./Assets";
-import { layerSound } from "./browser/Audio";
-import { listen } from "./browser/Devices";
-import type { Options } from "./browser/Options";
+import { layerSound } from "./browser/audio";
+import { listen } from "./browser/devices";
+import type { Options } from "./browser/options";
 import * as Driver from "./Driver";
 import * as Input from "./Input";
 
-export { layerSound } from "./browser/Audio";
-export { image, sound, stream } from "./browser/Media";
+export { layerSound } from "./browser/audio";
+export { image, sound, stream } from "./browser/media";
 export type {
   AudioLike,
   GamepadLike,
   MediaLike,
   Options,
   PointerTarget,
-} from "./browser/Options";
+} from "./browser/options";
 
 /**
  * A page's display, on which a frame is due once per repaint, with
