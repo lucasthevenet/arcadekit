@@ -1,10 +1,10 @@
 import { Cause, Data, Effect, Exit } from "effect";
 import { afterEach, assert, describe, expect, it } from "vitest";
 
+import * as Build from "../src/app/build";
 import {
   Action,
   App,
-  Build,
   Driver,
   Input,
   Journal,

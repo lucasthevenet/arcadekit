@@ -7,7 +7,7 @@
 import { Cause, Context, Effect, Exit, Layer, Metric, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
-import * as Action from "./Action";
+import * as Action from "../Action";
 import type {
   AllHandlers,
   App,
@@ -18,26 +18,26 @@ import type {
   StartOptions,
   Systems,
   TickError,
-} from "./App";
-import { hold } from "./app/parts";
-import { CommandBuffer } from "./ecs/commands";
-import type { Spawned } from "./ecs/spawned";
-import { World as EcsWorld } from "./ecs/world";
-import { EventBus } from "./Event";
-import * as Inbox from "./Inbox";
-import * as Input from "./Input";
-import * as Journal from "./Journal";
-import * as Loop from "./Loop";
-import * as Plugin from "./Plugin";
-import * as Runner from "./Runner";
-import * as Save from "./Save";
-import * as Schedule from "./Schedule";
-import { Time, World } from "./Services";
-import type { TimeState } from "./Services";
-import { reading } from "./services/handed";
-import * as Stage from "./Stage";
-import * as State from "./State";
-import { TickDispatcher, TickScheduler } from "./TickScheduler";
+} from "../App";
+import { CommandBuffer } from "../ecs/commands";
+import type { Spawned } from "../ecs/spawned";
+import { World as EcsWorld } from "../ecs/world";
+import { EventBus } from "../Event";
+import * as Input from "../Input";
+import * as Journal from "../Journal";
+import * as Plugin from "../Plugin";
+import * as Save from "../Save";
+import { Time, World } from "../Services";
+import type { TimeState } from "../Services";
+import { reading } from "../services/handed";
+import * as State from "../State";
+import * as Inbox from "./inbox";
+import * as Loop from "./loop";
+import { hold } from "./parts";
+import * as Runner from "./runner";
+import * as Schedule from "./schedule";
+import * as Stage from "./stage";
+import { TickDispatcher, TickScheduler } from "./tickScheduler";
 
 /**
  * What the code that took over an app holds: the two operations the app no

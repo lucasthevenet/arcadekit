@@ -1,6 +1,7 @@
 import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { TickScheduler } from "../src/app/tickScheduler";
 import { idOf } from "../src/ecs/component";
 import type { Spawned } from "../src/index";
 import {
@@ -16,7 +17,6 @@ import {
   Random,
   Resource,
   System,
-  TickScheduler,
   Time,
   World,
 } from "../src/index";

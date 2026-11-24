@@ -50,7 +50,7 @@ import { Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
 import * as Action from "./Action";
-import { build } from "./Build";
+import { build } from "./app/build";
 import type { Entity } from "./ecs/component";
 import type { Placed } from "./ecs/spawned";
 import * as Journal from "./Journal";
@@ -673,11 +673,13 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
    * - The app hashes the world before the frame or input stage and after each
    *   of its systems, without the actions queued for the next tick, which
    *   those stages are there to issue. If two hashes differ, `frame` or
-   *   `input` dies with `Stage.FrameChangedWorld`, which names the system. It
+   *   `input` dies with `App.FrameChangedWorld`, which names the system. It
    *   costs one world hash per system per frame.
    */
   readonly verifyFrames?: boolean;
 }
+
+export { FrameChangedWorld } from "./app/stage";
 
 /**
  * Makes an app that runs a game. A fresh app runs every plugin's `setup`, and

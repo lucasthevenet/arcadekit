@@ -298,14 +298,14 @@ export default defineConfig({
       files: [
         "packages/arcadekit/src/App.ts",
         // Where an app is put together, which was in App.ts.
-        "packages/arcadekit/src/Build.ts",
+        "packages/arcadekit/src/app/build.ts",
         "packages/arcadekit/src/Plugin.ts",
         // The turns of those systems, which were in App.ts.
-        "packages/arcadekit/src/Schedule.ts",
+        "packages/arcadekit/src/app/schedule.ts",
         // The run of a handler, which was in App.ts.
-        "packages/arcadekit/src/Inbox.ts",
+        "packages/arcadekit/src/app/inbox.ts",
         // The runs of the stages, which were in App.ts.
-        "packages/arcadekit/src/Loop.ts",
+        "packages/arcadekit/src/app/loop.ts",
       ],
       rules: {
         "effecttsgo/any-unknown-in-error-context": "off",

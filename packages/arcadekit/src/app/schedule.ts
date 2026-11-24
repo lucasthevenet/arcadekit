@@ -8,9 +8,9 @@
  */
 import { Effect } from "effect";
 
-import type * as Plugin from "./Plugin";
-import type * as State from "./State";
-import * as System from "./System";
+import type * as Plugin from "../Plugin";
+import type * as State from "../State";
+import * as System from "../System";
 
 /**
  * A system as the app runs it. A turn checks the system's condition, then runs
