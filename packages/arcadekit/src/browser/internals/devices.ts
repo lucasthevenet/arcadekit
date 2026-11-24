@@ -1,5 +1,5 @@
-import type { GamepadLike, Options, PointerTarget } from "../../Browser";
 import * as Input from "../../Input";
+import type { GamepadLike, Options, PointerTarget } from "../Browser";
 
 const isPad = (code: string): boolean => code.startsWith("Pad");
 const isPointer = (code: string): boolean => code.startsWith("Pointer");

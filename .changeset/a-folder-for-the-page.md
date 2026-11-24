@@ -1,7 +1,7 @@
 ---
-"arcadekit": patch
+"arcadekit": minor
 ---
 
-`src/Browser.ts` keeps what `arcadekit/Browser` exports, each with its type and doc comment, and the code behind them moves to `src/browser/internal/`: the page's display and layer, the devices, the page's audio, and the sounds and pictures it decodes. The build writes them to `dist/browser/internal/`.
+What only a page can use is a folder, `src/browser/`. `arcadekit/Browser` is its `Browser.ts`, and the page's sound is a module of its own beside it, `arcadekit/browser/Audio`: `Audio.layerSound`, `Audio.stream`, `Audio.sound`, `Audio.AudioLike` and `Audio.MediaLike`. What both keep to themselves is in `src/browser/internals/`, which is no entry.
 
-Nothing breaks: `arcadekit/Browser` exports the same names, with the same types and doc comments, and does what it did.
+Nothing breaks: `arcadekit/Browser` exports the same names, with the same types and doc comments, the page's sound among them, and does what it did. `arcadekit/browser/Audio` only adds an entry.

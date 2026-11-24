@@ -1,9 +1,9 @@
 import { Effect, Layer } from "effect";
 
 import * as Assets from "../../Assets";
-import type { Options } from "../../Browser";
 import * as Driver from "../../Driver";
 import * as Input from "../../Input";
+import type { Options } from "../Browser";
 import { layerSound } from "./audio";
 import { listen } from "./devices";
 

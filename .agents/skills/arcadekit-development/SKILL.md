@@ -40,7 +40,7 @@ Everything in the package is plain code or Effect code, and the first decision f
 
 The folders are a contract, and most of it is checked.
 
-- `src/ecs/` imports nothing. Every other module of `arcadekit` imports Effect alone and names nothing that only a page has. `src/Browser.ts` is the one import of a browser package. `@arcadekit/three` imports `arcadekit` by its entries, as a game would, and defines no component. The package does not depend on a UI library and will not. See [modules.md](modules.md).
+- `src/ecs/` imports nothing. Every other module of `arcadekit` imports Effect alone and names nothing that only a page has. `src/browser/` holds the one import of a browser package. `@arcadekit/three` imports `arcadekit` by its entries, as a game would, and defines no component. The package does not depend on a UI library and will not. See [modules.md](modules.md).
 - The stages are boundaries too: the tick is the simulation, the frame stage draws and plays sound and never changes the world, and the input stage turns devices into actions. What crosses one is refused. [Ticks and frames](../../../website/src/content/docs/concepts/ticks-and-frames.md) and [determinism](../../../website/src/content/docs/concepts/determinism.md) say what each may do.
 
 ## Root causes, not workarounds
