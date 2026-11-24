@@ -160,6 +160,20 @@ describe.runIf(built)("a module's page", () => {
     const page = renderModule(readSound(), "https://github.com/o/r", "main");
     expect(page.startsWith("Sound plays named cues")).toBe(true);
     expect(page).toContain('import * as Sound from "arcadekit/Sound"');
+    const session = renderModule(
+      readModule(
+        REPO_ROOT,
+        "packages/arcadekit",
+        "arcadekit",
+        "net/Session",
+        "packages/arcadekit/src/net/Session.ts"
+      ),
+      "https://github.com/o/r",
+      "main"
+    );
+    expect(session).toContain(
+      'import * as Session from "arcadekit/net/Session"'
+    );
     expect(page).toContain("## Constructors\n\n### clip");
   });
 

@@ -1,6 +1,6 @@
 import type { Camera, PerspectiveCamera } from "three";
 
-import type { FitOptions, RendererLike, RendererShape } from "../renderer";
+import type { FitOptions, RendererLike, RendererShape } from "../Renderer";
 
 const isPerspective = (camera: Camera): camera is PerspectiveCamera =>
   (camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera === true;

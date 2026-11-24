@@ -1,7 +1,7 @@
 ---
-"@arcadekit/three": patch
+"@arcadekit/three": minor
 ---
 
-`@arcadekit/three/Three` is written as files of its own in `src/three/`, behind the same entry. Each public file declares the exports it gives, with their doc comments: the scene, the renderer, which entities a system draws, the textures and loading managers made of assets, instances and objects. What they run on is in `src/three/internal/`. The built package has a file for each in `dist/three/`.
+`@arcadekit/three/Three` is written in a folder, `src/three/`, and each of its parts is a module and an entry of its own: `@arcadekit/three/three/Scene`, `Renderer`, `Which`, `Loading` (`texture` and `manager`), `Instances` and `Objects`. Each gives the same values `Three` gives, and has its own page in the reference. Their implementation is in `src/three/internals/`, which is no entry.
 
-Nothing breaks: the entry, and what it gives, are the same.
+Nothing breaks: `@arcadekit/three/Three` and `import { Three } from "@arcadekit/three"` give what they gave, from `dist/Three.js` as before. The new entries only add.

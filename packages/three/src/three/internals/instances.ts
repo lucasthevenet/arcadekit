@@ -4,8 +4,8 @@ import * as Query from "arcadekit/Query";
 import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 
-import type { InstancesFromOptions, InstancesOptions } from "../instances";
-import { Scene } from "../scene";
+import type { InstancesFromOptions, InstancesOptions } from "../Instances";
+import { Scene } from "../Scene";
 import { FromAssets } from "./assets";
 import type { Entries } from "./assets";
 import { Holdings } from "./holdings";

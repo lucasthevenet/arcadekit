@@ -1,7 +1,23 @@
+/**
+ * The scene an app draws into, and the camera it is seen through.
+ * `Three.plugin` provides `Scene` to an app.
+ *
+ *   import * as Scene from "@arcadekit/three/three/Scene"
+ *
+ *   const Lights = Layer.effectDiscard(
+ *     Effect.map(Scene.Scene, ({ scene }) => {
+ *       scene.add(new AmbientLight("#ffffff", 1))
+ *     })
+ *   )
+ *
+ * `@arcadekit/three/Three` gives the same exports. The scene belongs to
+ * rendering, not to the game: a tick cannot require it, and none of it is
+ * saved.
+ */
 import { Context } from "effect";
 import type { Camera, Scene as ThreeScene } from "three";
 
-import type { Kept, Owned } from "./internal/holdings";
+import type { Kept, Owned } from "./internals/holdings";
 
 /**
  * The scene and its camera, as a system gets them from `yield* Three.Scene`.

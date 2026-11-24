@@ -1,12 +1,27 @@
+/**
+ * Draws every entity of a kind as one instance of one mesh, for crowds.
+ *
+ *   import * as Instances from "@arcadekit/three/three/Instances"
+ *
+ *   const Rocks = Instances.instances("game/Rocks", {
+ *     of: Rock,
+ *     transform: Transform3d,
+ *     geometry: new IcosahedronGeometry(1),
+ *     material: new MeshStandardMaterial({ color: "#8a8f98" }),
+ *   })
+ *
+ * `@arcadekit/three/Three` gives the same exports. The system it makes
+ * requires `Three.plugin`.
+ */
 import type * as Assets from "arcadekit/Assets";
 import type * as Color from "arcadekit/Color";
 import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
-import type { Entries } from "./internal/assets";
-import * as internal from "./internal/instances";
-import type { Needs } from "./internal/kind";
-import type { Which } from "./which";
+import type { Entries } from "./internals/assets";
+import * as internal from "./internals/instances";
+import type { Needs } from "./internals/kind";
+import type { Which } from "./Which";
 
 /**
  * How an instance looks: its mesh's geometry and material.

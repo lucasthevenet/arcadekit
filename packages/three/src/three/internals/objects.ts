@@ -10,8 +10,8 @@ import type {
   ObjectsFromOptions,
   ObjectsOptions,
   ObjectsShared,
-} from "../objects";
-import { Scene } from "../scene";
+} from "../Objects";
+import { Scene } from "../Scene";
 import { FromAssets } from "./assets";
 import type { Entries } from "./assets";
 import type { Angle, Columns, Xy, Xyz, Xyzw } from "./columns";

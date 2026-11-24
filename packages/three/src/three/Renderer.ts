@@ -1,3 +1,17 @@
+/**
+ * What renders an app's scene each frame, and the layers that provide it from
+ * a page's canvas.
+ *
+ *   import * as Renderer from "@arcadekit/three/three/Renderer"
+ *
+ *   Driver.run(app, { hz: 60 }).pipe(
+ *     Effect.provide(Renderer.layerWebGL({ canvas }))
+ *   )
+ *
+ * `@arcadekit/three/Three` gives the same exports. A renderer needs a canvas,
+ * so it comes from outside the app, and a test provides one that draws
+ * nothing.
+ */
 import * as Plugin from "arcadekit/Plugin";
 import * as System from "arcadekit/System";
 import { Context, Effect, Layer } from "effect";
@@ -8,9 +22,9 @@ import type {
   WebGLRendererParameters,
 } from "three";
 
-import { fitted } from "./internal/fit";
-import { sceneLayer } from "./internal/scene-layer";
-import { Scene } from "./scene";
+import { fitted } from "./internals/fit";
+import { sceneLayer } from "./internals/scene-layer";
+import { Scene } from "./Scene";
 
 /**
  * The shape of `Three.Renderer`: a Three.js renderer, or a test's renderer that

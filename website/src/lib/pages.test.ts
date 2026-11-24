@@ -51,7 +51,16 @@ describe("the site's pages", () => {
       "arcadekit",
       "@arcadekit/three",
     ]);
-    expect(pages.packages[1]?.modules).toStrictEqual(["Gltf", "Three"]);
+    expect(pages.packages[1]?.modules).toStrictEqual([
+      "Gltf",
+      "Three",
+      "three/Instances",
+      "three/Loading",
+      "three/Objects",
+      "three/Renderer",
+      "three/Scene",
+      "three/Which",
+    ]);
   });
 
   it("names files that exist, each served at an address of its own", () => {
@@ -141,6 +150,12 @@ describe("the sidebar", () => {
       { label: "Overview", link: "/reference/three" },
       "reference/three/Gltf",
       "reference/three/Three",
+      "reference/three/three/Instances",
+      "reference/three/three/Loading",
+      "reference/three/three/Objects",
+      "reference/three/three/Renderer",
+      "reference/three/three/Scene",
+      "reference/three/three/Which",
     ]);
   });
 

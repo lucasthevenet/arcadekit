@@ -707,7 +707,8 @@ export const renderModule = (
       ...(module.inRoot
         ? [`import { ${module.name} } from "${module.packageName}"`, "// or"]
         : []),
-      `import * as ${module.name} from "${module.packageName}/${module.name}"`,
+      // A module in a folder is imported by its own name: Session, of net/Session.
+      `import * as ${module.name.split("/").at(-1)} from "${module.packageName}/${module.name}"`,
       "```",
     ].join("\n"),
     ...sections,

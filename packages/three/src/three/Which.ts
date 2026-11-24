@@ -1,3 +1,13 @@
+/**
+ * Which entities a drawing system draws, and the transform it draws them
+ * from: the options `Three.instances` and `Three.objects` share.
+ *
+ *   import type { Which } from "@arcadekit/three/three/Which"
+ *
+ *   const rocks: Which = { of: Rock, transform: Transform3d, smooth: true }
+ *
+ * `@arcadekit/three/Three` gives the same export.
+ */
 import type { ComponentDef } from "arcadekit/ecs";
 import type * as Transform2d from "arcadekit/Transform2d";
 import type * as Transform3d from "arcadekit/Transform3d";

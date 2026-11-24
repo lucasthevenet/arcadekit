@@ -49,30 +49,34 @@
  * bundle's assets while the bundle is loaded. `Three.texture` makes a texture
  * asset for such a bundle. After every frame-stage system has run,
  * `Three.Render` renders the scene through `Three.Renderer`.
+ *
+ * Each part is also a module of its own, which gives the same exports:
+ * `@arcadekit/three/three/Scene`, `Renderer`, `Which`, `Loading`,
+ * `Instances` and `Objects`.
  */
-export { Scene } from "./three/scene";
-export type { SceneShape } from "./three/scene";
+export { Scene } from "./Scene";
+export type { SceneShape } from "./Scene";
 export {
   layerRenderer,
   layerWebGL,
   plugin,
   Render,
   Renderer,
-} from "./three/renderer";
-export type { FitOptions, RendererLike, RendererShape } from "./three/renderer";
-export type { Which } from "./three/which";
-export { manager, texture } from "./three/assets";
-export type { TextureOptions } from "./three/assets";
-export { instances } from "./three/instances";
+} from "./Renderer";
+export type { FitOptions, RendererLike, RendererShape } from "./Renderer";
+export type { Which } from "./Which";
+export { manager, texture } from "./Loading";
+export type { TextureOptions } from "./Loading";
+export { instances } from "./Instances";
 export type {
   InstancesFromOptions,
   InstancesOptions,
   InstancesShared,
   Look,
-} from "./three/instances";
-export { objects } from "./three/objects";
+} from "./Instances";
+export { objects } from "./Objects";
 export type {
   ObjectsFromOptions,
   ObjectsOptions,
   ObjectsShared,
-} from "./three/objects";
+} from "./Objects";
