@@ -4,7 +4,7 @@
  *
  * No Effect dependency.
  */
-import { INDEX_MASK } from "./component";
+import { INDEX_MASK, entityOf } from "./component";
 import type { ComponentDef, Entity } from "./component";
 import { corrupt } from "./snapshot";
 import type { World } from "./world";
@@ -508,7 +508,7 @@ export class RemovedReader {
     this.world._reading(cursor);
     cursor.at = log.end;
     this.world._read(log);
-    return Array.from(ids) as Entity[];
+    return Array.from(ids, entityOf);
   }
 }
 

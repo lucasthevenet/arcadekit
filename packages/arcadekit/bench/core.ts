@@ -20,7 +20,7 @@
  */
 import { pathToFileURL } from "node:url";
 
-import { Component, Field, World } from "../src/ecs/index";
+import { Component, Field, World, entityIndex } from "../src/ecs/index";
 import type { Entity, Terms } from "../src/ecs/index";
 import { Query } from "../src/Query";
 
@@ -196,13 +196,13 @@ export const variants: Record<string, Variant> = {
           sink += vel.x;
         });
         velocities.each((vel, entity) => {
-          sink += entity;
+          sink += entityIndex(entity);
         });
         view.each((pos, vel) => {
           sink += pos.x - vel.y;
         });
         view.each((_, vel, entity) => {
-          sink += vel.x + entity;
+          sink += vel.x + entityIndex(entity);
         });
       }
       void sink;
@@ -254,13 +254,14 @@ export const variants: Record<string, Variant> = {
         drag: Field.f32,
       });
       const Age = Component.define("bench/Age", { seconds: Field.f32 });
+      const anchor = world.spawn();
       for (let i = 0; i < 2000; i++) {
         world.spawn(
           Health.of({ hp: i, max: i }),
           Spin.of({ angle: 0, speed: 1 }),
           Colour.of({ r: 1, g: 2, b: 3 }),
           Team.of({ side: i & 1, rank: i & 7 }),
-          Owner.of({ by: 0 as Entity, since: i }),
+          Owner.of({ by: anchor, since: i }),
           Label.of({ text: "thing" }),
           Mass.of({ kg: 1, drag: 0.5 }),
           Age.of({ seconds: 0 })
@@ -285,7 +286,7 @@ export const variants: Record<string, Variant> = {
         });
         owned.each((owner, mass, entity) => {
           owner.since += 1;
-          sink += owner.by + mass.kg + entity;
+          sink += entityIndex(owner.by) + mass.kg + entityIndex(entity);
         });
         falling.each((mass, age, spin) => {
           spin.speed -= mass.drag * age.seconds * DT;

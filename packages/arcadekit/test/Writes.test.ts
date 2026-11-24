@@ -1,6 +1,7 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { idOf } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -475,7 +476,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
         Effect.map(Query.all(Position, Velocity, Pointing), (query) => {
           const values: number[] = [];
           query.each((pos, vel, pointing) => {
-            values.push(pos.x, pos.y, vel.x, vel.y, pointing.target);
+            values.push(pos.x, pos.y, vel.x, vel.y, idOf(pointing.target));
           });
           return values;
         })

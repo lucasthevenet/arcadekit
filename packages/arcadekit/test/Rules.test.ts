@@ -118,7 +118,7 @@ describe("events", () => {
     const Report = System.tick("Report", function* () {
       const damaged = yield* Damaged.emits;
       for (const event of damaged.read()) {
-        log.push(`${event.target}:${event.amount}`);
+        log.push(`${idOf(event.target)}:${event.amount}`);
       }
     });
     const wounded: Spawned[] = [];
@@ -135,7 +135,7 @@ describe("events", () => {
       App.make(App.define({ plugins: [Two], systems: [Hit, Report] })),
       (app) => {
         app.tick(1);
-        expect(log).toEqual(wounded.map((entity) => `${entity}:3`));
+        expect(log).toEqual(wounded.map((entity) => `${idOf(entity)}:3`));
         expect(wounded).toHaveLength(2);
       }
     );
@@ -286,6 +286,7 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
   return entity;
 });
 
+import { idOf } from "../src/ecs/component";
 // The World service, imported under another name so `world` reads naturally above.
 import { World as App_World } from "../src/index";
 
@@ -371,7 +372,7 @@ const look = Effect.gen(function* () {
   ];
   (yield* Query.all(Health)).each((health, entity) => {
     const energy = world.get(entity, Energy);
-    out.push(`${entity}: hp=${health.hp} energy=${energy?.points}`);
+    out.push(`${idOf(entity)}: hp=${health.hp} energy=${energy?.points}`);
   });
   (yield* Turns).each(
     (turn) => void out.push(`turn ${turn.number} player ${turn.player}`)

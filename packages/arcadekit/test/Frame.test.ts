@@ -9,6 +9,7 @@ import {
 } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { entityIndex } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -865,7 +866,7 @@ describe("what the frame stage reads", () => {
         const Nudge = System.tick("Nudge", function* () {
           const { tick } = yield* Time;
           (yield* Balls).each((ball, entity) => {
-            if (entity === tick % 3) {
+            if (entityIndex(entity) === tick % 3) {
               ball.x += 1;
             }
           });

@@ -1,5 +1,6 @@
 import { assert } from "vitest";
 
+import { idOf } from "../src/ecs/component";
 import type { Spawned } from "../src/index";
 import type { Entity } from "../src/index";
 import type { ReadingWorld } from "../src/Services";
@@ -13,6 +14,6 @@ export const placedIn = (
   id: Spawned
 ): Entity => {
   const entity = world.placed(id);
-  assert(entity !== undefined, `the spawn of ${id} was not applied`);
+  assert(entity !== undefined, `the spawn of ${idOf(id)} was not applied`);
   return entity;
 };

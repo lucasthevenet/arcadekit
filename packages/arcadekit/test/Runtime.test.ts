@@ -1,6 +1,7 @@
 import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { idOf } from "../src/ecs/component";
 import type { Spawned } from "../src/index";
 import {
   Action,
@@ -600,7 +601,7 @@ describe("determinism", () => {
           });
           step(5);
           Effect.runSync(app.read(Movers)).each((pos, vel, entity) => {
-            trace.push(`${entity}:${pos.x},${pos.y},${vel.x}`);
+            trace.push(`${idOf(entity)}:${pos.x},${pos.y},${vel.x}`);
           });
           trace.push(`ticks=${app.time.tick} entities=${world.entityCount}`);
         }

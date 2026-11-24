@@ -17,6 +17,7 @@ import {
   World,
 } from "arcadekit";
 import type { Entity } from "arcadekit";
+import { entityGeneration, entityIndex } from "arcadekit/ecs";
 import type { ComponentDef, ComponentInput, ValueOf } from "arcadekit/ecs";
 import type { BuiltIn, ReadingWorld } from "arcadekit/Services";
 import { Cause, Context, Effect, Exit, Layer, Schema, Scope } from "effect";
@@ -1287,10 +1288,11 @@ describe("a flat game's Transform2d", () => {
     hand.spawn(Ship, Flat.Rotation, Flat.Scale);
     hand.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
     app.frame();
-    expect(made.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual([
-      plain,
-      whole,
-    ]);
+    expect(
+      made
+        .map((one) => one.entity)
+        .toSorted((a, b) => entityIndex(a) - entityIndex(b))
+    ).toEqual([plain, whole]);
     expect(objectOf(plain).position.toArray()).toEqual([1, 2, 5]);
     expect(objectOf(plain).rotation.z).toBe(0);
     expect(objectOf(plain).scale.toArray()).toEqual([1, 1, 4]);
@@ -1337,8 +1339,8 @@ describe("a flat game's Transform2d", () => {
     hand.despawn(plain);
     hand.add(whole, Hidden);
     app.frame();
-    expect(freed.toSorted((a, b) => a - b)).toEqual(
-      [plain, whole].toSorted((a, b) => a - b)
+    expect(freed.toSorted((a, b) => entityIndex(a) - entityIndex(b))).toEqual(
+      [plain, whole].toSorted((a, b) => entityIndex(a) - entityIndex(b))
     );
     expect(renderer.scene?.children).toEqual([]);
   });
@@ -1577,7 +1579,7 @@ describe("an entity drawn between two ticks", () => {
     // from where the old one was.
     hand.despawn(old);
     const fresh = hand.spawn(Rock, Position.of({ x: 500, y: 3, z: 0 }));
-    expect(fresh & 0x3f_ff_ff).toBe(old & 0x3f_ff_ff);
+    expect(entityIndex(fresh)).toBe(entityIndex(old));
     hand.add(hidden, Hidden);
     app.tick(1);
     app.frame(0.5);
@@ -1717,8 +1719,8 @@ describe("an entity drawn between two ticks", () => {
       Scale.of({ x: 6, y: 7, z: 8 })
     );
     expect(
-      [flat & 0x3f_ff_ff, solid & 0x3f_ff_ff].toSorted((a, b) => a - b)
-    ).toEqual(olds.map((one) => one & 0x3f_ff_ff).toSorted((a, b) => a - b));
+      [entityIndex(flat), entityIndex(solid)].toSorted((a, b) => a - b)
+    ).toEqual(olds.map((one) => entityIndex(one)).toSorted((a, b) => a - b));
     app.tick(1);
     app.frame(0.5);
     expectDrawn(mesh(), world, [solid], Transform3d);
@@ -2624,7 +2626,7 @@ describe("a colour per instance", () => {
       hand.set(rock, Color.Rgb, { r, g: 0.5, b: 0.5 });
       app.tick(1);
       expect(() => app.frame()).toThrow(
-        `Three.instances("th/Painted") was given the colour (${spoilt}, 0.5, 0.5) by entity ${rock}, which is no colour: each number of a colour in Color.Srgb is finite. One below 0 is drawn as 0 and one over 1 as 1, but NaN and an infinity, such as a division by zero leaves, have no colour to be drawn as.`
+        `Three.instances("th/Painted") was given the colour (${spoilt}, 0.5, 0.5) by the entity of slot ${entityIndex(rock)}, generation ${entityGeneration(rock)}, which is no colour: each number of a colour in Color.Srgb is finite. One below 0 is drawn as 0 and one over 1 as 1, but NaN and an infinity, such as a division by zero leaves, have no colour to be drawn as.`
       );
     }
   });
@@ -2740,7 +2742,7 @@ describe("a colour per instance", () => {
     // @ts-expect-error a space is Color.Srgb or Color.Linear
     hand.set(turned, Color.Rgb, { space: 2 });
     expect(() => app.frame()).toThrow(
-      `Three.instances("th/Painted") was given the colour (0, 0, 0.5) by entity ${turned}, which is no colour: its space is 2, and a colour's space is Color.Srgb (0) or Color.Linear (1).`
+      `Three.instances("th/Painted") was given the colour (0, 0, 0.5) by the entity of slot ${entityIndex(turned)}, generation ${entityGeneration(turned)}, which is no colour: its space is 2, and a colour's space is Color.Srgb (0) or Color.Linear (1).`
     );
   });
 
@@ -2849,10 +2851,11 @@ describe("Three.objects", () => {
     // One that is turned and sized, and nowhere.
     hand.spawn(Ship, Rotation, Scale);
     app.frame();
-    expect(made.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual([
-      plain,
-      whole,
-    ]);
+    expect(
+      made
+        .map((one) => one.entity)
+        .toSorted((a, b) => entityIndex(a) - entityIndex(b))
+    ).toEqual([plain, whole]);
     expect(renderer.scene?.children.toSorted((a, b) => a.id - b.id)).toEqual(
       made.map((one) => one.object).toSorted((a, b) => a.id - b.id)
     );
@@ -2907,8 +2910,14 @@ describe("Three.objects", () => {
     hand.add(hidden, Hidden);
     hand.remove(nowhere, Position);
     app.frame();
-    expect(freed.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
-      [gone, unmarked, hidden, nowhere].toSorted((a, b) => a - b)
+    expect(
+      freed
+        .map((one) => one.entity)
+        .toSorted((a, b) => entityIndex(a) - entityIndex(b))
+    ).toEqual(
+      [gone, unmarked, hidden, nowhere].toSorted(
+        (a, b) => entityIndex(a) - entityIndex(b)
+      )
     );
     for (const one of freed) {
       expect(one.object).toBe(objects.get(one.entity));
@@ -2941,7 +2950,7 @@ describe("Three.objects", () => {
     tilted = true;
     const second = hand.spawn(Ship, Position.of({ x: 2, y: 2, z: 2 }));
     // The same slot, and another entity.
-    expect(second & 0x3f_ff_ff).toBe(first & 0x3f_ff_ff);
+    expect(entityIndex(second)).toBe(entityIndex(first));
     expect(second).not.toBe(first);
     app.frame();
     expect(freed).toEqual([{ object: old, entity: first }]);
@@ -3043,9 +3052,11 @@ describe("Three.objects", () => {
       const kept = made.filter(
         (one) => !freed.some((other) => other.object === one.object)
       );
-      expect(kept.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
-        shown.toSorted((a, b) => a - b)
-      );
+      expect(
+        kept
+          .map((one) => one.entity)
+          .toSorted((a, b) => entityIndex(a) - entityIndex(b))
+      ).toEqual(shown.toSorted((a, b) => entityIndex(a) - entityIndex(b)));
       expect(new Set(renderer.scene?.children)).toEqual(
         new Set(kept.map((one) => one.object))
       );
@@ -3104,9 +3115,11 @@ describe("Three.objects", () => {
     app.frame();
     expect(freed.length).toBe(1);
     close();
-    expect(freed.map((one) => one.entity).toSorted((a, b) => a - b)).toEqual(
-      ships.toSorted((a, b) => a - b)
-    );
+    expect(
+      freed
+        .map((one) => one.entity)
+        .toSorted((a, b) => entityIndex(a) - entityIndex(b))
+    ).toEqual(ships.toSorted((a, b) => entityIndex(a) - entityIndex(b)));
     expect(renderer.scene?.children).toEqual([]);
   });
 });

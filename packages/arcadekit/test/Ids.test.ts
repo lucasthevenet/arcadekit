@@ -1,6 +1,7 @@
 import { Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { entityOf, idOf, makeEntity } from "../src/ecs/component";
 import {
   Component,
   Field,
@@ -28,7 +29,7 @@ const Mark = Component.define(
 const Count = Component.singleton(
   "id/Count",
   { n: Field.i32, last: Field.entity },
-  { n: 0, last: 0 as Entity }
+  { n: 0, last: entityOf(0) }
 );
 const all = [Body, Owned, ChildOf, Mark, Count.component];
 
@@ -67,14 +68,14 @@ const worn = (world: World, times: number): Entity => {
 describe("an entity's id", () => {
   it("names nobody once its entity is gone, however often its slot is given out again", () => {
     const world = new World();
-    const seen = new Set<number>();
+    const seen = new Set<Entity>();
     const kept: Entity[] = [];
     // Past the 1,024 times at which an id of 32 bits came round again.
     for (let n = 0; n < 3000; n++) {
       const entity = world.spawn(Body.of({ x: n }));
       expect(entityIndex(entity)).toBe(0);
       expect(entityGeneration(entity)).toBe(n);
-      expect(seen.has(entity), `given out twice: ${entity}`).toBe(false);
+      expect(seen.has(entity), `given out twice: ${idOf(entity)}`).toBe(false);
       seen.add(entity);
       if (n % 97 === 0 || n === 1023 || n === 1024 || n === 2048) {
         kept.push(entity);
@@ -97,9 +98,15 @@ describe("an entity's id", () => {
     expect(world.entityCount).toBe(1);
     // Nor does a number that is no id at all, though its low bits are a
     // slot that is taken.
-    for (const never of [last + 0.5, -1, Number.NaN, 2 ** 53 + last, 0.25]) {
-      expect(world.isAlive(never as Entity), String(never)).toBe(false);
-      expect(world.get(never as Entity, Body)).toBeUndefined();
+    for (const never of [
+      idOf(last) + 0.5,
+      -1,
+      Number.NaN,
+      2 ** 53 + idOf(last),
+      0.25,
+    ]) {
+      expect(world.isAlive(entityOf(never)), String(never)).toBe(false);
+      expect(world.get(entityOf(never), Body)).toBeUndefined();
     }
   });
 
@@ -198,11 +205,11 @@ describe("an entity's id", () => {
     expect(writeSnapshot(contents)).toEqual(bytes);
     // A different id in a field is a different world, though they differ
     // only above their 32nd bit: in a table, and in a sparse set.
-    copy.set(owned, Owned, { by: (wide + 2 ** 32) as Entity });
+    copy.set(owned, Owned, { by: entityOf(idOf(wide) + 2 ** 32) });
     expect(copy.hash()).not.toBe(hash);
     copy.set(owned, Owned, { by: wide });
     expect(copy.hash()).toBe(hash);
-    copy.set(wide, Mark, { to: (wide + 2 ** 32) as Entity });
+    copy.set(wide, Mark, { to: entityOf(idOf(wide) + 2 ** 32) });
     expect(copy.hash()).not.toBe(hash);
     copy.set(wide, Mark, { to: wide });
     expect(copy.hash()).toBe(hash);
@@ -229,26 +236,61 @@ describe("an entity's id", () => {
     // The slots that came free are given out again, last first, each with
     // its next generation.
     expect(world.spawn(Body.of({ x: 3 }))).toBe(SLOTS + entityIndex(child));
-    expect(world.spawn(Body.of({ x: 3 }))).toBe(wide + SLOTS);
+    expect(world.spawn(Body.of({ x: 3 }))).toBe(idOf(wide) + SLOTS);
     expect(world.isAlive(wide)).toBe(false);
+  });
+
+  it("goes in no typed array, number field or arithmetic, though it runs as a number", () => {
+    const Tally = Component.define("id/Tally", { n: Field.u32, x: Field.f64 });
+    const world = new World();
+    const entity = world.spawn(Owned.of({ by: world.spawn(), n: 1 }));
+    const ref = world.get(entity, Owned)!.by;
+    const narrow = new Uint32Array(1);
+    const exact = new Float64Array(1);
+    // @ts-expect-error a Uint32Array keeps an id's low 32 bits alone
+    narrow[0] = entity;
+    // @ts-expect-error and a stored reference's
+    narrow[0] = ref;
+    // @ts-expect-error a Float64Array holds the number, but not as an id
+    exact[0] = entity;
+    // @ts-expect-error a number field is not an entity field
+    Tally.of({ n: entity, x: 0 });
+    // @ts-expect-error even one wide enough
+    Tally.of({ n: 0, x: ref });
+    // @ts-expect-error an id is not a number to add to
+    void (entity + 1);
+    // @ts-expect-error nor a reference
+    void (ref + 1);
+    // @ts-expect-error nor one to take the bits of
+    void (entity & 0x3f_ff_ff);
+    // An entity is a reference, and a reference is not an entity.
+    const kept: Entity.Ref = entity;
+    // @ts-expect-error a reference is an entity once world.live says so
+    const alive: Entity = ref;
+    expect(world.live(kept)).toBe(entity);
+    expect(alive).toBe(ref);
+    expect(typeof entity).toBe("number");
+    expect(JSON.parse(JSON.stringify({ entity }))).toEqual({
+      entity: idOf(entity),
+    });
   });
 
   it("is one a schema takes, and a migration can put in a field", () => {
     const decode = Schema.decodeUnknownExit(EntityId);
-    const wide = (1500 * SLOTS + 1) as Entity;
+    const wide = entityOf(1500 * SLOTS + 1);
     expect(decode(wide)).toEqual(Exit.succeed(wide));
     expect(JSON.parse(JSON.stringify({ wide }))).toEqual({ wide });
     const world = new World();
     world.spawn(Body.of({ x: 1 }));
     const contents = readSnapshot(world.snapshot());
-    Migrate.addField(contents, "id/Body", "by", "entity", wide);
+    Migrate.addField(contents, "id/Body", "by", "entity", idOf(wide));
     const Bodied = Component.define("id/Body", {
       x: Field.f32,
       by: Field.entity,
     });
     const moved = new World();
     moved.load(writeSnapshot(contents), [Bodied]);
-    expect(moved.get(0 as Entity, Bodied)).toEqual({ x: 1, by: wide });
+    expect(moved.get(entityOf(0), Bodied)).toEqual({ x: 1, by: wide });
   });
 });
 
@@ -258,11 +300,11 @@ describe("a slot whose generations are used up", () => {
     const first = new World({ seed: 3 });
     first.spawn(Body.of({ x: 1 }));
     first.spawn(Body.of({ x: 2 }));
-    first.despawn(1 as Entity);
+    first.despawn(entityOf(1));
     const contents = readSnapshot(first.snapshot());
-    const last = ((GENERATIONS - 1) * SLOTS) as Entity;
+    const last = makeEntity(0, GENERATIONS - 1);
     contents.generations[0] = GENERATIONS - 1;
-    contents.tables[0]!.entities[0] = last;
+    contents.tables[0]!.entities[0] = idOf(last);
     const world = new World();
     world.load(writeSnapshot(contents), all);
     return { world, last };
@@ -290,7 +332,7 @@ describe("a slot whose generations are used up", () => {
       after.map((entity) => entityIndex(entity)).toSorted((a, b) => a - b)
     ).toEqual([1, 2, 3, 4, 5]);
     expect(world.isAlive(last)).toBe(false);
-    expect(world.isAlive(0 as Entity)).toBe(false);
+    expect(world.isAlive(entityOf(0))).toBe(false);
   });
 
   it("is kept so by a snapshot, and counted in the hash by the slots it leaves", () => {

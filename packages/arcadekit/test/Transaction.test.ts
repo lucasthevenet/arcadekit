@@ -1,6 +1,7 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { entityOf } from "../src/ecs/component";
 import type { JsonValue, Spawned } from "../src/index";
 import {
   Action,
@@ -47,7 +48,7 @@ const sheet = (n: number) => ({
   unsigned: 3_000_000_000 + n,
   short: 60_000 + n,
   byte: 200 + (n % 50),
-  other: n as Entity,
+  other: entityOf(n),
   note: `note ${n}`,
 });
 
@@ -118,7 +119,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
       row.unsigned = 1;
       row.short = 1;
       row.byte = 1;
-      row.other = 0 as Entity;
+      row.other = entityOf(0);
       row.note = "rewritten";
     });
   },
@@ -174,7 +175,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
     const clock = world.singleton(Clock);
     clock.single += 1;
     clock.note = { replaced: true };
-    clock.other = 9 as Entity;
+    clock.other = entityOf(9);
   },
   "writing a singleton for the first time": (world) => {
     const mood = world.singleton(Mood);

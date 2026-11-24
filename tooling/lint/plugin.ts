@@ -382,6 +382,55 @@ const noOutsideState: Rule = {
   }),
 };
 
+/** The types of an id: what only src/ecs/component.ts converts a number to, or an id from. */
+const idTypes = new Set(["Entity", "Spawned", "EntityColumn"]);
+
+/** Whether a type names an id's type anywhere in it: `Entity`, `Entity.Ref`, `Entity[]`, `Codec<Entity, number>`. */
+const namesAnId = (node: unknown): boolean => {
+  if (typeof node !== "object" || node === null) {
+    return false;
+  }
+  const { type } = node as { readonly type?: unknown };
+  if (type === "TSTypeReference") {
+    let name = (node as NodeOf<"TSTypeReference">).typeName;
+    while (name.type === "TSQualifiedName") {
+      name = name.left;
+    }
+    if (name.type === "Identifier" && idTypes.has(name.name)) {
+      return true;
+    }
+  }
+  return Object.entries(node).some(
+    ([key, child]) =>
+      key !== "parent" &&
+      (Array.isArray(child) ? child.some(namesAnId) : namesAnId(child))
+  );
+};
+
+const idCasts: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Only src/ecs/component.ts asserts that a value is an id, where an id and its number are converted.",
+    },
+  },
+  create: (context) => {
+    const check = (
+      node: NodeOf<"TSAsExpression"> | NodeOf<"TSTypeAssertion">
+    ): void => {
+      if (namesAnId(node.typeAnnotation)) {
+        context.report({
+          node,
+          message:
+            "This asserts that a value is an entity's id, which the compiler then takes on trust: a number that is no id, or an id cut to 32 bits, would pass. A game keeps an id in a Field.entity or a relation, turns a stored one back with world.live, and reads its parts with entityIndex and entityGeneration. The storage core converts with idOf and entityOf from src/ecs/component.ts, the one place that may.",
+        });
+      }
+    };
+    return { TSAsExpression: check, TSTypeAssertion: check };
+  },
+};
+
 export default {
   meta: { name: "arcadekit" },
   rules: {
@@ -390,5 +439,6 @@ export default {
     "no-code-from-text": noCodeFromText,
     "top-level-classes": topLevelClasses,
     "no-outside-state": noOutsideState,
+    "id-casts": idCasts,
   },
 };

@@ -14,6 +14,7 @@ import {
   World,
 } from "arcadekit";
 import type { Entity } from "arcadekit";
+import { entityGeneration, entityIndex } from "arcadekit/ecs";
 import type { BuiltIn } from "arcadekit/Services";
 import { Cause, Effect, Exit, Layer, Logger, Schema, Scope } from "effect";
 import {
@@ -33,6 +34,10 @@ import type { LoadingManager, Scene } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Three } from "../src/index";
+
+/** An entity as a log names it: its slot and generation. */
+const named = (entity: Entity): string =>
+  `${entityIndex(entity)}/${entityGeneration(entity)}`;
 
 const { Position } = Transform3d;
 
@@ -702,14 +707,14 @@ describe("objects made of assets", () => {
       from: Forest,
       make: (entity, { bark }) => {
         const object = new Object3D();
-        object.name = `deer ${entity} of ${bark.load}`;
+        object.name = `deer ${named(entity)} of ${bark.load}`;
         object.userData = { bark };
-        log.push(`make ${entity} of ${bark.load}`);
+        log.push(`make ${named(entity)} of ${bark.load}`);
         return object;
       },
       free: (object, entity) => {
         log.push(
-          `free ${entity} of ${(object.userData as { bark: Bark }).bark.load}`
+          `free ${named(entity)} of ${(object.userData as { bark: Bark }).bark.load}`
         );
       },
     });
@@ -731,8 +736,15 @@ describe("objects made of assets", () => {
     expect(renderer.drew).toEqual([]);
 
     enter("forest");
-    expect(log).toEqual(["open 1", `make ${one} of 1`, `make ${two} of 1`]);
-    expect(renderer.drew).toEqual([`deer ${one} of 1`, `deer ${two} of 1`]);
+    expect(log).toEqual([
+      "open 1",
+      `make ${named(one)} of 1`,
+      `make ${named(two)} of 1`,
+    ]);
+    expect(renderer.drew).toEqual([
+      `deer ${named(one)} of 1`,
+      `deer ${named(two)} of 1`,
+    ]);
     expect(renderer.scene!.children.map((child) => child.position.x)).toEqual([
       1, 2,
     ]);
@@ -742,7 +754,10 @@ describe("objects made of assets", () => {
     despawn(two);
     const three = spawn("deer", 3);
     app.frame();
-    expect(log.slice(3)).toEqual([`free ${two} of 1`, `make ${three} of 1`]);
+    expect(log.slice(3)).toEqual([
+      `free ${named(two)} of 1`,
+      `make ${named(three)} of 1`,
+    ]);
     expect(renderer.scene!.children.map((child) => child.position.x)).toEqual([
       5, 3,
     ]);
@@ -751,7 +766,11 @@ describe("objects made of assets", () => {
     // The level is left: every deer goes, once.
     enter("menu");
     expect(log.toSorted()).toEqual(
-      ["close 1", `free ${one} of 1`, `free ${three} of 1`].toSorted()
+      [
+        "close 1",
+        `free ${named(one)} of 1`,
+        `free ${named(three)} of 1`,
+      ].toSorted()
     );
     expect(log[0]).toBe("close 1");
     expect(renderer.drew).toEqual([]);
@@ -765,9 +784,9 @@ describe("objects made of assets", () => {
     expect(log.toSorted()).toEqual(
       [
         "open 2",
-        `make ${one} of 2`,
-        `make ${three} of 2`,
-        `make ${four} of 2`,
+        `make ${named(one)} of 2`,
+        `make ${named(three)} of 2`,
+        `make ${named(four)} of 2`,
       ].toSorted()
     );
     expect(renderer.drew.length).toBe(3);
@@ -789,20 +808,20 @@ describe("objects made of assets", () => {
     spawn("tree", 2);
     enter("forest");
     app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees", `deer ${one} of 1`]);
+    expect(renderer.drew).toEqual(["ta/Trees", `deer ${named(one)} of 1`]);
     enter("menu");
     expect(renderer.drew).toEqual([]);
     expect(renderer.stale).toBe(0);
-    expect(log.slice(-2)).toEqual(["close 1", `free ${one} of 1`]);
+    expect(log.slice(-2)).toEqual(["close 1", `free ${named(one)} of 1`]);
 
     enter("forest");
     app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees", `deer ${one} of 2`]);
+    expect(renderer.drew).toEqual(["ta/Trees", `deer ${named(one)} of 2`]);
     const made = renderer.scene!.children[1]!;
     log.length = 0;
     close();
     expect(log.filter((line) => line.startsWith("free"))).toEqual([
-      `free ${one} of 2`,
+      `free ${named(one)} of 2`,
     ]);
     expect(made.parent).toBeNull();
   });

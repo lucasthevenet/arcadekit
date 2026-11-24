@@ -4,10 +4,12 @@
  *
  * No Effect dependency.
  */
-import { entityIndex } from "./component";
+import { entityIndex, placedOf } from "./component";
 import type { Entity } from "./component";
 import { NOT_PLACED } from "./records";
 import type { World } from "./world";
+
+declare const SpawnedBrand: unique symbol;
 
 /**
  * The id that `Commands.spawn` returns. The entity is placed, with its
@@ -22,7 +24,7 @@ import type { World } from "./world";
  *
  * @category Models
  */
-export type Spawned = number & { readonly _spawned: "Spawned" };
+export type Spawned = { readonly [SpawnedBrand]: true };
 
 /**
  * A value as it is handed on once the spawns before it are applied, such as
@@ -70,8 +72,7 @@ type Unplaced<P> = P extends Entity
  * @category Utilities
  */
 export const placed = (world: World, id: Spawned): Entity | undefined => {
-  // The same number: a spawn reserves the id it gives.
-  const entity = id as number as Entity;
+  const entity = placedOf(id);
   return world.isAlive(entity) &&
     world._recTable[entityIndex(entity)] !== NOT_PLACED
     ? entity

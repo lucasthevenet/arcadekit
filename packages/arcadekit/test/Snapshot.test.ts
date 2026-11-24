@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { entityOf, idOf } from "../src/ecs/component";
 import { readSingleton } from "../src/ecs/contents";
 import { readSnapshot, writeSnapshot } from "../src/ecs/index";
 import {
@@ -11,7 +12,7 @@ import {
   Query,
   SnapshotError,
 } from "../src/index";
-import type { ComponentDef, Entity, JsonValue } from "../src/index";
+import type { ComponentDef, JsonValue } from "../src/index";
 import { Shouts } from "./stores";
 
 // One component of every field kind, in a table and in a sparse set.
@@ -59,7 +60,7 @@ const sheet = (n: number) => ({
   unsigned: 3_000_000_000 + n,
   short: 60_000 + n,
   byte: 200 + (n % 50),
-  other: n as Entity,
+  other: entityOf(n),
   note: notes[n % notes.length],
 });
 
@@ -197,7 +198,7 @@ describe("a snapshot of a world", () => {
             now[field as keyof typeof now],
             then[field as keyof typeof then]
           ),
-          `Sheet.${field} of ${entity}`
+          `Sheet.${field} of ${idOf(entity)}`
         ).toBe(true);
       }
       expect(copy.get(entity, C.Aura)).toEqual(world.get(entity, C.Aura));
@@ -581,7 +582,7 @@ describe("a snapshot that cannot be loaded", () => {
       }
       throw new Error("not found");
     };
-    const rows = find(a!, d!);
+    const rows = find(idOf(a!), idOf(d!));
     // The sparse set comes last: its one member, the index of entity a,
     // then that member's eight fields (36 bytes, the note being an empty
     // string), and the four bytes that end a snapshot.
@@ -618,10 +619,10 @@ describe("a snapshot that cannot be loaded", () => {
         "a slot that is used up and holds an entity",
         (v) => v.setUint32(generations, 2 ** 31, true),
       ],
-      ["an entity in two rows", (v) => v.setFloat64(rows + 8, a!, true)],
+      ["an entity in two rows", (v) => v.setFloat64(rows + 8, idOf(a!), true)],
       [
         "an entity of another generation",
-        (v) => v.setFloat64(rows, a! + 2 ** 22, true),
+        (v) => v.setFloat64(rows, idOf(a!) + 2 ** 22, true),
       ],
       [
         "an entity in a slot that does not exist",

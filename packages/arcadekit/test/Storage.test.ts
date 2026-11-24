@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { CommandBuffer } from "../src/ecs/commands";
-import { Component, Field, entityIndex } from "../src/ecs/component";
+import {
+  Component,
+  Field,
+  entityIndex,
+  entityOf,
+  idOf,
+} from "../src/ecs/component";
 import type { ComponentDef, Entity } from "../src/ecs/component";
 import type { QuerySpec, Terms } from "../src/ecs/query";
 import { World } from "../src/ecs/world";
@@ -143,7 +149,7 @@ describe("entities and components", () => {
         x: 9,
         wide: 9,
         hp: 9,
-        who: 9 as Entity,
+        who: entityOf(9),
         name: "old",
         cache: {},
       }),
@@ -377,7 +383,9 @@ describe("queries", () => {
       pos.y += vel.y;
       seen.push(entity);
     });
-    expect(seen.sort((a, b) => a - b)).toEqual([a, b].sort((a, b) => a - b));
+    expect(seen.sort((a, b) => idOf(a) - idOf(b))).toEqual(
+      [a, b].sort((a, b) => idOf(a) - idOf(b))
+    );
     expect(world.get(a, Position)).toEqual({ x: 1, y: 2 });
     expect(world.get(b, Position)).toEqual({ x: 9, y: 10 });
     expect(world.get(still, Position)).toEqual({ x: 5, y: 5 });
@@ -449,8 +457,8 @@ describe("queries", () => {
       world
         .view(query([Position], [Enemy]))
         .entities()
-        .sort((a, b) => a - b)
-    ).toEqual([enemy, stunned].sort((a, b) => a - b));
+        .sort((a, b) => idOf(a) - idOf(b))
+    ).toEqual([enemy, stunned].sort((a, b) => idOf(a) - idOf(b)));
     expect(world.view(query([Position], [], [Enemy])).entities()).toEqual([
       plain,
     ]);
@@ -539,10 +547,10 @@ describe("queries", () => {
     const burning = world.view(query([Position, Burning]));
     const seen: string[] = [];
     burning.each((pos, burn, entity) => {
-      seen.push(`${entity}:${pos.x}:${burn.seconds}`);
+      seen.push(`${idOf(entity)}:${pos.x}:${burn.seconds}`);
       burn.seconds -= pos.x;
     });
-    expect(seen.sort()).toEqual([`${a}:1:5`, `${c}:3:9`].sort());
+    expect(seen.sort()).toEqual([`${idOf(a)}:1:5`, `${idOf(c)}:3:9`].sort());
     expect(world.get(a, Burning)).toEqual({ seconds: 4 });
     expect(world.get(c, Burning)).toEqual({ seconds: 6 });
     expect(world.has(b, Burning)).toBe(false);
@@ -783,7 +791,7 @@ describe("what each hands its callback", () => {
     u32: 3_000_000_000 + n,
     u16: 60_000 + n,
     u8: (200 + n) & 255,
-    entity: (n + 7) as Entity,
+    entity: entityOf(n + 7),
     json: `text ${n}`,
     ref: new Date(1000 * n),
     transient: { n },
@@ -819,8 +827,8 @@ describe("what each hands its callback", () => {
         expect(Object.keys(every)).toEqual([]);
         expect(names.every((name) => name in every)).toBe(true);
       });
-      expect(seen.toSorted((a, b) => a - b)).toEqual(
-        having.toSorted((a, b) => a - b)
+      expect(seen.toSorted((a, b) => idOf(a) - idOf(b))).toEqual(
+        having.toSorted((a, b) => idOf(a) - idOf(b))
       );
 
       // Written through the accessors: what the world then holds.
@@ -933,7 +941,7 @@ describe("what each hands its callback", () => {
         each.each((...args: unknown[]) => {
           const [health, burning] = args as [
             { hp: number },
-            { seconds: number } | Entity,
+            { seconds: number } | number,
           ];
           seen.push(health.hp);
           if (typeof burning === "object") {
@@ -1285,15 +1293,17 @@ describe("randomized comparison against a simple model", () => {
                 values.has(required.id) && !values.has(excluded.id)
             )
             .map(([entity]) => entity)
-            .sort((a, b) => a - b);
+            .sort((a, b) => idOf(a) - idOf(b));
           const view = world.view(query([required], [], [excluded]));
-          expect(view.entities().sort((a, b) => a - b)).toEqual(expected);
+          expect(view.entities().sort((a, b) => idOf(a) - idOf(b))).toEqual(
+            expected
+          );
           expect(view.count()).toBe(expected.length);
           const visited: Entity[] = [];
           view.each((_, entity) => {
             visited.push(entity);
           });
-          expect(visited.sort((a, b) => a - b)).toEqual(expected);
+          expect(visited.sort((a, b) => idOf(a) - idOf(b))).toEqual(expected);
         }
       }
 
@@ -1309,7 +1319,7 @@ describe("randomized comparison against a simple model", () => {
                 !values.has(Enemy.id)
             )
             .map(([entity]) => entity)
-            .sort((a, b) => a - b);
+            .sort((a, b) => idOf(a) - idOf(b));
           const view = world.view(query([Position], [sparse], [Enemy]));
           view._path = path;
           const visited: Entity[] = [];
@@ -1317,17 +1327,17 @@ describe("randomized comparison against a simple model", () => {
             expect(pos.x).toBe(model.get(entity)!.get(Position.id)!.x);
             visited.push(entity);
           });
-          expect(visited.sort((a, b) => a - b)).toEqual(expected);
+          expect(visited.sort((a, b) => idOf(a) - idOf(b))).toEqual(expected);
           const chunked: Entity[] = [];
           view.eachChunk((start, end, pos, entities) => {
             expect(end).toBeGreaterThan(start);
             for (let i = start; i < end; i++) {
-              const entity = entities[i] as Entity;
+              const entity = entities[i]!;
               expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id)!.y);
               chunked.push(entity);
             }
           });
-          expect(chunked.sort((a, b) => a - b)).toEqual(expected);
+          expect(chunked.sort((a, b) => idOf(a) - idOf(b))).toEqual(expected);
         }
 
         const expected = [...model]
@@ -1338,7 +1348,7 @@ describe("randomized comparison against a simple model", () => {
               !values.has(Stunned.id)
           )
           .map(([entity]) => entity)
-          .sort((a, b) => a - b);
+          .sort((a, b) => idOf(a) - idOf(b));
         const view = world.view(query([Health, Burning], [], [Stunned]));
         view._path = path;
         const visited: Entity[] = [];
@@ -1349,11 +1359,11 @@ describe("randomized comparison against a simple model", () => {
           );
           visited.push(entity);
         });
-        expect(visited.sort((a, b) => a - b)).toEqual(expected);
+        expect(visited.sort((a, b) => idOf(a) - idOf(b))).toEqual(expected);
         const chunked: Entity[] = [];
         view.eachChunk((start, end, health, burning, entities) => {
           for (let i = start; i < end; i++) {
-            const entity = entities[i] as Entity;
+            const entity = entities[i]!;
             expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id)!.hp);
             expect(burning.columns.seconds[burning.indexOf(entity)]).toBe(
               model.get(entity)!.get(Burning.id)!.seconds
@@ -1361,7 +1371,7 @@ describe("randomized comparison against a simple model", () => {
             chunked.push(entity);
           }
         });
-        expect(chunked.sort((a, b) => a - b)).toEqual(expected);
+        expect(chunked.sort((a, b) => idOf(a) - idOf(b))).toEqual(expected);
       }
 
       // A sparse `without` must split raw chunks without losing or adding rows.
@@ -1370,16 +1380,16 @@ describe("randomized comparison against a simple model", () => {
           ([, values]) => values.has(Position.id) && !values.has(Stunned.id)
         )
         .map(([entity]) => entity)
-        .sort((a, b) => a - b);
+        .sort((a, b) => idOf(a) - idOf(b));
       const chunked: Entity[] = [];
       world
         .view(query([Position], [], [Stunned]))
         .eachChunk((start, end, _pos, entities) => {
           for (let i = start; i < end; i++) {
-            chunked.push(entities[i] as Entity);
+            chunked.push(entities[i]!);
           }
         });
-      expect(chunked.sort((a, b) => a - b)).toEqual(awake);
+      expect(chunked.sort((a, b) => idOf(a) - idOf(b))).toEqual(awake);
     });
   }
 });

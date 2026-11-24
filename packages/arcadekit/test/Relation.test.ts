@@ -1,6 +1,7 @@
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { entityIndex } from "../src/ecs/component";
 import {
   Action,
   App,
@@ -60,7 +61,7 @@ const expectNoDangling = (world: EcsWorld): void => {
     });
     for (const [target, sources] of byTarget) {
       expect(world.sources(target, relation)).toEqual(
-        sources.toSorted((a, b) => (a & 0x3f_ff_ff) - (b & 0x3f_ff_ff))
+        sources.toSorted((a, b) => entityIndex(a) - entityIndex(b))
       );
     }
   }
@@ -164,7 +165,7 @@ describe("a relation", () => {
     // The slot is used again: nothing was left pointing at it to mistake
     // the newcomer for the one that died.
     const newcomer = body(world);
-    expect(newcomer & 0x3f_ff_ff).toBe(prey & 0x3f_ff_ff);
+    expect(entityIndex(newcomer)).toBe(entityIndex(prey));
     expect(world.sources(newcomer, Targets)).toEqual([]);
     expect(world.view(Query.all(Targets)).count()).toBe(0);
     // And what points at the newcomer does not point at the one that died.
@@ -197,7 +198,7 @@ describe("a relation", () => {
       // then the one that was only held.
       expect(lost[0]!.read()).toEqual([child, both]);
       expect(lost[1]!.read()).toEqual([both, held]);
-      return [0, 1, 2, 3].map(() => world.spawn(Body) & 0x3f_ff_ff);
+      return [0, 1, 2, 3].map(() => entityIndex(world.spawn(Body)));
     };
     expect(build(true)).toEqual([1, 3, 2, 0]);
     expect(build(false)).toEqual([1, 3, 2, 0]);

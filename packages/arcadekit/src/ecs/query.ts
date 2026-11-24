@@ -7,7 +7,7 @@
 import { ChangeLog } from "./changes";
 import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
 import type { Column } from "./column";
-import { INDEX_MASK, makeAccessor, retarget } from "./component";
+import { INDEX_MASK, entityOf, makeAccessor, retarget } from "./component";
 import type {
   Accessor,
   AccessorsOf,
@@ -16,6 +16,7 @@ import type {
   ComponentDef,
   Entity,
   ReadOnlyTerm,
+  ReadonlyColumn,
   ReadonlyColumnsOf,
   Row,
   Schema,
@@ -138,7 +139,7 @@ export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
    * Returns an entity's row in `columns`, for an entity that has the
    * component. For any other entity, the number means nothing.
    */
-  readonly indexOf: (entity: number) => number;
+  readonly indexOf: (entity: Entity) => number;
 }
 
 /** A column `eachChunk` hands out as read-only, and what it held before the loop. */
@@ -155,7 +156,7 @@ interface ReadOnlyCopy {
  *
  * @category Models
  */
-export type EntityColumn = Float64Array & Readonly<Record<number, Entity>>;
+export type EntityColumn = ReadonlyColumn<Entity>;
 
 export type ColumnSetsOf<D extends Terms> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, infer St>
@@ -1223,7 +1224,7 @@ export class QueryView<D extends Terms = Terms> {
       try {
         this.runs(frame, (table, start, end) => {
           for (let i = start; i < end; i++) {
-            out.push(table.entities[i] as Entity);
+            out.push(entityOf(table.entities[i]!));
           }
         });
       } finally {
@@ -1235,7 +1236,7 @@ export class QueryView<D extends Terms = Terms> {
     for (const table of this.tables) {
       for (let i = 0; i < table.count; i++) {
         if (!this.filtered || this.pass(table.entities[i]!)) {
-          out.push(table.entities[i] as Entity);
+          out.push(entityOf(table.entities[i]!));
         }
       }
     }

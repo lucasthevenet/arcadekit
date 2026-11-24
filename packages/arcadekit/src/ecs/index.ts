@@ -32,6 +32,7 @@ export type {
   InputOf,
   OnTargetDespawn,
   ReadonlyColumn,
+  WritableColumn,
   RefCodec,
   SingletonSpec,
   Storage,

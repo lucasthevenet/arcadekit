@@ -1,6 +1,7 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
+import { entityIndex } from "../src/ecs/component";
 import type { Terms } from "../src/ecs/query";
 import type { Spawned } from "../src/index";
 import {
@@ -269,7 +270,7 @@ describe("a change query", () => {
     world.set(entities[4]!, Health, { hp: 2 });
     world.despawn(entities[4]!);
     const reused = world.spawn(Health.of({ hp: 5 }));
-    expect(reused & 0x3f_ff_ff).toBe(entities[4]! & 0x3f_ff_ff);
+    expect(entityIndex(reused)).toBe(entityIndex(entities[4]!));
     expect(hurt.entities()).toEqual([reused]);
     const bystander = world.spawn(Position.of({ x: 0, y: 0 }));
     expect(world.isAlive(bystander)).toBe(true);
@@ -816,7 +817,7 @@ describe("changes against a simple model", () => {
           const modulus = dice.int(2, 5);
           const Healing = Query.all(Health).pipe(Query.writes(Health));
           world.view(Healing).each((health, entity) => {
-            if (entity % modulus === 0) {
+            if (entityIndex(entity) % modulus === 0) {
               health.hp += 1;
               fire("Health:changed", entity);
             }
@@ -829,10 +830,10 @@ describe("changes against a simple model", () => {
               )
             )
             .each((heat, pos, entity) => {
-              if (entity % modulus === 1) {
+              if (entityIndex(entity) % modulus === 1) {
                 heat.degrees += 1;
                 fire("Heat:changed", entity);
-              } else if (entity % modulus === 0) {
+              } else if (entityIndex(entity) % modulus === 0) {
                 pos.y += 1;
                 fire("Position:changed", entity);
               }
@@ -996,13 +997,15 @@ describe("a change log", () => {
     expect(world.saveChanges()[0]!.entries.length).toBe(5010);
     moved.entities();
     world.view(Positions).each((pos, entity) => {
-      if (entity % 1000 === 7) {
+      if (entityIndex(entity) % 1000 === 7) {
         pos.x = 0;
       }
     });
     world.set(entities[4500]!, Position, { y: 1 });
     expect(moved.entities()).toEqual(
-      entities.filter((entity, n) => entity % 1000 === 7 || n === 4500)
+      entities.filter(
+        (entity, n) => entityIndex(entity) % 1000 === 7 || n === 4500
+      )
     );
     for (const entity of entities.slice(3000)) {
       world.despawn(entity);
@@ -1300,7 +1303,7 @@ const Early = System.tick("Early", function* () {
 const Drift = System.tick("Drift", function* () {
   const { tick } = yield* Time;
   (yield* Positions).each((pos, entity) => {
-    if ((entity + tick) % 3 === 0) {
+    if ((entityIndex(entity) + tick) % 3 === 0) {
       pos.y += 1;
     }
   });

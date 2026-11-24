@@ -12,6 +12,9 @@ import type { Spawned } from "./spawned";
 // Entities
 // ---------------------------------------------------------------------------
 
+declare const RefBrand: unique symbol;
+declare const EntityBrand: unique symbol;
+
 /**
  * An entity's id, an integer below 2^53 that packs two numbers. The low 22
  * bits are its index, the slot the entity occupies. The bits above are its
@@ -23,23 +26,21 @@ import type { Spawned } from "./spawned";
  * second, lasts more than a year. Once its generations run out, the slot is
  * retired, so an id never refers to another entity.
  *
- * An id is an ordinary number. The world keeps ids in `Float64Array`s, which
- * hold every integer below 2^53 exactly, and JSON writes an id as an integer.
+ * At run time an id is an ordinary number, and JSON writes it as an integer.
+ * In the type it is not a number: it compares with `===` and keys a `Map` or
+ * a `Set`, and no typed array, number field or arithmetic takes one, since a
+ * `Uint32Array` or a bitwise operator would keep only its low 32 bits.
  *
  * **Gotchas**
  *
  * - A world holds at most 4,194,304 entities at a time, the range of a 22-bit
  *   index. A spawn beyond that throws.
- * - Store ids in a `Float64Array`. A `Uint32Array` truncates the id of an
- *   entity whose slot was reused more than 1,023 times, with no error. The
- *   number read back is the id of an earlier generation of the same slot, and
- *   refers to no entity.
- * - Read the two parts with `entityIndex` and `entityGeneration`. A bitwise
- *   operator sees only the low 32 bits of an id.
+ * - Keep an id in a component with `Field.entity` or a relation, and read its
+ *   parts with `entityIndex` and `entityGeneration`.
  *
  * @category Models
  */
-export type Entity = number & { readonly _brand: "Entity" };
+export type Entity = Entity.Ref & { readonly [EntityBrand]: true };
 
 export declare namespace Entity {
   /**
@@ -51,7 +52,7 @@ export declare namespace Entity {
    *   const target = world.live(hunter.target)
    *   if (target !== undefined) world.get(target, Health)
    */
-  export type Ref = number & { readonly _brand: "Entity" | "Entity.Ref" };
+  export type Ref = { readonly [RefBrand]: true };
 }
 
 export const INDEX_BITS = 22;
@@ -64,6 +65,23 @@ const INDEX_RANGE = 2 ** INDEX_BITS;
  */
 export const GENERATIONS = 2 ** (53 - INDEX_BITS);
 
+// The one place an id and its number are converted, either way. The storage
+// core keeps ids as numbers in `Float64Array`s.
+/** @internal The number an id is at run time. */
+export const idOf = (id: Entity.Ref | Spawned): number =>
+  id as unknown as number;
+/** @internal The entity whose id is this number, as a column of ids holds it. */
+export const entityOf = (id: number): Entity => id as unknown as Entity;
+/** @internal Whether a value is an id, which at run time is a number. */
+export const isEntity = (value: unknown): value is Entity =>
+  typeof value === "number";
+/** @internal The entity a relation's value points at, placed by the time the world reads it. */
+export const targetOf = (value: object): Entity =>
+  (value as { readonly target: Entity }).target;
+/** @internal The entity a `Spawned` id becomes, the same number. */
+export const placedOf = (id: Entity | Spawned): Entity =>
+  id as unknown as Entity;
+
 // `&` takes a number's low 32 bits, whatever is above them: the index.
 /**
  * Returns an entity's index, the slot it occupies in the world. Once the
@@ -72,7 +90,8 @@ export const GENERATIONS = 2 ** (53 - INDEX_BITS);
  *
  * @category Utilities
  */
-export const entityIndex = (entity: Entity.Ref): number => entity & INDEX_MASK;
+export const entityIndex = (entity: Entity.Ref): number =>
+  idOf(entity) & INDEX_MASK;
 /**
  * Returns an entity's generation, the number of entities that held its index
  * before it. The generation tells the entity apart from them.
@@ -80,9 +99,9 @@ export const entityIndex = (entity: Entity.Ref): number => entity & INDEX_MASK;
  * @category Utilities
  */
 export const entityGeneration = (entity: Entity.Ref): number =>
-  Math.floor(entity / INDEX_RANGE);
+  Math.floor(idOf(entity) / INDEX_RANGE);
 export const makeEntity = (index: number, generation: number): Entity =>
-  (generation * INDEX_RANGE + index) as Entity;
+  entityOf(generation * INDEX_RANGE + index);
 
 // ---------------------------------------------------------------------------
 // Fields
@@ -197,7 +216,7 @@ export const Field = {
    * `Entity.Ref`, which `world.live` turns back into an `Entity`. For a
    * reference the world keeps correct, use `Component.relation`.
    */
-  entity: field<Entity.Ref, Float64Array>("entity"),
+  entity: field<Entity.Ref, WritableColumn<Entity.Ref>>("entity"),
   /**
    * Plain data: a string, number, boolean, bigint, null or undefined, or an
    * array or object of strings, numbers, booleans and null. It is saved in
@@ -348,6 +367,19 @@ export type OnTargetDespawn = "despawn" | "remove";
  */
 export interface ReadonlyColumn<T> {
   readonly [index: number]: T;
+  readonly length: number;
+}
+
+/**
+ * A column that a loop reads and assigns, and no more. `eachChunk` hands one
+ * out for a `Field.entity` of a term the query writes: its ids are numbers in
+ * a `Float64Array`, which the type doesn't show, so that no number is taken
+ * for an id.
+ *
+ * @category Models
+ */
+export interface WritableColumn<T> {
+  [index: number]: T;
   readonly length: number;
 }
 
