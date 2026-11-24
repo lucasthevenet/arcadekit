@@ -23,7 +23,7 @@ import type { Rng } from "./ecs/random";
 import type { PatchOf, Targeted } from "./ecs/relation";
 import type { Spawned } from "./ecs/spawned";
 import type { World as EcsWorld } from "./ecs/world";
-import type { EventBus } from "./Event";
+import type { ReadingEvents } from "./Event";
 import type { Devices } from "./Input";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query";
 import { writing } from "./services/handed";
@@ -42,14 +42,15 @@ export class Sim extends Context.Service<
 >()("arcadekit/Sim") {}
 
 /** What `set` is told of a component its world was not asked for. */
-type Settable<C extends string, N extends string> = [N] extends [never]
-  ? "This world was asked for with yield* World, which reads. To set a component, ask for it with yield* World.writes(...), naming each component this system sets."
-  : C extends N
-    ? unknown
-    : `World.writes was not given "${C}". Add it where the world is asked for: yield* World.writes(...), with every component this system sets.`;
+type Settable<C extends string, N extends string> = C extends N
+  ? unknown
+  : `World.writes was not given "${C}". Add it where the world is asked for: yield* World.writes(...), with every component this system sets.`;
 
 /**
- * The reads of every world that a system or a handler is handed.
+ * The world as `yield* World` and `app.read` hand it, which reads and has no
+ * `set`. To set a component, a system of the tick asks for
+ * `yield* World.writes(...)`, naming each component it sets. The frame stage,
+ * the input stage and `app.read` are handed this world alone.
  *
  * @category Models
  */
@@ -127,7 +128,7 @@ export interface WritingWorld<N extends string> extends ReadingWorld {
  *
  * @category Services
  */
-export class World extends Context.Service<World, WritingWorld<never>>()(
+export class World extends Context.Service<World, ReadingWorld>()(
   "arcadekit/World"
 ) {
   /** Returns the world with a `set` for these components. */
@@ -275,13 +276,13 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
 }
 
 /**
- * The app's event channels. A system usually reaches them through an event's
- * definition, with `yield* SomeEvent` to read and `yield* SomeEvent.emits` to
- * emit.
+ * The app's event channels, to read. A system usually reaches them through an
+ * event's definition, with `yield* SomeEvent` to read and
+ * `yield* SomeEvent.emits` to emit, which only the tick may.
  *
  * @category Services
  */
-export class Events extends Context.Service<Events, EventBus>()(
+export class Events extends Context.Service<Events, ReadingEvents>()(
   "arcadekit/Events"
 ) {}
 

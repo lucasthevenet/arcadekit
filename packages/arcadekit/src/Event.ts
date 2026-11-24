@@ -133,9 +133,14 @@ export class EventDef<P> extends Effectable.Class<
    * `Sim` doesn't compile.
    */
   get emits(): Effect.Effect<EventHandle<P>, never, Events | Sim> {
-    return (this.emitting ??= Effect.map(Effect.service(Events), (bus) =>
-      bus.handle(this)
-    ));
+    return (this.emitting ??= Effect.map(Effect.service(Events), (bus) => {
+      if (!(bus instanceof EventBus)) {
+        throw new Error(
+          `${this.name}.emits was asked for outside the tick. The frame stage and the input stage read events, and only the tick emits.`
+        );
+      }
+      return bus.handle(this);
+    }));
   }
 }
 
@@ -635,13 +640,25 @@ const outside = (def: EventDef<unknown>): Error =>
 // ---------------------------------------------------------------------------
 
 /**
+ * The app's events as `yield* Events` hands them, which read and have no
+ * `emit`. In the tick it is the app's `EventBus`. The frame stage and the
+ * input stage are handed this alone.
+ *
+ * @category Models
+ */
+export interface ReadingEvents {
+  /** Returns a handle to an event type, which reads it. */
+  handle<P>(def: EventDef<P>): EventReader<P>;
+}
+
+/**
  * Where an app's events are emitted and read. Each app holds one, which the
  * `Events` service provides. A game's code reads and emits through the
  * handles that `yield* SomeEvent` and `SomeEvent.emits` give.
  *
  * @category Models
  */
-export class EventBus {
+export class EventBus implements ReadingEvents {
   /**
    * The stage between ticks that is running, if one is. Its systems read
    * what was told and can't emit.

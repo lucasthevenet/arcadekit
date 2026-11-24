@@ -170,9 +170,11 @@ describe("events", () => {
     let bus: { emit(def: typeof Ping, n: number): void } | undefined;
     const Keeper = System.tick("Keeper", function* () {
       kept = yield* Ping.emits;
-      // A system that has the bus and no handle emits through it.
-      bus = yield* Effect.service(Events);
-      bus.emit(Ping, 7);
+      // A system of the tick that has the bus and no handle emits through it.
+      const events = yield* Effect.service(Events);
+      assert(events instanceof Event.EventBus);
+      events.emit(Ping, 7);
+      bus = events;
     });
     withApp(
       App.make(App.define({ systems: [Keeper], handlers: [say] })),

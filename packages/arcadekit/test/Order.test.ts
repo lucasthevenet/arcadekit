@@ -371,12 +371,8 @@ describe("what a system spawns and sets", () => {
       assert(target !== undefined);
       const patient = placedIn(world, target);
       world.get(patient, Health);
-      world.set(
-        patient,
-        // @ts-expect-error and sets nothing
-        Health,
-        { hp: 0 }
-      );
+      // @ts-expect-error and has no set: World.writes gives one
+      world.set(patient, Health, { hp: 0 });
       // @ts-expect-error The set of entities changes through Commands alone.
       world.spawn(Dot);
       // @ts-expect-error And a query is asked for, not taken from the world.

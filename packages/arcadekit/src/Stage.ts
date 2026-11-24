@@ -23,7 +23,7 @@ import type { EventBus } from "./Event";
 import * as Input from "./Input";
 import { Commands, Events, Frame, Random, Time, World } from "./Services";
 import type { FrameState, TimeState } from "./Services";
-import { handed } from "./services/handed";
+import { handed, hearing, reading } from "./services/handed";
 
 /**
  * The prefix of a reader's name in the world's change logs when it is a
@@ -123,28 +123,36 @@ export const tick = (parts: {
 };
 
 /**
- * Makes what the frame stage is given from what the tick is given. Its systems
- * get the world to read and nothing to change it with. What is random there
- * comes from a generator of its own, seeded with `seed`, which is no part of
- * the world. An action issued there is input from outside.
+ * Makes what the frame stage is given from what the app's plugins and its
+ * caller provide. It is handed a world that reads, events that read, and no
+ * `Commands`: an object of their own each, with nothing that changes the game
+ * even to a cast. What is random there comes from a generator of its own,
+ * seeded with `seed`, which is no part of the world. An action issued there
+ * is input from outside.
  *
  * @category Constructors
  */
 export const frame = (
   context: Context.Context<unknown>,
   parts: {
+    readonly world: EcsWorld;
+    readonly time: Readonly<TimeState>;
     /** The frame being drawn, which the app writes before each run. */
     readonly frame: Readonly<FrameState>;
+    readonly events: EventBus;
     readonly actions: Actions;
     readonly seed: number;
   }
 ): Context.Context<unknown> => {
   const random = new Rng(parts.seed);
-  return context.pipe(
+  return Context.omit(Commands)(context).pipe(
+    Context.add(World, reading(parts.world)),
+    Context.add(Time, parts.time),
     Context.add(Frame, parts.frame),
+    Context.add(Events, hearing(parts.events)),
+    Context.add(Action.Actions, parts.actions),
     Context.add(Random, random),
-    Context.add(EffectRandom.Random, effectRandom(random)),
-    Context.add(Action.Actions, parts.actions)
+    Context.add(EffectRandom.Random, effectRandom(random))
   );
 };
 

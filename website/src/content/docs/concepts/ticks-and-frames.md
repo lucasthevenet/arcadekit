@@ -61,7 +61,7 @@ const Draw = System.frame("game/Draw", function* () {
 });
 ```
 
-The world is read-only during the frame stage. A frame system reads queries, singletons, states, `Time`, events and change queries. Code that spawns, sets a component, writes a singleton or a state, runs a command, assigns in `each` or emits an event doesn't compile there. `yield* Frame` describes the current frame:
+The world is read-only during the frame stage. A frame system reads queries, singletons, states, `Time`, events and change queries. Code that spawns, sets a component, writes a singleton or a state, runs a command, assigns in `each` or emits an event doesn't compile there, and a cast finds nothing to call: its world has no `set`, its events have no `emit`, and it has no `Commands`. The input stage and `app.read` are handed the same. `yield* Frame` describes the current frame:
 
 | Field | Description |
 | --- | --- |

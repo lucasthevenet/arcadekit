@@ -161,16 +161,23 @@ export const Bot = System.tick("ls/Bot", function* () {
  * A bug of the kind that drift detection is for: on one tick, in the worlds
  * it is set for, a system moves a coin by a number that is not the game's.
  */
-let glitch: { tick: number; worlds: Set<ReadingWorld> | "all" } | undefined;
-/** Sets the bug, in the worlds as `app.read(World)` gives them, or takes it away. */
+let glitch:
+  | { tick: number; apps: ReadonlySet<{ readonly time: object }> | "all" }
+  | undefined;
+/** Sets the bug, in these apps, or takes it away. */
 export const setGlitch = (to: typeof glitch): void => {
   glitch = to;
 };
 export const Fault = System.tick("ls/Fault", function* () {
-  if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
+  const time = yield* Time;
+  if (glitch === undefined || time.tick !== glitch.tick) {
     return;
   }
-  if (glitch.worlds !== "all" && !glitch.worlds.has(yield* World)) {
+  // An app's `time` is the one its systems are handed.
+  if (
+    glitch.apps !== "all" &&
+    ![...glitch.apps].some((app) => app.time === time)
+  ) {
     return;
   }
   let first = true;
