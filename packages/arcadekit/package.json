@@ -47,11 +47,6 @@
       "types": "./dist/Assets.d.ts",
       "default": "./dist/Assets.js"
     },
-    "./Browser": {
-      "source": "./src/browser/Browser.ts",
-      "types": "./dist/Browser.d.ts",
-      "default": "./dist/Browser.js"
-    },
     "./Build": {
       "source": "./src/Build.ts",
       "types": "./dist/Build.d.ts",
@@ -197,10 +192,20 @@
       "types": "./dist/View.d.ts",
       "default": "./dist/View.js"
     },
+    "./browser": {
+      "source": "./src/browser/index.ts",
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
     "./browser/Audio": {
       "source": "./src/browser/Audio.ts",
       "types": "./dist/browser/Audio.d.ts",
       "default": "./dist/browser/Audio.js"
+    },
+    "./browser/Browser": {
+      "source": "./src/browser/Browser.ts",
+      "types": "./dist/browser/Browser.d.ts",
+      "default": "./dist/browser/Browser.js"
     },
     "./ecs": {
       "source": "./src/ecs/index.ts",

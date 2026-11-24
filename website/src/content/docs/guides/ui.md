@@ -96,7 +96,7 @@ A bridge refuses two different views with the same name.
 
 ```ts title="main.ts"
 import { App, Driver, View } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Effect } from "effect";
 
 import { Game } from "./game";

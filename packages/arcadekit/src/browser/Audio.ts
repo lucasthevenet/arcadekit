@@ -1,7 +1,7 @@
 /**
  * The page's sound, played with Web Audio: the page's own sound files, the
  * clips in a level's bundle, and tracks streamed as they play.
- * `arcadekit/Browser` gives all of it too, as `Browser.layerSound`,
+ * `arcadekit/browser/Browser` gives all of it too, as `Browser.layerSound`,
  * `Browser.sound` and `Browser.stream`.
  *
  *   import * as Audio from "arcadekit/browser/Audio"
@@ -18,8 +18,8 @@ import type { Layer } from "effect";
 import type * as Assets from "../Assets";
 import type * as Sound from "../Sound";
 import type { Options } from "./Browser";
-import * as audio from "./internals/audio";
-import * as decode from "./internals/decode";
+import * as audio from "./internal/audio";
+import * as decode from "./internal/decode";
 
 /**
  * The parts of a page's audio that are used. The browser's `AudioContext`

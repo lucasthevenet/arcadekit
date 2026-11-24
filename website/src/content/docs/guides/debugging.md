@@ -9,7 +9,7 @@ description: "See what a game does as it runs. Learn how to inspect an app's ent
 
 ```ts
 import { App, Driver, Plugin } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Effect } from "effect";
 
 const Game = Plugin.make("game/Game", {});
@@ -47,7 +47,7 @@ Browser.runMain(
 
 ```ts
 import { App, Driver, System } from "arcadekit";
-import * as Browser from "arcadekit/Browser";
+import { Browser } from "arcadekit/browser";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { OtlpSerialization, OtlpTracer } from "effect/observability";
