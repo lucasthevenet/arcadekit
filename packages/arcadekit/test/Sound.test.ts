@@ -43,7 +43,7 @@ class TooHigh extends Schema.TaggedError<TooHigh>()("TooHigh", {}) {}
 const Drop = Action.define(
   "sd/Drop",
   Schema.Struct({ height: Schema.Finite }),
-  { refusals: [TooHigh] }
+  { error: TooHigh }
 );
 const Mute = Action.define("sd/Mute", Schema.Struct({ on: Schema.Boolean }));
 const Throw = Action.define(

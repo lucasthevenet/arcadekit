@@ -9,7 +9,7 @@
  * with, each a `Schema.TaggedError`.
  *
  *   class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {}) {}
- *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }), { refusals: [NotYourTurn] })
+ *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }), { error: NotYourTurn })
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Turn
@@ -81,7 +81,7 @@ export class UnknownAction extends Schema.TaggedError<UnknownAction>()(
  * the handler received, the refusal it failed with, and who issued it.
  *
  * @typeParam P the action's payload
- * @typeParam E the refusals its action declares
+ * @typeParam E the error its action declares
  *
  * @category Models
  */
@@ -93,11 +93,11 @@ export interface Refused<P, E> {
 
 /**
  * An action type, as `Action.define` makes it: its name, the codec of its
- * payload, and the codec of its refusals.
+ * payload, and the codec of its error.
  *
  * @typeParam N the action's name
  * @typeParam P the payload a handler receives
- * @typeParam E the refusals its handler may fail with
+ * @typeParam E the error its handler may refuse it with
  *
  * @category Models
  */
@@ -109,26 +109,15 @@ export interface ActionDef<N extends string, P, E = unknown> {
    */
   readonly codec: Schema.Codec<P, unknown>;
   /**
-   * Converts a refusal to and from JSON. Derived from the refusals the
-   * action declares.
+   * Validates a refusal and converts it to and from JSON. Derived from the
+   * action's error schema.
    */
-  readonly refusals: Schema.Codec<E, unknown>;
+  readonly error: Schema.Codec<E, unknown>;
   /** The event of the action's refusals, which `Action.rejected` returns. */
   readonly rejected: Event.EventDef<Refused<P, E>>;
   /** Holds no value. It keeps the payload type on the action, invariant. */
   readonly _P?: (payload: P) => P;
 }
-
-/**
- * What an action may declare as a refusal: a class made with
- * `Schema.TaggedError`, which a handler yields and the schema encodes.
- *
- * @category Type-level
- */
-export type Refusal = Schema.Codec<
-  Cause.YieldableError & { readonly _tag: string },
-  unknown
->;
 
 /**
  * Defines an action, with the schema of its payload. The payload type is
@@ -137,12 +126,16 @@ export type Refusal = Schema.Codec<
  * payload takes only its name, `Action.define("duel/Pass")`, and is issued
  * with `undefined`.
  *
- * The third argument declares the errors its handler refuses the action
- * with, each a class made with `Schema.TaggedError`:
- * `Action.define("duel/Strike", payload, { refusals: [NotYourTurn, TooTired] })`.
- * A handler that fails with an error the action doesn't declare doesn't
- * compile. An action with no payload and refusals takes `Schema.Void` as its
- * payload.
+ * The third argument declares the schema of the error its handler refuses
+ * the action with, as `Rpc.make` does: `{ error: NotYourTurn }`, or
+ * `{ error: Schema.Union([NotYourTurn, TooTired]) }` for several. Without it
+ * the error is `Schema.Never`, and the handler can't refuse the action. A
+ * handler that fails with an error outside the schema doesn't compile. An
+ * action with no payload and an error takes `Schema.Void` as its payload.
+ *
+ * The error is tagged: each value it takes, and its encoded form, has a
+ * `_tag`, as a class made with `Schema.TaggedError` or a `Schema.TaggedStruct`
+ * has. `Action.Rejected` reads the tag of any action's refusal.
  *
  * **Details**
  *
@@ -153,35 +146,41 @@ export type Refusal = Schema.Codec<
  *
  * @category Constructors
  */
+/** A schema whose values and encoded form each have a `_tag`. */
+type Tagged = Schema.Codec<
+  { readonly _tag: string },
+  { readonly _tag: string }
+>;
+
 export function define<const N extends string>(
   name: N
 ): ActionDef<N, void, never>;
 export function define<
   const N extends string,
   S extends Schema.Codec<unknown, unknown>,
-  const R extends readonly Refusal[] = readonly [],
+  Err extends Tagged = typeof Schema.Never,
 >(
   name: N,
   payload: S,
-  options?: { readonly refusals: R }
-): ActionDef<N, S["Type"], R[number]["Type"]>;
+  options?: { readonly error?: Err }
+): ActionDef<N, S["Type"], Err["Type"]>;
 export function define(
   name: string,
   payload: Schema.Codec<unknown, unknown> = Schema.Void,
-  options?: { readonly refusals: readonly Refusal[] }
+  options?: { readonly error?: Tagged }
 ): AnyActionDef {
-  const refusals = Schema.Union(options?.refusals ?? []);
+  const error = options?.error ?? Schema.Never;
   // The JSON codec turns values such as dates and bigints into JSON on the
   // way out and back on the way in, so the log is always safe to serialize.
   return {
     codec: Schema.toCodecJson(payload),
     name,
-    refusals: Schema.toCodecJson(refusals),
+    error: Schema.toCodecJson(error),
     rejected: Event.define(
       `Action.Rejected(${name})`,
       Schema.Struct({
         payload,
-        error: refusals,
+        error,
         from: Schema.UndefinedOr(Schema.String),
       })
     ),
@@ -250,7 +249,7 @@ export interface Handler<N extends string, P, A, E, R> {
 export interface AnyActionDef {
   readonly name: string;
   readonly codec: Schema.Codec<unknown, unknown>;
-  readonly refusals: Schema.Codec<unknown, unknown>;
+  readonly error: Schema.Codec<unknown, unknown>;
   readonly rejected: Event.EventDef<Refused<unknown, unknown>>;
 }
 
@@ -292,7 +291,7 @@ export interface AnyHandler {
  *   outside it, such as a variable of a module that the handler changed. A
  *   value a field holds is read-only, so the handler replaces it, and the
  *   refusal puts the old value back.
- * - A handler fails only with the refusals its action declares in
+ * - A handler fails only with the error its action declares in
  *   `Action.define`. Any other error doesn't compile, and the compiler names
  *   it.
  *

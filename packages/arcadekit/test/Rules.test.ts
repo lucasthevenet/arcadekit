@@ -214,17 +214,17 @@ class NoSuchTarget extends Schema.TaggedError<NoSuchTarget>()(
 const Attack = Action.define(
   "Attack",
   Schema.Struct({ attacker: EntityId, target: EntityId }),
-  { refusals: [NotYourTurn, NotEnoughEnergy, NoSuchTarget] }
+  { error: Schema.Union([NotYourTurn, NotEnoughEnergy, NoSuchTarget]) }
 );
 const EndTurn = Action.define(
   "EndTurn",
   Schema.Struct({ player: Schema.Number }),
-  { refusals: [NotYourTurn] }
+  { error: NotYourTurn }
 );
 const Summon = Action.define(
   "Summon",
   Schema.Struct({ player: Schema.Number, hp: Schema.Number }),
-  { refusals: [NoSuchTarget] }
+  { error: NoSuchTarget }
 );
 const Unhandled = Action.define("Unhandled", Schema.Struct({}));
 
@@ -591,7 +591,7 @@ describe("actions", () => {
     expect(rolls()).toEqual(rolled);
   });
 
-  it("fail only with the refusals their action declares, each a Schema.TaggedError", () => {
+  it("fail only with the error their action declares, a tagged schema", () => {
     class Undeclared extends Schema.TaggedError<Undeclared>()(
       "ru/Undeclared",
       {}
@@ -599,7 +599,7 @@ describe("actions", () => {
     class Plain extends Data.TaggedError("ru/Plain")<{}> {}
     Action.handler(
       EndTurn,
-      // @ts-expect-error Undeclared is not among the refusals of EndTurn
+      // @ts-expect-error EndTurn's error schema does not take Undeclared
       function* () {
         return yield* Undeclared.make({});
       }
@@ -614,9 +614,29 @@ describe("actions", () => {
     expect(() =>
       Action.define("ru/Plain", Schema.Void, {
         // @ts-expect-error a Data.TaggedError has no schema to encode it with
-        refusals: [Plain],
+        error: Plain,
       })
     ).toThrow(TypeError);
+    Action.define("ru/Untagged", Schema.Void, {
+      // @ts-expect-error a refusal has a _tag, which Action.Rejected reads
+      error: Schema.String,
+    });
+    const Offside = Schema.TaggedStruct("ru/Offside", { by: Schema.Number });
+    const Kick = Action.define(
+      "ru/Kick",
+      Schema.Struct({ by: Schema.Number }),
+      {
+        error: Offside,
+      }
+    );
+    const kick = Action.handler(Kick, function* ({ by }) {
+      return yield* Effect.fail(Offside.make({ by }));
+    });
+    withApp(App.make(App.define({ systems: [], handlers: [kick] })), (app) => {
+      expect(app.dispatch(Kick, { by: 3 })).toEqual(
+        Exit.fail({ _tag: "ru/Offside", by: 3 })
+      );
+    });
     const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> = withApp(
       duel(),
       ({ app }) => app.dispatch(EndTurn, { player: 2 })

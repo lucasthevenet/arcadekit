@@ -99,7 +99,7 @@ class NothingToHeal extends Schema.TaggedError<NothingToHeal>()(
 ) {}
 
 const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }), {
-  refusals: [NothingToHeal],
+  error: NothingToHeal,
 });
 
 const heal = Action.handler(Heal, function* ({ amount }) {

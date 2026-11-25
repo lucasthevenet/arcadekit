@@ -47,7 +47,7 @@ const Phase = State.define("tr/Phase", ["title", "playing"]);
 const Add = Action.define("tr/Add", Schema.Struct({ by: Schema.Int }));
 class NotNow extends Schema.TaggedError<NotNow>()("tr/NotNow", {}) {}
 const Refused = Action.define("tr/Refused", Schema.Struct({}), {
-  refusals: [NotNow],
+  error: NotNow,
 });
 const Begin = Action.define("tr/Begin", Schema.Struct({}));
 

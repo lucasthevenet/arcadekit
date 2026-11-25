@@ -796,7 +796,7 @@ class NoSuchTree extends Schema.TaggedError<NoSuchTree>()("NoSuchTree", {}) {}
 const Graft = Action.define(
   "rl/Graft",
   Schema.Struct({ branch: EntityId, onto: EntityId }),
-  { refusals: [NoSuchTree] }
+  { error: NoSuchTree }
 );
 const fell = Action.handler(Fell, function* ({ tree }) {
   (yield* Commands).despawn(tree);

@@ -65,7 +65,7 @@ export class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()("NoSuchCoin", {
 export const Take = Action.define(
   "ls/Take",
   Schema.Struct({ by: Player, coin: EntityId }),
-  { refusals: [NoSuchCoin] }
+  { error: NoSuchCoin }
 );
 export const Fire = Action.define("ls/Fire", Schema.Struct({}));
 export class Stranger extends Schema.TaggedError<Stranger>()("Stranger", {
@@ -75,7 +75,7 @@ export class Stranger extends Schema.TaggedError<Stranger>()("Stranger", {
 export const Tip = Action.define(
   "ls/Tip",
   Schema.Struct({ amount: Schema.Int }),
-  { refusals: [Stranger] }
+  { error: Stranger }
 );
 export const Mint = Action.define(
   "ls/Mint",

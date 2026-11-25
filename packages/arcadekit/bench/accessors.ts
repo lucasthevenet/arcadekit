@@ -78,7 +78,7 @@ class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 const Nudge = Action.define(
   "bench/Nudge",
   Schema.Struct({ target: EntityId, refuse: Schema.Boolean }),
-  { refusals: [Refused] }
+  { error: Refused }
 );
 const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   const world = yield* WorldService.writes(Position);
@@ -95,7 +95,7 @@ const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
 const Sweep = Action.define(
   "bench/Sweep",
   Schema.Struct({ refuse: Schema.Boolean }),
-  { refusals: [Refused] }
+  { error: Refused }
 );
 const sweep = Action.handler(Sweep, function* ({ refuse }) {
   (yield* Moving).each((pos, vel) => {

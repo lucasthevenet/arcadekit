@@ -349,7 +349,7 @@ class TooFast extends Schema.TaggedError<TooFast>()("TooFast", {}) {}
 const Survey = Action.define(
   "rd/Survey",
   Schema.Struct({ limit: Schema.Int }),
-  { refusals: [TooFast] }
+  { error: TooFast }
 );
 /** Looks at every body, changes one field of each, and may then refuse. */
 const survey = Action.handler(Survey, function* ({ limit }) {

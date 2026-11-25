@@ -76,12 +76,12 @@ class NoSuchFighter extends Schema.TaggedError<NoSuchFighter>()(
 const Strike = Action.define(
   "Strike",
   Schema.Struct({ attacker: EntityId, target: EntityId }),
-  { refusals: [NoSuchFighter, NotYourTurn, TooTired] }
+  { error: Schema.Union([NoSuchFighter, NotYourTurn, TooTired]) }
 );
 const Pass = Action.define(
   "Pass",
   Schema.Struct({ player: Schema.Literals([1, 2]) }),
-  { refusals: [NotYourTurn] }
+  { error: NotYourTurn }
 );
 
 const STRIKE_COST = 2;

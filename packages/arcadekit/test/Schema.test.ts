@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Option, Predicate, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Predicate, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 import { assert, describe, expect, it } from "vitest";
 
@@ -17,7 +17,6 @@ import {
   System,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
 import { Layout } from "../src/internal/recording";
 import { Message } from "../src/net/index";
 
@@ -36,7 +35,7 @@ const Damage = Action.define(
     seed: Schema.BigInt,
     note: Schema.optional(Schema.String),
   }),
-  { refusals: [NoSuchTarget] }
+  { error: NoSuchTarget }
 );
 
 const Rename = Action.define("Rename", Schema.Struct({ name: Schema.String }));

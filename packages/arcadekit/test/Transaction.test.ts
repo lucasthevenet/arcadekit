@@ -520,7 +520,7 @@ const Act = Action.define(
     steps: Schema.Array(Step),
     refuse: Schema.Boolean,
   }),
-  { refusals: [Refused] }
+  { error: Refused }
 );
 const Echo = Action.define("tx/Echo", Schema.Struct({ by: Schema.Int }));
 

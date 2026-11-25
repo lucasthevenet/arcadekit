@@ -46,7 +46,7 @@ const Strike = Action.define("in/Strike", Schema.Struct({ by: Schema.Int }));
 const Begin = Action.define("in/Begin", Schema.Struct({}));
 class NotNow extends Schema.TaggedError<NotNow>()("in/NotNow", {}) {}
 const Refuse = Action.define("in/Refuse", Schema.Struct({}), {
-  refusals: [NotNow],
+  error: NotNow,
 });
 
 const Moved = Query.all(Position).pipe(Query.writes(Position));

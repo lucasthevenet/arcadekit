@@ -116,7 +116,7 @@ export const Move = Action.define(
   Schema.Struct({
     dx: Schema.Int.check(Schema.isBetween({ minimum: -1, maximum: 1 })),
   }),
-  { refusals: [GameOver] }
+  { error: GameOver }
 );
 
 const move = Action.handler(Move, function* ({ dx }) {

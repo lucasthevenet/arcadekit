@@ -291,7 +291,7 @@ export class Inbox {
       }
       const json = Schema.encodeUnknownExit(
         Exit.isSuccess(parsed)
-          ? parsed.value.handler.action.refusals
+          ? parsed.value.handler.action.error
           : isUnknown(error.value)
             ? UnknownJson
             : InvalidJson
@@ -308,7 +308,7 @@ export class Inbox {
         defects.push(
           Exit.die(
             new Error(
-              `The handler for "${name}" failed with ${Action.said(error.value)}, which is not among the refusals its action declares. Declare it in Action.define(name, payload, { refusals }), as a class made with Schema.TaggedError.`
+              `The handler for "${name}" failed with ${Action.said(error.value)}, which the error schema of its action does not take. Declare it in Action.define(name, payload, { error }), as a class made with Schema.TaggedError.`
             )
           )
         );

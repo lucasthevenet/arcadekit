@@ -32,7 +32,7 @@ class TooPoor extends Schema.TaggedError<TooPoor>()("TooPoor", {}) {}
 // What it may ask for.
 const Start = Action.define("vw/Start", Schema.Struct({}));
 const Buy = Action.define("vw/Buy", Schema.Struct({ price: Schema.Int }), {
-  refusals: [TooPoor],
+  error: TooPoor,
 });
 const Ping = Action.define("vw/Ping");
 

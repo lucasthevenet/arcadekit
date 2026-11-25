@@ -52,7 +52,7 @@ const Motes = Query.all(Mote).pipe(Query.writes(Mote));
 class TooBig extends Schema.TaggedError<TooBig>()("TooBig", {}) {}
 const Add = Action.define("sv/Add", Schema.Struct({ by: Schema.Int }));
 const Double = Action.define("sv/Double", Schema.Struct({}), {
-  refusals: [TooBig],
+  error: TooBig,
 });
 const Scatter = Action.define(
   "sv/Scatter",

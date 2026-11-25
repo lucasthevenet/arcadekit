@@ -637,7 +637,7 @@ describe("the input stage", () => {
     class TooMuch extends Schema.TaggedError<TooMuch>()("TooMuch", {}) {}
     const Done = Event.define("in/Done", Schema.Struct({ by: Schema.Int }));
     const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }), {
-      refusals: [TooMuch],
+      error: TooMuch,
     });
     const attempt = Action.handler(Try, function* ({ by }) {
       if (by > 5) {
@@ -1739,7 +1739,7 @@ describe("the picture of the devices in the world", () => {
   it("is read by a handler and by what draws the game, as by a system", () => {
     class NotHeld extends Schema.TaggedError<NotHeld>()("NotHeld", {}) {}
     const Shoot = Action.define("in/Shoot", Schema.Struct({}), {
-      refusals: [NotHeld],
+      error: NotHeld,
     });
     const shoot = Action.handler(Shoot, function* () {
       if (!(yield* Input.Keyboard).down("Space")) {

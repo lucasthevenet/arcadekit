@@ -45,7 +45,7 @@ const Go = Action.define(
     to: Schema.Literals(["menu", "playing", "paused"]),
     refuse: Schema.Boolean,
   }),
-  { refusals: [Refused] }
+  { error: Refused }
 );
 const go = Action.handler(Go, function* ({ refuse, to }) {
   const phase = yield* Phase.sets;

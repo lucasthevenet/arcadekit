@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Layer, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 import { assert, describe, expect, it } from "vitest";
 
@@ -38,7 +38,7 @@ class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()("NoSuchCoin", {
 }) {}
 const Drop = Action.define("rp/Drop", Schema.Struct({ value: Schema.Int }));
 const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }), {
-  refusals: [NoSuchCoin],
+  error: NoSuchCoin,
 });
 
 const drop = Action.handler(Drop, function* ({ value }) {
@@ -844,7 +844,7 @@ const tallyOf = (
 
 class TooBig extends Schema.TaggedError<TooBig>()("TooBig", {}) {}
 const Double = Action.define("rp/Double", Schema.Struct({}), {
-  refusals: [TooBig],
+  error: TooBig,
 });
 const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));
 const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));

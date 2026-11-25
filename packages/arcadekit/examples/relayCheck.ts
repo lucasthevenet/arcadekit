@@ -33,7 +33,7 @@ class NotSeated extends Schema.TaggedError<NotSeated>()("NotSeated", {
   from: Schema.UndefinedOr(Schema.String),
 }) {}
 const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }), {
-  refusals: [NotSeated],
+  error: NotSeated,
 });
 const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {

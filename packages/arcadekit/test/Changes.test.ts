@@ -1301,7 +1301,7 @@ class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 const Push = Action.define(
   "ch/Push",
   Schema.Struct({ slot: Schema.Int, refuse: Schema.Boolean }),
-  { refusals: [Refused] }
+  { error: Refused }
 );
 const Spawn = Action.define("ch/Spawn", Schema.Struct({}));
 const Cull = Action.define("ch/Cull", Schema.Struct({ slot: Schema.Int }));

@@ -555,10 +555,10 @@ class Caught extends Schema.TaggedError<Caught>()("Caught", {}) {}
 const EndTurn = Action.define(
   "sg/EndTurn",
   Schema.Struct({ player: Schema.Int }),
-  { refusals: [NotYourTurn] }
+  { error: NotYourTurn }
 );
 const Cheat = Action.define("sg/Cheat", Schema.Struct({}), {
-  refusals: [Caught],
+  error: Caught,
 });
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
@@ -734,7 +734,7 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
   const Clear = Action.define(
     "sg/Clear",
     Schema.Struct({ refuse: Schema.Boolean }),
-    { refusals: [Refused] }
+    { error: Refused }
   );
   const clear = Action.handler(Clear, function* ({ refuse }) {
     (yield* Index.writes).byX = {};

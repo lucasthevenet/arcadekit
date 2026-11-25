@@ -471,7 +471,7 @@ describe("a game that changes", () => {
     const Ask = Action.define(
       "st/Ask",
       Schema.Struct({ refuse: Schema.Boolean }),
-      { refusals: [Refused] }
+      { error: Refused }
     );
     const ask = Action.handler(Ask, function* ({ refuse }) {
       (yield* Clock.writes).left = 9;

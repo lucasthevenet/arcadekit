@@ -28,7 +28,7 @@ const StartLevel = State.onEnter(
 
 class NotPaused extends Schema.TaggedError<NotPaused>()("NotPaused", {}) {}
 const Resume = Action.define("game/Resume", Schema.Struct({}), {
-  refusals: [NotPaused],
+  error: NotPaused,
 });
 
 const resume = Action.handler(Resume, function* () {

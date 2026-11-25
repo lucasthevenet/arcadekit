@@ -237,7 +237,7 @@ const Spark = Component.define("rnd/Spark", { x: Field.f32, y: Field.f32 });
 
 class NoSuchDie extends Schema.TaggedError<NoSuchDie>()("NoSuchDie", {}) {}
 const Roll = Action.define("rnd/Roll", Schema.Struct({ sides: Schema.Int }), {
-  refusals: [NoSuchDie],
+  error: NoSuchDie,
 });
 
 /** A handler that draws: the die's new face is random. */

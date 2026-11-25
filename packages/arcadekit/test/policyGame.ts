@@ -173,7 +173,7 @@ const Draw = System.frame("policy/Draw", function* () {
 
 class TooPoor extends Schema.TaggedError<TooPoor>()("policy/TooPoor", {}) {}
 const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }), {
-  refusals: [TooPoor],
+  error: TooPoor,
 });
 const tax = Action.handler(Tax, function* ({ amount }) {
   let poorest = Infinity;

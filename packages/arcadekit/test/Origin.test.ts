@@ -229,7 +229,7 @@ describe("who issued an action", () => {
     const Never = Action.define(
       "or/Never",
       Schema.Struct({ n: Schema.Number }),
-      { refusals: [Stranger] }
+      { error: Stranger }
     );
     const never = Action.handler(Never, function* () {
       return yield* Stranger.make({ from: undefined });
