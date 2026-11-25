@@ -308,7 +308,7 @@ export class Inbox {
         defects.push(
           Exit.die(
             new Error(
-              `The handler for "${name}" failed with ${Action.said(error.value)}, which the error schema of its action does not take. Declare it in Action.define(name, payload, { error }), as a class made with Schema.TaggedError.`
+              `The handler for "${name}" failed with ${Action.said(error.value)}, which the error schema of its action does not take. Declare it in the error of Action.define(name, payload, { error }): a schema whose values have a _tag, such as a Schema.TaggedError or a Schema.TaggedStruct.`
             )
           )
         );

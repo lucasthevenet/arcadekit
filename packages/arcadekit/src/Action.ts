@@ -5,8 +5,8 @@
  * An action's handler checks it against the current state, then applies it
  * or refuses it with a typed error. A dispatched action returns the refusal
  * to its caller as a typed failure, and a queued one becomes an event that
- * `Action.rejected` reads. An action declares the errors it may be refused
- * with, each a `Schema.TaggedError`.
+ * `Action.rejected` reads. An action declares the schema of the error it may
+ * be refused with, as `Rpc.make` does, and each error has a `_tag`.
  *
  *   class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {}) {}
  *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }), { error: NotYourTurn })
@@ -119,6 +119,12 @@ export interface ActionDef<N extends string, P, E = unknown> {
   readonly _P?: (payload: P) => P;
 }
 
+/** A schema whose values and encoded form each have a `_tag`. */
+type Tagged = Schema.Codec<
+  { readonly _tag: string },
+  { readonly _tag: string }
+>;
+
 /**
  * Defines an action, with the schema of its payload. The payload type is
  * inferred from the schema, and every payload is validated against it:
@@ -146,12 +152,6 @@ export interface ActionDef<N extends string, P, E = unknown> {
  *
  * @category Constructors
  */
-/** A schema whose values and encoded form each have a `_tag`. */
-type Tagged = Schema.Codec<
-  { readonly _tag: string },
-  { readonly _tag: string }
->;
-
 export function define<const N extends string>(
   name: N
 ): ActionDef<N, void, never>;
