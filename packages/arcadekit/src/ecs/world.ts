@@ -1072,7 +1072,8 @@ export class World {
   /**
    * Returns the entities that point at `target` with a relation, in order of
    * index, such as a parent's children. Finding them doesn't look at any other
-   * entity.
+   * entity. To visit them with their components, narrow a view with
+   * `QueryView.pointingAt`.
    */
   sources(target: Entity, def: RelationDef): Entity[] {
     const relation = this.relations[def.id];
@@ -1082,6 +1083,11 @@ export class World {
     return relation
       .sources(entityIndex(target))
       .map((source) => makeEntity(source, this.gens[source]!));
+  }
+
+  /** @internal A relation's index of which entities point at which, if one is stored. */
+  _relation(def: ComponentDef): RelationIndex | undefined {
+    return this.relations[def.id];
   }
 
   /** Returns a relation's index of which entities point at which, creating it if needed. */

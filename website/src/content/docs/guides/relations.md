@@ -64,6 +64,39 @@ export const Rules = Plugin.make("game/Rules", { handlers: [swap], setup });
 - An entity has one target per relation. For a different kind of link, define a different relation.
 - In a system or an action handler, add, remove and retarget relations through `Commands`, like any other structural change.
 
+## Visit the entities that point at a target
+
+```ts
+import { Component, Field, Query, System } from "arcadekit";
+
+const Position = Component.define("game/Position", {
+  x: Field.f32,
+  y: Field.f32,
+});
+const ChildOf = Component.relation("scene/ChildOf", {
+  onTargetDespawn: "despawn",
+});
+const Parents = Query.all(Position).pipe(Query.without(ChildOf));
+const Children = Query.all(Position, ChildOf).pipe(Query.writes(Position));
+
+// Each child sits one unit above its parent.
+export const Follow = System.tick("Follow", function* () {
+  const children = yield* Children;
+  (yield* Parents).each((parent, entity) => {
+    children.pointingAt(ChildOf, entity).each((position) => {
+      position.x = parent.x;
+      position.y = parent.y + 1;
+    });
+  });
+});
+```
+
+- `view.pointingAt(ChildOf, target)` narrows a query's view to the entities that point at `target`, and its `each` and `eachChunk` hand them their components as the view's own loops do. Finding them doesn't look at any other entity.
+- They are visited in the order every loop of the view visits, tables in creation order and rows ascending, and not in order of index as `world.sources` returns them. They are the entities of `world.sources(target, ChildOf)` that the query matches.
+- The relation is one of the query's terms, and any other doesn't compile. A target that is not alive has nobody pointing at it.
+- A change query, made with `Query.changed` or `Query.added`, can't be narrowed, and `pointingAt` throws. Read the relation's `target` in its loop instead.
+- Use `world.sources` for the ids alone, outside a loop.
+
 ## Choose what happens when a target is despawned
 
 - `onTargetDespawn` sets what happens to the entities that point at a target when the target is despawned. `"despawn"` despawns them too, along with whatever points at them, at any depth. `"remove"` removes the relation from them and leaves them otherwise untouched.

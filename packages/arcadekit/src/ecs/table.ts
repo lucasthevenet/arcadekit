@@ -571,6 +571,29 @@ export class RelationIndex {
     this.target[source] = -1;
   }
 
+  /**
+   * Writes the indexes of the entities that point at `target` into
+   * `members`, in no order, growing its array if it must, and returns how
+   * many.
+   */
+  collect(
+    target: number,
+    members: { dense: Uint32Array; count: number }
+  ): number {
+    let { dense } = members;
+    let count = 0;
+    for (let at = this.head[target]!; at !== -1; at = this.next[at]!) {
+      if (count === dense.length) {
+        const grown = new Uint32Array(dense.length * 2);
+        grown.set(dense);
+        dense = members.dense = grown;
+      }
+      dense[count++] = at;
+    }
+    members.count = count;
+    return count;
+  }
+
   /** Returns the indexes of the entities that point at `target`, ascending. */
   sources(target: number): number[] {
     const out: number[] = [];
