@@ -18,7 +18,7 @@
  * doesn't match, or at its end on a world with another hash than the
  * recorded game ended on.
  */
-import { Brand, Cause, Data, Effect, Exit, Schema } from "effect";
+import { Brand, Cause, Data, Effect, Exit, Schema, SchemaIssue } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 import * as Action from "./Action";
@@ -158,6 +158,9 @@ const RecordingSchema = Layout.check(
 
 const codec = SchemaBinary.toCodec(RecordingSchema);
 
+/** The first byte of a recording that an earlier arcadekit wrote as JSON. */
+const OPEN_BRACE = 0x7b;
+
 /**
  * Encodes a recording in bytes, for a file or the network. A recording made
  * since a save holds the save, as the bytes `Save.encode` writes, which are
@@ -165,8 +168,9 @@ const codec = SchemaBinary.toCodec(RecordingSchema);
  *
  * **Gotchas**
  *
- * It throws when a payload in the log has no JSON form, such as a bigint
- * given to `app.enqueueByName` under a name the game doesn't have.
+ * It throws when a payload in the log has no JSON form: a bigint, or no
+ * payload at all, given to `app.enqueueByName` under a name the game doesn't
+ * have.
  *
  * @category Codecs
  */
@@ -192,7 +196,8 @@ export const encode = (recording: Recording): Uint8Array<ArrayBuffer> => {
  * in order and within it. A replay checks the rest: each payload against its
  * action's schema, and each checkpoint and its `endHash` against the world.
  *
- * A recording that an earlier version of arcadekit wrote as text is refused.
+ * A recording that an earlier version of arcadekit wrote as text is refused,
+ * with a message that begins `older format`.
  *
  * @category Codecs
  */
@@ -201,7 +206,16 @@ export const decode = (
 ): Exit.Exit<Recording, Schema.SchemaError> => {
   const read = Schema.decodeUnknownExit(codec)(bytes);
   if (Exit.isFailure(read)) {
-    return Exit.failCause(read.cause);
+    return bytes[0] === OPEN_BRACE
+      ? Exit.fail(
+          new Schema.SchemaError(
+            new SchemaIssue.InvalidValue({
+              message:
+                "older format: it was written as text by an earlier arcadekit, and this version reads a recording in bytes",
+            })
+          )
+        )
+      : Exit.failCause(read.cause);
   }
   const { save, seed, ...played } = read.value;
   if (save === undefined) {

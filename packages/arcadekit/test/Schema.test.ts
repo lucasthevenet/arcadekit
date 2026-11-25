@@ -19,6 +19,7 @@ import {
 } from "../src/index";
 import type { Entity } from "../src/index";
 import { Layout } from "../src/internal/recording";
+import { Message } from "../src/net/index";
 
 const Health = Component.define("sc/Health", { hp: Field.i32 });
 
@@ -647,6 +648,46 @@ describe("saving and replaying", () => {
       log: [],
     });
     expect(Exit.isSuccess(Journal.decode(since(4)))).toBe(true);
+  });
+
+  it("writes a message and a recording in the same bytes as before", () => {
+    // Bytes written once, so a change to how either is laid out, an upgrade
+    // of Effect's SchemaBinary included, fails here and not on a peer.
+    const hex = (bytes: Uint8Array): string =>
+      Buffer.from(bytes).toString("hex");
+    const bytesOf = (text: string): Uint8Array =>
+      Uint8Array.from(Buffer.from(text, "hex"));
+    const message = {
+      from: "ada",
+      tick: 12,
+      actions: [{ name: "g/Move", payload: { dx: 1 } }],
+      checkpoints: [{ tick: 11, hash: 4_294_967_295 }],
+      made: { game: 99, delta: 1 / 60, peers: ["ada", "bob"], start: 0 },
+      heard: 10,
+    };
+    const messageBytes =
+      "492103371702b2a5d7db070c010a000302160afeffffff1f18036164611401120003107b226478223a317d0c672f4d6f76651609020361646103626f62c6010008111111111111913f14";
+    expect(hex(Message.encode(message))).toBe(messageBytes);
+    expect(Message.decode(bytesOf(messageBytes))).toEqual(
+      Exit.succeed(message)
+    );
+
+    const recordingBytes =
+      "73208895aad41f34022a09a8faeec319087b226478223a317da18ac6d52d00b0deb7ce4606672f4d6f7665a887b0f34a03616461070b02feffffff1fe1cab791280ef9cde0ca3200d1dacea33504b0d1d6d56218011600a4e1d8da050200a1f885d80610111111111111913ff1c7a6a76a80890f";
+    const recording = Journal.decode(bytesOf(recordingBytes));
+    assert(Exit.isSuccess(recording));
+    expect(recording.value).toEqual({
+      seed: 7,
+      start: 0,
+      end: 2,
+      endHash: 123_456,
+      deltas: [{ tick: 0, delta: 1 / 60 }],
+      log: [
+        { tick: 0, name: "g/Move", payload: { dx: 1 }, from: "ada" },
+        { tick: 1, hash: 4_294_967_295 },
+      ],
+    });
+    expect(hex(Journal.encode(recording.value))).toBe(recordingBytes);
   });
 
   it("stops a replay at the first entry that no longer applies", () => {

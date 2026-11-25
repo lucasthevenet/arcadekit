@@ -1556,11 +1556,9 @@ describe("how a recorded game began", () => {
     void (() => Journal.replay(byHand, coinGame()));
 
     // A recording as an earlier version wrote it, as text.
-    expect(
-      Exit.isFailure(
-        Journal.decode(new TextEncoder().encode(JSON.stringify(whole)))
-      )
-    ).toBe(true);
+    expect(refusal(new TextEncoder().encode(JSON.stringify(whole)))).toMatch(
+      /^.*older format: .*written as text by an earlier arcadekit/u
+    );
 
     const { seed: _, ...neither } = fromSeed;
     expect(refusal(written(neither))).toMatch(
