@@ -252,7 +252,7 @@ type Body<Eff, Ban, Msg extends string, A = void> = [
  * `Ok` when a tick may require `Eff`, and the refusal otherwise. `System.tick`,
  * `State.onEnter`, `Action.handler` and a plugin's `setup` use it.
  *
- * @internal
+ * @category Type-level
  */
 export type TickGated<
   Eff extends Effect.Effect<unknown, unknown, unknown>,
@@ -265,7 +265,7 @@ export type TickGated<
 /**
  * The body of a system of the tick.
  *
- * @internal
+ * @category Type-level
  */
 export type TickBody<Eff extends Effect.Effect<unknown, unknown, unknown>> =
   TickGated<Eff, () => Generator<Eff, void, never>>;
@@ -281,7 +281,7 @@ type Checked<R, Ban, Msg extends string> =
  * An effect a frame system may yield. A requirement the frame refuses is an
  * error at the argument, which is how `Assets.during` checks its condition.
  *
- * @internal
+ * @category Type-level
  */
 export type FrameOk<A, E, R> = Effect.Effect<A, E, R> &
   Checked<R, FrameBan, typeof FRAME_MSG>;
@@ -289,7 +289,7 @@ export type FrameOk<A, E, R> = Effect.Effect<A, E, R> &
 /**
  * The body of a frame system, as `Sound.music` and `View.publish` take it.
  *
- * @internal
+ * @category Type-level
  */
 export type FrameBody<
   Eff extends Effect.Effect<unknown, unknown, unknown>,
@@ -305,7 +305,7 @@ type EffectBody<Eff, Ban, Msg extends string> = [
 /**
  * A plugin's `setup`, or any other Effect that runs as the tick does.
  *
- * @internal
+ * @category Type-level
  */
 export type TickEffect<Eff extends Effect.Effect<unknown, unknown, unknown>> =
   EffectBody<Eff, TickBan, typeof TICK_MSG>;
@@ -313,7 +313,7 @@ export type TickEffect<Eff extends Effect.Effect<unknown, unknown, unknown>> =
 /**
  * A plugin's `layer`, which reads the game and cannot change it.
  *
- * @internal
+ * @category Type-level
  */
 export type LayerGated<L extends Layer.Layer<never, unknown, unknown>> =
   L extends Layer.Layer<never, unknown, infer R>

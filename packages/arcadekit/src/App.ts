@@ -59,11 +59,23 @@ import * as Save from "./Save";
 import type { BuiltIn, Time, TimeState, World } from "./Services";
 import * as System from "./System";
 
-/** @internal The systems of a game, of any type. */
+/**
+ * The systems of a game, of any type.
+ *
+ * @category Type-level
+ */
 export type Systems = readonly Plugin.AnySystem[];
-/** @internal The handlers of a game, of any type. */
+/**
+ * The handlers of a game, of any type.
+ *
+ * @category Type-level
+ */
 export type Handlers = readonly Plugin.AnyHandler[];
-/** @internal The plugins of a game, of any type. */
+/**
+ * The plugins of a game, of any type.
+ *
+ * @category Type-level
+ */
 export type Plugins = readonly Plugin.Any[];
 
 // Distributive on purpose: an empty list must give `never`, not `unknown`.
@@ -74,11 +86,19 @@ type HandlerNeeds<T> =
     ? R
     : never;
 
-/** @internal What a tick of a game can fail with: what its systems fail with. */
+/**
+ * What a tick of a game can fail with: what its systems fail with.
+ *
+ * @category Type-level
+ */
 export type TickError<S extends Systems, P extends Plugins> =
   | SystemError<S[number]>
   | Plugin.TickErrorOf<P[number]>;
-/** @internal A game's handlers, its plugins' among them, as a union. */
+/**
+ * A game's handlers, its plugins' among them, as a union.
+ *
+ * @category Type-level
+ */
 export type AllHandlers<H extends Handlers, P extends Plugins> =
   | H[number]
   | Plugin.HandlerOf<P[number]>;
@@ -90,7 +110,7 @@ type Provided<P extends Plugins> = Plugin.ProvidedOf<P[number]>;
  * their declared dependencies don't provide. A scope is never among them,
  * because the app has its own.
  *
- * @internal
+ * @category Type-level
  */
 export type External<
   S extends Systems,

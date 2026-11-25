@@ -92,7 +92,11 @@ export const renameInChanges = (
  */
 export type Terms = readonly ComponentDef[];
 
-/** @internal What only `Query` has, so that nothing else is a `QuerySpec`. */
+/**
+ * What only `Query` has, so that nothing else is a `QuerySpec`.
+ *
+ * @category Type-level
+ */
 export declare const Described: unique symbol;
 
 /**

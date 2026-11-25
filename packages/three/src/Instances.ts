@@ -18,10 +18,8 @@ import type * as Color from "arcadekit/Color";
 import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
-import type { Entries } from "./internal/assets";
 import * as internal from "./internal/instances";
-import type { Needs } from "./internal/kind";
-import type { TransformOf, Which } from "./Three";
+import type { Entries, Needs, TransformOf, Which } from "./Three";
 
 /**
  * How an instance looks: its mesh's geometry and material.

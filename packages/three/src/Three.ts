@@ -53,9 +53,13 @@
  * Each part is also a module of its own, which gives the same exports:
  * `@arcadekit/three/Scene`, `Renderer`, `Assets`, `Instances` and `Objects`.
  */
+import type * as Assets from "arcadekit/Assets";
 import type { ComponentDef, RequiredOf } from "arcadekit/ecs";
+import type { Frame, Time, World } from "arcadekit/Services";
 import type * as Transform2d from "arcadekit/Transform2d";
 import type * as Transform3d from "arcadekit/Transform3d";
+
+import type { Scene } from "./Scene";
 
 export { Scene } from "./Scene";
 export type { SceneShape } from "./Scene";
@@ -168,3 +172,19 @@ export type TransformOf<O> = Which["transform"] & {
       : Exclude<PositionName, Missing<O>>;
   };
 };
+
+/**
+ * The assets of a bundle, whatever their types: what a look built `from` a
+ * bundle is given, in `Three.instances` and `Three.objects`.
+ *
+ * @category Type-level
+ */
+export type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
+
+/**
+ * What a system of `Three.instances` or `Three.objects` requires from an app.
+ * One that builds its look `from` a bundle requires `Assets.Store` too.
+ *
+ * @category Type-level
+ */
+export type Needs = Frame | Scene | Time | World;
