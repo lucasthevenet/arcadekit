@@ -3,6 +3,7 @@ import { Effect, Layer } from "effect";
 import * as Assets from "../../Assets";
 import * as Driver from "../../Driver";
 import * as Input from "../../Input";
+import { fetching, fetchingFrom } from "../../internal/assets";
 import type { Options } from "../Browser";
 import { layerSound } from "./audio";
 import { listen } from "./devices";
@@ -37,8 +38,8 @@ export const layer = (options: Options): Layer.Layer<never> => {
   const loader = Layer.effect(
     Assets.Loader,
     Effect.map(Assets.Loader, (given) =>
-      given === Assets.fetching
-        ? Assets.fetchingFrom((url) => new URL(url, document.baseURI).href)
+      given === fetching
+        ? fetchingFrom((url) => new URL(url, document.baseURI).href)
         : given
     )
   );

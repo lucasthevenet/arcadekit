@@ -199,7 +199,9 @@ describe("the package's entries", () => {
     ).toEqual([
       ...browserFiles,
       "../src/ecs/index.ts",
-      ...Object.keys(netModules).toSorted(),
+      ...Object.keys(sources)
+        .filter((file) => file.startsWith("../src/net/"))
+        .toSorted(),
     ]);
     // A game with one player loads none of what several play with.
     expect(Object.keys(netModules).toSorted()).toEqual([

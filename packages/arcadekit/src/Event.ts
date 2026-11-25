@@ -41,7 +41,7 @@ import { isPlain } from "./ecs/store";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 import { Outbox } from "./internal/outbox";
-import type { Stage, Told } from "./internal/outbox";
+import type { Emitted, Stage, Told } from "./internal/outbox";
 import { Events } from "./Services";
 import type { Sim } from "./Services";
 
@@ -232,16 +232,6 @@ export const decode = <P>(
   convert(def, (codec) => Schema.decodeUnknownExit(codec)(data));
 
 const EMPTY: readonly never[] = Object.freeze([]);
-
-/**
- * One event as it was emitted, with which event it is.
- *
- * @internal
- */
-export interface Emitted {
-  readonly def: EventDef<unknown>;
-  readonly payload: unknown;
-}
 
 // ---------------------------------------------------------------------------
 // The tick's side: the events the simulation has yet to read

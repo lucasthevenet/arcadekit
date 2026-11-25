@@ -24,19 +24,22 @@ import type { Spawned } from "../ecs/spawned";
 import { World as EcsWorld } from "../ecs/world";
 import { EventBus } from "../Event";
 import * as Input from "../Input";
-import * as Journal from "../Journal";
 import * as Plugin from "../Plugin";
 import * as Save from "../Save";
 import { Time, World } from "../Services";
 import type { TimeState } from "../Services";
 import { reading } from "../services/handed";
-import * as State from "../State";
+import { Intake } from "./action";
 import * as Inbox from "./inbox";
+import { Log } from "./journal";
 import * as Loop from "./loop";
 import { hold } from "./parts";
+import { flatten } from "./plugin";
 import * as Runner from "./runner";
+import { Visits, into, take as takeSave } from "./save";
 import * as Schedule from "./schedule";
 import * as Stage from "./stage";
+import { prepare, refuseRemovedScopes } from "./state";
 import { TickDispatcher, TickScheduler } from "./tickScheduler";
 
 /**
@@ -148,25 +151,25 @@ const assemble = <
     const commands = new CommandBuffer<Spawned>(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.
-    const intake = new Action.Intake();
+    const intake = new Intake();
     world._attach(intake);
     world._attach(
-      new Save.Visits(world, (reader) => !reader.startsWith(Stage.READER))
+      new Visits(world, (reader) => !reader.startsWith(Stage.READER))
     );
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
     // Dependencies first, each plugin once, then the app's own systems.
-    const plugins = Plugin.flatten(game.plugins);
+    const plugins = flatten(game.plugins);
     const { version } = game;
     let save: Save.Save | undefined;
     if (given !== undefined) {
       // Before anything else can touch the world: a load fills an empty one.
-      const loaded = Save.into(world, given, version, game.migrations);
+      const loaded = into(world, given, version, game.migrations);
       if (Exit.isFailure(loaded)) {
         return yield* loaded;
       }
-      const scoped = State.refuseRemovedScopes(world);
+      const scoped = refuseRemovedScopes(world);
       if (Exit.isFailure(scoped)) {
         return yield* scoped;
       }
@@ -184,7 +187,7 @@ const assemble = <
     ];
 
     const handlers = Inbox.handlersOf(allHandlers);
-    const log = new Journal.Log(
+    const log = new Log(
       world,
       time,
       start.checkpointEvery ?? 60,
@@ -267,7 +270,7 @@ const assemble = <
     if (schedule.input.length > 0) {
       events.expect("input", time.tick);
     }
-    State.prepare(world, schedule.hooked, save !== undefined);
+    prepare(world, schedule.hooked, save !== undefined);
 
     const loop = Loop.make({
       world,
@@ -352,7 +355,7 @@ const assemble = <
           (busy) =>
             `save() was called during a ${busy}. A game is saved between ticks.`
         );
-        return Save.take(world, commands, version, log.entries.length);
+        return takeSave(world, commands, version, log.entries.length);
       },
       get settled() {
         return loop.settled();

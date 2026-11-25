@@ -194,7 +194,7 @@ export type Misordered<S extends readonly Any[]> = number extends S["length"]
 /**
  * Two lists of systems, one after the other, as `Misordered` takes them.
  *
- * @internal
+ * @category Type-level
  */
 export type Listing<
   A extends readonly Any[],
@@ -249,7 +249,7 @@ export type Duplicated<
  * whose order works and whose names are each their own, and otherwise a
  * property nobody can give, whose type is the message.
  *
- * @internal
+ * @category Type-level
  */
 export type Ordered<S extends readonly Any[], Extra = never> = [
   Misordered<S> | Extra,

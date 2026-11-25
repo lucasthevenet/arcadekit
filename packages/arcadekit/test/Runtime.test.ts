@@ -19,6 +19,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import { order } from "../src/internal/schedule";
 import { TickScheduler } from "../src/internal/tickScheduler";
 import type { ReadingWorld } from "../src/Services";
 import { placedIn } from "./placed";
@@ -114,7 +115,7 @@ describe("systems", () => {
       app.tick(1);
       expect(log).toEqual(["input", "b", "a", "c", "render"]);
     });
-    expect(() => System.order([sys("x"), sys("x")])).toThrow(
+    expect(() => order([sys("x"), sys("x")])).toThrow(
       'Duplicate system name "x"'
     );
   });

@@ -67,9 +67,11 @@ import { add, addString, finish } from "../ecs/hash";
 import { build } from "../internal/build";
 import type { Reins } from "../internal/build";
 import { partsOf } from "../internal/parts";
+import { flatten } from "../internal/plugin";
 import * as Plugin from "../Plugin";
 import type * as Save from "../Save";
 import * as Timeline from "../Timeline";
+import { build as buildPeer } from "./internal/peer";
 import * as Peer from "./Peer";
 
 /**
@@ -203,7 +205,7 @@ const simulates = (
   game: App.Game<App.Systems, App.Handlers, App.Plugins>,
   systemOrder: readonly string[]
 ): number => {
-  const plugins = Plugin.flatten(game.plugins);
+  const plugins = flatten(game.plugins);
   const systems = [
     ...plugins.flatMap((plugin) => plugin.systems),
     ...game.systems,
@@ -283,7 +285,7 @@ export const make = <
     Effect.onError(
       Effect.sync((): Session<App.TickError<S, P>, App.AllHandlers<H, P>> => {
         const ahead = options.ahead ?? 8;
-        return Peer.build(app, take, {
+        return buildPeer(app, take, {
           game: simulates(game, app.systemOrder),
           me: options.me,
           others: options.others,

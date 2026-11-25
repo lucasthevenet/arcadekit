@@ -11,6 +11,7 @@ import { Effect } from "effect";
 import type * as Plugin from "../Plugin";
 import type * as State from "../State";
 import * as System from "../System";
+import { spanLevel } from "./system";
 
 /**
  * A system as the app runs it. A turn checks the system's condition, then runs
@@ -66,7 +67,7 @@ export class Turn {
             return holds ? run : (idle ?? Effect.void);
           }),
       system.name,
-      { level: System.spanLevel }
+      { level: spanLevel }
     );
   }
 }
@@ -117,9 +118,9 @@ export const make = (
   systems: readonly Plugin.AnySystem[],
   trace: boolean
 ): Schedule => {
-  System.unique(systems);
+  unique(systems);
   const turns = (list: readonly Plugin.AnySystem[]): Turn[] =>
-    System.order(list).map((system) => new Turn(system, trace));
+    order(list).map((system) => new Turn(system, trace));
   // A hook runs when its state is entered or left, not with the rest.
   const staged = systems.filter((system) => system.trigger === undefined);
   const tick = turns(
@@ -161,4 +162,38 @@ export const make = (
     hooked: [...hooked],
     all: [...tick, ...[...hooks.values()].flat(), ...input, ...frame],
   };
+};
+
+const everyStage: readonly System.Stage[] = [
+  ...System.stages,
+  "input",
+  ...System.frameStages,
+];
+
+/**
+ * A system's name is its place in events and in what changed, so two
+ * systems cannot share one.
+ */
+const unique = (systems: readonly System.System<unknown, unknown>[]): void => {
+  const names = new Set<string>();
+  for (const system of systems) {
+    if (names.has(system.name)) {
+      throw new Error(`Duplicate system name "${system.name}"`);
+    }
+    names.add(system.name);
+  }
+};
+
+/**
+ * Sorts systems into run order: by stage, and within a stage in the order they
+ * are listed.
+ * @internal
+ */
+export const order = (
+  systems: readonly System.System<unknown, unknown>[]
+): System.System<unknown, unknown>[] => {
+  unique(systems);
+  return everyStage.flatMap((stage) =>
+    systems.filter((system) => system.stage === stage)
+  );
 };

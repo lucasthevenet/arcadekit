@@ -18,10 +18,8 @@ import type { Entity } from "arcadekit/ecs";
 import type * as System from "arcadekit/System";
 import type { Object3D } from "three";
 
-import type { Entries } from "./internal/assets";
-import type { Needs } from "./internal/kind";
 import * as internal from "./internal/objects";
-import type { Drawn, Which } from "./Three";
+import type { Drawn, Entries, Needs, Which } from "./Three";
 
 /**
  * The options of `Three.objects`, wherever its objects come from.

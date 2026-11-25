@@ -5,11 +5,10 @@ import * as System from "arcadekit/System";
 
 import type { InstancesFromOptions, InstancesOptions } from "../Instances";
 import { Scene } from "../Scene";
+import type { Entries, Needs } from "../Three";
 import { FromAssets } from "./assets";
-import type { Entries } from "./assets";
 import { Holdings } from "./holdings";
 import type { Kept } from "./holdings";
-import type { Needs } from "./kind";
 import { required } from "./kind";
 import { Instances } from "./mesh";
 

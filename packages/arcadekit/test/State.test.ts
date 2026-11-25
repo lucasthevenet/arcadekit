@@ -21,6 +21,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { triggered } from "../src/internal/system";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");
@@ -818,7 +819,7 @@ describe("hooks", () => {
   });
 
   it("are refused for a value the state does not have, and for a name twice", () => {
-    const Flying = System.triggered(noting("Flying", []), {
+    const Flying = triggered(noting("Flying", []), {
       state: Phase,
       on: "enter",
       value: "flying",

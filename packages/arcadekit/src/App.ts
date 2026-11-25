@@ -53,17 +53,30 @@ import * as Action from "./Action";
 import type { Entity } from "./ecs/component";
 import type { Placed } from "./ecs/spawned";
 import { build } from "./internal/build";
+import { versionOf } from "./internal/save";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
 import type { BuiltIn, Time, TimeState, World } from "./Services";
 import * as System from "./System";
 
-/** @internal The systems of a game, of any type. */
+/**
+ * The systems of a game, of any type.
+ *
+ * @category Type-level
+ */
 export type Systems = readonly Plugin.AnySystem[];
-/** @internal The handlers of a game, of any type. */
+/**
+ * The handlers of a game, of any type.
+ *
+ * @category Type-level
+ */
 export type Handlers = readonly Plugin.AnyHandler[];
-/** @internal The plugins of a game, of any type. */
+/**
+ * The plugins of a game, of any type.
+ *
+ * @category Type-level
+ */
 export type Plugins = readonly Plugin.Any[];
 
 // Distributive on purpose: an empty list must give `never`, not `unknown`.
@@ -74,11 +87,19 @@ type HandlerNeeds<T> =
     ? R
     : never;
 
-/** @internal What a tick of a game can fail with: what its systems fail with. */
+/**
+ * What a tick of a game can fail with: what its systems fail with.
+ *
+ * @category Type-level
+ */
 export type TickError<S extends Systems, P extends Plugins> =
   | SystemError<S[number]>
   | Plugin.TickErrorOf<P[number]>;
-/** @internal A game's handlers, its plugins' among them, as a union. */
+/**
+ * A game's handlers, its plugins' among them, as a union.
+ *
+ * @category Type-level
+ */
 export type AllHandlers<H extends Handlers, P extends Plugins> =
   | H[number]
   | Plugin.HandlerOf<P[number]>;
@@ -90,7 +111,7 @@ type Provided<P extends Plugins> = Plugin.ProvidedOf<P[number]>;
  * their declared dependencies don't provide. A scope is never among them,
  * because the app has its own.
  *
- * @internal
+ * @category Type-level
  */
 export type External<
   S extends Systems,
@@ -621,7 +642,7 @@ export const define = <
   plugins: options.plugins ?? ([] as unknown as readonly [...P]),
   systems: options.systems ?? ([] as unknown as readonly [...S]),
   handlers: options.handlers ?? ([] as unknown as readonly [...H]),
-  version: Save.versionOf(options.version),
+  version: versionOf(options.version),
   migrations: options.migrations ?? [],
 });
 
