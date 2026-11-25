@@ -495,6 +495,18 @@ describe("required components", () => {
     ).toThrow(/"st\/RequiredScore" can't be required/);
   });
 
+  it("refuse a spawn whose requirement has the name of another of the world's components, and leave no entity", () => {
+    const world = new World();
+    world.spawn(Component.tag("st/Twice"));
+    const Twin = Component.tag("st/Twin", {
+      requires: [Component.tag("st/Twice")],
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(() => world.spawn(Twin)).toThrow(/both named "st\/Twice"/);
+    }
+    expect(world.entityCount).toBe(1);
+  });
+
   it("fill nothing when a world loads a save, and hash as a world without the requirement", () => {
     const before = new World();
     const Old = Component.tag("st/Saved");

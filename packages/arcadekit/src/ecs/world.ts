@@ -1518,6 +1518,11 @@ export class World {
     if (this.registered[def.id] === true) {
       return;
     }
+    // Ahead of the component, once: a component whose requirement is refused
+    // is refused again at its next spawn, before an entity is reserved.
+    for (const required of def.requires) {
+      this.register(isComponentDef(required) ? required : required.def);
+    }
     const known = this.componentsByName.get(def.name);
     if (known !== undefined) {
       throw new Error(
@@ -1541,9 +1546,6 @@ export class World {
         throw targetless(def);
       }
       this.register(def);
-      for (const required of def.requires) {
-        this.register(isComponentDef(required) ? required : required.def);
-      }
     }
   }
 
