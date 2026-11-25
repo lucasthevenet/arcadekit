@@ -243,7 +243,9 @@ export interface Any {
    */
   readonly phase: Phase;
   /**
-   * Runs one tick. It throws if a system fails, or if a fiber started during
+   * Runs one tick. It throws if a system fails, if the handler of a queued
+   * action dies or fails with an error its action doesn't declare, or if a
+   * fiber started during
    * the tick is still running when the tick ends: one forked with
    * `Effect.forkDetach`, `Effect.forkIn` or into a scope of its own, which
    * would change the game at a moment no replay repeats.

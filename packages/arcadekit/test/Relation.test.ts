@@ -792,9 +792,11 @@ describe("relations against a simple model", () => {
 // --- in an app --------------------------------------------------------------------
 
 const Fell = Action.define("rl/Fell", Schema.Struct({ tree: EntityId }));
+class NoSuchTree extends Schema.TaggedError<NoSuchTree>()("NoSuchTree", {}) {}
 const Graft = Action.define(
   "rl/Graft",
-  Schema.Struct({ branch: EntityId, onto: EntityId })
+  Schema.Struct({ branch: EntityId, onto: EntityId }),
+  { error: NoSuchTree }
 );
 const fell = Action.handler(Fell, function* ({ tree }) {
   (yield* Commands).despawn(tree);
@@ -802,7 +804,7 @@ const fell = Action.handler(Fell, function* ({ tree }) {
 const graft = Action.handler(Graft, function* ({ branch, onto }) {
   const world = yield* World;
   if (!world.isAlive(onto)) {
-    return yield* Effect.fail("no such tree" as const);
+    return yield* NoSuchTree.make({});
   }
   (yield* Commands.spawns(ChildOf)).add(branch, ChildOf.of({ target: onto }));
   return world.sources(onto, ChildOf).length;

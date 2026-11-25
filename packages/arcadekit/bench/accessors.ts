@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
  *
  *   pnpm --filter arcadekit bench
  */
-import { Data, Effect, Exit, Layer, Schema } from "effect";
+import { Effect, Exit, Layer, Schema } from "effect";
 
 import {
   Action,
@@ -73,27 +73,29 @@ const Populated = Plugin.make("bench/Populated", {
   }),
 });
 
-class Refused extends Data.TaggedError("Refused")<{}> {}
+class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 
 const Nudge = Action.define(
   "bench/Nudge",
-  Schema.Struct({ target: EntityId, refuse: Schema.Boolean })
+  Schema.Struct({ target: EntityId, refuse: Schema.Boolean }),
+  { error: Refused }
 );
 const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   const world = yield* WorldService.writes(Position);
   const position = world.get(target, Position);
   if (position === undefined) {
-    return yield* new Refused();
+    return yield* Refused.make({});
   }
   world.set(target, Position, { x: position.x + 1 });
   if (refuse) {
-    return yield* new Refused();
+    return yield* Refused.make({});
   }
 });
 
 const Sweep = Action.define(
   "bench/Sweep",
-  Schema.Struct({ refuse: Schema.Boolean })
+  Schema.Struct({ refuse: Schema.Boolean }),
+  { error: Refused }
 );
 const sweep = Action.handler(Sweep, function* ({ refuse }) {
   (yield* Moving).each((pos, vel) => {
@@ -101,7 +103,7 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
     pos.y += vel.y * DT;
   });
   if (refuse) {
-    return yield* new Refused();
+    return yield* Refused.make({});
   }
 });
 

@@ -199,26 +199,32 @@ describe("events", () => {
 
 // --- a tiny turn-based duel, used by the action tests -------------------------
 
-class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
-  readonly player: number;
-}> {}
-class NotEnoughEnergy extends Data.TaggedError("NotEnoughEnergy")<{
-  readonly have: number;
-  readonly need: number;
-}> {}
-class NoSuchTarget extends Data.TaggedError("NoSuchTarget")<{}> {}
+class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {
+  player: Schema.Number,
+}) {}
+class NotEnoughEnergy extends Schema.TaggedError<NotEnoughEnergy>()(
+  "NotEnoughEnergy",
+  { have: Schema.Number, need: Schema.Number }
+) {}
+class NoSuchTarget extends Schema.TaggedError<NoSuchTarget>()(
+  "NoSuchTarget",
+  {}
+) {}
 
 const Attack = Action.define(
   "Attack",
-  Schema.Struct({ attacker: EntityId, target: EntityId })
+  Schema.Struct({ attacker: EntityId, target: EntityId }),
+  { error: Schema.Union([NotYourTurn, NotEnoughEnergy, NoSuchTarget]) }
 );
 const EndTurn = Action.define(
   "EndTurn",
-  Schema.Struct({ player: Schema.Number })
+  Schema.Struct({ player: Schema.Number }),
+  { error: NotYourTurn }
 );
 const Summon = Action.define(
   "Summon",
-  Schema.Struct({ player: Schema.Number, hp: Schema.Number })
+  Schema.Struct({ player: Schema.Number, hp: Schema.Number }),
+  { error: NoSuchTarget }
 );
 const Unhandled = Action.define("Unhandled", Schema.Struct({}));
 
@@ -241,14 +247,14 @@ const attack = Action.handler(Attack, function* ({ attacker, target }) {
   const turn = yield* currentTurn;
   const owner = world.get(attacker, Owner);
   if (owner === undefined || owner.player !== turn.player) {
-    return yield* new NotYourTurn({ player: turn.player });
+    return yield* NotYourTurn.make({ player: turn.player });
   }
   const energy = world.get(attacker, Energy)!.points;
   if (energy < 2) {
-    return yield* new NotEnoughEnergy({ have: energy, need: 2 });
+    return yield* NotEnoughEnergy.make({ have: energy, need: 2 });
   }
   if (!world.has(target, Health)) {
-    return yield* new NoSuchTarget();
+    return yield* NoSuchTarget.make({});
   }
   // Validation is done; from here on the action will succeed.
   world.set(attacker, Energy, { points: energy - 2 });
@@ -262,7 +268,7 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turns = yield* TurnQuery;
   const turn = yield* currentTurn;
   if (player !== turn.player) {
-    return yield* new NotYourTurn({ player: turn.player });
+    return yield* NotYourTurn.make({ player: turn.player });
   }
   turns.each((t) => {
     t.player = t.player === 1 ? 2 : 1;
@@ -281,7 +287,7 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
   );
   died.emit({ entity });
   if (hp <= 0) {
-    return yield* new NoSuchTarget();
+    return yield* NoSuchTarget.make({});
   }
   return entity;
 });
@@ -410,12 +416,12 @@ describe("actions", () => {
     withApp(duel(), ({ app, world, one, two }) => {
       const before = snapshot(app);
       const notYours = app.dispatch(Attack, { attacker: two, target: one });
-      expect(notYours).toEqual(Exit.fail(new NotYourTurn({ player: 1 })));
+      expect(notYours).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
 
       app.dispatch(Attack, { attacker: one, target: two });
       const tired = app.dispatch(Attack, { attacker: one, target: two });
       expect(tired).toEqual(
-        Exit.fail(new NotEnoughEnergy({ have: 1, need: 2 }))
+        Exit.fail(NotEnoughEnergy.make({ have: 1, need: 2 }))
       );
       expect(world.get(two, Health)).toEqual({ hp: 2 });
       expect(moves(app.actionLog)).toHaveLength(1);
@@ -468,9 +474,7 @@ describe("actions", () => {
     const rejected: string[] = [];
     const Watch = System.tick("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
-        rejected.push(
-          `${event.action}: ${(event.error as { _tag: string })._tag}`
-        );
+        rejected.push(`${event.action}: ${event.error._tag}`);
       }
     });
     const make = begin(
@@ -585,6 +589,94 @@ describe("actions", () => {
     expect(rolled.every(Exit.isSuccess)).toBe(true);
     // Seeded by the app, so another app of the game rolls the same.
     expect(rolls()).toEqual(rolled);
+  });
+
+  it("fail only with the error their action declares, a tagged schema", () => {
+    class Undeclared extends Schema.TaggedError<Undeclared>()(
+      "ru/Undeclared",
+      {}
+    ) {}
+    class Plain extends Data.TaggedError("ru/Plain")<{}> {}
+    Action.handler(
+      EndTurn,
+      // @ts-expect-error EndTurn's error schema does not take Undeclared
+      function* () {
+        return yield* Undeclared.make({});
+      }
+    );
+    Action.handler(
+      Unhandled,
+      // @ts-expect-error an action that declares no refusal is never refused
+      function* () {
+        return yield* NotYourTurn.make({ player: 1 });
+      }
+    );
+    expect(() =>
+      Action.define("ru/Plain", Schema.Void, {
+        // @ts-expect-error a Data.TaggedError has no schema to encode it with
+        error: Plain,
+      })
+    ).toThrow(TypeError);
+    Action.define("ru/Untagged", Schema.Void, {
+      // @ts-expect-error a refusal has a _tag, which Action.Rejected reads
+      error: Schema.String,
+    });
+    const Offside = Schema.TaggedStruct("ru/Offside", { by: Schema.Number });
+    const Kick = Action.define(
+      "ru/Kick",
+      Schema.Struct({ by: Schema.Number }),
+      {
+        error: Offside,
+      }
+    );
+    const kick = Action.handler(Kick, function* ({ by }) {
+      return yield* Effect.fail(Offside.make({ by }));
+    });
+    withApp(App.make(App.define({ systems: [], handlers: [kick] })), (app) => {
+      expect(app.dispatch(Kick, { by: 3 })).toEqual(
+        Exit.fail({ _tag: "ru/Offside", by: 3 })
+      );
+    });
+    const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> = withApp(
+      duel(),
+      ({ app }) => app.dispatch(EndTurn, { player: 2 })
+    );
+    expect(ended).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
+  });
+
+  it("fail the tick when a queued action's handler dies, and leave the game as it was", () => {
+    const Crash = Action.define("ru/Crash", Schema.Struct({}));
+    const crash = Action.handler(Crash, function* () {
+      (yield* Turns.pipe(Query.writes(Turn))).each((turn) => {
+        turn.number += 100;
+      });
+      return yield* Effect.die(new Error("a bug in the handler"));
+    });
+    const heard: string[] = [];
+    const Watch = System.tick("Watch", function* () {
+      for (const event of (yield* Action.Rejected).read()) {
+        heard.push(event.action);
+      }
+    });
+    const make = begin(
+      App.make(
+        App.define({
+          plugins: [Board],
+          systems: [Watch],
+          handlers: [crash, endTurn],
+        })
+      )
+    );
+    withApp(make, ({ app }) => {
+      const before = snapshot(app);
+      app.enqueue(Crash, {});
+      app.enqueue(EndTurn, { player: 2 });
+      expect(() => app.tick(1)).toThrow(/a bug in the handler/);
+      expect(heard).toEqual(["EndTurn"]);
+      expect(snapshot(app)).toEqual(
+        before.map((line) => line.replace("tick=0", "tick=1"))
+      );
+    });
   });
 
   it("cannot be dispatched in the middle of a tick", () => {

@@ -5,7 +5,7 @@
  * page under a strict Content Security Policy is, and has to give the
  * same answer in both.
  */
-import { Data, DateTime, Effect, Exit, Schema } from "effect";
+import { DateTime, Effect, Exit, Schema } from "effect";
 
 import { entityOf } from "../src/ecs/component.ts";
 import type { Spawned } from "../src/index.ts";
@@ -171,8 +171,10 @@ const Draw = System.frame("policy/Draw", function* () {
   });
 });
 
-class TooPoor extends Data.TaggedError("policy/TooPoor")<{}> {}
-const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }));
+class TooPoor extends Schema.TaggedError<TooPoor>()("policy/TooPoor", {}) {}
+const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }), {
+  error: TooPoor,
+});
 const tax = Action.handler(Tax, function* ({ amount }) {
   let poorest = Infinity;
   (yield* Sheets).each((sheet) => {
@@ -181,7 +183,7 @@ const tax = Action.handler(Tax, function* ({ amount }) {
   });
   // A u32 wraps: a sheet that could not pay holds a huge number.
   if (poorest > 1_000_000) {
-    return yield* new TooPoor();
+    return yield* TooPoor.make({});
   }
 });
 

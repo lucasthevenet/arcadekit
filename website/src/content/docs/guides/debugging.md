@@ -40,7 +40,7 @@ Browser.runMain(
 - Every value is a copy. Writing to one changes nothing in the game.
 - `ran` is false for a system whose `System.runIf` condition didn't hold, and for one that hasn't had a turn yet, such as a hook whose state was never entered.
 - `ms` includes the system's condition and applying its commands. It is measured on every turn, whether or not you inspect.
-- `events` holds what the last tick's actions, hooks and systems emitted, including an `Action.Rejected` for each refusal, and what was emitted since the tick before it ended. An event that a refused handler emitted is not there, since a refusal takes it back.
+- `events` holds what the last tick's actions, hooks and systems emitted, including an `Action.Rejected` for each refusal and, for a refusal by a handler, the action's own event that `Action.rejected` reads, and what was emitted since the tick before it ended. An event that a refused handler emitted is not there, since a refusal takes it back.
 - `inspect` copies the whole world, so call it when you look rather than every frame. It throws if called from inside a tick or a frame.
 
 ## Trace an app

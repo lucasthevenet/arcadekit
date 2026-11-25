@@ -54,10 +54,10 @@ describe("who issued an action", () => {
     withApp(game(), (app, world) => {
       // Typed, through the app: a game of one has no one to name.
       expect(app.dispatch(Tip, { amount: 1 })).toEqual(
-        Exit.fail(new Stranger({ from: undefined }))
+        Exit.fail(Stranger.make({ from: undefined }))
       );
       expect(app.dispatchByName("ls/Tip", { amount: 1 })).toEqual(
-        Exit.fail(new Stranger({ from: undefined }))
+        Exit.fail(Stranger.make({ from: undefined }))
       );
       app.enqueue(Tip, { amount: 1 });
       app.tick(DELTA);
@@ -228,10 +228,11 @@ describe("who issued an action", () => {
     });
     const Never = Action.define(
       "or/Never",
-      Schema.Struct({ n: Schema.Number })
+      Schema.Struct({ n: Schema.Number }),
+      { error: Stranger }
     );
     const never = Action.handler(Never, function* () {
-      return yield* new Stranger({ from: undefined });
+      return yield* Stranger.make({ from: undefined });
     });
     withApp(
       App.make(App.define({ systems: [Hear], handlers: [never] })),

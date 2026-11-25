@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { entityOf } from "../src/ecs/component.ts";
@@ -492,7 +492,7 @@ describe("commands that are rolled back", () => {
 
 // --- through an app: an action that is refused leaves nothing behind ------------
 
-class Refused extends Data.TaggedError("Refused")<{}> {}
+class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 const Noted = Event.define("tx/Noted", Schema.Struct({ step: Schema.String }));
 /** Emitted by a system every tick, for a handler to read. */
 const Rung = Event.define("tx/Rung", Schema.Struct({ at: Schema.Int }));
@@ -519,7 +519,8 @@ const Act = Action.define(
     target: EntityId,
     steps: Schema.Array(Step),
     refuse: Schema.Boolean,
-  })
+  }),
+  { error: Refused }
 );
 const Echo = Action.define("tx/Echo", Schema.Struct({ by: Schema.Int }));
 
@@ -609,7 +610,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
     }
   }
   if (refuse) {
-    return yield* new Refused();
+    return yield* Refused.make({});
   }
   return steps.length;
 });
@@ -741,7 +742,7 @@ describe("an action that is refused", () => {
           steps: [step],
           refuse: true,
         });
-        expect(exit).toEqual(Exit.fail(new Refused()));
+        expect(exit).toEqual(Exit.fail(Refused.make({})));
         expect(world.hash()).toBe(before);
         expect(waiting(app)).not.toContain(Noted.name);
         expect(app.actionLog.length).toBe(log);
@@ -852,7 +853,7 @@ describe("an action that is refused", () => {
         expect(dispatched).toEqual(
           attempts
             .filter((attempt) => attempt === "refused")
-            .map(() => Exit.fail(new Refused()))
+            .map(() => Exit.fail(Refused.make({})))
         );
         app.dispatch(Act, { target, steps: ["read"], refuse: false });
         const heard = y() - before;

@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Option, Schema, Tracer } from "effect";
+import { Effect, Exit, Option, Schema, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -45,10 +45,11 @@ const Count = Component.define("tr/Count", { n: Field.i32 });
 const Counted = Query.all(Count).pipe(Query.writes(Count));
 const Phase = State.define("tr/Phase", ["title", "playing"]);
 const Add = Action.define("tr/Add", Schema.Struct({ by: Schema.Int }));
-const Refused = Action.define("tr/Refused", Schema.Struct({}));
+class NotNow extends Schema.TaggedError<NotNow>()("tr/NotNow", {}) {}
+const Refused = Action.define("tr/Refused", Schema.Struct({}), {
+  error: NotNow,
+});
 const Begin = Action.define("tr/Begin", Schema.Struct({}));
-
-class NotNow extends Data.TaggedError("tr/NotNow") {}
 
 const Grow = System.tick("tr/Grow", function* () {
   (yield* Counted).each((count) => {
@@ -75,7 +76,7 @@ const handlers = [
     });
   }),
   Action.handler(Refused, function* () {
-    return yield* new NotNow();
+    return yield* NotNow.make({});
   }),
   Action.handler(Begin, function* () {
     (yield* Phase.sets).set("playing");
@@ -196,7 +197,7 @@ describe("tracing an app", () => {
   it("ends a tick's span with the failure of the system that failed it", () => {
     const { spans, tracer } = recorder();
     const Fails = System.tick("tr/Fails", function* () {
-      return yield* new NotNow();
+      return yield* NotNow.make({});
     });
     const app = traced(tracer, App.make(App.define({ systems: [Fails] })));
     const exit = app.tickExit(1 / 60);

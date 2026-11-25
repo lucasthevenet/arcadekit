@@ -11,7 +11,7 @@
  *   pnpm --filter arcadekit duel
  */
 import { NodeRuntime } from "@effect/platform-node";
-import { Console, Context, Data, Effect, Exit, Layer, Schema } from "effect";
+import { Console, Context, Effect, Exit, Layer, Schema } from "effect";
 
 import {
   Action,
@@ -57,25 +57,32 @@ const TurnEnded = Event.define(
 );
 
 // --- what players can ask for ----------------------------------------------------
+// Refusals are schemas too, so every peer and a save hold the same one.
+class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {
+  waitingFor: Schema.Number,
+}) {}
+class TooTired extends Schema.TaggedError<TooTired>()("TooTired", {
+  energy: Schema.Number,
+  cost: Schema.Number,
+}) {}
+class NoSuchFighter extends Schema.TaggedError<NoSuchFighter>()(
+  "NoSuchFighter",
+  {}
+) {}
+
 // Defined with schemas, so a move is checked however it arrives (from this
 // program, a save file or the network) and the log can be written as JSON.
+// Each declares what its handler may refuse it with.
 const Strike = Action.define(
   "Strike",
-  Schema.Struct({ attacker: EntityId, target: EntityId })
+  Schema.Struct({ attacker: EntityId, target: EntityId }),
+  { error: Schema.Union([NoSuchFighter, NotYourTurn, TooTired]) }
 );
 const Pass = Action.define(
   "Pass",
-  Schema.Struct({ player: Schema.Literals([1, 2]) })
+  Schema.Struct({ player: Schema.Literals([1, 2]) }),
+  { error: NotYourTurn }
 );
-
-class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
-  readonly waitingFor: number;
-}> {}
-class TooTired extends Data.TaggedError("TooTired")<{
-  readonly energy: number;
-  readonly cost: number;
-}> {}
-class NoSuchFighter extends Data.TaggedError("NoSuchFighter")<{}> {}
 
 const STRIKE_COST = 2;
 const STRIKE_DAMAGE = 4;
@@ -86,14 +93,14 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const me = world.get(attacker, Fighter);
   const them = world.get(target, Fighter);
   if (me === undefined || them === undefined) {
-    return yield* new NoSuchFighter();
+    return yield* NoSuchFighter.make({});
   }
   const turn = yield* Turn;
   if (me.player !== turn.player) {
-    return yield* new NotYourTurn({ waitingFor: turn.player });
+    return yield* NotYourTurn.make({ waitingFor: turn.player });
   }
   if (me.energy < STRIKE_COST) {
-    return yield* new TooTired({ energy: me.energy, cost: STRIKE_COST });
+    return yield* TooTired.make({ energy: me.energy, cost: STRIKE_COST });
   }
   // Every check has passed. Only now does anything change.
   world.set(attacker, Fighter, { energy: me.energy - STRIKE_COST });
@@ -105,7 +112,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 const pass = Action.handler(Pass, function* ({ player }) {
   const turn = yield* Turn.writes;
   if (player !== turn.player) {
-    return yield* new NotYourTurn({ waitingFor: turn.player });
+    return yield* NotYourTurn.make({ waitingFor: turn.player });
   }
   const next = player === 1 ? 2 : 1;
   turn.player = next;
