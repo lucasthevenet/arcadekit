@@ -19,7 +19,9 @@ Your rules place entities with arcadekit's own `Transform3d` or `Transform2d`, a
 import { Commands, Component, Plugin, Transform3d } from "arcadekit";
 import { Effect } from "effect";
 
-export const Rock = Component.tag("game/Rock");
+export const Rock = Component.tag("game/Rock", {
+  requires: [Transform3d.Position],
+});
 
 export const Rules = Plugin.make("game/Rules", {
   setup: Effect.gen(function* () {

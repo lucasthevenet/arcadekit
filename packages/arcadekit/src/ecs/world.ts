@@ -223,6 +223,27 @@ const ahead = (
 };
 
 /**
+ * Adds to a spawn's components, by id, what its inputs require and it doesn't
+ * give. Of two inputs that require one component, the later's value is
+ * taken.
+ */
+const fill = (
+  byId: Map<number, ComponentInput>,
+  inputs: readonly ComponentInput[]
+): void => {
+  const given = new Set(byId.keys());
+  for (const input of inputs) {
+    for (const required of (isComponentDef(input) ? input : input.def)
+      .requires) {
+      const id = (isComponentDef(required) ? required : required.def).id;
+      if (!given.has(id)) {
+        byId.set(id, required);
+      }
+    }
+  }
+};
+
+/**
  * A world of entities and their components: the tables and sparse sets that
  * store them, its singletons, its change logs and its random generator. An
  * app holds one, and its systems reach it through the `World` service.
@@ -516,8 +537,16 @@ export class World {
     const index = entityIndex(entity);
     // Later inputs win when the same component is given twice.
     const byId = new Map<number, ComponentInput>();
+    let requiring = false;
     for (const input of inputs) {
-      byId.set((isComponentDef(input) ? input : input.def).id, input);
+      const def = isComponentDef(input) ? input : input.def;
+      byId.set(def.id, input);
+      if (def.requires.length > 0) {
+        requiring = true;
+      }
+    }
+    if (requiring) {
+      fill(byId, inputs);
     }
     const tableDefs: ComponentDef[] = [];
     for (const input of byId.values()) {
@@ -740,6 +769,9 @@ export class World {
     def: ComponentDef,
     value: Readonly<Record<string, unknown>> | undefined
   ): boolean {
+    if (def.requires.length > 0) {
+      return this.addRequiring(index, entity, def, value);
+    }
     if (def.storage === "sparse") {
       const set = this._sparse(def);
       const had = set.has(index);
@@ -771,6 +803,73 @@ export class World {
     writeRow(def, to.columns[def.id]!, row, value);
     this.addedLogs[def.id]?.note(index);
     this._changed[def.id]?.note(index);
+    return true;
+  }
+
+  /**
+   * Adds a component that requires others, with those the entity lacks, in
+   * one move: the table it moves to is kept on the edge, as for any add.
+   */
+  private addRequiring(
+    index: number,
+    entity: Entity,
+    def: ComponentDef,
+    value: Readonly<Record<string, unknown>> | undefined
+  ): boolean {
+    const from = this.placedTable(index);
+    let to = from.addEdges.get(def.id);
+    if (to === undefined) {
+      const defs = new Map(from.defs.map((d) => [d.id, d]));
+      if (def.storage === "table") {
+        defs.set(def.id, def);
+      }
+      for (const required of def.requires) {
+        const filled = isComponentDef(required) ? required : required.def;
+        if (filled.storage === "table") {
+          defs.set(filled.id, filled);
+        }
+      }
+      to = this.tableFor([...defs.values()].sort((a, b) => a.id - b.id));
+      from.addEdges.set(def.id, to);
+    }
+    const row = to === from ? this.recRow[index]! : this.move(entity, from, to);
+    for (const required of def.requires) {
+      const filled = isComponentDef(required) ? required : required.def;
+      const given = isComponentDef(required) ? undefined : required.value;
+      if (filled.storage === "table") {
+        if (from.ids.has(filled.id)) {
+          continue;
+        }
+        writeRow(filled, to.columns[filled.id]!, row, given);
+      } else {
+        const set = this._sparse(filled);
+        if (set.has(index)) {
+          continue;
+        }
+        set.add(index, given);
+      }
+      this.addedLogs[filled.id]?.note(index);
+      this._changed[filled.id]?.note(index);
+    }
+    if (def.storage === "sparse") {
+      const set = this._sparse(def);
+      const had = set.has(index);
+      set.add(index, value);
+      if (!had) {
+        this.addedLogs[def.id]?.note(index);
+      }
+      if (!had || value !== undefined) {
+        this._changed[def.id]?.note(index);
+      }
+    } else if (!from.ids.has(def.id)) {
+      writeRow(def, to.columns[def.id]!, row, value);
+      this.addedLogs[def.id]?.note(index);
+      this._changed[def.id]?.note(index);
+    } else if (value !== undefined) {
+      to.versions[def.id] = this.version.now;
+      writeRow(def, to.columns[def.id]!, row, value);
+      this._changed[def.id]?.note(index);
+    }
     return true;
   }
 
@@ -1419,6 +1518,11 @@ export class World {
     if (this.registered[def.id] === true) {
       return;
     }
+    // Ahead of the component, once: a component whose requirement is refused
+    // is refused again at its next spawn, before an entity is reserved.
+    for (const required of def.requires) {
+      this.register(isComponentDef(required) ? required : required.def);
+    }
     const known = this.componentsByName.get(def.name);
     if (known !== undefined) {
       throw new Error(
@@ -1441,7 +1545,9 @@ export class World {
       if (def.relation !== undefined && isComponentDef(input)) {
         throw targetless(def);
       }
-      this.register(def);
+      if (this.registered[def.id] !== true) {
+        this.register(def);
+      }
     }
   }
 

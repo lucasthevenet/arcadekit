@@ -14,6 +14,7 @@ import type {
   ComponentDef,
   ComponentInput,
   Entity,
+  RequiredOf,
   Schema,
   SingletonSpec,
   Storage,
@@ -214,6 +215,15 @@ type Spawnable<I, N extends string> =
         : `Commands.spawns was not given "${NameOf<I>}". Add it where the commands are asked for: yield* Commands.spawns(...), with every component this system spawns or adds.`
     : unknown;
 
+// One component at a time, so that one whose requirements the compiler only
+// knows as `string` doesn't make the union `string` and hide the others'.
+/** What a spawn or an add of these components fills in. */
+type Filled<D> = D extends unknown
+  ? string extends RequiredOf<D>
+    ? never
+    : RequiredOf<D>
+  : never;
+
 /**
  * The commands of a system or a handler, which change the set of entities.
  * They are queued, and applied when the system or handler finishes. They
@@ -268,13 +278,17 @@ export interface Spawning<N extends string> {
 export class Commands extends Context.Service<Commands, Spawning<never>>()(
   "arcadekit/Commands"
 ) {
-  /** Returns the commands with a `spawn` and an `add` for these components. */
+  /**
+   * Returns the commands with a `spawn` and an `add` for these components.
+   * What the components require is in the system's requirements too, since a
+   * spawn or an add fills it in, and a system that watches it is listed after.
+   */
   static readonly spawns = <const D extends readonly ComponentDef[]>(
     ..._defs: D
   ): Effect.Effect<
     Spawning<NameOf<D[number]>>,
     never,
-    Commands | AddsOf<NameOf<D[number]>>
+    Commands | AddsOf<NameOf<D[number]> | Filled<D[number]>>
   > => Effect.service(Commands);
 }
 

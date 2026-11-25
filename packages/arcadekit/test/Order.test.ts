@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
-import type { Spawned } from "../src/index";
+import type { ComponentDef, Spawned } from "../src/index";
 import {
   Action,
   App,
@@ -15,6 +15,7 @@ import {
   Time,
   World,
 } from "../src/index";
+import type { Adds } from "../src/Query";
 import { withApp } from "./peers";
 import { placedIn } from "./placed";
 
@@ -427,5 +428,86 @@ describe("what a system spawns and sets", () => {
     const said: Said<readonly [typeof Trail, typeof Jolt]> =
       '"Trail" watches "or/Position" with Query.changed, and "Jolt" writes it later in the tick, so "Trail" would react a tick late. List "Trail" after "Jolt", or place it in a later stage.';
     expect(said).toContain('"Jolt" writes it');
+  });
+});
+
+describe("what a spawn fills in", () => {
+  const Size = Component.define("or/Size", { s: Field.f32 });
+  const Rock = Component.tag("or/Rock", { requires: [Position, Size] });
+  type Needs<T> =
+    T extends Effect.Effect<unknown, unknown, infer R> ? R : never;
+  const NewPositions = Query.all(Position).pipe(Query.added(Position));
+  const watches = (seen: number[]) =>
+    System.tick("Watch", function* () {
+      seen.push((yield* NewPositions).entities().length);
+    });
+  const Watch = watches([]);
+  const Quarry = System.tick("Quarry", function* () {
+    (yield* Commands.spawns(Rock)).spawn(Rock);
+  });
+
+  it("is in the requirements of a system that spawns, so a watcher of it is listed after", () => {
+    expectTypeOf<
+      Needs<ReturnType<typeof Commands.spawns<[typeof Rock]>>>
+    >().toEqualTypeOf<
+      Commands | Adds<"or/Rock"> | Adds<"or/Position"> | Adds<"or/Size">
+    >();
+    const seen: number[] = [];
+    withApp(App.make(App.define({ systems: [Quarry, watches(seen)] })), (app) =>
+      app.tick(1)
+    );
+    expect(seen).toEqual([1]);
+    App.define(
+      // @ts-expect-error the watcher would see the filled position a tick late
+      { systems: [Watch, Quarry] }
+    );
+    // What is filled in is not spawned alone by these commands.
+    System.tick("Alone", function* () {
+      const commands = yield* Commands.spawns(Rock);
+      commands.spawn(
+        // @ts-expect-error the commands were not asked for positions
+        Position.of({ x: 1 })
+      );
+    });
+  });
+
+  it("goes with a state's scoped tag, and the order check sees both", () => {
+    const playing = State.scoped(Phase, "playing");
+    const NewInPlay = Query.all(playing).pipe(Query.added(playing));
+    const Scoped = System.tick("Scoped", function* () {
+      (yield* Commands.spawns(Rock, playing)).spawn(Rock, playing);
+    });
+    const inPlay: number[] = [];
+    const WatchPlay = System.tick("WatchPlay", function* () {
+      inPlay.push((yield* NewInPlay).entities().length);
+    });
+    const seen: number[] = [];
+    withApp(
+      App.make(App.define({ systems: [Scoped, watches(seen), WatchPlay] })),
+      (app) => app.tick(1)
+    );
+    expect([seen, inPlay]).toEqual([[1], [1]]);
+    App.define(
+      // @ts-expect-error the filled position, watched ahead of the spawn
+      { systems: [Watch, Scoped] }
+    );
+    App.define(
+      // @ts-expect-error the scoped tag, watched ahead of the spawn
+      { systems: [WatchPlay, Scoped] }
+    );
+  });
+
+  it("is not hidden by a component whose requirements the compiler can't read", () => {
+    const Loose: ComponentDef<{}, "table", "or/Loose"> =
+      Component.tag("or/Loose");
+    expectTypeOf<
+      Needs<ReturnType<typeof Commands.spawns<[typeof Loose, typeof Rock]>>>
+    >().toEqualTypeOf<
+      | Commands
+      | Adds<"or/Loose">
+      | Adds<"or/Rock">
+      | Adds<"or/Position">
+      | Adds<"or/Size">
+    >();
   });
 });

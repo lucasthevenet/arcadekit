@@ -5,7 +5,7 @@
  */
 import type { Column } from "./column";
 import type { Frozen, JsonValue } from "./frozen";
-import type { RelationSchema, RowOf } from "./relation";
+import type { RelationSchema, RowOf, TargetField } from "./relation";
 import type { Spawned } from "./spawned";
 
 // ---------------------------------------------------------------------------
@@ -455,6 +455,7 @@ export interface ComponentDef<
   S extends Schema = Schema,
   St extends Storage = Storage,
   N extends string = string,
+  R extends string = string,
 > {
   /** A number that tells definitions apart in this program. It is never saved. */
   readonly id: number;
@@ -491,10 +492,22 @@ export interface ComponentDef<
    */
   readonly initial: Readonly<ValueOf<S>> | undefined;
   /**
+   * What a spawn or an add of it gives the entity beside it, when the entity
+   * doesn't have it and the spawn doesn't give it: the components
+   * `Component.define` was given as `requires`, and what they require. See
+   * `Component.define`.
+   */
+  readonly requires: readonly ComponentInput[];
+  /**
+   * Holds no value. It carries the names of `requires`, in a tuple so that a
+   * component that requires nothing has none, whatever the compiler's options.
+   */
+  readonly _requires?: readonly [R];
+  /**
    * Pairs this component with a value, for `spawn` and `add`. It is a method,
    * so that a component of any fields is a `ComponentDef`.
    */
-  of(value: InputOf<S>): ComponentValue<S, N>;
+  of(value: InputOf<S>): ComponentValue<S, N, R>;
 }
 
 /**
@@ -506,9 +519,10 @@ export interface ComponentDef<
 export interface ComponentValue<
   S extends Schema = Schema,
   N extends string = string,
+  R extends string = string,
 > {
   /** The component. */
-  readonly def: ComponentDef<S, Storage, N>;
+  readonly def: ComponentDef<S, Storage, N, R>;
   /** Its value. */
   readonly value: InputOf<S>;
 }
@@ -523,6 +537,65 @@ export type ComponentInput = ComponentValue | ComponentDef;
 
 export const isComponentDef = (u: ComponentInput): u is ComponentDef =>
   "id" in u;
+
+/**
+ * The names of the components a spawn or an add of a component gives the
+ * entity beside it, at any depth: what it requires, and `never` for a
+ * component that requires nothing. It reads a component or its value.
+ *
+ * @category Type-level
+ */
+export type RequiredOf<I> = I extends { readonly def: infer D }
+  ? RequiredOf<D>
+  : I extends { readonly _requires?: readonly [infer R extends string] }
+    ? R
+    : never;
+
+type NameIn<I> = I extends { readonly def: { readonly name: infer N } }
+  ? N & string
+  : I extends { readonly name: infer N extends string }
+    ? N
+    : never;
+
+/** A required component and what it requires, as one union of names. */
+type Closed<I> = I extends unknown ? NameIn<I> | RequiredOf<I> : never;
+
+/** What `requires` is told of a component it can't take, and `unknown` for one it can. */
+type Requirable<I> = string extends NameIn<I> | RequiredOf<I>
+  ? "A component requires components whose names the compiler reads, defined with a literal name. A singleton's is not one: no entity has it."
+  : I extends
+        | { readonly schema: { readonly target: TargetField } }
+        | {
+            readonly def: { readonly schema: { readonly target: TargetField } };
+          }
+    ? `"${NameIn<I>}" is a relation, and a requirement can't be one: there is no target to fill in. Give the relation at the spawn.`
+    : unknown;
+
+const defOf = (input: ComponentInput): ComponentDef =>
+  isComponentDef(input) ? input : input.def;
+
+// Of two requirements of one component, the later wins, and one given in
+// `requires` beats one it inherits.
+const closeRequires = (
+  direct: readonly ComponentInput[]
+): readonly ComponentInput[] => {
+  const all = new Map<number, ComponentInput>();
+  for (const input of direct) {
+    const def = defOf(input);
+    if (def.relation !== undefined || def.single) {
+      throw new Error(
+        `"${def.name}" can't be required: a relation has no target to fill in, and no entity has a singleton. Give a relation at the spawn.`
+      );
+    }
+    for (const inherited of def.requires) {
+      all.set(defOf(inherited).id, inherited);
+    }
+  }
+  for (const input of direct) {
+    all.set(defOf(input).id, input);
+  }
+  return [...all.values()];
+};
 
 /**
  * The definition of a singleton, data that exists once per world, such as the
@@ -905,10 +978,11 @@ const define = <
     readonly single?: boolean;
     readonly relation?: OnTargetDespawn;
     readonly initial?: ValueOf<S>;
+    readonly requires?: readonly ComponentInput[];
   }
-): ComponentDef<S, St, N> => {
+): ComponentDef<S, St, N, never> => {
   const fields = Object.keys(schema);
-  const def: ComponentDef<S, St, N> = {
+  const def: ComponentDef<S, St, N, never> = {
     id: nextId++,
     name,
     schema,
@@ -920,6 +994,8 @@ const define = <
     single: options?.single === true,
     relation: options?.relation,
     initial: options?.initial,
+    requires:
+      options?.requires === undefined ? [] : closeRequires(options.requires),
     of: (value) => ({ def, value }),
   };
   defined.set(name, def as ComponentDef);
@@ -958,16 +1034,43 @@ export const Component = {
    * A component added or spawned bare, with no value, is all zeros. Give
    * `initial` to a component whose zeros are wrong, such as a size:
    * `{ initial: { x: 1, y: 1 } }`.
+   *
+   * `requires` lists the components a spawn or an add of this one fills in
+   * when the entity lacks them, each bare or with a value:
+   *
+   *   const Rock = Component.define("game/Rock", { hp: Field.i32 }, {
+   *     requires: [Transform3d.Position, Transform3d.Scale.of({ x: 2, y: 2, z: 2 })],
+   *   })
+   *
+   * - What they require is filled in too. Of two values for one component,
+   *   the one given at the spawn wins, then one written in `requires` over
+   *   one it inherits, then the later.
+   * - An add fills in only what the entity lacks, so adding the component
+   *   again gives back a requirement that was removed. Removing a required
+   *   component is allowed, and leaves this one.
+   * - `Commands.spawns` names what it fills in, for the order of systems.
+   * - A relation can't be required, and neither can a singleton.
+   * - A save holds what was filled in, and loading one fills nothing in. A
+   *   replay recorded before a component required something drifts from a
+   *   game that fills it in.
    */
   define: <
     const N extends string,
     S extends Schema,
     St extends Storage = "table",
+    const Req extends readonly ComponentInput[] = readonly [],
   >(
     name: LiteralName<N>,
     schema: S,
-    options?: { readonly storage?: St; readonly initial?: ValueOf<S> }
-  ): ComponentDef<S, St, N> => define(name, schema, options),
+    options?: {
+      readonly storage?: St;
+      readonly initial?: ValueOf<S>;
+      readonly requires?: {
+        readonly [K in keyof Req]: Req[K] & Requirable<Req[K]>;
+      };
+    }
+  ): ComponentDef<S, St, N, Closed<Req[number]>> =>
+    define(name, schema, options),
   /**
    * Defines a singleton, data the world holds once, which has the value
    * `initial` until it is written. A world registers its name as a
@@ -1020,7 +1123,7 @@ export const Component = {
       readonly storage?: St;
       readonly fields?: S;
     }
-  ): ComponentDef<RelationSchema<S>, St, N> =>
+  ): ComponentDef<RelationSchema<S>, St, N, never> =>
     define<RelationSchema<S>, St, N>(
       name,
       {
@@ -1033,10 +1136,19 @@ export const Component = {
     ),
   /**
    * Defines a tag, a component with no fields. A query uses a tag only to
-   * filter entities.
+   * filter entities. `requires` is as `Component.define` takes it.
    */
-  tag: <const N extends string, St extends Storage = "table">(
+  tag: <
+    const N extends string,
+    St extends Storage = "table",
+    const Req extends readonly ComponentInput[] = readonly [],
+  >(
     name: LiteralName<N>,
-    options?: { readonly storage?: St }
-  ): ComponentDef<{}, St, N> => define(name, {}, options),
+    options?: {
+      readonly storage?: St;
+      readonly requires?: {
+        readonly [K in keyof Req]: Req[K] & Requirable<Req[K]>;
+      };
+    }
+  ): ComponentDef<{}, St, N, Closed<Req[number]>> => define(name, {}, options),
 };

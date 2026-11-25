@@ -22,6 +22,7 @@ export {
   type FieldDef,
   type OnTargetDespawn,
   type RefCodec,
+  type RequiredOf,
   type SingletonSpec,
 } from "./ecs/component";
 export type { RelationDef } from "./ecs/relation";

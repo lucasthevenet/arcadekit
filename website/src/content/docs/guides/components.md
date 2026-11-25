@@ -128,6 +128,35 @@ const world = new EcsWorld();
 world.spawn(Size); // 1 by 1
 ```
 
+## Require other components
+
+A component can **require** others. A spawn or an add of it gives the entity each one it lacks and wasn't given, bare or with the value written in `requires`:
+
+```ts
+import { Component, EcsWorld, Field, Transform3d } from "arcadekit";
+
+const Rock = Component.define(
+  "game/Rock",
+  { hp: Field.i32 },
+  {
+    requires: [
+      Transform3d.Position,
+      Transform3d.Scale.of({ x: 2, y: 2, z: 2 }),
+    ],
+  }
+);
+
+const world = new EcsWorld();
+world.spawn(Rock); // at the origin, twice its size
+world.spawn(Rock, Transform3d.Position.of({ x: 4, y: 0, z: 0 })); // at 4
+```
+
+- What a required component requires is filled in too. Of two values for one component, the one given at the spawn wins, then one written in `requires` over one it inherits, then the later.
+- Adding a component the entity already has fills in what it has lost since. Removing a required component is allowed, and leaves the rock without it.
+- `Commands.spawns(Rock)` names what `Rock` requires too, so a system that watches positions is [ordered](systems.md#order-systems) after one that spawns rocks.
+- A relation can't be required, since there is no target to fill in, and neither can a singleton.
+- A save holds components and not the rule, so loading one fills nothing in. A replay recorded before a component required something spawns it without, and [drifts](replays.md) from a game that fills it in.
+
 ## Use a tag or sparse storage
 
 A **tag** is a component with no fields. Store a component sparsely when it is added and removed often, or when few entities have it. Adding or removing a sparse component doesn't move the entity between tables:

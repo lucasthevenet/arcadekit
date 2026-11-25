@@ -12,7 +12,7 @@ import { Three } from "@arcadekit/three";
 import { Assets, Component, Plugin, State, Transform3d } from "arcadekit";
 import { CylinderGeometry, MeshStandardMaterial } from "three";
 
-const Tree = Component.tag("game/Tree");
+const Tree = Component.tag("game/Tree", { requires: [Transform3d.Position] });
 const Level = State.define("game/Level", ["menu", "forest"]);
 
 const Forest = Assets.bundle("game/Forest", {
@@ -82,8 +82,8 @@ import { Three } from "@arcadekit/three";
 import * as Gltf from "@arcadekit/three/Gltf";
 import { Assets, Component, Transform3d } from "arcadekit";
 
-const Ship = Component.tag("game/Ship");
-const Rock = Component.tag("game/Rock");
+const Ship = Component.tag("game/Ship", { requires: [Transform3d.Position] });
+const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] });
 
 const Fleet = Assets.bundle("game/Fleet", {
   ship: Gltf.model("/ship.glb"),

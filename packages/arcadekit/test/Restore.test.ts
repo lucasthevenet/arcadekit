@@ -49,7 +49,11 @@ const logOf = (world: EcsWorld): Shouts => {
   return log;
 };
 
-const optional: ComponentDef[] = [Body, Marked, Aura, Chilled];
+// A spawn or an add of it fills in a body and a chill.
+const Held = Component.tag("rs/Held", {
+  requires: [Body.of({ x: 5, y: 6 }), Chilled],
+});
+const optional: ComponentDef[] = [Body, Marked, Aura, Chilled, Held];
 const Bodies = Query.all(Body).pipe(Query.writes(Body));
 const Warm = Query.all(Aura).pipe(Query.without(Chilled));
 const Moved = Query.all(Body).pipe(Query.changed(Body));
@@ -493,6 +497,36 @@ describe("a world rewound to a moment it captured", () => {
     world.spawn(Body.of({ x: 2, y: 2 }));
     world._rewind(moment, []);
     expect(world.snapshot()).toEqual(bytes);
+  });
+
+  it("puts back what a spawn and an add filled in, and hashes it as the full hash does", () => {
+    const Ship = Component.define(
+      "rs/Ship",
+      { fuel: Field.i32 },
+      {
+        requires: [Body.of({ x: 1, y: 2 }), Aura.of({ power: 3, note: "n" })],
+      }
+    );
+    const world = new EcsWorld();
+    const a = world.spawn(Marked);
+    world.hash();
+    const moment = world._capture();
+    const bytes = world.snapshot();
+    const b = world.spawn(Ship);
+    world.add(a, Ship.of({ fuel: 4 }));
+    expect(world.hash()).toBe(world._fullHash());
+    // Added again with a value: the ship's own row is written in place.
+    world.add(a, Ship.of({ fuel: 5 }));
+    expect(world.get(a, Ship)).toEqual({ fuel: 5 });
+    expect(world.hash()).toBe(world._fullHash());
+    world.remove(b, Body);
+    world.add(b, Ship);
+    expect(world.get(b, Body)).toEqual({ x: 1, y: 2 });
+    expect(world.hash()).toBe(world._fullHash());
+    world._rewind(moment, []);
+    expect(world.hash()).toBe(world._fullHash());
+    expect(world.snapshot()).toEqual(bytes);
+    expect(world.has(a, Body)).toBe(false);
   });
 
   it("hashes as the full hash does after every step, through captures and rewinds", () => {

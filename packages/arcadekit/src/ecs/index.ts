@@ -34,6 +34,7 @@ export type {
   ReadonlyColumn,
   WritableColumn,
   RefCodec,
+  RequiredOf,
   SingletonSpec,
   Storage,
   ValueOf,

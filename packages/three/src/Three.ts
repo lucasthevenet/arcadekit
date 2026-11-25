@@ -53,7 +53,7 @@
  * Each part is also a module of its own, which gives the same exports:
  * `@arcadekit/three/Scene`, `Renderer`, `Assets`, `Instances` and `Objects`.
  */
-import type { ComponentDef } from "arcadekit/ecs";
+import type { ComponentDef, RequiredOf } from "arcadekit/ecs";
 import type * as Transform2d from "arcadekit/Transform2d";
 import type * as Transform3d from "arcadekit/Transform3d";
 
@@ -94,6 +94,10 @@ export interface Which {
    * The component that marks an entity as one of the kind, or several
    * components, all of which it must have. An entity is drawn while it has
    * them, none of `without`, and the `Position` of the kind's `transform`.
+   * One of them requires that `Position`, so that a spawn or an add of it
+   * gives the entity one, and a kind whose components don't doesn't compile:
+   *
+   *   const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] })
    */
   readonly of: ComponentDef | readonly ComponentDef[];
   /**
@@ -125,3 +129,27 @@ export interface Which {
    */
   readonly snap?: number;
 }
+
+/**
+ * What `Three.instances` and `Three.objects` are told of a kind whose `of`
+ * doesn't require its transform's `Position`, and `unknown` for one that
+ * does. A transform typed as either module needs both positions, since the
+ * compiler can't tell which it is. A component whose requirements the
+ * compiler only knows as `string` is not checked.
+ *
+ * @category Type-level
+ */
+export type Drawn<O, T> =
+  RequiredOf<O extends readonly (infer D)[] ? D : O> extends infer Required
+    ? string extends Required
+      ? unknown
+      : [T] extends [
+            { readonly Position: { readonly name: infer P extends string } },
+          ]
+        ? [P] extends [Required]
+          ? unknown
+          : {
+              readonly of: `The kind's "of" doesn't require "${P}", so an entity spawned without it is never drawn. Define its component with requires: [Position], the Position of the kind's transform.`;
+            }
+        : unknown
+    : never;

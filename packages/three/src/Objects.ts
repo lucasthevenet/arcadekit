@@ -21,7 +21,7 @@ import type { Object3D } from "three";
 import type { Entries } from "./internal/assets";
 import type { Needs } from "./internal/kind";
 import * as internal from "./internal/objects";
-import type { Which } from "./Three";
+import type { Drawn, Which } from "./Three";
 
 /**
  * The options of `Three.objects`, wherever its objects come from.
@@ -139,13 +139,28 @@ export interface ObjectsFromOptions<
  */
 // The one made of assets is first, so that the two things its `make` is
 // handed are typed from it.
-export function objects<B extends Entries, O extends Object3D = Object3D>(
+export function objects<
+  B extends Entries,
+  const K extends Which["of"],
+  T extends Which["transform"],
+  O extends Object3D = Object3D,
+>(
   name: string,
-  options: ObjectsFromOptions<B, O>
+  options: ObjectsFromOptions<B, O> & {
+    readonly of: K;
+    readonly transform: T;
+  } & Drawn<K, T>
 ): System.System<never, Needs | Assets.Store, string, "frame">;
-export function objects<O extends Object3D = Object3D>(
+export function objects<
+  const K extends Which["of"],
+  T extends Which["transform"],
+  O extends Object3D = Object3D,
+>(
   name: string,
-  options: ObjectsOptions<O>
+  options: ObjectsOptions<O> & {
+    readonly of: K;
+    readonly transform: T;
+  } & Drawn<K, T>
 ): System.System<never, Needs, string, "frame">;
 // One body for both, as for `instances`.
 export function objects<O extends Object3D>(
