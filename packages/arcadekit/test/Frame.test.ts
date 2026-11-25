@@ -50,6 +50,7 @@ const Score = Singleton.define(
 );
 const Phase = State.define("fr/Phase", ["playing", "paused"]);
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
+const Leash = Component.relation("fr/Leash", { onTargetDespawn: "remove" });
 const Seen = Query.all(Ball);
 const Moved = Query.all(Ball).pipe(Query.changed(Ball), Query.writes(Ball));
 const Watched = Query.all(Ball).pipe(Query.changed(Ball));
@@ -94,7 +95,7 @@ describe("a frozen world", () => {
   const populated = (): { world: EcsWorld; ball: Entity } => {
     const world = new EcsWorld({ seed: 1 });
     const ball = world.spawn(Ball.of({ x: 1, vx: 2 }), Glow.of({ level: 3 }));
-    world.spawn(Ball.of({ x: 5, vx: 0 }));
+    world.spawn(Ball.of({ x: 5, vx: 0 }), Leash.of({ target: ball }));
     world.singleton(Score).points = 7;
     return { world, ball };
   };
@@ -118,7 +119,13 @@ describe("a frozen world", () => {
         sum += rows.x[i]!;
       }
     });
-    expect(sum).toBe(12);
+    world
+      .view(Query.all(Ball, Leash))
+      .pointingAt(Leash, ball)
+      .each((row) => {
+        sum += row.x;
+      });
+    expect(sum).toBe(17);
     // Changing.
     const bytes = new EcsWorld().snapshot();
     const changes: [string, () => unknown][] = [
@@ -141,6 +148,16 @@ describe("a frozen world", () => {
           world.view(Balls).each((row) => {
             row.x = 0;
           }),
+      ],
+      [
+        'An assignment to "fr/Ball.x"',
+        () =>
+          world
+            .view(Query.all(Ball, Leash).pipe(Query.writes(Ball)))
+            .pointingAt(Leash, ball)
+            .each((row) => {
+              row.x = 0;
+            }),
       ],
       [
         'An assignment to "fr/Glow.level"',

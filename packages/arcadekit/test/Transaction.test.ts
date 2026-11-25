@@ -40,6 +40,7 @@ const Sheet = Component.define("tx/Sheet", kinds);
 const Aura = Component.define("tx/Aura", kinds, { storage: "sparse" });
 const Marked = Component.tag("tx/Marked");
 const Chilled = Component.tag("tx/Chilled", { storage: "sparse" });
+const Follows = Component.relation("tx/Follows", { onTargetDespawn: "remove" });
 
 const sheet = (n: number) => ({
   single: n + 0.5,
@@ -87,6 +88,9 @@ const populated = (): { world: EcsWorld; entities: Entity[] } => {
     }
     if (n % 7 === 0) {
       world.add(entity, Chilled);
+    }
+    if (n % 4 === 1) {
+      world.add(entity, Follows.of({ target: entities[0]! }));
     }
     entities.push(entity);
   }
@@ -169,6 +173,24 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
       for (let i = start; i < end; i++) {
         body.y[i] = 0;
         aura.columns.signed[aura.indexOf(ids[i]!)] = 123;
+      }
+    });
+  },
+  "each and eachChunk over the entities that point at a target": (
+    world,
+    entities
+  ) => {
+    const followers = world
+      .view(Query.all(Body, Follows, Aura).pipe(Query.writes(Body, Aura)))
+      .pointingAt(Follows, entities[0]!);
+    followers.each((body, _, aura) => {
+      body.x += 3;
+      aura.signed = 4;
+    });
+    followers.eachChunk((start, end, body, _, aura, ids) => {
+      for (let i = start; i < end; i++) {
+        body.y[i] = 7;
+        aura.columns.short[aura.indexOf(ids[i]!)] = 8;
       }
     });
   },
