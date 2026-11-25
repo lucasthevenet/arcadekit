@@ -133,8 +133,9 @@ export interface Which {
 /**
  * What `Three.instances` and `Three.objects` are told of a kind whose `of`
  * doesn't require its transform's `Position`, and `unknown` for one that
- * does. A component whose requirements the compiler only knows as `string`
- * is not checked.
+ * does. A transform typed as either module needs both positions, since the
+ * compiler can't tell which it is. A component whose requirements the
+ * compiler only knows as `string` is not checked.
  *
  * @category Type-level
  */
@@ -142,8 +143,10 @@ export type Drawn<O, T> =
   RequiredOf<O extends readonly (infer D)[] ? D : O> extends infer Required
     ? string extends Required
       ? unknown
-      : T extends { readonly Position: { readonly name: infer P extends string } }
-        ? P extends Required
+      : [T] extends [
+            { readonly Position: { readonly name: infer P extends string } },
+          ]
+        ? [P] extends [Required]
           ? unknown
           : {
               readonly of: `The kind's "of" doesn't require "${P}", so an entity spawned without it is never drawn. Define its component with requires: [Position], the Position of the kind's transform.`;

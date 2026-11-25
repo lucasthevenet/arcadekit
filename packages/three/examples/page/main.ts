@@ -53,10 +53,12 @@ const COUNT =
 const BOX = 60;
 
 // --- the simulation: no Three.js here ----------------------------------------------
-const Mote = Component.tag("page/Mote");
-const Card = Component.tag("page/Card");
+const Mote = Component.tag("page/Mote", { requires: [Position] });
+const Card = Component.tag("page/Card", {
+  requires: [Transform2d.Position],
+});
 const CARDS = 48;
-const Ship = Component.tag("page/Ship");
+const Ship = Component.tag("page/Ship", { requires: [Position] });
 const Velocity = Component.define("page/Velocity", {
   x: Field.f32,
   y: Field.f32,

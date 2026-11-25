@@ -45,8 +45,14 @@ const { Position, Rotation, Scale } = Transform3d;
 
 const Rock = Component.tag("th/Rock", { requires: [Transform3d.Position] });
 const Ship = Component.tag("th/Ship", { requires: [Transform3d.Position] });
+const FlatRock = Component.tag("th/FlatRock", {
+  requires: [Transform2d.Position],
+});
+const FlatShip = Component.tag("th/FlatShip", {
+  requires: [Transform2d.Position],
+});
 const Hidden = Component.tag("th/Hidden", { storage: "sparse" });
-const Heavy = Component.tag("th/Heavy", { requires: [Transform3d.Position] });
+const Heavy = Component.tag("th/Heavy");
 const Velocity = Component.define("th/Velocity", {
   x: Field.f32,
   y: Field.f32,
@@ -64,6 +70,8 @@ const components: readonly ComponentDef[] = [
   Transform2d.Scale,
   Rock,
   Ship,
+  FlatRock,
+  FlatShip,
   Hidden,
   Heavy,
   Color.Rgb,
@@ -236,9 +244,9 @@ const Look = Plugin.make("th/Look", {
   plugins: [Three.plugin, Hand],
   systems: [Rocks],
 });
-/** The same rocks, placed as a flat game places them. */
+/** A flat game's rocks, placed as it places them. */
 const FlatRocks = Three.instances("th/FlatRocks", {
-  of: Rock,
+  of: FlatRock,
   transform: Transform2d,
   geometry,
   material,
@@ -464,7 +472,7 @@ describe("Three.instances", () => {
     hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Scale);
     hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Rotation);
     hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Rotation, Scale);
-    hand.spawn(Rock);
+    hand.remove(hand.spawn(Rock), Position);
     app.frame();
 
     const mesh = meshOf(renderer.scene, "th/Rocks");
@@ -480,7 +488,7 @@ describe("Three.instances", () => {
     expect(mesh.frustumCulled).toBe(false);
   });
 
-  it("does not compile unless it is told which transform places its entities, one of the two modules", () => {
+  it("does not compile unless it is told which transform places its entities, one of the two modules, whose Position its components require", () => {
     const make = () => new Object3D();
     // A position of a flat game's and a turn in three dimensions.
     const mixed = { ...Transform2d, Rotation: Transform3d.Rotation };
@@ -490,20 +498,55 @@ describe("Three.instances", () => {
       // @ts-expect-error nor for objects
       Three.objects("th/UnsaidObjects", { of: Ship, make });
       Three.instances("th/Mixed", {
-        of: Rock,
+        of: [Rock, FlatRock],
         // @ts-expect-error a mix of the two is neither
         transform: mixed,
         geometry,
         material,
       });
+      const transforms: readonly Transform[] = [Transform3d, Transform2d];
+      const either = transforms[0]!;
+      Three.instances("th/Either", {
+        // @ts-expect-error a transform that may be either needs both positions
+        of: Rock,
+        transform: either,
+        geometry,
+        material,
+      });
       // @ts-expect-error a component of one is not the module
       Three.objects("th/Part", { of: Ship, transform: Position, make });
+      Three.instances("th/Nowhere", {
+        // @ts-expect-error a component that requires no Position
+        of: Heavy,
+        transform: Transform3d,
+        geometry,
+        material,
+      });
+      Three.objects("th/NowhereObjects", {
+        // @ts-expect-error nor for objects
+        of: Heavy,
+        transform: Transform2d,
+        make,
+      });
+      Three.instances("th/Lifted", {
+        // @ts-expect-error a rock requires the Position of Transform3d
+        of: Rock,
+        transform: Transform2d,
+        geometry,
+        material,
+      });
+      Three.objects("th/LiftedObjects", {
+        // @ts-expect-error nor for objects, of several components
+        of: [Ship, Heavy],
+        transform: Transform2d,
+        make,
+      });
     };
     void kinds;
     expect(
       [
         Three.instances("th/Flat", {
-          of: Rock,
+          of: FlatRock,
           transform: Transform2d,
           geometry,
           material,
@@ -870,9 +913,13 @@ describe("Three.instances", () => {
       });
       // Half of them in three dimensions, and half in the plane: a kind of
       // each transform.
-      const crowd = (name: string, transform: Transform) =>
+      const crowd = (
+        name: string,
+        of: typeof Rock | typeof FlatRock,
+        transform: Transform
+      ) =>
         Three.instances(name, {
-          of: Rock,
+          of,
           transform,
           geometry,
           material,
@@ -887,8 +934,8 @@ describe("Three.instances", () => {
             plugins: [Three.plugin, Hand],
             systems: [
               Move,
-              crowd("th/Crowd", Transform3d),
-              crowd("th/FlatCrowd", Transform2d),
+              crowd("th/Crowd", Rock, Transform3d),
+              crowd("th/FlatCrowd", FlatRock, Transform2d),
             ],
           })
         ),
@@ -903,7 +950,7 @@ describe("Three.instances", () => {
         // both, in three dimensions and in two.
         const flat = i % 8 >= 4;
         const parts = [
-          Rock,
+          flat ? FlatRock : Rock,
           flat
             ? Transform2d.Position.of({ x: random.next(), y: random.next() })
             : Position.of({
@@ -1024,20 +1071,23 @@ describe("a flat game's Transform2d", () => {
       renderer
     );
     const rocks = [
-      hand.spawn(Rock, at(3, 4)),
-      hand.spawn(Rock, at(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
-      hand.spawn(Rock, at(6, -7), Flat.Rotation.of({ angle: Math.PI / 2 })),
+      hand.spawn(FlatRock, at(3, 4)),
+      hand.spawn(FlatRock, at(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
+      hand.spawn(FlatRock, at(6, -7), Flat.Rotation.of({ angle: Math.PI / 2 })),
       hand.spawn(
-        Rock,
+        FlatRock,
         at(0.5, 9),
         Flat.Rotation.of({ angle: 0.7 }),
         Flat.Scale.of({ x: 3, y: 0.5 })
       ),
     ];
     // Not rocks, and one that is nowhere.
-    hand.spawn(Ship, at(8, 8));
-    hand.spawn(Ship, at(8, 8), Flat.Rotation, Flat.Scale);
-    hand.spawn(Rock, Flat.Rotation.of({ angle: 1 }));
+    hand.spawn(FlatShip, at(8, 8));
+    hand.spawn(FlatShip, at(8, 8), Flat.Rotation, Flat.Scale);
+    hand.remove(
+      hand.spawn(FlatRock, Flat.Rotation.of({ angle: 1 })),
+      Flat.Position
+    );
     app.frame();
     const mesh = meshOf(renderer.scene, "th/FlatRocks");
     expectDrawn(mesh, world, rocks, Transform2d);
@@ -1067,6 +1117,7 @@ describe("a flat game's Transform2d", () => {
     // Both positions, and a turn and a size of each module.
     const both = hand.spawn(
       Rock,
+      FlatRock,
       Position.of({ x: 1, y: 2, z: 3 }),
       Rotation.of(Transform3d.axisAngle(1, 0, 0, Math.PI / 2)),
       Scale.of({ x: 4, y: 4, z: 4 }),
@@ -1075,7 +1126,7 @@ describe("a flat game's Transform2d", () => {
       Flat.Scale.of({ x: 2, y: 3 })
     );
     const solid = hand.spawn(Rock, Position.of({ x: 5, y: 6, z: 7 }));
-    const flat = hand.spawn(Rock, at(30, 40));
+    const flat = hand.spawn(FlatRock, at(30, 40));
     app.frame();
     const rocks = meshOf(renderer.scene, "th/Rocks");
     const flatRocks = meshOf(renderer.scene, "th/FlatRocks");
@@ -1119,14 +1170,15 @@ describe("a flat game's Transform2d", () => {
         const roll = random.int(10);
         const one = alive[random.int(alive.length)];
         if (roll < 3 || one === undefined) {
-          const parts = [Rock] as ComponentInput[];
+          const parts: ComponentInput[] = [];
           // Most are flat; some are in three dimensions; a few are both.
           const kind = random.int(6);
           if (kind !== 0) {
-            parts.push(place());
+            parts.push(FlatRock, place());
           }
           if (kind === 0 || kind === 1) {
             parts.push(
+              Rock,
               Position.of({
                 x: random.next() * 100,
                 y: random.next() * 100,
@@ -1167,6 +1219,7 @@ describe("a flat game's Transform2d", () => {
             hand.remove(one, Position);
           } else {
             hand.add(one, Position.of({ x: frame, y: step, z: -frame }));
+            hand.add(one, Rock);
           }
         }
       }
@@ -1174,21 +1227,23 @@ describe("a flat game's Transform2d", () => {
       expectDrawn(
         meshOf(renderer.scene, "th/Rocks"),
         world,
-        alive.filter((one) => world.has(one, Position)),
+        alive.filter((one) => world.has(one, Rock) && world.has(one, Position)),
         Transform3d
       );
       expectDrawn(
         meshOf(renderer.scene, "th/FlatRocks"),
         world,
-        alive.filter((one) => world.has(one, Flat.Position)),
+        alive.filter(
+          (one) => world.has(one, FlatRock) && world.has(one, Flat.Position)
+        ),
         Transform2d
       );
     }
     // All of it was drawn from along the way.
     const has = (...parts: Parameters<typeof world.has>[1][]) =>
       alive.some((one) => parts.every((part) => world.has(one, part)));
-    expect(has(Flat.Position, Flat.Rotation, Flat.Scale)).toBe(true);
-    expect(has(Flat.Position, Position)).toBe(true);
+    expect(has(FlatRock, Flat.Position, Flat.Rotation, Flat.Scale)).toBe(true);
+    expect(has(FlatRock, Flat.Position, Rock, Position)).toBe(true);
     expect(
       alive.some(
         (one) =>
@@ -1203,7 +1258,7 @@ describe("a flat game's Transform2d", () => {
 
   it("is drawn only for the entities that have every component it was given and none of those it was told to leave out", () => {
     const Heavies = Three.instances("th/FlatHeavies", {
-      of: [Rock, Heavy],
+      of: [FlatRock, Heavy],
       transform: Transform2d,
       without: [Hidden],
       geometry,
@@ -1220,18 +1275,18 @@ describe("a flat game's Transform2d", () => {
     const size = Flat.Scale.of({ x: 2, y: 3 });
     // One of each kind of table, shown and hidden.
     const shown = [
-      hand.spawn(Rock, Heavy, at(1, 0)),
-      hand.spawn(Rock, Heavy, at(2, 0), size),
-      hand.spawn(Rock, Heavy, at(3, 0), turn),
-      hand.spawn(Rock, Heavy, at(4, 0), turn, size),
+      hand.spawn(FlatRock, Heavy, at(1, 0)),
+      hand.spawn(FlatRock, Heavy, at(2, 0), size),
+      hand.spawn(FlatRock, Heavy, at(3, 0), turn),
+      hand.spawn(FlatRock, Heavy, at(4, 0), turn, size),
     ];
     const hidden = [
-      hand.spawn(Rock, Heavy, Hidden, at(5, 0)),
-      hand.spawn(Rock, Heavy, Hidden, at(6, 0), size),
-      hand.spawn(Rock, Heavy, Hidden, at(7, 0), turn),
-      hand.spawn(Rock, Heavy, Hidden, at(8, 0), turn, size),
+      hand.spawn(FlatRock, Heavy, Hidden, at(5, 0)),
+      hand.spawn(FlatRock, Heavy, Hidden, at(6, 0), size),
+      hand.spawn(FlatRock, Heavy, Hidden, at(7, 0), turn),
+      hand.spawn(FlatRock, Heavy, Hidden, at(8, 0), turn, size),
     ];
-    for (const only of [Rock, Heavy]) {
+    for (const only of [FlatRock, Heavy]) {
       hand.spawn(only, at(9, 0));
       hand.spawn(only, at(9, 0), size);
       hand.spawn(only, at(9, 0), turn);
@@ -1254,7 +1309,7 @@ describe("a flat game's Transform2d", () => {
     const made: { readonly object: Object3D; readonly entity: Entity }[] = [];
     const freed: Entity[] = [];
     const Cards = Three.objects("th/Cards", {
-      of: Ship,
+      of: FlatShip,
       transform: Transform2d,
       without: [Hidden],
       make: (entity) => {
@@ -1277,16 +1332,16 @@ describe("a flat game's Transform2d", () => {
     );
     const objectOf = (entity: Entity): Object3D =>
       made.findLast((one) => one.entity === entity)!.object;
-    const plain = hand.spawn(Ship, at(1, 2));
+    const plain = hand.spawn(FlatShip, at(1, 2));
     const whole = hand.spawn(
-      Ship,
+      FlatShip,
       at(-3, -4),
       Flat.Rotation.of({ angle: 0.5 }),
       Flat.Scale.of({ x: 2, y: 3 })
     );
     // Turned and sized, and nowhere; and hidden.
-    hand.spawn(Ship, Flat.Rotation, Flat.Scale);
-    hand.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
+    hand.remove(hand.spawn(FlatShip, Flat.Rotation, Flat.Scale), Flat.Position);
+    hand.spawn(FlatShip, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
     app.frame();
     expect(
       made
@@ -1348,7 +1403,7 @@ describe("a flat game's Transform2d", () => {
   it("keeps what it knows of its objects when a frame brings so many more that its room has to grow", () => {
     const made = new Map<Entity, Object3D>();
     const Cards = Three.objects("th/ManyCards", {
-      of: Ship,
+      of: FlatShip,
       transform: Transform2d,
       make: (entity) => {
         const object = new Group();
@@ -1361,14 +1416,18 @@ describe("a flat game's Transform2d", () => {
       App.make(App.define({ plugins: [Three.plugin, Hand], systems: [Cards] })),
       makeRenderer()
     );
-    const first = hand.spawn(Ship, at(1, 1), Flat.Rotation.of({ angle: 2 }));
+    const first = hand.spawn(
+      FlatShip,
+      at(1, 1),
+      Flat.Rotation.of({ angle: 2 })
+    );
     app.frame();
     expect(made.get(first)!.rotation.z).toBe(2);
     // In one frame: the first is no longer turned, and a crowd arrives
     // after it, more than there was room for.
     hand.remove(first, Flat.Rotation);
     for (let i = 0; i < 200; i++) {
-      hand.spawn(Ship, at(i, 2));
+      hand.spawn(FlatShip, at(i, 2));
     }
     app.frame();
     expect(made.size).toBe(201);
@@ -1387,7 +1446,7 @@ describe("a flat game's Transform2d", () => {
       makeRenderer()
     );
     const rock = first.hand.spawn(
-      Rock,
+      FlatRock,
       at(4, 5),
       Flat.Rotation.of({ angle: 1 }),
       Flat.Scale.of({ x: 2, y: 2 })
@@ -1427,18 +1486,22 @@ describe("an entity drawn between two ticks", () => {
       }
     );
   });
-  const smoothed = (name: string, transform: Transform) =>
+  const smoothed = (
+    name: string,
+    of: typeof Rock | typeof FlatRock,
+    transform: Transform
+  ) =>
     Three.instances(name, {
-      of: Rock,
+      of,
       transform,
       without: [Hidden],
       geometry,
       material,
       smooth: true,
     });
-  const Smoothed = smoothed("th/Smoothed", Transform3d);
-  /** The same rocks of a flat game, drawn so. */
-  const SmoothedFlat = smoothed("th/SmoothedFlat", Transform2d);
+  const Smoothed = smoothed("th/Smoothed", Rock, Transform3d);
+  /** A flat game's rocks, drawn so. */
+  const SmoothedFlat = smoothed("th/SmoothedFlat", FlatRock, Transform2d);
   const plugins = [Three.plugin, Hand] as const;
   /** A game whose rocks slide, and the systems that draw them. */
   const play = (
@@ -1621,9 +1684,13 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("is drawn where it is when it went further in a tick than it was told an entity can", () => {
-    const wrapping = (name: string, transform: Transform) =>
+    const wrapping = (
+      name: string,
+      of: typeof Rock | typeof FlatRock,
+      transform: Transform
+    ) =>
       Three.instances(name, {
-        of: Rock,
+        of,
         transform,
         geometry,
         material,
@@ -1635,13 +1702,13 @@ describe("an entity drawn between two ticks", () => {
         plugins,
         systems: [
           Slide,
-          wrapping("th/Smoothed", Transform3d),
-          wrapping("th/SmoothedFlat", Transform2d),
+          wrapping("th/Smoothed", Rock, Transform3d),
+          wrapping("th/SmoothedFlat", FlatRock, Transform2d),
         ],
       })
     );
     const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-    const card = hand.spawn(Rock, Flat.Position.of({ x: 0, y: 2 }));
+    const card = hand.spawn(FlatRock, Flat.Position.of({ x: 0, y: 2 }));
     app.frame();
     app.tick(1);
     app.frame(0.5);
@@ -1694,7 +1761,7 @@ describe("an entity drawn between two ticks", () => {
         Scale.of({ x: 1, y: 1, z: 1 })
       ),
       hand.spawn(
-        Rock,
+        FlatRock,
         Flat.Position.of({ x: 0, y: 2 }),
         Flat.Rotation.of({ angle: 0.2 }),
         Flat.Scale.of({ x: 1, y: 1 })
@@ -1707,7 +1774,7 @@ describe("an entity drawn between two ticks", () => {
     hand.despawn(olds[0]!);
     hand.despawn(olds[1]!);
     const flat = hand.spawn(
-      Rock,
+      FlatRock,
       Flat.Position.of({ x: 100, y: 4 }),
       Flat.Rotation.of({ angle: 2.5 }),
       Flat.Scale.of({ x: 6, y: 7 })
@@ -1794,7 +1861,7 @@ describe("an entity drawn between two ticks", () => {
       hand,
     } = play(App.define({ plugins, systems: [Slide, SmoothedFlat] }));
     const card = hand.spawn(
-      Rock,
+      FlatRock,
       Flat.Position.of({ x: 0, y: 1 }),
       Flat.Rotation.of({ angle: 0.2 }),
       Flat.Scale.of({ x: 1, y: 1 })
@@ -1869,7 +1936,7 @@ describe("an entity drawn between two ticks", () => {
           const x = random.int(1000);
           alive.push({
             entity: flat
-              ? hand.spawn(Rock, Flat.Position.of({ x, y }))
+              ? hand.spawn(FlatRock, Flat.Position.of({ x, y }))
               : hand.spawn(Rock, Position.of({ x, y, z: 0 })),
             y,
             flat,
@@ -1991,9 +2058,13 @@ describe("an entity drawn between two ticks", () => {
 
   it("places an object of Three.objects the same way", () => {
     const made = new Map<Entity, Object3D>();
-    const ships = (name: string, transform: Transform) =>
+    const ships = (
+      name: string,
+      of: typeof Ship | typeof FlatShip,
+      transform: Transform
+    ) =>
       Three.objects(name, {
-        of: Ship,
+        of,
         transform,
         make: (entity) => {
           const object = new Group();
@@ -2009,8 +2080,8 @@ describe("an entity drawn between two ticks", () => {
         plugins,
         systems: [
           Slide,
-          ships("th/SmoothShips", Transform3d),
-          ships("th/SmoothCards", Transform2d),
+          ships("th/SmoothShips", Ship, Transform3d),
+          ships("th/SmoothCards", FlatShip, Transform2d),
         ],
       })
     );
@@ -2021,7 +2092,7 @@ describe("an entity drawn between two ticks", () => {
       Scale.of({ x: 1, y: 1, z: 1 })
     );
     const card = hand.spawn(
-      Ship,
+      FlatShip,
       Flat.Position.of({ x: 0, y: 4 }),
       Flat.Rotation.of({ angle: 0.5 }),
       Flat.Scale.of({ x: 1, y: 1 })
@@ -2173,7 +2244,7 @@ describe("an entity drawn between two ticks", () => {
     };
     for (const { hand } of [drawnGame, bare]) {
       hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), Rotation);
-      hand.spawn(Rock, Flat.Position.of({ x: 0, y: 2 }), Flat.Rotation);
+      hand.spawn(FlatRock, Flat.Position.of({ x: 0, y: 2 }), Flat.Rotation);
       hand.spawn(Ship, Position.of({ x: 0, y: 3, z: 0 }), Scale);
     }
     for (let tick = 0; tick < 40; tick++) {
@@ -2194,9 +2265,13 @@ describe("an entity drawn between two ticks", () => {
 
 describe("a colour per instance", () => {
   const Flat = Transform2d;
-  const painted = (name: string, transform: Transform) =>
+  const painted = (
+    name: string,
+    of: typeof Rock | typeof FlatRock,
+    transform: Transform
+  ) =>
     Three.instances(name, {
-      of: Rock,
+      of,
       transform,
       without: [Hidden],
       geometry,
@@ -2206,9 +2281,9 @@ describe("a colour per instance", () => {
       color: Color.Rgb,
       capacity: 4,
     });
-  const Painted = painted("th/Painted", Transform3d);
+  const Painted = painted("th/Painted", Rock, Transform3d);
   /** The same of a flat game's rocks. */
-  const PaintedFlat = painted("th/PaintedFlat", Transform2d);
+  const PaintedFlat = painted("th/PaintedFlat", FlatRock, Transform2d);
   const plugins = [Three.plugin, Hand] as const;
   /** A game whose rocks are painted, and the systems that draw them. */
   const play = (
@@ -2260,10 +2335,10 @@ describe("a colour per instance", () => {
       hand.spawn(Rock, at(2), size, paint(0.25, 0, 0)),
       hand.spawn(Rock, at(3), turn, paint(0.375, 0, 0)),
       hand.spawn(Rock, at(4), turn, size, paint(0.5, 0, 0)),
-      hand.spawn(Rock, flat(5), paint(0, 0.125, 0.75)),
-      hand.spawn(Rock, flat(6), flatSize, paint(0, 0.25, 0.75)),
-      hand.spawn(Rock, flat(7), flatTurn, paint(0, 0.375, 0.75)),
-      hand.spawn(Rock, flat(8), flatTurn, flatSize, paint(0, 0.5, 0.75)),
+      hand.spawn(FlatRock, flat(5), paint(0, 0.125, 0.75)),
+      hand.spawn(FlatRock, flat(6), flatSize, paint(0, 0.25, 0.75)),
+      hand.spawn(FlatRock, flat(7), flatTurn, paint(0, 0.375, 0.75)),
+      hand.spawn(FlatRock, flat(8), flatTurn, flatSize, paint(0, 0.5, 0.75)),
     ];
     // Not painted, of every kind: drawn in the material's own colour.
     const bare = [
@@ -2271,10 +2346,10 @@ describe("a colour per instance", () => {
       hand.spawn(Rock, at(10), size),
       hand.spawn(Rock, at(11), turn),
       hand.spawn(Rock, at(12), turn, size),
-      hand.spawn(Rock, flat(13)),
-      hand.spawn(Rock, flat(14), flatSize),
-      hand.spawn(Rock, flat(15), flatTurn),
-      hand.spawn(Rock, flat(16), flatTurn, flatSize),
+      hand.spawn(FlatRock, flat(13)),
+      hand.spawn(FlatRock, flat(14), flatSize),
+      hand.spawn(FlatRock, flat(15), flatTurn),
+      hand.spawn(FlatRock, flat(16), flatTurn, flatSize),
     ];
     // Painted and not a rock; and hidden.
     hand.spawn(Ship, at(20), paint(1, 1, 1));
@@ -2343,7 +2418,7 @@ describe("a colour per instance", () => {
           const y = ++heights;
           const flat = random.next() < 0.5;
           const parts = [
-            Rock,
+            flat ? FlatRock : Rock,
             flat
               ? Flat.Position.of({ x: random.int(50), y })
               : Position.of({ x: random.int(50), y, z: 0 }),
@@ -2849,7 +2924,7 @@ describe("Three.objects", () => {
     );
     hand.spawn(Rock, Position.of({ x: 9, y: 9, z: 9 }));
     // One that is turned and sized, and nowhere.
-    hand.spawn(Ship, Rotation, Scale);
+    hand.remove(hand.spawn(Ship, Rotation, Scale), Position);
     app.frame();
     expect(
       made
