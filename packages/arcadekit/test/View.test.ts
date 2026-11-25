@@ -335,11 +335,152 @@ describe("a view", () => {
       app.frame();
     }
     expect(worked).toEqual({ hud: 0, menu: 0 });
-    // With one, once per frame.
-    const withUi = play(keeper().mount);
+    // With one that watches both, once per frame.
+    const { app: withUi, ui } = playWithUi();
+    listen(ui, Hud);
+    listen(ui, Menu);
     withUi.frame();
     withUi.frame();
     expect(worked).toEqual({ hud: 2, menu: 2 });
+  });
+
+  it("is not worked out while the UI does not watch it, and is again once it does", () => {
+    const { app, ui } = playWithUi({ coins: [1] });
+    app.dispatch(Start, {});
+    app.tick(1);
+    app.frame();
+    app.frame();
+    expect(worked).toEqual({ hud: 0, menu: 0 });
+    // Read without listening: what it had, and worked out at the next frame.
+    expect(ui.get(Hud)).toBe(Hud.initial);
+    app.frame();
+    app.frame();
+    expect(worked).toEqual({ hud: 1, menu: 0 });
+    expect(ui.get(Hud)).toEqual({ gold: 1, coins: 1 });
+    app.tick(1);
+    app.frame();
+    const hud = listen(ui, Hud);
+    // The frame after the tick worked it out because it was read; now it
+    // is listened to, it is worked out each frame.
+    app.tick(1);
+    app.frame();
+    app.frame();
+    expect(worked).toEqual({ hud: 4, menu: 0 });
+    expect(hud.heard).toEqual([{ gold: 3, coins: 1 }]);
+    hud.stop();
+    app.tick(1);
+    app.frame();
+    expect(worked).toEqual({ hud: 4, menu: 0 });
+    expect(ui.get(Hud)).toEqual({ gold: 3, coins: 1 });
+  });
+
+  it("given `when`, is worked out again only when what `when` returns changed", () => {
+    let bodies = 0;
+    const Quit = Action.define("vw/QuitWhen", Schema.Struct({}));
+    const Shown = View.publish(
+      Menu,
+      {
+        when: function* () {
+          return (yield* Phase).value;
+        },
+      },
+      function* () {
+        bodies++;
+        return { phase: (yield* Phase).value };
+      }
+    );
+    const Rules = Plugin.make("vw/When", {
+      plugins: [View.plugin],
+      systems: [Shown],
+      handlers: [
+        Action.handler(Start, function* () {
+          (yield* Phase.sets).set("playing");
+        }),
+        Action.handler(Quit, function* () {
+          (yield* Phase.sets).set("title");
+        }),
+      ],
+    });
+    const Gated = App.define({ plugins: [Rules] });
+    const kept = keeper<typeof Start | typeof Quit>();
+    const app = Effect.runSync(
+      App.make(Gated).pipe(Effect.provide(View.layer(Gated, kept.mount)))
+    );
+    const { heard } = listen(kept.ui(), Menu);
+    for (let i = 0; i < 5; i++) {
+      app.tick(1);
+      app.frame();
+    }
+    expect(bodies).toBe(1);
+    app.dispatch(Start, {});
+    app.tick(1);
+    app.frame();
+    app.frame();
+    expect(bodies).toBe(2);
+    app.dispatch(Quit, {});
+    app.tick(1);
+    app.frame();
+    expect(bodies).toBe(3);
+    expect(heard).toEqual([{ phase: "playing" }, { phase: "title" }]);
+    expect(Shown.name).toBe("View.publish(vw/Menu)");
+
+    View.publish(
+      Menu,
+      {
+        // @ts-expect-error `when` reads the game, and cannot change it
+        when: function* () {
+          return (yield* Purse.writes).gold;
+        },
+      },
+      function* () {
+        return Menu.initial;
+      }
+    );
+  });
+
+  it("given `when`, shows what its body last said even after a reset, though `when` returns what it did", () => {
+    let bodies = 0;
+    const Quit = Action.define("vw/QuitWhenReset", Schema.Struct({}));
+    const Shown = View.publish(
+      Hud,
+      {
+        when: function* () {
+          return (yield* Purse).gold;
+        },
+      },
+      function* () {
+        bodies++;
+        return { gold: (yield* Purse).gold, coins: 0 };
+      }
+    ).pipe(
+      System.runIf(State.is(Phase, "playing")),
+      System.otherwise(View.reset(Hud))
+    );
+    const Rules = Plugin.make("vw/WhenReset", {
+      plugins: [View.plugin],
+      systems: [Shown],
+      handlers: [
+        Action.handler(Start, function* () {
+          (yield* Phase.sets).set("playing");
+        }),
+        Action.handler(Quit, function* () {
+          (yield* Phase.sets).set("title");
+        }),
+      ],
+    });
+    const Reset = App.define({ plugins: [Rules, begun({ gold: 9 })] });
+    const kept = keeper<typeof Start | typeof Quit>();
+    const app = Effect.runSync(
+      App.make(Reset).pipe(Effect.provide(View.layer(Reset, kept.mount)))
+    );
+    const { heard } = listen(kept.ui(), Hud);
+    for (const action of [Start, Quit, Start]) {
+      app.dispatch(action, {});
+      app.tick(1);
+      app.frame();
+    }
+    expect(bodies).toBe(1);
+    expect(heard).toEqual([{ gold: 9, coins: 0 }, Hud.initial, heard[0]]);
   });
 
   it("keeps the value it had while the system that publishes it does not run", () => {
@@ -525,6 +666,7 @@ describe("what the UI sends", () => {
 
   it("is issued before the next tick, in the order it was sent, and is in the log like any input", () => {
     const { app, ui } = playWithUi({ gold: 5 });
+    listen(ui, Menu);
     ui.send(Buy, { price: 3 });
     ui.send(Start, {});
     ui.send(Buy, { price: 4 });
@@ -648,6 +790,7 @@ describe("what the UI sends", () => {
 
   it("is an action its game has a handler for: any other does not compile", () => {
     const { app, ui } = playWithUi();
+    listen(ui, Menu);
     ui.send(Start, {});
     app.input();
     app.tick(1);
