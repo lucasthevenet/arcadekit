@@ -72,7 +72,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p . && tsc -p examples && tsc -p bench",
     "page": "vite examples/page",
     "bench": "tsx --conditions=source bench/instances.ts"

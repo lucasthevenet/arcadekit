@@ -10,8 +10,8 @@
 // The Oxlint rule `arcadekit/entry-imports` (plugin.ts) holds it in the sources, file by file:
 // each file keeps to the rule of the entry it is behind, and imports only files whose rule is no
 // looser than its own, so an entry reaches nothing its rule refuses. That holds the build too,
-// since the build writes each source file to a file of its own (`unbundle` in tsdown.config.ts),
-// whose imports are that source's.
+// since the build writes each source file to a file of its own (tsconfig.build.json), whose
+// imports are that source's.
 
 const isEffect = (name: string): boolean =>
   name === "effect" || name.startsWith("effect/");

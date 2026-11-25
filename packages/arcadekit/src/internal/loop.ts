@@ -14,21 +14,21 @@ import {
   Tracer,
 } from "effect";
 
-import type * as Action from "../Action";
-import { FrameChangedWorld } from "../App";
-import type { CommandBuffer } from "../ecs/commands";
-import type { Spawned } from "../ecs/spawned";
-import type { World as EcsWorld } from "../ecs/world";
-import type { EventBus } from "../Event";
-import * as Input from "../Input";
-import type * as Journal from "../Journal";
-import type { FrameState, TimeState } from "../Services";
-import * as State from "../State";
-import * as System from "../System";
-import type { Inbox } from "./inbox";
-import type { Runner } from "./runner";
-import type * as Schedule from "./schedule";
-import * as Stage from "./stage";
+import type * as Action from "../Action.ts";
+import { FrameChangedWorld } from "../App.ts";
+import type { CommandBuffer } from "../ecs/commands.ts";
+import type { Spawned } from "../ecs/spawned.ts";
+import type { World as EcsWorld } from "../ecs/world.ts";
+import type { EventBus } from "../Event.ts";
+import * as Input from "../Input.ts";
+import type * as Journal from "../Journal.ts";
+import type { FrameState, TimeState } from "../Services.ts";
+import * as State from "../State.ts";
+import * as System from "../System.ts";
+import type { Inbox } from "./inbox.ts";
+import type { Runner } from "./runner.ts";
+import type * as Schedule from "./schedule.ts";
+import * as Stage from "./stage.ts";
 
 /**
  * The spans of an app that traces. A tick's span is opened before the tick

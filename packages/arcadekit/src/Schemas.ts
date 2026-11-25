@@ -9,8 +9,8 @@
  */
 import { Schema, SchemaTransformation } from "effect";
 
-import { entityOf, idOf, isEntity } from "./ecs/component";
-import type { Entity } from "./ecs/component";
+import { entityOf, idOf, isEntity } from "./ecs/component.ts";
+import type { Entity } from "./ecs/component.ts";
 
 /**
  * An entity id, which is an integer from 0 up to, but not including, 2^53.

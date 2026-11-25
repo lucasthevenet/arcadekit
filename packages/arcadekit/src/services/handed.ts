@@ -4,13 +4,18 @@ import type {
   Schema,
   SingletonSpec,
   ValueOf,
-} from "../ecs/component";
-import type { PatchOf, RelationDef } from "../ecs/relation";
-import { placed } from "../ecs/spawned";
-import type { Spawned } from "../ecs/spawned";
-import type { World as EcsWorld } from "../ecs/world";
-import type { EventBus, EventDef, EventReader, ReadingEvents } from "../Event";
-import type { ReadingWorld, WritingWorld } from "../Services";
+} from "../ecs/component.ts";
+import type { PatchOf, RelationDef } from "../ecs/relation.ts";
+import { placed } from "../ecs/spawned.ts";
+import type { Spawned } from "../ecs/spawned.ts";
+import type { World as EcsWorld } from "../ecs/world.ts";
+import type {
+  EventBus,
+  EventDef,
+  EventReader,
+  ReadingEvents,
+} from "../Event.ts";
+import type { ReadingWorld, WritingWorld } from "../Services.ts";
 
 /**
  * The world as the frame stage, the input stage and `app.read` are handed it:

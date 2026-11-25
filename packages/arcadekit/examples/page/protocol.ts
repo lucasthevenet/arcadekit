@@ -6,8 +6,8 @@
 import { Schema } from "effect";
 
 // In a game of your own these are "arcadekit/Action" and "arcadekit/View".
-import * as Action from "../../src/Action";
-import * as View from "../../src/View";
+import * as Action from "../../src/Action.ts";
+import * as View from "../../src/View.ts";
 
 export type PhaseName = "title" | "playing" | "paused";
 

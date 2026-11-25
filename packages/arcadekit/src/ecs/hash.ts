@@ -10,8 +10,8 @@
  *
  * No Effect dependency.
  */
-import type { Column } from "./column";
-import type { FieldKind, RefCodec } from "./component";
+import type { Column } from "./column.ts";
+import type { FieldKind, RefCodec } from "./component.ts";
 
 /** Folds one 32-bit word into a hash state. */
 export const add = (state: number, word: number): number => {

@@ -17,9 +17,9 @@
  * - `Drift`: peers that are no longer playing the same game.
  * - `Peer`: a session without its app, which a driver steps.
  */
-export * as Drift from "./Drift";
-export * as Message from "./Message";
-export * as Peer from "./Peer";
-export * as Relay from "./Relay";
-export * as Session from "./Session";
-export * as Transport from "./Transport";
+export * as Drift from "./Drift.ts";
+export * as Message from "./Message.ts";
+export * as Peer from "./Peer.ts";
+export * as Relay from "./Relay.ts";
+export * as Session from "./Session.ts";
+export * as Transport from "./Transport.ts";

@@ -48,11 +48,11 @@ import {
 } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 
-import * as Action from "./Action";
-import * as Input from "./Input";
-import * as Plugin from "./Plugin";
-import { Commands, Events, Frame, Random, Time, World } from "./Services";
-import * as System from "./System";
+import * as Action from "./Action.ts";
+import * as Input from "./Input.ts";
+import * as Plugin from "./Plugin.ts";
+import { Commands, Events, Frame, Random, Time, World } from "./Services.ts";
+import * as System from "./System.ts";
 
 /**
  * An asset couldn't be loaded, because it is missing or isn't what it claimed

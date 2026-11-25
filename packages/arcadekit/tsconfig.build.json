@@ -1,0 +1,14 @@
+// The build: the TypeScript compiler writes each file of src/ to dist/, at the same path, as
+// JavaScript, declarations and their source maps, and rewrites "./Color.ts" as "./Color.js".
+// Nothing is bundled, so a module is the same object whichever entry reaches it, and
+// `export * as Transform3d from "./Transform3d.ts"` stays the module itself.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "sourceMap": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

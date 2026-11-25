@@ -3,9 +3,9 @@ import { Effect } from "effect";
 import type { Scope } from "effect";
 import { LoadingManager, SRGBColorSpace, Texture } from "three";
 
-import type { TextureOptions } from "../Assets";
-import type { Entries } from "../Three";
-import type { Kept } from "./holdings";
+import type { TextureOptions } from "../Assets.ts";
+import type { Entries } from "../Three.ts";
+import type { Kept } from "./holdings.ts";
 
 /**
  * What a system builds from a bundle's assets: available while the app has the

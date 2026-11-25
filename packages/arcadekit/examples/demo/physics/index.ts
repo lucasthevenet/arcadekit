@@ -11,8 +11,8 @@ import {
   Resource,
   System,
   Time,
-} from "../../../src/index";
-import { fall } from "./loops";
+} from "../../../src/index.ts";
+import { fall } from "./loops.ts";
 
 export const Position = Component.define("demo/Position", {
   x: Field.f32,

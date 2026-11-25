@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
-import type { ComponentDef, Spawned } from "../src/index";
+import type { ComponentDef, Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -14,10 +14,10 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import type { Adds } from "../src/Query";
-import { withApp } from "./peers";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import type { Adds } from "../src/Query.ts";
+import { withApp } from "./peers.ts";
+import { placedIn } from "./placed.ts";
 
 const Position = Component.define("or/Position", { x: Field.f32 });
 const Health = Component.define("or/Health", { hp: Field.i32 });

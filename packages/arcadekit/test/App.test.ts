@@ -1,7 +1,7 @@
 import { Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { App, Plugin, System } from "../src/index";
+import { App, Plugin, System } from "../src/index.ts";
 
 /** A plugin whose layer notes when it is acquired and released. */
 const makeHeld = () => {

@@ -39,7 +39,7 @@ import {
 import type { Camera, Scene } from "three";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { Three } from "../src/index";
+import { Three } from "../src/index.ts";
 
 const { Position, Rotation, Scale } = Transform3d;
 

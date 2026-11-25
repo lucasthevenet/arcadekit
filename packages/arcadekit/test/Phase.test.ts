@@ -1,8 +1,8 @@
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { Action, App, System, Timeline } from "../src/index";
-import { withApp } from "./peers";
+import { Action, App, System, Timeline } from "../src/index.ts";
+import { withApp } from "./peers.ts";
 
 describe("what an app is running", () => {
   it("is told by its phase, in each stage and handler", () => {

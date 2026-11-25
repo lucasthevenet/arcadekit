@@ -3,8 +3,6 @@
   // DOM. Its .astro components are checked by Astro as it builds them.
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    // The site's files import each other with their extension, as Node loads them.
-    "allowImportingTsExtensions": true,
     "lib": ["ES2023"],
     "types": ["node"]
   },

@@ -1,8 +1,8 @@
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { idOf } from "../src/ecs/component";
-import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot";
+import { idOf } from "../src/ecs/component.ts";
+import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot.ts";
 import {
   Action,
   App,
@@ -23,8 +23,8 @@ import {
   World,
   readSnapshot,
   writeSnapshot,
-} from "../src/index";
-import type { JsonValue } from "../src/index";
+} from "../src/index.ts";
+import type { JsonValue } from "../src/index.ts";
 
 const Turn = Singleton.define(
   "sg/Turn",

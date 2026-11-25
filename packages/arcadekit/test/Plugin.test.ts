@@ -15,8 +15,8 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import type { Entity } from "../src/index";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 
 const Position = Component.define("pl/Position", {
   x: Field.f32,

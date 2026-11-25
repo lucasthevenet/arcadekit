@@ -5,11 +5,11 @@
  *
  * No Effect dependency.
  */
-import { growColumn, makeColumn } from "./column";
-import type { Column } from "./column";
-import { entityIndex, entityOf, idOf, isBoxed } from "./component";
-import type { ComponentDef, Entity } from "./component";
-import { refuseUnsaved } from "./format";
+import { growColumn, makeColumn } from "./column.ts";
+import type { Column } from "./column.ts";
+import { entityIndex, entityOf, idOf, isBoxed } from "./component.ts";
+import type { ComponentDef, Entity } from "./component.ts";
+import { refuseUnsaved } from "./format.ts";
 
 /** A component's columns, by field. @internal */
 export type Columns = Record<string, Column>;

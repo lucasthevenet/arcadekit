@@ -45,7 +45,7 @@
  */
 import { Data, Exit, Schema } from "effect";
 
-import * as Message from "./Message";
+import * as Message from "./Message.ts";
 
 /**
  * A connection's identity: its room, and the peer it speaks for. A host

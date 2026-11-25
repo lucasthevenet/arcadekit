@@ -10,16 +10,16 @@ import type {
   ObjectsFromOptions,
   ObjectsOptions,
   ObjectsShared,
-} from "../Objects";
-import { Scene } from "../Scene";
-import type { Entries, Needs } from "../Three";
-import { FromAssets } from "./assets";
-import type { Angle, Columns, Xy, Xyz, Xyzw } from "./columns";
-import { Holdings } from "./holdings";
-import type { Kept } from "./holdings";
-import { isFlat, required } from "./kind";
-import { smoothOf } from "./smooth";
-import type { Smooth } from "./smooth";
+} from "../Objects.ts";
+import { Scene } from "../Scene.ts";
+import type { Entries, Needs } from "../Three.ts";
+import { FromAssets } from "./assets.ts";
+import type { Angle, Columns, Xy, Xyz, Xyzw } from "./columns.ts";
+import { Holdings } from "./holdings.ts";
+import type { Kept } from "./holdings.ts";
+import { isFlat, required } from "./kind.ts";
+import { smoothOf } from "./smooth.ts";
+import type { Smooth } from "./smooth.ts";
 
 /** Either set of options, as the class that keeps the objects sees them. */
 interface ObjectsOf<O extends Object3D> extends ObjectsShared<O> {

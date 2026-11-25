@@ -27,7 +27,7 @@ import type { ComponentDef, ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 
-import { Three } from "../src/index";
+import { Three } from "../src/index.ts";
 
 const N = 10_000;
 const { Position, Rotation, Scale } = Transform3d;

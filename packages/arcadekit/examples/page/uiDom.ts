@@ -5,9 +5,9 @@
  * views, each time one is published with a new value and not otherwise,
  * and acts by sending actions.
  */
-import type * as View from "../../src/View";
-import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
-import type { Requests } from "./protocol";
+import type * as View from "../../src/View.ts";
+import { Hud, Menu, Quit, Start, TogglePause } from "./protocol.ts";
+import type { Requests } from "./protocol.ts";
 
 /** Puts the UI in `root`, and returns what takes it out again. */
 export const mount = (

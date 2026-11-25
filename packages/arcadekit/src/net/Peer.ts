@@ -40,14 +40,14 @@
 import { Cause, Exit } from "effect";
 import type { Effect } from "effect";
 
-import * as Action from "../Action";
-import type * as App from "../App";
-import type { Paced } from "../Driver";
-import type { Reins } from "../internal/build";
-import type * as Save from "../Save";
-import * as Timeline from "../Timeline";
-import * as Drift from "./Drift";
-import type { Issued, Made, Message } from "./Message";
+import * as Action from "../Action.ts";
+import type * as App from "../App.ts";
+import type { Paced } from "../Driver.ts";
+import type { Reins } from "../internal/build.ts";
+import type * as Save from "../Save.ts";
+import * as Timeline from "../Timeline.ts";
+import * as Drift from "./Drift.ts";
+import type { Issued, Made, Message } from "./Message.ts";
 
 /**
  * What a peer is told of its game: what it simulates, as `Message.Made`'s

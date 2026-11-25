@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { generates, play } from "./policyGame";
+import { generates, play } from "./policyGame.ts";
 
 // Node's own, declared here, since the tests are compiled with no types
 // but their own.

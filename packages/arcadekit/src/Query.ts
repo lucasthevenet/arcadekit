@@ -20,17 +20,17 @@
 import { Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
 
-import type { RemovedReader } from "./ecs/changes";
+import type { RemovedReader } from "./ecs/changes.ts";
 import type {
   ComponentDef,
   MaybeTerm,
   ReadOnlyTerm,
   Schema,
   WatchedTerm,
-} from "./ecs/component";
-import type { Described, QuerySpec, QueryView, Terms } from "./ecs/query";
-import { World } from "./Services";
-import { whole } from "./services/handed";
+} from "./ecs/component.ts";
+import type { Described, QuerySpec, QueryView, Terms } from "./ecs/query.ts";
+import { World } from "./Services.ts";
+import { whole } from "./services/handed.ts";
 
 /**
  * A query, which says what entities to visit and what to do with their

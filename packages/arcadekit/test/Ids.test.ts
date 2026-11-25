@@ -1,7 +1,7 @@
 import { Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { entityOf, idOf, makeEntity } from "../src/ecs/component";
+import { entityOf, idOf, makeEntity } from "../src/ecs/component.ts";
 import {
   Component,
   Field,
@@ -11,10 +11,10 @@ import {
   entityIndex,
   readSnapshot,
   writeSnapshot,
-} from "../src/ecs/index";
-import type { Entity, Terms } from "../src/ecs/index";
-import { EntityId, Migrate } from "../src/index";
-import { Query } from "../src/Query";
+} from "../src/ecs/index.ts";
+import type { Entity, Terms } from "../src/ecs/index.ts";
+import { EntityId, Migrate } from "../src/index.ts";
+import { Query } from "../src/Query.ts";
 
 const Body = Component.define("id/Body", { x: Field.f32 });
 const Owned = Component.define("id/Owned", { by: Field.entity, n: Field.u16 });

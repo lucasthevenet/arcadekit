@@ -37,8 +37,8 @@ import {
   View,
   EcsWorld as World,
   World as WorldService,
-} from "../src/index";
-import type { Entity } from "../src/index";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 import {
   Position,
   Velocity,
@@ -46,8 +46,8 @@ import {
   measure,
   populate,
   sizes,
-} from "./core";
-import type { Variant } from "./core";
+} from "./core.ts";
+import type { Variant } from "./core.ts";
 
 // As `bench/core.ts` has them, and constants of this module so that a loop
 // reads them at no cost.

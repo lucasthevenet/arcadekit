@@ -3,10 +3,10 @@
  *
  * No Effect dependency.
  */
-import type { Column } from "./column";
-import type { Frozen, JsonValue } from "./frozen";
-import type { RelationSchema, RowOf, TargetField } from "./relation";
-import type { Spawned } from "./spawned";
+import type { Column } from "./column.ts";
+import type { Frozen, JsonValue } from "./frozen.ts";
+import type { RelationSchema, RowOf, TargetField } from "./relation.ts";
+import type { Spawned } from "./spawned.ts";
 
 // ---------------------------------------------------------------------------
 // Entities

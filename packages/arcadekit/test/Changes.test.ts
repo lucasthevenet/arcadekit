@@ -1,9 +1,9 @@
 import { Cause, Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { entityIndex } from "../src/ecs/component";
-import type { Terms } from "../src/ecs/query";
-import type { Spawned } from "../src/index";
+import { entityIndex } from "../src/ecs/component.ts";
+import type { Terms } from "../src/ecs/query.ts";
+import type { Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -22,16 +22,16 @@ import {
   World,
   readSnapshot,
   writeSnapshot,
-} from "../src/index";
+} from "../src/index.ts";
 import type {
   ComponentDef,
   Entity,
   EntityColumn,
   SavedChanges,
   SnapshotContents,
-} from "../src/index";
-import { expectChecked, makeChecks } from "./checks";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import { expectChecked, makeChecks } from "./checks.ts";
+import { placedIn } from "./placed.ts";
 
 /** What the change queries of a snapshot's world had yet to visit. */
 const visitsOf = (world: SnapshotContents): SavedChanges[] =>

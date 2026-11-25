@@ -22,15 +22,15 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import type { CommandBuffer } from "./ecs/commands";
-import type { Entity } from "./ecs/component";
-import { readSingleton, readSnapshot, writeSnapshot } from "./ecs/contents";
-import type { SnapshotContents } from "./ecs/contents";
-import { SnapshotError } from "./ecs/snapshot";
-import type { SnapshotProblem } from "./ecs/snapshot";
-import type { Spawned } from "./ecs/spawned";
-import type { Store } from "./ecs/store";
-import type { World } from "./ecs/world";
+import type { CommandBuffer } from "./ecs/commands.ts";
+import type { Entity } from "./ecs/component.ts";
+import { readSingleton, readSnapshot, writeSnapshot } from "./ecs/contents.ts";
+import type { SnapshotContents } from "./ecs/contents.ts";
+import { SnapshotError } from "./ecs/snapshot.ts";
+import type { SnapshotProblem } from "./ecs/snapshot.ts";
+import type { Spawned } from "./ecs/spawned.ts";
+import type { Store } from "./ecs/store.ts";
+import type { World } from "./ecs/world.ts";
 
 /**
  * A game captured between two ticks, which `app.save()` makes: the game's

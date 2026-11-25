@@ -46,10 +46,10 @@ import {
 import type { Schema } from "effect";
 import { Socket } from "effect/socket";
 
-import type { Paced } from "../Driver";
-import { Rng } from "../ecs/random";
-import * as Message from "./Message";
-import type { Session } from "./Session";
+import type { Paced } from "../Driver.ts";
+import { Rng } from "../ecs/random.ts";
+import * as Message from "./Message.ts";
+import type { Session } from "./Session.ts";
 
 /**
  * A transport being listened on. Its two calls don't wait, so a tick that

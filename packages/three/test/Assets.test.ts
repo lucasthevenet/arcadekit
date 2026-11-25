@@ -33,7 +33,7 @@ import {
 import type { LoadingManager, Scene } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Three } from "../src/index";
+import { Three } from "../src/index.ts";
 
 /** An entity as a log names it: its slot and generation. */
 const named = (entity: Entity): string =>

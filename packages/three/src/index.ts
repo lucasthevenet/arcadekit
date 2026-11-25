@@ -13,5 +13,5 @@
  * `arcadekit/Transform2d`. The game's rules write them, and this package only
  * reads them.
  */
-export * as Three from "./Three";
-export * as Gltf from "./Gltf";
+export * as Three from "./Three.ts";
+export * as Gltf from "./Gltf.ts";

@@ -62,15 +62,15 @@
  */
 import { Cause, Data, Effect, Exit } from "effect";
 
-import type * as App from "../App";
-import { add, addString, finish } from "../ecs/hash";
-import { build } from "../internal/build";
-import type { Reins } from "../internal/build";
-import { partsOf } from "../internal/parts";
-import * as Plugin from "../Plugin";
-import type * as Save from "../Save";
-import * as Timeline from "../Timeline";
-import * as Peer from "./Peer";
+import type * as App from "../App.ts";
+import { add, addString, finish } from "../ecs/hash.ts";
+import { build } from "../internal/build.ts";
+import type { Reins } from "../internal/build.ts";
+import { partsOf } from "../internal/parts.ts";
+import * as Plugin from "../Plugin.ts";
+import type * as Save from "../Save.ts";
+import * as Timeline from "../Timeline.ts";
+import * as Peer from "./Peer.ts";
 
 /**
  * Options for a session: how its game starts, as `App.make` takes it, this

@@ -1,7 +1,7 @@
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { Spawned } from "../src/index";
+import type { Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -15,9 +15,9 @@ import {
   Transform2d,
   Transform3d,
   World,
-} from "../src/index";
-import * as Entry from "../src/Transform2d";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import * as Entry from "../src/Transform2d.ts";
+import { placedIn } from "./placed.ts";
 
 const { Position, Rotation, Scale } = Transform2d;
 

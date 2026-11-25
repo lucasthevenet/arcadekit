@@ -1,8 +1,8 @@
 import { Context, Data, Effect, Exit, Metric, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { idOf } from "../src/ecs/component";
-import type { Spawned } from "../src/index";
+import { idOf } from "../src/ecs/component.ts";
+import type { Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -18,10 +18,10 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import { TickScheduler } from "../src/internal/tickScheduler";
-import type { ReadingWorld } from "../src/Services";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import { TickScheduler } from "../src/internal/tickScheduler.ts";
+import type { ReadingWorld } from "../src/Services.ts";
+import { placedIn } from "./placed.ts";
 
 const Position = Component.define("rt/Position", {
   x: Field.f32,

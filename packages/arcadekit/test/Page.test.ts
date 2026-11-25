@@ -3,12 +3,12 @@ import { Effect, Layer } from "effect";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Game, Screen } from "../examples/page/game";
-import { Hud, Menu } from "../examples/page/protocol";
-import type { Requests } from "../examples/page/protocol";
-import { mount as mountDom } from "../examples/page/uiDom";
-import { mount as mountReact } from "../examples/page/uiReact";
-import { App, Assets, Input, Sound, View } from "../src/index";
+import { Game, Screen } from "../examples/page/game.ts";
+import { Hud, Menu } from "../examples/page/protocol.ts";
+import type { Requests } from "../examples/page/protocol.ts";
+import { mount as mountDom } from "../examples/page/uiDom.ts";
+import { mount as mountReact } from "../examples/page/uiReact.ts";
+import { App, Assets, Input, Sound, View } from "../src/index.ts";
 
 // The example page's game, with its menu and its heads-up display built
 // twice on the view bridge: once with the page's own DOM and once with a
@@ -284,14 +284,14 @@ describe("the page's UI", () => {
 
   it("holds no reference to the world: it imports the views and actions it may use, and the type of the bridge", () => {
     expect(imported("uiDom.ts")).toEqual([
-      "../../src/View",
-      "./protocol",
-      "./protocol",
+      "../../src/View.ts",
+      "./protocol.ts",
+      "./protocol.ts",
     ]);
     expect(imported("uiReact.ts")).toEqual([
-      "../../src/View",
-      "./protocol",
-      "./protocol",
+      "../../src/View.ts",
+      "./protocol.ts",
+      "./protocol.ts",
       "react",
       "react",
       "react-dom/client",
@@ -299,13 +299,13 @@ describe("the page's UI", () => {
     // Of the bridge they import the type alone: they are handed the bridge.
     for (const file of ["uiDom.ts", "uiReact.ts"]) {
       expect(sources[`../examples/page/${file}`]).toContain(
-        'import type * as View from "../../src/View";'
+        'import type * as View from "../../src/View.ts";'
       );
     }
     // And what they share with the game is keys: no component, no system.
     expect(imported("protocol.ts")).toEqual([
-      "../../src/Action",
-      "../../src/View",
+      "../../src/Action.ts",
+      "../../src/View.ts",
       "effect",
     ]);
   });

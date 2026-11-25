@@ -9,9 +9,9 @@ import { createElement as h, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
-import type * as View from "../../src/View";
-import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
-import type { Requests } from "./protocol";
+import type * as View from "../../src/View.ts";
+import { Hud, Menu, Quit, Start, TogglePause } from "./protocol.ts";
+import type { Requests } from "./protocol.ts";
 
 /** A view's value, in a component that is drawn again when it changes. */
 const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>

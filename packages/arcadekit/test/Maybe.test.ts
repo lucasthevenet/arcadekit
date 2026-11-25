@@ -1,9 +1,9 @@
 import { Exit, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { entityIndex } from "../src/ecs";
-import type { ReadonlyColumnsOf } from "../src/ecs/component";
-import type { RowOf } from "../src/ecs/relation";
+import type { ReadonlyColumnsOf } from "../src/ecs/component.ts";
+import { entityIndex } from "../src/ecs/index.ts";
+import type { RowOf } from "../src/ecs/relation.ts";
 import {
   Action,
   App,
@@ -12,10 +12,10 @@ import {
   Field,
   Query,
   Timeline,
-} from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
-import { partsOf } from "../src/internal/parts";
-import { withApp } from "./peers";
+} from "../src/index.ts";
+import type { ComponentDef, Entity } from "../src/index.ts";
+import { partsOf } from "../src/internal/parts.ts";
+import { withApp } from "./peers.ts";
 
 const Position = Component.define("mb/Position", { x: Field.f32 });
 const Rotation = Component.define("mb/Rotation", { a: Field.f32 });

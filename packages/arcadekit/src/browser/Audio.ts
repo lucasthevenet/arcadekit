@@ -15,11 +15,11 @@
  */
 import type { Layer } from "effect";
 
-import type * as Assets from "../Assets";
-import type * as Sound from "../Sound";
-import type { Options } from "./Browser";
-import * as audio from "./internal/audio";
-import * as decode from "./internal/decode";
+import type * as Assets from "../Assets.ts";
+import type * as Sound from "../Sound.ts";
+import type { Options } from "./Browser.ts";
+import * as audio from "./internal/audio.ts";
+import * as decode from "./internal/decode.ts";
 
 /**
  * The parts of a page's audio that are used. The browser's `AudioContext`

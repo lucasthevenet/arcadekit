@@ -59,33 +59,33 @@ import type { Frame, Time, World } from "arcadekit/Services";
 import type * as Transform2d from "arcadekit/Transform2d";
 import type * as Transform3d from "arcadekit/Transform3d";
 
-import type { Scene } from "./Scene";
+import type { Scene } from "./Scene.ts";
 
-export { Scene } from "./Scene";
-export type { SceneShape } from "./Scene";
+export { Scene } from "./Scene.ts";
+export type { SceneShape } from "./Scene.ts";
 export {
   layerRenderer,
   layerWebGL,
   plugin,
   Render,
   Renderer,
-} from "./Renderer";
-export type { FitOptions, RendererLike, RendererShape } from "./Renderer";
-export { manager, texture } from "./Assets";
-export type { TextureOptions } from "./Assets";
-export { instances } from "./Instances";
+} from "./Renderer.ts";
+export type { FitOptions, RendererLike, RendererShape } from "./Renderer.ts";
+export { manager, texture } from "./Assets.ts";
+export type { TextureOptions } from "./Assets.ts";
+export { instances } from "./Instances.ts";
 export type {
   InstancesFromOptions,
   InstancesOptions,
   InstancesShared,
   Look,
-} from "./Instances";
-export { objects } from "./Objects";
+} from "./Instances.ts";
+export { objects } from "./Objects.ts";
 export type {
   ObjectsFromOptions,
   ObjectsOptions,
   ObjectsShared,
-} from "./Objects";
+} from "./Objects.ts";
 
 /**
  * Which entities a drawing system draws, and the transform it draws them from.

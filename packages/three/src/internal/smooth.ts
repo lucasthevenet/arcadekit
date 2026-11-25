@@ -1,8 +1,8 @@
 import { entityGeneration, entityIndex } from "arcadekit/ecs";
 import type { EntityColumn } from "arcadekit/ecs";
 
-import type { Which } from "../Three";
-import type { Angle, Numbers, Xy, Xyz, Xyzw } from "./columns";
+import type { Which } from "../Three.ts";
+import type { Angle, Numbers, Xy, Xyz, Xyzw } from "./columns.ts";
 
 // What a system keeps to draw its entities between their last two places:
 // for each component it reads, the value an entity had a tick ago and the

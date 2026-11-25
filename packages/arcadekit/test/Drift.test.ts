@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Drift } from "../src/net/index";
+import { Drift } from "../src/net/index.ts";
 
 /** Ada's side of a game of two, or of three, that begins at a tick. */
 const ada = (peers: readonly string[] = ["ada", "grace"], start = 0) =>

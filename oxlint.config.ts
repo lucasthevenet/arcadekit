@@ -28,6 +28,13 @@ export default defineConfig({
   ignorePatterns: ["**/dist/**", "**/node_modules/**"],
   jsPlugins: ["./tooling/lint/plugin.ts"],
   rules: {
+    // A file imports another by its own name, `./Color.ts`, which the build writes as
+    // `./Color.js`, as Effect's source does.
+    "import/extensions": [
+      "error",
+      "always",
+      { ignorePackages: true, js: "never", ts: "always" },
+    ],
     "no-unused-vars": [
       "error",
       {

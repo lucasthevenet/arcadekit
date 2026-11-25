@@ -7,8 +7,8 @@
  */
 import type { Exit, Fiber, Metric } from "effect";
 
-import type { Phase } from "../App";
-import type { TickDispatcher } from "./tickScheduler";
+import type { Phase } from "../App.ts";
+import type { TickDispatcher } from "./tickScheduler.ts";
 
 /**
  * Runs a game's code to its end, counts the fibers it starts, and says what

@@ -19,7 +19,7 @@ import {
   System,
   View,
   World,
-} from "../src/index";
+} from "../src/index.ts";
 
 /** The world of an app, as `app.read(World)` gives it. */
 const worldOf = (app: Pick<App.Any, "read">) => Effect.runSync(app.read(World));

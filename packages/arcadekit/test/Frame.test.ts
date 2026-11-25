@@ -9,7 +9,7 @@ import {
 } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { entityIndex } from "../src/ecs/component";
+import { entityIndex } from "../src/ecs/component.ts";
 import {
   Action,
   App,
@@ -33,9 +33,9 @@ import {
   Time,
   World,
   readSnapshot,
-} from "../src/index";
-import type { ComponentDef, Entity, Rng } from "../src/index";
-import type { BuiltIn } from "../src/Services";
+} from "../src/index.ts";
+import type { ComponentDef, Entity, Rng } from "../src/index.ts";
+import type { BuiltIn } from "../src/Services.ts";
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
 const Glow = Component.define(

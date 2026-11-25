@@ -21,11 +21,11 @@ import {
   Time,
   Timeline,
   World,
-} from "../src/index";
-import type { Entity, QueryView } from "../src/index";
-import type * as Build from "../src/internal/build";
-import { Message, Session } from "../src/net/index";
-import type { ReadingWorld } from "../src/Services";
+} from "../src/index.ts";
+import type { Entity, QueryView } from "../src/index.ts";
+import type * as Build from "../src/internal/build.ts";
+import { Message, Session } from "../src/net/index.ts";
+import type { ReadingWorld } from "../src/Services.ts";
 
 // --- a small game: players drop coins, which drift about, and take them --------
 

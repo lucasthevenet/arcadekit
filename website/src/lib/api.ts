@@ -4,10 +4,10 @@
 // right.
 //
 // It reads a package's built declarations, `dist/<Module>.d.ts`, which `pnpm build:packages`
-// writes with the TypeScript compiler (tsdown): there every export has its signature written
-// out, inferred or not, and its doc comment kept. A module's file names what it exports, which
-// may be declared in a chunk the build shares between modules; this follows each name to its
-// declaration, and the chunk's source map back to the line of the source that wrote it.
+// writes with the TypeScript compiler: there every export has its signature written out,
+// inferred or not, and its doc comment kept. A module's file names what it exports, which may be
+// declared in another file it imports or exports from; this follows each name to its
+// declaration, and that file's source map back to the line of the source that wrote it.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -166,16 +166,19 @@ const readDeclarations = (file: string): DeclarationFile => {
       for (const declarator of node.declarations as Node[]) {
         declare(nameOf(declarator.id), node);
       }
-    } else if (node.type !== "TSModuleDeclaration" || !isExportList(node)) {
+    } else {
       declare(nameOf(node.id), node);
     }
   };
+  // The file a relative import names, "./Color.ts", is declared in ./Color.d.ts.
+  const fileOf = (source: Node) =>
+    path.resolve(
+      path.dirname(file),
+      String(source.value).replace(/\.ts$/u, ".d.ts")
+    );
   for (const node of body) {
     if (node.type === "ImportDeclaration") {
-      const from = path.resolve(
-        path.dirname(file),
-        String((node.source as Node).value).replace(/\.js$/u, ".d.ts")
-      );
+      const from = fileOf(node.source as Node);
       for (const specifier of (node.specifiers as Node[]) ?? []) {
         const local = nameOf(specifier.local);
         if (local !== undefined && from.endsWith(".d.ts")) {
@@ -186,6 +189,19 @@ const readDeclarations = (file: string): DeclarationFile => {
         }
       }
     } else if (node.type === "ExportNamedDeclaration") {
+      // `export { World } from "./world.ts"`: declared there, under its name there.
+      const from = node.source ? fileOf(node.source as Node) : undefined;
+      if (from !== undefined && from.endsWith(".d.ts")) {
+        for (const specifier of (node.specifiers as Node[]) ?? []) {
+          const local = nameOf(specifier.local);
+          const exported = nameOf(specifier.exported);
+          if (local !== undefined && exported !== undefined) {
+            imports.set(exported, { file: from, name: local });
+            exports.set(exported, exported);
+          }
+        }
+        continue;
+      }
       if (node.declaration) {
         const declaration = node.declaration as Node;
         declareNode(declaration);
@@ -233,19 +249,6 @@ const namesOf = (node: Node): string[] =>
   node.type === "VariableDeclaration"
     ? (node.declarations as Node[]).flatMap((d) => nameOf(d.id) ?? [])
     : [nameOf(node.id) ?? []].flat();
-
-/** A namespace the build writes to list a module's exports, which declares nothing. */
-const isExportList = (node: Node) => {
-  const body = node.body as Node | null;
-  const statements = (body?.body as Node[] | undefined) ?? [];
-  return (
-    statements.length > 0 &&
-    statements.every(
-      (statement) =>
-        statement.type === "ExportNamedDeclaration" && !statement.declaration
-    )
-  );
-};
 
 const kindOf = (node: Node): Kind => {
   switch (node.type) {
@@ -480,7 +483,9 @@ const textOf = (parsed: DeclarationFile, node: Node): string => {
 const signatureOf = (parsed: DeclarationFile, node: Node) =>
   textOf(parsed, node)
     .replace(/^declare /u, "")
-    .replaceAll(/\b([A-Za-z_]\w*)\$\d+\b/gu, "$1");
+    .replaceAll(/\b([A-Za-z_]\w*)\$\d+\b/gu, "$1")
+    // An inferred type names what another file declares as `import("./ecs/component.ts").Ref`.
+    .replaceAll(/\bimport\("[^"]+"\)\./gu, "");
 
 const lineOf = (source: string, offset: number) =>
   source.slice(0, offset).split("\n").length - 1;
@@ -524,7 +529,14 @@ export const readModule = (
   name: string,
   sourceFile: string
 ): Module => {
-  const entry = path.join(root, folder, "dist", `${name}.d.ts`);
+  const entry = path.join(
+    root,
+    folder,
+    "dist",
+    path
+      .relative(path.join(folder, "src"), sourceFile)
+      .replace(/\.ts$/u, ".d.ts")
+  );
   if (!existsSync(entry)) {
     throw new Error(
       `${path.relative(root, entry)} is missing: the reference is read from the packages' built declarations. Run \`pnpm build:packages\` first.`

@@ -26,7 +26,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
-import { Gltf, Three } from "../src/index";
+import { Gltf, Three } from "../src/index.ts";
 
 // --- a model small enough to write out ----------------------------------------------
 // One triangle: three indices, then, on a multiple of four, three positions.

@@ -9,7 +9,7 @@
  */
 import { Context, Effect } from "effect";
 
-import type { Actions } from "./Action";
+import type { Actions } from "./Action.ts";
 import type {
   ComponentDef,
   ComponentInput,
@@ -19,15 +19,15 @@ import type {
   SingletonSpec,
   Storage,
   ValueOf,
-} from "./ecs/component";
-import type { Rng } from "./ecs/random";
-import type { PatchOf, Targeted } from "./ecs/relation";
-import type { Spawned } from "./ecs/spawned";
-import type { World as EcsWorld } from "./ecs/world";
-import type { ReadingEvents } from "./Event";
-import type { Devices } from "./Input";
-import type { Access, AddsOf, NameOf, WritesOf } from "./Query";
-import { writing } from "./services/handed";
+} from "./ecs/component.ts";
+import type { Rng } from "./ecs/random.ts";
+import type { PatchOf, Targeted } from "./ecs/relation.ts";
+import type { Spawned } from "./ecs/spawned.ts";
+import type { World as EcsWorld } from "./ecs/world.ts";
+import type { ReadingEvents } from "./Event.ts";
+import type { Devices } from "./Input.ts";
+import type { Access, AddsOf, NameOf, WritesOf } from "./Query.ts";
+import { writing } from "./services/handed.ts";
 
 /**
  * In a system's requirements, says that the system changes the game other than

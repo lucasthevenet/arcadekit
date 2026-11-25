@@ -1,18 +1,18 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { CommandBuffer } from "../src/ecs/commands";
+import { CommandBuffer } from "../src/ecs/commands.ts";
 import {
   Component,
   Field,
   entityIndex,
   entityOf,
   idOf,
-} from "../src/ecs/component";
-import type { ComponentDef, Entity, RequiredOf } from "../src/ecs/component";
-import type { QuerySpec, Terms } from "../src/ecs/query";
-import { World } from "../src/ecs/world";
-import { Query, all, maybe, without } from "../src/Query";
-import { expectChecked, makeChecks } from "./checks";
+} from "../src/ecs/component.ts";
+import type { ComponentDef, Entity, RequiredOf } from "../src/ecs/component.ts";
+import type { QuerySpec, Terms } from "../src/ecs/query.ts";
+import { World } from "../src/ecs/world.ts";
+import { Query, all, maybe, without } from "../src/Query.ts";
+import { expectChecked, makeChecks } from "./checks.ts";
 
 const Position = Component.define("st/Position", {
   x: Field.f32,

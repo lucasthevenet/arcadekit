@@ -4,10 +4,10 @@
  *
  * No Effect dependency.
  */
-import { entityIndex, placedOf } from "./component";
-import type { Entity } from "./component";
-import { NOT_PLACED } from "./records";
-import type { World } from "./world";
+import { entityIndex, placedOf } from "./component.ts";
+import type { Entity } from "./component.ts";
+import { NOT_PLACED } from "./records.ts";
+import type { World } from "./world.ts";
 
 declare const SpawnedBrand: unique symbol;
 

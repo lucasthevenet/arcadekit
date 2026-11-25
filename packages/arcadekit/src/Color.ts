@@ -23,8 +23,8 @@
  * - `Linear` is a renderer's own numbers, in which light adds up. A number
  *   can be over 1, for a colour brighter than white.
  */
-import { Component, Field } from "./ecs/component";
-import type { FieldDef } from "./ecs/component";
+import { Component, Field } from "./ecs/component.ts";
+import type { FieldDef } from "./ecs/component.ts";
 
 /**
  * The space of a colour written as a hex code or a colour picker writes it,

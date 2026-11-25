@@ -48,9 +48,9 @@
  */
 import { Context, Effect, Equal, Layer } from "effect";
 
-import * as Action from "./Action";
-import * as Plugin from "./Plugin";
-import * as System from "./System";
+import * as Action from "./Action.ts";
+import * as Plugin from "./Plugin.ts";
+import * as System from "./System.ts";
 
 // --- a view ----------------------------------------------------------------------
 

@@ -20,7 +20,7 @@
  * `Transform2d.Position`. A save names each by module and component, as the
  * world does, such as `"arcadekit/Transform2d.Position"`.
  */
-import { Component, Field } from "./ecs/component";
+import { Component, Field } from "./ecs/component.ts";
 
 /**
  * An entity's position, in the game's units. Added without a value, it is at

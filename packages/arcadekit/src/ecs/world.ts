@@ -26,9 +26,9 @@
  *
  * No Effect dependency.
  */
-import { ChangeLog, RemovedReader } from "./changes";
-import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
-import type { Column } from "./column";
+import { ChangeLog, RemovedReader } from "./changes.ts";
+import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes.ts";
+import type { Column } from "./column.ts";
 import {
   GENERATIONS,
   INDEX_MASK,
@@ -43,7 +43,7 @@ import {
   refuseRetarget,
   targetOf,
   targetless,
-} from "./component";
+} from "./component.ts";
 import type {
   ComponentDef,
   ComponentInput,
@@ -52,9 +52,9 @@ import type {
   Schema,
   SingletonSpec,
   ValueOf,
-} from "./component";
-import { read, write } from "./format";
-import type { SnapshotStore } from "./format";
+} from "./component.ts";
+import { read, write } from "./format.ts";
+import type { SnapshotStore } from "./format.ts";
 import {
   add,
   addColumn,
@@ -63,16 +63,16 @@ import {
   addString,
   finish,
   shapeOf,
-} from "./hash";
-import { QueryView, describeSpec } from "./query";
-import type { QuerySpec, Terms } from "./query";
-import { Rng } from "./random";
-import { NOT_PLACED, WHOLE } from "./records";
-import type { Saved, Single } from "./records";
-import type { PatchOf, RelationDef, Targeted } from "./relation";
-import { STORAGES, SnapshotError, WIDTH, corrupt } from "./snapshot";
-import type { Store } from "./store";
-import type { Columns, Kept, KeptSet, Versions } from "./table";
+} from "./hash.ts";
+import { QueryView, describeSpec } from "./query.ts";
+import type { QuerySpec, Terms } from "./query.ts";
+import { Rng } from "./random.ts";
+import { NOT_PLACED, WHOLE } from "./records.ts";
+import type { Saved, Single } from "./records.ts";
+import type { PatchOf, RelationDef, Targeted } from "./relation.ts";
+import { STORAGES, SnapshotError, WIDTH, corrupt } from "./snapshot.ts";
+import type { Store } from "./store.ts";
+import type { Columns, Kept, KeptSet, Versions } from "./table.ts";
 import {
   RelationIndex,
   SparseSet,
@@ -83,7 +83,7 @@ import {
   readRow,
   tableNode,
   writeRow,
-} from "./table";
+} from "./table.ts";
 
 const FREE = -2;
 /** The number of slots: what an id's generation is multiplied by. */

@@ -1,0 +1,13 @@
+// The build, as the kit's own: see packages/arcadekit/tsconfig.build.json.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "sourceMap": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    // arcadekit as a game gets it, from its built declarations, not its src/.
+    "customConditions": []
+  },
+  "include": ["src"]
+}

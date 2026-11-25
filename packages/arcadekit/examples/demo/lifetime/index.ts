@@ -7,8 +7,8 @@ import {
   Query,
   System,
   Time,
-} from "../../../src/index";
-import * as Physics from "../physics/index";
+} from "../../../src/index.ts";
+import * as Physics from "../physics/index.ts";
 
 export const Lifetime = Component.define("demo/Lifetime", {
   seconds: Field.f32,

@@ -17,7 +17,7 @@ import {
   Time,
   View,
   World,
-} from "../src/index";
+} from "../src/index.ts";
 
 // --- a game with a heads-up display and a menu -------------------------------------
 const Coin = Component.define("vw/Coin", { value: Field.i32 });

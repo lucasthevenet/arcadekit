@@ -13,8 +13,8 @@
 import { NodeRuntime, NodeSocket } from "@effect/platform-node";
 import { Console, Effect, Result, Schema } from "effect";
 
-import { Action, App, Field, Singleton, World } from "../src/index";
-import { Message, Relay, Session, Transport } from "../src/net/index";
+import { Action, App, Field, Singleton, World } from "../src/index.ts";
+import { Message, Relay, Session, Transport } from "../src/net/index.ts";
 
 const base = process.argv[2];
 if (base === undefined) {

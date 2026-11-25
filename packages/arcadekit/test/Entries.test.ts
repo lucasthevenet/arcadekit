@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import * as BrowserEntry from "../src/browser/index";
-import * as Ecs from "../src/ecs/index";
-import * as Main from "../src/index";
-import * as Net from "../src/net/index";
+import * as BrowserEntry from "../src/browser/index.ts";
+import * as Ecs from "../src/ecs/index.ts";
+import * as Main from "../src/index.ts";
+import * as Net from "../src/net/index.ts";
 
 // Vite gives a test the text of files, and the modules themselves: the
 // sources of the package, and its manifest. Declared here, since the tests
@@ -80,10 +80,8 @@ const resolve = (from: string, specifier: string): string => {
     }
   }
   const path = parts.join("/");
-  for (const candidate of [`${path}.ts`, `${path}/index.ts`]) {
-    if (candidate in sources) {
-      return candidate;
-    }
+  if (path in sources) {
+    return path;
   }
   throw new Error(`${from} imports ${specifier}, which is not a source file`);
 };
@@ -123,10 +121,10 @@ const entries = Object.keys(manifest.exports);
 describe("the package's entries", () => {
   it("are the package itself, every module, the storage core, and the folder of what plays on several machines", () => {
     // What the sources say the entries are: a module's is named as its
-    // file is.
+    // file is, and built to the same path in dist/.
     const expected: Record<string, Target> = {};
     const entry = (name: string, source: string): void => {
-      const built = name === "." ? "index" : name.slice("./".length);
+      const built = source.slice("../src/".length, -".ts".length);
       expected[name] = {
         source: `./${source.slice("../".length)}`,
         types: `./dist/${built}.d.ts`,

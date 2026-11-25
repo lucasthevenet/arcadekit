@@ -12,7 +12,7 @@ import {
 import type { Scope as ScopeType } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as Browser from "../src/browser/Browser";
+import * as Browser from "../src/browser/Browser.ts";
 import {
   App,
   Assets,
@@ -27,8 +27,8 @@ import {
   Sound,
   System,
   Time,
-} from "../src/index";
-import { Message, Session, Transport } from "../src/net/index";
+} from "../src/index.ts";
+import { Message, Session, Transport } from "../src/net/index.ts";
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));

@@ -1,8 +1,19 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { Component, EcsWorld, Field, Query, SnapshotError } from "../src/index";
-import type { ComponentDef, Entity, JsonValue, RefCodec } from "../src/index";
+import {
+  Component,
+  EcsWorld,
+  Field,
+  Query,
+  SnapshotError,
+} from "../src/index.ts";
+import type {
+  ComponentDef,
+  Entity,
+  JsonValue,
+  RefCodec,
+} from "../src/index.ts";
 
 const dates: RefCodec<Date> = {
   encode: (value) => {

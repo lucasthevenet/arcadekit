@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { entityIndex, entityOf } from "../src/ecs/component";
+import { entityIndex, entityOf } from "../src/ecs/component.ts";
 import {
   Action,
   App,
@@ -16,8 +16,8 @@ import {
   System,
   Timeline,
   World,
-} from "../src/index";
-import type { ComponentDef, Entity, JsonValue } from "../src/index";
+} from "../src/index.ts";
+import type { ComponentDef, Entity, JsonValue } from "../src/index.ts";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {

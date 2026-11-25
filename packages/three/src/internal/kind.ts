@@ -1,7 +1,7 @@
 import type { ComponentDef } from "arcadekit/ecs";
 import * as Transform2d from "arcadekit/Transform2d";
 
-import type { Which } from "../Three";
+import type { Which } from "../Three.ts";
 
 /**
  * The components that mark an entity as one of the kind, as a list.

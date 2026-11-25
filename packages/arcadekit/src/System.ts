@@ -24,13 +24,20 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
-import type { Actions } from "./Action";
-import type { Devices, Gamepads, Keyboard, Pointer } from "./Input";
-import type { Access, Adds, Writes } from "./Query";
-import { Sim } from "./Services";
-import type { Commands, Events, Frame, Random, Time, World } from "./Services";
-import type { Player } from "./Sound";
-import type { Intake, Port } from "./View";
+import type { Actions } from "./Action.ts";
+import type { Devices, Gamepads, Keyboard, Pointer } from "./Input.ts";
+import type { Access, Adds, Writes } from "./Query.ts";
+import { Sim } from "./Services.ts";
+import type {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Time,
+  World,
+} from "./Services.ts";
+import type { Player } from "./Sound.ts";
+import type { Intake, Port } from "./View.ts";
 
 /**
  * The stages of a tick, in the order they run.
@@ -700,7 +707,12 @@ export const otherwise: {
   }
 );
 
-export type { Duplicated, Listing, Misordered, Ordered } from "./system/order";
+export type {
+  Duplicated,
+  Listing,
+  Misordered,
+  Ordered,
+} from "./system/order.ts";
 
 /**
  * The level of the spans an app makes, as a program's

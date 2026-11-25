@@ -1,5 +1,5 @@
-import { SnapshotError } from "../src/ecs/index";
-import type { Store } from "../src/ecs/store";
+import { SnapshotError } from "../src/ecs/index.ts";
+import type { Store } from "../src/ecs/store.ts";
 
 /**
  * A store for the tests: text in order, each saved as `{ said }`, and one

@@ -22,9 +22,9 @@ import type {
   WebGLRendererParameters,
 } from "three";
 
-import { fitted } from "./internal/fit";
-import { sceneLayer } from "./internal/sceneLayer";
-import { Scene } from "./Scene";
+import { fitted } from "./internal/fit.ts";
+import { sceneLayer } from "./internal/sceneLayer.ts";
+import { Scene } from "./Scene.ts";
 
 /**
  * The shape of `Three.Renderer`: a Three.js renderer, or a test's renderer that
