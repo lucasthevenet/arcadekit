@@ -2,7 +2,7 @@
  * What the tests of several peers share: a small game, peers of it in one
  * process, and a network made by hand that delays and reorders.
  */
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import {
   Action,
@@ -59,19 +59,24 @@ export const Drop = Action.define(
   "ls/Drop",
   Schema.Struct({ by: Player, value: Schema.Int })
 );
+export class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()("NoSuchCoin", {
+  coin: EntityId,
+}) {}
 export const Take = Action.define(
   "ls/Take",
-  Schema.Struct({ by: Player, coin: EntityId })
+  Schema.Struct({ by: Player, coin: EntityId }),
+  { error: NoSuchCoin }
 );
 export const Fire = Action.define("ls/Fire", Schema.Struct({}));
+export class Stranger extends Schema.TaggedError<Stranger>()("Stranger", {
+  from: Schema.UndefinedOr(Schema.String),
+}) {}
 /** A gift to oneself: whose purse it goes to is whoever issued it. */
 export const Tip = Action.define(
   "ls/Tip",
-  Schema.Struct({ amount: Schema.Int })
+  Schema.Struct({ amount: Schema.Int }),
+  { error: Stranger }
 );
-export class Stranger extends Data.TaggedError("Stranger")<{
-  readonly from: string | undefined;
-}> {}
 export const Mint = Action.define(
   "ls/Mint",
   Schema.Struct({ on: Schema.Date })
@@ -80,10 +85,6 @@ export const Whisper = Action.define(
   "ls/Whisper",
   Schema.Struct({ to: Schema.String })
 );
-
-export class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
-  readonly coin: Entity;
-}> {}
 
 export const drop = Action.handler(Drop, function* ({ value }) {
   const random = yield* Random;
@@ -95,7 +96,7 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
   const world = yield* World;
   const held = world.get(coin, Coin);
   if (held === undefined) {
-    return yield* new NoSuchCoin({ coin });
+    return yield* NoSuchCoin.make({ coin });
   }
   (yield* Commands).despawn(coin);
   (yield* Taken.emits).emit({ value: held.value });
@@ -110,7 +111,7 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
 });
 export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
-    return yield* new Stranger({ from });
+    return yield* Stranger.make({ from });
   }
   (yield* Purse.writes)[from] += amount;
   return from;
@@ -190,10 +191,16 @@ export const Fault = System.tick("ls/Fault", function* () {
 });
 /** What each app's input stage heard refused, in the order it heard it. */
 export const refusals: string[] = [];
+/** The coins each app's input stage heard a peer refused, typed. */
+export const untaken: Action.Refused<
+  { readonly by: string; readonly coin: Entity },
+  NoSuchCoin
+>[] = [];
 export const Hear = System.input("ls/Hear", function* () {
   for (const refusal of (yield* Action.Rejected).read()) {
     refusals.push(refusal.action);
   }
+  untaken.push(...(yield* Action.rejected(Take)).read());
 });
 export const Controls = Input.bind(
   "ls/Controls",

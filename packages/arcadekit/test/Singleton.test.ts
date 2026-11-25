@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { idOf } from "../src/ecs/component";
@@ -548,20 +548,23 @@ describe("a singleton in a transaction", () => {
 
 // --- in an app --------------------------------------------------------------------
 
+class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {
+  waitingFor: Schema.Number,
+}) {}
+class Caught extends Schema.TaggedError<Caught>()("Caught", {}) {}
 const EndTurn = Action.define(
   "sg/EndTurn",
-  Schema.Struct({ player: Schema.Int })
+  Schema.Struct({ player: Schema.Int }),
+  { error: NotYourTurn }
 );
-const Cheat = Action.define("sg/Cheat", Schema.Struct({}));
-class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
-  readonly waitingFor: number;
-}> {}
-class Caught extends Data.TaggedError("Caught")<{}> {}
+const Cheat = Action.define("sg/Cheat", Schema.Struct({}), {
+  error: Caught,
+});
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turn = yield* Turn.writes;
   if (turn.player !== player) {
-    return yield* new NotYourTurn({ waitingFor: turn.player });
+    return yield* NotYourTurn.make({ waitingFor: turn.player });
   }
   turn.player = player === 1 ? 2 : 1;
   turn.round++;
@@ -573,7 +576,7 @@ const cheat = Action.handler(Cheat, function* () {
   turn.round += 100;
   score.points += 1000;
   score.best = "the cheat";
-  return yield* new Caught();
+  return yield* Caught.make({});
 });
 const Reward = System.tick("Reward", function* () {
   const turn = yield* Turn.writes;
@@ -602,7 +605,7 @@ describe("a singleton in an app", () => {
         );
         const world = yield* app.read(World);
         expect(app.dispatch(EndTurn, { player: 2 })).toEqual(
-          Exit.fail(new NotYourTurn({ waitingFor: 1 }))
+          Exit.fail(NotYourTurn.make({ waitingFor: 1 }))
         );
         expect(app.dispatch(EndTurn, { player: 1 })).toEqual(Exit.succeed(1));
         app.tick(1);
@@ -727,15 +730,16 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
       index.byX = byX;
     }
   });
+  class Refused extends Schema.TaggedError<Refused>()("sg/Refused", {}) {}
   const Clear = Action.define(
     "sg/Clear",
-    Schema.Struct({ refuse: Schema.Boolean })
+    Schema.Struct({ refuse: Schema.Boolean }),
+    { error: Refused }
   );
-  class Refused extends Data.TaggedError("sg/Refused")<{}> {}
   const clear = Action.handler(Clear, function* ({ refuse }) {
     (yield* Index.writes).byX = {};
     if (refuse) {
-      return yield* new Refused();
+      return yield* Refused.make({});
     }
   });
   const Spotted = Plugin.make("sg/Spotted", {

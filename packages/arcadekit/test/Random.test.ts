@@ -1,4 +1,4 @@
-import { Data, Effect, Random as EffectRandom, Exit, Schema } from "effect";
+import { Effect, Random as EffectRandom, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { Rng } from "../src/ecs/random";
@@ -235,15 +235,17 @@ describe("the random number generator", () => {
 const Die = Component.define("rnd/Die", { face: Field.u8, rolls: Field.u32 });
 const Spark = Component.define("rnd/Spark", { x: Field.f32, y: Field.f32 });
 
-const Roll = Action.define("rnd/Roll", Schema.Struct({ sides: Schema.Int }));
-class NoSuchDie extends Data.TaggedError("NoSuchDie")<{}> {}
+class NoSuchDie extends Schema.TaggedError<NoSuchDie>()("NoSuchDie", {}) {}
+const Roll = Action.define("rnd/Roll", Schema.Struct({ sides: Schema.Int }), {
+  error: NoSuchDie,
+});
 
 /** A handler that draws: the die's new face is random. */
 const roll = Action.handler(Roll, function* ({ sides }) {
   const random = yield* Random;
   const dice = yield* Query.all(Die).pipe(Query.writes(Die));
   if (dice.count() === 0) {
-    return yield* new NoSuchDie();
+    return yield* NoSuchDie.make({});
   }
   let face = 0;
   dice.each((die) => {

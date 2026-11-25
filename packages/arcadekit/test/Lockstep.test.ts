@@ -6,6 +6,7 @@ import {
   Action,
   App,
   Driver,
+  Event,
   Input,
   Journal,
   Save,
@@ -25,7 +26,9 @@ import {
   Fault,
   Hear,
   Mint,
+  NoSuchCoin,
   Purse,
+  Take,
   Tally,
   Drift as Wander,
   catchUp,
@@ -42,6 +45,7 @@ import {
   setGlitch,
   take,
   tip,
+  untaken,
   untilStopped,
   whisper,
   withApp,
@@ -439,7 +443,7 @@ describe("a lockstep session", () => {
       // when its turn comes on this machine alone.
       expect(ada.app.enqueue(Drop, { by: "ada", value: 1.5 })).toEqual(
         Exit.fail(
-          new Action.InvalidPayload({
+          Action.InvalidPayload.make({
             action: "ls/Drop",
             message: 'Expected an integer\n  at ["value"]',
           })
@@ -455,6 +459,86 @@ describe("a lockstep session", () => {
       expect(moves(grace.app.actionLog)).toEqual([]);
       expect(ada.world.hash()).toBe(grace.world.hash());
     });
+  });
+
+  it("has every peer read the same refusal, typed, and a save hold it in its JSON form", () => {
+    withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
+      const net = network(1, { min: 0, max: 0 });
+      const [ada, grace] = peers as [Peer, Peer];
+      ada.app.enqueue(Drop, { by: "ada", value: 3 });
+      for (let i = 0; i < 3; i++) {
+        round(peers, net);
+      }
+      catchUp(peers, net);
+      const [coin] = coinsOf(ada);
+      assert(coin !== undefined);
+      untaken.length = 0;
+      // Both take the one coin on the same tick: ada's name comes first.
+      ada.app.enqueue(Take, { by: "ada", coin });
+      grace.app.enqueue(Take, { by: "grace", coin });
+      for (let i = 0; i < 6; i++) {
+        round(peers, net);
+      }
+      catchUp(peers, net);
+      const refused = {
+        payload: { by: "grace", coin },
+        error: NoSuchCoin.make({ coin }),
+        from: "grace",
+      };
+      expect(untaken).toEqual([refused, refused]);
+      expect(untaken.map(({ error }) => Schema.is(NoSuchCoin)(error))).toEqual([
+        true,
+        true,
+      ]);
+      expect(grace.world.hash()).toBe(ada.world.hash());
+    });
+  });
+
+  it("refuses an action queued in a save the same way once it is loaded, and the refusal's JSON form decodes to it", () => {
+    Effect.runSync(
+      Effect.gen(function* () {
+        const going = yield* game();
+        const dropped = going.dispatch(Drop, { by: "ada", value: 3 });
+        assert(Exit.isSuccess(dropped));
+        const coin = dropped.value;
+        going.enqueueByName("ls/Take", { by: "ada", coin }, "ada");
+        going.enqueueByName("ls/Take", { by: "grace", coin }, "grace");
+        const saved = going.save();
+        assert(Exit.isSuccess(saved));
+        const loaded = yield* App.make(CoinGame, { save: saved.value });
+        untaken.length = 0;
+        for (const app of [going, loaded]) {
+          app.tick(DELTA);
+          app.input();
+        }
+        const refused: Action.Refused<
+          { readonly by: "grace"; readonly coin: typeof coin },
+          NoSuchCoin
+        > = {
+          payload: { by: "grace", coin },
+          error: NoSuchCoin.make({ coin }),
+          from: "grace",
+        };
+        expect(untaken).toEqual([refused, refused]);
+        const json = Event.encode(Action.rejected(Take), refused);
+        assert(Exit.isSuccess(json));
+        expect(json.value).toEqual({
+          payload: { by: "grace", coin },
+          error: { _tag: "NoSuchCoin", coin },
+          from: "grace",
+        });
+        const decoded = Event.decode(
+          Action.rejected(Take),
+          JSON.parse(JSON.stringify(json.value))
+        );
+        assert(Exit.isSuccess(decoded));
+        expect(decoded.value).toEqual(refused);
+        expect(decoded.value.error).toBeInstanceOf(NoSuchCoin);
+        expect((yield* loaded.read(World)).hash()).toBe(
+          (yield* going.read(World)).hash()
+        );
+      })
+    );
   });
 
   it("returns a system's failure, and throws it from tick", () => {

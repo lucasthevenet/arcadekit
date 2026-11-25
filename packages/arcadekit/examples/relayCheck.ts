@@ -11,7 +11,7 @@
  * `examples/relay-cloudflare` with `/rooms` after it, or one of your own.
  */
 import { NodeRuntime, NodeSocket } from "@effect/platform-node";
-import { Console, Data, Effect, Result, Schema } from "effect";
+import { Console, Effect, Result, Schema } from "effect";
 
 import { Action, App, Field, Singleton, World } from "../src/index";
 import { Message, Relay, Session, Transport } from "../src/net/index";
@@ -29,13 +29,15 @@ const Purse = Singleton.define(
   { ada: Field.i32, grace: Field.i32 },
   { ada: 0, grace: 0 }
 );
-const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }));
-class NotSeated extends Data.TaggedError("NotSeated")<{
-  readonly from: string | undefined;
-}> {}
+class NotSeated extends Schema.TaggedError<NotSeated>()("NotSeated", {
+  from: Schema.UndefinedOr(Schema.String),
+}) {}
+const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }), {
+  error: NotSeated,
+});
 const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
-    return yield* new NotSeated({ from });
+    return yield* NotSeated.make({ from });
   }
   (yield* Purse.writes)[from] += amount;
 });

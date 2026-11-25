@@ -1,4 +1,4 @@
-import { Data, Effect, Option, Schema, Tracer } from "effect";
+import { Effect, Option, Schema, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Spawned } from "../src/index";
@@ -44,9 +44,10 @@ const Hit = Event.define("in/Hit", Schema.Struct({ by: Schema.Int }));
 const Spawned = Event.define("in/Spawned", Schema.Struct({}));
 const Strike = Action.define("in/Strike", Schema.Struct({ by: Schema.Int }));
 const Begin = Action.define("in/Begin", Schema.Struct({}));
-const Refuse = Action.define("in/Refuse", Schema.Struct({}));
-
-class NotNow extends Data.TaggedError("in/NotNow") {}
+class NotNow extends Schema.TaggedError<NotNow>()("in/NotNow", {}) {}
+const Refuse = Action.define("in/Refuse", Schema.Struct({}), {
+  error: NotNow,
+});
 
 const Moved = Query.all(Position).pipe(Query.writes(Position));
 const Move = System.tick("in/Move", function* () {
@@ -78,7 +79,7 @@ const handlers = [
   }),
   Action.handler(Refuse, function* () {
     (yield* Hit.emits).emit({ by: 1000 });
-    return yield* new NotNow();
+    return yield* NotNow.make({});
   }),
 ] as const;
 
@@ -296,14 +297,20 @@ describe("app.inspect", () => {
     app.enqueue(Refuse, {});
     app.tick(1 / 60);
     const { events } = app.inspect();
-    expect(Object.keys(events)).toEqual([Action.Rejected.name]);
+    expect(Object.keys(events)).toEqual([
+      Action.Rejected.name,
+      Action.rejected(Refuse).name,
+    ]);
     expect(events[Action.Rejected.name]).toEqual([
       {
         action: "in/Refuse",
         payload: {},
-        error: { _tag: "in/NotNow", message: "" },
+        error: { _tag: "in/NotNow" },
         from: undefined,
       },
+    ]);
+    expect(events[Action.rejected(Refuse).name]).toEqual([
+      { payload: {}, error: NotNow.make({}), from: undefined },
     ]);
   });
 

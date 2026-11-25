@@ -11,7 +11,7 @@
  *
  * The inbox is the other side of `Outbox`, which holds what a game sends out.
  */
-import { Cause, Exit, Schema } from "effect";
+import { Cause, Exit, Option, Schema } from "effect";
 import type { Effect, Fiber } from "effect";
 
 import * as Action from "../Action";
@@ -65,22 +65,19 @@ export const handlersOf = (
   return named;
 };
 
-/** Why an action was refused, as `Action.Rejected` carries it. */
-const refusal = (error: unknown): { _tag: string; message: string } => {
-  const tag =
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    typeof error._tag === "string"
-      ? error._tag
-      : error instanceof Error
-        ? error.name
-        : "Error";
-  return {
-    _tag: tag,
-    message: error instanceof Error ? error.message : String(error),
-  };
-};
+/** An action whose payload its schema took, ready for its handler. */
+interface Parsed {
+  readonly handler: Action.AnyHandler;
+  /** The payload as its handler works with it. */
+  readonly value: unknown;
+  /** The payload in its JSON form. */
+  readonly json: unknown;
+}
+
+const InvalidJson = Schema.toCodecJson(Action.InvalidPayload);
+const UnknownJson = Schema.toCodecJson(Action.UnknownAction);
+const isRejected = Schema.is(Action.Rejected.codec);
+const isUnknown = Schema.is(Action.UnknownAction);
 
 /**
  * An app's inbox. The app's `enqueue`, `dispatch` and their by-name forms
@@ -157,7 +154,7 @@ export class Inbox {
     const json = Schema.encodeUnknownExit(codec)(payload);
     if (Exit.isFailure(json)) {
       return Exit.fail(
-        new Action.InvalidPayload({
+        Action.InvalidPayload.make({
           action: name,
           message: Action.said(Cause.squash(json.cause)),
         })
@@ -238,7 +235,7 @@ export class Inbox {
     if (!this.handles(action)) {
       throw new Error(`No handler for action "${action.name}"`);
     }
-    return this.apply(action.name, payload, "value", true, undefined);
+    return this.apply(action.name, payload, "value", undefined);
   }
 
   /**
@@ -251,40 +248,82 @@ export class Inbox {
     from?: string
   ): Exit.Exit<unknown, unknown> {
     this.betweenTicks(name);
-    return this.apply(name, payload, "json", true, from);
+    return this.apply(name, payload, "json", from);
   }
 
   /**
    * Applies every queued action, for the tick that begins. For each refused
-   * action it emits `Action.Rejected`, and the action's log entry says why.
+   * action it emits `Action.Rejected`, and the action's own event of
+   * refusals when its handler refused it, and the action's log entry says
+   * why. A handler that dies, or fails with an error its action doesn't
+   * declare, is a bug: what it did is undone, and the returned failure holds
+   * the defect, for the tick to fail with.
    */
-  drain(): void {
+  drain(): Exit.Exit<void, unknown> {
     const { events, intake } = this.parts;
     if (intake.queued.length === 0) {
-      return;
+      return Exit.void;
     }
+    const defects: Exit.Exit<void, unknown>[] = [];
     for (const action of intake.take()) {
       const { codec, entry, from, name, payload } = action;
-      const exit = this.apply(
+      const parsed = this.parse(
         name,
         payload,
-        codec === undefined ? "json" : "value",
-        false,
-        from
+        codec === undefined ? "json" : "value"
       );
-      if (Exit.isFailure(exit)) {
-        const error = Cause.squash(exit.cause);
-        if (entry !== undefined) {
-          entry.refused = Action.said(error);
-        }
-        events._emit(Action.Rejected, {
-          action: name,
-          payload: Action.jsonOf(action),
-          error: refusal(error),
+      const exit = Exit.isSuccess(parsed)
+        ? this.run(name, parsed.value, false, from)
+        : parsed;
+      if (Exit.isSuccess(exit)) {
+        continue;
+      }
+      if (entry !== undefined) {
+        entry.refused = Action.said(Cause.squash(exit.cause));
+      }
+      const error =
+        Cause.hasDies(exit.cause) || Cause.hasInterrupts(exit.cause)
+          ? Option.none()
+          : Cause.findErrorOption(exit.cause);
+      if (Option.isNone(error)) {
+        defects.push(Exit.asVoid(exit));
+        continue;
+      }
+      const json = Schema.encodeUnknownExit(
+        Exit.isSuccess(parsed)
+          ? parsed.value.handler.action.error
+          : isUnknown(error.value)
+            ? UnknownJson
+            : InvalidJson
+      )(error.value);
+      const rejected = Exit.isSuccess(json)
+        ? {
+            action: name,
+            payload: Action.jsonOf(action),
+            error: json.value,
+            from,
+          }
+        : undefined;
+      if (!isRejected(rejected)) {
+        defects.push(
+          Exit.die(
+            new Error(
+              `The handler for "${name}" failed with ${Action.said(error.value)}, which the error schema of its action does not take. Declare it in the error of Action.define(name, payload, { error }): a schema whose values have a _tag, such as a Schema.TaggedError or a Schema.TaggedStruct.`
+            )
+          )
+        );
+        continue;
+      }
+      events._emit(Action.Rejected, rejected);
+      if (Exit.isSuccess(parsed)) {
+        events._emit(parsed.value.handler.action.rejected, {
+          payload: parsed.value.value,
+          error: error.value,
           from,
         });
       }
     }
+    return Exit.asVoidAll(defects);
   }
 
   /** Refuses a dispatch that isn't made between ticks, on an app of one. */
@@ -318,27 +357,32 @@ export class Inbox {
     commands.rollback(mark);
   }
 
-  /**
-   * Validates a payload and runs its handler to completion. `payload` is in
-   * the form `form` says: the value a handler works with, or its JSON form.
-   * The handler runs in a world transaction: a refusal rolls back its
-   * component writes, the random numbers it drew, what it read of events and
-   * changes, and what it queued, emitted and enqueued. With `dispatched`, an
-   * accepted action is logged; an enqueued one was logged on arrival, if it
-   * came from outside.
-   */
+  /** Validates a dispatched payload and runs its handler, as `run` does. */
   private apply(
     name: string,
     payload: unknown,
     form: "json" | "value",
-    dispatched: boolean,
     from: string | undefined
   ): Exit.Exit<unknown, unknown> {
-    const { commands, events, handlers, log, run, runner, time, world } =
-      this.parts;
+    const parsed = this.parse(name, payload, form);
+    return Exit.isSuccess(parsed)
+      ? this.run(name, parsed.value, true, from)
+      : parsed;
+  }
+
+  /**
+   * Finds an action's handler and validates its payload, which is in the form
+   * `form` says: the value a handler works with, or its JSON form.
+   */
+  private parse(
+    name: string,
+    payload: unknown,
+    form: "json" | "value"
+  ): Exit.Exit<Parsed, Action.InvalidPayload | Action.UnknownAction> {
+    const { handlers, log } = this.parts;
     const handler = handlers.get(name);
     if (handler === undefined) {
-      return Exit.fail(new Action.UnknownAction({ action: name }));
+      return Exit.fail(Action.UnknownAction.make({ action: name }));
     }
     log.start();
 
@@ -352,15 +396,33 @@ export class Inbox {
     if (Exit.isFailure(converted)) {
       const error = Cause.squash(converted.cause);
       return Exit.fail(
-        new Action.InvalidPayload({
+        Action.InvalidPayload.make({
           action: name,
           message: error instanceof Error ? error.message : String(error),
         })
       );
     }
-    const value = form === "json" ? converted.value : payload;
-    const logged = form === "json" ? payload : converted.value;
+    return Exit.succeed({
+      handler,
+      value: form === "json" ? converted.value : payload,
+      json: form === "json" ? payload : converted.value,
+    });
+  }
 
+  /**
+   * Runs a parsed action's handler to completion. The handler runs in a world
+   * transaction: a refusal rolls back its component writes, the random
+   * numbers it drew, what it read of events and changes, and what it queued,
+   * emitted and enqueued. With `dispatched`, an accepted action is logged; an
+   * enqueued one was logged on arrival, if it came from outside.
+   */
+  private run(
+    name: string,
+    { handler, json, value }: Parsed,
+    dispatched: boolean,
+    from: string | undefined
+  ): Exit.Exit<unknown, unknown> {
+    const { commands, events, log, run, runner, time, world } = this.parts;
     if (runner.phase === "handler") {
       throw new Error(
         `dispatch("${name}") was called from the handler of "${runner.applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`
@@ -408,7 +470,7 @@ export class Inbox {
         }
       }
       if (dispatched) {
-        log.accepted(name, logged, from);
+        log.accepted(name, json, from);
       }
     }
     return exit;

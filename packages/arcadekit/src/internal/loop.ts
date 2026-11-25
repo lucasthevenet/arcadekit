@@ -429,7 +429,7 @@ export const make = (parts: Parts): Loop => {
     try {
       // Queued actions are applied before time advances, so they land at the
       // same point in the timeline as an action dispatched between ticks.
-      inbox.drain();
+      const drained = inbox.drain();
 
       log.ticking(delta);
       time.delta = delta;
@@ -458,7 +458,7 @@ export const make = (parts: Parts): Loop => {
       intake.ticked(
         resting ? world._frameHash(false, Stage.GameTime.component) : undefined
       );
-      return exit;
+      return Exit.asVoidAll([drained, exit]);
     } finally {
       runner.ticking = false;
     }

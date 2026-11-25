@@ -9,7 +9,7 @@ A **state** is one of a few named values the game is in, such as `"menu"`, `"pla
 
 ```ts
 import { Action, Plugin, State, System } from "arcadekit";
-import { Data, Schema } from "effect";
+import { Schema } from "effect";
 
 const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
 
@@ -26,13 +26,15 @@ const StartLevel = State.onEnter(
   }
 );
 
-const Resume = Action.define("game/Resume", Schema.Struct({}));
-class NotPaused extends Data.TaggedError("NotPaused")<{}> {}
+class NotPaused extends Schema.TaggedError<NotPaused>()("NotPaused", {}) {}
+const Resume = Action.define("game/Resume", Schema.Struct({}), {
+  error: NotPaused,
+});
 
 const resume = Action.handler(Resume, function* () {
   const phase = yield* Phase.sets;
   if (!phase.is("paused")) {
-    return yield* new NotPaused();
+    return yield* NotPaused.make({});
   }
   phase.set("playing");
 });
