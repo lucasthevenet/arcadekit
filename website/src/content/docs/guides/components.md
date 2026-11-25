@@ -138,7 +138,12 @@ import { Component, EcsWorld, Field, Transform3d } from "arcadekit";
 const Rock = Component.define(
   "game/Rock",
   { hp: Field.i32 },
-  { requires: [Transform3d.Position, Transform3d.Scale.of({ x: 2, y: 2, z: 2 })] }
+  {
+    requires: [
+      Transform3d.Position,
+      Transform3d.Scale.of({ x: 2, y: 2, z: 2 }),
+    ],
+  }
 );
 
 const world = new EcsWorld();
