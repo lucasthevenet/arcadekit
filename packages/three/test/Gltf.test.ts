@@ -611,8 +611,12 @@ describe("Gltf.mesh", () => {
 });
 
 describe("a level's models", () => {
-  const Ship = Component.tag("gl/Ship");
-  const Rock = Component.tag("gl/Rock");
+  const Ship = Component.tag("gl/Ship", {
+    requires: [Transform3d.Position],
+  });
+  const Rock = Component.tag("gl/Rock", {
+    requires: [Transform3d.Position],
+  });
   const Level = State.define("gl/Level", ["dock", "space"]);
   const Go = Action.define(
     "gl/Go",

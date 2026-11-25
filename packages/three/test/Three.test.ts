@@ -43,10 +43,10 @@ import { Three } from "../src/index";
 
 const { Position, Rotation, Scale } = Transform3d;
 
-const Rock = Component.tag("th/Rock");
-const Ship = Component.tag("th/Ship");
+const Rock = Component.tag("th/Rock", { requires: [Transform3d.Position] });
+const Ship = Component.tag("th/Ship", { requires: [Transform3d.Position] });
 const Hidden = Component.tag("th/Hidden", { storage: "sparse" });
-const Heavy = Component.tag("th/Heavy");
+const Heavy = Component.tag("th/Heavy", { requires: [Transform3d.Position] });
 const Velocity = Component.define("th/Velocity", {
   x: Field.f32,
   y: Field.f32,

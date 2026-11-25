@@ -31,7 +31,9 @@ import { Three } from "../src/index";
 
 const N = 10_000;
 const { Position, Rotation, Scale } = Transform3d;
-const Thing = Component.tag("bench/Thing");
+const Thing = Component.tag("bench/Thing", {
+  requires: [Transform2d.Position],
+});
 const geometry = new BoxGeometry(1, 1, 1);
 const material = new MeshBasicMaterial();
 
