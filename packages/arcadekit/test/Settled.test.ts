@@ -284,6 +284,7 @@ describe("a game that ticks when its player moves", () => {
           Layer.merge(
             View.layer(Played, (ui) => {
               handed.push(ui);
+              ui.subscribe(Shown, () => {});
             }),
             Input.layer(source)
           )
