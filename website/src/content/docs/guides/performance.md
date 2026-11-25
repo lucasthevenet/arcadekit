@@ -107,11 +107,11 @@ arcadekit's own plugins cost this much when each has little to do:
 
 | Variant                                                    | Cost   |
 | ---------------------------------------------------------- | ------ |
-| Spawn 1,000 entities with two components and despawn them  | 561 µs |
-| The same, each also pointing at one entity with a relation | 693 µs |
-| Despawn 100 parents, each taking its 10 children with it   | 143 µs |
+| Spawn 1,000 entities with two components and despawn them  | 156 µs |
+| The same, each also pointing at one entity with a relation | 251 µs |
+| Despawn 100 parents, each taking its 10 children with it   | 106 µs |
 
-A relation costs its component plus a few assignments to link and unlink, 0.13 µs more per entity spawned and despawned with one. A cascading despawn costs the same as despawning each entity alone, 130 ns per entity in the last row.
+A relation costs its component plus a few assignments to link and unlink, 0.1 µs more per entity spawned and despawned with one. A cascading despawn costs the same as despawning each entity alone, 96 ns per entity in the last row.
 
 ## Actions
 
