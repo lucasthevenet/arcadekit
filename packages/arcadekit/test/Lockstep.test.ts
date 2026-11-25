@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit } from "effect";
+import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { afterEach, assert, describe, expect, it } from "vitest";
 
 import {
@@ -27,6 +27,7 @@ import {
   Mint,
   NoSuchCoin,
   Purse,
+  Take,
   Tally,
   Drift as Wander,
   catchUp,
@@ -41,7 +42,6 @@ import {
   refusals,
   round,
   setGlitch,
-  Take,
   take,
   tip,
   untaken,
@@ -442,7 +442,7 @@ describe("a lockstep session", () => {
       // when its turn comes on this machine alone.
       expect(ada.app.enqueue(Drop, { by: "ada", value: 1.5 })).toEqual(
         Exit.fail(
-          new Action.InvalidPayload({
+          Action.InvalidPayload.make({
             action: "ls/Drop",
             message: 'Expected an integer\n  at ["value"]',
           })
@@ -481,11 +481,11 @@ describe("a lockstep session", () => {
       catchUp(peers, net);
       const refused = {
         payload: { by: "grace", coin },
-        error: new NoSuchCoin({ coin }),
+        error: NoSuchCoin.make({ coin }),
         from: "grace",
       };
       expect(untaken).toEqual([refused, refused]);
-      expect(untaken.map(({ error }) => error instanceof NoSuchCoin)).toEqual([
+      expect(untaken.map(({ error }) => Schema.is(NoSuchCoin)(error))).toEqual([
         true,
         true,
       ]);
@@ -510,9 +510,12 @@ describe("a lockstep session", () => {
           app.tick(DELTA);
           app.input();
         }
-        const refused = {
+        const refused: Action.Refused<
+          { readonly by: "grace"; readonly coin: typeof coin },
+          NoSuchCoin
+        > = {
           payload: { by: "grace", coin },
-          error: new NoSuchCoin({ coin }),
+          error: NoSuchCoin.make({ coin }),
           from: "grace",
         };
         expect(untaken).toEqual([refused, refused]);

@@ -37,7 +37,7 @@ const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }), {
 });
 const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
-    return yield* new NotSeated({ from });
+    return yield* NotSeated.make({ from });
   }
   (yield* Purse.writes)[from] += amount;
 });

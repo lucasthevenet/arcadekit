@@ -34,7 +34,7 @@ const Resume = Action.define("game/Resume", Schema.Struct({}), {
 const resume = Action.handler(Resume, function* () {
   const phase = yield* Phase.sets;
   if (!phase.is("paused")) {
-    return yield* new NotPaused();
+    return yield* NotPaused.make({});
   }
   phase.set("playing");
 });

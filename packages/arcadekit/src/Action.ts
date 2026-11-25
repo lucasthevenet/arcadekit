@@ -13,7 +13,7 @@
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Turn
- *     if (turn.player !== owner) return yield* new NotYourTurn()
+ *     if (turn.player !== owner) return yield* NotYourTurn.make({})
  *     const commands = yield* Commands
  *     commands.despawn(card)
  *     const played = yield* CardPlayed.emits
@@ -148,9 +148,8 @@ export type Refusal = Schema.Codec<
  *
  * The log and a save hold a payload in its JSON form, and the other peers
  * receive that form, so a bigint or a date in it is converted along the way.
- * The JSON form of an action with no payload is `null`. A refusal is held in
- * its JSON form too, by the event `Action.rejected` reads and by
- * `Action.Rejected`, so every peer and a save hold the same one.
+ * The JSON form of an action with no payload is `null`. The world's hash and a
+ * save hold a refusal in its JSON form too, so every peer reads the same one.
  *
  * @category Constructors
  */
@@ -280,7 +279,7 @@ export interface AnyHandler {
  *
  *   const pass = Action.handler(Pass, function* (_, { from }) {
  *     const turn = yield* Turn
- *     if (turn.player !== from) return yield* new NotYourTurn()
+ *     if (turn.player !== from) return yield* NotYourTurn.make({})
  *     ...
  *   })
  *

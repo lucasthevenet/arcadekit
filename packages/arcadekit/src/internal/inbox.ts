@@ -77,6 +77,7 @@ interface Parsed {
 const InvalidJson = Schema.toCodecJson(Action.InvalidPayload);
 const UnknownJson = Schema.toCodecJson(Action.UnknownAction);
 const isRejected = Schema.is(Action.Rejected.codec);
+const isUnknown = Schema.is(Action.UnknownAction);
 
 /**
  * An app's inbox. The app's `enqueue`, `dispatch` and their by-name forms
@@ -153,7 +154,7 @@ export class Inbox {
     const json = Schema.encodeUnknownExit(codec)(payload);
     if (Exit.isFailure(json)) {
       return Exit.fail(
-        new Action.InvalidPayload({
+        Action.InvalidPayload.make({
           action: name,
           message: Action.said(Cause.squash(json.cause)),
         })
@@ -291,12 +292,17 @@ export class Inbox {
       const json = Schema.encodeUnknownExit(
         Exit.isSuccess(parsed)
           ? parsed.value.handler.action.refusals
-          : error.value instanceof Action.UnknownAction
+          : isUnknown(error.value)
             ? UnknownJson
             : InvalidJson
       )(error.value);
       const rejected = Exit.isSuccess(json)
-        ? { action: name, payload: Action.jsonOf(action), error: json.value, from }
+        ? {
+            action: name,
+            payload: Action.jsonOf(action),
+            error: json.value,
+            from,
+          }
         : undefined;
       if (!isRejected(rejected)) {
         defects.push(
@@ -376,7 +382,7 @@ export class Inbox {
     const { handlers, log } = this.parts;
     const handler = handlers.get(name);
     if (handler === undefined) {
-      return Exit.fail(new Action.UnknownAction({ action: name }));
+      return Exit.fail(Action.UnknownAction.make({ action: name }));
     }
     log.start();
 
@@ -390,7 +396,7 @@ export class Inbox {
     if (Exit.isFailure(converted)) {
       const error = Cause.squash(converted.cause);
       return Exit.fail(
-        new Action.InvalidPayload({
+        Action.InvalidPayload.make({
           action: name,
           message: error instanceof Error ? error.message : String(error),
         })

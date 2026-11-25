@@ -5,7 +5,7 @@
  *   const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 })
  *
  *   const turn = yield* Turn              // read, in any stage
- *   if (turn.player !== mine) return yield* new NotYourTurn()
+ *   if (turn.player !== mine) return yield* NotYourTurn.make({})
  *   const writing = yield* Turn.writes    // in the code of the tick
  *   writing.player = writing.player === 1 ? 2 : 1
  *

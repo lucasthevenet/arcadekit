@@ -68,7 +68,7 @@ const Strike = Action.define(
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const world = yield* World;
   if (!world.isAlive(attacker) || !world.isAlive(target)) {
-    return yield* new NoSuchFighter();
+    return yield* NoSuchFighter.make({});
   }
   (yield* Commands).despawn(target);
 });
@@ -92,7 +92,7 @@ The payload's type comes from the schema. Its JSON encoding is what the log and 
 
 Before the handler runs, the app validates the payload against the schema, including refinements the compiler can't see, such as a number between 1 and 10. A mismatch fails with `Action.InvalidPayload`.
 
-The handler checks the game's rules and refuses with a typed error, a tagged class made with `Schema.TaggedError`. Fail with it and return, as in `return yield* new NoSuchFighter()`. Without the `return`, TypeScript doesn't know that the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag, because two classes with the same tag are caught as one, with no warning.
+The handler checks the game's rules and refuses with a typed error, a tagged class made with `Schema.TaggedError`. Fail with it and return, as in `return yield* NoSuchFighter.make({})`. Without the `return`, TypeScript doesn't know that the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag, because two classes with the same tag are caught as one, with no warning.
 
 The action declares its refusals in `Action.define`, with `{ refusals: [...] }`. A handler that fails with an error its action doesn't declare doesn't compile, and the compiler names the error. The schema of each refusal gives it a JSON form, so every peer and a save hold the same refusal. An action with no payload and refusals takes `Schema.Void` as its payload.
 
@@ -124,7 +124,7 @@ A handler receives the action's origin alongside the payload:
 const pass = Action.handler(Pass, function* (_, { from }) {
   const turn = yield* Turn;
   if (turn.player !== from) {
-    return yield* new NotYourTurn();
+    return yield* NotYourTurn.make({});
   }
   /* … */
 });

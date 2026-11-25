@@ -122,7 +122,7 @@ export const Move = Action.define(
 const move = Action.handler(Move, function* ({ dx }) {
   const basket = yield* Basket.writes;
   if (basket.lives === 0) {
-    return yield* new GameOver();
+    return yield* GameOver.make({});
   }
   basket.dx = dx;
 });

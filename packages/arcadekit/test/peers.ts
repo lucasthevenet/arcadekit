@@ -59,10 +59,9 @@ export const Drop = Action.define(
   "ls/Drop",
   Schema.Struct({ by: Player, value: Schema.Int })
 );
-export class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()(
-  "NoSuchCoin",
-  { coin: EntityId }
-) {}
+export class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()("NoSuchCoin", {
+  coin: EntityId,
+}) {}
 export const Take = Action.define(
   "ls/Take",
   Schema.Struct({ by: Player, coin: EntityId }),
@@ -97,7 +96,7 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
   const world = yield* World;
   const held = world.get(coin, Coin);
   if (held === undefined) {
-    return yield* new NoSuchCoin({ coin });
+    return yield* NoSuchCoin.make({ coin });
   }
   (yield* Commands).despawn(coin);
   (yield* Taken.emits).emit({ value: held.value });
@@ -112,7 +111,7 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
 });
 export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
-    return yield* new Stranger({ from });
+    return yield* Stranger.make({ from });
   }
   (yield* Purse.writes)[from] += amount;
   return from;

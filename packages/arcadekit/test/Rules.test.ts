@@ -247,14 +247,14 @@ const attack = Action.handler(Attack, function* ({ attacker, target }) {
   const turn = yield* currentTurn;
   const owner = world.get(attacker, Owner);
   if (owner === undefined || owner.player !== turn.player) {
-    return yield* new NotYourTurn({ player: turn.player });
+    return yield* NotYourTurn.make({ player: turn.player });
   }
   const energy = world.get(attacker, Energy)!.points;
   if (energy < 2) {
-    return yield* new NotEnoughEnergy({ have: energy, need: 2 });
+    return yield* NotEnoughEnergy.make({ have: energy, need: 2 });
   }
   if (!world.has(target, Health)) {
-    return yield* new NoSuchTarget();
+    return yield* NoSuchTarget.make({});
   }
   // Validation is done; from here on the action will succeed.
   world.set(attacker, Energy, { points: energy - 2 });
@@ -268,7 +268,7 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turns = yield* TurnQuery;
   const turn = yield* currentTurn;
   if (player !== turn.player) {
-    return yield* new NotYourTurn({ player: turn.player });
+    return yield* NotYourTurn.make({ player: turn.player });
   }
   turns.each((t) => {
     t.player = t.player === 1 ? 2 : 1;
@@ -287,7 +287,7 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
   );
   died.emit({ entity });
   if (hp <= 0) {
-    return yield* new NoSuchTarget();
+    return yield* NoSuchTarget.make({});
   }
   return entity;
 });
@@ -416,12 +416,12 @@ describe("actions", () => {
     withApp(duel(), ({ app, world, one, two }) => {
       const before = snapshot(app);
       const notYours = app.dispatch(Attack, { attacker: two, target: one });
-      expect(notYours).toEqual(Exit.fail(new NotYourTurn({ player: 1 })));
+      expect(notYours).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
 
       app.dispatch(Attack, { attacker: one, target: two });
       const tired = app.dispatch(Attack, { attacker: one, target: two });
       expect(tired).toEqual(
-        Exit.fail(new NotEnoughEnergy({ have: 1, need: 2 }))
+        Exit.fail(NotEnoughEnergy.make({ have: 1, need: 2 }))
       );
       expect(world.get(two, Health)).toEqual({ hp: 2 });
       expect(moves(app.actionLog)).toHaveLength(1);
@@ -474,9 +474,7 @@ describe("actions", () => {
     const rejected: string[] = [];
     const Watch = System.tick("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
-        rejected.push(
-          `${event.action}: ${event.error._tag}`
-        );
+        rejected.push(`${event.action}: ${event.error._tag}`);
       }
     });
     const make = begin(
@@ -603,14 +601,14 @@ describe("actions", () => {
       EndTurn,
       // @ts-expect-error Undeclared is not among the refusals of EndTurn
       function* () {
-        return yield* new Undeclared();
+        return yield* Undeclared.make({});
       }
     );
     Action.handler(
       Unhandled,
       // @ts-expect-error an action that declares no refusal is never refused
       function* () {
-        return yield* new NotYourTurn({ player: 1 });
+        return yield* NotYourTurn.make({ player: 1 });
       }
     );
     expect(() =>
@@ -618,10 +616,12 @@ describe("actions", () => {
         // @ts-expect-error a Data.TaggedError has no schema to encode it with
         refusals: [Plain],
       })
-    ).toThrow();
-    const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> =
-      withApp(duel(), ({ app }) => app.dispatch(EndTurn, { player: 2 }));
-    expect(ended).toEqual(Exit.fail(new NotYourTurn({ player: 1 })));
+    ).toThrow(TypeError);
+    const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> = withApp(
+      duel(),
+      ({ app }) => app.dispatch(EndTurn, { player: 2 })
+    );
+    expect(ended).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
   });
 
   it("fail the tick when a queued action's handler dies, and leave the game as it was", () => {
