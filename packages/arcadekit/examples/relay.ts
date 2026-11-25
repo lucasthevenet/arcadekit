@@ -21,8 +21,8 @@ const relay = Relay.make();
 const server = new WebSocketServer({ port });
 
 server.on("connection", (socket, request) => {
-  const connection = relay.connect(request.url ?? "", Relay.anyone, (text) =>
-    socket.send(text)
+  const connection = relay.connect(request.url ?? "", Relay.anyone, (data) =>
+    socket.send(data)
   );
   if (Exit.isFailure(connection)) {
     const refused = Cause.squash(connection.cause) as Relay.Refused;

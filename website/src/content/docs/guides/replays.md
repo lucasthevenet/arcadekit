@@ -34,9 +34,9 @@ const program = Effect.gen(function* () {
   for (let i = 0; i < 10; i++) {
     game.tick(1 / 60);
   }
-  const text = Journal.encode(game.record()); // for a file
+  const bytes = Journal.encode(game.record()); // for a file
 
-  const recording = yield* Journal.decode(text); // fails on text that isn't one
+  const recording = yield* Journal.decode(bytes); // fails on bytes that aren't one
   // The replay makes its app from how the recorded game began: its seed.
   const again = yield* Effect.acquireRelease(
     Journal.replay(recording, Game, { checkpointEvery: 1 }), // fails with Journal.ReplayDiverged
@@ -53,7 +53,7 @@ const program = Effect.gen(function* () {
 
 Each action holds its payload in JSON form and the tick it arrived at. Actions the simulation issues itself, such as a bot's move, aren't in the log, since the replay's own systems issue them again.
 
-`app.record()` returns a recording: how the game began, that log, the ticks it begins and ends at, the `delta` of every tick in between, kept as runs of ticks that took the same delta, and `endHash`, the world's hash where it ends. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes. A recording comes only from `app.record()` or `Journal.decode`: an object written by hand isn't one, and doesn't compile as one. To replay an edited recording, edit its text and decode it.
+`app.record()` returns a recording: how the game began, that log, the ticks it begins and ends at, the `delta` of every tick in between, kept as runs of ticks that took the same delta, and `endHash`, the world's hash where it ends. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes. A recording comes only from `app.record()` or `Journal.decode`: an object written by hand isn't one, and doesn't compile as one. To replay an edited recording, edit its bytes and decode them.
 
 `Journal.replay(recording, game)` makes an app of the game from how the recorded game began, plays the recording in it, and returns the app where the recording ends.
 
@@ -64,7 +64,7 @@ Each action holds its payload in JSON form and the tick it arrived at. Actions t
 - It runs no frame or input stage, so it reads no device and draws nothing. What the devices said is in the log.
 - In the recorded game, a frame or input stage that wrote through a raw column changed the game with no error, unless the app was made with `verifyFrames`, which refuses the write. The replay runs neither stage, so it diverges. See [testing](testing.md#run-the-frame-stage-by-hand).
 
-`Journal.encode` turns a recording into text, and `Journal.decode` turns the text back. `Journal.decode` refuses a recording that doesn't say how its game began, one whose save doesn't read or is of another tick than the recording begins at, and one whose log or runs of deltas are out of order or outside it. It refuses a recording from an earlier version of arcadekit, which holds no `endHash`, with a message that begins `older format`. A recording made since a save holds the save, which is most of its text.
+`Journal.encode` turns a recording into bytes, and `Journal.decode` turns the bytes back. `Journal.decode` refuses a recording that doesn't say how its game began, one whose save doesn't read or is of another tick than the recording begins at, and one whose log or runs of deltas are out of order or outside it. It refuses a recording that an earlier version of arcadekit wrote as text. A recording made since a save holds the save, as the bytes `Save.encode` writes, which are most of it.
 
 ## Verify a replay with checkpoints
 
