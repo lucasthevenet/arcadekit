@@ -76,7 +76,7 @@ A colour's `space` says how its numbers are drawn, [`Color.Srgb`](/reference/arc
 ```ts title="look.ts"
 import { BoxGeometry, Mesh } from "three";
 
-const Ship = Component.tag("game/Ship", { requires: [Transform3d.Position] });
+const Ship = Component.tag("game/Ship");
 
 const hull = new BoxGeometry(1, 1, 3);
 const paint = new MeshStandardMaterial({ color: "#d0d4dc" });

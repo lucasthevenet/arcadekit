@@ -42,7 +42,7 @@ const named = (entity: Entity): string =>
 const { Position } = Transform3d;
 
 const Tree = Component.tag("ta/Tree", { requires: [Transform3d.Position] });
-const Deer = Component.tag("ta/Deer", { requires: [Transform3d.Position] });
+const Deer = Component.tag("ta/Deer");
 const Level = State.define("ta/Level", ["menu", "forest"]);
 const Go = Action.define(
   "ta/Go",
