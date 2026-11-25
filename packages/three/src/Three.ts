@@ -94,9 +94,8 @@ export interface Which {
    * The component that marks an entity as one of the kind, or several
    * components, all of which it must have. An entity is drawn while it has
    * them, none of `without`, and the `Position` of the kind's `transform`.
-   * For `Three.instances`, one of them requires that `Position`, so that a
-   * spawn or an add of it gives the entity one, and a kind whose components
-   * don't doesn't compile:
+   * One of them requires that `Position`, so that a spawn or an add of it
+   * gives the entity one, and a kind whose components don't doesn't compile:
    *
    *   const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] })
    */
@@ -132,7 +131,7 @@ export interface Which {
 }
 
 /**
- * What `Three.instances` is told of a kind whose `of`
+ * What `Three.instances` and `Three.objects` are told of a kind whose `of`
  * doesn't require its transform's `Position`, and `unknown` for one that
  * does. A transform typed as either module needs both positions, since the
  * compiler can't tell which it is. A component whose requirements the

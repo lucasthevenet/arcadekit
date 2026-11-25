@@ -82,7 +82,7 @@ import { Three } from "@arcadekit/three";
 import * as Gltf from "@arcadekit/three/Gltf";
 import { Assets, Component, Transform3d } from "arcadekit";
 
-const Ship = Component.tag("game/Ship");
+const Ship = Component.tag("game/Ship", { requires: [Transform3d.Position] });
 const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] });
 
 const Fleet = Assets.bundle("game/Fleet", {

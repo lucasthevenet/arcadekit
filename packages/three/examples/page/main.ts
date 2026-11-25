@@ -58,7 +58,7 @@ const Card = Component.tag("page/Card", {
   requires: [Transform2d.Position],
 });
 const CARDS = 48;
-const Ship = Component.tag("page/Ship");
+const Ship = Component.tag("page/Ship", { requires: [Position] });
 const Velocity = Component.define("page/Velocity", {
   x: Field.f32,
   y: Field.f32,

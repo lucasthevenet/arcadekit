@@ -44,8 +44,11 @@ import { Three } from "../src/index";
 const { Position, Rotation, Scale } = Transform3d;
 
 const Rock = Component.tag("th/Rock", { requires: [Transform3d.Position] });
-const Ship = Component.tag("th/Ship");
+const Ship = Component.tag("th/Ship", { requires: [Transform3d.Position] });
 const FlatRock = Component.tag("th/FlatRock", {
+  requires: [Transform2d.Position],
+});
+const FlatShip = Component.tag("th/FlatShip", {
   requires: [Transform2d.Position],
 });
 const Hidden = Component.tag("th/Hidden", { storage: "sparse" });
@@ -68,6 +71,7 @@ const components: readonly ComponentDef[] = [
   Rock,
   Ship,
   FlatRock,
+  FlatShip,
   Hidden,
   Heavy,
   Color.Rgb,
@@ -518,12 +522,24 @@ describe("Three.instances", () => {
         geometry,
         material,
       });
+      Three.objects("th/NowhereObjects", {
+        // @ts-expect-error nor for objects
+        of: Heavy,
+        transform: Transform2d,
+        make,
+      });
       Three.instances("th/Lifted", {
         // @ts-expect-error a rock requires the Position of Transform3d
         of: Rock,
         transform: Transform2d,
         geometry,
         material,
+      });
+      Three.objects("th/LiftedObjects", {
+        // @ts-expect-error nor for objects, of several components
+        of: [Ship, Heavy],
+        transform: Transform2d,
+        make,
       });
     };
     void kinds;
@@ -1066,8 +1082,8 @@ describe("a flat game's Transform2d", () => {
       ),
     ];
     // Not rocks, and one that is nowhere.
-    hand.spawn(Ship, at(8, 8));
-    hand.spawn(Ship, at(8, 8), Flat.Rotation, Flat.Scale);
+    hand.spawn(FlatShip, at(8, 8));
+    hand.spawn(FlatShip, at(8, 8), Flat.Rotation, Flat.Scale);
     hand.remove(
       hand.spawn(FlatRock, Flat.Rotation.of({ angle: 1 })),
       Flat.Position
@@ -1293,7 +1309,7 @@ describe("a flat game's Transform2d", () => {
     const made: { readonly object: Object3D; readonly entity: Entity }[] = [];
     const freed: Entity[] = [];
     const Cards = Three.objects("th/Cards", {
-      of: Ship,
+      of: FlatShip,
       transform: Transform2d,
       without: [Hidden],
       make: (entity) => {
@@ -1316,16 +1332,16 @@ describe("a flat game's Transform2d", () => {
     );
     const objectOf = (entity: Entity): Object3D =>
       made.findLast((one) => one.entity === entity)!.object;
-    const plain = hand.spawn(Ship, at(1, 2));
+    const plain = hand.spawn(FlatShip, at(1, 2));
     const whole = hand.spawn(
-      Ship,
+      FlatShip,
       at(-3, -4),
       Flat.Rotation.of({ angle: 0.5 }),
       Flat.Scale.of({ x: 2, y: 3 })
     );
     // Turned and sized, and nowhere; and hidden.
-    hand.spawn(Ship, Flat.Rotation, Flat.Scale);
-    hand.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
+    hand.remove(hand.spawn(FlatShip, Flat.Rotation, Flat.Scale), Flat.Position);
+    hand.spawn(FlatShip, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
     app.frame();
     expect(
       made
@@ -1387,7 +1403,7 @@ describe("a flat game's Transform2d", () => {
   it("keeps what it knows of its objects when a frame brings so many more that its room has to grow", () => {
     const made = new Map<Entity, Object3D>();
     const Cards = Three.objects("th/ManyCards", {
-      of: Ship,
+      of: FlatShip,
       transform: Transform2d,
       make: (entity) => {
         const object = new Group();
@@ -1400,14 +1416,18 @@ describe("a flat game's Transform2d", () => {
       App.make(App.define({ plugins: [Three.plugin, Hand], systems: [Cards] })),
       makeRenderer()
     );
-    const first = hand.spawn(Ship, at(1, 1), Flat.Rotation.of({ angle: 2 }));
+    const first = hand.spawn(
+      FlatShip,
+      at(1, 1),
+      Flat.Rotation.of({ angle: 2 })
+    );
     app.frame();
     expect(made.get(first)!.rotation.z).toBe(2);
     // In one frame: the first is no longer turned, and a crowd arrives
     // after it, more than there was room for.
     hand.remove(first, Flat.Rotation);
     for (let i = 0; i < 200; i++) {
-      hand.spawn(Ship, at(i, 2));
+      hand.spawn(FlatShip, at(i, 2));
     }
     app.frame();
     expect(made.size).toBe(201);
@@ -2038,9 +2058,13 @@ describe("an entity drawn between two ticks", () => {
 
   it("places an object of Three.objects the same way", () => {
     const made = new Map<Entity, Object3D>();
-    const ships = (name: string, transform: Transform) =>
+    const ships = (
+      name: string,
+      of: typeof Ship | typeof FlatShip,
+      transform: Transform
+    ) =>
       Three.objects(name, {
-        of: Ship,
+        of,
         transform,
         make: (entity) => {
           const object = new Group();
@@ -2056,8 +2080,8 @@ describe("an entity drawn between two ticks", () => {
         plugins,
         systems: [
           Slide,
-          ships("th/SmoothShips", Transform3d),
-          ships("th/SmoothCards", Transform2d),
+          ships("th/SmoothShips", Ship, Transform3d),
+          ships("th/SmoothCards", FlatShip, Transform2d),
         ],
       })
     );
@@ -2068,7 +2092,7 @@ describe("an entity drawn between two ticks", () => {
       Scale.of({ x: 1, y: 1, z: 1 })
     );
     const card = hand.spawn(
-      Ship,
+      FlatShip,
       Flat.Position.of({ x: 0, y: 4 }),
       Flat.Rotation.of({ angle: 0.5 }),
       Flat.Scale.of({ x: 1, y: 1 })
@@ -2900,7 +2924,7 @@ describe("Three.objects", () => {
     );
     hand.spawn(Rock, Position.of({ x: 9, y: 9, z: 9 }));
     // One that is turned and sized, and nowhere.
-    hand.spawn(Ship, Rotation, Scale);
+    hand.remove(hand.spawn(Ship, Rotation, Scale), Position);
     app.frame();
     expect(
       made
