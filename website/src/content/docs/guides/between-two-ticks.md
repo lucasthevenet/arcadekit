@@ -12,7 +12,7 @@ import { Three } from "@arcadekit/three";
 import { Component, Transform3d } from "arcadekit";
 import { IcosahedronGeometry, MeshStandardMaterial } from "three";
 
-const Rock = Component.tag("game/Rock");
+const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] });
 
 const Rocks = Three.instances("game/Rocks", {
   of: Rock,

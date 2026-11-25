@@ -14,7 +14,7 @@ import { Three } from "@arcadekit/three";
 import { Color, Component, Field, Transform3d } from "arcadekit";
 import { IcosahedronGeometry, MeshStandardMaterial } from "three";
 
-const Rock = Component.tag("game/Rock");
+const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] });
 const Lit = Component.tag("game/Lit");
 const Hidden = Component.tag("game/Hidden");
 
@@ -35,6 +35,7 @@ const Rocks = Three.instances("game/Rocks", {
 
 `Three.instances` draws every entity of a kind as an instance of one `InstancedMesh`. An entity belongs to the kind while it has every component in `of`, none in `without`, and the `Position` of the kind's `transform`.
 
+- A component in `of` [requires](components.md#require-other-components) that `Position`, so that every entity spawned with it has one. A kind whose `of` doesn't require it doesn't compile.
 - `transform` names the module whose components place the kind's entities: `Transform3d`, or `Transform2d` for entities drawn in the x-y plane. It has no default, so a kind that leaves it out doesn't compile. A kind reads nothing of the other module. An entity with both positions is drawn by a kind of each, from that kind's own position.
 - Each frame, the system reads the columns raw and writes one matrix per entity into the mesh's instance buffer. It creates no object, matrix, or vector per entity, and allocates nothing per entity per frame. Ten thousand moving objects cost 0.1 to 0.4 ms of a frame, not counting Three.js's own drawing. See [drawing performance](drawing-performance.md).
 - The buffer has room for `capacity` instances, 256 by default, and doubles when it fills up. The system allocates only then.
@@ -75,7 +76,7 @@ A colour's `space` says how its numbers are drawn, [`Color.Srgb`](/reference/arc
 ```ts title="look.ts"
 import { BoxGeometry, Mesh } from "three";
 
-const Ship = Component.tag("game/Ship");
+const Ship = Component.tag("game/Ship", { requires: [Transform3d.Position] });
 
 const hull = new BoxGeometry(1, 1, 3);
 const paint = new MeshStandardMaterial({ color: "#d0d4dc" });

@@ -1034,6 +1034,25 @@ export const Component = {
    * A component added or spawned bare, with no value, is all zeros. Give
    * `initial` to a component whose zeros are wrong, such as a size:
    * `{ initial: { x: 1, y: 1 } }`.
+   *
+   * `requires` lists the components a spawn or an add of this one fills in
+   * when the entity lacks them, each bare or with a value:
+   *
+   *   const Rock = Component.define("game/Rock", { hp: Field.i32 }, {
+   *     requires: [Transform3d.Position, Transform3d.Scale.of({ x: 2, y: 2, z: 2 })],
+   *   })
+   *
+   * - What they require is filled in too. Of two values for one component,
+   *   the one given at the spawn wins, then one written in `requires` over
+   *   one it inherits, then the later.
+   * - An add fills in only what the entity lacks, so adding the component
+   *   again gives back a requirement that was removed. Removing a required
+   *   component is allowed, and leaves this one.
+   * - `Commands.spawns` names what it fills in, for the order of systems.
+   * - A relation can't be required, and neither can a singleton.
+   * - A save holds what was filled in, and loading one fills nothing in. A
+   *   replay recorded before a component required something drifts from a
+   *   game that fills it in.
    */
   define: <
     const N extends string,

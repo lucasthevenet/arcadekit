@@ -21,7 +21,7 @@ import type { BufferGeometry, InstancedMesh, Material } from "three";
 import type { Entries } from "./internal/assets";
 import * as internal from "./internal/instances";
 import type { Needs } from "./internal/kind";
-import type { Which } from "./Three";
+import type { Drawn, Which } from "./Three";
 
 /**
  * How an instance looks: its mesh's geometry and material.
@@ -201,13 +201,27 @@ export interface InstancesFromOptions<
  *
  * @category Systems
  */
-export function instances<B extends Entries, L extends Look = Look>(
+export function instances<
+  B extends Entries,
+  const O extends Which["of"],
+  T extends Which["transform"],
+  L extends Look = Look,
+>(
   name: string,
-  options: InstancesFromOptions<B, L>
+  options: InstancesFromOptions<B, L> & {
+    readonly of: O;
+    readonly transform: T;
+  } & Drawn<O, T>
 ): System.System<never, Needs | Assets.Store, string, "frame">;
-export function instances(
+export function instances<
+  const O extends Which["of"],
+  T extends Which["transform"],
+>(
   name: string,
-  options: InstancesOptions
+  options: InstancesOptions & {
+    readonly of: O;
+    readonly transform: T;
+  } & Drawn<O, T>
 ): System.System<never, Needs, string, "frame">;
 // One body for both: the system of a look that is there asks for no store of
 // assets, which the second signature says.
