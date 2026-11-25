@@ -1,7 +1,7 @@
 // The Oxlint plugin `arcadekit`: the rules of what a file of a published package may import,
 // contain or export. oxlint.config.ts turns them on for packages/*/src, and no-outside-state for
 // the examples and benchmarks too.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
 import { parseSync, visitorKeys } from "oxc-parser";
@@ -9,6 +9,8 @@ import type {
   ArrowFunctionExpression,
   BindingIdentifier,
   ClassElement,
+  ExportAllDeclaration,
+  ExportDefaultDeclaration,
   ExportNamedDeclaration,
   ExportSpecifier,
   Function,
@@ -474,7 +476,11 @@ interface Source {
   readonly namespaces: Map<string, string>;
   readonly internals: Map<string, Internal[]>;
   /** The exports of a file outside internal/ that are not @internal: what a game sees. */
-  readonly publics: ExportNamedDeclaration[];
+  readonly publics: (
+    | ExportNamedDeclaration
+    | ExportAllDeclaration
+    | ExportDefaultDeclaration
+  )[];
   /** Whether the doc comment of a statement or a member says `@internal`. */
   readonly isInternalDoc: (node: Node) => boolean;
 }
@@ -702,6 +708,13 @@ const readSource = (
           });
         }
       }
+    } else if (
+      statement.type === "ExportAllDeclaration" ||
+      statement.type === "ExportDefaultDeclaration"
+    ) {
+      if (!isInternalPath(file)) {
+        source.publics.push(statement);
+      }
     } else if (statement.type === "ExportNamedDeclaration") {
       if (!isInternalDoc(statement)) {
         if (!isInternalPath(file)) {
@@ -875,23 +888,39 @@ const publicTypes = (
   }
 };
 
-/** The problems of each file of the packages under `cwd`, found once per run. */
-const analyses = new Map<string, ReadonlyMap<string, readonly Problem[]>>();
+/**
+ * The problems of each file of the packages under `cwd`, with the sources and their times of
+ * change they were found in: found again once a source changes, as in an editor.
+ */
+const analyses = new Map<
+  string,
+  {
+    readonly stamp: string;
+    readonly problems: ReadonlyMap<string, readonly Problem[]>;
+  }
+>();
 
 const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
-  const known = analyses.get(cwd);
-  if (known !== undefined) {
-    return known;
-  }
   const root = join(cwd, "packages");
   const workspaces = (existsSync(root) ? readdirSync(root) : []).flatMap(
     (folder) => workspaceOf(join(root, folder)) ?? []
   );
+  const files = workspaces.flatMap((workspace) =>
+    sourceFiles(join(workspace.dir, "src")).map((file) => ({
+      file,
+      workspace,
+    }))
+  );
+  const stamp = files
+    .map(({ file }) => `${file}@${statSync(file).mtimeMs}`)
+    .join("\n");
+  const known = analyses.get(cwd);
+  if (known?.stamp === stamp) {
+    return known.problems;
+  }
   const sources = new Map<string, Source>();
-  for (const workspace of workspaces) {
-    for (const file of sourceFiles(join(workspace.dir, "src"))) {
-      sources.set(file, readSource(file, workspace, workspaces));
-    }
+  for (const { file, workspace } of files) {
+    sources.set(file, readSource(file, workspace, workspaces));
   }
   const reexported = (
     source: Source,
@@ -906,6 +935,12 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
           resolveModule(statement.source.value, source.file, workspaces),
           name
         );
+  };
+
+  /** The source an `export *` or a dynamic import leads to. */
+  const sourceAt = (source: Source, specifier: string): Source | undefined => {
+    const file = resolveModule(specifier, source.file, workspaces);
+    return file === undefined ? undefined : sources.get(file);
   };
 
   for (const source of sources.values()) {
@@ -926,14 +961,14 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
           use(reexported(source, node, specifier), specifier);
         }
       } else if (
-        node.type === "ImportExpression" &&
+        (node.type === "ImportExpression" ||
+          node.type === "ExportAllDeclaration") &&
         node.source.type === "Literal" &&
         typeof node.source.value === "string"
       ) {
-        const file = resolveModule(node.source.value, source.file, workspaces);
-        for (const internals of (file === undefined
-          ? undefined
-          : sources.get(file)
+        for (const internals of sourceAt(
+          source,
+          node.source.value
         )?.internals.values() ?? []) {
           use(internals, node);
         }
@@ -947,14 +982,42 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
     problems.set(file, [...(problems.get(file) ?? []), problem]);
   };
   for (const source of sources.values()) {
+    const reexporting = (internal: Internal, name: Node): void =>
+      report(source.file, {
+        start: name.start,
+        end: name.end,
+        message: `${internal.name} is @internal, so a public module must not export it: a game could import it. Import it where it is used, or make it public and give it a doc comment.`,
+      });
     for (const statement of source.publics) {
+      if (statement.type === "ExportAllDeclaration") {
+        const all = sourceAt(source, statement.source.value);
+        if (
+          all !== undefined &&
+          (all.internals.size > 0 || isInternalPath(all.file))
+        ) {
+          report(source.file, {
+            start: statement.source.start,
+            end: statement.source.end,
+            message: `${all.path} ${all.internals.size > 0 ? "has @internal exports" : "is in internal/"}, so a public module must not export all of it: a game could import what is internal. Export its public names one by one.`,
+          });
+        }
+        continue;
+      }
+      if (statement.type === "ExportDefaultDeclaration") {
+        if (statement.declaration.type === "Identifier") {
+          for (const internal of referredBy(
+            sources,
+            source,
+            statement.declaration.name
+          )) {
+            reexporting(internal, statement.declaration);
+          }
+        }
+        continue;
+      }
       for (const specifier of statement.specifiers) {
         for (const internal of reexported(source, statement, specifier)) {
-          report(source.file, {
-            start: specifier.local.start,
-            end: specifier.local.end,
-            message: `${internal.name} is @internal, so a public module must not export it: a game could import it. Import it where it is used, or make it public and give it a doc comment.`,
-          });
+          reexporting(internal, specifier.local);
         }
       }
       for (const type of publicTypes(source, statement)) {
@@ -988,7 +1051,7 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
       }
     }
   }
-  analyses.set(cwd, problems);
+  analyses.set(cwd, { stamp, problems });
   return problems;
 };
 
@@ -997,8 +1060,10 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
  * keeps it (packages/tools/oxc in Effect's repository), ported here: Effect's package is
  * private. Beside its three problems, an @internal export in a public signature, one exported
  * again from a public module, and one no source uses, it refuses one declared in an entry.
- * It reads the sources of every package once a run, since what it finds in a file depends on
- * the others. A test is no source, so what only a test uses is unused.
+ * It reads the sources of every package, again whenever one has changed, since what it finds
+ * in a file depends on the others. A test is no source, so what only a test uses is unused.
+ * Like Effect's, it reads a signature that is written out: an export made by a call, such as
+ * `wrap((q: Hidden) => q)` or `Effect.fn(...)`, can name an @internal type unseen.
  */
 const noInternalInEntries: Rule = {
   meta: {

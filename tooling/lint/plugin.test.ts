@@ -290,6 +290,14 @@ export class Holder {
         },
         "packages/kit/src/Mod.ts"
       ),
+      linting(
+        "a public module exports all of a public module",
+        {
+          "packages/kit/src/Mod.ts": `/** Public. */\nexport const one = 1;\n`,
+          "packages/kit/src/index.ts": `export * from "./Mod";\nexport * as Mod from "./Mod";\n`,
+        },
+        "packages/kit/src/index.ts"
+      ),
     ],
     invalid: [
       ...[
@@ -387,6 +395,41 @@ export type Kept = Hidden;
           },
         ],
       })),
+      ...[
+        `export * from "./internal/impl";`,
+        `export * as Impl from "./internal/impl";`,
+      ].map((reexport) => ({
+        ...linting(
+          `a public module exports all of a module with @internal exports: ${reexport}`,
+          {
+            "packages/kit/src/internal/impl.ts": hidden,
+            "packages/kit/src/index.ts": `${reexport}\n`,
+          },
+          "packages/kit/src/index.ts"
+        ),
+        errors: [
+          {
+            message:
+              /^src\/internal\/impl\.ts has @internal exports, so a public module must not export all of it/u,
+          },
+        ],
+      })),
+      {
+        ...linting(
+          "a public module exports an @internal export as its default",
+          {
+            "packages/kit/src/internal/impl.ts": hidden,
+            "packages/kit/src/index.ts": `import { helper } from "./internal/impl";\nimport type { Hidden } from "./internal/impl";\nexport const n = ({ n: 0 } satisfies Hidden).n;\nexport default helper;\n`,
+          },
+          "packages/kit/src/index.ts"
+        ),
+        errors: [
+          {
+            message:
+              /^helper is @internal, so a public module must not export it/u,
+          },
+        ],
+      },
       {
         ...linting(
           "an @internal export that no source uses, though a test does",
