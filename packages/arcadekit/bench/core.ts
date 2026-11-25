@@ -107,6 +107,20 @@ const spread = (world: World): void => {
   }
 };
 
+/**
+ * `populate`, where the first 100 entities are parents and 1,000 others,
+ * spread over the rest, are their children, 10 each: returns the parents.
+ */
+const family = (world: World): Entity[] => {
+  populate(world);
+  const all = world.view(query([Position])).entities();
+  const parents = all.slice(0, 100);
+  for (let c = 0; c < 1000; c++) {
+    world.add(all[100 + c * 97]!, Child.of({ target: parents[c % 100]! }));
+  }
+  return parents;
+};
+
 const Moving = query([Position, Velocity]);
 /** The entities of `spread`'s last table, and no others: 1 table in 100. */
 const OneTable = query([Position, Velocity], { withDefs: spreadTags });
@@ -934,6 +948,41 @@ export const variants: Record<string, Variant> = {
       );
     },
   },
+  pointingAt: {
+    unit: "matches",
+    label: "each: the 10 children of each of 100 parents, by relation target",
+    run: () => {
+      const world = new World();
+      const parents = family(world);
+      const view = world.view(query([Position, Child]));
+      return measure(() => {
+        for (let p = 0; p < parents.length; p++) {
+          view.pointingAt(Child, parents[p]!).each((pos) => {
+            pos.x += DT;
+          });
+        }
+      });
+    },
+  },
+
+  pointingAtSources: {
+    unit: "matches",
+    label: "the same, with world.sources, get and set",
+    run: () => {
+      const world = new World();
+      const parents = family(world);
+      return measure(() => {
+        for (let p = 0; p < parents.length; p++) {
+          for (const child of world.sources(parents[p]!, Child)) {
+            world.set(child, Position, {
+              x: world.get(child, Position)!.x + DT,
+            });
+          }
+        }
+      });
+    },
+  },
+
   cascade: {
     unit: "matches",
     label: "despawn 100 parents, each taking its 10 children",

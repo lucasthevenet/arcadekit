@@ -12,13 +12,12 @@ import type {
   ObjectsShared,
 } from "../Objects";
 import { Scene } from "../Scene";
+import type { Entries, Needs } from "../Three";
 import { FromAssets } from "./assets";
-import type { Entries } from "./assets";
 import type { Angle, Columns, Xy, Xyz, Xyzw } from "./columns";
 import { Holdings } from "./holdings";
 import type { Kept } from "./holdings";
 import { isFlat, required } from "./kind";
-import type { Needs } from "./kind";
 import { smoothOf } from "./smooth";
 import type { Smooth } from "./smooth";
 

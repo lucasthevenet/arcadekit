@@ -1,8 +1,6 @@
 import type { ComponentDef } from "arcadekit/ecs";
-import type { Frame, Time, World } from "arcadekit/Services";
 import * as Transform2d from "arcadekit/Transform2d";
 
-import type { Scene } from "../Scene";
 import type { Which } from "../Three";
 
 /**
@@ -21,11 +19,3 @@ export const required = (which: Which): readonly ComponentDef[] =>
  */
 export const isFlat = (which: Which): boolean =>
   which.transform.Position === Transform2d.Position;
-
-/**
- * What a system of this module requires from an app, and what one that draws
- * from a bundle requires in addition.
- *
- * @internal
- */
-export type Needs = Frame | Scene | Time | World;

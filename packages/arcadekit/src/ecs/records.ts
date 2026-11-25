@@ -12,7 +12,7 @@ export const NOT_PLACED = -1;
 /** In a `Saved`, the row value that means "every row". */
 export const WHOLE = -1;
 
-/** The single instance of a singleton that a world holds. */
+/** The single instance of a singleton that a world holds. @internal */
 export interface Single {
   readonly def: ComponentDef;
   /** One row. */
@@ -35,7 +35,7 @@ export interface Single {
   hashedAt: number;
 }
 
-/** What a transaction saved before a write: one row, or whole columns. */
+/** What a transaction saved before a write: one row, or whole columns. @internal */
 export interface Saved {
   readonly cols: Columns;
   /** Whose columns they are: a rollback notes that it wrote them. */

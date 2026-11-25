@@ -415,7 +415,7 @@ describe("the Random service", () => {
         return snapshot(app);
       });
     const replayOf = (recording: Journal.Recording) => {
-      // Through text and back, as a save file would be.
+      // Through bytes and back, as a save file would be.
       const loaded = Journal.decode(Journal.encode(recording));
       if (Exit.isFailure(loaded)) {
         throw new Error("the log did not survive being written down");

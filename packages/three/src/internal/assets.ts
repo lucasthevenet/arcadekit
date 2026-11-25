@@ -4,14 +4,8 @@ import type { Scope } from "effect";
 import { LoadingManager, SRGBColorSpace, Texture } from "three";
 
 import type { TextureOptions } from "../Assets";
+import type { Entries } from "../Three";
 import type { Kept } from "./holdings";
-
-/**
- * The assets of a bundle, whatever their types.
- *
- * @internal
- */
-export type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 /**
  * What a system builds from a bundle's assets: available while the app has the

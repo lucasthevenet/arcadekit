@@ -53,9 +53,13 @@
  * Each part is also a module of its own, which gives the same exports:
  * `@arcadekit/three/Scene`, `Renderer`, `Assets`, `Instances` and `Objects`.
  */
+import type * as Assets from "arcadekit/Assets";
 import type { ComponentDef, RequiredOf } from "arcadekit/ecs";
+import type { Frame, Time, World } from "arcadekit/Services";
 import type * as Transform2d from "arcadekit/Transform2d";
 import type * as Transform3d from "arcadekit/Transform3d";
+
+import type { Scene } from "./Scene";
 
 export { Scene } from "./Scene";
 export type { SceneShape } from "./Scene";
@@ -130,26 +134,57 @@ export interface Which {
   readonly snap?: number;
 }
 
+type PositionName = Which["transform"]["Position"]["name"];
+
+/** The positions that one of the components `of` may be doesn't require. */
+type Missing<O> = O extends unknown
+  ? Exclude<PositionName, RequiredOf<O extends readonly (infer D)[] ? D : O>>
+  : never;
+
 /**
- * What `Three.instances` and `Three.objects` are told of a kind whose `of`
- * doesn't require its transform's `Position`, and `unknown` for one that
- * does. A transform typed as either module needs both positions, since the
- * compiler can't tell which it is. A component whose requirements the
- * compiler only knows as `string` is not checked.
+ * The transform a kind of `of` may be drawn from: the module whose `Position`
+ * `of` requires, whichever of the components of its type it is. It is the
+ * type of `transform` in `Three.instances` and `Three.objects`. A helper that
+ * makes kinds types its own `transform` with it, so that it can't pair a
+ * component with the other module:
+ *
+ *   const crowd = <const O extends Three.Which["of"]>(
+ *     name: string,
+ *     of: O,
+ *     transform: Three.TransformOf<O>,
+ *   ) => Three.instances(name, { of, transform, geometry, material })
+ *
+ *   crowd("game/Rocks", Rock, Transform3d)
+ *   crowd("game/Lifted", Rock, Transform2d)   // doesn't compile
+ *
+ * A helper that takes `of` and `transform` as two unions doesn't compile:
+ * the compiler can't tell that a call pairs a 3D marker with `Transform2d`,
+ * whose entities, spawned with the marker alone, are never drawn. A
+ * component whose requirements the compiler only knows as `string` is not
+ * checked.
  *
  * @category Type-level
  */
-export type Drawn<O, T> =
-  RequiredOf<O extends readonly (infer D)[] ? D : O> extends infer Required
-    ? string extends Required
-      ? unknown
-      : [T] extends [
-            { readonly Position: { readonly name: infer P extends string } },
-          ]
-        ? [P] extends [Required]
-          ? unknown
-          : {
-              readonly of: `The kind's "of" doesn't require "${P}", so an entity spawned without it is never drawn. Define its component with requires: [Position], the Position of the kind's transform.`;
-            }
-        : unknown
-    : never;
+export type TransformOf<O> = Which["transform"] & {
+  readonly Position: {
+    readonly name: [Exclude<PositionName, Missing<O>>] extends [never]
+      ? `The kind's "of" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Define its component with requires: [Position], the Position of the kind's transform.`
+      : Exclude<PositionName, Missing<O>>;
+  };
+};
+
+/**
+ * The assets of a bundle, whatever their types: what a look built `from` a
+ * bundle is given, in `Three.instances` and `Three.objects`.
+ *
+ * @category Type-level
+ */
+export type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
+
+/**
+ * What a system of `Three.instances` or `Three.objects` requires from an app.
+ * One that builds its look `from` a bundle requires `Assets.Store` too.
+ *
+ * @category Type-level
+ */
+export type Needs = Frame | Scene | Time | World;

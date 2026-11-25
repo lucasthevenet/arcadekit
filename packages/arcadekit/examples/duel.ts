@@ -286,15 +286,15 @@ const program = Effect.gen(function* () {
   yield* Console.log(`end -> ${end}`);
 
   // The recording holds the moves that were accepted, the world's hash after
-  // every tick, and how long each tick was. Written out as text and read
+  // every tick, and how long each tick was. Written out as bytes and read
   // back, it reproduces this game in a fresh one, which checks itself against
   // those hashes as it goes. The replay installs only the rules, so it is
   // silent.
   const saved = Journal.encode(app.record());
-  yield* Console.log(`saved: ${saved}`);
+  yield* Console.log(`saved: ${saved.byteLength} bytes`);
   // A fresh app, held in a scope that closes it when the replay is over.
-  const replay = Effect.fnUntraced(function* (text: string) {
-    const loaded = Journal.decode(text);
+  const replay = Effect.fnUntraced(function* (bytes: Uint8Array) {
+    const loaded = Journal.decode(bytes);
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
@@ -316,16 +316,25 @@ const program = Effect.gen(function* () {
     );
   }, Effect.scoped);
   yield* Console.log(`replayed -> ${yield* replay(saved)}`);
+  // A payload is in its JSON form among the bytes, which someone edits in
+  // place.
+  const edited = (from: string, to: string): Uint8Array => {
+    const bytes = Buffer.from(saved);
+    bytes.write(to, bytes.indexOf(from));
+    return bytes;
+  };
   // Someone edits the save so that a player who does not exist passes.
   yield* Console.log(
-    `edited save -> ${yield* replay(saved.replace('"player":1', '"player":3'))}`
+    `edited save -> ${yield* replay(edited('"player":1', '"player":3'))}`
   );
   // Someone edits it so that the Knight's first strike lands on the Knight.
   // The rules allow that move, so nothing is refused: the hash gives it away.
   yield* Console.log(
-    `legal but altered -> ${yield* replay(saved.replace('"target":1', '"target":0'))}`
+    `legal but altered -> ${yield* replay(edited('"target":1', '"target":0'))}`
   );
-  yield* Console.log(`garbage -> ${yield* replay("<html>")}`);
+  yield* Console.log(
+    `garbage -> ${yield* replay(new TextEncoder().encode("<html>"))}`
+  );
 
   // A save is the game as it stands, as bytes. Loaded into the rules alone,
   // it is the same fight at the same point: no replay, and no setup run.

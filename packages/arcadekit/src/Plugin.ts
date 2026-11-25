@@ -312,7 +312,7 @@ type GatheredHands<P extends readonly Any[]> = WalkHands<
  * Duplicate system, handler and plugin names reachable from `plugins`, plus
  * the caller's own systems and handlers. A shared dependency is counted once.
  *
- * @internal
+ * @category Type-level
  */
 export type Clashes<
   P extends readonly Any[],

@@ -528,17 +528,17 @@ describe("a session joined to a transport", () => {
   });
 });
 
-describe("a transport over text", () => {
-  it("sends a message as text, and reads the texts that are messages", () => {
-    const sent: string[] = [];
-    let deliver: (text: string) => void = () => {};
+describe("a transport over a wire", () => {
+  it("sends a message as bytes, and reads the bytes that are messages and the text that is a notice", () => {
+    const sent: Uint8Array[] = [];
+    let deliver: (data: string | Uint8Array) => void = () => {};
     let listening = 0;
-    const transport = Transport.text({
-      send: (text) => {
-        sent.push(text);
+    const transport = Transport.fromWire({
+      send: (bytes) => {
+        sent.push(bytes);
       },
-      listen(onText) {
-        deliver = onText;
+      listen(onData) {
+        deliver = onData;
         listening++;
         return () => {
           listening--;
@@ -548,22 +548,25 @@ describe("a transport over text", () => {
     transport.send(message("ada", 3, 2));
     expect(sent).toEqual([Message.encode(message("ada", 3, 2))]);
     deliver(Message.encode(message("grace", 0)));
+    deliver(Message.encodeNotice({ left: "edsger" }));
     deliver("not a message");
-    deliver(JSON.stringify({ from: "grace", tick: -1, actions: [] }));
+    deliver(JSON.stringify(message("grace", 2)));
+    deliver(new Uint8Array([1, 2, 3]));
     deliver(Message.encode(message("grace", 1, 5)));
-    // What is not a message is dropped, and counted.
+    // What is neither is dropped, and counted.
     expect(transport.receive()).toEqual([
       message("grace", 0),
+      { left: "edsger" },
       message("grace", 1, 5),
     ]);
-    expect(transport.dropped).toBe(2);
+    expect(transport.dropped).toBe(3);
     expect(transport.receive()).toEqual([]);
     expect(listening).toBe(1);
     transport.close();
     expect(listening).toBe(0);
     // Closed, it says so, in place of a game that waits for ever.
     expect(() => transport.receive()).toThrow(
-      /A transport over text was used after it was closed/u
+      /A transport over a wire was used after it was closed/u
     );
     expect(() => transport.send(message("ada", 4))).toThrow(
       /used after it was closed/u
@@ -613,7 +616,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           ada.send(message("ada", 0, 7));
           grace.send(message("grace", 0));
           // Whatever else is posted under the name is not a message.
-          stranger.postMessage({ not: "text" });
+          stranger.postMessage({ not: "a message" });
           stranger.postMessage("nor is this");
           yield* Effect.promise(() => later(20));
           expect(grace.receive()).toEqual([message("ada", 0, 7)]);
@@ -626,7 +629,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
       )
     );
     await later(20);
-    // As text, as any wire would carry it.
+    // Messages as bytes and notices as text, as any wire would carry them.
     expect(heard).toEqual([
       Message.encodeNotice({ joined: "ada" }),
       Message.encodeNotice({ joined: "grace" }),

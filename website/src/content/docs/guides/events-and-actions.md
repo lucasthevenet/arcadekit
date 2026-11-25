@@ -174,7 +174,7 @@ Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app
 
 Both accept the issuer as a third argument, for a program that relays actions on someone else's behalf, such as a server for its clients: `app.enqueueByName(name, json, client)`. Don't pass it on an app in a session, where each peer's actions carry that peer's own name.
 
-`app.actionLog` holds every action from outside the simulation, in JSON form, with checkpoints of the world's hash among them. `app.record()` returns the log with how long each tick was. `Journal.encode` and `Journal.decode` convert that recording to text and back. See [replays](replays.md).
+`app.actionLog` holds every action from outside the simulation, in JSON form, with checkpoints of the world's hash among them. `app.record()` returns the log with how long each tick was. `Journal.encode` and `Journal.decode` convert that recording to bytes and back. See [replays](replays.md).
 
 ## Read more
 

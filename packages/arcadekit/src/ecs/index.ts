@@ -57,6 +57,6 @@ export type { SnapshotProblem } from "./snapshot";
 export { RemovedReader } from "./changes";
 export type { ChangeKind, SavedChanges } from "./changes";
 export { CommandBuffer } from "./commands";
-export { QueryView } from "./query";
+export { PointingView, QueryView } from "./query";
 export type { EntityColumn, QuerySpec, SparseColumns, Terms } from "./query";
 export { World } from "./world";

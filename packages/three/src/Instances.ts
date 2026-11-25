@@ -18,10 +18,8 @@ import type * as Color from "arcadekit/Color";
 import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
-import type { Entries } from "./internal/assets";
 import * as internal from "./internal/instances";
-import type { Needs } from "./internal/kind";
-import type { Drawn, Which } from "./Three";
+import type { Entries, Needs, TransformOf, Which } from "./Three";
 
 /**
  * How an instance looks: its mesh's geometry and material.
@@ -204,24 +202,20 @@ export interface InstancesFromOptions<
 export function instances<
   B extends Entries,
   const O extends Which["of"],
-  T extends Which["transform"],
   L extends Look = Look,
 >(
   name: string,
   options: InstancesFromOptions<B, L> & {
     readonly of: O;
-    readonly transform: T;
-  } & Drawn<O, T>
+    readonly transform: TransformOf<O>;
+  }
 ): System.System<never, Needs | Assets.Store, string, "frame">;
-export function instances<
-  const O extends Which["of"],
-  T extends Which["transform"],
->(
+export function instances<const O extends Which["of"]>(
   name: string,
   options: InstancesOptions & {
     readonly of: O;
-    readonly transform: T;
-  } & Drawn<O, T>
+    readonly transform: TransformOf<O>;
+  }
 ): System.System<never, Needs, string, "frame">;
 // One body for both: the system of a look that is there asks for no store of
 // assets, which the second signature says.

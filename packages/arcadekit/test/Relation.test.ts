@@ -63,8 +63,31 @@ const expectNoDangling = (world: EcsWorld): void => {
       expect(world.sources(target, relation)).toEqual(
         sources.toSorted((a, b) => entityIndex(a) - entityIndex(b))
       );
+      expect(pointing(world, relation, target)).toEqual(sources);
     }
   }
+};
+
+/** Who `pointingAt` visits, with `each` and then with `eachChunk`, which must agree. */
+const pointing = (
+  world: EcsWorld,
+  relation: RelationDef,
+  target: Entity
+): Entity[] => {
+  const narrowed = world.view(Query.all(relation)).pointingAt(relation, target);
+  const seen: Entity[] = [];
+  narrowed.each((row, entity) => {
+    expect(row.target).toBe(target);
+    seen.push(entity);
+  });
+  const chunked: Entity[] = [];
+  narrowed.eachChunk((start, end, _, ids) => {
+    for (let i = start; i < end; i++) {
+      chunked.push(ids[i]!);
+    }
+  });
+  expect(chunked).toEqual(seen);
+  return seen;
 };
 
 describe("a relation", () => {
@@ -405,6 +428,178 @@ describe("a relation", () => {
     world.rollback();
     expect(world.hash()).toBe(before);
     expect(world.sources(a, ChildOf)).toEqual([child]);
+  });
+});
+
+describe("a view narrowed to who points at a target", () => {
+  it("visits them with their components, in the order the view visits them", () => {
+    const world = new EcsWorld();
+    const [parent, other] = [body(world), body(world)];
+    // In two tables, spawned in turn: the order of index is not the order of visit.
+    const children = [0, 1, 2, 3, 4, 5].map((n) =>
+      n % 2 === 0
+        ? world.spawn(Body.of({ x: n }), ChildOf.of({ target: parent }))
+        : world.spawn(
+            Body.of({ x: n }),
+            ChildOf.of({ target: parent }),
+            Owes.of({ target: other, amount: n })
+          )
+    );
+    const stranger = childOf(world, other);
+    const Children = Query.all(Body, ChildOf).pipe(Query.writes(Body));
+    const view = world.view(Children);
+
+    const seen: Entity[] = [];
+    view.pointingAt(ChildOf, parent).each((row, child, entity) => {
+      expect(child.target).toBe(parent);
+      row.x += 100;
+      seen.push(entity);
+    });
+    const [c0, c1, c2, c3, c4, c5] = children;
+    expect(seen).toEqual([c0, c2, c4, c1, c3, c5]);
+    expect(seen).toEqual(
+      view.entities().filter((e) => world.get(e, ChildOf)?.target === parent)
+    );
+    expect(seen.toSorted((a, b) => entityIndex(a) - entityIndex(b))).toEqual(
+      world.sources(parent, ChildOf)
+    );
+    expect(children.map((child) => world.get(child, Body)!.x)).toEqual([
+      100, 101, 102, 103, 104, 105,
+    ]);
+    expect(world.get(stranger, Body)!.x).toBe(0);
+
+    // One run per table, of the rows that point at the target.
+    const runs: [number, number][] = [];
+    view.pointingAt(ChildOf, other).eachChunk((start, end, row, _, ids) => {
+      runs.push([start, end]);
+      expect(ids[start]).toBe(stranger);
+      expect(row.x[start]).toBe(0);
+    });
+    expect(runs).toEqual([[3, 4]]);
+
+    // The relation is one of the query's.
+    view.pointingAt(
+      // @ts-expect-error Owes is not a term of the query
+      Owes,
+      other
+    );
+    view.pointingAt(
+      // @ts-expect-error only a relation points
+      Body,
+      other
+    );
+    world
+      .view(Query.all(Body, Owes))
+      .pointingAt(Owes, other)
+      .each((_, owes) => {
+        expect(owes.amount % 2).toBe(1);
+      });
+  });
+
+  it("keeps to the rest of the query, and visits nobody for a target nobody points at or that is gone", () => {
+    const world = new EcsWorld();
+    const hand = body(world);
+    const cards = [0, 1, 2, 3].map(() =>
+      world.spawn(Body, HeldBy.of({ target: hand }))
+    );
+    world.add(cards[1]!, Targets.of({ target: hand }));
+    // Kept in a sparse set, and narrowed again by another.
+    const Untargeted = Query.all(HeldBy).pipe(Query.without(Targets));
+    const seen: Entity[] = [];
+    world
+      .view(Untargeted)
+      .pointingAt(HeldBy, hand)
+      .each((_, entity) => seen.push(entity));
+    expect(seen).toEqual([cards[0], cards[2], cards[3]]);
+    expect(pointing(world, HeldBy, cards[0]!)).toEqual([]);
+    expect(pointing(world, Owes, hand)).toEqual([]);
+
+    // A target that is gone, whose index another entity has now.
+    const lender = body(world);
+    world.despawn(lender);
+    const heir = body(world);
+    expect(entityIndex(heir)).toBe(entityIndex(lender));
+    const debtor = world.spawn(Body, Owes.of({ target: heir, amount: 1 }));
+    expect(pointing(world, Owes, lender)).toEqual([]);
+    expect(pointing(world, Owes, heir)).toEqual([debtor]);
+  });
+
+  it("nests, in itself and in the view it narrows", () => {
+    const world = new EcsWorld();
+    const root = body(world);
+    const kids = [0, 1].map(() => childOf(world, root));
+    const grandkids = kids.map((kid) => [
+      childOf(world, kid),
+      childOf(world, kid),
+    ]);
+    const view = world.view(Query.all(ChildOf));
+    const tree: Entity[][] = [];
+    view.pointingAt(ChildOf, root).each((_, kid) => {
+      const below: Entity[] = [];
+      view
+        .pointingAt(ChildOf, kid)
+        .each((__, grandkid) => below.push(grandkid));
+      tree.push(below);
+    });
+    expect(tree).toEqual(grandkids);
+    let all = 0;
+    view.pointingAt(ChildOf, root).each(() => {
+      view.each(() => all++);
+    });
+    expect(all).toBe(12);
+  });
+
+  it("is refused to a change query", () => {
+    const world = new EcsWorld();
+    const parent = body(world);
+    childOf(world, parent);
+    const view = world.view(
+      Query.all(ChildOf).pipe(Query.changed(Body)),
+      "reader"
+    );
+    expect(() => view.pointingAt(ChildOf, parent)).toThrow(
+      /pointingAt\(\) was called on a change query/
+    );
+    expect(view.count()).toBe(1);
+  });
+
+  it("follows a rewind, which puts back who points at whom as it was captured", () => {
+    const world = new EcsWorld({ seed: 3 });
+    const [a, b] = [body(world), body(world)];
+    const kids = [0, 1, 2].map(() => childOf(world, a));
+    world.add(kids[0]!, Owes.of({ target: b, amount: 1 }));
+    world.hash();
+    const moment = world._capture();
+    const before = {
+      a: pointing(world, ChildOf, a),
+      b: pointing(world, ChildOf, b),
+      owed: pointing(world, Owes, b),
+    };
+    // Spawned, added, moved and removed after the moment.
+    const late = childOf(world, b);
+    world.add(kids[1]!, ChildOf.of({ target: b }));
+    world.remove(kids[2]!, ChildOf);
+    world.remove(kids[0]!, Owes);
+    world.spawn(Body, Owes.of({ target: b, amount: 2 }));
+    // A relation nobody had at the moment.
+    const card = world.spawn(Body, HeldBy.of({ target: a }));
+    expect(pointing(world, HeldBy, a)).toEqual([card]);
+    expect(pointing(world, ChildOf, b)).toEqual([late, kids[1]]);
+    expect(world.hash()).toBe(world._fullHash());
+
+    world._rewind(moment, []);
+    expect({
+      a: pointing(world, ChildOf, a),
+      b: pointing(world, ChildOf, b),
+      owed: pointing(world, Owes, b),
+    }).toEqual(before);
+    expect(before.a).toEqual([kids[2], kids[1], kids[0]]);
+    expect(pointing(world, HeldBy, a)).toEqual([]);
+    expect(world.hash()).toBe(world._fullHash());
+    // And the world goes on from there.
+    world.add(kids[2]!, ChildOf.of({ target: b }));
+    expect(pointing(world, ChildOf, b)).toEqual([kids[2]]);
+    expect(world.hash()).toBe(world._fullHash());
   });
 });
 

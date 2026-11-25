@@ -79,8 +79,9 @@ import {
   Table,
   byName,
   makeColumns,
+  nodeOf,
   readRow,
-  tableKey,
+  tableNode,
   writeRow,
 } from "./table";
 
@@ -223,27 +224,6 @@ const ahead = (
 };
 
 /**
- * Adds to a spawn's components, by id, what its inputs require and it doesn't
- * give. Of two inputs that require one component, the later's value is
- * taken.
- */
-const fill = (
-  byId: Map<number, ComponentInput>,
-  inputs: readonly ComponentInput[]
-): void => {
-  const given = new Set(byId.keys());
-  for (const input of inputs) {
-    for (const required of (isComponentDef(input) ? input : input.def)
-      .requires) {
-      const id = (isComponentDef(required) ? required : required.def).id;
-      if (!given.has(id)) {
-        byId.set(id, required);
-      }
-    }
-  }
-};
-
-/**
  * A world of entities and their components: the tables and sparse sets that
  * store them, its singletons, its change logs and its random generator. An
  * app holds one, and its systems reach it through the `World` service.
@@ -291,7 +271,7 @@ export class World {
   get _now(): number {
     return this.version.now;
   }
-  private readonly tableByKey = new Map<string, Table>();
+  private readonly tableRoot = tableNode();
   private readonly sparseById = new Map<number, SparseSet>();
   private readonly sparseList: SparseSet[] = [];
   private views = new WeakMap<QuerySpec, QueryView>();
@@ -302,6 +282,8 @@ export class World {
   private readonly shapes: number[] = [];
   /** The sparse sets in order of component name, rebuilt when one is created. */
   private sparseByName: SparseSet[] | undefined;
+  /** Indexed by component id: where in a spawn's inputs it may be, for `_place`. */
+  private readonly placedAt: number[] = [];
   /** Scratch space for `hash`: one state per member of a sparse set. */
   private memberStates = new Int32Array(64);
 
@@ -535,31 +517,45 @@ export class World {
   /** @internal */
   _place(entity: Entity, inputs: readonly ComponentInput[]): void {
     const index = entityIndex(entity);
+    const placing: ComponentInput[] = [];
+    const tableDefs: ComponentDef[] = [];
     // Later inputs win when the same component is given twice.
-    const byId = new Map<number, ComponentInput>();
     let requiring = false;
-    for (const input of inputs) {
-      const def = isComponentDef(input) ? input : input.def;
-      byId.set(def.id, input);
-      if (def.requires.length > 0) {
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i]!;
+      this.placeInput(placing, input, 0);
+      if ((isComponentDef(input) ? input : input.def).requires.length > 0) {
         requiring = true;
       }
     }
+    // What they require and none gives: of two that require one, the later's value.
     if (requiring) {
-      fill(byId, inputs);
-    }
-    const tableDefs: ComponentDef[] = [];
-    for (const input of byId.values()) {
-      const def = isComponentDef(input) ? input : input.def;
-      if (def.storage === "table") {
-        tableDefs.push(def);
+      const given = placing.length;
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i]!;
+        for (const required of (isComponentDef(input) ? input : input.def)
+          .requires) {
+          this.placeInput(placing, required, given);
+        }
       }
     }
-    tableDefs.sort((a, b) => a.id - b.id);
+    for (let i = 0; i < placing.length; i++) {
+      const input = placing[i]!;
+      const def = isComponentDef(input) ? input : input.def;
+      // Kept in order of id as they come: `sort` measured half again a spawn
+      // and despawn.
+      if (def.storage === "table") {
+        let at = tableDefs.length;
+        for (; at > 0 && tableDefs[at - 1]!.id > def.id; at--) {
+          tableDefs[at] = tableDefs[at - 1]!;
+        }
+        tableDefs[at] = def;
+      }
+    }
     const table = this.tableFor(tableDefs);
     const row = table.push(entity);
     let related: ComponentValue[] | undefined;
-    for (const input of byId.values()) {
+    for (const input of placing) {
       const def = isComponentDef(input) ? input : input.def;
       const value = isComponentDef(input) ? undefined : input.value;
       if (def.storage === "table") {
@@ -580,6 +576,30 @@ export class World {
     if (related !== undefined) {
       this.placeRelations(entity, related);
     }
+  }
+
+  /**
+   * Puts an input in `placing`, or in place of the one of the same component
+   * that is there, when that one is at `from` or later.
+   */
+  private placeInput(
+    placing: ComponentInput[],
+    input: ComponentInput,
+    from: number
+  ): void {
+    const { id } = isComponentDef(input) ? input : input.def;
+    const at = this.placedAt[id];
+    if (at !== undefined && at < placing.length) {
+      const there = placing[at]!;
+      if ((isComponentDef(there) ? there : there.def).id === id) {
+        if (at >= from) {
+          placing[at] = input;
+        }
+        return;
+      }
+    }
+    this.placedAt[id] = placing.length;
+    placing.push(input);
   }
 
   /** Records the relations an entity was spawned with. */
@@ -666,20 +686,25 @@ export class World {
    * on top.
    */
   private orphan(index: number, pending: Entity[]): void {
-    const doomed: Entity[] = [];
+    let doomed: Entity[] | undefined;
     for (const relation of this.relationList) {
+      if (!relation.pointedAt(index)) {
+        continue;
+      }
       // Each is unlinked as it loses the relation, or is despawned.
       for (const source of relation.sources(index)) {
         const holder = makeEntity(source, this.gens[source]!);
         if (relation.def.relation === "despawn") {
-          doomed.push(holder);
+          (doomed ??= []).push(holder);
         } else {
           this.removeOne(holder, relation.def);
         }
       }
     }
-    for (let i = doomed.length - 1; i >= 0; i--) {
-      pending.push(doomed[i]!);
+    if (doomed !== undefined) {
+      for (let i = doomed.length - 1; i >= 0; i--) {
+        pending.push(doomed[i]!);
+      }
     }
   }
 
@@ -1072,7 +1097,8 @@ export class World {
   /**
    * Returns the entities that point at `target` with a relation, in order of
    * index, such as a parent's children. Finding them doesn't look at any other
-   * entity.
+   * entity. To visit them with their components, narrow a view with
+   * `QueryView.pointingAt`.
    */
   sources(target: Entity, def: RelationDef): Entity[] {
     const relation = this.relations[def.id];
@@ -1082,6 +1108,11 @@ export class World {
     return relation
       .sources(entityIndex(target))
       .map((source) => makeEntity(source, this.gens[source]!));
+  }
+
+  /** @internal A relation's index of which entities point at which, if one is stored. */
+  _relation(def: ComponentDef): RelationIndex | undefined {
+    return this.relations[def.id];
   }
 
   /** Returns a relation's index of which entities point at which, creating it if needed. */
@@ -1910,7 +1941,8 @@ export class World {
     this.alive = 0;
     // Where their data is.
     this.tables.length = 0;
-    this.tableByKey.clear();
+    this.tableRoot.table = undefined;
+    this.tableRoot.next.clear();
     this.sparseById.clear();
     this.sparseList.length = 0;
     this.sparseByName = undefined;
@@ -2138,8 +2170,8 @@ export class World {
           }
         }
         const sorted = defs.toSorted((a, b) => a.id - b.id);
-        const key = tableKey(sorted);
-        if (this.tableByKey.has(key)) {
+        const node = nodeOf(this.tableRoot, sorted);
+        if (node.table !== undefined) {
           throw corrupt("it holds two tables for the same components");
         }
         let capacity = 16;
@@ -2153,7 +2185,7 @@ export class World {
           capacity
         );
         this.tables.push(table);
-        this.tableByKey.set(key, table);
+        node.table = table;
         return {
           entities: table.entities,
           placed: () => {
@@ -2691,7 +2723,7 @@ export class World {
     }
     if (cut < tables.length) {
       for (let t = cut; t < tables.length; t++) {
-        this.tableByKey.delete(tableKey(tables[t]!.defs));
+        nodeOf(this.tableRoot, tables[t]!.defs).table = undefined;
       }
       tables.length = cut;
       for (const table of tables) {
@@ -2710,7 +2742,7 @@ export class World {
       const back = t >= cut;
       if (back) {
         tables.push(table);
-        this.tableByKey.set(tableKey(table.defs), table);
+        nodeOf(this.tableRoot, table.defs).table = table;
         table.addEdges.clear();
         table.removeEdges.clear();
       }
@@ -2882,8 +2914,8 @@ export class World {
   }
 
   private tableFor(sortedDefs: readonly ComponentDef[]): Table {
-    const key = tableKey(sortedDefs);
-    let table = this.tableByKey.get(key);
+    const node = nodeOf(this.tableRoot, sortedDefs);
+    let { table } = node;
     if (table === undefined) {
       for (const def of sortedDefs) {
         this.refuseSingle(def);
@@ -2891,7 +2923,7 @@ export class World {
       }
       table = new Table(this.tables.length, sortedDefs, this.version);
       this.tables.push(table);
-      this.tableByKey.set(key, table);
+      node.table = table;
     }
     return table;
   }

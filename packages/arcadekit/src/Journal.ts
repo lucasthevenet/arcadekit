@@ -4,7 +4,7 @@
  * that plays a recording again.
  *
  *   const recording = app.record()                 // the game so far
- *   const text = Journal.encode(recording)         // for a file or the network
+ *   const bytes = Journal.encode(recording)        // for a file or the network
  *
  *   // The same game, begun the same way, and checked as it is played.
  *   const again = yield* Journal.replay(recording, game)
@@ -18,14 +18,15 @@
  * doesn't match, or at its end on a world with another hash than the
  * recorded game ended on.
  */
-import { Brand, Cause, Data, Effect, Exit, Schema } from "effect";
-import { Base64 } from "effect/encoding";
+import { Brand, Cause, Data, Effect, Exit, Schema, SchemaIssue } from "effect";
+import { SchemaBinary } from "effect/encoding";
 
 import * as Action from "./Action";
 import * as App from "./App";
 import type { Store } from "./ecs/store";
 import type { World } from "./ecs/world";
 import { partsOf } from "./internal/parts";
+import { Layout } from "./internal/recording";
 import { GameTime } from "./internal/stage";
 import type * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -117,109 +118,104 @@ const originHolds = (recording: {
   );
 };
 
-const Tick = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-const Hash = Schema.Int.check(
-  Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
+const RecordingSchema = Layout.check(
+  Schema.makeFilter((recording) => {
+    const origin = originHolds(recording);
+    if (origin !== true) {
+      return origin;
+    }
+    if (recording.end < recording.start) {
+      return "it ends before it begins";
+    }
+    const { deltas } = recording;
+    if (
+      recording.end > recording.start &&
+      deltas[0]?.tick !== recording.start
+    ) {
+      return "its first run of deltas doesn't begin where it does";
+    }
+    for (let i = 1; i < deltas.length; i++) {
+      if (
+        deltas[i]!.tick <= deltas[i - 1]!.tick ||
+        deltas[i]!.tick >= recording.end
+      ) {
+        return "its runs of deltas are out of order, or past its end";
+      }
+    }
+    for (let i = 0; i < recording.log.length; i++) {
+      const { tick } = recording.log[i]!;
+      if (
+        tick < recording.start ||
+        tick > recording.end ||
+        (i > 0 && tick < recording.log[i - 1]!.tick)
+      ) {
+        return "its log is out of order, or outside it";
+      }
+    }
+    return true;
+  })
 );
 
-const RecordingSchema = Schema.fromJsonString(
-  Schema.Struct({
-    seed: Schema.optionalKey(Tick),
-    save: Schema.optionalKey(Schema.Uint8ArrayFromBase64),
-    start: Tick,
-    end: Tick,
-    endHash: Hash.annotateKey({
-      messageMissingKey:
-        "older format: it holds no endHash, the hash its game ended on, which this version of arcadekit replays to",
-    }),
-    deltas: Schema.Array(Schema.Struct({ tick: Tick, delta: Schema.Finite })),
-    log: Schema.Array(
-      Schema.Union([
-        Schema.Struct({
-          tick: Tick,
-          name: Schema.String,
-          payload: Schema.Unknown,
-          from: Schema.optionalKey(Schema.String),
-          queued: Schema.optionalKey(Schema.Literal(true)),
-          refused: Schema.optionalKey(Schema.String),
-        }),
-        Schema.Struct({
-          tick: Tick,
-          hash: Hash,
-        }),
-      ])
-    ),
-  }).check(
-    Schema.makeFilter((recording) => {
-      const origin = originHolds(recording);
-      if (origin !== true) {
-        return origin;
-      }
-      if (recording.end < recording.start) {
-        return "it ends before it begins";
-      }
-      const { deltas } = recording;
-      if (
-        recording.end > recording.start &&
-        deltas[0]?.tick !== recording.start
-      ) {
-        return "its first run of deltas doesn't begin where it does";
-      }
-      for (let i = 1; i < deltas.length; i++) {
-        if (
-          deltas[i]!.tick <= deltas[i - 1]!.tick ||
-          deltas[i]!.tick >= recording.end
-        ) {
-          return "its runs of deltas are out of order, or past its end";
-        }
-      }
-      for (let i = 0; i < recording.log.length; i++) {
-        const { tick } = recording.log[i]!;
-        if (
-          tick < recording.start ||
-          tick > recording.end ||
-          (i > 0 && tick < recording.log[i - 1]!.tick)
-        ) {
-          return "its log is out of order, or outside it";
-        }
-      }
-      return true;
-    })
-  )
-);
+const codec = SchemaBinary.toCodec(RecordingSchema);
+
+/** The first byte of a recording that an earlier arcadekit wrote as JSON. */
+const OPEN_BRACE = 0x7b;
 
 /**
- * Encodes a recording as text, for a file or the network. A recording made
- * since a save holds the save, which is most of its text.
+ * Encodes a recording in bytes, for a file or the network. A recording made
+ * since a save holds the save, as the bytes `Save.encode` writes, which are
+ * most of it. The bytes are the recording's own, in a buffer of their own.
+ *
+ * **Gotchas**
+ *
+ * It throws when a payload in the log has no JSON form: a bigint, or no
+ * payload at all, given to `app.enqueueByName` under a name the game doesn't
+ * have.
  *
  * @category Codecs
  */
-export const encode = (recording: Recording): string =>
-  JSON.stringify(
-    recording.save === undefined
-      ? recording
-      : { ...recording, save: Base64.encode(Save.encode(recording.save)) }
+export const encode = (recording: Recording): Uint8Array<ArrayBuffer> => {
+  const { save, ...rest } = recording;
+  const bytes = Schema.encodeExit(codec)(
+    save === undefined ? rest : { ...rest, save: Save.encode(save) }
   );
+  if (Exit.isFailure(bytes)) {
+    throw new Error(
+      "Journal.encode can't write this recording: a payload in its log has no JSON form. An action enqueued by a name the game doesn't have is logged with the payload it was given.",
+      { cause: Cause.squash(bytes.cause) }
+    );
+  }
+  return bytes.value.slice();
+};
 
 /**
- * Decodes a recording from text, and fails with a `Schema.SchemaError` on
- * text that isn't one. It checks the recording's own structure: that it says
- * how its game began, that a save it holds decodes and was made at the tick
- * the recording begins at, and that its log and its runs of deltas are in
- * order and within it. A replay checks the rest: each payload against its
+ * Decodes a recording from bytes, and fails with a `Schema.SchemaError` on
+ * bytes that aren't one. It checks the recording's own structure: that it
+ * says how its game began, that a save it holds decodes and was made at the
+ * tick the recording begins at, and that its log and its runs of deltas are
+ * in order and within it. A replay checks the rest: each payload against its
  * action's schema, and each checkpoint and its `endHash` against the world.
  *
- * A recording that an earlier version of arcadekit wrote, with no `endHash`,
- * is refused with a message that begins `older format`.
+ * A recording that an earlier version of arcadekit wrote as text is refused,
+ * with a message that begins `older format`.
  *
  * @category Codecs
  */
 export const decode = (
-  text: string
+  bytes: Uint8Array
 ): Exit.Exit<Recording, Schema.SchemaError> => {
-  const read = Schema.decodeExit(RecordingSchema)(text);
+  const read = Schema.decodeUnknownExit(codec)(bytes);
   if (Exit.isFailure(read)) {
-    return Exit.failCause(read.cause);
+    return bytes[0] === OPEN_BRACE
+      ? Exit.fail(
+          new Schema.SchemaError(
+            new SchemaIssue.InvalidValue({
+              message:
+                "older format: it was written as text by an earlier arcadekit, and this version reads a recording in bytes",
+            })
+          )
+        )
+      : Exit.failCause(read.cause);
   }
   const { save, seed, ...played } = read.value;
   if (save === undefined) {

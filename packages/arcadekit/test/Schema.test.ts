@@ -1,4 +1,5 @@
-import { Cause, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Option, Predicate, Schema } from "effect";
+import { SchemaBinary } from "effect/encoding";
 import { assert, describe, expect, it } from "vitest";
 
 import { entityOf } from "../src/ecs/component";
@@ -16,6 +17,9 @@ import {
   System,
   World,
 } from "../src/index";
+import type { Entity } from "../src/index";
+import { Layout } from "../src/internal/recording";
+import { Message } from "../src/net/index";
 
 const Health = Component.define("sc/Health", { hp: Field.i32 });
 
@@ -481,6 +485,13 @@ describe("events with a schema", () => {
   });
 });
 
+const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
+  if (Exit.isFailure(exit)) {
+    throw Cause.squash(exit.cause);
+  }
+  return exit.value;
+};
+
 describe("saving and replaying", () => {
   const record = () =>
     withApp(game, ({ app, world, target }) => {
@@ -493,44 +504,52 @@ describe("saving and replaying", () => {
       app.dispatch(Rename, { name: "x" });
       app.tick(1);
       return {
-        text: Journal.encode(app.record()),
+        bytes: Journal.encode(app.record()),
         hp: world.get(target, Health)!.hp,
       };
     });
 
-  /** A log entry as its JSON has it, which a player can edit into anything. */
-  interface Written {
-    tick: number;
-    name?: string;
-    payload?: Record<string, unknown>;
-    hash?: number;
-  }
+  /** A recording's fields as its bytes hold them, each checked on its own. */
+  const Written = SchemaBinary.toCodec(Layout);
+  const fieldsIn = (bytes: Uint8Array<ArrayBuffer>) =>
+    unwrap(Schema.decodeExit(Written)(bytes));
+  /** Fields written as a recording's bytes, as a player edits a file. */
+  const written = (fields: typeof Layout.Type) =>
+    unwrap(Schema.encodeExit(Written)(fields));
   const replayInto = (recording: Journal.Recording) =>
     withApp(
       begin(Journal.replay(recording, Game)),
       ({ world, target }) => world.get(target, Health)!.hp
     );
   /**
-   * The recording in `text` with its log replaced by `log`, read back as a
+   * The recording in `bytes` with its log replaced by `log`, read back as a
    * player's edited file is: whatever the log says, the replay checks it.
    */
   const withLog = (
-    text: string,
-    log: readonly Written[]
+    bytes: Uint8Array<ArrayBuffer>,
+    log: readonly Action.LogEntry[]
   ): Journal.Recording => {
-    const read = Journal.decode(
-      JSON.stringify({ ...(JSON.parse(text) as object), log })
-    );
+    const read = Journal.decode(written({ ...fieldsIn(bytes), log }));
     assert(Exit.isSuccess(read));
     return read.value;
   };
+  /** The action at `index` of `log`, with its payload, to edit. */
+  const actionAt = (log: readonly Action.LogEntry[], index: number) => {
+    const entry = log[index];
+    assert(
+      entry !== undefined &&
+        !Action.isCheckpoint(entry) &&
+        Predicate.isObject(entry.payload)
+    );
+    return { ...entry, payload: entry.payload };
+  };
 
-  it("round-trips the recording through text and reproduces the game", () => {
+  it("round-trips the recording through bytes and reproduces the game", () => {
     const saved = record();
     expect(saved.hp).toBe(35);
-    expect(saved.text).toBeTypeOf("string");
+    expect(saved.bytes).toBeInstanceOf(Uint8Array);
 
-    const loaded = Journal.decode(saved.text);
+    const loaded = Journal.decode(saved.bytes);
     expect(Exit.isSuccess(loaded)).toBe(true);
     if (!Exit.isSuccess(loaded)) {
       return;
@@ -546,12 +565,12 @@ describe("saving and replaying", () => {
     expect(replayInto(loaded.value)).toBe(saved.hp);
   });
 
-  it("refuses text that is not a recording", () => {
+  it("refuses bytes that are not a recording", () => {
     /**
-     * A recording of nothing, as text, that begins after `ticks` ticks: it
-     * holds the save its game was at then.
+     * A recording of nothing that begins after `ticks` ticks: it holds the
+     * save its game was at then.
      */
-    const since = (ticks: number): string =>
+    const since = (ticks: number): Uint8Array<ArrayBuffer> =>
       withApp(game, ({ app }) => {
         for (let tick = 0; tick < ticks; tick++) {
           app.tick(1);
@@ -561,55 +580,69 @@ describe("saving and replaying", () => {
         return Journal.encode(app.record(save.value));
       });
     const valid = {
-      ...(JSON.parse(since(1)) as { save: string }),
+      ...fieldsIn(since(1)),
       start: 1,
       end: 3,
       deltas: [{ tick: 1, delta: 1 }],
-      log: [] as unknown[],
+      log: [],
     };
-    for (const text of [
-      "not json",
-      "{}",
-      "[1, 2]",
-      JSON.stringify({ ...valid, log: [{ tick: 1.5, hash: 3 }] }),
-      JSON.stringify({ ...valid, log: [{ tick: 1, payload: {} }] }),
-      JSON.stringify({ ...valid, log: [{ tick: 1, name: 7, payload: {} }] }),
+    const AnyStart = SchemaBinary.toCodec(
+      Schema.Struct({ ...Layout.fields, start: Schema.Int })
+    );
+    const anyStart = (fields: typeof AnyStart.Type) =>
+      unwrap(Schema.encodeExit(AnyStart)(fields));
+    for (const [what, bytes] of [
+      ["text", new TextEncoder().encode("not a recording")],
+      ["nothing", new Uint8Array()],
+      ["noise", new Uint8Array([1, 2])],
       // A log out of order, or outside the recording.
-      JSON.stringify({ ...valid, log: [{ tick: 0, hash: 1 }] }),
-      JSON.stringify({ ...valid, log: [{ tick: 4, hash: 1 }] }),
-      JSON.stringify({
-        ...valid,
-        log: [
-          { tick: 2, hash: 1 },
-          { tick: 1, hash: 1 },
-        ],
-      }),
+      ["a log before it", written({ ...valid, log: [{ tick: 0, hash: 1 }] })],
+      ["a log after it", written({ ...valid, log: [{ tick: 4, hash: 1 }] })],
+      [
+        "a log out of order",
+        written({
+          ...valid,
+          log: [
+            { tick: 2, hash: 1 },
+            { tick: 1, hash: 1 },
+          ],
+        }),
+      ],
       // A recording that ends before it begins, or at a tick that isn't one.
-      JSON.stringify({ ...valid, start: -1 }),
-      JSON.stringify({ ...valid, end: 0 }),
+      ["a start that is no tick", anyStart({ ...valid, start: -1 })],
+      ["an end before its start", written({ ...valid, end: 0 })],
       // Runs of deltas that don't cover it, in order.
-      JSON.stringify({ ...valid, deltas: [] }),
-      JSON.stringify({ ...valid, deltas: [{ tick: 2, delta: 1 }] }),
-      JSON.stringify({
-        ...valid,
-        deltas: [
-          { tick: 1, delta: 1 },
-          { tick: 1, delta: 2 },
-        ],
-      }),
-      JSON.stringify({
-        ...valid,
-        deltas: [
-          { tick: 1, delta: 1 },
-          { tick: 3, delta: 2 },
-        ],
-      }),
-      JSON.stringify({ ...valid, deltas: [{ tick: 1, delta: null }] }),
-    ]) {
-      expect(Exit.isFailure(Journal.decode(text)), text).toBe(true);
+      ["no deltas", written({ ...valid, deltas: [] })],
+      [
+        "deltas that begin late",
+        written({ ...valid, deltas: [{ tick: 2, delta: 1 }] }),
+      ],
+      [
+        "deltas of one tick twice",
+        written({
+          ...valid,
+          deltas: [
+            { tick: 1, delta: 1 },
+            { tick: 1, delta: 2 },
+          ],
+        }),
+      ],
+      [
+        "deltas past its end",
+        written({
+          ...valid,
+          deltas: [
+            { tick: 1, delta: 1 },
+            { tick: 3, delta: 2 },
+          ],
+        }),
+      ],
+    ] as const) {
+      expect(Exit.isFailure(Journal.decode(bytes)), what).toBe(true);
     }
-    expect(Exit.isSuccess(Journal.decode(JSON.stringify(valid)))).toBe(true);
-    expect(JSON.parse(since(4))).toMatchObject({
+    expect(Exit.isSuccess(Journal.decode(anyStart(valid)))).toBe(true);
+    expect(Exit.isSuccess(Journal.decode(written(valid)))).toBe(true);
+    expect(fieldsIn(since(4))).toMatchObject({
       start: 4,
       end: 4,
       deltas: [],
@@ -618,25 +651,66 @@ describe("saving and replaying", () => {
     expect(Exit.isSuccess(Journal.decode(since(4)))).toBe(true);
   });
 
+  it("writes a message and a recording in the same bytes as before", () => {
+    // Bytes written once, so a change to how either is laid out, an upgrade
+    // of Effect's SchemaBinary included, fails here and not on a peer.
+    const hex = (bytes: Uint8Array): string =>
+      Buffer.from(bytes).toString("hex");
+    const bytesOf = (text: string): Uint8Array =>
+      Uint8Array.from(Buffer.from(text, "hex"));
+    const message = {
+      from: "ada",
+      tick: 12,
+      actions: [{ name: "g/Move", payload: { dx: 1 } }],
+      checkpoints: [{ tick: 11, hash: 4_294_967_295 }],
+      made: { game: 99, delta: 1 / 60, peers: ["ada", "bob"], start: 0 },
+      heard: 10,
+    };
+    const messageBytes =
+      "492103371702b2a5d7db070c010a000302160afeffffff1f18036164611401120003107b226478223a317d0c672f4d6f76651609020361646103626f62c6010008111111111111913f14";
+    expect(hex(Message.encode(message))).toBe(messageBytes);
+    expect(Message.decode(bytesOf(messageBytes))).toEqual(
+      Exit.succeed(message)
+    );
+
+    const recordingBytes =
+      "73208895aad41f34022a09a8faeec319087b226478223a317da18ac6d52d00b0deb7ce4606672f4d6f7665a887b0f34a03616461070b02feffffff1fe1cab791280ef9cde0ca3200d1dacea33504b0d1d6d56218011600a4e1d8da050200a1f885d80610111111111111913ff1c7a6a76a80890f";
+    const recording = Journal.decode(bytesOf(recordingBytes));
+    assert(Exit.isSuccess(recording));
+    expect(recording.value).toEqual({
+      seed: 7,
+      start: 0,
+      end: 2,
+      endHash: 123_456,
+      deltas: [{ tick: 0, delta: 1 / 60 }],
+      log: [
+        { tick: 0, name: "g/Move", payload: { dx: 1 }, from: "ada" },
+        { tick: 1, hash: 4_294_967_295 },
+      ],
+    });
+    expect(hex(Journal.encode(recording.value))).toBe(recordingBytes);
+  });
+
   it("stops a replay at the first entry that no longer applies", () => {
     const saved = record();
     // Entry 0 is the checkpoint of the state the game started from; the four
     // actions follow it.
-    const { log } = JSON.parse(saved.text) as { log: Written[] };
-    expect(log.map((entry) => entry.name)).toEqual([
-      undefined,
-      "Damage",
-      "Damage",
-      "Damage",
-      "Rename",
-    ]);
+    const { log } = fieldsIn(saved.bytes);
+    expect(
+      log.map((entry) =>
+        Action.isCheckpoint(entry) ? "checkpoint" : entry.name
+      )
+    ).toEqual(["checkpoint", "Damage", "Damage", "Damage", "Rename"]);
 
     // An edited save file: a hit far above what the schema allows.
-    const edited = structuredClone(log);
-    edited[2]!.payload!.amount = 9999;
+    const hit = actionAt(log, 2);
+    const edited = log.with(2, {
+      ...hit,
+      payload: { ...hit.payload, amount: 9999 },
+    });
     let caught: unknown;
     try {
-      replayInto(withLog(saved.text, edited));
+      replayInto(withLog(saved.bytes, edited));
     } catch (error) {
       caught = error;
     }
@@ -651,27 +725,26 @@ describe("saving and replaying", () => {
     );
 
     // An action this build of the game does not have.
-    const renamed = structuredClone(log);
-    renamed[1]!.name = "Smite";
-    expect(() => replayInto(withLog(saved.text, renamed))).toThrow(
+    const renamed = log.with(1, { ...actionAt(log, 1), name: "Smite" });
+    expect(() => replayInto(withLog(saved.bytes, renamed))).toThrow(
       /Log entry 1 \("Smite" at tick 0\)/
     );
 
     // Valid entries the rules refuse: the target is not in this game.
-    const retargeted = structuredClone(log);
-    retargeted[3]!.payload!.target = 4000;
-    expect(() => replayInto(withLog(saved.text, retargeted))).toThrow(
+    const struck = actionAt(log, 3);
+    const retargeted = log.with(3, {
+      ...struck,
+      payload: { ...struck.payload, target: 4000 },
+    });
+    expect(() => replayInto(withLog(saved.bytes, retargeted))).toThrow(
       /Log entry 3/
     );
 
     // An entry past the recording's end is refused before any replay.
-    const late = structuredClone(log);
-    late[4]!.tick = 99;
+    const late = log.with(4, { ...actionAt(log, 4), tick: 99 });
     expect(
       Exit.isFailure(
-        Journal.decode(
-          JSON.stringify({ ...(JSON.parse(saved.text) as object), log: late })
-        )
+        Journal.decode(written({ ...fieldsIn(saved.bytes), log: late }))
       )
     ).toBe(true);
   });

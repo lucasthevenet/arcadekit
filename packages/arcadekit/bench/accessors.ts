@@ -360,7 +360,9 @@ const atRest = (): number =>
         Effect.provide(
           Layer.merge(
             Input.layer(source),
-            View.layer(Resting, () => {})
+            View.layer(Resting, (ui) => {
+              ui.subscribe(Shown, () => {});
+            })
           )
         )
       );

@@ -47,6 +47,7 @@ export {
 export { CommandBuffer } from "./ecs/commands";
 export {
   type EntityColumn,
+  type PointingView,
   type QueryView,
   type SparseColumns,
 } from "./ecs/query";

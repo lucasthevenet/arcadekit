@@ -109,6 +109,28 @@ describe("entities and components", () => {
     expect(world.get(again, Glow)).toEqual({ level: 7 });
   });
 
+  it("takes the later value of a component given twice, whatever was spawned before", () => {
+    const world = new World();
+    world.spawn(Position, Velocity, Health);
+    world.spawn(Health, Stunned);
+    const e = world.spawn(
+      Velocity.of({ x: 1, y: 1 }),
+      Stunned,
+      Position.of({ x: 2, y: 2 }),
+      Velocity.of({ x: 3, y: 3 }),
+      Position.of({ x: 4, y: 4 })
+    );
+    expect(world.get(e, Velocity)).toEqual({ x: 3, y: 3 });
+    expect(world.get(e, Position)).toEqual({ x: 4, y: 4 });
+    expect(world.has(e, Stunned)).toBe(true);
+    expect(world.has(e, Health)).toBe(false);
+    expect(world.tables.map((t) => t.defs.map((d) => d.name))).toEqual([
+      ["st/Position", "st/Velocity", "st/Health"],
+      ["st/Health"],
+      ["st/Position", "st/Velocity"],
+    ]);
+  });
+
   it("reuses a slot with a new generation, so stale handles stay dead", () => {
     const world = new World();
     const a = world.spawn(Health.of({ hp: 1 }));

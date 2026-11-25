@@ -1,4 +1,5 @@
-import { Cause, Effect, Exit, Layer, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Layer, Schema } from "effect";
+import { SchemaBinary } from "effect/encoding";
 import { assert, describe, expect, it } from "vitest";
 
 import { entityOf } from "../src/ecs/component";
@@ -22,6 +23,7 @@ import {
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import { Layout } from "../src/internal/recording";
 import type { BuiltIn } from "../src/Services";
 
 // --- a small game: coins are dropped, drift about at random, and are taken ------
@@ -192,20 +194,30 @@ const record = (options: Options & { readonly ticks: number }) =>
     };
   });
 
+const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
+  if (Exit.isFailure(exit)) {
+    throw Cause.squash(exit.cause);
+  }
+  return exit.value;
+};
+
+/** A recording's fields as its bytes hold them, each checked on its own. */
+const Written = SchemaBinary.toCodec(Layout);
+const fieldsOf = (recording: Journal.Recording) =>
+  unwrap(Schema.decodeExit(Written)(Journal.encode(recording)));
+/** Fields written as a recording's bytes, as a file edited by hand. */
+const written = (fields: typeof Layout.Type) =>
+  unwrap(Schema.encodeExit(Written)(fields));
+
 /**
- * `recording` with `fields` changed in its text, as a file edited by hand,
+ * `recording` with `fields` changed in its bytes, as a file edited by hand,
  * and read back.
  */
 const altered = (
   recording: Journal.Recording,
-  fields: Readonly<Record<string, unknown>>
+  fields: Partial<typeof Layout.Type>
 ): Journal.Recording => {
-  const read = Journal.decode(
-    JSON.stringify({
-      ...(JSON.parse(Journal.encode(recording)) as object),
-      ...fields,
-    })
-  );
+  const read = Journal.decode(written({ ...fieldsOf(recording), ...fields }));
   assert(Exit.isSuccess(read));
   return read.value;
 };
@@ -383,32 +395,62 @@ describe("checkpoints", () => {
 
   it("survive being written down, and a malformed one is refused", () => {
     const recorded = record({ ticks: 12, checkpointEvery: 4 });
-    const text = Journal.encode(recorded.recording);
-    const loaded = Journal.decode(text);
+    const loaded = Journal.decode(Journal.encode(recorded.recording));
     expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recorded.recording);
-    expect(JSON.parse(text).log[0]).toEqual({
+    expect(fieldsOf(recorded.recording).log[0]).toEqual({
       tick: 0,
       hash: recorded.starting,
     });
-    /** The recording, as text, holding `log`. */
-    const holding = (log: readonly unknown[]): string =>
-      JSON.stringify({ ...(JSON.parse(text) as object), log });
-
+    /** A checkpoint as its bytes hold it, its tick and its hash, unchecked. */
+    const Holding = SchemaBinary.toCodec(
+      Schema.Struct({
+        ...Layout.fields,
+        log: Schema.Array(
+          Schema.Union([
+            Layout.fields.log.value.members[0],
+            Schema.Tuple([Schema.Int, Schema.Int]),
+          ])
+        ),
+      })
+    );
+    const holding = (fields: typeof Holding.Type) =>
+      unwrap(Schema.encodeExit(Holding)(fields));
+    const fields = fieldsOf(recorded.recording);
+    const largest = Journal.decode(
+      holding({ ...fields, log: [[0, 2 ** 32 - 1]] })
+    );
+    expect(Exit.isSuccess(largest) && largest.value.log).toEqual([
+      { tick: 0, hash: 2 ** 32 - 1 },
+    ]);
     for (const entry of [
-      { tick: 0, hash: -1 },
-      { tick: 0, hash: 2 ** 32 },
-      { tick: 0, hash: 1.5 },
-      { tick: 0, hash: "12" },
-      { tick: -1, hash: 12 },
-      { tick: 0.5, hash: 12 },
-      { hash: 12 },
-      { tick: 0 },
-    ]) {
-      const refused = Journal.decode(holding([entry]));
+      [0, -1],
+      [0, 2 ** 32],
+      [-1, 12],
+    ] as const) {
+      const refused = Journal.decode(holding({ ...fields, log: [entry] }));
       expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
     }
-    const largest = Journal.decode(holding([{ tick: 0, hash: 2 ** 32 - 1 }]));
-    expect(Exit.isSuccess(largest)).toBe(true);
+    // A log of entries of another kind.
+    const otherwise = SchemaBinary.toCodec(
+      Schema.Struct({
+        ...Layout.fields,
+        log: Schema.Array(
+          Schema.Struct({ tick: Schema.Number, hash: Schema.String })
+        ),
+      })
+    );
+    expect(
+      Exit.isFailure(
+        Journal.decode(
+          unwrap(
+            Schema.encodeExit(otherwise)({
+              ...fields,
+              log: [{ tick: 0.5, hash: "12" }],
+            })
+          )
+        )
+      )
+    ).toBe(true);
     expect(Action.isCheckpoint({ tick: 1, hash: 0 })).toBe(true);
     expect(Action.isCheckpoint({ tick: 1, name: "x", payload: 0 })).toBe(false);
   });
@@ -926,7 +968,7 @@ describe("the action log", () => {
     });
   });
 
-  it("keeps its marks through text, and refuses a malformed one", () => {
+  it("keeps its marks through bytes, and refuses a malformed one", () => {
     const log: Action.LogEntry[] = [
       { tick: 0, hash: 7 },
       { tick: 0, name: "a", payload: { x: 1 } },
@@ -937,20 +979,29 @@ describe("the action log", () => {
     expect(recording.log).toEqual(log);
     const loaded = Journal.decode(Journal.encode(recording));
     expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recording);
-    for (const entry of [
-      { tick: 0, name: "a", payload: 1, queued: false },
-      { tick: 0, name: "a", payload: 1, queued: "yes" },
-      { tick: 0, name: "a", payload: 1, queued: true, refused: true },
-      { tick: 0, name: "a", payload: 1, refused: 5 },
-    ]) {
-      const refused = Journal.decode(
-        JSON.stringify({
-          ...(JSON.parse(Journal.encode(recording)) as object),
-          log: [entry],
+    // A mark of another kind is bytes in another layout.
+    const marked = SchemaBinary.toCodec(
+      Schema.Struct({
+        ...Layout.fields,
+        log: Schema.Array(
+          Schema.Struct({
+            tick: Schema.Int,
+            name: Schema.String,
+            payload: Schema.Unknown,
+            queued: Schema.String,
+          })
+        ),
+      })
+    );
+    const refused = Journal.decode(
+      unwrap(
+        Schema.encodeExit(marked)({
+          ...fieldsOf(recording),
+          log: [{ tick: 0, name: "a", payload: 1, queued: "yes" }],
         })
-      );
-      expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
-    }
+      )
+    );
+    expect(Exit.isFailure(refused)).toBe(true);
   });
 });
 
@@ -1325,9 +1376,9 @@ describe("a recording", () => {
 });
 
 describe("how a recorded game began", () => {
-  /** What the schema said was wrong with a recording's text. */
-  const refusal = (text: string): string => {
-    const read = Journal.decode(text);
+  /** What the schema said was wrong with a recording's bytes. */
+  const refusal = (bytes: Uint8Array): string => {
+    const read = Journal.decode(bytes);
     assert(Exit.isFailure(read));
     return String(Cause.squash(read.cause));
   };
@@ -1391,7 +1442,7 @@ describe("how a recorded game began", () => {
     withApp(App.make(coinGame()), (app) => {
       expect(app.record().seed).toBe(0);
     });
-    // Through text and back.
+    // Through bytes and back.
     expect(Journal.decode(Journal.encode(recorded.recording))).toEqual(
       Exit.succeed(recorded.recording)
     );
@@ -1421,7 +1472,7 @@ describe("how a recorded game began", () => {
     expect(played.whole.seed).toBe(3);
     expect(played.whole.save).toBeUndefined();
 
-    // As text, the recording holds the save, and reads back as it was.
+    // In bytes, the recording holds the save, and reads back as it was.
     const read = Journal.decode(Journal.encode(tail));
     assert(Exit.isSuccess(read));
     expect(read.value).toEqual(tail);
@@ -1446,7 +1497,7 @@ describe("how a recorded game began", () => {
     });
   });
 
-  it("is checked when a recording is read from text", () => {
+  it("is written in bytes and read back, from a seed and since a save, which it holds as the bytes of the save", () => {
     const { save, tail, whole } = withApp(game({ seed: 3 }), (app) => {
       drops(app, 4);
       const saved = app.save();
@@ -1458,20 +1509,46 @@ describe("how a recorded game began", () => {
         whole: app.record(),
       };
     });
-    const fromSeed = JSON.parse(Journal.encode(whole)) as Record<
-      string,
-      unknown
-    >;
-    const fromSave = JSON.parse(Journal.encode(tail)) as Record<
-      string,
-      unknown
-    >;
-    expect(typeof fromSave["save"]).toBe("string");
-    const text = (recording: Record<string, unknown>): string =>
-      JSON.stringify(recording);
+    const fromSeed = Journal.encode(whole);
+    const fromSave = Journal.encode(tail);
+    for (const bytes of [fromSeed, fromSave]) {
+      expect(bytes).toBeInstanceOf(Uint8Array);
+      expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
+    }
+    expect(Journal.decode(fromSeed)).toEqual(Exit.succeed(whole));
+    expect(Journal.decode(fromSave)).toEqual(Exit.succeed(tail));
+    expect(Buffer.from(fromSave).includes(Buffer.from(Save.encode(save)))).toBe(
+      true
+    );
+  });
+
+  it("can't be written with a payload that has no JSON form", () => {
+    withApp(game({ seed: 3 }), (app) => {
+      app.enqueueByName("rp/Nothing", { n: 1n });
+      app.tick(1 / 60);
+      expect(() => Journal.encode(app.record())).toThrow(
+        /a payload in its log has no JSON form/u
+      );
+    });
+  });
+
+  it("is checked when a recording is read from bytes", () => {
+    const { save, tail, whole } = withApp(game({ seed: 3 }), (app) => {
+      drops(app, 4);
+      const saved = app.save();
+      assert(Exit.isSuccess(saved));
+      drops(app, 2);
+      return {
+        save: saved.value,
+        tail: app.record(saved.value),
+        whole: app.record(),
+      };
+    });
+    const fromSeed = fieldsOf(whole);
+    const fromSave = fieldsOf(tail);
 
     // Only `app.record()` and `Journal.decode` make a recording.
-    const written: Journal.Played & Journal.Origin = {
+    const byHand: Journal.Played & Journal.Origin = {
       seed: 3,
       start: 0,
       end: 0,
@@ -1480,25 +1557,24 @@ describe("how a recorded game began", () => {
       log: [],
     };
     // @ts-expect-error a recording written by hand is not one
-    void (() => Journal.replay(written, coinGame()));
+    void (() => Journal.replay(byHand, coinGame()));
 
-    // A recording from before one held the hash its game ended on.
-    const { endHash: _endHash, ...older } = fromSeed;
-    expect(refusal(text(older))).toMatch(
-      /older format: it holds no endHash, the hash its game ended on/
+    // A recording as an earlier version wrote it, as text.
+    expect(refusal(new TextEncoder().encode(JSON.stringify(whole)))).toMatch(
+      /^.*older format: .*written as text by an earlier arcadekit/u
     );
 
     const { seed: _, ...neither } = fromSeed;
-    expect(refusal(text(neither))).toMatch(
+    expect(refusal(written(neither))).toMatch(
       /how its game began as a seed or as a save, one of the two/
     );
-    expect(refusal(text({ ...fromSave, seed: 3 }))).toMatch(
+    expect(refusal(written({ ...fromSave, seed: 3 }))).toMatch(
       /how its game began as a seed or as a save, one of the two/
     );
     // A game from a seed begins at tick 0.
     expect(
       refusal(
-        text({
+        written({
           ...fromSeed,
           start: 2,
           deltas: [{ tick: 2, delta: 1 / 60 }],
@@ -1509,7 +1585,7 @@ describe("how a recorded game began", () => {
     // A save is of the tick its recording begins at.
     expect(
       refusal(
-        text({
+        written({
           ...fromSave,
           start: 5,
           deltas: [{ tick: 5, delta: 1 / 60 }],
@@ -1518,12 +1594,13 @@ describe("how a recorded game began", () => {
       )
     ).toMatch(/begins at tick 5, and its save was made at tick 4/);
     // And it reads as a save.
-    expect(refusal(text({ ...fromSave, save: "bm90IGEgc2F2ZQ==" }))).toMatch(
-      /its save can't be read: These bytes are not a saved game/
-    );
-    const cut = Save.encode(save).slice(0, 40);
     expect(
-      refusal(text({ ...fromSave, save: Buffer.from(cut).toString("base64") }))
+      refusal(
+        written({ ...fromSave, save: new TextEncoder().encode("not a save") })
+      )
+    ).toMatch(/its save can't be read: These bytes are not a saved game/);
+    expect(
+      refusal(written({ ...fromSave, save: Save.encode(save).slice(0, 40) }))
     ).toMatch(/its save can't be read/);
   });
 });
