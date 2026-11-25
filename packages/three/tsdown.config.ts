@@ -5,11 +5,12 @@
 import { defineConfig } from "tsdown";
 import type { UserConfig } from "tsdown";
 
-import { entries } from "../../tooling/build/tsdown-entries.ts";
+import { entries, entryImports } from "../../tooling/build/tsdown-entries.ts";
 
 const config: UserConfig = defineConfig({
   cwd: import.meta.dirname,
   entry: entries(import.meta.dirname),
+  plugins: [entryImports(import.meta.dirname)],
   format: "esm",
   platform: "neutral",
   target: "es2022",
