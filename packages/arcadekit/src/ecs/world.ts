@@ -1545,7 +1545,9 @@ export class World {
       if (def.relation !== undefined && isComponentDef(input)) {
         throw targetless(def);
       }
-      this.register(def);
+      if (this.registered[def.id] !== true) {
+        this.register(def);
+      }
     }
   }
 
