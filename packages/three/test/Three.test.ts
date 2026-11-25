@@ -507,8 +507,8 @@ describe("Three.instances", () => {
       const transforms: readonly Transform[] = [Transform3d, Transform2d];
       const either = transforms[0]!;
       Three.instances("th/Either", {
-        // @ts-expect-error a transform that may be either needs both positions
         of: Rock,
+        // @ts-expect-error a transform that may be either needs both positions
         transform: either,
         geometry,
         material,
@@ -516,31 +516,50 @@ describe("Three.instances", () => {
       // @ts-expect-error a component of one is not the module
       Three.objects("th/Part", { of: Ship, transform: Position, make });
       Three.instances("th/Nowhere", {
-        // @ts-expect-error a component that requires no Position
         of: Heavy,
+        // @ts-expect-error a component that requires no Position
         transform: Transform3d,
         geometry,
         material,
       });
       Three.objects("th/NowhereObjects", {
-        // @ts-expect-error nor for objects
         of: Heavy,
+        // @ts-expect-error nor for objects
         transform: Transform2d,
         make,
       });
       Three.instances("th/Lifted", {
-        // @ts-expect-error a rock requires the Position of Transform3d
         of: Rock,
+        // @ts-expect-error a rock requires the Position of Transform3d
         transform: Transform2d,
         geometry,
         material,
       });
       Three.objects("th/LiftedObjects", {
-        // @ts-expect-error nor for objects, of several components
         of: [Ship, Heavy],
+        // @ts-expect-error nor for objects, of several components
         transform: Transform2d,
         make,
       });
+      const loose = (of: typeof Rock | typeof FlatRock, transform: Transform) =>
+        Three.instances("th/Loose", {
+          of,
+          // @ts-expect-error a helper that may pair a rock with Transform2d
+          transform,
+          geometry,
+          material,
+        });
+      const tied = <const O extends Three.Which["of"]>(
+        of: O,
+        transform: Three.TransformOf<O>
+      ) => Three.instances("th/Tied", { of, transform, geometry, material });
+      tied(Rock, Transform3d);
+      tied([Rock, FlatRock], either);
+      // @ts-expect-error a helper of one type for both pairs them too
+      tied(Rock, Transform2d);
+      // @ts-expect-error nor of either rock
+      tied(Math.random() < 0.5 ? Rock : FlatRock, Transform2d);
+      void loose;
     };
     void kinds;
     expect(
@@ -913,10 +932,10 @@ describe("Three.instances", () => {
       });
       // Half of them in three dimensions, and half in the plane: a kind of
       // each transform.
-      const crowd = (
+      const crowd = <const O extends Three.Which["of"]>(
         name: string,
-        of: typeof Rock | typeof FlatRock,
-        transform: Transform
+        of: O,
+        transform: Three.TransformOf<O>
       ) =>
         Three.instances(name, {
           of,
@@ -1486,10 +1505,10 @@ describe("an entity drawn between two ticks", () => {
       }
     );
   });
-  const smoothed = (
+  const smoothed = <const O extends Three.Which["of"]>(
     name: string,
-    of: typeof Rock | typeof FlatRock,
-    transform: Transform
+    of: O,
+    transform: Three.TransformOf<O>
   ) =>
     Three.instances(name, {
       of,
@@ -1684,10 +1703,10 @@ describe("an entity drawn between two ticks", () => {
   });
 
   it("is drawn where it is when it went further in a tick than it was told an entity can", () => {
-    const wrapping = (
+    const wrapping = <const O extends Three.Which["of"]>(
       name: string,
-      of: typeof Rock | typeof FlatRock,
-      transform: Transform
+      of: O,
+      transform: Three.TransformOf<O>
     ) =>
       Three.instances(name, {
         of,
@@ -2058,10 +2077,10 @@ describe("an entity drawn between two ticks", () => {
 
   it("places an object of Three.objects the same way", () => {
     const made = new Map<Entity, Object3D>();
-    const ships = (
+    const ships = <const O extends Three.Which["of"]>(
       name: string,
-      of: typeof Ship | typeof FlatShip,
-      transform: Transform
+      of: O,
+      transform: Three.TransformOf<O>
     ) =>
       Three.objects(name, {
         of,
@@ -2265,10 +2284,10 @@ describe("an entity drawn between two ticks", () => {
 
 describe("a colour per instance", () => {
   const Flat = Transform2d;
-  const painted = (
+  const painted = <const O extends Three.Which["of"]>(
     name: string,
-    of: typeof Rock | typeof FlatRock,
-    transform: Transform
+    of: O,
+    transform: Three.TransformOf<O>
   ) =>
     Three.instances(name, {
       of,
