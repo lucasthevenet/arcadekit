@@ -53,7 +53,6 @@ import * as Action from "./Action";
 import type { Entity } from "./ecs/component";
 import type { Placed } from "./ecs/spawned";
 import { build } from "./internal/build";
-import { versionOf } from "./internal/save";
 import * as Journal from "./Journal";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -642,7 +641,7 @@ export const define = <
   plugins: options.plugins ?? ([] as unknown as readonly [...P]),
   systems: options.systems ?? ([] as unknown as readonly [...S]),
   handlers: options.handlers ?? ([] as unknown as readonly [...H]),
-  version: versionOf(options.version),
+  version: Save.versionOf(options.version),
   migrations: options.migrations ?? [],
 });
 

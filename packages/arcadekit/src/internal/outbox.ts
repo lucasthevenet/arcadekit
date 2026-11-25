@@ -10,17 +10,7 @@
  * are heard afresh. After a session takes a game back to run the same ticks
  * again, each event of those ticks is heard once.
  */
-import type { EventDef, EventHandle } from "../Event";
-
-/**
- * One event as it was emitted, with which event it is.
- *
- * @internal
- */
-export interface Emitted {
-  readonly def: EventDef<unknown>;
-  readonly payload: unknown;
-}
+import type { Emitted, EventDef, EventHandle } from "../Event";
 
 const EMPTY: readonly never[] = Object.freeze([]);
 

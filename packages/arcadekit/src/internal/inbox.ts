@@ -19,8 +19,7 @@ import type { CommandBuffer } from "../ecs/commands";
 import type { Spawned } from "../ecs/spawned";
 import type { World } from "../ecs/world";
 import type { EventBus } from "../Event";
-import { Intake, jsonOf, said } from "./action";
-import type { Log } from "./journal";
+import type * as Journal from "../Journal";
 import type { Runner } from "./runner";
 import { GameTime } from "./stage";
 
@@ -34,8 +33,8 @@ export interface Parts {
   readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
   /** The actions queued for the next tick, a store of the world. */
-  readonly intake: Intake;
-  readonly log: Log;
+  readonly intake: Action.Intake;
+  readonly log: Journal.Log;
   readonly runner: Runner;
   readonly time: { readonly tick: number };
   /** The game's handlers, by the name of their action. */
@@ -160,7 +159,7 @@ export class Inbox {
       return Exit.fail(
         new Action.InvalidPayload({
           action: name,
-          message: said(Cause.squash(json.cause)),
+          message: Action.said(Cause.squash(json.cause)),
         })
       );
     }
@@ -187,7 +186,7 @@ export class Inbox {
     const exit = this.enqueue(action, payload);
     if (Exit.isFailure(exit)) {
       throw new Error(
-        `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${said(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
+        `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${Action.said(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
       );
     }
   }
@@ -276,11 +275,11 @@ export class Inbox {
       if (Exit.isFailure(exit)) {
         const error = Cause.squash(exit.cause);
         if (entry !== undefined) {
-          entry.refused = said(error);
+          entry.refused = Action.said(error);
         }
         events._emit(Action.Rejected, {
           action: name,
-          payload: jsonOf(action),
+          payload: Action.jsonOf(action),
           error: refusal(error),
           from,
         });

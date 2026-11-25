@@ -48,8 +48,6 @@
 import { Context, Effect, Equal, Layer } from "effect";
 
 import * as Action from "./Action";
-import { raw } from "./internal/system";
-import { Intake } from "./internal/view";
 import * as Plugin from "./Plugin";
 import * as System from "./System";
 
@@ -253,6 +251,17 @@ export interface PortShape {
   readonly publish: <A>(view: View<A>, value: A) => boolean;
 }
 
+/**
+ * The actions a UI has sent, for the input stage. Publishing is `View.Port`,
+ * which a system of the input stage cannot require.
+ *
+ * @internal
+ */
+export class Intake extends Context.Service<
+  Intake,
+  { readonly take: () => readonly Sent[] }
+>()("arcadekit/View.Intake") {}
+
 interface PortValue extends PortShape {
   readonly take: () => readonly Sent[];
 }
@@ -440,7 +449,7 @@ export function publish<
   "frame"
 > {
   const read = Effect.gen(body);
-  return raw(`View.publish(${view.name})`, "frame", function* () {
+  return System.raw(`View.publish(${view.name})`, "frame", function* () {
     const port = yield* Port;
     if (port.connected) {
       port.publish(view, yield* read);

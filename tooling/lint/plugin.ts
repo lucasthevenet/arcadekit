@@ -459,13 +459,11 @@ interface Internal {
   used: boolean;
 }
 
-/** A source file of a package, as no-internal-in-entries reads it. */
+/** A source file of a package, as no-unused-internal reads it. */
 interface Source {
   readonly file: string;
   /** Its path in its package, such as "src/Action.ts". */
   readonly path: string;
-  /** The entry the file is, such as "arcadekit/Action", if it is one. */
-  readonly entry: string | undefined;
   readonly program: Program;
   /** What a name imported by name stands for: the file it is from, and its name there. */
   readonly imports: Map<
@@ -491,11 +489,10 @@ interface Problem {
   readonly message: string;
 }
 
-/** A package under packages/: its name, its folder, and its entries, by their source file. */
+/** A package under packages/: its name and its folder. */
 interface Workspace {
   readonly name: string;
   readonly dir: string;
-  readonly entries: ReadonlyMap<string, string>;
 }
 
 const isNode = (value: unknown): value is Node =>
@@ -615,7 +612,7 @@ const field = (value: unknown, key: string): unknown =>
     ? Reflect.get(value, key)
     : undefined;
 
-/** A package's entries, from the `source` of each subpath of its `exports`. */
+/** A package, by the name its package.json gives it. */
 const workspaceOf = (dir: string): Workspace | undefined => {
   const manifest = join(dir, "package.json");
   if (!existsSync(manifest)) {
@@ -626,16 +623,7 @@ const workspaceOf = (dir: string): Workspace | undefined => {
   if (typeof name !== "string") {
     return undefined;
   }
-  const entries = new Map<string, string>();
-  for (const [subpath, conditions] of Object.entries(
-    field(json, "exports") ?? {}
-  )) {
-    const source = field(conditions, "source");
-    if (typeof source === "string") {
-      entries.set(join(dir, source), `${name}${subpath.slice(1)}`);
-    }
-  }
-  return { name, dir, entries };
+  return { name, dir };
 };
 
 const sourceFiles = (dir: string): string[] =>
@@ -681,7 +669,6 @@ const readSource = (
   const source: Source = {
     file,
     path: relative(workspace.dir, file),
-    entry: workspace.entries.get(file),
     program,
     imports: new Map(),
     namespaces: new Map(),
@@ -991,14 +978,17 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
     for (const statement of source.publics) {
       if (statement.type === "ExportAllDeclaration") {
         const all = sourceAt(source, statement.source.value);
+        // A public module's @internal exports go where it goes, as in Effect's barrels:
+        // `export * as Schema from "./Schema"`. Only a file of internal/ is refused.
         if (
           all !== undefined &&
-          (all.internals.size > 0 || isInternalPath(all.file))
+          all.internals.size > 0 &&
+          isInternalPath(all.file)
         ) {
           report(source.file, {
             start: statement.source.start,
             end: statement.source.end,
-            message: `${all.path} ${all.internals.size > 0 ? "has @internal exports" : "is in internal/"}, so a public module must not export all of it: a game could import what is internal. Export its public names one by one.`,
+            message: `${all.path} has @internal exports, so a public module must not export all of it: a game could import what is internal. Export its public names one by one.`,
           });
         }
         continue;
@@ -1034,13 +1024,6 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
     }
     for (const internals of source.internals.values()) {
       for (const internal of internals) {
-        if (source.entry !== undefined) {
-          report(source.file, {
-            start: internal.start,
-            end: internal.end,
-            message: `${internal.name} is @internal, but ${source.path} is an entry, ${source.entry}, so a game can import it. Move it to the module's file in internal/, or make it public and give it a doc comment.`,
-          });
-        }
         if (!internal.used) {
           report(source.file, {
             start: internal.start,
@@ -1058,19 +1041,19 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
 /**
  * What is @internal stays out of what a game imports, as Effect's `no-unused-internal` rule
  * keeps it (packages/tools/oxc in Effect's repository), ported here: Effect's package is
- * private. Beside its three problems, an @internal export in a public signature, one exported
- * again from a public module, and one no source uses, it refuses one declared in an entry.
+ * private: an @internal export a public signature names, one a public module exports again, and
+ * one no source uses. Where an @internal export is declared is left to the module, as in Effect.
  * It reads the sources of every package, again whenever one has changed, since what it finds
  * in a file depends on the others. A test is no source, so what only a test uses is unused.
  * Like Effect's, it reads a signature that is written out: an export made by a call, such as
  * `wrap((q: Hidden) => q)` or `Effect.fn(...)`, can name an @internal type unseen.
  */
-const noInternalInEntries: Rule = {
+const noUnusedInternal: Rule = {
   meta: {
     type: "problem",
     docs: {
       description:
-        "What is @internal is declared outside the entries, named by no public signature or export, and used by a source.",
+        "What is @internal is named by no public signature or export, and used by a source.",
     },
   },
   create: (context) => {
@@ -1100,6 +1083,6 @@ export default {
     "top-level-classes": topLevelClasses,
     "no-outside-state": noOutsideState,
     "id-casts": idCasts,
-    "no-internal-in-entries": noInternalInEntries,
+    "no-unused-internal": noUnusedInternal,
   },
 };

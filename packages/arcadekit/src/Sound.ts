@@ -50,7 +50,6 @@ import type { Scope } from "effect";
 
 import * as Assets from "./Assets";
 import type * as Event from "./Event";
-import { raw } from "./internal/system";
 import * as Plugin from "./Plugin";
 import type { Events } from "./Services";
 import * as System from "./System";
@@ -826,7 +825,7 @@ export function music<Eff extends Effect.Effect<unknown, unknown, unknown>>(
 ): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player> {
   const pick = Effect.gen(body);
   const channel = options.channel ?? MUSIC;
-  return raw(name, "frame", function* () {
+  return System.raw(name, "frame", function* () {
     const player = yield* Player;
     if (!player.audible) {
       return;

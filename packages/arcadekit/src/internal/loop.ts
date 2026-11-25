@@ -14,22 +14,21 @@ import {
   Tracer,
 } from "effect";
 
+import type * as Action from "../Action";
 import { FrameChangedWorld } from "../App";
 import type { CommandBuffer } from "../ecs/commands";
 import type { Spawned } from "../ecs/spawned";
 import type { World as EcsWorld } from "../ecs/world";
 import type { EventBus } from "../Event";
 import * as Input from "../Input";
+import type * as Journal from "../Journal";
 import type { FrameState, TimeState } from "../Services";
 import * as State from "../State";
-import type { Intake } from "./action";
+import * as System from "../System";
 import type { Inbox } from "./inbox";
-import type { Log } from "./journal";
 import type { Runner } from "./runner";
 import type * as Schedule from "./schedule";
 import * as Stage from "./stage";
-import { despawnScoped, enter, pending, registryOf } from "./state";
-import { spanLevel } from "./system";
 
 /**
  * The spans of an app that traces. A tick's span is opened before the tick
@@ -58,7 +57,7 @@ export class Spans {
       Context.get(context, References.TracerEnabled) &&
       !LogLevel.isGreaterThan(
         Context.get(context, Tracer.MinimumTraceLevel),
-        spanLevel
+        System.spanLevel
       );
   }
 
@@ -68,7 +67,7 @@ export class Spans {
       Effect.makeSpan(name, {
         root: true,
         attributes,
-        level: spanLevel,
+        level: System.spanLevel,
       })
     ).pollUnsafe();
     if (made === undefined || Exit.isFailure(made)) {
@@ -104,8 +103,8 @@ export class Spans {
       handled,
       `action:${name}`,
       this.tick === undefined
-        ? { root: true, level: spanLevel }
-        : { parent: this.tick, level: spanLevel }
+        ? { root: true, level: System.spanLevel }
+        : { parent: this.tick, level: System.spanLevel }
     );
   }
 }
@@ -121,8 +120,8 @@ export interface Parts {
   readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
   /** What the game has taken in for its next tick, a store of the world. */
-  readonly intake: Intake;
-  readonly log: Log;
+  readonly intake: Action.Intake;
+  readonly log: Journal.Log;
   readonly inbox: Inbox;
   readonly runner: Runner;
   readonly time: TimeState;
@@ -203,7 +202,7 @@ export const make = (parts: Parts): Loop => {
     world,
   } = parts;
   const trace = spans.enabled;
-  const states = registryOf(world);
+  const states = State.registryOf(world);
   // Whoever stepped the tick that is running, if they asked to be told.
   let observer: ((system: string | undefined) => void) | undefined;
   // What the world hashed to when the stage between ticks began.
@@ -284,8 +283,8 @@ export const make = (parts: Parts): Loop => {
     if (move.from !== undefined) {
       yield* takeTurns(schedule.hooks(state, "exit", move.from), "tick", false);
     }
-    despawnScoped(world, state, move);
-    enter(world, state, move);
+    State.despawnScoped(world, state, move);
+    State.enter(world, state, move);
     yield* takeTurns(schedule.hooks(state, "enter", move.to), "tick", false);
   });
   /** Enters the requested states, and runs their hooks. */
@@ -293,13 +292,13 @@ export const make = (parts: Parts): Loop => {
     for (const state of states.states) {
       // One move a tick, but for a game's first: entering the state it
       // starts in is followed by the move that was asked for before it.
-      const move = pending(world, state);
+      const move = State.pending(world, state);
       if (move === undefined) {
         continue;
       }
       yield* makeMove(state, move);
       if (move.followedBy !== undefined) {
-        const asked = pending(world, state);
+        const asked = State.pending(world, state);
         // Unless a hook has asked for something else since.
         if (asked !== undefined && asked.to === move.followedBy) {
           yield* makeMove(state, asked);
@@ -344,14 +343,14 @@ export const make = (parts: Parts): Loop => {
         Effect.withSpan(drawn, "arcadekit/frame", {
           root: true,
           attributes: { "arcadekit.frame": drawing.count },
-          level: spanLevel,
+          level: System.spanLevel,
         })
       )
     : drawn;
   const heardTraced = trace
     ? Effect.withSpan(heard, "arcadekit/input", {
         root: true,
-        level: spanLevel,
+        level: System.spanLevel,
       })
     : heard;
 
@@ -530,7 +529,7 @@ export const make = (parts: Parts): Loop => {
         return false;
       }
       for (const state of states.states) {
-        if (pending(world, state) !== undefined) {
+        if (State.pending(world, state) !== undefined) {
           return false;
         }
       }

@@ -30,7 +30,6 @@ import type {
   SnapshotTable,
 } from "./ecs/contents";
 import { renameInChanges } from "./ecs/query";
-import { VisitsData } from "./internal/save";
 import * as Save from "./Save";
 
 /** The field types that hold numbers, in a typed array. */
@@ -180,7 +179,7 @@ export const renameComponent = (
   }
   const visits = world.stores.find((store) => store.name === Save.VISITS);
   // Visits that aren't as a world saves them make the load fail as "corrupt".
-  if (visits !== undefined && Schema.is(VisitsData)(visits.data)) {
+  if (visits !== undefined && Schema.is(Save.VisitsData)(visits.data)) {
     visits.data = renameInChanges(visits.data, from, to);
   }
 };
