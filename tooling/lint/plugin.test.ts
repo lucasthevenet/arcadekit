@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
 import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
 
@@ -165,3 +169,261 @@ new RuleTester().run("no-page", plugin.rules["no-page"], {
     },
   ],
 });
+
+/**
+ * A workspace on disk, as no-internal-in-entries reads one: `packages/kit`, whose entries are
+ * `kit` (src/index.ts) and `kit/Mod` (src/Mod.ts), and `packages/other`, which imports it.
+ */
+const workspace = (files: Record<string, string>): string => {
+  const cwd = mkdtempSync(join(tmpdir(), "no-internal-in-entries-"));
+  const all: Record<string, string> = {
+    "packages/kit/package.json": JSON.stringify({
+      name: "kit",
+      exports: {
+        ".": { source: "./src/index.ts", default: "./dist/index.js" },
+        "./Mod": { source: "./src/Mod.ts", default: "./dist/Mod.js" },
+      },
+    }),
+    "packages/other/package.json": JSON.stringify({
+      name: "other",
+      exports: { ".": { source: "./src/index.ts" } },
+    }),
+    ...files,
+  };
+  for (const [file, text] of Object.entries(all)) {
+    mkdirSync(dirname(join(cwd, file)), { recursive: true });
+    writeFileSync(join(cwd, file), text);
+  }
+  return cwd;
+};
+
+/** The case that lints `file` of a workspace of `files`. */
+const linting = (
+  name: string,
+  files: Record<string, string>,
+  file: string
+): { name: string; cwd: string; filename: string; code: string } => {
+  const cwd = workspace(files);
+  return { name, cwd, filename: join(cwd, file), code: files[file]! };
+};
+
+const hidden = `/** @internal */
+export interface Hidden {
+  readonly n: number;
+}
+
+/** @internal */
+export const helper = (n: number): number => n + 1;
+`;
+
+new RuleTester().run(
+  "no-internal-in-entries",
+  plugin.rules["no-internal-in-entries"],
+  {
+    valid: [
+      linting(
+        "a module uses an @internal export in its code, not in its signatures",
+        {
+          "packages/kit/src/internal/impl.ts": hidden,
+          "packages/kit/src/Mod.ts": `import type { Hidden } from "./internal/impl";
+import * as impl from "./internal/impl";
+
+/** Public. */
+export const next = (n: number): number => {
+  const kept: Hidden = { n: impl.helper(n) };
+  return kept.n;
+};
+`,
+        },
+        "packages/kit/src/Mod.ts"
+      ),
+      linting(
+        "an @internal export that a source uses",
+        {
+          "packages/kit/src/internal/impl.ts": hidden,
+          "packages/kit/src/Mod.ts": `import { helper } from "./internal/impl";
+import type { Hidden } from "./internal/impl";
+
+/** Public. */
+export const next = (n: number): number => helper(({ n } satisfies Hidden).n);
+`,
+        },
+        "packages/kit/src/internal/impl.ts"
+      ),
+      linting(
+        "a public signature names a public export of an internal file",
+        {
+          "packages/kit/src/internal/impl.ts": `/** Public. */
+export interface Shown {
+  readonly n: number;
+}
+`,
+          "packages/kit/src/Mod.ts": `import type { Shown } from "./internal/impl";
+
+/** Public. */
+export const read = (shown: Shown): number => shown.n;
+`,
+        },
+        "packages/kit/src/Mod.ts"
+      ),
+      linting(
+        "an @internal member, and a private one, name an @internal export",
+        {
+          "packages/kit/src/internal/impl.ts": hidden,
+          "packages/kit/src/Mod.ts": `import type { Hidden } from "./internal/impl";
+
+/** Public. */
+export interface Shown {
+  /** @internal */
+  readonly hidden: Hidden;
+}
+
+/** Public. */
+export class Holder {
+  private readonly kept: Hidden = { n: 0 };
+  /** @internal */
+  read(hidden: Hidden): number {
+    return hidden.n + this.kept.n;
+  }
+}
+`,
+        },
+        "packages/kit/src/Mod.ts"
+      ),
+    ],
+    invalid: [
+      ...[
+        "export const read = (hidden: Hidden): number => hidden.n;",
+        "export function read(hidden: Hidden): number {\n  return hidden.n;\n}",
+        "export const read: (hidden: Hidden) => number = (hidden) => hidden.n;",
+        "export const make = (): Hidden => ({ n: 0 });",
+        "export type Of<A extends Hidden> = A;",
+        "export interface Wrapped {\n  readonly hidden: Hidden;\n}",
+        "export interface More extends Hidden {}",
+        "export class Holder {\n  read(hidden: Hidden): number {\n    return hidden.n;\n  }\n}",
+        "export class Holder {\n  readonly kept: Hidden = { n: 0 };\n}",
+      ].map((declaration) => ({
+        ...linting(
+          `a public signature names an @internal export: ${declaration}`,
+          {
+            "packages/kit/src/internal/impl.ts": hidden,
+            "packages/kit/src/Mod.ts": `import type { Hidden } from "./internal/impl";
+
+/** Public. */
+${declaration}
+`,
+          },
+          "packages/kit/src/Mod.ts"
+        ),
+        errors: [
+          {
+            message:
+              /^Hidden is @internal, but this public signature names it/u,
+          },
+        ],
+      })),
+      {
+        ...linting(
+          "a public signature names an @internal export through its namespace",
+          {
+            "packages/kit/src/internal/impl.ts": hidden,
+            "packages/kit/src/Mod.ts": `import * as impl from "./internal/impl";
+
+/** Public. */
+export type Kept = impl.Hidden;
+`,
+          },
+          "packages/kit/src/Mod.ts"
+        ),
+        errors: [
+          {
+            message:
+              /^Hidden is @internal, but this public signature names it/u,
+          },
+        ],
+      },
+      {
+        ...linting(
+          "a public signature names an @internal export of another package",
+          {
+            "packages/kit/src/internal/impl.ts": hidden,
+            "packages/kit/src/Mod.ts": `import type { Hidden } from "./internal/impl";
+
+/** Public. */
+export type Shown = Hidden;
+`,
+            "packages/other/src/index.ts": `import type { Hidden } from "kit/internal/impl";
+
+/** Public. */
+export type Kept = Hidden;
+`,
+          },
+          "packages/other/src/index.ts"
+        ),
+        errors: [
+          {
+            message:
+              /^Hidden is @internal, but this public signature names it/u,
+          },
+        ],
+      },
+      ...[
+        `export { helper } from "./internal/impl";`,
+        `import { helper } from "./internal/impl";\nexport { helper };`,
+        `export { helper as next } from "./internal/impl";`,
+      ].map((reexport) => ({
+        ...linting(
+          `a public module exports an @internal export again: ${reexport}`,
+          {
+            "packages/kit/src/internal/impl.ts": hidden,
+            "packages/kit/src/index.ts": `${reexport}\nimport type { Hidden } from "./internal/impl";\nexport const n = ({ n: 0 } satisfies Hidden).n;\n`,
+          },
+          "packages/kit/src/index.ts"
+        ),
+        errors: [
+          {
+            message:
+              /^helper is @internal, so a public module must not export it/u,
+          },
+        ],
+      })),
+      {
+        ...linting(
+          "an @internal export that no source uses, though a test does",
+          {
+            "packages/kit/src/internal/impl.ts": `/** @internal */
+export const unused = 1;
+`,
+            "packages/kit/test/Impl.test.ts": `import { unused } from "../src/internal/impl";\nunused;\n`,
+          },
+          "packages/kit/src/internal/impl.ts"
+        ),
+        errors: [
+          {
+            message:
+              /^unused is @internal, and no source of the packages uses it/u,
+          },
+        ],
+      },
+      {
+        ...linting(
+          "an entry declares an @internal export",
+          {
+            "packages/kit/src/internal/impl.ts": `import { helper } from "../Mod";\n\n/** Public. */\nexport const two = helper(1);\n`,
+            "packages/kit/src/Mod.ts": `/**
+ * The next number.
+ *
+ * @internal
+ */
+export const helper = (n: number): number => n + 1;
+`,
+          },
+          "packages/kit/src/Mod.ts"
+        ),
+        errors: [
+          { message: /^helper is @internal, but src\/Mod\.ts is an entry/u },
+        ],
+      },
+    ],
+  }
+);
