@@ -26,7 +26,8 @@
  *   `arcadekit/net/Relay`.
  * - `Transport.layerBroadcastChannel` connects the tabs, windows and workers
  *   of one browser.
- * - `Transport.text` makes a transport over anything else that carries text.
+ * - `Transport.fromWire` makes a transport over anything else that carries
+ *   bytes and text.
  * - `Transport.makeHub` is an in-memory network for tests, which delays and
  *   reorders messages as it is told.
  */
@@ -42,6 +43,7 @@ import {
   Schedule,
   Scope,
 } from "effect";
+import type { Schema } from "effect";
 import { Socket } from "effect/socket";
 
 import type { Paced } from "../Driver";
@@ -275,19 +277,21 @@ const joined = (
 };
 
 /**
- * A channel that carries text to the other peers: a WebSocket to a relay that
- * forwards each message to the others in a room, a data channel, or a port.
+ * A channel that carries bytes and text to the other peers: a WebSocket to a
+ * relay that forwards each message to the others in a room, a data channel,
+ * or a port. Messages go as bytes, and a relay's notices come as text.
  *
  * @category Models
  */
 export interface Wire {
-  /** Sends text to every other peer. */
-  readonly send: (text: string) => void;
+  /** Sends a message's bytes to every other peer. */
+  readonly send: (bytes: Uint8Array<ArrayBuffer>) => void;
   /**
-   * Calls `onText` with each text that arrives from another peer. Returns a
+   * Calls `onData` with each frame that arrives from another peer: bytes as
+   * a `Uint8Array` and text as a string, as they were sent. Returns a
    * function that stops listening.
    */
-  readonly listen: (onText: (text: string) => void) => () => void;
+  readonly listen: (onData: (data: string | Uint8Array) => void) => () => void;
 }
 
 /**
@@ -295,24 +299,36 @@ export interface Wire {
  *
  * @category Models
  */
-export interface TextTransport extends Listener {
+export interface WireTransport extends Listener {
   /**
    * Stops listening to the wire. `send` and `receive` throw from then on, so
    * a game doesn't wait for messages that can no longer arrive.
    */
   readonly close: () => void;
   /**
-   * The number of texts that arrived but weren't messages, and were dropped.
-   * Nothing that comes off a wire is trusted.
+   * The number of frames that arrived but were neither a message nor a
+   * notice, and were dropped. Nothing that comes off a wire is trusted.
    */
   readonly dropped: number;
 }
 
+/** What a frame from another peer is: a message in bytes, a relay's notice in text, or neither. */
+const arrival = (
+  data: string | Uint8Array
+): Message.Message | Message.Notice | undefined => {
+  const read: Exit.Exit<Message.Message | Message.Notice, Schema.SchemaError> =
+    typeof data === "string"
+      ? Message.decodeNotice(data)
+      : Message.decode(data);
+  return Exit.isSuccess(read) ? read.value : undefined;
+};
+
 /**
- * Makes a transport over anything that carries text. It sends messages as
- * `Message.encode` writes them, and reads arriving text with
- * `Message.decode`, or as a relay's notice with `Message.decodeNotice`. It
- * drops text that is neither, and counts it in `dropped`.
+ * Makes a transport over anything that carries bytes and text. It sends
+ * messages in the bytes `Message.encode` writes. It reads arriving bytes with
+ * `Message.decode`, and arriving text as a relay's notice with
+ * `Message.decodeNotice`. It drops what is neither, and counts it in
+ * `dropped`.
  *
  * The wire must deliver every message, in any order. A WebSocket does, and a
  * data channel must be configured to.
@@ -323,28 +339,23 @@ export interface TextTransport extends Listener {
  *
  * @category Constructors
  */
-export const text = (wire: Wire): TextTransport => {
+export const fromWire = (wire: Wire): WireTransport => {
   let inbox: (Message.Message | Message.Notice)[] = [];
   let dropped = 0;
   let open = true;
   const use = (): void => {
     if (!open) {
       throw new Error(
-        "A transport over text was used after it was closed. Close it when the session it carries is done with it, as the close of a connection Transport.connect made closes the transports of the package."
+        "A transport over a wire was used after it was closed. Close it when the session it carries is done with it, as the close of a connection Transport.connect made closes the transports of the package."
       );
     }
   };
-  const stop = wire.listen((arrived) => {
-    const message = Message.decode(arrived);
-    if (Exit.isSuccess(message)) {
-      inbox.push(message.value);
-      return;
-    }
-    const notice = Message.decodeNotice(arrived);
-    if (Exit.isSuccess(notice)) {
-      inbox.push(notice.value);
-    } else {
+  const stop = wire.listen((data) => {
+    const arrived = arrival(data);
+    if (arrived === undefined) {
       dropped++;
+    } else {
+      inbox.push(arrived);
     }
   });
   return {
@@ -400,13 +411,13 @@ export const layerBroadcastChannel = (
         Effect.sync(() => {
           const channel = new BroadcastChannel(name);
           channel.postMessage(Message.encodeNotice({ joined: me }));
-          const over = text({
-            send: (message) => channel.postMessage(message),
-            listen(onText) {
-              channel.onmessage = (event: MessageEvent<unknown>) => {
-                // Whatever else is posted under the name is not text, and
-                // is dropped as what is not a message.
-                onText(event.data as string);
+          const over = fromWire({
+            send: (bytes) => channel.postMessage(bytes),
+            listen(onData) {
+              channel.onmessage = ({ data }: MessageEvent<unknown>) => {
+                if (typeof data === "string" || data instanceof Uint8Array) {
+                  onData(data);
+                }
               };
               return () => {
                 channel.onmessage = null;
@@ -424,7 +435,7 @@ export const layerBroadcastChannel = (
           })
       ),
       (held): Listener => {
-        const use = (): TextTransport => {
+        const use = (): WireTransport => {
           if (!held.open) {
             throw new Error(
               `The transport "${name}" was used after it was let go, and its channel closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
@@ -555,14 +566,14 @@ export const layerWebSocket = (
             construct
           ),
       });
-      const outbox = yield* Queue.unbounded<string>();
-      let hear: (text: string) => void = () => {};
-      const over = text({
-        send(sent) {
-          Queue.offerUnsafe(outbox, sent);
+      const outbox = yield* Queue.unbounded<Uint8Array>();
+      let hear: (data: string | Uint8Array) => void = () => {};
+      const over = fromWire({
+        send(bytes) {
+          Queue.offerUnsafe(outbox, bytes);
         },
-        listen(onText) {
-          hear = onText;
+        listen(onData) {
+          hear = onData;
           return () => {
             hear = () => {};
           };
@@ -599,13 +610,13 @@ export const layerWebSocket = (
         Effect.gen(function* () {
           again = opened;
           heard = false;
-          const pull = yield* Socket.readerString(socket);
+          const { pull } = yield* socket.reader;
           opened = true;
           return yield* Effect.forever(
-            Effect.map(pull, (texts) => {
+            Effect.map(pull, (frames) => {
               heard = true;
-              for (const arrived of texts) {
-                hear(arrived);
+              for (const frame of frames) {
+                hear(frame);
               }
             })
           );
@@ -631,7 +642,7 @@ export const layerWebSocket = (
         Effect.forkScoped
       );
 
-      const use = (): TextTransport => {
+      const use = (): WireTransport => {
         if (!listening) {
           throw new Error(
             `The transport to ${url} was used after it was let go, and its socket closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
@@ -701,8 +712,9 @@ export interface Hub {
 /**
  * Makes an in-memory network. Nothing is lost unless a peer is cut off with
  * `disconnect`, and time moves only when the test calls `step`. A message is
- * in transit for as many steps as its delay. Messages travel as text, so a
- * message that wouldn't survive a wire doesn't survive the hub either.
+ * in transit for as many steps as its delay. Messages travel as bytes and
+ * notices as text, so a message that wouldn't survive a wire doesn't survive
+ * the hub either.
  *
  *   const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 })
  *   const ada = yield* Transport.connect(session).pipe(Effect.provide(hub.layer("ada")))
@@ -732,7 +744,7 @@ export const makeHub = (options: HubOptions = {}): Hub => {
     readonly at: number;
     readonly order: number;
     readonly from: string | undefined;
-    readonly text: string;
+    readonly data: string | Uint8Array;
   }
   // Per peer, what is on its way to it.
   const flights = new Map<string, Flight[]>();
@@ -745,7 +757,7 @@ export const makeHub = (options: HubOptions = {}): Hub => {
       at: now,
       order: sent++,
       from: undefined,
-      text: Message.encodeNotice(notice),
+      data: Message.encodeNotice(notice),
     });
   };
   const known = (peer: string): void => {
@@ -772,7 +784,7 @@ export const makeHub = (options: HubOptions = {}): Hub => {
                 at: now + (min === max ? min : dice.int(min, max)),
                 order: sent++,
                 from: peer,
-                text: encoded,
+                data: encoded,
               });
             }
           }
@@ -789,14 +801,9 @@ export const makeHub = (options: HubOptions = {}): Hub => {
           mine.push(...left);
           const arrived: (Message.Message | Message.Notice)[] = [];
           for (const flight of due) {
-            const message = Message.decode(flight.text);
-            if (Exit.isSuccess(message)) {
-              arrived.push(message.value);
-              continue;
-            }
-            const notice = Message.decodeNotice(flight.text);
-            if (Exit.isSuccess(notice)) {
-              arrived.push(notice.value);
+            const one = arrival(flight.data);
+            if (one !== undefined) {
+              arrived.push(one);
             }
           }
           return arrived;

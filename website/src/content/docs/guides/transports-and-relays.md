@@ -15,7 +15,7 @@ There is no default transport. A multiplayer game without one doesn't compile, s
 | --- | --- |
 | `Transport.layerBroadcastChannel(name, me)` | The tabs, windows and workers of one browser, with no server |
 | `Transport.layerWebSocket(url)` | Machines, through a relay |
-| `Transport.text(wire)` | Anything that carries text, such as a data channel or a port |
+| `Transport.fromWire(wire)` | Anything that carries bytes and text, such as a data channel or a port |
 | `Transport.makeHub(options)` | Peers in one test, in memory. See [testing](testing.md#connect-several-peers) |
 
 A transport's channel must deliver every message, in any order. The session drops duplicates. It also keeps what it sent until every other peer has said it heard it, and sends it again when a relay says a peer joined the room, so a socket that drops and connects again loses nothing.
@@ -87,11 +87,13 @@ The game ends for that peer when the socket closes for good: when it never opene
 import { Transport } from "arcadekit/net";
 
 declare const channel: RTCDataChannel;
+channel.binaryType = "arraybuffer";
 
-const transport = Transport.text({
-  send: (text) => channel.send(text),
-  listen(onText) {
-    const hear = (event: MessageEvent<string>) => onText(event.data);
+const transport = Transport.fromWire({
+  send: (bytes) => channel.send(bytes),
+  listen(onData) {
+    const hear = ({ data }: MessageEvent<string | ArrayBuffer>) =>
+      onData(typeof data === "string" ? data : new Uint8Array(data));
     channel.addEventListener("message", hear);
     return () => channel.removeEventListener("message", hear);
   },
@@ -100,15 +102,15 @@ const transport = Transport.text({
 export const layer = Transport.layer(transport);
 ```
 
-`Transport.text(wire)` makes a transport over anything else that carries text.
+`Transport.fromWire(wire)` makes a transport over anything else that carries bytes and text.
 
-- Messages travel in the format `Message.encode` writes, and a relay's notices in the format `Message.encodeNotice` writes. Text that is neither is dropped and counted in `transport.dropped`, since nothing that comes off a wire is trusted.
+- Messages travel as the bytes `Message.encode` writes, and a relay's notices as the text `Message.encodeNotice` writes. The wire hands `onData` bytes as a `Uint8Array` and text as a string. What is neither a message nor a notice is dropped and counted in `transport.dropped`, since nothing that comes off a wire is trusted.
 - The channel must deliver every message. A WebSocket does, and a data channel does once it is configured to.
 - `transport.close()` stops listening, and `send` and `receive` throw from then on. A transport passed to `Transport.layer` is listened on already, and your game closes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
 - It doesn't tell the other peers that this one joined or left. Send them `Message.encodeNotice({ joined: me })` when the channel opens and `Message.encodeNotice({ left: me })` before it closes, or `connected.away` never lists a peer that is gone.
 
-For a channel that doesn't carry text, pass a `Transport.Listener` of your own to `Transport.layer`. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows of one. Neither of its calls waits, so a tick stays one synchronous step. Whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
+For a channel that carries neither bytes nor text, pass a `Transport.Listener` of your own to `Transport.layer`. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows of one. Neither of its calls waits, so a tick stays one synchronous step. Whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
 
 ## Read more
 

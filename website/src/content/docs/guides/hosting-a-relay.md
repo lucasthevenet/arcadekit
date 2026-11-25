@@ -28,39 +28,39 @@ export const onConnect = (url: string, socket: WebSocket) => {
     return undefined;
   }
   // The room is told who came in, and the newcomer who is there.
-  for (const { to, text } of Relay.joined(joined.value, [
+  for (const { to, data } of Relay.joined(joined.value, [
     ...present,
     joined.value,
   ])) {
-    (to.peer === joined.value.peer ? socket : socketOf(to)).send(text);
+    (to.peer === joined.value.peer ? socket : socketOf(to)).send(data);
   }
   return joined.value; // { room, peer }, to keep with the connection
 };
 
-// A member sent something.
-export const onMessage = (from: Relay.Member, data: string) => {
+// A member sent something: a message comes as bytes.
+export const onMessage = (from: Relay.Member, data: string | ArrayBuffer) => {
   const deliveries = Relay.forward(from, data, present); // Exit<Delivery[], Refused>
   if (Exit.isFailure(deliveries)) {
     const refused = Cause.squash(deliveries.cause) as Relay.Refused;
     socketOf(from).close(refused.code, refused.reason);
     return;
   }
-  for (const { to, text } of deliveries.value) {
-    socketOf(to).send(text);
+  for (const { to, data } of deliveries.value) {
+    socketOf(to).send(data);
   }
 };
 
 // A member's socket closed, and the member is no longer in `present`.
 export const onClose = (gone: Relay.Member) => {
-  for (const { to, text } of Relay.left(gone, present)) {
-    socketOf(to).send(text);
+  for (const { to, data } of Relay.left(gone, present)) {
+    socketOf(to).send(data);
   }
 };
 ```
 
 - `Relay.join(url, proven, present, options)` decides whether a peer may join, from the address it asked for, the name the host proved it holds, and who is already in the room. It refuses an address without a room or a peer, a name other than the proven one, a name already taken in that room, a full room, and a name that the room's `peers` doesn't list. Room and peer names are at most 64 characters.
-- `Relay.forward(member, data, present, options)` decides what to forward from a member's message: one text for every other member of its room. The relay writes the forwarded message again from what it parsed, so nothing else the peer sent is passed on. It refuses anything that isn't a message, anything longer than `maxLength`, and a message that claims to be from anyone but the member that sent it.
-- `Relay.joined(member, present)` and `Relay.left(member, present)` return the notices for a member that joins or leaves the room. Every other member gets `{"joined":"ada"}` or `{"left":"ada"}`, and the member who joined gets a `joined` for each member already there. With these notices, a peer that comes back after its socket dropped is sent again what it missed, and `Transport.connect` lists who left in `away`. A member can't send a notice itself, since a notice isn't a message and `forward` refuses it.
+- `Relay.forward(member, data, present, options)` decides what to forward from a member's message: the bytes the member sent, unchanged, for every other member of its room. It refuses text, since a message comes as bytes, bytes that aren't a message and nothing more, anything longer than `maxLength` bytes, and a message that claims to be from anyone but the member that sent it.
+- `Relay.joined(member, present)` and `Relay.left(member, present)` return the notices for a member that joins or leaves the room, as text. Every other member gets `{"joined":"ada"}` or `{"left":"ada"}`, and the member who joined gets a `joined` for each member already there. With these notices, a peer that comes back after its socket dropped is sent again what it missed, and `Transport.connect` lists who left in `away`. A member can't send a notice itself, since a notice isn't a message and `forward` refuses it.
 - `present` is everyone connected, as the host tracks them. The functions keep no state between calls, so a host that sleeps between messages can call them. `Relay.Member` is the schema to store a member with.
 
 `join` and `forward` take these options:
@@ -69,7 +69,7 @@ export const onClose = (gone: Relay.Member) => {
 | --- | --- | --- |
 | `maxPeers` | `8` | The most peers in a room. One more is refused with `"room full"` |
 | `peers` | Any name | The only names a room admits, for a game that knows its players |
-| `maxLength` | `65_536` | The longest text a member may send, in characters. A longer one is refused with `"too long"` |
+| `maxLength` | `65_536` | The longest message a member may send, in bytes. A longer one is refused with `"too long"` |
 
 A refusal is a `Relay.Refused`:
 

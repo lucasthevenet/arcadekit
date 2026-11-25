@@ -15,8 +15,8 @@
  *   for (const message of session.outgoing()) send(message)
  *
  * A peer holds no socket and no timer. It receives the messages that arrived
- * and returns the ones to send, and a transport carries them, as text in the
- * form `Message.encode` writes. Every message says how far its peer has heard
+ * and returns the ones to send, and a transport carries them, as the bytes
+ * `Message.encode` writes. Every message says how far its peer has heard
  * the others. A peer keeps what it sent until every other peer has heard it,
  * and `resend` returns it to send again when a peer comes back after its
  * socket dropped.
