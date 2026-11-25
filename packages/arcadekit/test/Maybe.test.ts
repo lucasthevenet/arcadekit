@@ -237,6 +237,25 @@ describe("a term an entity may lack", () => {
     expect(world.get(populated().entities[1]!, Rotation)).toEqual({ a: 1 });
   });
 
+  it("hands out what a spawn or an add filled in", () => {
+    const Turned = Component.tag("mb/Turned", {
+      requires: [Rotation.of({ a: 9 })],
+    });
+    const world = new EcsWorld();
+    world.spawn(Position.of({ x: 0 }), Turned);
+    const later = world.spawn(Position.of({ x: 1 }));
+    const seen = (): (number | undefined)[] => {
+      const angles: (number | undefined)[] = [];
+      world.view(Drawn).each((_position, rotation) => {
+        angles.push(rotation?.a);
+      });
+      return angles;
+    };
+    expect(seen()).toEqual([9, undefined]);
+    world.add(later, Turned);
+    expect(seen()).toEqual([9, 9]);
+  });
+
   it("is refused for a sparse component", () => {
     // @ts-expect-error only a component stored in tables
     expect(() => Query.maybe(Heat)).toThrow(/sparse component/);

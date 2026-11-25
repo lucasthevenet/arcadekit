@@ -90,9 +90,9 @@ export interface StateHandle<V extends string> extends StateView<V> {
 
 /** A value's tag, and the query of the entities that have it. */
 interface Scope<V extends string, N extends string> {
-  readonly tag: ComponentDef<{}, "table", `${N}.Scoped.${V}`>;
+  readonly tag: ComponentDef<{}, "table", `${N}.Scoped.${V}`, never>;
   readonly holders: Query.Query<
-    readonly [ComponentDef<{}, "table", `${N}.Scoped.${V}`>],
+    readonly [ComponentDef<{}, "table", `${N}.Scoped.${V}`, never>],
     never
   >;
 }
@@ -447,14 +447,14 @@ export const refuseRemovedScopes = (
 export const scoped = <V extends string, N extends string, S extends V>(
   state: State<V, N>,
   value: S
-): ComponentDef<{}, "table", `${N}.Scoped.${S}`> => {
+): ComponentDef<{}, "table", `${N}.Scoped.${S}`, never> => {
   const scope = state.scopes.get(value);
   if (scope === undefined) {
     throw new Error(
       `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`
     );
   }
-  return scope.tag as ComponentDef<{}, "table", `${N}.Scoped.${S}`>;
+  return scope.tag as ComponentDef<{}, "table", `${N}.Scoped.${S}`, never>;
 };
 
 /**

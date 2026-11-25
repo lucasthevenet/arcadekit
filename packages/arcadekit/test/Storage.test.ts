@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { CommandBuffer } from "../src/ecs/commands";
 import {
@@ -8,7 +8,7 @@ import {
   entityOf,
   idOf,
 } from "../src/ecs/component";
-import type { ComponentDef, Entity } from "../src/ecs/component";
+import type { ComponentDef, Entity, RequiredOf } from "../src/ecs/component";
 import type { QuerySpec, Terms } from "../src/ecs/query";
 import { World } from "../src/ecs/world";
 import { Query, all, maybe, without } from "../src/Query";
@@ -349,6 +349,163 @@ describe("entities and components", () => {
     ]);
     const variant = (n: 1 | 2) => Component.tag(`st/Variant${n}`);
     expect(variant(1).name).toBe("st/Variant1");
+  });
+});
+
+describe("required components", () => {
+  const Size = Component.define(
+    "st/Size",
+    { w: Field.f32 },
+    { initial: { w: 1 } }
+  );
+  const Body = Component.define("st/Body", {}, { requires: [Position, Size] });
+  const Rock = Component.define(
+    "st/Rock",
+    { hp: Field.i32 },
+    { requires: [Body, Size.of({ w: 2 })] }
+  );
+  const Big = Component.tag("st/Big", { requires: [Size.of({ w: 3 })] });
+  const Huge = Component.tag("st/Huge", { requires: [Size.of({ w: 4 })] });
+  const Lit = Component.tag("st/Lit", { requires: [Burning] });
+
+  it("name what they fill, at any depth, and nothing for a component that requires none", () => {
+    expectTypeOf<RequiredOf<typeof Rock>>().toEqualTypeOf<
+      "st/Body" | "st/Position" | "st/Size"
+    >();
+    expectTypeOf<RequiredOf<ReturnType<typeof Rock.of>>>().toEqualTypeOf<
+      "st/Body" | "st/Position" | "st/Size"
+    >();
+    expectTypeOf<RequiredOf<typeof Health>>().toEqualTypeOf<never>();
+    expectTypeOf<RequiredOf<typeof Enemy>>().toEqualTypeOf<never>();
+    expectTypeOf<
+      RequiredOf<ReturnType<typeof Health.of>>
+    >().toEqualTypeOf<never>();
+    // Without exactOptionalPropertyTypes, an optional property is also
+    // undefined: a component that requires nothing still names none.
+    expectTypeOf<
+      RequiredOf<{ readonly _requires?: readonly [never] | undefined }>
+    >().toEqualTypeOf<never>();
+  });
+
+  it("fill what a spawn leaves out: zeros, the initial value, and the value required", () => {
+    const world = new World();
+    const rock = world.spawn(Rock);
+    expect(world.has(rock, Body)).toBe(true);
+    expect(world.get(rock, Position)).toEqual({ x: 0, y: 0 });
+    // Rock's own Size.of beats the bare Size its Body requires.
+    expect(world.get(rock, Size)).toEqual({ w: 2 });
+    expect(world.get(world.spawn(Body), Size)).toEqual({ w: 1 });
+  });
+
+  it("keep a component given at the spawn over the one they would fill", () => {
+    const world = new World();
+    const rock = world.spawn(Rock, Position.of({ x: 5, y: 0 }), Size);
+    expect(world.get(rock, Position)).toEqual({ x: 5, y: 0 });
+    expect(world.get(rock, Size)).toEqual({ w: 1 });
+    const later = world.spawn(Size.of({ w: 9 }), Rock);
+    expect(world.get(later, Size)).toEqual({ w: 9 });
+  });
+
+  it("take the later input's value when two fill one component", () => {
+    const world = new World();
+    expect(world.get(world.spawn(Big, Huge), Size)).toEqual({ w: 4 });
+    expect(world.get(world.spawn(Huge, Big), Size)).toEqual({ w: 3 });
+  });
+
+  it("take, of two a component inherits, the later", () => {
+    const Both = Component.tag("st/Both", { requires: [Big, Huge] });
+    const world = new World();
+    expect(world.get(world.spawn(Both), Size)).toEqual({ w: 4 });
+  });
+
+  it("fill on add only what the entity lacks, in one move", () => {
+    const world = new World();
+    const e = world.spawn(Health, Position.of({ x: 7, y: 1 }));
+    const tables = world.tables.length;
+    world.add(e, Rock);
+    expect(world.tables.length).toBe(tables + 1);
+    expect(world.get(e, Position)).toEqual({ x: 7, y: 1 });
+    expect(world.get(e, Size)).toEqual({ w: 2 });
+    expect(world.has(e, Body)).toBe(true);
+  });
+
+  it("let a required component be removed, and fill it again when the component is added again", () => {
+    const world = new World();
+    const rock = world.spawn(Rock.of({ hp: 3 }));
+    expect(world.remove(rock, Position)).toBe(true);
+    expect(world.has(rock, Rock)).toBe(true);
+    expect(world.has(rock, Position)).toBe(false);
+    world.add(rock, Rock);
+    expect(world.get(rock, Position)).toEqual({ x: 0, y: 0 });
+    expect(world.get(rock, Rock)).toEqual({ hp: 3 });
+  });
+
+  it("fill a sparse component, on spawn and on add", () => {
+    const world = new World();
+    expect(world.has(world.spawn(Lit), Burning)).toBe(true);
+    const e = world.spawn(Health, Burning.of({ seconds: 5 }));
+    world.add(e, Lit);
+    expect(world.get(e, Burning)).toEqual({ seconds: 5 });
+    const bare = world.spawn(Health);
+    world.add(bare, Lit);
+    expect(world.get(bare, Burning)).toEqual({ seconds: 0 });
+  });
+
+  it("fill through a command buffer", () => {
+    const world = new World();
+    const commands = new CommandBuffer(world);
+    const rock = commands.spawn(Rock);
+    const e = world.spawn(Health);
+    commands.add(e, Lit);
+    commands.apply();
+    expect(world.has(rock, Position)).toBe(true);
+    expect(world.has(e, Burning)).toBe(true);
+  });
+
+  it("refuse a relation and a singleton, in the type and when the type is gone round", () => {
+    const ChildOf = Component.relation("st/RequiredChildOf", {
+      onTargetDespawn: "despawn",
+    });
+    const Score = Component.singleton(
+      "st/RequiredScore",
+      { n: Field.i32 },
+      {
+        n: 0,
+      }
+    );
+    expect(() =>
+      Component.define(
+        "st/Hanging",
+        {},
+        {
+          // @ts-expect-error a relation has no target to fill in
+          requires: [ChildOf],
+        }
+      )
+    ).toThrow(/"st\/RequiredChildOf" can't be required/);
+    expect(() =>
+      Component.define(
+        "st/Scored",
+        {},
+        {
+          // @ts-expect-error no entity has a singleton
+          requires: [Score.component],
+        }
+      )
+    ).toThrow(/"st\/RequiredScore" can't be required/);
+  });
+
+  it("fill nothing when a world loads a save, and hash as a world without the requirement", () => {
+    const before = new World();
+    const Old = Component.tag("st/Saved");
+    before.spawn(Old, Health.of({ hp: 2 }));
+    const bytes = before.snapshot();
+    const New = Component.tag("st/Saved", { requires: [Position] });
+    const after = new World();
+    after.load(bytes, [New]);
+    const [only] = after.view(query([New])).entities();
+    expect(after.has(only!, Position)).toBe(false);
+    expect(after.hash()).toBe(before.hash());
   });
 });
 
@@ -1196,6 +1353,24 @@ describe("structural changes during iteration", () => {
 describe("randomized comparison against a simple model", () => {
   // A second, obviously-correct implementation: a Map of entity -> components.
   // Thousands of random operations must leave both in the same state.
+  const Armored = Component.define(
+    "st/Armored",
+    { plates: Field.i32 },
+    { requires: [Health.of({ hp: 100 }), Stunned] }
+  );
+  /** What the model fills in for a component, by the id of the one filled. */
+  const fills = new Map<
+    number,
+    readonly (readonly [number, Record<string, number>])[]
+  >([
+    [
+      Armored.id,
+      [
+        [Health.id, { hp: 100 }],
+        [Stunned.id, {}],
+      ],
+    ],
+  ]);
   // As any component: the model holds plain objects, whatever the component.
   const defs: readonly ComponentDef[] = [
     Position,
@@ -1204,6 +1379,7 @@ describe("randomized comparison against a simple model", () => {
     Enemy,
     Stunned,
     Burning,
+    Armored,
   ];
   const random = (seed: number) => () => {
     seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
@@ -1221,6 +1397,9 @@ describe("randomized comparison against a simple model", () => {
     }
     if (def === Burning) {
       return { seconds: Math.fround(rnd() * 10) };
+    }
+    if (def === Armored) {
+      return { plates: Math.floor(rnd() * 10) };
     }
     return {};
   };
@@ -1247,6 +1426,17 @@ describe("randomized comparison against a simple model", () => {
             values.set(d.id, value);
             return d.of(value);
           });
+          const filled = new Map<number, Record<string, number>>();
+          for (const d of chosen) {
+            for (const [id, value] of fills.get(d.id) ?? []) {
+              filled.set(id, value);
+            }
+          }
+          for (const [id, value] of filled) {
+            if (!values.has(id)) {
+              values.set(id, value);
+            }
+          }
           model.set(world.spawn(...inputs), values);
         } else if (roll < 0.45) {
           checks.check(`step ${step}: despawned`, world.despawn(pick), true);
@@ -1255,7 +1445,13 @@ describe("randomized comparison against a simple model", () => {
         } else if (roll < 0.75) {
           const value = sample(def!, rnd);
           world.add(pick, def.of(value));
-          model.get(pick)!.set(def.id, value);
+          const values = model.get(pick)!;
+          values.set(def.id, value);
+          for (const [id, filled] of fills.get(def.id) ?? []) {
+            if (!values.has(id)) {
+              values.set(id, filled);
+            }
+          }
         } else {
           checks.check(
             `step ${step}: removed ${def.name}`,
