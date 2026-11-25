@@ -541,6 +541,40 @@ describe("Three.instances", () => {
         transform: Transform2d,
         make,
       });
+      // A kind of the Position itself, or of a list with it, has that Position.
+      Three.instances("th/Positions", {
+        of: Position,
+        transform: Transform3d,
+        geometry,
+        material,
+      });
+      Three.objects("th/HeavyPositions", {
+        of: [Heavy, Transform2d.Position],
+        transform: Transform2d,
+        make,
+      });
+      Three.instances("th/OtherPosition", {
+        of: [Heavy, Transform2d.Position],
+        // @ts-expect-error the Position of the other module
+        transform: Transform3d,
+        geometry,
+        material,
+      });
+      const bare: ComponentDef = Heavy;
+      Three.instances("th/Bare", {
+        of: bare,
+        // @ts-expect-error a component whose names the compiler doesn't read
+        transform: Transform3d,
+        geometry,
+        material,
+      });
+      const bares: readonly ComponentDef[] = [Heavy];
+      Three.objects("th/Bares", {
+        of: bares,
+        // @ts-expect-error nor for objects, of several components
+        transform: Transform2d,
+        make,
+      });
       const loose = (of: typeof Rock | typeof FlatRock, transform: Transform) =>
         Three.instances("th/Loose", {
           of,

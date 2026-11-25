@@ -98,8 +98,9 @@ export interface Which {
    * The component that marks an entity as one of the kind, or several
    * components, all of which it must have. An entity is drawn while it has
    * them, none of `without`, and the `Position` of the kind's `transform`.
-   * One of them requires that `Position`, so that a spawn or an add of it
-   * gives the entity one, and a kind whose components don't doesn't compile:
+   * One of them is that `Position` or requires it, so that a spawn or an add
+   * of it gives the entity one, and a kind whose components don't doesn't
+   * compile:
    *
    *   const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] })
    */
@@ -136,14 +137,22 @@ export interface Which {
 
 type PositionName = Which["transform"]["Position"]["name"];
 
-/** The positions that one of the components `of` may be doesn't require. */
+/** A name the compiler reads, and `never` for one it only knows as `string`. */
+type Known<N> = string extends N ? never : N;
+
+/** The names that a component is or requires, as far as the compiler reads them. */
+type Gives<D> = D extends { readonly name: infer N extends string }
+  ? Known<N> | Known<RequiredOf<D>>
+  : never;
+
+/** The positions that one of the components `of` may be neither is nor requires. */
 type Missing<O> = O extends unknown
-  ? Exclude<PositionName, RequiredOf<O extends readonly (infer D)[] ? D : O>>
+  ? Exclude<PositionName, Gives<O extends readonly (infer D)[] ? D : O>>
   : never;
 
 /**
  * The transform a kind of `of` may be drawn from: the module whose `Position`
- * `of` requires, whichever of the components of its type it is. It is the
+ * `of` is or requires, whichever of the components of its type it is. It is the
  * type of `transform` in `Three.instances` and `Three.objects`. A helper that
  * makes kinds types its own `transform` with it, so that it can't pair a
  * component with the other module:
@@ -159,16 +168,17 @@ type Missing<O> = O extends unknown
  *
  * A helper that takes `of` and `transform` as two unions doesn't compile:
  * the compiler can't tell that a call pairs a 3D marker with `Transform2d`,
- * whose entities, spawned with the marker alone, are never drawn. A
- * component whose requirements the compiler only knows as `string` is not
- * checked.
+ * whose entities, spawned with the marker alone, are never drawn. Nor does
+ * an `of` typed as a plain `ComponentDef`: the compiler knows its name and
+ * its requirements only as `string`, and can't tell that it requires a
+ * `Position`.
  *
  * @category Type-level
  */
 export type TransformOf<O> = Which["transform"] & {
   readonly Position: {
     readonly name: [Exclude<PositionName, Missing<O>>] extends [never]
-      ? `The kind's "of" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Define its component with requires: [Position], the Position of the kind's transform.`
+      ? `The kind's "of" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Define its component with requires: [Position], the Position of the kind's transform, and type it as the component it is, not as a ComponentDef.`
       : Exclude<PositionName, Missing<O>>;
   };
 };
