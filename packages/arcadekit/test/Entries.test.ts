@@ -121,10 +121,10 @@ const entries = Object.keys(manifest.exports);
 describe("the package's entries", () => {
   it("are the package itself, every module, the storage core, and the folder of what plays on several machines", () => {
     // What the sources say the entries are: a module's is named as its
-    // file is.
+    // file is, and built to the same path in dist/.
     const expected: Record<string, Target> = {};
     const entry = (name: string, source: string): void => {
-      const built = name === "." ? "index" : name.slice("./".length);
+      const built = source.slice("../src/".length, -".ts".length);
       expected[name] = {
         source: `./${source.slice("../".length)}`,
         types: `./dist/${built}.d.ts`,

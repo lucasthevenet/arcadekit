@@ -154,8 +154,8 @@
     },
     "./browser": {
       "source": "./src/browser/index.ts",
-      "types": "./dist/browser.d.ts",
-      "default": "./dist/browser.js"
+      "types": "./dist/browser/index.d.ts",
+      "default": "./dist/browser/index.js"
     },
     "./browser/Audio": {
       "source": "./src/browser/Audio.ts",
@@ -169,13 +169,13 @@
     },
     "./ecs": {
       "source": "./src/ecs/index.ts",
-      "types": "./dist/ecs.d.ts",
-      "default": "./dist/ecs.js"
+      "types": "./dist/ecs/index.d.ts",
+      "default": "./dist/ecs/index.js"
     },
     "./net": {
       "source": "./src/net/index.ts",
-      "types": "./dist/net.d.ts",
-      "default": "./dist/net.js"
+      "types": "./dist/net/index.d.ts",
+      "default": "./dist/net/index.js"
     },
     "./net/Drift": {
       "source": "./src/net/Drift.ts",
@@ -212,7 +212,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p . && tsc -p examples && tsc -p bench",
     "demo": "tsx examples/demo/main.ts",
     "duel": "tsx examples/duel.ts",
