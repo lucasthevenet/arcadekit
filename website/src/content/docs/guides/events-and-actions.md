@@ -52,14 +52,18 @@ An action is how anything outside the simulation changes the game, such as a pla
 
 ```ts
 import { Action, Commands, EntityId, World } from "arcadekit";
-import { Data, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
+
+class NoSuchFighter extends Schema.TaggedError<NoSuchFighter>()(
+  "NoSuchFighter",
+  {}
+) {}
 
 const Strike = Action.define(
   "duel/Strike",
-  Schema.Struct({ attacker: EntityId, target: EntityId })
+  Schema.Struct({ attacker: EntityId, target: EntityId }),
+  { refusals: [NoSuchFighter] }
 );
-
-class NoSuchFighter extends Data.TaggedError("NoSuchFighter")<{}> {}
 
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const world = yield* World;
@@ -88,7 +92,9 @@ The payload's type comes from the schema. Its JSON encoding is what the log and 
 
 Before the handler runs, the app validates the payload against the schema, including refinements the compiler can't see, such as a number between 1 and 10. A mismatch fails with `Action.InvalidPayload`.
 
-The handler checks the game's rules and refuses with a typed error, a tagged class made with `Data.TaggedError`. Fail with it and return, as in `return yield* new NoSuchFighter()`. Without the `return`, TypeScript doesn't know that the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag, because two classes with the same tag are caught as one, with no warning.
+The handler checks the game's rules and refuses with a typed error, a tagged class made with `Schema.TaggedError`. Fail with it and return, as in `return yield* new NoSuchFighter()`. Without the `return`, TypeScript doesn't know that the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag, because two classes with the same tag are caught as one, with no warning.
+
+The action declares its refusals in `Action.define`, with `{ refusals: [...] }`. A handler that fails with an error its action doesn't declare doesn't compile, and the compiler names the error. The schema of each refusal gives it a JSON form, so every peer and a save hold the same refusal. An action with no payload and refusals takes `Schema.Void` as its payload.
 
 A refusal changes nothing, even after the handler has written to the world, so a handler can check as it goes. A refusal rolls back:
 
@@ -97,7 +103,7 @@ A refusal changes nothing, even after the handler has written to the world, so a
 - the events it emitted and the actions it enqueued
 - its position in the events it read and in its change queries, so the next action sees what this one saw
 
-The same applies to a handler that dies from a bug halfway through. A refused action isn't logged, so a replay never runs it. Anything it left behind would therefore make the replay diverge.
+The same applies to a handler that dies from a bug halfway through. A refused action isn't logged, so a replay never runs it. Anything it left behind would therefore make the replay diverge. A bug isn't a refusal, though: a queued action whose handler dies fails the tick, as a system that dies does, and `app.tick` throws once the tick's other actions and systems have run.
 
 A refusal doesn't roll back anything outside the world, such as a module variable the handler changed. A field's value is read-only, so a handler replaces it, and a refusal puts the old value back. A fiber the handler forks ends with the handler. A fiber that would outlive it makes `dispatch` throw, with the handler's changes undone. A refusal also doesn't undo a write forced through a raw column of a component the query [only reads](queries.md#name-what-a-query-writes), which only an app made with `verifyFrames` refuses.
 
@@ -126,7 +132,25 @@ const pass = Action.handler(Pass, function* (_, { from }) {
 
 In a multiplayer game, `from` is the name of the peer that issued the action, the same on every peer. In a single-player game it is `undefined`, as it is for actions the simulation issues itself. Check permissions against `from`, never against a name in the payload, which the sender controls.
 
-The log and a save keep `from` for queued actions. `Action.Rejected` carries it too, alongside the action's name, its payload in JSON form, and the error as its `_tag` and `message`, so a UI can show players their own refusals.
+The log and a save keep `from` for queued actions, and so does a refusal of one, so a UI can show players their own refusals.
+
+## Read the refusals of an action
+
+A queued action that is refused becomes an event. `Action.rejected(action)` is the event of one action's refusals, with its payload and its error typed:
+
+```ts sketch
+const Refusals = System.frame("ui/Refusals", function* () {
+  for (const { error, from } of (yield* Action.rejected(Strike)).read()) {
+    if (error._tag === "NoSuchFighter") {
+      /* … */
+    }
+  }
+});
+```
+
+Each refusal is `{ payload, error, from }`: the payload the handler received, one of the refusals the action declares, and who issued it. A payload that the action's schema doesn't take never reaches the handler, and isn't among them.
+
+`Action.Rejected` is the event of every refusal, whatever the action. It carries the action's name, its payload in JSON form, the error in JSON form with its `_tag`, and `from`. Its error is a refusal the action declares, `Action.InvalidPayload` for a payload the schema doesn't take, or `Action.UnknownAction` for an action the game has no handler for.
 
 A schema validates only a payload's shape. Have the handler check whether an entity id in the payload is still alive, and whether it belongs to the player who sent it.
 

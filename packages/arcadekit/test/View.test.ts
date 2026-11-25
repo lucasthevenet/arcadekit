@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Layer, Schema } from "effect";
+import { Effect, Exit, Layer, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
@@ -28,12 +28,13 @@ const Phase = State.define("vw/Phase", ["title", "playing"]);
 // What the UI may see.
 const Hud = View.define("vw/Hud", { gold: 0, coins: 0 });
 const Menu = View.define("vw/Menu", { phase: "title" as "title" | "playing" });
+class TooPoor extends Schema.TaggedError<TooPoor>()("TooPoor", {}) {}
 // What it may ask for.
 const Start = Action.define("vw/Start", Schema.Struct({}));
-const Buy = Action.define("vw/Buy", Schema.Struct({ price: Schema.Int }));
+const Buy = Action.define("vw/Buy", Schema.Struct({ price: Schema.Int }), {
+  refusals: [TooPoor],
+});
 const Ping = Action.define("vw/Ping");
-
-class TooPoor extends Data.TaggedError("TooPoor")<{}> {}
 
 /** How often each view was worked out. */
 const worked = { hud: 0, menu: 0 };
@@ -69,7 +70,7 @@ const Game = Plugin.make("vw/Game", {
     Action.handler(Buy, function* ({ price }) {
       const purse = yield* Purse.writes;
       if (purse.gold < price) {
-        return yield* new TooPoor();
+        return yield* TooPoor.make({});
       }
       purse.gold -= price;
       (yield* Commands.spawns(Coin)).spawn(Coin.of({ value: 1 }));

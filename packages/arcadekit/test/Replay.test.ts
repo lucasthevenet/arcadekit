@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Layer, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { entityOf } from "../src/ecs/component";
@@ -31,11 +31,13 @@ const Coins = Query.all(Coin).pipe(Query.writes(Coin));
 /** The coins, read from outside the game. */
 const Lying = Query.all(Coin);
 
+class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()("NoSuchCoin", {
+  coin: EntityId,
+}) {}
 const Drop = Action.define("rp/Drop", Schema.Struct({ value: Schema.Int }));
-const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }));
-class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
-  readonly coin: Entity;
-}> {}
+const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }), {
+  refusals: [NoSuchCoin],
+});
 
 const drop = Action.handler(Drop, function* ({ value }) {
   const random = yield* Random;
@@ -47,7 +49,7 @@ const take = Action.handler(Take, function* ({ coin }) {
   const world = yield* World;
   const held = world.get(coin, Coin);
   if (held === undefined) {
-    return yield* new NoSuchCoin({ coin });
+    return yield* NoSuchCoin.make({ coin });
   }
   (yield* Commands).despawn(coin);
   return held.value;
@@ -798,10 +800,12 @@ const tallyOf = (
   return tally;
 };
 
-const Double = Action.define("rp/Double", Schema.Struct({}));
+class TooBig extends Schema.TaggedError<TooBig>()("TooBig", {}) {}
+const Double = Action.define("rp/Double", Schema.Struct({}), {
+  refusals: [TooBig],
+});
 const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));
 const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));
-class TooBig extends Data.TaggedError("TooBig")<{}> {}
 
 // Doubling and adding do not commute, so the tally gives away any change in
 // the order actions were applied in.
@@ -812,7 +816,7 @@ const double = Action.handler(Double, function* () {
     refuse = tally.value > 1e12;
   });
   if (refuse) {
-    return yield* new TooBig();
+    return yield* TooBig.make({});
   }
 });
 const add = Action.handler(Add, function* ({ by }) {

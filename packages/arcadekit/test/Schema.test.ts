@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { entityOf } from "../src/ecs/component";
@@ -16,13 +16,12 @@ import {
   System,
   World,
 } from "../src/index";
-import type { Entity } from "../src/index";
 
 const Health = Component.define("sc/Health", { hp: Field.i32 });
 
-class NoSuchTarget extends Data.TaggedError("NoSuchTarget")<{
-  readonly target: Entity;
-}> {}
+class NoSuchTarget extends Schema.TaggedError<NoSuchTarget>()("NoSuchTarget", {
+  target: EntityId,
+}) {}
 
 const Damage = Action.define(
   "Damage",
@@ -32,7 +31,8 @@ const Damage = Action.define(
     // Not representable in JSON as it is: the log has to convert it.
     seed: Schema.BigInt,
     note: Schema.optional(Schema.String),
-  })
+  }),
+  { refusals: [NoSuchTarget] }
 );
 
 const Rename = Action.define("Rename", Schema.Struct({ name: Schema.String }));
@@ -45,7 +45,7 @@ const damage = Action.handler(Damage, function* (payload) {
   const world = yield* World.writes(Health);
   const health = world.get(payload.target, Health);
   if (health === undefined) {
-    return yield* new NoSuchTarget({ target: payload.target });
+    return yield* NoSuchTarget.make({ target: payload.target });
   }
   world.set(payload.target, Health, { hp: health.hp - payload.amount });
   return health.hp - payload.amount;
@@ -131,7 +131,7 @@ describe("actions with a schema", () => {
       received.length = 0;
       const exit = app.dispatch(Damage, { target, amount: 999, seed: 1n });
       const error = failure(exit);
-      assert(error instanceof Action.InvalidPayload);
+      assert(error._tag === "InvalidPayload");
       expect(error.action).toBe("Damage");
       expect(error.message).toMatch(/amount/);
       // The handler never ran, nothing changed, nothing was logged.
@@ -182,11 +182,11 @@ describe("actions with a schema", () => {
       ];
       for (const [label, payload] of bad) {
         const error = failure(app.dispatchByName("Damage", payload));
-        assert(error instanceof Action.InvalidPayload, label);
+        assert(Schema.is(Action.InvalidPayload)(error), label);
         expect(error.message.length, label).toBeGreaterThan(0);
       }
       expect(failure(app.dispatchByName("Nope", {}))).toEqual(
-        new Action.UnknownAction({ action: "Nope" })
+        Action.UnknownAction.make({ action: "Nope" })
       );
       expect(failure(app.dispatchByName("constructor", {}))).toBeInstanceOf(
         Action.UnknownAction
@@ -198,7 +198,7 @@ describe("actions with a schema", () => {
         failure(
           app.dispatchByName("Damage", { target: dead, amount: 3, seed: "1" })
         )
-      ).toEqual(new NoSuchTarget({ target: dead }));
+      ).toEqual(NoSuchTarget.make({ target: dead }));
 
       expect(received).toHaveLength(1); // only the last one reached the handler
       expect(world.get(target, Health)).toEqual({ hp: 50 });
@@ -233,7 +233,7 @@ describe("actions with a schema", () => {
       // refused where it is enqueued, and nothing is queued.
       expect(app.enqueue(Damage, { target, amount: -2, seed: 9n })).toEqual(
         Exit.fail(
-          new Action.InvalidPayload({
+          Action.InvalidPayload.make({
             action: "Damage",
             message: 'Expected a value between 1 and 10\n  at ["amount"]',
           })
@@ -246,12 +246,12 @@ describe("actions with a schema", () => {
         "Teleport: UnknownAction",
         "Damage: NoSuchTarget",
       ]);
-      // A refusal is data: the payload in its JSON form, the error as its tag
-      // and message. It is written down and read back as it was.
+      // A refusal is data: the payload and the error in their JSON form. It
+      // is written down and read back as it was.
       expect(events[2]).toEqual({
         action: "Damage",
         payload: { target: 999, amount: 3, seed: "7" },
-        error: { _tag: "NoSuchTarget", message: "" },
+        error: { _tag: "NoSuchTarget", target: 999 },
         from: undefined,
       });
       for (const event of events) {

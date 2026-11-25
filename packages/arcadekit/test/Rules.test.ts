@@ -199,26 +199,32 @@ describe("events", () => {
 
 // --- a tiny turn-based duel, used by the action tests -------------------------
 
-class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
-  readonly player: number;
-}> {}
-class NotEnoughEnergy extends Data.TaggedError("NotEnoughEnergy")<{
-  readonly have: number;
-  readonly need: number;
-}> {}
-class NoSuchTarget extends Data.TaggedError("NoSuchTarget")<{}> {}
+class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {
+  player: Schema.Number,
+}) {}
+class NotEnoughEnergy extends Schema.TaggedError<NotEnoughEnergy>()(
+  "NotEnoughEnergy",
+  { have: Schema.Number, need: Schema.Number }
+) {}
+class NoSuchTarget extends Schema.TaggedError<NoSuchTarget>()(
+  "NoSuchTarget",
+  {}
+) {}
 
 const Attack = Action.define(
   "Attack",
-  Schema.Struct({ attacker: EntityId, target: EntityId })
+  Schema.Struct({ attacker: EntityId, target: EntityId }),
+  { refusals: [NotYourTurn, NotEnoughEnergy, NoSuchTarget] }
 );
 const EndTurn = Action.define(
   "EndTurn",
-  Schema.Struct({ player: Schema.Number })
+  Schema.Struct({ player: Schema.Number }),
+  { refusals: [NotYourTurn] }
 );
 const Summon = Action.define(
   "Summon",
-  Schema.Struct({ player: Schema.Number, hp: Schema.Number })
+  Schema.Struct({ player: Schema.Number, hp: Schema.Number }),
+  { refusals: [NoSuchTarget] }
 );
 const Unhandled = Action.define("Unhandled", Schema.Struct({}));
 
@@ -469,7 +475,7 @@ describe("actions", () => {
     const Watch = System.tick("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
         rejected.push(
-          `${event.action}: ${(event.error as { _tag: string })._tag}`
+          `${event.action}: ${event.error._tag}`
         );
       }
     });
@@ -585,6 +591,72 @@ describe("actions", () => {
     expect(rolled.every(Exit.isSuccess)).toBe(true);
     // Seeded by the app, so another app of the game rolls the same.
     expect(rolls()).toEqual(rolled);
+  });
+
+  it("fail only with the refusals their action declares, each a Schema.TaggedError", () => {
+    class Undeclared extends Schema.TaggedError<Undeclared>()(
+      "ru/Undeclared",
+      {}
+    ) {}
+    class Plain extends Data.TaggedError("ru/Plain")<{}> {}
+    Action.handler(
+      EndTurn,
+      // @ts-expect-error Undeclared is not among the refusals of EndTurn
+      function* () {
+        return yield* new Undeclared();
+      }
+    );
+    Action.handler(
+      Unhandled,
+      // @ts-expect-error an action that declares no refusal is never refused
+      function* () {
+        return yield* new NotYourTurn({ player: 1 });
+      }
+    );
+    expect(() =>
+      Action.define("ru/Plain", Schema.Void, {
+        // @ts-expect-error a Data.TaggedError has no schema to encode it with
+        refusals: [Plain],
+      })
+    ).toThrow();
+    const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> =
+      withApp(duel(), ({ app }) => app.dispatch(EndTurn, { player: 2 }));
+    expect(ended).toEqual(Exit.fail(new NotYourTurn({ player: 1 })));
+  });
+
+  it("fail the tick when a queued action's handler dies, and leave the game as it was", () => {
+    const Crash = Action.define("ru/Crash", Schema.Struct({}));
+    const crash = Action.handler(Crash, function* () {
+      (yield* Turns.pipe(Query.writes(Turn))).each((turn) => {
+        turn.number += 100;
+      });
+      return yield* Effect.die(new Error("a bug in the handler"));
+    });
+    const heard: string[] = [];
+    const Watch = System.tick("Watch", function* () {
+      for (const event of (yield* Action.Rejected).read()) {
+        heard.push(event.action);
+      }
+    });
+    const make = begin(
+      App.make(
+        App.define({
+          plugins: [Board],
+          systems: [Watch],
+          handlers: [crash, endTurn],
+        })
+      )
+    );
+    withApp(make, ({ app }) => {
+      const before = snapshot(app);
+      app.enqueue(Crash, {});
+      app.enqueue(EndTurn, { player: 2 });
+      expect(() => app.tick(1)).toThrow(/a bug in the handler/);
+      expect(heard).toEqual(["EndTurn"]);
+      expect(snapshot(app)).toEqual(
+        before.map((line) => line.replace("tick=0", "tick=1"))
+      );
+    });
   });
 
   it("cannot be dispatched in the middle of a tick", () => {

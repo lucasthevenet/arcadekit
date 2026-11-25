@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import { entityIndex } from "../src/ecs/component";
@@ -1277,13 +1277,14 @@ const tallyOf = (app: Pick<App.Any, "read">) => {
   return out;
 };
 
+class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 const Push = Action.define(
   "ch/Push",
-  Schema.Struct({ slot: Schema.Int, refuse: Schema.Boolean })
+  Schema.Struct({ slot: Schema.Int, refuse: Schema.Boolean }),
+  { refusals: [Refused] }
 );
 const Spawn = Action.define("ch/Spawn", Schema.Struct({}));
 const Cull = Action.define("ch/Cull", Schema.Struct({ slot: Schema.Int }));
-class Refused extends Data.TaggedError("Refused")<{}> {}
 
 const push = Action.handler(Push, function* ({ refuse, slot }) {
   let n = 0;
@@ -1293,7 +1294,7 @@ const push = Action.handler(Push, function* ({ refuse, slot }) {
     }
   });
   if (refuse) {
-    return yield* new Refused();
+    return yield* Refused.make({});
   }
 });
 const spawn = Action.handler(Spawn, function* () {

@@ -466,14 +466,16 @@ describe("a game that changes", () => {
   });
 
   it("is settled still after an action that was refused, which changed nothing", () => {
+    class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
     const Ask = Action.define(
       "st/Ask",
-      Schema.Struct({ refuse: Schema.Boolean })
+      Schema.Struct({ refuse: Schema.Boolean }),
+      { refusals: [Refused] }
     );
     const ask = Action.handler(Ask, function* ({ refuse }) {
       (yield* Clock.writes).left = 9;
       if (refuse) {
-        return yield* Effect.fail("refused" as const);
+        return yield* Refused.make({});
       }
     });
     const app = Effect.runSync(App.make(App.define({ handlers: [ask] })));

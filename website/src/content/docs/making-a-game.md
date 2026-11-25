@@ -36,7 +36,7 @@ import {
   System,
   Time,
 } from "arcadekit";
-import { Data, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 export const Position = Component.define("catch/Position", {
   x: Field.f32,
@@ -109,14 +109,15 @@ const Land = System.tick("catch/Land", function* () {
 Players change the game only through actions. An action has a name and a payload. The app validates the payload against a schema before the handler runs, and here the schema takes a direction of -1, 0 or 1. The handler applies the action or refuses it with a typed error, and a refused action changes nothing.
 
 ```ts title="rules.ts"
+export class GameOver extends Schema.TaggedError<GameOver>()("GameOver", {}) {}
+
 export const Move = Action.define(
   "catch/Move",
   Schema.Struct({
     dx: Schema.Int.check(Schema.isBetween({ minimum: -1, maximum: 1 })),
-  })
+  }),
+  { refusals: [GameOver] }
 );
-
-export class GameOver extends Data.TaggedError("GameOver")<{}> {}
 
 const move = Action.handler(Move, function* ({ dx }) {
   const basket = yield* Basket.writes;

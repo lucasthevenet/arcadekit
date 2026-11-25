@@ -93,14 +93,19 @@ const Physics = Plugin.make("Physics", {
 class Fragile extends Data.TaggedError("Fragile")<{
   readonly entity: Entity;
 }> {}
-class NothingToHeal extends Data.TaggedError("NothingToHeal")<{}> {}
+class NothingToHeal extends Schema.TaggedError<NothingToHeal>()(
+  "NothingToHeal",
+  {}
+) {}
 
-const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }));
+const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }), {
+  refusals: [NothingToHeal],
+});
 
 const heal = Action.handler(Heal, function* ({ amount }) {
   const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
   if (wounded.count() === 0) {
-    return yield* new NothingToHeal();
+    return yield* NothingToHeal.make({});
   }
   let total = 0;
   wounded.each((health) => {

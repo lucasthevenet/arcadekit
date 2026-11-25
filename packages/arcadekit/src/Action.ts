@@ -4,10 +4,12 @@
  *
  * An action's handler checks it against the current state, then applies it
  * or refuses it with a typed error. A dispatched action returns the refusal
- * to its caller as a typed failure, and a queued one becomes an
- * `Action.Rejected` event.
+ * to its caller as a typed failure, and a queued one becomes an event that
+ * `Action.rejected` reads. An action declares the errors it may be refused
+ * with, each a `Schema.TaggedError`.
  *
- *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
+ *   class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {}) {}
+ *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }), { refusals: [NotYourTurn] })
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Turn
@@ -40,7 +42,7 @@
  * Replaying the log into a fresh app reproduces the game, and stops at the
  * first checkpoint that doesn't match.
  */
-import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Context, Effect, Exit, Schema } from "effect";
 
 import { SnapshotError } from "./ecs/snapshot";
 import type { WithSpawned } from "./ecs/spawned";
@@ -55,40 +57,78 @@ import type * as System from "./System";
  *
  * @category Errors
  */
-export class InvalidPayload extends Data.TaggedError("InvalidPayload")<{
-  readonly action: string;
-  /** What was wrong, as the schema reported it. */
-  readonly message: string;
-}> {}
+export class InvalidPayload extends Schema.TaggedError<InvalidPayload>()(
+  "InvalidPayload",
+  {
+    action: Schema.String,
+    /** What was wrong, as the schema reported it. */
+    message: Schema.String,
+  }
+) {}
 
 /**
  * An action arrived by name, and the app has no handler for that name.
  *
  * @category Errors
  */
-export class UnknownAction extends Data.TaggedError("UnknownAction")<{
-  readonly action: string;
-}> {}
+export class UnknownAction extends Schema.TaggedError<UnknownAction>()(
+  "UnknownAction",
+  { action: Schema.String }
+) {}
 
 /**
- * An action type, as `Action.define` makes it: its name, and the codec of its
- * payload.
+ * An action its handler refused, as `Action.rejected` reads it: the payload
+ * the handler received, the refusal it failed with, and who issued it.
  *
- * @typeParam N the action's name
- * @typeParam P the payload a handler receives
+ * @typeParam P the action's payload
+ * @typeParam E the refusals its action declares
  *
  * @category Models
  */
-export interface ActionDef<N extends string, P> {
+export interface Refused<P, E> {
+  readonly payload: P;
+  readonly error: E;
+  readonly from: string | undefined;
+}
+
+/**
+ * An action type, as `Action.define` makes it: its name, the codec of its
+ * payload, and the codec of its refusals.
+ *
+ * @typeParam N the action's name
+ * @typeParam P the payload a handler receives
+ * @typeParam E the refusals its handler may fail with
+ *
+ * @category Models
+ */
+export interface ActionDef<N extends string, P, E = unknown> {
   readonly name: N;
   /**
    * Validates the payload and converts it to and from JSON. Derived from the
    * action's schema.
    */
   readonly codec: Schema.Codec<P, unknown>;
+  /**
+   * Converts a refusal to and from JSON. Derived from the refusals the
+   * action declares.
+   */
+  readonly refusals: Schema.Codec<E, unknown>;
+  /** The event of the action's refusals, which `Action.rejected` returns. */
+  readonly rejected: Event.EventDef<Refused<P, E>>;
   /** Holds no value. It keeps the payload type on the action, invariant. */
   readonly _P?: (payload: P) => P;
 }
+
+/**
+ * What an action may declare as a refusal: a class made with
+ * `Schema.TaggedError`, which a handler yields and the schema encodes.
+ *
+ * @category Type-level
+ */
+export type Refusal = Schema.Codec<
+  Cause.YieldableError & { readonly _tag: string },
+  unknown
+>;
 
 /**
  * Defines an action, with the schema of its payload. The payload type is
@@ -97,27 +137,78 @@ export interface ActionDef<N extends string, P> {
  * payload takes only its name, `Action.define("duel/Pass")`, and is issued
  * with `undefined`.
  *
+ * The third argument declares the errors its handler refuses the action
+ * with, each a class made with `Schema.TaggedError`:
+ * `Action.define("duel/Strike", payload, { refusals: [NotYourTurn, TooTired] })`.
+ * A handler that fails with an error the action doesn't declare doesn't
+ * compile. An action with no payload and refusals takes `Schema.Void` as its
+ * payload.
+ *
  * **Details**
  *
  * The log and a save hold a payload in its JSON form, and the other peers
  * receive that form, so a bigint or a date in it is converted along the way.
- * The JSON form of an action with no payload is `null`.
+ * The JSON form of an action with no payload is `null`. A refusal is held in
+ * its JSON form too, by the event `Action.rejected` reads and by
+ * `Action.Rejected`, so every peer and a save hold the same one.
  *
  * @category Constructors
  */
-export function define<const N extends string>(name: N): ActionDef<N, void>;
+export function define<const N extends string>(
+  name: N
+): ActionDef<N, void, never>;
 export function define<
   const N extends string,
   S extends Schema.Codec<unknown, unknown>,
->(name: N, payload: S): ActionDef<N, S["Type"]>;
+  const R extends readonly Refusal[] = readonly [],
+>(
+  name: N,
+  payload: S,
+  options?: { readonly refusals: R }
+): ActionDef<N, S["Type"], R[number]["Type"]>;
 export function define(
   name: string,
-  payload: Schema.Codec<unknown, unknown> = Schema.Void
+  payload: Schema.Codec<unknown, unknown> = Schema.Void,
+  options?: { readonly refusals: readonly Refusal[] }
 ): AnyActionDef {
+  const refusals = Schema.Union(options?.refusals ?? []);
   // The JSON codec turns values such as dates and bigints into JSON on the
   // way out and back on the way in, so the log is always safe to serialize.
-  return { codec: Schema.toCodecJson(payload), name };
+  return {
+    codec: Schema.toCodecJson(payload),
+    name,
+    refusals: Schema.toCodecJson(refusals),
+    rejected: Event.define(
+      `Action.Rejected(${name})`,
+      Schema.Struct({
+        payload,
+        error: refusals,
+        from: Schema.UndefinedOr(Schema.String),
+      })
+    ),
+  };
 }
+
+/**
+ * Returns the event of an action's refusals, whose reader gives each time its
+ * handler refused it, with the payload and the refusal typed:
+ *
+ *   for (const { error, from } of (yield* Action.rejected(PlayCard)).read()) {
+ *     if (error._tag === "NotYourTurn") ...
+ *   }
+ *
+ * **Details**
+ *
+ * The event is named `Action.Rejected(<the action's name>)`. The world's hash
+ * and a save hold its refusals in their JSON form, so every peer reads the
+ * same one. A payload that the action's schema doesn't take never reaches the
+ * handler, and `Action.Rejected` alone reports it.
+ *
+ * @category Events
+ */
+export const rejected = <N extends string, P, E>(
+  action: ActionDef<N, P, E>
+): Event.EventDef<Refused<P, E>> => action.rejected;
 
 /**
  * Where an action came from, which a handler receives alongside its payload.
@@ -160,6 +251,8 @@ export interface Handler<N extends string, P, A, E, R> {
 export interface AnyActionDef {
   readonly name: string;
   readonly codec: Schema.Codec<unknown, unknown>;
+  readonly refusals: Schema.Codec<unknown, unknown>;
+  readonly rejected: Event.EventDef<Refused<unknown, unknown>>;
 }
 
 /**
@@ -200,16 +293,20 @@ export interface AnyHandler {
  *   outside it, such as a variable of a module that the handler changed. A
  *   value a field holds is read-only, so the handler replaces it, and the
  *   refusal puts the old value back.
+ * - A handler fails only with the refusals its action declares in
+ *   `Action.define`. Any other error doesn't compile, and the compiler names
+ *   it.
  *
  * @category Constructors
  */
 export function handler<
   N extends string,
   P,
-  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  E,
+  Eff extends Effect.Effect<unknown, E, unknown>,
   A,
 >(
-  action: ActionDef<N, P>,
+  action: ActionDef<N, P, E>,
   body: System.TickGated<
     Eff,
     (payload: P, origin: Origin) => Generator<Eff, A, never>
@@ -310,8 +407,9 @@ export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
   "hash" in entry;
 
 /**
- * Emitted when a queued action is refused. A dispatched action returns its
- * failure to the caller instead.
+ * Emitted when a queued action is refused, whatever the action. A dispatched
+ * action returns its failure to the caller instead. `Action.rejected` reads
+ * the refusals of one action, typed.
  *
  * **Details**
  *
@@ -320,8 +418,9 @@ export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
  * - `action`: the action's name.
  * - `payload`: the payload in its JSON form, or `null` when its schema didn't
  *   take it.
- * - `error`: why it was refused, as the error's `_tag` and `message`, so the
- *   event is the same on every peer and in a save.
+ * - `error`: why it was refused, in its JSON form: a refusal the action
+ *   declares, `InvalidPayload` or `UnknownAction`, each with its `_tag`. It is
+ *   the same on every peer and in a save.
  * - `from`: the peer that issued it, as its handler would have received it.
  *
  * @category Events
@@ -331,7 +430,9 @@ export const Rejected = Event.define(
   Schema.Struct({
     action: Schema.String,
     payload: Schema.Unknown,
-    error: Schema.Struct({ _tag: Schema.String, message: Schema.String }),
+    error: Schema.StructWithRest(Schema.Struct({ _tag: Schema.String }), [
+      Schema.Record(Schema.String, Schema.Unknown),
+    ]),
     from: Schema.UndefinedOr(Schema.String),
   })
 );

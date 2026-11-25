@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { idOf } from "../src/ecs/component";
@@ -345,8 +345,12 @@ describe("a query, which writes only what it names", () => {
 
 // --- in an app --------------------------------------------------------------------
 
-class TooFast extends Data.TaggedError("TooFast")<{}> {}
-const Survey = Action.define("rd/Survey", Schema.Struct({ limit: Schema.Int }));
+class TooFast extends Schema.TaggedError<TooFast>()("TooFast", {}) {}
+const Survey = Action.define(
+  "rd/Survey",
+  Schema.Struct({ limit: Schema.Int }),
+  { refusals: [TooFast] }
+);
 /** Looks at every body, changes one field of each, and may then refuse. */
 const survey = Action.handler(Survey, function* ({ limit }) {
   let fastest = 0;
@@ -357,7 +361,7 @@ const survey = Action.handler(Survey, function* ({ limit }) {
     }
   });
   if (fastest > limit) {
-    return yield* new TooFast();
+    return yield* TooFast.make({});
   }
   return fastest;
 });
@@ -405,7 +409,7 @@ describe("a query, which writes only what it names, in an app", () => {
         expect(turned).toEqual([4, 0, 0]);
         const before = world.hash();
         expect(app.dispatch(Survey, { limit: 2 })).toEqual(
-          Exit.fail(new TooFast())
+          Exit.fail(TooFast.make({}))
         );
         expect(world.hash()).toBe(before);
         expect(app.dispatch(Survey, { limit: 5 })).toEqual(Exit.succeed(3));

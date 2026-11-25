@@ -634,12 +634,14 @@ describe("the input stage", () => {
   });
 
   it("hears what a tick's actions emitted, and that an action it issued was refused", () => {
-    class TooMuch extends Data.TaggedError("TooMuch")<{}> {}
+    class TooMuch extends Schema.TaggedError<TooMuch>()("TooMuch", {}) {}
     const Done = Event.define("in/Done", Schema.Struct({ by: Schema.Int }));
-    const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }));
+    const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }), {
+      refusals: [TooMuch],
+    });
     const attempt = Action.handler(Try, function* ({ by }) {
       if (by > 5) {
-        return yield* new TooMuch();
+        return yield* TooMuch.make({});
       }
       (yield* Done.emits).emit({ by });
     });
@@ -654,7 +656,7 @@ describe("the input stage", () => {
           done.push(event.by);
         }
         for (const event of (yield* Action.Rejected).read()) {
-          refused.push(`${event.action} ${(event.error as TooMuch)._tag}`);
+          refused.push(`${event.action} ${event.error._tag}`);
         }
       };
       return stage === "input"
@@ -1735,11 +1737,13 @@ describe("the picture of the devices in the world", () => {
   });
 
   it("is read by a handler and by what draws the game, as by a system", () => {
-    class NotHeld extends Data.TaggedError("NotHeld")<{}> {}
-    const Shoot = Action.define("in/Shoot", Schema.Struct({}));
+    class NotHeld extends Schema.TaggedError<NotHeld>()("NotHeld", {}) {}
+    const Shoot = Action.define("in/Shoot", Schema.Struct({}), {
+      refusals: [NotHeld],
+    });
     const shoot = Action.handler(Shoot, function* () {
       if (!(yield* Input.Keyboard).down("Space")) {
-        return yield* new NotHeld();
+        return yield* NotHeld.make({});
       }
       (yield* Score.writes).points += 1;
     });

@@ -38,20 +38,21 @@ const drawing = (name: string, into: string[]) =>
     into.push(name);
   });
 
+class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 const Go = Action.define(
   "st/Go",
   Schema.Struct({
     to: Schema.Literals(["menu", "playing", "paused"]),
     refuse: Schema.Boolean,
-  })
+  }),
+  { refusals: [Refused] }
 );
-class Refused extends Data.TaggedError("Refused")<{}> {}
 const go = Action.handler(Go, function* ({ refuse, to }) {
   const phase = yield* Phase.sets;
   const from = phase.value;
   phase.set(to);
   if (refuse) {
-    return yield* new Refused();
+    return yield* Refused.make({});
   }
   return from;
 });

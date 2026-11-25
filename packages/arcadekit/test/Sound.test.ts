@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
@@ -39,14 +39,17 @@ const Bounced = Event.define(
   Schema.Struct({ speed: Schema.Finite })
 );
 const Dropped = Event.define("sd/Dropped", Schema.Struct({}));
-const Drop = Action.define("sd/Drop", Schema.Struct({ height: Schema.Finite }));
+class TooHigh extends Schema.TaggedError<TooHigh>()("TooHigh", {}) {}
+const Drop = Action.define(
+  "sd/Drop",
+  Schema.Struct({ height: Schema.Finite }),
+  { refusals: [TooHigh] }
+);
 const Mute = Action.define("sd/Mute", Schema.Struct({ on: Schema.Boolean }));
 const Throw = Action.define(
   "sd/Throw",
   Schema.Struct({ speed: Schema.Finite })
 );
-
-class TooHigh extends Data.TaggedError("TooHigh")<{}> {}
 
 const Fall = System.tick("sd/Fall", function* () {
   const { delta } = yield* Time;
@@ -92,7 +95,7 @@ const Rules = Plugin.make("sd/Rules", {
     Action.handler(Drop, function* ({ height }) {
       (yield* Dropped.emits).emit({});
       if (height > 100) {
-        return yield* new TooHigh();
+        return yield* TooHigh.make({});
       }
       (yield* Commands.spawns(Ball)).spawn(Ball.of({ y: height, speed: 0 }));
     }),

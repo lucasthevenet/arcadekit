@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
  *
  *   pnpm --filter arcadekit bench
  */
-import { Data, Effect, Exit, Layer, Schema } from "effect";
+import { Effect, Exit, Layer, Schema } from "effect";
 
 import {
   Action,
@@ -73,11 +73,12 @@ const Populated = Plugin.make("bench/Populated", {
   }),
 });
 
-class Refused extends Data.TaggedError("Refused")<{}> {}
+class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 
 const Nudge = Action.define(
   "bench/Nudge",
-  Schema.Struct({ target: EntityId, refuse: Schema.Boolean })
+  Schema.Struct({ target: EntityId, refuse: Schema.Boolean }),
+  { refusals: [Refused] }
 );
 const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   const world = yield* WorldService.writes(Position);
@@ -93,7 +94,8 @@ const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
 
 const Sweep = Action.define(
   "bench/Sweep",
-  Schema.Struct({ refuse: Schema.Boolean })
+  Schema.Struct({ refuse: Schema.Boolean }),
+  { refusals: [Refused] }
 );
 const sweep = Action.handler(Sweep, function* ({ refuse }) {
   (yield* Moving).each((pos, vel) => {

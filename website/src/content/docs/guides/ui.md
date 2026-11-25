@@ -88,7 +88,7 @@ export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
 
 A bridge sends the actions of its type and no other. The app of a game hands out a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` can be handed the bridge only if the game handles `NewGame`. A `View.Bridge` with no actions reads views and sends nothing. An action that the game has no handler for doesn't compile, in `send` or where the bridge is handed to the UI.
 
-The UI isn't told the outcome of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and publish as a view.
+The UI isn't told the outcome of an action it sent. A refusal is an event, which a frame system reads with `Action.rejected(action)`, typed, and publishes as a view. See [read the refusals of an action](events-and-actions.md#read-the-refusals-of-an-action).
 
 A bridge refuses two different views with the same name.
 

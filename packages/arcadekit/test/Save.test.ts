@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -49,14 +49,16 @@ const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
 const Counted = Query.all(Tally);
 const Motes = Query.all(Mote).pipe(Query.writes(Mote));
 
+class TooBig extends Schema.TaggedError<TooBig>()("TooBig", {}) {}
 const Add = Action.define("sv/Add", Schema.Struct({ by: Schema.Int }));
-const Double = Action.define("sv/Double", Schema.Struct({}));
+const Double = Action.define("sv/Double", Schema.Struct({}), {
+  refusals: [TooBig],
+});
 const Scatter = Action.define(
   "sv/Scatter",
   Schema.Struct({ count: Schema.Int })
 );
 const Pulse = Action.define("sv/Pulse", Schema.Struct({}));
-class TooBig extends Data.TaggedError("TooBig")<{}> {}
 
 const add = Action.handler(Add, function* ({ by }) {
   (yield* Tallies).each((tally) => {
@@ -71,7 +73,7 @@ const double = Action.handler(Double, function* () {
     refuse = tally.value > 1e9;
   });
   if (refuse) {
-    return yield* new TooBig();
+    return yield* TooBig.make({});
   }
 });
 const scatter = Action.handler(Scatter, function* ({ count }) {
