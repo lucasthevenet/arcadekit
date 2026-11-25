@@ -30,8 +30,9 @@
  *   )
  *
  * A view is a value the game exposes to the UI. It is published from the frame
- * stage, once per frame, and only when it differs from the value the UI already
- * has. An unchanged value costs the UI nothing.
+ * stage, once per frame while the UI watches it, and only when it differs from
+ * the value the UI already has. An unchanged value costs the UI nothing, and a
+ * view the UI doesn't watch costs the game nothing.
  *
  * The UI acts by sending actions, like any other input source. The app makes
  * the bridge when it is made, and it sends only the actions the game has a
@@ -154,12 +155,14 @@ const NOTHING: readonly Sent[] = Object.freeze([]);
 interface Slot {
   readonly view: View<unknown>;
   value: unknown;
+  /** Read with `get` since it was last published. */
+  asked: boolean;
   /** Each of the slot's view: handed its value, and nothing else. */
   readonly listeners: Set<(value: never) => void>;
 }
 
 /** A UI's bridge, and the app's end of it. */
-interface Opened extends Omit<PortValue, "connected"> {
+interface Opened extends PortValue {
   readonly ui: Bridge<Action.AnyActionDef>;
 }
 
@@ -169,7 +172,7 @@ const open = (): Opened => {
   const slotOf = (view: View<unknown>): Slot => {
     let slot = slots.get(view.name);
     if (slot === undefined) {
-      slot = { view, value: view.initial, listeners: new Set() };
+      slot = { view, value: view.initial, asked: false, listeners: new Set() };
       slots.set(view.name, slot);
     } else if (slot.view !== view) {
       throw new Error(
@@ -179,7 +182,11 @@ const open = (): Opened => {
     return slot;
   };
   const ui: Bridge<Action.AnyActionDef> = {
-    get: (view) => slotOf(view).value as never,
+    get(view) {
+      const slot = slotOf(view);
+      slot.asked = true;
+      return slot.value as never;
+    },
     subscribe(view, listener) {
       const { listeners } = slotOf(view);
       listeners.add(listener);
@@ -193,8 +200,13 @@ const open = (): Opened => {
   };
   return {
     ui,
+    watched(view) {
+      const slot = slots.get(view.name);
+      return slot !== undefined && (slot.asked || slot.listeners.size > 0);
+    },
     publish(view, value) {
       const slot = slotOf(view);
+      slot.asked = false;
       // Compared as data: an object made anew each frame with the same
       // fields is the same value, and nobody is told.
       if (Equal.equals(slot.value, value)) {
@@ -241,8 +253,12 @@ const open = (): Opened => {
  * @category Services
  */
 export interface PortShape {
-  /** Whether a UI is listening. False on a server, in a replay, and in most tests. */
-  readonly connected: boolean;
+  /**
+   * Whether the UI watches a view: it listens to it, or read it with `get`
+   * since it was last published. False for every view on a server, in a
+   * replay, and in most tests.
+   */
+  readonly watched: <A>(view: View<A>) => boolean;
   /**
    * Publishes a view. It sets the view's value and notifies the UI, unless the
    * value is unchanged, and returns whether it published. A system of the frame
@@ -286,7 +302,7 @@ const Ui = Context.Reference<Mount | undefined>("arcadekit/View.Ui", {
 });
 
 const alone: PortValue = {
-  connected: false,
+  watched: () => false,
   publish: () => false,
   take: () => NOTHING,
 };
@@ -296,12 +312,12 @@ const portLayer = Layer.unwrap(
     const mount = yield* Ui;
     let port = alone;
     if (mount !== undefined) {
-      const { ui, publish, take } = open();
+      const { ui, ...opened } = open();
       const unmount = mount(ui);
       if (typeof unmount === "function") {
         yield* Effect.addFinalizer(() => Effect.sync(unmount));
       }
-      port = { connected: true, publish, take };
+      port = opened;
     }
     return Layer.mergeAll(
       Layer.succeed(Port, port),
@@ -400,8 +416,9 @@ export function layer(_game: unknown, mount: Mount): Layer.Layer<never> {
 }
 
 /**
- * Makes a frame-stage system that publishes a view. Each frame it computes the
- * value, and publishes it if it differs from the UI's.
+ * Makes a frame-stage system that publishes a view. Each frame the UI watches
+ * the view, it computes the value, and publishes it if it differs from the
+ * UI's.
  *
  *   const ShowHud = View.publish(Hud, function*() {
  *     const score = yield* Score
@@ -415,12 +432,35 @@ export function layer(_game: unknown, mount: Mount): Layer.Layer<never> {
  *   differs.
  * - Several ticks within one frame produce one publication, of the latest
  *   value.
- * - When no UI is listening, the body doesn't run at all.
+ * - The body runs only while the UI watches the view: while it has a listener,
+ *   and in the frame after the UI reads it with `get`. When no UI is there, on
+ *   a server or in a replay, it doesn't run at all.
  * - It accepts `System.runIf` like any system. A view that isn't published
- *   keeps its last value, which suits a view that is expensive to compute and
- *   refreshed occasionally. For a view that belongs to one part of the game
+ *   keeps its last value. For a view that belongs to one part of the game
  *   and shouldn't show elsewhere, add `System.otherwise(View.reset(view))`.
  * - The system is named `View.publish(<the view's name>)`. Use one per view.
+ *
+ * **When to use**
+ *
+ * Use `when` for a view that is costly to compute from a few cheap inputs. It
+ * reads them and returns them, and the body runs again only when they differ,
+ * compared as data, from what they were when it last ran:
+ *
+ *   const ShowShop = View.publish(Shop, {
+ *     when: function*() { return (yield* Purse).gold }
+ *   }, function*() {
+ *     return priceEveryItem(yield* Purse, yield* Items)
+ *   })
+ *
+ * **Gotchas**
+ *
+ * - The UI reads a view it doesn't listen to a frame late: `get` returns the
+ *   value last published, and the next frame publishes the view again.
+ * - Given `when`, the body runs again only when what `when` returns changes.
+ *   Anything else the body reads shows as it was when the body last ran.
+ * - `when` returns plain data, such as `(yield* Score).points`. Returned whole,
+ *   `yield* Score` is the same object each frame, so the body never runs
+ *   again.
  *
  * @category Systems
  */
@@ -438,22 +478,66 @@ export function publish<
 >;
 export function publish<
   A,
+  D,
+  WhenEff extends Effect.Effect<unknown, unknown, unknown>,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
 >(
   view: View<A>,
-  body: () => Generator<Eff, A, never>
+  options: { readonly when: System.FrameBody<WhenEff, D> },
+  body: System.FrameBody<Eff, A>
+): System.System<
+  System.GenError<WhenEff | Eff>,
+  System.GenServices<WhenEff | Eff> | Port,
+  string,
+  "frame"
+>;
+export function publish<
+  A,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+>(
+  view: View<A>,
+  ...args:
+    | [body: () => Generator<Eff, A, never>]
+    | [
+        options: { readonly when: () => Generator<Eff, unknown, never> },
+        body: () => Generator<Eff, A, never>,
+      ]
 ): System.System<
   System.GenError<Eff>,
   System.GenServices<Eff> | Port,
   string,
   "frame"
 > {
+  const name = `View.publish(${view.name})`;
+  if (args.length === 1) {
+    const read = Effect.gen(args[0]);
+    return System.raw(name, "frame", function* () {
+      const port = yield* Port;
+      if (port.watched(view)) {
+        port.publish(view, yield* read);
+      }
+    });
+  }
+  const [{ when }, body] = args;
+  const inputs = Effect.gen(when);
   const read = Effect.gen(body);
-  return System.raw(`View.publish(${view.name})`, "frame", function* () {
+  // Each app has a port of its own, and the system may be in several apps.
+  const last = new WeakMap<
+    PortShape,
+    { readonly inputs: unknown; readonly value: A }
+  >();
+  return System.raw(name, "frame", function* () {
     const port = yield* Port;
-    if (port.connected) {
-      port.publish(view, yield* read);
+    if (!port.watched(view)) {
+      return;
     }
+    const now = yield* inputs;
+    let memo = last.get(port);
+    if (memo === undefined || !Equal.equals(memo.inputs, now)) {
+      memo = { inputs: now, value: yield* read };
+      last.set(port, memo);
+    }
+    port.publish(view, memo.value);
   });
 }
 

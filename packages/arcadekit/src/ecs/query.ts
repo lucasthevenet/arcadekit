@@ -7,7 +7,13 @@
 import { ChangeLog } from "./changes";
 import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
 import type { Column } from "./column";
-import { INDEX_MASK, entityOf, makeAccessor, retarget } from "./component";
+import {
+  INDEX_MASK,
+  entityIndex,
+  entityOf,
+  makeAccessor,
+  retarget,
+} from "./component";
 import type {
   Absent,
   Accessor,
@@ -22,6 +28,7 @@ import type {
   Row,
   Schema,
 } from "./component";
+import type { RelationDef } from "./relation";
 import { SparseSet, Table } from "./table";
 import type { World } from "./world";
 
@@ -607,7 +614,27 @@ export class QueryView<D extends Terms = Terms> {
    * same order (tables in creation order, rows ascending), whichever strategy
    * finds them.
    */
-  private runs(frame: Frame, onRun: OnRun): void {
+  private runs(
+    frame: Frame,
+    from: PointingView<D> | undefined,
+    onRun: OnRun
+  ): void {
+    if (from !== undefined) {
+      // Who points at the target is a list already: it is sorted, as a
+      // rare required component's members are, and nothing else is looked at.
+      this._lastPath = "sorted";
+      const { world } = this;
+      const relation = world.isAlive(from.target)
+        ? world._relation(from.relation)
+        : undefined;
+      if (
+        relation !== undefined &&
+        relation.collect(entityIndex(from.target), frame.members) > 0
+      ) {
+        this.sortedRuns(frame, frame.members, onRun);
+      }
+      return;
+    }
     if (!this.filtered) {
       this._lastPath = "dense";
       for (let t = 0; t < this.tables.length; t++) {
@@ -928,6 +955,14 @@ export class QueryView<D extends Terms = Terms> {
    * throws for a term the query only reads, and in a frozen world.
    */
   each(fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void): void {
+    this._each(fn, undefined);
+  }
+
+  /** @internal `each`, over the entities that point at a target when `from` says which. */
+  _each(
+    fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void,
+    from: PointingView<D> | undefined
+  ): void {
     const frame = this.enter();
     try {
       const f = fn as Callback;
@@ -954,7 +989,7 @@ export class QueryView<D extends Terms = Terms> {
         this.wroteSparseTerms(now);
       }
       let bound: Table | undefined;
-      this.runs(frame, (table, start, end) => {
+      this.runs(frame, from, (table, start, end) => {
         if (table !== bound) {
           // Unless they are pointed at it already, from the last time.
           if (loop.table !== table.entities) {
@@ -1112,6 +1147,18 @@ export class QueryView<D extends Terms = Terms> {
       ...args: [...ColumnSetsOf<D>, entities: EntityColumn]
     ) => void
   ): void {
+    this._eachChunk(fn, undefined);
+  }
+
+  /** @internal `eachChunk`, over the entities that point at a target when `from` says which. */
+  _eachChunk(
+    fn: (
+      start: number,
+      end: number,
+      ...args: [...ColumnSetsOf<D>, entities: EntityColumn]
+    ) => void,
+    from: PointingView<D> | undefined
+  ): void {
     const frame = this.enter();
     try {
       const f = fn as Callback;
@@ -1136,7 +1183,7 @@ export class QueryView<D extends Terms = Terms> {
       }
       const kept = world._checkReads ? this.keepReadOnly() : undefined;
       let bound: Table | undefined;
-      this.runs(frame, (table, start, end) => {
+      this.runs(frame, from, (table, start, end) => {
         if (table !== bound) {
           for (let k = 0; k < n; k++) {
             const id = this.termTableId[k];
@@ -1299,7 +1346,7 @@ export class QueryView<D extends Terms = Terms> {
     if (this.watching) {
       const frame = this.enter();
       try {
-        this.runs(frame, (table, start, end) => {
+        this.runs(frame, undefined, (table, start, end) => {
           for (let i = start; i < end; i++) {
             out.push(entityOf(table.entities[i]!));
           }
@@ -1318,5 +1365,82 @@ export class QueryView<D extends Terms = Terms> {
       }
     }
     return out;
+  }
+
+  /**
+   * Narrows the view to the entities that point at `target` with `relation`,
+   * such as a parent's children, for `each` and `eachChunk`:
+   *
+   *   const Children = Query.all(Position, ChildOf).pipe(Query.writes(Position))
+   *   world.view(Children).pointingAt(ChildOf, parent).each((position) => { position.x += 1 })
+   *
+   * The relation is one of the query's terms. They are visited in the order
+   * every loop of the view visits them, tables in creation order and rows
+   * ascending, and they are the ones `World.sources` returns that the query
+   * matches. Finding them doesn't look at any other entity. A target that is
+   * not alive has nobody pointing at it.
+   *
+   * **Gotchas**
+   *
+   * A change query can't be narrowed, since it visits only what changed: it
+   * throws. Visit the query without `Query.changed` or `Query.added`, or check
+   * the target of the relation in the loop.
+   */
+  pointingAt(
+    relation: RelationDef & { readonly name: RelationNamesOf<D> },
+    target: Entity
+  ): PointingView<D> {
+    if (this.watching) {
+      throw new Error(
+        `pointingAt() was called on a change query, which visits only what changed since its last visit, and a visit of some of it would count as a visit of all of it. Narrow a query without Query.changed or Query.added, or read "${relation.name}".target in the change query's loop.`
+      );
+    }
+    return new PointingView(this, relation, target);
+  }
+}
+
+/** The names of a query's terms that are relations. */
+type RelationNamesOf<D extends Terms> = {
+  [K in keyof D]: D[K] extends RelationDef ? D[K]["name"] : never;
+}[number];
+
+/**
+ * The entities of a view that point at one target with a relation, as
+ * `QueryView.pointingAt` returns it. It visits them as the view does, and
+ * hands its loops the same terms.
+ *
+ * @category Models
+ */
+export class PointingView<D extends Terms = Terms> {
+  /** @internal */
+  constructor(
+    private readonly view: QueryView<D>,
+    /** The relation that points. */
+    readonly relation: RelationDef,
+    /** The entity pointed at. */
+    readonly target: Entity
+  ) {}
+
+  /**
+   * Calls `fn` once for each entity that points at the target, as
+   * `QueryView.each` does for each entity of the view.
+   */
+  each(fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void): void {
+    this.view._each(fn, this);
+  }
+
+  /**
+   * Calls `fn` with the raw columns of each run of consecutive rows that
+   * point at the target, as `QueryView.eachChunk` does for the view.
+   */
+  eachChunk(
+    this: Chunked<D> & PointingView<D>,
+    fn: (
+      start: number,
+      end: number,
+      ...args: [...ColumnSetsOf<D>, entities: EntityColumn]
+    ) => void
+  ): void {
+    this.view._eachChunk(fn, this);
   }
 }

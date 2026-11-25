@@ -42,7 +42,7 @@ const program = Effect.gen(function* () {
 
 Everything a multiplayer game needs is in `arcadekit/net`, not in `arcadekit`, so a single-player game loads none of it. `Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` has no `tick` and no `dispatch`, since either would move this machine's game alone, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's. It has no `close` either. `session.close` closes it, as `app.close` closes an app.
 
-Pass each message from another peer to `session.receive(message)`. Usually a [transport](transports-and-relays.md) carries messages both ways and a driver steps the session, so your game never calls these itself. To carry messages some other way, turn them into text with `Message.encode` and back with `Message.decode`. `Message.decode` returns an `Exit`, which fails for text that isn't a message.
+Pass each message from another peer to `session.receive(message)`. Usually a [transport](transports-and-relays.md) carries messages both ways and a driver steps the session, so your game never calls these itself. To carry messages some other way, turn them into bytes with `Message.encode` and back with `Message.decode`. `Message.decode` returns an `Exit`, which fails for bytes that aren't a message.
 
 - Make every peer alike: the same game, the same seed or save, the same `delta` and the same peer names. A peer made with another game, `delta`, names or starting tick stops every peer with `Drift.Unlike`. A different seed shows as `Drift.Drifted`. See [detecting drift](detecting-drift.md).
 - A session begins at whatever tick its app does, so a game can start from a save that every peer loaded.

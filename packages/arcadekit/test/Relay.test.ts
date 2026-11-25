@@ -1,7 +1,7 @@
 import { Cause, Effect, Exit, Result, Scope } from "effect";
 import { Socket } from "effect/socket";
 import { TestClock } from "effect/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, assert, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
 import { Input, World } from "../src/index";
@@ -14,8 +14,11 @@ const message = (from: string, tick: number, value = 0): Message.Message => ({
   tick,
   actions: value === 0 ? [] : [{ name: "ls/Tip", payload: { amount: value } }],
 });
-const text = (from: string, tick: number, value = 0): string =>
-  Message.encode(message(from, tick, value));
+const bytes = (
+  from: string,
+  tick: number,
+  value = 0
+): Uint8Array<ArrayBuffer> => Message.encode(message(from, tick, value));
 const notice = (told: Message.Notice): string => Message.encodeNotice(told);
 
 /** The messages among what arrived, without the relay's notices. */
@@ -249,53 +252,50 @@ describe("a peer that asks to come in", () => {
 
 describe("what a member sent", () => {
   it("is passed on to every other member of its room, and to nobody else", () => {
-    const deliveries = Relay.forward(ada, text("ada", 3, 2), [
-      ada,
-      grace,
-      linus,
-      edsger,
-    ]);
+    const sent = bytes("ada", 3, 2);
+    const deliveries = Relay.forward(ada, sent, [ada, grace, linus, edsger]);
     expect(deliveries).toEqual(
       Exit.succeed([
-        { to: grace, text: text("ada", 3, 2) },
-        { to: edsger, text: text("ada", 3, 2) },
+        { to: grace, data: sent },
+        { to: edsger, data: sent },
       ])
     );
     // Alone in its room, to nobody.
-    expect(Relay.forward(linus, text("linus", 0), [ada, linus])).toEqual(
+    expect(Relay.forward(linus, bytes("linus", 0), [ada, linus])).toEqual(
       Exit.succeed([])
     );
   });
 
-  it("is read whether it came as text or as bytes, and written out again as the message it is", () => {
-    const bytes = new TextEncoder().encode(text("ada", 1));
-    for (const data of [bytes, bytes.buffer]) {
-      expect(Relay.forward(ada, data, [ada, grace])).toEqual(
-        Exit.succeed([{ to: grace, text: text("ada", 1) }])
-      );
-    }
-    // What rides along and is no part of a message is not passed on.
-    const padded = JSON.stringify({
-      ...message("ada", 1),
-      extra: "x".repeat(100),
-    });
-    expect(Relay.forward(ada, padded, [ada, grace])).toEqual(
-      Exit.succeed([{ to: grace, text: text("ada", 1) }])
-    );
-    // Every part of one is, what the peer was made with among them.
-    const first = Message.encode({
-      ...message("ada", 0),
+  it("is passed on as the bytes it came in, unchanged, whether in a buffer of their own or a view of a larger one", () => {
+    const sent = Message.encode({
+      ...message("ada", 0, 3),
       checkpoints: [{ tick: 0, hash: 7 }],
       made: { game: 3, delta: DELTA, peers: ["ada", "grace"], start: 0 },
+      heard: 0,
     });
-    expect(Relay.forward(ada, first, [ada, grace])).toEqual(
-      Exit.succeed([{ to: grace, text: first }])
-    );
+    const kept = sent.slice();
+    const framed = new Uint8Array(sent.byteLength + 8);
+    framed.set(sent, 4);
+    for (const [data, buffer, offset] of [
+      [sent, sent.buffer, 0],
+      [kept.buffer, kept.buffer, 0],
+      [new DataView(framed.buffer, 4, sent.byteLength), framed.buffer, 4],
+    ] as const) {
+      const [first, second] = joined(
+        Relay.forward(ada, data, [ada, grace, edsger])
+      );
+      assert(first?.data instanceof Uint8Array);
+      expect(second?.data).toBe(first.data);
+      expect(first.data).toEqual(kept);
+      expect(first.data.buffer).toBe(buffer);
+      expect(first.data.byteOffset).toBe(offset);
+    }
+    expect(sent).toEqual(kept);
   });
 
   it("is refused when it says it is from anyone but the member that sent it", () => {
     const refused = refusal(
-      Relay.forward(ada, text("grace", 3, 9), [ada, grace, edsger])
+      Relay.forward(ada, bytes("grace", 3, 9), [ada, grace, edsger])
     );
     expect(refused).toEqual(
       new Relay.Refused({
@@ -308,27 +308,49 @@ describe("what a member sent", () => {
     );
   });
 
-  it("is refused when it is not a message", () => {
-    for (const data of ["", "hello", "{}", JSON.stringify({ from: "ada" })]) {
+  it("is refused when it is not a message, text or bytes", () => {
+    const sent = bytes("ada", 1);
+    for (const [what, data] of [
+      ["no text", ""],
+      ["text", "hello"],
+      ["a message as text", JSON.stringify(message("ada", 1))],
+      ["no bytes", new Uint8Array()],
+      ["noise", new Uint8Array([7, 7, 7, 7])],
+      ["a message cut short", sent.subarray(0, -1)],
+      ["a message padded", new Uint8Array([...sent, 0, 0])],
+    ] as const) {
       const refused = refusal(Relay.forward(ada, data, [ada, grace]));
-      expect(refused.reason, data).toBe("not a message");
-      expect(refused.code, data).toBe(1007);
+      expect(refused.reason, what).toBe("not a message");
+      expect(refused.code, what).toBe(1007);
     }
   });
 
-  it("is refused when it is longer than the relay takes", () => {
-    const long = JSON.stringify({
+  it("is refused when it is longer than the relay takes, in bytes", () => {
+    const long = Message.encode({
       ...message("ada", 1),
-      actions: [{ name: "ls/Tip", payload: "x".repeat(200) }],
+      actions: [{ name: "ls/Tip", payload: "é".repeat(200) }],
     });
-    expect(Exit.isSuccess(Relay.forward(ada, long, [ada, grace]))).toBe(true);
-    const refused = refusal(
-      Relay.forward(ada, long, [ada, grace], { maxLength: 100 })
+    const most = { maxLength: long.byteLength };
+    expect(Exit.isSuccess(Relay.forward(ada, long, [ada, grace], most))).toBe(
+      true
     );
-    expect(refused.reason).toBe("too long");
-    expect(refused.code).toBe(1009);
-    // 65,536 characters, unless told.
-    const huge = JSON.stringify({
+    expect(
+      refusal(
+        Relay.forward(ada, long, [ada, grace], {
+          maxLength: long.byteLength - 1,
+        })
+      )
+    ).toEqual(
+      new Relay.Refused({
+        reason: "too long",
+        message: `"ada" sent ${long.byteLength} bytes, and the relay takes ${long.byteLength - 1} at most.`,
+        status: 400,
+        code: 1009,
+      })
+    );
+    // 65,536 bytes, unless told.
+    expect(Exit.isSuccess(Relay.forward(ada, long, [ada, grace]))).toBe(true);
+    const huge = Message.encode({
       ...message("ada", 1),
       actions: [{ name: "ls/Tip", payload: "x".repeat(65_536) }],
     });
@@ -341,14 +363,14 @@ describe("what a member sent", () => {
 describe("who joins a room and who leaves it", () => {
   it("is told to every other member of the room, and the one who joins is told who is there", () => {
     expect(Relay.joined(edsger, [ada, grace, linus, edsger])).toEqual([
-      { to: ada, text: notice({ joined: "edsger" }) },
-      { to: grace, text: notice({ joined: "edsger" }) },
-      { to: edsger, text: notice({ joined: "ada" }) },
-      { to: edsger, text: notice({ joined: "grace" }) },
+      { to: ada, data: notice({ joined: "edsger" }) },
+      { to: grace, data: notice({ joined: "edsger" }) },
+      { to: edsger, data: notice({ joined: "ada" }) },
+      { to: edsger, data: notice({ joined: "grace" }) },
     ]);
     expect(Relay.left(edsger, [ada, grace, linus])).toEqual([
-      { to: ada, text: notice({ left: "edsger" }) },
-      { to: grace, text: notice({ left: "edsger" }) },
+      { to: ada, data: notice({ left: "edsger" }) },
+      { to: grace, data: notice({ left: "edsger" }) },
     ]);
     // Alone in the room, nobody is told anything.
     expect(Relay.joined(linus, [ada, linus])).toEqual([]);
@@ -369,7 +391,7 @@ describe("who joins a room and who leaves it", () => {
       );
     }
     for (const text of [
-      Message.encode(message("ada", 0)),
+      JSON.stringify(message("ada", 0)),
       "{}",
       JSON.stringify({ joined: 1 }),
       "nothing",
@@ -382,7 +404,11 @@ describe("who joins a room and who leaves it", () => {
 describe("a relay that keeps its rooms itself", () => {
   it("sends what a peer sent to the others in its room", () => {
     const relay = Relay.make();
-    const got: Record<string, string[]> = { ada: [], grace: [], linus: [] };
+    const got: Record<string, (string | Uint8Array)[]> = {
+      ada: [],
+      grace: [],
+      linus: [],
+    };
     const connect = (url: string, name: string) =>
       joined(relay.connect(url, Relay.anyone, (sent) => got[name]!.push(sent)));
     const first = connect("/blue?peer=ada", "ada");
@@ -391,16 +417,20 @@ describe("a relay that keeps its rooms itself", () => {
     expect(first.member).toEqual(ada);
     expect(relay.members("blue")).toEqual([ada, grace]);
     expect(relay.rooms).toBe(2);
-    expect(first.receive(text("ada", 0, 4))).toEqual(Exit.void);
-    expect(second.receive(text("grace", 0))).toEqual(Exit.void);
-    expect(third.receive(text("linus", 0))).toEqual(Exit.void);
+    const fromAda = bytes("ada", 0, 4);
+    expect(first.receive(fromAda)).toEqual(Exit.void);
+    expect(second.receive(bytes("grace", 0))).toEqual(Exit.void);
+    expect(third.receive(bytes("linus", 0))).toEqual(Exit.void);
     expect(got).toEqual({
-      ada: [notice({ joined: "grace" }), text("grace", 0)],
-      grace: [notice({ joined: "ada" }), text("ada", 0, 4)],
+      ada: [notice({ joined: "grace" }), bytes("grace", 0)],
+      grace: [notice({ joined: "ada" }), fromAda],
       linus: [],
     });
+    const passed = got.grace![1];
+    assert(passed instanceof Uint8Array);
+    expect(passed.buffer).toBe(fromAda.buffer);
     // A refusal is the host's to act on: nothing is sent.
-    expect(refusal(first.receive(text("grace", 1))).reason).toBe(
+    expect(refusal(first.receive(bytes("grace", 1))).reason).toBe(
       "speaks for another"
     );
     expect(got.grace).toHaveLength(2);
@@ -408,7 +438,11 @@ describe("a relay that keeps its rooms itself", () => {
 
   it("tells the room who joins it and who leaves it, and nobody else", () => {
     const relay = Relay.make();
-    const got: Record<string, string[]> = { ada: [], grace: [], linus: [] };
+    const got: Record<string, (string | Uint8Array)[]> = {
+      ada: [],
+      grace: [],
+      linus: [],
+    };
     const connect = (url: string, name: string) =>
       joined(relay.connect(url, Relay.anyone, (sent) => got[name]!.push(sent)));
     const first = connect("/blue?peer=ada", "ada");
@@ -455,8 +489,11 @@ describe("a relay that keeps its rooms itself", () => {
   });
 
   it("holds what its members send to the limits it was made with", () => {
-    const relay = Relay.make({ maxLength: 60, peers: ["ada", "grace"] });
-    const sent: string[] = [];
+    const relay = Relay.make({
+      maxLength: bytes("ada", 0).byteLength,
+      peers: ["ada", "grace"],
+    });
+    const sent: (string | Uint8Array)[] = [];
     const first = joined(
       relay.connect("/blue?peer=ada", Relay.anyone, () => {})
     );
@@ -466,11 +503,11 @@ describe("a relay that keeps its rooms itself", () => {
     expect(
       refusal(relay.connect("/blue?peer=edsger", Relay.anyone, () => {})).reason
     ).toBe("not a peer");
-    expect(first.receive(text("ada", 0))).toEqual(Exit.void);
-    expect(refusal(first.receive(text("ada", 1, 123_456))).reason).toBe(
+    expect(first.receive(bytes("ada", 0))).toEqual(Exit.void);
+    expect(refusal(first.receive(bytes("ada", 1, 123_456))).reason).toBe(
       "too long"
     );
-    expect(sent).toEqual([notice({ joined: "ada" }), text("ada", 0)]);
+    expect(sent).toEqual([notice({ joined: "ada" }), bytes("ada", 0)]);
   });
 
   it("forgets a room when the last peer has left it", () => {
@@ -1051,7 +1088,7 @@ describe("the transport between machines, when its socket drops", () => {
         const first = last();
         first.open();
         yield* TestClock.adjust(0);
-        expect(first.sent).toEqual([text("ada", 0)]);
+        expect(first.sent).toEqual([bytes("ada", 0)]);
         first.say(notice({ joined: "grace" }));
         first.drop();
         relay.down = true;
@@ -1070,7 +1107,7 @@ describe("the transport between machines, when its socket drops", () => {
         const again = last();
         again.open();
         yield* TestClock.adjust(0);
-        expect(again.sent).toEqual([text("ada", 1)]);
+        expect(again.sent).toEqual([bytes("ada", 1)]);
         expect(transport.receive()).toEqual([{ joined: "grace" }]);
         expect(first.closedWith).toEqual([1000]);
       })

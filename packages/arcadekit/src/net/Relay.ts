@@ -3,7 +3,9 @@
  *
  * Each peer opens a WebSocket to the relay, at an address that names a room and
  * the peer. The relay forwards what one peer sends to the others in its room.
- * It runs no game and keeps no game state: it receives text and forwards text.
+ * It runs no game and keeps no game state: it receives a message's bytes and
+ * forwards them unchanged. What it tells a room itself, who joined and who
+ * left, it sends as text.
  *
  * The relay is a handler, not a server: plain functions that decide what to
  * do with a connection and with what it sends. Whatever accepts the sockets,
@@ -14,11 +16,11 @@
  *
  *   // a member sent something: what goes to whom?
  *   const deliveries = Relay.forward(member, data, present) // Exit<Delivery[], Refused>
- *   for (const { to, text } of deliveries.value) socketOf(to).send(text)
+ *   for (const { to, data } of deliveries.value) socketOf(to).send(data)
  *
  *   // a member came in, or its socket closed: who is told?
- *   for (const { to, text } of Relay.joined(member, present)) socketOf(to).send(text)
- *   for (const { to, text } of Relay.left(member, present)) socketOf(to).send(text)
+ *   for (const { to, data } of Relay.joined(member, present)) socketOf(to).send(data)
+ *   for (const { to, data } of Relay.left(member, present)) socketOf(to).send(data)
  *
  * `present` is everyone connected, as the host tracks them. The host can
  * store its connections anywhere, even on the sockets themselves, on a
@@ -59,13 +61,14 @@ export const Member: Schema.Struct<{
 export type Member = typeof Member.Type;
 
 /**
- * One text to send to one member of the room.
+ * What to send to one member of the room: a message's bytes, as a member sent
+ * them, or a notice in text.
  *
  * @category Models
  */
 export interface Delivery {
   readonly to: Member;
-  readonly text: string;
+  readonly data: string | Uint8Array<ArrayBuffer>;
 }
 
 /**
@@ -121,7 +124,7 @@ export interface Options {
    */
   readonly peers?: readonly string[];
   /**
-   * The longest text a member may send, in characters. Defaults to 65,536. A
+   * The longest message a member may send, in bytes. Defaults to 65,536. A
    * longer one is refused with `"too long"`.
    */
   readonly maxLength?: number;
@@ -256,15 +259,14 @@ export const join = (
   return Exit.succeed({ room, peer });
 };
 
-const decoder = new TextDecoder();
-
 /**
- * Decides what to do with a member's message: the text to forward to every
+ * Decides what to do with a member's message: the bytes to forward to every
  * other member of its room.
  *
- * The forwarded text is the message as the relay decoded it, encoded again,
- * so it carries nothing a message doesn't have. It refuses text that isn't a
- * message, text longer than `maxLength`, and a message that claims to be from
+ * The forwarded bytes are the very bytes the member sent, unchanged, once the
+ * relay has decoded them as a message. It refuses text, since a message
+ * comes as bytes, bytes that aren't a message, whole and nothing more, a
+ * message longer than `maxLength` bytes, and a message that claims to be from
  * anyone but the member that sent it. The host then closes the socket with
  * the refusal's `code`.
  *
@@ -272,21 +274,31 @@ const decoder = new TextDecoder();
  */
 export const forward = (
   from: Member,
-  data: string | ArrayBuffer | ArrayBufferView,
+  data: string | ArrayBuffer | ArrayBufferView<ArrayBuffer>,
   present: readonly Member[],
   options: Options = {}
 ): Exit.Exit<readonly Delivery[], Refused> => {
-  const text = typeof data === "string" ? data : decoder.decode(data);
+  if (typeof data === "string") {
+    return refuse(
+      "not a message",
+      `"${from.peer}" sent text, and a message comes as bytes.`,
+      400,
+      1007
+    );
+  }
+  const bytes = ArrayBuffer.isView(data)
+    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    : new Uint8Array(data);
   const longest = options.maxLength ?? 65_536;
-  if (text.length > longest) {
+  if (bytes.byteLength > longest) {
     return refuse(
       "too long",
-      `"${from.peer}" sent ${text.length} characters, and the relay takes ${longest} at most.`,
+      `"${from.peer}" sent ${bytes.byteLength} bytes, and the relay takes ${longest} at most.`,
       400,
       1009
     );
   }
-  const message = Message.decode(text);
+  const message = Message.decode(bytes);
   if (Exit.isFailure(message)) {
     return refuse(
       "not a message",
@@ -303,11 +315,10 @@ export const forward = (
       1008
     );
   }
-  const passedOn = Message.encode(message.value);
   const deliveries: Delivery[] = [];
   for (const member of present) {
     if (member.room === from.room && member.peer !== from.peer) {
-      deliveries.push({ to: member, text: passedOn });
+      deliveries.push({ to: member, data: bytes });
     }
   }
   return Exit.succeed(deliveries);
@@ -319,10 +330,10 @@ const notify = (
   present: readonly Member[],
   notice: Message.Notice
 ): Delivery[] => {
-  const text = Message.encodeNotice(notice);
+  const data = Message.encodeNotice(notice);
   return present
     .filter((other) => other.room === member.room && other.peer !== member.peer)
-    .map((to) => ({ to, text }));
+    .map((to) => ({ to, data }));
 };
 
 /**
@@ -344,7 +355,7 @@ export const joined = (
   for (const { to } of deliveries.slice()) {
     deliveries.push({
       to: member,
-      text: Message.encodeNotice({ joined: to.peer }),
+      data: Message.encodeNotice({ joined: to.peer }),
     });
   }
   return deliveries;
@@ -374,7 +385,7 @@ export interface Connection {
    * when the message is refused, so the host can close the socket.
    */
   readonly receive: (
-    data: string | ArrayBuffer | ArrayBufferView
+    data: string | ArrayBuffer | ArrayBufferView<ArrayBuffer>
   ) => Exit.Exit<void, Refused>;
   /**
    * Ends the connection: the peer's name is free again, and the others in its
@@ -397,7 +408,7 @@ export interface Server {
   readonly connect: (
     url: string,
     proven: Proven,
-    send: (text: string) => void
+    send: (data: string | Uint8Array<ArrayBuffer>) => void
   ) => Exit.Exit<Connection, Refused>;
   /** Returns who is in a room, in the order they joined. */
   readonly members: (room: string) => readonly Member[];
@@ -413,8 +424,8 @@ export interface Server {
  *
  *   const relay = Relay.make()
  *   server.on("connection", (socket, request) => {
- *     const connection = relay.connect(request.url, Relay.anyone, (text) =>
- *       socket.send(text)
+ *     const connection = relay.connect(request.url, Relay.anyone, (data) =>
+ *       socket.send(data)
  *     )
  *     if (Exit.isFailure(connection)) return socket.close(1008, "refused")
  *     socket.on("message", (data) => connection.value.receive(data))
@@ -427,7 +438,10 @@ export const make = (options: Options = {}): Server => {
   // Per room, how to send to each peer in it, by name.
   const rooms = new Map<
     string,
-    Map<string, { readonly send: (text: string) => void }>
+    Map<
+      string,
+      { readonly send: (data: string | Uint8Array<ArrayBuffer>) => void }
+    >
   >();
   const members = (room: string): Member[] =>
     Array.from(rooms.get(room)?.keys() ?? [], (peer) => ({ room, peer }));
@@ -450,8 +464,8 @@ export const make = (options: Options = {}): Server => {
       room.set(member.peer, self);
       const peers = room;
       const tell = (deliveries: readonly Delivery[]): void => {
-        for (const { text, to } of deliveries) {
-          peers.get(to.peer)?.send(text);
+        for (const { data, to } of deliveries) {
+          peers.get(to.peer)?.send(data);
         }
       };
       tell(joined(member, members(member.room)));

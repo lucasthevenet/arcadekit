@@ -13,7 +13,7 @@
  * - `Session`: one peer of a game, with the app it makes and steps.
  * - `Transport`: what carries a session's messages to the other peers.
  * - `Relay`: the rules of a server that passes messages on between peers.
- * - `Message`: what peers send each other, and its form as text.
+ * - `Message`: what peers send each other, and its form in bytes.
  * - `Drift`: peers that are no longer playing the same game.
  * - `Peer`: a session without its app, which a driver steps.
  */

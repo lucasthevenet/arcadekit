@@ -48,10 +48,10 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
         }[]
       ) =>
         Effect.gen(function* () {
-          for (const { text, to } of deliveries) {
+          for (const { data, to } of deliveries) {
             const peer = sockets.find(({ member }) => member.peer === to.peer);
             if (peer !== undefined) {
-              yield* peer.socket.send(text);
+              yield* peer.socket.send(data);
             }
           }
         });

@@ -102,17 +102,42 @@ export const byName = (
 ) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 /**
- * The key a world finds a table by: the ids of its components, in order.
- * Written as a loop: `map` and `join` here had whoever called it thrown back
- * to the interpreter, a table's loading among them.
+ * Where a world finds a table by its components: one step per component id,
+ * in order of id. A step is no table, so finding one makes none.
  * @internal
  */
-export const tableKey = (sorted: readonly ComponentDef[]): string => {
-  let key = "";
+export interface TableNode {
+  table: Table | undefined;
+  readonly next: Map<number, TableNode>;
+}
+
+/** @internal */
+export const tableNode = (): TableNode => ({
+  table: undefined,
+  next: new Map(),
+});
+
+/**
+ * The node of the table of these components, sorted by id, with the steps
+ * to it made as needed. A key of text, the ids joined, measured a tenth
+ * slower on a spawn.
+ * @internal
+ */
+export const nodeOf = (
+  root: TableNode,
+  sorted: readonly ComponentDef[]
+): TableNode => {
+  let node = root;
   for (let d = 0; d < sorted.length; d++) {
-    key += d === 0 ? `${sorted[d]!.id}` : `,${sorted[d]!.id}`;
+    const id = sorted[d]!.id;
+    let step = node.next.get(id);
+    if (step === undefined) {
+      step = tableNode();
+      node.next.set(id, step);
+    }
+    node = step;
   }
-  return key;
+  return node;
 };
 
 // ---------------------------------------------------------------------------
@@ -549,6 +574,11 @@ export class RelationIndex {
     this.target[source] = target;
   }
 
+  /** Returns whether anyone points at `target`. */
+  pointedAt(target: number): boolean {
+    return this.head[target] !== -1;
+  }
+
   /** Makes `source` point at nothing. */
   unlink(source: number): void {
     const target = this.target[source]!;
@@ -569,6 +599,29 @@ export class RelationIndex {
     this.next[source] = -1;
     this.prev[source] = -1;
     this.target[source] = -1;
+  }
+
+  /**
+   * Writes the indexes of the entities that point at `target` into
+   * `members`, in no order, growing its array if it must, and returns how
+   * many.
+   */
+  collect(
+    target: number,
+    members: { dense: Uint32Array; count: number }
+  ): number {
+    let { dense } = members;
+    let count = 0;
+    for (let at = this.head[target]!; at !== -1; at = this.next[at]!) {
+      if (count === dense.length) {
+        const grown = new Uint32Array(dense.length * 2);
+        grown.set(dense);
+        dense = members.dense = grown;
+      }
+      dense[count++] = at;
+    }
+    members.count = count;
+    return count;
   }
 
   /** Returns the indexes of the entities that point at `target`, ascending. */

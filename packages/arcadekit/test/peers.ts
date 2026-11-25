@@ -339,12 +339,12 @@ export const withApp = <T extends Pick<App.Any, "read">, A, E = never>(
  * A network that is nothing like a wire: every message takes a random
  * number of rounds to arrive, so they overtake each other, and the ones
  * that arrive together arrive shuffled. Nothing is lost. Messages travel
- * as text.
+ * as bytes.
  */
 export const network = (seed: number, lag: { min: number; max: number }) => {
   const dice = new EcsWorld({ seed }).random;
   let now = 0;
-  let inFlight: { at: number; to: string; text: string }[] = [];
+  let inFlight: { at: number; to: string; bytes: Uint8Array }[] = [];
   return {
     get inFlight() {
       return inFlight.length;
@@ -358,7 +358,7 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
           inFlight.push({
             at: now + dice.int(lag.min, lag.max),
             to: name,
-            text: Message.encode(message),
+            bytes: Message.encode(message),
           });
         }
       }
@@ -367,7 +367,7 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
       const due = inFlight.filter((m) => m.to === to && m.at <= now);
       inFlight = inFlight.filter((m) => !(m.to === to && m.at <= now));
       return dice.shuffle(due).map((m) => {
-        const message = Message.decode(m.text);
+        const message = Message.decode(m.bytes);
         if (Exit.isFailure(message)) {
           throw new Error("a message did not survive the wire");
         }

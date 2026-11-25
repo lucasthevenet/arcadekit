@@ -23,7 +23,7 @@ Like an action, a view is a key and not part of the game. The game never reads a
 
 ## Publish views
 
-`View.publish` makes a frame-stage system. Each frame, it computes the value and publishes it only if it differs from what the UI has.
+`View.publish` makes a frame-stage system. Each frame that the UI watches the view, it computes the value and publishes it only if it differs from what the UI has.
 
 ```ts title="game.ts"
 import { Field, Plugin, Singleton, View, Action } from "arcadekit";
@@ -58,9 +58,9 @@ The system compares values field by field, at any depth. The body can return a n
 
 - The body can read anything a frame system can: singletons, states, queries, events, and assets. It can't change the game.
 - Several ticks within one frame produce one publication, of the latest value.
-- When no UI is attached, as on a server, in a replay, or in most tests, no body runs at all.
-- While a UI is attached, the system computes and compares the whole value every frame. Put a view that is costly to compute under `System.runIf`.
-- A frame system of your own publishes through `(yield* View.Port).publish(view, value)`, which reports whether the value was new. A system of the tick or the input stage that requires `View.Port` doesn't compile.
+- The body runs only while the UI watches the view: while the view has a listener, and in the frame after the UI reads it with `get`. When no UI is attached, as on a server, in a replay, or in most tests, no body runs at all.
+- While the UI watches a view, the system computes and compares the whole value every frame. For a view that is costly to compute, give `View.publish` a `when`, as [below](#compute-a-costly-view-only-when-its-inputs-change).
+- A frame system of your own publishes through `(yield* View.Port).publish(view, value)`, which reports whether the value was new. `(yield* View.Port).watched(view)` says whether the UI watches the view. A system of the tick or the input stage that requires `View.Port` doesn't compile.
 
 ## Read views and send actions from the UI
 
@@ -82,7 +82,7 @@ export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
 };
 ```
 
-- `ui.get(view)` returns the last published value. It returns the same object until the value changes, so `===` tells a UI library whether anything changed.
+- `ui.get(view)` returns the last published value. It returns the same object until the value changes, so `===` tells a UI library whether anything changed. A view that the UI doesn't listen to is computed in the frame after `get` reads it, so `get` returns it a frame late.
 - `ui.subscribe(view, listener)` calls the listener each time the value changes, and returns a function that unsubscribes. It doesn't call the listener with the current value, so read that with `get`. A listener that throws fails the frame, like any bug in the frame stage, once every other listener has been notified.
 - `ui.send(action, payload)` requests an action. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for a key bound to it. A replay therefore needs no UI, and a button counts the same as a key.
 
@@ -133,9 +133,32 @@ const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
   );
 ```
 
+## Compute a costly view only when its inputs change
+
+Give `View.publish` a `when` before the body. `when` reads the few cheap values the view is computed from, such as a state or a singleton, and returns them. The body runs again only when they differ from what they were the last time it ran, compared as data:
+
+```ts title="game.ts"
+const Rank = View.define("game/Rank", { title: "novice" });
+
+export const ShowRank = View.publish(
+  Rank,
+  {
+    when: function* () {
+      return (yield* Score).points;
+    },
+  },
+  function* () {
+    const { points } = yield* Score;
+    return { title: points >= 1000 ? "master" : "novice" };
+  }
+);
+```
+
+The body runs again only when what `when` returns changes. Anything else it reads shows as it was when the body last ran. `when` returns plain data, such as `(yield* Score).points`: returned whole, `yield* Score` is the same object every frame, and the body never runs again.
+
 ## Show a view in one part of the game
 
-`View.publish` accepts `System.runIf` like any system. A view that isn't published keeps its last value, which suits a costly view computed only now and then. For a view that belongs to one part of the game and shouldn't show elsewhere, give `View.reset` to `System.otherwise`. The view returns to its initial value while its system doesn't run:
+`View.publish` accepts `System.runIf` like any system. A view that isn't published keeps its last value. For a view that belongs to one part of the game and shouldn't show elsewhere, give `View.reset` to `System.otherwise`. The view returns to its initial value while its system doesn't run:
 
 ```ts title="game.ts"
 import { State, System } from "arcadekit";

@@ -53,6 +53,7 @@ const Heat = Component.define(
 );
 const Frozen = Component.tag("ch/Frozen", { storage: "sparse" });
 const Boss = Component.tag("ch/Boss");
+const Follows = Component.relation("ch/Follows", { onTargetDespawn: "remove" });
 
 const Positions = Query.all(Position).pipe(Query.writes(Position));
 const Moved = Query.all(Position).pipe(
@@ -807,6 +808,7 @@ describe("changes against a simple model", () => {
           } else {
             world.add(some, Frozen);
           }
+          world.add(some, Follows.of({ target: dice.pick(alive) }));
         } else if (roll < 14) {
           const name = dice.pick(["Position", "Health", "Heat"] as const);
           if (world.has(some, defs[name])) {
@@ -843,6 +845,16 @@ describe("changes against a simple model", () => {
                 fire("Position:changed", entity);
               }
             });
+          // Of the entities that point at one.
+          world
+            .view(Query.all(Health, Follows).pipe(Query.writes(Health)))
+            .pointingAt(Follows, some)
+            .each((health, _, entity) => {
+              if (entityIndex(entity) % modulus === 0) {
+                health.hp += 1;
+                fire("Health:changed", entity);
+              }
+            });
         } else if (roll < 17) {
           // A raw loop: every row it is handed to write counts.
           world
@@ -853,6 +865,14 @@ describe("changes against a simple model", () => {
               )
             )
             .eachChunk((start, end, _, ids) => {
+              for (let i = start; i < end; i++) {
+                fire("Position:changed", ids[i]!);
+              }
+            });
+          world
+            .view(Query.all(Position, Follows).pipe(Query.writes(Position)))
+            .pointingAt(Follows, some)
+            .eachChunk((start, end, _, __, ids) => {
               for (let i = start; i < end; i++) {
                 fire("Position:changed", ids[i]!);
               }

@@ -1,4 +1,5 @@
-import { Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
+import { SchemaBinary } from "effect/encoding";
 import { assert, describe, expect, it } from "vitest";
 
 import {
@@ -11,6 +12,7 @@ import {
   Timeline,
   readSnapshot,
 } from "../src/index";
+import { Layout } from "../src/internal/recording";
 import {
   CoinGame,
   DELTA,
@@ -27,6 +29,13 @@ import {
   withPeers,
 } from "./peers";
 import type { Peer } from "./peers";
+
+const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
+  if (Exit.isFailure(exit)) {
+    throw Cause.squash(exit.cause);
+  }
+  return exit.value;
+};
 
 describe("who issued an action", () => {
   it("is told to its handler when the action came with a name", () => {
@@ -103,9 +112,9 @@ describe("who issued an action", () => {
         refused: expect.any(String),
       },
     ]);
-    // As text and back, as a log that is kept would be.
-    const text = Journal.encode(recorded.recording);
-    const read = Journal.decode(text);
+    // As bytes and back, as a log that is kept would be.
+    const bytes = Journal.encode(recorded.recording);
+    const read = Journal.decode(bytes);
     expect(read).toEqual(Exit.succeed(recorded.recording));
     assert(Exit.isSuccess(read));
     withApp(
@@ -123,8 +132,10 @@ describe("who issued an action", () => {
       const { from: _, ...rest } = entry;
       return rest;
     });
+    const Written = SchemaBinary.toCodec(Layout);
+    const fields = unwrap(Schema.decodeExit(Written)(bytes));
     const alteredRecording = Journal.decode(
-      JSON.stringify({ ...(JSON.parse(text) as object), log: anonymous })
+      unwrap(Schema.encodeExit(Written)({ ...fields, log: anonymous }))
     );
     assert(Exit.isSuccess(alteredRecording));
     const diverged = Effect.runSync(
@@ -135,14 +146,29 @@ describe("who issued an action", () => {
       )
     );
     expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
-    // A name is text.
+    // A name is text, and one that isn't is bytes of another layout.
+    const numbered = SchemaBinary.toCodec(
+      Schema.Struct({
+        ...Layout.fields,
+        log: Schema.Array(
+          Schema.Struct({
+            tick: Schema.Int,
+            name: Schema.String,
+            payload: Schema.Unknown,
+            from: Schema.Number,
+          })
+        ),
+      })
+    );
     expect(
       Exit.isFailure(
         Journal.decode(
-          JSON.stringify({
-            ...recorded.recording,
-            log: [{ tick: 0, name: "ls/Tip", payload: {}, from: 7 }],
-          })
+          unwrap(
+            Schema.encodeExit(numbered)({
+              ...fields,
+              log: [{ tick: 0, name: "ls/Tip", payload: {}, from: 7 }],
+            })
+          )
         )
       )
     ).toBe(true);
