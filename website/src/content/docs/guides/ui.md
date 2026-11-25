@@ -154,7 +154,7 @@ export const ShowRank = View.publish(
 );
 ```
 
-The body runs again only when what `when` returns changes. Anything else it reads shows as it was when the body last ran. `when` returns plain data, such as `(yield* Score).points`: returned whole, `yield* Score` is the same object every frame, and the body never runs again.
+The body runs again only when what `when` returns changes. Anything else it reads shows as it was when the body last ran. `when` and the body return data, such as `(yield* Score).points` or `{ ...(yield* Score) }`. A singleton read whole, `yield* Score`, doesn't compile as either: it is the world's own object, the same every frame, so it would never differ.
 
 ## Show a view in one part of the game
 

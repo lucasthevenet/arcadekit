@@ -50,6 +50,7 @@ import { Context, Effect, Equal, Layer } from "effect";
 
 import * as Action from "./Action.ts";
 import * as Plugin from "./Plugin.ts";
+import type * as Singleton from "./Singleton.ts";
 import * as System from "./System.ts";
 
 // --- a view ----------------------------------------------------------------------
@@ -83,6 +84,26 @@ export const define = <A>(name: string, initial: A): View<A> => ({
   name,
   initial,
 });
+
+/**
+ * The singleton reads in `A`, as a union, at most four levels deep. A deeper
+ * search overflows the compiler on ordinary data.
+ */
+type Held<A, Depth extends unknown[] = []> = Depth["length"] extends 4
+  ? never
+  : A extends Singleton.Read<{}>
+    ? A
+    : A extends (...args: never) => unknown
+      ? never
+      : A extends object
+        ? Held<A[keyof A], [...Depth, unknown]>
+        : never;
+/** Refuses a value that holds a singleton read whole. */
+type Fresh<A> = [Held<A>] extends [never]
+  ? unknown
+  : {
+      readonly "A singleton read whole is the same object every frame, so it never differs: return its fields": Held<A>;
+    };
 
 // --- the bridge ------------------------------------------------------------------
 
@@ -452,24 +473,27 @@ export function layer(_game: unknown, mount: Mount): Layer.Layer<never> {
  *     return priceEveryItem(yield* Purse, yield* Items)
  *   })
  *
+ * `when` and the body return data, such as `(yield* Purse).gold` or a spread
+ * of `yield* Purse`. A singleton read whole, `yield* Purse`, doesn't compile
+ * as either, even inside an array or an object: it is the world's own object,
+ * the same every frame, so it would never differ.
+ *
  * **Gotchas**
  *
  * - The UI reads a view it doesn't listen to a frame late: `get` returns the
  *   value last published, and the next frame publishes the view again.
  * - Given `when`, the body runs again only when what `when` returns changes.
  *   Anything else the body reads shows as it was when the body last ran.
- * - `when` returns plain data, such as `(yield* Score).points`. Returned whole,
- *   `yield* Score` is the same object each frame, so the body never runs
- *   again.
  *
  * @category Systems
  */
 export function publish<
   A,
+  V extends A,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
 >(
   view: View<A>,
-  body: System.FrameBody<Eff, A>
+  body: System.FrameBody<Eff, V> & Fresh<V>
 ): System.System<
   System.GenError<Eff>,
   System.GenServices<Eff> | Port,
@@ -478,13 +502,14 @@ export function publish<
 >;
 export function publish<
   A,
+  V extends A,
   D,
   WhenEff extends Effect.Effect<unknown, unknown, unknown>,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
 >(
   view: View<A>,
-  options: { readonly when: System.FrameBody<WhenEff, D> },
-  body: System.FrameBody<Eff, A>
+  options: { readonly when: System.FrameBody<WhenEff, D> & Fresh<D> },
+  body: System.FrameBody<Eff, V> & Fresh<V>
 ): System.System<
   System.GenError<WhenEff | Eff>,
   System.GenServices<WhenEff | Eff> | Port,

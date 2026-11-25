@@ -26,9 +26,29 @@ import type {
 import { World } from "./Services.ts";
 import type { Sim } from "./Services.ts";
 
+declare const LiveBrand: unique symbol;
+
+// A getter of a class, which a spread drops: a copy is not the world's object.
+declare abstract class LiveObject {
+  get [LiveBrand](): true;
+}
+interface Live extends LiveObject {}
+
+/**
+ * A singleton's value as `yield*` reads it: the world's own object, read-only,
+ * and the same object on every read. Its fields are plain data, and so is a
+ * spread of it, `{ ...(yield* Score) }`. Returned whole, it is refused as the
+ * value of a view and as what `View.publish`'s `when` returns, which would
+ * never differ from one frame to the next.
+ *
+ * @category Models
+ */
+export type Read<S extends Schema> = Readonly<ValueOf<S>> & Live;
+
 /**
  * A singleton's definition, as `Singleton.define` makes it. It is an Effect,
- * and `yield*` returns its value in the world, read-only.
+ * and `yield*` returns its value in the world, read-only, as a
+ * `Singleton.Read`.
  * `yield* SomeSingleton.writes` returns the same value with fields that can be
  * assigned. Only the code of the tick can ask for it: a system of the tick, a
  * handler or a plugin's setup.
@@ -36,10 +56,10 @@ import type { Sim } from "./Services.ts";
  * @category Models
  */
 export class Singleton<S extends Schema>
-  extends Effectable.Class<Readonly<ValueOf<S>>, never, World>
+  extends Effectable.Class<Read<S>, never, World>
   implements SingletonSpec<S>
 {
-  private effect: Effect.Effect<Readonly<ValueOf<S>>, never, World> | undefined;
+  private effect: Effect.Effect<Read<S>, never, World> | undefined;
   private writing: Effect.Effect<ValueOf<S>, never, World | Sim> | undefined;
 
   constructor(
@@ -54,9 +74,10 @@ export class Singleton<S extends Schema>
     return this.component.name;
   }
 
-  asEffect(): Effect.Effect<Readonly<ValueOf<S>>, never, World> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      world.singleton(this)
+  asEffect(): Effect.Effect<Read<S>, never, World> {
+    return (this.effect ??= Effect.map(
+      Effect.service(World),
+      (world) => world.singleton(this) as Read<S>
     ));
   }
 

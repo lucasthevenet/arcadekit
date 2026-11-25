@@ -1,5 +1,5 @@
 import { Effect, Exit, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { idOf } from "../src/ecs/component.ts";
 import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot.ts";
@@ -97,6 +97,21 @@ describe("a singleton", () => {
       player: 1,
       round: 0,
     });
+  });
+
+  it("is read as the world's own object, whose fields and spread are plain data", () => {
+    const app = Effect.runSync(App.make(App.define({ plugins: [] })));
+    const turn = Effect.runSync(app.read(Turn));
+    expectTypeOf(turn).toEqualTypeOf<
+      Singleton.Read<typeof Turn.component.schema>
+    >();
+    expectTypeOf(turn.player).toEqualTypeOf<number>();
+    expectTypeOf({ ...turn }).toEqualTypeOf<{
+      player: number;
+      round: number;
+    }>();
+    expect(Effect.runSync(app.read(Turn))).toBe(turn);
+    expect({ ...turn }).toEqual({ player: 1, round: 0 });
   });
 
   it("has fields of every kind", () => {
