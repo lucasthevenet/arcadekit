@@ -35,15 +35,15 @@
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
-import { SnapshotError } from "./ecs/snapshot";
-import type { WithSpawned } from "./ecs/spawned";
-import { isPlain } from "./ecs/store";
-import type { Store } from "./ecs/store";
-import type { World } from "./ecs/world";
-import { Outbox } from "./internal/outbox";
-import type { Stage, Told } from "./internal/outbox";
-import { Events } from "./Services";
-import type { Sim } from "./Services";
+import { SnapshotError } from "./ecs/snapshot.ts";
+import type { WithSpawned } from "./ecs/spawned.ts";
+import { isPlain } from "./ecs/store.ts";
+import type { Store } from "./ecs/store.ts";
+import type { World } from "./ecs/world.ts";
+import { Outbox } from "./internal/outbox.ts";
+import type { Stage, Told } from "./internal/outbox.ts";
+import { Events } from "./Services.ts";
+import type { Sim } from "./Services.ts";
 
 /**
  * The handle to one event type that `yield* SomeEvent` gives the code of any

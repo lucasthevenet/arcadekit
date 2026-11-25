@@ -10,7 +10,7 @@ import type {
   FieldDef,
   ReadonlyColumn,
   Schema,
-} from "./component";
+} from "./component.ts";
 
 /**
  * A relation's `target` field, the id of an entity that the world keeps track

@@ -17,8 +17,8 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import * as Services from "../src/Services";
+} from "../src/index.ts";
+import * as Services from "../src/Services.ts";
 
 const Position = Component.define("rd/Position", { x: Field.f32 });
 const Aim = Component.define("rd/Aim", { at: Field.entity });

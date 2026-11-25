@@ -11,8 +11,8 @@ import {
   Time,
   Timeline,
   readSnapshot,
-} from "../src/index";
-import { Layout } from "../src/internal/recording";
+} from "../src/index.ts";
+import { Layout } from "../src/internal/recording.ts";
 import {
   CoinGame,
   DELTA,
@@ -27,8 +27,8 @@ import {
   round,
   withApp,
   withPeers,
-} from "./peers";
-import type { Peer } from "./peers";
+} from "./peers.ts";
+import type { Peer } from "./peers.ts";
 
 const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   if (Exit.isFailure(exit)) {

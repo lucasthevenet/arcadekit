@@ -2,8 +2,8 @@
  * What the demo draws, which under Node is a note of how high the highest
  * thing is. Leave the plugin out and the game is the same.
  */
-import { Frame, Plugin, System, Time } from "../../../src/index";
-import * as Physics from "../physics/index";
+import { Frame, Plugin, System, Time } from "../../../src/index.ts";
+import * as Physics from "../physics/index.ts";
 
 /** What the last frame drew, and how many frames there have been. */
 export const sketch = { frames: 0, highest: 0 };

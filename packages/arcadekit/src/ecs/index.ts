@@ -20,8 +20,13 @@
  * one more field type, `Field.schema`. `entityIndex`, `entityGeneration` and
  * `placed` are exported only here.
  */
-export { Component, entityGeneration, entityIndex, Field } from "./component";
-export type { PatchOf, RelationDef, TargetField } from "./relation";
+export {
+  Component,
+  entityGeneration,
+  entityIndex,
+  Field,
+} from "./component.ts";
+export type { PatchOf, RelationDef, TargetField } from "./relation.ts";
 export type {
   ComponentDef,
   ComponentInput,
@@ -38,25 +43,25 @@ export type {
   SingletonSpec,
   Storage,
   ValueOf,
-} from "./component";
-export { Rng } from "./random";
-export type { Frozen, JsonValue } from "./frozen";
-export { placed } from "./spawned";
-export type { Placed, Spawned, WithSpawned } from "./spawned";
-export { readSnapshot, writeSnapshot } from "./contents";
+} from "./component.ts";
+export { Rng } from "./random.ts";
+export type { Frozen, JsonValue } from "./frozen.ts";
+export { placed } from "./spawned.ts";
+export type { Placed, Spawned, WithSpawned } from "./spawned.ts";
+export { readSnapshot, writeSnapshot } from "./contents.ts";
 export type {
   SnapshotComponent,
   SnapshotContents,
   SnapshotSingleton,
   SnapshotSparse,
   SnapshotTable,
-} from "./contents";
-export type { SnapshotStore } from "./format";
-export { SnapshotError } from "./snapshot";
-export type { SnapshotProblem } from "./snapshot";
-export { RemovedReader } from "./changes";
-export type { ChangeKind, SavedChanges } from "./changes";
-export { CommandBuffer } from "./commands";
-export { PointingView, QueryView } from "./query";
-export type { EntityColumn, QuerySpec, SparseColumns, Terms } from "./query";
-export { World } from "./world";
+} from "./contents.ts";
+export type { SnapshotStore } from "./format.ts";
+export { SnapshotError } from "./snapshot.ts";
+export type { SnapshotProblem } from "./snapshot.ts";
+export { RemovedReader } from "./changes.ts";
+export type { ChangeKind, SavedChanges } from "./changes.ts";
+export { CommandBuffer } from "./commands.ts";
+export { PointingView, QueryView } from "./query.ts";
+export type { EntityColumn, QuerySpec, SparseColumns, Terms } from "./query.ts";
+export { World } from "./world.ts";

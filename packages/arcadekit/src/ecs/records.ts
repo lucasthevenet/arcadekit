@@ -4,8 +4,8 @@
  *
  * No Effect dependency.
  */
-import type { ComponentDef } from "./component";
-import type { Columns, SparseSet, Table } from "./table";
+import type { ComponentDef } from "./component.ts";
+import type { Columns, SparseSet, Table } from "./table.ts";
 
 /** Where the record of an entity whose spawn is not applied yet points. */
 export const NOT_PLACED = -1;

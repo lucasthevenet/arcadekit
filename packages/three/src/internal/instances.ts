@@ -3,14 +3,14 @@ import * as Query from "arcadekit/Query";
 import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 
-import type { InstancesFromOptions, InstancesOptions } from "../Instances";
-import { Scene } from "../Scene";
-import type { Entries, Needs } from "../Three";
-import { FromAssets } from "./assets";
-import { Holdings } from "./holdings";
-import type { Kept } from "./holdings";
-import { required } from "./kind";
-import { Instances } from "./mesh";
+import type { InstancesFromOptions, InstancesOptions } from "../Instances.ts";
+import { Scene } from "../Scene.ts";
+import type { Entries, Needs } from "../Three.ts";
+import { FromAssets } from "./assets.ts";
+import { Holdings } from "./holdings.ts";
+import type { Kept } from "./holdings.ts";
+import { required } from "./kind.ts";
+import { Instances } from "./mesh.ts";
 
 /** The instances of a look built from assets, while those assets are loaded. */
 interface Sourced extends Kept {

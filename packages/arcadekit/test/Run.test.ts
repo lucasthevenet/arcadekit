@@ -10,7 +10,7 @@ import {
 } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import * as Browser from "../src/browser/Browser";
+import * as Browser from "../src/browser/Browser.ts";
 import {
   Action,
   App,
@@ -26,7 +26,7 @@ import {
   Singleton,
   System,
   Time,
-} from "../src/index";
+} from "../src/index.ts";
 
 const Ball = Component.define("run/Ball", { x: Field.f32, vx: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));

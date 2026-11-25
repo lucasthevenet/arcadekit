@@ -4,8 +4,8 @@
  *
  * No Effect dependency.
  */
-import { isBoxed } from "./component";
-import type { FieldKind } from "./component";
+import { isBoxed } from "./component.ts";
+import type { FieldKind } from "./component.ts";
 
 export type Column =
   | Float32Array

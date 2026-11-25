@@ -13,7 +13,7 @@ import {
   State,
   System,
   World,
-} from "../src/index";
+} from "../src/index.ts";
 
 /** A tracer that keeps every span it makes, in the order it made them. */
 const recorder = () => {

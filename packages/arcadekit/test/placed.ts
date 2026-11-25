@@ -1,9 +1,9 @@
 import { assert } from "vitest";
 
-import { idOf } from "../src/ecs/component";
-import type { Spawned } from "../src/index";
-import type { Entity } from "../src/index";
-import type { ReadingWorld } from "../src/Services";
+import { idOf } from "../src/ecs/component.ts";
+import type { Spawned } from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
+import type { ReadingWorld } from "../src/Services.ts";
 
 /**
  * The entity of an id `Commands.spawn` returned, failing the test if its

@@ -4,11 +4,11 @@
  *
  * No Effect dependency.
  */
-import { frozenWrite, placedOf } from "./component";
-import type { ComponentDef, ComponentInput, Entity } from "./component";
-import type { Targeted } from "./relation";
-import type { Spawned } from "./spawned";
-import type { World } from "./world";
+import { frozenWrite, placedOf } from "./component.ts";
+import type { ComponentDef, ComponentInput, Entity } from "./component.ts";
+import type { Targeted } from "./relation.ts";
+import type { Spawned } from "./spawned.ts";
+import type { World } from "./world.ts";
 
 /**
  * The id a command applies to: one spawned by this buffer is placed by the

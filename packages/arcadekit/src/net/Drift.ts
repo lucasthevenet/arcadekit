@@ -23,8 +23,8 @@
  */
 import { Data } from "effect";
 
-import type * as Action from "../Action";
-import type { Made } from "./Message";
+import type * as Action from "../Action.ts";
+import type { Made } from "./Message.ts";
 
 /**
  * The peers are no longer playing the same game: at one tick, their worlds'

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { entityOf, idOf } from "../src/ecs/component";
-import { readSingleton } from "../src/ecs/contents";
-import { readSnapshot, writeSnapshot } from "../src/ecs/index";
+import { entityOf, idOf } from "../src/ecs/component.ts";
+import { readSingleton } from "../src/ecs/contents.ts";
+import { readSnapshot, writeSnapshot } from "../src/ecs/index.ts";
 import {
   CommandBuffer,
   Component,
@@ -11,9 +11,9 @@ import {
   Migrate,
   Query,
   SnapshotError,
-} from "../src/index";
-import type { ComponentDef, JsonValue } from "../src/index";
-import { Shouts } from "./stores";
+} from "../src/index.ts";
+import type { ComponentDef, JsonValue } from "../src/index.ts";
+import { Shouts } from "./stores.ts";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {

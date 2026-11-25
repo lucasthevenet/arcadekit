@@ -27,20 +27,20 @@
  */
 import { Effect, Effectable, Exit } from "effect";
 
-import { Component, Field, entityIndex } from "./ecs/component";
+import { Component, Field, entityIndex } from "./ecs/component.ts";
 import type {
   ComponentDef,
   FieldDef,
   LiteralName,
   SingletonSpec,
-} from "./ecs/component";
-import type { World as EcsWorld } from "./ecs/world";
-import * as Query from "./Query";
-import { LoadRefused } from "./Save";
-import { World } from "./Services";
-import type { Sim } from "./Services";
-import { whole } from "./services/handed";
-import * as System from "./System";
+} from "./ecs/component.ts";
+import type { World as EcsWorld } from "./ecs/world.ts";
+import * as Query from "./Query.ts";
+import { LoadRefused } from "./Save.ts";
+import { World } from "./Services.ts";
+import type { Sim } from "./Services.ts";
+import { whole } from "./services/handed.ts";
+import * as System from "./System.ts";
 
 /** What the world stores for a state. */
 type Fields = {

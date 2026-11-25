@@ -16,9 +16,9 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import type { Entity, JsonValue } from "../src/index";
-import { Drift, Session } from "../src/net/index";
+} from "../src/index.ts";
+import type { Entity, JsonValue } from "../src/index.ts";
+import { Drift, Session } from "../src/net/index.ts";
 import {
   Coin,
   CoinGame,
@@ -36,8 +36,8 @@ import {
   untilStopped,
   withApp,
   withPeers,
-} from "./peers";
-import type { Network, Peer } from "./peers";
+} from "./peers.ts";
+import type { Network, Peer } from "./peers.ts";
 
 /** Runs `use` with what `make` makes: a session. */
 const withMade = <T, A>(

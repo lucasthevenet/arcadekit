@@ -28,9 +28,9 @@
  */
 import type { Effect, Layer } from "effect";
 
-import type * as Action from "./Action";
-import type { BuiltIn, Sim } from "./Services";
-import type * as System from "./System";
+import type * as Action from "./Action.ts";
+import type { BuiltIn, Sim } from "./Services.ts";
+import type * as System from "./System.ts";
 
 /**
  * Any system, whatever its error and requirements.

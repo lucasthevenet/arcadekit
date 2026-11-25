@@ -17,7 +17,7 @@ import type * as Assets from "arcadekit/Assets";
 import type { Effect, Scope } from "effect";
 import type { LoadingManager, Texture } from "three";
 
-import * as internal from "./internal/assets";
+import * as internal from "./internal/assets.ts";
 
 /**
  * Options for an image loaded with `Three.texture`.

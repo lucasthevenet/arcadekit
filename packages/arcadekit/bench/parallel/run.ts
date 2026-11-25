@@ -24,7 +24,15 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
-import { DONE, INTEGERS, JOB, KERNEL, RANGES, SPIN, kernels } from "./kernels";
+import {
+  DONE,
+  INTEGERS,
+  JOB,
+  KERNEL,
+  RANGES,
+  SPIN,
+  kernels,
+} from "./kernels.ts";
 
 const DT = 1 / 60;
 

@@ -21,16 +21,16 @@
  */
 import { Schema } from "effect";
 
-import { makeColumn } from "./ecs/column";
-import type { Column } from "./ecs/column";
-import type { FieldKind } from "./ecs/component";
+import { makeColumn } from "./ecs/column.ts";
+import type { Column } from "./ecs/column.ts";
+import type { FieldKind } from "./ecs/component.ts";
 import type {
   SnapshotComponent,
   SnapshotContents,
   SnapshotTable,
-} from "./ecs/contents";
-import { renameInChanges } from "./ecs/query";
-import * as Save from "./Save";
+} from "./ecs/contents.ts";
+import { renameInChanges } from "./ecs/query.ts";
+import * as Save from "./Save.ts";
 
 /** The field types that hold numbers, in a typed array. */
 type NumericKind = "f32" | "f64" | "i32" | "u32" | "u16" | "u8" | "entity";

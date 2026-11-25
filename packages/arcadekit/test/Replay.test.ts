@@ -2,7 +2,7 @@ import { Cause, Data, Effect, Exit, Layer, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 import { assert, describe, expect, it } from "vitest";
 
-import { entityOf } from "../src/ecs/component";
+import { entityOf } from "../src/ecs/component.ts";
 import {
   Action,
   App,
@@ -21,10 +21,10 @@ import {
   Time,
   Timeline,
   World,
-} from "../src/index";
-import type { Entity } from "../src/index";
-import { Layout } from "../src/internal/recording";
-import type { BuiltIn } from "../src/Services";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
+import { Layout } from "../src/internal/recording.ts";
+import type { BuiltIn } from "../src/Services.ts";
 
 // --- a small game: coins are dropped, drift about at random, and are taken ------
 

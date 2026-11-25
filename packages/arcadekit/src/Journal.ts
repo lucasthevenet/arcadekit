@@ -21,15 +21,15 @@
 import { Brand, Cause, Data, Effect, Exit, Schema, SchemaIssue } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
-import * as Action from "./Action";
-import * as App from "./App";
-import type { Store } from "./ecs/store";
-import type { World } from "./ecs/world";
-import { partsOf } from "./internal/parts";
-import { Layout } from "./internal/recording";
-import { GameTime } from "./internal/stage";
-import type * as Plugin from "./Plugin";
-import * as Save from "./Save";
+import * as Action from "./Action.ts";
+import * as App from "./App.ts";
+import type { Store } from "./ecs/store.ts";
+import type { World } from "./ecs/world.ts";
+import { partsOf } from "./internal/parts.ts";
+import { Layout } from "./internal/recording.ts";
+import { GameTime } from "./internal/stage.ts";
+import type * as Plugin from "./Plugin.ts";
+import * as Save from "./Save.ts";
 
 /**
  * How a recorded game began: its `seed`, when it was recorded from its start,

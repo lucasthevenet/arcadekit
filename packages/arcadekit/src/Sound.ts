@@ -48,11 +48,11 @@
 import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 
-import * as Assets from "./Assets";
-import type * as Event from "./Event";
-import * as Plugin from "./Plugin";
-import type { Events } from "./Services";
-import * as System from "./System";
+import * as Assets from "./Assets.ts";
+import type * as Event from "./Event.ts";
+import * as Plugin from "./Plugin.ts";
+import type { Events } from "./Services.ts";
+import * as System from "./System.ts";
 
 // --- a sound that is not a name ------------------------------------------------------
 

@@ -20,9 +20,9 @@
 import { Effect, Layer } from "effect";
 
 // In a game of your own these are "arcadekit/browser/Browser" and "arcadekit".
-import * as Browser from "../../src/browser/Browser";
-import { App, Driver, View } from "../../src/index";
-import { Game, Screen } from "./game";
+import * as Browser from "../../src/browser/Browser.ts";
+import { App, Driver, View } from "../../src/index.ts";
+import { Game, Screen } from "./game.ts";
 
 // The game, which the bridge and the app are both made from.
 const Catch = App.define({ plugins: [Game] });
@@ -34,8 +34,8 @@ const Catch = App.define({ plugins: [Game] });
 // bridge and nothing of the game; only the one that is shown is loaded.
 const { mount } =
   new URLSearchParams(location.search).get("ui") === "react"
-    ? await import("./uiReact")
-    : await import("./uiDom");
+    ? await import("./uiReact.ts")
+    : await import("./uiDom.ts");
 const ui = View.layer(Catch, (bridge) =>
   mount(document.querySelector("#ui")!, bridge)
 );

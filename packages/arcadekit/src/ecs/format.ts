@@ -13,8 +13,8 @@
  *
  * No Effect dependency.
  */
-import type { Column } from "./column";
-import type { FieldKind, RefCodec } from "./component";
+import type { Column } from "./column.ts";
+import type { FieldKind, RefCodec } from "./component.ts";
 import {
   END,
   FORMAT,
@@ -26,8 +26,8 @@ import {
   corrupt,
   readColumn,
   writeColumn,
-} from "./snapshot";
-import { describeValue } from "./store";
+} from "./snapshot.ts";
+import { describeValue } from "./store.ts";
 
 /** One column for each field of a component, by the field's name. */
 type Columns = Record<string, Column>;

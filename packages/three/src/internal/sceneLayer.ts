@@ -1,8 +1,8 @@
 import { Effect, Layer } from "effect";
 import { PerspectiveCamera, Scene as ThreeScene } from "three";
 
-import { Scene } from "../Scene";
-import type { SceneShape } from "../Scene";
+import { Scene } from "../Scene.ts";
+import type { SceneShape } from "../Scene.ts";
 
 /**
  * Provides `Three.Scene`, and disposes of what the systems made when the app

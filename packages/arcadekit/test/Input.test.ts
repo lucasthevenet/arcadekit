@@ -22,8 +22,8 @@ import {
   Time,
   World,
   readSnapshot,
-} from "../src/index";
-import type { Rng } from "../src/index";
+} from "../src/index.ts";
+import type { Rng } from "../src/index.ts";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));

@@ -1,7 +1,7 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { idOf } from "../src/ecs/component";
+import { idOf } from "../src/ecs/component.ts";
 import {
   Action,
   App,
@@ -15,8 +15,8 @@ import {
   Query,
   System,
   World,
-} from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
+} from "../src/index.ts";
+import type { ComponentDef, Entity } from "../src/index.ts";
 
 // Two components with the same fields: a query has to tell them apart.
 const Position = Component.define("rd/Position", {

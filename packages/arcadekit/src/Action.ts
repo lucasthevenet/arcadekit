@@ -42,13 +42,13 @@
  */
 import { Cause, Context, Data, Effect, Exit, Schema } from "effect";
 
-import { SnapshotError } from "./ecs/snapshot";
-import type { WithSpawned } from "./ecs/spawned";
-import { isPlain } from "./ecs/store";
-import type { Store } from "./ecs/store";
-import * as Event from "./Event";
-import type { Sim } from "./Services";
-import type * as System from "./System";
+import { SnapshotError } from "./ecs/snapshot.ts";
+import type { WithSpawned } from "./ecs/spawned.ts";
+import { isPlain } from "./ecs/store.ts";
+import type { Store } from "./ecs/store.ts";
+import * as Event from "./Event.ts";
+import type { Sim } from "./Services.ts";
+import type * as System from "./System.ts";
 
 /**
  * The payload didn't match the action's schema. The handler didn't run.

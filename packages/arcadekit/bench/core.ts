@@ -20,9 +20,9 @@
  */
 import { pathToFileURL } from "node:url";
 
-import { Component, Field, World, entityIndex } from "../src/ecs/index";
-import type { Entity, Terms } from "../src/ecs/index";
-import { Query } from "../src/Query";
+import { Component, Field, World, entityIndex } from "../src/ecs/index.ts";
+import type { Entity, Terms } from "../src/ecs/index.ts";
+import { Query } from "../src/Query.ts";
 
 // Not exported: a loop that reads an exported constant reads it through the
 // module each time, which measured a tenth slower over these loops.

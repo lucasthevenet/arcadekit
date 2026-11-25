@@ -15,7 +15,7 @@ import {
   Singleton,
   System,
   Time,
-} from "../src/index";
+} from "../src/index.ts";
 
 const Ball = Component.define("dr/Ball", { x: Field.f32, vx: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));

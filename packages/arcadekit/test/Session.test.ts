@@ -1,10 +1,10 @@
 import { Effect, Exit, Layer } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { App, Plugin, Save, World } from "../src/index";
-import * as Build from "../src/internal/build";
-import { Session } from "../src/net/index";
-import { CoinGame, DELTA, Drop, game } from "./peers";
+import { App, Plugin, Save, World } from "../src/index.ts";
+import * as Build from "../src/internal/build.ts";
+import { Session } from "../src/net/index.ts";
+import { CoinGame, DELTA, Drop, game } from "./peers.ts";
 
 const alone = { me: "ada", others: [], delta: DELTA } as const;
 

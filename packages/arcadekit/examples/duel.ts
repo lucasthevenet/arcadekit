@@ -28,8 +28,8 @@ import {
   Singleton,
   System,
   World,
-} from "../src/index";
-import type { Entity } from "../src/index";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 
 // --- state ---------------------------------------------------------------------
 const Fighter = Component.define("duel/Fighter", {

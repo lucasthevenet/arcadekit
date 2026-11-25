@@ -22,10 +22,10 @@ import {
   System,
   Time,
   World,
-} from "../../src/index";
-import * as Lifetime from "./lifetime/index";
-import * as Physics from "./physics/index";
-import * as Sketch from "./sketch/index";
+} from "../../src/index.ts";
+import * as Lifetime from "./lifetime/index.ts";
+import * as Physics from "./physics/index.ts";
+import * as Sketch from "./sketch/index.ts";
 
 const { Frozen, Gravity, Position, Velocity } = Physics;
 

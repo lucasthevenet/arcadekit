@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { idOf } from "../src/ecs/component";
-import { readSnapshot, writeSnapshot } from "../src/ecs/index";
+import { idOf } from "../src/ecs/component.ts";
+import { readSnapshot, writeSnapshot } from "../src/ecs/index.ts";
 import {
   CommandBuffer,
   Component,
@@ -10,9 +10,9 @@ import {
   Migrate,
   Query,
   SnapshotError,
-} from "../src/index";
-import type { ComponentDef, Entity, JsonValue } from "../src/index";
-import { Shouts } from "./stores";
+} from "../src/index.ts";
+import type { ComponentDef, Entity, JsonValue } from "../src/index.ts";
+import { Shouts } from "./stores.ts";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
 const Marked = Component.tag("rs/Marked");

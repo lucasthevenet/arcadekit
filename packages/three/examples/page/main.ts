@@ -45,7 +45,7 @@ import {
 } from "three";
 
 // In a game of your own this is "@arcadekit/three".
-import { Gltf, Three } from "../../src/index";
+import { Gltf, Three } from "../../src/index.ts";
 
 const { Position, Rotation, Scale } = Transform3d;
 const COUNT =

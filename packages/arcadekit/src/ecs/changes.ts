@@ -4,10 +4,10 @@
  *
  * No Effect dependency.
  */
-import { INDEX_MASK, entityOf } from "./component";
-import type { ComponentDef, Entity } from "./component";
-import { corrupt } from "./snapshot";
-import type { World } from "./world";
+import { INDEX_MASK, entityOf } from "./component.ts";
+import type { ComponentDef, Entity } from "./component.ts";
+import { corrupt } from "./snapshot.ts";
+import type { World } from "./world.ts";
 
 /**
  * A kind of change to a component that a world logs: `"changed"` for a write,

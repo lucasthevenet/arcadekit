@@ -18,8 +18,8 @@ import type { Entity } from "arcadekit/ecs";
 import type * as System from "arcadekit/System";
 import type { Object3D } from "three";
 
-import * as internal from "./internal/objects";
-import type { Entries, Needs, TransformOf, Which } from "./Three";
+import * as internal from "./internal/objects.ts";
+import type { Entries, Needs, TransformOf, Which } from "./Three.ts";
 
 /**
  * The options of `Three.objects`, wherever its objects come from.

@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import type { Spawned } from "../src/index";
+import type { Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -17,9 +17,9 @@ import {
   Random,
   System,
   Time,
-} from "../src/index";
-import type { Entity } from "../src/index";
-import type { BuiltIn } from "../src/Services";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
+import type { BuiltIn } from "../src/Services.ts";
 
 const Health = Component.define("ru/Health", { hp: Field.i32 });
 const Energy = Component.define("ru/Energy", { points: Field.i32 });
@@ -286,9 +286,9 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
   return entity;
 });
 
-import { idOf } from "../src/ecs/component";
+import { idOf } from "../src/ecs/component.ts";
 // The World service, imported under another name so `world` reads naturally above.
-import { World as App_World } from "../src/index";
+import { World as App_World } from "../src/index.ts";
 
 const Death = System.tick("Death", function* () {
   const damaged = yield* Damaged.emits;

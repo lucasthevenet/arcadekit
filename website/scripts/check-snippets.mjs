@@ -99,6 +99,10 @@ writeFileSync(
     {
       extends: "../../tsconfig.base.json",
       compilerOptions: {
+        // A page shows a game, which a bundler builds: its own files import each other without
+        // an extension, as `import { Coin } from "./rules"`.
+        module: "ESNext",
+        moduleResolution: "bundler",
         lib: ["ES2023", "DOM", "DOM.Iterable"],
         types: ["node"],
       },

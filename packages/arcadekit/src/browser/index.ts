@@ -17,5 +17,5 @@
  *   program starts in it. It gives `Audio`'s sound too.
  * - `Audio`: the page's sound, played with Web Audio.
  */
-export * as Audio from "./Audio";
-export * as Browser from "./Browser";
+export * as Audio from "./Audio.ts";
+export * as Browser from "./Browser.ts";

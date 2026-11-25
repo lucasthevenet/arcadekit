@@ -7,7 +7,7 @@
 import { Cause, Context, Effect, Exit, Layer, Metric, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
-import * as Action from "../Action";
+import * as Action from "../Action.ts";
 import type {
   AllHandlers,
   App,
@@ -18,26 +18,26 @@ import type {
   StartOptions,
   Systems,
   TickError,
-} from "../App";
-import { CommandBuffer } from "../ecs/commands";
-import type { Spawned } from "../ecs/spawned";
-import { World as EcsWorld } from "../ecs/world";
-import { EventBus } from "../Event";
-import * as Input from "../Input";
-import * as Journal from "../Journal";
-import * as Plugin from "../Plugin";
-import * as Save from "../Save";
-import { Time, World } from "../Services";
-import type { TimeState } from "../Services";
-import { reading } from "../services/handed";
-import * as State from "../State";
-import * as Inbox from "./inbox";
-import * as Loop from "./loop";
-import { hold } from "./parts";
-import * as Runner from "./runner";
-import * as Schedule from "./schedule";
-import * as Stage from "./stage";
-import { TickDispatcher, TickScheduler } from "./tickScheduler";
+} from "../App.ts";
+import { CommandBuffer } from "../ecs/commands.ts";
+import type { Spawned } from "../ecs/spawned.ts";
+import { World as EcsWorld } from "../ecs/world.ts";
+import { EventBus } from "../Event.ts";
+import * as Input from "../Input.ts";
+import * as Journal from "../Journal.ts";
+import * as Plugin from "../Plugin.ts";
+import * as Save from "../Save.ts";
+import { Time, World } from "../Services.ts";
+import type { TimeState } from "../Services.ts";
+import { reading } from "../services/handed.ts";
+import * as State from "../State.ts";
+import * as Inbox from "./inbox.ts";
+import * as Loop from "./loop.ts";
+import { hold } from "./parts.ts";
+import * as Runner from "./runner.ts";
+import * as Schedule from "./schedule.ts";
+import * as Stage from "./stage.ts";
+import { TickDispatcher, TickScheduler } from "./tickScheduler.ts";
 
 /**
  * What the code that took over an app holds: the two operations the app no

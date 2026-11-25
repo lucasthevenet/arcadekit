@@ -8,13 +8,13 @@ import {
 } from "three";
 import type { Scene as ThreeScene } from "three";
 
-import type { InstancesOptions } from "../Instances";
-import type { Angle, Columns, Rgb, Xy, Xyz, Xyzw } from "./columns";
-import type { Holdings, Kept } from "./holdings";
-import { isFlat } from "./kind";
-import * as matrices from "./matrices";
-import { smoothOf } from "./smooth";
-import type { Smooth } from "./smooth";
+import type { InstancesOptions } from "../Instances.ts";
+import type { Angle, Columns, Rgb, Xy, Xyz, Xyzw } from "./columns.ts";
+import type { Holdings, Kept } from "./holdings.ts";
+import { isFlat } from "./kind.ts";
+import * as matrices from "./matrices.ts";
+import { smoothOf } from "./smooth.ts";
+import type { Smooth } from "./smooth.ts";
 
 /**
  * How finely a colour is converted; the table has one more entry than this.

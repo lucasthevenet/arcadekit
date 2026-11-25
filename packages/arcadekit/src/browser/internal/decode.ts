@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 
-import * as Assets from "../../Assets";
-import * as Sound from "../../Sound";
+import * as Assets from "../../Assets.ts";
+import * as Sound from "../../Sound.ts";
 
 /**
  * What went wrong, said for a message.

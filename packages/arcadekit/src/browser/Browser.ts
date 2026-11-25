@@ -22,12 +22,12 @@ import * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";
 import { Effect } from "effect";
 import type { Layer, Runtime } from "effect";
 
-import type * as Assets from "../Assets";
-import type * as Driver from "../Driver";
-import type * as Sound from "../Sound";
-import type { AudioLike, MediaLike } from "./Audio";
-import * as decode from "./internal/decode";
-import * as page from "./internal/page";
+import type * as Assets from "../Assets.ts";
+import type * as Driver from "../Driver.ts";
+import type * as Sound from "../Sound.ts";
+import type { AudioLike, MediaLike } from "./Audio.ts";
+import * as decode from "./internal/decode.ts";
+import * as page from "./internal/page.ts";
 
 export {
   layerSound,
@@ -35,7 +35,7 @@ export {
   stream,
   type AudioLike,
   type MediaLike,
-} from "./Audio";
+} from "./Audio.ts";
 
 /**
  * A page's display, on which a frame is due once per repaint, with

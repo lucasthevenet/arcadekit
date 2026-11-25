@@ -1,7 +1,7 @@
 // What each instance's matrix is, from its entity's transform: written into
 // the mesh's buffer, sixteen numbers an instance, from `at` on.
 
-import type { Angle, Xy, Xyz, Xyzw } from "./columns";
+import type { Angle, Xy, Xyz, Xyzw } from "./columns.ts";
 
 /**
  * Entities with only a position: drawn unrotated, at the geometry's size.

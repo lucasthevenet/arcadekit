@@ -4,10 +4,10 @@ import { TestClock } from "effect/testing";
 import { afterEach, assert, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
-import { Input, World } from "../src/index";
-import { Message, Relay, Session, Transport } from "../src/net/index";
-import { CoinGame, DELTA, Lying, moves, players, purseOf } from "./peers";
-import type { Peer } from "./peers";
+import { Input, World } from "../src/index.ts";
+import { Message, Relay, Session, Transport } from "../src/net/index.ts";
+import { CoinGame, DELTA, Lying, moves, players, purseOf } from "./peers.ts";
+import type { Peer } from "./peers.ts";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
   from,

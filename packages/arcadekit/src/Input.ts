@@ -45,14 +45,14 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 
-import * as Action from "./Action";
-import type { World as EcsWorld } from "./ecs/world";
-import * as Field from "./Field";
-import * as Plugin from "./Plugin";
-import { Time, World } from "./Services";
-import { whole } from "./services/handed";
-import * as Singleton from "./Singleton";
-import * as System from "./System";
+import * as Action from "./Action.ts";
+import type { World as EcsWorld } from "./ecs/world.ts";
+import * as Field from "./Field.ts";
+import * as Plugin from "./Plugin.ts";
+import { Time, World } from "./Services.ts";
+import { whole } from "./services/handed.ts";
+import * as Singleton from "./Singleton.ts";
+import * as System from "./System.ts";
 
 // --- codes -------------------------------------------------------------------
 // Everything that can be held down is a button with a code, and everything

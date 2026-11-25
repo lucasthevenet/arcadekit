@@ -18,9 +18,9 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import * as Build from "../src/internal/build";
-import { steered } from "./peers";
+} from "../src/index.ts";
+import * as Build from "../src/internal/build.ts";
+import { steered } from "./peers.ts";
 
 // --- a game that makes noise -------------------------------------------------------
 // Balls fall and bounce off the floor. The simulation says so with an

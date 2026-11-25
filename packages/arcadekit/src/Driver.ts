@@ -14,9 +14,9 @@
 import { Clock, Context, Duration, Effect, Schedule } from "effect";
 import type { Scope } from "effect";
 
-import * as App from "./App";
-import type * as Plugin from "./Plugin";
-import type * as Save from "./Save";
+import * as App from "./App.ts";
+import type * as Plugin from "./Plugin.ts";
+import type * as Save from "./Save.ts";
 
 /**
  * Anything with a `tick` that takes the length of the tick in seconds. A

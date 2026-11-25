@@ -7,8 +7,8 @@
  */
 import { Data, DateTime, Effect, Exit, Schema } from "effect";
 
-import { entityOf } from "../src/ecs/component";
-import type { Spawned } from "../src/index";
+import { entityOf } from "../src/ecs/component.ts";
+import type { Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -22,8 +22,8 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import type { Entity } from "../src/index";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 
 const Position = Component.define("policy/Position", {
   x: Field.f32,

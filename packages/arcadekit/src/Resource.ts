@@ -12,7 +12,7 @@
  */
 import { Context, Layer } from "effect";
 
-import type { Frozen as Deep } from "./ecs/frozen";
+import type { Frozen as Deep } from "./ecs/frozen.ts";
 
 /**
  * A resource's value, read-only all the way down, since every app that reads

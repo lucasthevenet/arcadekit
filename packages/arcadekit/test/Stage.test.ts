@@ -20,7 +20,7 @@ import {
   System,
   View,
   World,
-} from "../src/index";
+} from "../src/index.ts";
 
 const Position = Component.define("stg/Position", { x: Field.f32 });
 const Moving = Query.all(Position).pipe(Query.writes(Position));

@@ -14,8 +14,8 @@
  */
 import { Schema } from "effect";
 
-import { Field } from "./ecs/component";
-import type { FieldDef } from "./ecs/component";
+import { Field } from "./ecs/component.ts";
+import type { FieldDef } from "./ecs/component.ts";
 
 /**
  * A 32-bit float, in a `Float32Array`, for a position or a speed.

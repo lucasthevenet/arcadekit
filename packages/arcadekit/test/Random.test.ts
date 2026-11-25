@@ -1,8 +1,8 @@
 import { Data, Effect, Random as EffectRandom, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { Rng } from "../src/ecs/random";
-import { World as EcsWorld } from "../src/ecs/world";
+import { Rng } from "../src/ecs/random.ts";
+import { World as EcsWorld } from "../src/ecs/world.ts";
 import {
   Action,
   App,
@@ -16,8 +16,8 @@ import {
   Singleton,
   System,
   World,
-} from "../src/index";
-import type { Entity } from "../src/index";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 
 const withApp = <T, A, E = never>(
   make: Effect.Effect<T, E>,

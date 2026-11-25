@@ -1,7 +1,7 @@
 import { Data, Effect, Option, Schema, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { Spawned } from "../src/index";
+import type { Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -16,8 +16,8 @@ import {
   System,
   Timeline,
   World,
-} from "../src/index";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import { placedIn } from "./placed.ts";
 
 const Position = Component.define("in/Position", {
   x: Field.f64,

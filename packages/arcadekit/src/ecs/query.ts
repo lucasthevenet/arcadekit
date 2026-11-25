@@ -4,16 +4,16 @@
  *
  * No Effect dependency.
  */
-import { ChangeLog } from "./changes";
-import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes";
-import type { Column } from "./column";
+import { ChangeLog } from "./changes.ts";
+import type { ChangeCursor, ChangeKind, SavedChanges } from "./changes.ts";
+import type { Column } from "./column.ts";
 import {
   INDEX_MASK,
   entityIndex,
   entityOf,
   makeAccessor,
   retarget,
-} from "./component";
+} from "./component.ts";
 import type {
   Absent,
   Accessor,
@@ -27,10 +27,10 @@ import type {
   ReadonlyColumnsOf,
   Row,
   Schema,
-} from "./component";
-import type { RelationDef } from "./relation";
-import { SparseSet, Table } from "./table";
-import type { World } from "./world";
+} from "./component.ts";
+import type { RelationDef } from "./relation.ts";
+import { SparseSet, Table } from "./table.ts";
+import type { World } from "./world.ts";
 
 /**
  * Describes a query as text: how a save identifies a change query.

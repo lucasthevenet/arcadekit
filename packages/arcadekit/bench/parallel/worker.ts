@@ -5,7 +5,15 @@
  */
 import { workerData } from "node:worker_threads";
 
-import { DONE, INTEGERS, JOB, KERNEL, RANGES, SPIN, kernels } from "./kernels";
+import {
+  DONE,
+  INTEGERS,
+  JOB,
+  KERNEL,
+  RANGES,
+  SPIN,
+  kernels,
+} from "./kernels.ts";
 
 const { columns, control, id } = workerData as {
   readonly columns: readonly SharedArrayBuffer[];

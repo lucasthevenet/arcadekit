@@ -6,8 +6,8 @@ import {
   entityIndex,
   entityOf,
   idOf,
-} from "../src/ecs/component";
-import type { JsonValue, Spawned } from "../src/index";
+} from "../src/ecs/component.ts";
+import type { JsonValue, Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -23,9 +23,9 @@ import {
   World,
   readSnapshot,
   writeSnapshot,
-} from "../src/index";
-import type { ComponentDef, Entity } from "../src/index";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import type { ComponentDef, Entity } from "../src/index.ts";
+import { placedIn } from "./placed.ts";
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
 const withApp = <T extends Pick<App.Any, "read">, E, A>(

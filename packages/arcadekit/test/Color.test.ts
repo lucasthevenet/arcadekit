@@ -1,10 +1,10 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import * as Entry from "../src/Color";
-import type { Spawned } from "../src/index";
-import { App, Color, Commands, Plugin, World } from "../src/index";
-import { placedIn } from "./placed";
+import * as Entry from "../src/Color.ts";
+import type { Spawned } from "../src/index.ts";
+import { App, Color, Commands, Plugin, World } from "../src/index.ts";
+import { placedIn } from "./placed.ts";
 
 describe("Color", () => {
   it("is one component of three 32-bit floats and the space they are in, known by its name", () => {

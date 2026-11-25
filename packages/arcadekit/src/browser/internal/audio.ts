@@ -1,11 +1,11 @@
 import { Effect, Fiber, Layer } from "effect";
 
-import * as Assets from "../../Assets";
-import * as Driver from "../../Driver";
-import * as Sound from "../../Sound";
-import type { AudioLike, MediaLike } from "../Audio";
-import type { Options } from "../Browser";
-import { decodeOffline, describe } from "./decode";
+import * as Assets from "../../Assets.ts";
+import * as Driver from "../../Driver.ts";
+import * as Sound from "../../Sound.ts";
+import type { AudioLike, MediaLike } from "../Audio.ts";
+import type { Options } from "../Browser.ts";
+import { decodeOffline, describe } from "./decode.ts";
 
 /**
  * What a streamed clip holds: only its URL.

@@ -1,7 +1,7 @@
 import * as Arcadekit from "arcadekit";
 import { describe, expect, it } from "vitest";
 
-import * as Main from "../src/index";
+import * as Main from "../src/index.ts";
 
 // Vite gives a test the text of files, and the modules themselves: the
 // sources of the package, and its manifest. Declared here, since the tests
@@ -76,10 +76,8 @@ const resolve = (from: string, specifier: string): string => {
     }
   }
   const path = parts.join("/");
-  for (const candidate of [`${path}.ts`, `${path}/index.ts`]) {
-    if (candidate in sources) {
-      return candidate;
-    }
+  if (path in sources) {
+    return path;
   }
   throw new Error(`${from} imports ${specifier}, which is not a source file`);
 };

@@ -1,7 +1,7 @@
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { Spawned } from "../src/index";
+import type { Spawned } from "../src/index.ts";
 import {
   App,
   Commands,
@@ -13,9 +13,9 @@ import {
   Time,
   Transform3d,
   World,
-} from "../src/index";
-import * as Entry from "../src/Transform3d";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import * as Entry from "../src/Transform3d.ts";
+import { placedIn } from "./placed.ts";
 
 const { Position, Rotation, Scale } = Transform3d;
 

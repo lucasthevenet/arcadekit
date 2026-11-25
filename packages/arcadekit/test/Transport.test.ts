@@ -1,8 +1,8 @@
 import { Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App, Driver, Input, Journal, Plugin, World } from "../src/index";
-import { Drift, Message, Session, Transport } from "../src/net/index";
+import { App, Driver, Input, Journal, Plugin, World } from "../src/index.ts";
+import { Drift, Message, Session, Transport } from "../src/net/index.ts";
 import {
   CoinGame,
   DELTA,
@@ -11,8 +11,8 @@ import {
   moves,
   players,
   setGlitch,
-} from "./peers";
-import type { Peer } from "./peers";
+} from "./peers.ts";
+import type { Peer } from "./peers.ts";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
   from,

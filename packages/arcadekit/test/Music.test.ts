@@ -14,8 +14,8 @@ import {
   State,
   System,
   World,
-} from "../src/index";
-import type { BuiltIn } from "../src/Services";
+} from "../src/index.ts";
+import type { BuiltIn } from "../src/Services.ts";
 
 // --- a game of levels, which knows nothing of sound ---------------------------------
 const Level = State.define("mu/Level", ["menu", "forest", "cave"]);

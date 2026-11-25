@@ -9,11 +9,11 @@
  *
  * No Effect dependency.
  */
-import type { Column } from "./column";
-import type { FieldKind } from "./component";
-import { read, write } from "./format";
-import type { Shape, SnapshotStore, TableSource, Target } from "./format";
-import { STORAGES, corrupt } from "./snapshot";
+import type { Column } from "./column.ts";
+import type { FieldKind } from "./component.ts";
+import { read, write } from "./format.ts";
+import type { Shape, SnapshotStore, TableSource, Target } from "./format.ts";
+import { STORAGES, corrupt } from "./snapshot.ts";
 
 /**
  * A component as a snapshot describes it: by name, with its fields.

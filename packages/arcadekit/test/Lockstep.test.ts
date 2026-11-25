@@ -12,9 +12,9 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import * as Build from "../src/internal/build";
-import { Drift, Message, Session } from "../src/net/index";
+} from "../src/index.ts";
+import * as Build from "../src/internal/build.ts";
+import { Drift, Message, Session } from "../src/net/index.ts";
 import {
   Bot,
   Coin,
@@ -46,8 +46,8 @@ import {
   whisper,
   withApp,
   withPeers,
-} from "./peers";
-import type { Peer } from "./peers";
+} from "./peers.ts";
+import type { Peer } from "./peers.ts";
 
 /** Runs `use` with what `make` makes. */
 const withMade = <T, A, E = never>(

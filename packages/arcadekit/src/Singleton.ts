@@ -16,15 +16,15 @@
  */
 import { Effect, Effectable } from "effect";
 
-import { Component } from "./ecs/component";
+import { Component } from "./ecs/component.ts";
 import type {
   ComponentDef,
   Schema,
   SingletonSpec,
   ValueOf,
-} from "./ecs/component";
-import { World } from "./Services";
-import type { Sim } from "./Services";
+} from "./ecs/component.ts";
+import { World } from "./Services.ts";
+import type { Sim } from "./Services.ts";
 
 /**
  * A singleton's definition, as `Singleton.define` makes it. It is an Effect,

@@ -1,11 +1,11 @@
 import { Effect, Layer } from "effect";
 
-import * as Assets from "../../Assets";
-import * as Driver from "../../Driver";
-import * as Input from "../../Input";
-import type { Options } from "../Browser";
-import { layerSound } from "./audio";
-import { listen } from "./devices";
+import * as Assets from "../../Assets.ts";
+import * as Driver from "../../Driver.ts";
+import * as Input from "../../Input.ts";
+import type { Options } from "../Browser.ts";
+import { layerSound } from "./audio.ts";
+import { listen } from "./devices.ts";
 
 /**
  * The page's display, `Browser.display`.

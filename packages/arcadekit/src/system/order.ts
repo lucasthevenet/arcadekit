@@ -1,6 +1,6 @@
-import type { Adds, Watches, WatchesAdded, Writes } from "../Query";
-import type { System, Trigger } from "../System";
-import { frameStages } from "../System";
+import type { Adds, Watches, WatchesAdded, Writes } from "../Query.ts";
+import type { System, Trigger } from "../System.ts";
+import { frameStages } from "../System.ts";
 
 type FrameStage = (typeof frameStages)[number];
 

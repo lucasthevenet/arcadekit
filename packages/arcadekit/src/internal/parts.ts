@@ -1,8 +1,8 @@
-import type { CommandBuffer } from "../ecs/commands";
-import type { Spawned } from "../ecs/spawned";
-import type { World } from "../ecs/world";
-import type { EventBus } from "../Event";
-import type { TickDispatcher } from "./tickScheduler";
+import type { CommandBuffer } from "../ecs/commands.ts";
+import type { Spawned } from "../ecs/spawned.ts";
+import type { World } from "../ecs/world.ts";
+import type { EventBus } from "../Event.ts";
+import type { TickDispatcher } from "./tickScheduler.ts";
 
 /**
  * What an app changes the game with. The package's own modules reach it

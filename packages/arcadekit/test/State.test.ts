@@ -1,7 +1,7 @@
 import { Cause, Context, Data, Effect, Exit, Result, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { entityIndex } from "../src/ecs/component";
+import { entityIndex } from "../src/ecs/component.ts";
 import {
   Action,
   App,
@@ -19,8 +19,8 @@ import {
   Time,
   Timeline,
   World,
-} from "../src/index";
-import type { Entity } from "../src/index";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
 const Weather = State.define("st/Weather", ["dry", "wet"], "wet");

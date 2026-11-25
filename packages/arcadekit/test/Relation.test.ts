@@ -1,7 +1,7 @@
 import { Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { entityIndex } from "../src/ecs/component";
+import { entityIndex } from "../src/ecs/component.ts";
 import {
   Action,
   App,
@@ -20,8 +20,8 @@ import {
   World,
   readSnapshot,
   writeSnapshot,
-} from "../src/index";
-import type { Entity, RelationDef } from "../src/index";
+} from "../src/index.ts";
+import type { Entity, RelationDef } from "../src/index.ts";
 
 const Body = Component.define("rl/Body", { x: Field.f32 });
 /** A child goes with its parent. */

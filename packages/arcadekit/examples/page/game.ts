@@ -10,7 +10,7 @@
 import { Context, Layer, Schema } from "effect";
 
 // In a game of your own these are "arcadekit/browser/Browser" and "arcadekit".
-import * as Browser from "../../src/browser/Browser";
+import * as Browser from "../../src/browser/Browser.ts";
 import {
   Action,
   Assets,
@@ -29,8 +29,8 @@ import {
   System,
   Time,
   View,
-} from "../../src/index";
-import { Hud, Menu, Quit, Start, TogglePause } from "./protocol";
+} from "../../src/index.ts";
+import { Hud, Menu, Quit, Start, TogglePause } from "./protocol.ts";
 
 export const WIDTH = 480;
 export const HEIGHT = 320;

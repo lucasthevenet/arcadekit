@@ -9,9 +9,9 @@ import {
   onPurpose,
   settled,
   table,
-} from "../bench/verdict";
-import type { Line } from "../bench/verdict";
-import { Rng } from "../src/ecs/random";
+} from "../bench/verdict.ts";
+import type { Line } from "../bench/verdict.ts";
+import { Rng } from "../src/ecs/random.ts";
 
 /**
  * Runs as a shared machine gives them: most within a few in a hundred of

@@ -19,8 +19,8 @@ import {
   World,
   readSnapshot,
   writeSnapshot,
-} from "../src/index";
-import type { JsonValue } from "../src/index";
+} from "../src/index.ts";
+import type { JsonValue } from "../src/index.ts";
 
 /** What one store of a save's world held. */
 const stored = (save: Save.Save, name: string): unknown =>

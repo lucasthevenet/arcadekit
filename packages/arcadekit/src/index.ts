@@ -10,11 +10,11 @@
  * a game uses, with its world class as `EcsWorld`, beside the `World`
  * service.
  */
-export * as Action from "./Action";
-export * as App from "./App";
-export * as Assets from "./Assets";
-export * as Color from "./Color";
-export * as Driver from "./Driver";
+export * as Action from "./Action.ts";
+export * as App from "./App.ts";
+export * as Assets from "./Assets.ts";
+export * as Color from "./Color.ts";
+export * as Driver from "./Driver.ts";
 export {
   Component,
   type ComponentDef,
@@ -24,11 +24,11 @@ export {
   type RefCodec,
   type RequiredOf,
   type SingletonSpec,
-} from "./ecs/component";
-export type { RelationDef } from "./ecs/relation";
-export type { JsonValue } from "./ecs/frozen";
-export type { Rng } from "./ecs/random";
-export type { Placed, Spawned, WithSpawned } from "./ecs/spawned";
+} from "./ecs/component.ts";
+export type { RelationDef } from "./ecs/relation.ts";
+export type { JsonValue } from "./ecs/frozen.ts";
+export type { Rng } from "./ecs/random.ts";
+export type { Placed, Spawned, WithSpawned } from "./ecs/spawned.ts";
 export {
   readSnapshot,
   type SnapshotComponent,
@@ -37,37 +37,37 @@ export {
   type SnapshotSparse,
   type SnapshotTable,
   writeSnapshot,
-} from "./ecs/contents";
-export { SnapshotError, type SnapshotProblem } from "./ecs/snapshot";
+} from "./ecs/contents.ts";
+export { SnapshotError, type SnapshotProblem } from "./ecs/snapshot.ts";
 export {
   type ChangeKind,
   type RemovedReader,
   type SavedChanges,
-} from "./ecs/changes";
-export { CommandBuffer } from "./ecs/commands";
+} from "./ecs/changes.ts";
+export { CommandBuffer } from "./ecs/commands.ts";
 export {
   type EntityColumn,
   type PointingView,
   type QueryView,
   type SparseColumns,
-} from "./ecs/query";
-export { World as EcsWorld } from "./ecs/world";
-export * as Event from "./Event";
-export * as Field from "./Field";
-export * as Input from "./Input";
-export * as Journal from "./Journal";
-export * as Migrate from "./Migrate";
-export * as Plugin from "./Plugin";
-export * as Query from "./Query";
-export * as Resource from "./Resource";
-export * as Save from "./Save";
-export * as Singleton from "./Singleton";
-export * as Sound from "./Sound";
-export * as State from "./State";
-export { EntityId } from "./Schemas";
-export { Commands, Events, Frame, Random, Time, World } from "./Services";
-export * as System from "./System";
-export * as Timeline from "./Timeline";
-export * as Transform2d from "./Transform2d";
-export * as Transform3d from "./Transform3d";
-export * as View from "./View";
+} from "./ecs/query.ts";
+export { World as EcsWorld } from "./ecs/world.ts";
+export * as Event from "./Event.ts";
+export * as Field from "./Field.ts";
+export * as Input from "./Input.ts";
+export * as Journal from "./Journal.ts";
+export * as Migrate from "./Migrate.ts";
+export * as Plugin from "./Plugin.ts";
+export * as Query from "./Query.ts";
+export * as Resource from "./Resource.ts";
+export * as Save from "./Save.ts";
+export * as Singleton from "./Singleton.ts";
+export * as Sound from "./Sound.ts";
+export * as State from "./State.ts";
+export { EntityId } from "./Schemas.ts";
+export { Commands, Events, Frame, Random, Time, World } from "./Services.ts";
+export * as System from "./System.ts";
+export * as Timeline from "./Timeline.ts";
+export * as Transform2d from "./Transform2d.ts";
+export * as Transform3d from "./Transform3d.ts";
+export * as View from "./View.ts";

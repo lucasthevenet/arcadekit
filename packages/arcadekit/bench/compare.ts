@@ -52,7 +52,7 @@ import { appendFileSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { inUnit, variants } from "./core";
+import { inUnit, variants } from "./core.ts";
 import {
   CHANCE,
   FLOOR,
@@ -61,8 +61,8 @@ import {
   onPurpose,
   settled,
   table,
-} from "./verdict";
-import type { Line } from "./verdict";
+} from "./verdict.ts";
+import type { Line } from "./verdict.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const head = path.resolve(here, "..");

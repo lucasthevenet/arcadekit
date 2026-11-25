@@ -32,7 +32,7 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
+} from "../src/index.ts";
 
 const Layout = Schema.Struct({
   walls: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

@@ -47,7 +47,7 @@ import type {
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
 
-import * as Three from "./Three";
+import * as Three from "./Three.ts";
 
 /**
  * A loaded model, as Three.js's glTF loader returns it. `scene` is its default

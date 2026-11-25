@@ -49,15 +49,15 @@
 import { Data, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
-import * as Action from "./Action";
-import type { Entity } from "./ecs/component";
-import type { Placed } from "./ecs/spawned";
-import { build } from "./internal/build";
-import * as Journal from "./Journal";
-import * as Plugin from "./Plugin";
-import * as Save from "./Save";
-import type { BuiltIn, Time, TimeState, World } from "./Services";
-import * as System from "./System";
+import * as Action from "./Action.ts";
+import type { Entity } from "./ecs/component.ts";
+import type { Placed } from "./ecs/spawned.ts";
+import { build } from "./internal/build.ts";
+import * as Journal from "./Journal.ts";
+import * as Plugin from "./Plugin.ts";
+import * as Save from "./Save.ts";
+import type { BuiltIn, Time, TimeState, World } from "./Services.ts";
+import * as System from "./System.ts";
 
 /**
  * The systems of a game, of any type.

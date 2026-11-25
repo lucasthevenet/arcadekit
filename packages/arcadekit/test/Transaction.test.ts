@@ -1,8 +1,8 @@
 import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { assert, describe, expect, it } from "vitest";
 
-import { entityOf } from "../src/ecs/component";
-import type { JsonValue, Spawned } from "../src/index";
+import { entityOf } from "../src/ecs/component.ts";
+import type { JsonValue, Spawned } from "../src/index.ts";
 import {
   Action,
   App,
@@ -20,9 +20,9 @@ import {
   System,
   Time,
   World,
-} from "../src/index";
-import type { Entity } from "../src/index";
-import { placedIn } from "./placed";
+} from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
+import { placedIn } from "./placed.ts";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
