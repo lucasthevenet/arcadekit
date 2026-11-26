@@ -183,6 +183,22 @@ describe("the package's entries", () => {
     );
   });
 
+  it("are the files of src/ but the storage core's and those of an internal/ folder: each a module, or the index of a folder that has one", () => {
+    const misplaced = Object.keys(sources).filter((file) => {
+      if (file.startsWith("../src/ecs/") || file.includes("/internal/")) {
+        return false;
+      }
+      const placed =
+        /^\.\.\/src\/(?:([a-z]\w*)\/)?(?:[A-Z]\w*|index)\.ts$/u.exec(file);
+      const folder = placed?.[1];
+      return (
+        placed === null ||
+        (folder !== undefined && !(`../src/${folder}/index.ts` in sources))
+      );
+    });
+    expect(misplaced).toEqual([]);
+  });
+
   // What a source may import or name, by the entry it is behind, is held by
   // the Oxlint rules of tooling/lint/plugin.ts, file by file: arcadekit/ecs
   // imports no package and nothing outside src/ecs, no entry but

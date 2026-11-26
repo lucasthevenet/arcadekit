@@ -251,6 +251,7 @@
     "typecheck": "tsc -p . && tsc -p bench",
     "bench": "tsx bench/accessors.ts",
     "bench:compare": "tsx bench/compare.ts",
+    "bench:grid": "tsx bench/grid.ts",
     "bench:parallel": "tsx bench/parallel/run.ts"
   },
   "devDependencies": {

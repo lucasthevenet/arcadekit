@@ -162,7 +162,10 @@ const columnOf = (
   return made;
 };
 
-/** A value of a field as its column holds it: an entity as its id, a `ref` encoded. */
+/**
+ * A value of a field as its column holds it: an entity as its id, a boolean
+ * as 1 or 0, a `ref` encoded.
+ */
 const storedOf = (
   def: ComponentDef,
   field: string,
@@ -177,6 +180,14 @@ const storedOf = (
       );
     }
     return idOf(value);
+  }
+  if (def.bools.includes(field)) {
+    if (typeof value !== "boolean") {
+      throw new Error(
+        `The bool field "${field}" of "${def.name}" cannot hold ${shown(value)}: it holds true or false.`
+      );
+    }
+    return value ? 1 : 0;
   }
   const codec = def.codecs[at];
   return codec === undefined ? value : codec.encode(value);
@@ -397,8 +408,9 @@ export class Contents {
    *
    * The save doesn't record the old value's TypeScript type, so the parameter
    * of `map` declares it. A `ref` field gives `map` its encoded form, an
-   * entity its id, and a `transient` field undefined. For a field of a number
-   * type, it throws on a value the type can't hold, as `addField` does.
+   * entity its id, a `Field.bool` its number, 0 or 1, and a `transient` field
+   * undefined. For a field of a number type, it throws on a value the type
+   * can't hold, as `addField` does.
    */
   mapField<C extends Component, F extends keyof FieldsOf<C> & string, T>(
     component: C,

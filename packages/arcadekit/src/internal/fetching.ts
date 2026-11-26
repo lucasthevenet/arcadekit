@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 
-import { Failed as AssetFailed } from "../Assets.ts";
+import { Failed } from "../Assets.ts";
 import type { LoaderShape } from "../Assets.ts";
 
 // What a request that got no answer says: what was asked, and why.
@@ -24,7 +24,7 @@ export const fetchingFrom = (
     Effect.gen(function* () {
       const response = yield* HttpClient.get(resolve(url));
       if (response.status < 200 || response.status >= 300) {
-        return yield* new AssetFailed({
+        return yield* new Failed({
           url,
           message: `The server answered ${response.status}`,
           ...(response.status >= 500 ? { transient: true } : {}),
@@ -34,7 +34,7 @@ export const fetchingFrom = (
     }).pipe(
       Effect.catchTag("HttpClientError", (error) =>
         Effect.fail(
-          new AssetFailed({
+          new Failed({
             url,
             message: unanswered(error),
             // The request got no answer, or its body stopped arriving.

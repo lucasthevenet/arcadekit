@@ -1400,25 +1400,25 @@ const game = (
 > => App.make(Game, { hashEvery: options.hashEvery ?? 1 });
 
 /** A game with a move every tick, some of them refused. */
-const play = Effect.fnUntraced(function* (
-  app: App.App,
-  from: number,
-  to: number
-) {
-  for (let tick = from; tick < to; tick++) {
-    // Refused on every third tick, as the game says.
-    yield* Effect.exit(
-      app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 })
-    );
-    if (tick % 4 === 0) {
-      yield* app.enqueueByName("ch/Spawn", {});
+const play = (app: App.App, from: number, to: number) =>
+  Effect.gen(function* () {
+    for (let tick = from; tick < to; tick++) {
+      // Refused on every third tick, as the game says.
+      const refuse = tick % 3 === 1;
+      expect(
+        yield* Effect.exit(
+          app.dispatchByName("ch/Push", { slot: tick % 5, refuse })
+        )
+      ).toEqual(refuse ? Exit.fail(Refused.make({})) : Exit.void);
+      if (tick % 4 === 0) {
+        yield* app.enqueueByName("ch/Spawn", {});
+      }
+      if (tick % 7 === 3) {
+        yield* app.enqueueByName("ch/Cull", { slot: 1 });
+      }
+      yield* app.tick(1);
     }
-    if (tick % 7 === 3) {
-      yield* app.enqueueByName("ch/Cull", { slot: 1 });
-    }
-    yield* app.tick(1);
-  }
-});
+  });
 
 describe("change queries in an app", () => {
   it.effect(

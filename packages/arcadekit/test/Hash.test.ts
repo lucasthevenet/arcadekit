@@ -716,7 +716,7 @@ describe("the hash of an app's world", () => {
     commands.spawn(Body.of({ x: 0, y: random.next() }));
   });
   const hashes = Effect.fnUntraced(function* (
-    make: Effect.Effect<App.App, never>
+    make: Effect.Effect<App.Any<never>, never>
   ) {
     return yield* withApp(make, (app, world) =>
       Effect.gen(function* () {

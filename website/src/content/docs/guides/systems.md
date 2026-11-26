@@ -213,7 +213,7 @@ const Movement = System.tick("game/Movement", function* () {
 
 - Given several conditions, the system runs when all of them hold. They are checked in order until one fails.
 - A condition's requirements and errors become the system's.
-- A system without a condition checks nothing. A condition costs about 0.35 µs per tick, and a system that doesn't run costs that and nothing more.
+- A system without a condition checks nothing. `State.is` costs a little less than a system that runs and does nothing, and a system that doesn't run costs that and nothing more. The [performance guide](performance.md#idle-ticks-and-frames) has the numbers.
 - A system of the frame or the input stage takes a condition too, checked each time its stage runs.
 
 A system that doesn't run doesn't read, and sees nothing of what happened while it was off. The events from the ticks it skipped are gone when it runs again, and its change queries skip what changed in them. When it runs again, have it read the state it needs with an ordinary query or a singleton, rather than count on hearing of every change.
