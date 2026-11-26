@@ -75,7 +75,10 @@ const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   if (Exit.isSuccess(exit)) {
     throw new Error("it was let through");
   }
-  return Cause.squash(exit.cause) as Relay.Refused;
+  return Option.getOrThrowWith(
+    Exit.findErrorOption(exit),
+    () => new Error("it failed with no refusal", { cause: exit.cause })
+  );
 };
 
 const joined = <A>(exit: Exit.Exit<A, Relay.Refused>): A => {
@@ -550,7 +553,7 @@ const serve = async (options?: Relay.Options) => {
       socket.send(sent)
     );
     if (Exit.isFailure(connection)) {
-      const refused = Cause.squash(connection.cause) as Relay.Refused;
+      const refused = refusal(connection);
       socket.close(refused.code, refused.reason);
       return;
     }
@@ -565,7 +568,7 @@ const serve = async (options?: Relay.Options) => {
         isBinary ? bytes : new TextDecoder().decode(bytes)
       );
       if (Exit.isFailure(received)) {
-        const refused = Cause.squash(received.cause) as Relay.Refused;
+        const refused = refusal(received);
         closes.push({ peer: member.peer, code: refused.code });
         socket.close(refused.code, refused.reason);
       }
