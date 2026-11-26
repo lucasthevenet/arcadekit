@@ -8,7 +8,7 @@ import type { World as EcsWorld } from "../ecs/world.ts";
 import * as Query from "../Query.ts";
 import { LoadRefused } from "../Save.ts";
 import type { Spawning } from "../Services.ts";
-import type { Move, Setter, State } from "../State.ts";
+import type { Move, Reader, Setter, State } from "../State.ts";
 
 /** A value's tag, and the query of the entities that have it. */
 interface Scope<V extends string, N extends string> {
@@ -69,6 +69,7 @@ export interface Registry {
   /** Sorted by name, so transitions happen in the same order everywhere. */
   states: State<string>[];
   readonly handles: Map<State<string>, Setter<string>>;
+  readonly readers: Map<State<string>, Reader<string>>;
   /** The states a hook waits for, which are entered on the first tick. */
   readonly hooked: Set<State<string>>;
 }
@@ -77,7 +78,12 @@ export interface Registry {
 export const registryOf = (world: EcsWorld): Registry => {
   let registry = known.get(world);
   if (registry === undefined) {
-    registry = { states: [], handles: new Map(), hooked: new Set() };
+    registry = {
+      states: [],
+      handles: new Map(),
+      readers: new Map(),
+      hooked: new Set(),
+    };
     known.set(world, registry);
   }
   return registry;
@@ -135,6 +141,30 @@ export const handleOf = <V extends string>(
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   );
   return handle;
+};
+
+/** @internal A world's reader of a state: its handle, without `set`. */
+export const readerOf = <V extends string>(
+  world: EcsWorld,
+  state: State<V>
+): Reader<V> => {
+  const { readers } = registryOf(world);
+  const found = readers.get(state);
+  if (found !== undefined) {
+    return found as Reader<V>;
+  }
+  const handle = handleOf(world, state);
+  const reader: Reader<V> = {
+    get value() {
+      return handle.value;
+    },
+    get next() {
+      return handle.next;
+    },
+    is: (...values) => handle.is(...values),
+  };
+  readers.set(state, reader);
+  return reader;
 };
 
 /**

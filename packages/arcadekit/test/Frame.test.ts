@@ -824,7 +824,7 @@ describe("what the frame stage reads", () => {
         }).pipe(
           System.runIf(Effect.map(Time, ({ tick }) => tick === 1 || tick === 6))
         );
-        const run = Effect.fnUntraced(function* (each: App.App) {
+        const run = Effect.fnUntraced(function* (each: App.Any<never>) {
           sat.length = 0;
           yield* each.tick(1);
           yield* each.frame();

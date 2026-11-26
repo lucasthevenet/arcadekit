@@ -298,8 +298,10 @@ export default defineConfig({
     },
     {
       // A test of a package is an Effect itself, with it.effect, and runs
-      // none by hand.
-      files: ["packages/*/test/**/*.test.ts", "examples/**/*.test.ts"],
+      // none by hand, nor does a helper of one. test/policyGame.ts is the
+      // program a child process runs, outside any test, so it runs its own.
+      files: ["packages/*/test/**", "examples/**/*.test.ts"],
+      excludeFiles: ["packages/arcadekit/test/policyGame.ts"],
       rules: { "arcadekit/no-run-in-tests": "error" },
     },
     {
@@ -378,6 +380,12 @@ export default defineConfig({
       // or a hash, which throws what it can't encode.
       files: ["packages/arcadekit/src/Field.ts"],
       rules: { "effecttsgo/schema-sync": "off" },
+    },
+    {
+      // An action or an event with no payload is defined with no schema, as
+      // a game defines one.
+      files: ["packages/*/src/**", "packages/*/bench/**", "examples/**"],
+      rules: { "arcadekit/no-empty-payload": "error" },
     },
   ],
 });

@@ -1,6 +1,6 @@
 # What stands in for the outside
 
-What a game reaches outside itself, a test gives it by hand: files in memory, a source of input worked by hand, a display turned by hand, a bridge, an output that notes the sound it was asked for, a renderer that draws nothing. They are exports of the package, for a game's tests as much as for its own: `Test.make` makes an app with those of `arcadekit`, and [Testing a game](../../../website/src/content/docs/guides/testing.md) is their guide: read the section for what the test needs (devices, sound, files, a UI, what is drawn, a stand-in given by hand).
+What a game reaches outside itself, a test gives it by hand: files in memory, a source of input worked by hand, a display turned by hand, a bridge, an output that notes the sound it was asked for, a renderer that draws nothing. They are exports of the package, for a game's tests as much as for its own: `Test.make` makes an app with those of `arcadekit`, and [Testing a game](../../../website/src/content/docs/guides/testing.md) and [Testing by hand](../../../website/src/content/docs/guides/testing-by-hand.md) are their guides: read the section for what the test needs (devices, sound, files and a UI in the first, what is drawn and a stand-in given by hand in the second).
 
 What only the package's own tests need beside it:
 

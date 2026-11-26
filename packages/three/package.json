@@ -84,7 +84,8 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p . && tsc -p bench",
-    "bench": "tsx --conditions=source bench/instances.ts"
+    "bench": "tsx --conditions=source bench/instances.ts",
+    "bench:compare": "tsx --conditions=source bench/compare.ts"
   },
   "devDependencies": {
     "@effect/platform-browser": "~4.1.4",

@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Scheduler, Schema } from "effect";
+import { Effect, Exit, Layer, Scheduler, Schema } from "effect";
 
 import {
   Action,
@@ -533,9 +533,11 @@ describe("a game that changes", () => {
         yield* app.tick(1);
         yield* app.tick(1);
         expect(app.settled).toBe(true);
-        yield* Effect.exit(app.dispatch(Ask, { refuse: true }));
+        expect(yield* Effect.exit(app.dispatch(Ask, { refuse: true }))).toEqual(
+          Exit.fail(Refused.make({}))
+        );
         expect(app.settled).toBe(true);
-        yield* Effect.exit(app.dispatch(Ask, { refuse: false }));
+        yield* app.dispatch(Ask, { refuse: false });
         expect(app.settled).toBe(false);
       })
   );
