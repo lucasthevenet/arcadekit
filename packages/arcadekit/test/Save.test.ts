@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
 import {
   Cause,
   Effect,
@@ -335,6 +335,26 @@ describe("a saved game", () => {
         ).toThrow(
           /App\.make was given a save and the seed 4\..* give one of the two/
         );
+      })
+  );
+
+  it.effect(
+    "is given as a seed or a save, as a host that loads a save if it has one gives it, and may fail as a load does",
+    () =>
+      Effect.gen(function* () {
+        const { save, saved } = yield* record(3, 1);
+        const start = (from: Save.Save | undefined) =>
+          from === undefined ? { seed: 4 } : { save: from };
+        const loaded = App.make(Played, start(save));
+        expectTypeOf<
+          Effect.Error<typeof loaded>
+        >().toEqualTypeOf<Save.LoadRefused>();
+        const fresh = App.make(Played, { seed: 4 });
+        expectTypeOf<Effect.Error<typeof fresh>>().toEqualTypeOf<never>();
+        const [again, seeded] = [yield* loaded, yield* fresh];
+        expect([again.time, seeded.time.tick]).toEqual([saved, 0]);
+        yield* again.close;
+        yield* seeded.close;
       })
   );
 

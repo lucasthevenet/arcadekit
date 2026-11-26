@@ -29,17 +29,20 @@ const Draw = System.frame("game/Draw", function* () {
 
 const Game = Plugin.make("game/Game", {
   plugins: [Assets.plugin],
-  systems: [Assets.during(State.is(Level, "forest"), Forest), Draw],
+  systems: [
+    Assets.during(Forest).pipe(System.runIf(State.is(Level, "forest"))),
+    Draw,
+  ],
 });
 ```
 
-`Assets.during(condition, bundle)` gives a level its scope. It makes a system that keeps a bundle loaded while the condition holds. The condition is the same as `System.runIf`'s, usually a state. From the frame after the game enters the level, the bundle loads in a scope of its own. From the frame after the game leaves, that scope closes. Images are closed, and downloads still running are cancelled. Entering the level again loads the bundle again.
+`Assets.during(bundle)` gives a level its scope. It makes a system that keeps a bundle loaded, and `System.runIf` gives it the condition to keep it loaded while, as for any system, usually a state. With no condition, the bundle stays loaded until the app is closed. From the frame after the game enters the level, the bundle loads in a scope of its own. From the frame after the game leaves, that scope closes. Images are closed, and downloads still running are cancelled. Entering the level again loads the bundle again.
 
 - Use one `Assets.during` per bundle. To keep a bundle loaded across several states, give a condition that holds in each.
 - The system runs in `"preFrame"`, the stage before the frame's own. Every frame system sees the bundle in the same status, whatever order the systems are listed in.
 - Anything still loaded when the app is closed is released with it.
 
-`yield*` on a bundle gives its current status: `Absent`, `Loading`, `Ready`, or `Failed`. `Ready` holds the `assets`, each under its name and with its type, and `Failed` holds the error. The store logs a failed bundle once, keeps nothing of what did load, and retries it the next time its level is entered.
+`yield*` on a bundle gives its current status: `Absent`, `Loading`, `Ready`, or `Failed`. `Ready` holds the `assets`, each under its name and with its type, and `Failed` holds the error. `Assets.match(status, { Absent, Loading, Ready, Failed })` returns what the function of its case returns, as a HUD that says how a level is loading needs. The store logs a failed bundle once, keeps nothing of what did load, and retries it the next time its level is entered.
 
 ## Share files between bundles
 
@@ -120,12 +123,12 @@ const Game = Plugin.make("game/Game", {
       (yield* Progress.writes).level += 1;
     }),
   ],
-  systems: [Assets.during(level, Levels)],
+  systems: [Assets.during(Levels, level)],
 });
 ```
 
 - `Levels.of(3)` is the bundle of the third level, named `"game/Level(3)"`, and the same bundle each time it is asked for.
-- `Assets.during(level, Levels)` keeps the bundle of the level the game is at loaded. When `Progress.level` changes, it lets go of the bundle before and loads the next one.
+- `Assets.during(Levels, level)` keeps the bundle of the level the game is at loaded. When `Progress.level` changes, it lets go of the bundle before and loads the next one.
 - `Assets.onReady(Levels, level, build, payload)` hands the bundle of the level the game is at to the rules once it is loaded. The world records the level it was last handed, so going from level 1 to 2 and back hands each over as the game comes to it, and `payload` is given the level as its second argument.
 - The level's entities are the game's: here, the walls, which `build` despawns before it spawns the next level's. A level is a number in the world, so neither a state nor a bundle names it.
 

@@ -17,7 +17,7 @@
  *
  *   const Game = Plugin.make("Game", {
  *     plugins: [Assets.plugin],
- *     systems: [Assets.during(State.is(Level, "forest"), Forest), Draw],
+ *     systems: [Assets.during(Forest).pipe(System.runIf(State.is(Level, "forest"))), Draw],
  *   })
  *
  *   const Draw = System.frame("Draw", function*() {
@@ -47,6 +47,7 @@ import {
   Schema,
   Scope,
 } from "effect";
+import { dual } from "effect/Function";
 
 import * as Action from "./Action.ts";
 import * as Event from "./Event.ts";
@@ -288,6 +289,58 @@ export type Status<A> =
    */
   | { readonly _tag: "Failed"; readonly error: Failed };
 
+/**
+ * What `Assets.match` does with each status of a bundle: a function for each
+ * `_tag`, given the status of that tag.
+ *
+ * @category Type-level
+ */
+export type StatusCases<A, R> = {
+  readonly [K in Status<A>["_tag"]]: (
+    status: Extract<Status<A>, { readonly _tag: K }>
+  ) => R;
+};
+
+/**
+ * Returns what the case of a bundle's status returns, one function for each
+ * of the four:
+ *
+ *   const label = Assets.match(yield* Forest, {
+ *     Absent: () => "",
+ *     Loading: () => "Loading",
+ *     Ready: ({ assets }) => assets.title.text,
+ *     Failed: ({ error }) => error.message,
+ *   })
+ *
+ * A status that a later version adds is a case that doesn't compile until it
+ * is given.
+ *
+ * @category Utilities
+ */
+export const match: {
+  <A, R>(cases: StatusCases<A, R>): (status: Status<A>) => R;
+  <A, R>(status: Status<A>, cases: StatusCases<A, R>): R;
+} = dual(2, <A, R>(status: Status<A>, cases: StatusCases<A, R>): R => {
+  switch (status._tag) {
+    case "Absent": {
+      return cases.Absent(status);
+    }
+    case "Loading": {
+      return cases.Loading(status);
+    }
+    case "Ready": {
+      return cases.Ready(status);
+    }
+    case "Failed": {
+      return cases.Failed(status);
+    }
+    default: {
+      const unknown: never = status;
+      return unknown;
+    }
+  }
+});
+
 const ABSENT: Status<never> = { _tag: "Absent" };
 const LOADING: Status<never> = { _tag: "Loading" };
 
@@ -367,7 +420,7 @@ export interface Family<K extends Key, B extends Entries> {
  * **When to use**
  *
  * Use for levels that are data: a game adds a level by adding its files,
- * with no bundle of its own to write. `Assets.during(key, family)` keeps the
+ * with no bundle of its own to write. `Assets.during(family, key)` keeps the
  * bundle of the key the game is at loaded, and `Assets.onReady` hands each
  * loaded bundle to the rules. For one set of files, use `Assets.bundle`.
  *
@@ -632,64 +685,69 @@ const storeLayer = Layer.effect(
 export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
 
 /**
- * Makes a system that keeps a bundle loaded while a condition holds:
+ * Makes a system that keeps a bundle loaded, piped through `System.runIf` to
+ * keep it loaded while a condition holds, as every system is:
  *
- *   Assets.during(State.is(Level, "forest"), Forest)
+ *   Assets.during(Forest).pipe(System.runIf(State.is(Level, "forest")))
  *
- * The condition is the same as `System.runIf`'s, an Effect that returns a
- * boolean. From the frame after it starts holding, the bundle loads in a scope
- * of its own. From the frame after it stops, that scope closes. Loaded assets
- * are released, and pending loads are cancelled. A level's assets therefore
- * last as long as the level, and leaving it frees them.
+ * From the frame after the condition starts to hold, the bundle loads in a
+ * scope of its own. From the frame after it stops, that scope closes. Loaded
+ * assets are released, and pending loads are cancelled. A level's assets
+ * therefore last as long as the level, and leaving it frees them. With no
+ * condition, the bundle stays loaded until the app is closed.
  *
  * It is a frame system, since assets serve what draws the game. A replay or a
  * server runs no frames, and loads nothing. It runs in the first of a frame's
  * three stages, `"preFrame"`, so every system that draws with the bundle sees
- * the same status within a frame, whatever order they are listed in. Use one
- * per bundle. To keep a bundle loaded across several states, give a condition
- * that holds in each.
+ * the same status within a frame, whatever order they are listed in. It is
+ * named after the bundle, `Assets.during(game/Forest)`, so a second one for
+ * the same bundle is refused as a second system of that name. To keep a
+ * bundle loaded across several states, give a condition that holds in each.
  *
- * Given a family in place of a bundle, it takes a key in place of the
- * condition, and keeps the bundle of that key loaded, such as the files of
- * the level the game is at:
+ * Given a family and a key, it keeps the bundle of that key loaded, such as
+ * the files of the level the game is at:
  *
- *   Assets.during(Effect.map(Progress, ({ level }) => level), Levels)
+ *   Assets.during(Levels, Effect.map(Progress, ({ level }) => level))
  *
  * When the key changes, it lets go of the bundle of the key before and holds
  * the new one, from the next frame. A key of `undefined` holds none.
  *
  * @category Systems
  */
-export function during<E, R, B extends Entries>(
-  condition: System.FrameOk<boolean, E, R>,
+export function during<B extends Entries>(
   bundle: Bundle<B>
-): System.System<E, R | Store, string, "preFrame">;
+): System.System<never, Store, string, "preFrame">;
 export function during<E, R, K extends Key, B extends Entries>(
-  key: System.FrameOk<K | undefined, E, R>,
-  family: Family<K, B>
+  family: Family<K, B>,
+  key: System.FrameOk<K | undefined, E, R>
 ): System.System<E, R | Store, string, "preFrame">;
 export function during<E, R>(
-  condition: Effect.Effect<boolean | Key | undefined, E, R>,
-  held: Bundle<Entries> | Family<Key, Entries>
+  held: Bundle<Entries> | Family<Key, Entries>,
+  key?: Effect.Effect<Key | undefined, E, R>
 ): System.System<E, R | Store, string, "preFrame"> {
   const name = `Assets.during(${held.name})`;
   if (held instanceof Bundle) {
     return makeSystem(name, "preFrame", function* () {
-      const store = yield* Store;
-      if (yield* condition) {
-        store.hold(held, name);
-      } else {
-        store.drop(held, name);
-      }
-    });
+      (yield* Store).hold(held, name);
+    }).pipe(
+      System.otherwise(
+        Effect.map(Effect.service(Store), (store) => {
+          store.drop(held, name);
+        })
+      )
+    );
+  }
+  if (key === undefined) {
+    throw new Error(
+      `Assets.during was given the family "${held.name}" and no key. Give it the key of the bundle to keep loaded: Assets.during(${held.name}, key), with an Effect that returns it.`
+    );
   }
   // The bundle each app's store holds for this system, by store.
   const holding = new WeakMap<StoreShape, Bundle<Entries>>();
   return makeSystem(name, "preFrame", function* () {
     const store = yield* Store;
-    const key = yield* condition;
-    const next =
-      key === undefined || typeof key === "boolean" ? undefined : held.of(key);
+    const now = yield* key;
+    const next = now === undefined ? undefined : held.of(now);
     const before = holding.get(store);
     if (before === next) {
       return;

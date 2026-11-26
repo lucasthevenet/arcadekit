@@ -518,7 +518,7 @@ const idCasts: Rule = {
         context.report({
           node,
           message:
-            "This asserts that a value is an entity's id, which the compiler then takes on trust: a number that is no id, or an id cut to 32 bits, would pass. A game keeps an id in a Field.entity or a relation, turns a stored one back with world.live, and reads its parts with entityIndex and entityGeneration. The storage core converts with idOf and entityOf from src/ecs/component.ts, the one place that may.",
+            "This asserts that a value is an entity's id, which the compiler then takes on trust: a number that is no id, or an id cut to 32 bits, would pass. A game keeps an id in a Field.entity or a relation, turns a stored one back with world.live, and reads its parts with entityIndex and entityGeneration. The storage core converts with idOf and entityOf from src/ecs/component.ts, the one place that may. A value whose type is taken from what it starts as is given its type instead: View.define<readonly Entity[]>(name, []).",
         });
       }
     };

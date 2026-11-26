@@ -126,13 +126,7 @@ const Look = Plugin.make("game/Look", {
     Rules,
     Input.controls("game/Controls", [Click]),
   ],
-  systems: [
-    Assets.during(Effect.succeed(true), Deck),
-    View,
-    Crates,
-    Heroes,
-    Aiming,
-  ],
+  systems: [Assets.during(Deck), View, Crates, Heroes, Aiming],
 });
 
 Browser.runMain(

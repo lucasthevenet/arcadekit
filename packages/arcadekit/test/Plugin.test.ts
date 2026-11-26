@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
 
 import {
@@ -48,9 +48,7 @@ const withApp = <
 const Bounds = Resource.make<{
   readonly width: number;
   readonly clamp: (x: number) => number;
-}>("pl/Bounds", {
-  defaultValue: () => ({ width: 100, clamp: (x) => Math.min(x, 100) }),
-});
+}>("pl/Bounds", { width: 100, clamp: (x) => Math.min(x, 100) });
 
 const Movement = System.tick("Movement", function* () {
   const moving = yield* Query.all(Position, Velocity).pipe(
@@ -145,6 +143,25 @@ const wound = Action.handler(Wound, function* ({ hp }) {
 });
 
 describe("plugins", () => {
+  it("are refused when one is typed any, as one whose import failed is, and the error says so where it is", () => {
+    // What a failed import leaves: a value the compiler knows nothing of.
+    const lost = JSON.parse("{}");
+    void (() =>
+      App.define({
+        // @ts-expect-error a plugin typed any: said of the list, not of an order
+        plugins: [Combat, lost],
+      }));
+    void (() =>
+      Plugin.make("pl/Lost", {
+        // @ts-expect-error the same of the plugins a plugin depends on
+        plugins: [lost],
+      }));
+    expectTypeOf<
+      keyof Plugin.Typed<[typeof Combat, typeof lost]>
+    >().toEqualTypeOf<"A plugin of this list is typed any, as a plugin whose import failed is, so the compiler can check nothing of it: fix its import, or give it its type">();
+    expectTypeOf<Plugin.Typed<[typeof Combat]>>().toEqualTypeOf<unknown>();
+  });
+
   it.effect(
     "bundle systems, handlers, resources and setup into one value",
     () =>

@@ -6,7 +6,7 @@
  *   commands.spawn(
  *     Rock,
  *     Transform3d.Position.of({ x: 0, y: 4, z: 0 }),
- *     Color.Rgb.of({ r: 0xff / 255, g: 0x61 / 255, b: 0x88 / 255, space: Color.Srgb })
+ *     Color.Rgb.of(Color.hex(0xff6188))
  *   )
  *
  * It is an ordinary component of three 32-bit floats and the space they are
@@ -96,6 +96,31 @@ export const Rgb = Component.define(
   { r: Field.f32, g: Field.f32, b: Field.f32, space },
   { initial: { r: 1, g: 1, b: 1, space: Srgb } }
 );
+
+/**
+ * Returns a colour written as a hex code, as `Color.Rgb.of` takes it: each
+ * byte over 255, in `Color.Srgb`.
+ *
+ *   Color.Rgb.of(Color.hex(0xff6188))   // r 0xff / 255, g 0x61 / 255, b 0x88 / 255
+ *
+ * It throws for a number that is no hex code of a colour, a whole number from
+ * `0x000000` to `0xffffff`.
+ *
+ * @category Constructors
+ */
+export const hex = (code: number): Parameters<typeof Rgb.of>[0] => {
+  if (!Number.isInteger(code) || code < 0 || code > 0xff_ff_ff) {
+    throw new Error(
+      `Color.hex was given ${code}, which is not the hex code of a colour: a whole number from 0x000000 to 0xffffff, such as 0xff6188.`
+    );
+  }
+  return {
+    r: (code >> 16) / 255,
+    g: ((code >> 8) & 255) / 255,
+    b: (code & 255) / 255,
+    space: Srgb,
+  };
+};
 
 /** A numeric column, as `eachChunk` hands it. */
 type Column = { readonly [row: number]: number };

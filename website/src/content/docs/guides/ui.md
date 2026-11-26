@@ -19,6 +19,20 @@ export const NewGame = Action.define("game/NewGame", Schema.Struct({}));
 
 A **view** has a name and an initial value. The UI sees the initial value until the game first publishes, and the initial value sets the view's type. A view's value is plain data: strings, numbers, booleans, and arrays and objects of them.
 
+When the initial value says less than the type, give the type: an empty list of entities, a phase that starts at one of several values.
+
+```ts
+import { View } from "arcadekit";
+import type { Entity } from "arcadekit";
+
+type Phase = "title" | "playing" | "paused";
+
+export const Party = View.define<readonly Entity[]>("game/Party", []);
+export const Menu = View.define<{ readonly phase: Phase }>("game/Menu", {
+  phase: "title",
+});
+```
+
 Like an action, a view is a key and not part of the game. The game never reads a view, because a view is what the UI sees, not game state.
 
 ## Publish views
@@ -73,7 +87,6 @@ import { Hud, NewGame } from "./protocol";
 
 export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
   const label = root.querySelector("output")!;
-  label.textContent = `${ui.get(Hud).score}`;
   const stop = ui.subscribe(Hud, ({ score }) => {
     label.textContent = `${score}`;
   });
@@ -83,7 +96,7 @@ export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
 ```
 
 - `ui.get(view)` returns the last published value. It returns the same object until the value changes, so `===` tells a UI library whether anything changed. A view that the UI doesn't listen to is computed in the frame after `get` reads it, so `get` returns it a frame late.
-- `ui.subscribe(view, listener)` calls the listener each time the value changes, and returns a function that unsubscribes. It doesn't call the listener with the current value, so read that with `get`. A listener that throws fails the frame, like any bug in the frame stage, once every other listener has been notified.
+- `ui.subscribe(view, listener)` calls the listener with the current value at once, then each time the value changes, and returns a function that unsubscribes. So a UI that subscribes shows the game as it is, and needs no `get` beside it. A listener that throws when the value changes fails the frame, like any bug in the frame stage, once every other listener has been notified.
 - `ui.send(action, payload)` requests an action. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for one an input system issues for a key. A replay therefore needs no UI, and a button counts the same as a key.
 
 A bridge sends the actions of its type and no other. The app of a game hands out a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` can be handed the bridge only if the game handles `NewGame`. A `View.Bridge` with no actions reads views and sends nothing. An action that the game has no handler for doesn't compile, in `send` or where the bridge is handed to the UI.

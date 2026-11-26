@@ -318,7 +318,7 @@ variant(
   "Three.instancesFrom: a position",
   () => [Thing, place()],
   Sourced,
-  Assets.during(Effect.succeed(true), Level)
+  Assets.during(Level)
 );
 
 // What the loops above replace: an Object3D per entity, its matrix worked

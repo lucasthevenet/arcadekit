@@ -208,7 +208,7 @@ const play = Effect.fnUntraced(function* (
  * bundle comes or goes in is the frame the system that draws sees it.
  */
 const during = (Forest: Forest) =>
-  Assets.during(State.is(Level, "forest"), Forest);
+  Assets.during(Forest).pipe(System.runIf(State.is(Level, "forest")));
 
 /**
  * A system of a game's own that keeps the forest's assets as
@@ -409,7 +409,12 @@ describe("instances whose look is made of assets", () => {
         const listed = yield* play(
           App.define({
             ...forest,
-            systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+            systems: [
+              Trees,
+              Assets.during(Forest).pipe(
+                System.runIf(State.is(Level, "forest"))
+              ),
+            ],
           })
         );
         yield* listed.spawn("tree", 1);
@@ -1100,7 +1105,12 @@ describe("a texture", () => {
         const { app, enter, mesh, renderer, spawn } = yield* play(
           App.define({
             ...forest,
-            systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+            systems: [
+              Trees,
+              Assets.during(Forest).pipe(
+                System.runIf(State.is(Level, "forest"))
+              ),
+            ],
           })
         );
         yield* spawn("tree", 1);

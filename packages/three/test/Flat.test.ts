@@ -118,7 +118,7 @@ const lookOf = (height: number, smooth = false) =>
       Input.controls("fl/Controls", [Click]),
     ],
     systems: [
-      Assets.during(Effect.succeed(true), Deck),
+      Assets.during(Deck),
       Three.camera2d("fl/View", {
         height,
         follow: Player,

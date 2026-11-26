@@ -25,9 +25,7 @@ export const Velocity = Component.define("demo/Velocity", {
 // Toggled often, so it lives in a sparse set and never moves entities around.
 export const Frozen = Component.tag("demo/Frozen", { storage: "sparse" });
 
-export const Gravity = Resource.make("demo/Gravity", {
-  defaultValue: () => -9.81,
-});
+export const Gravity = Resource.make("demo/Gravity", -9.81);
 
 /** What falls, to read. */
 export const Bodies = Query.all(Position, Velocity).pipe(Query.without(Frozen));

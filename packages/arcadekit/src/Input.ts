@@ -27,7 +27,7 @@
  *
  * The bindings are settings, outside the world, the save and the hash. A
  * frame or input system changes them with `Input.rebind`. Below the
- * controls, `Input.Keyboard`, `Input.Pointer` and `Input.Gamepad` read the
+ * controls, `Input.Keyboard`, `Input.Pointer` and `Input.Gamepads` read the
  * devices by their codes, and an input-stage system that needs the devices
  * and the world, such as one that picks the card under the pointer, reads
  * one sample of them, `Input.Devices`, and issues an action itself.
@@ -1287,7 +1287,11 @@ export class Pointer extends Context.Service<Pointer, PointerView>()(
 
 /**
  * Every gamepad's state in the current tick, by index, which `Input.plugin`
- * provides. A system reads one with `Input.Gamepad`.
+ * provides. A system reads it as it reads `Input.Keyboard`, and one gamepad
+ * of it by its index:
+ *
+ *   const pads = yield* Input.Gamepads
+ *   pads(0).axis(0)          // the first gamepad's first axis
  *
  * @category Views
  */
@@ -1295,20 +1299,6 @@ export class Gamepads extends Context.Service<
   Gamepads,
   (index: number) => GamepadView
 >()("arcadekit/Input.Gamepads") {}
-
-const padViews: Effect.Effect<GamepadView, never, Gamepads>[] = [];
-
-/**
- * Returns a gamepad's state in the current tick, or the first gamepad's when
- * given no index, read as `Input.Keyboard` is. It requires `Input.Gamepads`,
- * which `Input.plugin` provides.
- *
- * @category Views
- */
-export const Gamepad = (
-  index = 0
-): Effect.Effect<GamepadView, never, Gamepads> =>
-  (padViews[index] ??= Effect.map(Gamepads, (pads) => pads(index)));
 
 // --- the plugins ---------------------------------------------------------------
 

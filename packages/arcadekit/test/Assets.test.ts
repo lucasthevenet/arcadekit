@@ -140,8 +140,8 @@ const makeGame = () => {
     plugins: [Assets.plugin],
     handlers: [go],
     systems: [
-      Assets.during(State.is(Level, "forest"), Forest),
-      Assets.during(State.is(Level, "cave"), Cave),
+      Assets.during(Forest).pipe(System.runIf(State.is(Level, "forest"))),
+      Assets.during(Cave).pipe(System.runIf(State.is(Level, "cave"))),
       Draw,
     ],
   });
@@ -477,7 +477,9 @@ describe("a level's assets", () => {
         const Draw = System.frame("Draw", function* () {
           seen.push((yield* Forest)._tag);
         });
-        const Keep = Assets.during(State.is(Level, "forest"), Forest);
+        const Keep = Assets.during(Forest).pipe(
+          System.runIf(State.is(Level, "forest"))
+        );
         const Visit = Action.define(
           "as/Visit",
           Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
@@ -865,7 +867,10 @@ describe("a level's assets", () => {
         });
         const Shown = Plugin.make("Shown", {
           plugins: [Rules, Assets.plugin],
-          systems: [Assets.during(State.is(Level, "forest"), Forest), Begin],
+          systems: [
+            Assets.during(Forest).pipe(System.runIf(State.is(Level, "forest"))),
+            Begin,
+          ],
         });
         const slow = makeSlowLoader();
         const { hash, recording } = yield* Effect.gen(function* () {
@@ -950,7 +955,11 @@ describe("a level's assets", () => {
             App.make(
               App.define({
                 plugins: [Game],
-                systems: [Assets.during(State.is(Level, "menu"), Forest)],
+                systems: [
+                  Assets.during(Forest).pipe(
+                    System.runIf(State.is(Level, "menu"))
+                  ),
+                ],
               })
             )
           );
@@ -969,7 +978,9 @@ describe("a level's assets", () => {
             App.define({
               plugins: [Game],
               systems: [
-                Assets.during(State.is(Level, "forest", "cave"), Shared),
+                Assets.during(Shared).pipe(
+                  System.runIf(State.is(Level, "forest", "cave"))
+                ),
               ],
             })
           );
@@ -1072,8 +1083,10 @@ describe("a level's assets", () => {
               }),
             ],
             systems: [
-              Assets.during(State.is(Level, "forest"), Forest),
-              Assets.during(State.is(Level, "forest"), Raw),
+              Assets.during(Forest).pipe(
+                System.runIf(State.is(Level, "forest"))
+              ),
+              Assets.during(Raw).pipe(System.runIf(State.is(Level, "forest"))),
               Look,
             ],
           })
@@ -1192,7 +1205,10 @@ describe("a level's assets", () => {
           const app = yield* App.make(
             App.define({
               plugins: [Assets.plugin],
-              systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
+              systems: [
+                Assets.during(Cursed).pipe(System.runIf(State.is(Level, "on"))),
+                Look,
+              ],
             })
           );
           yield* app.frame();
@@ -1274,7 +1290,7 @@ describe("levels as data", () => {
   });
   const Shown = Plugin.make("lv/Shown", {
     plugins: [Rules],
-    systems: [Assets.during(level, Levels)],
+    systems: [Assets.during(Levels, level)],
   });
   const LevelGame = App.define({ plugins: [Shown] });
   const makeLevels = () => App.make(LevelGame, { hashEvery: 1 });
@@ -1437,7 +1453,7 @@ describe("levels as data", () => {
               yield* Assets.forget(Sky);
             }),
           ],
-          systems: [Assets.during(Effect.succeed(true), Sky)],
+          systems: [Assets.during(Sky)],
         });
         const app = yield* App.make(App.define({ plugins: [Runs] }));
         yield* play(app);

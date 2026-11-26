@@ -245,7 +245,7 @@ describe("systems", () => {
 
   it.effect("read resources with defaults that a layer can override", () =>
     Effect.gen(function* () {
-      const Gravity = Resource.make("rt/Gravity", { defaultValue: () => 9.81 });
+      const Gravity = Resource.make("rt/Gravity", 9.81);
       const seen: number[] = [];
       const ReadGravity = System.tick("ReadGravity", function* () {
         seen.push(yield* Gravity);
@@ -268,7 +268,8 @@ describe("systems", () => {
     () =>
       Effect.gen(function* () {
         const Config = Resource.make("rt/Config", {
-          defaultValue: () => ({ difficulty: 1, levels: [{ name: "start" }] }),
+          difficulty: 1,
+          levels: [{ name: "start" }],
         });
         const Harden = System.tick("rt/Harden", function* () {
           const config = yield* Config;
@@ -438,9 +439,7 @@ describe("the built-in services", () => {
 
   it.effect("leave a game free to define a resource called World", () =>
     Effect.gen(function* () {
-      const GameWorld = Resource.make("World", {
-        defaultValue: () => ({ size: 0 }),
-      });
+      const GameWorld = Resource.make("World", { size: 0 });
       const sizes: number[] = [];
       const Probe = System.tick("Probe", function* () {
         const world = yield* World;

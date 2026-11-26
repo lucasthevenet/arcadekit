@@ -181,21 +181,28 @@ const isNamed = (sound: Playable): boolean => sound.data instanceof Entry;
 export interface Speaker {
   /**
    * Starts a cue now, at `volume`, where 1 is the cue as recorded, and at
-   * `rate` times its normal speed, which also sets its pitch.
+   * `rate` times its normal speed, which also sets its pitch. The player
+   * gives both, as `Sound.Player`'s `play` takes them by name.
    */
-  readonly play: (cue: Playable, volume: number, rate: number) => void;
+  readonly play: (
+    cue: Playable,
+    options: { readonly volume: number; readonly rate: number }
+  ) => void;
   /**
    * Sets what a channel plays from now on: `track` at `volume`, faded in over
    * `fade` seconds while what the channel was playing fades out over the same
    * time. The track loops, or with `once` plays to its end and stops. No track
-   * means silence. The player calls it only when one of these changes.
+   * means silence. The player calls it only when one of these changes, with
+   * each option given.
    */
   readonly music: (
     channel: string,
     track: Playable | undefined,
-    volume: number,
-    fade: number,
-    once?: boolean
+    options: {
+      readonly volume: number;
+      readonly fade: number;
+      readonly once: boolean;
+    }
   ) => void;
 }
 
@@ -335,14 +342,14 @@ export const makeRecorder = (): Recorder => {
     played,
     scored,
     playing,
-    play(cue, volume, rate) {
+    play(cue, { rate, volume }) {
       played.push(
         isNamed(cue)
           ? { cue: cue.name, volume, rate }
           : { cue: cue.name, volume, rate, clip: cue }
       );
     },
-    music(channel, track, volume, fade, once) {
+    music(channel, track, { fade, once, volume }) {
       if (track === undefined) {
         playing.delete(channel);
         scored.push({ channel, track, volume, fade });
@@ -582,7 +589,11 @@ const playerLayer = Layer.effect(
       Effect.sync(() => {
         for (const [channel, told] of channels) {
           if (told.track !== undefined) {
-            speaker.music(channel, undefined, 0, 0, false);
+            speaker.music(channel, undefined, {
+              volume: 0,
+              fade: 0,
+              once: false,
+            });
           }
         }
         channels.clear();
@@ -718,10 +729,13 @@ const playerLayer = Layer.effect(
           told.volume = volume;
           told.once = once;
           told.bus = bus;
-          speaker.music(channel, track, volume, fade, once);
+          speaker.music(channel, track, { volume, fade, once });
         }
         for (const [cue, how] of asked) {
-          speaker.play(cue, how.volume * busVolume(how.bus), how.rate);
+          speaker.play(cue, {
+            volume: how.volume * busVolume(how.bus),
+            rate: how.rate,
+          });
         }
       },
     });

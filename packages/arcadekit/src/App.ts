@@ -477,7 +477,7 @@ export interface App<E = never, HU = never> extends Any {
    */
   readonly dispatch: <N extends ActionNames<HU>>(
     action: Action.Action<N, PayloadFor<HU, N>>,
-    payload: PayloadFor<HU, N>
+    ...payload: Action.PayloadArgument<PayloadFor<HU, N>>
   ) => Effect.Effect<Placed<ResultFor<HU, N>>, FailureFor<HU, N>>;
   /**
    * Applies an action that arrives as data, as `App.Any`'s `dispatchByName`
@@ -511,7 +511,7 @@ export interface App<E = never, HU = never> extends Any {
    */
   readonly enqueue: <N extends ActionNames<HU>>(
     action: Action.Action<N, PayloadFor<HU, N>>,
-    payload: PayloadFor<HU, N>
+    ...payload: Action.PayloadArgument<PayloadFor<HU, N>>
   ) => Effect.Effect<void, Action.InvalidPayload>;
   /**
    * Closes the app. It lets go of everything the app opened when it was
@@ -565,7 +565,7 @@ export interface Options<
   H extends Handlers = readonly [],
   P extends Plugins = readonly [],
 > {
-  readonly plugins?: readonly [...P];
+  readonly plugins?: readonly [...P] & Plugin.Typed<P>;
   /**
    * The game's version, an integer you increment when the game changes its
    * components or what its saves contain. Defaults to 0. A save records it.
@@ -639,11 +639,7 @@ export const define = <
   H extends Handlers = readonly [],
   P extends Plugins = readonly [],
 >(
-  options: Options<S, H, P> &
-    System.Ordered<
-      System.Listing<Plugin.SystemsOf<P>, S>,
-      Plugin.Clashes<P, H, S>
-    >
+  options: Options<S, H, P> & Plugin.Checked<P, S, H>
 ): Game<S, H, P> => ({
   plugins: options.plugins ?? ([] as unknown as readonly [...P]),
   systems: options.systems ?? ([] as unknown as readonly [...S]),
@@ -738,6 +734,10 @@ export class FrameChangedWorld extends Data.TaggedError(
  *
  *   const app = yield* App.make(Duel, { seed: 1 })
  *   const again = yield* App.make(Duel, { save })
+ *   const either = yield* App.make(Duel, save === undefined ? { seed: 1 } : { save })
+ *
+ * Made from a seed, it fails only as its plugins do. Given a save, or a start
+ * that may be one, it may fail as a load does too, with `Save.LoadRefused`.
  *
  * **Details**
  *
@@ -775,7 +775,7 @@ export class FrameChangedWorld extends Data.TaggedError(
  *
  * @category Constructors
  */
-export const make = <
+export function make<
   S extends Systems = readonly [],
   H extends Handlers = readonly [],
   P extends Plugins = readonly [],
@@ -787,7 +787,34 @@ export const make = <
   App<TickError<S, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
   External<S, H, P>
-> => {
+>;
+// A start that is a seed or a save, as a host that loads a save if it has
+// one gives it: it may load, and so may fail as a load does.
+export function make<
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+>(
+  game: Game<S, H, P>,
+  start: StartOptions | StartOptions<Save.Save>
+): Effect.Effect<
+  App<TickError<S, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+  External<S, H, P>
+>;
+export function make<
+  S extends Systems,
+  H extends Handlers,
+  P extends Plugins,
+  SV extends Save.Save | undefined,
+>(
+  game: Game<S, H, P>,
+  start?: StartOptions<SV>
+): Effect.Effect<
+  App<TickError<S, P>, AllHandlers<H, P>>,
+  unknown,
+  External<S, H, P>
+> {
   const given: StartOptions<SV> = start ?? {};
   return Effect.map(build(game, given), (built) => built.app);
-};
+}

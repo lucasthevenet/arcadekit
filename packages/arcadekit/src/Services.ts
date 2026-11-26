@@ -361,6 +361,8 @@ export class Events extends Context.Service<Events, ReadingEvents>()(
  *
  *   const random = yield* Random
  *   random.next()          // from 0 up to, but not including, 1
+ *   random.range(2, 5)     // from 2 up to, but not including, 5
+ *   random.chance(0.1)     // true one time in ten
  *   random.int(1, 6)       // an integer, both ends inclusive
  *   random.pick(items)
  *   random.shuffle(items)  // in place

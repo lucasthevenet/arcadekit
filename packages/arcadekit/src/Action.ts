@@ -248,6 +248,17 @@ export interface Any {
 }
 
 /**
+ * The payload an action is issued with, as the rest of the arguments after
+ * the action: one that takes no payload is issued with none,
+ * `app.dispatch(Pause)`, and any other with its payload.
+ *
+ * @category Type-level
+ */
+export type PayloadArgument<P> = undefined extends P
+  ? [payload?: P]
+  : [payload: P];
+
+/**
  * Any handler, whatever its action, result and requirements. Its payload is
  * `never`, since only code that checked a payload against the handler's
  * action may hand it one.
@@ -457,7 +468,7 @@ export class Actions extends Context.Service<
   {
     readonly enqueue: <N extends string, P>(
       action: Action<N, P>,
-      payload: WithSpawned<P>
+      ...payload: PayloadArgument<WithSpawned<P>>
     ) => void;
     /**
      * Returns whether the game has a handler for an action. An action without

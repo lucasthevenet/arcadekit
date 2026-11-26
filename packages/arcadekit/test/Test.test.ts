@@ -70,7 +70,8 @@ describe("a game under test", () => {
           { cue: "coin", volume: 1, rate: 1 },
         ]);
         expect(game.ui.get(Hud)).toEqual({ points: 1 });
-        expect(seen).toEqual([{ points: 1 }]);
+        // As it was when the UI subscribed, then what the step published.
+        expect(seen).toEqual([{ points: 0 }, { points: 1 }]);
         // The bridge sends what the game handles, as a UI's button does.
         game.ui.send(Add, { points: 2 });
         yield* game.step();

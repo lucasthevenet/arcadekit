@@ -7,7 +7,7 @@ The **devices** are the keyboard, the pointer, and the gamepads, below the [cont
 
 ## Read the devices by their codes
 
-`Input.plugin`, which `Input.controls` installs, provides `Input.Keyboard`, `Input.Pointer`, and `Input.Gamepads`, which `Input.Gamepad(index)` reads. They are the level below the controls, for what reads a device by its code, such as a debug key, and for the pointer's position:
+`Input.plugin`, which `Input.controls` installs, provides `Input.Keyboard`, `Input.Pointer`, and `Input.Gamepads`, each read with `yield*`, a gamepad by its index: `(yield* Input.Gamepads)(0)`. They are the level below the controls, for what reads a device by its code, such as a debug key, and for the pointer's position:
 
 ```ts
 import { Input, System } from "arcadekit";
@@ -20,7 +20,7 @@ const Aim = System.tick("game/Aim", function* () {
 });
 ```
 
-- `Input.Keyboard` has `down`, `pressed`, and `released`. `Input.Pointer` has `x`, `y`, and the same three for a button, the primary button by default. `Input.Gamepad(index)` has `axis(n)` and the same three for a button. Each stage reads them as it reads a control.
+- `Input.Keyboard` has `down`, `pressed`, and `released`. `Input.Pointer` has `x`, `y`, and the same three for a button, the primary button by default. A gamepad of `Input.Gamepads` has `axis(n)` and the same three for a button. Each stage reads them as it reads a control.
 - A game that reads them and leaves out the plugin doesn't compile.
 
 ## Write an input system of your own

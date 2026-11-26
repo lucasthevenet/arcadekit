@@ -117,7 +117,7 @@ const Fall = System.tick("Fall", function* () {
     }
     if (got || star.y > HEIGHT) {
       star.y = 0;
-      star.x = random.next() * WIDTH;
+      star.x = random.range(0, WIDTH);
     }
   });
   if (caught > 0) {
@@ -183,9 +183,9 @@ const scatter = Action.handler(
     for (let i = 0; i < stars; i++) {
       commands.spawn(
         Star.of({
-          x: random.next() * WIDTH,
-          y: random.next() * HEIGHT,
-          speed: slowest + random.next() * (fastest - slowest),
+          x: random.range(0, WIDTH),
+          y: random.range(0, HEIGHT),
+          speed: random.range(slowest, fastest),
         })
       );
     }
@@ -216,7 +216,9 @@ const Level = Assets.bundle("page/Level", {
   // The level's own sound, loaded and let go with the rest of it.
   caught: Audio.sound("/caught.wav"),
 });
-const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
+const LevelAssets = Assets.during(Level).pipe(
+  System.runIf(State.is(Phase, "playing", "paused"))
+);
 
 // Once the level's file is loaded, the sky is filled with what it says: the
 // world records that it was, and a new game forgets it, in Start.

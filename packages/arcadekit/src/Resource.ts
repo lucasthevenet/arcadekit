@@ -2,7 +2,7 @@
  * Resources are configuration values with a default that a layer can override,
  * built on `Context.Reference`.
  *
- *   const Gravity = Resource.make("game/Gravity", { defaultValue: () => 9.81 })
+ *   const Gravity = Resource.make("game/Gravity", 9.81)
  *   const g = yield* Gravity                      // 9.81 unless overridden
  *   App.make(App.define({ systems })).pipe(Effect.provide(Resource.layer(Gravity, 1.62)))
  *
@@ -38,26 +38,26 @@ const freeze = <A>(value: A): Frozen<A> => {
 };
 
 /**
- * Makes a resource, a value with a default that a layer can override. Nothing
- * has to provide it.
+ * Makes a resource from its key and its default value, which a layer can
+ * override. Nothing has to provide it.
  *
- *   const Gravity = Resource.make("game/Gravity", { defaultValue: () => 9.81 })
+ *   const Gravity = Resource.make("game/Gravity", 9.81)
  *
  * **Gotchas**
  *
- * The default is created once, and every app in the process shares it, so the
- * value is read-only. Its type says so all the way down. A plain object or
- * array in it is frozen, so a write to one throws. To change the value,
+ * Every app in the process shares the default, so the value is read-only. Its
+ * type says so all the way down. A plain object or array in it is frozen when
+ * the resource is first read, so a write to one throws. To change the value,
  * provide another with `Resource.layer`.
  *
  * @category Constructors
  */
 export const make = <A>(
   key: string,
-  options: { readonly defaultValue: () => A }
+  defaultValue: A
 ): Context.Reference<Frozen<A>> =>
   Context.Reference<Frozen<A>>(key, {
-    defaultValue: () => freeze(options.defaultValue()),
+    defaultValue: () => freeze(defaultValue),
   });
 
 /**

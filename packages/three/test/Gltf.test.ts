@@ -9,6 +9,7 @@ import {
   Component,
   Plugin,
   State,
+  System,
   Transform3d,
 } from "arcadekit";
 import {
@@ -742,7 +743,7 @@ describe("a level's models", () => {
           App.define({
             plugins: [Three.plugin, Assets.plugin, Harbour],
             systems: [
-              Assets.during(State.is(Level, "space"), Fleet),
+              Assets.during(Fleet).pipe(System.runIf(State.is(Level, "space"))),
               Ships,
               Rocks,
             ],

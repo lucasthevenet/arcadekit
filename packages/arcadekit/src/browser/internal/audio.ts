@@ -337,7 +337,7 @@ const openPage = (
   return {
     holders: 0,
     speaker: {
-      play(cue, volume, rate) {
+      play(cue, { rate, volume }) {
         const buffer = bufferOf(cue);
         // Before the first touch, or before the file is here.
         if (audio === undefined || buffer === undefined) {
@@ -381,7 +381,7 @@ const openPage = (
         gain.connect(audio.destination);
         source.start();
       },
-      music(name, track, volume, fade, once) {
+      music(name, track, { fade, once, volume }) {
         let channel = channels.get(name);
         if (channel === undefined) {
           channel = { wanted: undefined, fade, playing: undefined };
@@ -466,9 +466,9 @@ export const layerSound = (
               return hold.page.speaker;
             };
             return {
-              play: (cue, volume, rate) => use().play(cue, volume, rate),
-              music: (channel, track, volume, fade, once) =>
-                use().music(channel, track, volume, fade, once),
+              play: (cue, options) => use().play(cue, options),
+              music: (channel, track, options) =>
+                use().music(channel, track, options),
             };
           }
         ),

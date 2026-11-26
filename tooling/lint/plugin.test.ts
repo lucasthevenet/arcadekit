@@ -133,12 +133,24 @@ new RuleTester().run("id-casts", plugin.rules["id-casts"], {
     "column as EntityColumn",
     "<Entity>n",
     "schema as unknown as Schema.Codec<Entity, number>",
-  ].map((cast) => ({
-    name: cast,
-    code: `const id = ${cast};`,
-    filename: "game.ts",
-    errors: [{ message: /^This asserts that a value is an entity's id/u }],
-  })),
+  ]
+    .map((cast) => ({
+      name: cast,
+      code: `const id = ${cast};`,
+      filename: "game.ts",
+      errors: [{ message: /^This asserts that a value is an entity's id/u }],
+    }))
+    .concat({
+      name: "an empty list of ids, which is given its type instead",
+      code: `const Party = View.define("game/Party", [] as Entity[]);`,
+      filename: "game.ts",
+      errors: [
+        {
+          message:
+            /given its type instead: View\.define<readonly Entity\[\]>\(name, \[\]\)\.$/u,
+        },
+      ],
+    }),
 });
 
 new RuleTester().run("no-run-in-tests", plugin.rules["no-run-in-tests"], {
