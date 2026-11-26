@@ -199,7 +199,7 @@ describe("a session joined to a transport", () => {
         Effect.gen(function* () {
           const [ada] = yield* seated(
             ["ada", "grace"],
-            (name) => hub.layer(name),
+            (name) => Transport.layer(hub.port(name)),
             undefined
           );
           yield* ada!.app.enqueue(Drop, { by: "ada", value: 4 });
@@ -234,7 +234,7 @@ describe("a session joined to a transport", () => {
             Effect.gen(function* () {
               const seats = yield* seated(
                 ["ada", "grace"],
-                (name) => hub.layer(name),
+                (name) => Transport.layer(hub.port(name)),
                 ahead
               );
               const steps = seats.map((seat) =>
@@ -299,7 +299,7 @@ describe("a session joined to a transport", () => {
             Effect.gen(function* () {
               const seats = yield* seated(
                 ["ada", "edsger", "grace"],
-                (name) => hub.layer(name),
+                (name) => Transport.layer(hub.port(name)),
                 ahead
               );
               const [ada, edsger, grace] = seats as [Seat, Seat, Seat];
@@ -388,7 +388,7 @@ describe("a session joined to a transport", () => {
           Effect.gen(function* () {
             const [ada, grace] = (yield* seated(
               ["ada", "grace"],
-              (name) => hub.layer(name),
+              (name) => Transport.layer(hub.port(name)),
               undefined,
               { awayFor: 1000 }
             )) as [Seat, Seat];
@@ -447,7 +447,7 @@ describe("a session joined to a transport", () => {
             Effect.gen(function* () {
               const seats = yield* seated(
                 ["ada", "grace"],
-                (name) => hub.layer(name),
+                (name) => Transport.layer(hub.port(name)),
                 undefined
               );
               setGlitch({ tick: 9, apps: "all" });
@@ -493,7 +493,7 @@ describe("a session joined to a transport", () => {
           Effect.sync(() => {
             drawn++;
           }),
-      }).pipe(Effect.provide(hub.layer("ada")));
+      }).pipe(Effect.provide(Transport.layer(hub.port("ada"))));
       yield* Driver.fixedStep(connected)(DELTA);
       expect(drawn).toBe(1);
       expect(session.app.time.tick).toBe(1);

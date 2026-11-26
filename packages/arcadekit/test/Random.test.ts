@@ -377,7 +377,7 @@ describe("the Random service", () => {
       expect(yield* hashAfterATick(false)).toBe(still);
       // A draw moves the generator, and the world with it.
       expect(yield* hashAfterATick(true)).not.toBe(still);
-      expect(Random.key).toBe("arcadekit/Random");
+      expect(Random.key).toBe("arcadekit/Services.Random");
     })
   );
 

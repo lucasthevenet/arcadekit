@@ -166,7 +166,7 @@ A layer fits only a perspective camera. Fit any other kind of camera yourself wh
 
 ## Test without a canvas
 
-A test provides a renderer that draws nothing, `Layer.succeed(Three.Renderer, { render(scene, camera) {} })`. Three.js builds scenes and meshes under Node as it does in a page, so you can inspect what was added to the scene. See [testing](testing.md).
+A test provides a renderer that draws nothing and records what it was asked to render, `Three.layer(Three.makeRecorder())`. Three.js builds scenes and meshes under Node as it does in a page, so you can inspect what was added to the scene. See [testing](testing.md).
 
 ## Write a plugin for another renderer
 
@@ -179,7 +179,7 @@ Frame-stage systems draw a game, in a plugin that only the page installs. A plug
 
 ## Find a service or system by name
 
-- The services are named `"arcadekit/three/Scene"` and `"arcadekit/three/Renderer"`.
+- The services are named `"@arcadekit/three/Scene.Scene"` and `"@arcadekit/three/Renderer.Renderer"`.
 - The plugin is `"arcadekit/three"`, and the system that draws the scene is `"arcadekit/three/Render"`.
 - A system made by `Three.instances` or `Three.objects` has the name you give it, which is also its mesh's name. The name must be unique among the app's systems.
 

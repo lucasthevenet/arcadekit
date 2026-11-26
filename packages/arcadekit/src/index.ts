@@ -60,6 +60,7 @@ export * as State from "./State.ts";
 export { EntityId } from "./Schemas.ts";
 export * from "./Services.ts";
 export * as System from "./System.ts";
+export * as Test from "./Test.ts";
 export * as Timeline from "./Timeline.ts";
 export * as Timer from "./Timer.ts";
 export * as Transform2d from "./Transform2d.ts";

@@ -41,8 +41,8 @@ const geometry = new BoxGeometry(1, 1, 1);
 const material = new MeshBasicMaterial();
 
 const noRenderer = Layer.mergeAll(
-  Layer.succeed(Three.Renderer, { render() {} }),
-  Assets.layerMemory({ "/bark.png": "" })
+  Three.layer({ render() {} }),
+  Assets.layer(Assets.makeMemory({ "/bark.png": "" }))
 );
 
 const median = (values: number[]): number =>

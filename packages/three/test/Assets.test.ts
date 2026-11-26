@@ -116,7 +116,9 @@ const makeForest = (log: string[]) => {
 };
 type Forest = ReturnType<typeof makeForest>;
 
-const files = Assets.layerMemory({ "/bark.png": new Uint8Array([1, 2, 3]) });
+const files = Assets.layer(
+  Assets.makeMemory({ "/bark.png": new Uint8Array([1, 2, 3]) })
+);
 
 /**
  * A renderer that draws nothing, and notes what was in the scene when it
@@ -132,7 +134,7 @@ const makeRenderer = () => {
     stale: 0,
     layer: undefined as unknown as Layer.Layer<Three.Renderer>,
   };
-  renderer.layer = Layer.succeed(Three.Renderer, {
+  renderer.layer = Three.layer({
     render(scene) {
       renderer.scene = scene;
       renderer.drew = scene.children.map((child) => child.name);
@@ -944,10 +946,12 @@ describe("a texture", () => {
         const { bark, normals } = yield* Assets.load(Forest).pipe(
           Scope.provide(scope),
           Effect.provide(
-            Assets.layerMemory({
-              "/bark.png": new Uint8Array([9, 8, 7]),
-              "/normals.png": "nn",
-            })
+            Assets.layer(
+              Assets.makeMemory({
+                "/bark.png": new Uint8Array([9, 8, 7]),
+                "/normals.png": "nn",
+              })
+            )
           )
         );
         expect(bark).toBeInstanceOf(Texture);
@@ -980,9 +984,11 @@ describe("a texture", () => {
     () =>
       Effect.gen(function* () {
         const { asked, bitmaps } = stubBitmaps();
-        const files = Assets.layerMemory({
-          "/skin.png": new Uint8Array([1, 2]),
-        });
+        const files = Assets.layer(
+          Assets.makeMemory({
+            "/skin.png": new Uint8Array([1, 2]),
+          })
+        );
         const load = (asset: Assets.Asset<Texture>) =>
           Effect.scoped(
             Effect.map(
@@ -1054,7 +1060,9 @@ describe("a texture", () => {
           )
         ).pipe(
           Effect.provide(
-            Assets.layerMemory({ "/bark.png": new Uint8Array([0]) })
+            Assets.layer(
+              Assets.makeMemory({ "/bark.png": new Uint8Array([0]) })
+            )
           )
         );
         expect(Exit.isFailure(exit)).toBe(true);
@@ -1125,7 +1133,7 @@ describe("a manager of Three.js's requests", () => {
     const scope = Scope.makeUnsafe();
     const exit = yield* Effect.exit(Three.manager(served)).pipe(
       Scope.provide(scope),
-      Effect.provide(Assets.layerMemory(files))
+      Effect.provide(Assets.layer(Assets.makeMemory(files)))
     );
     return {
       exit,

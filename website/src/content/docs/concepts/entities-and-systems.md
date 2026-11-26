@@ -119,7 +119,7 @@ Each feature is a **plugin**: its systems, the actions it handles, the services 
 
 ## Every name starts with its feature
 
-Every string that identifies something at run time starts with the name of the feature it belongs to. A component is `"physics/Position"`, a system `"game/Movement"`, and an event `"physics/Collided"`. Every name arcadekit gives its own parts starts with `arcadekit/`, such as the service `"arcadekit/World"` and the system `"arcadekit/Input.Read"`. Your game is therefore free to name its own service `"World"`.
+Every string that identifies something at run time starts with the name of the feature it belongs to. A component is `"physics/Position"`, a system `"game/Movement"`, and an event `"physics/Collided"`. Every name arcadekit gives its own parts starts with `arcadekit/`, such as the service `"arcadekit/Services.World"` and the system `"arcadekit/Input.Read"`. Your game is therefore free to name its own service `"World"`.
 
 ## Inspiration
 

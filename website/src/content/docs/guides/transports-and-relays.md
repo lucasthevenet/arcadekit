@@ -16,7 +16,7 @@ There is no default transport. A multiplayer game without one doesn't compile, s
 | `Transport.layerBroadcastChannel(name, me)` | The tabs, windows and workers of one browser, with no server |
 | `Transport.layerWebSocket(url)` | Machines, through a relay |
 | `Transport.fromWire(wire)` | Anything that carries bytes and text, such as a data channel or a port |
-| `Transport.makeHub(options)` | Peers in one test, in memory. See [testing](testing.md#connect-several-peers) |
+| `Transport.makeHub(options)` | Peers in one test, in memory. See [testing several peers](testing-peers.md#connect-several-peers) |
 
 A transport's channel must deliver every message, in any order. The session drops duplicates. It also keeps what it sent until every other peer has said it heard it, and sends it again when a relay says a peer joined the room, so a socket that drops and connects again loses nothing.
 

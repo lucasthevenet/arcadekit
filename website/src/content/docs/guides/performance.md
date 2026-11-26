@@ -101,7 +101,7 @@ arcadekit's own plugins cost this much when each has little to do:
 - **Sound** was measured with one system that plays cues for two kinds of event, or one that keeps a channel's music, to an output that does nothing. The cue system costs a frame two reads of empty event queues, 0.7 µs over an empty frame, plus 0.2 µs per cue played. When sound goes nowhere, the system checks for an output and stops.
 - **A game at rest** was measured as one that [ticks only when needed](running-a-game.md#tick-only-when-needed), with device state, a state, and a view.
 - `verifyFrames` hashes the world before the frame stage and after each of its systems, and copies and compares each column that `eachChunk` hands out read-only. For one system that reads raw columns over 100,000 entities, it adds 2.6 ms. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
-- `Session.syncTest` checks rewinds with a capture of the game, a rewind, a second run, and a world hash per system, every tick. For a game of 1,000 entities and two systems, the check costs about 100 µs a tick, against 7 to 20 µs without it. Use it in [tests](testing.md#check-that-a-rewind-runs-the-same).
+- `Session.syncTest` checks rewinds with a capture of the game, a rewind, a second run, and a world hash per system, every tick. For a game of 1,000 entities and two systems, the check costs about 100 µs a tick, against 7 to 20 µs without it. Use it in [tests](testing-peers.md#check-that-a-rewind-runs-the-same).
 
 ## Spawns and despawns
 

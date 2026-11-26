@@ -781,7 +781,7 @@ describe("a picture", () => {
         const scope = Scope.makeUnsafe();
         const loaded = yield* Assets.load(Art).pipe(
           Scope.provide(scope),
-          Effect.provide(Assets.layerMemory(files))
+          Effect.provide(Assets.layer(Assets.makeMemory(files)))
         );
         expect(loaded.one.width).toBe(1);
         expect(loaded.two.width).toBe(4);
@@ -795,7 +795,7 @@ describe("a picture", () => {
           Promise.reject(new Error("The source image could not be decoded."))
         );
         const exit = yield* Effect.exit(Effect.scoped(Assets.load(Art))).pipe(
-          Effect.provide(Assets.layerMemory(files))
+          Effect.provide(Assets.layer(Assets.makeMemory(files)))
         );
         const error = Option.getOrThrow(Exit.findErrorOption(exit));
         expect(error).toBeInstanceOf(Assets.Failed);
@@ -892,11 +892,13 @@ describe("Browser.layer", () => {
           Effect.provide(
             Layer.provide(
               Browser.layer({ gamepads: () => [], sounds: false }),
-              Assets.layerMemory({
-                "levels/one.txt": "mine",
-                "/rooted.txt": "mine",
-                "https://cdn.test/far.txt": "mine",
-              })
+              Assets.layer(
+                Assets.makeMemory({
+                  "levels/one.txt": "mine",
+                  "/rooted.txt": "mine",
+                  "https://cdn.test/far.txt": "mine",
+                })
+              )
             )
           )
         );
@@ -1314,7 +1316,7 @@ describe("a page's sound", () => {
       Effect.provide(
         Layer.mergeAll(
           options.loader === undefined
-            ? Assets.layerMemory(sounds)
+            ? Assets.layer(Assets.makeMemory(sounds))
             : Layer.succeed(Assets.Loader, options.loader),
           Logger.layer([
             Logger.make((entry) => {
@@ -1459,7 +1461,7 @@ describe("a page's sound", () => {
           Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
           Effect.provide(
             Layer.mergeAll(
-              Assets.layerMemory(sounds),
+              Assets.layer(Assets.makeMemory(sounds)),
               Logger.layer([
                 Logger.make((entry) => {
                   logged.push(String(entry.message));
@@ -2187,7 +2189,7 @@ describe("a page's sound", () => {
           wind: Audio.sound("/thud.wav"),
         });
         const { chirp, wind } = yield* Effect.scoped(Assets.load(Forest)).pipe(
-          Effect.provide(Assets.layerMemory(sounds))
+          Effect.provide(Assets.layer(Assets.makeMemory(sounds)))
         );
         expect(chirp).toBeInstanceOf(Sound.Clip);
         // Named for where it came from, which is what a log calls it.
@@ -2207,7 +2209,7 @@ describe("a page's sound", () => {
               Assets.bundle("br/Broken", { noise: Audio.sound("/noise.wav") })
             )
           )
-        ).pipe(Effect.provide(Assets.layerMemory(sounds)));
+        ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(sounds))));
         expect(Exit.isFailure(exit)).toBe(true);
         const error = Cause.squash(
           (exit as Exit.Failure<never, unknown>).cause
@@ -2251,7 +2253,7 @@ describe("a page's sound", () => {
             }).pipe(
               Effect.provide(
                 Browser.layer({ gamepads: () => [], ...options }).pipe(
-                  Layer.provideMerge(Assets.layerMemory(sounds))
+                  Layer.provideMerge(Assets.layer(Assets.makeMemory(sounds)))
                 )
               )
             ),
@@ -2349,7 +2351,9 @@ describe("a page's sound", () => {
                 sounds: { coin: "/coin.wav" },
                 audio: () => audio,
                 decode: decodeInto([]),
-              }).pipe(Layer.provideMerge(Assets.layerMemory(sounds)))
+              }).pipe(
+                Layer.provideMerge(Assets.layer(Assets.makeMemory(sounds)))
+              )
             )
           )
         );
@@ -2393,7 +2397,7 @@ describe("a page's sound", () => {
               )
             ),
             Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
-            Effect.provide(Assets.layerMemory(sounds))
+            Effect.provide(Assets.layer(Assets.makeMemory(sounds)))
           )
         );
         yield* Effect.promise(() => settle());
@@ -2446,7 +2450,7 @@ describe("a page's sound", () => {
           )
         ).pipe(
           Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
-          Effect.provide(Assets.layerMemory(sounds))
+          Effect.provide(Assets.layer(Assets.makeMemory(sounds)))
         );
         const start = Effect.fnUntraced(function* () {
           const app = yield* App.make(Clinking).pipe(

@@ -885,7 +885,9 @@ const makeForest = () => {
   const Keep = Assets.during(State.is(Level, "forest"), Forest);
   return { Forest, Keep, clips };
 };
-const files = Assets.layerMemory({ "/creak.wav": "c", "/wind.ogg": "w" });
+const files = Assets.layer(
+  Assets.makeMemory({ "/creak.wav": "c", "/wind.ogg": "w" })
+);
 
 describe("a clip", () => {
   it.effect(

@@ -85,7 +85,7 @@ export interface Listener {
 export class Transport extends Context.Service<
   Transport,
   { readonly listen: Effect.Effect<Listener, never, Scope.Scope> }
->()("arcadekit/Transport") {}
+>()("arcadekit/net/Transport.Transport") {}
 
 /**
  * Listens on this peer's transport in the current scope, and stops when that
@@ -712,8 +712,6 @@ export interface Hub {
    * moment it has a port.
    */
   readonly port: (peer: string) => Listener;
-  /** Returns a layer that provides a peer's end. */
-  readonly layer: (peer: string) => Layer.Layer<Transport>;
   /** Advances time by one step: every message in transit is one step closer. */
   readonly step: () => void;
   /**
@@ -740,7 +738,7 @@ export interface Hub {
  * the hub either.
  *
  *   const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 })
- *   const ada = yield* Transport.connect(session).pipe(Effect.provide(hub.layer("ada")))
+ *   const ada = yield* Transport.connect(session).pipe(Effect.provide(Transport.layer(hub.port("ada"))))
  *   hub.step()
  *   yield* ada.tick()
  *
@@ -838,7 +836,6 @@ export const makeHub = (options: HubOptions = {}): Hub => {
   };
   return {
     port,
-    layer: (peer) => layer(port(peer)),
     step() {
       now++;
     },

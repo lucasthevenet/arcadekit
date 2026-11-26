@@ -169,7 +169,7 @@ An app has a scope of its own. It opens the devices, the sound, and what its plu
 
 A program that makes its app itself can run `Driver.frames(app, { hz })`, the loop that `Driver.run` uses. `Driver.interval(app, { hz })` steps the same way on a timer. Neither closes the app, which belongs to the program. Each stops when the fiber that runs it is interrupted. One started with `Effect.forkScoped` stops when its scope closes, and leaves no frame requested.
 
-`Driver.frames` reaches the screen through the `Driver.Display` service. In a page it is `Browser.display`. Elsewhere, such as under Node, the default is a timer at 60 frames a second that is never hidden. A test advances a display by hand with `Driver.makeManualDisplay()`. See [testing](testing.md).
+`Driver.frames` reaches the screen through the `Driver.Display` service. In a page it is `Browser.display`. Elsewhere, such as under Node, the default is a timer at 60 frames a second that is never hidden. A test provides a display it advances by hand, `Driver.layer(Driver.makeManualDisplay())`. See [testing](testing.md).
 
 ## Read more
 

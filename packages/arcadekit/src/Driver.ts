@@ -15,7 +15,7 @@
  * yields it: one Effect a tick, and one a frame. It fails with what a tick
  * or a frame fails with.
  */
-import { Clock, Context, Duration, Effect, Schedule } from "effect";
+import { Clock, Context, Duration, Effect, Layer, Schedule } from "effect";
 import type { Scope } from "effect";
 
 import * as App from "./App.ts";
@@ -337,14 +337,23 @@ const timerDisplay: DisplayShape = {
  * hand:
  *
  *   const display = Driver.makeManualDisplay()
- *   Driver.frames(app, { hz: 60 }).pipe(Effect.provideService(Driver.Display, display))
+ *   Driver.frames(app, { hz: 60 }).pipe(Effect.provide(Driver.layer(display)))
  *
  * @category Services
  */
 export const Display: Context.Reference<DisplayShape> =
-  Context.Reference<DisplayShape>("arcadekit/Display", {
+  Context.Reference<DisplayShape>("arcadekit/Driver.Display", {
     defaultValue: () => timerDisplay,
   });
+
+/**
+ * Returns a layer that provides a display, such as `Driver.makeManualDisplay()`
+ * in a test, as `Driver.Display`.
+ *
+ * @category Layers
+ */
+export const layer = (display: DisplayShape): Layer.Layer<never> =>
+  Layer.succeed(Display, display);
 
 /**
  * A display advanced by hand, for tests and tools.

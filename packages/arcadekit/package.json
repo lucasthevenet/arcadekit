@@ -147,6 +147,11 @@
       "types": "./dist/System.d.ts",
       "default": "./dist/System.js"
     },
+    "./Test": {
+      "source": "./src/Test.ts",
+      "types": "./dist/Test.d.ts",
+      "default": "./dist/Test.js"
+    },
     "./Timeline": {
       "source": "./src/Timeline.ts",
       "types": "./dist/Timeline.d.ts",

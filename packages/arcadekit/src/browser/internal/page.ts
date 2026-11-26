@@ -45,7 +45,7 @@ export const layer = (options: Options): Layer.Layer<never> => {
   );
   const page = Layer.mergeAll(
     loader,
-    Layer.succeed(Driver.Display, display),
+    Driver.layer(display),
     Layer.succeed(Input.Source, {
       listen: Effect.map(
         Effect.acquireRelease(
@@ -63,7 +63,7 @@ export const layer = (options: Options): Layer.Layer<never> => {
         // Its sound sleeps while the page's own document is hidden.
         Layer.provide(
           layerSound(options.sounds ?? {}, options),
-          Layer.merge(Layer.succeed(Driver.Display, display), loader)
+          Layer.merge(Driver.layer(display), loader)
         )
       );
 };

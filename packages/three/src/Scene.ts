@@ -54,5 +54,5 @@ export interface SceneShape {
  * @category Services
  */
 export class Scene extends Context.Service<Scene, SceneShape>()(
-  "arcadekit/three/Scene"
+  "@arcadekit/three/Scene.Scene"
 ) {}

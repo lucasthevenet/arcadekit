@@ -43,5 +43,5 @@ Peers that drift apart stay stopped. To go on, every peer makes its session agai
 
 ## Read more
 
-- [Sessions](sessions.md), and [testing](testing.md#connect-several-peers) two peers side by side.
+- [Sessions](sessions.md), and [testing](testing-peers.md#connect-several-peers) two peers side by side.
 - [`Drift`](/reference/arcadekit/net/Drift) in the API reference.

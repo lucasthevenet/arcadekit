@@ -733,7 +733,7 @@ describe("a level's models", () => {
           look: ({ ship }) => Gltf.mesh(ship, "Tri"),
         });
         let scene: Scene | undefined;
-        const renderer = Layer.succeed(Three.Renderer, {
+        const renderer = Three.layer({
           render(drawn) {
             scene = drawn;
           },

@@ -1,10 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+import { Context, Effect } from "effect";
+import type { Layer } from "effect";
 
+import * as Action from "../src/Action.ts";
+import * as Assets from "../src/Assets.ts";
 import * as BrowserEntry from "../src/browser/index.ts";
+import * as Driver from "../src/Driver.ts";
 import * as Ecs from "../src/ecs/index.ts";
 import * as Main from "../src/index.ts";
 import type { ReadingWorld, WritingWorld } from "../src/index.ts";
+import * as Input from "../src/Input.ts";
 import * as Net from "../src/net/index.ts";
+import * as Transport from "../src/net/Transport.ts";
+import * as Services from "../src/Services.ts";
+import * as Sound from "../src/Sound.ts";
+import * as View from "../src/View.ts";
 
 // Vite gives a test the text of files, and the modules themselves: the
 // sources of the package, and its manifest. Declared here, since the tests
@@ -159,7 +169,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(41);
+    expect(entries.length).toBe(42);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -256,6 +266,7 @@ describe("the package's entries", () => {
       "Sound",
       "State",
       "System",
+      "Test",
       "Timeline",
       "Timer",
       "Transform2d",
@@ -397,4 +408,105 @@ describe("arcadekit/ecs", () => {
       world.entityCount;
     expect([reads, writes]).toHaveLength(2);
   });
+});
+
+// What a program provides from outside an app, each with its module's
+// `layer`, given the stand-in its module makes for a test. A new service
+// joins this list, or `byTheApp` when an app or a plugin provides it.
+const providing = <I, S>(
+  service: Context.Key<I, S>,
+  layer: Layer.Layer<I>
+): {
+  readonly service: unknown;
+  readonly key: string;
+  readonly given: Effect.Effect<S>;
+  /** What the service is where nothing provides it, if anything. */
+  readonly fallback: S | undefined;
+} => ({
+  service,
+  key: service.key,
+  given: Effect.provide(Effect.service(service), layer),
+  fallback: Context.isReference(service) ? service.defaultValue() : undefined,
+});
+const provided = [
+  providing(Input.Source, Input.layer(Input.makeManualSource())),
+  providing(Sound.Output, Sound.layer(Sound.makeRecorder())),
+  providing(Driver.Display, Driver.layer(Driver.makeManualDisplay())),
+  providing(Assets.Loader, Assets.layer(Assets.makeMemory({}))),
+  providing(
+    Transport.Transport,
+    Transport.layer(Transport.makeHub().port("ada"))
+  ),
+];
+const byTheApp: readonly unknown[] = [
+  Services.Sim,
+  Services.World,
+  Services.Time,
+  Services.Frame,
+  Services.Commands,
+  Services.Events,
+  Services.Random,
+  Action.Actions,
+  Input.Devices,
+  Input.Keyboard,
+  Input.Pointer,
+  Input.Gamepads,
+  Sound.Player,
+  Assets.Store,
+  View.Port,
+];
+
+/** Every module an entry gives by its own name, as `arcadekit/Input`, and what it exports. */
+const named = Object.keys(manifest.exports)
+  .filter((subpath) => /\/[A-Z]\w*$/u.test(subpath))
+  .map((subpath) => ({
+    entry: `arcadekit${subpath.slice(1)}`,
+    exports: Object.entries(
+      { ...modules, ...netModules, ...browserModules }[sourceOf(subpath)]!
+    ),
+  }));
+
+describe("a service", () => {
+  it("is keyed by the entry it is imported from and its name there", () => {
+    const keys = named.flatMap(({ entry, exports }) =>
+      exports.flatMap(([name, value]) =>
+        Context.isKey(value) ? [[`${entry}.${name}`, value.key]] : []
+      )
+    );
+    expect(keys.length).toBe(provided.length + byTheApp.length);
+    for (const [wanted, key] of keys) {
+      expect(key, wanted).toBe(wanted);
+    }
+  });
+
+  it("is provided by its module's layer given its stand-in, or by the app itself", () => {
+    const listed = new Set<unknown>([
+      ...provided.map(({ service }) => service),
+      ...byTheApp,
+    ]);
+    const services = named.flatMap(({ entry, exports }) =>
+      exports.flatMap(([name, value]) =>
+        Context.isKey(value) ? [{ name: `${entry}.${name}`, value }] : []
+      )
+    );
+    const unlisted = services
+      .filter(({ value }) => !listed.has(value))
+      .map(({ name }) => name);
+    expect(
+      unlisted,
+      "A service a program provides has a layer, X.layer(implementation), and a stand-in, X.make...(): add it to `provided` with both, or to `byTheApp` if the app or a plugin provides it."
+    ).toEqual([]);
+  });
+
+  it.effect(
+    "a program provides is given by its module's layer, in place of its default",
+    () =>
+      Effect.gen(function* () {
+        for (const { fallback, given, key } of provided) {
+          const value: unknown = yield* given;
+          expect(value, key).toBeDefined();
+          expect(value, key).not.toBe(fallback);
+        }
+      })
+  );
 });

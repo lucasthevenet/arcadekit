@@ -92,7 +92,7 @@ const play = Effect.fnUntraced(function* (
   const handed: View.Bridge<Requests>[] = [];
   // What the UI is handed: the bridge, counting how often it is told.
   let told = 0;
-  const ui = View.layer(Catch, (bridge) => {
+  const ui = View.mount(Catch, (bridge) => {
     handed.push(bridge);
     return mount(root, {
       get: bridge.get,
@@ -110,7 +110,11 @@ const play = Effect.fnUntraced(function* (
   const app = yield* inAct(
     App.make(Catch, { seed: 3 }).pipe(
       Effect.provide(
-        Layer.mergeAll(ui, Sound.layer(sound), Assets.layerMemory(files))
+        Layer.mergeAll(
+          ui,
+          Sound.layer(sound),
+          Assets.layer(Assets.makeMemory(files))
+        )
       ),
       Effect.provideService(Screen, { canvas }),
       Effect.provide(Input.layer(source))

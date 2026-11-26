@@ -231,7 +231,7 @@ const makeRenderer = () => {
         .map((mesh) => mesh.count);
     },
   };
-  renderer.layer = Layer.succeed(Three.Renderer, {
+  renderer.layer = Three.layer({
     render: (scene, camera) => renderer.render(scene, camera),
   });
   return renderer;
@@ -3739,7 +3739,7 @@ describe("Three.plugin", () => {
           },
         });
         const renderer = makeRenderer();
-        const layer = Layer.succeed(Three.Renderer, {
+        const layer = Three.layer({
           render(scene, seen) {
             order.push("render");
             renderer.render(scene, seen);

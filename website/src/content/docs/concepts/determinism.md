@@ -76,10 +76,10 @@ The frame stage draws and plays sound while the world is read-only. A drawn game
 The type checker and the default checks at run time miss these ways to break determinism:
 
 - A write forced through a raw column that `eachChunk` hands out read-only, in any stage, is refused only by an app created with `verifyFrames`.
-- State a tick reads from outside the world, in a service, a plugin or a module, isn't put back by a rewind, so a rollback session runs the tick again differently. Only `Session.syncTest` detects it, by running each tick twice from the same moment. See [testing](../guides/testing.md#check-that-a-rewind-runs-the-same).
+- State a tick reads from outside the world, in a service, a plugin or a module, isn't put back by a rewind, so a rollback session runs the tick again differently. Only `Session.syncTest` detects it, by running each tick twice from the same moment. See [testing several peers](../guides/testing-peers.md#check-that-a-rewind-runs-the-same).
 - The hash doesn't cover [where each reader is](#the-worlds-hash-covers-what-a-simulation-can-observe), so two games with the same hash can still diverge.
 
-In a multiplayer game, a broken rule is caught at the first checkpoint after it changes the world. Peers compare the hashes of their worlds, and every session stops with `Drift.Drifted`, which reports the last tick they agreed on. To test such a game, run two peers side by side and compare their hashes, as [testing several peers](../guides/testing.md#connect-several-peers) shows.
+In a multiplayer game, a broken rule is caught at the first checkpoint after it changes the world. Peers compare the hashes of their worlds, and every session stops with `Drift.Drifted`, which reports the last tick they agreed on. To test such a game, run two peers side by side and compare their hashes, as [testing several peers](../guides/testing-peers.md#connect-several-peers) shows.
 
 ## Read more
 

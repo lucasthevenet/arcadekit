@@ -465,7 +465,7 @@ export class Actions extends Context.Service<
      */
     readonly handles: (action: Any) => boolean;
   }
->()("arcadekit/Actions") {}
+>()("arcadekit/Action.Actions") {}
 
 /**
  * The name of the store that holds an app's queued actions, as a snapshot
