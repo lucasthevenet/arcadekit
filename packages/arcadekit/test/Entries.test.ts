@@ -159,7 +159,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(38);
+    expect(entries.length).toBe(40);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -246,6 +246,7 @@ describe("the package's entries", () => {
       "Input",
       "Journal",
       "Migrate",
+      "Overlap",
       "Plugin",
       "Query",
       "Resource",
@@ -258,6 +259,7 @@ describe("the package's entries", () => {
       "Timer",
       "Transform2d",
       "Transform3d",
+      "Vec2",
       "View",
     ];
     for (const name of namespaces) {
