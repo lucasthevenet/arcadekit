@@ -94,7 +94,7 @@ new RuleTester().run(
     valid: Object.entries(between).flatMap(([kind, wrap]) =>
       [
         // Drawing changes what is outside the game, which is what a frame is for.
-        "cache.set(1, 2); list.push(1); obj.a.b = 1; context.fillRect(0, 0, n, n);",
+        "context.fillRect(0, 0, n, n); camera.position.set(0, 0, n);",
         "let m = 0; m++; const kept = yield* Kept; kept.angle += 1;",
       ].map((body) => ({
         name: `${kind}: ${body}`,
@@ -109,6 +109,70 @@ new RuleTester().run(
           {
             message:
               /^This sets n, a variable declared outside the frame or input system it is in: every app of the game shares it.*in a System\.local/u,
+          },
+        ],
+      }))
+    ),
+  }
+);
+
+/** A module that makes `state`, and what a frame or an input system changes of it. */
+const changesTheModules = [
+  ["const state = { count: 0 };", "state.count += 1;"],
+  ["let state = { count: 0 };", "state.count++;"],
+  ["const state = { list: [] };", "state.list[0] = 1;"],
+  ["const state = { list: [] };", "state.list.push(1);"],
+  ["const state = { key: 1 };", "delete state.key;"],
+  ["const state = [];", "state.splice(0, 1);"],
+  ["const state = new Array(4);", "state.fill(0);"],
+  ["const state = new Map();", "state.set(1, 2);"],
+  ["const state = new Set();", "state.add(1);"],
+  ["const state = new Object();", "state.key = 1;"],
+  ["const state = {} as Record<string, number>;", "state.key = 1;"],
+  ["const state = new Map() satisfies Kept;", "state.clear();"],
+] as const;
+
+/** The same changes to what syntax can't tell is the module's, and what reads and changes nothing. */
+const changesNoneOfTheModules = [
+  [
+    `import { state } from "./state.ts";`,
+    "state.count += 1; state.list.push(1);",
+  ],
+  [
+    "const state = new Camera();",
+    "state.zoom = 2; state.position.set(0, 0, 1);",
+  ],
+  ["const state = make();", "state.count += 1; delete state.key;"],
+  [
+    "const state = { count: 0, list: [], seen: new Set() };",
+    "const shown = state.count + state.list.map(String).length; state.list.slice().sort(); state.seen.has(1);",
+  ],
+] as const;
+
+new RuleTester({
+  languageOptions: { sourceType: "module", parserOptions: { lang: "ts" } },
+}).run(
+  "no-outside-state, an object of the module",
+  plugin.rules["no-outside-state"],
+  {
+    valid: Object.entries(between).flatMap(([kind, wrap]) => [
+      ...changesNoneOfTheModules.map(([made, body]) => ({
+        name: `${kind}: ${made} ${body}`,
+        code: `${made}\n${wrap(body)}`,
+      })),
+      {
+        name: `${kind}: an object a function makes for the system it returns`,
+        code: `const draws = () => {\nconst state = { count: 0 };\nreturn ${wrap("state.count += 1;")}\n};`,
+      },
+    ]),
+    invalid: Object.entries(between).flatMap(([kind, wrap]) =>
+      changesTheModules.map(([made, body]) => ({
+        name: `${kind}: ${made} ${body}`,
+        code: `${made}\n${wrap(body)}`,
+        errors: [
+          {
+            message:
+              /^This changes state, an object its module makes once, from a frame or an input system: every app of the game shares it.*const Kept = System\.local\(\(\) => \.\.\.\).*then const state = yield\* Kept in the system\./u,
           },
         ],
       }))
