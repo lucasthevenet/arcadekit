@@ -645,7 +645,7 @@ const runMade = <
  * closes the connection when it ends, and the connection's `close` closes
  * the session. It fails with what the session's tick fails with: what the
  * game's systems fail with, `Drift.Unlike`, `Drift.Drifted`,
- * `Save.Refused` and `Transport.Left`.
+ * `Save.Refused`, `Transport.Left` and `Transport.Closed`.
  *
  * @category Running
  */

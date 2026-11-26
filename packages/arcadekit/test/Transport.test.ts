@@ -8,7 +8,15 @@ import {
 } from "@effect/vitest";
 import { Context, Effect, Layer, Result } from "effect";
 
-import { App, Driver, Input, Journal, Plugin, World } from "../src/index.ts";
+import {
+  App,
+  Driver,
+  Input,
+  Journal,
+  Plugin,
+  Save,
+  World,
+} from "../src/index.ts";
 import { Drift, Message, Session, Transport } from "../src/net/index.ts";
 import { thrown, unwrap } from "./checks.ts";
 import { CoinGame, DELTA, Drop, moves, players, setGlitch } from "./peers.ts";
@@ -73,109 +81,136 @@ const seated = (
   });
 
 describe("a hub, the network in memory", () => {
-  it("carries what one port sends to every other, and not back", () => {
-    const hub = Transport.makeHub();
-    const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
-      hub.port(name)
-    ) as [Transport.Listener, Transport.Listener, Transport.Listener];
-    ada.send(message("ada", 0, 3));
-    ada.send(message("ada", 1));
-    expect(hub.inFlight).toBe(4);
-    expect(grace.receive()).toEqual([message("ada", 0, 3), message("ada", 1)]);
-    // Taken: asked again, there is nothing.
-    expect(grace.receive()).toEqual([]);
-    expect(edsger.receive()).toEqual([message("ada", 0, 3), message("ada", 1)]);
-    expect(ada.receive()).toEqual([]);
-    expect(hub.inFlight).toBe(0);
-    // A port is the same port each time it is asked for.
-    expect(hub.port("ada")).toBe(ada);
-  });
+  it.effect("carries what one port sends to every other, and not back", () =>
+    Effect.gen(function* () {
+      const hub = Transport.makeHub();
+      const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
+        hub.port(name)
+      ) as [Transport.Listener, Transport.Listener, Transport.Listener];
+      yield* ada.send(message("ada", 0, 3));
+      yield* ada.send(message("ada", 1));
+      expect(hub.inFlight).toBe(4);
+      expect(yield* grace.receive()).toEqual([
+        message("ada", 0, 3),
+        message("ada", 1),
+      ]);
+      // Taken: asked again, there is nothing.
+      expect(yield* grace.receive()).toEqual([]);
+      expect(yield* edsger.receive()).toEqual([
+        message("ada", 0, 3),
+        message("ada", 1),
+      ]);
+      expect(yield* ada.receive()).toEqual([]);
+      expect(hub.inFlight).toBe(0);
+      // A port is the same port each time it is asked for.
+      expect(hub.port("ada")).toBe(ada);
+    })
+  );
 
-  it("loses what is on its way to and from a peer it cuts off, and tells the others, until it comes back", () => {
-    const hub = Transport.makeHub({ delay: 1 });
-    const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
-      hub.port(name)
-    ) as [Transport.Listener, Transport.Listener, Transport.Listener];
-    ada.send(message("ada", 0));
-    grace.send(message("grace", 0));
-    hub.disconnect("grace");
-    // Gone: ada's message to grace, and grace's to everyone.
-    expect(hub.inFlight).toBe(3);
-    grace.send(message("grace", 1));
-    ada.send(message("ada", 1));
-    hub.step();
-    expect(grace.receive()).toEqual([]);
-    expect(ada.receive()).toEqual([{ left: "grace" }]);
-    expect(edsger.receive()).toEqual([
-      { left: "grace" },
-      message("ada", 0),
-      message("ada", 1),
-    ]);
-    hub.reconnect("grace");
-    hub.step();
-    expect(grace.receive()).toEqual([{ joined: "ada" }, { joined: "edsger" }]);
-    expect(ada.receive()).toEqual([{ joined: "grace" }]);
-    expect(edsger.receive()).toEqual([{ joined: "grace" }]);
-    grace.send(message("grace", 2));
-    hub.step();
-    expect(ada.receive()).toEqual([message("grace", 2)]);
-    // Twice is once, and a peer without a port is no peer of it.
-    hub.reconnect("grace");
-    expect(ada.receive()).toEqual([]);
-    expect(() => hub.disconnect("linus")).toThrow(/no port for "linus"/u);
-  });
+  it.effect(
+    "loses what is on its way to and from a peer it cuts off, and tells the others, until it comes back",
+    () =>
+      Effect.gen(function* () {
+        const hub = Transport.makeHub({ delay: 1 });
+        const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
+          hub.port(name)
+        ) as [Transport.Listener, Transport.Listener, Transport.Listener];
+        yield* ada.send(message("ada", 0));
+        yield* grace.send(message("grace", 0));
+        hub.disconnect("grace");
+        // Gone: ada's message to grace, and grace's to everyone.
+        expect(hub.inFlight).toBe(3);
+        yield* grace.send(message("grace", 1));
+        yield* ada.send(message("ada", 1));
+        hub.step();
+        expect(yield* grace.receive()).toEqual([]);
+        expect(yield* ada.receive()).toEqual([{ left: "grace" }]);
+        expect(yield* edsger.receive()).toEqual([
+          { left: "grace" },
+          message("ada", 0),
+          message("ada", 1),
+        ]);
+        hub.reconnect("grace");
+        hub.step();
+        expect(yield* grace.receive()).toEqual([
+          { joined: "ada" },
+          { joined: "edsger" },
+        ]);
+        expect(yield* ada.receive()).toEqual([{ joined: "grace" }]);
+        expect(yield* edsger.receive()).toEqual([{ joined: "grace" }]);
+        yield* grace.send(message("grace", 2));
+        hub.step();
+        expect(yield* ada.receive()).toEqual([message("grace", 2)]);
+        // Twice is once, and a peer without a port is no peer of it.
+        hub.reconnect("grace");
+        expect(yield* ada.receive()).toEqual([]);
+        expect(() => hub.disconnect("linus")).toThrow(/no port for "linus"/u);
+      })
+  );
 
-  it("reaches a peer only from the moment it has a port", () => {
-    const hub = Transport.makeHub();
-    const ada = hub.port("ada");
-    ada.send(message("ada", 0));
-    const grace = hub.port("grace");
-    ada.send(message("ada", 1));
-    expect(grace.receive()).toEqual([message("ada", 1)]);
-  });
+  it.effect("reaches a peer only from the moment it has a port", () =>
+    Effect.gen(function* () {
+      const hub = Transport.makeHub();
+      const ada = hub.port("ada");
+      yield* ada.send(message("ada", 0));
+      const grace = hub.port("grace");
+      yield* ada.send(message("ada", 1));
+      expect(yield* grace.receive()).toEqual([message("ada", 1)]);
+    })
+  );
 
-  it("keeps a message on its way for as many steps as its delay", () => {
-    const hub = Transport.makeHub({ delay: 2 });
-    const ada = hub.port("ada");
-    const grace = hub.port("grace");
-    ada.send(message("ada", 0));
-    expect(grace.receive()).toEqual([]);
-    hub.step();
-    ada.send(message("ada", 1));
-    expect(grace.receive()).toEqual([]);
-    hub.step();
-    expect(grace.receive()).toEqual([message("ada", 0)]);
-    expect(hub.inFlight).toBe(1);
-    hub.step();
-    expect(grace.receive()).toEqual([message("ada", 1)]);
-  });
-
-  it("lets messages overtake each other when the delay is a range, the same way for the same seed", () => {
-    const run = (seed: number): number[] => {
-      const hub = Transport.makeHub({ delay: { min: 0, max: 6 }, seed });
+  it.effect("keeps a message on its way for as many steps as its delay", () =>
+    Effect.gen(function* () {
+      const hub = Transport.makeHub({ delay: 2 });
       const ada = hub.port("ada");
       const grace = hub.port("grace");
-      const order: number[] = [];
-      for (let tick = 0; tick < 40; tick++) {
-        ada.send(message("ada", tick));
-        hub.step();
-        order.push(...messagesIn(grace.receive()).map((one) => one.tick));
-      }
-      for (let i = 0; i < 6; i++) {
-        hub.step();
-        order.push(...messagesIn(grace.receive()).map((one) => one.tick));
-      }
-      return order;
-    };
-    const order = run(1);
-    // Every one arrived, once, and not in the order they were sent.
-    expect(order.toSorted((a, b) => a - b)).toEqual(
-      Array.from({ length: 40 }, (_, tick) => tick)
-    );
-    expect(order).not.toEqual(order.toSorted((a, b) => a - b));
-    expect(run(1)).toEqual(order);
-    expect(run(2)).not.toEqual(order);
-  });
+      yield* ada.send(message("ada", 0));
+      expect(yield* grace.receive()).toEqual([]);
+      hub.step();
+      yield* ada.send(message("ada", 1));
+      expect(yield* grace.receive()).toEqual([]);
+      hub.step();
+      expect(yield* grace.receive()).toEqual([message("ada", 0)]);
+      expect(hub.inFlight).toBe(1);
+      hub.step();
+      expect(yield* grace.receive()).toEqual([message("ada", 1)]);
+    })
+  );
+
+  it.effect(
+    "lets messages overtake each other when the delay is a range, the same way for the same seed",
+    () =>
+      Effect.gen(function* () {
+        const run = Effect.fnUntraced(function* (seed: number) {
+          const hub = Transport.makeHub({ delay: { min: 0, max: 6 }, seed });
+          const ada = hub.port("ada");
+          const grace = hub.port("grace");
+          const order: number[] = [];
+          for (let tick = 0; tick < 40; tick++) {
+            yield* ada.send(message("ada", tick));
+            hub.step();
+            order.push(
+              ...messagesIn(yield* grace.receive()).map((one) => one.tick)
+            );
+          }
+          for (let i = 0; i < 6; i++) {
+            hub.step();
+            order.push(
+              ...messagesIn(yield* grace.receive()).map((one) => one.tick)
+            );
+          }
+          return order;
+        });
+        const order = yield* run(1);
+        // Every one arrived, once, and not in the order they were sent.
+        expect(order.toSorted((a, b) => a - b)).toEqual(
+          Array.from({ length: 40 }, (_, tick) => tick)
+        );
+        expect(order).not.toEqual(order.toSorted((a, b) => a - b));
+        expect(yield* run(1)).toEqual(order);
+        expect(yield* run(2)).not.toEqual(order);
+      })
+  );
 
   it("refuses a delay that is no number of steps", () => {
     for (const delay of [-1, 1.5, { min: 3, max: 2 }, { min: -1, max: 2 }]) {
@@ -205,20 +240,20 @@ describe("a session joined to a transport", () => {
           yield* ada!.app.enqueue(Drop, { by: "ada", value: 4 });
           // It waits for grace, and has said its piece all the same.
           expect(yield* ada!.connected.tick()).toBe(false);
-          expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
-            0, 1, 2,
-          ]);
+          expect(
+            messagesIn(yield* grace.receive()).map((sent) => sent.tick)
+          ).toEqual([0, 1, 2]);
           for (let tick = 0; tick <= 2; tick++) {
-            grace.send(message("grace", tick));
+            yield* grace.send(message("grace", tick));
           }
           expect(yield* ada!.connected.tick()).toBe(true);
           expect(yield* ada!.connected.tick()).toBe(true);
           expect(yield* ada!.connected.tick()).toBe(true);
           expect(ada!.app.time.tick).toBe(3);
           expect(moves(ada!.app.actionLog)).toHaveLength(1);
-          expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
-            3, 4,
-          ]);
+          expect(
+            messagesIn(yield* grace.receive()).map((sent) => sent.tick)
+          ).toEqual([3, 4]);
         })
       );
     })
@@ -530,52 +565,56 @@ describe("a session joined to a transport", () => {
 });
 
 describe("a transport over a wire", () => {
-  it("sends a message as bytes, and reads the bytes that are messages and the text that is a notice", () => {
-    const sent: Uint8Array[] = [];
-    let deliver: (data: string | Uint8Array) => void = () => {};
-    let listening = 0;
-    const transport = Transport.fromWire({
-      send: (bytes) => {
-        sent.push(bytes);
-      },
-      listen(onData) {
-        deliver = onData;
-        listening++;
-        return () => {
-          listening--;
-        };
-      },
-    });
-    transport.send(message("ada", 3, 2));
-    expect(sent).toEqual([unwrap(Message.encode(message("ada", 3, 2)))]);
-    deliver(Message.encode(message("grace", 0)).pipe(unwrap));
-    deliver(Message.encodeNotice({ left: "edsger" }));
-    deliver("not a message");
-    deliver(JSON.stringify(message("grace", 2)));
-    deliver(new Uint8Array([1, 2, 3]));
-    deliver(Message.encode(message("grace", 1, 5)).pipe(unwrap));
-    // What is neither is dropped, and counted.
-    expect(transport.receive()).toEqual([
-      message("grace", 0),
-      { left: "edsger" },
-      message("grace", 1, 5),
-    ]);
-    expect(transport.dropped).toBe(3);
-    expect(transport.receive()).toEqual([]);
-    expect(listening).toBe(1);
-    transport.close();
-    expect(listening).toBe(0);
-    // Closed, it says so, in place of a game that waits for ever.
-    expect(() => transport.receive()).toThrow(
-      /A transport over a wire was used after it was closed/u
-    );
-    expect(() => transport.send(message("ada", 4))).toThrow(
-      /used after it was closed/u
-    );
-    expect(sent).toHaveLength(1);
-    transport.close();
-    expect(listening).toBe(0);
-  });
+  it.effect(
+    "sends a message as bytes, and reads the bytes that are messages and the text that is a notice",
+    () =>
+      Effect.gen(function* () {
+        const sent: Uint8Array[] = [];
+        let deliver: (data: string | Uint8Array) => void = () => {};
+        let listening = 0;
+        const transport = Transport.fromWire({
+          send: (bytes) => {
+            sent.push(bytes);
+          },
+          listen(onData) {
+            deliver = onData;
+            listening++;
+            return () => {
+              listening--;
+            };
+          },
+        });
+        yield* transport.send(message("ada", 3, 2));
+        expect(sent).toEqual([unwrap(Message.encode(message("ada", 3, 2)))]);
+        deliver(Message.encode(message("grace", 0)).pipe(unwrap));
+        deliver(Message.encodeNotice({ left: "edsger" }));
+        deliver("not a message");
+        deliver(JSON.stringify(message("grace", 2)));
+        deliver(new Uint8Array([1, 2, 3]));
+        deliver(Message.encode(message("grace", 1, 5)).pipe(unwrap));
+        // What is neither is dropped, and counted.
+        expect(yield* transport.receive()).toEqual([
+          message("grace", 0),
+          { left: "edsger" },
+          message("grace", 1, 5),
+        ]);
+        expect(transport.dropped).toBe(3);
+        expect(yield* transport.receive()).toEqual([]);
+        expect(listening).toBe(1);
+        transport.close();
+        expect(listening).toBe(0);
+        // Closed, it says so, in place of a game that waits for ever.
+        expect(yield* thrown(transport.receive())).toThrow(
+          /A transport over a wire was used after it was closed/u
+        );
+        expect(yield* thrown(transport.send(message("ada", 4)))).toThrow(
+          /used after it was closed/u
+        );
+        expect(sent).toHaveLength(1);
+        transport.close();
+        expect(listening).toBe(0);
+      })
+  );
 });
 
 /** A turn of the event loop or two: a channel delivers in its own time. */
@@ -617,7 +656,29 @@ describe("a session connected to a transport", () => {
   it("is run by Driver.run, which fails with what its tick fails with, each by its tag", () => {
     const run = () => Driver.run(Effect.succeed(drifting));
     expectTypeOf<Effect.Error<ReturnType<typeof run>>>().toEqualTypeOf<
-      Drift.Drifted | Transport.Left
+      Drift.Drifted | Transport.Left | Transport.Closed
+    >();
+  });
+
+  it("is run by Driver.run, which carries in its error type every way a game of several peers ends", () => {
+    const online = () =>
+      Driver.run(
+        Effect.flatMap(
+          Session.make(CoinGame, {
+            seed: 5,
+            me: "ada",
+            others: ["grace"],
+            delta: DELTA,
+          }),
+          (session) => Transport.connect(session)
+        )
+      );
+    expectTypeOf<Effect.Error<ReturnType<typeof online>>>().toEqualTypeOf<
+      | Drift.Unlike
+      | Drift.Drifted
+      | Save.Refused
+      | Transport.Left
+      | Transport.Closed
     >();
   });
 });
@@ -643,18 +704,18 @@ describe("the transport between tabs, a BroadcastChannel", () => {
               );
             const ada = yield* listen("ada");
             const grace = yield* listen("grace");
-            ada.send(message("ada", 0, 7));
-            grace.send(message("grace", 0));
+            yield* ada.send(message("ada", 0, 7));
+            yield* grace.send(message("grace", 0));
             // Whatever else is posted under the name is not a message.
             stranger.postMessage({ not: "a message" });
             stranger.postMessage("nor is this");
             yield* Effect.promise(() => later(20));
-            expect(grace.receive()).toEqual([message("ada", 0, 7)]);
-            expect(ada.receive()).toEqual([
+            expect(yield* grace.receive()).toEqual([message("ada", 0, 7)]);
+            expect(yield* ada.receive()).toEqual([
               { joined: "grace" },
               message("grace", 0),
             ]);
-            expect(grace.receive()).toEqual([]);
+            expect(yield* grace.receive()).toEqual([]);
           })
         );
         yield* Effect.promise(() => later(20));
@@ -724,7 +785,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
                 expect(made[0]!.name).toBe("game/room");
                 expect(typeof made[0]!.onmessage).toBe("function");
                 expect(made[0]!.closed).toBe(false);
-                transport.send(message("ada", 0));
+                yield* transport.send(message("ada", 0));
                 expect(made[0]!.posted).toEqual([
                   Message.encodeNotice({ joined: "ada" }),
                   unwrap(Message.encode(message("ada", 0))),
@@ -802,7 +863,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             Effect.provide(Transport.layerBroadcastChannel(name, "ada"))
           )
         );
-        expect(() => kept.send(message("ada", 0))).toThrow(
+        expect(yield* thrown(kept.send(message("ada", 0)))).toThrow(
           /or the scope Transport\.listen ran in had ended/u
         );
         outside.close();

@@ -57,13 +57,10 @@ const listenAs = (peer: string, inRoom = room) =>
 const closed = (transport: Transport.Listener) =>
   Effect.gen(function* () {
     for (let i = 0; i < 400; i++) {
-      // A transport whose socket has closed throws, and says why.
-      const heard = Result.try(() => transport.receive());
+      // A transport whose socket has closed fails, and says why.
+      const heard = yield* Effect.result(transport.receive());
       if (Result.isFailure(heard)) {
-        if (heard.failure instanceof Transport.Closed) {
-          return heard.failure;
-        }
-        return yield* Effect.die(heard.failure);
+        return heard.failure;
       }
       yield* wait(10);
     }
@@ -154,10 +151,10 @@ const check = Effect.gen(function* () {
   const liar = yield* listenAs("ada", other);
   yield* wait(300);
   const forged: Message.Message = { from: "grace", tick: 0, actions: [] };
-  liar.send(forged);
+  yield* liar.send(forged);
   const refused = yield* closed(liar);
   yield* wait(100);
-  const told = honest.receive();
+  const told = yield* honest.receive();
   if (
     refused.reason !== "speaks for another" ||
     told.some((arrived) => "from" in arrived)
