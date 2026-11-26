@@ -52,6 +52,7 @@ import {
   Board,
   NEVER,
   Rebound,
+  Sampling,
   bindingsIn,
   controlsIn,
   difference,
@@ -65,7 +66,13 @@ import {
   padButtonCode,
   pointerCode,
 } from "./internal/input.ts";
-import type { Axes, Buttons, Faces, Undrawn } from "./internal/input.ts";
+import type {
+  Axes,
+  Buttons,
+  Changes,
+  Faces,
+  Undrawn,
+} from "./internal/input.ts";
 import { partsOf } from "./internal/parts.ts";
 import * as Plugin from "./Plugin.ts";
 import { Time, World } from "./Services.ts";
@@ -931,7 +938,8 @@ export const stick = <const N extends Name>(
 /**
  * Changes what a control is bound to in this app, from a frame or an input
  * system, such as a menu that asks the player for a key. It takes effect at
- * the next sample of the devices.
+ * the next sample of the devices: the input systems after it in this sample
+ * read the bindings the sample began with.
  *
  *   const Choose = System.input("game/Choose", function* () {
  *     const [key] = (yield* Input.Devices).pressed
@@ -940,6 +948,10 @@ export const stick = <const N extends Name>(
  *
  * **Details**
  *
+ * - A key that is down at that sample, as the one the player pressed to
+ *   choose and still holds, moves the control only from its next press: the
+ *   control stays up until the key is let go and pressed again. A key the
+ *   control was already bound to the same way counts as it did.
  * - Bindings are settings, not the game: they are outside the world, so a
  *   save, the hash, the log and a rewind leave them as they are, and a
  *   replay needs none. Each app has its own, and they are let go of when it
@@ -1143,7 +1155,7 @@ const Read = System.input("arcadekit/Input.Read", function* () {
     return;
   }
   const devices = yield* Devices;
-  const { controls, waiting } = yield* Board;
+  const { controls, sampling, waiting } = yield* Board;
   const world = whole(yield* World);
   const { tick } = yield* Time;
   let { axes, buttons } = world.singleton(Held);
@@ -1157,14 +1169,12 @@ const Read = System.input("arcadekit/Input.Read", function* () {
     buttons = nextButtons(buttons, earlier, tick + 1) ?? buttons;
     axes = nextAxes(axes, earlier.axes) ?? axes;
   }
-  const payload = difference(
-    buttons,
-    axes,
-    devices,
-    controls.length === 0
-      ? undefined
-      : controlsIn(controls, yield* Rebound, devices)
-  );
+  let said: Changes | undefined;
+  if (controls.length > 0) {
+    sampling.begin(controls, yield* Rebound, devices);
+    said = controlsIn(controls, sampling, devices);
+  }
+  const payload = difference(buttons, axes, devices, said);
   if (payload !== undefined) {
     waiting.payloads.push(payload);
     (yield* Action.Actions).enqueue(Report, payload);
@@ -1302,22 +1312,15 @@ export class Gamepads extends Context.Service<
 
 // --- the plugins ---------------------------------------------------------------
 
-/** How a stage reads one control, with the bindings the app has now. */
-const faceOf = (
-  faces: Faces,
-  control: AnyControl,
-  rebound: () => ReadonlyMap<string, unknown>
-): Face<unknown> => {
+/** How a stage reads one control. */
+const faceOf = (faces: Faces, control: AnyControl): Face<unknown> => {
   switch (control.kind) {
     case "button":
-      return () =>
-        faces.button(control.name, () => bindingsIn(control, rebound()));
+      return () => faces.button(control);
     case "axis":
-      return () =>
-        faces.axis(control.name, () => bindingsIn(control, rebound()));
+      return () => faces.axis(control);
     case "stick":
-      return () =>
-        faces.stick(control.name, () => bindingsIn(control, rebound()));
+      return () => faces.stick(control);
     default: {
       const never: never = control;
       throw new Error(`Not a control: ${String(never)}`);
@@ -1331,8 +1334,7 @@ const faceOf = (
  */
 const contextOf = <S>(
   faces: Faces,
-  controls: readonly AnyControl[],
-  rebound: () => ReadonlyMap<string, unknown>
+  controls: readonly AnyControl[]
 ): Context.Context<S> => {
   const services = new Map<string, unknown>([
     [Keyboard.key, faces.keyboard],
@@ -1340,13 +1342,10 @@ const contextOf = <S>(
     [Gamepads.key, faces.gamepad],
   ]);
   for (const control of controls) {
-    services.set(keyOf(control.name).key, faceOf(faces, control, rebound));
+    services.set(keyOf(control.name).key, faceOf(faces, control));
   }
   return Context.makeUnsafe<S>(services);
 };
-
-/** The bindings the world's faces never read: the tick reads what was reported. */
-const unbound: ReadonlyMap<string, unknown> = new Map();
 
 const board = Layer.effectContext(
   Effect.gen(function* () {
@@ -1362,9 +1361,11 @@ const board = Layer.effectContext(
       (key, which) => (held.buttons[key]?.[which] ?? NEVER) === now()
     );
     const controls: AnyControl[] = [];
+    const sampling = new Sampling();
     const taken = new Map<string, string>();
     const shape: Context.Service.Shape<typeof Board> = {
       controls,
+      sampling,
       waiting: { tick: NEVER, payloads: [] },
       declare: <C extends AnyControl>(declared: readonly C[]) => {
         for (const control of declared) {
@@ -1379,16 +1380,11 @@ const board = Layer.effectContext(
           }
           controls.push(control);
         }
-        return contextOf<Declared<C["name"]>>(ticked, declared, () => unbound);
+        return contextOf<Declared<C["name"]>>(ticked, declared);
       },
       frame: (undrawn: Readonly<Undrawn>) =>
-        contextOf(
-          facesInWorld(held, drawnIn(held, time, undrawn)),
-          controls,
-          () => unbound
-        ),
-      input: (devices, locals) =>
-        contextOf(facesInSample(devices), controls, () => locals.get(Rebound)),
+        contextOf(facesInWorld(held, drawnIn(held, time, undrawn)), controls),
+      input: (devices) => contextOf(facesInSample(devices, sampling), controls),
     };
     return Context.make(Keyboard, ticked.keyboard).pipe(
       Context.add(Pointer, ticked.pointer),

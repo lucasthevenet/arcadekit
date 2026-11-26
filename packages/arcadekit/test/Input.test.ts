@@ -2491,6 +2491,107 @@ describe("controls", () => {
   );
 
   it.effect(
+    "hear a key the player holds as it is bound only from its next press, and read the rest of the sample with the bindings it began with",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          const seen: string[] = [];
+          const Choose = System.input("in/Choose", function* () {
+            if ((yield* Input.Devices).pressed.includes("KeyK")) {
+              yield* Input.rebind(Jump, ["KeyK"]);
+            }
+          });
+          const Hear = System.input("in/Hear", function* () {
+            seen.push(said(0, yield* Jump));
+          });
+          const Look = System.tick("in/Look", function* () {
+            seen.push(said((yield* Time).tick, yield* Jump));
+          });
+          const app = yield* App.make(
+            App.define({ plugins: [Controls], systems: [Choose, Hear, Look] }),
+            { hashEvery: 0 }
+          );
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          source.press("Space");
+          yield* step();
+          source.release("Space");
+          source.press("KeyK");
+          yield* step();
+          yield* step();
+          source.release("KeyK");
+          yield* step();
+          source.press("KeyK");
+          yield* step();
+          expect(seen).toEqual([
+            "0: held pressed",
+            "1: held pressed",
+            "0: released",
+            "2: released",
+            "0:",
+            "3:",
+            "0:",
+            "4:",
+            "0: held pressed",
+            "5: held pressed",
+          ]);
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
+    "hear a key a menu outside the systems binds while it is held only from its next press, and the keys that stay bound as before",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          const seen: string[] = [];
+          const Look = System.tick("in/Look", function* () {
+            seen.push(
+              `${said((yield* Time).tick, yield* Jump)} ${yield* Steer}`
+            );
+          });
+          const app = yield* App.make(
+            App.define({ plugins: [Controls], systems: [Look] }),
+            { hashEvery: 0 }
+          );
+          const settings = Input.settingsOf(app, Controls);
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          source.press("Space");
+          source.press("ArrowRight");
+          yield* step();
+          source.press("KeyK");
+          yield* settings.rebind(Jump, ["Space", "KeyK"]);
+          yield* settings.rebind(Steer, {
+            negative: ["ArrowRight"],
+            positive: ["ArrowLeft"],
+          });
+          yield* step();
+          source.release("Space");
+          yield* step();
+          source.releaseAll();
+          yield* step();
+          source.press("KeyK");
+          source.press("ArrowRight");
+          yield* step();
+          expect(seen).toEqual([
+            "1: held pressed 1",
+            "2: held 0",
+            "3: released 0",
+            "4: 0",
+            "5: held pressed -1",
+          ]);
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
     "refuse two controls of one name, or a stick and an axis that keep the same state",
     () =>
       Effect.gen(function* () {
