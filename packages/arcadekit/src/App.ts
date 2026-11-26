@@ -287,7 +287,10 @@ export interface Any {
    * A driver set to tick only when needed checks it. A game that moves only
    * when its player does then stands still in between, and one with a clock
    * running or a body in flight ticks for as long as they change the world.
-   * An app that hasn't ticked yet, new or just loaded, isn't settled.
+   * A new app isn't settled until it has ticked. A save holds whether the
+   * game was at rest, so an app made from a save of a game at rest, or one
+   * that loads it with `Save.load`, is settled, and runs no tick before its
+   * first action.
    *
    * **Gotchas**
    *

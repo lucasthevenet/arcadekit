@@ -470,8 +470,10 @@ export class Actions extends Context.Service<
 /**
  * The name of the store that holds an app's queued actions, as a snapshot
  * lists it in `readSnapshot(save.world).stores`. The store holds
- * `{ queued }`, the actions queued for the next tick, each
- * `{ name, payload, from? }` with its payload in JSON form.
+ * `{ queued, rests? }`: the actions queued for the next tick, each
+ * `{ name, payload, from? }` with its payload in JSON form, and
+ * `rests: true` when the game's last tick changed nothing but its time, so
+ * that a game loaded from it is at rest.
  *
  * @category Constants
  */

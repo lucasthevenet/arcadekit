@@ -134,6 +134,71 @@ yield* Replay.verify(recording, Game).pipe(
 
 Whatever stops a replay, the error's `app` is the replay's app where it stopped. The replay has closed that app, but its world, its log and its time are still there to read.
 
+## Compare two games
+
+The world has two hashes. `world.hash()` covers everything a simulation can tell apart, the game's time included: a hash check, a replay's `endHash`, a session's check for [drift](detecting-drift.md) and a lobby compare it. `world.hash({ time: false })` covers the same but the game's time, `Time`, which every tick moves on. A test that pauses a game compares that one:
+
+```ts title="pause.test.ts"
+import { expect, it } from "@effect/vitest";
+import {
+  Action,
+  App,
+  Commands,
+  Component,
+  Field,
+  Plugin,
+  Query,
+  State,
+  System,
+  Test,
+  World,
+} from "arcadekit";
+import { Effect, Schema } from "effect";
+
+const Phase = State.define("game/Phase", ["playing", "paused"]);
+const Ball = Component.define("game/Ball", { x: Field.f32 });
+const Balls = Query.all(Ball).pipe(Query.writes(Ball));
+
+const Roll = System.tick("game/Roll", function* () {
+  (yield* Balls).each((ball) => {
+    ball.x += 1;
+  });
+}).pipe(System.runIf(State.is(Phase, "playing")));
+
+const Pause = Action.define("game/Pause", Schema.Struct({}));
+const pause = Action.handler(Pause, function* () {
+  (yield* Phase.sets).set("paused");
+});
+
+const Rules = Plugin.make("game/Rules", {
+  systems: [Roll],
+  handlers: [pause],
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Ball)).spawn(Ball);
+  }),
+});
+
+it.effect("stands still while paused", () =>
+  Effect.gen(function* () {
+    const game = yield* Test.make(App.define({ plugins: [Rules] }));
+    yield* game.app.enqueue(Pause, {});
+    yield* game.step();
+    const world = yield* game.app.read(World);
+    const [still, all] = [world.hash({ time: false }), world.hash()];
+    for (let i = 0; i < 120; i++) {
+      yield* game.step();
+    }
+    expect(world.hash({ time: false })).toBe(still);
+    expect(world.hash()).not.toBe(all); // 120 ticks later
+  })
+);
+```
+
+- A game and a replay of it, two peers, and a game and its save loaded and played on the same way, hash the same with `world.hash()`. Compare that one when they ran the same ticks.
+- A save holds whether the game was at rest. An app made from a save of a game that [ticks only when needed](running-a-game.md#tick-only-when-needed), taken at rest, or that loads it with `Save.load`, runs no tick before its first action, so it and the game it was saved from go on tick for tick, and `world.hash()` says so.
+- `{ time: false }` is for games that reached the same place in a different number of ticks. Nothing the package compares uses it, since two games whose times differ go on differently: a system that reads `Time` sees it.
+- It leaves out the clock and nothing else. The buttons the world keeps, with the ticks each went down and up, are what the player did and are in both hashes, so a game whose player pressed a key during the pause, or at another tick, hashes differently.
+
 ## Read more
 
 - [`Replay`](/reference/arcadekit/Replay), [`App`](/reference/arcadekit/App) and [`Action`](/reference/arcadekit/Action) in the API reference, and the world's [`hash`](/reference/arcadekit/ecs#world).

@@ -69,8 +69,29 @@ type Unasked<C extends string> =
  */
 export interface ReadingWorld extends Pick<
   EcsWorld,
-  "entityCount" | "has" | "hash" | "holds" | "isAlive" | "live" | "sources"
+  "entityCount" | "has" | "holds" | "isAlive" | "live" | "sources"
 > {
+  /**
+   * Returns a number for everything in the game that a simulation can tell
+   * apart, as the storage core's `World.hash` does: the entities and their
+   * components, every singleton written, the random generator, the actions
+   * queued for the next tick and the events waiting to be read. Two games
+   * that hash the same go on the same way. A replay, a session and a lobby
+   * compare this one.
+   *
+   * It covers the game's time, `Time`, which every tick moves on. With
+   * `{ time: false }`, it covers the rest: two games that differ only in how
+   * many ticks they ran, such as one paused for a while and the same game
+   * not paused, hash the same. The rest holds the buttons the world keeps,
+   * with the ticks each last went down and up: they are what the player did,
+   * which a system reads, so two games whose buttons went down at other
+   * ticks hash differently either way.
+   *
+   *   const world = yield* app.read(World)
+   *   world.hash()                  // the game, its time included
+   *   world.hash({ time: false })   // the game, apart from its time
+   */
+  hash(options?: { readonly time?: boolean }): number;
   /**
    * Returns the entity of an id that `Commands.spawn` returned, once its spawn
    * is applied, and undefined before. The world's reads take an `Entity`, not

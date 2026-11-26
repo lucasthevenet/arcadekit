@@ -11,9 +11,11 @@ import {
   Component,
   Event,
   Field,
+  Input,
   Query,
   Random,
   System,
+  Test,
   Timeline,
   World,
 } from "../src/index.ts";
@@ -799,6 +801,63 @@ describe("the hash of an app's world", () => {
       expect(yield* after([1 / 60, 1 / 30])).not.toBe(twice);
       expect(yield* after([1 / 30, 1 / 60])).not.toBe(twice);
     })
+  );
+
+  it.effect(
+    "leaves the game's time out with { time: false }, and nothing else",
+    () =>
+      Effect.gen(function* () {
+        const after = Effect.fnUntraced(function* (
+          drifts: boolean,
+          deltas: readonly number[],
+          seed = 5
+        ) {
+          return yield* withApp(
+            drifts
+              ? App.make(App.define({ systems: [Drift] }), { seed })
+              : App.make(App.define({}), { seed }),
+            (app, world) =>
+              Effect.gen(function* () {
+                for (const delta of deltas) {
+                  yield* app.tick(delta);
+                }
+                return [world.hash({ time: false }), world.hash()];
+              })
+          );
+        });
+        const [still, whole] = yield* after(false, [1 / 60]);
+        // Only the time tells these apart.
+        const [later, wholeLater] = yield* after(false, [1 / 60, 1 / 30]);
+        expect([later, wholeLater === whole]).toEqual([still, false]);
+        expect(whole).toBe((yield* after(false, [1 / 60]))[1]);
+        // The generator and the entities are still in it.
+        expect((yield* after(false, [1 / 60], 6))[0]).not.toBe(still);
+        const [moved] = yield* after(true, [1 / 60]);
+        expect((yield* after(true, [1 / 60, 1 / 60]))[0]).not.toBe(moved);
+        expect((yield* after(true, [1 / 60]))[0]).toBe(moved);
+      })
+  );
+
+  it.effect(
+    "keeps in { time: false } the buttons the world keeps, which are the player's and not the clock's",
+    () =>
+      Effect.gen(function* () {
+        const Game = App.define({ plugins: [Input.plugin] });
+        const after = Effect.fnUntraced(function* (
+          key: Input.KeyCode | undefined
+        ) {
+          const game = yield* Test.make(Game);
+          if (key !== undefined) {
+            game.input.press(key);
+          }
+          yield* game.step();
+          return (yield* game.app.read(World)).hash({ time: false });
+        });
+        const untouched = yield* after(undefined);
+        expect(yield* after(undefined)).toBe(untouched);
+        expect(yield* after("KeyW")).not.toBe(untouched);
+        expect(yield* after("KeyW")).not.toBe(yield* after("KeyA"));
+      })
   );
 
   describe("covers what waits for the next tick", () => {

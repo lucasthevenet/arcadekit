@@ -18,6 +18,7 @@ import {
   Singleton,
   State,
   System,
+  Test,
   View,
   World,
 } from "../src/index.ts";
@@ -570,6 +571,68 @@ describe("a game that changes", () => {
         }
         expect((yield* worldOf(loaded)).singleton(Clock).left).toBe(0);
         expect(loaded.time.tick).toBe(2 + 4 + 1);
+      })
+  );
+
+  it.effect(
+    "is settled when it was made from a save of a game at rest, or had one loaded, and goes on from it tick for tick",
+    () =>
+      Effect.gen(function* () {
+        const Game = App.define({ plugins: [Rules] });
+        const game = yield* Test.make(Game);
+        yield* game.app.enqueue(Begin, {});
+        yield* game.rest();
+        yield* game.app.enqueue(Move, { by: 2 });
+        yield* game.rest();
+        expect(game.app.settled).toBe(true);
+        const save = yield* Save.make(game.app);
+        // Made from the save, and loaded into an app at rest that had played
+        // a game of its own, with a tick more than the saved one.
+        const made = yield* Test.make(Game, { save });
+        const loadedInto = yield* Test.make(Game);
+        yield* loadedInto.app.enqueue(Begin, {});
+        yield* loadedInto.rest();
+        yield* loadedInto.app.enqueue(Move, { by: 5 });
+        yield* loadedInto.rest();
+        yield* loadedInto.app.tick(1 / 60);
+        yield* loadedInto.rest();
+        yield* Save.load(loadedInto.app, save);
+        for (const loaded of [made, loadedInto]) {
+          expect(loaded.app.settled).toBe(true);
+          // A driver that ticks when needed runs no tick before an action.
+          const advance = Driver.fixedStep(loaded.app, {
+            hz: 10,
+            ticks: "whenNeeded",
+          });
+          for (let i = 0; i < 20; i++) {
+            yield* advance(0.1);
+          }
+          expect(loaded.app.time.tick).toBe(game.app.time.tick);
+        }
+        for (const one of [game, made, loadedInto]) {
+          yield* one.app.enqueue(Move, { by: 1 });
+          yield* one.rest();
+        }
+        const hash = (yield* worldOf(game.app)).hash();
+        for (const loaded of [made, loadedInto]) {
+          expect(loaded.app.time.tick).toBe(game.app.time.tick);
+          expect((yield* worldOf(loaded.app)).hash()).toBe(hash);
+        }
+        // A save of a game that was not asked whether it rests holds no rest,
+        // and a game made from it or loaded with it rests after as many ticks.
+        const busy = yield* App.make(Game);
+        yield* busy.tick(1);
+        yield* busy.tick(1);
+        const unrested = yield* Save.make(busy);
+        const again = yield* Test.make(Game, { save: unrested });
+        yield* Save.load(loadedInto.app, unrested);
+        expect([again.app.settled, loadedInto.app.settled]).toEqual([
+          false,
+          false,
+        ]);
+        const ticks = yield* again.rest();
+        expect(ticks).toBeGreaterThan(0);
+        expect(yield* loadedInto.rest()).toBe(ticks);
       })
   );
 });

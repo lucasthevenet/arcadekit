@@ -60,6 +60,7 @@ The hash doesn't depend on anything a simulation can't observe: a table's capaci
 - It uses 32-bit integer arithmetic on each field's bits, so it is identical on every machine and in every JavaScript engine.
 - It changes nothing in the world, so you can call it at any time. It costs about 8 ns per entity with four float fields.
 - It doesn't cover where each reader is: how far a system has read the events, or what change queries haven't visited. Where a reader is belongs to the reader, so a plugin that only watches a game doesn't change the game's hash. Two games with the same hash can still differ there, until the difference reaches the world. A [save](../guides/saving-and-loading.md) holds where each reader is.
+- `world.hash({ time: false })` covers all of it but the game's time. Two games that differ only in how many ticks they ran, such as a game paused for a while and the same game not paused, hash the same there and differ in `world.hash()`. [Compare two games](../guides/replays.md#compare-two-games) says which to compare when.
 
 The app records the hash in its log every `hashEvery` ticks, 60 by default. A replay compares its own world at each hash check, and stops at the first mismatch with `Replay.Diverged`, which reports the tick and when the two last agreed. [Verify a replay with hash checks](../guides/replays.md#verify-a-replay-with-hash-checks) covers how often to record one, and what it costs.
 
