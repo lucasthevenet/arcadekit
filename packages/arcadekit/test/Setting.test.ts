@@ -91,18 +91,39 @@ describe("a setting", () => {
   );
 
   it.effect(
-    "reads what its schema no longer takes, or text that isn't JSON, as its initial value",
+    "fails to read what its schema no longer takes, or text that isn't JSON, until it is set again",
     () =>
       Effect.gen(function* () {
-        const kept = Setting.makeMemory({
-          "st/Volume": '"loud"',
-          "st/Keys": "{ not json",
-        });
-        expect(yield* Effect.provide(Volume, Setting.layer(kept))).toBe(1);
-        expect(yield* Effect.provide(Keys, Setting.layer(kept))).toEqual({
-          jump: "Space",
-        });
-      })
+        expect(yield* Effect.exit(Volume)).toEqual(
+          Exit.fail(
+            new Setting.Invalid({
+              key: "st/Volume",
+              message:
+                'The setting "st/Volume" keeps a value its schema doesn\'t take: Expected a value between 0 and 1. Set it again, or read its initial value in its place with Effect.orElseSucceed.',
+            })
+          )
+        );
+        expect(yield* Effect.exit(Keys)).toEqual(
+          Exit.fail(
+            new Setting.Invalid({
+              key: "st/Keys",
+              message:
+                'The setting "st/Keys" keeps a value its schema doesn\'t take: Expected a valid JSON string. Set it again, or read its initial value in its place with Effect.orElseSucceed.',
+            })
+          )
+        );
+        expect(yield* Effect.orElseSucceed(Volume, () => Volume.initial)).toBe(
+          1
+        );
+        yield* Setting.set(Volume, 0.5);
+        expect(yield* Volume).toBe(0.5);
+      }).pipe(
+        Effect.provide(
+          Setting.layer(
+            Setting.makeMemory({ "st/Volume": "3", "st/Keys": "{ not json" })
+          )
+        )
+      )
   );
 
   it.effect(

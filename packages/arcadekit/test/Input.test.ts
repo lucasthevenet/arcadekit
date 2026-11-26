@@ -2797,11 +2797,18 @@ describe("a platformer", () => {
         expect(yield* next.settings.bindingsOf(Jump)).toEqual(["KeyK"]);
         expect(yield* jumped(next.game, "KeyK")).toBe(true);
         expect(yield* jumped(next.game, "Space")).toBe(false);
-        // A kept text the schema refuses, a key that is none, is the keys
-        // the control was declared with.
-        const spelt = Setting.makeMemory({ "pf/JumpKeys": '["Spce"]' });
+        // A kept text the schema refuses, a key that is none, fails the read.
+        const spelt = Setting.layer(
+          Setting.makeMemory({ "pf/JumpKeys": '["Spce"]' })
+        );
         expect(
-          yield* Effect.provide(JumpKeys.asEffect(), Setting.layer(spelt))
+          yield* Effect.provide(Effect.flip(JumpKeys), spelt)
+        ).toMatchObject({ _tag: "SettingInvalid", key: "pf/JumpKeys" });
+        expect(
+          yield* Effect.provide(
+            Effect.orElseSucceed(JumpKeys, () => Jump.bindings),
+            spelt
+          )
         ).toEqual(Jump.bindings);
         // What the game's own menu, an input system, rebinds is what the
         // page's reads.

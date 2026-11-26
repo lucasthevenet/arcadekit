@@ -115,7 +115,9 @@ export class StoreFailed extends Data.TaggedError("SettingStoreFailed")<{
 }> {}
 
 /**
- * A value that a setting's schema doesn't take, given to `Setting.set`.
+ * A value that a setting's schema doesn't take: one given to `Setting.set`,
+ * or what the store kept, read with `yield*`, when it isn't JSON or the
+ * schema no longer takes it.
  *
  * @category Errors
  */
@@ -129,12 +131,13 @@ export class Invalid extends Data.TaggedError("SettingInvalid")<{
 /**
  * A setting's definition, as `Setting.define` makes it. It is an Effect, and
  * `yield*` returns its value: the one last set, kept in `Setting.Store`, or
- * its initial value when none was.
+ * its initial value when none was. It fails with `Setting.Invalid` when what
+ * the store kept isn't JSON or the schema doesn't take it.
  *
  * @category Models
  */
-export class Setting<A> extends Effectable.Class<A, never, Store> {
-  private effect: Effect.Effect<A, never, Store> | undefined;
+export class Setting<A> extends Effectable.Class<A, Invalid, Store> {
+  private effect: Effect.Effect<A, Invalid, Store> | undefined;
 
   constructor(
     /** What identifies the setting where it is kept, prefixed with its feature. */
@@ -147,25 +150,28 @@ export class Setting<A> extends Effectable.Class<A, never, Store> {
     super();
   }
 
-  asEffect(): Effect.Effect<A, never, Store> {
-    return (this.effect ??= Effect.map(Effect.service(Store), (store) =>
-      this.valueOf(store.get(this.key))
-    ));
-  }
-
-  /** The value a kept text holds, or the initial value for none, or for one the schema doesn't take. */
-  private valueOf(text: string | undefined): A {
-    if (text === undefined) {
-      return this.initial;
+  asEffect(): Effect.Effect<A, Invalid, Store> {
+    if (this.effect === undefined) {
+      const decode = Schema.decodeUnknownExit(
+        Schema.fromJsonString(this.codec)
+      );
+      this.effect = Effect.flatMap(Effect.service(Store), (store) => {
+        const text = store.get(this.key);
+        if (text === undefined) {
+          return Effect.succeed(this.initial);
+        }
+        const decoded = decode(text);
+        return Exit.isSuccess(decoded)
+          ? Effect.succeed(decoded.value)
+          : Effect.fail(
+              new Invalid({
+                key: this.key,
+                message: `The setting "${this.key}" keeps a value its schema doesn't take: ${said(Cause.squash(decoded.cause))}. Set it again, or read its initial value in its place with Effect.orElseSucceed.`,
+              })
+            );
+      });
     }
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return this.initial;
-    }
-    const decoded = Schema.decodeUnknownExit(this.codec)(json);
-    return Exit.isSuccess(decoded) ? decoded.value : this.initial;
+    return this.effect;
   }
 }
 
@@ -183,8 +189,10 @@ export class Setting<A> extends Effectable.Class<A, never, Store> {
  *
  * - The key is what identifies the setting where it is kept, so prefix it
  *   with its feature. Two settings of one key read and write the same text.
- * - A kept value the schema no longer takes, after the schema changed, reads
- *   as the initial value until it is set again.
+ * - A kept value the schema no longer takes, after the schema changed, fails
+ *   the read with `Setting.Invalid` until it is set again.
+ *   `Effect.orElseSucceed(Keys, () => Keys.initial)` reads the initial value
+ *   in its place.
  *
  * @category Constructors
  */
