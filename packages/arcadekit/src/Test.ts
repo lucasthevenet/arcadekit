@@ -135,57 +135,59 @@ export const make = <
   Test<App.TickError<S, P>, App.AllHandlers<H, P>, UiOf<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
   App.External<S, H, P>
-> => {
-  const { delta = 1 / 60, files = {}, ...start } = options ?? {};
-  const input = Input.makeManualSource();
-  const sound = Sound.makeRecorder();
-  const loader = Assets.makeMemory(files);
-  const handed: unknown[] = [];
-  const standIns = Layer.mergeAll(
-    Input.layer(input),
-    Sound.layer(sound),
-    Assets.layer(loader),
-    Layer.succeed(Ui, (bridge) => {
-      handed.push(bridge);
-    })
-  );
-  return Effect.map(
-    App.make(game, start).pipe(Effect.provide(standIns)),
-    (app) => {
-      const step = Effect.fnUntraced(function* (seconds: number = delta) {
-        yield* app.input();
-        yield* app.tick(seconds);
-        yield* app.frame();
-      });
-      const rest = Effect.fnUntraced(function* (limit: number = 1000) {
-        let ticks = 0;
-        for (;;) {
+> =>
+  // Each run makes stand-ins of its own, so two apps never share a device.
+  Effect.suspend(() => {
+    const { delta = 1 / 60, files = {}, ...start } = options ?? {};
+    const input = Input.makeManualSource();
+    const sound = Sound.makeRecorder();
+    const loader = Assets.makeMemory(files);
+    const handed: unknown[] = [];
+    const standIns = Layer.mergeAll(
+      Input.layer(input),
+      Sound.layer(sound),
+      Assets.layer(loader),
+      Layer.succeed(Ui, (bridge) => {
+        handed.push(bridge);
+      })
+    );
+    return Effect.map(
+      App.make(game, start).pipe(Effect.provide(standIns)),
+      (app) => {
+        const step = Effect.fnUntraced(function* (seconds: number = delta) {
           yield* app.input();
-          if (app.settled) {
-            break;
+          yield* app.tick(seconds);
+          yield* app.frame();
+        });
+        const rest = Effect.fnUntraced(function* (limit: number = 1000) {
+          let ticks = 0;
+          for (;;) {
+            yield* app.input();
+            if (app.settled) {
+              break;
+            }
+            if (ticks === limit) {
+              return yield* Effect.die(
+                new Error(
+                  `The game did not settle in ${limit} ticks: some system writes the world every tick, or an action, a state's transition or an event is always waiting. Step it a number of times with game.step(), or give rest a larger limit.`
+                )
+              );
+            }
+            yield* app.tick(delta);
+            ticks++;
           }
-          if (ticks === limit) {
-            return yield* Effect.die(
-              new Error(
-                `The game did not settle in ${limit} ticks: some system writes the world every tick, or an action, a state's transition or an event is always waiting. Step it a number of times with game.step(), or give rest a larger limit.`
-              )
-            );
-          }
-          yield* app.tick(delta);
-          ticks++;
-        }
-        yield* app.frame();
-        return ticks;
-      });
-      return {
-        app,
-        input,
-        sound,
-        files: loader,
-        ui: handed[0] as UiOf<H, P>,
-        step,
-        rest,
-      };
-    }
-  );
-};
+          yield* app.frame();
+          return ticks;
+        });
+        return {
+          app,
+          input,
+          sound,
+          files: loader,
+          ui: handed[0] as UiOf<H, P>,
+          step,
+          rest,
+        };
+      }
+    );
+  });
