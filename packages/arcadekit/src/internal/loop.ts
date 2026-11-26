@@ -135,6 +135,8 @@ export interface Parts {
   readonly actions: Stage.Actions;
   /** Where the frame stage's own random sequence starts. */
   readonly seed: number;
+  /** What the app's systems keep between frames. */
+  readonly locals: Stage.LocalStore;
   /** Whether the stages between ticks are checked to leave the world as it was. */
   readonly verifyFrames: boolean;
 }
@@ -325,6 +327,7 @@ export const make = (parts: Parts): Loop => {
     events,
     actions: parts.actions,
     seed: parts.seed,
+    locals: parts.locals,
   });
   const runFrame = Effect.runForkWith(frameContext);
   const devices: {

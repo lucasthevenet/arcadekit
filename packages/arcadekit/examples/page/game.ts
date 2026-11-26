@@ -200,8 +200,8 @@ const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 const Begin = Assets.onReady(Level, scatter, ({ layout }) => layout);
 
 // --- drawing: the frame stage ----------------------------------------------------
-// What a frame system keeps from one frame to the next is in a service of
-// its own, not in the world: here, the canvas it draws on.
+// The canvas a frame system draws on is the page's, and the app is given it
+// as a service, which a test gives a canvas of its own in place of.
 export class Screen extends Context.Service<
   Screen,
   { readonly canvas: CanvasRenderingContext2D }

@@ -262,6 +262,12 @@ const assemble = <
       run: (name, handled) => runFork(spans.action(name, handled)),
     });
     const schedule = Schedule.make(allSystems, spans.enabled);
+    // What the frame and input stages keep, let go of with the app.
+    const locals = new Stage.LocalStore();
+    yield* Scope.addFinalizer(
+      scope,
+      Effect.sync(() => locals.release())
+    );
     // What runs between ticks hears the events of every tick, the first
     // among them: they are kept for it from the start.
     if (schedule.frame.length > 0) {
@@ -287,6 +293,7 @@ const assemble = <
       listener,
       actions,
       seed: seed ?? 0,
+      locals,
       verifyFrames: start.verifyFrames === true,
     });
     // What a run ends with is what the game's systems fail with: the loop

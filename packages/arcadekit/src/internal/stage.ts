@@ -22,6 +22,7 @@ import type { World as EcsWorld } from "../ecs/world.ts";
 import * as Input from "../Input.ts";
 import { Commands, Events, Frame, Random, Time, World } from "../Services.ts";
 import type { FrameState, TimeState } from "../Services.ts";
+import * as System from "../System.ts";
 import type { EventBus } from "./eventBus.ts";
 import { handed, hearing, reading } from "./handed.ts";
 
@@ -99,6 +100,42 @@ export const tick = (parts: {
 };
 
 /**
+ * An app's values of each `System.local`, made when one of its systems first
+ * asks, and let go of when the app is closed.
+ *
+ * @internal
+ */
+export class LocalStore {
+  /** Each local's value, and what lets go of it. */
+  private readonly values = new Map<
+    object,
+    { readonly value: unknown; readonly release: () => void }
+  >();
+
+  readonly get = <A>(local: System.Local<A>): A => {
+    const kept = this.values.get(local);
+    if (kept !== undefined) {
+      return kept.value as A;
+    }
+    const value = local.make();
+    this.values.set(local, {
+      value,
+      release: () => local.release?.(value),
+    });
+    return value;
+  };
+
+  /** Lets go of every value, each with its local's `release`. */
+  release(): void {
+    const made = [...this.values.values()];
+    this.values.clear();
+    for (const { release } of made) {
+      release();
+    }
+  }
+}
+
+/**
  * Makes what the frame stage is given from what the app's plugins and its
  * caller provide. It is handed a world that reads, events that read, and no
  * `Commands`: an object of their own each, with nothing that changes the game
@@ -118,10 +155,13 @@ export const frame = (
     readonly events: EventBus;
     readonly actions: Actions;
     readonly seed: number;
+    /** What the app's systems keep between frames, `System.local`'s values. */
+    readonly locals: LocalStore;
   }
 ): Context.Context<unknown> => {
   const random = new Rng(parts.seed);
   return Context.omit(Commands)(context).pipe(
+    Context.add(System.Locals, parts.locals),
     Context.add(World, reading(parts.world)),
     Context.add(Time, parts.time),
     Context.add(Frame, parts.frame),

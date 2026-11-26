@@ -395,42 +395,82 @@ const changes = (reference: Reference): boolean => {
   }
 };
 
+/** The calls whose last argument is the code of a system between ticks: `System.frame("Draw", function* () { ... })`. */
+const betweenCallees = new Set(["System.frame", "System.input"]);
+
+/** The code of a frame or an input system a call is given: its last argument. */
+const betweenCodeOf = (
+  node: NodeOf<"CallExpression">
+): TickCode | undefined => {
+  const { callee } = node;
+  if (
+    callee.type !== "MemberExpression" ||
+    callee.computed ||
+    callee.object.type !== "Identifier" ||
+    callee.property.type !== "Identifier" ||
+    !betweenCallees.has(`${callee.object.name}.${callee.property.name}`)
+  ) {
+    return undefined;
+  }
+  return node.arguments.at(-1);
+};
+
+/** The references of a body to names it did not declare. */
+const throughOf = (context: Context, body: TickCode): Reference[] =>
+  context.sourceCode.scopeManager.scopes.flatMap((scope) =>
+    scope.upper === null ||
+    !within(scope.block, body) ||
+    within(scope.upper.block, body)
+      ? []
+      : scope.through
+  );
+
 /**
- * Code of the tick keeps what it changes in the world. It can't see what code of the tick is
- * given by name rather than written in the call, nor a function declared elsewhere that the
- * code calls. It leaves imports alone, since `HashMap.set(map, key, value)` changes nothing,
- * and so misses a `Map` a module exports. The repository's tests record what systems did in arrays outside them, so
- * oxlint.config.ts leaves test/ out.
+ * Code of the tick keeps what it changes in the world, and a frame or an input system keeps
+ * what it sets between frames in a `System.local`. It can't see what code is given by name
+ * rather than written in the call, nor a function declared elsewhere that the code calls. It
+ * leaves imports alone, since `HashMap.set(map, key, value)` changes nothing, and so misses a
+ * `Map` a module exports. A frame system draws by changing objects outside it, a canvas or a
+ * camera, so of its code only setting a variable declared outside it is refused. The
+ * repository's tests record what systems did in arrays outside them, so oxlint.config.ts
+ * leaves test/ out.
  */
 const noOutsideState: Rule = {
   meta: {
     type: "problem",
     docs: {
       description:
-        "The code of the tick (a system of the tick, a state's hook, an action's handler, a plugin's setup) changes nothing declared outside it.",
+        "The code of the tick (a system of the tick, a state's hook, an action's handler, a plugin's setup) changes nothing declared outside it, and a frame or an input system sets no variable declared outside it.",
     },
   },
   create: (context) => ({
     CallExpression: (node) => {
-      const body = tickCodeOf(node);
-      if (body === undefined) {
-        return;
-      }
-      for (const scope of context.sourceCode.scopeManager.scopes) {
-        if (
-          scope.upper === null ||
-          !within(scope.block, body) ||
-          within(scope.upper.block, body)
-        ) {
-          continue;
-        }
-        for (const reference of scope.through) {
+      const tick = tickCodeOf(node);
+      if (tick !== undefined) {
+        for (const reference of throughOf(context, tick)) {
           if (changes(reference)) {
             context.report({
               node: reference.identifier,
               message: `This changes ${reference.identifier.name}, which is declared outside the code of the tick it is in: a refused action doesn't undo it, and a save, a rewind or a replay doesn't hold it. Keep the state in the world, as a component or a singleton, or, for a cache rebuilt from the world, in a Field.transient field of a singleton.`,
             });
           }
+        }
+        return;
+      }
+      const between = betweenCodeOf(node);
+      if (between === undefined) {
+        return;
+      }
+      for (const reference of throughOf(context, between)) {
+        if (
+          reference.isWrite() &&
+          !reference.init &&
+          !reference.resolved?.defs.some((def) => def.type === "ImportBinding")
+        ) {
+          context.report({
+            node: reference.identifier,
+            message: `This sets ${reference.identifier.name}, a variable declared outside the frame or input system it is in: every app of the game shares it, and closing an app doesn't let go of it. Keep what a frame or an input system keeps from one frame to the next in a System.local, of which each app has its own: const Kept = System.local(() => ({ ${reference.identifier.name}: ... })), then (yield* Kept).${reference.identifier.name} in the system.`,
+          });
         }
       }
     },

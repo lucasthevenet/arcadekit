@@ -76,7 +76,7 @@ Everything else depends on one rule: **drawing never changes the game.** A game 
 - It tracks events and change queries apart from the tick. Events are kept until the frame stage has run, so it sees each event once, however many ticks ran since the last frame. After 600 ticks without a frame, the app takes the frame stage to be gone and stops keeping events for it. A save doesn't hold this tracking, so a loaded game redraws everything.
 - Its random numbers come from a separate generator, seeded like the world's but not part of it. Visual effects can be random without changing the game.
 - An action it issues with `Actions.enqueue` counts as outside input, like a button press. The app logs it and applies it at the start of the next tick, and a replay applies it again without drawing a frame.
-- State it keeps between frames, such as a mesh or a playing sound, lives in a service of its own, not in the world.
+- State it keeps between frames, such as a camera's angle, lives in a [`System.local`](../guides/systems.md#keep-something-from-one-frame-to-the-next), and a mesh or a playing sound in a service, not in the world.
 
 Sound plays from the frame stage too, driven by the events the ticks emitted. The simulation never plays sound.
 

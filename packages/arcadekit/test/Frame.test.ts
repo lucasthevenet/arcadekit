@@ -35,6 +35,7 @@ import {
   State,
   System,
   Time,
+  Timeline,
   World,
 } from "../src/index.ts";
 import type { Entity, Rng } from "../src/index.ts";
@@ -1149,4 +1150,127 @@ describe("a frame stage that is checked", () => {
         expect(yield* ballsOf(unchecked)).toEqual([{ x: 2, vx: 1 }]);
       })
   );
+});
+
+describe("what a frame or input system keeps", () => {
+  /** A camera that goes round, as far as it has gone in this app, and what was let go. */
+  const orbiting = () => {
+    const released: number[] = [];
+    const Orbit = System.local(
+      () => ({ angle: 0 }),
+      ({ angle }) => {
+        released.push(angle);
+      }
+    );
+    const seen: number[] = [];
+    const Camera = System.frame("fr/Camera", function* () {
+      const orbit = yield* Orbit;
+      orbit.angle += (yield* Frame).delta;
+      seen.push(orbit.angle);
+    });
+    return { Orbit, Camera, seen, released };
+  };
+
+  it.effect(
+    "lasts from one frame to the next, is each app's own, and is let go of when the app closes",
+    () =>
+      Effect.gen(function* () {
+        const { Camera, released, seen } = orbiting();
+        const Game = App.define({ systems: [Roll, Camera] });
+        const one = yield* App.make(Game);
+        const two = yield* App.make(Game);
+        yield* one.frame(1, 1);
+        yield* one.frame(1, 1);
+        yield* two.frame(1, 5);
+        yield* one.frame(1, 1);
+        expect(seen).toEqual([1, 2, 5, 3]);
+        yield* one.close;
+        expect(released).toEqual([3]);
+        yield* two.close;
+        expect(released).toEqual([3, 5]);
+      })
+  );
+
+  it.effect(
+    "is no part of the game: a rewind leaves it as it is, and the hash and the save leave it out",
+    () =>
+      Effect.gen(function* () {
+        const { Camera, seen } = orbiting();
+        const app = yield* App.make(
+          App.define({
+            plugins: [racked({ x: 0, vx: 1 })],
+            systems: [Roll, Camera],
+          })
+        );
+        const bare = yield* App.make(
+          App.define({ plugins: [racked({ x: 0, vx: 1 })], systems: [Roll] })
+        );
+        yield* app.tick(1);
+        yield* bare.tick(1);
+        const moment = yield* Timeline.capture(app);
+        yield* app.frame(1, 1);
+        yield* app.tick(1);
+        yield* app.frame(1, 1);
+        yield* Timeline.rewind(app, moment);
+        yield* app.frame(1, 1);
+        // Three frames have gone by, whatever the game went back to.
+        expect(seen).toEqual([1, 2, 3]);
+        expect(yield* ballsOf(app)).toEqual([{ x: 1, vx: 1 }]);
+        expect((yield* app.read(World)).hash()).toBe(
+          (yield* bare.read(World)).hash()
+        );
+        expect(Save.encode(yield* app.save())).toEqual(
+          Save.encode(yield* bare.save())
+        );
+      })
+  );
+
+  it.effect(
+    "is shared by the systems that yield it, so an input system sets what a frame system reads",
+    () =>
+      Effect.gen(function* () {
+        const Shown = System.local(() => ({ deck: true }));
+        const Toggle = System.input("fr/Toggle", function* () {
+          const shown = yield* Shown;
+          shown.deck = !shown.deck;
+        });
+        const drawn: boolean[] = [];
+        const Draw = System.frame("fr/DrawDeck", function* () {
+          drawn.push((yield* Shown).deck);
+        });
+        const app = yield* App.make(App.define({ systems: [Toggle, Draw] }));
+        yield* app.frame();
+        yield* app.input();
+        yield* app.frame();
+        yield* app.input();
+        yield* app.frame();
+        expect(drawn).toEqual([true, false, true]);
+      })
+  );
+
+  it("is kept by a frame or an input system, and by no code of the tick", () => {
+    const { Orbit } = orbiting();
+    const Drawn = System.frame("fr/Drawn", function* () {
+      void (yield* Orbit).angle;
+    });
+    System.input("fr/Heard", function* () {
+      void (yield* Orbit).angle;
+    });
+    System.tick(
+      "fr/Ticked",
+      // @ts-expect-error the tick keeps what it keeps in the world
+      function* () {
+        void (yield* Orbit).angle;
+      }
+    );
+    const Turn = Action.define("fr/Turn", Schema.Struct({}));
+    Action.handler(
+      Turn,
+      // @ts-expect-error a handler keeps what it keeps in the world
+      function* () {
+        void (yield* Orbit).angle;
+      }
+    );
+    expect(Drawn.stage).toBe("frame");
+  });
 });

@@ -14,6 +14,7 @@ import * as Net from "../src/net/index.ts";
 import * as Transport from "../src/net/Transport.ts";
 import * as Services from "../src/Services.ts";
 import * as Sound from "../src/Sound.ts";
+import * as System from "../src/System.ts";
 import * as View from "../src/View.ts";
 
 // Vite gives a test the text of files, and the modules themselves: the
@@ -454,6 +455,7 @@ const byTheApp: readonly unknown[] = [
   Sound.Player,
   Assets.Store,
   View.Port,
+  System.Locals,
 ];
 
 /** Every module an entry gives by its own name, as `arcadekit/Input`, and what it exports. */
