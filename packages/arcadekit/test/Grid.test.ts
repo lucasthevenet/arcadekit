@@ -301,7 +301,7 @@ describe("a map in the world", () => {
       expect(yield* Effect.exit(Save.make(app))).toEqual(
         Exit.fail(
           new Save.Refused({
-            message: `"gr/Small.tiles" holds a value its codec did not turn into plain data (an object).`,
+            message: `"gr/Small.tiles" holds a value its codec refuses: a map of 3 by 3 is in a field of 2 by 2`,
           })
         )
       );

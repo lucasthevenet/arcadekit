@@ -110,9 +110,9 @@ export const json = Field.json;
  *
  * **Gotchas**
  *
- * - A value its `encode` rejects can't be saved. The snapshot is refused and
- *   names the field. A loaded value its `decode` rejects is refused the same
- *   way.
+ * - A value its `encode` rejects can't be saved. The snapshot is refused, and
+ *   its message names the field and says what `encode` threw. A loaded value
+ *   its `decode` rejects is refused the same way.
  * - The value is encoded on every hash of the world, so reserve this field type
  *   for small or rare values.
  *
@@ -133,7 +133,7 @@ export const transient = Field.transient;
  * A field that holds any value a schema describes. Snapshots and the hash use
  * the schema's JSON form, so a `Date`, a bigint or a class with its own schema
  * all work. A value that doesn't match the schema can't be saved, and the
- * snapshot names the field.
+ * snapshot is refused, naming the field and saying what the schema found wrong.
  *
  * **Gotchas**
  *

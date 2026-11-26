@@ -146,8 +146,8 @@ export const isBoxed = (kind: FieldKind): boolean =>
  * **Gotchas**
  *
  * - When `encode` throws, `World.snapshot` throws a `SnapshotError` whose
- *   problem is `"cannot be saved"` and names the field. `World.hash` throws
- *   the codec's own error.
+ *   problem is `"cannot be saved"`, and whose message names the field and
+ *   says what `encode` threw. `World.hash` throws the codec's own error.
  * - When `decode` throws, the load throws a `SnapshotError` whose problem is
  *   `"component changed"`.
  * - `World.hash` calls `encode` once for every value of the field.

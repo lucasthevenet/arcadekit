@@ -225,7 +225,7 @@ describe("a field that is not a number", () => {
     ).toBe("component changed");
   });
 
-  it("refuses a snapshot when a codec or a schema will not take a value, and names the field", () => {
+  it("refuses a snapshot when a codec or a schema will not take a value, naming the field and saying why", () => {
     const refused = (
       change: Record<string, unknown>,
       def: ComponentDef = Card
@@ -242,11 +242,15 @@ describe("a field that is not a number", () => {
     expect(date).toBeInstanceOf(SnapshotError);
     expect(date.problem).toBe("cannot be saved");
     expect(date.component).toBe("fld/Card");
-    expect(date.message).toContain('"fld/Card.when" holds a value its codec');
+    expect(date.message).toBe(
+      '"fld/Card.when" holds a value its codec refuses: not a date'
+    );
     // A level the schema does not allow, which the compiler cannot see.
     const level = refused({ profile: { ...card(1).profile, level: 100 } })!;
     expect(level.problem).toBe("cannot be saved");
-    expect(level.message).toContain('"fld/Card.profile"');
+    expect(level.message).toMatch(
+      /^"fld\/Card\.profile" holds a value its codec refuses: Expected a value between 1 and 99/
+    );
     expect(refused({ when: "yesterday" }, Badge)!.message).toContain(
       '"fld/Badge.when"'
     );
