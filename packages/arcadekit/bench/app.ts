@@ -22,7 +22,9 @@ import { pathToFileURL } from "node:url";
 import { Effect, Layer, Schema } from "effect";
 
 import {
+  Action,
   App,
+  Commands,
   Driver,
   Event,
   Field,
@@ -34,6 +36,7 @@ import {
   State,
   System,
   Time,
+  Timeline,
   View,
 } from "../src/index.ts";
 import { Position, Velocity, sizes } from "./core.ts";
@@ -124,6 +127,85 @@ const idling = (power: "on" | "off"): number =>
       const app = yield* App.make(App.define({ plugins: [Switched], systems }));
       return yield* measureEffect(() => app.tick(DT), 50_000, 20_000);
     })
+  );
+
+const Clock = Singleton.define(
+  "bench/Clock",
+  { ticks: Field.i32 },
+  { ticks: 0 }
+);
+/** A clock that runs every tick, as a puzzle's timer does. */
+const Counting = System.tick("bench/Counting", function* () {
+  (yield* Clock.writes).ticks++;
+});
+/** A move of the player's: the first piece slides, a write to the board's positions. */
+const Slide = Action.define("bench/Slide");
+const Board = Plugin.make("bench/Board", {
+  plugins: [Timeline.plugin],
+  systems: [Counting],
+  handlers: [
+    Action.handler(Slide, function* () {
+      (yield* Moving).eachChunk((start, _end, pos) => {
+        pos.x[start]! += 1;
+      });
+    }),
+  ],
+  setup: Effect.gen(function* () {
+    const pieces = yield* Commands.spawns(Position, Velocity);
+    for (let i = 0; i < 1000; i++) {
+      pieces.spawn(Position.of({ x: i, y: i }), Velocity.of({ x: 0, y: 0 }));
+    }
+  }),
+});
+
+/**
+ * Median milliseconds of a tick of a board game that ticks by itself: a
+ * clock that runs, and 1,000 pieces in one table that lie still. With
+ * `moved`, a move of the player's is enqueued before each pass, untimed, and
+ * the tick applies it. With `kept`, `Timeline.keep` keeps the game's turns,
+ * so the tick ends with a capture of the game, and with `moved` it keeps a
+ * turn, the last 100 of them.
+ */
+const playing = (kept: boolean, moved: boolean): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [Board] }));
+        if (kept) {
+          yield* Timeline.keep(app);
+        }
+        const median = yield* measureEffect(
+          () => app.tick(DT),
+          50_000,
+          20_000,
+          moved ? () => app.enqueue(Slide, undefined) : undefined
+        );
+        const { tick } = app.time;
+        const { ticks } = yield* app.read(Clock);
+        let first = Number.NaN;
+        (yield* app.read(Seen)).eachChunk((start, _end, pos) => {
+          first = pos.x[start]!;
+        });
+        if (ticks !== tick || first !== (moved ? tick : 0)) {
+          throw new Error(
+            `Of ${tick} ticks, the clock ran ${ticks} and the first piece slid ${first}.`
+          );
+        }
+        if (kept) {
+          yield* app.enqueue(Slide, undefined);
+          yield* app.tick(DT);
+          if (
+            !(yield* Timeline.undo(app)) ||
+            (yield* app.read(Clock)).ticks !== tick
+          ) {
+            throw new Error(
+              "Timeline.keep did not hold the game as it was after the last tick timed."
+            );
+          }
+        }
+        return median;
+      })
+    )
   );
 
 /** A game's controls, as a platformer has them: a jump, a stick and a fire. */
@@ -342,8 +424,8 @@ const atRest = (): number =>
     })
   );
 
-/** What the systems below drew, outside the app as a canvas is, so their loops are kept. */
-export const drawn = { sum: 0 };
+/** What the systems below drew, so their loops are kept: each app has its own, as it has its own canvas. */
+const Drawn = System.local(() => ({ sum: 0 }));
 
 /** A system that draws: it fetches a query and the time, and with `reading` reads every column. */
 export const drawer = <const I extends number>(i: I, reading: boolean) =>
@@ -351,6 +433,7 @@ export const drawer = <const I extends number>(i: I, reading: boolean) =>
     const moving = yield* Seen;
     yield* Time;
     if (reading) {
+      const drawn = yield* Drawn;
       moving.eachChunk((start, end, pos, vel) => {
         const px = pos.x;
         const vx = vel.x;
@@ -418,6 +501,32 @@ export const variants: Record<string, Variant> = {
     unit: "matches",
     label: "app.tick: the same, each with a condition that does not",
     run: () => idling("off"),
+  },
+
+  // The turns an undo goes back to: `Timeline.keep` captures the game after
+  // every tick, which in a game that ticks by itself is 60 times a second.
+  // Each pair is the same tick without and with it. A capture shares what
+  // did not change since the last one and copies what did, so at rest it
+  // copies the clock, and after a move the board's positions as well.
+  board: {
+    unit: "matches",
+    label: "app.tick: a clock and 1,000 pieces at rest",
+    run: () => playing(false, false),
+  },
+  boardKept: {
+    unit: "matches",
+    label: "app.tick: the same, its turns kept by Timeline.keep",
+    run: () => playing(true, false),
+  },
+  boardMoved: {
+    unit: "matches",
+    label: "app.tick: a clock and 1,000 pieces, one moved from outside",
+    run: () => playing(false, true),
+  },
+  boardMovedKept: {
+    unit: "matches",
+    label: "app.tick: the same, its turns kept, one kept each tick",
+    run: () => playing(true, true),
   },
 
   // The frame stage: systems that draw, run between ticks with the world

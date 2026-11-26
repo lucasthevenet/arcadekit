@@ -270,7 +270,9 @@ describe("a map in the world", () => {
       const app = yield* App.make(Rogue, { seed: 6 });
       const world = yield* app.read(World);
       const before = world.hash();
-      yield* Effect.exit(app.dispatch(Dig, { x: 0, y: 0, refuse: true }));
+      expect(
+        yield* Effect.exit(app.dispatch(Dig, { x: 0, y: 0, refuse: true }))
+      ).toEqual(Exit.fail(Blocked.make({ by: "the rule" })));
       expect(world.hash()).toBe(before);
       expect((yield* app.read(Floor)).tiles.at(0, 0)).toBe(WALL);
       yield* app.dispatch(Dig, { x: 0, y: 0, refuse: false });
@@ -301,7 +303,7 @@ describe("a map in the world", () => {
       expect(yield* Effect.exit(Save.make(app))).toEqual(
         Exit.fail(
           new Save.Refused({
-            message: `"gr/Small.tiles" holds a value its codec did not turn into plain data (an object).`,
+            message: `"gr/Small.tiles" holds a value its codec refuses: a map of 3 by 3 is in a field of 2 by 2`,
           })
         )
       );

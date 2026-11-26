@@ -9,7 +9,7 @@ import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
 import { migrate } from "../Migrate.ts";
 import type { Migration } from "../Migrate.ts";
-import { LoadRefused, Refused as SaveRefused } from "../Save.ts";
+import { LoadRefused, Refused } from "../Save.ts";
 import type { Save } from "../Save.ts";
 
 /**
@@ -39,10 +39,10 @@ export const taking = <A>(
   commands: CommandBuffer<Entity | Spawned>,
   to: "save" | "capture",
   take: () => A
-): Exit.Exit<A, SaveRefused> => {
+): Exit.Exit<A, Refused> => {
   if (commands.size > 0) {
     return Exit.fail(
-      new SaveRefused({
+      new Refused({
         message: `${commands.size} commands are queued and not applied. They are applied at the end of a tick: ${to} after one.`,
       })
     );
@@ -51,7 +51,7 @@ export const taking = <A>(
     return Exit.succeed(take());
   } catch (error) {
     if (error instanceof SnapshotError) {
-      return Exit.fail(new SaveRefused({ message: error.message }));
+      return Exit.fail(new Refused({ message: error.message }));
     }
     throw error;
   }
@@ -67,7 +67,7 @@ export const takeSave = (
   world: World,
   commands: CommandBuffer<Entity | Spawned>,
   version: number
-): Exit.Exit<Save, SaveRefused> =>
+): Exit.Exit<Save, Refused> =>
   Exit.map(
     taking(commands, "save", () => world.snapshot()),
     (bytes) => ({ version, world: bytes })

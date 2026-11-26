@@ -41,7 +41,6 @@ import {
   Seen,
   variants as appVariants,
   drawer,
-  drawn,
   measureEffect,
 } from "./app.ts";
 import {
@@ -254,9 +253,7 @@ const drawingRaw = (verify: boolean): number =>
         App.define({ plugins: [Populated], systems: [drawer(0, true)] }),
         { verifyFrames: verify }
       );
-      const ms = yield* measureEffect(() => app.frame(0.5));
-      void drawn.sum;
-      return ms;
+      return yield* measureEffect(() => app.frame(0.5));
     })
   );
 
