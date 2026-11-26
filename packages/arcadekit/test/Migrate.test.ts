@@ -13,18 +13,20 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/ecs/index.ts";
-import type { ComponentDef } from "../src/ecs/index.ts";
 import type { JsonValue, Spawned } from "../src/index.ts";
 import {
   Action,
   App,
   Commands,
   Component,
+  Event,
   Field,
   Migrate,
   Plugin,
   Query,
   Save,
+  State,
+  System,
   World,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
@@ -142,52 +144,79 @@ const Game2 = Plugin.make("mg/Game", {
   handlers: [mend2, recruit2],
 });
 
-const migrations: Save.Migration[] = [
-  {
-    from: 0,
-    migrate: ({ world }) => {
-      Migrate.renameComponent(world, "mg/Hp", "mg/Health");
-      Migrate.addField(world, "mg/Health", "armor", "i32", 5, "points");
-      Migrate.renameField(world, "mg/Pos", "x", "px");
-    },
-  },
-  {
-    from: 1,
-    migrate: (contents) => {
-      const { world } = contents;
-      Migrate.mapField(
-        world,
-        "mg/Health",
-        "points",
-        "f32",
-        (hp: number) => hp / 4
-      );
-      Migrate.removeField(world, "mg/Pos", "y");
-      Migrate.removeComponent(world, "mg/Old");
-      Migrate.mapField(
-        world,
-        "mg/Buff",
-        "power",
-        "u16",
-        (power: number) => power * 100
-      );
-      Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
-      // The action that was waiting has another name and payload now.
-      const intake = contents.world.stores.find(
-        (store) => store.name === Action.INTAKE
-      )?.data as { queued: { name: string; payload: unknown }[] } | undefined;
-      for (const action of intake?.queued ?? []) {
-        if (action.name === "mg/Heal") {
-          action.name = "mg/Mend";
-          action.payload = {
-            by: (action.payload as { amount: number }).amount,
-          };
-        }
-      }
-    },
-  },
+const migrations: Migrate.Migration[] = [
+  Migrate.step(0, (save) => {
+    save.renameComponent("mg/Hp", Health2);
+    // Ahead of points, where Health puts it.
+    save.addField(Health2, "armor", 5);
+    save.renameField(Pos2, "x", "px");
+  }),
+  Migrate.step(1, (save) => {
+    save.mapField(Health2, "points", (hp: number) => hp / 4);
+    save.removeField(Pos2, "y");
+    save.removeComponent("mg/Old");
+    save.mapField(Buff2, "power", (power: number) => power * 100);
+    save.addField(Buff2, "fresh", undefined);
+    // The action that was waiting has another name and payload now.
+    save.renameAction("mg/Heal", Mend2);
+    save.mapPayloads(Mend2, (payload) => ({
+      by: (payload as { amount: number }).amount,
+    }));
+  }),
 ];
 const Version2 = App.define({ plugins: [Game2], version: 2, migrations });
+
+// --- a gauge, and the builds of it that each add a field of a kind -------------------
+
+const Gauge = Component.define("mg/Gauge", { level: Field.u8 });
+const GaugeF32 = Component.define("mg/Gauge", {
+  level: Field.u8,
+  z: Field.f32,
+});
+const GaugeI32 = Component.define("mg/Gauge", {
+  level: Field.u8,
+  z: Field.i32,
+});
+const GaugeU32 = Component.define("mg/Gauge", {
+  level: Field.u8,
+  z: Field.u32,
+});
+const GaugeU8 = Component.define("mg/Gauge", { level: Field.u8, z: Field.u8 });
+
+// --- what a save holds beside its components, in version 0 and in version 1 ----------
+
+const Hit0 = Event.define("mv/Hit", Schema.Struct({ damage: Schema.Int }));
+const Move0 = Action.define("mv/Move", Schema.Struct({ dx: Schema.Int }));
+const Phase0 = State.define("mv/Phase", ["menu", "play", "over"]);
+const Spark = Component.define("mv/Spark", { n: Field.u8 });
+const Sparks = Query.all(Spark);
+/** Emitted by the last system, and read by the first: it waits for a tick. */
+const Hitting0 = System.tick("mv/Hits", function* () {
+  (yield* Hit0.emits).emit({ damage: 2 });
+});
+const Version0Moves = App.define({
+  plugins: [
+    Plugin.make("mv/Game", {
+      setup: Effect.gen(function* () {
+        const play = State.scoped(Phase0, "play");
+        const commands = yield* Commands.spawns(Spark, play);
+        commands.spawn(Spark.of({ n: 1 }), play);
+        commands.spawn(Spark.of({ n: 2 }), play);
+        (yield* Phase0.sets).set("play");
+      }),
+      systems: [Hitting0],
+      handlers: [Action.handler(Move0, function* () {})],
+    }),
+  ],
+});
+
+const Struck = Event.define("mv/Struck", Schema.Struct({ damage: Schema.Int }));
+const Step1 = Action.define(
+  "mv/Step",
+  Schema.Struct({ dx: Schema.Int, run: Schema.Boolean })
+);
+const Phase1 = State.define("mv/Phase", ["menu", "playing", "over"]);
+const End1 = Action.define("mv/End", Schema.Struct({}));
 
 describe("a snapshot read without the program's components", () => {
   it.effect(
@@ -458,7 +487,7 @@ describe("a save from another version of the game", () => {
     Effect.gen(function* () {
       const { save } = yield* savedByVersion0();
       const load = Effect.fnUntraced(function* (
-        given: readonly Save.Migration[],
+        given: readonly Migrate.Migration[],
         version = 2
       ) {
         return refusal(
@@ -495,8 +524,8 @@ describe("a save from another version of the game", () => {
   it.effect("is refused when a migration fails, and says which and why", () =>
     Effect.gen(function* () {
       const { save } = yield* savedByVersion0();
-      const failing = (migrate: Save.Migration["migrate"]) =>
-        refusal(Save.migrate(save, 1, [{ from: 0, migrate }]));
+      const failing = (migrate: Migrate.Migration["migrate"]) =>
+        refusal(Migrate.migrate(save, 1, [Migrate.step(0, migrate)]));
       const thrown = failing(() => {
         throw new Error("the old saves had no such thing");
       });
@@ -504,114 +533,122 @@ describe("a save from another version of the game", () => {
       expect(thrown.message).toBe(
         "The migration from version 0 to version 1 failed: the old saves had no such thing"
       );
-      // Each helper refuses what is not there, by name.
-      const cases: [(world: Save.Contents["world"]) => void, RegExp][] = [
+      // Each change refuses what is not there, by name.
+      const cases: [(save: Migrate.Contents) => void, RegExp][] = [
         [
-          (world) => Migrate.renameComponent(world, "mg/Nope", "mg/Else"),
+          (one) => one.renameComponent("mg/Nope", Name2),
           /holds no component named "mg\/Nope"\. It holds: arcadekit\/Time, mg\/Buff, mg\/Hp/,
         ],
         [
-          (world) => Migrate.renameComponent(world, "mg/Hp", "mg/Pos"),
+          (one) => one.renameComponent("mg/Hp", Pos2),
           /already holds a component named "mg\/Pos"/,
         ],
         [
-          (world) => Migrate.renameField(world, "mg/Pos", "z", "w"),
+          (one) => one.renameField(Pos2, "z", "px"),
           /"mg\/Pos" has no field named "z" in the save\. It has: x, y/,
         ],
         [
-          (world) => Migrate.renameField(world, "mg/Pos", "x", "y"),
+          (one) => one.renameField(Pos0, "x", "y"),
           /"mg\/Pos" already has a field named "y"/,
         ],
         [
-          (world) => Migrate.addField(world, "mg/Pos", "x", "f32", 0),
+          (one) => one.addField(Pos0, "x", 0),
           /"mg\/Pos" already has a field named "x"/,
         ],
+        [(one) => one.removeField(Pos2, "z"), /no field named "z"/],
         [
-          (world) => Migrate.addField(world, "mg/Pos", "z", "f32", 0, "w"),
-          /no field named "w"/,
+          (one) => one.mapField(Pos2, "px", (v: number) => v),
+          /no field named "px"/,
+        ],
+        [(one) => one.removeComponent("mg/Nope"), /no component named/],
+        [
+          (one) => one.renameEvent("mg/Nope", Struck),
+          /holds no event named "mg\/Nope" waiting to be read\. It holds: none/,
         ],
         [
-          (world) => Migrate.removeField(world, "mg/Pos", "z"),
-          /no field named "z"/,
+          (one) => one.renameAction("mg/Nope", Mend2),
+          /holds no action named "mg\/Nope" queued for the next tick\. It holds: mg\/Heal/,
         ],
         [
-          (world) =>
-            Migrate.mapField(world, "mg/Pos", "z", "f64", (v: number) => v),
-          /no field named "z"/,
+          (one) => one.renameStateValue(Phase1, "nope", "playing"),
+          /holds no state named "mv\/Phase"/,
         ],
         [
-          (world) => Migrate.removeComponent(world, "mg/Nope"),
-          /no component named/,
+          (one) => {
+            one.renameAction("mg/Heal", Mend2);
+            one.mapPayloads(Mend2, () => ({ by: 1.5 }));
+          },
+          /A payload of "mg\/Mend" is not one its schema takes/,
         ],
       ];
       for (const [change, message] of cases) {
-        const error = failing(({ world }) => change(world));
+        const error = failing(change);
         expect(error.problem).toBe("migration failed");
         expect(error.message).toMatch(message);
       }
     })
   );
 
-  it.effect(
-    "is refused when a migration gives a number field what it cannot hold",
-    () =>
-      Effect.gen(function* () {
-        const { save } = yield* savedByVersion0();
-        const failing = (change: (world: Save.Contents["world"]) => void) =>
-          refusal(
-            Save.migrate(save, 1, [
-              { from: 0, migrate: ({ world }) => change(world) },
-            ])
-          );
-        const cases: [(world: Save.Contents["world"]) => void, string][] = [
-          [
-            // @ts-expect-error a number field is given a string
-            (world) => Migrate.addField(world, "mg/Pos", "z", "f32", "far"),
-            'The f32 field "z" of "mg/Pos" cannot hold "far": it holds numbers.',
-          ],
-          [
-            (world) => Migrate.addField(world, "mg/Pos", "z", "u8", 300),
-            'The u8 field "z" of "mg/Pos" cannot hold 300: it holds whole numbers from 0 to 255.',
-          ],
-          [
-            (world) => Migrate.addField(world, "mg/Pos", "z", "i32", 1.5),
-            'The i32 field "z" of "mg/Pos" cannot hold 1.5: it holds whole numbers from -2147483648 to 2147483647.',
-          ],
-          [
-            (world) => Migrate.addField(world, "mg/Pos", "z", "u32", -1),
-            'The u32 field "z" of "mg/Pos" cannot hold -1: it holds whole numbers from 0 to 4294967295.',
-          ],
-          [
-            (world) =>
-              Migrate.mapField(
-                world,
-                "mg/Hp",
-                "points",
-                "u16",
-                // @ts-expect-error a number field is given what is not a number
-                (points: number) => ({ points })
-              ),
-            'The u16 field "points" of "mg/Hp" cannot hold [object Object]: it holds whole numbers from 0 to 65535.',
-          ],
-          [
-            (world) =>
-              Migrate.mapField(
-                world,
-                "mg/Pos",
-                "x",
-                "u8",
-                (x: number) => x * 100
-              ),
-            'The u8 field "x" of "mg/Pos" cannot hold',
-          ],
-        ];
-        for (const [change, message] of cases) {
-          const error = failing(change);
-          expect(error.problem).toBe("migration failed");
-          expect(error.message).toContain(message);
-        }
-      })
-  );
+  it("is refused when a migration gives a number field what it cannot hold", () => {
+    // A save of a gauge, and the builds of it that add a field of each kind.
+    const world = new EcsWorld();
+    world.spawn(Gauge.of({ level: 3 }));
+    const save: Save.Save = { version: 0, world: world.snapshot() };
+    const failing = (change: (save: Migrate.Contents) => void) =>
+      refusal(Migrate.migrate(save, 1, [Migrate.step(0, change)]));
+    const cases: [(save: Migrate.Contents) => void, string][] = [
+      [
+        // @ts-expect-error a number field is given a string
+        (one) => one.addField(GaugeF32, "z", "far"),
+        'The f32 field "z" of "mg/Gauge" cannot hold "far": it holds numbers.',
+      ],
+      [
+        (one) => one.addField(GaugeU8, "z", 300),
+        'The u8 field "z" of "mg/Gauge" cannot hold 300: it holds whole numbers from 0 to 255.',
+      ],
+      [
+        (one) => one.addField(GaugeI32, "z", 1.5),
+        'The i32 field "z" of "mg/Gauge" cannot hold 1.5: it holds whole numbers from -2147483648 to 2147483647.',
+      ],
+      [
+        (one) => one.addField(GaugeU32, "z", -1),
+        'The u32 field "z" of "mg/Gauge" cannot hold -1: it holds whole numbers from 0 to 4294967295.',
+      ],
+      [
+        (one) =>
+          one.mapField(
+            GaugeU8,
+            "level",
+            // @ts-expect-error a number field is given what is not a number
+            (level: number) => ({ level })
+          ),
+        'The u8 field "level" of "mg/Gauge" cannot hold [object Object]: it holds whole numbers from 0 to 255.',
+      ],
+      [
+        (one) => one.mapField(GaugeU8, "level", (level: number) => level * 100),
+        'The u8 field "level" of "mg/Gauge" cannot hold 300',
+      ],
+    ];
+    for (const [change, message] of cases) {
+      const error = failing(change);
+      expect(error.problem).toBe("migration failed");
+      expect(error.message).toContain(message);
+    }
+  });
+
+  it("does not compile with a field the component's definition does not have", () => {
+    const edit = (save: Migrate.Contents) => {
+      // @ts-expect-error GaugeU8 has no field "zz"
+      save.addField(GaugeU8, "zz", 1);
+      // @ts-expect-error nor can a field be renamed to one it does not have
+      save.renameField(GaugeU8, "level", "height");
+      // @ts-expect-error nor computed anew
+      save.mapField(GaugeU8, "volume", (level: number) => level);
+      // @ts-expect-error nor a state be given a value it does not have
+      save.renameStateValue(Phase1, "play", "paused");
+    };
+    expect(edit).toBeTypeOf("function");
+  });
 
   it.effect(
     "is refused by name when its migrations do not bring it all the way",
@@ -644,20 +681,18 @@ describe("a save from another version of the game", () => {
     Effect.gen(function* () {
       const { save } = yield* savedByVersion0();
       let ran = 0;
-      const counting: Save.Migration[] = [
-        { from: 0, migrate: () => void ran++ },
-      ];
-      expect(unwrap(Save.migrate(save, 0, counting))).toBe(save);
+      const counting = [Migrate.step(0, () => void ran++)];
+      expect(unwrap(Migrate.migrate(save, 0, counting))).toBe(save);
       expect(ran).toBe(0);
       // A migration that changes nothing gives the same game, a version on.
-      const moved = unwrap(Save.migrate(save, 1, counting));
+      const moved = unwrap(Migrate.migrate(save, 1, counting));
       expect(ran).toBe(1);
       expect(moved.version).toBe(1);
       expect(moved.world).toEqual(save.world);
       expect({ ...moved, version: 0 }).toEqual(save);
       // The save it was given is not changed by a migration that edits.
       const before = structuredClone(save);
-      unwrap(Save.migrate(save, 2, migrations));
+      unwrap(Migrate.migrate(save, 2, migrations));
       expect(save).toEqual(before);
     })
   );
@@ -667,18 +702,6 @@ describe("a save from another version of the game", () => {
     () =>
       Effect.gen(function* () {
         const { entities, save } = yield* savedByVersion0();
-        const contents = readSnapshot(save.world);
-        // Renames that change where a component sorts, one of them sparse, and
-        // a sparse component and a tag taken out.
-        Migrate.renameComponent(contents, "mg/Pos", "mg/Apos");
-        Migrate.renameComponent(contents, "mg/Hp", "mg/Zhp");
-        Migrate.renameComponent(contents, "mg/Buff", "mg/Boon");
-        Migrate.removeComponent(contents, "mg/Old");
-        // A world on its own has none of an app's stores, and refuses what
-        // they held: here it is the components that are looked at.
-        contents.stores = [];
-        const bytes = writeSnapshot(contents);
-
         const Apos = Component.define("mg/Apos", {
           x: Field.f32,
           y: Field.f32,
@@ -689,6 +712,18 @@ describe("a save from another version of the game", () => {
           { power: Field.u8, note: Field.json<string>() },
           { storage: "sparse" }
         );
+        const contents = readSnapshot(save.world);
+        const edited = new Migrate.Contents(contents);
+        // Renames that change where a component sorts, one of them sparse, and
+        // a sparse component and a tag taken out.
+        edited.renameComponent("mg/Pos", Apos);
+        edited.renameComponent("mg/Hp", Zhp);
+        edited.renameComponent("mg/Buff", Boon);
+        edited.removeComponent("mg/Old");
+        // A world on its own has none of an app's stores, and refuses what
+        // they held: here it is the components that are looked at.
+        contents.stores = [];
+        const bytes = writeSnapshot(contents);
         const world = new EcsWorld();
         world.load(bytes, [Apos, Zhp, Boon, Name0]);
         expect(world.get(entities[0]!, Apos)).toEqual({ x: 0, y: -0 });
@@ -702,7 +737,7 @@ describe("a save from another version of the game", () => {
         expect(world.snapshot()).toEqual(bytes);
 
         // The sparse component taken out altogether.
-        Migrate.removeComponent(contents, "mg/Boon");
+        edited.removeComponent("mg/Boon");
         expect(contents.sparse).toEqual([]);
         const without = new EcsWorld();
         without.load(writeSnapshot(contents), [Apos, Zhp, Name0]);
@@ -718,13 +753,10 @@ describe("a save from another version of the game", () => {
       Effect.gen(function* () {
         const { save } = yield* savedByVersion0();
         const error = refusal(
-          Save.migrate(save, 1, [
-            {
-              from: 0,
-              migrate: ({ world }) => {
-                world.tables[0]!.columns["mg/Hp"]!.points = new Int32Array(1);
-              },
-            },
+          Migrate.migrate(save, 1, [
+            Migrate.step(0, ({ world }) => {
+              world.tables[0]!.columns["mg/Hp"]!.points = new Int32Array(1);
+            }),
           ])
         );
         expect(error).toBeInstanceOf(Save.LoadRefused);
@@ -735,26 +767,20 @@ describe("a save from another version of the game", () => {
         // And when it takes a column away, or leaves data for a component it
         // took off the list.
         const missing = refusal(
-          Save.migrate(save, 1, [
-            {
-              from: 0,
-              migrate: ({ world }) => {
-                delete world.tables[1]!.columns["mg/Pos"]!.y;
-              },
-            },
+          Migrate.migrate(save, 1, [
+            Migrate.step(0, ({ world }) => {
+              delete world.tables[1]!.columns["mg/Pos"]!.y;
+            }),
           ])
         );
         expect(missing.message).toMatch(/"mg\/Pos\.y" has no column/);
         const unlisted = refusal(
-          Save.migrate(save, 1, [
-            {
-              from: 0,
-              migrate: ({ world }) => {
-                world.components = world.components.filter(
-                  (component) => component.name !== "mg/Buff"
-                );
-              },
-            },
+          Migrate.migrate(save, 1, [
+            Migrate.step(0, ({ world }) => {
+              world.components = world.components.filter(
+                (component) => component.name !== "mg/Buff"
+              );
+            }),
           ])
         );
         expect(unlisted.problem).toBe("corrupt");
@@ -774,19 +800,7 @@ describe("a save from another version of the game", () => {
       world.spawn(Thing.of({ a: n, b: `b${n}` }))
     );
     const contents = readSnapshot(world.snapshot());
-    Migrate.mapField(contents, "mg/Thing", "a", "json", (a) => ({ was: a }));
-    Migrate.mapField(
-      contents,
-      "mg/Thing",
-      "b",
-      "f64",
-      (b: string) => Number(b.slice(1)) / 2
-    );
-    Migrate.addField(contents, "mg/Thing", "c", "entity", idOf(entities[0]!));
-    Migrate.addField(contents, "mg/Thing", "d", "json", "new", "a");
-    Migrate.addField(contents, "mg/Thing", "e", "u16", 500);
-    Migrate.addField(contents, "mg/Thing", "f", "f32", 0.5);
-    const Thing2: ComponentDef = Component.define("mg/Thing", {
+    const Thing2 = Component.define("mg/Thing", {
       d: Field.json<string>(),
       a: Field.json<{ was: number }>(),
       b: Field.f64,
@@ -794,6 +808,14 @@ describe("a save from another version of the game", () => {
       e: Field.u16,
       f: Field.f32,
     });
+    const save = new Migrate.Contents(contents);
+    save.mapField(Thing2, "a", (a: number) => ({ was: a }));
+    save.mapField(Thing2, "b", (b: string) => Number(b.slice(1)) / 2);
+    save.addField(Thing2, "c", entities[0]!);
+    // First, where the definition puts it.
+    save.addField(Thing2, "d", "new");
+    save.addField(Thing2, "e", 500);
+    save.addField(Thing2, "f", 0.5);
     const loaded = new EcsWorld();
     loaded.load(writeSnapshot(contents), [Thing2]);
     expect(entities.map((entity) => loaded.get(entity, Thing2))).toEqual([
@@ -802,4 +824,110 @@ describe("a save from another version of the game", () => {
       { d: "new", a: { was: 3 }, b: 1.5, c: entities[0], e: 500, f: 0.5 },
     ]);
   });
+});
+
+describe("a save's events, actions and states", () => {
+  it.effect(
+    "are carried across a rename of each, with nothing edited by hand, and go on in the game as it is now",
+    () =>
+      Effect.gen(function* () {
+        // A tick of version 0: the event is waiting, the move is queued, and
+        // the sparks are scoped to the state's "play".
+        const save = yield* withApp(App.make(Version0Moves), (app) =>
+          Effect.gen(function* () {
+            yield* app.tick(1);
+            yield* app.enqueue(Move0, { dx: 3 });
+            return unwrap(yield* Effect.exit(Save.make(app)));
+          })
+        );
+        const heard: number[] = [];
+        const stepped: { dx: number; run: boolean }[] = [];
+        const game = (migrations: readonly Migrate.Migration[]) =>
+          App.define({
+            version: 1,
+            migrations,
+            systems: [
+              System.tick("mv/Hear", function* () {
+                for (const { damage } of (yield* Struck).read()) {
+                  heard.push(damage);
+                }
+              }),
+            ],
+            handlers: [
+              Action.handler(Step1, function* (step) {
+                stepped.push(step);
+              }),
+              Action.handler(End1, function* () {
+                (yield* Phase1.sets).set("over");
+              }),
+            ],
+          });
+        // Without a migration, each of them is refused.
+        const bare = refusal(
+          yield* Effect.exit(
+            App.make(game([Migrate.step(0, () => {})]), { save })
+          )
+        );
+        expect(["store changed", "unknown component"]).toContain(bare.problem);
+        const Carried = game([
+          Migrate.step(0, (one) => {
+            one.renameEvent("mv/Hit", Struck);
+            one.renameAction("mv/Move", Step1);
+            one.mapPayloads(Step1, (payload) => ({
+              ...(payload as { dx: number }),
+              run: false,
+            }));
+            one.renameStateValue(Phase1, "play", "playing");
+          }),
+        ]);
+        yield* withApp(App.make(Carried, { save }), (app, world) =>
+          Effect.gen(function* () {
+            expect((yield* app.read(Phase1)).value).toBe("playing");
+            expect((yield* app.read(Sparks)).entities().length).toBe(2);
+            yield* app.tick(1);
+            // The event that was waiting is heard under its new name, and the
+            // move applied with the payload it has now.
+            expect(heard).toEqual([2]);
+            expect(stepped).toEqual([{ dx: 3, run: false }]);
+            // The sparks are still the state's: leaving it takes them.
+            yield* app.dispatch(End1, {});
+            yield* app.tick(1);
+            expect((yield* app.read(Phase1)).value).toBe("over");
+            expect(world.entityCount).toBe(0);
+          })
+        );
+      })
+  );
+
+  it.effect("are renamed with a state, its scoped tags among them", () =>
+    Effect.gen(function* () {
+      const save = yield* withApp(App.make(Version0Moves), (app) =>
+        Effect.gen(function* () {
+          yield* app.tick(1);
+          return unwrap(yield* Effect.exit(Save.make(app)));
+        })
+      );
+      const Stage = State.define("mv/Stage", ["menu", "play", "over"]);
+      const moved = unwrap(
+        Migrate.migrate(save, 1, [
+          Migrate.step(0, (one) => {
+            one.renameState("mv/Phase", Stage);
+            one.removeEvent("mv/Hit");
+          }),
+        ])
+      );
+      const names = readSnapshot(moved.world).components.map(
+        ({ name }) => name
+      );
+      expect(names).toContain("mv/Stage");
+      expect(names).toContain("mv/Stage.Scoped.play");
+      expect(names.filter((name) => name.startsWith("mv/Phase"))).toEqual([]);
+      // No event is waiting any more.
+      expect(
+        readSnapshot(moved.world).stores.find(
+          (store) => store.name === Event.STORE
+        )?.data
+      ).toEqual([]);
+    })
+  );
 });

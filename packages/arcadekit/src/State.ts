@@ -219,7 +219,7 @@ export interface Move {
  *   either.
  * - A save that holds the tag of a value the state no longer has fails to
  *   load with `Save.LoadRefused`, `"unknown component"`. A migration renames
- *   or removes the tag.
+ *   the value with `renameStateValue`, and the tag with it.
  *
  *   const playing = State.scoped(Phase, "playing")
  *   const commands = yield* Commands.spawns(Wall, playing)

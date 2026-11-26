@@ -27,6 +27,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { JsonValue } from "../src/index.ts";
+import { renamedIn } from "./renamed.ts";
 
 const Turn = Singleton.define(
   "sg/Turn",
@@ -314,7 +315,7 @@ describe("a singleton in a snapshot", () => {
     // program's "sg/Turn" stays the one a load finds.
     const renamed = (to: string): Uint8Array => {
       const contents = readSnapshot(bytes);
-      Migrate.renameComponent(contents, "sg/Turn", to);
+      renamedIn(contents, "sg/Turn", to);
       return writeSnapshot(contents);
     };
     const Shorter = Singleton.define(
@@ -483,7 +484,7 @@ describe("a singleton in a snapshot", () => {
     expect(writeSnapshot(readSnapshot(third))).toEqual(world.snapshot());
   });
 
-  it("describes itself, so a migration can change it by name", () => {
+  it("describes itself, so a migration can change it", () => {
     const bytes = written().snapshot();
     const contents = readSnapshot(bytes);
     expect(writeSnapshot(contents)).toEqual(bytes);
@@ -508,23 +509,18 @@ describe("a singleton in a snapshot", () => {
         ],
       }
     );
-    Migrate.renameComponent(contents, "sg/Turn", "sg/Clock");
-    Migrate.renameField(contents, "sg/Clock", "round", "lap");
-    Migrate.addField(contents, "sg/Clock", "speed", "f32", 2);
-    Migrate.mapField(
-      contents,
-      "sg/Clock",
-      "lap",
-      "f64",
-      (lap: number) => lap / 8
-    );
-    Migrate.removeField(contents, "sg/Clock", "player");
-    Migrate.removeComponent(contents, "sg/Everything");
     const Clock = Singleton.define(
       "sg/Clock",
       { lap: Field.f64, speed: Field.f32 },
       { lap: 0, speed: 1 }
     );
+    const save = new Migrate.Contents(contents);
+    save.renameComponent("sg/Turn", Clock);
+    save.renameField(Clock, "round", "lap");
+    save.addField(Clock, "speed", 2);
+    save.mapField(Clock, "lap", (lap: number) => lap / 8);
+    save.removeField(Clock, "player");
+    save.removeComponent("sg/Everything");
     const copy = new EcsWorld();
     copy.load(writeSnapshot(contents), [Body, Clock.component]);
     expect({ ...copy.singleton(Clock) }).toEqual({ lap: 1.5, speed: 2 });

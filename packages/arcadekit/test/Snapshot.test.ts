@@ -10,8 +10,9 @@ import {
 } from "../src/ecs/index.ts";
 import { Component } from "../src/ecs/index.ts";
 import type { ComponentDef } from "../src/ecs/index.ts";
-import { Field, Migrate, Query } from "../src/index.ts";
+import { Field, Query } from "../src/index.ts";
 import type { JsonValue } from "../src/index.ts";
+import { renamedIn } from "./renamed.ts";
 import { Shouts } from "./stores.ts";
 
 // One component of every field kind, in a table and in a sparse set.
@@ -435,7 +436,7 @@ describe("a snapshot that cannot be loaded", () => {
     expect(found.component("snap/Aura")?.name).toBe("snap/Aura");
 
     const contents = readSnapshot(sample());
-    Migrate.renameComponent(contents, "snap/Aura", "snap/Undefined");
+    renamedIn(contents, "snap/Aura", "snap/Undefined");
     const error = problemOf(() => loaded(writeSnapshot(contents)));
     expect(error.problem).toBe("unknown component");
     expect(error.component).toBe("snap/Undefined");

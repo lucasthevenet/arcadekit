@@ -9,8 +9,9 @@ import {
 } from "../src/ecs/index.ts";
 import { Component } from "../src/ecs/index.ts";
 import type { ComponentDef } from "../src/ecs/index.ts";
-import { Field, Migrate, Query } from "../src/index.ts";
+import { Field, Query } from "../src/index.ts";
 import type { Entity, JsonValue } from "../src/index.ts";
+import { renamedIn } from "./renamed.ts";
 import { Shouts } from "./stores.ts";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
@@ -428,7 +429,7 @@ describe("a world that is restored from a snapshot", () => {
     const other = new EcsWorld();
     other.spawn(Component.tag("rs/Stranger"));
     const contents = readSnapshot(other.snapshot());
-    Migrate.renameComponent(contents, "rs/Stranger", "rs/Undefined");
+    renamedIn(contents, "rs/Stranger", "rs/Undefined");
     let refused: unknown;
     try {
       world.restore(writeSnapshot(contents));

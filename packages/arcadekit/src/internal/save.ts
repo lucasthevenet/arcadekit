@@ -7,13 +7,20 @@ import { SnapshotError } from "../ecs/snapshot.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
-import {
-  LoadRefused,
-  Refused as SaveRefused,
-  VISITS,
-  migrate,
-} from "../Save.ts";
-import type { Migration, Save } from "../Save.ts";
+import { migrate } from "../Migrate.ts";
+import type { Migration } from "../Migrate.ts";
+import { LoadRefused, Refused as SaveRefused } from "../Save.ts";
+import type { Save } from "../Save.ts";
+
+/**
+ * The name of the store that holds what an app's change queries have yet to
+ * visit, as a snapshot has it: what `world.saveChanges()` returns for the
+ * systems of the tick and the handlers, one entry per component and kind of
+ * change, `{ component, kind, entries, readers }`.
+ *
+ * @internal
+ */
+export const VISITS = "arcadekit/changes";
 
 /** Says what a failed decoding found wrong. */
 const describeCause = (cause: Cause.Cause<unknown>): string => {
@@ -109,10 +116,10 @@ export const into = (
         problem: loading(error),
         message:
           error.problem === "unknown component"
-            ? `${error.message} A migration renames or removes a component in a save.`
+            ? `${error.message} A step of \`Migrate.step\` renames it to its definition with \`renameComponent\`, or removes it with \`removeComponent\`.`
             : error.problem === "unknown store" ||
                 error.problem === "store changed"
-              ? `${error.message} A migration changes the events and the queued actions of a save in \`world.stores\`.`
+              ? `${error.message} A step of \`Migrate.step\` renames them with \`renameEvent\` and \`renameAction\`, and changes their payloads with \`mapPayloads\`.`
               : error.message,
       })
     );

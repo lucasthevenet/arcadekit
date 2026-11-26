@@ -108,7 +108,8 @@ export class Singleton<S extends Schema>
  *   at the `initial` of the build that loads it.
  * - No entity has it, and no query visits it. Spawning it, or adding it to an
  *   entity, throws.
- * - A migration changes it by name with `Migrate`, as it does a component.
+ * - A migration changes it with `Migrate.step`, by its definition, as it
+ *   does a component.
  *
  * @category Constructors
  */
