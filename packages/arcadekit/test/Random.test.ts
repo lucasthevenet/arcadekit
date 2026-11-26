@@ -211,6 +211,42 @@ describe("the random number generator", () => {
     expect(rng.next()).toBe(same.next());
   });
 
+  it("range() stays at least min and below max at any magnitude, from one draw", () => {
+    // Where a step of the range is a whole unit of the numbers, or more, a
+    // draw near the top would round up to max; where the range is wider than
+    // the largest number, max - min is no number.
+    for (const [min, max] of [
+      [2 ** 53, 2 ** 53 + 2],
+      [-(2 ** 53) - 2, -(2 ** 53)],
+      [1e300, 1e300 + 1e284],
+      [1, 1 + Number.EPSILON],
+      [-Number.MAX_VALUE, Number.MAX_VALUE],
+      [-Number.MIN_VALUE, 0],
+    ] as const) {
+      const rng = new Rng(5);
+      const same = new Rng(5);
+      for (let i = 0; i < 2000; i++) {
+        const value = rng.range(min, max);
+        expect(value >= min && value < max, `range(${min}, ${max})`).toBe(true);
+        same.next();
+      }
+      expect(rng.next()).toBe(same.next());
+    }
+    // The widest range is spread over both signs, and not piled at its top.
+    const rng = new Rng(6);
+    const wide = Array.from({ length: 200 }, () =>
+      rng.range(-Number.MAX_VALUE, Number.MAX_VALUE)
+    );
+    expect(wide.filter((value) => value < 0).length).toBeGreaterThan(70);
+    expect(wide.filter((value) => value > 0).length).toBeGreaterThan(70);
+    // A draw that rounds up is the largest number below max.
+    const top = new Rng(5);
+    const values = new Set(
+      Array.from({ length: 200 }, () => top.range(2 ** 53, 2 ** 53 + 2))
+    );
+    expect([...values]).toEqual([2 ** 53]);
+  });
+
   it("chance() is true about as often as it says, from one draw, and refuses a chance that is none", () => {
     const rng = new Rng(9);
     const same = new Rng(9);

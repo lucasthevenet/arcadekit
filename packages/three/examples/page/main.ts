@@ -150,19 +150,21 @@ const Fly = Input.stick("page/Fly", {
   pad: Input.padStick(0, "left"),
 });
 
+/** The one ship the player flies. */
+const Piloted = Query.all(Position).pipe(
+  Query.with(Ship),
+  Query.writes(Position)
+);
+
 const Steer = System.tick("Steer", function* () {
   const { delta } = yield* Time;
   const { x, y } = yield* Fly;
   if (x === 0 && y === 0) {
     return;
   }
-  (yield* Query.all(Position).pipe(
-    Query.writes(Position),
-    Query.with(Ship)
-  )).each((position) => {
-    position.x += x * 30 * delta;
-    position.y += y * 30 * delta;
-  });
+  const [position] = (yield* Piloted).single();
+  position.x += x * 30 * delta;
+  position.y += y * 30 * delta;
 });
 
 const Rules = Plugin.make("page/Rules", {

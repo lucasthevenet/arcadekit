@@ -28,6 +28,29 @@ const mix = (value: number): number => {
 const GOLDEN = 0x9e3779b9;
 
 /**
+ * The largest number below a finite `x`, from its bits, written out in a
+ * fixed byte order so that every engine finds the same.
+ */
+const below = (x: number): number => {
+  if (x === 0) {
+    return -Number.MIN_VALUE;
+  }
+  const bits = new DataView(new ArrayBuffer(8));
+  bits.setFloat64(0, x);
+  const high = bits.getUint32(0);
+  const low = bits.getUint32(4);
+  // A positive number's bits count up with it, and a negative one's down.
+  if (x > 0) {
+    bits.setUint32(0, low === 0 ? high - 1 : high);
+    bits.setUint32(4, low === 0 ? 0xff_ff_ff_ff : low - 1);
+  } else {
+    bits.setUint32(0, low === 0xff_ff_ff_ff ? high + 1 : high);
+    bits.setUint32(4, low === 0xff_ff_ff_ff ? 0 : low + 1);
+  }
+  return bits.getFloat64(0);
+};
+
+/**
  * A seeded random number generator, xoshiro128**. The same seed gives the
  * same numbers on every machine and in every JavaScript engine. Each world
  * owns one, as `world.random`, and its state is part of the world: a
@@ -137,7 +160,9 @@ export class Rng {
   /**
    * Returns a number from `min` up to, but not including, `max`:
    * `range(2, 5)` for a speed of 2 to 5. Both must be finite, with `max` no
-   * less than `min`, or it throws. `range(min, min)` is `min`.
+   * less than `min`, or it throws. `range(min, min)` is `min`. It draws one
+   * number, and holds to its ends at any magnitude: a draw that would round
+   * up to `max` is the largest number below it.
    */
   range(min: number, max: number): number {
     if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) {
@@ -145,7 +170,17 @@ export class Rng {
         `Random.range(${min}, ${max}): both must be finite numbers, with max no less than min.`
       );
     }
-    return min + this.next() * (max - min);
+    const drawn = this.next();
+    if (min === max) {
+      return min;
+    }
+    const width = max - min;
+    // Wider than the largest number, the range is worked out at half scale,
+    // which a power of two leaves exact.
+    const value = Number.isFinite(width)
+      ? min + drawn * width
+      : 2 * (min / 2 + drawn * (max / 2 - min / 2));
+    return value < max ? value : below(max);
   }
 
   /**
