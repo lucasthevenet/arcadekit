@@ -87,6 +87,11 @@
       "types": "./dist/Migrate.d.ts",
       "default": "./dist/Migrate.js"
     },
+    "./Overlap": {
+      "source": "./src/Overlap.ts",
+      "types": "./dist/Overlap.d.ts",
+      "default": "./dist/Overlap.js"
+    },
     "./Plugin": {
       "source": "./src/Plugin.ts",
       "types": "./dist/Plugin.d.ts",
@@ -156,6 +161,11 @@
       "source": "./src/Transform3d.ts",
       "types": "./dist/Transform3d.d.ts",
       "default": "./dist/Transform3d.js"
+    },
+    "./Vec2": {
+      "source": "./src/Vec2.ts",
+      "types": "./dist/Vec2.d.ts",
+      "default": "./dist/Vec2.js"
     },
     "./View": {
       "source": "./src/View.ts",

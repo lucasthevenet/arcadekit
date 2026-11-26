@@ -22,11 +22,13 @@ import {
   Action,
   App,
   Commands,
+  Component,
   Driver,
   EntityId,
   Event,
   Field,
   Input,
+  Overlap,
   Plugin,
   Query,
   Singleton,
@@ -35,6 +37,7 @@ import {
   System,
   Time,
   Timeline,
+  Transform2d,
   View,
   World as WorldService,
 } from "../src/index.ts";
@@ -598,6 +601,41 @@ const MovementRaw = System.tick("MovementRaw", function* () {
   });
 });
 
+const Red = Component.tag("bench/Red");
+const Blue = Component.tag("bench/Blue");
+const Reds = Query.all(Transform2d.Position, Overlap.Circle, Red);
+const Blues = Query.all(Transform2d.Position, Overlap.Circle, Blue);
+
+/**
+ * A thousand red circles against a thousand blue, scattered so that about a
+ * pair in a hundred touches, as bullets among enemies do. Nothing is
+ * despawned, so every pass tests the same pairs.
+ */
+const pairing = (): number => {
+  const world = new World();
+  let seed = 1;
+  const next = () => {
+    seed = (seed * 16_807) % 2_147_483_647;
+    return seed / 2_147_483_647;
+  };
+  for (const colour of [Red, Blue]) {
+    for (let i = 0; i < 1000; i++) {
+      world.spawn(
+        colour,
+        Transform2d.Position.of({ x: next() * 200, y: next() * 200 }),
+        Overlap.Circle.of({ radius: 4 })
+      );
+    }
+  }
+  const reds = world.view(Reds);
+  const blues = world.view(Blues);
+  const commands = { despawn: () => {} };
+  const keep = (): Overlap.Despawn => "neither";
+  return measure(() => {
+    Overlap.pairs(commands, reds, blues, keep);
+  });
+};
+
 const variants: Record<string, Variant> = {
   // The storage core's own, which `bench/core.ts` holds and CI compares.
   ...coreVariants,
@@ -855,6 +893,11 @@ const variants: Record<string, Variant> = {
     unit: "dispatch",
     label: "dispatch: the same, through a query that only reads",
     run: () => scanned(scanReads),
+  },
+  pairs: {
+    unit: "matches",
+    label: "Overlap.pairs: 1,000 circles against 1,000",
+    run: pairing,
   },
 };
 
