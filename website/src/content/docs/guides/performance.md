@@ -82,7 +82,7 @@ With a query that watches `Position`:
 
 This section is what a cloud Linux VM measured on 2026-11-26, with four cores of an Intel Xeon at 2.1 GHz and Node 22.23, at a load average of 1.1 to 1.5 from the benchmark itself. Each variant ran in fifteen processes of its own, in turn with the others, and each number is the median of five, each the fastest of three. A pass yields the app's method from one fiber, as a driver does, so each number includes what yielding it costs, about 0.3 µs a method. On the same day the machine measured the `eachChunk` row of the [loops](#loops) table at 2.6 ns per entity, as the table has it, and its other rows from 25% faster to 10% slower.
 
-A tick of ten empty systems costs about 7.6 µs, and a frame of ten empty systems costs 7.3 µs. With a [condition](systems.md) that holds on each of the ten, the tick costs 18.9 µs. With a condition that doesn't hold, it costs 11.7 µs.
+A tick of ten empty systems costs about 7.6 µs, and a frame of ten empty systems costs 7.3 µs. With a [condition](systems.md) of `State.is` that holds on each of the ten, the tick costs about 1.7 times as much as without. With one that doesn't hold, it costs about three quarters as much as without, because a system that is skipped costs less than one that runs and does nothing.
 
 arcadekit's own plugins cost this much when each has little to do:
 
