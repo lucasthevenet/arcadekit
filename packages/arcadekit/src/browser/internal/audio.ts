@@ -2,7 +2,7 @@ import { Effect, Fiber, Layer } from "effect";
 
 import * as Assets from "../../Assets.ts";
 import * as Driver from "../../Driver.ts";
-import { Entry } from "../../internal/sheet.ts";
+import { Entry, soundsOf } from "../../internal/sheet.ts";
 import * as Sound from "../../Sound.ts";
 import type { ContextLike, MediaLike } from "../Audio.ts";
 import type { Options } from "../Browser.ts";
@@ -105,7 +105,7 @@ const openPage = (
     { readonly cue: string; readonly url: string }
   >();
   for (const sheet of sheets) {
-    for (const clip of Object.values(sheet)) {
+    for (const clip of Object.values(soundsOf.get(sheet) ?? {})) {
       const { data } = clip;
       if (data instanceof Entry && data.url !== undefined) {
         files.set(data, { cue: clip.name, url: data.url });

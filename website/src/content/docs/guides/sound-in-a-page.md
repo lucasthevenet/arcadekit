@@ -9,15 +9,17 @@ In a page, cues and music play through **Web Audio**. A sound comes from one of 
 
 `Browser.runMain` and `Browser.layer` provide the Web Audio output. Their `sounds` option takes the cue sheets, made with `Sound.sheet`, whose files the page keeps for its lifetime: `sounds: [Sfx, Tracks]`. Their `volume` option sets the master volume, which scales every bus. `Audio.layerSound(sheets)` provides the same sound layer on its own.
 
+Give the page every sheet the game plays from. A game whose systems yield a sheet that `sounds` doesn't list doesn't compile, and the error names the sheet that is missing: `Plays<"game/Tracks">`.
+
 - The page's sound opens with the first app that has `Sound.plugin`, wherever the layer is provided, and is heard until that app is closed. The apps made under one `Browser.layer` share one audio context, because a browser allows a page only a few. They fetch each file once.
 - `Assets.Loader` fetches the files when the page's sound opens, and each file is decoded on arrival.
 - A browser lets a page make no sound until the user interacts with it. The page creates the audio context on the first key or pointer press, and cues requested from the next frame on play. A cue requested before that, or before its file has loaded, is dropped, because a late sound is worse than none. The first cue dropped before the first interaction is logged once by name, through Effect's logger, so a game that opens with a sound learns why it isn't heard.
 - Cues play only while the audio is running. Resuming takes a moment when the page becomes visible again or a laptop lid opens. While the audio is suspended or resuming, cues are dropped, because otherwise they would queue up and all play at once.
 - Music is never late, because it describes what should be playing. A track requested before the first interaction, or before its file has loaded, starts as soon as it can.
-- A sound of a sheet the page wasn't given, or whose file couldn't be fetched or decoded, is logged once, with its sheet's name, and plays nothing.
+- A sound whose file couldn't be fetched or decoded is logged once, with its name, and plays nothing.
 - Each cue and track plays at the volume `Sound.Player` gives it, its [bus's](sound.md#set-how-loud-each-kind-of-sound-is) volume included.
 - While the page is hidden, its audio is suspended, music included, as the frame loop is. The audio resumes when the page is visible again.
-- A page without sounds of its own still has audio, for its levels' clips. `sounds: false` turns audio off. The page creates no audio context, and `audible` on `Sound.Player` is false.
+- A page without sounds of its own still has audio, for its levels' clips. `sounds: false` turns audio off. The page creates no audio context, `audible` on `Sound.Player` is false, and a game may play from any sheet.
 - When the last app that plays through the page's sound is closed, or the page closes, the audio context closes and pending requests are cancelled. An app made after that opens the page's sound again, and the page waits for another touch.
 - An app that plays after it was closed throws, with an error that says so.
 
@@ -71,7 +73,7 @@ A sheet's file given by URL, and an `Audio.sound`, are downloaded in full and ke
 
 - A stream isn't an asset and belongs to no bundle. Nothing is downloaded until it plays, and there is nothing to release.
 - It starts, fades, and stops like any track. It is for tracks only. Played as a cue, it is logged once and doesn't play.
-- The page fetches it directly, not through `Assets.Loader`, whether or not it was given the stream's sheet. A test's recorder records it by its name in the sheet.
+- The page fetches it directly, not through `Assets.Loader`, as it plays: a page given its sheet fetches nothing of it when it starts. A test's recorder records it by its name in the sheet.
 - A streamed track may have an audible gap where it loops. For a short piece that must loop without a gap, give its URL in the sheet so the page decodes it in full.
 
 ## Read more

@@ -89,21 +89,20 @@ const Sfx = Sound.sheet("sd/Sfx", {
 
 /** How often a line was asked what an event sounds like. */
 let asked = 0;
-const Cues = Sound.cues(
-  "sd/Cues",
-  Sound.on(Dropped, Sfx.whoosh),
+const Cues = Sound.cues("sd/Cues", Sfx, ({ thud, whoosh }) => [
+  Sound.on(Dropped, whoosh),
   Sound.on(Bounced, ({ speed }) => {
     asked++;
     // A slow one makes no sound at all.
     return speed < 2
       ? undefined
       : {
-          cue: Sfx.thud,
+          cue: thud,
           volume: Math.min(1, speed / 10),
           rate: speed > 8 ? 2 : 1,
         };
-  })
-);
+  }),
+]);
 
 const Rules = Plugin.make("sd/Rules", {
   systems: [Fall],
@@ -135,10 +134,11 @@ const play = Effect.fnUntraced(function* (
   seed = 1
 ) {
   asked = 0;
-  const made = App.make(Noisy, { seed, hashEvery: 1 });
-  return yield* output === undefined
-    ? made
-    : made.pipe(Effect.provide(Sound.layer(output)));
+  return yield* App.make(Noisy, { seed, hashEvery: 1 }).pipe(
+    Effect.provide(
+      output === undefined ? Sound.layerNowhere : Sound.layer(output)
+    )
+  );
 });
 
 /** A ball that hits the floor on the next tick, at `speed`. */
@@ -309,10 +309,9 @@ describe("Sound.cues", () => {
     "plays nothing while its system does not run, and nothing later of what happened meanwhile",
     () =>
       Effect.gen(function* () {
-        const Quiet = Sound.cues(
-          "sd/Quiet",
-          Sound.on(Dropped, Sfx.whoosh)
-        ).pipe(System.runIf(State.is(Phase, "playing")));
+        const Quiet = Sound.cues("sd/Quiet", Sfx, ({ whoosh }) => [
+          Sound.on(Dropped, whoosh),
+        ]).pipe(System.runIf(State.is(Phase, "playing")));
         const sound = Sound.makeRecorder();
         const app = yield* App.make(
           App.define({ plugins: [Rules, Sound.plugin], systems: [Quiet] })
@@ -375,7 +374,7 @@ describe("Sound.Player", () => {
       "sd/Loud",
       // @ts-expect-error sound is the frame's
       function* () {
-        (yield* Sound.Player).play(Sfx.bang);
+        (yield* Sound.Player).play(Sound.clip("bang"));
       }
     );
     const Bang = Action.define("sd/Bang", Schema.Struct({}));
@@ -383,7 +382,15 @@ describe("Sound.Player", () => {
       Bang,
       // @ts-expect-error sound is the frame's
       function* () {
-        (yield* Sound.Player).play(Sfx.bang);
+        (yield* Sound.Player).play(Sound.clip("bang"));
+      }
+    );
+    // Nor can it take a sheet's sounds, which are only to play.
+    System.tick(
+      "sd/Sheeted",
+      // @ts-expect-error sound is the frame's
+      function* () {
+        yield* Sfx;
       }
     );
     expect(Bang.name).toBe("sd/Bang");
@@ -397,9 +404,10 @@ describe("Sound.Player", () => {
         const heard: number[] = [];
         const sound = Sound.makeRecorder();
         const Click = System.frame("sd/Click", function* () {
+          const { click } = yield* Sfx;
           const player = yield* Sound.Player;
           for (const options of clicks) {
-            player.play(Sfx.click, options);
+            player.play(click, options);
           }
           // Asked for, and not played yet: the frame is not over.
           heard.push(sound.played.length);
@@ -454,14 +462,14 @@ describe("Sound.Player", () => {
     () =>
       Effect.gen(function* () {
         const sound = Sound.makeRecorder();
-        const Theirs = Sound.cues(
-          "sd/Theirs",
-          Sound.on(Bounced, { cue: Sfx.thud, volume: 0.3 }),
-          Sound.on(Dropped, Sfx.whoosh)
-        );
+        const Theirs = Sound.cues("sd/Theirs", Sfx, ({ thud, whoosh }) => [
+          Sound.on(Bounced, { cue: thud, volume: 0.3 }),
+          Sound.on(Dropped, whoosh),
+        ]);
         const Mine = System.frame("sd/Mine", function* () {
-          (yield* Sound.Player).play(Sfx.whoosh, { volume: 0.2, rate: 2 });
-          (yield* Sound.Player).play(Sfx.ping);
+          const { ping, whoosh } = yield* Sfx;
+          (yield* Sound.Player).play(whoosh, { volume: 0.2, rate: 2 });
+          (yield* Sound.Player).play(ping);
         });
         const app = yield* App.make(
           App.define({ plugins: [Game], systems: [Theirs, Mine] })
@@ -489,7 +497,7 @@ describe("Sound.Player", () => {
       let failing = true;
       const Click = System.frame("sd/Click", function* () {
         if (failing) {
-          (yield* Sound.Player).play(Sfx.click);
+          (yield* Sound.Player).play((yield* Sfx).click);
           return yield* Effect.fail("broken");
         }
       });
@@ -509,10 +517,12 @@ describe("Sound.Player", () => {
       const Ask = System.frame("sd/Ask", function* () {
         seen.push((yield* Sound.Player).audible);
         // Playing to nowhere is no mistake.
-        (yield* Sound.Player).play(Sfx.anything);
+        (yield* Sound.Player).play((yield* Sfx).anything);
       });
       const Asking = App.define({ plugins: [Sound.plugin], systems: [Ask] });
-      yield* (yield* App.make(Asking)).frame();
+      yield* (yield* App.make(Asking).pipe(
+        Effect.provide(Sound.layerNowhere)
+      )).frame();
       yield* (yield* App.make(Asking).pipe(
         Effect.provide(Sound.layer(Sound.makeRecorder()))
       )).frame();
@@ -525,9 +535,11 @@ describe("Sound.Player", () => {
     expectTypeOf(
       App.make(App.define({ plugins: [Rules], systems: [Cues] }))
     ).not.toExtend<Effect.Effect<unknown, never>>();
-    expectTypeOf(App.make(App.define({ plugins: [Game] }))).toExtend<
-      Effect.Effect<unknown, never>
-    >();
+    expectTypeOf(
+      App.make(App.define({ plugins: [Game] })).pipe(
+        Effect.provide(Sound.layerNowhere)
+      )
+    ).toExtend<Effect.Effect<unknown, never>>();
   });
 });
 
@@ -603,53 +615,98 @@ describe("a game with sound", () => {
 });
 
 describe("Sound.makeRecorder", () => {
-  it("notes what it was asked to play, oldest first, and plays nothing", () => {
-    const sound = Sound.makeRecorder();
-    sound.play(Sfx.a, { volume: 1, rate: 1 });
-    sound.play(Sfx.b, { volume: 0.5, rate: 2 });
-    expect(sound.played).toEqual([
-      { cue: "a", volume: 1, rate: 1 },
-      { cue: "b", volume: 0.5, rate: 2 },
-    ]);
-    // Each its own.
-    expect(Sound.makeRecorder().played).toEqual([]);
-  });
+  it.effect(
+    "notes what it was asked to play, oldest first, and plays nothing",
+    () =>
+      Effect.gen(function* () {
+        const { a, b } = yield* Effect.provide(Sfx, Sound.layerNowhere);
+        const sound = Sound.makeRecorder();
+        sound.play(a, { volume: 1, rate: 1 });
+        sound.play(b, { volume: 0.5, rate: 2 });
+        expect(sound.played).toEqual([
+          { cue: "a", volume: 1, rate: 1 },
+          { cue: "b", volume: 0.5, rate: 2 },
+        ]);
+        // Each its own.
+        expect(Sound.makeRecorder().played).toEqual([]);
+      })
+  );
 });
 
 describe("a cue sheet", () => {
-  it("names each sound as a clip, and a cue that is not in it doesn't compile", () => {
-    const Sfx = Sound.sheet("sd/Named", {
-      coin: "/coin.wav",
-      thud: "/thud.wav",
+  it.effect(
+    "names each sound as a clip, and a cue that is not in it doesn't compile",
+    () =>
+      Effect.gen(function* () {
+        const Named = Sound.sheet("sd/Named", {
+          coin: "/coin.wav",
+          thud: "/thud.wav",
+        });
+        const sounds = yield* Effect.provide(Named, Sound.layerNowhere);
+        expect(Named.name).toBe("sd/Named");
+        expect(Object.keys(sounds)).toEqual(["coin", "thud"]);
+        expect(sounds.coin).toBeInstanceOf(Sound.Clip);
+        expect(sounds.coin.name).toBe("coin");
+        const lines = [
+          Sound.on(Dropped, sounds.coin),
+          // @ts-expect-error A sound the sheet doesn't have.
+          Sound.on(Dropped, sounds.coni),
+          // @ts-expect-error A name is no sound: a sheet's sound is.
+          Sound.on(Dropped, "coin"),
+        ];
+        expect(lines.length).toBe(3);
+        // @ts-expect-error Its sounds are a yield's: a game has none outside one.
+        expect(Named.coin).toBeUndefined();
+      })
+  );
+
+  it("is played only where it is had: a game that plays from it requires it of what runs the game", () => {
+    const Tunes = Sound.sheet("sd/Tunes", { theme: "/theme.ogg" });
+    const Theme = Sound.music("sd/Theme", function* () {
+      return (yield* Tunes).theme;
     });
-    expect(Object.keys(Sfx)).toEqual(["coin", "thud"]);
-    expect(Sfx.coin).toBeInstanceOf(Sound.Clip);
-    expect(Sfx.coin.name).toBe("coin");
-    const lines = [
-      Sound.on(Dropped, Sfx.coin),
-      // @ts-expect-error A sound the sheet doesn't have.
-      Sound.on(Dropped, Sfx.coni),
-      // @ts-expect-error A name is no sound: a sheet's sound is.
-      Sound.on(Dropped, "coin"),
-    ];
-    expect(lines.length).toBe(3);
+    const Tuned = App.define({ plugins: [Game], systems: [Theme] });
+    // Of every sheet the game plays from, cues and music alike.
+    expectTypeOf(App.make(Tuned)).toExtend<
+      Effect.Effect<
+        unknown,
+        never,
+        Sound.Plays<"sd/Sfx"> | Sound.Plays<"sd/Tunes">
+      >
+    >();
+    expectTypeOf(App.make(Tuned)).not.toExtend<
+      Effect.Effect<unknown, never, Sound.Plays<"sd/Sfx">>
+    >();
+    // A speaker of one's own has them all, and so has nowhere.
+    expectTypeOf(
+      App.make(Tuned).pipe(Effect.provide(Sound.layer(Sound.makeRecorder())))
+    ).toExtend<Effect.Effect<unknown, never>>();
+    expectTypeOf(
+      App.make(Tuned).pipe(Effect.provide(Sound.layerNowhere))
+    ).toExtend<Effect.Effect<unknown, never>>();
+    expectTypeOf(Test.make(Tuned)).toExtend<Effect.Effect<unknown, never>>();
   });
 
-  it("is recorded by its names, and a clip of a bundle with itself", () => {
-    const Sfx = Sound.sheet("sd/Recorded", { coin: "/coin.wav" });
-    const loaded = Sound.clip("chirp", { samples: 2 });
-    const sound = Sound.makeRecorder();
-    sound.play(Sfx.coin, { volume: 1, rate: 1 });
-    sound.play(loaded, { volume: 1, rate: 1 });
-    sound.music("music", Sfx.coin, { volume: 1, fade: 0, once: false });
-    expect(sound.played).toEqual([
-      { cue: "coin", volume: 1, rate: 1 },
-      { cue: "chirp", volume: 1, rate: 1, clip: loaded },
-    ]);
-    expect(sound.scored).toEqual([
-      { channel: "music", track: "coin", volume: 1, fade: 0 },
-    ]);
-  });
+  it.effect(
+    "is recorded by its names, and a clip of a bundle with itself",
+    () =>
+      Effect.gen(function* () {
+        const Recorded = Sound.sheet("sd/Recorded", { coin: "/coin.wav" });
+        const { coin } = yield* Effect.provide(Recorded, Sound.layerNowhere);
+        const loaded = Sound.clip("chirp", { samples: 2 });
+        const sound = Sound.makeRecorder();
+        sound.play(coin, { volume: 1, rate: 1 });
+        sound.play(loaded, { volume: 1, rate: 1 });
+        sound.music("music", coin, { volume: 1, fade: 0, once: false });
+        expect(sound.played).toEqual([
+          { cue: "coin", volume: 1, rate: 1 },
+          { cue: "chirp", volume: 1, rate: 1, clip: loaded },
+        ]);
+        expect(sound.scored).toEqual([
+          { channel: "music", track: "coin", volume: 1, fade: 0 },
+        ]);
+      })
+  );
 });
 
 describe("a bus", () => {
@@ -708,19 +765,20 @@ describe("a bus", () => {
     "scales only what plays on it: a cue or a channel that names another bus is as loud as it asks",
     () =>
       Effect.gen(function* () {
-        const Sfx = Sound.sheet("sd/Buses", {
+        const Buzz = Sound.sheet("sd/Buses", {
           click: "/click.wav",
           hum: "/hum.wav",
         });
         const UiBus = Sound.bus("ui");
         const sound = Sound.makeRecorder();
         const Loud = System.frame("sd/Loud", function* () {
+          const { click, hum } = yield* Buzz;
           const player = yield* Sound.Player;
           player.volume(Sound.EffectsBus, 0.25);
           player.volume(Sound.MusicBus, 0);
-          player.play(Sfx.click, { volume: 0.8 });
-          player.play(Sfx.hum, { bus: UiBus });
-          player.music("ui", Sfx.hum, { bus: UiBus, fade: 0 });
+          player.play(click, { volume: 0.8 });
+          player.play(hum, { bus: UiBus });
+          player.music("ui", hum, { bus: UiBus, fade: 0 });
         });
         const app = yield* App.make(
           App.define({ plugins: [Sound.plugin], systems: [Loud] })
@@ -739,8 +797,9 @@ describe("a bus", () => {
   it("is a bus that was declared, or doesn't compile", () => {
     const UiBus = Sound.bus("ui");
     const Buses = { music: Sound.MusicBus, ui: UiBus };
-    const Sfx = Sound.sheet("sd/Declared", { click: "/click.wav" });
+    const Declared = Sound.sheet("sd/Declared", { click: "/click.wav" });
     const Menu = System.frame("sd/Menu", function* () {
+      const { click } = yield* Declared;
       const player = yield* Sound.Player;
       player.volume(UiBus, 0.5);
       // @ts-expect-error A bus is a declared value, never a name.
@@ -748,13 +807,12 @@ describe("a bus", () => {
       // @ts-expect-error No bus of that name was declared.
       player.volume(Buses.musci, 0.5);
       // @ts-expect-error The bus of a cue is a declared one too.
-      player.play(Sfx.click, { bus: "ui" });
+      player.play(click, { bus: "ui" });
     });
-    const Cues = Sound.cues(
-      "sd/Declared",
+    const Cues = Sound.cues("sd/Declared", Declared, ({ click }) => [
       // @ts-expect-error The bus of a cue is a declared one too.
-      Sound.on(Dropped, { cue: Sfx.click, bus: "effects" })
-    );
+      Sound.on(Dropped, { cue: click, bus: "effects" }),
+    ]);
     expect([Menu.stage, Cues.stage]).toEqual(["frame", "frame"]);
     expect([Sound.MusicBus.name, Sound.EffectsBus.name, UiBus.name]).toEqual([
       "music",

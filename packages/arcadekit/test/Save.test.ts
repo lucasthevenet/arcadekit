@@ -1112,7 +1112,7 @@ const Rolled = Plugin.make("sv/Rolls", {
       return sum;
     }),
     Sound.music("sv/Theme", function* () {
-      return (yield* Lit).value === "lit" ? Tunes.theme : undefined;
+      return (yield* Lit).value === "lit" ? (yield* Tunes).theme : undefined;
     }),
   ],
   handlers: [

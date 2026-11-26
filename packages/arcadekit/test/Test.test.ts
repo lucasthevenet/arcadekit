@@ -46,7 +46,7 @@ const Game = App.define({
             (yield* Action.Actions).enqueue(Add, { points: 1 });
           }
         }),
-        Sound.cues("ts/Cues", Sound.on(Scored, Sfx.coin)),
+        Sound.cues("ts/Cues", Sfx, ({ coin }) => [Sound.on(Scored, coin)]),
         View.publish(Hud, function* () {
           return { points: (yield* Score).points };
         }),

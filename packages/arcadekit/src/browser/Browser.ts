@@ -25,6 +25,7 @@ import type { Layer, Runtime } from "effect";
 import type * as Assets from "../Assets.ts";
 import type * as Driver from "../Driver.ts";
 import type * as Input from "../Input.ts";
+import { playing } from "../internal/sheet.ts";
 import type * as Save from "../Save.ts";
 import type * as Setting from "../Setting.ts";
 import type * as Sound from "../Sound.ts";
@@ -97,10 +98,11 @@ export interface Options {
   /**
    * The cue sheets whose files the page plays for its whole lifetime, made
    * with `Sound.sheet`, as `Audio.layerSound` takes them. Their files are
-   * fetched and decoded. When omitted, the page still plays the sounds in a
-   * level's bundle, made with `Audio.sound`, and the streams of a sheet.
-   * `false` means no sound at all. No audio context is created, and the game
-   * is told that nothing is heard.
+   * fetched and decoded. A game that plays from a sheet that isn't listed
+   * doesn't compile. When omitted, the page still plays the sounds in a
+   * level's bundle, made with `Audio.sound`. `false` means no sound at all.
+   * No audio context is created, the game is told that nothing is heard, and
+   * a game may play from any sheet.
    */
   readonly sounds?: readonly Sound.Sheet[] | false;
   /**
@@ -152,11 +154,25 @@ export interface Options {
  *   `Sound.plugin` opens it when the app is made, wherever the layer is
  *   provided, and keeps it open until the app is closed. The apps made under
  *   the layer share it.
+ * - It provides the `Sound.Plays` of each sheet in `sounds`, and of every
+ *   sheet when `sounds` is `false`, so a game that plays from a sheet the
+ *   page isn't given doesn't compile under it.
  *
  * @category Layers
  */
-export const layer = (options: Options = {}): Layer.Layer<never> =>
-  page.layer(options);
+export const layer = <
+  const S extends readonly Sound.Sheet[] | false = readonly [],
+>(
+  options: Options & { readonly sounds?: S } = {}
+): Layer.Layer<Heard<S>> => playing(page.layer(options));
+
+/**
+ * The sheets a page has, by the `sounds` it is given: every one when it has
+ * no sound, and otherwise each of the list.
+ */
+type Heard<S> = [S] extends [false]
+  ? Sound.Plays<string>
+  : Sound.PlaysOf<Extract<S, readonly unknown[]>[number]>;
 
 /**
  * Where a page keeps a game's saves: its local storage, under the game's
@@ -208,8 +224,10 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
  *
  * **Details**
  *
- * - The game must have no remaining requirements. Provide your game's own
- *   services to it first, since a missing one is a compile error here.
+ * - The game must have no remaining requirements but the `Sound.Plays` of
+ *   the sheets in `sounds`. Provide your game's own services to it first,
+ *   since a missing one is a compile error here, as a game that plays from a
+ *   sheet `sounds` doesn't list is.
  * - A failure is reported through Effect's logger.
  * - When the page is closed for good, on a `pagehide` that doesn't enter the
  *   browser's back-forward cache, the game is interrupted. The frame loop
@@ -218,16 +236,28 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
  *
  * @category Running
  */
-export const runMain = <A, E>(
-  game: Effect.Effect<A, E>,
+export const runMain = <
+  A,
+  E,
+  R extends Heard<NoInfer<S>>,
+  const S extends readonly Sound.Sheet[] | false = readonly [],
+>(
+  game: Effect.Effect<A, E, R>,
   options: Options & {
+    readonly sounds?: S;
     /** Disables error reporting. */
     readonly disableErrorReporting?: boolean;
     /** What to do when the game ends. Defaults to nothing. */
     readonly teardown?: Runtime.Teardown;
   } = {}
-): void =>
-  BrowserRuntime.runMain(Effect.provide(game, layer(options)), {
-    disableErrorReporting: options.disableErrorReporting,
-    teardown: options.teardown,
-  });
+): void => {
+  // `R`'s bound has put every sheet it plays from in `sounds`.
+  const heard: Effect.Effect<A, E, Sound.Plays<string>> = game;
+  BrowserRuntime.runMain(
+    Effect.provide(heard, playing<Sound.Plays<string>>(page.layer(options))),
+    {
+      disableErrorReporting: options.disableErrorReporting,
+      teardown: options.teardown,
+    }
+  );
+};
