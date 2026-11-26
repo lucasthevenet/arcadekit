@@ -212,6 +212,19 @@ export default defineConfig({
 
     // An expect that runs on some paths alone passes on the others.
     "vitest/no-conditional-expect": "error",
+    // A test that is an Effect is registered with @effect/vitest's it.effect
+    // or it.live, and an expect in it is in a test.
+    "vitest/no-standalone-expect": [
+      "warn",
+      {
+        additionalTestBlockFunctions: [
+          "it.effect",
+          "it.effect.each",
+          "it.live",
+          "it.live.each",
+        ],
+      },
+    ],
     // A test with no expect checks nothing, unless through a helper that
     // expects, which is named expect<Something>.
     "vitest/expect-expect": [

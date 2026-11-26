@@ -1,5 +1,5 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Random as EffectRandom, Exit, Schema } from "effect";
-import { assert, describe, expect, it } from "vitest";
 
 import { Rng } from "../src/ecs/random.ts";
 import { World as EcsWorld } from "../src/ecs/world.ts";
@@ -18,11 +18,12 @@ import {
   World,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
+import { thrown } from "./checks.ts";
 
-const withApp = <T, A, E = never>(
+const withApp = <T, A, E = never, E2 = never>(
   make: Effect.Effect<T, E>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.map(make, use));
+  use: (app: T) => Effect.Effect<A, E2>
+) => Effect.flatMap(make, use);
 
 const draws = (rng: Rng, count: number): number[] =>
   Array.from({ length: count }, () => rng.bits());
@@ -298,8 +299,11 @@ const Begin = Plugin.make("rnd/Begin", {
   }),
 });
 
-const play = (seed: number | undefined, ticks: number) =>
-  withApp(
+const play = Effect.fnUntraced(function* (
+  seed: number | undefined,
+  ticks: number
+) {
+  return yield* withApp(
     App.make(
       App.define({
         plugins: [Begin],
@@ -308,33 +312,33 @@ const play = (seed: number | undefined, ticks: number) =>
       }),
       seed === undefined ? {} : { seed }
     ),
-    (app) => {
-      for (let i = 0; i < ticks; i++) {
-        if (i % 7 === 3) {
-          app.dispatch(Roll, { sides: 6 });
+    (app) =>
+      Effect.gen(function* () {
+        for (let i = 0; i < ticks; i++) {
+          if (i % 7 === 3) {
+            app.dispatch(Roll, { sides: 6 });
+          }
+          app.tick(1);
         }
-        app.tick(1);
-      }
-      return snapshot(app);
-    }
+        return yield* snapshot(app);
+      })
   );
+});
 
-const snapshot = (app: App.Any) => {
+const snapshot = Effect.fnUntraced(function* (app: App.Any) {
   const sparks: [Entity, number, number][] = [];
   const dice: [number, number][] = [];
-  const hash = Effect.runSync(
-    app.read(
-      Effect.gen(function* () {
-        (yield* Query.all(Spark)).each((spark, entity) => {
-          sparks.push([entity, spark.x, spark.y]);
-        });
-        (yield* Query.all(Die)).each((die) => {
-          dice.push([die.face, die.rolls]);
-        });
-        // It covers the generator's state, which is part of the world.
-        return (yield* World).hash();
-      })
-    )
+  const hash = yield* app.read(
+    Effect.gen(function* () {
+      (yield* Query.all(Spark)).each((spark, entity) => {
+        sparks.push([entity, spark.x, spark.y]);
+      });
+      (yield* Query.all(Die)).each((die) => {
+        dice.push([die.face, die.rolls]);
+      });
+      // It covers the generator's state, which is part of the world.
+      return (yield* World).hash();
+    })
   );
   return {
     sparks,
@@ -343,164 +347,191 @@ const snapshot = (app: App.Any) => {
     recording: app.record(),
     hash,
   };
-};
+});
 
 describe("the Random service", () => {
-  it("is the world's generator, so its state is part of the world", () => {
-    let seen: number[] = [];
-    let drawing = false;
-    const Probe = System.tick("Probe", function* () {
-      const random = yield* Random;
-      seen = Array.from(random.state);
-      if (drawing) {
-        random.bits();
-      }
-    });
-    const hashAfterATick = (draws: boolean) => {
-      drawing = draws;
-      return withApp(
-        App.make(App.define({ systems: [Probe] }), { seed: 5 }),
-        (app) => {
-          app.tick(1);
-          return Effect.runSync(app.read(World)).hash();
-        }
-      );
-    };
-    const still = hashAfterATick(false);
-    expect(seen).toEqual(Array.from(new Rng(5).state));
-    expect(hashAfterATick(false)).toBe(still);
-    // A draw moves the generator, and the world with it.
-    expect(hashAfterATick(true)).not.toBe(still);
-    expect(Random.key).toBe("arcadekit/Random");
-  });
-
-  it("makes two apps with one seed agree, and two seeds differ", () => {
-    const first = play(2024, 120);
-    const second = play(2024, 120);
-    expect(second).toEqual(first);
-    // The game really is random: it rolled, spawned and moved things.
-    expect(first.sparks.length).toBeGreaterThan(0);
-    expect(first.dice[0]![1]).toBeGreaterThan(20);
-    // The gambler's rolls are the simulation's own, so only the moves made
-    // from outside are in the log.
-    expect(first.log.length).toBeGreaterThan(15);
-
-    const other = play(2025, 120);
-    expect(other.hash).not.toBe(first.hash);
-    expect(other.sparks).not.toEqual(first.sparks);
-    expect(other.log).not.toEqual(first.log);
-    // Leaving the seed out is seed 0, not a different game each time.
-    expect(play(undefined, 60)).toEqual(play(0, 60));
-    expect(play(undefined, 60)).toEqual(play(undefined, 60));
-  });
-
-  it("lets a game that uses it replay identically from its log", () => {
-    // The rolls are in the log as actions, so the replay runs the systems
-    // and the handler, and must still draw the same numbers in the same order
-    // to end in the same state.
-    const Game = App.define({
-      plugins: [Begin],
-      systems: [Sparks],
-      handlers: [roll],
-    });
-    const record = (seed: number) =>
-      withApp(App.make(Game, { seed }), (app) => {
-        const other = new Rng(seed + 1000);
-        for (let i = 0; i < 150; i++) {
-          if (other.int(1, 4) === 1) {
-            app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
-          }
-          app.tick(1 / 60);
-        }
-        return snapshot(app);
-      });
-    const replayOf = (recording: Journal.Recording) => {
-      // Through bytes and back, as a save file would be.
-      const loaded = Journal.decode(Journal.encode(recording));
-      if (Exit.isFailure(loaded)) {
-        throw new Error("the log did not survive being written down");
-      }
-      return Journal.replay(loaded.value, Game);
-    };
-
-    const recorded = record(31);
-    const { recording } = recorded;
-    expect(recorded.dice[0]![1]).toBeGreaterThan(10);
-    expect(recorded.sparks.length).toBeGreaterThan(0);
-    expect(withApp(replayOf(recording), snapshot)).toEqual(recorded);
-    // With another seed the same moves would be a different game, and the
-    // replay says so before its first tick.
-    assert(recording.seed === 31);
-    const diverged = withApp(
-      Effect.flip(replayOf({ ...recording, seed: 32 })),
-      (error) => error
-    );
-    expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
-    expect(diverged.message).toMatch(
-      /the world's hash at tick 0 .* check the seed/
-    );
-  });
-
-  it("refuses a bad seed when the app is made", () => {
-    expect(() =>
-      withApp(App.make(App.define({}), { seed: 1.5 }), () => 0)
-    ).toThrow(/random seed must be a whole number/);
-  });
-
-  it("seeds Effect's own Random inside the app too", () => {
-    const run = (seed: number) => {
-      const out: number[] = [];
-      let drew: number[] = [];
-      const Draw = System.tick("Draw", function* () {
-        out.push(yield* EffectRandom.next);
-        out.push(yield* EffectRandom.nextInt);
-        out.push(yield* EffectRandom.nextIntBetween(1, 6));
-        out.push(...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5])));
+  it.effect("is the world's generator, so its state is part of the world", () =>
+    Effect.gen(function* () {
+      let seen: number[] = [];
+      let drawing = false;
+      const Probe = System.tick("Probe", function* () {
         const random = yield* Random;
-        drew = Array.from(random.state);
-        // The two are one generator: this continues the same sequence.
-        out.push(random.bits());
-      });
-      return withApp(
-        App.make(App.define({ systems: [Draw] }), { seed }),
-        (app) => {
-          const before = Array.from(new Rng(seed).state);
-          app.tick(1);
-          // Effect's draws were from the world's generator, not from one of
-          // their own: it had moved before anything drew from it by name.
-          expect(drew).not.toEqual(before);
-          return out;
+        seen = Array.from(random.state);
+        if (drawing) {
+          random.bits();
         }
-      );
-    };
-    const first = run(8);
-    expect(run(8)).toEqual(first);
-    expect(run(9)).not.toEqual(first);
-    expect(first[0]! >= 0 && first[0]! < 1).toBe(true);
-    expect(Number.isSafeInteger(first[1])).toBe(true);
-    expect(first[2]! >= 1 && first[2]! <= 6).toBe(true);
+      });
+      const hashAfterATick = Effect.fnUntraced(function* (draws: boolean) {
+        drawing = draws;
+        return yield* withApp(
+          App.make(App.define({ systems: [Probe] }), { seed: 5 }),
+          (app) =>
+            Effect.gen(function* () {
+              app.tick(1);
+              return (yield* app.read(World)).hash();
+            })
+        );
+      });
+      const still = yield* hashAfterATick(false);
+      expect(seen).toEqual(Array.from(new Rng(5).state));
+      expect(yield* hashAfterATick(false)).toBe(still);
+      // A draw moves the generator, and the world with it.
+      expect(yield* hashAfterATick(true)).not.toBe(still);
+      expect(Random.key).toBe("arcadekit/Random");
+    })
+  );
 
-    // Its floats use all 53 bits and its integers both signs.
-    const floats: number[] = [];
-    const ints: number[] = [];
-    const Many = System.tick("Many", function* () {
-      for (let i = 0; i < 2000; i++) {
-        floats.push(yield* EffectRandom.next);
-        ints.push(yield* EffectRandom.nextInt);
-      }
-    });
-    withApp(App.make(App.define({ systems: [Many] }), { seed: 3 }), (app) => {
-      app.tick(1);
-      expect(floats.every((value) => value >= 0 && value < 1)).toBe(true);
-      expect(floats.some((value) => (value * 2 ** 32) % 1 !== 0)).toBe(true);
-      const mean = floats.reduce((sum, value) => sum + value, 0) / 2000;
-      expect(mean).toBeGreaterThan(0.47);
-      expect(mean).toBeLessThan(0.53);
-      expect(ints.every((value) => Number.isSafeInteger(value))).toBe(true);
-      expect(ints.some((value) => value < 0)).toBe(true);
-      expect(ints.some((value) => value > 2 ** 40)).toBe(true);
-      expect(ints.some((value) => value < -(2 ** 40))).toBe(true);
-      expect(ints.some((value) => Math.abs(value) < 2 ** 50)).toBe(true);
-    });
-  });
+  it.effect("makes two apps with one seed agree, and two seeds differ", () =>
+    Effect.gen(function* () {
+      const first = yield* play(2024, 120);
+      const second = yield* play(2024, 120);
+      expect(second).toEqual(first);
+      // The game really is random: it rolled, spawned and moved things.
+      expect(first.sparks.length).toBeGreaterThan(0);
+      expect(first.dice[0]![1]).toBeGreaterThan(20);
+      // The gambler's rolls are the simulation's own, so only the moves made
+      // from outside are in the log.
+      expect(first.log.length).toBeGreaterThan(15);
+
+      const other = yield* play(2025, 120);
+      expect(other.hash).not.toBe(first.hash);
+      expect(other.sparks).not.toEqual(first.sparks);
+      expect(other.log).not.toEqual(first.log);
+      // Leaving the seed out is seed 0, not a different game each time.
+      expect(yield* play(undefined, 60)).toEqual(yield* play(0, 60));
+      expect(yield* play(undefined, 60)).toEqual(yield* play(undefined, 60));
+    })
+  );
+
+  it.effect("lets a game that uses it replay identically from its log", () =>
+    Effect.gen(function* () {
+      // The rolls are in the log as actions, so the replay runs the systems
+      // and the handler, and must still draw the same numbers in the same order
+      // to end in the same state.
+      const Game = App.define({
+        plugins: [Begin],
+        systems: [Sparks],
+        handlers: [roll],
+      });
+      const record = Effect.fnUntraced(function* (seed: number) {
+        return yield* withApp(App.make(Game, { seed }), (app) =>
+          Effect.gen(function* () {
+            const other = new Rng(seed + 1000);
+            for (let i = 0; i < 150; i++) {
+              if (other.int(1, 4) === 1) {
+                app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
+              }
+              app.tick(1 / 60);
+            }
+            return yield* snapshot(app);
+          })
+        );
+      });
+      const replayOf = (recording: Journal.Recording) => {
+        // Through bytes and back, as a save file would be.
+        const loaded = Journal.decode(Journal.encode(recording));
+        if (Exit.isFailure(loaded)) {
+          throw new Error("the log did not survive being written down");
+        }
+        return Journal.replay(loaded.value, Game);
+      };
+
+      const recorded = yield* record(31);
+      const { recording } = recorded;
+      expect(recorded.dice[0]![1]).toBeGreaterThan(10);
+      expect(recorded.sparks.length).toBeGreaterThan(0);
+      expect(yield* withApp(replayOf(recording), snapshot)).toEqual(recorded);
+      // With another seed the same moves would be a different game, and the
+      // replay says so before its first tick.
+      assert(recording.seed === 31);
+      const diverged = yield* withApp(
+        Effect.flip(replayOf({ ...recording, seed: 32 })),
+        (error) => Effect.sync(() => error)
+      );
+      expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
+      expect(diverged.message).toMatch(
+        /the world's hash at tick 0 .* check the seed/
+      );
+    })
+  );
+
+  it.effect("refuses a bad seed when the app is made", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* thrown(
+          withApp(App.make(App.define({}), { seed: 1.5 }), () =>
+            Effect.succeed(0)
+          )
+        )
+      ).toThrow(/random seed must be a whole number/);
+    })
+  );
+
+  it.effect("seeds Effect's own Random inside the app too", () =>
+    Effect.gen(function* () {
+      const run = Effect.fnUntraced(function* (seed: number) {
+        const out: number[] = [];
+        let drew: number[] = [];
+        const Draw = System.tick("Draw", function* () {
+          out.push(yield* EffectRandom.next);
+          out.push(yield* EffectRandom.nextInt);
+          out.push(yield* EffectRandom.nextIntBetween(1, 6));
+          out.push(...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5])));
+          const random = yield* Random;
+          drew = Array.from(random.state);
+          // The two are one generator: this continues the same sequence.
+          out.push(random.bits());
+        });
+        return yield* withApp(
+          App.make(App.define({ systems: [Draw] }), { seed }),
+          (app) =>
+            Effect.gen(function* () {
+              const before = Array.from(new Rng(seed).state);
+              app.tick(1);
+              // Effect's draws were from the world's generator, not from one of
+              // their own: it had moved before anything drew from it by name.
+              expect(drew).not.toEqual(before);
+              return out;
+            })
+        );
+      });
+      const first = yield* run(8);
+      expect(yield* run(8)).toEqual(first);
+      expect(yield* run(9)).not.toEqual(first);
+      expect(first[0]! >= 0 && first[0]! < 1).toBe(true);
+      expect(Number.isSafeInteger(first[1])).toBe(true);
+      expect(first[2]! >= 1 && first[2]! <= 6).toBe(true);
+
+      // Its floats use all 53 bits and its integers both signs.
+      const floats: number[] = [];
+      const ints: number[] = [];
+      const Many = System.tick("Many", function* () {
+        for (let i = 0; i < 2000; i++) {
+          floats.push(yield* EffectRandom.next);
+          ints.push(yield* EffectRandom.nextInt);
+        }
+      });
+      yield* withApp(
+        App.make(App.define({ systems: [Many] }), { seed: 3 }),
+        (app) =>
+          Effect.gen(function* () {
+            app.tick(1);
+            expect(floats.every((value) => value >= 0 && value < 1)).toBe(true);
+            expect(floats.some((value) => (value * 2 ** 32) % 1 !== 0)).toBe(
+              true
+            );
+            const mean = floats.reduce((sum, value) => sum + value, 0) / 2000;
+            expect(mean).toBeGreaterThan(0.47);
+            expect(mean).toBeLessThan(0.53);
+            expect(ints.every((value) => Number.isSafeInteger(value))).toBe(
+              true
+            );
+            expect(ints.some((value) => value < 0)).toBe(true);
+            expect(ints.some((value) => value > 2 ** 40)).toBe(true);
+            expect(ints.some((value) => value < -(2 ** 40))).toBe(true);
+            expect(ints.some((value) => Math.abs(value) < 2 ** 50)).toBe(true);
+          })
+      );
+    })
+  );
 });

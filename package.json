@@ -22,6 +22,7 @@
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@effect/tsgo": "^0.70.0",
+    "@effect/vitest": "4.1.4",
     "@types/node": "^26.6.6",
     "happy-dom": "^21.0.4",
     "oxc-parser": "^0.159.0",

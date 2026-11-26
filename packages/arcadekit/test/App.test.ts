@@ -1,5 +1,5 @@
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
-import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { App, Plugin, System } from "../src/index.ts";
 
@@ -41,41 +41,50 @@ describe("an app", () => {
     );
   });
 
-  it("holds what it opened until it is closed, however soon the effect that made it ended", () => {
-    const { Held, log } = makeHeld();
-    // Made in a scope that closes as soon as the line has run.
-    const app = Effect.runSync(
-      Effect.scoped(App.make(App.define({ plugins: [Held] })))
-    );
-    expect(log).toEqual(["acquired"]);
-    app.tick(0.1);
-    Effect.runSync(app.close);
-    expect(log).toEqual(["acquired", "released"]);
-    // Closing it again does nothing.
-    Effect.runSync(app.close);
-    expect(log).toEqual(["acquired", "released"]);
-  });
+  it.effect(
+    "holds what it opened until it is closed, however soon the effect that made it ended",
+    () =>
+      Effect.gen(function* () {
+        const { Held, log } = makeHeld();
+        // Made in a scope that closes as soon as the line has run.
+        const app = yield* Effect.scoped(
+          App.make(App.define({ plugins: [Held] }))
+        );
+        expect(log).toEqual(["acquired"]);
+        app.tick(0.1);
+        yield* app.close;
+        expect(log).toEqual(["acquired", "released"]);
+        // Closing it again does nothing.
+        yield* app.close;
+        expect(log).toEqual(["acquired", "released"]);
+      })
+  );
 
-  it("lets go at once of what it opened when the making fails", async () => {
-    class Broken extends Data.TaggedError("app/Broken")<{}> {}
-    const { Held, log } = makeHeld();
-    const Fails = Plugin.make("app/Fails", {
-      plugins: [Held],
-      setup: Effect.fail(new Broken()),
-    });
-    expect(
-      Effect.runSyncExit(App.make(App.define({ plugins: [Fails] })))
-    ).toEqual(Exit.fail(new Broken()));
-    expect(log).toEqual(["acquired", "released"]);
-    // And when it is interrupted while it is being made.
-    const Waits = Plugin.make("app/Waits", {
-      plugins: [Held],
-      layer: Layer.effectDiscard(Effect.never),
-    });
-    log.length = 0;
-    const fiber = Effect.runFork(App.make(App.define({ plugins: [Waits] })));
-    expect(log).toEqual(["acquired"]);
-    await Effect.runPromise(Fiber.interrupt(fiber));
-    expect(log).toEqual(["acquired", "released"]);
-  });
+  it.effect("lets go at once of what it opened when the making fails", () =>
+    Effect.gen(function* () {
+      class Broken extends Data.TaggedError("app/Broken")<{}> {}
+      const { Held, log } = makeHeld();
+      const Fails = Plugin.make("app/Fails", {
+        plugins: [Held],
+        setup: Effect.fail(new Broken()),
+      });
+      expect(
+        yield* Effect.exit(App.make(App.define({ plugins: [Fails] })))
+      ).toEqual(Exit.fail(new Broken()));
+      expect(log).toEqual(["acquired", "released"]);
+      // And when it is interrupted while it is being made.
+      const Waits = Plugin.make("app/Waits", {
+        plugins: [Held],
+        layer: Layer.effectDiscard(Effect.never),
+      });
+      log.length = 0;
+      const fiber = yield* Effect.forkChild(
+        App.make(App.define({ plugins: [Waits] })),
+        { startImmediately: true }
+      );
+      expect(log).toEqual(["acquired"]);
+      yield* Fiber.interrupt(fiber);
+      expect(log).toEqual(["acquired", "released"]);
+    })
+  );
 });

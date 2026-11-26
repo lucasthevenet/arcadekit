@@ -1,5 +1,5 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Scheduler, Schema } from "effect";
-import { assert, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -22,7 +22,7 @@ import {
 } from "../src/index.ts";
 
 /** The world of an app, as `app.read(World)` gives it. */
-const worldOf = (app: Pick<App.Any, "read">) => Effect.runSync(app.read(World));
+const worldOf = (app: Pick<App.Any, "read">) => app.read(World);
 
 // --- a game that moves when its player does ----------------------------------------
 // A board of pieces. A move slides them, and a piece lands a tick after it
@@ -87,161 +87,183 @@ const Rules = Plugin.make("st/Rules", {
 });
 
 describe("app.settled", () => {
-  it("is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked", () => {
-    const app = Effect.runSync(
-      App.make(App.define({}), { checkpointEvery: 0 })
-    );
-    // A game that has not ticked yet has not been asked whether it has
-    // anything to do.
-    expect(app.settled).toBe(false);
-    app.frame();
-    app.input();
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    app.tick(1);
-    app.frame();
-    app.input();
-    expect(app.settled).toBe(true);
-  });
+  it.effect(
+    "is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({}), { checkpointEvery: 0 });
+        // A game that has not ticked yet has not been asked whether it has
+        // anything to do.
+        expect(app.settled).toBe(false);
+        app.frame();
+        app.input();
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        app.tick(1);
+        app.frame();
+        app.input();
+        expect(app.settled).toBe(true);
+      })
+  );
 
-  it("is false while a state waits to be entered: the one a game starts in, and one that was asked for", () => {
-    entered.length = 0;
-    const app = Effect.runSync(App.make(App.define({ plugins: [Rules] })));
-    // The state it starts in is entered by its first tick, which changes
-    // the game: the next finds nothing to do.
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    app.dispatch(Begin, {});
-    expect(app.settled).toBe(false);
-    expect(entered).toEqual([]);
-    app.tick(1);
-    expect(entered).toEqual(["playing"]);
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-  });
+  it.effect(
+    "is false while a state waits to be entered: the one a game starts in, and one that was asked for",
+    () =>
+      Effect.gen(function* () {
+        entered.length = 0;
+        const app = yield* App.make(App.define({ plugins: [Rules] }));
+        // The state it starts in is entered by its first tick, which changes
+        // the game: the next finds nothing to do.
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        app.dispatch(Begin, {});
+        expect(app.settled).toBe(false);
+        expect(entered).toEqual([]);
+        app.tick(1);
+        expect(entered).toEqual(["playing"]);
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+      })
+  );
 
-  it("is false while an action waits to be applied", () => {
-    const app = Effect.runSync(App.make(App.define({ plugins: [Rules] })));
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    entered.length = 0;
-    app.enqueue(Begin, {});
-    expect(app.settled).toBe(false);
-    // Applied at the start of the tick, and the state it asked for is
-    // entered by the same tick: nothing is left waiting, and the tick after
-    // finds nothing to do.
-    app.tick(1);
-    expect(entered).toEqual(["playing"]);
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-  });
-
-  it("is false while an event waits that a system has not had its chance at, and no longer", () => {
-    const app = Effect.runSync(App.make(App.define({ plugins: [Rules] })));
-    const world = worldOf(app);
-    expect(app.settled).toBe(false);
-    app.dispatch(Begin, {});
-    app.tick(1);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    // A handler's event is heard by every system of the tick that
-    // applies it: nothing waits after that tick but what a system said.
-    app.enqueue(Move, { by: 2 });
-    app.tick(1);
-    // Land said Landed, which Tally, listed before it, has yet to hear.
-    expect(world.singleton(Score).moves).toBe(0);
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(world.singleton(Score).moves).toBe(1);
-    // Nothing waits, and the tick that counted it changed the score.
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    // One an action emitted between two ticks waits too.
-    app.dispatch(Declare, { landed: true });
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(world.singleton(Score).moves).toBe(2);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    // Of whichever kind: this one, and then the one it sets off.
-    app.dispatch(Declare, { landed: false });
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(world.singleton(Score).moves).toBe(3);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-  });
-
-  it("does not wait for what draws: an event kept for the frame stage is nothing a tick is needed for", () => {
-    const heard: number[] = [];
-    const Watch = System.frame("st/Watch", function* () {
-      heard.push((yield* Moved).read().length + (yield* Landed).read().length);
-    });
-    const app = Effect.runSync(
-      App.make(App.define({ plugins: [Rules], systems: [Watch] }))
-    );
-    expect(app.settled).toBe(false);
-    app.dispatch(Begin, {});
-    app.tick(1);
-    app.enqueue(Move, { by: 1 });
-    app.tick(1);
-    app.tick(1);
-    app.tick(1);
-    // No frame has been drawn: both events are still kept for the system
-    // that draws, and the game is at rest all the same.
-    expect(app.settled).toBe(true);
-    app.frame();
-    expect(heard).toEqual([2]);
-    expect(app.settled).toBe(true);
-  });
-
-  it("is false while work is queued for the next tick", () => {
-    const kept: Scheduler.SchedulerDispatcher[] = [];
-    // What the game's fibers are dispatched by.
-    const Keep = System.tick("st/Keep", function* () {
-      kept.push((yield* Scheduler.Scheduler).makeDispatcher());
-    });
-    const app = Effect.runSync(App.make(App.define({ systems: [Keep] })));
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    const [dispatcher] = kept;
-    assert(dispatcher !== undefined);
-    const ran: string[] = [];
-    // As a fiber a system forked leaves the rest of itself, when what it
-    // waited for arrives between two ticks: it runs when the next tick lets
-    // fibers run.
-    dispatcher.scheduleTask(() => ran.push("ran"), 0);
-    expect(ran).toEqual([]);
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(ran).toEqual(["ran"]);
-    expect(app.settled).toBe(true);
-  });
-
-  it("is not changed by looking, nor by the stages between ticks", () => {
-    const app = Effect.runSync(
-      App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
-    );
-    const world = worldOf(app);
-    const before = world.hash();
-    for (let i = 0; i < 3; i++) {
+  it.effect("is false while an action waits to be applied", () =>
+    Effect.gen(function* () {
+      const app = yield* App.make(App.define({ plugins: [Rules] }));
       expect(app.settled).toBe(false);
-    }
-    app.frame();
-    app.input();
-    expect(app.settled).toBe(false);
-    expect(world.hash()).toBe(before);
-  });
+      app.tick(1);
+      entered.length = 0;
+      app.enqueue(Begin, {});
+      expect(app.settled).toBe(false);
+      // Applied at the start of the tick, and the state it asked for is
+      // entered by the same tick: nothing is left waiting, and the tick after
+      // finds nothing to do.
+      app.tick(1);
+      expect(entered).toEqual(["playing"]);
+      expect(app.settled).toBe(false);
+      app.tick(1);
+      expect(app.settled).toBe(true);
+    })
+  );
+
+  it.effect(
+    "is false while an event waits that a system has not had its chance at, and no longer",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [Rules] }));
+        const world = yield* worldOf(app);
+        expect(app.settled).toBe(false);
+        app.dispatch(Begin, {});
+        app.tick(1);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        // A handler's event is heard by every system of the tick that
+        // applies it: nothing waits after that tick but what a system said.
+        app.enqueue(Move, { by: 2 });
+        app.tick(1);
+        // Land said Landed, which Tally, listed before it, has yet to hear.
+        expect(world.singleton(Score).moves).toBe(0);
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(world.singleton(Score).moves).toBe(1);
+        // Nothing waits, and the tick that counted it changed the score.
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        // One an action emitted between two ticks waits too.
+        app.dispatch(Declare, { landed: true });
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(world.singleton(Score).moves).toBe(2);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        // Of whichever kind: this one, and then the one it sets off.
+        app.dispatch(Declare, { landed: false });
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(world.singleton(Score).moves).toBe(3);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+      })
+  );
+
+  it.effect(
+    "does not wait for what draws: an event kept for the frame stage is nothing a tick is needed for",
+    () =>
+      Effect.gen(function* () {
+        const heard: number[] = [];
+        const Watch = System.frame("st/Watch", function* () {
+          heard.push(
+            (yield* Moved).read().length + (yield* Landed).read().length
+          );
+        });
+        const app = yield* App.make(
+          App.define({ plugins: [Rules], systems: [Watch] })
+        );
+        expect(app.settled).toBe(false);
+        app.dispatch(Begin, {});
+        app.tick(1);
+        app.enqueue(Move, { by: 1 });
+        app.tick(1);
+        app.tick(1);
+        app.tick(1);
+        // No frame has been drawn: both events are still kept for the system
+        // that draws, and the game is at rest all the same.
+        expect(app.settled).toBe(true);
+        app.frame();
+        expect(heard).toEqual([2]);
+        expect(app.settled).toBe(true);
+      })
+  );
+
+  it.effect("is false while work is queued for the next tick", () =>
+    Effect.gen(function* () {
+      const kept: Scheduler.SchedulerDispatcher[] = [];
+      // What the game's fibers are dispatched by.
+      const Keep = System.tick("st/Keep", function* () {
+        kept.push((yield* Scheduler.Scheduler).makeDispatcher());
+      });
+      const app = yield* App.make(App.define({ systems: [Keep] }));
+      expect(app.settled).toBe(false);
+      app.tick(1);
+      expect(app.settled).toBe(true);
+      const [dispatcher] = kept;
+      assert(dispatcher !== undefined);
+      const ran: string[] = [];
+      // As a fiber a system forked leaves the rest of itself, when what it
+      // waited for arrives between two ticks: it runs when the next tick lets
+      // fibers run.
+      dispatcher.scheduleTask(() => ran.push("ran"), 0);
+      expect(ran).toEqual([]);
+      expect(app.settled).toBe(false);
+      app.tick(1);
+      expect(ran).toEqual(["ran"]);
+      expect(app.settled).toBe(true);
+    })
+  );
+
+  it.effect("is not changed by looking, nor by the stages between ticks", () =>
+    Effect.gen(function* () {
+      const app = yield* App.make(App.define({ plugins: [Rules] }), {
+        checkpointEvery: 1,
+      });
+      const world = yield* worldOf(app);
+      const before = world.hash();
+      for (let i = 0; i < 3; i++) {
+        expect(app.settled).toBe(false);
+      }
+      app.frame();
+      app.input();
+      expect(app.settled).toBe(false);
+      expect(world.hash()).toBe(before);
+    })
+  );
 });
 
 describe("a game that ticks when its player moves", () => {
@@ -271,23 +293,21 @@ describe("a game that ticks when its player moves", () => {
     systems: [Show, Keys],
   });
   const Played = App.define({ plugins: [Game] });
-  const play = () => {
+  const play = Effect.fnUntraced(function* () {
     frames = 0;
     const handed: View.Bridge<typeof Begin | typeof Move>[] = [];
     const source = Input.makeManualSource();
-    const app = Effect.runSync(
-      App.make(Played, {
-        checkpointEvery: 1,
-        seed: 5,
-      }).pipe(
-        Effect.provide(
-          Layer.merge(
-            View.layer(Played, (ui) => {
-              handed.push(ui);
-              ui.subscribe(Shown, () => {});
-            }),
-            Input.layer(source)
-          )
+    const app = yield* App.make(Played, {
+      checkpointEvery: 1,
+      seed: 5,
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          View.layer(Played, (ui) => {
+            handed.push(ui);
+            ui.subscribe(Shown, () => {});
+          }),
+          Input.layer(source)
         )
       )
     );
@@ -302,76 +322,88 @@ describe("a game that ticks when its player moves", () => {
       return ticks;
     };
     return { app, ui, source, frame };
-  };
-
-  it("enters the state it starts in, then stands still: frames are drawn and time does not pass", () => {
-    const { app, frame, ui } = play();
-    // The first tick, which enters the title, and one more after it.
-    expect(frame(10)).toBe(2);
-    expect(app.time.tick).toBe(2);
-    const { elapsed } = app.time;
-    expect(frame(600)).toBe(0);
-    expect(app.time.tick).toBe(2);
-    expect(app.time.elapsed).toBe(elapsed);
-    // Drawn all the while, all the way to its last tick.
-    expect(frames).toBe(610);
-    expect(lastAlpha).toBe(1);
-    expect(ui.get(Shown)).toEqual({ x: 0, moves: 0, phase: "title" });
   });
 
-  it("ticks for a move from the UI or a key until everything that follows from it is done, and rests again", () => {
-    const { app, frame, source, ui } = play();
-    frame(10);
-    // A button: the tick that applies it enters the state it asked for.
-    ui.send(Begin, {});
-    expect(ui.get(Shown).phase).toBe("title");
-    expect(frame()).toBe(1);
-    expect(ui.get(Shown).phase).toBe("playing");
-    // And one more, after which nothing runs.
-    expect(frame()).toBe(1);
-    expect(frame(100)).toBe(0);
-    const rested = app.time.tick;
-    // A key: the move, the tick in which it is heard to have landed, and
-    // one more.
-    source.tap("ArrowRight");
-    expect(frame()).toBe(1);
-    expect(ui.get(Shown)).toEqual({ x: 1, moves: 0, phase: "playing" });
-    expect(frame()).toBe(1);
-    expect(ui.get(Shown)).toEqual({ x: 1, moves: 1, phase: "playing" });
-    expect(frame()).toBe(1);
-    expect(frame(100)).toBe(0);
-    expect(app.time.tick).toBe(rested + 3);
-    // Two moves in one frame, by both: one tick applies both.
-    ui.send(Move, { by: 10 });
-    source.tap("ArrowRight");
-    expect(frame()).toBe(1);
-    expect(ui.get(Shown).x).toBe(12);
-    frame(100);
-    // Two pieces moved and one landing said, in the one tick.
-    expect(ui.get(Shown).moves).toBe(2);
-    expect(app.time.tick).toBe(rested + 6);
-  });
+  it.effect(
+    "enters the state it starts in, then stands still: frames are drawn and time does not pass",
+    () =>
+      Effect.gen(function* () {
+        const { app, frame, ui } = yield* play();
+        // The first tick, which enters the title, and one more after it.
+        expect(frame(10)).toBe(2);
+        expect(app.time.tick).toBe(2);
+        const { elapsed } = app.time;
+        expect(frame(600)).toBe(0);
+        expect(app.time.tick).toBe(2);
+        expect(app.time.elapsed).toBe(elapsed);
+        // Drawn all the while, all the way to its last tick.
+        expect(frames).toBe(610);
+        expect(lastAlpha).toBe(1);
+        expect(ui.get(Shown)).toEqual({ x: 0, moves: 0, phase: "title" });
+      })
+  );
 
-  it("replays from its log, given how many ticks it ran: resting is no part of the game", () => {
-    const { app, frame, source, ui } = play();
-    frame(30);
-    ui.send(Begin, {});
-    frame(45);
-    source.tap("ArrowRight");
-    frame(7);
-    ui.send(Move, { by: -4 });
-    frame(200);
-    expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
-    // The same game with no UI, no devices and no rest: tick after tick.
-    const played = app.record();
-    const again = Effect.runSync(
-      Journal.replay(played, Played, { checkpointEvery: 1 })
-    );
-    const replayed = worldOf(again);
-    expect(replayed.hash()).toBe(worldOf(app).hash());
-    expect(again.time.tick).toBe(app.time.tick);
-    expect(replayed.singleton(Score).moves).toBe(2);
-  });
+  it.effect(
+    "ticks for a move from the UI or a key until everything that follows from it is done, and rests again",
+    () =>
+      Effect.gen(function* () {
+        const { app, frame, source, ui } = yield* play();
+        frame(10);
+        // A button: the tick that applies it enters the state it asked for.
+        ui.send(Begin, {});
+        expect(ui.get(Shown).phase).toBe("title");
+        expect(frame()).toBe(1);
+        expect(ui.get(Shown).phase).toBe("playing");
+        // And one more, after which nothing runs.
+        expect(frame()).toBe(1);
+        expect(frame(100)).toBe(0);
+        const rested = app.time.tick;
+        // A key: the move, the tick in which it is heard to have landed, and
+        // one more.
+        source.tap("ArrowRight");
+        expect(frame()).toBe(1);
+        expect(ui.get(Shown)).toEqual({ x: 1, moves: 0, phase: "playing" });
+        expect(frame()).toBe(1);
+        expect(ui.get(Shown)).toEqual({ x: 1, moves: 1, phase: "playing" });
+        expect(frame()).toBe(1);
+        expect(frame(100)).toBe(0);
+        expect(app.time.tick).toBe(rested + 3);
+        // Two moves in one frame, by both: one tick applies both.
+        ui.send(Move, { by: 10 });
+        source.tap("ArrowRight");
+        expect(frame()).toBe(1);
+        expect(ui.get(Shown).x).toBe(12);
+        frame(100);
+        // Two pieces moved and one landing said, in the one tick.
+        expect(ui.get(Shown).moves).toBe(2);
+        expect(app.time.tick).toBe(rested + 6);
+      })
+  );
+
+  it.effect(
+    "replays from its log, given how many ticks it ran: resting is no part of the game",
+    () =>
+      Effect.gen(function* () {
+        const { app, frame, source, ui } = yield* play();
+        frame(30);
+        ui.send(Begin, {});
+        frame(45);
+        source.tap("ArrowRight");
+        frame(7);
+        ui.send(Move, { by: -4 });
+        frame(200);
+        expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
+        // The same game with no UI, no devices and no rest: tick after tick.
+        const played = app.record();
+        const again = yield* Journal.replay(played, Played, {
+          checkpointEvery: 1,
+        });
+        const replayed = yield* worldOf(again);
+        expect(replayed.hash()).toBe((yield* worldOf(app)).hash());
+        expect(again.time.tick).toBe(app.time.tick);
+        expect(replayed.singleton(Score).moves).toBe(2);
+      })
+  );
 });
 
 // --- a system with work of its own -------------------------------------------------
@@ -396,123 +428,145 @@ const RunDown = System.tick("st/RunDown", function* () {
 describe("a game that changes", () => {
   const options = { handlers: [wind] } as const;
 
-  it("is not settled after a tick that changed more than its time, and is after one that did not", () => {
-    const app = Effect.runSync(
-      App.make(App.define({ ...options, systems: [RunDown] }))
-    );
-    // Asked once, the app watches from then on.
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    // The action waits; applied, the clock runs down a tick at a time.
-    app.enqueue(Wind, { ticks: 3 });
-    expect(app.settled).toBe(false);
-    const settled: boolean[] = [];
-    for (let i = 0; i < 5; i++) {
-      app.tick(1);
-      settled.push(app.settled);
-    }
-    // Three ticks that change it; the fourth finds it run down.
-    expect(settled).toEqual([false, false, false, true, true]);
-    expect(worldOf(app).singleton(Clock).left).toBe(0);
-    // Looking does not change it, and nor do the stages between ticks.
-    for (let i = 0; i < 3; i++) {
-      app.frame();
-      app.input();
-      expect(app.settled).toBe(true);
-    }
-  });
-
-  it("keeps a game that ticks when it is needed going while it changes, and no longer", () => {
-    ran = 0;
-    const app = Effect.runSync(
-      App.make(App.define({ ...options, systems: [RunDown] }))
-    );
-    const world = worldOf(app);
-    const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
-    const frames = (count: number): void => {
-      for (let i = 0; i < count; i++) {
-        advance(0.1);
-      }
-    };
-    // A new game runs a tick, which finds nothing to change.
-    frames(50);
-    expect(app.time.tick).toBe(1);
-    app.enqueue(Wind, { ticks: 20 });
-    frames(10);
-    // Half way down, and still going: a tick a frame.
-    expect(world.singleton(Clock).left).toBe(10);
-    expect(app.time.tick).toBe(11);
-    frames(100);
-    // Twenty ticks of the clock, and the one that found it at nothing;
-    // then rest.
-    expect(world.singleton(Clock).left).toBe(0);
-    expect(app.time.tick).toBe(1 + 20 + 1);
-    expect(ran).toBe(app.time.tick);
-  });
-
-  it("is not settled after an action dispatched between ticks, for the tick that follows it up", () => {
-    const app = Effect.runSync(
-      App.make(App.define({ ...options, systems: [] }))
-    );
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    app.dispatch(Wind, { ticks: 1 });
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-  });
-
-  it("is settled still after an action that was refused, which changed nothing", () => {
-    class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
-    const Ask = Action.define(
-      "st/Ask",
-      Schema.Struct({ refuse: Schema.Boolean }),
-      { error: Refused }
-    );
-    const ask = Action.handler(Ask, function* ({ refuse }) {
-      (yield* Clock.writes).left = 9;
-      if (refuse) {
-        return yield* Refused.make({});
-      }
-    });
-    const app = Effect.runSync(App.make(App.define({ handlers: [ask] })));
-    expect(app.settled).toBe(false);
-    app.tick(1);
-    app.tick(1);
-    expect(app.settled).toBe(true);
-    app.dispatch(Ask, { refuse: true });
-    expect(app.settled).toBe(true);
-    app.dispatch(Ask, { refuse: false });
-    expect(app.settled).toBe(false);
-  });
-
-  it("runs the first tick of a game that was loaded, and goes on while it changes", () => {
-    const made = App.make(App.define({ ...options, systems: [RunDown] }));
-    const app = Effect.runSync(made);
-    app.enqueue(Wind, { ticks: 6 });
-    app.tick(1);
-    app.tick(1);
-    expect(worldOf(app).singleton(Clock).left).toBe(4);
-    const save = app.save();
-    expect(save._tag).toBe("Success");
-    if (save._tag !== "Success") {
-      return;
-    }
-    const loaded = Effect.runSync(
-      App.make(App.define({ ...options, systems: [RunDown] }), {
-        save: save.value,
+  it.effect(
+    "is not settled after a tick that changed more than its time, and is after one that did not",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* App.make(
+          App.define({ ...options, systems: [RunDown] })
+        );
+        // Asked once, the app watches from then on.
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        // The action waits; applied, the clock runs down a tick at a time.
+        app.enqueue(Wind, { ticks: 3 });
+        expect(app.settled).toBe(false);
+        const settled: boolean[] = [];
+        for (let i = 0; i < 5; i++) {
+          app.tick(1);
+          settled.push(app.settled);
+        }
+        // Three ticks that change it; the fourth finds it run down.
+        expect(settled).toEqual([false, false, false, true, true]);
+        expect((yield* worldOf(app)).singleton(Clock).left).toBe(0);
+        // Looking does not change it, and nor do the stages between ticks.
+        for (let i = 0; i < 3; i++) {
+          app.frame();
+          app.input();
+          expect(app.settled).toBe(true);
+        }
       })
-    );
-    expect(loaded.settled).toBe(false);
-    const advance = Driver.fixedStep(loaded, { hz: 10, ticks: "whenNeeded" });
-    for (let i = 0; i < 50; i++) {
-      advance(0.1);
-    }
-    expect(worldOf(loaded).singleton(Clock).left).toBe(0);
-    expect(loaded.time.tick).toBe(2 + 4 + 1);
-  });
+  );
+
+  it.effect(
+    "keeps a game that ticks when it is needed going while it changes, and no longer",
+    () =>
+      Effect.gen(function* () {
+        ran = 0;
+        const app = yield* App.make(
+          App.define({ ...options, systems: [RunDown] })
+        );
+        const world = yield* worldOf(app);
+        const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
+        const frames = (count: number): void => {
+          for (let i = 0; i < count; i++) {
+            advance(0.1);
+          }
+        };
+        // A new game runs a tick, which finds nothing to change.
+        frames(50);
+        expect(app.time.tick).toBe(1);
+        app.enqueue(Wind, { ticks: 20 });
+        frames(10);
+        // Half way down, and still going: a tick a frame.
+        expect(world.singleton(Clock).left).toBe(10);
+        expect(app.time.tick).toBe(11);
+        frames(100);
+        // Twenty ticks of the clock, and the one that found it at nothing;
+        // then rest.
+        expect(world.singleton(Clock).left).toBe(0);
+        expect(app.time.tick).toBe(1 + 20 + 1);
+        expect(ran).toBe(app.time.tick);
+      })
+  );
+
+  it.effect(
+    "is not settled after an action dispatched between ticks, for the tick that follows it up",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ ...options, systems: [] }));
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        app.dispatch(Wind, { ticks: 1 });
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+      })
+  );
+
+  it.effect(
+    "is settled still after an action that was refused, which changed nothing",
+    () =>
+      Effect.gen(function* () {
+        class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
+        const Ask = Action.define(
+          "st/Ask",
+          Schema.Struct({ refuse: Schema.Boolean }),
+          { error: Refused }
+        );
+        const ask = Action.handler(Ask, function* ({ refuse }) {
+          (yield* Clock.writes).left = 9;
+          if (refuse) {
+            return yield* Refused.make({});
+          }
+        });
+        const app = yield* App.make(App.define({ handlers: [ask] }));
+        expect(app.settled).toBe(false);
+        app.tick(1);
+        app.tick(1);
+        expect(app.settled).toBe(true);
+        app.dispatch(Ask, { refuse: true });
+        expect(app.settled).toBe(true);
+        app.dispatch(Ask, { refuse: false });
+        expect(app.settled).toBe(false);
+      })
+  );
+
+  it.effect(
+    "runs the first tick of a game that was loaded, and goes on while it changes",
+    () =>
+      Effect.gen(function* () {
+        const made = App.make(App.define({ ...options, systems: [RunDown] }));
+        const app = yield* made;
+        app.enqueue(Wind, { ticks: 6 });
+        app.tick(1);
+        app.tick(1);
+        expect((yield* worldOf(app)).singleton(Clock).left).toBe(4);
+        const save = app.save();
+        expect(save._tag).toBe("Success");
+        if (save._tag !== "Success") {
+          return;
+        }
+        const loaded = yield* App.make(
+          App.define({ ...options, systems: [RunDown] }),
+          {
+            save: save.value,
+          }
+        );
+        expect(loaded.settled).toBe(false);
+        const advance = Driver.fixedStep(loaded, {
+          hz: 10,
+          ticks: "whenNeeded",
+        });
+        for (let i = 0; i < 50; i++) {
+          advance(0.1);
+        }
+        expect((yield* worldOf(loaded)).singleton(Clock).left).toBe(0);
+        expect(loaded.time.tick).toBe(2 + 4 + 1);
+      })
+  );
 });

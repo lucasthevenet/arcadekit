@@ -1,5 +1,5 @@
+import { describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema } from "effect";
-import { describe, expect, it } from "vitest";
 
 import { idOf } from "../src/ecs/component.ts";
 import {
@@ -367,8 +367,9 @@ const survey = Action.handler(Survey, function* ({ limit }) {
 });
 
 describe("a query, which writes only what it names, in an app", () => {
-  it("is what a system and a handler ask for, and a refusal still leaves nothing", () => {
-    Effect.runSync(
+  it.effect(
+    "is what a system and a handler ask for, and a refusal still leaves nothing",
+    () =>
       Effect.gen(function* () {
         const turned: number[] = [];
         const Move = System.tick("Move", function* () {
@@ -417,8 +418,7 @@ describe("a query, which writes only what it names, in an app", () => {
         app.tick(1);
         expect(turned.at(-1)).toBe(0);
       })
-    );
-  });
+  );
 });
 
 describe("a raw column a loop is handed read-only, in an app made with verifyFrames", () => {
@@ -474,83 +474,77 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
     });
   });
   /** Every field of every body, as a query that only reads finds them. */
-  const bodies = (app: App.Any): number[] =>
-    Effect.runSync(
-      app.read(
-        Effect.map(Query.all(Position, Velocity, Pointing), (query) => {
-          const values: number[] = [];
-          query.each((pos, vel, pointing) => {
-            values.push(pos.x, pos.y, vel.x, vel.y, idOf(pointing.target));
-          });
-          return values;
-        })
-      )
+  const bodies = (app: App.Any) =>
+    app.read(
+      Effect.map(Query.all(Position, Velocity, Pointing), (query) => {
+        const values: number[] = [];
+        query.each((pos, vel, pointing) => {
+          values.push(pos.x, pos.y, vel.x, vel.y, idOf(pointing.target));
+        });
+        return values;
+      })
     );
   const refusal = (field: string): Error =>
     new Error(
       `eachChunk() wrote "rd/Velocity.${field}", which the query only reads, through its raw column. No change query would see the write, and no refusal would undo it, so it has been put back. Name "rd/Velocity" in Query.writes to write it, or write it with each().`
     );
 
-  it("lets a loop write what its query writes", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({ plugins: [Bodies], systems: [Move] }),
-          { verifyFrames: true }
-        );
-        app.tick(1);
-        app.tick(1);
-        expect(bodies(app).slice(0, 4)).toEqual([3, 0, 1, 2]);
-      })
-    );
-  });
+  it.effect("lets a loop write what its query writes", () =>
+    Effect.gen(function* () {
+      const app = yield* App.make(
+        App.define({ plugins: [Bodies], systems: [Move] }),
+        { verifyFrames: true }
+      );
+      app.tick(1);
+      app.tick(1);
+      expect((yield* bodies(app)).slice(0, 4)).toEqual([3, 0, 1, 2]);
+    })
+  );
 
-  it("refuses a write to it in a tick, in a handler, and to a relation's target, and puts it back", () => {
-    Effect.runSync(
+  it.effect(
+    "refuses a write to it in a tick, in a handler, and to a relation's target, and puts it back",
+    () =>
       Effect.gen(function* () {
         const ticked = yield* App.make(
           App.define({ plugins: [Bodies], systems: [Brake] }),
           { verifyFrames: true }
         );
-        const before = bodies(ticked);
+        const before = yield* bodies(ticked);
         expect(() => ticked.tick(1)).toThrow(refusal("x"));
-        expect(bodies(ticked)).toEqual(before);
+        expect(yield* bodies(ticked)).toEqual(before);
 
         const handled = yield* App.make(
           App.define({ plugins: [Bodies], handlers: [halt] }),
           { verifyFrames: true }
         );
-        const unhalted = bodies(handled);
+        const unhalted = yield* bodies(handled);
         const exit = handled.dispatch(Halt, {});
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
           refusal("y")
         );
-        expect(bodies(handled)).toEqual(unhalted);
+        expect(yield* bodies(handled)).toEqual(unhalted);
 
         const turned = yield* App.make(
           App.define({ plugins: [Bodies], systems: [Turn] }),
           { verifyFrames: true }
         );
-        const unturned = bodies(turned);
+        const unturned = yield* bodies(turned);
         expect(() => turned.tick(1)).toThrow(
           /^eachChunk\(\) wrote the target of "rd\/Pointing" through its raw column, and it has been put back\. "rd\/Pointing" is a relation/
         );
-        expect(bodies(turned)).toEqual(unturned);
+        expect(yield* bodies(turned)).toEqual(unturned);
       })
-    );
-  });
+  );
 
-  it("is not checked in an app made without it", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({ plugins: [Bodies], systems: [Brake] })
-        );
-        app.tick(1);
-        expect(bodies(app).slice(0, 4)).toEqual([1, 0, 0, 2]);
-      })
-    );
-  });
+  it.effect("is not checked in an app made without it", () =>
+    Effect.gen(function* () {
+      const app = yield* App.make(
+        App.define({ plugins: [Bodies], systems: [Brake] })
+      );
+      app.tick(1);
+      expect((yield* bodies(app)).slice(0, 4)).toEqual([1, 0, 0, 2]);
+    })
+  );
 });
 
 describe("an id Commands.spawn returns", () => {
@@ -560,46 +554,44 @@ describe("an id Commands.spawn returns", () => {
   const Fired = Event.define("rd/Fired", Schema.Struct({ shot: EntityId }));
   const Fire = Action.define("rd/Fire", Schema.Struct({}));
 
-  it("is not read before its entity is placed, and is once it is", () => {
-    const seen: (Entity | undefined)[] = [];
-    const heard: Entity[] = [];
-    const fire = Action.handler(Fire, function* () {
-      const commands = yield* Commands.spawns(Position, Target);
-      const world = yield* World;
-      const shot = commands.spawn(Position.of({ x: 1, y: 0 }));
-      // @ts-expect-error its entity is not placed until the handler ends
-      world.get(shot, Position);
-      // Commands, a component's value and an event's payload take it.
-      commands.add(shot, Position.of({ x: 2, y: 0 }));
-      commands.spawn(Position, Target.of({ target: shot }));
-      (yield* Fired.emits).emit({ shot });
-      seen.push(world.placed(shot));
-      return shot;
-    });
-    const Hear = System.tick("rd/Hear", function* () {
-      for (const { shot } of (yield* Fired).read()) {
-        heard.push(shot);
-      }
-    });
-    Effect.runSync(
-      Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({ handlers: [fire], systems: [Hear] })
-        );
-        const world = yield* app.read(World);
-        const exit = app.dispatch(Fire, {});
-        // dispatch gives it back as an entity, once the handler has ended.
-        const shot = Exit.isSuccess(exit) ? exit.value : undefined;
-        expect(shot).toBeDefined();
-        if (shot === undefined) {
-          return;
+  it.effect("is not read before its entity is placed, and is once it is", () =>
+    Effect.gen(function* () {
+      const seen: (Entity | undefined)[] = [];
+      const heard: Entity[] = [];
+      const fire = Action.handler(Fire, function* () {
+        const commands = yield* Commands.spawns(Position, Target);
+        const world = yield* World;
+        const shot = commands.spawn(Position.of({ x: 1, y: 0 }));
+        // @ts-expect-error its entity is not placed until the handler ends
+        world.get(shot, Position);
+        // Commands, a component's value and an event's payload take it.
+        commands.add(shot, Position.of({ x: 2, y: 0 }));
+        commands.spawn(Position, Target.of({ target: shot }));
+        (yield* Fired.emits).emit({ shot });
+        seen.push(world.placed(shot));
+        return shot;
+      });
+      const Hear = System.tick("rd/Hear", function* () {
+        for (const { shot } of (yield* Fired).read()) {
+          heard.push(shot);
         }
-        expect(seen).toEqual([undefined]);
-        expect(world.get(shot, Position)).toEqual({ x: 2, y: 0 });
-        expect(world.sources(shot, Target)).toHaveLength(1);
-        app.tick(1 / 60);
-        expect(heard).toEqual([shot]);
-      })
-    );
-  });
+      });
+      const app = yield* App.make(
+        App.define({ handlers: [fire], systems: [Hear] })
+      );
+      const world = yield* app.read(World);
+      const exit = app.dispatch(Fire, {});
+      // dispatch gives it back as an entity, once the handler has ended.
+      const shot = Exit.isSuccess(exit) ? exit.value : undefined;
+      expect(shot).toBeDefined();
+      if (shot === undefined) {
+        return;
+      }
+      expect(seen).toEqual([undefined]);
+      expect(world.get(shot, Position)).toEqual({ x: 2, y: 0 });
+      expect(world.sources(shot, Target)).toHaveLength(1);
+      app.tick(1 / 60);
+      expect(heard).toEqual([shot]);
+    })
+  );
 });

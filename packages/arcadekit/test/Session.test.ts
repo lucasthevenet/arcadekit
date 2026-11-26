@@ -1,9 +1,10 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Layer } from "effect";
-import { assert, describe, expect, it } from "vitest";
 
 import { App, Plugin, Save, World } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";
 import { Session } from "../src/net/index.ts";
+import { thrown } from "./checks.ts";
 import { CoinGame, DELTA, Drop, game } from "./peers.ts";
 
 const alone = { me: "ada", others: [], delta: DELTA } as const;
@@ -21,33 +22,32 @@ const OTHER_TWICE =
   '"grace" is among the others twice. Every peer has a name of its own: name each other peer once.';
 
 describe("a session", () => {
-  it("makes the app it steps, from the game and how it starts", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const session = yield* Session.make(CoinGame, {
-          ...alone,
-          seed: 5,
-          checkpointEvery: 1,
-        });
-        const { app } = session;
-        expect(app.time.tick).toBe(0);
-        // The same game, made the same way, is the same world.
-        const single = yield* game(5, 1);
-        expect((yield* app.read(World)).hash()).toBe(
-          (yield* single.read(World)).hash()
-        );
-        // What is enqueued on its app is the session's to apply.
-        app.enqueue(Drop, { by: "ada", value: 3 });
-        expect(session.tick()).toBe(true);
-        expect(app.time.tick).toBe(1);
-        // A recording of it says how it began, as an app's does.
-        expect(app.record().seed).toBe(5);
-      })
-    );
-  });
+  it.effect("makes the app it steps, from the game and how it starts", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.make(CoinGame, {
+        ...alone,
+        seed: 5,
+        checkpointEvery: 1,
+      });
+      const { app } = session;
+      expect(app.time.tick).toBe(0);
+      // The same game, made the same way, is the same world.
+      const single = yield* game(5, 1);
+      expect((yield* app.read(World)).hash()).toBe(
+        (yield* single.read(World)).hash()
+      );
+      // What is enqueued on its app is the session's to apply.
+      app.enqueue(Drop, { by: "ada", value: 3 });
+      expect(session.tick()).toBe(true);
+      expect(app.time.tick).toBe(1);
+      // A recording of it says how it began, as an app's does.
+      expect(app.record().seed).toBe(5);
+    })
+  );
 
-  it("is told this peer apart from the others, and a name given twice does not compile", () => {
-    Effect.runSync(
+  it.effect(
+    "is told this peer apart from the others, and a name given twice does not compile",
+    () =>
       Effect.gen(function* () {
         const session = yield* Session.make(CoinGame, {
           seed: 5,
@@ -58,49 +58,48 @@ describe("a session", () => {
         expect(session.me).toBe("grace");
         // Every peer, in the order their actions are applied.
         expect(session.peers).toEqual(["ada", "edsger", "grace"]);
+
+        const mine: Said<"ada", readonly ["grace", "ada"]> = ME_TOO;
+        const theirs: Said<"ada", readonly ["grace", "edsger", "grace"]> =
+          OTHER_TWICE;
+        const fine: Said<"ada", readonly ["grace", "edsger"]> = "nothing";
+        // Names the compiler only knows as text are refused when it runs.
+        const unknown: Said<string, readonly string[]> = "nothing";
+        expect([mine, theirs, fine, unknown]).toEqual([
+          ME_TOO,
+          OTHER_TWICE,
+          "nothing",
+          "nothing",
+        ]);
+        // Refused where they are written: neither effect is run.
+        void Session.make(
+          CoinGame,
+          // @ts-expect-error "ada" is me, and among the others too
+          { seed: 5, me: "ada", others: ["grace", "ada"], delta: DELTA }
+        );
+        void Session.make(
+          CoinGame,
+          // @ts-expect-error "grace" is among the others twice
+          { seed: 5, me: "ada", others: ["grace", "grace"], delta: DELTA }
+        );
       })
-    );
+  );
 
-    const mine: Said<"ada", readonly ["grace", "ada"]> = ME_TOO;
-    const theirs: Said<"ada", readonly ["grace", "edsger", "grace"]> =
-      OTHER_TWICE;
-    const fine: Said<"ada", readonly ["grace", "edsger"]> = "nothing";
-    // Names the compiler only knows as text are refused when it runs.
-    const unknown: Said<string, readonly string[]> = "nothing";
-    expect([mine, theirs, fine, unknown]).toEqual([
-      ME_TOO,
-      OTHER_TWICE,
-      "nothing",
-      "nothing",
-    ]);
-    // Refused where they are written: neither effect is run.
-    void Session.make(
-      CoinGame,
-      // @ts-expect-error "ada" is me, and among the others too
-      { seed: 5, me: "ada", others: ["grace", "ada"], delta: DELTA }
-    );
-    void Session.make(
-      CoinGame,
-      // @ts-expect-error "grace" is among the others twice
-      { seed: 5, me: "ada", others: ["grace", "grace"], delta: DELTA }
-    );
-  });
-
-  it("begins where a save every peer loads was made, and fails as a load does", () => {
-    const save = Effect.runSync(
+  it.effect(
+    "begins where a save every peer loads was made, and fails as a load does",
+    () =>
       Effect.gen(function* () {
-        const app = yield* game(5, 1);
-        app.enqueue(Drop, { by: "ada", value: 2 });
+        const played = yield* game(5, 1);
+        played.enqueue(Drop, { by: "ada", value: 2 });
         for (let i = 0; i < 4; i++) {
-          app.tick(DELTA);
+          played.tick(DELTA);
         }
-        const saved = app.save();
+        const saved = played.save();
         assert(Exit.isSuccess(saved));
-        return { save: saved.value, hash: (yield* app.read(World)).hash() };
-      })
-    );
-    Effect.runSync(
-      Effect.gen(function* () {
+        const save = {
+          save: saved.value,
+          hash: (yield* played.read(World)).hash(),
+        };
         const session = yield* Session.make(CoinGame, {
           ...alone,
           save: save.save,
@@ -109,32 +108,35 @@ describe("a session", () => {
         expect((yield* session.app.read(World)).hash()).toBe(save.hash);
         expect(session.tick()).toBe(true);
         expect(session.app.time.tick).toBe(5);
+        // A save that doesn't load is the session's failure, typed.
+        const damaged: Save.Save = {
+          ...save.save,
+          world: save.save.world.slice(0, 20),
+        };
+        const refused = yield* Effect.exit(
+          Session.make(CoinGame, { ...alone, save: damaged })
+        );
+        const typed: Exit.Exit<unknown, Save.LoadRefused> = refused;
+        expect(Exit.isFailure(typed)).toBe(true);
+        // From a seed there is nothing to refuse.
+        const fresh: Effect.Effect<unknown, never> = Session.make(CoinGame, {
+          ...alone,
+          seed: 1,
+        });
+        void fresh;
       })
-    );
-    // A save that doesn't load is the session's failure, typed.
-    const damaged: Save.Save = {
-      ...save.save,
-      world: save.save.world.slice(0, 20),
-    };
-    const refused = Effect.runSync(
-      Effect.exit(Session.make(CoinGame, { ...alone, save: damaged }))
-    );
-    const typed: Exit.Exit<unknown, Save.LoadRefused> = refused;
-    expect(Exit.isFailure(typed)).toBe(true);
-    // From a seed there is nothing to refuse.
-    const fresh: Effect.Effect<unknown, never> = Session.make(CoinGame, {
-      ...alone,
-      seed: 1,
-    });
-    void fresh;
-  });
+  );
 
-  it("runs 8 ticks ahead with no delay unless told, and with a delay of 2 when it runs none ahead", () => {
-    Effect.runSync(
+  it.effect(
+    "runs 8 ticks ahead with no delay unless told, and with a delay of 2 when it runs none ahead",
+    () =>
       Effect.gen(function* () {
         const ahead = yield* Session.make(CoinGame, alone);
         expect([ahead.ahead, ahead.delay]).toEqual([8, 0]);
-        const lockstep = yield* Session.make(CoinGame, { ...alone, ahead: 0 });
+        const lockstep = yield* Session.make(CoinGame, {
+          ...alone,
+          ahead: 0,
+        });
         expect([lockstep.ahead, lockstep.delay]).toEqual([0, 2]);
         const told = yield* Session.make(CoinGame, {
           ...alone,
@@ -149,46 +151,50 @@ describe("a session", () => {
         });
         expect([both.ahead, both.delay]).toEqual([3, 1]);
       })
-    );
-  });
+  );
 
-  it("closes its app when it is closed, and at once the one made for options that describe no game", () => {
-    const held: string[] = [];
-    const Held = Plugin.make("se/Held", {
-      layer: Layer.effectDiscard(
-        Effect.acquireRelease(
-          Effect.sync(() => held.push("acquired")),
-          () => Effect.sync(() => held.push("released"))
-        )
-      ),
-    });
-    const Holding = App.define({ plugins: [Held] });
-    const session = Effect.runSync(Session.make(Holding, alone));
-    expect(held).toEqual(["acquired"]);
-    // Its app is closed with it, and by nothing else.
-    // @ts-expect-error a session's app has no close: the session's closes it
-    void session.app.close;
-    Effect.runSync(session.close);
-    expect(held).toEqual(["acquired", "released"]);
+  it.effect(
+    "closes its app when it is closed, and at once the one made for options that describe no game",
+    () =>
+      Effect.gen(function* () {
+        const held: string[] = [];
+        const Held = Plugin.make("se/Held", {
+          layer: Layer.effectDiscard(
+            Effect.acquireRelease(
+              Effect.sync(() => held.push("acquired")),
+              () => Effect.sync(() => held.push("released"))
+            )
+          ),
+        });
+        const Holding = App.define({ plugins: [Held] });
+        const session = yield* Session.make(Holding, alone);
+        expect(held).toEqual(["acquired"]);
+        // Its app is closed with it, and by nothing else.
+        // @ts-expect-error a session's app has no close: the session's closes it
+        void session.app.close;
+        yield* session.close;
+        expect(held).toEqual(["acquired", "released"]);
 
-    held.length = 0;
-    expect(() =>
-      Effect.runSync(Session.make(Holding, { ...alone, delay: 1.5 }))
-    ).toThrow(/A session's delay is a whole number of ticks/u);
-    expect(held).toEqual(["acquired", "released"]);
+        held.length = 0;
+        expect(
+          yield* thrown(Session.make(Holding, { ...alone, delay: 1.5 }))
+        ).toThrow(/A session's delay is a whole number of ticks/u);
+        expect(held).toEqual(["acquired", "released"]);
 
-    // A sync test's too.
-    held.length = 0;
-    const test = Effect.runSync(Session.syncTest(Holding));
-    test.tick(DELTA);
-    Effect.runSync(test.close);
-    expect(held).toEqual(["acquired", "released"]);
-  });
+        // A sync test's too.
+        held.length = 0;
+        const test = yield* Session.syncTest(Holding);
+        test.tick(DELTA);
+        yield* test.close;
+        expect(held).toEqual(["acquired", "released"]);
+      })
+  );
 });
 
 describe("taking an app over", () => {
-  it("is no member of an app: only what builds it hands it over, once", () => {
-    Effect.runSync(
+  it.effect(
+    "is no member of an app: only what builds it hands it over, once",
+    () =>
       Effect.gen(function* () {
         const app = yield* App.make(CoinGame, { seed: 5 });
         // @ts-expect-error an app is taken over by what builds it, not by itself
@@ -204,31 +210,28 @@ describe("taking an app over", () => {
           /taken over already\. An app is in one session at a time/
         );
       })
-    );
-  });
+  );
 
-  it("is what a sync test does to the app it makes", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const test = yield* Session.syncTest(CoinGame, { seed: 5 });
-        test.app.enqueue(Drop, { by: "ada", value: 1 });
-        for (let i = 0; i < 5; i++) {
-          test.tick(DELTA);
-        }
-        expect(test.checked).toBe(5);
-        expect(test.app.time.tick).toBe(5);
-        // Each tick is in the log and the recording once.
-        expect(test.app.record()).toMatchObject({ seed: 5, start: 0, end: 5 });
-        // The same game stepped once a tick ends in the same world.
-        const single = yield* game(5, 60);
-        single.enqueue(Drop, { by: "ada", value: 1 });
-        for (let i = 0; i < 5; i++) {
-          single.tick(DELTA);
-        }
-        expect((yield* test.app.read(World)).hash()).toBe(
-          (yield* single.read(World)).hash()
-        );
-      })
-    );
-  });
+  it.effect("is what a sync test does to the app it makes", () =>
+    Effect.gen(function* () {
+      const test = yield* Session.syncTest(CoinGame, { seed: 5 });
+      test.app.enqueue(Drop, { by: "ada", value: 1 });
+      for (let i = 0; i < 5; i++) {
+        test.tick(DELTA);
+      }
+      expect(test.checked).toBe(5);
+      expect(test.app.time.tick).toBe(5);
+      // Each tick is in the log and the recording once.
+      expect(test.app.record()).toMatchObject({ seed: 5, start: 0, end: 5 });
+      // The same game stepped once a tick ends in the same world.
+      const single = yield* game(5, 60);
+      single.enqueue(Drop, { by: "ada", value: 1 });
+      for (let i = 0; i < 5; i++) {
+        single.tick(DELTA);
+      }
+      expect((yield* test.app.read(World)).hash()).toBe(
+        (yield* single.read(World)).hash()
+      );
+    })
+  );
 });

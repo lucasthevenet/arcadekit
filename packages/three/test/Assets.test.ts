@@ -1,3 +1,4 @@
+import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 /// <reference types="node" />
 import {
   Action,
@@ -31,7 +32,6 @@ import {
   Texture,
 } from "three";
 import type { LoadingManager, Scene } from "three";
-import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Gltf, Three } from "../src/index.ts";
 
@@ -165,25 +165,23 @@ const forest = {
 } as const;
 
 /** A game of a menu and a forest, drawn by its systems. */
-const play = (
+const play = Effect.fnUntraced(function* (
   game: App.Game<
     readonly System.System<never, Drawing>[],
     typeof forest.handlers,
     typeof forest.plugins
   >,
   loader: Layer.Layer<never> = files
-) => {
+) {
   const renderer = makeRenderer();
   const made = App.make(game);
-  const app = Effect.runSync(
-    made.pipe(
-      Effect.provide(Layer.mergeAll(renderer.layer, loader, Logger.layer([])))
-    )
+  const app = yield* made.pipe(
+    Effect.provide(Layer.mergeAll(renderer.layer, loader, Logger.layer([])))
   );
   return {
     app,
     renderer,
-    close: () => Effect.runSync(app.close),
+    close: app.close,
     /** The game goes to a level, and a frame is drawn. */
     enter: (to: "menu" | "forest") => {
       done(app.dispatch(Go, { to }));
@@ -211,7 +209,7 @@ const play = (
         (child): child is InstancedMesh => child instanceof InstancedMesh
       ),
   };
-};
+});
 
 /**
  * Keeps the forest's assets while the game is in the forest. It runs
@@ -285,331 +283,368 @@ const makeTrees = (
 };
 
 describe("instances whose look is made of assets", () => {
-  it("are drawn while the app holds the bundle loaded, in a look made of it once", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees, looks } = makeTrees(Forest, log);
-    const { app, despawn, enter, mesh, renderer, spawn } = play(
-      App.define({ ...forest, systems: [during(Forest), Trees] })
-    );
-    spawn("tree", 1);
-    spawn("tree", 2);
-    spawn("deer", 9);
-    // In the menu the forest is not loaded: there is nothing to draw with.
-    app.tick(1);
-    app.frame();
-    app.frame();
-    expect(renderer.drew).toEqual([]);
-    expect(log).toEqual([]);
+  it.effect(
+    "are drawn while the app holds the bundle loaded, in a look made of it once",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees, looks } = makeTrees(Forest, log);
+        const { app, despawn, enter, mesh, renderer, spawn } = yield* play(
+          App.define({ ...forest, systems: [during(Forest), Trees] })
+        );
+        spawn("tree", 1);
+        spawn("tree", 2);
+        spawn("deer", 9);
+        // In the menu the forest is not loaded: there is nothing to draw with.
+        app.tick(1);
+        app.frame();
+        app.frame();
+        expect(renderer.drew).toEqual([]);
+        expect(log).toEqual([]);
 
-    enter("forest");
-    expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
-    expect(renderer.drew).toEqual(["ta/Trees"]);
-    const drawn = mesh()!;
-    expect(drawn.geometry).toBe(geometry);
-    expect(drawn.material).toBe(looks[0]!.material);
-    expect(xs(drawn)).toEqual([1, 2]);
-    // It is the mesh of any instances: not culled, its buffer its own.
-    expect(drawn.frustumCulled).toBe(false);
+        enter("forest");
+        expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
+        expect(renderer.drew).toEqual(["ta/Trees"]);
+        const drawn = mesh()!;
+        expect(drawn.geometry).toBe(geometry);
+        expect(drawn.material).toBe(looks[0]!.material);
+        expect(xs(drawn)).toEqual([1, 2]);
+        // It is the mesh of any instances: not culled, its buffer its own.
+        expect(drawn.frustumCulled).toBe(false);
 
-    // The look is made once, however long the level lasts, and the trees
-    // that come and go are drawn as any are.
-    const more = spawn("tree", 3);
-    app.tick(1);
-    app.frame();
-    expect(xs(mesh()!)).toEqual([1, 2, 3]);
-    despawn(more);
-    app.frame();
-    expect(xs(mesh()!)).toEqual([1, 2]);
-    expect(mesh()).toBe(drawn);
-    expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
-    expect(renderer.stale).toBe(0);
-  });
-
-  it("are taken out of the scene when the bundle is let go, and what look made is handed to free", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees, freed, looks } = makeTrees(Forest, log);
-    const { app, enter, mesh, renderer, spawn } = play(
-      App.define({ ...forest, systems: [during(Forest), Trees] })
-    );
-    spawn("tree", 1);
-    enter("forest");
-    const drawn = mesh()!;
-    let disposed = 0;
-    drawn.addEventListener("dispose", () => {
-      disposed++;
-    });
-    log.length = 0;
-
-    enter("menu");
-    // The bark first, which is the bundle's, then what was made of it.
-    expect(log).toEqual(["close 1", "free 1"]);
-    expect(freed).toEqual([looks[0]]);
-    expect(freed[0]).toBe(looks[0]);
-    expect(renderer.drew).toEqual([]);
-    expect(drawn.parent).toBeNull();
-    expect(disposed).toBe(1);
-    // And it stays away, with nothing made or freed again.
-    app.tick(1);
-    app.frame();
-    app.frame();
-    expect(renderer.drew).toEqual([]);
-    expect(log).toEqual(["close 1", "free 1"]);
-    expect(renderer.stale).toBe(0);
-  });
-
-  it("are made again of what is loaded next, with the room the last had come to need", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees, looks } = makeTrees(Forest, log);
-    const { despawn, enter, mesh, spawn } = play(
-      App.define({ ...forest, systems: [during(Forest), Trees] })
-    );
-    const trees = [1, 2, 3, 4, 5].map((x) => spawn("tree", x));
-    enter("forest");
-    const first = mesh()!;
-    // Room for two was asked for, and five were drawn.
-    expect(first.instanceMatrix.array.length).toBe(8 * 16);
-    enter("menu");
-    // While it is away most of them go, and one comes.
-    for (const tree of trees.slice(1)) {
-      despawn(tree);
-    }
-    spawn("tree", 6);
-    log.length = 0;
-
-    enter("forest");
-    expect(log).toEqual(["open 2", "look 2", "prepare ta/Trees"]);
-    const second = mesh()!;
-    expect(second).not.toBe(first);
-    expect(second.material).toBe(looks[1]!.material);
-    expect(second.material).not.toBe(first.material);
-    expect(looks[1]!.bark).toMatchObject({ load: 2, open: true, size: 3 });
-    expect(xs(second)).toEqual([1, 6]);
-    // The room the first had grown to, though two would do for these: a
-    // level that is entered again does not grow its way up again.
-    expect(second.instanceMatrix.array.length).toBe(8 * 16);
-    expect(first.parent).toBeNull();
-  });
-
-  it("are never drawn with what was let go, whichever of the two systems runs first", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees } = makeTrees(Forest, log);
-    // Listed after what draws, and nothing more said: `Assets.during` is
-    // of the stage before a frame's own, so the trees find their bark in
-    // the frame it is loaded, and find it gone in the frame it goes.
-    const listed = play(
-      App.define({
-        ...forest,
-        systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+        // The look is made once, however long the level lasts, and the trees
+        // that come and go are drawn as any are.
+        const more = spawn("tree", 3);
+        app.tick(1);
+        app.frame();
+        expect(xs(mesh()!)).toEqual([1, 2, 3]);
+        despawn(more);
+        app.frame();
+        expect(xs(mesh()!)).toEqual([1, 2]);
+        expect(mesh()).toBe(drawn);
+        expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
+        expect(renderer.stale).toBe(0);
       })
-    );
-    listed.spawn("tree", 1);
-    listed.enter("forest");
-    expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
-    expect(listed.renderer.drew).toEqual(["ta/Trees"]);
-    listed.enter("menu");
-    expect(listed.renderer.drew).toEqual([]);
-    expect(log.slice(-2)).toEqual(["close 1", "free 1"]);
-    expect(listed.renderer.stale).toBe(0);
-    expect(listed.app.frameOrder.slice(-3)).toEqual([
-      "Assets.during(ta/Forest)",
-      "ta/Trees",
-      "arcadekit/three/Render",
-    ]);
+  );
 
-    // The worst way round, which a system of the game's own can still be:
-    // the trees look, then the level lets its assets go, then the scene
-    // is drawn.
-    log.length = 0;
-    const { app, enter, renderer, spawn } = play(
-      App.define({ ...forest, systems: [Trees, keepLate(Forest)] })
-    );
-    spawn("tree", 1);
-    enter("forest");
-    expect(renderer.drew).toEqual([]);
-    app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees"]);
-    log.length = 0;
-    // The frame the level is left in, the trees saw their bark, and then
-    // it was let go: they are gone all the same by the time it is drawn.
-    enter("menu");
-    expect(log).toEqual(["close 2", "free 2"]);
-    expect(renderer.drew).toEqual([]);
-    expect(renderer.stale).toBe(0);
-    app.frame();
-    expect(log).toEqual(["close 2", "free 2"]);
+  it.effect(
+    "are taken out of the scene when the bundle is let go, and what look made is handed to free",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees, freed, looks } = makeTrees(Forest, log);
+        const { app, enter, mesh, renderer, spawn } = yield* play(
+          App.define({ ...forest, systems: [during(Forest), Trees] })
+        );
+        spawn("tree", 1);
+        enter("forest");
+        const drawn = mesh()!;
+        let disposed = 0;
+        drawn.addEventListener("dispose", () => {
+          disposed++;
+        });
+        log.length = 0;
 
-    // In again, and out again.
-    enter("forest");
-    app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees"]);
-    enter("menu");
-    expect(renderer.drew).toEqual([]);
-    expect(renderer.stale).toBe(0);
-    expect(log.slice(-2)).toEqual(["close 3", "free 3"]);
-  });
+        enter("menu");
+        // The bark first, which is the bundle's, then what was made of it.
+        expect(log).toEqual(["close 1", "free 1"]);
+        expect(freed).toEqual([looks[0]]);
+        expect(freed[0]).toBe(looks[0]);
+        expect(renderer.drew).toEqual([]);
+        expect(drawn.parent).toBeNull();
+        expect(disposed).toBe(1);
+        // And it stays away, with nothing made or freed again.
+        app.tick(1);
+        app.frame();
+        app.frame();
+        expect(renderer.drew).toEqual([]);
+        expect(log).toEqual(["close 1", "free 1"]);
+        expect(renderer.stale).toBe(0);
+      })
+  );
 
-  it("are made anew in the frame a bundle is found loaded again, though it was never seen gone", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees, looks } = makeTrees(Forest, log);
-    // A system of the game's own keeps the forest, and can load it afresh.
-    let afresh = false;
-    const Keep = System.frame("ta/Keep", function* () {
-      const store = yield* Assets.Store;
-      if (afresh) {
-        afresh = false;
-        store.drop(Forest, "ta/Keep");
-      }
-      store.hold(Forest, "ta/Keep");
-    });
-    const { app, mesh, renderer, spawn } = play(
-      App.define({ ...forest, systems: [Keep, Trees] })
-    );
-    spawn("tree", 1);
-    app.frame();
-    const first = mesh()!;
-    expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
-    log.length = 0;
+  it.effect(
+    "are made again of what is loaded next, with the room the last had come to need",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees, looks } = makeTrees(Forest, log);
+        const { despawn, enter, mesh, spawn } = yield* play(
+          App.define({ ...forest, systems: [during(Forest), Trees] })
+        );
+        const trees = [1, 2, 3, 4, 5].map((x) => spawn("tree", x));
+        enter("forest");
+        const first = mesh()!;
+        // Room for two was asked for, and five were drawn.
+        expect(first.instanceMatrix.array.length).toBe(8 * 16);
+        enter("menu");
+        // While it is away most of them go, and one comes.
+        for (const tree of trees.slice(1)) {
+          despawn(tree);
+        }
+        spawn("tree", 6);
+        log.length = 0;
 
-    afresh = true;
-    app.frame();
-    // Between one look and the next the bark became other bark: the old
-    // look is freed and the new made, and the trees are drawn all the while.
-    expect(log).toEqual([
-      "close 1",
-      "open 2",
-      "free 1",
-      "look 2",
-      "prepare ta/Trees",
-    ]);
-    expect(renderer.drew).toEqual(["ta/Trees"]);
-    expect(mesh()).not.toBe(first);
-    expect(mesh()!.material).toBe(looks[1]!.material);
-    expect(xs(mesh()!)).toEqual([1]);
-    expect(renderer.stale).toBe(0);
-  });
+        enter("forest");
+        expect(log).toEqual(["open 2", "look 2", "prepare ta/Trees"]);
+        const second = mesh()!;
+        expect(second).not.toBe(first);
+        expect(second.material).toBe(looks[1]!.material);
+        expect(second.material).not.toBe(first.material);
+        expect(looks[1]!.bark).toMatchObject({ load: 2, open: true, size: 3 });
+        expect(xs(second)).toEqual([1, 6]);
+        // The room the first had grown to, though two would do for these: a
+        // level that is entered again does not grow its way up again.
+        expect(second.instanceMatrix.array.length).toBe(8 * 16);
+        expect(first.parent).toBeNull();
+      })
+  );
 
-  it("wait for a bundle that takes its time, and draw nothing of one that could not be loaded", async () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees } = makeTrees(Forest, log);
-    const waiting: ((
-      exit: Exit.Exit<Uint8Array, Assets.AssetFailed>
-    ) => void)[] = [];
-    const slow = Layer.succeed(Assets.Loader, {
-      bytes: () =>
-        Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
-          waiting.push((exit) => resume(exit));
-        }),
-    }) as Layer.Layer<never>;
-    const { app, enter, renderer, spawn } = play(
-      App.define({ ...forest, systems: [during(Forest), Trees] }),
-      slow
-    );
-    spawn("tree", 1);
-    enter("forest");
-    app.frame();
-    expect(renderer.drew).toEqual([]);
-    expect(log).toEqual([]);
-    // The file arrives.
-    waiting[0]!(Exit.succeed(new Uint8Array([7])));
-    await settle();
-    expect(renderer.drew).toEqual([]);
-    app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees"]);
-    expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
+  it.effect(
+    "are never drawn with what was let go, whichever of the two systems runs first",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees } = makeTrees(Forest, log);
+        // Listed after what draws, and nothing more said: `Assets.during` is
+        // of the stage before a frame's own, so the trees find their bark in
+        // the frame it is loaded, and find it gone in the frame it goes.
+        const listed = yield* play(
+          App.define({
+            ...forest,
+            systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+          })
+        );
+        listed.spawn("tree", 1);
+        listed.enter("forest");
+        expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
+        expect(listed.renderer.drew).toEqual(["ta/Trees"]);
+        listed.enter("menu");
+        expect(listed.renderer.drew).toEqual([]);
+        expect(log.slice(-2)).toEqual(["close 1", "free 1"]);
+        expect(listed.renderer.stale).toBe(0);
+        expect(listed.app.frameOrder.slice(-3)).toEqual([
+          "Assets.during(ta/Forest)",
+          "ta/Trees",
+          "arcadekit/three/Render",
+        ]);
 
-    // Left and entered again, and this time it is not there.
-    enter("menu");
-    enter("forest");
-    waiting[1]!(
-      Exit.fail(new Assets.AssetFailed({ url: "/bark.png", message: "gone" }))
-    );
-    await settle();
-    log.length = 0;
-    app.frame();
-    app.frame();
-    expect(renderer.drew).toEqual([]);
-    expect(log).toEqual([]);
-    expect(renderer.stale).toBe(0);
-  });
+        // The worst way round, which a system of the game's own can still be:
+        // the trees look, then the level lets its assets go, then the scene
+        // is drawn.
+        log.length = 0;
+        const { app, enter, renderer, spawn } = yield* play(
+          App.define({ ...forest, systems: [Trees, keepLate(Forest)] })
+        );
+        spawn("tree", 1);
+        enter("forest");
+        expect(renderer.drew).toEqual([]);
+        app.frame();
+        expect(renderer.drew).toEqual(["ta/Trees"]);
+        log.length = 0;
+        // The frame the level is left in, the trees saw their bark, and then
+        // it was let go: they are gone all the same by the time it is drawn.
+        enter("menu");
+        expect(log).toEqual(["close 2", "free 2"]);
+        expect(renderer.drew).toEqual([]);
+        expect(renderer.stale).toBe(0);
+        app.frame();
+        expect(log).toEqual(["close 2", "free 2"]);
 
-  it("go with the app's scope: what look made is freed once if it was there, and never if it was not", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees, freed } = makeTrees(Forest, log);
-    const game = App.define({ ...forest, systems: [during(Forest), Trees] });
-    const loaded = play(game);
-    loaded.spawn("tree", 1);
-    loaded.enter("forest");
-    const drawn = loaded.mesh()!;
-    loaded.close();
-    expect(log.filter((line) => line === "free 1")).toEqual(["free 1"]);
-    expect(freed.length).toBe(1);
-    expect(drawn.parent).toBeNull();
+        // In again, and out again.
+        enter("forest");
+        app.frame();
+        expect(renderer.drew).toEqual(["ta/Trees"]);
+        enter("menu");
+        expect(renderer.drew).toEqual([]);
+        expect(renderer.stale).toBe(0);
+        expect(log.slice(-2)).toEqual(["close 3", "free 3"]);
+      })
+  );
 
-    // An app that left the forest has nothing of it to free when it closes.
-    log.length = 0;
-    const left = play(game);
-    left.enter("forest");
-    left.enter("menu");
-    expect(log).toEqual([
-      "open 2",
-      "look 2",
-      "prepare ta/Trees",
-      "close 2",
-      "free 2",
-    ]);
-    left.close();
-    expect(log.length).toBe(5);
+  it.effect(
+    "are made anew in the frame a bundle is found loaded again, though it was never seen gone",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees, looks } = makeTrees(Forest, log);
+        // A system of the game's own keeps the forest, and can load it afresh.
+        let afresh = false;
+        const Keep = System.frame("ta/Keep", function* () {
+          const store = yield* Assets.Store;
+          if (afresh) {
+            afresh = false;
+            store.drop(Forest, "ta/Keep");
+          }
+          store.hold(Forest, "ta/Keep");
+        });
+        const { app, mesh, renderer, spawn } = yield* play(
+          App.define({ ...forest, systems: [Keep, Trees] })
+        );
+        spawn("tree", 1);
+        app.frame();
+        const first = mesh()!;
+        expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
+        log.length = 0;
 
-    // And one that never entered it made nothing.
-    log.length = 0;
-    const never = play(game);
-    never.app.tick(1);
-    never.app.frame();
-    never.close();
-    expect(log).toEqual([]);
-  });
+        afresh = true;
+        app.frame();
+        // Between one look and the next the bark became other bark: the old
+        // look is freed and the new made, and the trees are drawn all the while.
+        expect(log).toEqual([
+          "close 1",
+          "open 2",
+          "free 1",
+          "look 2",
+          "prepare ta/Trees",
+        ]);
+        expect(renderer.drew).toEqual(["ta/Trees"]);
+        expect(mesh()).not.toBe(first);
+        expect(mesh()!.material).toBe(looks[1]!.material);
+        expect(xs(mesh()!)).toEqual([1]);
+        expect(renderer.stale).toBe(0);
+      })
+  );
 
-  it("are drawn between two ticks, and each in its colour, as any instances are", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const { Trees } = makeTrees(Forest, log, {
-      smooth: true,
-      color: Color.Rgb,
-    });
-    const { app, enter, mesh, moveTo, spawn } = play(
-      App.define({ ...forest, systems: [during(Forest), Trees] })
-    );
-    const tree = spawn("tree", 0, { r: 0.25, g: 0.5, b: 0.75 });
-    // Not painted: drawn white, after the painted ones.
-    spawn("tree", 99);
-    enter("forest");
-    expect(xs(mesh()!)).toEqual([0, 99]);
-    expect(Array.from(mesh()!.instanceColor!.array.subarray(0, 6))).toEqual([
-      0.25, 0.5, 0.75, 1, 1, 1,
-    ]);
-    moveTo(tree, 10);
-    app.tick(1);
-    app.frame(0.5);
-    expect(xs(mesh()!)).toEqual([5, 99]);
+  it.effect(
+    "wait for a bundle that takes its time, and draw nothing of one that could not be loaded",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees } = makeTrees(Forest, log);
+        const waiting: ((
+          exit: Exit.Exit<Uint8Array, Assets.AssetFailed>
+        ) => void)[] = [];
+        const slow = Layer.succeed(Assets.Loader, {
+          bytes: () =>
+            Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+              waiting.push((exit) => resume(exit));
+            }),
+        }) as Layer.Layer<never>;
+        const { app, enter, renderer, spawn } = yield* play(
+          App.define({ ...forest, systems: [during(Forest), Trees] }),
+          slow
+        );
+        spawn("tree", 1);
+        enter("forest");
+        app.frame();
+        expect(renderer.drew).toEqual([]);
+        expect(log).toEqual([]);
+        // The file arrives.
+        waiting[0]!(Exit.succeed(new Uint8Array([7])));
+        yield* Effect.promise(() => settle());
+        expect(renderer.drew).toEqual([]);
+        app.frame();
+        expect(renderer.drew).toEqual(["ta/Trees"]);
+        expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
 
-    // Away, it moves on; back, it is drawn where it is, and not on the way
-    // from where it was last seen.
-    enter("menu");
-    moveTo(tree, 30);
-    app.tick(1);
-    app.frame(0.5);
-    app.dispatch(Go, { to: "forest" });
-    app.tick(1);
-    app.frame(0.5);
-    expect(xs(mesh()!)).toEqual([30, 99]);
-  });
+        // Left and entered again, and this time it is not there.
+        enter("menu");
+        enter("forest");
+        waiting[1]!(
+          Exit.fail(
+            new Assets.AssetFailed({ url: "/bark.png", message: "gone" })
+          )
+        );
+        yield* Effect.promise(() => settle());
+        log.length = 0;
+        app.frame();
+        app.frame();
+        expect(renderer.drew).toEqual([]);
+        expect(log).toEqual([]);
+        expect(renderer.stale).toBe(0);
+      })
+  );
+
+  it.effect(
+    "go with the app's scope: what look made is freed once if it was there, and never if it was not",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees, freed } = makeTrees(Forest, log);
+        const game = App.define({
+          ...forest,
+          systems: [during(Forest), Trees],
+        });
+        const loaded = yield* play(game);
+        loaded.spawn("tree", 1);
+        loaded.enter("forest");
+        const drawn = loaded.mesh()!;
+        yield* loaded.close;
+        expect(log.filter((line) => line === "free 1")).toEqual(["free 1"]);
+        expect(freed.length).toBe(1);
+        expect(drawn.parent).toBeNull();
+
+        // An app that left the forest has nothing of it to free when it closes.
+        log.length = 0;
+        const left = yield* play(game);
+        left.enter("forest");
+        left.enter("menu");
+        expect(log).toEqual([
+          "open 2",
+          "look 2",
+          "prepare ta/Trees",
+          "close 2",
+          "free 2",
+        ]);
+        yield* left.close;
+        expect(log.length).toBe(5);
+
+        // And one that never entered it made nothing.
+        log.length = 0;
+        const never = yield* play(game);
+        never.app.tick(1);
+        never.app.frame();
+        yield* never.close;
+        expect(log).toEqual([]);
+      })
+  );
+
+  it.effect(
+    "are drawn between two ticks, and each in its colour, as any instances are",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const { Trees } = makeTrees(Forest, log, {
+          smooth: true,
+          color: Color.Rgb,
+        });
+        const { app, enter, mesh, moveTo, spawn } = yield* play(
+          App.define({ ...forest, systems: [during(Forest), Trees] })
+        );
+        const tree = spawn("tree", 0, { r: 0.25, g: 0.5, b: 0.75 });
+        // Not painted: drawn white, after the painted ones.
+        spawn("tree", 99);
+        enter("forest");
+        expect(xs(mesh()!)).toEqual([0, 99]);
+        expect(Array.from(mesh()!.instanceColor!.array.subarray(0, 6))).toEqual(
+          [0.25, 0.5, 0.75, 1, 1, 1]
+        );
+        moveTo(tree, 10);
+        app.tick(1);
+        app.frame(0.5);
+        expect(xs(mesh()!)).toEqual([5, 99]);
+
+        // Away, it moves on; back, it is drawn where it is, and not on the way
+        // from where it was last seen.
+        enter("menu");
+        moveTo(tree, 30);
+        app.tick(1);
+        app.frame(0.5);
+        app.dispatch(Go, { to: "forest" });
+        app.tick(1);
+        app.frame(0.5);
+        expect(xs(mesh()!)).toEqual([30, 99]);
+      })
+  );
 
   it("say in their types what the look is made of, and that they need the app's assets", () => {
     const Forest = makeForest([]);
@@ -664,38 +699,40 @@ describe("instances whose look is made of assets", () => {
     expect(From.stage).toBe("frame");
   });
 
-  it("ask nothing of an app's assets when their look is there: such an app needs no Assets.plugin", () => {
-    const renderer = makeRenderer();
-    const material = new MeshBasicMaterial();
-    const Grove = Plugin.make("ta/Grove", {
-      setup: Effect.gen(function* () {
-        (yield* Commands.spawns(Tree, Position)).spawn(Tree, at(1));
-      }),
-    });
-    const app = Effect.runSync(
-      App.make(
-        App.define({
-          plugins: [Three.plugin, Grove],
-          systems: [
-            Three.instances("ta/Plain", {
-              of: Tree,
-              transform: Transform3d,
-              geometry,
-              material,
-            }),
-            Three.objects("ta/Things", {
-              of: Deer,
-              transform: Transform3d,
-              make: () => new Object3D(),
-            }),
-          ],
-        })
-      ).pipe(Effect.provide(renderer.layer))
-    );
-    app.frame();
-    expect(renderer.drew).toEqual(["ta/Plain"]);
-    Effect.runSync(app.close);
-  });
+  it.effect(
+    "ask nothing of an app's assets when their look is there: such an app needs no Assets.plugin",
+    () =>
+      Effect.gen(function* () {
+        const renderer = makeRenderer();
+        const material = new MeshBasicMaterial();
+        const Grove = Plugin.make("ta/Grove", {
+          setup: Effect.gen(function* () {
+            (yield* Commands.spawns(Tree, Position)).spawn(Tree, at(1));
+          }),
+        });
+        const app = yield* App.make(
+          App.define({
+            plugins: [Three.plugin, Grove],
+            systems: [
+              Three.instances("ta/Plain", {
+                of: Tree,
+                transform: Transform3d,
+                geometry,
+                material,
+              }),
+              Three.objects("ta/Things", {
+                of: Deer,
+                transform: Transform3d,
+                make: () => new Object3D(),
+              }),
+            ],
+          })
+        ).pipe(Effect.provide(renderer.layer));
+        app.frame();
+        expect(renderer.drew).toEqual(["ta/Plain"]);
+        yield* app.close;
+      })
+  );
 });
 
 describe("objects made of assets", () => {
@@ -719,112 +756,120 @@ describe("objects made of assets", () => {
       },
     });
 
-  it("are made while the app holds the bundle loaded, of what it holds, and all let go when it does not", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const Herd = makeDeer(Forest, log);
-    const { app, despawn, enter, moveTo, renderer, spawn } = play(
-      App.define({ ...forest, systems: [during(Forest), Herd] })
-    );
-    const one = spawn("deer", 1);
-    const two = spawn("deer", 2);
-    spawn("tree", 9);
-    app.tick(1);
-    app.frame();
-    // No bark, no deer.
-    expect(log).toEqual([]);
-    expect(renderer.drew).toEqual([]);
+  it.effect(
+    "are made while the app holds the bundle loaded, of what it holds, and all let go when it does not",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const Herd = makeDeer(Forest, log);
+        const { app, despawn, enter, moveTo, renderer, spawn } = yield* play(
+          App.define({ ...forest, systems: [during(Forest), Herd] })
+        );
+        const one = spawn("deer", 1);
+        const two = spawn("deer", 2);
+        spawn("tree", 9);
+        app.tick(1);
+        app.frame();
+        // No bark, no deer.
+        expect(log).toEqual([]);
+        expect(renderer.drew).toEqual([]);
 
-    enter("forest");
-    expect(log).toEqual([
-      "open 1",
-      `make ${named(one)} of 1`,
-      `make ${named(two)} of 1`,
-    ]);
-    expect(renderer.drew).toEqual([
-      `deer ${named(one)} of 1`,
-      `deer ${named(two)} of 1`,
-    ]);
-    expect(renderer.scene!.children.map((child) => child.position.x)).toEqual([
-      1, 2,
-    ]);
-    // While it lasts they are objects as any: made once, placed each
-    // frame, and one whose entity goes is let go alone.
-    moveTo(one, 5);
-    despawn(two);
-    const three = spawn("deer", 3);
-    app.frame();
-    expect(log.slice(3)).toEqual([
-      `free ${named(two)} of 1`,
-      `make ${named(three)} of 1`,
-    ]);
-    expect(renderer.scene!.children.map((child) => child.position.x)).toEqual([
-      5, 3,
-    ]);
-    log.length = 0;
+        enter("forest");
+        expect(log).toEqual([
+          "open 1",
+          `make ${named(one)} of 1`,
+          `make ${named(two)} of 1`,
+        ]);
+        expect(renderer.drew).toEqual([
+          `deer ${named(one)} of 1`,
+          `deer ${named(two)} of 1`,
+        ]);
+        expect(
+          renderer.scene!.children.map((child) => child.position.x)
+        ).toEqual([1, 2]);
+        // While it lasts they are objects as any: made once, placed each
+        // frame, and one whose entity goes is let go alone.
+        moveTo(one, 5);
+        despawn(two);
+        const three = spawn("deer", 3);
+        app.frame();
+        expect(log.slice(3)).toEqual([
+          `free ${named(two)} of 1`,
+          `make ${named(three)} of 1`,
+        ]);
+        expect(
+          renderer.scene!.children.map((child) => child.position.x)
+        ).toEqual([5, 3]);
+        log.length = 0;
 
-    // The level is left: every deer goes, once.
-    enter("menu");
-    expect(log.toSorted()).toEqual(
-      [
-        "close 1",
-        `free ${named(one)} of 1`,
-        `free ${named(three)} of 1`,
-      ].toSorted()
-    );
-    expect(log[0]).toBe("close 1");
-    expect(renderer.drew).toEqual([]);
-    const four = spawn("deer", 4);
-    app.frame();
-    expect(renderer.drew).toEqual([]);
-    log.length = 0;
+        // The level is left: every deer goes, once.
+        enter("menu");
+        expect(log.toSorted()).toEqual(
+          [
+            "close 1",
+            `free ${named(one)} of 1`,
+            `free ${named(three)} of 1`,
+          ].toSorted()
+        );
+        expect(log[0]).toBe("close 1");
+        expect(renderer.drew).toEqual([]);
+        const four = spawn("deer", 4);
+        app.frame();
+        expect(renderer.drew).toEqual([]);
+        log.length = 0;
 
-    // And entered again: each is made anew, of the bark loaded now.
-    enter("forest");
-    expect(log.toSorted()).toEqual(
-      [
-        "open 2",
-        `make ${named(one)} of 2`,
-        `make ${named(three)} of 2`,
-        `make ${named(four)} of 2`,
-      ].toSorted()
-    );
-    expect(renderer.drew.length).toBe(3);
-    expect(renderer.stale).toBe(0);
-  });
+        // And entered again: each is made anew, of the bark loaded now.
+        enter("forest");
+        expect(log.toSorted()).toEqual(
+          [
+            "open 2",
+            `make ${named(one)} of 2`,
+            `make ${named(three)} of 2`,
+            `make ${named(four)} of 2`,
+          ].toSorted()
+        );
+        expect(renderer.drew.length).toBe(3);
+        expect(renderer.stale).toBe(0);
+      })
+  );
 
-  it("are out of the scene before it is drawn in the frame their assets go, whichever system runs first, and freed with the app", () => {
-    const log: string[] = [];
-    const Forest = makeForest(log);
-    const Herd = makeDeer(Forest, log);
-    // The worst way round: the deer are looked at, then the level lets its
-    // assets go, then the scene is drawn.
-    // And trees beside them, of the same bark: every kind is asked.
-    const { Trees } = makeTrees(Forest, []);
-    const { app, close, enter, renderer, spawn } = play(
-      App.define({ ...forest, systems: [Trees, Herd, keepLate(Forest)] })
-    );
-    const one = spawn("deer", 1);
-    spawn("tree", 2);
-    enter("forest");
-    app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees", `deer ${named(one)} of 1`]);
-    enter("menu");
-    expect(renderer.drew).toEqual([]);
-    expect(renderer.stale).toBe(0);
-    expect(log.slice(-2)).toEqual(["close 1", `free ${named(one)} of 1`]);
+  it.effect(
+    "are out of the scene before it is drawn in the frame their assets go, whichever system runs first, and freed with the app",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Forest = makeForest(log);
+        const Herd = makeDeer(Forest, log);
+        // The worst way round: the deer are looked at, then the level lets its
+        // assets go, then the scene is drawn.
+        // And trees beside them, of the same bark: every kind is asked.
+        const { Trees } = makeTrees(Forest, []);
+        const { app, close, enter, renderer, spawn } = yield* play(
+          App.define({ ...forest, systems: [Trees, Herd, keepLate(Forest)] })
+        );
+        const one = spawn("deer", 1);
+        spawn("tree", 2);
+        enter("forest");
+        app.frame();
+        expect(renderer.drew).toEqual(["ta/Trees", `deer ${named(one)} of 1`]);
+        enter("menu");
+        expect(renderer.drew).toEqual([]);
+        expect(renderer.stale).toBe(0);
+        expect(log.slice(-2)).toEqual(["close 1", `free ${named(one)} of 1`]);
 
-    enter("forest");
-    app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees", `deer ${named(one)} of 2`]);
-    const made = renderer.scene!.children[1]!;
-    log.length = 0;
-    close();
-    expect(log.filter((line) => line.startsWith("free"))).toEqual([
-      `free ${named(one)} of 2`,
-    ]);
-    expect(made.parent).toBeNull();
-  });
+        enter("forest");
+        app.frame();
+        expect(renderer.drew).toEqual(["ta/Trees", `deer ${named(one)} of 2`]);
+        const made = renderer.scene!.children[1]!;
+        log.length = 0;
+        yield* close;
+        expect(log.filter((line) => line.startsWith("free"))).toEqual([
+          `free ${named(one)} of 2`,
+        ]);
+        expect(made.parent).toBeNull();
+      })
+  );
 
   it("say in their types what an object is made of", () => {
     const Forest = makeForest([]);
@@ -887,225 +932,260 @@ describe("a texture", () => {
     return { asked, bitmaps };
   };
 
-  it("is a picture decoded for Three.js, the right way up, and let go with the scope it was loaded in", async () => {
-    const { asked, bitmaps } = stubBitmaps();
-    const prepared: { readonly version: number; readonly space: string }[] = [];
-    const Forest = Assets.bundle("ta/Textures", {
-      bark: Three.texture("/bark.png"),
-      normals: Three.texture("/normals.png", {
-        prepare: (texture) => {
-          prepared.push({
-            version: texture.version,
-            space: texture.colorSpace,
-          });
-          texture.colorSpace = NoColorSpace;
-        },
-      }),
-    });
-    const scope = Scope.makeUnsafe();
-    const { bark, normals } = await Effect.runPromise(
-      Assets.load(Forest).pipe(
-        Scope.provide(scope),
-        Effect.provide(
-          Assets.layerMemory({
-            "/bark.png": new Uint8Array([9, 8, 7]),
-            "/normals.png": "nn",
+  it.effect(
+    "is a picture decoded for Three.js, the right way up, and let go with the scope it was loaded in",
+    () =>
+      Effect.gen(function* () {
+        const { asked, bitmaps } = stubBitmaps();
+        const prepared: { readonly version: number; readonly space: string }[] =
+          [];
+        const Forest = Assets.bundle("ta/Textures", {
+          bark: Three.texture("/bark.png"),
+          normals: Three.texture("/normals.png", {
+            prepare: (texture) => {
+              prepared.push({
+                version: texture.version,
+                space: texture.colorSpace,
+              });
+              texture.colorSpace = NoColorSpace;
+            },
+          }),
+        });
+        const scope = Scope.makeUnsafe();
+        const { bark, normals } = yield* Assets.load(Forest).pipe(
+          Scope.provide(scope),
+          Effect.provide(
+            Assets.layerMemory({
+              "/bark.png": new Uint8Array([9, 8, 7]),
+              "/normals.png": "nn",
+            })
+          )
+        );
+        expect(bark).toBeInstanceOf(Texture);
+        expect(bark.image).toBe(bitmaps[0]);
+        // Colours, unless told otherwise; and told before it is ever sent.
+        expect(bark.colorSpace).toBe(SRGBColorSpace);
+        expect(normals.colorSpace).toBe(NoColorSpace);
+        expect(prepared).toEqual([{ version: 0, space: SRGBColorSpace }]);
+        // It is to be sent to the renderer, once.
+        expect(bark.version).toBe(1);
+        expect(normals.version).toBe(1);
+        // A bitmap is flipped when it is made, or never.
+        expect(asked).toEqual([
+          { bytes: [9, 8, 7], options: { imageOrientation: "flipY" } },
+          { bytes: [110, 110], options: { imageOrientation: "flipY" } },
+        ]);
+        let disposed = 0;
+        bark.addEventListener("dispose", () => {
+          disposed++;
+        });
+        expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([0, 0]);
+        yield* Scope.close(scope, Exit.void);
+        expect(disposed).toBe(1);
+        expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1]);
+      })
+  );
+
+  it.effect(
+    "is left as its file has it when it is told so where it is made, and cannot be told in prepare",
+    () =>
+      Effect.gen(function* () {
+        const { asked, bitmaps } = stubBitmaps();
+        const files = Assets.layerMemory({
+          "/skin.png": new Uint8Array([1, 2]),
+        });
+        const load = (asset: Assets.Asset<Texture>) =>
+          Effect.scoped(
+            Effect.map(
+              Assets.load(Assets.bundle("ta/Skin", { skin: asset })),
+              ({ skin }) => ({ flipY: skin.flipY, image: skin.image })
+            )
+          ).pipe(Effect.provide(files));
+        // A model's own picture, say: as the file has it.
+        expect(
+          yield* load(Three.texture("/skin.png", { flipY: false }))
+        ).toEqual({
+          flipY: false,
+          image: bitmaps[0],
+        });
+        // And turned over, which is what it is when nothing says: the texture
+        // says of itself how it was decoded.
+        expect(
+          yield* load(Three.texture("/skin.png", { flipY: true }))
+        ).toEqual({
+          flipY: true,
+          image: bitmaps[1],
+        });
+        expect(asked.map((one) => one.options)).toEqual([
+          { imageOrientation: "from-image" },
+          { imageOrientation: "flipY" },
+        ]);
+        // Three.js does not read flipY of a bitmap, so prepare is handed a
+        // texture without it, and with everything else a game sets.
+        Three.texture("/skin.png", {
+          prepare: (texture) => {
+            texture.colorSpace = NoColorSpace;
+            texture.wrapS = RepeatWrapping;
+            texture.wrapT = MirroredRepeatWrapping;
+            texture.magFilter = NearestFilter;
+            texture.minFilter = NearestFilter;
+            texture.generateMipmaps = false;
+            texture.anisotropy = 4;
+            texture.premultiplyAlpha = true;
+            texture.repeat.set(2, 2);
+            texture.offset.set(0.5, 0);
+            texture.center.set(0.5, 0.5);
+            texture.rotation = Math.PI / 2;
+            // @ts-expect-error flipY is said where the texture is made
+            texture.flipY = false;
+          },
+        });
+        Three.texture("/skin.png", {
+          // @ts-expect-error nor by a function that takes a whole texture
+          prepare: (texture: Texture) => {
+            texture.flipY = false;
+          },
+        });
+        // How it is told is an object, as a model is: a function alone is not.
+        // @ts-expect-error prepare is named
+        Three.texture("/skin.png", () => {});
+      })
+  );
+
+  it.effect(
+    "fails as an asset that could not be loaded when the file is no picture",
+    () =>
+      Effect.gen(function* () {
+        stubBitmaps();
+        const exit = yield* Effect.exit(
+          Effect.scoped(
+            Assets.load(
+              Assets.bundle("ta/Broken", { bark: Three.texture("/bark.png") })
+            )
+          )
+        ).pipe(
+          Effect.provide(
+            Assets.layerMemory({ "/bark.png": new Uint8Array([0]) })
+          )
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        const error = Cause.squash(
+          (exit as Exit.Failure<never, unknown>).cause
+        );
+        expect(error).toBeInstanceOf(Assets.AssetFailed);
+        expect(error).toEqual(
+          new Assets.AssetFailed({
+            url: "/bark.png",
+            message:
+              "It could not be made a texture: The source image could not be decoded.",
           })
-        )
-      )
-    );
-    expect(bark).toBeInstanceOf(Texture);
-    expect(bark.image).toBe(bitmaps[0]);
-    // Colours, unless told otherwise; and told before it is ever sent.
-    expect(bark.colorSpace).toBe(SRGBColorSpace);
-    expect(normals.colorSpace).toBe(NoColorSpace);
-    expect(prepared).toEqual([{ version: 0, space: SRGBColorSpace }]);
-    // It is to be sent to the renderer, once.
-    expect(bark.version).toBe(1);
-    expect(normals.version).toBe(1);
-    // A bitmap is flipped when it is made, or never.
-    expect(asked).toEqual([
-      { bytes: [9, 8, 7], options: { imageOrientation: "flipY" } },
-      { bytes: [110, 110], options: { imageOrientation: "flipY" } },
-    ]);
-    let disposed = 0;
-    bark.addEventListener("dispose", () => {
-      disposed++;
-    });
-    expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([0, 0]);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    expect(disposed).toBe(1);
-    expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1]);
-  });
-
-  it("is left as its file has it when it is told so where it is made, and cannot be told in prepare", async () => {
-    const { asked, bitmaps } = stubBitmaps();
-    const files = Assets.layerMemory({ "/skin.png": new Uint8Array([1, 2]) });
-    const load = (asset: Assets.Asset<Texture>) =>
-      Effect.runPromise(
-        Effect.scoped(
-          Effect.map(
-            Assets.load(Assets.bundle("ta/Skin", { skin: asset })),
-            ({ skin }) => ({ flipY: skin.flipY, image: skin.image })
-          )
-        ).pipe(Effect.provide(files))
-      );
-    // A model's own picture, say: as the file has it.
-    expect(await load(Three.texture("/skin.png", { flipY: false }))).toEqual({
-      flipY: false,
-      image: bitmaps[0],
-    });
-    // And turned over, which is what it is when nothing says: the texture
-    // says of itself how it was decoded.
-    expect(await load(Three.texture("/skin.png", { flipY: true }))).toEqual({
-      flipY: true,
-      image: bitmaps[1],
-    });
-    expect(asked.map((one) => one.options)).toEqual([
-      { imageOrientation: "from-image" },
-      { imageOrientation: "flipY" },
-    ]);
-    // Three.js does not read flipY of a bitmap, so prepare is handed a
-    // texture without it, and with everything else a game sets.
-    Three.texture("/skin.png", {
-      prepare: (texture) => {
-        texture.colorSpace = NoColorSpace;
-        texture.wrapS = RepeatWrapping;
-        texture.wrapT = MirroredRepeatWrapping;
-        texture.magFilter = NearestFilter;
-        texture.minFilter = NearestFilter;
-        texture.generateMipmaps = false;
-        texture.anisotropy = 4;
-        texture.premultiplyAlpha = true;
-        texture.repeat.set(2, 2);
-        texture.offset.set(0.5, 0);
-        texture.center.set(0.5, 0.5);
-        texture.rotation = Math.PI / 2;
-        // @ts-expect-error flipY is said where the texture is made
-        texture.flipY = false;
-      },
-    });
-    Three.texture("/skin.png", {
-      // @ts-expect-error nor by a function that takes a whole texture
-      prepare: (texture: Texture) => {
-        texture.flipY = false;
-      },
-    });
-    // How it is told is an object, as a model is: a function alone is not.
-    // @ts-expect-error prepare is named
-    Three.texture("/skin.png", () => {});
-  });
-
-  it("fails as an asset that could not be loaded when the file is no picture", async () => {
-    stubBitmaps();
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Assets.load(
-            Assets.bundle("ta/Broken", { bark: Three.texture("/bark.png") })
-          )
-        )
-      ).pipe(
-        Effect.provide(Assets.layerMemory({ "/bark.png": new Uint8Array([0]) }))
-      )
-    );
-    expect(Exit.isFailure(exit)).toBe(true);
-    const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
-    expect(error).toBeInstanceOf(Assets.AssetFailed);
-    expect(error).toEqual(
-      new Assets.AssetFailed({
-        url: "/bark.png",
-        message:
-          "It could not be made a texture: The source image could not be decoded.",
+        );
       })
-    );
-  });
+  );
 
-  it("is what a level's instances are drawn with, for as long as the level", async () => {
-    const { bitmaps } = stubBitmaps();
-    const Forest = Assets.bundle("ta/Forest", {
-      bark: Three.texture("/bark.png"),
-    });
-    const Trees = Gltf.instances("ta/Trees", {
-      of: Tree,
-      transform: Transform3d,
-      from: Forest,
-      look: ({ bark }) => ({
-        geometry,
-        material: new MeshBasicMaterial({ map: bark }),
-      }),
-    });
-    const { app, enter, mesh, renderer, spawn } = play(
-      App.define({
-        ...forest,
-        systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+  it.effect(
+    "is what a level's instances are drawn with, for as long as the level",
+    () =>
+      Effect.gen(function* () {
+        const { bitmaps } = stubBitmaps();
+        const Forest = Assets.bundle("ta/Forest", {
+          bark: Three.texture("/bark.png"),
+        });
+        const Trees = Gltf.instances("ta/Trees", {
+          of: Tree,
+          transform: Transform3d,
+          from: Forest,
+          look: ({ bark }) => ({
+            geometry,
+            material: new MeshBasicMaterial({ map: bark }),
+          }),
+        });
+        const { app, enter, mesh, renderer, spawn } = yield* play(
+          App.define({
+            ...forest,
+            systems: [Trees, Assets.during(State.is(Level, "forest"), Forest)],
+          })
+        );
+        spawn("tree", 1);
+        enter("forest");
+        // A picture is decoded in its own time.
+        expect(renderer.drew).toEqual([]);
+        yield* Effect.promise(() => settle());
+        app.frame();
+        expect(renderer.drew).toEqual(["ta/Trees"]);
+        const material = mesh()!.material as MeshBasicMaterial;
+        expect(material.map).toBeInstanceOf(Texture);
+        expect(material.map!.image).toBe(bitmaps[0]);
+        const events: string[] = [];
+        material.map!.addEventListener("dispose", () => events.push("texture"));
+        material.addEventListener("dispose", () => events.push("material"));
+        enter("menu");
+        expect(events).toEqual(["texture", "material"]);
+        expect(bitmaps[0]!.closed).toBe(1);
+        expect(renderer.drew).toEqual([]);
       })
-    );
-    spawn("tree", 1);
-    enter("forest");
-    // A picture is decoded in its own time.
-    expect(renderer.drew).toEqual([]);
-    await settle();
-    app.frame();
-    expect(renderer.drew).toEqual(["ta/Trees"]);
-    const material = mesh()!.material as MeshBasicMaterial;
-    expect(material.map).toBeInstanceOf(Texture);
-    expect(material.map!.image).toBe(bitmaps[0]);
-    const events: string[] = [];
-    material.map!.addEventListener("dispose", () => events.push("texture"));
-    material.addEventListener("dispose", () => events.push("material"));
-    enter("menu");
-    expect(events).toEqual(["texture", "material"]);
-    expect(bitmaps[0]!.closed).toBe(1);
-    expect(renderer.drew).toEqual([]);
-  });
+  );
 });
 
 describe("a manager of Three.js's requests", () => {
   /** Makes a manager of `served` under in-memory files, in a scope of the test's. */
-  const make = async (
+  const make = Effect.fnUntraced(function* (
     files: Readonly<Record<string, string>>,
     served: ReadonlyArray<string>
-  ) => {
+  ) {
     const scope = Scope.makeUnsafe();
-    const exit = await Effect.runPromise(
-      Effect.exit(Three.manager(served)).pipe(
-        Scope.provide(scope),
-        Effect.provide(Assets.layerMemory(files))
-      )
+    const exit = yield* Effect.exit(Three.manager(served)).pipe(
+      Scope.provide(scope),
+      Effect.provide(Assets.layerMemory(files))
     );
     return {
       exit,
-      close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+      close: Scope.close(scope, Exit.void),
     };
-  };
+  });
   const text = (manager: LoadingManager, path: string, url: string) =>
     new FileLoader(manager).setPath(path).loadAsync(url);
 
-  it("serves a loader made with it the files it was given, fetched through Assets.Loader, until its scope closes", async () => {
-    // Node has no ProgressEvent, which a FileLoader reports progress with.
-    vi.stubGlobal("ProgressEvent", Event);
-    const { close, exit } = await make(
-      { "/draco/decoder.js": "decode()", "/other.js": "other()" },
-      ["/draco/decoder.js"]
-    );
-    const manager = Exit.isSuccess(exit) ? exit.value : undefined;
-    expect(await text(manager!, "/draco/", "decoder.js")).toBe("decode()");
-    await expect(text(manager!, "", "/other.js")).rejects.toThrow(
-      'A Three.js loader asked for "/other.js", which is not one of the files its manager serves.'
-    );
-    const blob = URL.createObjectURL(new Blob(["held()"]));
-    expect(await text(manager!, "", blob)).toBe("held()");
-    await close();
-    await expect(text(manager!, "/draco/", "decoder.js")).rejects.toThrow(
-      "fetch failed"
-    );
-  });
+  it.effect(
+    "serves a loader made with it the files it was given, fetched through Assets.Loader, until its scope closes",
+    () =>
+      Effect.gen(function* () {
+        // Node has no ProgressEvent, which a FileLoader reports progress with.
+        vi.stubGlobal("ProgressEvent", Event);
+        const { close, exit } = yield* make(
+          { "/draco/decoder.js": "decode()", "/other.js": "other()" },
+          ["/draco/decoder.js"]
+        );
+        const manager = Exit.isSuccess(exit) ? exit.value : undefined;
+        expect(
+          yield* Effect.promise(() => text(manager!, "/draco/", "decoder.js"))
+        ).toBe("decode()");
+        yield* Effect.promise(() =>
+          expect(text(manager!, "", "/other.js")).rejects.toThrow(
+            'A Three.js loader asked for "/other.js", which is not one of the files its manager serves.'
+          )
+        );
+        const blob = URL.createObjectURL(new Blob(["held()"]));
+        expect(yield* Effect.promise(() => text(manager!, "", blob))).toBe(
+          "held()"
+        );
+        yield* close;
+        yield* Effect.promise(() =>
+          expect(text(manager!, "/draco/", "decoder.js")).rejects.toThrow(
+            "fetch failed"
+          )
+        );
+      })
+  );
 
-  it("fails with the file that is missing", async () => {
-    const { exit } = await make({}, ["/draco/decoder.js"]);
-    const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
-    expect(failure).toBeInstanceOf(Assets.AssetFailed);
-    expect(failure).toMatchObject({ url: "/draco/decoder.js" });
-  });
+  it.effect("fails with the file that is missing", () =>
+    Effect.gen(function* () {
+      const { exit } = yield* make({}, ["/draco/decoder.js"]);
+      const failure = Exit.isFailure(exit)
+        ? Cause.squash(exit.cause)
+        : undefined;
+      expect(failure).toBeInstanceOf(Assets.AssetFailed);
+      expect(failure).toMatchObject({ url: "/draco/decoder.js" });
+    })
+  );
 });

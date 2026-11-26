@@ -1,5 +1,5 @@
+import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
 
 import { entityIndex, entityOf } from "../src/ecs/component.ts";
 import {
@@ -684,14 +684,12 @@ const KNOWN_HASH = 522_063_573;
 
 // --- through an app --------------------------------------------------------------
 
-const withApp = <T extends Pick<App.Any, "read">, A>(
+const withApp = <T extends Pick<App.Any, "read">, A, E2 = never>(
   make: Effect.Effect<T, never>,
-  use: (app: T, world: Effect.Success<typeof World>) => A
-): A =>
-  Effect.runSync(
-    Effect.flatMap(make, (app) =>
-      Effect.map(app.read(World), (world) => use(app, world))
-    )
+  use: (app: T, world: Effect.Success<typeof World>) => Effect.Effect<A, E2>
+) =>
+  Effect.flatMap(make, (app) =>
+    Effect.flatMap(app.read(World), (world) => use(app, world))
   );
 
 const capture = (app: Timeline.Game): Timeline.Moment => {
@@ -715,71 +713,93 @@ describe("the hash of an app's world", () => {
     });
     commands.spawn(Body.of({ x: 0, y: random.next() }));
   });
-  const hashes = (make: Effect.Effect<App.Any, never>) =>
-    withApp(make, (app, world) => {
-      const out: number[] = [];
-      for (let i = 0; i < 100; i++) {
-        app.tick(1 / 60);
-        out.push(world.hash());
-      }
-      return out;
-    });
-
-  it("agrees tick by tick between two apps given the same seed, which is how peers know they have not drifted", () => {
-    const first = hashes(
-      App.make(App.define({ systems: [Drift] }), { seed: 5 })
+  const hashes = Effect.fnUntraced(function* (
+    make: Effect.Effect<App.Any, never>
+  ) {
+    return yield* withApp(make, (app, world) =>
+      Effect.gen(function* () {
+        const out: number[] = [];
+        for (let i = 0; i < 100; i++) {
+          app.tick(1 / 60);
+          out.push(world.hash());
+        }
+        return out;
+      })
     );
-    expect(
-      hashes(App.make(App.define({ systems: [Drift] }), { seed: 5 }))
-    ).toEqual(first);
-    expect(new Set(first).size).toBe(100);
-    const other = hashes(
-      App.make(App.define({ systems: [Drift] }), { seed: 6 })
-    );
-    expect(other[0]).not.toBe(first[0]);
   });
 
-  it("shows the first tick at which one of them does something else", () => {
-    // The same game, but on tick 40 one machine rounds a number differently.
-    let tick = 0;
-    const Wrong = System.tick("Wrong", function* () {
-      tick++;
-      if (tick === 40) {
-        let first = true;
-        (yield* Query.all(Body).pipe(Query.writes(Body))).each((body) => {
-          if (first) {
-            body.y = nudged("f32", body.y) as number;
-            first = false;
+  it.effect(
+    "agrees tick by tick between two apps given the same seed, which is how peers know they have not drifted",
+    () =>
+      Effect.gen(function* () {
+        const first = yield* hashes(
+          App.make(App.define({ systems: [Drift] }), { seed: 5 })
+        );
+        expect(
+          yield* hashes(App.make(App.define({ systems: [Drift] }), { seed: 5 }))
+        ).toEqual(first);
+        expect(new Set(first).size).toBe(100);
+        const other = yield* hashes(
+          App.make(App.define({ systems: [Drift] }), { seed: 6 })
+        );
+        expect(other[0]).not.toBe(first[0]);
+      })
+  );
+
+  it.effect(
+    "shows the first tick at which one of them does something else",
+    () =>
+      Effect.gen(function* () {
+        // The same game, but on tick 40 one machine rounds a number differently.
+        let tick = 0;
+        const Wrong = System.tick("Wrong", function* () {
+          tick++;
+          if (tick === 40) {
+            let first = true;
+            (yield* Query.all(Body).pipe(Query.writes(Body))).each((body) => {
+              if (first) {
+                body.y = nudged("f32", body.y) as number;
+                first = false;
+              }
+            });
           }
         });
-      }
-    });
-    const honest = hashes(
-      App.make(App.define({ systems: [Drift] }), { seed: 5 })
-    );
-    const faulty = hashes(
-      App.make(App.define({ systems: [Drift, Wrong] }), { seed: 5 })
-    );
-    const firstDifference = honest.findIndex((hash, i) => hash !== faulty[i]);
-    expect(firstDifference).toBe(39);
-    expect(faulty.slice(0, 39)).toEqual(honest.slice(0, 39));
-  });
+        const honest = yield* hashes(
+          App.make(App.define({ systems: [Drift] }), { seed: 5 })
+        );
+        const faulty = yield* hashes(
+          App.make(App.define({ systems: [Drift, Wrong] }), { seed: 5 })
+        );
+        const firstDifference = honest.findIndex(
+          (hash, i) => hash !== faulty[i]
+        );
+        expect(firstDifference).toBe(39);
+        expect(faulty.slice(0, 39)).toEqual(honest.slice(0, 39));
+      })
+  );
 
-  it("covers the game's time, which the world holds", () => {
-    const after = (deltas: readonly number[]) =>
-      withApp(App.make(App.define({}), { seed: 5 }), (app, world) => {
-        for (const delta of deltas) {
-          app.tick(delta);
-        }
-        return world.hash();
+  it.effect("covers the game's time, which the world holds", () =>
+    Effect.gen(function* () {
+      const after = Effect.fnUntraced(function* (deltas: readonly number[]) {
+        return yield* withApp(
+          App.make(App.define({}), { seed: 5 }),
+          (app, world) =>
+            Effect.gen(function* () {
+              for (const delta of deltas) {
+                app.tick(delta);
+              }
+              return world.hash();
+            })
+        );
       });
-    const twice = after([1 / 60, 1 / 60]);
-    expect(after([1 / 60, 1 / 60])).toBe(twice);
-    // Nothing in the game moves, and only the time tells these apart.
-    expect(after([1 / 60])).not.toBe(twice);
-    expect(after([1 / 60, 1 / 30])).not.toBe(twice);
-    expect(after([1 / 30, 1 / 60])).not.toBe(twice);
-  });
+      const twice = yield* after([1 / 60, 1 / 60]);
+      expect(yield* after([1 / 60, 1 / 60])).toBe(twice);
+      // Nothing in the game moves, and only the time tells these apart.
+      expect(yield* after([1 / 60])).not.toBe(twice);
+      expect(yield* after([1 / 60, 1 / 30])).not.toBe(twice);
+      expect(yield* after([1 / 30, 1 / 60])).not.toBe(twice);
+    })
+  );
 
   describe("covers what waits for the next tick", () => {
     const Rang = Event.define("hash/Rang", Schema.Struct({ n: Schema.Int }));
@@ -800,101 +820,128 @@ describe("the hash of an app's world", () => {
         seed: 5,
         checkpointEvery: 0,
       });
-    const after = (
+    const after = Effect.fnUntraced(function* (
       ring: number | undefined,
       act: (app: Effect.Success<ReturnType<typeof make>>) => void = () => {}
-    ) =>
-      withApp(make(), (app, world) => {
-        ringing = ring;
-        app.tick(1 / 60);
-        act(app);
-        return world.hash();
-      });
-
-    it("the events the simulation has yet to read", () => {
-      const one = after(1);
-      expect(after(1)).toBe(one);
-      expect(after(2)).not.toBe(one);
-      expect(after(undefined)).not.toBe(one);
-    });
-
-    it("the actions queued for the next tick, and who issued them", () => {
-      const idle = after(undefined);
-      const one = after(undefined, (app) => app.enqueue(Push, { by: 1 }));
-      expect(one).not.toBe(idle);
-      expect(after(undefined, (app) => app.enqueue(Push, { by: 1 }))).toBe(one);
-      expect(after(undefined, (app) => app.enqueue(Push, { by: 2 }))).not.toBe(
-        one
+    ) {
+      return yield* withApp(make(), (app, world) =>
+        Effect.gen(function* () {
+          ringing = ring;
+          app.tick(1 / 60);
+          act(app);
+          return world.hash();
+        })
       );
-      expect(
-        after(undefined, (app) =>
-          app.enqueueByName("hash/Push", { by: 1 }, "ada")
-        )
-      ).not.toBe(one);
     });
 
-    it("but not where a reader between ticks is, so that watching changes nothing", () => {
-      expect(after(1, (app) => app.frame())).toBe(after(1));
-    });
-  });
+    it.effect("the events the simulation has yet to read", () =>
+      Effect.gen(function* () {
+        const one = yield* after(1);
+        expect(yield* after(1)).toBe(one);
+        expect(yield* after(2)).not.toBe(one);
+        expect(yield* after(undefined)).not.toBe(one);
+      })
+    );
 
-  it("is put back by a rewind with the actions queued and the events waiting, which every system then reads afresh", () => {
-    const Rang = Event.define("hash/Rang2", Schema.Struct({ n: Schema.Int }));
-    const Push = Action.define("hash/Push2", Schema.Struct({ by: Schema.Int }));
-    const heard: number[] = [];
-    const pushed: number[] = [];
-    const push = Action.handler(Push, function* ({ by }) {
-      pushed.push(by);
-    });
-    let ringing = true;
-    // Before the system that rings: it hears a ring on the tick after.
-    const Hear = System.tick("hash/Hear", function* () {
-      for (const { n } of (yield* Rang).read()) {
-        heard.push(n);
-      }
-    });
-    const Ring = System.tick("hash/Ring2", function* () {
-      if (ringing) {
-        (yield* Rang.emits).emit({ n: 1 });
-      }
-    });
-    withApp(
-      App.make(App.define({ systems: [Hear, Ring], handlers: [push] }), {
-        seed: 5,
-      }),
-      (app, world) => {
-        app.tick(1 / 60);
-        ringing = false;
-        app.enqueue(Push, { by: 7 });
-        const hash = world.hash();
-        const moment = capture(app);
-        app.tick(1 / 60);
-        expect([heard, pushed]).toEqual([[1], [7]]);
-        Timeline.rewind(app, moment);
-        expect(world.hash()).toBe(hash);
-        app.tick(1 / 60);
-        expect([heard, pushed]).toEqual([
-          [1, 1],
-          [7, 7],
-        ]);
-      }
+    it.effect("the actions queued for the next tick, and who issued them", () =>
+      Effect.gen(function* () {
+        const idle = yield* after(undefined);
+        const one = yield* after(undefined, (app) =>
+          app.enqueue(Push, { by: 1 })
+        );
+        expect(one).not.toBe(idle);
+        expect(
+          yield* after(undefined, (app) => app.enqueue(Push, { by: 1 }))
+        ).toBe(one);
+        expect(
+          yield* after(undefined, (app) => app.enqueue(Push, { by: 2 }))
+        ).not.toBe(one);
+        expect(
+          yield* after(undefined, (app) =>
+            app.enqueueByName("hash/Push", { by: 1 }, "ada")
+          )
+        ).not.toBe(one);
+      })
+    );
+
+    it.effect(
+      "but not where a reader between ticks is, so that watching changes nothing",
+      () =>
+        Effect.gen(function* () {
+          expect(yield* after(1, (app) => app.frame())).toBe(yield* after(1));
+        })
     );
   });
 
-  it("is put back with the game's time by a rewind", () => {
+  it.effect(
+    "is put back by a rewind with the actions queued and the events waiting, which every system then reads afresh",
+    () =>
+      Effect.gen(function* () {
+        const Rang = Event.define(
+          "hash/Rang2",
+          Schema.Struct({ n: Schema.Int })
+        );
+        const Push = Action.define(
+          "hash/Push2",
+          Schema.Struct({ by: Schema.Int })
+        );
+        const heard: number[] = [];
+        const pushed: number[] = [];
+        const push = Action.handler(Push, function* ({ by }) {
+          pushed.push(by);
+        });
+        let ringing = true;
+        // Before the system that rings: it hears a ring on the tick after.
+        const Hear = System.tick("hash/Hear", function* () {
+          for (const { n } of (yield* Rang).read()) {
+            heard.push(n);
+          }
+        });
+        const Ring = System.tick("hash/Ring2", function* () {
+          if (ringing) {
+            (yield* Rang.emits).emit({ n: 1 });
+          }
+        });
+        yield* withApp(
+          App.make(App.define({ systems: [Hear, Ring], handlers: [push] }), {
+            seed: 5,
+          }),
+          (app, world) =>
+            Effect.gen(function* () {
+              app.tick(1 / 60);
+              ringing = false;
+              app.enqueue(Push, { by: 7 });
+              const hash = world.hash();
+              const moment = capture(app);
+              app.tick(1 / 60);
+              expect([heard, pushed]).toEqual([[1], [7]]);
+              Timeline.rewind(app, moment);
+              expect(world.hash()).toBe(hash);
+              app.tick(1 / 60);
+              expect([heard, pushed]).toEqual([
+                [1, 1],
+                [7, 7],
+              ]);
+            })
+        );
+      })
+  );
+
+  it.effect("is put back with the game's time by a rewind", () =>
     withApp(
       App.make(App.define({ systems: [Drift] }), { seed: 5 }),
-      (app, world) => {
-        app.tick(1 / 60);
-        app.tick(1 / 30);
-        const time = { ...app.time };
-        const hash = world.hash();
-        const moment = capture(app);
-        app.tick(1 / 60);
-        Timeline.rewind(app, moment);
-        expect(app.time).toEqual(time);
-        expect(world.hash()).toBe(hash);
-      }
-    );
-  });
+      (app, world) =>
+        Effect.gen(function* () {
+          app.tick(1 / 60);
+          app.tick(1 / 30);
+          const time = { ...app.time };
+          const hash = world.hash();
+          const moment = capture(app);
+          app.tick(1 / 60);
+          Timeline.rewind(app, moment);
+          expect(app.time).toEqual(time);
+          expect(world.hash()).toBe(hash);
+        })
+    )
+  );
 });

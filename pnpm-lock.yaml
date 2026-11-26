@@ -20,6 +20,9 @@ importers:
       '@effect/tsgo':
         specifier: ^0.70.0
         version: 0.70.0
+      '@effect/vitest':
+        specifier: 4.1.4
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
@@ -759,6 +762,12 @@ packages:
   '@effect/tsgo@0.70.0':
     resolution: {integrity: sha512-kZwLZaAT4of8wu1sTRnk2IZpbjHGQSBKGvfw+nYw2iuvJlkIS0BNYcwA0ohoLPRffUKUP6PY7iBW5Ag4DUxh+Q==}
     hasBin: true
+
+  '@effect/vitest@4.1.4':
+    resolution: {integrity: sha512-AKpZ6zKihCRhY7hDbiQ2yp/krw+afIkxDRjFMwwzMiyhd0iYk0WaHa9J6GGC7TUF/C7HP2dZyMVq5xC0Qm/2/g==}
+    peerDependencies:
+      effect: ^4.1.4
+      vitest: '>=5.0.0 <6.0.0'
 
   '@emnapi/core@1.11.1':
     resolution: {integrity: sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ==}
@@ -4409,6 +4418,11 @@ snapshots:
       '@effect/tsgo-linux-x64': 0.70.0
       '@effect/tsgo-win32-arm64': 0.70.0
       '@effect/tsgo-win32-x64': 0.70.0
+
+  '@effect/vitest@4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))':
+    dependencies:
+      effect: 4.1.4
+      vitest: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
   '@emnapi/core@1.11.1':
     dependencies:

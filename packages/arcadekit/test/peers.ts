@@ -22,7 +22,7 @@ import {
   Timeline,
   World,
 } from "../src/index.ts";
-import type { Entity, QueryView } from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 import type * as Build from "../src/internal/build.ts";
 import { Message, Session } from "../src/net/index.ts";
 import type { ReadingWorld } from "../src/Services.ts";
@@ -237,8 +237,6 @@ export interface Peer {
   readonly app: SteeredGame;
   /** Its world, as `app.read(World)` gives it. */
   readonly world: ReadingWorld;
-  /** Its coins, as `app.read(Lying)` gives them, read again each time: a rollback ends a view. */
-  readonly coins: QueryView<readonly [typeof Coin]>;
   /** A session, whether or not it runs ahead. */
   readonly session: Session.Session<Parts["e"], Parts["hu"]>;
   /** The world's hash after each tick this peer ran: `hashes[0]` is after the first. */
@@ -258,46 +256,40 @@ export interface Setup {
   readonly shuffled?: boolean;
 }
 
-export const withPeers = <A>(
+export const withPeers = <A, E = never>(
   names: readonly string[],
   setup: Setup,
-  use: (peers: Peer[]) => A
-): A =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const peers: Peer[] = [];
-      const services = yield* Effect.context<never>();
-      for (const name of names) {
-        const source = Input.makeManualSource();
-        const others = names.filter((other) => other !== name);
-        const session = yield* Session.make(CoinGame, {
-          seed: setup.seeds?.[name] ?? 5,
-          checkpointEvery: setup.checkpointEvery?.[name] ?? 1,
-          me: name,
-          others:
-            setup.shuffled === true && peers.length % 2 === 1
-              ? others.toReversed()
-              : others,
-          delta: DELTA,
-          ...(setup.delay === undefined ? {} : { delay: setup.delay }),
-          ahead: setup.ahead ?? 0,
-        }).pipe(Effect.provide(Input.layer(source)));
-        const { app } = session;
-        peers.push({
-          name,
-          app,
-          world: yield* app.read(World),
-          get coins() {
-            return Effect.runSyncWith(services)(app.read(Lying));
-          },
-          session,
-          hashes: [],
-          source,
-        });
-      }
-      return use(peers);
-    })
-  );
+  use: (peers: Peer[]) => Effect.Effect<A, E>
+) =>
+  Effect.gen(function* () {
+    const peers: Peer[] = [];
+    for (const name of names) {
+      const source = Input.makeManualSource();
+      const others = names.filter((other) => other !== name);
+      const session = yield* Session.make(CoinGame, {
+        seed: setup.seeds?.[name] ?? 5,
+        checkpointEvery: setup.checkpointEvery?.[name] ?? 1,
+        me: name,
+        others:
+          setup.shuffled === true && peers.length % 2 === 1
+            ? others.toReversed()
+            : others,
+        delta: DELTA,
+        ...(setup.delay === undefined ? {} : { delay: setup.delay }),
+        ahead: setup.ahead ?? 0,
+      }).pipe(Effect.provide(Input.layer(source)));
+      const { app } = session;
+      peers.push({
+        name,
+        app,
+        world: yield* app.read(World),
+        session,
+        hashes: [],
+        source,
+      });
+    }
+    return yield* use(peers);
+  });
 
 /**
  * Takes an app over as a session does, to go back and run the same ticks
@@ -332,14 +324,17 @@ export const steered = <E, HU>({ app, take }: Build.Built<E, HU>) => {
 };
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
-export const withApp = <T extends Pick<App.Any, "read">, A, E = never>(
+export const withApp = <
+  T extends Pick<App.Any, "read">,
+  A,
+  E = never,
+  E2 = never,
+>(
   make: Effect.Effect<T, E>,
-  use: (app: T, world: ReadingWorld) => A
-): A =>
-  Effect.runSync(
-    Effect.flatMap(make, (app) =>
-      Effect.map(app.read(World), (world) => use(app, world))
-    )
+  use: (app: T, world: ReadingWorld) => Effect.Effect<A, E2>
+) =>
+  Effect.flatMap(make, (app) =>
+    Effect.flatMap(app.read(World), (world) => use(app, world))
   );
 
 /**
@@ -419,12 +414,14 @@ export const catchUp = (peers: readonly Peer[], net: Network): number => {
   throw new Error("the peers never caught up with each other");
 };
 
-export const coinsOf = (peer: Peer): Entity[] => peer.coins.entities();
+/** A peer's coins, read again each time: a rollback ends a view. */
+export const coinsOf = (peer: Peer) =>
+  Effect.map(peer.app.read(Lying), (coins) => coins.entities());
 
 /** Each peer's player does something at random, from what its own world holds. */
 export const players = (seed: number) => {
   const dice = new EcsWorld({ seed }).random;
-  return (peer: Peer): void => {
+  return Effect.fnUntraced(function* (peer: Peer) {
     const by = peer.name as "ada" | "grace";
     const roll = dice.int(1, 6);
     if (roll <= 2) {
@@ -433,13 +430,13 @@ export const players = (seed: number) => {
       // Whose it is, the payload does not say.
       peer.app.enqueue(Tip, { amount: 1 });
     } else if (roll === 3) {
-      const coins = coinsOf(peer);
+      const coins = yield* coinsOf(peer);
       if (coins.length > 0) {
         // Both players go for the oldest coin: one of them is refused.
         peer.app.enqueue(Take, { by, coin: coins[0]! });
       }
     }
-  };
+  });
 };
 
 export const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>

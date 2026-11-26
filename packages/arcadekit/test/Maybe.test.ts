@@ -1,5 +1,5 @@
-import { Exit, Schema } from "effect";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
+import { Effect, Exit, Schema } from "effect";
 
 import type { ReadonlyColumnsOf } from "../src/ecs/component.ts";
 import { entityIndex } from "../src/ecs/index.ts";
@@ -189,40 +189,49 @@ describe("a term an entity may lack", () => {
     );
   });
 
-  it("is put back by a rewind where a table has it, and hashed as a full hash is", () => {
-    const Turn = Action.define("mb/Turn", Schema.Struct({}));
-    const turn = Action.handler(Turn, function* () {
-      (yield* Spinning).each((_position, rotation) => {
-        if (rotation !== undefined) {
-          rotation.a += 10;
-        }
-      });
-      (yield* Spinning).eachChunk((start, end, _position, rotation) => {
-        for (let i = start; rotation !== undefined && i < end; i++) {
-          rotation.a[i] = rotation.a[i]! + 1;
-        }
-      });
-    });
-    withApp(App.make(App.define({ handlers: [turn] })), (app) => {
-      const { world } = partsOf(app);
-      const placed = world.spawn(Position.of({ x: 0 }));
-      const turned = world.spawn(Position.of({ x: 1 }), Rotation.of({ a: 1 }));
-      const before = world.hash();
-      const moment = Timeline.capture(app);
-      if (Exit.isFailure(moment)) {
-        throw new Error("the game could not be captured");
-      }
-      app.dispatch(Turn, {});
-      expect(world.get(turned, Rotation)).toEqual({ a: 12 });
-      expect(world.hash()).not.toBe(before);
-      expect(world.hash()).toBe(world._fullHash());
-      Timeline.rewind(app, moment.value);
-      expect(world.get(turned, Rotation)).toEqual({ a: 1 });
-      expect(world.get(placed, Rotation)).toBeUndefined();
-      expect(world.hash()).toBe(before);
-      expect(world.hash()).toBe(world._fullHash());
-    });
-  });
+  it.effect(
+    "is put back by a rewind where a table has it, and hashed as a full hash is",
+    () =>
+      Effect.gen(function* () {
+        const Turn = Action.define("mb/Turn", Schema.Struct({}));
+        const turn = Action.handler(Turn, function* () {
+          (yield* Spinning).each((_position, rotation) => {
+            if (rotation !== undefined) {
+              rotation.a += 10;
+            }
+          });
+          (yield* Spinning).eachChunk((start, end, _position, rotation) => {
+            for (let i = start; rotation !== undefined && i < end; i++) {
+              rotation.a[i] = rotation.a[i]! + 1;
+            }
+          });
+        });
+        yield* withApp(App.make(App.define({ handlers: [turn] })), (app) =>
+          Effect.gen(function* () {
+            const { world } = partsOf(app);
+            const placed = world.spawn(Position.of({ x: 0 }));
+            const turned = world.spawn(
+              Position.of({ x: 1 }),
+              Rotation.of({ a: 1 })
+            );
+            const before = world.hash();
+            const moment = Timeline.capture(app);
+            if (Exit.isFailure(moment)) {
+              throw new Error("the game could not be captured");
+            }
+            app.dispatch(Turn, {});
+            expect(world.get(turned, Rotation)).toEqual({ a: 12 });
+            expect(world.hash()).not.toBe(before);
+            expect(world.hash()).toBe(world._fullHash());
+            Timeline.rewind(app, moment.value);
+            expect(world.get(turned, Rotation)).toEqual({ a: 1 });
+            expect(world.get(placed, Rotation)).toBeUndefined();
+            expect(world.hash()).toBe(before);
+            expect(world.hash()).toBe(world._fullHash());
+          })
+        );
+      })
+  );
 
   it("is checked for writes past the compiler where a table has it", () => {
     const { world } = populated();

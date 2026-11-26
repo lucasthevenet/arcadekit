@@ -1,5 +1,5 @@
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
-import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { idOf } from "../src/ecs/component.ts";
 import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot.ts";
@@ -99,25 +99,29 @@ describe("a singleton", () => {
     });
   });
 
-  it("is read as the world's own object, whose fields and spread are plain data", () => {
-    const app = Effect.runSync(App.make(App.define({ plugins: [] })));
-    const turn = Effect.runSync(app.read(Turn));
-    expectTypeOf(turn).toEqualTypeOf<
-      Singleton.Read<typeof Turn.component.schema>
-    >();
-    expectTypeOf(turn.player).toEqualTypeOf<number>();
-    expectTypeOf({ ...turn }).toEqualTypeOf<{
-      player: number;
-      round: number;
-    }>();
-    const world = Effect.runSync(app.read(World));
-    expectTypeOf(world.singleton(Turn)).toEqualTypeOf<
-      Singleton.Read<typeof Turn.component.schema>
-    >();
-    expect(world.singleton(Turn)).toBe(turn);
-    expect(Effect.runSync(app.read(Turn))).toBe(turn);
-    expect({ ...turn }).toEqual({ player: 1, round: 0 });
-  });
+  it.effect(
+    "is read as the world's own object, whose fields and spread are plain data",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* App.make(App.define({ plugins: [] }));
+        const turn = yield* app.read(Turn);
+        expectTypeOf(turn).toEqualTypeOf<
+          Singleton.Read<typeof Turn.component.schema>
+        >();
+        expectTypeOf(turn.player).toEqualTypeOf<number>();
+        expectTypeOf({ ...turn }).toEqualTypeOf<{
+          player: number;
+          round: number;
+        }>();
+        const world = yield* app.read(World);
+        expectTypeOf(world.singleton(Turn)).toEqualTypeOf<
+          Singleton.Read<typeof Turn.component.schema>
+        >();
+        expect(world.singleton(Turn)).toBe(turn);
+        expect(yield* app.read(Turn)).toBe(turn);
+        expect({ ...turn }).toEqual({ player: 1, round: 0 });
+      })
+  );
 
   it("has fields of every kind", () => {
     const world = new EcsWorld();
@@ -612,8 +616,9 @@ const Rules = Plugin.make("sg/Rules", {
 });
 
 describe("a singleton in an app", () => {
-  it("is what `yield*` gives a handler and a system, to read and to write", () => {
-    Effect.runSync(
+  it.effect(
+    "is what `yield*` gives a handler and a system, to read and to write",
+    () =>
       Effect.gen(function* () {
         const rounds: number[] = [];
         const Watch = System.tick("Watch", function* () {
@@ -644,41 +649,39 @@ describe("a singleton in an app", () => {
         expect(world.entityCount).toBe(0);
         expect((yield* app.read(Query.all())).count()).toBe(0);
       })
-    );
-  });
+  );
 
-  it("is as it was after a refused action, and the game replays", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const game = App.define({ plugins: [Rules] });
-        const app = yield* App.make(game, { checkpointEvery: 1 });
-        const world = yield* app.read(World);
-        const before = world.hash();
-        expect(Exit.isFailure(app.dispatch(Cheat, {}))).toBe(true);
-        // Never written, so never there.
-        expect(world.hash()).toBe(before);
-        for (let move = 0; move < 12; move++) {
-          app.dispatch(EndTurn, { player: (move % 2) + 1 });
-          app.dispatch(Cheat, {});
-          app.enqueue(Cheat, {});
-          app.tick(1);
-        }
-        expect({ ...world.singleton(Turn) }).toEqual({
-          player: 1,
-          round: 12,
-        });
-        expect(world.singleton(Score).points).toBe(42);
-        const played = app.record();
-        const again = yield* Journal.replay(played, game, {
-          checkpointEvery: 1,
-        });
-        expect((yield* again.read(World)).hash()).toBe(world.hash());
-      })
-    );
-  });
+  it.effect("is as it was after a refused action, and the game replays", () =>
+    Effect.gen(function* () {
+      const game = App.define({ plugins: [Rules] });
+      const app = yield* App.make(game, { checkpointEvery: 1 });
+      const world = yield* app.read(World);
+      const before = world.hash();
+      expect(Exit.isFailure(app.dispatch(Cheat, {}))).toBe(true);
+      // Never written, so never there.
+      expect(world.hash()).toBe(before);
+      for (let move = 0; move < 12; move++) {
+        app.dispatch(EndTurn, { player: (move % 2) + 1 });
+        app.dispatch(Cheat, {});
+        app.enqueue(Cheat, {});
+        app.tick(1);
+      }
+      expect({ ...world.singleton(Turn) }).toEqual({
+        player: 1,
+        round: 12,
+      });
+      expect(world.singleton(Score).points).toBe(42);
+      const played = app.record();
+      const again = yield* Journal.replay(played, game, {
+        checkpointEvery: 1,
+      });
+      expect((yield* again.read(World)).hash()).toBe(world.hash());
+    })
+  );
 
-  it("is saved with the game, and loaded by a game with no list of its components", () => {
-    Effect.runSync(
+  it.effect(
+    "is saved with the game, and loaded by a game with no list of its components",
+    () =>
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }), {
           checkpointEvery: 1,
@@ -724,8 +727,7 @@ describe("a singleton in an app", () => {
         );
         expect((yield* bare.read(World)).hash()).toBe(savedHash);
       })
-    );
-  });
+  );
 });
 
 describe("a cache rebuilt from the world, kept in a transient field of a singleton", () => {
@@ -774,10 +776,11 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
   });
   const Game = App.define({ plugins: [Spotted] });
 
-  it("is built once, put back by a refused action, built again after a load, and kept by a rewind unless written since", () => {
-    built = 0;
-    Effect.runSync(
+  it.effect(
+    "is built once, put back by a refused action, built again after a load, and kept by a rewind unless written since",
+    () =>
       Effect.gen(function* () {
+        built = 0;
         const app = yield* App.make(Game);
         const byX = () => Effect.map(app.read(Index), (index) => index.byX);
         app.tick(1);
@@ -818,6 +821,5 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
         expect(built).toBe(3);
         expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
       })
-    );
-  });
+  );
 });

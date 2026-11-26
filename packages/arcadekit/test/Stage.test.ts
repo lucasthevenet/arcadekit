@@ -1,5 +1,5 @@
+import { describe, expect, it } from "@effect/vitest";
 import { Effect, Option, Schema } from "effect";
-import { describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -52,20 +52,22 @@ const Start = Plugin.make("stg/Start", {
 });
 
 describe("a system's stage", () => {
-  it("emits from the tick and reads that event from the frame", () => {
-    seen.length = 0;
-    const app = Effect.runSync(
-      App.make(App.define({ plugins: [Start], systems: [Move, Read] }))
-    );
-    app.tick(1);
-    app.frame();
-    expect(seen).toEqual([1]);
-    const world = Effect.runSync(app.read(World));
-    const positions = Effect.runSync(app.read(Placed))
-      .entities()
-      .map((id) => world.get(id, Position)?.x);
-    expect(positions).toEqual([1]);
-  });
+  it.effect("emits from the tick and reads that event from the frame", () =>
+    Effect.gen(function* () {
+      seen.length = 0;
+      const app = yield* App.make(
+        App.define({ plugins: [Start], systems: [Move, Read] })
+      );
+      app.tick(1);
+      app.frame();
+      expect(seen).toEqual([1]);
+      const world = yield* app.read(World);
+      const positions = (yield* app.read(Placed))
+        .entities()
+        .map((id) => world.get(id, Position)?.x);
+      expect(positions).toEqual([1]);
+    })
+  );
 
   it("refuses what the other stages do", () => {
     System.tick(
@@ -212,49 +214,51 @@ describe("a system's stage", () => {
     expect(left.name).toBe(right.name);
   });
 
-  it("hands the frame stage, the input stage and app.read nothing that changes the game, even to a cast", () => {
-    const handed = new Map<string, object>();
-    const look = (place: string) =>
+  it.effect(
+    "hands the frame stage, the input stage and app.read nothing that changes the game, even to a cast",
+    () =>
       Effect.gen(function* () {
-        const world = yield* World;
-        const commands = yield* Effect.serviceOption(Commands);
-        const events = yield* Effect.serviceOption(Events);
-        handed.set(place, {
-          set: "set" in world,
-          commands: Option.isSome(commands),
-          emit: Option.match(events, {
-            onNone: () => false,
-            onSome: (bus) => "emit" in bus || "emit" in bus.handle(Moved),
-          }),
+        const handed = new Map<string, object>();
+        const look = (place: string) =>
+          Effect.gen(function* () {
+            const world = yield* World;
+            const commands = yield* Effect.serviceOption(Commands);
+            const events = yield* Effect.serviceOption(Events);
+            handed.set(place, {
+              set: "set" in world,
+              commands: Option.isSome(commands),
+              emit: Option.match(events, {
+                onNone: () => false,
+                onSome: (bus) => "emit" in bus || "emit" in bus.handle(Moved),
+              }),
+            });
+          });
+        const app = yield* App.make(
+          App.define({
+            systems: [
+              System.tick("stg/LookTick", function* () {
+                yield* look("tick");
+              }),
+              System.frame("stg/LookFrame", function* () {
+                yield* look("frame");
+              }),
+              System.input("stg/LookInput", function* () {
+                yield* look("input");
+              }),
+            ],
+          })
+        );
+        app.input();
+        app.tick(1);
+        app.frame();
+        yield* app.read(look("read"));
+        const nothing = { set: false, commands: false, emit: false };
+        expect(Object.fromEntries(handed)).toEqual({
+          tick: { set: true, commands: true, emit: true },
+          frame: nothing,
+          input: nothing,
+          read: nothing,
         });
-      });
-    const app = Effect.runSync(
-      App.make(
-        App.define({
-          systems: [
-            System.tick("stg/LookTick", function* () {
-              yield* look("tick");
-            }),
-            System.frame("stg/LookFrame", function* () {
-              yield* look("frame");
-            }),
-            System.input("stg/LookInput", function* () {
-              yield* look("input");
-            }),
-          ],
-        })
-      )
-    );
-    app.input();
-    app.tick(1);
-    app.frame();
-    Effect.runSync(app.read(look("read")));
-    const nothing = { set: false, commands: false, emit: false };
-    expect(Object.fromEntries(handed)).toEqual({
-      tick: { set: true, commands: true, emit: true },
-      frame: nothing,
-      input: nothing,
-      read: nothing,
-    });
-  });
+      })
+  );
 });
