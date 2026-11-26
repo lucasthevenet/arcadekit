@@ -56,18 +56,25 @@ import type { Session } from "./Session.ts";
  * transport, a channel or a socket, fills a buffer in its own time, and
  * `receive` returns the buffer.
  *
+ * Both fail with `Transport.Closed` once what carries the messages has closed
+ * for good, so the tick that uses them fails with it too, and a program
+ * catches it by its tag.
+ *
  * @category Models
  */
 export interface Listener {
   /** Sends a message to every other peer. */
-  readonly send: (message: Message.Message) => void;
+  readonly send: (message: Message.Message) => Effect.Effect<void, Closed>;
   /**
    * Returns the messages that have arrived since the last call, in arrival
    * order, and removes them: the next call returns only newer ones. A
    * transport through a relay or a `BroadcastChannel` also returns notices of
    * who joined and who left.
    */
-  readonly receive: () => readonly (Message.Message | Message.Notice)[];
+  readonly receive: () => Effect.Effect<
+    readonly (Message.Message | Message.Notice)[],
+    Closed
+  >;
 }
 
 /**
@@ -118,13 +125,14 @@ export const layer = (transport: Listener): Layer.Layer<Transport> =>
  *
  * @category Models
  */
-export interface Connected<E = never> extends Paced<E | Left> {
+export interface Connected<E = never> extends Paced<E | Left | Closed> {
   /**
    * Hands the session what arrived, runs the session's tick, and sends what
-   * it produced. It fails with what the session's tick fails with, and with
-   * `Transport.Left` when a peer stayed away for longer than `awayFor`.
+   * it produced. It fails with what the session's tick fails with, with
+   * `Transport.Left` when a peer stayed away for longer than `awayFor`, and
+   * with `Transport.Closed` once the transport's socket has closed for good.
    */
-  readonly tick: () => Effect.Effect<boolean, E | Left>;
+  readonly tick: () => Effect.Effect<boolean, E | Left | Closed>;
   /** The session's frame stage, for a driver to draw the game with. */
   readonly frame: (alpha: number, delta?: number) => Effect.Effect<void, E>;
   /**
@@ -136,7 +144,7 @@ export interface Connected<E = never> extends Paced<E | Left> {
   readonly away: readonly string[];
   /**
    * Stops listening on the transport, then closes the session it connected.
-   * A transport of the package throws when used after, and says that its
+   * A transport of the package dies when used after, and says that its
    * connection was closed. Closing it again does nothing. `Driver.run`
    * closes it when it ends.
    */
@@ -239,15 +247,16 @@ const joined = <E>(
   let ticks = 0;
   const names = (peers: Iterable<string>): string[] =>
     Array.from(peers).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  // What the session produced, sent whether its tick ran, waited or failed.
-  const sent = Effect.sync(() => {
-    for (const message of session.outgoing()) {
-      transport.send(message);
+  const sendAll = Effect.fnUntraced(function* (
+    messages: readonly Message.Message[]
+  ) {
+    for (const message of messages) {
+      yield* transport.send(message);
     }
   });
   const ticking = Effect.gen(function* () {
     let again = false;
-    for (const arrived of transport.receive()) {
+    for (const arrived of yield* transport.receive()) {
       if ("from" in arrived) {
         // Whoever speaks is there, whatever the relay said before.
         away.delete(arrived.from);
@@ -269,11 +278,17 @@ const joined = <E>(
     }
     ticks++;
     if (again) {
-      for (const message of session.resend()) {
-        transport.send(message);
-      }
+      yield* sendAll(session.resend());
     }
-    return yield* Effect.ensuring(session.tick(), sent);
+    // What the session produced is sent whether its tick ran, waited or
+    // failed. A tick that failed fails with its own error, sent or not.
+    const ticked = yield* Effect.exit(session.tick());
+    const sent = yield* Effect.exit(sendAll(session.outgoing()));
+    if (Exit.isFailure(ticked)) {
+      return yield* ticked;
+    }
+    yield* sent;
+    return ticked.value;
   });
   return {
     delta: session.delta,
@@ -311,8 +326,8 @@ export interface Wire {
  */
 export interface OverWire extends Listener {
   /**
-   * Stops listening to the wire. `send` and `receive` throw from then on, so
-   * a game doesn't wait for messages that can no longer arrive.
+   * Stops listening to the wire. `send` and `receive` die from then on, and
+   * say so, so a game doesn't wait for messages that can no longer arrive.
    */
   readonly close: () => void;
   /**
@@ -356,7 +371,7 @@ const arrival = (
  * The wire must deliver every message, in any order. A WebSocket does, and a
  * data channel must be configured to.
  *
- * It throws when it is used after `close`. It authenticates no sender, and
+ * It dies when it is used after `close`. It authenticates no sender, and
  * doesn't report that its wire closed, or tell the other peers that this one
  * joined or left, unless your code sends them a `Message.Notice`.
  *
@@ -382,16 +397,18 @@ export const fromWire = (wire: Wire): OverWire => {
     }
   });
   return {
-    send(message) {
-      use();
-      wire.send(bytesOf(message));
-    },
-    receive() {
-      use();
-      const messages = inbox;
-      inbox = [];
-      return messages;
-    },
+    send: (message) =>
+      Effect.sync(() => {
+        use();
+        wire.send(bytesOf(message));
+      }),
+    receive: () =>
+      Effect.sync(() => {
+        use();
+        const messages = inbox;
+        inbox = [];
+        return messages;
+      }),
     close() {
       if (open) {
         open = false;
@@ -411,7 +428,7 @@ export const fromWire = (wire: Wire): OverWire => {
  * machines. `me` is this peer's name, as its session has it.
  *
  * The channel opens when `Transport.connect` listens on the transport, and
- * closes when the connection is closed. A transport used after that throws
+ * closes when the connection is closed. A transport used after that dies
  * and says so.
  *
  * As a relay does, it tells the other peers that this one joined when the
@@ -458,17 +475,18 @@ export const layerBroadcastChannel = (
           })
       ),
       (held): Listener => {
-        const use = (): OverWire => {
-          if (!held.open) {
-            throw new Error(
-              `The transport "${name}" was used after it was let go, and its channel closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
-            );
-          }
-          return held.over;
-        };
+        const use = Effect.suspend(() =>
+          held.open
+            ? Effect.succeed(held.over)
+            : Effect.die(
+                new Error(
+                  `The transport "${name}" was used after it was let go, and its channel closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
+                )
+              )
+        );
         return {
-          send: (message) => use().send(message),
-          receive: () => use().receive(),
+          send: (message) => Effect.flatMap(use, (over) => over.send(message)),
+          receive: () => Effect.flatMap(use, (over) => over.receive()),
         };
       }
     ),
@@ -477,10 +495,10 @@ export const layerBroadcastChannel = (
 /**
  * A transport's socket is closed for good: it never opened, the relay refused
  * it, or the network was gone for longer than `reconnectFor`. `send` and
- * `receive` throw this error from then on. The tick that uses the transport
- * fails with it and its driver stops, instead of the game waiting for
- * messages that can never arrive. The relay tells the other peers that this
- * one left.
+ * `receive` fail with this error from then on. The tick that uses the
+ * transport fails with it, and so does `Driver.run`, instead of the game
+ * waiting for messages that can never arrive. The relay tells the other
+ * peers that this one left.
  *
  * @category Errors
  */
@@ -544,7 +562,7 @@ const endOf = (
  * - The socket opens when `Transport.connect` listens on the transport. Messages
  *   sent before it opens are buffered and sent once it does.
  * - It closes when the connection is closed. A transport used after that
- *   throws and says so.
+ *   dies and says so.
  * - When a socket that was open drops, it connects again, waiting longer each
  *   time, up to two seconds, for as long as `reconnectFor` says. What is sent
  *   meanwhile is buffered. The relay tells the room it joined again, and the
@@ -553,7 +571,7 @@ const endOf = (
  *   of `reconnectFor` again.
  * - A name that is taken is tried again too, since the relay may not have
  *   seen the old socket close yet.
- * - `send` and `receive` throw `Transport.Closed`, with the close code and the
+ * - `send` and `receive` fail with `Transport.Closed`, with the close code and the
  *   relay's reason, once the socket closes for good: when it never opened,
  *   when the relay refused it for any other reason, or when it could not
  *   connect again in time.
@@ -603,8 +621,9 @@ export const layerWebSocket = (
         },
       });
       let listening = true;
-      // What `send` and `receive` throw once the socket closed for good.
-      let failure: unknown;
+      // What `send` and `receive` fail or die with once the socket closed
+      // for good.
+      let failure: Effect.Effect<never, Closed> | undefined;
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           listening = false;
@@ -658,27 +677,26 @@ export const layerWebSocket = (
           Effect.sync(() => {
             const squashed = Cause.squash(cause);
             failure = Socket.isSocketError(squashed)
-              ? new Closed({ url, ...endOf(squashed) })
-              : squashed;
+              ? Effect.fail(new Closed({ url, ...endOf(squashed) }))
+              : Effect.die(squashed);
           })
         ),
         Effect.forkScoped
       );
 
-      const use = (): OverWire => {
+      const use = Effect.suspend(() => {
         if (!listening) {
-          throw new Error(
-            `The transport to ${url} was used after it was let go, and its socket closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
+          return Effect.die(
+            new Error(
+              `The transport to ${url} was used after it was let go, and its socket closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
+            )
           );
         }
-        if (failure !== undefined) {
-          throw failure;
-        }
-        return over;
-      };
+        return failure ?? Effect.succeed(over);
+      });
       return {
-        send: (message) => use().send(message),
-        receive: () => use().receive(),
+        send: (message) => Effect.flatMap(use, (wired) => wired.send(message)),
+        receive: () => Effect.flatMap(use, (wired) => wired.receive()),
       } satisfies Listener;
     }),
   });
@@ -794,41 +812,43 @@ export const makeHub = (options: HubOptions = {}): Hub => {
       const mine: Flight[] = [];
       flights.set(peer, mine);
       made = {
-        send(message) {
-          if (cut.has(peer)) {
-            return;
-          }
-          const encoded = bytesOf(message);
-          for (const [other, theirs] of flights) {
-            if (other !== peer && !cut.has(other)) {
-              theirs.push({
-                at: now + (min === max ? min : dice.int(min, max)),
-                order: sent++,
-                from: peer,
-                data: encoded,
-              });
+        send: (message) =>
+          Effect.sync(() => {
+            if (cut.has(peer)) {
+              return;
             }
-          }
-        },
-        receive() {
-          const due = mine
-            .filter((flight) => flight.at <= now)
-            .toSorted((a, b) => a.at - b.at || a.order - b.order);
-          if (due.length === 0) {
-            return [];
-          }
-          const left = mine.filter((flight) => flight.at > now);
-          mine.length = 0;
-          mine.push(...left);
-          const arrived: (Message.Message | Message.Notice)[] = [];
-          for (const flight of due) {
-            const one = arrival(flight.data);
-            if (one !== undefined) {
-              arrived.push(one);
+            const encoded = bytesOf(message);
+            for (const [other, theirs] of flights) {
+              if (other !== peer && !cut.has(other)) {
+                theirs.push({
+                  at: now + (min === max ? min : dice.int(min, max)),
+                  order: sent++,
+                  from: peer,
+                  data: encoded,
+                });
+              }
             }
-          }
-          return arrived;
-        },
+          }),
+        receive: () =>
+          Effect.sync(() => {
+            const due = mine
+              .filter((flight) => flight.at <= now)
+              .toSorted((a, b) => a.at - b.at || a.order - b.order);
+            if (due.length === 0) {
+              return [] as (Message.Message | Message.Notice)[];
+            }
+            const left = mine.filter((flight) => flight.at > now);
+            mine.length = 0;
+            mine.push(...left);
+            const arrived: (Message.Message | Message.Notice)[] = [];
+            for (const flight of due) {
+              const one = arrival(flight.data);
+              if (one !== undefined) {
+                arrived.push(one);
+              }
+            }
+            return arrived;
+          }),
       };
       ports.set(peer, made);
     }

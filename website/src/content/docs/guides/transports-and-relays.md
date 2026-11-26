@@ -3,7 +3,7 @@ title: "Transports and relays"
 description: "A session holds no socket. Transports carry its messages: between tabs of one browser, between machines through a relay, or over a channel of your own."
 ---
 
-A **transport** is the service, `Transport`, that carries a session's messages to the other peers, since a session holds no socket. Listening on a transport gives two plain calls: `send(message)` to every other peer, and `receive()`, which returns what has arrived since the last call. Between machines, messages pass through a **relay**.
+A **transport** is the service, `Transport`, that carries a session's messages to the other peers, since a session holds no socket. Listening on a transport gives two calls that don't wait: `send(message)` to every other peer, and `receive()`, which returns what has arrived since the last call. Each returns an Effect. Between machines, messages pass through a **relay**.
 
 ## Connect a session to a transport
 
@@ -20,7 +20,7 @@ There is no default transport. A multiplayer game without one doesn't compile, s
 
 A transport's channel must deliver every message, in any order. The session drops duplicates. It also keeps what it sent until every other peer has said it heard it, and sends it again when a relay says a peer joined the room, so a socket that drops and connects again loses nothing.
 
-A transport's layer opens nothing. `Transport.connect` listens on the transport in a scope of its own, as an app listens to its devices. The channel or the socket opens then. It closes with the connection's `close`, which closes the session too, and `Driver.run` closes the connection when it ends. Provide the layer to the whole program or to `Transport.connect` alone. Either way, the channel lasts until the connection is closed. A transport used after that throws and says so.
+A transport's layer opens nothing. `Transport.connect` listens on the transport in a scope of its own, as an app listens to its devices. The channel or the socket opens then. It closes with the connection's `close`, which closes the session too, and `Driver.run` closes the connection when it ends. Provide the layer to the whole program or to `Transport.connect` alone. Either way, the channel lasts until the connection is closed. A transport used after that dies and says so.
 
 `Transport.listen` listens on the transport in the scope it runs in, until that scope closes, for a program that sends and receives messages itself.
 
@@ -79,7 +79,7 @@ When the socket drops, the game goes on:
 - While a peer is gone, the others wait for it. `connected.away` lists the peers the relay said left the room and that haven't joined it again. Show that list to the player.
 - They wait for as long as `Transport.connect(session, { awayFor })` says, in milliseconds, 60,000 by default. Then the tick fails with `Transport.Left`, naming the peers that stayed away, and the driver stops and fails with it, so a program catches it by its tag.
 
-The game ends for that peer when the socket closes for good: when it never opened, when the relay refused it, or when it couldn't connect again within `reconnectFor`. From then on, `send` and `receive` throw `Transport.Closed`, so the next tick fails and the driver stops. The error carries the close code and the relay's reason, such as `"name taken"` when the peer's name is already in the room. While the transport connects again, it tries a taken name again, since the relay may not have seen the old socket close yet.
+The game ends for that peer when the socket closes for good: when it never opened, when the relay refused it, or when it couldn't connect again within `reconnectFor`. From then on, `send` and `receive` fail with `Transport.Closed`, so the next tick fails, and the driver stops and fails with it, so a program catches it by its tag, `"TransportClosed"`. The error carries the close code and the relay's reason, such as `"name taken"` when the peer's name is already in the room. While the transport connects again, it tries a taken name again, since the relay may not have seen the old socket close yet.
 
 ## Carry messages over a channel of your own
 
@@ -106,11 +106,11 @@ export const layer = Transport.layer(transport);
 
 - Messages travel as the bytes `Message.encode` writes, and a relay's notices as the text `Message.encodeNotice` writes. The wire hands `onData` bytes as a `Uint8Array` and text as a string. What is neither a message nor a notice is dropped and counted in `transport.dropped`, since nothing that comes off a wire is trusted.
 - The channel must deliver every message. A WebSocket does, and a data channel does once it is configured to.
-- `transport.close()` stops listening, and `send` and `receive` throw from then on. A transport passed to `Transport.layer` is listened on already, and your game closes it.
+- `transport.close()` stops listening, and `send` and `receive` die from then on. A transport passed to `Transport.layer` is listened on already, and your game closes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
 - It doesn't tell the other peers that this one joined or left. Send them `Message.encodeNotice({ joined: me })` when the channel opens and `Message.encodeNotice({ left: me })` before it closes, or `connected.away` never lists a peer that is gone.
 
-For a channel that carries neither bytes nor text, pass a `Transport.Listener` of your own to `Transport.layer`. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows of one. Neither of its calls waits, so a tick stays one synchronous step. Whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
+For a channel that carries neither bytes nor text, pass a `Transport.Listener` of your own to `Transport.layer`. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows of one. Each of its calls returns an Effect, which fails with `Transport.Closed` once the channel is gone for good. Neither waits, so a tick stays one synchronous step. Whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
 
 ## Read more
 
