@@ -71,31 +71,97 @@ On the game's first tick, the enter hooks of the initial state run, followed in 
 
 A transition requested by a hook waits for the next tick.
 
-## Despawn a state's entities when the game leaves it
+An exit hook can tell where the game goes: `(yield* Phase).next` is the value it enters. An enter hook that has to know where the game came from is a transition hook, below.
 
-```ts
-import { Commands, Component, Field, Plugin, State } from "arcadekit";
+## Start a run, pause it, resume it and restart it
 
-const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
+A run starts when the game goes from the menu to `"playing"`. A pause and a resume go from `"playing"` to `"paused"` and back, and leave the run as it was:
+
+```ts title="run.ts"
+import { Action, Commands, Component, Field, Plugin, State } from "arcadekit";
+import { Schema } from "effect";
+
+export const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
+export const Hero = Component.tag("game/Hero");
 const Wall = Component.define("game/Wall", { x: Field.f32 });
 
-const playing = State.scoped(Phase, "playing");
-const paused = State.scoped(Phase, "paused");
-
-const BuildLevel = State.onEnter(
+const StartRun = State.onTransition(
   Phase,
-  "playing",
-  "game/BuildLevel",
+  { from: "menu", to: "playing" },
+  "game/StartRun",
   function* () {
-    const commands = yield* Commands.spawns(Wall, playing, paused);
-    commands.spawn(Wall.of({ x: 0 }), playing, paused);
+    const commands = yield* Commands.spawns(Hero, Wall).pipe(
+      State.scoping(Phase, "playing", "paused")
+    );
+    commands.spawn(Hero);
+    for (const x of [0, 8, 16]) {
+      commands.spawn(Wall.of({ x }));
+    }
   }
 );
 
-const Rules = Plugin.make("game/Rules", { systems: [BuildLevel] });
+export const Go = Action.define(
+  "game/Go",
+  Schema.Struct({ to: Schema.Literals(["menu", "playing", "paused"]) })
+);
+const go = Action.handler(Go, function* ({ to }) {
+  (yield* Phase.sets).set(to);
+});
+
+export const Rules = Plugin.make("game/Rules", {
+  systems: [StartRun],
+  handlers: [go],
+});
 ```
 
-`State.scoped(Phase, "playing")` is a tag. An entity that has it is despawned when the game leaves `"playing"`, unless it also has the tag of the state the game enters. The wall above has the tags of `"playing"` and `"paused"`, so it stays while the game is paused, and is despawned when the game goes back to `"menu"`. Name the tags in `Commands.spawns`, as any component a system spawns.
+`State.onTransition(Phase, { from, to }, name, body)` is an enter hook of `to` that runs only when the game comes from `from`, one value or a list of them. `StartRun` runs on a move from the menu, and not on a resume from `"paused"`. It never runs on the game's first tick, which comes from no value.
+
+`State.scoping(Phase, "playing", "paused")`, piped on `Commands.spawns`, gives every entity those commands spawn the tags of `"playing"` and `"paused"`, so the run's scope is named once. The hero and the walls stay while the game is paused, and are despawned when it goes back to the menu. Going to `"playing"` from there starts a new run:
+
+```ts title="run.test.ts"
+import { expect, it } from "@effect/vitest";
+import { App, Query, Test } from "arcadekit";
+import { Effect } from "effect";
+
+import { Go, Hero, Rules } from "./run";
+
+it.effect("starts a run, keeps it through a pause, and starts another", () =>
+  Effect.gen(function* () {
+    const game = yield* Test.make(App.define({ plugins: [Rules] }));
+    const go = Effect.fnUntraced(function* (to: "menu" | "playing" | "paused") {
+      yield* game.app.enqueue(Go, { to });
+      yield* game.step();
+      return (yield* game.app.read(Query.all().pipe(Query.with(Hero)))).count();
+    });
+    expect(yield* go("playing")).toBe(1); // a run starts
+    expect(yield* go("paused")).toBe(1);
+    expect(yield* go("playing")).toBe(1); // a resume spawns nothing
+    expect(yield* go("menu")).toBe(0); // the run ends
+    expect(yield* go("playing")).toBe(1); // and another starts
+  })
+);
+```
+
+## Despawn a state's entities when the game leaves it
+
+`State.scoped(Phase, "playing")` is the tag that `State.scoping` gives. An entity that has it is despawned when the game leaves `"playing"`, unless it also has the tag of the state the game enters. A system that spawns some entities in a scope and some not gives the tag by hand, and names it in `Commands.spawns`, as any component a system spawns:
+
+```ts
+import { Commands, Component, Field, State, System } from "arcadekit";
+
+const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
+const Wall = Component.define("game/Wall", { x: Field.f32 });
+const Score = Component.define("game/Score", { points: Field.u32 });
+const playing = State.scoped(Phase, "playing");
+
+const Build = System.tick("game/Build", function* () {
+  const commands = yield* Commands.spawns(Wall, Score, playing);
+  commands.spawn(Wall.of({ x: 0 }), playing); // goes with the run
+  commands.spawn(Score.of({ points: 0 })); // stays
+});
+```
+
+`State.scoping` takes a value known only when the system runs as it takes a literal: `State.scoping(Level, (yield* Level).value)` scopes what a system spawns to the level the game is in.
 
 The entities are despawned after the exit hooks and before the enter hooks, in order of their index. An exit hook still sees them, and decides what leaves with the state: an entity it gives the tag of the next state, or takes the tag from, stays, and one it spawns with the tag of the old state is despawned with the others. Each despawn takes with it the entities that point at it with a relation, as [Relations](relations.md#choose-what-happens-when-a-target-is-despawned) says, and [`Query.removed`](queries.md#visit-only-what-changed) reads them in the tick's systems.
 

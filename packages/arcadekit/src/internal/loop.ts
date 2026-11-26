@@ -287,11 +287,19 @@ export const make = (parts: Parts): Loop => {
     move: State.Move
   ) {
     if (move.from !== undefined) {
-      yield* takeTurns(schedule.hooks(state, "exit", move.from), "tick", false);
+      yield* takeTurns(
+        schedule.hooks(state, "exit", move.from, undefined),
+        "tick",
+        false
+      );
     }
     despawnScoped(world, state, move);
     enter(world, state, move);
-    yield* takeTurns(schedule.hooks(state, "enter", move.to), "tick", false);
+    yield* takeTurns(
+      schedule.hooks(state, "enter", move.to, move.from),
+      "tick",
+      false
+    );
   });
   /** Enters the requested states, and runs their hooks. */
   const enterStates = Effect.gen(function* () {

@@ -1382,3 +1382,183 @@ describe("an entity scoped to a state", () => {
     expect([said, late]).toHaveLength(2);
   });
 });
+
+describe("a run, started, paused, resumed and restarted", () => {
+  const Hero = Component.tag("st/Hero");
+  const Rock = Component.define("st/Rock", { n: Field.u8 });
+  const Crate = Component.define("st/Crate", { n: Field.u8 });
+  const Everything = Query.all(Crate);
+  const playing = State.scoped(Phase, "playing");
+  const paused = State.scoped(Phase, "paused");
+
+  /** Starts a run from the menu: a hero, rocks and walls, kept through a pause. */
+  const startRun = (started: string[]) =>
+    State.onTransition(
+      Phase,
+      { from: "menu", to: "playing" },
+      "StartRun",
+      function* () {
+        started.push("StartRun");
+        const commands = yield* Commands.spawns(Hero, Rock, Crate).pipe(
+          State.scoping(Phase, "playing", "paused")
+        );
+        commands.spawn(Hero);
+        for (const n of [1, 2, 3]) {
+          commands.spawn(Rock.of({ n }));
+        }
+        // A spawn may name a scope by hand as well.
+        commands.spawn(Crate.of({ n: 1 }), playing);
+      }
+    );
+  const count = (app: App.Any) =>
+    Effect.gen(function* () {
+      const world = yield* app.read(World);
+      return world.entityCount;
+    });
+
+  it.effect(
+    "starts once from the menu, spawns nothing on a resume, and starts again after a restart",
+    () =>
+      Effect.gen(function* () {
+        const started: string[] = [];
+        const Resumed = State.onTransition(
+          Phase,
+          { from: ["paused"], to: "playing" },
+          "Resumed",
+          function* () {
+            started.push("Resumed");
+          }
+        );
+        const app = yield* App.make(
+          App.define({
+            systems: [startRun(started), Resumed],
+            handlers: [go],
+          })
+        );
+        const to = Effect.fnUntraced(function* (
+          phase: "menu" | "playing" | "paused"
+        ) {
+          yield* app.dispatch(Go, { to: phase, refuse: false });
+          yield* app.tick(1);
+          return yield* count(app);
+        });
+        yield* app.tick(1);
+        expect(started).toEqual([]);
+        expect(yield* to("playing")).toBe(5);
+        expect(yield* to("paused")).toBe(5);
+        // A resume spawns nothing.
+        expect(yield* to("playing")).toBe(5);
+        expect(started).toEqual(["StartRun", "Resumed"]);
+        // The run ends with "playing", and a restart starts another.
+        expect(yield* to("menu")).toBe(0);
+        expect(yield* to("playing")).toBe(5);
+        expect(started).toEqual(["StartRun", "Resumed", "StartRun"]);
+        expect(
+          (yield* app.read(
+            Query.all().pipe(Query.with(playing, paused))
+          )).count()
+        ).toBe(5);
+      })
+  );
+
+  it.effect(
+    "doesn't run on a game's first tick, which comes from no value",
+    () =>
+      Effect.gen(function* () {
+        const started: string[] = [];
+        const app = yield* App.make(
+          App.define({
+            systems: [
+              State.onTransition(
+                Weather,
+                { from: "dry", to: "wet" },
+                "Rain",
+                function* () {
+                  started.push("Rain");
+                }
+              ),
+            ],
+          })
+        );
+        yield* app.tick(1);
+        expect(started).toEqual([]);
+      })
+  );
+
+  it.effect(
+    "is refused for a value the state does not have, in its types and when it runs",
+    () =>
+      Effect.gen(function* () {
+        State.onTransition(
+          Phase,
+          // @ts-expect-error not one of the state's values
+          { from: "flying", to: "playing" },
+          "Flying",
+          function* () {}
+        );
+        const Flying = triggered(noting("Flying", []), {
+          state: Phase,
+          on: "enter",
+          value: "playing",
+          from: ["flying"],
+        });
+        expect(
+          yield* thrown(App.make(App.define({ systems: [Flying] })))
+        ).toThrow(
+          /System "Flying" is a hook for "flying", which is not a value of the state "st\/Phase"/
+        );
+      })
+  );
+
+  it("names its scope in the requirements of the system, which a watcher of it is listed after", () => {
+    const Spawn = System.tick("Spawn", function* () {
+      (yield* Commands.spawns(Crate).pipe(
+        State.scoping(Phase, "playing")
+      )).spawn(Crate.of({ n: 1 }));
+    });
+    const Late = System.tick("Late", function* () {
+      (yield* Query.all().pipe(Query.added(playing))).count();
+    });
+    App.define(
+      // @ts-expect-error the watcher would see the scoped wall a tick late
+      { systems: [Late, Spawn] }
+    );
+    expect(App.define({ systems: [Spawn, Late] }).systems).toHaveLength(2);
+    // A scope of the value the state is in, known when the system runs.
+    System.tick("Now", function* () {
+      const phase = yield* Phase;
+      (yield* Commands.spawns(Crate).pipe(
+        State.scoping(Phase, phase.value)
+      )).spawn(Crate.of({ n: 2 }));
+    });
+    expect(() =>
+      State.scoping(
+        Phase,
+        // @ts-expect-error not one of the state's values
+        "flying"
+      )
+    ).toThrow(/has no value "flying"/);
+  });
+
+  it.effect("gives the tags of both, piped twice", () =>
+    Effect.gen(function* () {
+      const Level = State.define("st/Stage", ["one", "two"]);
+      const one = State.scoped(Level, "one");
+      const Build = Plugin.make("st/Build", {
+        setup: Effect.gen(function* () {
+          (yield* Commands.spawns(Crate).pipe(
+            State.scoping(Phase, "menu"),
+            State.scoping(Level, "one")
+          )).spawn(Crate.of({ n: 3 }));
+        }),
+      });
+      const app = yield* App.make(App.define({ plugins: [Build] }));
+      const world = yield* app.read(World);
+      const [wall] = (yield* app.read(Everything)).entities();
+      expect([
+        world.has(wall!, State.scoped(Phase, "menu")),
+        world.has(wall!, one),
+      ]).toEqual([true, true]);
+    })
+  );
+});

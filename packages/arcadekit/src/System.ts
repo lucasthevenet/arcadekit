@@ -102,6 +102,11 @@ export interface Trigger {
   readonly on: "enter" | "exit";
   /** The value of the state that the hook is for. */
   readonly value: string;
+  /**
+   * For a hook of `State.onTransition`, the values the game comes from: it
+   * runs on entering `value` from one of them, and from no other.
+   */
+  readonly from?: readonly string[];
 }
 
 /**

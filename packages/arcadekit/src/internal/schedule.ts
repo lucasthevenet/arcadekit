@@ -85,12 +85,14 @@ export interface Schedule {
   readonly input: readonly Turn[];
   /**
    * The hooks that run when the game enters or leaves a value of a state, in
-   * the order they are listed.
+   * the order they are listed. Of the hooks of `State.onTransition`, only
+   * those for a move from `from`.
    */
   readonly hooks: (
     state: State.State<string>,
     on: System.Trigger["on"],
-    value: string
+    value: string,
+    from: string | undefined
   ) => readonly Turn[];
   /** The states that have a hook. */
   readonly hooked: readonly State.State<string>[];
@@ -141,9 +143,12 @@ export const make = (
       continue;
     }
     const state = trigger.state as State.State<string>;
-    if (!state.values.includes(trigger.value)) {
+    const stranger = [trigger.value, ...(trigger.from ?? [])].find(
+      (value) => !state.values.includes(value)
+    );
+    if (stranger !== undefined) {
       throw new Error(
-        `System "${system.name}" is a hook for "${trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
+        `System "${system.name}" is a hook for "${stranger}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
       );
     }
     hooked.add(state);
@@ -158,7 +163,12 @@ export const make = (
     tick,
     frame,
     input,
-    hooks: (state, on, value) => hooks.get(hookKey(state, on, value)) ?? [],
+    hooks: (state, on, value, from) =>
+      (hooks.get(hookKey(state, on, value)) ?? []).filter(
+        ({ system }) =>
+          system.trigger?.from === undefined ||
+          (from !== undefined && system.trigger.from.includes(from))
+      ),
     hooked: [...hooked],
     all: [...tick, ...[...hooks.values()].flat(), ...input, ...frame],
   };
