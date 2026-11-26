@@ -10,10 +10,7 @@ import type { Move, Setter, State } from "../State.ts";
 /** A value's tag, and the query of the entities that have it. */
 interface Scope<V extends string, N extends string> {
   readonly tag: ComponentDef<{}, "table", `${N}.Scoped.${V}`, never>;
-  readonly holders: Query.Query<
-    readonly [ComponentDef<{}, "table", `${N}.Scoped.${V}`, never>],
-    never
-  >;
+  readonly holders: Query.Query<readonly [], never>;
 }
 
 // Every state this program has defined, by name, the newest of each: an app
@@ -38,7 +35,7 @@ export const defining = (state: State<string>): void => {
   const made = new Map(
     state.values.map((value) => {
       const tag = Component.tag(`${state.name}.Scoped.${value}` as const);
-      return [value, { tag, holders: Query.all(tag) }];
+      return [value, { tag, holders: Query.all().pipe(Query.with(tag)) }];
     })
   );
   scopes.set(state, made);

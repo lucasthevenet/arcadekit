@@ -11,7 +11,14 @@ import {
 import type { ComponentDef, Entity, RequiredOf } from "../src/ecs/component.ts";
 import type { QuerySpec, Terms } from "../src/ecs/query.ts";
 import { World } from "../src/ecs/world.ts";
-import { Query, all, maybe, without } from "../src/Query.ts";
+import {
+  Query,
+  all,
+  maybe,
+  with as with_,
+  without,
+  writes,
+} from "../src/Query.ts";
 import { expectChecked, makeChecks } from "./checks.ts";
 
 const Position = Component.define("st/Position", {
@@ -950,6 +957,94 @@ describe("queries", () => {
     expect(after[0]).not.toContain(40);
     expect(after[0]).toContain(5);
     expect(world.isAlive(ents[0]!)).toBe(false);
+  });
+});
+
+describe("the one entity of a query", () => {
+  const Player = Component.tag("st/Player");
+  const Players = all(Position, Burning).pipe(with_(Player), writes(Position));
+
+  it("is read with single, as each hands it out, and written through", () => {
+    const world = new World();
+    world.spawn(Position.of({ x: 1, y: 1 }), Burning.of({ seconds: 3 }));
+    const player = world.spawn(
+      Position.of({ x: 5, y: 6 }),
+      Burning.of({ seconds: 2 }),
+      Player
+    );
+    const players = world.view(Players);
+    const [position, burning, entity] = players.single();
+    expect([position.x, position.y, burning.seconds, entity]).toEqual([
+      5,
+      6,
+      2,
+      player,
+    ]);
+    position.x = 50;
+    expect(world.get(player, Position)).toEqual({ x: 50, y: 6 });
+    // A loop of the same view doesn't move what single handed out.
+    players.each(() => {});
+    expect(position.x).toBe(50);
+    expect(players.single()[2]).toBe(player);
+    void (() => {
+      // @ts-expect-error the query only reads its burning
+      burning.seconds = 0;
+    });
+    expect(() => {
+      Object.assign(burning, { seconds: 0 });
+    }).toThrow(/"st\/Burning"/);
+  });
+
+  it("names the query and how many it matched, when that is not one", () => {
+    const world = new World();
+    const players = world.view(Players);
+    expect(() => players.single()).toThrow(
+      'single() found 0 entities of the query of "st/Position", "st/Burning", with "st/Player", and reads exactly one. Spawn it before the systems that read it, or check view.count() first.'
+    );
+    for (let i = 0; i < 2; i++) {
+      world.spawn(Position, Burning, Player);
+    }
+    expect(() => players.single()).toThrow(
+      /^single\(\) found 2 entities of the query of "st\/Position", "st\/Burning", with "st\/Player", and reads exactly one\. Narrow the query with Query\.with or Query\.without/
+    );
+    const watching = world.view(
+      query([Position], [], [], { changedDefs: [Position] })
+    );
+    expect(() => watching.single()).toThrow(
+      /single\(\) was called on a change query/
+    );
+  });
+});
+
+describe("a tag given to Query.all", () => {
+  it("doesn't compile, and throws when the compiler doesn't know it is one", () => {
+    void (() =>
+      all(
+        Position,
+        // @ts-expect-error a tag has no data for the loop: require it with Query.with
+        Enemy
+      ));
+    const loose: ComponentDef = Enemy;
+    expect(() => all(Position, loose)).toThrow(
+      'Query.all was given "st/Enemy", a tag, which has no data: the loop would be handed an empty row in its place, and every term after it one argument later. Require it with Query.with, or take it as Query.maybe to be told whether an entity has it.'
+    );
+  });
+
+  it("is required with Query.with, and told with Query.maybe", () => {
+    const world = new World();
+    const enemy = world.spawn(Position.of({ x: 1, y: 0 }), Enemy);
+    world.spawn(Position.of({ x: 2, y: 0 }));
+    expect(world.view(all(Position).pipe(with_(Enemy))).entities()).toEqual([
+      enemy,
+    ]);
+    const told: [number, boolean][] = [];
+    world.view(all(Position, maybe(Enemy))).each((position, isEnemy) => {
+      told.push([position.x, isEnemy !== undefined]);
+    });
+    expect(told.sort((a, b) => a[0] - b[0])).toEqual([
+      [1, true],
+      [2, false],
+    ]);
   });
 });
 

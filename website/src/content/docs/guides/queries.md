@@ -196,11 +196,51 @@ Use a change query for data that changes occasionally. For a system that visits 
 
 `Save.make(app)` saves what change queries haven't visited, along with each system's position. A loaded game therefore reacts to the changes the saved one hadn't visited. `world.snapshot()` and the world's hash don't include them, because they belong to the readers, not the world. A plugin that only watches therefore doesn't change the hash of the game it observes. With the storage core alone, `world.saveChanges()` and `world.restoreChanges()` carry them beside a snapshot.
 
-## Count and list entities
+## Read the one entity a game has
 
-`view.count()` counts the matching entities without visiting them. For a change query, it is the number of entities left to visit. `view.entities()` returns the ids, and for a change query counts as a visit, like `each`.
+`single()` hands out the one entity a query matches, as `each` would: an accessor for each term, then its id. A game's player, the camera's target and the boss are read this way:
 
-Outside a system, such as in a test or a tool, `yield* app.read(query)` gives you a view of a query that only reads. A query with `Query.writes`, `Query.changed` or `Query.added` doesn't compile there, and neither does `Query.removed`, because what they write and visit belongs to the game.
+```ts
+import { Component, Field, Query, System } from "arcadekit";
+
+const Position = Component.define("game/Position", {
+  x: Field.f32,
+  y: Field.f32,
+});
+const Player = Component.tag("game/Player");
+
+const Players = Query.all(Position).pipe(
+  Query.with(Player),
+  Query.writes(Position)
+);
+
+const Wrap = System.tick("game/Wrap", function* () {
+  const [position, player] = (yield* Players).single();
+  if (position.x > 100) {
+    position.x = 0;
+  }
+});
+```
+
+- It throws when the query matches no entity, or more than one, and the error names the query and how many it matched. A game that may have none checks `count()` first.
+- Its accessors write as those of `each` do, and only what `Query.writes` names. They are the view's own: read them in the system that asked, and ask again in the next.
+- A change query throws, since it has no one entity.
+- A tag is not a term, since it has no data: `Query.all(Position, Player)` doesn't compile. Require it with `Query.with`, as above, or take it as `Query.maybe(Player)` to be told whether an entity has it.
+
+## What a view has
+
+`yield*` on a query gives a view of it, and so does `yield* app.read(query)` outside the game, in a test or a tool:
+
+| Member | What it does |
+| --- | --- |
+| `each(fn)` | Calls `fn` for each entity, with an accessor for each term and then its id |
+| `eachChunk(fn)` | Calls `fn` for each run of rows, with the raw columns |
+| `single()` | Returns the accessors and the id of the one entity the query matches, and throws for none or several |
+| `count()` | Counts the matching entities without visiting them. For a change query, the ones left to visit |
+| `entities()` | Returns the ids, in the order a loop visits them. For a change query, it counts as a visit |
+| `pointingAt(relation, target)` | Narrows `each` and `eachChunk` to the entities that point at `target`. See [relations](relations.md#visit-the-entities-that-point-at-a-target) |
+
+`app.read` takes a query that only reads. A query with `Query.writes`, `Query.changed` or `Query.added` doesn't compile there, and neither does `Query.removed`, because what they write and visit belongs to the game.
 
 ## Read more
 

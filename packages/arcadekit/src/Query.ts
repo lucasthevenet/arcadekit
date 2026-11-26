@@ -26,6 +26,7 @@ import type {
   MaybeTerm,
   ReadOnlyTerm,
   Schema,
+  Storage,
   WatchedTerm,
 } from "./ecs/component.ts";
 import type { Described, QuerySpec, QueryView, Terms } from "./ecs/query.ts";
@@ -96,12 +97,27 @@ export class Query<D extends Terms, W extends Watching = Watching>
  *   const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position))
  *   const Placed = Query.all(Position, Query.maybe(Rotation), Query.maybe(Scale))
  *
+ * **Gotchas**
+ *
+ * A tag has no data to pass, so it is not a term: one given bare doesn't
+ * compile, and one the compiler knows only as a `ComponentDef` throws.
+ * Require it with `Query.with(Player)`, or take it as `Query.maybe(Player)`
+ * to be told whether an entity has it.
+ *
  * @category Constructors
  */
 export const all = <const D extends readonly (ComponentDef | Maybe)[]>(
-  ...terms: D
-): Query<Reading<Unwrapped<D>>, never> =>
-  new Query<Reading<Unwrapped<D>>, never>(
+  ...terms: { readonly [K in keyof D]: D[K] & Untagged<D[K]> }
+): Query<Reading<Unwrapped<D>>, never> => {
+  const tag = terms.find(
+    (term): term is ComponentDef => !(term instanceof Maybe) && term.isTag
+  );
+  if (tag !== undefined) {
+    throw new Error(
+      `Query.all was given "${tag.name}", a tag, which has no data: the loop would be handed an empty row in its place, and every term after it one argument later. Require it with Query.with, or take it as Query.maybe to be told whether an entity has it.`
+    );
+  }
+  return new Query<Reading<Unwrapped<D>>, never>(
     // The components, with the ones an entity may lack marked in the type.
     terms.map((term) =>
       term instanceof Maybe ? term.def : term
@@ -113,6 +129,23 @@ export const all = <const D extends readonly (ComponentDef | Maybe)[]>(
     [],
     terms.flatMap((term) => (term instanceof Maybe ? [term.def] : []))
   );
+};
+
+/**
+ * What `Query.all` asks of a term: nothing, unless its type says it is a tag,
+ * which has no data to pass. One known only as a `ComponentDef` is left to
+ * the check at run time.
+ *
+ * @category Type-level
+ */
+export type Untagged<T> =
+  T extends ComponentDef<infer S, Storage, infer N>
+    ? [keyof S] extends [never]
+      ? {
+          readonly "Query.all passes no data of a tag, so the loop would get an empty row in its place: require it with Query.with, or take it as Query.maybe to be told whether an entity has it": N;
+        }
+      : unknown
+    : unknown;
 
 /**
  * A component that `Query.all` passes to the loop when an entity has it, and

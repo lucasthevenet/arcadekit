@@ -1,3 +1,4 @@
+import { CommandBuffer } from "../ecs/commands.ts";
 import type {
   ComponentDef,
   Entity,
@@ -14,7 +15,7 @@ import type {
   Reader as EventReader,
   ReadingEvents,
 } from "../Event.ts";
-import type { ReadingWorld, WritingWorld } from "../Services.ts";
+import type { ReadingWorld, Spawning, WritingWorld } from "../Services.ts";
 import type * as Singleton from "../Singleton.ts";
 import type { EventBus } from "./eventBus.ts";
 
@@ -109,6 +110,21 @@ export const writing = <N extends string>(world: object): WritingWorld<N> => {
     );
   }
   return world;
+};
+
+/**
+ * The same commands, to spawn and add the components named `N`, as
+ * `Commands.spawns` gives them.
+ *
+ * @internal
+ */
+export const spawning = <N extends string>(commands: object): Spawning<N> => {
+  if (!(commands instanceof CommandBuffer)) {
+    throw new Error(
+      "The Commands service was provided something that is not an app's commands. An app provides its own to the code of the tick: ask for them there, with yield* Commands.spawns(...)."
+    );
+  }
+  return commands;
 };
 
 /**

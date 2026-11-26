@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import { World as EcsWorld } from "../src/ecs/index.ts";
@@ -15,9 +15,11 @@ import {
   Singleton,
   State,
   System,
+  Test,
   Time,
   World,
 } from "../src/index.ts";
+import type { Entity, Spawning, WritingWorld } from "../src/index.ts";
 import * as Services from "../src/Services.ts";
 import { thrown } from "./checks.ts";
 
@@ -218,4 +220,141 @@ describe("the world a system is handed", () => {
         expect(Object.keys(Services)).not.toContain("whole");
       })
   );
+});
+
+describe("the player of a game", () => {
+  const Player = Component.tag("rd/Player");
+  const Players = Query.all(Position).pipe(Query.with(Player));
+  const Run = Plugin.make("rd/Run", {
+    setup: Effect.gen(function* () {
+      const commands = yield* Commands.spawns(Position, Player);
+      commands.spawn(Position.of({ x: 1 }));
+      commands.spawn(Position.of({ x: 2 }), Player);
+    }),
+  });
+
+  it.effect("is read in one call, in a system and through app.read", () =>
+    Effect.gen(function* () {
+      const seen: number[] = [];
+      const Walk = System.tick("rd/Walk", function* () {
+        const [position] = (yield* Players.pipe(
+          Query.writes(Position)
+        )).single();
+        position.x += 1;
+        seen.push(position.x);
+      });
+      const game = yield* Test.make(
+        App.define({ plugins: [Run], systems: [Walk] })
+      );
+      yield* game.step();
+      yield* game.step();
+      const [position, player] = (yield* game.app.read(Players)).single();
+      expect([seen, position.x]).toEqual([[3, 4], 4]);
+      expect((yield* game.app.read(World)).has(player, Player)).toBe(true);
+    })
+  );
+});
+
+describe("a plain function that takes what a system was handed", () => {
+  const Health = Component.define("rd/Health", { hp: Field.i32 });
+  const Spark = Component.tag("rd/Spark");
+  /** Strikes a target, for a handler and a system alike. */
+  const strike = (
+    world: WritingWorld<"rd/Health">,
+    commands: Spawning<"rd/Spark">,
+    score: Singleton.Write<typeof Score>,
+    target: Entity
+  ): void => {
+    world.set(target, Health, { hp: world.get(target, Health)!.hp - 1 });
+    commands.spawn(Spark);
+    score.points += 1;
+  };
+
+  it.effect(
+    "takes the world and commands of a system that writes and spawns more",
+    () =>
+      Effect.gen(function* () {
+        const Strike = System.tick("rd/Strike", function* () {
+          const world = yield* World.writes(Position, Health);
+          const commands = yield* Commands.spawns(Position, Spark);
+          for (const target of (yield* Query.all(Health)).entities()) {
+            strike(world, commands, yield* Score.writes, target);
+            world.set(target, Position, { x: 9 });
+          }
+        });
+        const Spawn = Plugin.make("rd/Targets", {
+          setup: Effect.gen(function* () {
+            (yield* Commands.spawns(Health, Position)).spawn(
+              Health.of({ hp: 3 }),
+              Position
+            );
+          }),
+        });
+        const game = yield* Test.make(
+          App.define({ plugins: [Spawn], systems: [Strike] })
+        );
+        yield* game.step();
+        const world = yield* game.app.read(World);
+        const [target] = (yield* game.app.read(Query.all(Health))).entities();
+        expect(world.get(target!, Health)).toEqual({ hp: 2 });
+        expect(
+          (yield* game.app.read(Query.all().pipe(Query.with(Spark)))).count()
+        ).toBe(1);
+        expect((yield* game.app.read(Score)).points).toBe(1);
+      })
+  );
+
+  it("doesn't take a world or commands that write or spawn less than it does", () => {
+    System.tick("rd/Less", function* () {
+      const target = (yield* Query.all(Health)).entities()[0]!;
+      strike(
+        // @ts-expect-error the world was not asked for health
+        yield* World.writes(Position),
+        yield* Commands.spawns(Spark),
+        yield* Score.writes,
+        target
+      );
+      strike(
+        // @ts-expect-error a world that only reads sets nothing
+        yield* World,
+        yield* Commands.spawns(Spark),
+        yield* Score.writes,
+        target
+      );
+      strike(
+        yield* World.writes(Health),
+        // @ts-expect-error the commands were not asked for sparks
+        yield* Commands.spawns(Position),
+        yield* Score.writes,
+        target
+      );
+      strike(
+        yield* World.writes(Health),
+        yield* Commands.spawns(Spark),
+        // @ts-expect-error a singleton read is not a singleton written
+        yield* Score,
+        target
+      );
+    });
+    // Nor does a world that writes less pass for one that writes more.
+    const both = (_world: WritingWorld<"rd/Health" | "rd/Position">) => {};
+    System.tick("rd/More", function* () {
+      both(
+        // @ts-expect-error the world was not asked for positions
+        yield* World.writes(Health)
+      );
+    });
+    expectTypeOf<WritingWorld<"rd/Health" | "rd/Position">>().toExtend<
+      WritingWorld<"rd/Health">
+    >();
+    expectTypeOf<WritingWorld<"rd/Health">>().not.toExtend<
+      WritingWorld<"rd/Health" | "rd/Position">
+    >();
+    expectTypeOf<Spawning<"rd/Spark" | "rd/Position">>().toExtend<
+      Spawning<"rd/Spark">
+    >();
+    expectTypeOf<Spawning<"rd/Spark">>().not.toExtend<
+      Spawning<"rd/Spark" | "rd/Position">
+    >();
+  });
 });

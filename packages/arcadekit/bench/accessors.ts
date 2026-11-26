@@ -632,8 +632,12 @@ const MovementRaw = System.tick("MovementRaw", function* () {
 
 const Red = Component.tag("bench/Red");
 const Blue = Component.tag("bench/Blue");
-const Reds = Query.all(Transform2d.Position, Overlap.Circle, Red);
-const Blues = Query.all(Transform2d.Position, Overlap.Circle, Blue);
+const Reds = Query.all(Transform2d.Position, Overlap.Circle).pipe(
+  Query.with(Red)
+);
+const Blues = Query.all(Transform2d.Position, Overlap.Circle).pipe(
+  Query.with(Blue)
+);
 
 /**
  * A thousand red circles against a thousand blue, scattered so that about a
