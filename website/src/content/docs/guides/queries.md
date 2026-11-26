@@ -146,7 +146,7 @@ A query only reads its terms. `Query.writes(Position)` names the ones it writes,
 - Each loop counts a component it writes as changed in every table it visits, whether or not it assigns a value. `world.hash()`, `Timeline.capture` and `Timeline.rewind` work again only on what changed, so a query that names in `Query.writes` a component it doesn't write makes each of them cost more. One that only reads costs them nothing.
 - The compiler tells two components with the same fields apart by their names, which are part of their types. Above, `position.x` is writable and `velocity.x` is not, although both are `{ x, y }`.
 
-A write forced past the compiler into the raw column of a term the query only reads, or into a relation's `target`, is seen by no change query, and no refusal undoes it. An app made with `App.make(game, { verifyFrames: true })` refuses it: `eachChunk` copies each column it hands out read-only, compares it when the loop returns, puts it back if it changed, and throws with the component and field it names. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
+A write forced past the compiler into the raw column of a term the query only reads, or into a relation's `target`, is seen by no change query, and no refusal undoes it. An app made with `App.make(game, { verifyFrames: true })` refuses it: `eachChunk` copies each column it hands out read-only, compares it when the loop returns, puts it back if it changed, and throws with the component and field it names. Use it in [tests](testing-by-hand.md#run-the-frame-stage-by-hand).
 
 ## Visit only what changed
 

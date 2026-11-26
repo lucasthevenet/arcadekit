@@ -1,9 +1,9 @@
 ---
 title: "Components"
-description: "A component is a kind of data an entity can have. Learn how to define components, choose field types, and use tags and singletons."
+description: "A component is a kind of data an entity can have. Learn how to define components, choose field types, and use tags."
 ---
 
-A **component** is a kind of data an entity can have, such as a position, health or a `Stunned` tag. For a component that points at another entity, see [relations](relations.md).
+A **component** is a kind of data an entity can have, such as a position, health or a `Stunned` tag. For a component that points at another entity, see [relations](relations.md), and for data that exists once per world, [singletons](singletons.md).
 
 ## Define a component
 
@@ -174,42 +174,10 @@ const Dazed = Query.all(Health).pipe(Query.with(Stunned));
 
 A query requires a tag with `Query.with`, as `Dazed` does. See [queries](queries.md#find-entities-by-their-components).
 
-## Store data that exists once in a singleton
-
-A **singleton** is data that exists once per world, such as the score, whose turn it is, or the current level. Its fields are component fields, of the same types, and the third argument of `Singleton.define` is its initial value. `yield* Score` gives you the world's value to read. `yield* Score.writes` gives the same value with fields you can assign. Only the simulation can ask for it: a system of the tick, an action handler or a plugin's `setup`.
-
-```ts
-import { Field, Plugin, Singleton, System } from "arcadekit";
-
-const Score = Singleton.define(
-  "game/Score",
-  { points: Field.i32 },
-  { points: 0 }
-);
-
-const Bonus = System.tick("game/Bonus", function* () {
-  const score = yield* Score.writes;
-  score.points += 1;
-});
-
-const Rules = Plugin.make("game/Rules", {
-  systems: [Bonus],
-});
-```
-
-A singleton lives in the world, so it is saved, hashed, and restored when an action is refused.
-
-- Until it is first written, it holds its initial value and is neither saved nor hashed. Reading it changes nothing, so a plugin that only reads a singleton doesn't change the hash of the game it observes.
-- Loading a save in which a singleton was never written gives it the initial value of the build that loads it.
-- Its name is one of the world's component names, and a save finds it by that name. To rename or change it, write a [migration](migrating-saves.md) with `Migrate`, as for a component.
-- No entity can have it, and no query visits it. Spawning or adding it throws.
-
-A [`Resource`](plugins.md#configure-a-plugin-with-a-resource) is the other kind of single value. It is configuration with a default that a layer can override, such as gravity. It isn't game state, and isn't saved.
-
 ## Place an entity in space
 
 `Transform3d` provides three components for an entity's place in three dimensions, `Position`, `Rotation` and `Scale`, and `Transform2d` provides the same for flat games. They live in arcadekit rather than in a renderer, so your rules and whatever draws them agree on where things are. See [transforms](transforms.md).
 
 ## Read more
 
-- [`Field`](/reference/arcadekit/Field), [`Entity`](/reference/arcadekit/ecs#entity), [`Component`](/reference/arcadekit/ecs#component), [`Singleton`](/reference/arcadekit/Singleton) and [`Transform3d`](/reference/arcadekit/Transform3d) in the API reference.
+- [`Field`](/reference/arcadekit/Field), [`Entity`](/reference/arcadekit/ecs#entity), [`Component`](/reference/arcadekit/ecs#component) and [`Transform3d`](/reference/arcadekit/Transform3d) in the API reference.
