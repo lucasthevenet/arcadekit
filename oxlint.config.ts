@@ -215,7 +215,7 @@ export default defineConfig({
     // A test that is an Effect is registered with @effect/vitest's it.effect
     // or it.live, and an expect in it is in a test.
     "vitest/no-standalone-expect": [
-      "warn",
+      "error",
       {
         additionalTestBlockFunctions: [
           "it.effect",
