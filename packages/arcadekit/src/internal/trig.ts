@@ -5,6 +5,19 @@
  * `-`, `*` and `/`, which IEEE 754 rounds one way. Below 2^20 π/2 they give
  * V8's bits. Above it, the angle is first taken modulo 2π with `%`, which is
  * exact, and the result is within a rounding of the angle itself.
+ *
+ * `kernelSin`, `kernelCos`, the reduction by π/2 and their constants are a
+ * port of fdlibm's `k_sin.c`, `k_cos.c` and `e_rem_pio2.c`, which carry this
+ * notice:
+ *
+ * ====================================================
+ * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+ *
+ * Developed at SunSoft, a Sun Microsystems, Inc. business.
+ * Permission to use, copy, modify, and distribute this
+ * software is freely granted, provided that this notice
+ * is preserved.
+ * ====================================================
  */
 
 const view = new DataView(new ArrayBuffer(8));
