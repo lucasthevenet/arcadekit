@@ -33,6 +33,7 @@ import {
   Sound,
   State,
   System,
+  Test,
   Time,
   Timeline,
   Timer,
@@ -1229,6 +1230,9 @@ describe("a game saved to a slot", () => {
 const Coins = Singleton.define("sv/Coins", { got: Field.i32 }, { got: 0 });
 const Grab = Action.define("sv/Grab", Schema.Struct({}));
 const Finish = Action.define("sv/Finish", Schema.Struct({}));
+const finish = Action.handler(Finish, function* () {
+  (yield* Save.Asked.emits).emit({ slot: "finished" });
+});
 const Levels = App.define({
   systems: [
     // The level ends with the third coin, and the rules ask to keep it.
@@ -1246,10 +1250,24 @@ const Levels = App.define({
     Action.handler(Grab, function* () {
       (yield* Coins.writes).got++;
     }),
-    Action.handler(Finish, function* () {
-      (yield* Save.Asked.emits).emit({ slot: "finished" });
+    finish,
+  ],
+});
+
+const Unsaved = View.define<Readonly<Record<string, string>>>("sv/Unsaved", {});
+const Told = App.define({
+  plugins: [View.plugin],
+  systems: [
+    View.publish(Unsaved, function* () {
+      return Object.fromEntries(
+        [...(yield* Save.failedAutosaves)].map(([slot, error]) => [
+          slot,
+          error.message,
+        ])
+      );
     }),
   ],
+  handlers: [finish],
 });
 
 describe("a save the rules ask for", () => {
@@ -1372,4 +1390,52 @@ describe("a save the rules ask for", () => {
         ]);
       }).pipe(Effect.scoped)
   );
+
+  it.effect(
+    "that can't be kept is told to the game's UI, until a later ask keeps it",
+    () => {
+      let full = true;
+      const slots = Save.makeMemory();
+      const store: Save.StoreShape = {
+        ...slots,
+        set: (slot, bytes) =>
+          full
+            ? Effect.fail(
+                new Save.StoreFailed({ slot, message: "It is full." })
+              )
+            : slots.set(slot, bytes),
+      };
+      return Effect.gen(function* () {
+        const game = yield* Test.make(Told);
+        yield* Save.autosave(game.app);
+        const told: Readonly<Record<string, string>>[] = [];
+        game.ui.subscribe(Unsaved, (unsaved) => {
+          told.push(unsaved);
+        });
+        yield* game.app.dispatch(Finish, {});
+        yield* game.step();
+        expect(game.ui.get(Unsaved)).toEqual({ finished: "It is full." });
+
+        full = false;
+        yield* game.app.dispatch(Finish, {});
+        yield* game.step();
+        expect(told).toEqual([{}, { finished: "It is full." }, {}]);
+        expect(yield* slots.slots).toEqual(["finished"]);
+      }).pipe(
+        Effect.provide(Layer.merge(Save.layer(store), Logger.layer([]))),
+        Effect.scoped
+      );
+    }
+  );
+
+  it("that failed is not for the code of the tick to read", () => {
+    const Reads = System.tick(
+      "sv/Reads",
+      // @ts-expect-error what the store did is outside the world, which a tick reads
+      function* () {
+        yield* Save.failedAutosaves;
+      }
+    );
+    expect(Reads.name).toBe("sv/Reads");
+  });
 });

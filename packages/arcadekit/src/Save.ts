@@ -45,6 +45,7 @@ import type { SnapshotProblem } from "./ecs/snapshot.ts";
 import * as Event from "./Event.ts";
 import { said } from "./internal/intake.ts";
 import { partsOf } from "./internal/parts.ts";
+import * as System from "./System.ts";
 
 /**
  * A game captured between two ticks, which `Save.make(app)` makes: the game's
@@ -401,6 +402,8 @@ export const Asked = Event.define(
   Schema.Struct({ slot: Schema.String })
 );
 
+const Unkept = System.local(() => new Map<string, Refused | StoreFailed>());
+
 /**
  * Keeps the saves a game asks for with `Save.Asked`, for as long as the scope
  * it runs in lasts: after each tick and each dispatched action in which the
@@ -417,8 +420,8 @@ export const Asked = Event.define(
  * - The save is taken between two ticks, of the game as the tick that asked
  *   left it, and written before the next tick runs.
  * - A save that can't be taken, or a slot the store can't keep, is logged as
- *   an error with what went wrong, and the game goes on. The next ask tries
- *   again.
+ *   an error with what went wrong, and the game goes on. The slot is in
+ *   `Save.failedAutosaves`, for the game's UI, until a later ask keeps it.
  *
  * @category Running
  */
@@ -432,8 +435,20 @@ export const autosave = (
       );
     }
     const store = yield* Store;
-    const { after, events } = partsOf(app);
+    const { after, events, locals } = partsOf(app);
     const asked = events.handle(Asked);
+    const unkept = locals.get(Unkept);
+    const failed = (
+      slots: readonly string[],
+      cause: Cause.Cause<Refused | StoreFailed>
+    ) => {
+      const error = Cause.findErrorOption(cause);
+      if (Option.isSome(error)) {
+        for (const slot of slots) {
+          unkept.set(slot, error.value);
+        }
+      }
+    };
     const step = Effect.fnUntraced(function* () {
       const slots = [...new Set(asked.read().map(({ slot }) => slot))];
       if (slots.length === 0) {
@@ -441,6 +456,7 @@ export const autosave = (
       }
       const taken = yield* Effect.exit(make(app));
       if (Exit.isFailure(taken)) {
+        failed(slots, taken.cause);
         return yield* Effect.logError(
           `Save.autosave could not take the save the game asked for in ${slots.map((slot) => `"${slot}"`).join(", ")}: ${said(Cause.squash(taken.cause))}`
         );
@@ -448,11 +464,14 @@ export const autosave = (
       const bytes = encode(taken.value);
       for (const slot of slots) {
         const kept = yield* Effect.exit(store.set(slot, bytes));
-        if (Exit.isFailure(kept)) {
-          yield* Effect.logError(
-            `Save.autosave could not keep the save the game asked for in "${slot}": ${said(Cause.squash(kept.cause))}`
-          );
+        if (Exit.isSuccess(kept)) {
+          unkept.delete(slot);
+          continue;
         }
+        failed([slot], kept.cause);
+        yield* Effect.logError(
+          `Save.autosave could not keep the save the game asked for in "${slot}": ${said(Cause.squash(kept.cause))}`
+        );
       }
     });
     after.add(step);
@@ -462,3 +481,31 @@ export const autosave = (
       })
     );
   });
+
+/**
+ * The slots that `Save.autosave` couldn't keep the save the game asked for
+ * in, each with why: `Save.Refused` when the save couldn't be taken, and
+ * `Save.StoreFailed` when the store couldn't keep it. A slot stays until a
+ * later ask keeps it. A frame or an input system reads it, to tell the player
+ * that the game isn't saved:
+ *
+ *   const ShowUnsaved = View.publish(Unsaved, function* () {
+ *     const failed = (yield* Save.failedAutosaves).get("auto")
+ *     return { message: failed?.message ?? "" }
+ *   })
+ *
+ * **Details**
+ *
+ * - It is outside the world, as a setting is: the game's hash, log and save
+ *   are the same whatever the store did, and a load or a rewind leaves it as
+ *   it is. Each app has its own.
+ * - A system of the tick, an action's handler and a plugin's setup that yield
+ *   it don't compile, since a replay has no store.
+ *
+ * @category Services
+ */
+export const failedAutosaves: Effect.Effect<
+  ReadonlyMap<string, Refused | StoreFailed>,
+  never,
+  System.Locals
+> = Unkept;

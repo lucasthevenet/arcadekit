@@ -134,6 +134,23 @@ The rules ask for a save with the event `Save.Asked`, which names a slot. `Save.
 - A game that nothing autosaves, as a replay or a server, asks and nothing happens.
 - It keeps saves for as long as the scope it runs in lasts: with `ready`, for as long as the game runs.
 
+## Tell the player an autosave failed
+
+```ts
+import { Save, View } from "arcadekit";
+
+const Unsaved = View.define("game/Unsaved", { message: "" });
+
+export const ShowUnsaved = View.publish(Unsaved, function* () {
+  const failed = (yield* Save.failedAutosaves).get("auto");
+  return { message: failed?.message ?? "" };
+});
+```
+
+`Save.failedAutosaves` holds each slot that `Save.autosave` couldn't keep a save in, with why: `Save.Refused` or `Save.StoreFailed`. A slot stays until a later ask keeps it, so a [view](ui.md) of it tells the player whether the game is saved.
+
+A frame or input system reads it. Like a [setting](settings.md), it is outside the world: the hash, the log and a save don't hold it, and the tick can't read it.
+
 ## Start a game from a save
 
 ```ts sketch
