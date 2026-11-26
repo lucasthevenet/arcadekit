@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - examples/*
   - website
 
 # A version is installed a day after it is published, not before.

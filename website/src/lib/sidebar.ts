@@ -37,7 +37,7 @@ export type TopicId = "learn" | "guides" | "reference";
 type Section = string;
 
 const examples = (folder: string) =>
-  `${REPO_URL}/tree/${BRANCH}/packages/${folder}`;
+  `${REPO_URL}/tree/${BRANCH}/examples/${folder}`;
 
 /** The groups of each topic, with the pages by their slug. */
 export const OUTLINE: readonly (Group & {
@@ -65,18 +65,18 @@ export const OUTLINE: readonly (Group & {
     topic: "learn",
     label: "Examples",
     items: [
-      { label: "A game in a page", link: examples("arcadekit/examples/page") },
+      { label: "A game in a page", link: examples("page") },
       {
         label: "A real-time simulation",
-        link: examples("arcadekit/examples/demo"),
+        link: examples("demo"),
       },
       {
         label: "A turn-based duel",
-        link: `${REPO_URL}/blob/${BRANCH}/packages/arcadekit/examples/duel.ts`,
+        link: examples("duel"),
       },
       {
         label: "Ten thousand objects in Three.js",
-        link: examples("three/examples/page"),
+        link: examples("three"),
       },
     ],
   },

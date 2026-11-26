@@ -8,8 +8,8 @@ import { defineConfig } from "oxlint";
 // refusal of `any`; and unused names allowed when they start with `_`, as both
 // have it. Then arcadekit's own:
 // its file names, and its plugin, tooling/lint/plugin.ts, on the sources of the
-// published packages and, for the code of the tick, on their examples and
-// benchmarks too.
+// published packages and, for the code of the tick, on their benchmarks and
+// on the examples too.
 export default defineConfig({
   options: {
     reportUnusedDisableDirectives: "error",
@@ -246,7 +246,7 @@ export default defineConfig({
     // arcadekit/ecs is, a test's helpers, the benchmarks and the examples.
     // index.ts and the files a tool names keep their names.
     {
-      files: ["packages/**"],
+      files: ["packages/**", "examples/**"],
       rules: {
         "unicorn/filename-case": [
           "error",
@@ -299,23 +299,24 @@ export default defineConfig({
     {
       // A test of a package is an Effect itself, with it.effect, and runs
       // none by hand.
-      files: ["packages/*/test/**/*.test.ts"],
+      files: ["packages/*/test/**/*.test.ts", "examples/**/*.test.ts"],
       rules: { "arcadekit/no-run-in-tests": "error" },
     },
     {
       // The code of the tick keeps what it changes in the world, except in
       // the tests, which record what systems did in arrays outside them.
-      files: ["packages/**"],
-      excludeFiles: ["packages/*/test/**"],
+      files: ["packages/**", "examples/**"],
+      excludeFiles: ["packages/*/test/**", "examples/**/*.test.ts"],
       rules: { "arcadekit/no-outside-state": "error" },
     },
     {
       // An id is converted to and from its number in one place, which the
       // tests may call too.
-      files: ["packages/**"],
+      files: ["packages/**", "examples/**"],
       excludeFiles: [
         "packages/arcadekit/src/ecs/component.ts",
         "packages/*/test/**",
+        "examples/**/*.test.ts",
       ],
       rules: { "arcadekit/id-casts": "error" },
     },
@@ -360,6 +361,25 @@ export default defineConfig({
                 importNames: ["Reader", "Writer", "readColumn", "writeColumn"],
                 message:
                   "Only src/ecs/format.ts reads and writes the bytes of a snapshot. Give `read` a target or `write` a source, as World.loading and World.snapshotOf do, and change the format there.",
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      // An example is a game: it imports arcadekit and @arcadekit/three by
+      // their entries, as a game does, and never a file of a package.
+      files: ["examples/**"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: ["**/packages/**"],
+                message:
+                  'An example imports a package by its entries, as a game does: "arcadekit", "arcadekit/net" or "@arcadekit/three", never a file of packages/. Add the package to the example\'s dependencies if it is not there.',
               },
             ],
           },

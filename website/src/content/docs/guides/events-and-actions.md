@@ -179,4 +179,4 @@ Both accept the issuer as a third argument, for a program that relays actions on
 ## Read more
 
 - [`Event`](/reference/arcadekit/Event) and [`Action`](/reference/arcadekit/Action) in the API reference.
-- [`examples/duel.ts`](../../../../../packages/arcadekit/examples/duel.ts), a turn-based game built on actions.
+- [`examples/duel`](../../../../../examples/duel), a turn-based game built on actions.

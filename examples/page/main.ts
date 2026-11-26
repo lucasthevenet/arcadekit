@@ -1,0 +1,59 @@
+import { App, Driver, View } from "arcadekit";
+// In a game of your own these are "arcadekit/browser/Browser" and "arcadekit".
+import * as Browser from "arcadekit/browser/Browser";
+/**
+ * A game in a page: stars fall at sixty ticks a second, a basket catches
+ * them, and both are drawn on a canvas once per repaint.
+ *
+ * Enter starts the level, whose assets are loaded when it starts and let go
+ * when it is left with Q. The arrow keys move the basket, and so does the
+ * pointer while its button is held. P pauses the game. The buttons under
+ * the canvas do what the keys do. A star caught makes a sound, which is
+ * the level's, and while the game is played there is music, softer while
+ * it is paused.
+ *
+ * The menu and the heads-up display are built twice, on the same bridge:
+ * with the page's own DOM (uiDom.ts), and with React (uiReact.ts), which
+ * `?ui=react` shows.
+ *
+ *   pnpm --filter @arcadekit/example-page start
+ */
+import { Effect, Layer } from "effect";
+
+import { Game, Screen, Sounds } from "./game.ts";
+
+// The game, which the bridge and the app are both made from.
+const Catch = App.define({ plugins: [Game] });
+
+// --- the UI ----------------------------------------------------------------------
+// The app makes the bridge when it is made, and hands it to the UI, which it
+// takes out again when it closes. The bridge sends what the game handles, and
+// the UI takes it only if the game handles what the UI sends. The UI holds the
+// bridge and nothing of the game; only the one that is shown is loaded.
+const { mount } =
+  new URLSearchParams(location.search).get("ui") === "react"
+    ? await import("./uiReact.ts")
+    : await import("./uiDom.ts");
+const ui = View.mount(Catch, (bridge) =>
+  mount(document.querySelector("#ui")!, bridge)
+);
+
+// --- the entry point -------------------------------------------------------------
+// Driver.run makes the app and runs it, sixty ticks a second, until it is
+// interrupted. Browser.runMain starts it in the page: the frame loop follows
+// the page's repaints, the page's devices are listened to, and when the page
+// goes away the game is interrupted: the loop takes its frame request back,
+// Driver.run closes the app, what was loaded is let go, and nobody listens
+// any more.
+Browser.runMain(
+  Driver.run(Catch, { seed: Date.now(), hz: 60 }).pipe(
+    Effect.provide(Layer.mergeAll(Screen.layer, ui))
+  ),
+  {
+    target: document.querySelector("#game")!,
+    preventDefault: ["ArrowLeft", "ArrowRight", "Space"],
+    // The sheet's files, fetched and decoded for as long as the page lasts,
+    // and played once it has been touched.
+    sounds: [Sounds],
+  }
+);

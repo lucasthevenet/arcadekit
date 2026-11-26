@@ -334,4 +334,4 @@ Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page 
 - [Entities and systems](concepts/entities-and-systems.md) and [ticks and frames](concepts/ticks-and-frames.md) explain the structure this walkthrough used.
 - [Determinism](concepts/determinism.md) covers the rules your game follows so that replays, saves and online play work.
 - The guides cover one task each: [drawing with Three.js](guides/drawing-with-three.md), [sound](guides/sound.md), [a UI](guides/ui.md), [saving](guides/saving-and-loading.md), [several players](guides/sessions.md).
-- [`examples/page`](../../../../packages/arcadekit/examples/page) is a fuller game in a page, with assets, sound, music, and a UI built two ways.
+- [`examples/page`](../../../../examples/page) is a fuller game in a page, with assets, sound, music, and a UI built two ways.

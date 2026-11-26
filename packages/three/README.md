@@ -14,6 +14,6 @@ npm install @arcadekit/three arcadekit effect three
 
 - [Drawing with Three.js](https://arcadekit.dev/guides/drawing-with-three): the guide.
 - [Reference](https://arcadekit.dev/reference/three): the API of each module.
-- [Example](https://github.com/lucasthevenet/arcadekit/tree/main/packages/three/examples/page): ten thousand moving objects in a page.
+- [Example](https://github.com/lucasthevenet/arcadekit/tree/main/examples/three): ten thousand moving objects in a page.
 - [Releases](https://github.com/lucasthevenet/arcadekit/releases): what changed, and what breaks.
 - [Issues](https://github.com/lucasthevenet/arcadekit/issues): bug reports and feature requests.

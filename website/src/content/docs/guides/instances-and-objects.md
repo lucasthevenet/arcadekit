@@ -108,4 +108,4 @@ Instances and objects built from a level's assets, such as a model, are made wit
 ## Read more
 
 - [`Three.instances`](/reference/three/Three#instances) and [`Three.objects`](/reference/three/Three#objects) in the API reference.
-- [`packages/three/examples/page`](../../../../../packages/three/examples/page): ten thousand moving objects.
+- [`examples/three`](../../../../../examples/three): ten thousand moving objects.

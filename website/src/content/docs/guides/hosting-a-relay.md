@@ -102,16 +102,16 @@ A host that proves nothing passes `Relay.anyone`, and `join` admits whoever firs
 
 `Relay.make(options)` makes a relay that tracks connections itself, and tells each room who joins and leaves. `relay.connect(url, proven, send)` returns an `Exit` of a connection, which fails when the peer may not join. Call the connection's `receive` with what the peer sent, and its `close` when the peer leaves.
 
-[`examples/relay.ts`](../../../../../packages/arcadekit/examples/relay.ts) wraps it in a WebSocket server on Node, in about forty lines. `pnpm --filter arcadekit relay` runs it on port 8787, or on `PORT` if set. Two machines on the same network can play through it as it is. It passes `Relay.anyone`, so it proves nothing of who connects.
+[`examples/relay`](../../../../../examples/relay) wraps it in a WebSocket server on Node, in about forty lines. `pnpm --filter @arcadekit/example-relay start` runs it on port 8787, or on `PORT` if set. Two machines on the same network can play through it as it is. It passes `Relay.anyone`, so it proves nothing of who connects.
 
 ## Host a relay that sleeps between messages
 
 A host that sleeps between messages calls `join`, `forward`, `joined` and `left` itself, and stores the connected members somewhere durable.
 
-[`examples/relay-cloudflare`](../../../../../packages/arcadekit/examples/relay-cloudflare) is the relay as a Worker with one Durable Object per room, declared and deployed with [Alchemy](https://alchemy.run). It is three files, and `src/room.ts` is the host.
+[`examples/relay-cloudflare`](../../../../../examples/relay-cloudflare) is the relay as a Worker with one Durable Object per room, declared and deployed with [Alchemy](https://alchemy.run). Its code is three files, and `src/room.ts` is the host.
 
 - The room keeps nothing in memory. Cloudflare hibernates a Durable Object between messages while it keeps the object's sockets open. Each socket carries its member as an attachment, which the room reads back on every call. The four functions need nothing more.
-- `pnpm --filter arcadekit relay:cloudflare` runs it locally in workerd with `alchemy dev`, with no Cloudflare account. It keeps the stack's state in `.alchemy/`, beside the example. Run `alchemy deploy` from `examples/relay-cloudflare` to deploy it to an account.
+- `pnpm --filter @arcadekit/example-relay-cloudflare start` builds `arcadekit` and runs the relay locally in workerd with `alchemy dev`, with no Cloudflare account. It keeps the stack's state in `.alchemy/`, beside the example. Run `alchemy deploy` from `examples/relay-cloudflare` to deploy it to an account.
 - A peer refused there is rejected with the HTTP status before a socket exists, so it learns only that it didn't connect.
 - The example targets Alchemy 2.0.0-beta.87.
 
@@ -119,7 +119,7 @@ Behind an API Gateway on AWS, a function per event calls the same functions, and
 
 ## Test a relay
 
-`pnpm --filter arcadekit relay:check <address>` tests a relay wherever it runs. It passes when:
+`pnpm --filter @arcadekit/example-relay check <address>` tests a relay wherever it runs. It passes when:
 
 - two peers play a small game through it and end on the same world;
 - a second peer with a taken name is refused;
