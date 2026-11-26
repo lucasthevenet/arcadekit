@@ -2,7 +2,6 @@ import * as Assets from "arcadekit/Assets";
 import { entityIndex } from "arcadekit/ecs";
 import type { Entity, EntityColumn } from "arcadekit/ecs";
 import * as Query from "arcadekit/Query";
-import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import type { Object3D, Scene as ThreeScene } from "three";
 
@@ -15,8 +14,8 @@ import { Holdings, heldIn } from "./holdings.ts";
 import type { Kept } from "./holdings.ts";
 import { isFlat, placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
-import { smoothOf } from "./smooth.ts";
-import type { Smooth } from "./smooth.ts";
+import { smoothOf, stores } from "./smooth.ts";
+import type { Smooth, Stores } from "./smooth.ts";
 
 /** The options of `Gltf.objects`, as its system reads them. */
 interface Bundled<
@@ -131,9 +130,12 @@ class Objects<O extends Object3D> implements Kept {
     return object;
   }
 
-  begin(tick: number, alpha: number, frame: number): void {
+  /** Starts a frame, with the app's store when the kind is drawn smoothly. */
+  begin(stores: Stores | undefined): void {
     this.stamp++;
-    this.smooth?.begin(tick, alpha, frame);
+    if (stores !== undefined) {
+      this.smooth?.begin(stores);
+    }
   }
 
   readonly placed = (
@@ -143,7 +145,7 @@ class Objects<O extends Object3D> implements Kept {
     entities: EntityColumn
   ): void => {
     if (this.smooth !== undefined) {
-      position = this.smooth.position.blend(start, end, position, entities);
+      position = this.smooth.position(start, end, position, entities);
     }
     const { x, y, z } = position;
     const { objects, stamp } = this;
@@ -174,7 +176,7 @@ class Objects<O extends Object3D> implements Kept {
     entities: EntityColumn
   ): void => {
     if (this.smooth !== undefined) {
-      position = this.smooth.flatPosition.blend(start, end, position, entities);
+      position = this.smooth.flatPosition(start, end, position, entities);
     }
     const { x, y } = position;
     const { objects, stamp } = this;
@@ -201,7 +203,7 @@ class Objects<O extends Object3D> implements Kept {
     entities: EntityColumn
   ): void => {
     if (this.smooth !== undefined) {
-      rotation = this.smooth.flatRotation.blend(start, end, rotation, entities);
+      rotation = this.smooth.flatRotation(start, end, rotation, entities);
     }
     const { angle } = rotation;
     const { objects, stamp, turnedAt } = this;
@@ -219,7 +221,7 @@ class Objects<O extends Object3D> implements Kept {
     entities: EntityColumn
   ): void => {
     if (this.smooth !== undefined) {
-      scale = this.smooth.flatScale.blend(start, end, scale, entities);
+      scale = this.smooth.flatScale(start, end, scale, entities);
     }
     const { x, y } = scale;
     const { objects, sizedAt, stamp } = this;
@@ -239,7 +241,7 @@ class Objects<O extends Object3D> implements Kept {
     entities: EntityColumn
   ): void => {
     if (this.smooth !== undefined) {
-      rotation = this.smooth.rotation.blend(start, end, rotation, entities);
+      rotation = this.smooth.rotation(start, end, rotation, entities);
     }
     const { x, y, z, w } = rotation;
     const { objects, stamp, turnedAt } = this;
@@ -270,7 +272,7 @@ class Objects<O extends Object3D> implements Kept {
     entities: EntityColumn
   ): void => {
     if (this.smooth !== undefined) {
-      scale = this.smooth.scale.blend(start, end, scale, entities);
+      scale = this.smooth.scale(start, end, scale, entities);
     }
     const { x, y, z } = scale;
     const { objects, sizedAt, stamp } = this;
@@ -339,11 +341,9 @@ const placer = <O extends Object3D>(options: ObjectsShared<O> & Placing) => {
   );
   return function* (held: Objects<O>) {
     const placed = yield* Placed;
-    const tick = smooth ? (yield* Time).tick : 0;
-    const frame = smooth ? yield* Frame : undefined;
     // Every entity that is one of these is found here, and its object made
     // if it is missing; whatever was not found is let go at the end.
-    held.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
+    held.begin(smooth ? yield* stores : undefined);
     placed.eachChunk(held.draw);
     held.finish();
   };

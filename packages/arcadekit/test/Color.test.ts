@@ -3,7 +3,15 @@ import { Effect } from "effect";
 
 import * as Entry from "../src/Color.ts";
 import type { Spawned } from "../src/index.ts";
-import { App, Color, Commands, Plugin, World } from "../src/index.ts";
+import {
+  App,
+  Color,
+  Commands,
+  Plugin,
+  Query,
+  System,
+  World,
+} from "../src/index.ts";
 import { placedIn } from "./placed.ts";
 
 describe("Color", () => {
@@ -56,6 +64,41 @@ describe("Color", () => {
           },
           { r: 4, g: 0, b: -1, space: Color.Linear },
         ]);
+      })
+  );
+
+  it.effect(
+    "is drawn between its last two values by a frame system, however far it changed",
+    () =>
+      Effect.gen(function* () {
+        const Fade = System.tick("co/Fade", function* () {
+          (yield* Query.all(Color.Rgb).pipe(Query.writes(Color.Rgb))).each(
+            (color) => {
+              color.r = 1;
+            }
+          );
+        });
+        const Dark = Plugin.make("co/Dark", {
+          setup: Effect.gen(function* () {
+            (yield* Commands.spawns(Color.Rgb)).spawn(
+              Color.Rgb.of({ r: 0, g: 0, b: 0, space: Color.Linear })
+            );
+          }),
+        });
+        const drawn: number[] = [];
+        const Draw = System.frame("co/Draw", function* () {
+          const smooth = yield* Color.smooth;
+          (yield* Query.all(Color.Rgb)).each((color, entity) => {
+            drawn.push(smooth.color(entity, color).r);
+          });
+        });
+        const app = yield* App.make(
+          App.define({ plugins: [Dark], systems: [Fade, Draw] })
+        );
+        yield* app.frame(1);
+        yield* app.tick(1);
+        yield* app.frame(0.25);
+        expect(drawn).toEqual([0, 0.25]);
       })
   );
 });

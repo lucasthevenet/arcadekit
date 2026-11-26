@@ -23,8 +23,13 @@
  * - `Linear` is a renderer's own numbers, in which light adds up. A number
  *   can be over 1, for a colour brighter than white.
  */
+import type { Effect } from "effect";
+
 import { Component, Field } from "./ecs/component.ts";
-import type { FieldDef } from "./ecs/component.ts";
+import type { Entity, FieldDef } from "./ecs/component.ts";
+import type { EntityColumn } from "./ecs/query.ts";
+import { Row, smoothing } from "./internal/smooth.ts";
+import type { Frame, Time } from "./Services.ts";
 
 /**
  * The space of a colour written as a hex code or a colour picker writes it,
@@ -90,4 +95,71 @@ export const Rgb = Component.define(
   "arcadekit/Color.Rgb",
   { r: Field.f32, g: Field.f32, b: Field.f32, space },
   { initial: { r: 1, g: 1, b: 1, space: Srgb } }
+);
+
+/** A numeric column, as `eachChunk` hands it. */
+type Column = { readonly [row: number]: number };
+
+/**
+ * A frame's reads of the colour an entity is drawn in between its last two
+ * ticks, as `Color.smooth` hands them: each number `Frame.alpha` of the way
+ * from its value a tick ago to the value it has now, however far it changed.
+ * The numbers are blended in the colour's own space.
+ *
+ * @category Models
+ */
+export interface Smooth {
+  /** Returns the colour an entity is drawn in, given its `Rgb`, as a new object. */
+  readonly color: (
+    entity: Entity,
+    color: { readonly r: number; readonly g: number; readonly b: number }
+  ) => { r: number; g: number; b: number };
+  /**
+   * Blends the colours of a run of rows, as `eachChunk` hands them, into
+   * columns of the app's own, which it returns. The next call overwrites them.
+   */
+  readonly colors: (
+    start: number,
+    end: number,
+    color: { readonly r: Column; readonly g: Column; readonly b: Column },
+    entities: EntityColumn
+  ) => {
+    readonly r: Float32Array;
+    readonly g: Float32Array;
+    readonly b: Float32Array;
+  };
+}
+
+const row = new Row();
+
+/**
+ * The colours a frame system draws its entities in between their last two
+ * ticks, from what the app keeps outside the world, as `Transform2d.smooth`
+ * does for where they are. `@arcadekit/three` reads the same with `smooth`.
+ *
+ *   const smooth = yield* Color.smooth
+ *   const { r, g, b } = smooth.color(entity, color)
+ *
+ * It requires `Frame`, so only a frame system can yield it.
+ *
+ * @category Services
+ */
+export const smooth: Effect.Effect<Smooth, never, Frame | Time> = smoothing(
+  (store): Smooth => ({
+    color: (entity, color) => {
+      row.a[0] = color.r;
+      row.b[0] = color.g;
+      row.c[0] = color.b;
+      const out = store.lerp3
+        .of(Rgb)
+        .blend(0, 1, row.a, row.b, row.c, row.of(entity));
+      return { r: out.x[0]!, g: out.y[0]!, b: out.z[0]! };
+    },
+    colors: (start, end, color, entities) => {
+      const out = store.lerp3
+        .of(Rgb)
+        .blend(start, end, color.r, color.g, color.b, entities);
+      return { r: out.x, g: out.y, b: out.z };
+    },
+  })
 );

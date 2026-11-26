@@ -111,7 +111,7 @@ A replay therefore reads no device, because the log already holds what the devic
 
 A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `Driver.run` still draws every frame, but ticks only while something is pending: an action, a state change, a system that asked for another tick, or an unread event. See [running a game](../guides/running-a-game.md).
 
-Ticks and frames don't line up, so an entity drawn where the last tick left it stutters. A frame system of your own draws it between two ticks from a velocity or a previous position the simulation keeps, as `Draw` does above. [Interpolation](../guides/between-two-ticks.md) shows how `@arcadekit/three` does the same with `smooth: true`.
+Ticks and frames don't line up, so an entity drawn where the last tick left it stutters. A frame system draws it between two ticks from its velocity, as `Draw` does above, or with `Transform2d.smooth` and `Transform3d.smooth`, from what the app keeps of where it was a tick ago. [Interpolation](../guides/between-two-ticks.md) shows both, and how `@arcadekit/three` does the same with `smooth: true`.
 
 ## Read more
 
