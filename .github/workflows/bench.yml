@@ -1,16 +1,17 @@
 name: Benchmarks
 
-# Did the pull request make the storage core slower? `bench/compare.ts` runs the variants
-# of `bench/core.ts` for what the pull request would be merged into and for the pull
-# request, turn and turn about on this one machine, and fails if any is slower by more
-# than the noise. A commit that slows a variant on purpose says so in its message, with a
-# line `Bench-slower: <variants>`, and the check then reports it and does not fail on it.
-# The package's README says how it decides, under "Benchmarks in CI".
+# Did the pull request make the storage core, or what an app's stages cost, slower?
+# `bench/compare.ts` runs the variants of `bench/core.ts`, and with `--suite app` those of
+# `bench/app.ts`, for what the pull request would be merged into and for the pull request,
+# turn and turn about on one machine, and fails if any is slower by more than the noise.
+# A commit that slows a variant on purpose says so in its message, with a line
+# `Bench-slower: <variants>`, and the check then reports it and does not fail on it.
+# `bench/verdict.ts` says how it decides.
 
 on:
   pull_request:
     paths:
-      - packages/arcadekit/src/ecs/**
+      - packages/arcadekit/src/**
       - packages/arcadekit/bench/**
       - pnpm-lock.yaml
       - .github/workflows/bench.yml
@@ -23,7 +24,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  storage-core:
+  compare:
+    strategy:
+      # Each suite on a machine of its own, and each reported whatever the other found.
+      fail-fast: false
+      matrix:
+        suite: [core, app]
+    name: ${{ matrix.suite == 'core' && 'storage-core' || 'app' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -42,4 +49,4 @@ jobs:
       - run: git worktree add ../base HEAD^1
       - run: pnpm install --frozen-lockfile
         working-directory: ../base
-      - run: pnpm --filter arcadekit bench:compare "$GITHUB_WORKSPACE/../base"
+      - run: pnpm --filter arcadekit bench:compare "$GITHUB_WORKSPACE/../base" --suite ${{ matrix.suite }}
