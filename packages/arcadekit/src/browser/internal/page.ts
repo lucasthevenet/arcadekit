@@ -47,13 +47,16 @@ export const layer = (options: Options): Layer.Layer<never> => {
     loader,
     Driver.layer(display),
     Layer.succeed(Input.Source, {
-      listen: Effect.map(
-        Effect.acquireRelease(
-          Effect.sync(() => listen(options)),
+      listen: Effect.gen(function* () {
+        const fork = Effect.runForkWith(yield* Effect.context<never>());
+        const listening = yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            listen(options, (message) => fork(Effect.logWarning(message)))
+          ),
           (listening) => Effect.sync(listening.stop)
-        ),
-        (listening) => listening.listener
-      ),
+        );
+        return listening.listener;
+      }),
     })
   ) as Layer.Layer<never>;
   return options.sounds === false

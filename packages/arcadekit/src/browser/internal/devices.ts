@@ -11,7 +11,8 @@ const isPointer = (code: string): boolean => code.startsWith("Pointer");
  * @internal
  */
 export const listen = (
-  options: Options
+  options: Options,
+  warn: (message: string) => void
 ): { readonly listener: Input.Listener; readonly stop: () => void } => {
   const state = Input.makeManualSource();
   const page: EventTarget = options.window ?? globalThis;
@@ -36,11 +37,25 @@ export const listen = (
       where.removeEventListener(type, listener as EventListener)
     );
   };
-  // A key whose code is none of the specification's, such as the empty code
-  // of a virtual keyboard, is no key a game can name, and is not heard.
+  // The empty code of a virtual keyboard, and the code of a key the browser
+  // could not name, are no key a game can name: they are not heard, and
+  // nothing is said of them.
+  const dropped = new Set(["", "Unidentified"]);
+  const heard = (code: string): code is Input.KeyCode => {
+    if (Input.isKeyCode(code)) {
+      return true;
+    }
+    if (!dropped.has(code)) {
+      dropped.add(code);
+      warn(
+        `The page sent a key whose code is "${code}", which is none of Input.KeyCode's, and it is not heard: no control and no Input.Keyboard can read it. Input.KeyCode is the UI Events specification's list, and a browser can send a code the list does not have yet. Report the code at https://github.com/lucasthevenet/arcadekit/issues, so that it is added. This is said once for each code.`
+      );
+    }
+    return false;
+  };
   on(page, "keydown", (event: KeyboardEvent) => {
     const { code } = event;
-    if (!Input.isKeyCode(code)) {
+    if (!heard(code)) {
       return;
     }
     if (prevented.has(code)) {
@@ -53,7 +68,7 @@ export const listen = (
   });
   on(page, "keyup", (event: KeyboardEvent) => {
     const { code } = event;
-    if (!Input.isKeyCode(code)) {
+    if (!heard(code)) {
       return;
     }
     if (prevented.has(code)) {
