@@ -93,7 +93,7 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
   ],
   three: [
     { label: "Core", modules: ["Three", "Scene", "Renderer"] },
-    { label: "Drawing", modules: ["Instances", "Objects"] },
+    { label: "Drawing", modules: ["Instances", "Objects", "Camera", "Sprite"] },
     { label: "Assets", modules: ["Assets", "Gltf"] },
   ],
 };

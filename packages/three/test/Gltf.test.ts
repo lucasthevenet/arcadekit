@@ -720,13 +720,13 @@ describe("a level's models", () => {
         const Fleet = Assets.bundle("gl/Fleet", {
           ship: Gltf.model("/tri.glb"),
         });
-        const Ships = Gltf.objects("gl/Ships", {
+        const Ships = Three.objectsFrom("gl/Ships", {
           of: Ship,
           transform: Transform3d,
           from: Fleet,
           make: (_entity, { ship }) => ship.scene.clone(),
         });
-        const Rocks = Gltf.instances("gl/Rocks", {
+        const Rocks = Three.instancesFrom("gl/Rocks", {
           of: Rock,
           transform: Transform3d,
           from: Fleet,

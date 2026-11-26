@@ -33,7 +33,7 @@ import {
 } from "three";
 import type { LoadingManager, Scene } from "three";
 
-import { Gltf, Three } from "../src/index.ts";
+import { Three } from "../src/index.ts";
 
 /** An entity as a log names it: its slot and generation. */
 const named = (entity: Entity): string =>
@@ -244,7 +244,7 @@ const makeTrees = (
     [];
   const freed: unknown[] = [];
   const meshes: InstancedMesh[] = [];
-  const Trees = Gltf.instances("ta/Trees", {
+  const Trees = Three.instancesFrom("ta/Trees", {
     of: Tree,
     transform: Transform3d,
     from: Forest,
@@ -646,7 +646,7 @@ describe("instances whose look is made of assets", () => {
       geometry,
       material,
     });
-    const From = Gltf.instances("ta/From", {
+    const From = Three.instancesFrom("ta/From", {
       of: Tree,
       transform: Transform3d,
       from: Forest,
@@ -660,7 +660,7 @@ describe("instances whose look is made of assets", () => {
         void size;
       },
     });
-    Gltf.instances("ta/Wrong", {
+    Three.instancesFrom("ta/Wrong", {
       of: Tree,
       transform: Transform3d,
       from: Forest,
@@ -676,7 +676,7 @@ describe("instances whose look is made of assets", () => {
       from: Forest,
     });
     // @ts-expect-error a bundle is not a look until something makes one of it
-    Gltf.instances("ta/Half", {
+    Three.instancesFrom("ta/Half", {
       of: Tree,
       transform: Transform3d,
       from: Forest,
@@ -729,7 +729,7 @@ describe("instances whose look is made of assets", () => {
 describe("objects made of assets", () => {
   /** Deer, each an object made of the forest's bark. */
   const makeDeer = (Forest: Forest, log: string[]) =>
-    Gltf.objects("ta/Deer", {
+    Three.objectsFrom("ta/Deer", {
       of: Deer,
       transform: Transform3d,
       from: Forest,
@@ -864,7 +864,7 @@ describe("objects made of assets", () => {
 
   it("say in their types what an object is made of", () => {
     const Forest = makeForest([]);
-    const Made = Gltf.objects("ta/Made", {
+    const Made = Three.objectsFrom("ta/Made", {
       of: Deer,
       transform: Transform3d,
       from: Forest,
@@ -876,7 +876,7 @@ describe("objects made of assets", () => {
       // The object is the one `make` gives.
       free: (object) => object.dispose(),
     });
-    Gltf.objects("ta/Wrong", {
+    Three.objectsFrom("ta/Wrong", {
       of: Deer,
       transform: Transform3d,
       from: Forest,
@@ -1088,7 +1088,7 @@ describe("a texture", () => {
         const Forest = Assets.bundle("ta/Forest", {
           bark: Three.texture("/bark.png"),
         });
-        const Trees = Gltf.instances("ta/Trees", {
+        const Trees = Three.instancesFrom("ta/Trees", {
           of: Tree,
           transform: Transform3d,
           from: Forest,

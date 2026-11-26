@@ -110,6 +110,7 @@ export const OUTLINE: readonly (Group & {
       "guides/drawing-with-three",
       "guides/instances-and-objects",
       "guides/textures-and-models",
+      "guides/drawing-a-flat-game",
       "guides/between-two-ticks",
     ],
   },

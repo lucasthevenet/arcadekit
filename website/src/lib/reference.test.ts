@@ -23,11 +23,13 @@ const three: ReferencePackage = {
   description: "Draws a game with Three.js.",
   modules: [
     "Assets",
+    "Camera",
     "Gltf",
     "Instances",
     "Objects",
     "Renderer",
     "Scene",
+    "Sprite",
     "Three",
   ],
 };
@@ -45,7 +47,7 @@ describe("the reference's index", () => {
         "## Core",
         "### [arcadekit](/reference/arcadekit)\n\n2 modules\n\nGames on Effect.",
         "## Rendering",
-        "### [@arcadekit/three](/reference/three)\n\n7 modules\n\nDraws a game with Three.js.",
+        "### [@arcadekit/three](/reference/three)\n\n9 modules\n\nDraws a game with Three.js.",
       ].join("\n\n")
     );
   });
@@ -67,12 +69,12 @@ describe("a package's page", () => {
     expect(renderPackage(three, REPO_URL, "main")).toBe(
       [
         "Draws a game with Three.js.",
-        `7 modules · [npm](https://www.npmjs.com/package/@arcadekit/three) · [Source](${REPO_URL}/tree/main/packages/three)`,
+        `9 modules · [npm](https://www.npmjs.com/package/@arcadekit/three) · [Source](${REPO_URL}/tree/main/packages/three)`,
         "## Modules",
         "### Core",
         "- [Renderer](/reference/three/Renderer)\n- [Scene](/reference/three/Scene)\n- [Three](/reference/three/Three)",
         "### Drawing",
-        "- [Instances](/reference/three/Instances)\n- [Objects](/reference/three/Objects)",
+        "- [Camera](/reference/three/Camera)\n- [Instances](/reference/three/Instances)\n- [Objects](/reference/three/Objects)\n- [Sprite](/reference/three/Sprite)",
         "### Assets",
         "- [Assets](/reference/three/Assets)\n- [Gltf](/reference/three/Gltf)",
       ].join("\n\n")

@@ -37,6 +37,11 @@
       "types": "./dist/Assets.d.ts",
       "default": "./dist/Assets.js"
     },
+    "./Camera": {
+      "source": "./src/Camera.ts",
+      "types": "./dist/Camera.d.ts",
+      "default": "./dist/Camera.js"
+    },
     "./Gltf": {
       "source": "./src/Gltf.ts",
       "types": "./dist/Gltf.d.ts",
@@ -61,6 +66,11 @@
       "source": "./src/Scene.ts",
       "types": "./dist/Scene.d.ts",
       "default": "./dist/Scene.js"
+    },
+    "./Sprite": {
+      "source": "./src/Sprite.ts",
+      "types": "./dist/Sprite.d.ts",
+      "default": "./dist/Sprite.js"
     },
     "./Three": {
       "source": "./src/Three.ts",

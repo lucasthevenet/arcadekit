@@ -19,7 +19,14 @@ export const fitted = (
   let width = 0;
   let height = 0;
   let ratio = 0;
+  // Asked once a frame: the one object, so that asking allocates nothing.
+  const size = { width: 0, height: 0 };
   return {
+    size() {
+      size.width = renderer.domElement.clientWidth ?? 0;
+      size.height = renderer.domElement.clientHeight ?? 0;
+      return size;
+    },
     render(scene, camera) {
       const w = renderer.domElement.clientWidth ?? 0;
       const h = renderer.domElement.clientHeight ?? 0;

@@ -17,7 +17,7 @@ import type { Placeable, Placing } from "./kind.ts";
 import { smoothOf, stores } from "./smooth.ts";
 import type { Smooth, Stores } from "./smooth.ts";
 
-/** The options of `Gltf.objects`, as its system reads them. */
+/** The options of `Three.objectsFrom`, as its system reads them. */
 interface Bundled<
   B extends Entries,
   O extends Object3D,
@@ -377,7 +377,7 @@ export const objects = <O extends Object3D>(
 };
 
 /**
- * The system of `Gltf.objects`.
+ * The system of `Three.objectsFrom`.
  *
  * @internal
  */

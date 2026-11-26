@@ -53,11 +53,13 @@ describe("the site's pages", () => {
     ]);
     expect(pages.packages[1]?.modules).toStrictEqual([
       "Assets",
+      "Camera",
       "Gltf",
       "Instances",
       "Objects",
       "Renderer",
       "Scene",
+      "Sprite",
       "Three",
     ]);
   });
@@ -157,7 +159,12 @@ describe("the sidebar", () => {
       },
       {
         label: "Drawing",
-        items: ["reference/three/Instances", "reference/three/Objects"],
+        items: [
+          "reference/three/Camera",
+          "reference/three/Instances",
+          "reference/three/Objects",
+          "reference/three/Sprite",
+        ],
       },
       {
         label: "Assets",
