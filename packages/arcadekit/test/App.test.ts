@@ -51,6 +51,29 @@ describe("an app", () => {
     expectTypeOf<App.Any["settled"]>().toEqualTypeOf<boolean>();
   });
 
+  it.effect(
+    "is an App.Any of what its systems fail with, whatever its handlers, so code that ticks any app passes that failure on",
+    () =>
+      Effect.gen(function* () {
+        class Boom extends Data.TaggedError("app/Boom")<{}> {}
+        const Fails = System.tick("app/Fails", function* () {
+          return yield* new Boom();
+        });
+        const app = yield* App.make(App.define({ systems: [Fails] }));
+        const ticked = <E>(each: App.Any<E>) => each.tick(1);
+        expectTypeOf(ticked(app)).toEqualTypeOf<Effect.Effect<void, Boom>>();
+        expect(yield* Effect.exit(ticked(app))).toEqual(Exit.fail(new Boom()));
+        expectTypeOf(app).not.toExtend<App.Any<never>>();
+        expectTypeOf<App.App<never, Plugin.AnyHandler>>().toExtend<
+          App.Any<never>
+        >();
+        expectTypeOf(app).toExtend<App.Any>();
+        expectTypeOf<ReturnType<App.Any["frame"]>>().toEqualTypeOf<
+          Effect.Effect<void, unknown>
+        >();
+      })
+  );
+
   it("requires no scope to be made: it has one of its own", () => {
     const { Held } = makeHeld();
     expectTypeOf(App.make(App.define({ plugins: [Held] }))).toEqualTypeOf<

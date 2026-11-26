@@ -82,7 +82,7 @@ With a query that watches `Position`:
 
 This section is what a cloud Linux VM measured on 2026-11-26, with four cores of an Intel Xeon at 2.1 GHz and Node 22.23, at a load average of 1.1 to 1.5 from the benchmark itself. Each variant ran in fifteen processes of its own, in turn with the others, and each number is the median of five, each the fastest of three. A pass yields the app's method from one fiber, as a driver does, so each number includes what yielding it costs, about 0.3 µs a method. On the same day the machine measured the `eachChunk` row of the [loops](#loops) table at 2.6 ns per entity, as the table has it, and its other rows from 25% faster to 10% slower.
 
-A tick of ten empty systems costs about 7.6 µs, and a frame of ten empty systems costs 7.3 µs. With a [condition](systems.md) that holds on each of the ten, the tick costs 18.9 µs. With a condition that doesn't hold, it costs 11.7 µs.
+A tick of ten empty systems costs about 7.6 µs, and a frame of ten empty systems costs 7.3 µs. With a [condition](systems.md) of `State.is` that holds on each of the ten, the tick costs about 1.7 times as much as without. With one that doesn't hold, it costs about three quarters as much as without, because a system that is skipped costs less than one that runs and does nothing.
 
 arcadekit's own plugins cost this much when each has little to do:
 
@@ -104,7 +104,7 @@ arcadekit's own plugins cost this much when each has little to do:
 - **A view** was measured with four fields, read from a singleton. It costs the game its body and one comparison per frame, 2.2 µs, and costs the UI nothing until a field differs. The comparison stops at the first field that differs, so a new value costs less than an unchanged one. When no UI is attached, the system checks for one and stops.
 - **Sound** was measured with one system that plays cues for two kinds of event, or one that keeps a channel's music, to an output that does nothing. The cue system costs a frame two reads of empty event queues, 3.2 µs over a frame whose one system stops at once, plus 0.3 µs per cue played. When sound goes nowhere, the system checks for an output and stops.
 - **A game at rest** was measured as one that [ticks only when needed](running-a-game.md#tick-only-when-needed), with device state, a state, and a view.
-- `verifyFrames` hashes the world before the frame stage and after each of its systems, and copies and compares each column that `eachChunk` hands out read-only. For one system that reads raw columns over 100,000 entities, it adds 3.2 ms. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
+- `verifyFrames` hashes the world before the frame stage and after each of its systems, and copies and compares each column that `eachChunk` hands out read-only. For one system that reads raw columns over 100,000 entities, it adds 3.2 ms. Use it in [tests](testing-by-hand.md#run-the-frame-stage-by-hand).
 - `Session.syncTest` checks rewinds with a capture of the game, a rewind, a second run, and a world hash per system, every tick. For a game of 1,000 entities and two systems, the check costs about 100 µs a tick, against 7 to 20 µs without it. Use it in [tests](testing-peers.md#check-that-a-rewind-runs-the-same).
 
 ## Spawns and despawns
