@@ -627,7 +627,7 @@ describe("Three.instances", () => {
     ).toEqual(["th/Flat", "th/Solid"]);
   });
 
-  it("refuses an of that requires no Position with the whole reason, first, for either transform and either system", () => {
+  it("refuses an of that requires no Position, or that the compiler can't read, with the whole reason, first, for either transform and each system", () => {
     const repo = realpathSync(
       fileURLToPath(new URL("../../..", import.meta.url))
     );
@@ -640,7 +640,8 @@ describe("Three.instances", () => {
     writeFileSync(join(dir, "package.json"), '{ "type": "module" }');
     writeFileSync(
       join(dir, "game.ts"),
-      `import { Component, Transform2d, Transform3d } from "arcadekit";
+      `import { Assets, Component, Transform2d, Transform3d } from "arcadekit";
+import type { ComponentDef } from "arcadekit/ecs";
 import { BoxGeometry, MeshBasicMaterial, Object3D } from "three";
 
 import { Three } from "${three}";
@@ -654,6 +655,16 @@ Three.instances("game/Rocks", { of: Heavy, transform: Transform3d, geometry, mat
 Three.instances("game/Cards", { of: Heavy, transform: Transform2d, geometry, material });
 Three.objects("game/Ships", { of: Heavy, transform: Transform3d, make });
 Three.objects("game/Pieces", { of: Heavy, transform: Transform2d, make });
+
+const Forest = Assets.bundle("game/Forest", { notes: Assets.text("/notes.txt") });
+Three.instancesFrom("game/Trees", { of: Heavy, transform: Transform3d, from: Forest, look: () => ({ geometry, material }) });
+Three.objectsFrom("game/Deer", { of: Heavy, transform: Transform2d, from: Forest, make });
+
+const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] });
+const bare: ComponentDef = Rock;
+const bares: readonly ComponentDef[] = [Rock];
+Three.instances("game/Bare", { of: bare, transform: Transform3d, geometry, material });
+Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Forest, make });
 `
     );
     writeFileSync(
@@ -676,10 +687,14 @@ Three.objects("game/Pieces", { of: Heavy, transform: Transform2d, make });
   The types of 'Position.name' are incompatible between these types.
     Type '"arcadekit/Transform${dimensions}d.Position"' is not assignable to type '${reason}'.`;
     expect(stdout.trimEnd().split(/\n(?=game\.ts)/)).toEqual([
-      refused(11, 44, 3),
-      refused(12, 44, 2),
-      refused(13, 42, 3),
-      refused(14, 43, 2),
+      refused(12, 44, 3),
+      refused(13, 44, 2),
+      refused(14, 42, 3),
+      refused(15, 43, 2),
+      refused(18, 48, 3),
+      refused(19, 45, 2),
+      refused(24, 42, 3),
+      refused(25, 46, 3),
     ]);
   });
 

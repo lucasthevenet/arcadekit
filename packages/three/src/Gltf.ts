@@ -9,7 +9,7 @@
  *   })
  *
  *   // One object per entity, made from the model while the bundle is loaded.
- *   const Ships = Three.objects("game/Ships", {
+ *   const Ships = Three.objectsFrom("game/Ships", {
  *     of: Ship,
  *     transform: Transform3d,
  *     from: Fleet,
@@ -17,7 +17,7 @@
  *   })
  *
  *   // Or a crowd, each entity an instance of one of a model's meshes.
- *   const Rocks = Three.instances("game/Rocks", {
+ *   const Rocks = Three.instancesFrom("game/Rocks", {
  *     of: Rock,
  *     transform: Transform3d,
  *     from: Fleet,
@@ -480,7 +480,7 @@ export const model = (
 
 /**
  * Returns a model's mesh by name, or its first mesh when given no name. A mesh
- * has a geometry and a material, so it is a look that `Three.instances`
+ * has a geometry and a material, so it is a look that `Three.instancesFrom`
  * accepts.
  *
  *   look: ({ rock }) => Gltf.mesh(rock, "Boulder")
