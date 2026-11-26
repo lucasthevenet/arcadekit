@@ -381,5 +381,11 @@ export default defineConfig({
       files: ["packages/arcadekit/src/Field.ts"],
       rules: { "effecttsgo/schema-sync": "off" },
     },
+    {
+      // An action or an event with no payload is defined with no schema, as
+      // a game defines one.
+      files: ["packages/*/src/**", "packages/*/bench/**", "examples/**"],
+      rules: { "arcadekit/no-empty-payload": "error" },
+    },
   ],
 });

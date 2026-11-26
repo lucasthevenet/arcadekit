@@ -19,7 +19,7 @@
  */
 import { pathToFileURL } from "node:url";
 
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer } from "effect";
 
 import {
   Action,
@@ -331,11 +331,11 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
 const sounding = (happening: boolean): number =>
   Effect.runSync(
     Effect.gen(function* () {
-      const Scored = Event.define("bench/Scored", Schema.Struct({}));
-      const Bounced = Event.define("bench/Bounced", Schema.Struct({}));
+      const Scored = Event.define("bench/Scored");
+      const Bounced = Event.define("bench/Bounced");
       const Score = System.tick("bench/Score", function* () {
         if (happening) {
-          (yield* Scored.emits).emit({});
+          (yield* Scored.emits).emit();
         }
       });
       const Sfx = Sound.sheet("bench/Sfx", {

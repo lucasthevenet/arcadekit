@@ -109,7 +109,7 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
 
 // A handler that looks at every entity and writes none. Through a query
 // that says it writes them, its transaction copies the columns it is handed.
-const Scan = Action.define("bench/Scan", Schema.Struct({}));
+const Scan = Action.define("bench/Scan");
 const Written = Query.all(Position, Velocity).pipe(
   Query.writes(Position, Velocity)
 );
@@ -266,7 +266,7 @@ const scanned = (handler: typeof scanPlain): number =>
         { hashEvery: 0 }
       );
       return yield* measureEffect(
-        () => Effect.exit(app.dispatch(Scan, {})),
+        () => Effect.exit(app.dispatch(Scan)),
         300,
         80
       );
