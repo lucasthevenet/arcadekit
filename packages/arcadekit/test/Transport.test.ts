@@ -40,9 +40,9 @@ const message = (from: string, tick: number, value = 0): Message.Message => ({
 
 /** The messages among what arrived, without a relay's notices. */
 const messagesIn = (
-  arrived: readonly (Message.Message | Message.Notice)[]
+  arrived: readonly (Message.Message | Message.Aside | Message.Notice)[]
 ): Message.Message[] =>
-  arrived.filter((one): one is Message.Message => "from" in one);
+  arrived.filter((one): one is Message.Message => "tick" in one);
 
 /** A peer whose session is joined to a transport, which steps it. */
 interface Seat extends Peer {

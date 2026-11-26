@@ -13,6 +13,10 @@
  * A relay also tells a room who joined it and who left it, with a `Notice`,
  * which it sends as text: a message comes as bytes and a notice as text, so
  * what carries them tells the two apart.
+ *
+ * What peers say to each other that isn't the game's, such as what a lobby
+ * agrees on before the game begins, is an `Aside`. It goes as bytes too,
+ * which a relay passes on as it passes on a message.
  */
 import { Cause, Data, Exit, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
@@ -128,14 +132,34 @@ const NoticeSchema = Schema.fromJsonString(
 );
 
 /**
+ * What a peer says to the others that isn't the game's: its name, what it is
+ * about, and a body in JSON form, which whatever reads it checks. A session
+ * never sees one: `Transport.connect` drops it. `Lobby` speaks this way.
+ *
+ * @category Schemas
+ */
+export const Aside = Schema.Struct({
+  /** The peer that says it. */
+  from: Schema.String,
+  /** What it is about, prefixed as a name is: `"arcadekit/Lobby"`. */
+  topic: Schema.String,
+  /** What it says, in JSON form. */
+  body: Schema.Unknown,
+});
+
+export type Aside = typeof Aside.Type;
+
+const asideCodec = SchemaBinary.toCodec(Aside, { fingerprint: true });
+
+/**
  * A message that can't be written as bytes, or bytes or text that aren't a
- * message or a notice. `problem` names which: `"not a message"` or
- * `"not a notice"`.
+ * message, an aside or a notice. `problem` names which: `"not a message"`,
+ * `"not an aside"` or `"not a notice"`.
  *
  * @category Errors
  */
 export class Invalid extends Data.TaggedError("MessageInvalid")<{
-  readonly problem: "not a message" | "not a notice";
+  readonly problem: "not a message" | "not an aside" | "not a notice";
   readonly message: string;
 }> {}
 
@@ -188,6 +212,34 @@ export const encode = (
 export const decode = (bytes: Uint8Array): Exit.Exit<Message, Invalid> =>
   Exit.mapError(Schema.decodeUnknownExit(codec)(bytes), (error) =>
     invalid("not a message", Cause.fail(error))
+  );
+
+/**
+ * Encodes an aside in bytes, in a buffer of their own, as `Message.encode`
+ * does a message. Fails with `Message.Invalid`, `"not an aside"`, when its
+ * body has no JSON form.
+ *
+ * @category Codecs
+ */
+export const encodeAside = (
+  aside: Aside
+): Exit.Exit<Uint8Array<ArrayBuffer>, Invalid> => {
+  const bytes = Schema.encodeExit(asideCodec)(aside);
+  return Exit.isFailure(bytes)
+    ? Exit.fail(invalid("not an aside", bytes.cause))
+    : Exit.succeed(bytes.value.slice());
+};
+
+/**
+ * Decodes an aside from bytes, and fails with `Message.Invalid`,
+ * `"not an aside"`, on bytes that aren't one, a message's among them. It
+ * checks the aside's own structure, and not its body.
+ *
+ * @category Codecs
+ */
+export const decodeAside = (bytes: Uint8Array): Exit.Exit<Aside, Invalid> =>
+  Exit.mapError(Schema.decodeUnknownExit(asideCodec)(bytes), (error) =>
+    invalid("not an aside", Cause.fail(error))
   );
 
 /**

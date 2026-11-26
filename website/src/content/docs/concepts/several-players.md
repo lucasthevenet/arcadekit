@@ -7,6 +7,12 @@ A game with **several players** runs the same simulation on each player's machin
 
 A single-player game's action log already records exactly that. Each peer plays through a **session**, which shares that log with the other peers.
 
+## A game begins in a lobby
+
+Before a game of several peers begins, its peers agree on who plays, a seed and the game's settings, and every peer makes its session with them. They meet in a **lobby**, which a room of the relay holds: each peer says who it is and when it is ready, any of them may set the settings, and the game begins once the lobby holds as many peers as play and each is ready for the same settings. No one peer chooses the seed: each gives a part of it, and the seed is a hash of every part and the settings. [Lobbies](../guides/lobbies.md) shows how.
+
+What a lobby agrees on, the sessions check as they check any game: peers that began otherwise stop before they play a tick they are sure of.
+
 ## Lockstep waits for every peer
 
 A session in **lockstep** runs a tick only once it has every peer's message for that tick. Its `ahead` is 0. A player's own action goes into their message for the tick `delay` ticks ahead, 2 by default in lockstep, so the message has time to reach the other peers before they need it. Every peer applies the action on that tick, the peer that issued it included.
