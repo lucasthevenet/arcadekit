@@ -3017,8 +3017,8 @@ export class World {
     this.handedOut.push(loop);
   }
 
-  // Asked for only when a loop is out, so that a spawn or a despawn with
-  // none makes no call: called each time, it measured 3% on `churn`.
+  // Called only when a loop is out: `_place`, which every spawn goes
+  // through, has no inlining budget left for it, and kept it as a call.
   private retractAccessors(): void {
     const { handedOut } = this;
     for (const loop of handedOut) {
