@@ -4,6 +4,8 @@
 
 Every method of an app returns an Effect, and a program yields it. `yield* app.tick(delta)` runs a tick and fails with what the game's systems fail with, and so do `app.frame` and `app.input`. `app.dispatch` fails with the action's refusal, `app.dispatchByName` with what the game's actions are refused with, `Action.UnknownAction` or `Action.InvalidPayload`, and `app.save` with `Save.SaveRefused`. What a driver steps answers the same way: `Driver.Tickable`, `Driver.Paced`, a session, `Transport.Connected` and `Session.syncTest`. What a session's tick threw, `Drift.Unlike`, `Drift.Drifted`, `Transport.Left` and `Session.RewindDiverged`, is now a failure that `Driver.run` fails with, so a program catches it by its tag. A call made where it may not be, such as `app.tick` from inside a tick, dies with the message it threw. `app.time`, `app.phase`, `app.settled`, `app.actionLog` and the lists of names stay values, and a view bridge's `send`, `get` and `subscribe` stay plain calls for a UI.
 
+Yielding a method costs its caller about 0.3 µs that a plain call did not. On a shared 4-core VM, `app.input()` of a game with `Input.plugin` and nothing changed measured 1.79 µs before and 2.17 µs now, of which the input stage's own work is 1.87 µs, each the fastest of 25 runs.
+
 What breaks, for every caller of these:
 
 - `app.tick(delta)`, `app.frame(alpha, delta)` and `app.input()` are `yield* app.tick(delta)`, `yield* app.frame(alpha, delta)` and `yield* app.input()`. `app.tickExit`, `app.frameExit` and `app.inputExit` are gone: `yield* Effect.exit(app.tick(delta))` gives the outcome as a value.

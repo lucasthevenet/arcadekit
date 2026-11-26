@@ -80,27 +80,31 @@ With a query that watches `Position`:
 
 ## Idle ticks and frames
 
-A tick of ten empty systems costs about 5 µs, and a frame of ten empty systems costs 5.8 µs. With a [condition](systems.md) that holds on each of the ten, the tick costs 8.5 µs. With a condition that doesn't hold, it costs 3.5 µs.
+This section is what a cloud Linux VM measured on 2026-11-26, with four cores of an Intel Xeon at 2.1 GHz and Node 22.23, at a load average of 1.1 to 1.5 from the benchmark itself. Each variant ran in fifteen processes of its own, in turn with the others, and each number is the median of five, each the fastest of three. A pass yields the app's method from one fiber, as a driver does, so each number includes what yielding it costs, about 0.3 µs a method. On the same day the machine measured the `eachChunk` row of the [loops](#loops) table at 2.6 ns per entity, as the table has it, and its other rows from 25% faster to 10% slower.
+
+A tick of ten empty systems costs about 7.6 µs, and a frame of ten empty systems costs 7.3 µs. With a [condition](systems.md) that holds on each of the ten, the tick costs 18.9 µs. With a condition that doesn't hold, it costs 11.7 µs.
 
 arcadekit's own plugins cost this much when each has little to do:
 
 | Variant | Cost |
 | --- | --- |
-| `app.input()`: the devices read, nothing changed | 1.39 µs |
-| `app.input()` and `app.tick()`: one key went down or up | 5.22 µs |
-| `app.frame()`: a view, no UI is there | 0.58 µs |
-| `app.frame()`: a view, a UI is there, the value is what it has | 2.90 µs |
-| `app.frame()`: a view, the value is new, and one listener told | 2.57 µs |
-| `app.frame()`: cues, nothing happened | 1.43 µs |
-| `app.frame()`: cues, one event, and its cue is played | 1.63 µs |
-| `app.frame()`: music that goes on as it was, nothing told | 1.24 µs |
-| One frame of a game at rest: the devices read, the app asked, drawn, no tick | 5.3 µs |
+| `app.input()`: the devices read, nothing changed | 2.37 µs |
+| `app.input()` and `app.tick()`: one key went down or up | 8.16 µs |
+| `app.input()`: three controls declared, nothing changed | 3.06 µs |
+| `app.input()` and `app.tick()`: a key of a control went down or up | 9.08 µs |
+| `app.frame()`: a view, no UI is there | 1.06 µs |
+| `app.frame()`: a view, a UI is there, the value is what it has | 3.25 µs |
+| `app.frame()`: a view, the value is new, and one listener told | 2.76 µs |
+| `app.frame()`: cues, nothing happened | 4.23 µs |
+| `app.frame()`: cues, one event, and its cue is played | 4.54 µs |
+| `app.frame()`: music that goes on as it was, nothing told | 3.44 µs |
+| One frame of a game at rest: the devices read, the app asked, drawn, no tick | 6.87 µs |
 
-- **Input** was measured with `Input.plugin`, three buttons held, and the pointer somewhere. The input stage runs before every tick, so its idle cost is the one that matters: one sample of the devices, compared with the state in the world. An app with no input-stage system reads nothing and pays nothing.
-- **A view** was measured with four fields, read from a singleton. It costs the game its body and one comparison per frame, 2.3 µs, and costs the UI nothing until a field differs. The comparison stops at the first field that differs, so a new value costs less than an unchanged one. When no UI is attached, the system checks for one and stops.
-- **Sound** was measured with one system that plays cues for two kinds of event, or one that keeps a channel's music, to an output that does nothing. The cue system costs a frame two reads of empty event queues, 0.7 µs over an empty frame, plus 0.2 µs per cue played. When sound goes nowhere, the system checks for an output and stops.
+- **Input** was measured with `Input.plugin`, or with three controls declared, three buttons held, and the pointer somewhere. The input stage runs before every tick, so its idle cost is the one that matters: one sample of the devices, compared with the state in the world. An app with no input-stage system reads nothing and pays nothing.
+- **A view** was measured with four fields, read from a singleton. It costs the game its body and one comparison per frame, 2.2 µs, and costs the UI nothing until a field differs. The comparison stops at the first field that differs, so a new value costs less than an unchanged one. When no UI is attached, the system checks for one and stops.
+- **Sound** was measured with one system that plays cues for two kinds of event, or one that keeps a channel's music, to an output that does nothing. The cue system costs a frame two reads of empty event queues, 3.2 µs over a frame whose one system stops at once, plus 0.3 µs per cue played. When sound goes nowhere, the system checks for an output and stops.
 - **A game at rest** was measured as one that [ticks only when needed](running-a-game.md#tick-only-when-needed), with device state, a state, and a view.
-- `verifyFrames` hashes the world before the frame stage and after each of its systems, and copies and compares each column that `eachChunk` hands out read-only. For one system that reads raw columns over 100,000 entities, it adds 2.6 ms. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
+- `verifyFrames` hashes the world before the frame stage and after each of its systems, and copies and compares each column that `eachChunk` hands out read-only. For one system that reads raw columns over 100,000 entities, it adds 3.2 ms. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
 - `Session.syncTest` checks rewinds with a capture of the game, a rewind, a second run, and a world hash per system, every tick. For a game of 1,000 entities and two systems, the check costs about 100 µs a tick, against 7 to 20 µs without it. Use it in [tests](testing-peers.md#check-that-a-rewind-runs-the-same).
 
 ## Spawns and despawns
