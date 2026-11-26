@@ -15,8 +15,8 @@
  *   const writing = yield* Phase.sets    // a tick system or a handler
  *   writing.set("playing")               // entered at the start of the next tick
  *
- *   commands.spawn(Wall.of({ x: 0 }), State.scoped(Phase, "playing"))
- *                                        // despawned when the game leaves "playing"
+ *   const commands = yield* Commands.spawns(Wall).pipe(State.scoping(Phase, "playing"))
+ *   commands.spawn(Wall.of({ x: 0 }))    // despawned when the game leaves "playing"
  *
  * A state is a singleton of the world. A save holds it with any pending
  * transition, the world's hash covers it, and a refused action that set it
@@ -35,10 +35,11 @@ import type {
   SingletonSpec,
 } from "./ecs/component.ts";
 import { whole } from "./internal/handed.ts";
-import { defining, handleOf, scopeOf } from "./internal/state.ts";
+import { defining, handleOf, scopeOf, scopingOf } from "./internal/state.ts";
 import { triggered } from "./internal/system.ts";
+import type { AddsOf } from "./Query.ts";
 import { World } from "./Services.ts";
-import type { Sim } from "./Services.ts";
+import type { Sim, Spawning } from "./Services.ts";
 import * as System from "./System.ts";
 
 /** What the world stores for a state. */
@@ -201,6 +202,8 @@ export interface Move {
  *
  * Use to tag what a level or a screen spawns, so that leaving it cleans it
  * up, in place of a `State.onExit` hook that despawns each kind of entity.
+ * A system that spawns all it spawns in a scope names it once instead, with
+ * `State.scoping`.
  *
  * **Details**
  *
@@ -238,6 +241,48 @@ export const scoped = <V extends string, N extends string, S extends V>(
     );
   }
   return scope.tag as ComponentDef<{}, "table", `${N}.Scoped.${S}`, never>;
+};
+
+/**
+ * Gives every entity a system's commands spawn the tags of these values of a
+ * state, as `State.scoped` returns them, so that they are named once and no
+ * spawn leaves them off.
+ *
+ *   const commands = yield* Commands.spawns(Player, Wall, Coin).pipe(
+ *     State.scoping(Phase, "playing", "paused")
+ *   )
+ *   commands.spawn(Wall.of({ x: 0 }))    // despawned when the run ends, kept through a pause
+ *
+ * **When to use**
+ *
+ * Use for a system or a hook that spawns what belongs to a level, a run or a
+ * screen. A spawn of a tag given by hand, `State.scoped`, is for a system
+ * that spawns some of its entities in a scope and some not.
+ *
+ * **Details**
+ *
+ * - It pipes on `Commands.spawns`. The commands add, despawn and remove as
+ *   they did, and only what they spawn gets the tags.
+ * - The tags are in the system's requirements, as those `Commands.spawns`
+ *   names, so a system that watches one with `Query.added` is listed after.
+ * - A value known only when the system runs, such as the level a state is
+ *   in, works as a literal does: `State.scoping(Level, (yield* Level).value)`.
+ * - Piped twice, the commands give the tags of both.
+ *
+ * @category Combinators
+ */
+export const scoping = <V extends string, N extends string, const S extends V>(
+  state: State<V, N>,
+  ...values: readonly [S, ...S[]]
+): (<C extends string, E, R>(
+  self: Effect.Effect<Spawning<C>, E, R>
+) => Effect.Effect<
+  Spawning<C | `${N}.Scoped.${S}`>,
+  E,
+  R | AddsOf<`${N}.Scoped.${S}`>
+>) => {
+  const tags = values.map((value) => scoped(state, value));
+  return (self) => Effect.map(self, (commands) => scopingOf(commands, tags));
 };
 
 /**
@@ -303,6 +348,57 @@ export const onEnter = <
   "update",
   System.Trigger
 > => hook(state, value, "enter", name, body);
+
+/**
+ * Makes a system that runs once when the game enters a state from one of
+ * some others, as `State.onEnter` does, and not when it comes from anywhere
+ * else.
+ *
+ *   const StartRun = State.onTransition(Phase, { from: ["menu", "over"], to: "playing" }, "StartRun", function*() {
+ *     ...                                // a new run, and not a resume from "paused"
+ *   })
+ *
+ * **When to use**
+ *
+ * Use when entering a state means one thing from one place and another from
+ * another, such as starting a run from the menu and resuming it from a pause.
+ * A hook that runs on every entry is `State.onEnter`. An exit hook can tell
+ * where the game goes without one: `(yield* Phase).next` is the value it
+ * enters.
+ *
+ * **Details**
+ *
+ * It is an enter hook of `to`: it runs with the others, in the order they are
+ * listed, after the entities scoped to the value the game left are
+ * despawned. It never runs on a game's first tick, which comes from no value.
+ *
+ * @category Constructors
+ */
+export const onTransition = <
+  const N extends string,
+  Eff extends Effect.Effect<unknown, unknown, unknown>,
+  V extends string,
+>(
+  state: State<V>,
+  move: {
+    readonly from: NoInfer<V> | readonly [NoInfer<V>, ...NoInfer<V>[]];
+    readonly to: NoInfer<V>;
+  },
+  name: N,
+  body: System.TickBody<Eff>
+): System.System<
+  System.GenError<Eff>,
+  Exclude<System.GenServices<Eff>, Sim>,
+  N,
+  "update",
+  System.Trigger
+> =>
+  triggered(System.tick(name, body), {
+    state,
+    on: "enter",
+    value: move.to,
+    from: typeof move.from === "string" ? [move.from] : move.from,
+  });
 
 /**
  * Makes a system that runs once when the game leaves a state, at the start of

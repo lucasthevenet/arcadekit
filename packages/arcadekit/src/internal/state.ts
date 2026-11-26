@@ -1,10 +1,13 @@
 import { Exit } from "effect";
 
+import { CommandBuffer } from "../ecs/commands.ts";
 import { Component, entityIndex } from "../ecs/component.ts";
-import type { ComponentDef } from "../ecs/component.ts";
+import type { ComponentDef, ComponentInput, Entity } from "../ecs/component.ts";
+import type { Spawned } from "../ecs/spawned.ts";
 import type { World as EcsWorld } from "../ecs/world.ts";
 import * as Query from "../Query.ts";
 import { LoadRefused } from "../Save.ts";
+import type { Spawning } from "../Services.ts";
 import type { Move, Setter, State } from "../State.ts";
 
 /** A value's tag, and the query of the entities that have it. */
@@ -263,4 +266,54 @@ export const prepare = (
     handleOf(world, state);
     registry.hooked.add(state);
   }
+};
+
+/**
+ * Commands that give every entity they spawn the tags of a state's values, as
+ * `State.scoping` makes them. They add, despawn and remove as the commands
+ * they wrap do.
+ */
+class Scoping implements Spawning<string> {
+  constructor(
+    readonly buffer: CommandBuffer<Spawned>,
+    readonly tags: readonly ComponentDef[]
+  ) {}
+
+  spawn(...inputs: readonly ComponentInput[]): Spawned {
+    return this.buffer.spawn(...inputs, ...this.tags);
+  }
+
+  add(entity: Entity | Spawned, input: ComponentInput): void {
+    this.buffer.add(entity, input);
+  }
+
+  despawn(entity: Entity | Spawned): void {
+    this.buffer.despawn(entity);
+  }
+
+  remove(entity: Entity | Spawned, def: ComponentDef): void {
+    this.buffer.remove(entity, def);
+  }
+}
+
+/**
+ * @internal The same commands, giving what they spawn these tags too, beside
+ * those of any scoping they already had.
+ */
+export const scopingOf = (
+  commands: object,
+  tags: readonly ComponentDef[]
+): Spawning<string> => {
+  if (commands instanceof Scoping) {
+    return new Scoping(commands.buffer, [
+      ...commands.tags,
+      ...tags.filter((tag) => !commands.tags.includes(tag)),
+    ]);
+  }
+  if (!(commands instanceof CommandBuffer)) {
+    throw new Error(
+      "State.scoping was given something that is not an app's commands. Pipe it on yield* Commands.spawns(...), in the code of the tick."
+    );
+  }
+  return new Scoping(commands, tags);
 };
