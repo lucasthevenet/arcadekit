@@ -50,6 +50,7 @@ import { Context, Effect, Equal, Layer } from "effect";
 
 import * as Action from "./Action.ts";
 import * as Plugin from "./Plugin.ts";
+import type * as Singleton from "./Singleton.ts";
 import * as System from "./System.ts";
 
 // --- a view ----------------------------------------------------------------------
@@ -83,6 +84,26 @@ export const define = <A>(name: string, initial: A): View<A> => ({
   name,
   initial,
 });
+
+/**
+ * The singleton reads in `A`, in its arrays and objects up to 32 levels deep.
+ * A recursive type has no last level, so the search stops there.
+ */
+type Held<A, Depth extends unknown[] = []> = Depth["length"] extends 32
+  ? never
+  : A extends Singleton.Read<{}>
+    ? A
+    : A extends (...args: never) => unknown
+      ? never
+      : A extends object
+        ? Held<A[keyof A], [...Depth, unknown]>
+        : never;
+/** Refuses a value that holds a singleton read whole. */
+type Fresh<A> = [Held<A>] extends [never]
+  ? unknown
+  : {
+      readonly "A singleton read whole is the same object every frame, so it never differs: return its fields": Held<A>;
+    };
 
 // --- the bridge ------------------------------------------------------------------
 
@@ -262,9 +283,14 @@ export interface PortShape {
   /**
    * Publishes a view. It sets the view's value and notifies the UI, unless the
    * value is unchanged, and returns whether it published. A system of the frame
-   * stage publishes, and a system of the tick can't require `View.Port`.
+   * stage publishes, and a system of the tick can't require `View.Port`. A
+   * value that holds a singleton read whole doesn't compile, as for
+   * `View.publish`.
    */
-  readonly publish: <A>(view: View<A>, value: A) => boolean;
+  readonly publish: <A, V extends A>(
+    view: View<A>,
+    value: V & Fresh<V>
+  ) => boolean;
 }
 
 /**
@@ -452,24 +478,28 @@ export function layer(_game: unknown, mount: Mount): Layer.Layer<never> {
  *     return priceEveryItem(yield* Purse, yield* Items)
  *   })
  *
+ * `when` and the body return data, such as `(yield* Purse).gold` or a spread
+ * of `yield* Purse`. A singleton read whole, `yield* Purse` or
+ * `(yield* World).singleton(Purse)`, doesn't compile as either, even inside
+ * arrays and objects up to 32 levels deep: it is the world's own object, the
+ * same every frame, so it would never differ.
+ *
  * **Gotchas**
  *
  * - The UI reads a view it doesn't listen to a frame late: `get` returns the
  *   value last published, and the next frame publishes the view again.
  * - Given `when`, the body runs again only when what `when` returns changes.
  *   Anything else the body reads shows as it was when the body last ran.
- * - `when` returns plain data, such as `(yield* Score).points`. Returned whole,
- *   `yield* Score` is the same object each frame, so the body never runs
- *   again.
  *
  * @category Systems
  */
 export function publish<
   A,
+  V extends A,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
 >(
   view: View<A>,
-  body: System.FrameBody<Eff, A>
+  body: System.FrameBody<Eff, V> & Fresh<V>
 ): System.System<
   System.GenError<Eff>,
   System.GenServices<Eff> | Port,
@@ -478,13 +508,14 @@ export function publish<
 >;
 export function publish<
   A,
+  V extends A,
   D,
   WhenEff extends Effect.Effect<unknown, unknown, unknown>,
   Eff extends Effect.Effect<unknown, unknown, unknown>,
 >(
   view: View<A>,
-  options: { readonly when: System.FrameBody<WhenEff, D> },
-  body: System.FrameBody<Eff, A>
+  options: { readonly when: System.FrameBody<WhenEff, D> & Fresh<D> },
+  body: System.FrameBody<Eff, V> & Fresh<V>
 ): System.System<
   System.GenError<WhenEff | Eff>,
   System.GenServices<WhenEff | Eff> | Port,
@@ -514,7 +545,8 @@ export function publish<
     return System.raw(name, "frame", function* () {
       const port = yield* Port;
       if (port.watched(view)) {
-        port.publish(view, yield* read);
+        // `View.publish` refused a read whole when it was given the body.
+        port.publish<unknown, unknown>(view, yield* read);
       }
     });
   }
@@ -537,7 +569,7 @@ export function publish<
       memo = { inputs: now, value: yield* read };
       last.set(port, memo);
     }
-    port.publish(view, memo.value);
+    port.publish<unknown, unknown>(view, memo.value);
   });
 }
 
@@ -561,5 +593,5 @@ export function publish<
 export const reset = <A>(view: View<A>): Effect.Effect<void, never, Port> =>
   // Where no UI is there, this publishes to nobody.
   Effect.map(Effect.service(Port), (port) => {
-    port.publish(view, view.initial);
+    port.publish<unknown, unknown>(view, view.initial);
   });

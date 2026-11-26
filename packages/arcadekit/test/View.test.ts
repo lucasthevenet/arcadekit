@@ -439,6 +439,171 @@ describe("a view", () => {
     );
   });
 
+  it("refuses a singleton read whole as its value and as what `when` returns, and takes its fields", () => {
+    const Gold = View.define("vw/Gold", { gold: 0 });
+    // The world's own object is the same every frame, so it would never
+    // differ, and the view would keep its first value.
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, from `when`
+        when: function* () {
+          return yield* Purse;
+        },
+      },
+      function* () {
+        return { gold: (yield* Purse).gold };
+      }
+    );
+    View.publish(
+      Gold,
+      // @ts-expect-error a singleton read whole, as the view's value
+      function* () {
+        return yield* Purse;
+      }
+    );
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, in a union
+        when: function* () {
+          const purse = yield* Purse;
+          return purse.gold > 3 ? purse : undefined;
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, in a tuple
+        when: function* () {
+          return [yield* Purse, (yield* Phase).value] as const;
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, in an object
+        when: function* () {
+          return { purse: yield* Purse };
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, four levels down
+        when: function* () {
+          return { a: { b: { c: { purse: yield* Purse } } } };
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, seven levels down
+        when: function* () {
+          return [[[{ a: { b: { c: yield* Purse } } }]]] as const;
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole from the world
+        when: function* () {
+          return (yield* World).singleton(Purse);
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      // @ts-expect-error a singleton read whole from the world, as the value
+      function* () {
+        return (yield* World).singleton(Purse);
+      }
+    );
+    System.frame("vw/PublishWhole", function* () {
+      const port = yield* View.Port;
+      // @ts-expect-error a singleton read whole, published through the port
+      port.publish(Gold, yield* Purse);
+      port.publish(Gold, { gold: (yield* World).singleton(Purse).gold });
+    });
+
+    // A field, a spread and a value built from them are data.
+    interface Branch {
+      readonly label: string;
+      readonly children: readonly Branch[];
+    }
+    const Tree = View.define<Branch>("vw/Tree", { label: "", children: [] });
+    const Rows = View.define("vw/Rows", {
+      rows: [] as readonly { readonly gold: number }[],
+    });
+    const taken = [
+      View.publish(
+        Gold,
+        {
+          when: function* () {
+            return (yield* Purse).gold;
+          },
+        },
+        function* () {
+          return { ...(yield* Purse) };
+        }
+      ),
+      View.publish(
+        Gold,
+        {
+          when: function* () {
+            return {
+              purse: { ...(yield* Purse) },
+              tags: ["gold"],
+              seen: new Map([["gold", (yield* Purse).gold]]),
+            };
+          },
+        },
+        function* () {
+          const { gold } = yield* Purse;
+          return { gold };
+        }
+      ),
+      View.publish(Rows, function* () {
+        const { gold } = yield* Purse;
+        return { rows: [gold, gold * 2].map((one) => ({ gold: one })) };
+      }),
+      View.publish(Tree, function* () {
+        const { gold } = yield* Purse;
+        return { label: `${gold}`, children: [{ label: "", children: [] }] };
+      }),
+    ];
+    expect(taken.map((system) => system.name)).toEqual([
+      "View.publish(vw/Gold)",
+      "View.publish(vw/Gold)",
+      "View.publish(vw/Rows)",
+      "View.publish(vw/Tree)",
+    ]);
+  });
+
   it("given `when`, shows what its body last said even after a reset, though `when` returns what it did", () => {
     let bodies = 0;
     const Quit = Action.define("vw/QuitWhenReset", Schema.Struct({}));

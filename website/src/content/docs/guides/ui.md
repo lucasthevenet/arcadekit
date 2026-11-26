@@ -60,7 +60,7 @@ The system compares values field by field, at any depth. The body can return a n
 - Several ticks within one frame produce one publication, of the latest value.
 - The body runs only while the UI watches the view: while the view has a listener, and in the frame after the UI reads it with `get`. When no UI is attached, as on a server, in a replay, or in most tests, no body runs at all.
 - While the UI watches a view, the system computes and compares the whole value every frame. For a view that is costly to compute, give `View.publish` a `when`, as [below](#compute-a-costly-view-only-when-its-inputs-change).
-- A frame system of your own publishes through `(yield* View.Port).publish(view, value)`, which reports whether the value was new. `(yield* View.Port).watched(view)` says whether the UI watches the view. A system of the tick or the input stage that requires `View.Port` doesn't compile.
+- A frame system of your own publishes through `(yield* View.Port).publish(view, value)`, which reports whether the value was new. It refuses a singleton read whole, as `View.publish` does. `(yield* View.Port).watched(view)` says whether the UI watches the view. A system of the tick or the input stage that requires `View.Port` doesn't compile.
 
 ## Read views and send actions from the UI
 
@@ -154,7 +154,7 @@ export const ShowRank = View.publish(
 );
 ```
 
-The body runs again only when what `when` returns changes. Anything else it reads shows as it was when the body last ran. `when` returns plain data, such as `(yield* Score).points`: returned whole, `yield* Score` is the same object every frame, and the body never runs again.
+The body runs again only when what `when` returns changes. Anything else it reads shows as it was when the body last ran. `when` and the body return data, such as `(yield* Score).points` or `{ ...(yield* Score) }`. A singleton read whole, `yield* Score` or `(yield* World).singleton(Score)`, doesn't compile as either, even inside arrays and objects up to 32 levels deep: it is the world's own object, the same every frame, so it would never differ.
 
 ## Show a view in one part of the game
 

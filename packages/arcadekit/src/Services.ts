@@ -28,6 +28,7 @@ import type { ReadingEvents } from "./Event.ts";
 import type { Devices } from "./Input.ts";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query.ts";
 import { writing } from "./services/handed.ts";
+import type * as Singleton from "./Singleton.ts";
 
 /**
  * In a system's requirements, says that the system changes the game other than
@@ -74,10 +75,11 @@ export interface ReadingWorld extends Pick<
     def: ComponentDef<S>
   ): Readonly<ValueOf<S>> | undefined;
   /**
-   * Returns a singleton, read-only. A system writes one with
+   * Returns a singleton, read-only, as a `Singleton.Read`: the world's own
+   * object, the same on every call. A system writes one with
    * `yield* Score.writes`.
    */
-  singleton<S extends Schema>(spec: SingletonSpec<S>): Readonly<ValueOf<S>>;
+  singleton<S extends Schema>(spec: SingletonSpec<S>): Singleton.Read<S>;
 }
 
 /**

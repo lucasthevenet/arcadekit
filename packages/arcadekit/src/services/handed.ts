@@ -16,6 +16,7 @@ import type {
   ReadingEvents,
 } from "../Event.ts";
 import type { ReadingWorld, WritingWorld } from "../Services.ts";
+import type * as Singleton from "../Singleton.ts";
 
 /**
  * The world as the frame stage, the input stage and `app.read` are handed it:
@@ -69,8 +70,8 @@ class Read implements ReadingWorld {
     return placed(this.#world, id);
   }
 
-  singleton<S extends Schema>(spec: SingletonSpec<S>): ValueOf<S> {
-    return this.#world.singleton(spec);
+  singleton<S extends Schema>(spec: SingletonSpec<S>): Singleton.Read<S> {
+    return this.#world.singleton(spec) as Singleton.Read<S>;
   }
 
   sources(target: Entity, def: RelationDef): Entity[] {
