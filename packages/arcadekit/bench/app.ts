@@ -342,8 +342,8 @@ const atRest = (): number =>
     })
   );
 
-/** What the systems below drew, outside the app as a canvas is, so their loops are kept. */
-export const drawn = { sum: 0 };
+/** What the systems below drew, so their loops are kept: each app has its own, as it has its own canvas. */
+const Drawn = System.local(() => ({ sum: 0 }));
 
 /** A system that draws: it fetches a query and the time, and with `reading` reads every column. */
 export const drawer = <const I extends number>(i: I, reading: boolean) =>
@@ -351,6 +351,7 @@ export const drawer = <const I extends number>(i: I, reading: boolean) =>
     const moving = yield* Seen;
     yield* Time;
     if (reading) {
+      const drawn = yield* Drawn;
       moving.eachChunk((start, end, pos, vel) => {
         const px = pos.x;
         const vx = vel.x;

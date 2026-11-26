@@ -425,22 +425,54 @@ const throughOf = (context: Context, body: TickCode): Reference[] =>
       : scope.through
   );
 
+/** What a module makes its own state with, called with `new`. */
+const stateConstructors = new Set(["Object", "Array", "Map", "Set"]);
+
+/**
+ * Whether a variable is declared at the top of its module and made there as an object, an
+ * array, a `Map` or a `Set`: `const state = { count: 0 }`, `let seen = new Set<number>()`.
+ */
+const madeByTheModule = (variable: Reference["resolved"]): boolean =>
+  variable?.scope.type === "module" &&
+  variable.defs.some((def) => {
+    if (def.node.type !== "VariableDeclarator" || def.node.id !== def.name) {
+      return false;
+    }
+    let made = def.node.init;
+    while (
+      made?.type === "TSAsExpression" ||
+      made?.type === "TSSatisfiesExpression"
+    ) {
+      made = made.expression;
+    }
+    return (
+      made?.type === "ObjectExpression" ||
+      made?.type === "ArrayExpression" ||
+      (made?.type === "NewExpression" &&
+        made.callee.type === "Identifier" &&
+        stateConstructors.has(made.callee.name))
+    );
+  });
+
 /**
  * Code of the tick keeps what it changes in the world, and a frame or an input system keeps
  * what it sets between frames in a `System.local`. It can't see what code is given by name
  * rather than written in the call, nor a function declared elsewhere that the code calls. It
  * leaves imports alone, since `HashMap.set(map, key, value)` changes nothing, and so misses a
  * `Map` a module exports. A frame system draws by changing objects outside it, a canvas or a
- * camera, so of its code only setting a variable declared outside it is refused. The
- * repository's tests record what systems did in arrays outside them, so oxlint.config.ts
- * leaves test/ out.
+ * camera, so of its code only two changes are refused: setting a variable declared outside it,
+ * and changing an object, an array, a `Map` or a `Set` its module makes at the top, as
+ * `state.count += 1` and `seen.add(id)` do. Syntax can't tell whether any other object is
+ * state or what the system draws on, so one that a function or a class makes, or that is
+ * handed to the system, is let through. The repository's tests record what systems did in
+ * arrays outside them, so oxlint.config.ts leaves test/ out.
  */
 const noOutsideState: Rule = {
   meta: {
     type: "problem",
     docs: {
       description:
-        "The code of the tick (a system of the tick, a state's hook, an action's handler, a plugin's setup) changes nothing declared outside it, and a frame or an input system sets no variable declared outside it.",
+        "The code of the tick (a system of the tick, a state's hook, an action's handler, a plugin's setup) changes nothing declared outside it, and a frame or an input system sets no variable declared outside it and changes no object, array, Map or Set its module makes at the top.",
     },
   },
   create: (context) => ({
@@ -463,15 +495,18 @@ const noOutsideState: Rule = {
       }
       for (const reference of throughOf(context, between)) {
         if (
-          reference.isWrite() &&
-          !reference.init &&
-          !reference.resolved?.defs.some((def) => def.type === "ImportBinding")
+          !changes(reference) ||
+          !(reference.isWrite() || madeByTheModule(reference.resolved))
         ) {
-          context.report({
-            node: reference.identifier,
-            message: `This sets ${reference.identifier.name}, a variable declared outside the frame or input system it is in: every app of the game shares it, and closing an app doesn't let go of it. Keep what a frame or an input system keeps from one frame to the next in a System.local, of which each app has its own: const Kept = System.local(() => ({ ${reference.identifier.name}: ... })), then (yield* Kept).${reference.identifier.name} in the system.`,
-          });
+          continue;
         }
+        const { name } = reference.identifier;
+        context.report({
+          node: reference.identifier,
+          message: reference.isWrite()
+            ? `This sets ${name}, a variable declared outside the frame or input system it is in: every app of the game shares it, and closing an app doesn't let go of it. Keep what a frame or an input system keeps from one frame to the next in a System.local, of which each app has its own: const Kept = System.local(() => ({ ${name}: ... })), then (yield* Kept).${name} in the system.`
+            : `This changes ${name}, an object its module makes once, from a frame or an input system: every app of the game shares it, and closing an app doesn't let go of it. Make it in a System.local, of which each app has its own: const Kept = System.local(() => ...), the dots being what makes ${name} now, then const ${name} = yield* Kept in the system. What code outside the app reads, such as what it draws on, is given to the app as a service instead.`,
+        });
       }
     },
   }),
