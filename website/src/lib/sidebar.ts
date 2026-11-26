@@ -91,6 +91,7 @@ export const OUTLINE: readonly (Group & {
       "guides/systems",
       "guides/events-and-actions",
       "guides/states",
+      "guides/timers",
       "guides/plugins",
     ],
   },

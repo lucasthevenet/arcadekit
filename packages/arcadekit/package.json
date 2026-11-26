@@ -142,6 +142,11 @@
       "types": "./dist/Timeline.d.ts",
       "default": "./dist/Timeline.js"
     },
+    "./Timer": {
+      "source": "./src/Timer.ts",
+      "types": "./dist/Timer.d.ts",
+      "default": "./dist/Timer.js"
+    },
     "./Transform2d": {
       "source": "./src/Transform2d.ts",
       "types": "./dist/Transform2d.d.ts",
