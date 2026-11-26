@@ -58,12 +58,12 @@ type Fields = {
  *
  * @category Models
  */
-export interface StateView<V extends string> {
+export interface Reader<V extends string> {
   /** The current state. */
   readonly value: V;
   /** The requested state that hasn't been entered yet, if any. */
   readonly next: V | undefined;
-  // A method, so that a view of any state is a `StateView<string>`.
+  // A method, so that a view of any state is a `Reader<string>`.
   /** Returns whether the game is in one of these states. */
   is(...values: readonly V[]): boolean;
 }
@@ -74,8 +74,8 @@ export interface StateView<V extends string> {
  *
  * @category Models
  */
-export interface StateHandle<V extends string> extends StateView<V> {
-  // A method, so that a handle of any state is a `StateHandle<string>`.
+export interface Setter<V extends string> extends Reader<V> {
+  // A method, so that a handle of any state is a `Setter<string>`.
   /**
    * Requests a state. The game enters it at the start of the next tick. The
    * exit hooks of the old state run, the entities scoped to it are despawned,
@@ -89,21 +89,19 @@ export interface StateHandle<V extends string> extends StateView<V> {
 
 /**
  * A state's definition. It is an Effect, and `yield*` on it returns a
- * `StateView` of the world's value. It is also the singleton that holds that
+ * `State.Reader` of the world's value. It is also the singleton that holds that
  * value.
  *
  * @category Models
  */
 export class State<V extends string, N extends string = string>
-  extends Effectable.Class<StateView<V>, never, World>
+  extends Effectable.Class<Reader<V>, never, World>
   implements SingletonSpec<Fields>
 {
   readonly component: ComponentDef<Fields>;
   readonly initial: { value: string; next: string | null; entered: number };
-  private effect: Effect.Effect<StateView<V>, never, World> | undefined;
-  private writing:
-    | Effect.Effect<StateHandle<V>, never, World | Sim>
-    | undefined;
+  private effect: Effect.Effect<Reader<V>, never, World> | undefined;
+  private writing: Effect.Effect<Setter<V>, never, World | Sim> | undefined;
 
   constructor(
     readonly name: N,
@@ -125,7 +123,7 @@ export class State<V extends string, N extends string = string>
     defining(this as unknown as State<string>);
   }
 
-  asEffect(): Effect.Effect<StateView<V>, never, World> {
+  asEffect(): Effect.Effect<Reader<V>, never, World> {
     return (this.effect ??= Effect.map(Effect.service(World), (world) => {
       const handle = handleOf(whole(world), this);
       return {
@@ -141,11 +139,11 @@ export class State<V extends string, N extends string = string>
   }
 
   /**
-   * The state's `StateHandle`, which can also `set` it. Requiring it puts `Sim`
+   * The state's `Setter`, which can also `set` it. Requiring it puts `Sim`
    * in the system's requirements, which a frame or input system doesn't
    * accept.
    */
-  get sets(): Effect.Effect<StateHandle<V>, never, World | Sim> {
+  get sets(): Effect.Effect<Setter<V>, never, World | Sim> {
     return (this.writing ??= Effect.map(Effect.service(World), (world) =>
       handleOf(whole(world), this)
     ));

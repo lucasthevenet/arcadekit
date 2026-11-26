@@ -55,7 +55,7 @@ import type * as System from "./System.ts";
  * @category Errors
  */
 export class InvalidPayload extends Schema.TaggedError<InvalidPayload>()(
-  "InvalidPayload",
+  "ActionInvalidPayload",
   {
     action: Schema.String,
     /** What was wrong, as the schema reported it. */
@@ -68,10 +68,9 @@ export class InvalidPayload extends Schema.TaggedError<InvalidPayload>()(
  *
  * @category Errors
  */
-export class UnknownAction extends Schema.TaggedError<UnknownAction>()(
-  "UnknownAction",
-  { action: Schema.String }
-) {}
+export class Unknown extends Schema.TaggedError<Unknown>()("ActionUnknown", {
+  action: Schema.String,
+}) {}
 
 /**
  * An action its handler refused, as `Action.rejected` reads it: the payload
@@ -98,7 +97,7 @@ export interface Refused<P, E> {
  *
  * @category Models
  */
-export interface ActionDef<N extends string, P, E = unknown> {
+export interface Action<N extends string, P, E = unknown> {
   readonly name: N;
   /**
    * Validates the payload and converts it to and from JSON. Derived from the
@@ -111,7 +110,7 @@ export interface ActionDef<N extends string, P, E = unknown> {
    */
   readonly error: Schema.Codec<E, unknown>;
   /** The event of the action's refusals, which `Action.rejected` returns. */
-  readonly rejected: Event.EventDef<Refused<P, E>>;
+  readonly rejected: Event.Event<Refused<P, E>>;
   /** Holds no value. It keeps the payload type on the action, invariant. */
   readonly _P?: (payload: P) => P;
 }
@@ -149,9 +148,7 @@ type Tagged = Schema.Codec<
  *
  * @category Constructors
  */
-export function define<const N extends string>(
-  name: N
-): ActionDef<N, void, never>;
+export function define<const N extends string>(name: N): Action<N, void, never>;
 export function define<
   const N extends string,
   S extends Schema.Codec<unknown, unknown>,
@@ -160,12 +157,12 @@ export function define<
   name: N,
   payload: S,
   options?: { readonly error?: Err }
-): ActionDef<N, S["Type"], Err["Type"]>;
+): Action<N, S["Type"], Err["Type"]>;
 export function define(
   name: string,
   payload: Schema.Codec<unknown, unknown> = Schema.Void,
   options?: { readonly error?: Tagged }
-): AnyActionDef {
+): Any {
   const error = options?.error ?? Schema.Never;
   // The JSON codec turns values such as dates and bigints into JSON on the
   // way out and back on the way in, so the log is always safe to serialize.
@@ -202,8 +199,8 @@ export function define(
  * @category Events
  */
 export const rejected = <N extends string, P, E>(
-  action: ActionDef<N, P, E>
-): Event.EventDef<Refused<P, E>> => action.rejected;
+  action: Action<N, P, E>
+): Event.Event<Refused<P, E>> => action.rejected;
 
 /**
  * Where an action came from, which a handler receives alongside its payload.
@@ -233,7 +230,7 @@ export interface Origin {
  * @category Models
  */
 export interface Handler<N extends string, P, A, E, R> {
-  readonly action: ActionDef<N, P>;
+  readonly action: Action<N, P>;
   readonly handle: (payload: P, origin: Origin) => Effect.Effect<A, E, R>;
 }
 
@@ -243,11 +240,11 @@ export interface Handler<N extends string, P, A, E, R> {
  *
  * @category Type-level
  */
-export interface AnyActionDef {
+export interface Any {
   readonly name: string;
   readonly codec: Schema.Codec<unknown, unknown>;
   readonly error: Schema.Codec<unknown, unknown>;
-  readonly rejected: Event.EventDef<Refused<unknown, unknown>>;
+  readonly rejected: Event.Event<Refused<unknown, unknown>>;
 }
 
 /**
@@ -258,7 +255,7 @@ export interface AnyActionDef {
  * @category Type-level
  */
 export interface AnyHandler {
-  readonly action: AnyActionDef;
+  readonly action: Any;
   readonly handle: (
     payload: never,
     origin: Origin
@@ -301,7 +298,7 @@ export function handler<
   Eff extends Effect.Effect<unknown, E, unknown>,
   A,
 >(
-  action: ActionDef<N, P, E>,
+  action: Action<N, P, E>,
   body: System.TickGated<
     Eff,
     (payload: P, origin: Origin) => Generator<Eff, A, never>
@@ -319,7 +316,7 @@ export function handler<
   Eff extends Effect.Effect<unknown, unknown, unknown>,
   A,
 >(
-  action: ActionDef<N, P>,
+  action: Action<N, P>,
   body: (payload: P, origin: Origin) => Generator<Eff, A, never>
 ): Handler<
   N,
@@ -414,7 +411,7 @@ export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
  * - `payload`: the payload in its JSON form, or `null` when its schema didn't
  *   take it.
  * - `error`: why it was refused, in its JSON form: a refusal the action
- *   declares, `InvalidPayload` or `UnknownAction`, each with its `_tag`. It is
+ *   declares, `Action.InvalidPayload` or `Action.Unknown`, each with its `_tag`. It is
  *   the same on every peer and in a save.
  * - `from`: the peer that issued it, as its handler would have received it.
  *
@@ -459,14 +456,14 @@ export class Actions extends Context.Service<
   Actions,
   {
     readonly enqueue: <N extends string, P>(
-      action: ActionDef<N, P>,
+      action: Action<N, P>,
       payload: WithSpawned<P>
     ) => void;
     /**
      * Returns whether the game has a handler for an action. An action without
      * one can't be issued: `enqueue` throws.
      */
-    readonly handles: (action: AnyActionDef) => boolean;
+    readonly handles: (action: Any) => boolean;
   }
 >()("arcadekit/Actions") {}
 

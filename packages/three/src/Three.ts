@@ -86,7 +86,7 @@ export type { ObjectsOptions, ObjectsShared } from "./Objects.ts";
  *
  * @category Options
  */
-export interface Which {
+export interface KindOptions {
   /**
    * The component that marks an entity as one of the kind, or several
    * components, all of which it must have. An entity is drawn while it has
@@ -150,7 +150,7 @@ type Missing<O> = O extends unknown
  * A helper that makes kinds types its own `transform` with it, so that it
  * can't pair a component with the other module:
  *
- *   const crowd = <const O extends Three.Which["of"]>(
+ *   const crowd = <const O extends Three.KindOptions["of"]>(
  *     name: string,
  *     of: O,
  *     transform: Three.TransformOf<O>,
@@ -173,7 +173,7 @@ type Missing<O> = O extends unknown
 export type TransformOf<O> = [Exclude<PositionName, Missing<O>>] extends [never]
   ? {
       readonly Position: {
-        readonly name: `The kind's "of" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Add the kind's transform's Position to its component's requires, and type it as that component, not as a ComponentDef.`;
+        readonly name: `The kind's "of" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Add the kind's transform's Position to its component's requires, and type it as that component itself.`;
       };
     }
   : (typeof Transform3d | typeof Transform2d) & {

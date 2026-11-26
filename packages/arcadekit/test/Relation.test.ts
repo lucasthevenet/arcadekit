@@ -9,6 +9,7 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/ecs/index.ts";
+import type { RelationDef } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -23,7 +24,7 @@ import {
   System,
   World,
 } from "../src/index.ts";
-import type { Entity, RelationDef } from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 
 const Body = Component.define("rl/Body", { x: Field.f32 });
 /** A child goes with its parent. */

@@ -64,7 +64,7 @@ describe("what an app is running", () => {
         const named = 'a handler of "ph/Call"';
         const calls: [
           string,
-          (app: App.App) => Effect.Effect<unknown, Save.SaveRefused>,
+          (app: App.App) => Effect.Effect<unknown, Save.Refused>,
           string,
         ][] = [
           ["App.tick", (app) => app.tick(1), named],

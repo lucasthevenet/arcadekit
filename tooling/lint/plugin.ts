@@ -2,7 +2,7 @@
 // contain or export. oxlint.config.ts turns them on for packages/*/src, no-outside-state for
 // the examples and benchmarks too, and no-run-in-tests for the packages' tests.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 import { parseSync, visitorKeys } from "oxc-parser";
 import type {
@@ -1183,6 +1183,165 @@ const noUnusedInternal: Rule = {
   },
 };
 
+/** The words of a name in PascalCase: "SceneShape" is Scene and Shape, "Transform2d" one word. */
+const wordsOf = (name: string): readonly string[] =>
+  name.match(/[A-Z][a-z0-9]*|[a-z0-9]+/gu) ?? [];
+
+/** Whether the words of `name` hold the words of `module`, one after another. */
+const repeats = (name: string, module: string): boolean => {
+  const words = wordsOf(name);
+  const own = wordsOf(module);
+  return (
+    name !== module &&
+    own.length > 0 &&
+    words.some((_, i) => own.every((word, j) => words[i + j] === word))
+  );
+};
+
+/**
+ * The namespace a game reads each export of a module after, by the module's file: its own
+ * name, unless another module of its package gives the export again by name, as `Three` gives
+ * what `Scene` and `Renderer` export.
+ */
+const namespaces = new Map<
+  string,
+  {
+    readonly stamp: string;
+    readonly readAs: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  }
+>();
+
+const readAsOf = (
+  cwd: string
+): ReadonlyMap<string, ReadonlyMap<string, string>> => {
+  const root = join(cwd, "packages");
+  const modules = (existsSync(root) ? readdirSync(root) : [])
+    .flatMap((folder) => workspaceOf(join(root, folder)) ?? [])
+    .flatMap((workspace) => [...workspace.entries])
+    .filter((file) => existsSync(file) && /^[A-Z]/u.test(basename(file)));
+  const stamp = modules
+    .map((file) => `${file}@${statSync(file).mtimeMs}`)
+    .join("\n");
+  const known = namespaces.get(cwd);
+  if (known?.stamp === stamp) {
+    return known.readAs;
+  }
+  const readAs = new Map<string, Map<string, string>>();
+  for (const file of modules) {
+    const { program } = parseSync(file, readFileSync(file, "utf8"));
+    for (const statement of program.body) {
+      if (
+        statement.type !== "ExportNamedDeclaration" ||
+        statement.source === null
+      ) {
+        continue;
+      }
+      const from = resolveFile(join(dirname(file), statement.source.value));
+      if (from === undefined) {
+        continue;
+      }
+      const names = readAs.get(from) ?? new Map<string, string>();
+      for (const specifier of statement.specifiers) {
+        names.set(nameOfSpecifier(specifier.local), basename(file, ".ts"));
+      }
+      readAs.set(from, names);
+    }
+  }
+  namespaces.set(cwd, { stamp, readAs });
+  return readAs;
+};
+
+/** The tag of a class that extends `Data.TaggedError("Tag")` or `Schema.TaggedError<C>()("Tag", ...)`. */
+const tagOf = (superClass: unknown): string | undefined => {
+  let call: unknown = superClass;
+  while (field(call, "type") === "CallExpression") {
+    const callee = field(call, "callee");
+    const named =
+      field(callee, "type") === "MemberExpression"
+        ? field(field(callee, "property"), "name")
+        : field(callee, "type") === "CallExpression"
+          ? field(field(field(callee, "callee"), "property"), "name")
+          : undefined;
+    const first: unknown = (
+      field(call, "arguments") as unknown[] | undefined
+    )?.[0];
+    if (
+      typeof named === "string" &&
+      /^Tagged(?:Error|ErrorClass)$/u.test(named) &&
+      field(first, "type") === "Literal" &&
+      typeof field(first, "value") === "string"
+    ) {
+      return field(first, "value") as string;
+    }
+    call = callee;
+  }
+  return undefined;
+};
+
+/**
+ * The names of a module's types and errors, as modules.md says them: a type is named for what
+ * it is after the namespace a game reads it after, which it does not repeat, and an error's tag
+ * is that namespace and its class together.
+ */
+const names: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "A module's types do not repeat its name, and an error's tag is its module's name and its class's.",
+    },
+  },
+  create: (context) => {
+    const file = context.filename;
+    const module = basename(file, ".ts");
+    const dir = /^(.*\/packages\/[^/]+)\/src\//u.exec(file)?.[1];
+    const workspace = dir === undefined ? undefined : workspaceOf(dir);
+    if (
+      workspace === undefined ||
+      !workspace.entries.has(file) ||
+      !/^[A-Z]/u.test(module)
+    ) {
+      return {};
+    }
+    const readAs = readAsOf(context.cwd).get(file);
+    return {
+      ExportNamedDeclaration: (node) => {
+        const { declaration } = node;
+        if (
+          declaration?.type !== "TSInterfaceDeclaration" &&
+          declaration?.type !== "TSTypeAliasDeclaration" &&
+          declaration?.type !== "ClassDeclaration"
+        ) {
+          return;
+        }
+        const id = declaration.id;
+        if (id?.type !== "Identifier") {
+          return;
+        }
+        const name = id.name;
+        const namespace = readAs?.get(name) ?? module;
+        if (repeats(name, namespace)) {
+          context.report({
+            node: id,
+            message: `${name} repeats ${namespace}, the namespace a game reads it after: ${namespace}.${name}. Name it for what it is after the namespace, and the module's main type ${namespace}.${namespace}, as modules.md says.`,
+          });
+        }
+        if (declaration.type !== "ClassDeclaration") {
+          return;
+        }
+        const tag = tagOf(declaration.superClass);
+        const wanted = `${namespace}${name}`;
+        if (tag !== undefined && tag !== wanted) {
+          context.report({
+            node: id,
+            message: `${name}'s tag is "${tag}". An error's tag is its namespace and its class together, "${wanted}": Effect.catchTag takes the tag, so two errors of one bare tag from two modules would be caught as one.`,
+          });
+        }
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "arcadekit" },
   rules: {
@@ -1194,5 +1353,6 @@ export default {
     "no-outside-state": noOutsideState,
     "id-casts": idCasts,
     "no-unused-internal": noUnusedInternal,
+    names,
   },
 };

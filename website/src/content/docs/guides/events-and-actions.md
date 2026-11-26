@@ -44,7 +44,7 @@ const Dust = System.tick("fx/Dust", function* () {
 
 An event is a fact, so name it in the past tense, prefixed with its feature, such as `"physics/Landed"`. The name identifies the event within an app. A second, different event with the same name is refused when it is first used.
 
-The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. A save uses the schema to store the events waiting to be read. `Event.encode` and `Event.decode` use it to convert a payload to JSON and back, and each returns an `Exit` that fails with `Event.InvalidEvent`. An event with no payload takes only its name, `Event.define("Started")`.
+The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. A save uses the schema to store the events waiting to be read. `Event.encode` and `Event.decode` use it to convert a payload to JSON and back, and each returns an `Exit` that fails with `Event.Invalid`. An event with no payload takes only its name, `Event.define("Started")`.
 
 ## Define and issue an action
 
@@ -150,7 +150,7 @@ const Refusals = System.frame("ui/Refusals", function* () {
 
 Each refusal is `{ payload, error, from }`: the payload the handler received, an error the action's schema takes, and who issued it. A payload that the action's schema doesn't take never reaches the handler, and isn't among them.
 
-`Action.Rejected` is the event of every refusal, whatever the action. It carries the action's name, its payload in JSON form, the error in JSON form with its `_tag`, and `from`. Its error is a refusal the action declares, `Action.InvalidPayload` for a payload the schema doesn't take, or `Action.UnknownAction` for an action the game has no handler for.
+`Action.Rejected` is the event of every refusal, whatever the action. It carries the action's name, its payload in JSON form, the error in JSON form with its `_tag`, and `from`. Its error is a refusal the action declares, `Action.InvalidPayload` for a payload the schema doesn't take, or `Action.Unknown` for an action the game has no handler for.
 
 A schema validates only a payload's shape. Have the handler check whether an entity id in the payload is still alive, and whether it belongs to the player who sent it.
 
@@ -170,7 +170,7 @@ The action is applied at the start of the next tick. The service's `handles(acti
 
 ## Issue an action from JSON
 
-Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. With `dispatchByName`, an unknown name or an invalid payload fails with `Action.UnknownAction` or `Action.InvalidPayload`. With `enqueueByName`, it becomes an `Action.Rejected` event. Neither crashes the game.
+Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. With `dispatchByName`, an unknown name or an invalid payload fails with `Action.Unknown` or `Action.InvalidPayload`. With `enqueueByName`, it becomes an `Action.Rejected` event. Neither crashes the game.
 
 Both accept the issuer as a third argument, for a program that relays actions on someone else's behalf, such as a server for its clients: `app.enqueueByName(name, json, client)`. Don't pass it on an app in a session, where each peer's actions carry that peer's own name.
 

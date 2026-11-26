@@ -7,9 +7,9 @@ import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
 import { STORE, decode, encode } from "../Event.ts";
 import type {
-  EventDef,
-  EventHandle,
-  InvalidEvent,
+  Emitter,
+  Event as EventDef,
+  Invalid as InvalidEvent,
   ReadingEvents,
 } from "../Event.ts";
 import { Outbox } from "./outbox.ts";
@@ -34,7 +34,7 @@ export const defining = (def: EventDef<unknown>): void => {
   defined.set(def.name, def);
 };
 
-/** What an `InvalidEvent` says was wrong. */
+/** What an `Event.Invalid` says was wrong. */
 const describeFailure = (cause: Cause.Cause<InvalidEvent>): string => {
   const error = Cause.squash(cause);
   return error instanceof Error ? error.message : String(error);
@@ -452,10 +452,7 @@ export class EventBus implements ReadingEvents {
   private readonly waiting: Waiting;
   private readonly outbox = new Outbox();
   /** The handles of the tick's systems and of handlers, by reader and event. */
-  private readonly handles = new Map<
-    string,
-    Map<object, EventHandle<unknown>>
-  >();
+  private readonly handles = new Map<string, Map<object, Emitter<unknown>>>();
 
   /** Keeps the events the simulation has yet to read in `world`, as a store. */
   constructor(world: World) {
@@ -486,7 +483,7 @@ export class EventBus implements ReadingEvents {
    * can't emit. Any other caller gets a new handle, which reads each event
    * emitted from now on, once the code that emitted it has ended.
    */
-  handle<P>(def: EventDef<P>): EventHandle<P> {
+  handle<P>(def: EventDef<P>): Emitter<P> {
     const channel = this.waiting.channel(def);
     const { reader, stage, waiting } = this;
     if (reader === undefined) {
@@ -506,7 +503,7 @@ export class EventBus implements ReadingEvents {
       mine = new Map();
       this.handles.set(reader, mine);
     }
-    let handle = mine.get(def) as EventHandle<P> | undefined;
+    let handle = mine.get(def) as Emitter<P> | undefined;
     if (handle === undefined) {
       handle = {
         emit: (payload) => {
@@ -518,7 +515,7 @@ export class EventBus implements ReadingEvents {
         },
         read: () => waiting.read(channel, reader),
       };
-      mine.set(def, handle as EventHandle<unknown>);
+      mine.set(def, handle as Emitter<unknown>);
     }
     return handle;
   }

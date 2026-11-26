@@ -519,3 +519,97 @@ export const unused = 1;
     },
   ],
 });
+
+/** A workspace whose package gives `src/Mod.ts` as `./Mod`, and `src/Part.ts` as `./Part`. */
+const named = (name: string, files: Record<string, string>, file: string) =>
+  linting(
+    name,
+    {
+      "packages/kit/package.json": JSON.stringify({
+        name: "kit",
+        exports: {
+          "./Mod": { source: "./src/Mod.ts" },
+          "./Part": { source: "./src/Part.ts" },
+        },
+      }),
+      ...files,
+    },
+    file
+  );
+
+new RuleTester().run("names", plugin.rules.names, {
+  valid: [
+    named(
+      "a module's main type is its name, and its other types are named for what they are",
+      {
+        "packages/kit/src/Mod.ts": `export interface Mod {}\nexport interface Reader {}\nexport type Mods = readonly Mod[];\nexport class Modded {}\n`,
+      },
+      "packages/kit/src/Mod.ts"
+    ),
+    named(
+      "an error's tag is its module's name and its class's together",
+      {
+        "packages/kit/src/Mod.ts": `import { Data, Schema } from "effect";\nexport class Refused extends Data.TaggedError("ModRefused")<{}> {}\nexport class Unknown extends Schema.TaggedError<Unknown>()("ModUnknown", {}) {}\n`,
+      },
+      "packages/kit/src/Mod.ts"
+    ),
+    named(
+      "a part's names are read after the module that gives them again",
+      {
+        "packages/kit/src/Part.ts": `export interface PartShape {}\n`,
+        "packages/kit/src/Mod.ts": `export type { PartShape } from "./Part.ts";\n`,
+      },
+      "packages/kit/src/Part.ts"
+    ),
+    named(
+      "a file that is no entry names its types as it likes",
+      { "packages/kit/src/internal/mod.ts": `export interface ModThing {}\n` },
+      "packages/kit/src/internal/mod.ts"
+    ),
+  ],
+  invalid: [
+    ...[
+      "export interface ModReader {}",
+      "export type AnyMod = unknown;",
+      "export class InvalidMod {}",
+    ].map((declaration) => ({
+      ...named(
+        `a type repeats its module's name: ${declaration}`,
+        { "packages/kit/src/Mod.ts": `${declaration}\n` },
+        "packages/kit/src/Mod.ts"
+      ),
+      errors: [
+        { message: /repeats Mod, the namespace a game reads it after/u },
+      ],
+    })),
+    {
+      ...named(
+        "a part's name repeats the module that gives it again",
+        {
+          "packages/kit/src/Part.ts": `export interface ModShape {}\n`,
+          "packages/kit/src/Mod.ts": `export type { ModShape } from "./Part.ts";\n`,
+        },
+        "packages/kit/src/Part.ts"
+      ),
+      errors: [{ message: /^ModShape repeats Mod/u }],
+    },
+    ...[
+      `export class Refused extends Data.TaggedError("Refused")<{}> {}`,
+      `export class Refused extends Schema.TaggedError<Refused>()("PartRefused", {}) {}`,
+    ].map((declaration) => ({
+      ...named(
+        `an error's tag is not its module's name and its class's: ${declaration}`,
+        {
+          "packages/kit/src/Mod.ts": `import { Data, Schema } from "effect";\n${declaration}\n`,
+        },
+        "packages/kit/src/Mod.ts"
+      ),
+      errors: [
+        {
+          message:
+            /^Refused's tag is "\w+"\. An error's tag is its namespace and its class together, "ModRefused"/u,
+        },
+      ],
+    })),
+  ],
+});

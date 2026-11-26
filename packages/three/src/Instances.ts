@@ -18,7 +18,7 @@ import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
 import * as internal from "./internal/instances.ts";
-import type { Needs, TransformOf, Which } from "./Three.ts";
+import type { KindOptions, Needs, TransformOf } from "./Three.ts";
 
 /**
  * How an instance looks: its mesh's geometry and material.
@@ -35,7 +35,7 @@ export interface Look {
  *
  * @category Options
  */
-export interface InstancesShared extends Which {
+export interface InstancesShared extends KindOptions {
   /**
    * `Color.Rgb`, for each instance to have its entity's colour, which
    * multiplies the material's own. An entity without one is drawn in the
@@ -151,7 +151,7 @@ export interface InstancesOptions extends InstancesShared, Look {}
  *
  * @category Systems
  */
-export function instances<const O extends Which["of"]>(
+export function instances<const O extends KindOptions["of"]>(
   name: string,
   options: InstancesOptions & {
     readonly of: O;

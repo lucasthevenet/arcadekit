@@ -18,14 +18,16 @@ import type * as System from "arcadekit/System";
 import type { Object3D } from "three";
 
 import * as internal from "./internal/objects.ts";
-import type { Needs, TransformOf, Which } from "./Three.ts";
+import type { KindOptions, Needs, TransformOf } from "./Three.ts";
 
 /**
  * The options of `Three.objects` and `Gltf.objects`.
  *
  * @category Options
  */
-export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
+export interface ObjectsShared<
+  O extends Object3D = Object3D,
+> extends KindOptions {
   /**
    * Called with an entity's object after it is removed from the scene, when
    * the entity stops matching, its bundle is released, or the app
@@ -99,7 +101,7 @@ export interface ObjectsOptions<
  * @category Systems
  */
 export function objects<
-  const K extends Which["of"],
+  const K extends KindOptions["of"],
   O extends Object3D = Object3D,
 >(
   name: string,

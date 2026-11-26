@@ -8,8 +8,9 @@ import {
   SnapshotError,
 } from "../src/ecs/index.ts";
 import { Component } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import { Field, Migrate, Query } from "../src/index.ts";
-import type { ComponentDef, Entity, JsonValue } from "../src/index.ts";
+import type { Entity, JsonValue } from "../src/index.ts";
 import { Shouts } from "./stores.ts";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });

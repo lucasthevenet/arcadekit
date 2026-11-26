@@ -25,7 +25,7 @@ import type { Layer, Runtime } from "effect";
 import type * as Assets from "../Assets.ts";
 import type * as Driver from "../Driver.ts";
 import type * as Sound from "../Sound.ts";
-import type { AudioLike, MediaLike } from "./Audio.ts";
+import type { ContextLike, MediaLike } from "./Audio.ts";
 import * as decode from "./internal/decode.ts";
 import * as page from "./internal/page.ts";
 
@@ -103,7 +103,7 @@ export interface Options {
   /** The master volume. Defaults to 1, the volume the game requests. */
   readonly volume?: number;
   /** Creates the page's audio context. Defaults to `new AudioContext()`. */
-  readonly audio?: () => AudioLike;
+  readonly audio?: () => ContextLike;
   /**
    * Decodes a sound from a file's bytes. Defaults to `decodeAudioData` on a
    * silent context, which needs no user gesture.

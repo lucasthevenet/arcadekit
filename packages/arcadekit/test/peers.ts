@@ -26,6 +26,7 @@ import type { Entity } from "../src/index.ts";
 import type * as Build from "../src/internal/build.ts";
 import { Message, Session } from "../src/net/index.ts";
 import type { ReadingWorld } from "../src/Services.ts";
+import { unwrap } from "./checks.ts";
 
 // --- a small game: players drop coins, which drift about, and take them --------
 
@@ -350,7 +351,7 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
           inFlight.push({
             at: now + dice.int(lag.min, lag.max),
             to: name,
-            bytes: Message.encode(message),
+            bytes: unwrap(Message.encode(message)),
           });
         }
       }

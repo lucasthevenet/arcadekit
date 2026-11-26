@@ -510,11 +510,11 @@ describe("instances whose look is made of assets", () => {
         const Forest = makeForest(log);
         const { Trees } = makeTrees(Forest, log);
         const waiting: ((
-          exit: Exit.Exit<Uint8Array, Assets.AssetFailed>
+          exit: Exit.Exit<Uint8Array, Assets.Failed>
         ) => void)[] = [];
         const slow = Layer.succeed(Assets.Loader, {
           bytes: () =>
-            Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+            Effect.callback<Uint8Array, Assets.Failed>((resume) => {
               waiting.push((exit) => resume(exit));
             }),
         }) as Layer.Layer<never>;
@@ -539,9 +539,7 @@ describe("instances whose look is made of assets", () => {
         yield* enter("menu");
         yield* enter("forest");
         waiting[1]!(
-          Exit.fail(
-            new Assets.AssetFailed({ url: "/bark.png", message: "gone" })
-          )
+          Exit.fail(new Assets.Failed({ url: "/bark.png", message: "gone" }))
         );
         yield* Effect.promise(() => settle());
         log.length = 0;
@@ -1063,9 +1061,9 @@ describe("a texture", () => {
         const error = Cause.squash(
           (exit as Exit.Failure<never, unknown>).cause
         );
-        expect(error).toBeInstanceOf(Assets.AssetFailed);
+        expect(error).toBeInstanceOf(Assets.Failed);
         expect(error).toEqual(
-          new Assets.AssetFailed({
+          new Assets.Failed({
             url: "/bark.png",
             message:
               "It could not be made a texture: The source image could not be decoded.",
@@ -1175,7 +1173,7 @@ describe("a manager of Three.js's requests", () => {
       const failure = Exit.isFailure(exit)
         ? Cause.squash(exit.cause)
         : undefined;
-      expect(failure).toBeInstanceOf(Assets.AssetFailed);
+      expect(failure).toBeInstanceOf(Assets.Failed);
       expect(failure).toMatchObject({ url: "/draco/decoder.js" });
     })
   );

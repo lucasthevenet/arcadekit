@@ -136,7 +136,7 @@ export interface Speaker {
  *
  * @category Services
  */
-export interface Output {
+export interface OutputShape {
   /**
    * Opens a speaker in the current scope, and lets go of it when that scope
    * closes.
@@ -146,7 +146,7 @@ export interface Output {
 
 const silent: Speaker = { play() {}, music() {} };
 
-const nowhere: Output = { open: Effect.succeed(silent) };
+const nowhere: OutputShape = { open: Effect.succeed(silent) };
 
 /**
  * Where an app's sound goes. Nothing has to provide it. By default sound goes
@@ -164,10 +164,10 @@ const nowhere: Output = { open: Effect.succeed(silent) };
  *
  * @category Services
  */
-export const Output: Context.Reference<Output> = Context.Reference<Output>(
-  "arcadekit/Sound.Output",
-  { defaultValue: () => nowhere }
-);
+export const Output: Context.Reference<OutputShape> =
+  Context.Reference<OutputShape>("arcadekit/Sound.Output", {
+    defaultValue: () => nowhere,
+  });
 
 /**
  * Opens `Sound.Output` in the current scope, and returns its speaker. The
@@ -215,7 +215,7 @@ export interface Played {
  *
  * @category Testing
  */
-export interface Scored {
+export interface Told {
   readonly channel: string;
   /** The track's name, the clip's name, or `undefined` for silence. */
   readonly track: string | undefined;
@@ -237,7 +237,7 @@ export interface Recorder extends Speaker {
   /** Every cue it was asked to play, oldest first. */
   readonly played: Played[];
   /** Everything a channel was told, oldest first. */
-  readonly scored: Scored[];
+  readonly scored: Told[];
   /** What each channel plays now, by channel name. A channel with no entry is silent. */
   readonly playing: Map<string, string>;
 }
@@ -258,7 +258,7 @@ export interface Recorder extends Speaker {
  */
 export const makeRecorder = (): Recorder => {
   const played: Played[] = [];
-  const scored: Scored[] = [];
+  const scored: Told[] = [];
   const playing = new Map<string, string>();
   return {
     played,
@@ -300,7 +300,7 @@ const MUSIC = "music";
  *
  * @category Options
  */
-export interface Options {
+export interface PlayOptions {
   /** The volume, where 1 is the cue as recorded. Defaults to 1. A negative volume plays as 0. */
   readonly volume?: number;
   /** The playback speed, and therefore pitch, where 1 is normal speed. Defaults to 1. */
@@ -344,7 +344,7 @@ export interface PlayerShape {
    * the loudest requested volume. Cues play in the order they were first
    * requested.
    */
-  readonly play: (cue: Playable, options?: Options) => void;
+  readonly play: (cue: Playable, options?: PlayOptions) => void;
   /**
    * Sets what a channel should play: a track, which loops or with `once` plays
    * to its end, or `undefined` for silence. Setting the same track and volume
@@ -573,7 +573,7 @@ export const plugin = Plugin.make("arcadekit/Sound", {
  *
  * @category Models
  */
-export interface Cue extends Options {
+export interface Cue extends PlayOptions {
   readonly cue: Playable;
 }
 
@@ -594,9 +594,9 @@ export type CueOf<P> =
  *
  * @category Models
  */
-export interface Line {
+export interface Binding {
   /** The event it plays a cue for. */
-  readonly event: Event.EventDef<unknown>;
+  readonly event: Event.Event<unknown>;
   /** What it plays for an event's payload, or nothing. */
   readonly pick: (payload: never) => Playable | Cue | undefined;
 }
@@ -614,7 +614,7 @@ export interface Line {
  *
  * @category Constructors
  */
-export const on = <P>(event: Event.EventDef<P>, cue: CueOf<P>): Line => ({
+export const on = <P>(event: Event.Event<P>, cue: CueOf<P>): Binding => ({
   event,
   pick: typeof cue === "function" ? cue : () => cue,
 });
@@ -628,12 +628,12 @@ const isCue = (picked: Playable | Cue): picked is Cue =>
 
 /** Entries grouped by event, so a system reads each event once for all of them. */
 type Heard = readonly (readonly [
-  Event.EventDef<unknown>,
-  readonly Line["pick"][],
+  Event.Event<unknown>,
+  readonly Binding["pick"][],
 ])[];
 
-const byEvent = (lines: readonly Line[]): Heard => {
-  const found = new Map<Event.EventDef<unknown>, Line["pick"][]>();
+const byEvent = (lines: readonly Binding[]): Heard => {
+  const found = new Map<Event.Event<unknown>, Binding["pick"][]>();
   for (const line of lines) {
     const picks = found.get(line.event);
     if (picks === undefined) {
@@ -682,11 +682,11 @@ const byEvent = (lines: readonly Line[]): Heard => {
 export function cues<B extends Entries>(
   name: string,
   from: Assets.Bundle<B>,
-  lines: (assets: Assets.Loaded<B>) => readonly Line[]
+  lines: (assets: Assets.Loaded<B>) => readonly Binding[]
 ): System.System<never, Player | Events | Assets.Store>;
 export function cues(
   name: string,
-  ...lines: readonly Line[]
+  ...lines: readonly Binding[]
 ): System.System<never, Player | Events>;
 // One body for both: the system of lines that are there asks for no store of
 // assets, which the second signature says.
@@ -696,8 +696,8 @@ export function cues(
 ): System.System<never, Player | Events | Assets.Store> {
   const from = rest[0] instanceof Assets.Bundle ? rest[0] : undefined;
   const fixed =
-    from === undefined ? byEvent(rest as readonly Line[]) : undefined;
-  const make = rest[1] as (assets: unknown) => readonly Line[];
+    from === undefined ? byEvent(rest as readonly Binding[]) : undefined;
+  const make = rest[1] as (assets: unknown) => readonly Binding[];
   // The lines of a bundle, and the assets they were made of: per app, by
   // the app's player, since a system is made once and may be in several.
   const made = new WeakMap<

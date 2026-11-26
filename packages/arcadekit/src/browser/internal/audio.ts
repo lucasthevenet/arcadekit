@@ -3,7 +3,7 @@ import { Effect, Fiber, Layer } from "effect";
 import * as Assets from "../../Assets.ts";
 import * as Driver from "../../Driver.ts";
 import * as Sound from "../../Sound.ts";
-import type { AudioLike, MediaLike } from "../Audio.ts";
+import type { ContextLike, MediaLike } from "../Audio.ts";
 import type { Options } from "../Browser.ts";
 import { decodeOffline, describe } from "./decode.ts";
 
@@ -49,7 +49,7 @@ interface Channel {
   playing:
     | {
         readonly track: Sound.Playable;
-        readonly gain: ReturnType<AudioLike["createGain"]>;
+        readonly gain: ReturnType<ContextLike["createGain"]>;
         /** Sets whether it loops, or plays to its end and stops. */
         readonly loop: (on: boolean) => void;
         /** Stops it `fade` seconds after `now`, when it falls silent. */
@@ -89,7 +89,7 @@ const openPage = (
     options.audio ??
     (typeof AudioContext === "undefined"
       ? undefined
-      : (): AudioLike => new AudioContext());
+      : (): ContextLike => new AudioContext());
   const master = options.volume ?? 1;
   const decode = options.decode ?? decodeOffline;
   const media = options.media ?? audioElement;
@@ -100,7 +100,7 @@ const openPage = (
   const buffers = new Map<string, unknown>();
   const missing = new Set<string>();
   const channels = new Map<string, Channel>();
-  let audio: AudioLike | undefined;
+  let audio: ContextLike | undefined;
   let unwatch: (() => void) | undefined;
   let closed = false;
   // Whether it was said that a cue came before the first touch.
@@ -134,10 +134,10 @@ const openPage = (
   };
   /** Starts a streamed track, silent, with its own volume. */
   const startStream = (
-    context: AudioLike,
+    context: ContextLike,
     streamed: Streamed,
     once: boolean,
-    gain: ReturnType<AudioLike["createGain"]>
+    gain: ReturnType<ContextLike["createGain"]>
   ): Pick<NonNullable<Channel["playing"]>, "end" | "loop"> | undefined => {
     if (context.createMediaElementSource === undefined) {
       if (!missing.has(streamed.url)) {

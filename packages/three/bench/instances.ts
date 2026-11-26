@@ -131,7 +131,7 @@ const place = () =>
   Position.of({ x: Math.random(), y: Math.random(), z: Math.random() });
 const turn = () => Rotation.of(Transform3d.axisAngle(0, 1, 0, Math.random()));
 const size = () => Scale.of({ x: 2, y: 2, z: 2 });
-const instanced = <const O extends Three.Which["of"]>(
+const instanced = <const O extends Three.KindOptions["of"]>(
   name: string,
   of: O,
   transform: Three.TransformOf<O>
@@ -213,7 +213,7 @@ variant(
 // Drawn between two ticks: each value on its way from the one a tick ago,
 // kept per entity by the renderer. No tick runs between these frames; a
 // frame that follows one does the same work.
-const smoothed = <const O extends Three.Which["of"]>(
+const smoothed = <const O extends Three.KindOptions["of"]>(
   name: string,
   of: O,
   transform: Three.TransformOf<O>

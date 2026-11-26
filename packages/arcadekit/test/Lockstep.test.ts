@@ -16,7 +16,7 @@ import {
 } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";
 import { Drift, Message, Session } from "../src/net/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 import {
   Bot,
   Coin,
@@ -1638,13 +1638,6 @@ describe("peers that were not made alike", () => {
   );
 });
 
-const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
-  if (Exit.isFailure(exit)) {
-    throw Cause.squash(exit.cause);
-  }
-  return exit.value;
-};
-
 describe("a message between peers", () => {
   const message: Message.Message = {
     from: "ada",
@@ -1669,24 +1662,29 @@ describe("a message between peers", () => {
     };
     const empty: Message.Message = { from: "grace", tick: 0, actions: [] };
     for (const sent of [message, whole, empty]) {
-      const bytes = Message.encode(sent);
+      const bytes = unwrap(Message.encode(sent));
       expect(bytes).toBeInstanceOf(Uint8Array);
       expect(Message.decode(bytes)).toEqual(Exit.succeed(sent));
     }
   });
 
   it("is bytes of its own, which the next message written leaves as they were", () => {
-    const first = Message.encode(message);
-    const second = Message.encode({ from: "grace", tick: 3, actions: [] });
+    const first = unwrap(Message.encode(message));
+    const second = unwrap(
+      Message.encode({ from: "grace", tick: 3, actions: [] })
+    );
     expect(first.buffer.byteLength).toBe(first.byteLength);
     expect(second.buffer).not.toBe(first.buffer);
     expect(Message.decode(first)).toEqual(Exit.succeed(message));
   });
 
   it("can't be written when it is not one", () => {
-    expect(() => Message.encode({ ...message, tick: -1 })).toThrow(
-      /Message\.encode was given what isn't a message/u
-    );
+    const written = Message.encode({ ...message, tick: -1 });
+    assert(Exit.isFailure(written));
+    expect(Cause.squash(written.cause)).toMatchObject({
+      _tag: "MessageInvalid",
+      problem: "not a message",
+    });
   });
 
   it("is refused when it is not one", () => {
@@ -1716,7 +1714,7 @@ describe("a message between peers", () => {
     const unchecked = (written: typeof Unchecked.Type) =>
       unwrap(Schema.encodeExit(Unchecked)(written));
     expect(Message.decode(unchecked(message))).toEqual(Exit.succeed(message));
-    const bytes = Message.encode(message);
+    const bytes = unwrap(Message.encode(message));
     for (const [what, data] of [
       ["nothing", new Uint8Array()],
       ["noise", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9])],

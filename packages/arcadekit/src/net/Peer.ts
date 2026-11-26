@@ -54,7 +54,7 @@ import type { Message } from "./Message.ts";
  * @category Models
  */
 export interface Peer<E = never> extends Paced<
-  E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
+  E | Drift.Unlike | Drift.Drifted | Save.Refused
 > {
   /** This peer's name. */
   readonly me: string;
@@ -106,13 +106,13 @@ export interface Peer<E = never> extends Paced<
    *
    * The tick simulates the session's `delta`. It fails with a system's error,
    * `Drift.Unlike` once a peer has said it was made otherwise,
-   * `Drift.Drifted` once the peers have drifted apart, or `Save.SaveRefused`
+   * `Drift.Drifted` once the peers have drifted apart, or `Save.Refused`
    * when the game can't be captured before a tick it runs ahead. The tick
    * doesn't run then.
    */
   readonly tick: () => Effect.Effect<
     boolean,
-    E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
+    E | Drift.Unlike | Drift.Drifted | Save.Refused
   >;
   /**
    * Why the session stopped, once it has: a peer was made otherwise than this

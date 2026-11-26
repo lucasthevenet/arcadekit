@@ -52,3 +52,11 @@ export const thrown = <A, E, R>(
       throw Cause.squash(exit.cause);
     }
   });
+
+/** The value of an `Exit` that succeeded, or what it failed or died with, thrown. */
+export const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
+  if (Exit.isFailure(exit)) {
+    throw Cause.squash(exit.cause);
+  }
+  return exit.value;
+};

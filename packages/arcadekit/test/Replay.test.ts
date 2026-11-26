@@ -25,7 +25,7 @@ import {
 import type { Entity } from "../src/index.ts";
 import { Layout } from "../src/internal/recording.ts";
 import type { BuiltIn } from "../src/Services.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 
 // --- a small game: coins are dropped, drift about at random, and are taken ------
 
@@ -147,7 +147,7 @@ const stoppedBy = <A extends App.Any>(
 ) =>
   replay.pipe(
     Effect.flatMap(() => Effect.die("it went the way the game went")),
-    Effect.catchTag("ReplayDiverged", Effect.succeed),
+    Effect.catchTag("JournalReplayDiverged", Effect.succeed),
     Effect.orDie
   );
 
@@ -198,17 +198,10 @@ const record = Effect.fnUntraced(function* (
   );
 });
 
-const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
-  if (Exit.isFailure(exit)) {
-    throw Cause.squash(exit.cause);
-  }
-  return exit.value;
-};
-
 /** A recording's fields as its bytes hold them, each checked on its own. */
 const Written = SchemaBinary.toCodec(Layout);
 const fieldsOf = (recording: Journal.Recording) =>
-  unwrap(Schema.decodeExit(Written)(Journal.encode(recording)));
+  Journal.encode(recording).pipe(unwrap, Schema.decodeExit(Written), unwrap);
 /** Fields written as a recording's bytes, as a file edited by hand. */
 const written = (fields: typeof Layout.Type) =>
   unwrap(Schema.encodeExit(Written)(fields));
@@ -239,7 +232,7 @@ const replayInto = (options: Options, recording: Journal.Recording) =>
       checkpointing(options)
     ).pipe(
       Effect.map((app) => ({ app, stopped: undefined })),
-      Effect.catchTag("ReplayDiverged", (diverged) =>
+      Effect.catchTag("JournalReplayDiverged", (diverged) =>
         Effect.succeed({ app: diverged.app, stopped: diverged })
       ),
       Effect.orDie
@@ -433,7 +426,7 @@ describe("checkpoints", () => {
   it.effect("survive being written down, and a malformed one is refused", () =>
     Effect.gen(function* () {
       const recorded = yield* record({ ticks: 12, checkpointEvery: 4 });
-      const loaded = Journal.decode(Journal.encode(recorded.recording));
+      const loaded = Journal.decode(unwrap(Journal.encode(recorded.recording)));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(
         recorded.recording
       );
@@ -569,7 +562,7 @@ describe("a replay that checks itself", () => {
           }
         ).pipe(
           Effect.flatMap(() => Effect.die("it went the way the game went")),
-          Effect.catchTag("ReplayDiverged", (diverged) =>
+          Effect.catchTag("JournalReplayDiverged", (diverged) =>
             Effect.gen(function* () {
               const { app, reason } = diverged;
               assert(reason instanceof Journal.HashMismatch);
@@ -1080,7 +1073,7 @@ describe("the action log", () => {
             )
           ).toEqual([
             ["rp/Double", "TooBig"],
-            ["rp/Nothing", "UnknownAction"],
+            ["rp/Nothing", "ActionUnknown"],
             ["rp/Add", expect.stringMatching(/by/)],
           ]);
           // The referee saw all three refusals.
@@ -1102,7 +1095,7 @@ describe("the action log", () => {
         log,
       });
       expect(recording.log).toEqual(log);
-      const loaded = Journal.decode(Journal.encode(recording));
+      const loaded = Journal.decode(unwrap(Journal.encode(recording)));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recording);
       // A mark of another kind is bytes in another layout.
       const marked = SchemaBinary.toCodec(
@@ -1503,7 +1496,9 @@ describe("a recording", () => {
             { tick: 5, delta: 1 / 60 },
           ],
         });
-        const decoded = Journal.decode(Journal.encode(recorded.recording));
+        const decoded = Journal.decode(
+          unwrap(Journal.encode(recorded.recording))
+        );
         expect(decoded).toEqual(Exit.succeed(recorded.recording));
         yield* withApp(replayWalking(recorded.recording), (app, world) =>
           Effect.gen(function* () {
@@ -1584,10 +1579,13 @@ describe("a recording", () => {
 
 describe("how a recorded game began", () => {
   /** What the schema said was wrong with a recording's bytes. */
+  /** What `Journal.decode` refuses bytes with: its problem, then its message. */
   const refusal = (bytes: Uint8Array): string => {
     const read = Journal.decode(bytes);
     assert(Exit.isFailure(read));
-    return String(Cause.squash(read.cause));
+    const error = Cause.squash(read.cause);
+    assert(error instanceof Journal.Invalid);
+    return `${error.problem}: ${error.message}`;
   };
   /** Plays `ticks` ticks of a seeded game, dropping a coin on each. */
   const drops = Effect.fnUntraced(function* (app: App.App, ticks: number) {
@@ -1664,9 +1662,9 @@ describe("how a recorded game began", () => {
           })
         );
         // Through bytes and back.
-        expect(Journal.decode(Journal.encode(recorded.recording))).toEqual(
-          Exit.succeed(recorded.recording)
-        );
+        expect(
+          Journal.decode(unwrap(Journal.encode(recorded.recording)))
+        ).toEqual(Exit.succeed(recorded.recording));
       })
   );
 
@@ -1699,7 +1697,7 @@ describe("how a recorded game began", () => {
         expect(played.whole.save).toBeUndefined();
 
         // In bytes, the recording holds the save, and reads back as it was.
-        const read = Journal.decode(Journal.encode(tail));
+        const read = Journal.decode(unwrap(Journal.encode(tail)));
         assert(Exit.isSuccess(read));
         expect(read.value).toEqual(tail);
         const present = yield* withApp(
@@ -1746,8 +1744,8 @@ describe("how a recorded game began", () => {
             };
           })
         );
-        const fromSeed = Journal.encode(whole);
-        const fromSave = Journal.encode(tail);
+        const fromSeed = unwrap(Journal.encode(whole));
+        const fromSave = unwrap(Journal.encode(tail));
         for (const bytes of [fromSeed, fromSave]) {
           expect(bytes).toBeInstanceOf(Uint8Array);
           expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
@@ -1766,9 +1764,13 @@ describe("how a recorded game began", () => {
         yield* app.enqueueByName("rp/Nothing", { n: 1n });
         yield* app.tick(1 / 60);
         const recording = yield* app.record();
-        expect(() => Journal.encode(recording)).toThrow(
-          /a payload in its log has no JSON form/u
-        );
+        const written = Journal.encode(recording);
+        assert(Exit.isFailure(written));
+        expect(Cause.squash(written.cause)).toMatchObject({
+          _tag: "JournalInvalid",
+          problem: "no JSON form",
+        });
+        expect(Cause.squash(written.cause)).toBeInstanceOf(Journal.Invalid);
       })
     )
   );

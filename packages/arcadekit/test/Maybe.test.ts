@@ -4,6 +4,7 @@ import { Effect, Exit, Schema } from "effect";
 import type { ReadonlyColumnsOf } from "../src/ecs/component.ts";
 import { entityIndex } from "../src/ecs/index.ts";
 import { World as EcsWorld } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import type { RowOf } from "../src/ecs/relation.ts";
 import {
   Action,
@@ -13,7 +14,7 @@ import {
   Query,
   Timeline,
 } from "../src/index.ts";
-import type { ComponentDef, Entity } from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 import { partsOf } from "../src/internal/parts.ts";
 import { withApp } from "./peers.ts";
 

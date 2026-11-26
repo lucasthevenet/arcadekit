@@ -1,7 +1,7 @@
 import { entityGeneration, entityIndex } from "arcadekit/ecs";
 import type { EntityColumn } from "arcadekit/ecs";
 
-import type { Which } from "../Three.ts";
+import type { KindOptions } from "../Three.ts";
 import type { Angle, Numbers, Xy, Xyz, Xyzw } from "./columns.ts";
 
 // What a system keeps to draw its entities between their last two places:
@@ -372,5 +372,5 @@ export class Smooth {
  *
  * @internal
  */
-export const smoothOf = (which: Which): Smooth | undefined =>
+export const smoothOf = (which: KindOptions): Smooth | undefined =>
   which.smooth === true ? new Smooth(which.snap) : undefined;

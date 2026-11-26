@@ -61,7 +61,7 @@ import * as System from "./System.ts";
  *
  * @category Errors
  */
-export class AssetFailed extends Data.TaggedError("AssetFailed")<{
+export class Failed extends Data.TaggedError("AssetsFailed")<{
   /** The URL the asset was loaded from. */
   readonly url: string;
   /** What went wrong. */
@@ -91,9 +91,7 @@ export interface Asset<out A> {
    * Decodes the asset from its bytes, in the scope it is loaded in. Anything
    * that must be released is released when that scope closes.
    */
-  readonly decode: (
-    bytes: Uint8Array
-  ) => Effect.Effect<A, AssetFailed, Scope.Scope>;
+  readonly decode: (bytes: Uint8Array) => Effect.Effect<A, Failed, Scope.Scope>;
 }
 
 /**
@@ -111,7 +109,7 @@ export const make = <A>(
   decode: (
     bytes: Uint8Array,
     url: string
-  ) => Effect.Effect<A, AssetFailed, Scope.Scope>
+  ) => Effect.Effect<A, Failed, Scope.Scope>
 ): Asset<A> => ({ url, decode: (bytes) => decode(bytes, url) });
 
 /**
@@ -136,7 +134,7 @@ export const text = (url: string): Asset<string> =>
         );
       } catch (error) {
         return Effect.fail(
-          new AssetFailed({
+          new Failed({
             url: at,
             message: `It is not text: ${describe(error)}`,
           })
@@ -148,7 +146,7 @@ export const text = (url: string): Asset<string> =>
 /**
  * Makes an asset of a JSON file that a schema describes. The file comes from
  * outside the program, so it is validated, and a file that doesn't match
- * fails to load with `AssetFailed`.
+ * fails to load with `Assets.Failed`.
  *
  * @category Constructors
  */
@@ -164,7 +162,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
         parsed = JSON.parse(new TextDecoder().decode(data));
       } catch (error) {
         return Effect.fail(
-          new AssetFailed({
+          new Failed({
             url: at,
             message: `It is not JSON: ${describe(error)}`,
           })
@@ -174,7 +172,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
       return Exit.isSuccess(exit)
         ? Effect.succeed(exit.value as S["Type"])
         : Effect.fail(
-            new AssetFailed({
+            new Failed({
               url: at,
               message: describe(Cause.squash(exit.cause)),
             })
@@ -193,7 +191,7 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
  */
 export interface LoaderShape {
   /** Returns the bytes at a URL. Interrupting it cancels the request. */
-  readonly bytes: (url: string) => Effect.Effect<Uint8Array, AssetFailed>;
+  readonly bytes: (url: string) => Effect.Effect<Uint8Array, Failed>;
 }
 
 /**
@@ -225,7 +223,7 @@ export const layerMemory = (
         const file = Object.hasOwn(files, url) ? files[url] : undefined;
         if (file === undefined) {
           return Effect.fail(
-            new AssetFailed({ url, message: "There is no such file." })
+            new Failed({ url, message: "There is no such file." })
           );
         }
         return Effect.succeed(
@@ -266,7 +264,7 @@ export type Status<A> =
    * kept. It is loaded again when it is next held after every holder has
    * dropped it.
    */
-  | { readonly _tag: "Failed"; readonly error: AssetFailed };
+  | { readonly _tag: "Failed"; readonly error: Failed };
 
 const ABSENT: Status<never> = { _tag: "Absent" };
 const LOADING: Status<never> = { _tag: "Loading" };
@@ -312,10 +310,8 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
 // Loads each asset of a bundle with `get`, in parallel, under its name.
 const loadEach = (
   bundle: Bundle<Entries>,
-  get: (
-    asset: Asset<unknown>
-  ) => Effect.Effect<unknown, AssetFailed, Scope.Scope>
-): Effect.Effect<Record<string, unknown>, AssetFailed, Scope.Scope> => {
+  get: (asset: Asset<unknown>) => Effect.Effect<unknown, Failed, Scope.Scope>
+): Effect.Effect<Record<string, unknown>, Failed, Scope.Scope> => {
   const names = Object.keys(bundle.assets);
   return Effect.map(
     Effect.forEach(names, (name) => get(bundle.assets[name]!), {
@@ -358,16 +354,16 @@ const loadEach = (
  */
 export const load: <B extends Entries>(
   bundle: Bundle<B>
-) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope> = Effect.fn(
-  "Assets.load"
-)(function* (bundle: Bundle<Entries>) {
-  const loader = yield* Loader;
-  return yield* loadEach(bundle, (asset) =>
-    Effect.flatMap(loader.bytes(asset.url), asset.decode)
-  );
-}) as <B extends Entries>(
+) => Effect.Effect<Loaded<B>, Failed, Scope.Scope> = Effect.fn("Assets.load")(
+  function* (bundle: Bundle<Entries>) {
+    const loader = yield* Loader;
+    return yield* loadEach(bundle, (asset) =>
+      Effect.flatMap(loader.bytes(asset.url), asset.decode)
+    );
+  }
+) as <B extends Entries>(
   bundle: Bundle<B>
-) => Effect.Effect<Loaded<B>, AssetFailed, Scope.Scope>;
+) => Effect.Effect<Loaded<B>, Failed, Scope.Scope>;
 
 // --- an app's assets -----------------------------------------------------------------
 
@@ -493,9 +489,9 @@ const storeLayer = Layer.effect(
           entry.status = {
             _tag: "Failed",
             error:
-              error instanceof AssetFailed
+              error instanceof Failed
                 ? error
-                : new AssetFailed({ url: "", message: describe(error) }),
+                : new Failed({ url: "", message: describe(error) }),
           };
           return Effect.logError(
             `The assets "${bundle.name}" could not be loaded`,

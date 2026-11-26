@@ -79,7 +79,7 @@ const Begin = System.input("game/Begin", function* () {
 
 ## Load assets for the app's lifetime
 
-Anywhere you have a scope, `Assets.load(bundle)` loads a bundle into it and waits. It loads every asset in parallel, and fails at the first failure with `Assets.AssetFailed`, which names the URL. Use it at the entry point, or in a plugin's `layer`, which keeps what it loads for the app's lifetime:
+Anywhere you have a scope, `Assets.load(bundle)` loads a bundle into it and waits. It loads every asset in parallel, and fails at the first failure with `Assets.Failed`, which names the URL. Use it at the entry point, or in a plugin's `layer`, which keeps what it loads for the app's lifetime:
 
 ```ts
 import { Assets, Plugin } from "arcadekit";
@@ -109,7 +109,7 @@ A frame or input-stage system of your own can keep a bundle loaded with `(yield*
 
 ## Choose where files come from
 
-`Assets.Loader` fetches the files. By default it uses `fetch`, and cancels the request when the load is interrupted. In a page, `Browser.runMain` and `Browser.layer` read a path against the document's base, as `fetch` does, so a page with a `<base href>` loads from there. A test serves its files from memory with `Assets.layerMemory({ "/forest.json": "..." })`. A loader of your own marks a failure worth trying again with `transient: true` on its `Assets.AssetFailed`.
+`Assets.Loader` fetches the files. By default it uses `fetch`, and cancels the request when the load is interrupted. In a page, `Browser.runMain` and `Browser.layer` read a path against the document's base, as `fetch` does, so a page with a `<base href>` loads from there. A test serves its files from memory with `Assets.layerMemory({ "/forest.json": "..." })`. A loader of your own marks a failure worth trying again with `transient: true` on its `Assets.Failed`.
 
 ## Read more
 

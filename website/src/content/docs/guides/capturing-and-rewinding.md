@@ -18,7 +18,7 @@ const program = Effect.gen(function* () {
     App.make(App.define({ plugins: [Game] })),
     (made) => made.close
   );
-  const moment = yield* Timeline.capture(app); // fails with Save.SaveRefused
+  const moment = yield* Timeline.capture(app); // fails with Save.Refused
   yield* app.tick(1 / 60);
   yield* Timeline.rewind(app, moment); // the same app, as it was
 }).pipe(Effect.scoped);

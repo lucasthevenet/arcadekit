@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 
 import { entityIndex, entityOf } from "../src/ecs/component.ts";
 import { CommandBuffer, World as EcsWorld } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -16,7 +17,7 @@ import {
   Timeline,
   World,
 } from "../src/index.ts";
-import type { ComponentDef, Entity, JsonValue } from "../src/index.ts";
+import type { Entity, JsonValue } from "../src/index.ts";
 
 // One component of every field kind, in a table and in a sparse set.
 const kinds = {
