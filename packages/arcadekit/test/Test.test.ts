@@ -29,6 +29,7 @@ const add = Action.handler(Add, function* ({ points }) {
   (yield* Scored.emits).emit(undefined);
 });
 const Hud = View.define("ts/Hud", { points: 0 });
+const Sfx = Sound.sheet("ts/Sfx", { coin: "/coin.wav" });
 
 const Rules = Plugin.make("ts/Rules", { handlers: [add] });
 const Game = App.define({
@@ -39,7 +40,7 @@ const Game = App.define({
     Plugin.make("ts/Looks", {
       systems: [
         Input.bind("ts/Keys", Input.onPress("KeyW", Add, { points: 1 })),
-        Sound.cues("ts/Cues", Sound.on(Scored, "coin")),
+        Sound.cues("ts/Cues", Sound.on(Scored, Sfx.coin)),
         View.publish(Hud, function* () {
           return { points: (yield* Score).points };
         }),

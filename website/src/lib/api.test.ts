@@ -171,7 +171,7 @@ describe.runIf(built)("a module's page", () => {
 
   it("starts with the module's comment and how to import it", () => {
     const page = renderModule(readSound(), "https://github.com/o/r", "main");
-    expect(page.startsWith("Sound plays named cues")).toBe(true);
+    expect(page.startsWith("Sound plays cues")).toBe(true);
     expect(page).toContain('import * as Sound from "arcadekit/Sound"');
     const session = renderModule(
       readModule(

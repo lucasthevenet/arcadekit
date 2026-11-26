@@ -247,10 +247,16 @@ const Draw = System.frame("Draw", function* () {
 });
 
 // --- what it sounds like: the frame stage too --------------------------------------
+// The sounds the page has for as long as it lasts, each by its name in the
+// sheet: a cue that is not in it does not compile. The level's own are in
+// its bundle.
+export const Sounds = Sound.sheet("page/Sounds", {
+  start: "/start.wav",
+  theme: "/theme.wav",
+});
 // Each event of the ticks since the last frame is played as a cue. The
 // simulation never plays: a replay of this game is silent, and the same.
-// "start" is a sound the page has for as long as it lasts, by its name.
-const Cues = Sound.cues("page/Cues", Sound.on(Started, "start"));
+const Cues = Sound.cues("page/Cues", Sound.on(Started, Sounds.start));
 // The level's cues are made of what its bundle holds, each time it is
 // loaded, and are silent while it is not.
 const LevelCues = Sound.cues("page/LevelCues", Level, ({ caught }) => [
@@ -269,7 +275,7 @@ const Score = Sound.music(
     if (phase === "title") {
       return undefined;
     }
-    return { track: "theme", volume: phase === "paused" ? 0.1 : 0.4 };
+    return { track: Sounds.theme, volume: phase === "paused" ? 0.1 : 0.4 };
   },
   { fade: 0.6 }
 );

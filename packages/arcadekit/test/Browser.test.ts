@@ -32,6 +32,7 @@ import {
 } from "../src/index.ts";
 import { Message, Session, Transport } from "../src/net/index.ts";
 import { thrown } from "./checks.ts";
+import * as Menu from "./volumeMenu.ts";
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
@@ -1074,6 +1075,9 @@ describe("Browser.runMain", () => {
   });
 });
 
+/** A game's one sound, as a sheet names it. */
+const Coins = Sound.sheet("br/Coins", { coin: "/coin.wav" });
+
 describe("a page's sound", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1266,6 +1270,46 @@ describe("a page's sound", () => {
     };
     return media;
   };
+  /** A sheet the pages of these tests are never given. */
+  const elsewhere = new Map<string, Sound.Clip>();
+  /**
+   * A speaker that takes the name of a sheet's sound, as a game names one
+   * with `Sheet.name`, or a clip.
+   */
+  const byName = (speaker: Sound.Speaker, sheet: Sound.Sheet) => {
+    const clipOf = (sound: string | Sound.Clip): Sound.Clip => {
+      if (typeof sound !== "string") {
+        return sound;
+      }
+      const found =
+        (Object.hasOwn(sheet, sound) ? sheet[sound] : undefined) ??
+        elsewhere.get(sound) ??
+        Sound.sheet("br/Elsewhere", { [sound]: `/${sound}.wav` })[sound];
+      if (found === undefined) {
+        throw new Error(`No sheet of these tests has "${sound}"`);
+      }
+      elsewhere.set(sound, found);
+      return found;
+    };
+    return {
+      play: (cue: string | Sound.Clip, volume: number, rate: number) =>
+        speaker.play(clipOf(cue), volume, rate),
+      music: (
+        channel: string,
+        track: string | Sound.Clip | undefined,
+        volume: number,
+        fade: number,
+        once?: boolean
+      ) =>
+        speaker.music(
+          channel,
+          track === undefined ? undefined : clipOf(track),
+          volume,
+          fade,
+          once
+        ),
+    };
+  };
   const build = Effect.fnUntraced(function* (
     files: Readonly<Record<string, string | Sound.Clip>>,
     options: {
@@ -1294,10 +1338,13 @@ describe("a page's sound", () => {
     const scope = Scope.makeUnsafe();
     // Opened in a scope of the test's, as an app opens it: the layer is
     // provided to the opening alone.
-    const output = yield* Sound.open.pipe(
+    // The page's sounds are a sheet's, which the page is given; a name that
+    // is not in it is a sound of a sheet the page was not given.
+    const sheet = Sound.sheet("br/Sounds", files);
+    const opened = yield* Sound.open.pipe(
       Scope.provide(scope),
       Effect.provide(
-        Audio.layerSound(files, {
+        Audio.layerSound([sheet], {
           window: page,
           audio: () => {
             made++;
@@ -1327,6 +1374,7 @@ describe("a page's sound", () => {
       )
     );
     yield* Effect.promise(() => settle());
+    const output = byName(opened, sheet);
     return {
       page,
       audio,
@@ -1343,6 +1391,10 @@ describe("a page's sound", () => {
   /** What the page's sound says when it is played after it was let go. */
   const LET_GO =
     /The page's sound was played after it was let go: the app that opened it was closed, or the scope Sound\.open ran in had ended/u;
+
+  /** What is said, once, of a sound of a sheet the page was not given. */
+  const NOT_GIVEN = (sound: string): string =>
+    `The sound "${sound}" of the sheet "br/Elsewhere" was played, and the page was not given its sheet, so it has not its file. Give the sheet in sounds, as Browser.runMain(game, { sounds: [Sheet] }) does. The page's sheets are: "br/Sounds".`;
 
   /** What is said, once, of a cue that came before the page was touched. */
   const UNTOUCHED = (cue: string): string =>
@@ -1417,7 +1469,7 @@ describe("a page's sound", () => {
         expect(logged).toEqual([
           UNTOUCHED("/level/chirp.wav"),
           // What has no file is said for itself, as ever.
-          'The sound "nothing" was played and has no file. The page\'s sounds are: coin.',
+          NOT_GIVEN("nothing"),
         ]);
         // Touched, a cue is played, and nothing more is said of it: nor when
         // the audio sleeps, which is the page being away.
@@ -1450,13 +1502,11 @@ describe("a page's sound", () => {
         const page = new Listened();
         const logged: string[] = [];
         const scope = Scope.makeUnsafe();
+        const Sheet = Sound.sheet("br/Sounds", { coin: "/coin.wav" });
         const output = yield* Sound.open.pipe(
           Scope.provide(scope),
           Effect.provide(
-            Audio.layerSound(
-              { coin: "/coin.wav" },
-              { window: page, decode: decodeInto([]) }
-            )
+            Audio.layerSound([Sheet], { window: page, decode: decodeInto([]) })
           ),
           Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
           Effect.provide(
@@ -1471,10 +1521,10 @@ describe("a page's sound", () => {
           )
         );
         yield* Effect.promise(() => settle());
-        output.play("coin", 1, 1);
-        output.music("score", "coin", 1, 0, false);
+        output.play(Sheet.coin, 1, 1);
+        output.music("score", Sheet.coin, 1, 0, false);
         page.send("pointerdown");
-        output.play("coin", 1, 1);
+        output.play(Sheet.coin, 1, 1);
         // No touch would have helped, so nothing is said of one.
         expect(logged).toEqual([]);
         yield* Scope.close(scope, Exit.void);
@@ -1520,8 +1570,8 @@ describe("a page's sound", () => {
         }
         expect(audio.started).toEqual([]);
         expect(logged.slice(2)).toEqual([
-          'The sound "laser" was played and has no file. The page\'s sounds are: coin, noise, lost.',
-          'The sound "toString" was played and has no file. The page\'s sounds are: coin, noise, lost.',
+          NOT_GIVEN("laser"),
+          NOT_GIVEN("toString"),
         ]);
         output.play("coin", 1, 1);
         expect(audio.started.length).toBe(1);
@@ -2082,9 +2132,7 @@ describe("a page's sound", () => {
             stopped: undefined,
           },
         ]);
-        expect(logged).toEqual([
-          'The sound "hiss" was played and has no file. The page\'s sounds are: theme, drip.',
-        ]);
+        expect(logged).toEqual([NOT_GIVEN("hiss")]);
       })
   );
 
@@ -2234,7 +2282,7 @@ describe("a page's sound", () => {
         });
         const Cues = Sound.cues(
           "br/Cues",
-          Sound.on(Scored, { cue: "coin", volume: 0.8 })
+          Sound.on(Scored, { cue: Coins.coin, volume: 0.8 })
         );
         const Game = Plugin.make("br/Noisy", {
           plugins: [Sound.plugin],
@@ -2260,7 +2308,7 @@ describe("a page's sound", () => {
             { startImmediately: true }
           );
         const fiber = yield* start({
-          sounds: { coin: "/coin.wav" },
+          sounds: [Coins],
           audio: () => audio,
           decode: decodeInto([]),
         });
@@ -2322,7 +2370,7 @@ describe("a page's sound", () => {
     plugins: [Sound.plugin],
     systems: [
       System.frame("br/Clink", function* () {
-        (yield* Sound.Player).play("coin");
+        (yield* Sound.Player).play(Coins.coin);
       }),
     ],
   });
@@ -2333,7 +2381,7 @@ describe("a page's sound", () => {
       Effect.gen(function* () {
         const Plink = System.frame("br/Plink", function* () {
           if ((yield* Input.Keyboard).down("Space")) {
-            (yield* Sound.Player).play("coin");
+            (yield* Sound.Player).play(Coins.coin);
           }
         });
         const Game = App.define({
@@ -2348,7 +2396,7 @@ describe("a page's sound", () => {
             Effect.provide(
               Browser.layer({
                 gamepads: () => [],
-                sounds: { coin: "/coin.wav" },
+                sounds: [Coins],
                 audio: () => audio,
                 decode: decodeInto([]),
               }).pipe(
@@ -2391,10 +2439,11 @@ describe("a page's sound", () => {
         const app = yield* Effect.scoped(
           App.make(Clinking).pipe(
             Effect.provide(
-              Audio.layerSound(
-                { coin: "/coin.wav" },
-                { window: page, audio: () => audio, decode: decodeInto([]) }
-              )
+              Audio.layerSound([Coins], {
+                window: page,
+                audio: () => audio,
+                decode: decodeInto([]),
+              })
             ),
             Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
             Effect.provide(Assets.layer(Assets.makeMemory(sounds)))
@@ -2436,17 +2485,14 @@ describe("a page's sound", () => {
         // Built once, as a program provides it, and its own scope closed at once.
         const provided = yield* Effect.scoped(
           Layer.build(
-            Audio.layerSound(
-              { coin: "/coin.wav" },
-              {
-                window: page,
-                audio: () => {
-                  made++;
-                  return audio;
-                },
-                decode: decodeInto(decoded),
-              }
-            )
+            Audio.layerSound([Coins], {
+              window: page,
+              audio: () => {
+                made++;
+                return audio;
+              },
+              decode: decodeInto(decoded),
+            })
           )
         ).pipe(
           Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
@@ -2495,6 +2541,55 @@ describe("a page's sound", () => {
         yield* three.close;
         expect(audio.closed).toBe(2);
         expect(page.total).toBe(0);
+      })
+  );
+
+  it.effect(
+    "plays a sheet it was given, at the volumes of the buses a frame system sets: the music at half and the effects silent while both play",
+    () =>
+      Effect.gen(function* () {
+        const page = new Listened();
+        const audio = makeAudio();
+        const app = yield* App.make(Menu.Game).pipe(
+          Effect.provide(
+            Audio.layerSound([Menu.Sfx], {
+              window: page,
+              audio: () => audio,
+              decode: decodeInto([]),
+            })
+          ),
+          Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
+          Effect.provide(Assets.layer(Assets.makeMemory(sounds)))
+        );
+        yield* Effect.promise(() => settle());
+        page.send("pointerdown");
+        const caught = Effect.fnUntraced(function* () {
+          yield* app.dispatch(Menu.Catch, {});
+          yield* app.tick(1 / 60);
+          yield* app.frame();
+        });
+        yield* caught();
+        // The coin's file, at its own volume, and the theme on its way to its.
+        expect(audio.started).toEqual([
+          {
+            buffer: { samples: 3 },
+            rate: 1,
+            volume: 1,
+            into: audio.destination,
+          },
+        ]);
+        const theme = audio.loops[0]!;
+        expect(theme.buffer).toEqual({ samples: 5 });
+        expect(theme.levels.at(-1)).toEqual(["ramp", 1, 0.5]);
+
+        // The menu: the music at half, the effects off.
+        yield* app.dispatch(Menu.Choose, { music: 0.5, effects: false });
+        yield* caught();
+        expect(audio.started.at(-1)?.volume).toBe(0);
+        // The same theme, not begun again, at half, at once.
+        expect(audio.loops.length).toBe(1);
+        expect(theme.levels.at(-1)).toEqual(["ramp", 0.5, 0]);
+        yield* app.close;
       })
   );
 });

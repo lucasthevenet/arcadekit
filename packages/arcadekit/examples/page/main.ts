@@ -14,16 +14,13 @@
  * `?ui=react` shows.
  *
  *   pnpm --filter arcadekit page
- *
- * `?stream` plays the music as a stream.
  */
 import { Effect, Layer } from "effect";
 
 // In a game of your own these are "arcadekit/browser/Browser" and "arcadekit".
-import * as Audio from "../../src/browser/Audio.ts";
 import * as Browser from "../../src/browser/Browser.ts";
 import { App, Driver, View } from "../../src/index.ts";
-import { Game, Screen } from "./game.ts";
+import { Game, Screen, Sounds } from "./game.ts";
 
 // The game, which the bridge and the app are both made from.
 const Catch = App.define({ plugins: [Game] });
@@ -55,15 +52,8 @@ Browser.runMain(
   {
     target: document.querySelector("#game")!,
     preventDefault: ["ArrowLeft", "ArrowRight", "Space"],
-    // The sounds the page has for as long as it lasts, by name, played once
-    // it has been touched. The level's own are in its bundle. The theme is
-    // short and goes round, so it is fetched whole and decoded; `?stream`
-    // plays it as a long piece would be played, fetched as it goes.
-    sounds: {
-      start: "/start.wav",
-      theme: new URLSearchParams(location.search).has("stream")
-        ? Audio.stream("/theme.wav")
-        : "/theme.wav",
-    },
+    // The sheet's files, fetched and decoded for as long as the page lasts,
+    // and played once it has been touched.
+    sounds: [Sounds],
   }
 );

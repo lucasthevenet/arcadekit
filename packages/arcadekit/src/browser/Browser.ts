@@ -91,16 +91,19 @@ export interface Options {
   /** The gamepads, read once per sample. Defaults to `navigator.getGamepads`. */
   readonly gamepads?: () => ArrayLike<GamepadLike | null>;
   /**
-   * The page's sounds for its whole lifetime, by the name a cue or a track is
-   * played with, as `Audio.layerSound` takes them. Each is the URL of a
-   * file, which is fetched and decoded, or a clip, such as
-   * `Audio.stream(url)` for a long piece of music. When omitted, the page
-   * still plays the sounds in a level's bundle, made with `Audio.sound`.
+   * The cue sheets whose files the page plays for its whole lifetime, made
+   * with `Sound.sheet`, as `Audio.layerSound` takes them. Their files are
+   * fetched and decoded. When omitted, the page still plays the sounds in a
+   * level's bundle, made with `Audio.sound`, and the streams of a sheet.
    * `false` means no sound at all. No audio context is created, and the game
    * is told that nothing is heard.
    */
-  readonly sounds?: Readonly<Record<string, string | Sound.Clip>> | false;
-  /** The master volume. Defaults to 1, the volume the game requests. */
+  readonly sounds?: readonly Sound.Sheet[] | false;
+  /**
+   * The master volume, which scales every bus. Defaults to 1, the volume the
+   * game requests. A game's own settings set a bus's volume with
+   * `Sound.Player`'s `volume` instead.
+   */
   readonly volume?: number;
   /** Creates the page's audio context. Defaults to `new AudioContext()`. */
   readonly audio?: () => ContextLike;

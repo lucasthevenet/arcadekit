@@ -4,9 +4,11 @@
  *
  *   import * as Audio from "arcadekit/browser/Audio"
  *
- *   Browser.runMain(game, {
- *     sounds: { coin: "/coin.wav", theme: Audio.stream("/theme.ogg") },
+ *   const Sounds = Sound.sheet("game/Sounds", {
+ *     coin: "/coin.wav",
+ *     theme: Audio.stream("/theme.ogg"),
  *   })
+ *   Browser.runMain(game, { sounds: [Sounds] })
  *
  * A page makes no sound until its user has pressed a key or a button.
  * `Audio.layerSound` says what is played before then, and what after.
@@ -74,8 +76,8 @@ export interface MediaLike {
  * decoded instead. A long piece of music takes tens of megabytes that way,
  * and a few hundred kilobytes streamed.
  *
- *   // By name, for the page's whole lifetime:
- *   Browser.runMain(game, { sounds: { theme: Audio.stream("/theme.ogg") } })
+ *   // In a sheet, for the page's whole lifetime:
+ *   const Tracks = Sound.sheet("game/Tracks", { theme: Audio.stream("/theme.ogg") })
  *
  *   // Or directly, where a level's music is chosen:
  *   const ForestTheme = Audio.stream("/forest.ogg")
@@ -87,7 +89,8 @@ export interface MediaLike {
  *
  * - It isn't an asset and belongs to no bundle. Nothing is fetched until it
  *   plays, so there is nothing to load or release, and it doesn't go through
- *   `Assets.Loader`. A test plays `Sound.clip(name)` instead.
+ *   `Assets.Loader`. In a sheet, it plays whether or not the page was given
+ *   the sheet. A recorder records it by its name.
  * - It is for a channel's track. Played as a cue, it is logged once through
  *   Effect's logger and not played, since a cue must sound immediately.
  * - It starts, fades and stops like any track, and with `once` plays to its
@@ -100,10 +103,11 @@ export interface MediaLike {
 export const stream = (url: string): Sound.Clip => audio.stream(url);
 
 /**
- * Returns a layer that plays a page's sound with Web Audio: the page's named
- * sound files for its whole lifetime, and the clips in a level's bundle.
+ * Returns a layer that plays a page's sound with Web Audio: the files of the
+ * cue sheets it is given, for the page's whole lifetime, and the clips in a
+ * level's bundle.
  *
- *   Audio.layerSound({ coin: "/coin.wav", theme: "/theme.ogg" })
+ *   Audio.layerSound([Sfx, Tracks])
  *
  * **Details**
  *
@@ -116,8 +120,8 @@ export const stream = (url: string): Sound.Clip => audio.stream(url);
  *   audio starts when the first of those apps opens it. When the last is
  *   closed, the audio context is closed, pending file requests are
  *   cancelled, and the page is no longer listened to.
- * - The files are fetched through `Assets.Loader` when the audio starts, and
- *   decoded as they arrive.
+ * - The files of its sheets are fetched through `Assets.Loader` when the
+ *   audio starts, and decoded as they arrive.
  * - A page can't play sound before the user interacts with it. The audio
  *   context is created on the first key or pointer press, and a cue requested
  *   in the very next frame plays. A cue requested before that, or before its
@@ -135,8 +139,10 @@ export const stream = (url: string): Sound.Clip => audio.stream(url);
  *   starts as soon as it can. It loops, or plays once to its end if
  *   requested, and a change of track or volume fades over the requested
  *   duration.
- * - A cue or a track without a file, or whose file couldn't be fetched or
+ * - A sound of a sheet it wasn't given, or whose file couldn't be fetched or
  *   decoded, is logged once through Effect's logger, and plays nothing.
+ * - It plays each cue and track at the volume `Sound.Player` gives it, its
+ *   bus's volume included, times `volume`, the page's own.
  * - While its display, `Driver.Display`, reports the page as hidden, the
  *   audio is suspended, music included, and it resumes when the page is
  *   visible again. The frame loop is paused then, and a frozen game should be
@@ -146,12 +152,12 @@ export const stream = (url: string): Sound.Clip => audio.stream(url);
  * @category Layers
  */
 export const layerSound = (
-  files: Readonly<Record<string, string | Sound.Clip>> = {},
+  sheets: readonly Sound.Sheet[] = [],
   options: Pick<
     Options,
     "audio" | "decode" | "media" | "volume" | "window"
   > = {}
-): Layer.Layer<never> => audio.layerSound(files, options);
+): Layer.Layer<never> => audio.layerSound(sheets, options);
 
 /**
  * Makes a sound asset, a `Sound.Clip` decoded and ready to play, which a

@@ -92,7 +92,7 @@ it.effect("plays nothing when nothing happens", () =>
 
 `game.sound` is a speaker that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each channel is playing now in `playing`. A step plays what its frame asked for.
 
-In a test, replace a sound that a page loads with `Audio.sound(url)` by an asset made with `Assets.make` that produces `Sound.clip(name)`. Replace a sound that a page streams with `Audio.stream(url)` by `Sound.clip(name)` itself. The recorder records each by that name.
+A sound of a cue sheet needs no stand-in: the recorder records it by its name in the sheet, at the volume it was played at, its bus's included. In a test, replace a sound that a page loads with `Audio.sound(url)` by an asset made with `Assets.make` that produces `Sound.clip(name)`. The recorder records it by that name.
 
 ## Serve files
 
