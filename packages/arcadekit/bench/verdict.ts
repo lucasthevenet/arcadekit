@@ -32,9 +32,12 @@
  * query's visit of one entity, a fifth slower.
  *
  * What it does not: a slowdown of less than `FLOOR`, or several such one
- * after the other; and anything outside the storage core, a tick or an
- * action's dispatch, which `pnpm --filter arcadekit bench` reports and
- * nothing compares.
+ * after the other; and what the two suites, the storage core's and an app's
+ * stages', leave out, such as an action's dispatch or a tick over 100,000
+ * entities, which `pnpm --filter arcadekit bench` reports and nothing
+ * compares. An app's stages take a few microseconds, and a build's fastest
+ * run of one is up to a fifth apart from one process to the next, so a
+ * slowdown of one is found when it is about a third, in 25 runs a build.
  */
 
 /** How much slower the fastest run has to be, beyond the noise: a twentieth. */

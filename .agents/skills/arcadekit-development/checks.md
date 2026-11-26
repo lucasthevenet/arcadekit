@@ -8,7 +8,7 @@
 - the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts` and `test/Frame.test.ts`, which every new way to write joins;
 - a frozen world, which refuses a change from the frame and input stages;
 - `Drift.Drifted`, which stops peers whose worlds have come apart;
-- `bench:compare`, which fails on a storage core that got slower;
+- `bench:compare`, which fails on a storage core that got slower, and with `--suite app` on an app's stages that did;
 - the site's typecheck, which compiles the code of every page, and its build, which fails on a dead link.
 
 Which kind of check a rule gets:
