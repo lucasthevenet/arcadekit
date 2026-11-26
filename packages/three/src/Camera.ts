@@ -80,7 +80,9 @@ export interface Camera2dOptions {
   /**
    * With `smooth`, the farthest the entity may move in one tick and still be
    * followed between its two positions. Give it the `snap` of the kind that
-   * draws the entity. Defaults to no limit.
+   * draws the entity. Defaults to no limit. A teleport the game counts in
+   * `Transform2d.Teleports` needs none: the view follows the entity to where
+   * it landed, as the kind draws it.
    */
   readonly snap?: number;
 }

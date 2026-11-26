@@ -21,15 +21,14 @@
  * component, as the world does, such as `"arcadekit/Transform3d.Position"`.
  *
  * A frame system draws an entity between its last two ticks with
- * `Transform3d.smooth`, from what the app keeps outside the world.
+ * `Transform3d.smooth`, from what the app keeps outside the world. An entity
+ * that the game teleports has `Transform3d.Teleports`, whose count the tick
+ * adds one to, and every reader draws it where it landed.
  */
-import type { Effect } from "effect";
-
 import { Component, Field } from "./ecs/component.ts";
 import type { Entity } from "./ecs/component.ts";
 import type { EntityColumn } from "./ecs/query.ts";
-import { Row, smoothing } from "./internal/smooth.ts";
-import type { Frame, Time } from "./Services.ts";
+import { Row, smoothingPlaces } from "./internal/smooth.ts";
 
 /**
  * An entity's position, in the game's units. Added without a value, it is at
@@ -74,6 +73,42 @@ export const Scale = Component.define(
 );
 
 /**
+ * How many times an entity has teleported, which the tick that teleports it
+ * adds one to. Between two ticks, an entity is drawn on its way from where it
+ * was to where it is. One whose `count` changed since the previous frame is
+ * drawn where it is instead, at its `Position`, `Rotation` and `Scale`, by
+ * every reader of `Transform3d.smooth` and by `@arcadekit/three`.
+ *
+ *   commands.spawn(Player, Transform3d.Position, Transform3d.Teleports)
+ *
+ *   ;(yield* Fallen).each((position, teleports) => {
+ *     position.y = 10
+ *     teleports.count += 1
+ *   })
+ *
+ * **When to use**
+ *
+ * Use with an entity that the game moves, in one tick, from one place to
+ * another it doesn't travel through: one that comes back to a checkpoint, or
+ * wraps from one edge of the world to the other. Every reader then draws the
+ * teleport alike, where a `snap` is a distance each reader gives of its own.
+ *
+ * **Details**
+ *
+ * - It is a component of the game, saved, hashed and replayed. A rewind takes
+ *   back a teleport with the tick that made it, and a tick run again counts
+ *   its own again, so a peer that hears of a teleport late draws the entity
+ *   where it landed.
+ * - What counts is that the count changed since the previous frame, not what
+ *   it is. Added bare, it is 0: no teleport.
+ *
+ * @category Components
+ */
+export const Teleports = Component.define("arcadekit/Transform3d.Teleports", {
+  count: Field.u32,
+});
+
+/**
  * Returns the `Rotation` that turns by `angle` radians about an axis.
  *
  *   Transform3d.axisAngle(0, 1, 0, Math.PI)   // half a turn about y
@@ -112,7 +147,9 @@ export const axisAngle = (
  * An entity not read in the previous frame, by any frame system or by
  * `@arcadekit/three`, is drawn where it is. That includes a new entity, one in
  * a slot that belonged to another, and every entity in an app's first frame.
- * Each call of `position`, `rotation` and `scale` returns a new object.
+ * So is an entity whose `Teleports` count changed since the previous frame, at
+ * its position, rotation and scale. Each call of `position`, `rotation` and
+ * `scale` returns a new object.
  * `positions`, `rotations` and `scales` blend a run of rows that `eachChunk`
  * hands out, for a loop over columns, and allocate nothing per entity.
  *
@@ -121,8 +158,8 @@ export const axisAngle = (
 export interface Smooth {
   /**
    * Returns where an entity is drawn, given its `Position`. One that moved
-   * farther than `snap` in a tick, such as one that was teleported, is drawn
-   * at `position`. Without `snap`, any distance is motion.
+   * farther than `snap` in a tick is drawn at `position` too, for a move the
+   * game doesn't count in `Teleports`. Without `snap`, any distance is motion.
    */
   readonly position: (
     entity: Entity,
@@ -207,7 +244,7 @@ const row = new Row();
  *   const Follow = System.frame("game/Follow", function* () {
  *     const smooth = yield* Transform3d.smooth
  *     ;(yield* Players).each((position, _player, entity) => {
- *       const at = smooth.position(entity, position, 50)
+ *       const at = smooth.position(entity, position)
  *       camera.position.set(at.x, at.y + 10, at.z + 20)
  *     })
  *   })
@@ -232,10 +269,14 @@ const row = new Row();
  *   rests.
  * - When several ticks ran since the last frame, an entity moves from where it
  *   was in that frame. When none ran, it stays between the same two values.
+ * - Before the first reader of a frame blends, the app looks at every entity
+ *   with `Teleports`, so every reader draws one that teleported where it
+ *   landed. A `snap` is the reader's own, and two readers that give different
+ *   distances draw a long move differently.
  *
  * @category Services
  */
-export const smooth: Effect.Effect<Smooth, never, Frame | Time> = smoothing(
+export const smooth = smoothingPlaces(
   (store): Smooth => ({
     positions: (start, end, position, entities, snap) =>
       store.lerp3
@@ -285,5 +326,7 @@ export const smooth: Effect.Effect<Smooth, never, Frame | Time> = smoothing(
         .blend(0, 1, row.a, row.b, row.c, row.of(entity));
       return { x: out.x[0]!, y: out.y[0]!, z: out.z[0]! };
     },
-  })
+  }),
+  Teleports,
+  [Position, Rotation, Scale]
 );

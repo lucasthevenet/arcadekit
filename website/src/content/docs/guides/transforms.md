@@ -98,6 +98,60 @@ const Rules = Plugin.make("game/Rules", {
 
 A positive `angle` rotates from the x axis towards the y axis: counterclockwise when y points up, clockwise when it points down.
 
+## Teleport an entity
+
+A **teleport** moves an entity, in one tick, from one place to another it doesn't travel through. An entity drawn between two ticks is drawn on its way from where it was to where it is, so give one that teleports `Teleports`, and count each teleport in it:
+
+```ts
+import {
+  Commands,
+  Component,
+  Plugin,
+  Query,
+  System,
+  Transform2d,
+} from "arcadekit";
+import { Effect } from "effect";
+
+const Ship = Component.tag("game/Ship");
+const Ships = Query.all(Transform2d.Position, Transform2d.Teleports).pipe(
+  Query.with(Ship),
+  Query.writes(Transform2d.Position, Transform2d.Teleports)
+);
+
+// Off the right edge, and in at the left.
+const Wrap = System.tick("game/Wrap", function* () {
+  (yield* Ships).eachChunk((start, end, position, teleports) => {
+    for (let i = start; i < end; i++) {
+      if (position.x[i]! > 400) {
+        position.x[i] = position.x[i]! - 800;
+        teleports.count[i] = teleports.count[i]! + 1;
+      }
+    }
+  });
+});
+
+const Rules = Plugin.make("game/Rules", {
+  systems: [Wrap],
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(
+      Ship,
+      Transform2d.Position,
+      Transform2d.Teleports
+    )).spawn(
+      Ship,
+      Transform2d.Position.of({ x: 0, y: 0 }),
+      Transform2d.Teleports
+    );
+  }),
+});
+```
+
+- `Transform2d.Teleports` and `Transform3d.Teleports` hold one number, `count`, which the tick that teleports the entity adds one to. Added bare, it is 0.
+- An entity whose count changed since the previous frame is drawn where it is, at its position, rotation and scale, until the next tick moves it on. Every reader draws it so: `Three.instances` and `Three.objects` with `smooth: true`, and a frame system of your own that reads `Transform2d.smooth` or `Transform3d.smooth`. See [interpolation](between-two-ticks.md).
+- It is a component of the game, saved, hashed and replayed. A rewind takes a teleport back with the tick that made it, and a peer that hears of one late draws the entity where it landed.
+- An entity without it costs nothing. One with it costs four bytes in the world, and a look at its count once a frame while something is drawn between ticks.
+
 ## Choose an entity's transforms
 
 - **Use them for everything that is drawn**, rather than a position component of your own, so your rules and your renderer agree. [`@arcadekit/three`](drawing-with-three.md) draws from them and has no components of its own.

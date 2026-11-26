@@ -11,14 +11,22 @@
  * smoothly pays nothing. An entity read in one frame is read from where it was
  * in the next: whoever reads it first in a frame brings its two values up to
  * that frame, and every other reader of the frame blends the same two.
+ *
+ * A transform's store looks at its module's `Teleports` once a frame, before
+ * any reader blends, and forgets where an entity was once its count is not
+ * what the frame before saw. The count is the world's, so a rewind takes back
+ * a teleport the frame saw, and a tick run again after one counts it again.
  */
 import { Context, Effect } from "effect";
 
 import { entityGeneration, entityIndex } from "../ecs/component.ts";
-import type { Entity } from "../ecs/component.ts";
+import type { ComponentDef, Entity, FieldDef } from "../ecs/component.ts";
 import type { EntityColumn } from "../ecs/query.ts";
-import { Frame, Time } from "../Services.ts";
+import type { World as EcsWorld } from "../ecs/world.ts";
+import * as Query from "../Query.ts";
+import { Frame, Time, World } from "../Services.ts";
 import type { FrameState } from "../Services.ts";
+import { whole } from "./handed.ts";
 
 /**
  * A numeric column, as a loop reads it.
@@ -103,6 +111,13 @@ abstract class Blend {
 
   /** Reallocates the blended columns with this many rows. */
   protected abstract widen(rows: number): void;
+
+  /** Forgets the entity of this index, so that its next read is of where it is. */
+  forget(index: number): void {
+    if (index < this.seen.length) {
+      this.seen[index] = 0;
+    }
+  }
 }
 
 /**
@@ -467,6 +482,90 @@ class Blends<B> {
     }
     return blend;
   }
+
+  /** The blend of a component, if a frame has read it. */
+  find(component: object): B | undefined {
+    return this.made.get(component);
+  }
+}
+
+/**
+ * A transform module's `Teleports`: how many times an entity has teleported.
+ *
+ * @internal
+ */
+export type Counted = ComponentDef<
+  { readonly count: FieldDef<number, Uint32Array> },
+  "table"
+>;
+
+/**
+ * How many times each entity of a transform module had teleported when a
+ * frame last looked, by entity index.
+ */
+class Teleported {
+  private readonly query: Query.Query<readonly [Counted]>;
+  private generations = new Uint32Array(0);
+  private counts = new Uint32Array(0);
+  /** The frame it last looked in. */
+  private stamp = 0;
+
+  constructor(
+    private readonly store: Smoothing,
+    teleports: Counted,
+    private readonly places: readonly object[]
+  ) {
+    this.query = Query.all(teleports);
+  }
+
+  /** Forgets each entity that teleported since the frame before, once a frame. */
+  look(stamp: number, world: EcsWorld): void {
+    if (stamp !== this.stamp) {
+      this.stamp = stamp;
+      const view = world.view(this.query);
+      if (view.count() > 0) {
+        view.eachChunk(this.visit);
+      }
+    }
+  }
+
+  private readonly visit = (
+    start: number,
+    end: number,
+    teleports: { readonly count: Numbers },
+    entities: EntityColumn
+  ): void => {
+    let { counts, generations } = this;
+    for (let i = start; i < end; i++) {
+      const entity = entities[i]!;
+      const index = entityIndex(entity);
+      if (index >= generations.length) {
+        this.grow(index);
+        ({ counts, generations } = this);
+      }
+      const generation = entityGeneration(entity);
+      const count = teleports.count[i]!;
+      const was = generations[index] === generation ? counts[index]! : 0;
+      if (count !== was) {
+        this.store.forget(index, this.places);
+      }
+      generations[index] = generation;
+      counts[index] = count;
+    }
+  };
+
+  private grow(index: number): void {
+    let length = Math.max(64, this.generations.length);
+    while (length <= index) {
+      length *= 2;
+    }
+    const generations = new Uint32Array(length);
+    generations.set(this.generations);
+    this.generations = generations;
+    const counts = new Uint32Array(length);
+    counts.set(this.counts);
+    this.counts = counts;
+  }
 }
 
 /**
@@ -483,6 +582,31 @@ export class Smoothing {
   readonly lerp3 = new Blends(() => new Lerp3(this.clock));
   readonly nlerp4 = new Blends(() => new Nlerp4(this.clock));
   readonly arc = new Blends(() => new Arc(this.clock));
+  private readonly teleported = new Map<Counted, Teleported>();
+
+  /**
+   * Forgets each entity that teleported since the frame before, by its count
+   * in `teleports`, in the blends of `places`. A second call in the same
+   * frame changes nothing.
+   */
+  look(teleports: Counted, places: readonly object[], world: EcsWorld): void {
+    let seen = this.teleported.get(teleports);
+    if (seen === undefined) {
+      seen = new Teleported(this, teleports, places);
+      this.teleported.set(teleports, seen);
+    }
+    seen.look(this.clock.stamp, world);
+  }
+
+  /** Forgets the entity of this index in the blends of these components. */
+  forget(index: number, components: readonly object[]): void {
+    for (const component of components) {
+      this.lerp2.find(component)?.forget(index);
+      this.lerp3.find(component)?.forget(index);
+      this.nlerp4.find(component)?.forget(index);
+      this.arc.find(component)?.forget(index);
+    }
+  }
 
   /**
    * Starts a frame: its number, the game's tick, and how far it is towards
@@ -503,6 +627,31 @@ export class Smoothing {
 /** Each app's, by the frame it draws, which is its own object. */
 const kept = new WeakMap<FrameState, Smoothing>();
 
+/** Returns the app's store, started for the frame being drawn. */
+const started = (context: Context.Context<Frame | Time>): Smoothing => {
+  const frame = Context.get(context, Frame);
+  let store = kept.get(frame);
+  if (store === undefined) {
+    store = new Smoothing();
+    kept.set(frame, store);
+  }
+  store.begin(Context.get(context, Time).tick, frame.alpha, frame.count);
+  return store;
+};
+
+/** Returns the view of a store that `view` makes, once per app. */
+const viewing = <V>(view: (store: Smoothing) => V) => {
+  const views = new WeakMap<Smoothing, V>();
+  return (store: Smoothing): V => {
+    let seen = views.get(store);
+    if (seen === undefined) {
+      seen = view(store);
+      views.set(store, seen);
+    }
+    return seen;
+  };
+};
+
 /**
  * Returns the app's store of what is drawn between two ticks, started for the
  * frame being drawn, as `view` shows it to a reader. A view is made once per
@@ -513,21 +662,30 @@ const kept = new WeakMap<FrameState, Smoothing>();
 export const smoothing = <V>(
   view: (store: Smoothing) => V
 ): Effect.Effect<V, never, Frame | Time> => {
-  const views = new WeakMap<Smoothing, V>();
+  const viewed = viewing(view);
   return Effect.map(Effect.context<Frame | Time>(), (context) => {
-    const frame = Context.get(context, Frame);
-    let store = kept.get(frame);
-    if (store === undefined) {
-      store = new Smoothing();
-      kept.set(frame, store);
-    }
-    store.begin(Context.get(context, Time).tick, frame.alpha, frame.count);
-    let seen = views.get(store);
-    if (seen === undefined) {
-      seen = view(store);
-      views.set(store, seen);
-    }
-    return seen;
+    const store = started(context);
+    return viewed(store);
+  });
+};
+
+/**
+ * As `smoothing`, for a transform: before the view is handed out, the store
+ * forgets each entity whose count in `teleports` changed since the frame
+ * before, in the blends of `places`.
+ *
+ * @internal
+ */
+export const smoothingPlaces = <V>(
+  view: (store: Smoothing) => V,
+  teleports: Counted,
+  places: readonly object[]
+): Effect.Effect<V, never, Frame | Time | World> => {
+  const viewed = viewing(view);
+  return Effect.map(Effect.context<Frame | Time | World>(), (context) => {
+    const store = started(context);
+    store.look(teleports, places, whole(Context.get(context, World)));
+    return viewed(store);
   });
 };
 

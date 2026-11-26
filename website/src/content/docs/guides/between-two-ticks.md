@@ -20,7 +20,6 @@ const Rocks = Three.instances("game/Rocks", {
   geometry: new IcosahedronGeometry(1),
   material: new MeshStandardMaterial({ color: "#8a8f98" }),
   smooth: true,
-  snap: 50, // moving further than this in one tick is a jump, not motion
 });
 ```
 
@@ -36,7 +35,8 @@ A real-time game wants interpolation. It is off by default because the picture i
 
 - Positions and scales are interpolated linearly. Rotations take the shorter path. A quaternion turns towards whichever of the target and its negation is closer, and a flat game's angle turns the shorter way round.
 - An entity not drawn in the previous frame is drawn where it is. That includes a new entity, one that reuses another's slot, one that was hidden, and every entity in the first frame, after a load, or after a frame in which no system drew it.
-- `snap` is how far an entity can move in one tick and still be interpolated, in scene units, one distance per kind. An entity that moved further, such as one that wrapped from one edge of the world to the other, is drawn where it is. Without `snap`, any distance counts as motion.
+- An entity that teleported, whose `Teleports` count changed since the previous frame, is drawn where it is until the next tick moves it on, by every reader alike. See [teleport an entity](transforms.md#teleport-an-entity).
+- `snap` is how far an entity can move in one tick and still be interpolated, in scene units, one distance per kind, for a long move the game doesn't count as a teleport. An entity that moved further is drawn where it is. Without `snap`, any distance counts as motion.
 - When several ticks ran since the last frame, an entity starts from where it was last drawn, more than a tick back, so it moves faster for that one frame. When no tick ran, it stays between the same two positions as in the previous frame.
 - A position changed without a tick, by an action dispatched between ticks, becomes the target, and the entity moves to it from where it was coming from.
 - An [instance's colour](instances-and-objects.md#colour-each-instance) is interpolated too, however far it changes.
@@ -64,7 +64,7 @@ const context = document.querySelector("canvas")!.getContext("2d")!;
 const Draw = System.frame("game/Draw", function* () {
   const smooth = yield* Transform2d.smooth;
   (yield* Players).each((position, entity) => {
-    const at = smooth.position(entity, position, 64); // 64 is a jump, not motion
+    const at = smooth.position(entity, position);
     context.fillRect(at.x, at.y, 8, 8);
   });
 });

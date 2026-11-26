@@ -138,8 +138,9 @@ export interface InstancesOptions extends InstancesShared, Look {}
  * - An entity that wasn't drawn in the previous frame is drawn where it is: a
  *   new entity, one in a slot that belonged to another, one that was hidden,
  *   and every entity on the first frame, after a load, or after a frame in
- *   which no system drew it smoothly. So is an entity that moved farther than
- *   `snap` in a tick.
+ *   which no system drew it smoothly. So is an entity whose transform's
+ *   `Teleports` count changed since the previous frame, and one that moved
+ *   farther than `snap` in a tick.
  * - It reads the app's store, as `Transform3d.smooth` and `Transform2d.smooth`
  *   do, so a frame system of the game's own, such as a camera that follows an
  *   entity, draws it where its instance is.

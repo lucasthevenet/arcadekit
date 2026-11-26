@@ -7,19 +7,23 @@ import {
   App,
   Commands,
   Component,
+  Field,
   Plugin,
   Query,
+  Replay,
   Save,
+  Singleton,
   System,
   Time,
   Transform2d,
   Transform3d,
   World,
 } from "../src/index.ts";
+import { Session } from "../src/net/index.ts";
 import * as Entry from "../src/Transform2d.ts";
 import { placedIn } from "./placed.ts";
 
-const { Position, Rotation, Scale } = Transform2d;
+const { Position, Rotation, Scale, Teleports } = Transform2d;
 
 const Card = Component.tag("t2/Card");
 
@@ -194,14 +198,16 @@ describe("Transform2d", () => {
               Card,
               Position,
               Rotation,
-              Scale
+              Scale,
+              Teleports
             );
             spawned.push(
               commands.spawn(
                 Card,
                 Position.of({ x: 1, y: 2 }),
                 Rotation.of({ angle: 1.5 }),
-                Scale.of({ x: 2, y: 3 })
+                Scale.of({ x: 2, y: 3 }),
+                Teleports.of({ count: 4 })
               )
             );
           }),
@@ -227,11 +233,14 @@ describe("Transform2d", () => {
               world.get(card, Position),
               world.get(card, Rotation),
               world.get(card, Scale),
+              world.get(card, Teleports),
             ]),
         };
         expect(loaded).toEqual({
           hash: made,
-          cards: [[{ x: 1, y: 2 }, { angle: 1.5 }, { x: 2, y: 3 }]],
+          cards: [
+            [{ x: 1, y: 2 }, { angle: 1.5 }, { x: 2, y: 3 }, { count: 4 }],
+          ],
         });
       })
   );
@@ -393,6 +402,208 @@ describe("Transform2d.smooth", () => {
         expect(seen[1]!.x).toBe(2);
       })
   );
+
+  describe("of an entity that teleports", () => {
+    const Hopper = Component.tag("t2/Hopper", {
+      requires: [Position, Teleports],
+    });
+    const Hoppers = Query.all(Position, Teleports).pipe(
+      Query.with(Hopper),
+      Query.writes(Position, Teleports)
+    );
+    const Hop = Action.define("t2/Hop", Schema.Struct({ x: Schema.Number }));
+    const hop = Action.handler(Hop, function* ({ x }) {
+      (yield* Hoppers).each((position, teleports) => {
+        position.x = x;
+        teleports.count += 1;
+      });
+    });
+    const Walk = System.tick("t2/Walk", function* () {
+      (yield* Query.all(Position).pipe(
+        Query.with(Hopper),
+        Query.writes(Position)
+      )).each((position) => {
+        position.x += 10;
+      });
+    });
+    const Arrive = Plugin.make("t2/Arrive", {
+      setup: Effect.gen(function* () {
+        (yield* Commands.spawns(Hopper)).spawn(Hopper);
+      }),
+    });
+    /**
+     * Two readers that give no distance: where the hopper is drawn, where a
+     * camera on it is, and where the world has it in each frame.
+     */
+    const readers = () => {
+      const drawn: number[] = [];
+      const camera: number[] = [];
+      const is: number[] = [];
+      const Hopping = Query.all(Position).pipe(Query.with(Hopper));
+      const Draw = System.frame("t2/DrawHopper", function* () {
+        const smooth = yield* Transform2d.smooth;
+        (yield* Hopping).each((position, entity) => {
+          drawn.push(smooth.position(entity, position).x);
+          is.push(position.x);
+        });
+      });
+      const Camera = System.frame("t2/CameraOnHopper", function* () {
+        const smooth = yield* Transform2d.smooth;
+        (yield* Hopping).each((position, entity) => {
+          camera.push(smooth.position(entity, position).x);
+        });
+      });
+      return { drawn, camera, is, Draw, Camera };
+    };
+
+    it.effect(
+      "is drawn where it landed by every reader, given no distance, and between its two places as it walks on",
+      () =>
+        Effect.gen(function* () {
+          const { Camera, Draw, camera, drawn } = readers();
+          const app = yield* App.make(
+            App.define({
+              plugins: [Arrive],
+              systems: [Walk, Draw, Camera],
+              handlers: [hop],
+            })
+          );
+          yield* app.tick(1);
+          yield* app.frame(0.5);
+          yield* app.tick(1);
+          yield* app.frame(0.5);
+          yield* app.enqueue(Hop, { x: 500 });
+          yield* app.tick(1);
+          yield* app.frame(0.5);
+          yield* app.frame(0.75);
+          yield* app.tick(1);
+          yield* app.frame(0.5);
+          expect(drawn).toEqual([10, 15, 510, 510, 515]);
+          expect(camera).toEqual(drawn);
+        })
+    );
+
+    it.effect(
+      "is drawn where it is when it teleported in any of the ticks since the last frame",
+      () =>
+        Effect.gen(function* () {
+          const { Draw, drawn } = readers();
+          const app = yield* App.make(
+            App.define({
+              plugins: [Arrive],
+              systems: [Walk, Draw],
+              handlers: [hop],
+            })
+          );
+          yield* app.tick(1);
+          yield* app.frame(0.5);
+          yield* app.enqueue(Hop, { x: 500 });
+          yield* app.tick(1);
+          yield* app.tick(1);
+          yield* app.frame(0.5);
+          yield* app.tick(1);
+          yield* app.frame(0.5);
+          expect(drawn).toEqual([10, 520, 525]);
+        })
+    );
+
+    it.effect(
+      "is drawn where it is after a rewind takes back a teleport, or runs one heard of late",
+      () =>
+        Effect.gen(function* () {
+          // On tick 3, the game sends the hopper back to 500, unless grace
+          // held it on a tick before.
+          const Held = Singleton.define(
+            "t2/Held",
+            { on: Field.i32 },
+            { on: 0 }
+          );
+          const Hold = Action.define("t2/Hold", Schema.Struct({}));
+          const hold = Action.handler(Hold, function* () {
+            (yield* Held.writes).on = 1;
+          });
+          const Back = System.tick("t2/Back", function* () {
+            if ((yield* Time).tick !== 3 || (yield* Held).on === 1) {
+              return;
+            }
+            (yield* Hoppers).each((position, teleports) => {
+              position.x = 500;
+              teleports.count += 1;
+            });
+          });
+          const { Draw, drawn, is } = readers();
+          const Game = App.define({
+            plugins: [Arrive],
+            systems: [Walk, Back, Draw],
+            handlers: [hop, hold],
+          });
+          const session = yield* Session.make(Game, {
+            me: "ada",
+            others: ["grace"],
+            hz: 30,
+            ahead: 10,
+          });
+          const { app } = session;
+          const heard = (
+            from: number,
+            to: number,
+            said: { readonly tick: number; readonly name: string; x?: number }
+          ) => {
+            for (let tick = from; tick < to; tick++) {
+              session.receive({
+                from: "grace",
+                tick,
+                actions:
+                  tick === said.tick
+                    ? [
+                        {
+                          name: said.name,
+                          payload: said.x === undefined ? {} : { x: said.x },
+                        },
+                      ]
+                    : [],
+              });
+            }
+          };
+          // Ahead of grace, who has said nothing: the game sent the hopper
+          // back on tick 3, and ada drew it there.
+          for (let tick = 0; tick < 5; tick++) {
+            yield* session.tick();
+            yield* app.frame(0.5);
+          }
+          expect(drawn.at(-1)).toBeGreaterThan(500);
+          // Grace held it on tick 2: ada goes back, and it was never sent.
+          heard(0, 5, { tick: 2, name: "t2/Hold" });
+          yield* session.tick();
+          yield* app.frame(0.5);
+          expect(session.stats.rewinds).toBe(1);
+          expect(is.at(-1)).toBeLessThan(100);
+          expect(drawn.at(-1)).toBe(is.at(-1));
+          // Grace sent it to 1000 on tick 7, which ada hears of on tick 10.
+          for (let tick = 6; tick < 10; tick++) {
+            yield* session.tick();
+            yield* app.frame(0.5);
+          }
+          heard(5, 10, { tick: 7, name: "t2/Hop", x: 1000 });
+          yield* session.tick();
+          yield* app.frame(0.5);
+          expect(session.stats.rewinds).toBe(2);
+          expect(is.at(-1)).toBeGreaterThan(1000);
+          expect(drawn.at(-1)).toBe(is.at(-1));
+          // And between its two places as it walks on from there.
+          yield* session.tick();
+          yield* app.frame(0.5);
+          expect(drawn.at(-1)).toBe(is.at(-1)! - 5);
+          // The count went back and came again with the world: the game is
+          // the one a single app plays given those actions on those ticks.
+          const played = yield* Replay.record(app);
+          const alone = yield* Replay.verify(played, Game, { hashEvery: 1 });
+          expect((yield* alone.read(World)).hash()).toBe(
+            (yield* app.read(World)).hash()
+          );
+        })
+    );
+  });
 
   it("is read by a frame system alone", () => {
     const drawn = System.frame("t2/Drawn", function* () {
