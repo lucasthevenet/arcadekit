@@ -6,7 +6,9 @@ import {
   chance,
   failures,
   judge,
+  judgeAll,
   onPurpose,
+  pairChance,
   settled,
   table,
 } from "../bench/verdict.ts";
@@ -235,6 +237,143 @@ describe("the verdict on a variant", () => {
   });
 });
 
+/**
+ * Thirty runs whose fastest, first quartile and median are as given, spread
+ * evenly between them and as far above the median as below it: issue
+ * #450's table gives no more of them.
+ */
+const thirty = (fastest: number, quartile: number, middle: number) => {
+  const lower = Array.from({ length: 15 }, (_, i) =>
+    i <= 7
+      ? fastest + ((quartile - fastest) * i) / 7
+      : quartile + ((middle - quartile) * (i - 7)) / 7.5
+  );
+  return [...lower, ...lower.map((run) => 2 * middle - run)];
+};
+
+describe("how often by chance, pair by pair", () => {
+  it("is the share of the deals in which one hand's run is the faster in that many pairs", () => {
+    // Every way of dealing the runs 1 to n into two hands, counted.
+    const counted = (pairs: number, winners: number, losers: number) => {
+      const size = winners + losers;
+      let deals = 0;
+      let extreme = 0;
+      for (let mask = 0; mask < 1 << size; mask++) {
+        const first: number[] = [];
+        const second: number[] = [];
+        for (let run = 0; run < size; run++) {
+          (((mask >> run) & 1) === 1 ? first : second).push(run);
+        }
+        if (first.length !== winners) {
+          continue;
+        }
+        deals++;
+        let won = 0;
+        for (const run of first) {
+          won += second.filter((other) => run < other).length;
+        }
+        extreme += won >= pairs ? 1 : 0;
+      }
+      return extreme / deals;
+    };
+    for (const [winners, losers] of [
+      [4, 4],
+      [5, 5],
+      [6, 3],
+      [3, 7],
+    ] as const) {
+      for (let pairs = 0; pairs <= winners * losers + 1; pairs++) {
+        expect(
+          pairChance(pairs, winners, losers),
+          `${pairs} of ${winners * losers}`
+        ).toBeCloseTo(counted(pairs, winners, losers), 12);
+      }
+    }
+  });
+
+  it("is one in as many deals as there are when every pair goes one way", () => {
+    expect(pairChance(400, 20, 20)).toBeCloseTo(1 / 137_846_528_820, 20);
+    expect(pairChance(0, 20, 20)).toBeCloseTo(1, 12);
+    expect(pairChance(399.5, 20, 20)).toBe(pairChance(399, 20, 20));
+  });
+});
+
+describe("the verdict on a variant by every run", () => {
+  it("is slower where the medians moved and the fastest runs did not, as in issue #450's table", () => {
+    // 4d05201 against 4f1d989: fastest, first quartile and median of 30
+    // runs each, in ns per entity.
+    const position = [thirty(24, 31.3, 32.3), thirty(25, 34.7, 37.9)];
+    const flat = [thirty(19.2, 25.2, 26.6), thirty(21.1, 31.7, 38)];
+    const flatAll = [thirty(72.5, 93.4, 96.2), thirty(70.3, 97.8, 117.8)];
+    const all = [thirty(66.2, 91.3, 93.8), thirty(67.9, 90.7, 97.2)];
+    for (const [base, head] of [position, flat, flatAll]) {
+      expect(judge(base!, head!).outcome).toBe("the same");
+      expect(judgeAll(base!, head!).outcome).toBe("slower");
+    }
+    expect(judgeAll(all[0]!, all[1]!)).toMatchObject({ outcome: "the same" });
+    expect(judgeAll(all[0]!, all[1]!).ratio).toBeLessThan(1 + FLOOR);
+  });
+
+  it("finds a slowdown of most runs that leaves the fastest where it was", () => {
+    const base = Array.from({ length: 20 }, (_, i) => 100 + i / 10);
+    const head = base.map((run, i) => (i < 2 ? run : run * 1.2));
+    expect(judge(base, head).outcome).toBe("the same");
+    expect(judgeAll(base, head).outcome).toBe("slower");
+  });
+
+  it("is faster the other way round, the same within the floor, and slower on purpose when a commit says so", () => {
+    const base = Array.from({ length: 20 }, (_, i) => 100 + i / 10);
+    const quick = base.map((run) => run * 0.8);
+    expect(judgeAll(base, quick)).toMatchObject({
+      outcome: "faster",
+      beaten: 400,
+      of: 400,
+      chance: pairChance(400, 20, 20),
+    });
+    expect(judgeAll(base, quick).ratio).toBeCloseTo(0.8, 12);
+    expect(judgeAll(quick, base, true).outcome).toBe("slower on purpose");
+    const within = base.map((run) => run * (1 + FLOOR) - 0.5);
+    expect(judgeAll(base, within).chance).toBeLessThan(CHANCE);
+    expect(judgeAll(base, within).outcome).toBe("the same");
+  });
+
+  it("is new when the base could not run the variant, and refuses to judge no run at all", () => {
+    expect(judgeAll([], [3, 2, 4])).toMatchObject({ outcome: "new", head: 3 });
+    expect(() => judgeAll([1, 2], [])).toThrow("no run of the head");
+  });
+
+  it("calls two builds that are the same slower less than once in a thousand comparisons, on a machine that disturbs one run in six", () => {
+    const random = new Rng(7);
+    let slower = 0;
+    let faster = 0;
+    const comparisons = 20_000;
+    for (let i = 0; i < comparisons; i++) {
+      const { outcome } = judgeAll(
+        runsOf(random, 100, 30),
+        runsOf(random, 100, 30)
+      );
+      slower += outcome === "slower" ? 1 : 0;
+      faster += outcome === "faster" ? 1 : 0;
+    }
+    expect(slower).toBeLessThan(40);
+    expect(faster).toBeLessThan(40);
+  });
+
+  it("finds a slowdown of a fourteenth nine times in ten on that machine, with thirty runs each", () => {
+    const random = new Rng(11);
+    let found = 0;
+    const comparisons = 2000;
+    for (let i = 0; i < comparisons; i++) {
+      found +=
+        judgeAll(runsOf(random, 100, 30), runsOf(random, 107, 30)).outcome ===
+        "slower"
+          ? 1
+          : 0;
+    }
+    expect(found / comparisons).toBeGreaterThan(0.9);
+  });
+});
+
 describe("a variant that need not be run again", () => {
   it("is one whose fastest runs are within half the floor, with runs of both builds in", () => {
     expect(settled([100, 130], [102, 101])).toBe(true);
@@ -332,6 +471,34 @@ describe("the report", () => {
       "| label of quick (`quick`) | 10.00 | 5.00 ns/entity | −50.0% | 15 of 15, 1 in 155,117,520 | faster |",
       "| label of fresh (`fresh`) | | 4.00 ns/entity | | | new |",
       "| label of same (`same`) | 10.00 | 10.00 ns/entity | +0.0% | 0 of 15, often | the same |",
+    ]);
+  });
+
+  it("heads the column of what was counted as it is told, and adds the bytes a frame of each build allocates", () => {
+    const drawn = (
+      name: string,
+      verdict: Line["verdict"],
+      bytes: NonNullable<Line["bytes"]>
+    ): Line => ({ ...line(name, verdict), bytes });
+    const slow = base.map((run) => run * 1.25);
+    expect(
+      table(
+        [
+          drawn("same", judgeAll(base, base), { base: 5000, head: 5000 }),
+          drawn("fresh", judgeAll([], [4, 5]), {
+            base: Number.NaN,
+            head: 7040.5,
+          }),
+          drawn("slow", judgeAll(base, slow), { base: 5016, head: 10_296 }),
+        ],
+        "Pairs of runs, one of each, that the faster won"
+      ).split("\n")
+    ).toEqual([
+      "| Variant | Base | Head | Change | Pairs of runs, one of each, that the faster won, and how often by chance | Bytes a frame | |",
+      "| --- | ---: | ---: | ---: | --- | ---: | --- |",
+      "| label of slow (`slow`) | 10.07 | 12.59 ns/entity | +25.0% | 225 of 225, 1 in 155,117,520 | 5,016 → 10,296 | **slower** |",
+      "| label of fresh (`fresh`) | | 4.50 ns/entity | | | 7,041 | new |",
+      "| label of same (`same`) | 10.07 | 10.07 ns/entity | +0.0% | 112.5 of 225, often | 5,000 → 5,000 | the same |",
     ]);
   });
 });
