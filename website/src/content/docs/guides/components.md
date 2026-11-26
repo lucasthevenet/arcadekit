@@ -106,7 +106,7 @@ Inside the simulation, you name the components where you request what changes th
 | Spawn an entity, or add a component | `yield* Commands.spawns(Bullet, Position)` | `commands.spawn(Bullet, Position.of({ x: 0, y: 0 }))`, `commands.add(entity, Bullet)` |
 | Despawn an entity, or remove a component | `yield* Commands` | `commands.despawn(entity)`, `commands.remove(entity, Bullet)` |
 | Set a component of one entity by id | `yield* World.writes(Health)` | `world.set(target, Health, { hp: 3 })` |
-| Read one entity by id | `yield* World` | `world.get(target, Health)`, `world.has(target, Health)`, `world.isAlive(target)`, `world.live(hero.target)` |
+| Read one entity by id, or a singleton | `yield* World` | `world.get(target, Health)`, `world.has(target, Health)`, `world.isAlive(target)`, `world.live(hero.target)`, `world.singleton(Score)` |
 | Write every entity that matches | A query with [`Query.writes`](queries.md#name-what-a-query-writes) | `view.each((health) => { health.hp -= 1 })` |
 
 - Spawning, adding or setting a component you didn't name doesn't compile, and the error says where to name it.
@@ -164,10 +164,15 @@ world.spawn(Rock, Transform3d.Position.of({ x: 4, y: 0, z: 0 })); // at 4
 A **tag** is a component with no fields. Store a component sparsely when it is added and removed often, or when few entities have it. Adding or removing a sparse component doesn't move the entity between tables:
 
 ```ts
-import { Component } from "arcadekit";
+import { Component, Field, Query } from "arcadekit";
 
+const Health = Component.define("game/Health", { hp: Field.i32 });
 const Stunned = Component.tag("game/Stunned", { storage: "sparse" });
+
+const Dazed = Query.all(Health).pipe(Query.with(Stunned));
 ```
+
+A query requires a tag with `Query.with`, as `Dazed` does. See [queries](queries.md#find-entities-by-their-components).
 
 ## Store data that exists once in a singleton
 

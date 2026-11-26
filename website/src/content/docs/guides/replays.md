@@ -153,7 +153,7 @@ import {
   Test,
   World,
 } from "arcadekit";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 const Phase = State.define("game/Phase", ["playing", "paused"]);
 const Ball = Component.define("game/Ball", { x: Field.f32 });
@@ -165,7 +165,7 @@ const Roll = System.tick("game/Roll", function* () {
   });
 }).pipe(System.runIf(State.is(Phase, "playing")));
 
-const Pause = Action.define("game/Pause", Schema.Struct({}));
+const Pause = Action.define("game/Pause");
 const pause = Action.handler(Pause, function* () {
   (yield* Phase.sets).set("paused");
 });
@@ -181,7 +181,7 @@ const Rules = Plugin.make("game/Rules", {
 it.effect("stands still while paused", () =>
   Effect.gen(function* () {
     const game = yield* Test.make(App.define({ plugins: [Rules] }));
-    yield* game.app.enqueue(Pause, {});
+    yield* game.app.enqueue(Pause);
     yield* game.step();
     const world = yield* game.app.read(World);
     const [still, all] = [world.hash({ time: false }), world.hash()];

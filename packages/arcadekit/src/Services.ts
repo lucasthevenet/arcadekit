@@ -75,9 +75,11 @@ export interface ReadingWorld extends Pick<
    * Returns a number for everything in the game that a simulation can tell
    * apart, as the storage core's `World.hash` does: the entities and their
    * components, every singleton written, the random generator, the actions
-   * queued for the next tick and the events waiting to be read. Two games
-   * that hash the same go on the same way. A replay, a session and a lobby
-   * compare this one.
+   * queued for the next tick and the events waiting to be read. The
+   * singletons include those arcadekit keeps: a state's value, the time left
+   * of each `Timer.every`, and what `Assets.onReady` has handed to the rules.
+   * Two games that hash the same go on the same way. A replay, a session and
+   * a lobby compare this one.
    *
    * It covers the game's time, `Time`, which every tick moves on. With
    * `{ time: false }`, it covers the rest: two games that differ only in how
@@ -86,6 +88,11 @@ export interface ReadingWorld extends Pick<
    * with the ticks each last went down and up: they are what the player did,
    * which a system reads, so two games whose buttons went down at other
    * ticks hash differently either way.
+   *
+   * It leaves out where each reader is, how far a system has read the events
+   * and what a change query hasn't visited, and what is outside the world: a
+   * `Resource`, a setting such as a control's bindings, the assets loaded,
+   * and the log.
    *
    *   const world = yield* app.read(World)
    *   world.hash()                  // the game, its time included

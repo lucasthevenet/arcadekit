@@ -5,7 +5,7 @@
  * replay or a test of the game imports `arcadekit` alone.
  *
  *   import { App, Driver } from "arcadekit"
- *   import * as Browser from "arcadekit/browser/Browser"
+ *   import { Browser } from "arcadekit/browser"
  *
  *   Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), {
  *     target: canvas,

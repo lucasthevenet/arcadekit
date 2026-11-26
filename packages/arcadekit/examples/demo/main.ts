@@ -142,7 +142,7 @@ const program = Effect.gen(function* () {
               `rock.y=${rockY()}`
           );
           if (second === 1) {
-            yield* app.enqueue(Thaw, undefined);
+            yield* app.enqueue(Thaw);
           } // the rock starts falling
         }
         const { wave } = yield* app.read(Spray);

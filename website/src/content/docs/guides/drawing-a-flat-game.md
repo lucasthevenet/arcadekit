@@ -78,7 +78,7 @@ import {
 import { Browser } from "arcadekit/browser";
 import { Effect } from "effect";
 
-import { Aim, Crate, Player, Rules, level } from "./rules";
+import { Aim, Crate, Player, Rules, level } from "./rules.ts";
 
 const canvas = document.querySelector("canvas")!;
 

@@ -51,7 +51,7 @@ import { Browser } from "arcadekit/browser";
 import { Effect, Layer } from "effect";
 import { AmbientLight, IcosahedronGeometry, MeshStandardMaterial } from "three";
 
-import { Rock, Rules } from "./rules";
+import { Rock, Rules } from "./rules.ts";
 
 const canvas = document.querySelector("canvas")!;
 

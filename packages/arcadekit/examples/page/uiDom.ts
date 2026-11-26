@@ -24,10 +24,10 @@ export const mount = (
     menu.append(made);
     return made;
   };
-  const start = button(() => ui.send(Start, {}));
+  const start = button(() => ui.send(Start));
   start.textContent = "Start";
-  const pause = button(() => ui.send(TogglePause, {}));
-  const quit = button(() => ui.send(Quit, {}));
+  const pause = button(() => ui.send(TogglePause));
+  const quit = button(() => ui.send(Quit));
   quit.textContent = "Quit";
 
   const showMenu = ({ phase }: typeof Menu.initial): void => {

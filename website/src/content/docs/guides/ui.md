@@ -11,10 +11,9 @@ Put the views and actions that the UI and the game share in one module. The UI i
 
 ```ts title="protocol.ts"
 import { Action, View } from "arcadekit";
-import { Schema } from "effect";
 
 export const Hud = View.define("game/Hud", { score: 0, lives: 3 });
-export const NewGame = Action.define("game/NewGame", Schema.Struct({}));
+export const NewGame = Action.define("game/NewGame");
 ```
 
 A **view** has a name and an initial value. The UI sees the initial value until the game first publishes, and the initial value sets the view's type. A view's value is plain data: strings, numbers, booleans, and arrays and objects of them.
@@ -42,7 +41,7 @@ Like an action, a view is a key and not part of the game. The game never reads a
 ```ts title="game.ts"
 import { Field, Plugin, Singleton, View, Action } from "arcadekit";
 
-import { Hud, NewGame } from "./protocol";
+import { Hud, NewGame } from "./protocol.ts";
 
 const Score = Singleton.define(
   "game/Score",
@@ -83,21 +82,21 @@ A UI never holds the app. The app hands it a `View.Bridge`, and nothing else of 
 ```ts title="ui.ts"
 import type { View } from "arcadekit";
 
-import { Hud, NewGame } from "./protocol";
+import { Hud, NewGame } from "./protocol.ts";
 
 export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
   const label = root.querySelector("output")!;
   const stop = ui.subscribe(Hud, ({ score }) => {
     label.textContent = `${score}`;
   });
-  root.querySelector("button")!.onclick = () => ui.send(NewGame, {});
+  root.querySelector("button")!.onclick = () => ui.send(NewGame);
   return stop;
 };
 ```
 
 - `ui.get(view)` returns the last published value. It returns the same object until the value changes, so `===` tells a UI library whether anything changed. A view that the UI doesn't listen to is computed in the frame after `get` reads it, so `get` returns it a frame late.
 - `ui.subscribe(view, listener)` calls the listener with the current value at once, then each time the value changes, and returns a function that unsubscribes. So a UI that subscribes shows the game as it is, and needs no `get` beside it. A listener that throws when the value changes fails the frame, like any bug in the frame stage, once every other listener has been notified.
-- `ui.send(action, payload)` requests an action. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for one an input system issues for a key. A replay therefore needs no UI, and a button counts the same as a key.
+- `ui.send(action, payload)` requests an action. An action with no payload, such as `NewGame`, is sent with none: `ui.send(NewGame)`. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for one an input system issues for a key. A replay therefore needs no UI, and a button counts the same as a key.
 
 A bridge sends the actions of its type and no other. The app of a game hands out a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` can be handed the bridge only if the game handles `NewGame`. A `View.Bridge` with no actions reads views and sends nothing. An action that the game has no handler for doesn't compile, in `send` or where the bridge is handed to the UI.
 
@@ -112,8 +111,8 @@ import { App, Driver, View } from "arcadekit";
 import { Browser } from "arcadekit/browser";
 import { Effect } from "effect";
 
-import { Game } from "./game";
-import { mount } from "./ui";
+import { Game } from "./game.ts";
+import { mount } from "./ui.ts";
 
 const Arcade = App.define({ plugins: [Game] });
 

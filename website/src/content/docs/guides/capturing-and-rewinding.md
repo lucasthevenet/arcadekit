@@ -60,10 +60,10 @@ const Keys = System.input("game/Keys", function* () {
     enqueue(Step, { dx: 1 });
   }
   if (pressed.includes("KeyZ")) {
-    enqueue(Timeline.Undo, undefined);
+    enqueue(Timeline.Undo);
   }
   if (pressed.includes("KeyY")) {
-    enqueue(Timeline.Redo, undefined);
+    enqueue(Timeline.Redo);
   }
 });
 const Puzzle = App.define({

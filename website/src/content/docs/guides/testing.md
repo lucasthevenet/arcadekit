@@ -107,7 +107,33 @@ A sound of a cue sheet needs no stand-in: the recorder records it by its name in
 
 ## Serve files
 
-`Test.make(game, { files: { "/level.json": "..." } })` serves the game's files from memory instead of `fetch`, and fails to load any other. A file given as text is read as UTF-8.
+```ts title="rules.test.ts"
+import { Assets } from "arcadekit";
+
+it.effect("starts with the points the level's file says", () =>
+  Effect.gen(function* () {
+    const Level = Assets.bundle("game/Level", {
+      start: Assets.json("/level.json", Schema.Int),
+    });
+    const Begin = Action.define("game/Begin", Schema.Int);
+    const begin = Action.handler(Begin, function* (points) {
+      (yield* Score.writes).points = points;
+    });
+    const game = yield* Test.make(
+      App.define({
+        plugins: [Rules, Assets.onReady(Level, begin, ({ start }) => start)],
+        systems: [Assets.during(Level)],
+      }),
+      { files: { "/level.json": "5" } }
+    );
+    yield* game.step(); // loads the file in its frame
+    yield* game.step(); // hands it to the rules
+    expect((yield* game.app.read(Score)).points).toBe(5);
+  })
+);
+```
+
+`Test.make(game, { files })` serves the game's files from memory instead of `fetch`, and fails to load any other. A file given as text is read as UTF-8. A file from memory is loaded in the frame that asks for it, so a test of a level steps the game and needs no `it.live`.
 
 To check that a level's assets are released when the level ends, give the level an asset made with `Assets.make`. Its `decode` records when the asset is created and, with `Effect.acquireRelease`, when it is released.
 

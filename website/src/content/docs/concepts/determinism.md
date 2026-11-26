@@ -47,7 +47,7 @@ Work that must go on in real time while the game runs, such as loading, runs out
 - every entity and the value of every field of every component it has, each component identified by its name and its fields;
 - the order queries visit entities in: tables in creation order, rows ascending;
 - the ids the next entities will get: the freed slots, in reuse order, and their generations;
-- every singleton that has been written, by name;
+- every singleton that has been written, by name, the game's own and those arcadekit keeps: a [state](../guides/states.md)'s value, the buttons the input stage keeps with the ticks each last went down and up, the time left of each `Timer.every`, and what `Assets.onReady` has handed to the rules;
 - the game's time: the ticks run, the seconds simulated and the last tick's `delta`, which the world holds as the singleton `arcadekit/Time`;
 - the state of the random number generator;
 - the actions queued for the next tick, with who issued them, and the events the simulation has yet to read, each in its JSON form.
@@ -60,6 +60,7 @@ The hash doesn't depend on anything a simulation can't observe: a table's capaci
 - It uses 32-bit integer arithmetic on each field's bits, so it is identical on every machine and in every JavaScript engine.
 - It changes nothing in the world, so you can call it at any time. It costs about 8 ns per entity with four float fields.
 - It doesn't cover where each reader is: how far a system has read the events, or what change queries haven't visited. Where a reader is belongs to the reader, so a plugin that only watches a game doesn't change the game's hash. Two games with the same hash can still differ there, until the difference reaches the world. A [save](../guides/saving-and-loading.md) holds where each reader is.
+- It doesn't cover what is outside the world: a `Resource`, a [setting](../guides/settings.md) such as a control's bindings, the assets loaded, and the log. Two games that differ there hash the same until the difference changes the world.
 - `world.hash({ time: false })` covers all of it but the game's time. Two games that differ only in how many ticks they ran, such as a game paused for a while and the same game not paused, hash the same there and differ in `world.hash()`. [Compare two games](../guides/replays.md#compare-two-games) says which to compare when.
 
 The app records the hash in its log every `hashEvery` ticks, 60 by default. A replay compares its own world at each hash check, and stops at the first mismatch with `Replay.Diverged`, which reports the tick and when the two last agreed. [Verify a replay with hash checks](../guides/replays.md#verify-a-replay-with-hash-checks) covers how often to record one, and what it costs.

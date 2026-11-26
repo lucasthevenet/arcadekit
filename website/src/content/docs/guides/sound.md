@@ -12,7 +12,7 @@ import { App, Driver, Event, Plugin, Sound } from "arcadekit";
 import { Browser } from "arcadekit/browser";
 import { Schema } from "effect";
 
-const Scored = Event.define("game/Scored", Schema.Struct({}));
+const Scored = Event.define("game/Scored");
 const Bounced = Event.define(
   "physics/Bounced",
   Schema.Struct({ speed: Schema.Finite })
