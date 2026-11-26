@@ -219,4 +219,4 @@ Play a game in a test, replay its recording with `Replay.verify(recording, game)
 ## Read more
 
 - [Testing several peers](testing-peers.md): a network in memory, and a check that a rewind runs a tick the same.
-- arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`examples/page/page.test.ts`](../../../../../examples/page/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.
+- arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`examples/page/src/page.test.ts`](../../../../../examples/page/src/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.

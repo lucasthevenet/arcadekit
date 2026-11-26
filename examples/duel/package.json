@@ -4,7 +4,7 @@
   "description": "A turn-based duel, played through actions",
   "type": "module",
   "scripts": {
-    "start": "tsx --conditions=source main.ts",
+    "start": "tsx --conditions=source src/main.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

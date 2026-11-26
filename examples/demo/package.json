@@ -4,7 +4,7 @@
   "description": "A small simulation in real time, laid out as a game is: a folder for each plugin",
   "type": "module",
   "scripts": {
-    "start": "tsx --conditions=source main.ts",
+    "start": "tsx --conditions=source src/main.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

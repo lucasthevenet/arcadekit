@@ -254,7 +254,6 @@
     "bench:parallel": "tsx bench/parallel/run.ts"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261104.1",
     "@effect/platform-browser": "~4.1.4",
     "@types/ws": "^8.18.2",
     "effect": "~4.1.4",
@@ -262,14 +261,10 @@
     "ws": "^8.23.0"
   },
   "peerDependencies": {
-    "@cloudflare/workers-types": "^5",
     "@effect/platform-browser": "~4.1.0",
     "effect": "~4.1.2"
   },
   "peerDependenciesMeta": {
-    "@cloudflare/workers-types": {
-      "optional": true
-    },
     "@effect/platform-browser": {
       "optional": true
     }

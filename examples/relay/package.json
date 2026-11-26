@@ -4,8 +4,8 @@
   "description": "A relay on Node, and a check of any relay",
   "type": "module",
   "scripts": {
-    "start": "tsx --conditions=source main.ts",
-    "check": "tsx --conditions=source check.ts",
+    "start": "tsx --conditions=source src/main.ts",
+    "check": "tsx --conditions=source src/check.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
