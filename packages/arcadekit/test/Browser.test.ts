@@ -1009,7 +1009,7 @@ describe("Browser.runMain", () => {
             seed: 1,
             me: "ada",
             others: ["grace"],
-            delta: 1 / 60,
+            hz: 60,
           }),
           Transport.connect
         )

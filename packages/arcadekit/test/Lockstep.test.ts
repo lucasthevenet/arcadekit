@@ -25,6 +25,7 @@ import {
   DELTA,
   Drop,
   Fault,
+  HZ,
   Hear,
   Mint,
   NoSuchCoin,
@@ -96,7 +97,9 @@ describe("a lockstep session", () => {
               const ticks = yield* catchUp(peers, net);
               // A tick that has run is let go of: what a peer holds is what the
               // others have said ahead of it, however long the game has gone on.
-              expect(ada.session.held).toBeLessThanOrEqual(2 * (2 * 2 + 2));
+              expect(ada.session.stats.held).toBeLessThanOrEqual(
+                2 * (2 * 2 + 2)
+              );
               expect(ada.app.time.tick).toBe(ticks);
               expect(grace.app.time.tick).toBe(ticks);
               expect(ada.world.hash()).toBe(grace.world.hash());
@@ -206,7 +209,7 @@ describe("a lockstep session", () => {
           const [ada] = peers as [Peer];
           // Two ticks, unless it is told otherwise.
           expect(ada.session.delay).toBe(2);
-          expect(ada.session.delta).toBe(DELTA);
+          expect(ada.session.hz).toBe(HZ);
           expect(ada.session.me).toBe("ada");
           yield* ada.app.enqueue(Drop, { by: "ada", value: 1 });
           yield* ada.app.enqueue(Drop, { by: "ada", value: 2 });
@@ -223,14 +226,17 @@ describe("a lockstep session", () => {
               // And what it was made with, first of all.
               made: {
                 game: expect.any(Number),
-                delta: DELTA,
+                hz: HZ,
                 peers: ["ada", "grace"],
                 start: 0,
               },
               // It has heard nothing of grace yet.
               heard: 0,
+              // It is about to run tick 0, and is no tick ahead of grace.
+              at: 0,
+              lead: 0,
             },
-            { from: "ada", tick: 1, actions: [], heard: 0 },
+            { from: "ada", tick: 1, actions: [], heard: 0, at: 0, lead: 0 },
             {
               from: "ada",
               tick: 2,
@@ -239,6 +245,8 @@ describe("a lockstep session", () => {
                 { name: "ls/Drop", payload: { by: "ada", value: 2 } },
               ],
               heard: 0,
+              at: 0,
+              lead: 0,
             },
           ]);
           // Taken: asked again, there is nothing.
@@ -261,7 +269,7 @@ describe("a lockstep session", () => {
             yield* ada.session.tick();
             const said = ada.session.outgoing();
             expect(said.map((message) => message.tick)).toEqual([0, 1]);
-            expect(ada.session.unheard).toBe(2);
+            expect(ada.session.stats.unheard).toBe(2);
             // As they were, with how far it has heard by now.
             expect(ada.session.resend()).toEqual(said);
             // Grace has heard ada's message for tick 0; edsger hasn't said.
@@ -271,7 +279,7 @@ describe("a lockstep session", () => {
               actions: [],
               heard: 1,
             });
-            expect(ada.session.unheard).toBe(2);
+            expect(ada.session.stats.unheard).toBe(2);
             ada.session.receive({
               from: "edsger",
               tick: 0,
@@ -292,7 +300,7 @@ describe("a lockstep session", () => {
               actions: [],
               heard: 9,
             });
-            expect(ada.session.unheard).toBe(1);
+            expect(ada.session.stats.unheard).toBe(1);
             ada.session.receive({
               from: "edsger",
               tick: 1,
@@ -305,7 +313,7 @@ describe("a lockstep session", () => {
               actions: [],
               heard: 2,
             });
-            expect(ada.session.unheard).toBe(0);
+            expect(ada.session.stats.unheard).toBe(0);
             expect(ada.session.resend()).toEqual([]);
           })
         );
@@ -314,7 +322,7 @@ describe("a lockstep session", () => {
           Effect.gen(function* () {
             yield* ada!.session.tick();
             expect(ada!.session.outgoing()[0]).not.toHaveProperty("heard");
-            expect(ada!.session.unheard).toBe(0);
+            expect(ada!.session.stats.unheard).toBe(0);
           })
         );
       })
@@ -405,9 +413,9 @@ describe("a lockstep session", () => {
           ada.session.receive({ from: "ada", tick: 1, actions: [action] });
           expect(yield* ada.session.tick()).toBe(true);
           // For a tick that has run: it is not kept.
-          const before = ada.session.held;
+          const before = ada.session.stats.held;
           ada.session.receive({ from: "grace", tick: 0, actions: [action] });
-          expect(ada.session.held).toBe(before);
+          expect(ada.session.stats.held).toBe(before);
           ada.session.receive({ from: "grace", tick: 1, actions: [] });
           expect(yield* ada.session.tick()).toBe(true);
           expect(moves(ada.app.actionLog)).toEqual([]);
@@ -527,6 +535,8 @@ describe("a lockstep session", () => {
               checkpoints: [{ tick: 0, hash: ada.world.hash() }],
               made: expect.objectContaining({ start: 0 }),
               heard: 0,
+              at: 0,
+              lead: 0,
             },
           ]);
           net.send(["grace"], said);
@@ -676,7 +686,7 @@ describe("a lockstep session", () => {
       const alone = {
         me: "ada",
         others: [],
-        delta: DELTA,
+        hz: HZ,
         delay: 0,
         ahead: 0,
       };
@@ -714,7 +724,7 @@ describe("a lockstep session", () => {
         Session.make(App.define({ systems: [Keys] }), {
           me: "ada",
           others: [],
-          delta: DELTA,
+          hz: HZ,
           delay: 0,
           ahead: 0,
         }),
@@ -823,7 +833,7 @@ describe("a lockstep session", () => {
             { hz: 30 }
           );
           void Driver.run(Effect.succeed(ada.session), {
-            ready: (session) => Effect.log(session.delta),
+            ready: (session) => Effect.log(session.hz),
           });
           // Its tick simulates its delta, and is given none.
           const told = [
@@ -940,7 +950,7 @@ describe("a lockstep session", () => {
             checkpointEvery: 1,
             me: "ada",
             others: ["grace"],
-            delta: DELTA,
+            hz: HZ,
             ...options,
             ahead: 0,
           }),
@@ -956,10 +966,8 @@ describe("a lockstep session", () => {
       );
       expect(yield* thrown(attempt({ delay: -1 }))).toThrow(/delay.*-1/u);
       expect(yield* thrown(attempt({ delay: 1.5 }))).toThrow(/delay.*1\.5/u);
-      expect(yield* thrown(attempt({ delta: 0 }))).toThrow(/delta.*0/u);
-      expect(yield* thrown(attempt({ delta: Number.NaN }))).toThrow(
-        /delta.*NaN/u
-      );
+      expect(yield* thrown(attempt({ hz: 0 }))).toThrow(/hz.*0/u);
+      expect(yield* thrown(attempt({ hz: Number.NaN }))).toThrow(/hz.*NaN/u);
     })
   );
 
@@ -982,7 +990,7 @@ describe("a lockstep session", () => {
             checkpointEvery: 1,
             me,
             others: [me === "ada" ? "grace" : "ada"],
-            delta: DELTA,
+            hz: HZ,
             delay: 1,
             ahead: 0,
           });
@@ -1170,7 +1178,9 @@ describe("peers that have come apart", () => {
               yield* round(peers, net);
             }
             // What is left is what the other has not had the time to answer.
-            expect(peers[0]!.session.unanswered).toBeLessThanOrEqual(2 * 2 + 2);
+            expect(peers[0]!.session.stats.unanswered).toBeLessThanOrEqual(
+              2 * 2 + 2
+            );
             expect(peers[0]!.app.time.tick).toBeGreaterThan(30);
           })
         );
@@ -1181,7 +1191,7 @@ describe("peers that have come apart", () => {
             checkpointEvery: 1,
             me: "ada",
             others: [],
-            delta: DELTA,
+            hz: HZ,
             ahead: 0,
           }),
           (session) =>
@@ -1190,7 +1200,7 @@ describe("peers that have come apart", () => {
                 yield* session.tick();
               }
               expect(session.app.time.tick).toBe(700);
-              expect(session.unanswered).toBe(601);
+              expect(session.stats.unanswered).toBe(601);
             })
         );
       })
@@ -1389,7 +1399,7 @@ const madeApart = (
 /** How each peer of these tests is made, unless it is told otherwise. */
 const alike = {
   seed: 5,
-  delta: DELTA,
+  hz: HZ,
   ahead: 0,
 } as const;
 
@@ -1414,7 +1424,7 @@ describe("peers that were not made alike", () => {
               ...alike,
               me: "grace",
               others: ["ada"],
-              delta: 1 / 60,
+              hz: 60,
             }),
           ],
         ]);
@@ -1425,21 +1435,21 @@ describe("peers that were not made alike", () => {
             other: "grace",
             mine: {
               game: found.mine.game,
-              delta: DELTA,
+              hz: HZ,
               peers: ["ada", "grace"],
               start: 0,
             },
             theirs: {
               game: found.mine.game,
-              delta: 1 / 60,
+              hz: 60,
               peers: ["ada", "grace"],
               start: 0,
             },
-            differ: ["delta"],
+            differ: ["hz"],
           })
         );
         expect(found.message).toBe(
-          `The peers "ada" and "grace" were not made alike: "ada" ticks ${DELTA} seconds at a time and "grace" ${1 / 60}. Give every peer the same delta.`
+          `The peers "ada" and "grace" were not made alike: "ada" ticks ${HZ} times a second and "grace" 60. Give every peer the same hz.`
         );
         expect(unlike(stopped.get("grace")).other).toBe("ada");
         expect(ticks).toEqual([0, 0]);
@@ -1545,7 +1555,7 @@ describe("peers that were not made alike", () => {
                 save: saved,
                 me: "grace",
                 others: ["ada"],
-                delta: DELTA,
+                hz: HZ,
                 ahead,
               }),
             ],
@@ -1654,10 +1664,12 @@ describe("a message between peers", () => {
       ],
       made: {
         game: 4_294_967_295,
-        delta: 1 / 60,
+        hz: 60,
         peers: ["ada", "grace"],
         start: 3,
       },
+      at: 7,
+      lead: -2,
       heard: 11,
     };
     const empty: Message.Message = { from: "grace", tick: 0, actions: [] };
@@ -1702,12 +1714,14 @@ describe("a message between peers", () => {
         made: Schema.optionalKey(
           Schema.Struct({
             game: Schema.Int,
-            delta: Schema.Finite,
+            hz: Schema.Finite,
             peers: Schema.Array(Schema.String),
             start: Schema.Int,
           })
         ),
         heard: Schema.optionalKey(Schema.Int),
+        at: Schema.optionalKey(Schema.Int),
+        lead: Schema.optionalKey(Schema.Int),
       }),
       { fingerprint: true }
     );
@@ -1748,10 +1762,11 @@ describe("a message between peers", () => {
         "made with a game whose hash is -1",
         unchecked({
           ...message,
-          made: { game: -1, delta: 1 / 60, peers: ["ada"], start: 0 },
+          made: { game: -1, hz: 60, peers: ["ada"], start: 0 },
         }),
       ],
       ["heard before the first tick", unchecked({ ...message, heard: -1 })],
+      ["at a tick before the first", unchecked({ ...message, at: -1 })],
     ] as const) {
       expect(Exit.isFailure(Message.decode(data)), what).toBe(true);
     }

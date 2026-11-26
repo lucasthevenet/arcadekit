@@ -776,11 +776,13 @@ describe("saving and replaying", () => {
       tick: 12,
       actions: [{ name: "g/Move", payload: { dx: 1 } }],
       checkpoints: [{ tick: 11, hash: 4_294_967_295 }],
-      made: { game: 99, delta: 1 / 60, peers: ["ada", "bob"], start: 0 },
+      made: { game: 99, hz: 60, peers: ["ada", "bob"], start: 0 },
       heard: 10,
+      at: 12,
+      lead: -3,
     };
     const messageBytes =
-      "492103371702b2a5d7db070c010a000302160afeffffff1f18036164611401120003107b226478223a317d0c672f4d6f76651609020361646103626f62c6010008111111111111913f14";
+      "4421f218d829e05c42a21f070c010a000302160afeffffff1f1818036164611401120003107b226478223a317d0c672f4d6f76650f09020361646103626f62c60101780014";
     expect(hex(unwrap(Message.encode(message)))).toBe(messageBytes);
     expect(Message.decode(bytesOf(messageBytes))).toEqual(
       Exit.succeed(message)

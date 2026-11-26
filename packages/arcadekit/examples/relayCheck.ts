@@ -75,7 +75,7 @@ const check = Effect.gen(function* () {
       checkpointEvery: 1,
       me: peer,
       others: [peer === "ada" ? "grace" : "ada"],
-      delta: 1 / 30,
+      hz: 30,
     });
     // Held in the check's scope, which closes each when the check ends.
     const connected = yield* Effect.acquireRelease(
@@ -127,7 +127,7 @@ const check = Effect.gen(function* () {
     );
   }
   yield* Console.log(
-    `✓ two peers played ${ada.app.time.tick} ticks through it and hold the same world (${ada.session.rewinds + grace.session.rewinds} rewinds)`
+    `✓ two peers played ${ada.app.time.tick} ticks through it and hold the same world (${ada.session.stats.rewinds + grace.session.stats.rewinds} rewinds)`
   );
 
   // --- a name that is taken ---------------------------------------------------

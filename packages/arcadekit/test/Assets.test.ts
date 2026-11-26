@@ -1457,7 +1457,7 @@ describe("levels as data", () => {
           others: readonly string[],
           given: Readonly<Record<string, string>>
         ) =>
-          Session.make(LevelGame, { seed: 1, me, others, delta: 1 }).pipe(
+          Session.make(LevelGame, { seed: 1, me, others, hz: 1 }).pipe(
             Effect.provide(
               Layer.merge(Assets.layer(Assets.makeMemory(given)), quiet)
             )

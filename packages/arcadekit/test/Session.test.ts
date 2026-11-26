@@ -5,9 +5,9 @@ import { App, Plugin, Save, World } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";
 import { Session } from "../src/net/index.ts";
 import { thrown } from "./checks.ts";
-import { CoinGame, DELTA, Drop, game } from "./peers.ts";
+import { CoinGame, DELTA, Drop, HZ, game } from "./peers.ts";
 
-const alone = { me: "ada", others: [], delta: DELTA } as const;
+const alone = { me: "ada", others: [], hz: HZ } as const;
 
 /** What the compiler says of a session's names, or that it says nothing. */
 type Said<Me extends string, Others extends readonly string[]> = [
@@ -53,7 +53,7 @@ describe("a session", () => {
           seed: 5,
           me: "grace",
           others: ["edsger", "ada"],
-          delta: DELTA,
+          hz: HZ,
         });
         expect(session.me).toBe("grace");
         // Every peer, in the order their actions are applied.
@@ -75,12 +75,12 @@ describe("a session", () => {
         void Session.make(
           CoinGame,
           // @ts-expect-error "ada" is me, and among the others too
-          { seed: 5, me: "ada", others: ["grace", "ada"], delta: DELTA }
+          { seed: 5, me: "ada", others: ["grace", "ada"], hz: HZ }
         );
         void Session.make(
           CoinGame,
           // @ts-expect-error "grace" is among the others twice
-          { seed: 5, me: "ada", others: ["grace", "grace"], delta: DELTA }
+          { seed: 5, me: "ada", others: ["grace", "grace"], hz: HZ }
         );
       })
   );

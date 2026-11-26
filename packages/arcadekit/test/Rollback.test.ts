@@ -23,8 +23,8 @@ import { thrown } from "./checks.ts";
 import {
   Coin,
   CoinGame,
-  DELTA,
   Drop,
+  HZ,
   Purse,
   Take,
   catchUp,
@@ -96,12 +96,12 @@ describe("a rollback session", () => {
           // Grace has run that tick too, and has not heard of it.
           expect(grace.app.time.tick).toBe(6);
           expect(moves(grace.app.actionLog)).not.toContainEqual(move);
-          const before = grace.session.rewinds;
+          const before = grace.session.stats.rewinds;
           yield* settle(peers, net, 6);
           // When she hears, it is put where it belongs: on tick 5, not on the
           // tick the message arrived in.
           expect(moves(grace.app.actionLog)).toContainEqual(move);
-          expect(grace.session.rewinds).toBeGreaterThan(before);
+          expect(grace.session.stats.rewinds).toBeGreaterThan(before);
           expect(grace.world.hash()).toBe(ada.world.hash());
         })
       )
@@ -150,17 +150,23 @@ describe("a rollback session", () => {
               // Over a network that takes no time, the peer that runs first in a
               // round hears of the other's moves late, and the other on time.
               expect(
-                [ada.session.rewinds > 5, grace.session.rewinds > 5],
+                [
+                  ada.session.stats.rewinds > 5,
+                  grace.session.stats.rewinds > 5,
+                ],
                 where
               ).toEqual(lag.max > 0 ? [true, true] : [true, false]);
-              expect(ada.session.resimulated, where).toBeGreaterThanOrEqual(
-                ada.session.rewinds
-              );
+              expect(
+                ada.session.stats.resimulated,
+                where
+              ).toBeGreaterThanOrEqual(ada.session.stats.rewinds);
               // What it keeps to go back to is what it is not sure of, however
               // long the game has gone on; at rest, with everything said, that
               // is next to nothing.
-              expect(ada.session.kept, where).toBeLessThanOrEqual(ahead);
-              expect(ada.session.kept, where).toBeLessThanOrEqual(lag.max + 1);
+              expect(ada.session.stats.kept, where).toBeLessThanOrEqual(ahead);
+              expect(ada.session.stats.kept, where).toBeLessThanOrEqual(
+                lag.max + 1
+              );
               // The same game on both.
               expect(ada.world.hash(), where).toBe(grace.world.hash());
               expect(ada.app.actionLog, where).toEqual(grace.app.actionLog);
@@ -203,7 +209,7 @@ describe("a rollback session", () => {
           expect(other.app.actionLog).toEqual(first.app.actionLog);
           expect(other.session.drifted).toBeUndefined();
         }
-        expect(first.session.rewinds).toBeGreaterThan(5);
+        expect(first.session.stats.rewinds).toBeGreaterThan(5);
         const recording = yield* first.app.record();
         expect(recording.end).toBe(ticks);
         yield* withApp(
@@ -254,17 +260,17 @@ describe("a rollback session", () => {
         }
         // Sixty ticks ahead of the network, every one predicted right.
         expect(ada.app.time.tick).toBe(60);
-        expect(ada.session.rewinds).toBe(0);
-        expect(grace.session.resimulated).toBe(0);
+        expect(ada.session.stats.rewinds).toBe(0);
+        expect(grace.session.stats.resimulated).toBe(0);
         yield* ada.app.enqueue(Drop, { by: "ada", value: 1 });
         for (let i = 0; i < 20; i++) {
           yield* round(peers, net);
         }
         // One move: grace went back once, and ada, who made it, never.
-        expect(grace.session.rewinds).toBe(1);
-        expect(grace.session.resimulated).toBeGreaterThanOrEqual(2);
-        expect(grace.session.resimulated).toBeLessThanOrEqual(6);
-        expect(ada.session.rewinds).toBe(0);
+        expect(grace.session.stats.rewinds).toBe(1);
+        expect(grace.session.stats.resimulated).toBeGreaterThanOrEqual(2);
+        expect(grace.session.stats.resimulated).toBeLessThanOrEqual(6);
+        expect(ada.session.stats.rewinds).toBe(0);
       })
     )
   );
@@ -279,7 +285,7 @@ describe("a rollback session", () => {
             yield* ada.session.tick();
           }
           expect(ada.session.confirmed).toBe(0);
-          expect(ada.session.kept).toBe(5);
+          expect(ada.session.stats.kept).toBe(5);
           // Grace's word for those five ticks, with a move on the third.
           for (let tick = 0; tick < 5; tick++) {
             ada.session.receive({
@@ -294,14 +300,14 @@ describe("a rollback session", () => {
           // Everything is said, and the game ada holds was run without that
           // move: it is right up to the tick the move is for, and no further.
           expect(ada.session.confirmed).toBe(2);
-          expect(ada.session.rewinds).toBe(0);
+          expect(ada.session.stats.rewinds).toBe(0);
           yield* ada.session.tick();
-          expect(ada.session.rewinds).toBe(1);
-          expect(ada.session.resimulated).toBe(3);
+          expect(ada.session.stats.rewinds).toBe(1);
+          expect(ada.session.stats.resimulated).toBe(3);
           expect(ada.session.confirmed).toBe(5);
           expect(ada.app.time.tick).toBe(6);
           // Sure of every tick but the one it has just run.
-          expect(ada.session.kept).toBe(1);
+          expect(ada.session.stats.kept).toBe(1);
           expect(moves(ada.app.actionLog)).toEqual([
             {
               tick: 2,
@@ -336,7 +342,7 @@ describe("a rollback session", () => {
           Session.make(Ringing, {
             me: "ada",
             others: ["grace"],
-            delta: DELTA,
+            hz: HZ,
             ahead: 8,
           }),
           (ada) =>
@@ -357,7 +363,7 @@ describe("a rollback session", () => {
               ada.receive({ from: "grace", tick: 1, actions: [] });
               expect(yield* ada.tick()).toBe(true);
               yield* ada.frame(0);
-              expect(ada.rewinds).toBe(1);
+              expect(ada.stats.rewinds).toBe(1);
               expect(heard).toEqual(["ada", "grace"]);
             })
         );
@@ -373,7 +379,7 @@ describe("a rollback session", () => {
           checkpointEvery: 1,
           me: "ada",
           others: ["grace"],
-          delta: DELTA,
+          hz: HZ,
         }),
         (session) => session
       );
@@ -384,14 +390,14 @@ describe("a rollback session", () => {
       for (let tick = 0; tick < 20; tick++) {
         sure.receive({ from: "grace", tick, actions: [] });
         expect(yield* sure.tick()).toBe(true);
-        expect(sure.kept).toBe(0);
+        expect(sure.stats.kept).toBe(0);
       }
       expect(sure.confirmed).toBe(20);
       // Grace says nothing: every tick is a guess, and is captured.
       const unsure = yield* counted;
       for (let tick = 0; tick < 5; tick++) {
         expect(yield* unsure.tick()).toBe(true);
-        expect(unsure.kept).toBe(tick + 1);
+        expect(unsure.stats.kept).toBe(tick + 1);
       }
       expect(unsure.confirmed).toBe(0);
     })
@@ -435,7 +441,7 @@ describe("a rollback session", () => {
             checkpointEvery: 1,
             me: "ada",
             others: ["grace"],
-            delta: DELTA,
+            hz: HZ,
           }),
           (session) =>
             Effect.gen(function* () {
@@ -457,7 +463,7 @@ describe("a rollback session", () => {
                   checkpointEvery: 1,
                   me: "ada",
                   others: [],
-                  delta: DELTA,
+                  hz: HZ,
                   ahead,
                 }),
                 (session) => Effect.sync(() => session)
@@ -480,7 +486,7 @@ describe("a rollback session", () => {
         }
         yield* catchUp(peers, net);
         const [ada, grace] = peers as [Peer, Peer];
-        expect(ada.session.rewinds).toBe(0);
+        expect(ada.session.stats.rewinds).toBe(0);
         expect(ada.session.confirmed).toBe(ada.app.time.tick);
         expect(ada.app.time.tick).toBeGreaterThan(20);
         expect(ada.app.time.tick).toBeLessThan(140);
@@ -621,7 +627,7 @@ describe("a rollback session", () => {
           Session.make(App.define({ plugins: [Hold], systems: [Spoil] }), {
             me: "ada",
             others: ["grace"],
-            delta: DELTA,
+            hz: HZ,
           }),
           (session) =>
             Effect.gen(function* () {
@@ -698,7 +704,7 @@ describe("a rollback session", () => {
               systems: [Play, Draw],
               handlers: [halt],
             }),
-            { me: "ada", others: ["grace"], delta: DELTA, ahead: 10 }
+            { me: "ada", others: ["grace"], hz: HZ, ahead: 10 }
           ),
           (session) =>
             Effect.gen(function* () {
@@ -724,7 +730,7 @@ describe("a rollback session", () => {
               drawn.length = 0;
               yield* session.tick();
               yield* app.frame(0);
-              expect(session.rewinds).toBe(1);
+              expect(session.stats.rewinds).toBe(1);
               // The dot moved in the future given up and the one moved in the ticks
               // run again changed, and the despawned one is back: the dot spawned
               // in the future given up is no more.

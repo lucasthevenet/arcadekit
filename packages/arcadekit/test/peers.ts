@@ -208,7 +208,8 @@ export const Controls = Input.bind(
   Input.onPress("Space", Fire, {})
 );
 
-export const DELTA = 1 / 30;
+export const HZ = 30;
+export const DELTA = 1 / HZ;
 
 /** The game every peer plays, and every save of it is loaded as. */
 export const CoinGame = App.define({
@@ -275,7 +276,7 @@ export const withPeers = <A, E = never>(
           setup.shuffled === true && peers.length % 2 === 1
             ? others.toReversed()
             : others,
-        delta: DELTA,
+        hz: HZ,
         ...(setup.delay === undefined ? {} : { delay: setup.delay }),
         ahead: setup.ahead ?? 0,
       }).pipe(Effect.provide(Input.layer(source)));

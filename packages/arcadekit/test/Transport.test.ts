@@ -6,7 +6,7 @@ import {
   it,
   vi,
 } from "@effect/vitest";
-import { Context, Effect, Layer, Result } from "effect";
+import { Context, Effect, Fiber, Layer, Result } from "effect";
 
 import {
   App,
@@ -19,7 +19,16 @@ import {
 } from "../src/index.ts";
 import { Drift, Message, Session, Transport } from "../src/net/index.ts";
 import { thrown, unwrap } from "./checks.ts";
-import { CoinGame, DELTA, Drop, moves, players, setGlitch } from "./peers.ts";
+import {
+  CoinGame,
+  DELTA,
+  Drop,
+  HZ,
+  NoSuchCoin,
+  moves,
+  players,
+  setGlitch,
+} from "./peers.ts";
 import type { Peer } from "./peers.ts";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
@@ -37,9 +46,9 @@ const messagesIn = (
 
 /** A peer whose session is joined to a transport, which steps it. */
 interface Seat extends Peer {
-  readonly connected: Transport.Connected<
-    Effect.Error<ReturnType<Peer["session"]["tick"]>>
-  >;
+  readonly connected: Peer["session"] extends Session.Session<infer E, infer HU>
+    ? Transport.Connected<E, HU>
+    : never;
 }
 
 /** Peers of the game, each joined to a layer of its own. */
@@ -47,7 +56,8 @@ const seated = (
   names: readonly string[],
   layerOf: (name: string) => ReturnType<typeof Transport.layer>,
   ahead: number | undefined,
-  options?: Transport.ConnectOptions
+  options?: Transport.ConnectOptions,
+  playing: readonly string[] = names
 ) =>
   Effect.gen(function* () {
     const seats: Seat[] = [];
@@ -57,8 +67,8 @@ const seated = (
         seed: 5,
         checkpointEvery: 1,
         me: name,
-        others: names.filter((other) => other !== name),
-        delta: DELTA,
+        others: playing.filter((other) => other !== name),
+        hz: HZ,
         ahead: ahead ?? 0,
       }).pipe(Effect.provide(Input.layer(source)));
       // Provided to the one line that connects, and held in the scope of
@@ -312,7 +322,7 @@ describe("a session joined to a transport", () => {
               expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
               expect(ada.session.drifted).toBeUndefined();
               // Only a game played with rollback goes back.
-              expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
+              expect(ada.session.stats.rewinds > 0).toBe(ahead !== undefined);
               const whole = yield* ada.app.record();
               const alone = yield* Journal.replay(whole, CoinGame, {
                 checkpointEvery: 1,
@@ -404,7 +414,7 @@ describe("a session joined to a transport", () => {
                 yield* frame(false);
               }
               for (const seat of seats) {
-                expect(seat.session.unheard).toBeLessThanOrEqual(
+                expect(seat.session.stats.unheard).toBeLessThanOrEqual(
                   seat.session.delay + (ahead ?? 0) + 6
                 );
               }
@@ -510,6 +520,190 @@ describe("a session joined to a transport", () => {
       })
   );
 
+  it.effect(
+    "slows the peer whose clock runs fast, so that it neither waits for the other nor runs far ahead",
+    () =>
+      Effect.gen(function* () {
+        const play = (slowed: boolean) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const hub = Transport.makeHub({ delay: 1 });
+              const [ada, grace] = (yield* seated(
+                ["ada", "grace"],
+                (name) => Transport.layer(hub.port(name)),
+                8
+              )) as [Seat, Seat];
+              // Ada's driver is handed her connection, or one that hides
+              // how far ahead she is.
+              const fast = Driver.fixedStep(
+                slowed
+                  ? ada.connected
+                  : {
+                      hz: ada.connected.hz,
+                      tick: ada.connected.tick,
+                      frame: ada.connected.frame,
+                    }
+              );
+              const slow = Driver.fixedStep(grace.connected);
+              const act = players(17);
+              let furthest = 0;
+              let waited = 0;
+              let lead = 0;
+              for (let i = 0; i < 400; i++) {
+                hub.step();
+                if (i < 350) {
+                  yield* act(ada);
+                  yield* act(grace);
+                }
+                // Her clock runs a quarter faster than grace's.
+                yield* fast(DELTA * 1.25);
+                yield* slow(DELTA);
+                if (i >= 100) {
+                  furthest = Math.max(
+                    furthest,
+                    ada.app.time.tick - grace.app.time.tick
+                  );
+                  lead = Math.max(lead, ada.connected.lead);
+                  if (ada.connected.waitingFor.length > 0) {
+                    waited++;
+                  }
+                }
+              }
+              // Grace finds herself behind as much as ada finds herself ahead.
+              expect(grace.connected.lead).toBeLessThanOrEqual(0);
+              // To rest, and then to the same tick.
+              for (let i = 0; i < 30; i++) {
+                hub.step();
+                yield* ada.connected.tick();
+                yield* grace.connected.tick();
+              }
+              for (
+                let i = 0;
+                i < 50 && ada.app.time.tick !== grace.app.time.tick;
+                i++
+              ) {
+                hub.step();
+                yield* (
+                  ada.app.time.tick < grace.app.time.tick ? ada : grace
+                ).connected.tick();
+              }
+              expect(ada.app.time.tick).toBe(grace.app.time.tick);
+              expect(ada.world.hash()).toBe(grace.world.hash());
+              expect(ada.app.actionLog).toEqual(grace.app.actionLog);
+              expect(moves(ada.app.actionLog).length).toBeGreaterThan(50);
+              return {
+                furthest,
+                waited,
+                lead,
+                resimulated: ada.session.stats.resimulated,
+              };
+            })
+          );
+        const free = yield* play(false);
+        const slowed = yield* play(true);
+        // Left to run, ada goes as far ahead as she may, and waits there:
+        // 8 ticks past what grace has sent, which is a tick on its way.
+        expect(free.lead).toBeGreaterThanOrEqual(4);
+        expect(free.furthest).toBeGreaterThanOrEqual(7);
+        expect(free.waited).toBeGreaterThan(50);
+        // Slowed, she keeps within a few ticks, and never waits.
+        expect(slowed.lead).toBeLessThan(3);
+        expect(slowed.furthest).toBeLessThanOrEqual(3);
+        expect(slowed.waited).toBe(0);
+        // And what she runs again when grace's moves come in is less.
+        expect(slowed.resimulated).toBeLessThan(free.resimulated);
+      })
+  );
+
+  it.effect(
+    "is handed to Driver.run's ready, which reads whom the game waits for, and the run fails by tag with a peer that left or a drift",
+    () =>
+      Effect.gen(function* () {
+        const play = (ending: "left" | "drifted") =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const hub = Transport.makeHub();
+              const display = Driver.makeManualDisplay();
+              const [grace] = (yield* seated(
+                ["grace"],
+                (name) => Transport.layer(hub.port(name)),
+                0,
+                { awayFor: 1000 },
+                ["ada", "grace"]
+              )) as [Seat];
+              let online: Seat["connected"] | undefined;
+              const fiber = yield* Effect.forkChild(
+                Driver.run(
+                  Effect.flatMap(
+                    Session.make(CoinGame, {
+                      seed: 5,
+                      checkpointEvery: 1,
+                      me: "ada",
+                      others: ["grace"],
+                      hz: HZ,
+                      ahead: 0,
+                    }),
+                    (session) => Transport.connect(session, { awayFor: 1000 })
+                  ),
+                  {
+                    ready: (connected) =>
+                      Effect.sync(() => {
+                        online = connected;
+                      }),
+                  }
+                ).pipe(
+                  Effect.catchTags({
+                    TransportLeft: (left) =>
+                      Effect.succeed(`${left.peers.join(", ")} left`),
+                    DriftDrifted: (drifted) =>
+                      Effect.succeed(`drifted at tick ${drifted.tick}`),
+                  }),
+                  Effect.provide(Transport.layer(hub.port("ada"))),
+                  Effect.provideService(Driver.Display, display)
+                ),
+                { startImmediately: true }
+              );
+              let now = 0;
+              const frame = Effect.fnUntraced(function* (both: boolean) {
+                hub.step();
+                display.frame(now);
+                now += 1000 / HZ;
+                if (both) {
+                  yield* grace.connected.tick();
+                }
+              });
+              for (let i = 0; i < 10; i++) {
+                yield* frame(true);
+              }
+              expect(online!.app.time.tick).toBeGreaterThan(5);
+              expect(online!.waitingFor).toEqual([]);
+              if (ending === "drifted") {
+                setGlitch({ tick: 15, apps: "all" });
+                yield* online!.app.enqueue(Drop, { by: "ada", value: 1 });
+                for (let i = 0; i < 20; i++) {
+                  yield* Effect.ignore(frame(true));
+                }
+                setGlitch(undefined);
+              } else {
+                // Grace says nothing more, and ada waits for her.
+                for (let i = 0; i < 5; i++) {
+                  yield* frame(false);
+                }
+                expect(online!.waitingFor).toEqual(["grace"]);
+                expect(online!.away).toEqual([]);
+                hub.disconnect("grace");
+                for (let i = 0; i < 40; i++) {
+                  yield* frame(false);
+                }
+              }
+              return yield* Fiber.join(fiber);
+            })
+          );
+        expect(yield* play("left")).toBe("grace left");
+        expect(yield* play("drifted")).toMatch(/^drifted at tick \d+$/u);
+      })
+  );
+
   it.effect("draws the game through the session", () =>
     Effect.gen(function* () {
       const hub = Transport.makeHub();
@@ -518,7 +712,7 @@ describe("a session joined to a transport", () => {
         checkpointEvery: 1,
         me: "ada",
         others: [],
-        delta: DELTA,
+        hz: HZ,
         ahead: 0,
       });
       let drawn = 0;
@@ -542,7 +736,7 @@ describe("a session joined to a transport", () => {
         checkpointEvery: 1,
         me: "ada",
         others: [],
-        delta: DELTA,
+        hz: HZ,
         ahead: 0,
       });
       // A game of several peers is given a transport, and one without it
@@ -572,7 +766,7 @@ describe("a transport over a wire", () => {
         const sent: Uint8Array[] = [];
         let deliver: (data: string | Uint8Array) => void = () => {};
         let listening = 0;
-        const transport = Transport.fromWire({
+        const wire: Transport.Wire = {
           send: (bytes) => {
             sent.push(bytes);
           },
@@ -583,36 +777,41 @@ describe("a transport over a wire", () => {
               listening--;
             };
           },
-        });
-        yield* transport.send(message("ada", 3, 2));
-        expect(sent).toEqual([unwrap(Message.encode(message("ada", 3, 2)))]);
-        deliver(Message.encode(message("grace", 0)).pipe(unwrap));
-        deliver(Message.encodeNotice({ left: "edsger" }));
-        deliver("not a message");
-        deliver(JSON.stringify(message("grace", 2)));
-        deliver(new Uint8Array([1, 2, 3]));
-        deliver(Message.encode(message("grace", 1, 5)).pipe(unwrap));
-        // What is neither is dropped, and counted.
-        expect(yield* transport.receive()).toEqual([
-          message("grace", 0),
-          { left: "edsger" },
-          message("grace", 1, 5),
-        ]);
-        expect(transport.dropped).toBe(3);
-        expect(yield* transport.receive()).toEqual([]);
-        expect(listening).toBe(1);
-        transport.close();
+        };
+        // A wire is listened to in a scope, and no longer once it closes.
+        const transport = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const over = yield* Transport.fromWire(wire);
+            expect(listening).toBe(1);
+            yield* over.send(message("ada", 3, 2));
+            expect(sent).toEqual([
+              unwrap(Message.encode(message("ada", 3, 2))),
+            ]);
+            deliver(Message.encode(message("grace", 0)).pipe(unwrap));
+            deliver(Message.encodeNotice({ left: "edsger" }));
+            deliver("not a message");
+            deliver(JSON.stringify(message("grace", 2)));
+            deliver(new Uint8Array([1, 2, 3]));
+            deliver(Message.encode(message("grace", 1, 5)).pipe(unwrap));
+            // What is neither is dropped.
+            expect(yield* over.receive()).toEqual([
+              message("grace", 0),
+              { left: "edsger" },
+              message("grace", 1, 5),
+            ]);
+            expect(yield* over.receive()).toEqual([]);
+            return over;
+          })
+        );
         expect(listening).toBe(0);
         // Closed, it says so, in place of a game that waits for ever.
         expect(yield* thrown(transport.receive())).toThrow(
-          /A transport over a wire was used after it was closed/u
+          /A transport over a wire was used after the scope it listened in had ended/u
         );
         expect(yield* thrown(transport.send(message("ada", 4)))).toThrow(
-          /used after it was closed/u
+          /used after the scope it listened in had ended/u
         );
         expect(sent).toHaveLength(1);
-        transport.close();
-        expect(listening).toBe(0);
       })
   );
 });
@@ -649,14 +848,19 @@ const waitUntil = <E>(
     return yield* Effect.die(new Error(`timed out waiting until ${what}`));
   });
 
-/** A session connected to a transport, whose tick fails with `Drift.Drifted`, as a type. */
-declare const drifting: Transport.Connected<Drift.Drifted>;
+/** A session connected to a transport, whose game's systems fail with `NoSuchCoin`, as a type. */
+declare const failing: Transport.Connected<NoSuchCoin>;
 
 describe("a session connected to a transport", () => {
   it("is run by Driver.run, which fails with what its tick fails with, each by its tag", () => {
-    const run = () => Driver.run(Effect.succeed(drifting));
+    const run = () => Driver.run(Effect.succeed(failing));
     expectTypeOf<Effect.Error<ReturnType<typeof run>>>().toEqualTypeOf<
-      Drift.Drifted | Transport.Left | Transport.Closed
+      | NoSuchCoin
+      | Drift.Unlike
+      | Drift.Drifted
+      | Save.Refused
+      | Transport.Left
+      | Transport.Closed
     >();
   });
 
@@ -668,7 +872,7 @@ describe("a session connected to a transport", () => {
             seed: 5,
             me: "ada",
             others: ["grace"],
-            delta: DELTA,
+            hz: HZ,
           }),
           (session) => Transport.connect(session)
         )
@@ -830,7 +1034,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
               seed: 5,
               me: "ada",
               others: ["grace"],
-              delta: DELTA,
+              hz: HZ,
             }),
             (session) =>
               Transport.connect(session).pipe(

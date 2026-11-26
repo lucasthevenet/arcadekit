@@ -170,7 +170,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(42);
+    expect(entries.length).toBe(41);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -217,7 +217,6 @@ describe("the package's entries", () => {
     expect(Object.keys(netModules).toSorted()).toEqual([
       "../src/net/Drift.ts",
       "../src/net/Message.ts",
-      "../src/net/Peer.ts",
       "../src/net/Relay.ts",
       "../src/net/Session.ts",
       "../src/net/Transport.ts",
@@ -298,7 +297,7 @@ describe("the package's entries", () => {
 describe("arcadekit/net", () => {
   it("gives every module of its folder as the module's own entry does, and the package's own entry none of them", () => {
     const net = Net as Record<string, unknown>;
-    const names = ["Drift", "Message", "Peer", "Relay", "Session", "Transport"];
+    const names = ["Drift", "Message", "Relay", "Session", "Transport"];
     for (const name of names) {
       expect(net[name], name).toBe(netModules[`../src/net/${name}.ts`]);
       expect(name in (Main as Record<string, unknown>), name).toBe(false);

@@ -43,7 +43,7 @@ A handler receives the peer that issued an action, `{ from }`, beside the payloa
 
 ## Peers that drift apart stop
 
-Each peer's first message says what the peer was made with: what its game simulates, its `delta`, the names of every peer, and the tick it begins at. The seed is not among them. Peers made otherwise stop with `Drift.Unlike` before any of them runs a tick it is sure of.
+Each peer's first message says what the peer was made with: what its game simulates, its `hz`, the names of every peer, and the tick it begins at. The seed is not among them. Peers made otherwise stop with `Drift.Unlike` before any of them runs a tick it is sure of.
 
 After that, peers exchange the world's hash at their checkpoints. When every peer has reported its hash for a tick and the hashes differ, every session stops with `Drift.Drifted`. The report gives the tick, each peer's hash, and the last tick they agreed on. A different seed is found this way, and so is a system that reads the clock, `Math.random` or the order of a `Set`, at the first checkpoint after it changes the world. [Determinism](determinism.md) lists what a game must do to stay in sync.
 
@@ -55,7 +55,7 @@ Each tick needs a message from every peer, so a session depends on every peer fo
 
 - The peers are fixed when the session is made. No peer joins later, and a peer that stops, or leaves for good, is waited for.
 - Every message must arrive. A lost message leaves a tick that no peer can confirm, and the game stops for everyone. [Transports and relays](../guides/transports-and-relays.md) shows how a session sends again what a dropped socket lost.
-- A session can't rest. The other peers wait for its message on every tick, so it ticks at its `delta` even when nothing moves. `ticks: "whenNeeded"` is for single-player games.
+- A session can't rest. The other peers wait for its message on every tick, so it ticks at its `hz` even when nothing moves. `ticks: "whenNeeded"` is for single-player games.
 - Peers that were not made alike, or that drift apart, stop, since they no longer play one game.
 
 [Make a session](../guides/sessions.md#make-a-session) shows how to see which peers a tick waits for.

@@ -7,7 +7,7 @@
  *
  *   const program = Driver.run(
  *     Effect.gen(function* () {
- *       const session = yield* Session.make(Duel, { seed, me, others, delta: 1 / 60 })
+ *       const session = yield* Session.make(Duel, { seed, me, others, hz: 60 })
  *       return yield* Transport.connect(session)
  *     })
  *   ).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7", me)))
@@ -26,7 +26,7 @@
  *   `arcadekit/net/Relay`.
  * - `Transport.layerBroadcastChannel` connects the tabs, windows and workers
  *   of one browser.
- * - `Transport.fromWire` makes a transport over anything else that carries
+ * - `Transport.fromWire` listens on anything else that carries
  *   bytes and text.
  * - `Transport.makeHub` is an in-memory network for tests, which delays and
  *   reorders messages as it is told.
@@ -45,8 +45,9 @@ import {
 } from "effect";
 import { Socket } from "effect/socket";
 
-import type { Paced } from "../Driver.ts";
 import { Rng } from "../ecs/random.ts";
+import type * as Save from "../Save.ts";
+import type * as Drift from "./Drift.ts";
 import * as Message from "./Message.ts";
 import type { Session } from "./Session.ts";
 
@@ -117,24 +118,30 @@ export const layer = (transport: Listener): Layer.Layer<Transport> =>
   Layer.succeed(Transport, { listen: Effect.succeed(transport) });
 
 /**
- * A session connected to a transport, which a driver steps in the session's
- * place, at the session's `delta`. Its `tick` succeeds with whether the
- * session's tick ran.
+ * A session connected to a transport: the session, which a driver steps, and
+ * who the transport has said is away. A program that runs it with
+ * `Driver.run` is handed it in `ready`, and reads from it what a player is
+ * shown: its app, `waitingFor`, `away`, `drifted` and `confirmed`.
  *
- * @typeParam E what the session's tick fails with
- *
+ * @typeParam E What a tick of its app can fail with.
+ * @typeParam HU The actions its handlers accept.
  * @category Models
  */
-export interface Connected<E = never> extends Paced<E | Left | Closed> {
+export interface Connected<E = never, HU = never> extends Omit<
+  Session<E, HU>,
+  "tick"
+> {
   /**
    * Hands the session what arrived, runs the session's tick, and sends what
-   * it produced. It fails with what the session's tick fails with, with
-   * `Transport.Left` when a peer stayed away for longer than `awayFor`, and
-   * with `Transport.Closed` once the transport's socket has closed for good.
+   * it produced. It succeeds with whether the session's tick ran. It fails
+   * with what the session's tick fails with, with `Transport.Left` when a
+   * peer stayed away for longer than `awayFor`, and with `Transport.Closed`
+   * once the transport's socket has closed for good.
    */
-  readonly tick: () => Effect.Effect<boolean, E | Left | Closed>;
-  /** The session's frame stage, for a driver to draw the game with. */
-  readonly frame: (alpha: number, delta?: number) => Effect.Effect<void, E>;
+  readonly tick: () => Effect.Effect<
+    boolean,
+    E | Drift.Unlike | Drift.Drifted | Save.Refused | Left | Closed
+  >;
   /**
    * The peers the transport has said left and that haven't joined again, in
    * order of name. The session waits for them, for as long as `awayFor`
@@ -207,16 +214,10 @@ export class Left extends Data.TaggedError("TransportLeft")<{
  *
  * @category Running
  */
-export const connect = <E>(
-  session: Pick<
-    Session<unknown>,
-    "close" | "delta" | "outgoing" | "receive" | "resend"
-  > & {
-    readonly tick: () => Effect.Effect<boolean, E>;
-    readonly frame: (alpha: number, delta?: number) => Effect.Effect<void, E>;
-  },
+export const connect = <E, HU>(
+  session: Session<E, HU>,
   options: ConnectOptions = {}
-): Effect.Effect<Connected<E>, never, Transport> =>
+): Effect.Effect<Connected<E, HU>, never, Transport> =>
   Effect.flatMap(Transport, ({ listen: open }) =>
     Effect.suspend(() => {
       const scope = Scope.makeUnsafe();
@@ -235,15 +236,15 @@ export const connect = <E>(
   );
 
 /** A session joined to a transport listened on, which `stop` stops. */
-const joined = <E>(
-  session: Parameters<typeof connect<E>>[0],
+const joined = <E, HU>(
+  session: Session<E, HU>,
   transport: Listener,
   stop: Effect.Effect<void>,
   awayFor: number
-): Connected<E> => {
+): Connected<E, HU> => {
   // Per peer away, the connection's tick it was said to leave at.
   const away = new Map<string, number>();
-  const allowed = awayFor / 1000 / session.delta;
+  const allowed = (awayFor / 1000) * session.hz;
   let ticks = 0;
   const names = (peers: Iterable<string>): string[] =>
     Array.from(peers).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -291,9 +292,30 @@ const joined = <E>(
     return ticked.value;
   });
   return {
-    delta: session.delta,
+    app: session.app,
+    me: session.me,
+    peers: session.peers,
+    hz: session.hz,
+    delay: session.delay,
+    ahead: session.ahead,
+    receive: session.receive,
+    outgoing: session.outgoing,
+    resend: session.resend,
     tick: () => ticking,
     frame: session.frame,
+    get drifted() {
+      return session.drifted;
+    },
+    get waitingFor() {
+      return session.waitingFor;
+    },
+    get confirmed() {
+      return session.confirmed;
+    },
+    get lead() {
+      return session.lead;
+    },
+    stats: session.stats,
     get away() {
       return names(away.keys());
     },
@@ -317,24 +339,6 @@ export interface Wire {
    * function that stops listening.
    */
   readonly listen: (onData: (data: string | Uint8Array) => void) => () => void;
-}
-
-/**
- * A transport over a wire, with a way to stop listening.
- *
- * @category Models
- */
-export interface OverWire extends Listener {
-  /**
-   * Stops listening to the wire. `send` and `receive` die from then on, and
-   * say so, so a game doesn't wait for messages that can no longer arrive.
-   */
-  readonly close: () => void;
-  /**
-   * The number of frames that arrived but were neither a message nor a
-   * notice, and were dropped. Nothing that comes off a wire is trusted.
-   */
-  readonly dropped: number;
 }
 
 /**
@@ -362,64 +366,69 @@ const arrival = (
 };
 
 /**
- * Makes a transport over anything that carries bytes and text. It sends
- * messages in the bytes `Message.encode` writes. It reads arriving bytes with
- * `Message.decode`, and arriving text as a relay's notice with
- * `Message.decodeNotice`. It drops what is neither, and counts it in
- * `dropped`.
+ * Listens on anything that carries bytes and text, in the current scope, and
+ * stops listening when the scope closes. It sends messages in the bytes
+ * `Message.encode` writes. It reads arriving bytes with `Message.decode`, and
+ * arriving text as a relay's notice with `Message.decodeNotice`, and drops
+ * what is neither, since nothing that comes off a wire is trusted.
+ *
+ *   const layer = Layer.succeed(Transport.Transport, {
+ *     listen: Transport.fromWire(wire),
+ *   })
  *
  * The wire must deliver every message, in any order. A WebSocket does, and a
  * data channel must be configured to.
  *
- * It dies when it is used after `close`. It authenticates no sender, and
- * doesn't report that its wire closed, or tell the other peers that this one
- * joined or left, unless your code sends them a `Message.Notice`.
+ * It dies when it is used after its scope closed. It authenticates no
+ * sender, and doesn't report that its wire closed, or tell the other peers
+ * that this one joined or left, unless your code sends them a
+ * `Message.Notice`.
  *
  * @category Constructors
  */
-export const fromWire = (wire: Wire): OverWire => {
-  let inbox: (Message.Message | Message.Notice)[] = [];
-  let dropped = 0;
-  let open = true;
-  const use = (): void => {
-    if (!open) {
-      throw new Error(
-        "A transport over a wire was used after it was closed. Close it when the session it carries is done with it, as the close of a connection Transport.connect made closes the transports of the package."
-      );
-    }
-  };
-  const stop = wire.listen((data) => {
-    const arrived = arrival(data);
-    if (arrived === undefined) {
-      dropped++;
-    } else {
-      inbox.push(arrived);
-    }
-  });
-  return {
-    send: (message) =>
-      Effect.sync(() => {
-        use();
-        wire.send(bytesOf(message));
-      }),
-    receive: () =>
-      Effect.sync(() => {
-        use();
-        const messages = inbox;
-        inbox = [];
-        return messages;
-      }),
-    close() {
-      if (open) {
-        open = false;
-        stop();
+export const fromWire = (
+  wire: Wire
+): Effect.Effect<Listener, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    let inbox: (Message.Message | Message.Notice)[] = [];
+    let open = true;
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        wire.listen((data) => {
+          const arrived = arrival(data);
+          if (arrived !== undefined) {
+            inbox.push(arrived);
+          }
+        })
+      ),
+      (stop) =>
+        Effect.sync(() => {
+          open = false;
+          stop();
+        })
+    );
+    const use = (): void => {
+      if (!open) {
+        throw new Error(
+          "A transport over a wire was used after the scope it listened in had ended. Use it through a connection that is open: Transport.connect listens in a scope of its own, which its close ends."
+        );
       }
-    },
-    get dropped() {
-      return dropped;
-    },
-  };
-};
+    };
+    return {
+      send: (message) =>
+        Effect.sync(() => {
+          use();
+          wire.send(bytesOf(message));
+        }),
+      receive: () =>
+        Effect.sync(() => {
+          use();
+          const messages = inbox;
+          inbox = [];
+          return messages;
+        }),
+    };
+  });
 
 /**
  * The transport between the tabs, windows and workers of one browser, or the
@@ -446,50 +455,49 @@ export const layerBroadcastChannel = (
   me: string
 ): Layer.Layer<Transport> =>
   Layer.succeed(Transport, {
-    listen: Effect.map(
-      Effect.acquireRelease(
+    listen: Effect.gen(function* () {
+      let open = true;
+      const channel = yield* Effect.acquireRelease(
         Effect.sync(() => {
-          const channel = new BroadcastChannel(name);
-          channel.postMessage(Message.encodeNotice({ joined: me }));
-          const over = fromWire({
-            send: (bytes) => channel.postMessage(bytes),
-            listen(onData) {
-              channel.onmessage = ({ data }: MessageEvent<unknown>) => {
-                if (typeof data === "string" || data instanceof Uint8Array) {
-                  onData(data);
-                }
-              };
-              return () => {
-                channel.onmessage = null;
-              };
-            },
-          });
-          return { channel, over, open: true };
+          const made = new BroadcastChannel(name);
+          made.postMessage(Message.encodeNotice({ joined: me }));
+          return made;
         }),
-        (held) =>
+        (made) =>
           Effect.sync(() => {
-            held.open = false;
-            held.over.close();
-            held.channel.postMessage(Message.encodeNotice({ left: me }));
-            held.channel.close();
+            open = false;
+            made.postMessage(Message.encodeNotice({ left: me }));
+            made.close();
           })
-      ),
-      (held): Listener => {
-        const use = Effect.suspend(() =>
-          held.open
-            ? Effect.succeed(held.over)
-            : Effect.die(
-                new Error(
-                  `The transport "${name}" was used after it was let go, and its channel closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
-                )
+      );
+      // Closed before the channel, which says this peer left as it closes.
+      const over = yield* fromWire({
+        send: (bytes) => channel.postMessage(bytes),
+        listen(onData) {
+          channel.onmessage = ({ data }: MessageEvent<unknown>) => {
+            if (typeof data === "string" || data instanceof Uint8Array) {
+              onData(data);
+            }
+          };
+          return () => {
+            channel.onmessage = null;
+          };
+        },
+      });
+      const use = Effect.suspend(() =>
+        open
+          ? Effect.succeed(over)
+          : Effect.die(
+              new Error(
+                `The transport "${name}" was used after it was let go, and its channel closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
               )
-        );
-        return {
-          send: (message) => Effect.flatMap(use, (over) => over.send(message)),
-          receive: () => Effect.flatMap(use, (over) => over.receive()),
-        };
-      }
-    ),
+            )
+      );
+      return {
+        send: (message) => Effect.flatMap(use, (wired) => wired.send(message)),
+        receive: () => Effect.flatMap(use, (wired) => wired.receive()),
+      } satisfies Listener;
+    }),
   });
 
 /**
@@ -609,7 +617,7 @@ export const layerWebSocket = (
       });
       const outbox = yield* Queue.unbounded<Uint8Array>();
       let hear: (data: string | Uint8Array) => void = () => {};
-      const over = fromWire({
+      const over = yield* fromWire({
         send(bytes) {
           Queue.offerUnsafe(outbox, bytes);
         },
@@ -627,7 +635,6 @@ export const layerWebSocket = (
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           listening = false;
-          over.close();
         })
       );
 
