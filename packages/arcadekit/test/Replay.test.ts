@@ -201,7 +201,7 @@ const record = Effect.fnUntraced(function* (
 /** A recording's fields as its bytes hold them, each checked on its own. */
 const Written = SchemaBinary.toCodec(Layout);
 const fieldsOf = (recording: Replay.Recording) =>
-  Replay.encode(recording).pipe(unwrap, Schema.decodeExit(Written), unwrap);
+  Effect.flatMap(Replay.encode(recording), Schema.decodeExit(Written));
 /** Fields written as a recording's bytes, as a file edited by hand. */
 const written = (fields: typeof Layout.Type) =>
   unwrap(Schema.encodeExit(Written)(fields));
@@ -210,14 +210,14 @@ const written = (fields: typeof Layout.Type) =>
  * `recording` with `fields` changed in its bytes, as a file edited by hand,
  * and read back.
  */
-const altered = (
+const altered = Effect.fnUntraced(function* (
   recording: Replay.Recording,
   fields: Partial<typeof Layout.Type>
-): Replay.Recording => {
-  const read = Replay.decode(written({ ...fieldsOf(recording), ...fields }));
-  assert(Exit.isSuccess(read));
-  return read.value;
-};
+) {
+  return yield* Replay.decode(
+    written({ ...(yield* fieldsOf(recording)), ...fields })
+  );
+});
 
 /**
  * Replays a recording into the coin game `options` make, and returns what
@@ -424,11 +424,11 @@ describe("hash checks", () => {
   it.effect("survive being written down, and a malformed one is refused", () =>
     Effect.gen(function* () {
       const recorded = yield* record({ ticks: 12, hashEvery: 4 });
-      const loaded = Replay.decode(unwrap(Replay.encode(recorded.recording)));
+      const loaded = Replay.decode(yield* Replay.encode(recorded.recording));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(
         recorded.recording
       );
-      expect(fieldsOf(recorded.recording).log[0]).toEqual({
+      expect((yield* fieldsOf(recorded.recording)).log[0]).toEqual({
         tick: 0,
         hash: recorded.starting,
       });
@@ -446,7 +446,7 @@ describe("hash checks", () => {
       );
       const holding = (fields: typeof Holding.Type) =>
         unwrap(Schema.encodeExit(Holding)(fields));
-      const fields = fieldsOf(recorded.recording);
+      const fields = yield* fieldsOf(recorded.recording);
       const largest = Replay.decode(
         holding({ ...fields, log: [[0, 2 ** 32 - 1]] })
       );
@@ -656,7 +656,7 @@ describe("a replay that checks itself", () => {
         ];
         const blind = yield* replayInto(
           { faulty: fault(40, "lose") },
-          altered(recorded.recording, { log: moves(log), end: 110 })
+          yield* altered(recorded.recording, { log: moves(log), end: 110 })
         );
         // Somewhere after the fault: at the first move that named a coin the
         // faulty game no longer had, by tick 100 at the latest.
@@ -669,7 +669,7 @@ describe("a replay that checks itself", () => {
         // With them, sixty ticks earlier, where it went wrong.
         const checked = yield* replayInto(
           { faulty: fault(40, "lose") },
-          altered(recorded.recording, { log, end: 110 })
+          yield* altered(recorded.recording, { log, end: 110 })
         );
         expect(checked.stopped!.tick).toBe(40);
         expect(checked.stopped!.reason).toBeInstanceOf(Replay.HashMismatch);
@@ -738,7 +738,7 @@ describe("a replay that checks itself", () => {
         const recorded = yield* record({ ticks: 30, seed: 5 });
         const otherSeed = yield* replayInto(
           {},
-          altered(recorded.recording, { seed: 6 })
+          yield* altered(recorded.recording, { seed: 6 })
         );
         expect(otherSeed.stopped!.tick).toBe(0);
         expect(otherSeed.tick).toBe(0);
@@ -772,8 +772,10 @@ describe("a replay that checks itself", () => {
         ) {
           const log = [...recorded.log];
           change(log);
-          return (yield* replayInto({}, altered(recorded.recording, { log })))
-            .stopped;
+          return (yield* replayInto(
+            {},
+            yield* altered(recorded.recording, { log })
+          )).stopped;
         });
         const drops = recorded.log.flatMap((entry, index) =>
           !Action.isHashCheck(entry) &&
@@ -885,7 +887,7 @@ describe("a replay that checks itself", () => {
         refusedNow[1] = { ...take, payload: { coin: 4000 } };
         const first = (yield* replayInto(
           {},
-          altered(recorded, { log: refusedNow })
+          yield* altered(recorded, { log: refusedNow })
         )).stopped!;
         expect(first.index).toBe(1);
         expect(first.reason).toBe("NoSuchCoin");
@@ -899,7 +901,7 @@ describe("a replay that checks itself", () => {
         acceptedNow.splice(1, 1);
         const second = (yield* replayInto(
           {},
-          altered(recorded, { log: acceptedNow })
+          yield* altered(recorded, { log: acceptedNow })
         )).stopped!;
         expect(second.index).toBe(1);
         expect(second.message).toBe(
@@ -1089,11 +1091,14 @@ describe("the action log", () => {
         { tick: 0, name: "b", payload: null, queued: true },
         { tick: 1, name: "c", payload: [1], queued: true, refused: "Because" },
       ];
-      const recording = altered((yield* record({ ticks: 2 })).recording, {
-        log,
-      });
+      const recording = yield* altered(
+        (yield* record({ ticks: 2 })).recording,
+        {
+          log,
+        }
+      );
       expect(recording.log).toEqual(log);
-      const loaded = Replay.decode(unwrap(Replay.encode(recording)));
+      const loaded = Replay.decode(yield* Replay.encode(recording));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recording);
       // A mark of another kind is bytes in another layout.
       const marked = SchemaBinary.toCodec(
@@ -1112,7 +1117,7 @@ describe("the action log", () => {
       const refused = Replay.decode(
         unwrap(
           Schema.encodeExit(marked)({
-            ...fieldsOf(recording),
+            ...(yield* fieldsOf(recording)),
             log: [{ tick: 0, name: "a", payload: 1, queued: "yes" }],
           })
         )
@@ -1369,7 +1374,7 @@ describe("a game whose simulation issues actions itself", () => {
           payload: { by: 7 },
         });
         const stopped = yield* stoppedBy(
-          replayBusy(altered(recorded, { log: withBotMoves }))
+          replayBusy(yield* altered(recorded, { log: withBotMoves }))
         );
         expect(stopped.reason).toBeInstanceOf(Replay.HashMismatch);
         expect(stopped.tick).toBe(4);
@@ -1494,9 +1499,7 @@ describe("a recording", () => {
             { tick: 5, delta: 1 / 60 },
           ],
         });
-        const decoded = Replay.decode(
-          unwrap(Replay.encode(recorded.recording))
-        );
+        const decoded = Replay.decode(yield* Replay.encode(recorded.recording));
         expect(decoded).toEqual(Exit.succeed(recorded.recording));
         yield* withApp(replayWalking(recorded.recording), (app, world) =>
           Effect.gen(function* () {
@@ -1660,9 +1663,9 @@ describe("how a recorded game began", () => {
           })
         );
         // Through bytes and back.
-        expect(
-          Replay.decode(unwrap(Replay.encode(recorded.recording)))
-        ).toEqual(Exit.succeed(recorded.recording));
+        expect(Replay.decode(yield* Replay.encode(recorded.recording))).toEqual(
+          Exit.succeed(recorded.recording)
+        );
       })
   );
 
@@ -1695,7 +1698,7 @@ describe("how a recorded game began", () => {
         expect(played.whole.save).toBeUndefined();
 
         // In bytes, the recording holds the save, and reads back as it was.
-        const read = Replay.decode(unwrap(Replay.encode(tail)));
+        const read = Replay.decode(yield* Replay.encode(tail));
         assert(Exit.isSuccess(read));
         expect(read.value).toEqual(tail);
         const present = yield* withApp(
@@ -1740,8 +1743,8 @@ describe("how a recorded game began", () => {
             };
           })
         );
-        const fromSeed = unwrap(Replay.encode(whole));
-        const fromSave = unwrap(Replay.encode(tail));
+        const fromSeed = yield* Replay.encode(whole);
+        const fromSave = yield* Replay.encode(tail);
         for (const bytes of [fromSeed, fromSave]) {
           expect(bytes).toBeInstanceOf(Uint8Array);
           expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
@@ -1760,7 +1763,7 @@ describe("how a recorded game began", () => {
         yield* app.enqueueByName("rp/Nothing", { n: 1n });
         yield* app.tick(1 / 60);
         const recording = yield* Replay.record(app);
-        const written = Replay.encode(recording);
+        const written = yield* Effect.exit(Replay.encode(recording));
         assert(Exit.isFailure(written));
         expect(Cause.squash(written.cause)).toMatchObject({
           _tag: "ReplayInvalid",
@@ -1786,8 +1789,8 @@ describe("how a recorded game began", () => {
           };
         })
       );
-      const fromSeed = fieldsOf(whole);
-      const fromSave = fieldsOf(tail);
+      const fromSeed = yield* fieldsOf(whole);
+      const fromSave = yield* fieldsOf(tail);
 
       // Only `Replay.record(app)` and `Replay.decode` make a recording.
       const byHand: Replay.Played & Replay.Origin = {

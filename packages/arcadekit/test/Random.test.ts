@@ -18,7 +18,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
-import { thrown, unwrap } from "./checks.ts";
+import { thrown } from "./checks.ts";
 
 const withApp = <T, A, E = never, E2 = never>(
   make: Effect.Effect<T, E>,
@@ -508,14 +508,16 @@ describe("the Random service", () => {
           })
         );
       });
-      const replayOf = (recording: Replay.Recording) => {
+      const replayOf = Effect.fnUntraced(function* (
+        recording: Replay.Recording
+      ) {
         // Through bytes and back, as a save file would be.
-        const loaded = Replay.decode(unwrap(Replay.encode(recording)));
+        const loaded = Replay.decode(yield* Replay.encode(recording));
         if (Exit.isFailure(loaded)) {
           throw new Error("the log did not survive being written down");
         }
-        return Replay.verify(loaded.value, Game);
-      };
+        return yield* Replay.verify(loaded.value, Game);
+      });
 
       const recorded = yield* record(31);
       const { recording } = recorded;

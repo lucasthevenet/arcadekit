@@ -37,7 +37,7 @@ import {
 } from "../src/index.ts";
 import type { Rng } from "../src/index.ts";
 import { Session } from "../src/net/index.ts";
-import { thrown, unwrap } from "./checks.ts";
+import { thrown } from "./checks.ts";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
@@ -1335,7 +1335,7 @@ describe("the picture of the devices in the world", () => {
           ]);
           return {
             hashes: tickHashes,
-            text: unwrap(Replay.encode(yield* Replay.record(app))),
+            text: yield* Replay.encode(yield* Replay.record(app)),
             played: yield* ship(app),
             ticks: app.time.tick,
           };

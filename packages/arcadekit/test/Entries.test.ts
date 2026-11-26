@@ -1,6 +1,6 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Context, Effect } from "effect";
-import type { Layer } from "effect";
+import type { Exit, Layer } from "effect";
 
 import * as Action from "../src/Action.ts";
 import * as Assets from "../src/Assets.ts";
@@ -13,6 +13,7 @@ import * as Input from "../src/Input.ts";
 import * as Net from "../src/net/index.ts";
 import * as Transport from "../src/net/Transport.ts";
 import * as Save from "../src/Save.ts";
+import type * as Schemas from "../src/Schemas.ts";
 import * as Services from "../src/Services.ts";
 import * as Setting from "../src/Setting.ts";
 import * as Sound from "../src/Sound.ts";
@@ -523,4 +524,39 @@ describe("a service", () => {
         }
       })
   );
+});
+
+/** The functions of the modules `Entry` gives that return an `Exit`, as `Module.name`. */
+type ReturningExit<Entry> = {
+  [M in keyof Entry & string]: {
+    [K in keyof Entry[M] & string]: Entry[M][K] extends (
+      ...args: never
+    ) => infer R
+      ? R extends Exit.Exit<unknown, unknown>
+        ? `${M}.${K}`
+        : never
+      : never;
+  }[keyof Entry[M] & string];
+}[keyof Entry & string];
+
+describe("a function an entry gives", () => {
+  it("returns an Effect where it can fail, and an Exit only where it is listed here", () => {
+    expectTypeOf<ReturningExit<typeof Main>>().toEqualTypeOf<
+      "Event.decode" | "Event.encode" | "Replay.decode" | "Save.decode"
+    >();
+    expectTypeOf<ReturningExit<typeof Net>>().toEqualTypeOf<
+      | "Message.decode"
+      | "Message.decodeAside"
+      | "Message.decodeNotice"
+      | "Relay.forward"
+      | "Relay.join"
+    >();
+    expectTypeOf<ReturningExit<typeof BrowserEntry>>().toEqualTypeOf<never>();
+    expectTypeOf<
+      ReturningExit<{
+        readonly Schemas: typeof Schemas;
+        readonly Services: typeof Services;
+      }>
+    >().toEqualTypeOf<never>();
+  });
 });

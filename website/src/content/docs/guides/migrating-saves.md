@@ -91,7 +91,7 @@ A save the migrations can't bring up to date is refused with `"no migration"`, `
 
 ## Read what a save holds
 
-`save.world` is the save in a plain form that describes itself, for what the changes don't do. It lists components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The game's time is one of the world's singletons, `arcadekit/Time`. Its `stores` hold what the app keeps of the game beside its entities, each as plain data under a name: the actions queued for the next tick under `Action.INTAKE`, as `{ queued }`, and the events waiting to be read under `Event.STORE`, as one `{ name, waiting, read }` for each event. `Migrate.migrate(save, version, migrations)` runs a game's migrations on a save outside an app, and a tool that edits a snapshot makes its own with `new Migrate.Contents(readSnapshot(bytes))`.
+`save.world` is the save in a plain form that describes itself, for what the changes don't do. It lists components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The game's time is one of the world's singletons, `arcadekit/Time`. Its `stores` hold what the app keeps of the game beside its entities, each as plain data under a name: the actions queued for the next tick under `Action.INTAKE`, as `{ queued }`, and the events waiting to be read under `Event.STORE`, as one `{ name, waiting, read }` for each event. `yield* Migrate.migrate(save, version, migrations)` runs a game's migrations on a save outside an app, and a tool that edits a snapshot makes its own with `new Migrate.Contents(readSnapshot(bytes))`.
 
 ## Read more
 

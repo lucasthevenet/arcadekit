@@ -1199,7 +1199,7 @@ describe("Session.syncTest", () => {
           }
           return {
             hashes,
-            recording: Replay.encode(yield* Replay.record(app)),
+            recording: yield* Replay.encode(yield* Replay.record(app)),
             checked: test.checked,
           };
         });
