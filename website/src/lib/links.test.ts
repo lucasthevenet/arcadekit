@@ -79,8 +79,8 @@ describe("a relative link in a page", () => {
     expect(rewrite(`${ROOT}packages/arcadekit/src/App.ts#L10`, GUIDE)).toBe(
       `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts#L10`
     );
-    expect(rewrite(`${ROOT}packages/arcadekit/examples/demo/`, GUIDE)).toBe(
-      `${REPO_URL}/tree/main/packages/arcadekit/examples/demo`
+    expect(rewrite(`${ROOT}examples/demo/`, GUIDE)).toBe(
+      `${REPO_URL}/tree/main/examples/demo`
     );
     expect(deadLinks()).toStrictEqual([]);
   });
@@ -103,13 +103,13 @@ describe("a relative link in a page", () => {
 describe("the plugin", () => {
   it("rewrites the links of a page as it renders", async () => {
     const html = await render(
-      `See [the hash](../concepts/determinism.md#read-more), [the page](${ROOT}packages/three/examples/page) and [Effect](https://effect.website).\n`
+      `See [the hash](../concepts/determinism.md#read-more), [the page](${ROOT}examples/three) and [Effect](https://effect.website).\n`
     );
     expect(html).toContain(
       '<a href="/concepts/determinism#read-more">the hash</a>'
     );
     expect(html).toContain(
-      `<a href="${REPO_URL}/tree/main/packages/three/examples/page">the page</a>`
+      `<a href="${REPO_URL}/tree/main/examples/three">the page</a>`
     );
     expect(html).toContain('<a href="https://effect.website">Effect</a>');
   });

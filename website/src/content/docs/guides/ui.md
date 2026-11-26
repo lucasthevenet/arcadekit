@@ -190,5 +190,5 @@ In a multiplayer game played with [rollback](sessions.md), a tick can run again.
 ## Read more
 
 - [`View`](/reference/arcadekit/View) in the API reference.
-- [`examples/page`](../../../../../packages/arcadekit/examples/page) builds its menu and HUD twice on one bridge, with the DOM (`uiDom.ts`) and with React (`uiReact.ts`, shown with `?ui=react`). Neither imports anything from the game except `protocol.ts`.
+- [`examples/page`](../../../../../examples/page) builds its menu and HUD twice on one bridge, with the DOM (`uiDom.ts`) and with React (`uiReact.ts`, shown with `?ui=react`). Neither imports anything from the game except `protocol.ts`.
 - [Testing](testing.md#act-as-the-ui) a game through its bridge.

@@ -83,8 +83,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p . && tsc -p examples && tsc -p bench",
-    "page": "vite examples/page",
+    "typecheck": "tsc -p . && tsc -p bench",
     "bench": "tsx --conditions=source bench/instances.ts"
   },
   "devDependencies": {

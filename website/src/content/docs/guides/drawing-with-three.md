@@ -167,4 +167,4 @@ Frame-stage systems draw a game, in a plugin that only the page installs. A plug
 
 - [Instances and objects](instances-and-objects.md), [textures and models](textures-and-models.md), [drawing a flat game](drawing-a-flat-game.md), [interpolation](between-two-ticks.md), and [drawing performance](drawing-performance.md).
 - [`@arcadekit/three`](/reference/three) in the API reference, with [`Three`](/reference/three/Three) and [`Gltf`](/reference/three/Gltf).
-- [`packages/three/examples/page`](../../../../../packages/three/examples/page): ten thousand moving objects, run with `pnpm --filter @arcadekit/three page`.
+- [`examples/three`](../../../../../examples/three): ten thousand moving objects, run with `pnpm --filter @arcadekit/example-three start`.

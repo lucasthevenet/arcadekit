@@ -162,7 +162,7 @@ export const plugin = Plugin.make("physics/Physics", {
 
 A loop that draws from `Random`, spawns or despawns through `Commands`, emits an event, or reads a `json` or `transient` field doesn't belong in `loops.ts`. Keep it in its system.
 
-[`examples/demo`](../../../../../packages/arcadekit/examples/demo) follows this layout.
+[`examples/demo`](../../../../../examples/demo) follows this layout.
 
 ## Read more
 

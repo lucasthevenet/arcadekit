@@ -1,0 +1,22 @@
+{
+  "name": "@arcadekit/example-relay",
+  "private": true,
+  "description": "A relay on Node, and a check of any relay",
+  "type": "module",
+  "scripts": {
+    "start": "tsx --conditions=source src/main.ts",
+    "check": "tsx --conditions=source src/check.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@effect/platform-node": "~4.1.4",
+    "arcadekit": "workspace:*",
+    "effect": "~4.1.4",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15"
+  }
+}

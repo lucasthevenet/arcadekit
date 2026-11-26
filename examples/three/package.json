@@ -1,0 +1,21 @@
+{
+  "name": "@arcadekit/example-three",
+  "private": true,
+  "description": "Ten thousand moving objects drawn with Three.js",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@arcadekit/three": "workspace:*",
+    "@effect/platform-browser": "~4.1.4",
+    "arcadekit": "workspace:*",
+    "effect": "~4.1.4",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "vite": "^8.3.5"
+  }
+}

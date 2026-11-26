@@ -1,0 +1,19 @@
+{
+  "name": "@arcadekit/example-duel",
+  "private": true,
+  "description": "A turn-based duel, played through actions",
+  "type": "module",
+  "scripts": {
+    "start": "tsx --conditions=source src/main.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@effect/platform-node": "~4.1.4",
+    "arcadekit": "workspace:*",
+    "effect": "~4.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15"
+  }
+}

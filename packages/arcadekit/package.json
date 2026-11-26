@@ -248,41 +248,23 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p . && tsc -p examples && tsc -p bench",
-    "demo": "tsx examples/demo/main.ts",
-    "duel": "tsx examples/duel.ts",
-    "page": "vite examples/page",
-    "relay": "tsx examples/relay.ts",
-    "relay:check": "tsx examples/relayCheck.ts",
-    "relay:cloudflare": "cd examples/relay-cloudflare && alchemy dev",
+    "typecheck": "tsc -p . && tsc -p bench",
     "bench": "tsx bench/accessors.ts",
     "bench:compare": "tsx bench/compare.ts",
     "bench:parallel": "tsx bench/parallel/run.ts"
   },
   "devDependencies": {
-    "@alchemy.run/cloudflare": "2.0.0-beta.87",
-    "@cloudflare/workers-types": "^5.20261104.1",
     "@effect/platform-browser": "~4.1.4",
-    "@effect/platform-node": "~4.1.4",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.2",
-    "alchemy": "2.0.0-beta.87",
     "effect": "~4.1.4",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
     "tsx": "^4.23.15",
     "ws": "^8.23.0"
   },
   "peerDependencies": {
-    "@cloudflare/workers-types": "^5",
     "@effect/platform-browser": "~4.1.0",
     "effect": "~4.1.2"
   },
   "peerDependenciesMeta": {
-    "@cloudflare/workers-types": {
-      "optional": true
-    },
     "@effect/platform-browser": {
       "optional": true
     }

@@ -1,0 +1,19 @@
+{
+  "name": "@arcadekit/example-demo",
+  "private": true,
+  "description": "A small simulation in real time, laid out as a game is: a folder for each plugin",
+  "type": "module",
+  "scripts": {
+    "start": "tsx --conditions=source src/main.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@effect/platform-node": "~4.1.4",
+    "arcadekit": "workspace:*",
+    "effect": "~4.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15"
+  }
+}

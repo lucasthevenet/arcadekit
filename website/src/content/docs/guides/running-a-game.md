@@ -175,4 +175,4 @@ A program that makes its app itself can run `Driver.frames(app, { hz })`, the lo
 ## Read more
 
 - [`Browser`](/reference/arcadekit/browser/Browser) and [`Driver`](/reference/arcadekit/Driver) in the API reference.
-- [`examples/page`](../../../../../packages/arcadekit/examples/page), started with `Browser.runMain` and served by `pnpm --filter arcadekit page`, and [`examples/demo`](../../../../../packages/arcadekit/examples/demo), started under Node.
+- [`examples/page`](../../../../../examples/page), started with `Browser.runMain` and served by `pnpm --filter @arcadekit/example-page start`, and [`examples/demo`](../../../../../examples/demo), started under Node.

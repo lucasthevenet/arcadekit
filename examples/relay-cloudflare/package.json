@@ -1,0 +1,20 @@
+{
+  "name": "@arcadekit/example-relay-cloudflare",
+  "private": true,
+  "description": "A relay on Cloudflare, a Worker with a Durable Object per room, declared with Alchemy",
+  "type": "module",
+  "scripts": {
+    "start": "pnpm --filter arcadekit build && alchemy dev",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "arcadekit": "workspace:*",
+    "effect": "~4.1.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261104.1",
+    "@types/node": "^26.6.6",
+    "alchemy": "2.0.0-beta.87"
+  }
+}
