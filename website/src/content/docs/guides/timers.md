@@ -104,7 +104,7 @@ const Enemy = Component.define("game/Enemy", { x: Field.f32 });
 
 export const Wave = System.tick("game/Wave", function* () {
   const random = yield* Random;
-  (yield* Commands.spawns(Enemy)).spawn(Enemy.of({ x: random.next() * 10 }));
+  (yield* Commands.spawns(Enemy)).spawn(Enemy.of({ x: random.range(0, 10) }));
 }).pipe(Timer.every(3));
 ```
 

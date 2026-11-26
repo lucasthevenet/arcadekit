@@ -77,20 +77,12 @@ const Drifting = Query.all(Position, Velocity, Color.Rgb).pipe(
 );
 const Spinning = Query.all(Rotation, Spin).pipe(Query.writes(Rotation, Spin));
 
-/** A hex code's three bytes, each over 255, in the space a hex code is in. */
-const code = (hex: number) => ({
-  r: (hex >> 16) / 255,
-  g: ((hex >> 8) & 255) / 255,
-  b: (hex & 255) / 255,
-  space: Color.Srgb,
-});
-
 // The rules know a colour as three numbers and nothing else. What draws
 // them converts each for the renderer.
 const WALLS = [
-  ["x", code(0x78_dc_e8)],
-  ["y", code(0xff_d8_66)],
-  ["z", code(0xff_61_88)],
+  ["x", Color.hex(0x78_dc_e8)],
+  ["y", Color.hex(0xff_d8_66)],
+  ["z", Color.hex(0xff_61_88)],
 ] as const;
 
 const Drift = System.tick("Drift", function* () {
@@ -203,7 +195,7 @@ const Rules = Plugin.make("page/Rules", {
         Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
         Spin.of({ rate: speed() / 4, angle: 0 }),
         Scale.of({ x: size, y: size, z: size }),
-        Color.Rgb.of(code(0xcb_cb_cb))
+        Color.Rgb.of(Color.hex(0xcb_cb_cb))
       );
     }
     for (let i = 0; i < CARDS; i++) {
@@ -252,9 +244,8 @@ const PutAway = System.input("page/PutAway", function* () {
     deck.out = !deck.out;
   }
 });
-const KeepDeck = Assets.during(
-  Effect.map(DeckOut, ({ out }) => out),
-  Deck
+const KeepDeck = Assets.during(Deck).pipe(
+  System.runIf(Effect.map(DeckOut, ({ out }) => out))
 );
 
 const Cards = Three.instancesFrom("page/Cards", {
@@ -279,7 +270,7 @@ const Cards = Three.instancesFrom("page/Cards", {
 const Fleet = Assets.bundle("page/Fleet", {
   ship: Gltf.model("/ship.gltf"),
 });
-const KeepFleet = Assets.during(Effect.succeed(true), Fleet);
+const KeepFleet = Assets.during(Fleet);
 const Ships = Three.objectsFrom("page/Ships", {
   of: Ship,
   transform: Transform3d,

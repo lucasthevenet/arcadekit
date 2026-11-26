@@ -908,7 +908,9 @@ const makeForest = () => {
     creak: clipAt("/creak.wav"),
     wind: clipAt("/wind.ogg"),
   });
-  const Keep = Assets.during(State.is(Level, "forest"), Forest);
+  const Keep = Assets.during(Forest).pipe(
+    System.runIf(State.is(Level, "forest"))
+  );
   return { Forest, Keep, clips };
 };
 const files = Assets.layer(
@@ -1213,17 +1215,17 @@ describe("Sound.makeRecorder", () => {
   it("notes what each channel was told, oldest first, and what each is playing now", () => {
     const sound = Sound.makeRecorder();
     const wind = Sound.clip("wind", { samples: 3 });
-    sound.music("a", T.theme, 1, 0.5);
-    sound.music("b", wind, 0.2, 0);
+    sound.music("a", T.theme, { volume: 1, fade: 0.5, once: false });
+    sound.music("b", wind, { volume: 0.2, fade: 0, once: false });
     expect(Object.fromEntries(sound.playing)).toEqual({
       a: "theme",
       b: "wind",
     });
-    sound.music("a", undefined, 0, 2);
-    sound.music("c", T.fanfare, 1, 0, true);
-    sound.music("c", wind, 1, 0, true);
-    sound.music("c", T.fanfare, 1, 0, false);
-    sound.music("c", undefined, 0, 0, true);
+    sound.music("a", undefined, { volume: 0, fade: 2, once: false });
+    sound.music("c", T.fanfare, { volume: 1, fade: 0, once: true });
+    sound.music("c", wind, { volume: 1, fade: 0, once: true });
+    sound.music("c", T.fanfare, { volume: 1, fade: 0, once: false });
+    sound.music("c", undefined, { volume: 0, fade: 0, once: true });
     expect(sound.scored).toEqual([
       { channel: "a", track: "theme", volume: 1, fade: 0.5 },
       { channel: "b", track: "wind", volume: 0.2, fade: 0, clip: wind },

@@ -150,8 +150,8 @@ A coin falls every second. A system runs to the end of its tick and waits for no
 const Rain = System.tick("catch/Rain", function* () {
   const random = yield* Random;
   (yield* Commands.spawns(Position, Fall)).spawn(
-    Position.of({ x: random.next() * 8 - 4, y: 10 }),
-    Fall.of({ speed: 2 + random.next() * 3 })
+    Position.of({ x: random.range(-4, 4), y: 10 }),
+    Fall.of({ speed: random.range(2, 5) })
   );
 }).pipe(Timer.every(1));
 ```

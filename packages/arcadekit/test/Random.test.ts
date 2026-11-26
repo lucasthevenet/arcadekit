@@ -187,6 +187,51 @@ describe("the random number generator", () => {
     expect(draws(rng, 3)).toEqual(draws(new Rng(1), 3));
   });
 
+  it("range() is a number from min up to, never reaching, max, from one draw, and refuses a range that is none", () => {
+    const rng = new Rng(4);
+    const same = new Rng(4);
+    for (let i = 0; i < 10_000; i++) {
+      const value = rng.range(2, 5);
+      expect(value >= 2 && value < 5).toBe(true);
+      expect(value).toBe(2 + same.next() * 3);
+    }
+    expect(rng.range(-4, 4)).toBe(-4 + same.next() * 8);
+    expect(rng.range(7, 7)).toBe(7);
+    same.next();
+    for (const [min, max] of [
+      [5, 2],
+      [Number.NaN, 1],
+      [0, Number.POSITIVE_INFINITY],
+    ] as const) {
+      expect(() => rng.range(min, max)).toThrow(
+        `Random.range(${min}, ${max}): both must be finite numbers`
+      );
+    }
+    // A refused call draws nothing.
+    expect(rng.next()).toBe(same.next());
+  });
+
+  it("chance() is true about as often as it says, from one draw, and refuses a chance that is none", () => {
+    const rng = new Rng(9);
+    const same = new Rng(9);
+    let hits = 0;
+    for (let i = 0; i < 100_000; i++) {
+      const hit = rng.chance(0.1);
+      expect(hit).toBe(same.next() < 0.1);
+      hits += hit ? 1 : 0;
+    }
+    expect(hits / 100_000).toBeCloseTo(0.1, 2);
+    expect([rng.chance(0), rng.chance(1)]).toEqual([false, true]);
+    same.next();
+    same.next();
+    for (const p of [-0.1, 1.5, Number.NaN]) {
+      expect(() => rng.chance(p)).toThrow(
+        `Random.chance(${p}): the chance must be a number from 0 to 1.`
+      );
+    }
+    expect(rng.next()).toBe(same.next());
+  });
+
   it("pick() returns each item about as often as any other, and refuses an empty list", () => {
     const rng = new Rng(4);
     const items = ["a", "b", "c", "d"] as const;

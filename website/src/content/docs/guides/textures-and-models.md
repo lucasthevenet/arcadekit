@@ -9,7 +9,14 @@ A level's **textures** and **models** are [assets](assets.md) of its bundle. The
 
 ```ts
 import { Three } from "@arcadekit/three";
-import { Assets, Component, Plugin, State, Transform3d } from "arcadekit";
+import {
+  Assets,
+  Component,
+  Plugin,
+  State,
+  System,
+  Transform3d,
+} from "arcadekit";
 import { CylinderGeometry, MeshStandardMaterial } from "three";
 
 const Tree = Component.tag("game/Tree", { requires: [Transform3d.Position] });
@@ -31,7 +38,10 @@ const Trees = Three.instancesFrom("game/Trees", {
 
 const Look = Plugin.make("game/Look", {
   plugins: [Three.plugin, Assets.plugin],
-  systems: [Assets.during(State.is(Level, "forest"), Forest), Trees],
+  systems: [
+    Assets.during(Forest).pipe(System.runIf(State.is(Level, "forest"))),
+    Trees,
+  ],
 });
 ```
 

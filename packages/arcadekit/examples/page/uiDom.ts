@@ -40,8 +40,6 @@ export const mount = (
     hud.textContent = level === "Loading" ? "Loading" : `Caught ${caught}`;
   };
   // As the game has it now, and again each time it changes.
-  showMenu(ui.get(Menu));
-  showHud(ui.get(Hud));
   const stops = [ui.subscribe(Menu, showMenu), ui.subscribe(Hud, showHud)];
   root.append(hud, menu);
   return () => {

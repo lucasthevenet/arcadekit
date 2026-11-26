@@ -124,7 +124,7 @@ export class Event<P> extends Effectable.Class<Reader<P>, never, Events> {
  * inferred from the schema:
  * `Event.define("physics/Collided", Schema.Struct({ ... }))`. An event with no
  * payload takes only its name, `Event.define("game/Started")`, and is emitted
- * with `undefined`.
+ * with none, `emit()`.
  *
  * **Gotchas**
  *

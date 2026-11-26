@@ -308,6 +308,44 @@ type GatheredHands<P extends readonly Any[]> = WalkHands<
   readonly []
 >[1];
 
+/** Whether one of a list is typed `any`. */
+type AnyIn<P extends readonly unknown[]> = true extends {
+  [K in keyof P]: 0 extends 1 & P[K] ? true : false;
+}[number]
+  ? true
+  : false;
+
+/**
+ * What `App.define` and `Plugin.make` ask of their list of plugins: nothing,
+ * unless one of them is typed `any`, as a plugin whose import failed is. The
+ * compiler can read nothing of such a plugin, its systems' order, its names
+ * or what it needs, so the list doesn't compile, and the error says which.
+ *
+ * @category Type-level
+ */
+export type Typed<P extends readonly unknown[]> =
+  AnyIn<P> extends true
+    ? {
+        readonly "A plugin of this list is typed any, as a plugin whose import failed is, so the compiler can check nothing of it: fix its import, or give it its type": P;
+      }
+    : unknown;
+
+/**
+ * What `App.define` and `Plugin.make` check of a list of systems: their order
+ * and their names, unless a plugin is typed `any`, which `Plugin.Typed` says
+ * alone, since nothing else of the list can be read.
+ *
+ * @category Type-level
+ */
+export type Checked<
+  P extends readonly Any[],
+  S extends readonly AnySystem[],
+  H extends readonly AnyHandler[],
+> =
+  AnyIn<P> extends true
+    ? unknown
+    : System.Ordered<System.Listing<SystemsOf<P>, S>, Clashes<P, H, S>>;
+
 /**
  * Duplicate system, handler and plugin names reachable from `plugins`, plus
  * the caller's own systems and handlers. A shared dependency is counted once.
@@ -356,7 +394,7 @@ export const make = <
   name: Id,
   options: {
     /** The plugins this one depends on, installed first. */
-    readonly plugins?: readonly [...P];
+    readonly plugins?: readonly [...P] & Typed<P>;
     readonly systems?: readonly [...S];
     readonly handlers?: readonly [...H];
     /**
@@ -379,7 +417,7 @@ export const make = <
      * devices don't compile here.
      */
     readonly setup?: System.TickEffect<SU>;
-  } & System.Ordered<System.Listing<SystemsOf<P>, S>, Clashes<P, H, S>>
+  } & Checked<P, S, H>
 ): Plugin<
   SystemError<S[number]> | TickErrorOf<P[number]>,
   H[number] | HandlerOf<P[number]>,

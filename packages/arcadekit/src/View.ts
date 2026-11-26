@@ -69,9 +69,11 @@ export interface View<A> {
 
 /**
  * Declares a value the UI may see. `initial` is the UI's value until the game
- * first publishes, and determines its type:
+ * first publishes, and determines its type, unless the type is given:
  *
- *   const Menu = View.define("game/Menu", { phase: "title" as Phase })
+ *   const Hud = View.define("game/Hud", { score: 0 })
+ *   const Menu = View.define<{ phase: Phase }>("game/Menu", { phase: "title" })
+ *   const Party = View.define<readonly Entity[]>("game/Party", [])
  *
  * A view is only a key, with no part of the game in it, so the UI can import
  * the module that declares it, along with the actions it may send.
@@ -109,8 +111,6 @@ type Fresh<A> = [Held<A>] extends [never]
 
 // --- the bridge ------------------------------------------------------------------
 
-/** Omitted for an action that takes no payload. */
-type PayloadArgument<P> = undefined extends P ? [payload?: P] : [payload: P];
 type PayloadOf<D> = D extends Action.Action<string, infer P> ? P : never;
 /** The actions of a union of handlers. Distributive: none for no handler. */
 type ActionOf<HU> = HU extends Action.AnyHandler ? HU["action"] : never;
@@ -151,10 +151,12 @@ export interface Bridge<
    */
   readonly get: <A>(view: View<A>) => A;
   /**
-   * Calls `listener` each time a view is published with a new value, and
-   * returns a function that unsubscribes. It isn't called with the current
-   * value, which `get` reads. A listener that throws fails the frame, like any
-   * bug in the frame stage, after every other listener has been called.
+   * Calls `listener` with the view's current value at once, as `get` reads
+   * it, then each time the view is published with a new value, and returns a
+   * function that unsubscribes. A listener that throws when it is published to
+   * fails the frame, like any bug in the frame stage, after every other
+   * listener has been called. One that throws at once throws to the caller,
+   * and isn't subscribed.
    */
   readonly subscribe: <A>(
     view: View<A>,
@@ -169,7 +171,7 @@ export interface Bridge<
     // Not `D extends Sends`, under which an action of no handler that takes
     // no payload is reported as a payload missing.
     action: D & Sends,
-    ...payload: PayloadArgument<PayloadOf<D>>
+    ...payload: Action.PayloadArgument<PayloadOf<D>>
   ) => void;
 }
 
@@ -211,10 +213,13 @@ const open = (): Opened => {
       return slot.value as never;
     },
     subscribe(view, listener) {
-      const { listeners } = slotOf(view);
-      listeners.add(listener);
+      const slot = slotOf(view);
+      // As the UI has it now, before the listener is kept: one that throws
+      // here is not subscribed.
+      listener(slot.value as never);
+      slot.listeners.add(listener);
       return () => {
-        listeners.delete(listener);
+        slot.listeners.delete(listener);
       };
     },
     send(action, ...payload) {

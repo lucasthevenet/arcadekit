@@ -380,8 +380,11 @@ describe("actions with a schema", () => {
             // taken by name as null.
             resets.length = 0;
             expect(
-              Exit.isSuccess(yield* Effect.exit(app.dispatch(Reset, undefined)))
+              Exit.isSuccess(yield* Effect.exit(app.dispatch(Reset)))
             ).toBe(true);
+            void (() =>
+              // @ts-expect-error an action with a payload is issued with it
+              app.dispatch(Rename));
             expect(
               Exit.isSuccess(
                 yield* Effect.exit(app.dispatchByName("Reset", null))
@@ -435,6 +438,8 @@ describe("events with a schema", () => {
       Effect.gen(function* () {
         const seen: unknown[] = [];
         const Emit = System.tick("Emit", function* () {
+          // An event with no payload is emitted with none.
+          (yield* Started.emits).emit();
           const hit = yield* Hit.emits;
           // The payload is typed by the schema: a string here would not compile.
           hit.emit({

@@ -134,6 +134,34 @@ export class Rng {
     return min + (drawn % range);
   }
 
+  /**
+   * Returns a number from `min` up to, but not including, `max`:
+   * `range(2, 5)` for a speed of 2 to 5. Both must be finite, with `max` no
+   * less than `min`, or it throws. `range(min, min)` is `min`.
+   */
+  range(min: number, max: number): number {
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) {
+      throw new Error(
+        `Random.range(${min}, ${max}): both must be finite numbers, with max no less than min.`
+      );
+    }
+    return min + this.next() * (max - min);
+  }
+
+  /**
+   * Returns true with the chance `p`, from 0, never, to 1, always:
+   * `chance(0.1)` is true one time in ten. Any other `p` throws. It draws one
+   * number whatever `p` is, so a replay draws the same.
+   */
+  chance(p: number): boolean {
+    if (!(p >= 0 && p <= 1)) {
+      throw new Error(
+        `Random.chance(${p}): the chance must be a number from 0 to 1.`
+      );
+    }
+    return this.next() < p;
+  }
+
   /** Returns one of the items, each equally likely. Throws on an empty list. */
   pick<T>(items: ArrayLike<T>): T {
     if (items.length === 0) {

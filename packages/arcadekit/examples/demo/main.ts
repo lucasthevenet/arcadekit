@@ -55,7 +55,7 @@ const Fountain = System.tick("Fountain", function* () {
   for (let i = 0; i < 100; i++) {
     commands.spawn(
       Position.of({ x: 0, y: 0 }),
-      Velocity.of({ x: random.next() * 10 - 5, y: 8 + spray.wave }),
+      Velocity.of({ x: random.range(-5, 5), y: 8 + spray.wave }),
       Timer.lifetime(1 + random.next())
     );
   }

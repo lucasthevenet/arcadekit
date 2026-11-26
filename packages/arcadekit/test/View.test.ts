@@ -156,13 +156,18 @@ const hashOf = Effect.fnUntraced(function* (app: App.Any) {
   return (yield* app.read(World)).hash();
 });
 
-/** A UI that only notes what it is told. */
+/**
+ * A UI that only notes what it is told: `now`, the value it is handed when it
+ * subscribes, and `heard`, each value published after.
+ */
 const listen = <A>(ui: View.Bridge, view: View.View<A>) => {
   const heard: A[] = [];
   const stop = ui.subscribe(view, (value) => {
     heard.push(value);
   });
-  return { heard, stop };
+  const now = heard.splice(0);
+  expect(now).toHaveLength(1);
+  return { heard, now: now[0]!, stop };
 };
 
 describe("a view", () => {
@@ -320,14 +325,22 @@ describe("a view", () => {
         ]);
         // A listener that stops itself, or another, while being told.
         const order: string[] = [];
+        // Each is handed the value at once, and acts only on what is published.
+        let published = false;
+        let stopLater = (): void => {};
         const stopOnce = ui.subscribe(Hud, () => {
-          order.push("once");
-          stopOnce();
-          stopLater();
+          if (published) {
+            order.push("once");
+            stopOnce();
+            stopLater();
+          }
         });
-        const stopLater = ui.subscribe(Hud, () => {
-          order.push("later");
+        stopLater = ui.subscribe(Hud, () => {
+          if (published) {
+            order.push("later");
+          }
         });
+        published = true;
         yield* app.dispatch(Find, { value: 1 });
         yield* app.frame();
         yield* app.dispatch(Find, { value: 1 });
@@ -338,17 +351,41 @@ describe("a view", () => {
   );
 
   it.effect(
+    "hands a subscriber its value at once: the initial one, then the last one published",
+    () =>
+      Effect.gen(function* () {
+        const { app, ui } = yield* playWithUi({ coins: [1] });
+        expect(listen(ui, Hud).now).toBe(Hud.initial);
+        yield* app.frame();
+        expect(listen(ui, Hud).now).toEqual({ gold: 0, coins: 1 });
+        expect(listen(ui, Hud).now).toBe(ui.get(Hud));
+      })
+  );
+
+  it.effect(
     "fails the frame with what a listener threw, once every other listener was told",
     () =>
       Effect.gen(function* () {
         const { app, ui } = yield* playWithUi({ coins: [1] });
-        ui.subscribe(Hud, () => {
-          throw new Error("the label is gone");
+        // One that throws at once throws to the UI, and isn't subscribed.
+        expect(() =>
+          ui.subscribe(Hud, () => {
+            throw new Error("no label yet");
+          })
+        ).toThrow("no label yet");
+        // These throw on the value the frame publishes, and not on the one
+        // they are handed at once.
+        ui.subscribe(Hud, ({ coins }) => {
+          if (coins > 0) {
+            throw new Error("the label is gone");
+          }
         });
         const after = listen(ui, Hud);
         // A second one that throws: it is the first that the frame fails with.
-        ui.subscribe(Hud, () => {
-          throw new Error("and so is the button");
+        ui.subscribe(Hud, ({ coins }) => {
+          if (coins > 0) {
+            throw new Error("and so is the button");
+          }
         });
         expect(yield* thrown(app.frame())).toThrow("the label is gone");
         expect(after.heard).toEqual([{ gold: 0, coins: 1 }]);

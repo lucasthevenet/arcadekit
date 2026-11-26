@@ -97,11 +97,18 @@ const play = Effect.fnUntraced(function* (
     return mount(root, {
       get: bridge.get,
       send: bridge.send,
-      subscribe: (view, listener) =>
-        bridge.subscribe(view, (value) => {
-          told++;
+      subscribe: (view, listener) => {
+        // What the game tells it: not the value a subscriber is handed at once.
+        let subscribed = false;
+        const stop = bridge.subscribe(view, (value) => {
+          if (subscribed) {
+            told++;
+          }
           listener(value);
-        }),
+        });
+        subscribed = true;
+        return stop;
+      },
     });
   });
   const source = Input.makeManualSource();

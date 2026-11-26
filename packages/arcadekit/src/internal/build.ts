@@ -229,8 +229,8 @@ const assemble = <
     // What systems and handlers issue goes through the inbox, made below
     // once the app's services are built.
     const actions: Context.Service.Shape<typeof Action.Actions> = {
-      enqueue: (action, payload) => {
-        inbox.issue(action, payload);
+      enqueue: (action, ...payload) => {
+        inbox.issue(action, payload[0]);
       },
       handles: (action) => inbox.handles(action),
     };
@@ -498,13 +498,13 @@ const assemble = <
       tick,
       frame,
       input,
-      dispatch: (action, payload) =>
+      dispatch: (action, ...payload) =>
         // What the action's handler returns or fails with.
         Effect.suspend(() =>
-          then(inbox.dispatch(action, payload) as Exit.Exit<never, never>)
+          then(inbox.dispatch(action, payload[0]) as Exit.Exit<never, never>)
         ),
-      enqueue: (action, payload) =>
-        Effect.suspend(() => inbox.enqueue(action, payload)),
+      enqueue: (action, ...payload) =>
+        Effect.suspend(() => inbox.enqueue(action, payload[0])),
       dispatchByName: (name, payload, from) =>
         // What the action's handler fails with, or why it was not applied.
         Effect.suspend(() =>

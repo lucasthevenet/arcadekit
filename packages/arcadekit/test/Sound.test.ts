@@ -605,8 +605,8 @@ describe("a game with sound", () => {
 describe("Sound.makeRecorder", () => {
   it("notes what it was asked to play, oldest first, and plays nothing", () => {
     const sound = Sound.makeRecorder();
-    sound.play(Sfx.a, 1, 1);
-    sound.play(Sfx.b, 0.5, 2);
+    sound.play(Sfx.a, { volume: 1, rate: 1 });
+    sound.play(Sfx.b, { volume: 0.5, rate: 2 });
     expect(sound.played).toEqual([
       { cue: "a", volume: 1, rate: 1 },
       { cue: "b", volume: 0.5, rate: 2 },
@@ -639,9 +639,9 @@ describe("a cue sheet", () => {
     const Sfx = Sound.sheet("sd/Recorded", { coin: "/coin.wav" });
     const loaded = Sound.clip("chirp", { samples: 2 });
     const sound = Sound.makeRecorder();
-    sound.play(Sfx.coin, 1, 1);
-    sound.play(loaded, 1, 1);
-    sound.music("music", Sfx.coin, 1, 0);
+    sound.play(Sfx.coin, { volume: 1, rate: 1 });
+    sound.play(loaded, { volume: 1, rate: 1 });
+    sound.music("music", Sfx.coin, { volume: 1, fade: 0, once: false });
     expect(sound.played).toEqual([
       { cue: "coin", volume: 1, rate: 1 },
       { cue: "chirp", volume: 1, rate: 1, clip: loaded },

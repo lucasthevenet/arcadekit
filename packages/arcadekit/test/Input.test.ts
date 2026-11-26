@@ -1062,7 +1062,7 @@ describe("the picture of the devices in the world", () => {
         void (yield* Input.Pointer).x;
       }),
       System.frame("in/Pad", function* () {
-        (yield* Input.Gamepad(1)).axis(0);
+        (yield* Input.Gamepads)(1).axis(0);
       }),
     ] as const;
     const press = Action.handler(Press, function* () {
@@ -1217,8 +1217,9 @@ describe("the picture of the devices in the world", () => {
         let seen: unknown;
         const Look = System.tick("Look", function* () {
           const pointer = yield* Input.Pointer;
-          const pad = yield* Input.Gamepad();
-          const other = yield* Input.Gamepad(1);
+          const pads = yield* Input.Gamepads;
+          const pad = pads(0);
+          const other = pads(1);
           seen = {
             at: [pointer.x, pointer.y],
             main: [pointer.down(), pointer.pressed(), pointer.released()],
@@ -1873,7 +1874,7 @@ describe("the picture of the devices in the world", () => {
           const Flash = System.frame("Flash", function* () {
             const keys = yield* Input.Keyboard;
             const pointer = yield* Input.Pointer;
-            const pad = yield* Input.Gamepad();
+            const pad = (yield* Input.Gamepads)(0);
             const { count } = yield* Frame;
             const changes: readonly (readonly [string, boolean, boolean])[] = [
               ["Space", keys.pressed("Space"), keys.released("Space")],

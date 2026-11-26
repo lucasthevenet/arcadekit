@@ -24,9 +24,7 @@ import { Effect } from "effect";
 const Position = Component.define("physics/Position", { x: Field.f32 });
 const Velocity = Component.define("physics/Velocity", { x: Field.f32 });
 
-const Bounds = Resource.make("physics/Bounds", {
-  defaultValue: () => ({ width: 10 }),
-});
+const Bounds = Resource.make("physics/Bounds", { width: 10 });
 
 const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
@@ -97,7 +95,7 @@ A `Resource` is a value with a default that a layer can override. Nothing has to
 ```ts
 import { Resource } from "arcadekit";
 
-const Gravity = Resource.make("physics/Gravity", { defaultValue: () => -9.81 });
+const Gravity = Resource.make("physics/Gravity", -9.81);
 const OnTheMoon = Resource.layer(Gravity, -1.62);
 ```
 

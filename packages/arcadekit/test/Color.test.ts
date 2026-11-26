@@ -25,6 +25,27 @@ describe("Color", () => {
     expect(Entry.Rgb).toBe(Color.Rgb);
   });
 
+  it("is written as a hex code with Color.hex, and refuses a number that is none", () => {
+    expect(Color.hex(0xff_61_88)).toEqual({
+      r: 0xff / 255,
+      g: 0x61 / 255,
+      b: 0x88 / 255,
+      space: Color.Srgb,
+    });
+    expect(Color.hex(0)).toEqual({ r: 0, g: 0, b: 0, space: Color.Srgb });
+    expect(Color.Rgb.of(Color.hex(0xff_ff_ff)).value).toEqual({
+      r: 1,
+      g: 1,
+      b: 1,
+      space: Color.Srgb,
+    });
+    for (const code of [-1, 0x1_00_00_00, 0.5, Number.NaN]) {
+      expect(() => Color.hex(code)).toThrow(
+        `Color.hex was given ${code}, which is not the hex code of a colour`
+      );
+    }
+  });
+
   it.effect(
     "is white when added bare, as an entity without one is drawn, and holds what it is given in either space",
     () =>
