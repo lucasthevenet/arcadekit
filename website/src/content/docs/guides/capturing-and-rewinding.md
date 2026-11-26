@@ -31,6 +31,71 @@ const program = Effect.gen(function* () {
 - A `Field.transient` field keeps its value through a rewind in a table that nothing changed since the moment: no loop or `world.set` wrote its component there, and no entity joined or left the table. Elsewhere it is `undefined`, and the system that builds it builds it again. A cache in a transient field survives a rewind past ticks that didn't touch what it caches.
 - Capture and rewind cost what changed since the last capture, not the size of the world. A table counts as changed for a component when a loop of a query that [writes](queries.md#name-what-a-query-writes) it visits the table, even if the loop writes nothing, or when `world.set` writes it, or when an entity joins or leaves the table. See [performance](performance.md#hashing-snapshots-and-rewinds).
 
+## Keep an undo stack
+
+```ts
+import {
+  Action,
+  App,
+  Driver,
+  Field,
+  Input,
+  Plugin,
+  Singleton,
+  System,
+  Timeline,
+} from "arcadekit";
+import { Browser } from "arcadekit/browser";
+import { Schema } from "effect";
+
+const Cell = Singleton.define("game/Cell", { x: Field.i32 }, { x: 0 });
+const Step = Action.define("game/Step", Schema.Struct({ dx: Schema.Int }));
+const step = Action.handler(Step, function* ({ dx }) {
+  (yield* Cell.writes).x += dx;
+});
+const Keys = System.input("game/Keys", function* () {
+  const { pressed } = yield* Input.Devices;
+  const { enqueue } = yield* Action.Actions;
+  if (pressed.includes("ArrowRight")) {
+    enqueue(Step, { dx: 1 });
+  }
+  if (pressed.includes("KeyZ")) {
+    enqueue(Timeline.Undo, undefined);
+  }
+  if (pressed.includes("KeyY")) {
+    enqueue(Timeline.Redo, undefined);
+  }
+});
+const Puzzle = App.define({
+  plugins: [
+    Plugin.make("game/Puzzle", {
+      plugins: [Timeline.plugin],
+      systems: [Keys],
+      handlers: [step],
+    }),
+  ],
+});
+
+Browser.runMain(
+  Driver.run(Puzzle, {
+    hz: 60,
+    ticks: "whenNeeded",
+    ready: (app) => Timeline.keep(app, { last: 50 }),
+  }),
+  { target: document.querySelector("canvas")! }
+);
+```
+
+`Timeline.keep(app)` keeps a game's turns: the game as it was before each turn, for as long as the scope it runs in lasts. A **turn** is what a tick or a dispatched action did with what came from outside: a move of the player's, from a key, a UI or `app.enqueue`. A tick with nothing from outside isn't one.
+
+- `Timeline.Undo` goes back a turn, and `Timeline.Redo` forward again one it went back. They are actions, so a key bound to them in the input stage, a UI that sends them with `ui.send(Timeline.Undo)`, and the rules ask for them alike. The game lists `Timeline.plugin`, which handles them, and the app goes back or forward once the tick that applies one has run.
+- Code outside the game goes back and forward with `Timeline.undo(app)` and `Timeline.redo(app)`, between ticks. Each succeeds with whether there was a turn to go to.
+- Going back is a rewind, so the log goes with it. A recording holds the turns that are left, and replays to the game as it is.
+- A tick, a move or a load gives up every turn ahead: there is nothing to redo once the game has moved on. A game that ticks only when needed rests after an undo, so a redo is there until the next move.
+- `app.load` gives up every turn kept, which are of the game the load replaced.
+- It keeps the `last` turns, 100 by default. It captures the game after each tick and each dispatched action, which costs what changed since the last capture.
+- An app that a session steps can't be kept: it has no `tick`, and a turn gone back would be this machine's alone.
+
 ## Control what the frame and input stages hear after a rewind
 
 - After `Timeline.rewind`, the game plays on from the moment. The frame and input stages, and code outside the game that reads an event, hear every event it emits from then on, including one they heard before the rewind, and their change queries visit everything again. They hear nothing of the future that was given up before they had read it.

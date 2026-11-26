@@ -277,7 +277,7 @@ export class Inbox {
         continue;
       }
       if (entry !== undefined) {
-        entry.refused = said(Cause.squash(exit.cause));
+        this.parts.log.refused(entry, said(Cause.squash(exit.cause)));
       }
       const error =
         Cause.hasDies(exit.cause) || Cause.hasInterrupts(exit.cause)

@@ -1,6 +1,6 @@
 ---
 title: "Saving and loading"
-description: "A save captures a game between two ticks, and a game loaded from it continues exactly as the saved one would have. Learn how to save, load in place, keep saves in slots, and read why a load was refused."
+description: "A save captures a game between two ticks, and a game loaded from it continues exactly as the saved one would have. Learn how to save, load in place, keep saves in slots, save when the rules ask, and read why a load was refused."
 ---
 
 A **save** captures a game between two ticks. A game loaded from a save continues exactly as the saved game would have. [Migrating old saves](migrating-saves.md) covers saves that an older version of the game wrote, and [settings](settings.md) what a game keeps that isn't the game.
@@ -87,6 +87,42 @@ A **slot** is a name a save is kept under in `Save.Store`. `Save.write(slot, sav
 - `(yield* Save.Store).slots` lists the slots that hold a save, for a menu of saved games, and `remove(slot)` empties one.
 - `Save.write` and `Save.read` fail with `Save.StoreFailed` when the store can't keep or read a slot, and `Save.read` with `Save.LoadRefused` when the slot holds what isn't a save.
 - A page's local storage holds about 5 MB for its whole site, and keeps a save as base64 text, a third larger than its bytes.
+
+## Save when the rules ask
+
+```ts
+import { App, Driver, Field, Save, Singleton, System, Timer } from "arcadekit";
+import { Browser } from "arcadekit/browser";
+import { Effect } from "effect";
+
+const Level = Singleton.define("game/Level", { won: Field.u8 }, { won: 0 });
+
+// The rules say when: once the level is won, and every minute of play.
+const Checkpoint = System.tick("game/Checkpoint", function* () {
+  if ((yield* Level).won === 1) {
+    (yield* Save.Asked.emits).emit({ slot: "level" });
+  }
+});
+const Autosave = System.tick("game/Autosave", function* () {
+  (yield* Save.Asked.emits).emit({ slot: "auto" });
+}).pipe(Timer.every(60));
+const Game = App.define({ systems: [Checkpoint, Autosave] });
+
+Browser.runMain(
+  Driver.run(Game, { hz: 60, ready: (app) => Save.autosave(app) }).pipe(
+    Effect.provide(Save.layer(Browser.saves("mygame")))
+  ),
+  { target: document.querySelector("canvas")! }
+);
+```
+
+The rules ask for a save with the event `Save.Asked`, which names a slot. `Save.autosave(app)` keeps what they ask for: once the tick that asked has run, between two ticks, it takes the game's save and writes it to each slot asked for. Nothing outside the game watches its world for the moment.
+
+- The save is of the game as the tick that asked left it, and is written before the next tick runs. A handler that `app.dispatch` runs can ask too, and its save is taken once the dispatch has run.
+- `Timer.every` keeps the interval in the world, so a replay asks at the same ticks, and a game loaded from the save goes on counting from where it was.
+- A save that can't be taken, or a slot the store can't keep, is logged as an error, and the game goes on. The next ask tries again.
+- A game that nothing autosaves, as a replay or a server, asks and nothing happens.
+- It keeps saves for as long as the scope it runs in lasts: with `ready`, for as long as the game runs.
 
 ## Start a game from a save
 
