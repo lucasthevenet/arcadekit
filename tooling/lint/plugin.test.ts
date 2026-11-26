@@ -316,6 +316,18 @@ export class Holder {
       },
       "packages/kit/src/index.ts"
     ),
+    linting(
+      "a file behind an entry, and no entry itself, declares an @internal export",
+      {
+        "packages/kit/package.json": JSON.stringify({
+          name: "kit",
+          exports: { ".": { source: "./src/index.ts" } },
+        }),
+        "packages/kit/src/core/table.ts": `/** Public. */\nexport const one = helper(0);\n\n/** @internal */\nexport const helper = (n: number): number => n + 1;\n`,
+        "packages/kit/src/index.ts": `export { one } from "./core/table";\n`,
+      },
+      "packages/kit/src/core/table.ts"
+    ),
   ],
   invalid: [
     ...[
@@ -445,6 +457,48 @@ export type Kept = Hidden;
         },
       ],
     },
+    {
+      ...linting(
+        "an entry's own file declares an @internal export",
+        {
+          "packages/kit/package.json": JSON.stringify({
+            name: "kit",
+            exports: { "./Mod": { source: "./src/Mod.ts" } },
+          }),
+          "packages/kit/src/Mod.ts": `/** Public. */\nexport const one = helper(0);\n\n/** @internal */\nexport const helper = (n: number): number => n + 1;\n`,
+        },
+        "packages/kit/src/Mod.ts"
+      ),
+      errors: [
+        {
+          message:
+            /^helper is @internal, but src\/Mod\.ts is an entry, which a game imports/u,
+        },
+      ],
+    },
+    ...[
+      "export interface Shown {\n  /** @internal */\n  readonly hidden: number;\n}",
+      "export type Shown = {\n  /** @internal */\n  readonly hidden: number;\n};",
+      "export class Shown {\n  /** @internal */\n  hidden(): number {\n    return 0;\n  }\n}",
+    ].map((declaration) => ({
+      ...linting(
+        `a public export of an entry's own file has an @internal member: ${declaration}`,
+        {
+          "packages/kit/package.json": JSON.stringify({
+            name: "kit",
+            exports: { "./Mod": { source: "./src/Mod.ts" } },
+          }),
+          "packages/kit/src/Mod.ts": `/** Public. */\n${declaration}\n`,
+        },
+        "packages/kit/src/Mod.ts"
+      ),
+      errors: [
+        {
+          message:
+            /^hidden is @internal, but it is a member of a public export of the entry src\/Mod\.ts/u,
+        },
+      ],
+    })),
     {
       ...linting(
         "an @internal export that no source uses, though a test does",

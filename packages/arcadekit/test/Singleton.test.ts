@@ -2,14 +2,19 @@ import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
 
 import { idOf } from "../src/ecs/component.ts";
+import {
+  CommandBuffer,
+  World as EcsWorld,
+  SnapshotError,
+  readSnapshot,
+  writeSnapshot,
+} from "../src/ecs/index.ts";
+import { Component } from "../src/ecs/index.ts";
 import { END, KIND_CODES, MAGIC, Writer } from "../src/ecs/snapshot.ts";
 import {
   Action,
   App,
-  CommandBuffer,
   Commands,
-  Component,
-  EcsWorld,
   Field,
   Journal,
   Migrate,
@@ -17,12 +22,9 @@ import {
   Query,
   Save,
   Singleton,
-  SnapshotError,
   System,
   Timeline,
   World,
-  readSnapshot,
-  writeSnapshot,
 } from "../src/index.ts";
 import type { JsonValue } from "../src/index.ts";
 

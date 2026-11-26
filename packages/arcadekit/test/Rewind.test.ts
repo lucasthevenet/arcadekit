@@ -5,13 +5,13 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
 
 import { entityOf, idOf } from "../src/ecs/component.ts";
+import { World as EcsWorld, readSnapshot } from "../src/ecs/index.ts";
 import type { ReadingEvents } from "../src/Event.ts";
 import {
   Action,
   App,
   Commands,
   Component,
-  EcsWorld,
   Event,
   Events,
   Field,
@@ -23,7 +23,6 @@ import {
   Time,
   Timeline,
   World,
-  readSnapshot,
 } from "../src/index.ts";
 import type { Entity, JsonValue } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";

@@ -20,6 +20,7 @@
 import { Effect, Layer } from "effect";
 
 // In a game of your own these are "arcadekit/browser/Browser" and "arcadekit".
+import * as Audio from "../../src/browser/Audio.ts";
 import * as Browser from "../../src/browser/Browser.ts";
 import { App, Driver, View } from "../../src/index.ts";
 import { Game, Screen } from "./game.ts";
@@ -61,7 +62,7 @@ Browser.runMain(
     sounds: {
       start: "/start.wav",
       theme: new URLSearchParams(location.search).has("stream")
-        ? Browser.stream("/theme.wav")
+        ? Audio.stream("/theme.wav")
         : "/theme.wav",
     },
   }

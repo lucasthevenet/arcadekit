@@ -1,13 +1,8 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  Component,
-  EcsWorld,
-  Field,
-  Query,
-  SnapshotError,
-} from "../src/index.ts";
+import { World as EcsWorld, SnapshotError } from "../src/ecs/index.ts";
+import { Component, Field, Query } from "../src/index.ts";
 import type {
   ComponentDef,
   Entity,

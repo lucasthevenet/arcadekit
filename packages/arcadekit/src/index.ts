@@ -6,52 +6,45 @@
  * Each module is the same object as its own entry point,
  * `import * as Input from "arcadekit/Input"`. Two modules are exported as
  * their members instead: `EntityId` from `Schemas`, and the services from
- * `Services`. The storage core, `arcadekit/ecs`, is exported as the members
- * a game uses, with its world class as `EcsWorld`, beside the `World`
- * service.
+ * `Services`, with the world's two types, `ReadingWorld` and `WritingWorld`.
+ * Of the storage core, `arcadekit/ecs`, it gives the types a game's code
+ * names, and none of its classes: a program of the storage core alone
+ * imports `arcadekit/ecs`.
  */
 export * as Action from "./Action.ts";
 export * as App from "./App.ts";
 export * as Assets from "./Assets.ts";
 export * as Color from "./Color.ts";
+export * as Component from "./Component.ts";
 export * as Driver from "./Driver.ts";
-export {
-  Component,
-  type ComponentDef,
-  type Entity,
-  type FieldDef,
-  type OnTargetDespawn,
-  type RefCodec,
-  type RequiredOf,
-  type SingletonSpec,
+export type {
+  ComponentDef,
+  Entity,
+  FieldDef,
+  OnTargetDespawn,
+  RefCodec,
+  RequiredOf,
+  SingletonSpec,
 } from "./ecs/component.ts";
 export type { RelationDef } from "./ecs/relation.ts";
 export type { JsonValue } from "./ecs/frozen.ts";
 export type { Rng } from "./ecs/random.ts";
 export type { Placed, Spawned, WithSpawned } from "./ecs/spawned.ts";
-export {
-  readSnapshot,
-  type SnapshotComponent,
-  type SnapshotContents,
-  type SnapshotSingleton,
-  type SnapshotSparse,
-  type SnapshotTable,
-  writeSnapshot,
+export type {
+  SnapshotComponent,
+  SnapshotContents,
+  SnapshotSingleton,
+  SnapshotSparse,
+  SnapshotTable,
 } from "./ecs/contents.ts";
-export { SnapshotError, type SnapshotProblem } from "./ecs/snapshot.ts";
-export {
-  type ChangeKind,
-  type RemovedReader,
-  type SavedChanges,
-} from "./ecs/changes.ts";
-export { CommandBuffer } from "./ecs/commands.ts";
-export {
-  type EntityColumn,
-  type PointingView,
-  type QueryView,
-  type SparseColumns,
+export type { SnapshotProblem } from "./ecs/snapshot.ts";
+export type { ChangeKind, RemovedReader, SavedChanges } from "./ecs/changes.ts";
+export type {
+  EntityColumn,
+  PointingView,
+  QueryView,
+  SparseColumns,
 } from "./ecs/query.ts";
-export { World as EcsWorld } from "./ecs/world.ts";
 export * as Event from "./Event.ts";
 export * as Field from "./Field.ts";
 export * as Input from "./Input.ts";
@@ -65,7 +58,7 @@ export * as Singleton from "./Singleton.ts";
 export * as Sound from "./Sound.ts";
 export * as State from "./State.ts";
 export { EntityId } from "./Schemas.ts";
-export { Commands, Events, Frame, Random, Time, World } from "./Services.ts";
+export * from "./Services.ts";
 export * as System from "./System.ts";
 export * as Timeline from "./Timeline.ts";
 export * as Transform2d from "./Transform2d.ts";

@@ -7,7 +7,7 @@ import type { InstancesOptions, InstancesShared, Look } from "../Instances.ts";
 import { Scene } from "../Scene.ts";
 import type { Entries, Needs } from "../Three.ts";
 import { FromAssets } from "./assets.ts";
-import { Holdings } from "./holdings.ts";
+import { Holdings, heldIn } from "./holdings.ts";
 import type { Kept } from "./holdings.ts";
 import { placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
@@ -79,15 +79,15 @@ export const instances = (
   const draw = drawer(options);
   return System.frame(name, function* () {
     const kept = yield* Scene;
-    let drawn = kept._kept.get(name) as Instances | undefined;
+    let drawn = heldIn(kept).kept.get(name) as Instances | undefined;
     if (drawn === undefined) {
       drawn = new Instances(
         kept.scene,
         name,
         options,
-        new Holdings(kept._owned)
+        new Holdings(heldIn(kept).owned)
       );
-      kept._kept.set(name, drawn);
+      heldIn(kept).kept.set(name, drawn);
     }
     yield* draw(drawn);
   });
@@ -106,12 +106,15 @@ export const bundledInstances = <B extends Entries, L extends Look>(
   const draw = drawer(options);
   return System.frame(name, function* () {
     const kept = yield* Scene;
-    let sourced = kept._kept.get(name) as FromAssets<Sourced> | undefined;
+    let sourced = heldIn(kept).kept.get(name) as
+      | FromAssets<Sourced>
+      | undefined;
     if (sourced === undefined) {
       // The room the instances came to need is kept from one loading of
       // the bundle to the next.
       let room = options.capacity ?? 256;
-      const { _owned, scene } = kept;
+      const { scene } = kept;
+      const { owned } = heldIn(kept);
       sourced = new FromAssets(
         yield* Assets.Store,
         options.from,
@@ -126,7 +129,7 @@ export const bundledInstances = <B extends Entries, L extends Look>(
               material: look.material,
               capacity: room,
             },
-            new Holdings(_owned)
+            new Holdings(owned)
           );
           return {
             instances: made,
@@ -138,7 +141,7 @@ export const bundledInstances = <B extends Entries, L extends Look>(
           };
         }
       );
-      kept._kept.set(name, sourced);
+      heldIn(kept).kept.set(name, sourced);
     }
     const drawn = sourced.now()?.instances;
     // Its assets are not there: nothing of it is in the scene.

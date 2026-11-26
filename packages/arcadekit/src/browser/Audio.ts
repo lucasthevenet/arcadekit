@@ -1,8 +1,6 @@
 /**
  * The page's sound, played with Web Audio: the page's own sound files, the
  * clips in a level's bundle, and tracks streamed as they play.
- * `arcadekit/browser/Browser` gives all of it too, as `Browser.layerSound`,
- * `Browser.sound` and `Browser.stream`.
  *
  *   import * as Audio from "arcadekit/browser/Audio"
  *
@@ -72,15 +70,15 @@ export interface MediaLike {
 /**
  * Makes a streamed track, a `Sound.Clip` that holds only its file's URL. When
  * a channel plays it, the page fetches and decodes it progressively. A file
- * given by URL, and one made with `Browser.sound`, are fetched whole and kept
+ * given by URL, and one made with `Audio.sound`, are fetched whole and kept
  * decoded instead. A long piece of music takes tens of megabytes that way,
  * and a few hundred kilobytes streamed.
  *
  *   // By name, for the page's whole lifetime:
- *   Browser.runMain(game, { sounds: { theme: Browser.stream("/theme.ogg") } })
+ *   Browser.runMain(game, { sounds: { theme: Audio.stream("/theme.ogg") } })
  *
  *   // Or directly, where a level's music is chosen:
- *   const ForestTheme = Browser.stream("/forest.ogg")
+ *   const ForestTheme = Audio.stream("/forest.ogg")
  *   const Score = Sound.music("game/Score", function*() {
  *     return (yield* Level).value === "forest" ? ForestTheme : undefined
  *   })
@@ -94,7 +92,7 @@ export interface MediaLike {
  *   Effect's logger and not played, since a cue must sound immediately.
  * - It starts, fades and stops like any track, and with `once` plays to its
  *   end. A looping stream may have an audible seam where it loops, so load a
- *   short piece that must loop seamlessly with `Browser.sound`, which decodes
+ *   short piece that must loop seamlessly with `Audio.sound`, which decodes
  *   it whole.
  *
  * @category Constructors
@@ -105,7 +103,7 @@ export const stream = (url: string): Sound.Clip => audio.stream(url);
  * Returns a layer that plays a page's sound with Web Audio: the page's named
  * sound files for its whole lifetime, and the clips in a level's bundle.
  *
- *   Browser.layerSound({ coin: "/coin.wav", theme: "/theme.ogg" })
+ *   Audio.layerSound({ coin: "/coin.wav", theme: "/theme.ogg" })
  *
  * **Details**
  *
@@ -161,14 +159,14 @@ export const layerSound = (
  * it wherever it takes a sound's name.
  *
  *   const Forest = Assets.bundle("game/Forest", {
- *     chirp: Browser.sound("/chirp.wav"),
- *     theme: Browser.sound("/forest.ogg"),
+ *     chirp: Audio.sound("/chirp.wav"),
+ *     theme: Audio.sound("/forest.ogg"),
  *   })
  *
  * **When to use**
  *
  * Use for a cue, or for a track that is short or must loop seamlessly. For a
- * long piece of music, use `Browser.stream`, which isn't decoded whole.
+ * long piece of music, use `Audio.stream`, which isn't decoded whole.
  *
  * **Details**
  *

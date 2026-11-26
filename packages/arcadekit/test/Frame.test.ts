@@ -11,13 +11,16 @@ import {
 
 import { entityIndex } from "../src/ecs/component.ts";
 import {
+  CommandBuffer,
+  World as EcsWorld,
+  readSnapshot,
+} from "../src/ecs/index.ts";
+import {
   Action,
   App,
-  CommandBuffer,
   Commands,
   Component,
   Driver,
-  EcsWorld,
   Event,
   Events,
   Field,
@@ -32,7 +35,6 @@ import {
   System,
   Time,
   World,
-  readSnapshot,
 } from "../src/index.ts";
 import type { ComponentDef, Entity, Rng } from "../src/index.ts";
 import type { BuiltIn } from "../src/Services.ts";

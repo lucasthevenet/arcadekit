@@ -21,6 +21,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
+import { triggered } from "../src/internal/system.ts";
 import { thrown } from "./checks.ts";
 
 const Phase = State.define("st/Phase", ["menu", "playing", "paused"]);
@@ -833,7 +834,7 @@ describe("hooks", () => {
     "are refused for a value the state does not have, and for a name twice",
     () =>
       Effect.gen(function* () {
-        const Flying = System.triggered(noting("Flying", []), {
+        const Flying = triggered(noting("Flying", []), {
           state: Phase,
           on: "enter",
           value: "flying",

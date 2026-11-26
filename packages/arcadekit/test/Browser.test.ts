@@ -13,6 +13,7 @@ import {
 } from "effect";
 import type { Scope as ScopeType } from "effect";
 
+import * as Audio from "../src/browser/Audio.ts";
 import * as Browser from "../src/browser/Browser.ts";
 import {
   App,
@@ -1294,7 +1295,7 @@ describe("a page's sound", () => {
     const output = yield* Sound.open.pipe(
       Scope.provide(scope),
       Effect.provide(
-        Browser.layerSound(files, {
+        Audio.layerSound(files, {
           window: page,
           audio: () => {
             made++;
@@ -1450,7 +1451,7 @@ describe("a page's sound", () => {
         const output = yield* Sound.open.pipe(
           Scope.provide(scope),
           Effect.provide(
-            Browser.layerSound(
+            Audio.layerSound(
               { coin: "/coin.wav" },
               { window: page, decode: decodeInto([]) }
             )
@@ -1746,7 +1747,7 @@ describe("a page's sound", () => {
       Effect.gen(function* () {
         const { audio, decoded, logged, made, output, page, streamed } =
           yield* build(
-            { theme: Browser.stream("/theme.ogg"), coin: "/coin.wav" },
+            { theme: Audio.stream("/theme.ogg"), coin: "/coin.wav" },
             { volume: 0.5 }
           );
         // Only the file that is to be decoded was fetched, and nothing was
@@ -1819,10 +1820,10 @@ describe("a page's sound", () => {
       Effect.gen(function* () {
         const { audio, display, logged, output, page, streamed } = yield* build(
           {
-            theme: Browser.stream("/theme.ogg"),
+            theme: Audio.stream("/theme.ogg"),
           }
         );
-        const wind = Browser.stream("/wind.ogg");
+        const wind = Audio.stream("/wind.ogg");
         // A clip like any other, named for where it is.
         expect(wind).toBeInstanceOf(Sound.Clip);
         expect(wind.name).toBe("/wind.ogg");
@@ -1851,11 +1852,11 @@ describe("a page's sound", () => {
         expect(audio.started).toEqual([]);
         expect(streamed.length).toBe(2);
         expect(logged).toEqual([
-          'The sound "/wind.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.',
-          'The sound "/theme.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.',
+          'The sound "/wind.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Audio.sound.',
+          'The sound "/theme.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Audio.sound.',
         ]);
         // Asked to play once from the start, it is started so.
-        output.music("jingle", Browser.stream("/jingle.ogg"), 1, 0, true);
+        output.music("jingle", Audio.stream("/jingle.ogg"), 1, 0, true);
         expect(streamed.at(-1)).toMatchObject({
           url: "/jingle.ogg",
           loop: false,
@@ -1869,8 +1870,8 @@ describe("a page's sound", () => {
     () =>
       Effect.gen(function* () {
         const { audio, close, display, output, page, streamed } = yield* build({
-          theme: Browser.stream("/theme.ogg"),
-          other: Browser.stream("/other.ogg"),
+          theme: Audio.stream("/theme.ogg"),
+          other: Audio.stream("/other.ogg"),
         });
         page.send("pointerdown");
         output.music("score", "theme", 1, 0);
@@ -1914,7 +1915,7 @@ describe("a page's sound", () => {
     () =>
       Effect.gen(function* () {
         const broken = yield* build(
-          { theme: Browser.stream("/gone.ogg") },
+          { theme: Audio.stream("/gone.ogg") },
           { brokenMedia: true }
         );
         broken.page.send("pointerdown");
@@ -1926,7 +1927,7 @@ describe("a page's sound", () => {
           'The sound "/gone.ogg" will not be played: The element has no supported sources.',
         ]);
         const deaf = yield* build(
-          { theme: Browser.stream("/theme.ogg"), coin: "/coin.wav" },
+          { theme: Audio.stream("/theme.ogg"), coin: "/coin.wav" },
           { noStreams: true }
         );
         deaf.page.send("pointerdown");
@@ -2153,7 +2154,7 @@ describe("a page's sound", () => {
         const scope = Scope.makeUnsafe();
         const quiet = yield* Sound.open.pipe(
           Scope.provide(scope),
-          Effect.provide(Browser.layerSound(undefined, { window: bare }))
+          Effect.provide(Audio.layerSound(undefined, { window: bare }))
         );
         expect(bare.total).toBe(2);
         bare.send("pointerdown");
@@ -2182,8 +2183,8 @@ describe("a page's sound", () => {
           }
         );
         const Forest = Assets.bundle("br/Forest", {
-          chirp: Browser.sound("/coin.wav"),
-          wind: Browser.sound("/thud.wav"),
+          chirp: Audio.sound("/coin.wav"),
+          wind: Audio.sound("/thud.wav"),
         });
         const { chirp, wind } = yield* Effect.scoped(Assets.load(Forest)).pipe(
           Effect.provide(Assets.layerMemory(sounds))
@@ -2203,7 +2204,7 @@ describe("a page's sound", () => {
         const exit = yield* Effect.exit(
           Effect.scoped(
             Assets.load(
-              Assets.bundle("br/Broken", { noise: Browser.sound("/noise.wav") })
+              Assets.bundle("br/Broken", { noise: Audio.sound("/noise.wav") })
             )
           )
         ).pipe(Effect.provide(Assets.layerMemory(sounds)));
@@ -2386,7 +2387,7 @@ describe("a page's sound", () => {
         const app = yield* Effect.scoped(
           App.make(Clinking).pipe(
             Effect.provide(
-              Browser.layerSound(
+              Audio.layerSound(
                 { coin: "/coin.wav" },
                 { window: page, audio: () => audio, decode: decodeInto([]) }
               )
@@ -2431,7 +2432,7 @@ describe("a page's sound", () => {
         // Built once, as a program provides it, and its own scope closed at once.
         const provided = yield* Effect.scoped(
           Layer.build(
-            Browser.layerSound(
+            Audio.layerSound(
               { coin: "/coin.wav" },
               {
                 window: page,

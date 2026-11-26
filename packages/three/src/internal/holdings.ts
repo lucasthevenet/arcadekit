@@ -1,6 +1,8 @@
 import { BufferGeometry } from "three";
 import type { Material, Object3D } from "three";
 
+import type { SceneShape } from "../Scene.ts";
+
 /**
  * What a system of this module has created, released with the app.
  *
@@ -22,6 +24,35 @@ export interface Kept {
  * @internal
  */
 export type Owned = BufferGeometry | Material;
+
+/**
+ * What the systems of this package keep in a scene: the meshes and objects,
+ * by the name of the system that keeps them, and how many systems draw with
+ * each geometry and material.
+ *
+ * @internal
+ */
+export interface Held {
+  readonly kept: Map<string, Kept>;
+  readonly owned: Map<Owned, number>;
+}
+
+const helds = new WeakMap<SceneShape, Held>();
+
+/**
+ * What the systems of this package keep in a scene, made the first time one
+ * asks.
+ *
+ * @internal
+ */
+export const heldIn = (scene: SceneShape): Held => {
+  let held = helds.get(scene);
+  if (held === undefined) {
+    held = { kept: new Map(), owned: new Map() };
+    helds.set(scene, held);
+  }
+  return held;
+};
 
 /**
  * The geometries and materials one system draws with. One that several

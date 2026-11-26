@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -133,16 +134,30 @@ describe.runIf(built)("a module's page", () => {
       .join("\n") ?? "";
 
   it("leaves private and @internal members out of a class, with their comments", () => {
-    const bus = signatureOf("Event", "EventBus");
-    expect(bus).toContain("emit<P>(def: EventDef<P>, payload: P): void;");
-    expect(bus).not.toMatch(/private|#private|@internal|_emit|reader|settled/u);
+    const state = signatureOf("State", "State");
+    expect(state).toContain("get sets(): Effect.Effect<StateHandle<V>");
+    expect(state).not.toMatch(/private|effect:|writing:/u);
     const world = signatureOf("ecs", "World", "ecs/index.ts");
     expect(world).toContain("class World");
     expect(world).not.toMatch(/private|@internal|_recTable|_reserve/u);
   });
 
   it("leaves @internal members out of an interface", () => {
-    const player = signatureOf("Sound", "PlayerShape");
+    // No entry of the packages has one, which their lint refuses, so a
+    // package of its own has it.
+    const root = mkdtempSync(path.join(tmpdir(), "reference-"));
+    mkdirSync(path.join(root, "kit/dist"), { recursive: true });
+    mkdirSync(path.join(root, "kit/src"), { recursive: true });
+    writeFileSync(
+      path.join(root, "kit/dist/Mod.d.ts"),
+      "/**\n * A player.\n *\n * @category Services\n */\nexport interface Player {\n    readonly play: () => void;\n    /** @internal */\n    readonly _flush: () => void;\n}\n"
+    );
+    writeFileSync(path.join(root, "kit/src/Mod.ts"), "export {};\n");
+    const player =
+      readModule(root, "kit", "kit", "Mod", "kit/src/Mod.ts")
+        .exports.find((item) => item.name === "Player")
+        ?.parts.map((part) => part.signature)
+        .join("\n") ?? "";
     expect(player).toContain("readonly play:");
     expect(player).not.toMatch(/_flush|@internal/u);
   });

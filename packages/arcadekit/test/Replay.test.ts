@@ -3,12 +3,12 @@ import { Cause, Effect, Exit, Layer, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 import { entityOf } from "../src/ecs/component.ts";
+import { World as EcsWorld } from "../src/ecs/index.ts";
 import {
   Action,
   App,
   Commands,
   Component,
-  EcsWorld,
   EntityId,
   Field,
   Journal,

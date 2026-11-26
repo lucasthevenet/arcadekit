@@ -197,7 +197,7 @@ describe("events", () => {
           kept = yield* Ping.emits;
           // A system of the tick that has the bus and no handle emits through it.
           const events = yield* Effect.service(Events);
-          assert(events instanceof Event.EventBus);
+          assert(events instanceof EventBus);
           events.emit(Ping, 7);
           bus = events;
         });
@@ -322,6 +322,7 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
 import { idOf } from "../src/ecs/component.ts";
 // The World service, imported under another name so `world` reads naturally above.
 import { World as App_World } from "../src/index.ts";
+import { EventBus } from "../src/internal/eventBus.ts";
 import { thrown } from "./checks.ts";
 
 const Death = System.tick("Death", function* () {

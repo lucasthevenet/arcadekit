@@ -4,12 +4,12 @@
  */
 import { Cause, Effect, Exit, Schema } from "effect";
 
+import { World as EcsWorld } from "../src/ecs/index.ts";
 import {
   Action,
   App,
   Commands,
   Component,
-  EcsWorld,
   EntityId,
   Event,
   Field,

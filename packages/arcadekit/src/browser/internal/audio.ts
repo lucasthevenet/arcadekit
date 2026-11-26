@@ -17,7 +17,7 @@ export class Streamed {
 }
 
 /**
- * Makes a streamed track: `Browser.stream`.
+ * Makes a streamed track: `Audio.stream`.
  *
  * @internal
  */
@@ -350,7 +350,7 @@ const openPage = (
             missing.add(buffer.url);
             fork(
               Effect.logWarning(
-                `The sound "${buffer.url}" is streamed, which is for a channel's track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.`
+                `The sound "${buffer.url}" is streamed, which is for a channel's track: as a cue it is not played. A cue is a file given by its URL, or Audio.sound.`
               )
             );
           }
@@ -405,7 +405,7 @@ const openPage = (
 };
 
 /**
- * The page's sound with Web Audio: `Browser.layerSound`.
+ * The page's sound with Web Audio: `Audio.layerSound`.
  *
  * @internal
  */

@@ -3,6 +3,7 @@ import { PerspectiveCamera, Scene as ThreeScene } from "three";
 
 import { Scene } from "../Scene.ts";
 import type { SceneShape } from "../Scene.ts";
+import { heldIn } from "./holdings.ts";
 
 /**
  * Provides `Three.Scene`, and disposes of what the systems made when the app
@@ -19,18 +20,17 @@ export const sceneLayer = Layer.effect(
       return {
         scene: new ThreeScene(),
         camera,
-        _kept: new Map(),
-        _owned: new Map(),
       };
     }),
     // What the systems made goes with the app, and the geometries and
     // materials they drew with once no system holds them.
-    (kept) =>
+    (shown) =>
       Effect.sync(() => {
-        for (const one of kept._kept.values()) {
+        const { kept } = heldIn(shown);
+        for (const one of kept.values()) {
           one.dispose();
         }
-        kept._kept.clear();
+        kept.clear();
       })
   )
 );

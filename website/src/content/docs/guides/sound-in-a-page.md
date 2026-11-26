@@ -7,7 +7,7 @@ In a page, cues and music play through **Web Audio**. A sound comes from one of 
 
 ## Name the page's own sounds
 
-`Browser.runMain` and `Browser.layer` provide the Web Audio output. Their `sounds` option maps the names that cues and tracks play by to the files that the page keeps for its lifetime. Their `volume` option sets the master volume. `Browser.layerSound(files)` provides the same sound layer on its own.
+`Browser.runMain` and `Browser.layer` provide the Web Audio output. Their `sounds` option maps the names that cues and tracks play by to the files that the page keeps for its lifetime. Their `volume` option sets the master volume. `Audio.layerSound(files)` provides the same sound layer on its own.
 
 - The page's sound opens with the first app that has `Sound.plugin`, wherever the layer is provided, and is heard until that app is closed. The apps made under one `Browser.layer` share one audio context, because a browser allows a page only a few. They fetch each file once.
 - `Assets.Loader` fetches the files when the page's sound opens, and each file is decoded on arrival.
@@ -22,11 +22,11 @@ In a page, cues and music play through **Web Audio**. A sound comes from one of 
 
 ## Play a level's own sounds
 
-Sounds that a page receives by name last for the page's lifetime. A level's own sounds are assets of its bundle, made with `Browser.sound(url)`. They load when the game enters the level and are released when it leaves. See [assets](assets.md).
+Sounds that a page receives by name last for the page's lifetime. A level's own sounds are assets of its bundle, made with `Audio.sound(url)`. They load when the game enters the level and are released when it leaves. See [assets](assets.md).
 
 ```ts
 import { Assets, Event, Sound } from "arcadekit";
-import { Browser } from "arcadekit/browser";
+import { Audio } from "arcadekit/browser";
 import { Schema } from "effect";
 
 const Stepped = Event.define(
@@ -35,8 +35,8 @@ const Stepped = Event.define(
 );
 
 const Forest = Assets.bundle("game/Forest", {
-  creak: Browser.sound("/creak.wav"),
-  wind: Browser.sound("/wind.ogg"),
+  creak: Audio.sound("/creak.wav"),
+  wind: Audio.sound("/wind.ogg"),
 });
 
 // Its cues, built from what the bundle holds.
@@ -62,11 +62,11 @@ const Air = Sound.music(
 - `Sound.cues(name, bundle, (assets) => mappings)` builds the mappings from the bundle's assets, once each time the bundle loads. While the bundle isn't loaded, the system plays nothing, and the events of that time aren't played later.
 - A level's music is a body that reads the bundle and returns one of its clips once the bundle is `Ready`. When the game enters the level again, the bundle loads again and its music restarts.
 - Both require `Assets.plugin`, and both systems' types say so.
-- `Browser.sound(url)` is decoded in full on arrival. When its bundle releases it, a sound still playing plays to its end, or stops when its channel changes.
+- `Audio.sound(url)` is decoded in full on arrival. When its bundle releases it, a sound still playing plays to its end, or stops when its channel changes.
 
 ## Stream long music
 
-A file given by URL, and a `Browser.sound`, are downloaded in full and kept decoded. A few minutes of decoded music take tens of megabytes. Stream a long piece instead, so the page downloads and decodes it as it plays. Name it in `sounds: { theme: Browser.stream("/theme.ogg") }`, or return `Browser.stream(url)` directly wherever a track is returned.
+A file given by URL, and an `Audio.sound`, are downloaded in full and kept decoded. A few minutes of decoded music take tens of megabytes. Stream a long piece instead, so the page downloads and decodes it as it plays. Name it in `sounds: { theme: Audio.stream("/theme.ogg") }`, or return `Audio.stream(url)` directly wherever a track is returned.
 
 - A stream isn't an asset and belongs to no bundle. Nothing is downloaded until it plays, and there is nothing to release.
 - It starts, fades, and stops like any track. It is for tracks only. Played as a cue, it is logged once and doesn't play.

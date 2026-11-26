@@ -2,13 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import { entityIndex, entityOf } from "../src/ecs/component.ts";
+import { CommandBuffer, World as EcsWorld } from "../src/ecs/index.ts";
 import {
   Action,
   App,
-  CommandBuffer,
   Commands,
   Component,
-  EcsWorld,
   Event,
   Field,
   Query,

@@ -7,22 +7,24 @@ import {
   entityOf,
   idOf,
 } from "../src/ecs/component.ts";
+import {
+  CommandBuffer,
+  World as EcsWorld,
+  readSnapshot,
+  writeSnapshot,
+} from "../src/ecs/index.ts";
 import type { JsonValue, Spawned } from "../src/index.ts";
 import {
   Action,
   App,
-  CommandBuffer,
   Commands,
   Component,
-  EcsWorld,
   Field,
   Migrate,
   Plugin,
   Query,
   Save,
   World,
-  readSnapshot,
-  writeSnapshot,
 } from "../src/index.ts";
 import type { ComponentDef, Entity } from "../src/index.ts";
 import { placedIn } from "./placed.ts";

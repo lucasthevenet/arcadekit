@@ -2,14 +2,13 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema } from "effect";
 
 import { entityOf } from "../src/ecs/component.ts";
+import { CommandBuffer, World as EcsWorld } from "../src/ecs/index.ts";
+import { Component } from "../src/ecs/index.ts";
 import type { JsonValue, Spawned } from "../src/index.ts";
 import {
   Action,
   App,
-  CommandBuffer,
   Commands,
-  Component,
-  EcsWorld,
   EntityId,
   Event,
   Field,

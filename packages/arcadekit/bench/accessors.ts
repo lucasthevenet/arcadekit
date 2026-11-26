@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
  */
 import { Effect, Exit, Layer, Schema } from "effect";
 
+import { World } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -35,7 +36,6 @@ import {
   Time,
   Timeline,
   View,
-  EcsWorld as World,
   World as WorldService,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";

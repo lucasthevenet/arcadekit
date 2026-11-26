@@ -2,6 +2,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
+import { readSnapshot } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -10,7 +11,6 @@ import {
   System,
   Time,
   Timeline,
-  readSnapshot,
 } from "../src/index.ts";
 import { Layout } from "../src/internal/recording.ts";
 import { thrown } from "./checks.ts";

@@ -29,8 +29,8 @@ import type {
   WatchedTerm,
 } from "./ecs/component.ts";
 import type { Described, QuerySpec, QueryView, Terms } from "./ecs/query.ts";
+import { whole } from "./internal/handed.ts";
 import { World } from "./Services.ts";
-import { whole } from "./services/handed.ts";
 
 /**
  * A query, which says what entities to visit and what to do with their

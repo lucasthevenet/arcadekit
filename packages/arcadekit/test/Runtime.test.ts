@@ -19,6 +19,7 @@ import {
   Time,
   World,
 } from "../src/index.ts";
+import { order } from "../src/internal/system.ts";
 import { TickScheduler } from "../src/internal/tickScheduler.ts";
 import type { ReadingWorld } from "../src/Services.ts";
 import { thrown } from "./checks.ts";
@@ -120,7 +121,7 @@ describe("systems", () => {
           expect(log).toEqual(["input", "b", "a", "c", "render"]);
         })
       );
-      expect(() => System.order([sys("x"), sys("x")])).toThrow(
+      expect(() => order([sys("x"), sys("x")])).toThrow(
         'Duplicate system name "x"'
       );
     })

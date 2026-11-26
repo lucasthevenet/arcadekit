@@ -5,13 +5,11 @@ import { readSingleton } from "../src/ecs/contents.ts";
 import { readSnapshot, writeSnapshot } from "../src/ecs/index.ts";
 import {
   CommandBuffer,
-  Component,
-  EcsWorld,
-  Field,
-  Migrate,
-  Query,
+  World as EcsWorld,
   SnapshotError,
-} from "../src/index.ts";
+} from "../src/ecs/index.ts";
+import { Component } from "../src/ecs/index.ts";
+import { Field, Migrate, Query } from "../src/index.ts";
 import type { ComponentDef, JsonValue } from "../src/index.ts";
 import { Shouts } from "./stores.ts";
 

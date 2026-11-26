@@ -2,11 +2,15 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 
 import {
+  World as EcsWorld,
+  readSnapshot,
+  writeSnapshot,
+} from "../src/ecs/index.ts";
+import {
   Action,
   App,
   Commands,
   Component,
-  EcsWorld,
   Event,
   Field,
   Journal,
@@ -17,8 +21,6 @@ import {
   System,
   Time,
   World,
-  readSnapshot,
-  writeSnapshot,
 } from "../src/index.ts";
 import type { JsonValue } from "../src/index.ts";
 import { thrown } from "./checks.ts";

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as BrowserEntry from "../src/browser/index.ts";
 import * as Ecs from "../src/ecs/index.ts";
 import * as Main from "../src/index.ts";
+import type { ReadingWorld, WritingWorld } from "../src/index.ts";
 import * as Net from "../src/net/index.ts";
 
 // Vite gives a test the text of files, and the modules themselves: the
@@ -158,7 +159,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(36);
+    expect(entries.length).toBe(37);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -197,7 +198,9 @@ describe("the package's entries", () => {
     ).toEqual([
       ...browserFiles,
       "../src/ecs/index.ts",
-      ...Object.keys(netModules).toSorted(),
+      ...Object.keys(sources)
+        .filter((file) => file.startsWith("../src/net/"))
+        .toSorted(),
     ]);
     // A game with one player loads none of what several play with.
     expect(Object.keys(netModules).toSorted()).toEqual([
@@ -236,6 +239,7 @@ describe("the package's entries", () => {
       "App",
       "Assets",
       "Color",
+      "Component",
       "Driver",
       "Event",
       "Field",
@@ -368,11 +372,25 @@ describe("arcadekit/ecs", () => {
   });
 
   it("is the same storage core that arcadekit is built on, not a copy of it", () => {
-    expect(Ecs.World).toBe(Main.EcsWorld);
-    expect(Ecs.Component).toBe(Main.Component);
-    expect(Ecs.CommandBuffer).toBe(Main.CommandBuffer);
-    expect(Ecs.SnapshotError).toBe(Main.SnapshotError);
-    expect(Ecs.readSnapshot).toBe(Main.readSnapshot);
+    expect(Ecs.Component.define).toBe(Main.Component.define);
+    expect(Ecs.Component.relation).toBe(Main.Component.relation);
+    expect(Ecs.Component.tag).toBe(Main.Component.tag);
     expect(Ecs.Field.f32).toBe(Main.Field.f32);
+  });
+
+  it("gives arcadekit none of its own values, so a game imports none of its classes, and defines a singleton one way", () => {
+    const core = new Set<unknown>(Object.values(Ecs));
+    const given = Object.entries(Main).filter(([, value]) => core.has(value));
+    expect(given.map(([name]) => name)).toEqual([]);
+    expect(Object.keys(Main.Component).toSorted()).toEqual([
+      "define",
+      "relation",
+      "tag",
+    ]);
+    // The world's two types, which a helper that takes a world names.
+    const reads = (world: ReadingWorld): number => world.entityCount;
+    const writes = (world: WritingWorld<"en/Position">): number =>
+      world.entityCount;
+    expect([reads, writes]).toHaveLength(2);
   });
 });

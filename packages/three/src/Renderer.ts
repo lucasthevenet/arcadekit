@@ -23,6 +23,7 @@ import type {
 } from "three";
 
 import { fitted } from "./internal/fit.ts";
+import { heldIn } from "./internal/holdings.ts";
 import { sceneLayer } from "./internal/sceneLayer.ts";
 import { Scene } from "./Scene.ts";
 
@@ -169,11 +170,11 @@ export const layerWebGL = (
  * @category Systems
  */
 export const Render = System.frame("arcadekit/three/Render", function* () {
-  const { _kept, camera, scene } = yield* Scene;
-  for (const one of _kept.values()) {
+  const shown = yield* Scene;
+  for (const one of heldIn(shown).kept.values()) {
     one.settle?.();
   }
-  (yield* Renderer).render(scene, camera);
+  (yield* Renderer).render(shown.scene, shown.camera);
 }).pipe(System.inStage("postFrame"));
 
 /**

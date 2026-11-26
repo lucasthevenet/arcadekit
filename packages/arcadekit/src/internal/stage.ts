@@ -19,11 +19,11 @@ import { Component, Field } from "../ecs/component.ts";
 import { Rng } from "../ecs/random.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World as EcsWorld } from "../ecs/world.ts";
-import type { EventBus } from "../Event.ts";
 import * as Input from "../Input.ts";
 import { Commands, Events, Frame, Random, Time, World } from "../Services.ts";
 import type { FrameState, TimeState } from "../Services.ts";
-import { handed, hearing, reading } from "../services/handed.ts";
+import type { EventBus } from "./eventBus.ts";
+import { handed, hearing, reading } from "./handed.ts";
 
 /**
  * The prefix of a reader's name in the world's change logs when it is a

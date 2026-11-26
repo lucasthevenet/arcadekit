@@ -22,21 +22,24 @@ import type {
 import { CommandBuffer } from "../ecs/commands.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import { World as EcsWorld } from "../ecs/world.ts";
-import { EventBus } from "../Event.ts";
 import * as Input from "../Input.ts";
-import * as Journal from "../Journal.ts";
 import * as Plugin from "../Plugin.ts";
 import * as Save from "../Save.ts";
 import { Time, World } from "../Services.ts";
 import type { TimeState } from "../Services.ts";
-import { reading } from "../services/handed.ts";
-import * as State from "../State.ts";
+import { EventBus } from "./eventBus.ts";
+import { reading } from "./handed.ts";
 import * as Inbox from "./inbox.ts";
+import { Intake } from "./intake.ts";
+import { Log } from "./journal.ts";
 import * as Loop from "./loop.ts";
 import { hold } from "./parts.ts";
+import { flatten } from "./plugins.ts";
 import * as Runner from "./runner.ts";
+import { Visits, into, takeSave } from "./save.ts";
 import * as Schedule from "./schedule.ts";
 import * as Stage from "./stage.ts";
+import { prepare, refuseRemovedScopes } from "./state.ts";
 import { TickDispatcher, TickScheduler } from "./tickScheduler.ts";
 
 /**
@@ -148,25 +151,25 @@ const assemble = <
     const commands = new CommandBuffer<Spawned>(world);
     const events = new EventBus(world);
     // Attached before the world loads a save, which may hold some of each.
-    const intake = new Action.Intake();
+    const intake = new Intake();
     world._attach(intake);
     world._attach(
-      new Save.Visits(world, (reader) => !reader.startsWith(Stage.READER))
+      new Visits(world, (reader) => !reader.startsWith(Stage.READER))
     );
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
     // Dependencies first, each plugin once, then the app's own systems.
-    const plugins = Plugin.flatten(game.plugins);
+    const plugins = flatten(game.plugins);
     const { version } = game;
     let save: Save.Save | undefined;
     if (given !== undefined) {
       // Before anything else can touch the world: a load fills an empty one.
-      const loaded = Save.into(world, given, version, game.migrations);
+      const loaded = into(world, given, version, game.migrations);
       if (Exit.isFailure(loaded)) {
         return yield* loaded;
       }
-      const scoped = State.refuseRemovedScopes(world);
+      const scoped = refuseRemovedScopes(world);
       if (Exit.isFailure(scoped)) {
         return yield* scoped;
       }
@@ -184,7 +187,7 @@ const assemble = <
     ];
 
     const handlers = Inbox.handlersOf(allHandlers);
-    const log = new Journal.Log(
+    const log = new Log(
       world,
       time,
       start.checkpointEvery ?? 60,
@@ -267,7 +270,7 @@ const assemble = <
     if (schedule.input.length > 0) {
       events.expect("input", time.tick);
     }
-    State.prepare(world, schedule.hooked, save !== undefined);
+    prepare(world, schedule.hooked, save !== undefined);
 
     const loop = Loop.make({
       world,
@@ -355,7 +358,7 @@ const assemble = <
             (busy) =>
               `save() was called during a ${busy}. A game is saved between ticks.`
           );
-          return Save.take(world, commands, version, log.entries.length);
+          return takeSave(world, commands, version, log.entries.length);
         }),
       get settled() {
         return loop.settled();
