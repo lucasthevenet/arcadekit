@@ -32,7 +32,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<JsonValue>(),
+  note: Field.json<JsonValue>(null),
 };
 const Body = Component.define("tx/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("tx/Sheet", kinds);
@@ -56,7 +56,7 @@ const sheet = (n: number) => ({
 const Clock = Component.singleton("tx/Clock", kinds, sheet(500));
 const Mood = Component.singleton(
   "tx/Mood",
-  { level: Field.i32, word: Field.json<string>() },
+  { level: Field.i32, word: Field.json<string>("") },
   { level: 3, word: "calm" }
 );
 

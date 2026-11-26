@@ -30,7 +30,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<JsonValue>(),
+  note: Field.json<JsonValue>(null),
 };
 const Body = Component.define("hash/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("hash/Sheet", kinds);

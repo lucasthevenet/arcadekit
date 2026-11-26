@@ -113,8 +113,8 @@ export class State<V extends string, N extends string = string>
     const spec = Component.singleton(
       name,
       {
-        value: Field.json<string>(),
-        next: Field.json<string | null>(),
+        value: Field.json<string>(first),
+        next: Field.json<string | null>(null),
         entered: Field.u8,
       },
       { value: first, next: null, entered: 0 }

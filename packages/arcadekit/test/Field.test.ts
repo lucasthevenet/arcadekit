@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { World as EcsWorld, SnapshotError } from "../src/ecs/index.ts";
 import type { ComponentDef } from "../src/ecs/index.ts";
@@ -36,10 +36,15 @@ type Profile = typeof Profile.Type;
 
 // Every kind of field that is not a number, in a table and in a sparse set.
 const fields = {
-  data: Field.json<JsonValue>(),
-  when: Field.ref(dates),
-  tags: Field.ref(sets),
-  profile: Field.schema(Profile),
+  data: Field.json<JsonValue>(null),
+  when: Field.ref(dates, new Date(0)),
+  tags: Field.ref(sets, new Set()),
+  profile: Field.schema(Profile, {
+    name: "",
+    level: 1,
+    joined: new Date(0),
+    gold: 0n,
+  }),
   handle: Field.transient<{ readonly id: number }>(),
   hp: Field.i32,
 };
@@ -107,6 +112,51 @@ describe("a field that is not a number", () => {
       false,
       false,
     ]);
+  });
+
+  it("holds in a component given bare what it was made with, as its type says", () => {
+    const Holder = Component.tag("fld/Holder", { requires: [Card, Badge] });
+    const world = new EcsWorld();
+    const added = world.spawn();
+    world.add(added, Card);
+    world.add(added, Badge);
+    for (const entity of [
+      world.spawn(Card, Badge),
+      added,
+      world.spawn(Holder),
+    ]) {
+      for (const def of both) {
+        expect(world.get(entity, def)).toEqual({
+          data: null,
+          when: new Date(0),
+          tags: new Set(),
+          profile: { name: "", level: 1, joined: new Date(0), gold: 0n },
+          handle: undefined,
+          hp: 0,
+        });
+      }
+    }
+    expect(reload(world, [...both, Holder]).hash()).toBe(world.hash());
+
+    const Named = Component.define("fld/Named", {
+      name: Field.json<string>("nobody"),
+    });
+    const name = world.get(world.spawn(Named), Named)!.name;
+    expectTypeOf(name).toEqualTypeOf<string>();
+    expect(name).toBe("nobody");
+  });
+
+  it("is told where it is made what a component given bare holds", () => {
+    expect(() =>
+      Component.define("fld/Untold", {
+        // @ts-expect-error a json field is given what a bare component holds
+        name: Field.json<string>(),
+        // @ts-expect-error a ref field is given what a bare component holds
+        when: Field.ref(dates),
+        // @ts-expect-error a schema field is given what a bare component holds
+        born: Field.schema(Schema.Date),
+      })
+    ).not.toThrow();
   });
 
   it("is saved and loaded as what it held, or not at all when it is transient", () => {
@@ -215,12 +265,18 @@ describe("a field that is not a number", () => {
     expect(transient!.message).toContain("data: transient");
     expect(
       retyped(
-        Component.define("fld/Card", { ...fields, handle: Field.json() })
+        Component.define("fld/Card", {
+          ...fields,
+          handle: Field.json<JsonValue>(null),
+        })
       )!.problem
     ).toBe("component changed");
     expect(
       retyped(
-        Component.define("fld/Card", { ...fields, data: Field.ref(dates) })
+        Component.define("fld/Card", {
+          ...fields,
+          data: Field.ref(dates, new Date(0)),
+        })
       )!.problem
     ).toBe("component changed");
   });
@@ -266,7 +322,7 @@ describe("a field that is not a number", () => {
     };
     const Changed = Component.define("fld/Card", {
       ...fields,
-      when: Field.ref(strict),
+      when: Field.ref(strict, new Date(0)),
     });
     const { world } = populated(2);
     let error: unknown;
@@ -284,7 +340,9 @@ describe("a field that is not a number", () => {
   });
 
   it("refuses a snapshot whose JSON is damaged, as damaged and not as a changed component", () => {
-    const Note = Component.define("fld/Note", { v: Field.json<JsonValue>() });
+    const Note = Component.define("fld/Note", {
+      v: Field.json<JsonValue>(null),
+    });
     const world = new EcsWorld();
     world.spawn(Note.of({ v: { key: "value" } }));
     const bytes = world.snapshot();
@@ -308,7 +366,9 @@ describe("a field that is not a number", () => {
 
   it("saves plain data in a json field as JSON does: what comes back is what JSON makes of it", () => {
     const world = new EcsWorld();
-    const Note = Component.define("fld/Note", { v: Field.json<JsonValue>() });
+    const Note = Component.define("fld/Note", {
+      v: Field.json<JsonValue>(null),
+    });
     const values: JsonValue[] = [
       { a: 1, b: [true, null, "x", { c: [] }] },
       [],
@@ -341,21 +401,21 @@ describe("a field that is not a number", () => {
 describe("a field that holds an object", () => {
   it("holds in a json field only what JSON holds, refused where the field is made", () => {
     const Notes = Component.define("fld/Notes", {
-      tags: Field.json<{ tags: string[] }>(),
+      tags: Field.json<{ tags: string[] }>({ tags: [] }),
       // @ts-expect-error A Date comes back from JSON as text: it is a ref.
-      when: Field.json<Date>(),
+      when: Field.json<Date>(new Date()),
       // @ts-expect-error A Map comes back from JSON as an empty object.
-      counts: Field.json<Map<string, number>>(),
+      counts: Field.json<Map<string, number>>(new Map()),
       // @ts-expect-error JSON cannot write a function at all.
-      call: Field.json<() => void>(),
+      call: Field.json<() => void>(() => {}),
     });
     expect(Notes.kinds).toEqual(["json", "json", "json", "json"]);
   });
 
   it("is read-only where it is read, and replaced with set", () => {
     const Tagged = Component.define("fld/Tagged", {
-      tags: Field.json<{ tags: string[] }>(),
-      labels: Field.ref(sets),
+      tags: Field.json<{ tags: string[] }>({ tags: [] }),
+      labels: Field.ref(sets, new Set()),
     });
     const world = new EcsWorld();
     const entity = world.spawn(

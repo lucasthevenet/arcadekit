@@ -227,7 +227,7 @@ const Enemy = Component.define("ov/Enemy", { hp: Field.i32 });
 
 const Tally = Singleton.define(
   "ov/Tally",
-  { hits: Field.schema(Schema.Array(Schema.Tuple([EntityId, EntityId]))) },
+  { hits: Field.schema(Schema.Array(Schema.Tuple([EntityId, EntityId])), []) },
   { hits: [] }
 );
 

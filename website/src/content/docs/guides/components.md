@@ -18,9 +18,9 @@ interface Sprite {
 const Hero = Component.define("game/Hero", {
   hp: Field.i32, // a number, in a typed array
   target: Field.entity, // an entity's id
-  name: Field.json<string>(), // plain data
-  inventory: Field.json<readonly string[]>(),
-  born: Field.schema(Schema.Date), // any value a schema describes
+  name: Field.json<string>(""), // plain data
+  inventory: Field.json<readonly string[]>([]),
+  born: Field.schema(Schema.Date, new Date(0)), // any value a schema describes
   sprite: Field.transient<Sprite>(), // not saved
 });
 ```
@@ -39,14 +39,15 @@ Other values use a field type that declares how snapshots and the hash treat the
 
 | Field | Holds | Saved and hashed |
 | --- | --- | --- |
-| `Field.json<T>()` | Plain data: a string, number, boolean, bigint, `null` or `undefined`, or an array or object of strings, numbers, booleans and `null` | As is. Arrays and objects as the text `JSON.stringify` produces |
-| `Field.schema(schema)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON encoding |
-| `Field.ref<T>(codec)` | Any value, with your own `encode` and `decode` to plain data and back | In its encoded form |
+| `Field.json<T>(initial)` | Plain data: a string, number, boolean, bigint, `null` or `undefined`, or an array or object of strings, numbers, booleans and `null` | As is. Arrays and objects as the text `JSON.stringify` produces |
+| `Field.schema(schema, initial)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON encoding |
+| `Field.ref<T>(codec, initial)` | Any value, with your own `encode` and `decode` to plain data and back | In its encoded form |
 | `Field.transient<T>()` | A handle or cache that another system can rebuild | Neither. It is `undefined` in a world loaded from a snapshot, and after a [rewind](capturing-and-rewinding.md) in a table that changed since the moment |
 
 - The hash covers exactly what a snapshot saves, in its saved form, so a world loaded from a snapshot has the same hash.
 - A snapshot fails, naming the field, when it meets a value it can't encode: a non-plain value in a `json` field, or one a codec or schema rejects. Loading fails the same way when a codec rejects a value.
-- A `json` field takes only a type that JSON holds. `Field.json<Date>()`, or an object with a `Map` in it, doesn't compile. Give such values a schema instead.
+- `initial` is what a `json`, `schema` or `ref` field holds in a component [added without a value](#create-and-change-entities), where a number field holds 0. A `transient` field holds `undefined` there, as its type says.
+- A `json` field takes only a type that JSON holds. `Field.json<Date>(new Date())`, or an object with a `Map` in it, doesn't compile. Give such values a schema instead.
 - The value of a `json`, `ref`, `schema` or `transient` field is read-only all the way down. Replace it with `world.set` or by assigning the field in `each`. A change in place doesn't compile, because no change query would see it and no refused action would undo it.
 - An `entity` field takes an entity and reads as an `Entity.Ref`, an id whose entity may be gone. The world's calls take an `Entity`, so pass the field through `world.live(hero.target)` first: it returns the entity while it is alive, and `undefined` once it is despawned.
 - Every hash encodes each `schema` and `ref` value, and stringifies each array or object in a `json` field. Use these fields for small or rarely changing data, and keep numbers that change every tick in numeric fields.
@@ -113,7 +114,7 @@ Inside the simulation, you name the components where you request what changes th
 - The names tell the compiler what a system changes, so it can [check the order of your systems](systems.md#order-systems).
 - The world a system requests has no `spawn`, `despawn`, `add` or `remove`. The set of entities changes through `Commands` alone, which applies the change when the system finishes.
 
-A component added without a value is all zeros, unless it gives `initial`. A number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. Give `initial` to a component whose zeros are wrong, such as a size. It is the value the component has when added bare:
+A component added without a value is all zeros, but for the `initial` of each `json`, `schema` and `ref` field, unless the component gives `initial` of its own. A number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. Give `initial` to a component whose zeros are wrong, such as a size. It is the value the component has when added bare:
 
 ```ts
 import { Component, Field } from "arcadekit";

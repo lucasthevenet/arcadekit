@@ -174,6 +174,13 @@ export interface FieldDef<T, C> {
   readonly kind: FieldKind;
   /** The codec of a `ref` field, and undefined on any other. */
   readonly codec?: RefCodec<T>;
+  /**
+   * What the field holds in a component added or spawned bare, with no value:
+   * a `json` or `ref` field's, given where the field is made. It is absent on
+   * a number field, which holds 0, and on a `transient` field, which holds
+   * undefined.
+   */
+  readonly initial?: T;
   /** Never set: it carries `T` in the type. */
   readonly _T?: T;
   /** Never set: it carries `C` in the type. */
@@ -187,7 +194,7 @@ const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
  * typed array. Any other field type says what a snapshot and the hash do with
  * its values.
  *
- *   const Hero = Component.define("game/Hero", { hp: Field.i32, name: Field.json<string>() })
+ *   const Hero = Component.define("game/Hero", { hp: Field.i32, name: Field.json<string>("") })
  *
  * **When to use**
  *
@@ -222,18 +229,24 @@ export const Field = {
    * array or object of strings, numbers, booleans and null. It is saved in
    * snapshots and included in the hash. An array or an object is saved and
    * hashed as its `JSON.stringify` text, so it loads as whatever `JSON.parse`
-   * makes of that text.
+   * makes of that text. `initial` is what it holds in a component given bare.
    */
-  json: <T extends JsonValue>(): FieldDef<Frozen<T>, Frozen<T>[]> =>
-    field<Frozen<T>, Frozen<T>[]>("json"),
+  json: <T extends JsonValue>(
+    initial: NoInfer<Frozen<T>>
+  ): FieldDef<Frozen<T>, Frozen<T>[]> => ({ kind: "json", initial }),
   /**
    * Any value, such as a `Date`, a `Map` or a class instance, with a codec
    * that converts it to plain data and back. Snapshots and the hash use its
-   * encoded form, so every hash encodes each value once.
+   * encoded form, so every hash encodes each value once. `initial` is what it
+   * holds in a component given bare.
    */
-  ref: <T>(codec: RefCodec<T>): FieldDef<Frozen<T>, Frozen<T>[]> => ({
+  ref: <T>(
+    codec: RefCodec<T>,
+    initial: NoInfer<Frozen<T>>
+  ): FieldDef<Frozen<T>, Frozen<T>[]> => ({
     kind: "ref",
     codec: codec as RefCodec<Frozen<T>>,
+    initial,
   }),
   /**
    * A value that isn't part of the game's state, such as a handle, a cache,
@@ -487,8 +500,10 @@ export interface ComponentDef<
    */
   readonly relation: OnTargetDespawn | undefined;
   /**
-   * Its value when it is added or spawned bare, with no value, and undefined
-   * when that value is all zeros. See `Component.define`.
+   * Its value when it is added or spawned bare, with no value: the `initial`
+   * `Component.define` was given, or else the `initial` of each `json` and
+   * `ref` field, with 0 in a number field and undefined in a `transient` one.
+   * It is undefined when that value is all zeros. See `Component.define`.
    */
   readonly initial: Readonly<ValueOf<S>> | undefined;
   /**
@@ -966,6 +981,18 @@ export const makeAccessor = (
   };
 };
 
+const bareOf = <S extends Schema>(schema: S): ValueOf<S> | undefined => {
+  const fieldDefs = Object.entries(schema);
+  if (!fieldDefs.some(([, { kind }]) => kind === "json" || kind === "ref")) {
+    return undefined;
+  }
+  const value: Record<string, unknown> = {};
+  for (const [name, fieldDef] of fieldDefs) {
+    value[name] = isBoxed(fieldDef.kind) ? fieldDef.initial : 0;
+  }
+  return value as ValueOf<S>;
+};
+
 const define = <
   S extends Schema,
   St extends Storage = "table",
@@ -993,7 +1020,7 @@ const define = <
     isTag: fields.length === 0,
     single: options?.single === true,
     relation: options?.relation,
-    initial: options?.initial,
+    initial: options?.initial ?? bareOf(schema),
     requires:
       options?.requires === undefined ? [] : closeRequires(options.requires),
     of: (value) => ({ def, value }),
@@ -1058,7 +1085,7 @@ export const Component = {
     schema: S,
     initial: ValueOf<S>
   ): SingletonSpec<S> => ({
-    component: define(name, schema, { single: true }),
+    component: define(name, schema, { single: true, initial }),
     initial,
   }),
   /**

@@ -1074,9 +1074,9 @@ const Held = Singleton.define(
      * ticks it last went down and up in: a frame after several ticks reads
      * them.
      */
-    buttons: Field.json<Buttons>(),
+    buttons: Field.json<Buttons>({}),
     /** Every axis not at 0, a device's or a control's. */
-    axes: Field.json<Axes>(),
+    axes: Field.json<Axes>({}),
   },
   { buttons: {}, axes: {} }
 );

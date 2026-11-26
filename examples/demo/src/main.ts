@@ -86,7 +86,7 @@ const launch = Action.handler(Launch, function* ({ speed }) {
 
 // The demo itself is a plugin too: the ones it is made of, and what no
 // plugin of its has.
-const Name = Component.define("demo/Name", { value: Field.json<string>() });
+const Name = Component.define("demo/Name", { value: Field.json<string>("") });
 const Named = Query.all(Name, Position);
 const Demo = Plugin.make("Demo", {
   plugins: [Physics.plugin, Timer.plugin, Sketch.plugin],
