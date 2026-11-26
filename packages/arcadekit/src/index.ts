@@ -45,6 +45,7 @@ export type {
 } from "./ecs/query.ts";
 export * as Event from "./Event.ts";
 export * as Field from "./Field.ts";
+export * as Grid from "./Grid.ts";
 export * as Input from "./Input.ts";
 export * as Journal from "./Journal.ts";
 export * as Migrate from "./Migrate.ts";
