@@ -1,5 +1,14 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  Option,
+  Schema,
+} from "effect";
 
 import {
   World as EcsWorld,
@@ -20,11 +29,13 @@ import {
   Query,
   Random,
   Save,
+  Singleton,
   Sound,
   State,
   System,
   Time,
   Timeline,
+  Timer,
   View,
   World,
 } from "../src/index.ts";
@@ -1183,5 +1194,155 @@ describe("a game saved to a slot", () => {
       expect(yield* store.slots).toEqual(["two"]);
       expect(Option.getOrThrow(yield* Save.read("two"))).toEqual(save);
     }).pipe(Effect.provide(Save.layer(Save.makeMemory())))
+  );
+});
+
+// --- a save the rules ask for --------------------------------------------------------
+
+const Coins = Singleton.define("sv/Coins", { got: Field.i32 }, { got: 0 });
+const Grab = Action.define("sv/Grab", Schema.Struct({}));
+const Finish = Action.define("sv/Finish", Schema.Struct({}));
+const Levels = App.define({
+  systems: [
+    // The level ends with the third coin, and the rules ask to keep it.
+    System.tick("sv/LevelEnd", function* () {
+      if ((yield* Coins).got === 3) {
+        (yield* Save.Asked.emits).emit({ slot: "level" });
+      }
+    }),
+    // And every second of the game's time.
+    System.tick("sv/Every", function* () {
+      (yield* Save.Asked.emits).emit({ slot: "auto" });
+    }).pipe(Timer.every(1)),
+  ],
+  handlers: [
+    Action.handler(Grab, function* () {
+      (yield* Coins.writes).got++;
+    }),
+    Action.handler(Finish, function* () {
+      (yield* Save.Asked.emits).emit({ slot: "finished" });
+    }),
+  ],
+});
+
+describe("a save the rules ask for", () => {
+  it.effect(
+    "is taken after the tick that asked, and kept in its slot, with nothing outside watching the world",
+    () => {
+      const slots = Save.makeMemory();
+      return Effect.gen(function* () {
+        const app = yield* App.make(Levels);
+        const world = yield* app.read(World);
+        yield* Save.autosave(app);
+        const hashes: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          yield* app.enqueue(Grab, {});
+          yield* app.tick(1 / 60);
+          hashes.push(world.hash());
+          expect(yield* slots.slots).toEqual(i < 2 ? [] : ["level"]);
+        }
+        // The game as the tick that asked left it.
+        const level = Option.getOrThrow(yield* Save.read("level"));
+        const loaded = yield* App.make(Levels, { save: level });
+        expect((yield* loaded.read(World)).hash()).toBe(hashes[2]);
+        // A handler that a dispatch runs asks as well, and the save is of
+        // the game as the dispatch left it.
+        yield* app.dispatch(Finish, {});
+        const finished = world.hash();
+        yield* app.tick(1 / 60);
+        yield* app.load(Option.getOrThrow(yield* Save.read("finished")));
+        expect(world.hash()).toBe(finished);
+      }).pipe(Effect.provide(Save.layer(slots)), Effect.scoped);
+    }
+  );
+
+  it.effect(
+    "is kept on the interval the rules keep, under Driver.run, and the game goes on from it after a reload",
+    () =>
+      Effect.gen(function* () {
+        const slots = Save.makeMemory();
+        const display = Driver.makeManualDisplay();
+        let made: App.Any | undefined;
+        const visit = (save?: Save.Save) =>
+          Effect.forkScoped(
+            Driver.run(Levels, {
+              hz: 60,
+              ...(save === undefined ? {} : { save }),
+              ready: (app) =>
+                Effect.andThen(
+                  Effect.sync(() => {
+                    made = app;
+                  }),
+                  Save.autosave(app)
+                ),
+            }).pipe(
+              Effect.provide(
+                Layer.merge(Driver.layer(display), Save.layer(slots))
+              )
+            ),
+            { startImmediately: true }
+          );
+        let now = 0;
+        const frames = (count: number) => {
+          for (let i = 0; i < count; i++) {
+            display.frame(now);
+            now += 1000 / 60;
+          }
+        };
+        const first = yield* visit();
+        frames(1);
+        frames(150);
+        const world = yield* made!.read(World);
+        expect(made!.time.tick).toBe(150);
+        // Kept at one second, and again at two.
+        const kept = Option.getOrThrow(
+          yield* Save.read("auto").pipe(Effect.provide(Save.layer(slots)))
+        );
+        const at = yield* App.make(Levels, { save: kept });
+        expect(at.time.tick).toBe(120);
+        const keptHash = (yield* at.read(World)).hash();
+        expect(world.hash()).not.toBe(keptHash);
+        yield* Fiber.interrupt(first);
+
+        // A reload: the game starts from the slot, where it was kept.
+        yield* visit(kept);
+        frames(1);
+        expect(made!.time.tick).toBe(120);
+        expect((yield* made!.read(World)).hash()).toBe(keptHash);
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "that can't be kept is logged as an error, and the game goes on",
+    () =>
+      Effect.gen(function* () {
+        const logged: string[] = [];
+        const full: Save.StoreShape = {
+          ...Save.makeMemory(),
+          set: (slot) =>
+            Effect.fail(new Save.StoreFailed({ slot, message: "It is full." })),
+        };
+        yield* Effect.gen(function* () {
+          const app = yield* App.make(Levels);
+          yield* Save.autosave(app);
+          yield* app.dispatch(Finish, {});
+          yield* app.tick(1 / 60);
+          expect(app.time.tick).toBe(1);
+        }).pipe(
+          Effect.provide(
+            Layer.merge(
+              Save.layer(full),
+              Logger.layer([
+                Logger.make((entry) => {
+                  logged.push(String(entry.message));
+                }),
+              ])
+            )
+          )
+        );
+        expect(logged).toEqual([
+          'Save.autosave could not keep the save the game asked for in "finished": It is full.',
+        ]);
+      }).pipe(Effect.scoped)
   );
 });

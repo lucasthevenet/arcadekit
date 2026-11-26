@@ -17,16 +17,49 @@ export const tickOf = (save: Save.Save): number => {
   return typeof tick === "number" ? tick : 0;
 };
 
+/** An entry of the log, with what became of it once it was applied. */
+interface Fated {
+  refused?: string;
+}
+
 /**
- * A place in a log: a tick, and the length the log had then. Where a
- * recording begins when it is made since a save, and what a moment of a
- * game holds of its log.
+ * One change of a log: an entry logged, what became of an entry once it was
+ * applied, with what it was before, or a run of deltas begun. Each points at
+ * the change before it, so that the log of every moment a game was at is a
+ * path back from its last change: a rewind undoes the changes back to where
+ * the two paths meet, and does again those of the moment's own.
+ */
+interface Change {
+  readonly step:
+    | { readonly entry: Action.LogEntry }
+    | {
+        readonly fated: Fated;
+        readonly refused: string;
+        readonly was: string | undefined;
+      }
+    | { readonly run: { readonly tick: number; readonly delta: number } }
+    | undefined;
+  readonly before: Change | undefined;
+  /** How many changes lead to it. */
+  readonly depth: number;
+}
+
+/** Where a log begins. */
+const begun = (): Change => ({ step: undefined, before: undefined, depth: 0 });
+
+/**
+ * A place in a log: a tick, and the length the log had then, which is what a
+ * moment of a game holds of its log.
  *
  * @internal
  */
 export interface Since {
   readonly tick: number;
   readonly logLength: number;
+  /** The log's last change, from which a rewind finds its way there. */
+  readonly last: Change;
+  /** How many saves the app had loaded in place. */
+  readonly loads: number;
 }
 
 /**
@@ -48,6 +81,8 @@ export class Log implements Store<Since> {
   private began: number;
   /** The delta of every tick run since, in runs of ticks that took the same. */
   private readonly deltas: { tick: number; delta: number }[] = [];
+  /** Its last change. */
+  private last: Change = begun();
   private readonly world: World;
   private readonly time: { readonly tick: number };
   private readonly checkpointEvery: number;
@@ -82,6 +117,7 @@ export class Log implements Store<Since> {
    * of an app made from it would start.
    */
   restart(save: Save.Save): void {
+    this.last = begun();
     this.entries.length = 0;
     this.deltas.length = 0;
     this.began = this.time.tick;
@@ -89,11 +125,29 @@ export class Log implements Store<Since> {
     this.loads++;
   }
 
+  /** Makes a change, the last from now on. */
+  private change(step: Change["step"]): void {
+    this.last = { step, before: this.last, depth: this.last.depth + 1 };
+  }
+
+  /** Logs an entry. */
+  private log(entry: Action.LogEntry): void {
+    this.entries.push(entry);
+    this.change({ entry });
+  }
+
   /** Records the world's hash now, and returns it. */
   checkpoint(): number {
     const hash = this.world._fullHash();
-    this.entries.push({ tick: this.time.tick, hash });
+    this.log({ tick: this.time.tick, hash });
     return hash;
+  }
+
+  /** Says of an enqueued action's entry that the tick that applied it refused it. */
+  refused(entry: { refused?: string }, reason: string): void {
+    const was = entry.refused;
+    entry.refused = reason;
+    this.change({ fated: entry, refused: reason, was });
   }
 
   /**
@@ -134,13 +188,13 @@ export class Log implements Store<Since> {
       ...(from === undefined ? {} : { from }),
       queued: true,
     };
-    this.entries.push(entry);
+    this.log(entry);
     return entry;
   }
 
   /** Logs an action that was dispatched and accepted. */
   accepted(name: string, payload: unknown, from: string | undefined): void {
-    this.entries.push({
+    this.log({
       tick: this.time.tick,
       name,
       payload,
@@ -151,7 +205,9 @@ export class Log implements Store<Since> {
   /** A tick is about to run, and takes `delta`. Before the time moves. */
   ticking(delta: number): void {
     if (this.deltas.at(-1)?.delta !== delta) {
-      this.deltas.push({ tick: this.time.tick, delta });
+      const run = { tick: this.time.tick, delta };
+      this.deltas.push(run);
+      this.change({ run });
     }
   }
 
@@ -176,15 +232,77 @@ export class Log implements Store<Since> {
   }
 
   capture(): Since {
-    return { tick: this.time.tick, logLength: this.entries.length };
+    return {
+      tick: this.time.tick,
+      logLength: this.entries.length,
+      last: this.last,
+      loads: this.loads,
+    };
   }
 
-  /** Takes the log back to the length it had when the game was at a tick. */
-  rewind({ logLength, tick }: Since): void {
-    this.entries.length = logLength;
-    while ((this.deltas.at(-1)?.tick ?? -1) >= tick) {
-      this.deltas.pop();
+  /**
+   * Why the log can't go with the game to a place, or undefined when it can:
+   * one of the game the app had before it last loaded a save.
+   */
+  refuses(since: Since): string | undefined {
+    return since.loads === this.loads
+      ? undefined
+      : "captured before the app loaded a save, of the game the load replaced. To go back there, save that game and load the save.";
+  }
+
+  /**
+   * Puts the log as it was at a place, whichever way the game went since:
+   * back, or to a future it had given up. What became of each entry goes
+   * with it, so an action that waits again there has had nothing become of
+   * it yet.
+   */
+  rewind(since: Since): void {
+    const { deltas, entries } = this;
+    let from = this.last;
+    let to = since.last;
+    const again: Change[] = [];
+    const undo = (change: Change): Change => {
+      const { step } = change;
+      if (step === undefined) {
+        throw new Error("A log was rewound past where it began.");
+      }
+      if ("entry" in step) {
+        entries.pop();
+      } else if ("run" in step) {
+        deltas.pop();
+      } else if (step.was === undefined) {
+        delete step.fated.refused;
+      } else {
+        step.fated.refused = step.was;
+      }
+      return change.before!;
+    };
+    while (to.depth > from.depth) {
+      again.push(to);
+      to = to.before!;
     }
+    while (from.depth > to.depth) {
+      from = undo(from);
+    }
+    while (from !== to) {
+      from = undo(from);
+      again.push(to);
+      to = to.before!;
+    }
+    for (let i = again.length - 1; i >= 0; i--) {
+      const { step } = again[i]!;
+      if (step === undefined) {
+        continue;
+      }
+      if ("entry" in step) {
+        entries.push(step.entry);
+      } else if ("run" in step) {
+        deltas.push(step.run);
+      } else {
+        step.fated.refused = step.refused;
+      }
+    }
+    this.last = since.last;
   }
 
   // Not the snapshot's to empty: a world that is restored keeps its log.

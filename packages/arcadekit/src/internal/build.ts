@@ -33,7 +33,8 @@ import * as Inbox from "./inbox.ts";
 import { Intake } from "./intake.ts";
 import { Log } from "./journal.ts";
 import * as Loop from "./loop.ts";
-import { hold } from "./parts.ts";
+import { hold, moved } from "./parts.ts";
+import type { Parts } from "./parts.ts";
 import { flatten } from "./plugins.ts";
 import * as Runner from "./runner.ts";
 import { Visits, into, takeSave } from "./save.ts";
@@ -336,6 +337,13 @@ const assemble = <
       Effect.suspend(() => loop.frame(alpha, delta) as Ran);
     const input = (): Effect.Effect<void, TickError<S, P>> =>
       Effect.suspend(() => loop.input() as Ran);
+    const after: Parts["after"] = new Set();
+    const parts: Parts = { world, commands, events, dispatcher, log, after };
+    /** What ran, then what code outside the game has the app do once it has. */
+    const then = <A, E>(ran: Exit.Exit<A, E>): Effect.Effect<A, E> =>
+      after.size === 0 || Exit.isFailure(ran)
+        ? ran
+        : Effect.as(moved(parts), ran.value);
     const tick = (delta: number): Effect.Effect<void, TickError<S, P>> =>
       Effect.suspend(() => {
         if (inbox.diverted !== undefined) {
@@ -343,7 +351,7 @@ const assemble = <
             "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
           );
         }
-        return loop.tick(delta) as Ran;
+        return then(loop.tick(delta) as Ran);
       });
 
     yield* Scope.addFinalizer(
@@ -397,7 +405,7 @@ const assemble = <
           return takeSave(world, commands, version, log.entries.length);
         }),
       load: (given) =>
-        Effect.suspend(() => {
+        Effect.suspend((): Effect.Effect<void, Save.LoadRefused> => {
           runner.whileIdle(
             (busy) =>
               `load() was called during a ${busy}. A save is loaded between ticks.`
@@ -419,7 +427,7 @@ const assemble = <
           prepare(world, schedule.hooked, true);
           events.restarted(time.tick);
           log.restart(loaded.value);
-          return Exit.void;
+          return then(Exit.void);
         }),
       get settled() {
         return loop.settled();
@@ -456,26 +464,27 @@ const assemble = <
       input,
       dispatch: (action, payload) =>
         // What the action's handler returns or fails with.
-        Effect.suspend(
-          () => inbox.dispatch(action, payload) as Exit.Exit<never, never>
+        Effect.suspend(() =>
+          then(inbox.dispatch(action, payload) as Exit.Exit<never, never>)
         ),
       enqueue: (action, payload) =>
         Effect.suspend(() => inbox.enqueue(action, payload)),
       dispatchByName: (name, payload, from) =>
         // What the action's handler fails with, or why it was not applied.
-        Effect.suspend(
-          () =>
+        Effect.suspend(() =>
+          then(
             inbox.dispatchByName(name, payload, from) as Exit.Exit<
               unknown,
               never
             >
+          )
         ),
       enqueueByName: (name, payload, from) =>
         Effect.sync(() => {
           inbox.enqueueByName(name, payload, from);
         }),
     };
-    hold(app, { world, commands, events, dispatcher, log });
+    hold(app, parts);
     const take: Built<TickError<S, P>>["take"] = (issued) => {
       if (inbox.diverted !== undefined) {
         throw new Error(

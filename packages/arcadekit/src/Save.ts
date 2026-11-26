@@ -38,11 +38,16 @@ import {
   Option,
   Schema,
 } from "effect";
+import type { Scope } from "effect";
 
+import type * as App from "./App.ts";
 import { readSnapshot, writeSnapshot } from "./ecs/contents.ts";
 import type { SnapshotContents } from "./ecs/contents.ts";
 import { SnapshotError } from "./ecs/snapshot.ts";
 import type { SnapshotProblem } from "./ecs/snapshot.ts";
+import * as Event from "./Event.ts";
+import { said } from "./internal/intake.ts";
+import { partsOf } from "./internal/parts.ts";
 import { loading } from "./internal/save.ts";
 
 /**
@@ -439,6 +444,90 @@ export const read = Effect.fn("Save.read")(function* (slot: string) {
   }
   return Option.some(yield* decode(bytes));
 });
+
+// --- a save the game asks for -------------------------------------------------------
+
+/**
+ * Asks for a save of the game in a slot, from its rules: the app takes it
+ * once the tick that asked for it has run, and keeps it in the slot, when
+ * `Save.autosave` keeps the app's saves. It is an event like any other, so a
+ * replay asks again, and a game whose saves nothing keeps asks for nothing.
+ *
+ *   const LevelEnd = State.onEnter(Level, "won", "game/Checkpoint", function* () {
+ *     (yield* Save.Asked.emits).emit({ slot: "auto" })
+ *   })
+ *   const Every = System.tick("game/Autosave", function* () {
+ *     (yield* Save.Asked.emits).emit({ slot: "auto" })
+ *   }).pipe(Timer.every(60))
+ *
+ * @category Events
+ */
+export const Asked = Event.define(
+  "arcadekit/Save.Asked",
+  Schema.Struct({ slot: Schema.String })
+);
+
+/**
+ * Keeps the saves a game asks for with `Save.Asked`, for as long as the scope
+ * it runs in lasts: after each tick and each dispatched action in which the
+ * rules asked, it takes the game's save and writes it to each slot they asked
+ * for, in `Save.Store`. Nothing outside the game watches its world for the
+ * moment: the rules say when.
+ *
+ *   Driver.run(Game, { hz: 60, ready: (app) => Save.autosave(app) }).pipe(
+ *     Effect.provide(Save.layer(Browser.saves("mygame")))
+ *   )
+ *
+ * **Details**
+ *
+ * - The save is taken between two ticks, of the game as the tick that asked
+ *   left it, and written before the next tick runs.
+ * - A save that can't be taken, or a slot the store can't keep, is logged as
+ *   an error with what went wrong, and the game goes on. The next ask tries
+ *   again.
+ *
+ * @category Running
+ */
+export const autosave = (
+  app: Pick<App.Any, "phase" | "save">
+): Effect.Effect<void, never, Store | Scope.Scope> =>
+  Effect.gen(function* () {
+    if (app.phase !== "idle") {
+      throw new Error(
+        "Save.autosave() was called while the app was running something. The saves of a game are kept from between two ticks."
+      );
+    }
+    const store = yield* Store;
+    const { after, events } = partsOf(app);
+    const asked = events.handle(Asked);
+    const step = Effect.fnUntraced(function* () {
+      const slots = [...new Set(asked.read().map(({ slot }) => slot))];
+      if (slots.length === 0) {
+        return;
+      }
+      const taken = yield* Effect.exit(app.save());
+      if (Exit.isFailure(taken)) {
+        return yield* Effect.logError(
+          `Save.autosave could not take the save the game asked for in ${slots.map((slot) => `"${slot}"`).join(", ")}: ${said(Cause.squash(taken.cause))}`
+        );
+      }
+      const bytes = encode(taken.value);
+      for (const slot of slots) {
+        const kept = yield* Effect.exit(store.set(slot, bytes));
+        if (Exit.isFailure(kept)) {
+          yield* Effect.logError(
+            `Save.autosave could not keep the save the game asked for in "${slot}": ${said(Cause.squash(kept.cause))}`
+          );
+        }
+      }
+    });
+    after.add(step);
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        after.delete(step);
+      })
+    );
+  });
 
 /**
  * The name of the store that holds what an app's change queries have yet to

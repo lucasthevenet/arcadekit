@@ -2,7 +2,7 @@ import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Layer, Schema } from "effect";
 
 import { entityOf, idOf } from "../src/ecs/component.ts";
 import { World as EcsWorld, readSnapshot } from "../src/ecs/index.ts";
@@ -12,23 +12,27 @@ import {
   App,
   Commands,
   Component,
+  Driver,
   Event,
   Events,
   Field,
+  Input,
   Journal,
+  Plugin,
   Query,
   Save,
   Singleton,
   System,
   Time,
   Timeline,
+  View,
   World,
 } from "../src/index.ts";
 import type { Entity, JsonValue } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";
 import { partsOf } from "../src/internal/parts.ts";
 import { Session } from "../src/net/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 import {
   CoinGame,
   DELTA,
@@ -129,6 +133,51 @@ describe("a game that is put back to a moment", () => {
         );
       }
     })
+  );
+
+  it.effect(
+    "has the log it had there, to a moment of a future it gave up too, so that what it records replays to it",
+    () =>
+      Effect.gen(function* () {
+        for (const seed of [1, 2, 3]) {
+          const dice = new EcsWorld({ seed: seed + 100 }).random;
+          yield* withApp(game(seed), (app, world) =>
+            Effect.gen(function* () {
+              const moments: {
+                readonly moment: Timeline.Moment;
+                readonly log: unknown;
+                readonly hash: number;
+              }[] = [];
+              for (let step = 0; step < 60; step++) {
+                const roll = dice.int(1, 6);
+                if (roll <= 3) {
+                  // Some of it refused, which the log says.
+                  yield* stretch(app, dice.int(1, 99), dice.int(1, 4));
+                } else if (roll === 4) {
+                  moments.push({
+                    moment: yield* captured(app),
+                    log: structuredClone(app.actionLog),
+                    hash: world.hash(),
+                  });
+                } else if (moments.length > 0) {
+                  const to = dice.pick(moments);
+                  yield* Timeline.rewind(app, to.moment, {
+                    again: roll === 6,
+                  });
+                  expect(app.actionLog).toEqual(to.log);
+                  expect(world.hash()).toBe(to.hash);
+                }
+              }
+              const replayed = yield* Journal.replay(
+                yield* app.record(),
+                CoinGame,
+                { checkpointEvery: 1 }
+              );
+              expect((yield* replayed.read(World)).hash()).toBe(world.hash());
+            })
+          );
+        }
+      })
   );
 
   it.effect("is the same game as one that never went anywhere else", () =>
@@ -1241,5 +1290,201 @@ describe("Session.syncTest", () => {
             })
         );
       })
+  );
+});
+
+// --- a puzzle whose turns are kept, played under Driver.run -------------------------
+
+const Cell = Singleton.define(
+  "vr/Cell",
+  { x: Field.i32, y: Field.i32 },
+  { x: 0, y: 0 }
+);
+const Step = Action.define(
+  "vr/Step",
+  Schema.Struct({ dx: Schema.Int, dy: Schema.Int })
+);
+const Where = View.define("vr/Where", { x: 0, y: 0 });
+/** The keys of the puzzle: the arrows move, Z goes back a turn and Y forward. */
+const Keys = System.input("vr/Keys", function* () {
+  const { pressed } = yield* Input.Devices;
+  const { enqueue } = yield* Action.Actions;
+  for (const code of pressed) {
+    if (code === "ArrowRight") {
+      enqueue(Step, { dx: 1, dy: 0 });
+    } else if (code === "ArrowDown") {
+      enqueue(Step, { dx: 0, dy: 1 });
+    } else if (code === "KeyZ") {
+      enqueue(Timeline.Undo, undefined);
+    } else if (code === "KeyY") {
+      enqueue(Timeline.Redo, undefined);
+    }
+  }
+});
+const Puzzle = App.define({
+  plugins: [
+    Plugin.make("vr/Puzzle", {
+      plugins: [Timeline.plugin, View.plugin],
+      systems: [
+        Keys,
+        View.publish(Where, function* () {
+          const { x, y } = yield* Cell;
+          return { x, y };
+        }),
+      ],
+      handlers: [
+        Action.handler(Step, function* ({ dx, dy }) {
+          const cell = yield* Cell.writes;
+          cell.x += dx;
+          cell.y += dy;
+        }),
+      ],
+    }),
+  ],
+});
+
+describe("the turns of a game kept by Timeline.keep", () => {
+  it.effect(
+    "go back three turns and forward one under Driver.run, from the keys and the UI, to where the game was",
+    () =>
+      Effect.gen(function* () {
+        const display = Driver.makeManualDisplay();
+        const keys = Input.makeManualSource();
+        let ui: View.Bridge<typeof Timeline.Undo> | undefined;
+        let made: App.Any | undefined;
+        yield* Effect.forkScoped(
+          Driver.run(Puzzle, {
+            hz: 60,
+            ticks: "whenNeeded",
+            ready: (app) =>
+              Effect.andThen(
+                Effect.sync(() => {
+                  made = app;
+                }),
+                Timeline.keep(app)
+              ),
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                Driver.layer(display),
+                Input.layer(keys),
+                View.mount(Puzzle, (bridge) => {
+                  ui = bridge;
+                })
+              )
+            )
+          ),
+          { startImmediately: true }
+        );
+        let now = 0;
+        /** Frames until the game is at rest. */
+        const rest = () => {
+          for (let i = 0; i < 10; i++) {
+            display.frame(now);
+            now += 1000 / 60;
+          }
+        };
+        const press = (code: string) => {
+          keys.press(code);
+          rest();
+          keys.release(code);
+          rest();
+        };
+        const app = made!;
+        const world = yield* app.read(World);
+        ui!.subscribe(Where, () => {});
+        rest();
+        const hashes = [world.hash()];
+        for (const code of [
+          "ArrowRight",
+          "ArrowDown",
+          "ArrowRight",
+          "ArrowDown",
+        ]) {
+          press(code);
+          hashes.push(world.hash());
+        }
+        expect(yield* app.read(Cell)).toMatchObject({ x: 2, y: 2 });
+        expect(new Set(hashes).size).toBe(5);
+
+        // Two turns back from the keys, and one from the UI.
+        press("KeyZ");
+        expect(world.hash()).toBe(hashes[3]);
+        press("KeyZ");
+        ui!.send(Timeline.Undo);
+        rest();
+        expect(world.hash()).toBe(hashes[1]);
+        expect(ui!.get(Where)).toEqual({ x: 1, y: 0 });
+        // And one forward again.
+        press("KeyY");
+        expect(world.hash()).toBe(hashes[2]);
+        expect(ui!.get(Where)).toEqual({ x: 1, y: 1 });
+        // The log went with it: what it records is the two turns left.
+        const replayed = yield* Journal.replay(yield* app.record(), Puzzle);
+        expect((yield* replayed.read(World)).hash()).toBe(hashes[2]);
+        expect(moves(app.actionLog).map((entry) => entry.name)).toEqual([
+          "vr/Step",
+          "vr/Step",
+        ]);
+
+        // A turn played gives up what was ahead: there is nothing to redo.
+        press("ArrowRight");
+        press("KeyY");
+        // The tick that applied it ran, and went nowhere.
+        expect(yield* app.read(Cell)).toMatchObject({ x: 2, y: 1 });
+        expect(yield* Timeline.redo(app)).toBe(false);
+        expect(yield* Timeline.undo(app)).toBe(true);
+        expect(world.hash()).toBe(hashes[2]);
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "go back a turn of moves dispatched or enqueued from outside, and are given up by a load",
+    () =>
+      withApp(App.make(Puzzle), (app, world) =>
+        Effect.gen(function* () {
+          yield* Timeline.keep(app);
+          const start = world.hash();
+          yield* app.dispatch(Step, { dx: 1, dy: 0 });
+          const one = world.hash();
+          yield* app.enqueue(Step, { dx: 0, dy: 1 });
+          yield* app.tick(1 / 60);
+          // A tick with nothing from outside is no turn.
+          yield* app.tick(1 / 60);
+          expect(yield* Timeline.undo(app)).toBe(true);
+          expect(world.hash()).toBe(one);
+          expect(yield* Timeline.undo(app)).toBe(true);
+          expect(world.hash()).toBe(start);
+          expect(yield* Timeline.undo(app)).toBe(false);
+          expect(yield* Timeline.redo(app)).toBe(true);
+          expect(world.hash()).toBe(one);
+
+          const save = unwrap(yield* Effect.exit(app.save()));
+          yield* app.dispatch(Step, { dx: 1, dy: 0 });
+          yield* app.load(save);
+          expect(yield* Timeline.undo(app)).toBe(false);
+          expect(yield* Timeline.redo(app)).toBe(false);
+        }).pipe(Effect.scoped)
+      )
+  );
+
+  it.effect(
+    "are kept once, of an app that ticks by itself, between ticks",
+    () =>
+      withApp(App.make(Puzzle), (app) =>
+        Effect.gen(function* () {
+          expect(yield* thrown(Timeline.undo(app))).toThrow(
+            "Timeline.undo() was called on an app whose turns nothing keeps. Keep them with Timeline.keep(app), as Driver.run's ready can."
+          );
+          yield* Timeline.keep(app);
+          expect(yield* thrown(Timeline.keep(app))).toThrow(
+            "Timeline.keep() was called on an app whose turns are kept already. Keep them once."
+          );
+          // As a session steps it, with no tick.
+          const steered: Omit<typeof app, "tick"> = app;
+          // @ts-expect-error an app a session steps has no tick of its own
+          expect(Timeline.keep(steered)).toBeDefined();
+        }).pipe(Effect.scoped)
+      )
   );
 });

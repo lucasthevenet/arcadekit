@@ -8,7 +8,12 @@
  *
  * An undo, a search ahead or a rewind mechanic keeps moments, and a session
  * that runs ahead rewinds to them. A game that never goes back imports none
- * of it.
+ * of it. An undo keeps the game's turns with `Timeline.keep`, and goes back
+ * one with `Timeline.undo`, or from the game's keys and UI with the action
+ * `Timeline.Undo`:
+ *
+ *   yield* Timeline.keep(app)                     // in Driver.run's ready
+ *   yield* Timeline.undo(app)                     // the game before its last turn
  *
  * A moment holds what a save holds, and no more: the world, with the game's
  * time, the actions queued for the next tick and the events waiting to be
@@ -16,15 +21,21 @@
  * holds the queued actions and the events as they are, without encoding
  * them, and it belongs to one app in one run of the program.
  */
-import { Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
+import type { Scope } from "effect";
 
+import * as Action from "./Action.ts";
 import type * as App from "./App.ts";
 import type { SavedChanges } from "./ecs/changes.ts";
 import type { World, Moment as WorldMoment } from "./ecs/world.ts";
+import * as Event from "./Event.ts";
+import { said } from "./internal/intake.ts";
+import type { Since } from "./internal/journal.ts";
 import type { Told } from "./internal/outbox.ts";
-import { partsOf } from "./internal/parts.ts";
+import { moved, partsOf } from "./internal/parts.ts";
 import { taking } from "./internal/save.ts";
 import { READER } from "./internal/stage.ts";
+import * as Plugin from "./Plugin.ts";
 import * as Save from "./Save.ts";
 
 /**
@@ -60,8 +71,8 @@ class Held implements Moment {
     readonly changes: SavedChanges[],
     /** Whether `changes` holds the frame and input stages' places too. */
     readonly stages: boolean,
-    /** How many saves the app had loaded in place: a load leaves it behind. */
-    readonly loads: number
+    /** Where the game was in its log, which goes back with it. */
+    readonly since: Since
   ) {}
 }
 
@@ -96,28 +107,31 @@ export const capture = (
 ): Effect.Effect<Moment, Save.Refused> =>
   Effect.suspend(() => {
     between(app, "capture", "A game is captured between ticks.");
-    const { time } = app;
-    const { commands, events, log, world } = partsOf(app);
-    return Exit.map(
-      taking(commands, "capture", () => world._capture()),
-      (of): Moment =>
-        new Held(
-          time.tick,
-          world,
-          of,
-          events.mark(),
-          // What runs between ticks has everything still to draw, unless it
-          // is to draw nothing before the game comes back here.
-          world.saveChanges(
-            options?.stages === true
-              ? undefined
-              : (reader) => !reader.startsWith(READER)
-          ),
-          options?.stages === true,
-          log.loads
-        )
-    );
+    return held(app, options?.stages === true);
   });
+
+/** Captures a game as it is, between ticks, as `capture` does. */
+const held = (app: Game, stages: boolean): Exit.Exit<Held, Save.Refused> => {
+  const { time } = app;
+  const { commands, events, log, world } = partsOf(app);
+  return Exit.map(
+    taking(commands, "capture", () => world._capture()),
+    (of) =>
+      new Held(
+        time.tick,
+        world,
+        of,
+        events.mark(),
+        // What runs between ticks has everything still to draw, unless it
+        // is to draw nothing before the game comes back here.
+        world.saveChanges(
+          stages ? undefined : (reader) => !reader.startsWith(READER)
+        ),
+        stages,
+        log.capture()
+      )
+  );
+};
 
 /**
  * Puts a game back, in place, to a moment `capture` took of it. The app, its
@@ -155,30 +169,291 @@ export const rewind = (
   moment: Moment,
   options?: { readonly again?: boolean }
 ): Effect.Effect<void> =>
-  Effect.sync(() => {
+  Effect.suspend(() => {
     between(app, "rewind", "A game is put back between ticks.");
-    const { commands, dispatcher, events, log, world } = partsOf(app);
-    if (!(moment instanceof Held) || moment.of !== world) {
-      throw new Error(
-        "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
-      );
-    }
-    if (moment.loads !== log.loads) {
-      throw new Error(
-        "Timeline.rewind() was given a moment captured before the app loaded a save, of the game the load replaced. To go back there, save that game and load the save."
-      );
-    }
-    dispatcher.flush();
-    // What is queued on the buffer was never part of the world.
-    commands.rollback(0);
     const again = options?.again === true;
-    world._rewind(
-      moment.world,
-      moment.changes,
-      again && !moment.stages
-        ? (reader) => reader.startsWith(READER)
-        : undefined
+    putBack(app, moment, again);
+    // A game put back to run the same ticks again has not gone anywhere yet.
+    return again ? Effect.void : moved(partsOf(app));
+  });
+
+/** Puts a game back to a moment, between ticks, as `rewind` does. */
+const putBack = (app: Game, moment: Moment, again: boolean): void => {
+  const { commands, dispatcher, events, log, world } = partsOf(app);
+  if (!(moment instanceof Held) || moment.of !== world) {
+    throw new Error(
+      "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
     );
-    events.rewound(moment.told, again);
-    commands.apply();
+  }
+  const refused = log.refuses(moment.since);
+  if (refused !== undefined) {
+    throw new Error(`Timeline.rewind() was given a moment ${refused}`);
+  }
+  dispatcher.flush();
+  // What is queued on the buffer was never part of the world.
+  commands.rollback(0);
+  world._rewind(
+    moment.world,
+    moment.changes,
+    again && !moment.stages ? (reader) => reader.startsWith(READER) : undefined
+  );
+  events.rewound(moment.told, again);
+  commands.apply();
+};
+
+// --- turns: what an undo goes back to, and a redo forward to ------------------------
+
+/**
+ * Asks to go back a turn, in a game whose app `Timeline.keep` keeps. It is an
+ * action like any other: a key bound to it in the input stage, or a UI that
+ * sends it, issues it, and the rules may enqueue it. The tick that applies it
+ * runs, and the app then goes back to where the game was before its last
+ * turn. A game lists `Timeline.plugin` to handle it.
+ *
+ *   ui.send(Timeline.Undo)
+ *
+ * @category Actions
+ */
+export const Undo = Action.define("arcadekit/Timeline.Undo");
+
+/**
+ * Asks to go forward again a turn that `Timeline.Undo` went back, as
+ * `Timeline.redo` does, after the tick that applies it.
+ *
+ * @category Actions
+ */
+export const Redo = Action.define("arcadekit/Timeline.Redo");
+
+/** What the rules asked of the app that keeps the game's turns. */
+interface Asking {
+  readonly to: "undo" | "redo";
+}
+const Asked = Event.define(
+  "arcadekit/Timeline.Asked",
+  Schema.Struct({ to: Schema.Literals(["undo", "redo"]) })
+);
+
+/**
+ * Handles `Timeline.Undo` and `Timeline.Redo`, so that a game's keys, its UI
+ * and its rules can ask for them. A game that lists it and whose app nothing
+ * keeps, as a replay or a server, applies them and changes nothing.
+ *
+ * @category Plugins
+ */
+export const plugin = Plugin.make("arcadekit/Timeline", {
+  handlers: [
+    Action.handler(Undo, function* () {
+      (yield* Asked.emits).emit({ to: "undo" });
+    }),
+    Action.handler(Redo, function* () {
+      (yield* Asked.emits).emit({ to: "redo" });
+    }),
+  ],
+});
+
+/**
+ * What keeping a game's turns needs of an app: an app that ticks by itself.
+ * An app a session steps has no `tick`, and a turn it went back would be this
+ * machine's alone.
+ *
+ * @category Type-level
+ */
+export type Kept = Pick<App.Any, "phase" | "time" | "tick">;
+
+/** The turns of an app that `keep` keeps. */
+class Turns {
+  /** The game before each turn, the last one last. */
+  readonly back: Held[] = [];
+  /** The game after each turn that was gone back, the next one last. */
+  readonly ahead: Held[] = [];
+  /** The game where it last stood still, between two ticks. */
+  standing: Held;
+
+  private readonly app: Kept;
+  private readonly last: number;
+  private readonly asked: { readonly read: () => readonly Asking[] };
+
+  constructor(
+    app: Kept,
+    last: number,
+    asked: { readonly read: () => readonly Asking[] }
+  ) {
+    this.app = app;
+    this.last = last;
+    this.asked = asked;
+    this.standing = this.take();
+  }
+
+  private take(): Held {
+    const taken = held(this.app, false);
+    if (Exit.isFailure(taken)) {
+      throw new Error(
+        `Timeline.keep could not keep a turn of the game: ${said(Cause.squash(taken.cause))} A game whose turns are kept holds only what can be saved.`
+      );
+    }
+    return taken.value;
+  }
+
+  /** Goes back or forward a turn, and says whether there was one to go to. */
+  go(to: "undo" | "redo"): boolean {
+    const [from, into] =
+      to === "undo" ? [this.back, this.ahead] : [this.ahead, this.back];
+    const next = from.pop();
+    if (next === undefined) {
+      return false;
+    }
+    into.push(this.standing);
+    putBack(this.app, next, false);
+    this.standing = next;
+    return true;
+  }
+
+  /**
+   * The game has moved, by a tick, a dispatched action, a load or a rewind:
+   * it goes where the rules asked, or, for a turn of moves from outside, the
+   * game as it stood before the turn is kept to go back to.
+   */
+  moved(): void {
+    let went = false;
+    for (const { to } of this.asked.read()) {
+      went = this.go(to) || went;
+    }
+    if (went) {
+      return;
+    }
+    const { log } = partsOf(this.app);
+    if (this.standing.since.loads !== log.loads) {
+      this.back.length = 0;
+    } else if (
+      log.entries
+        .slice(this.standing.since.logLength)
+        .some(
+          (entry) =>
+            !Action.isCheckpoint(entry) &&
+            entry.name !== Undo.name &&
+            entry.name !== Redo.name
+        )
+    ) {
+      this.back.push(this.standing);
+      if (this.back.length > this.last) {
+        this.back.shift();
+      }
+    }
+    // The game has gone elsewhere: what was given up is no more to go to.
+    this.ahead.length = 0;
+    this.standing = this.take();
+  }
+}
+
+/** The turns kept of each app's world. */
+const kept = new WeakMap<object, Turns>();
+
+/** The turns `keep` keeps of an app, or a defect that says it keeps none. */
+const turnsOf = (app: Game, call: string): Turns => {
+  const turns = kept.get(partsOf(app).world);
+  if (turns === undefined) {
+    throw new Error(
+      `Timeline.${call}() was called on an app whose turns nothing keeps. Keep them with Timeline.keep(app), as Driver.run's ready can.`
+    );
+  }
+  return turns;
+};
+
+/**
+ * Keeps the turns of a game, for an undo: the game as it was before each
+ * turn, for as long as the scope it runs in lasts. A turn is what a tick or a
+ * dispatched action did with what came from outside: a move of the player's,
+ * by a key, a UI or `app.enqueue`.
+ *
+ *   Driver.run(Puzzle, { hz: 60, ticks: "whenNeeded", ready: (app) => Timeline.keep(app) })
+ *   yield* Timeline.undo(app)          // or, from the game's keys and UI, Timeline.Undo
+ *
+ * **Details**
+ *
+ * - It captures the game after each tick and each dispatched action, as
+ *   `Timeline.capture` would, which costs what changed since the last one.
+ * - It keeps the `last` turns, 100 by default, and lets go of older ones.
+ * - Going back a turn keeps the game as it was, for `Timeline.redo` to go
+ *   forward to, until the game moves on: a tick, a move or a load gives up
+ *   every turn ahead.
+ * - `app.load` gives up every turn kept, since they are of the game the load
+ *   replaced.
+ *
+ * **Gotchas**
+ *
+ * - An app a session steps can't be kept: it has no `tick`, and going back
+ *   would move this machine's game alone.
+ * - A game that keeps ticking at rest, as one does with a running timer,
+ *   gives up a turn ahead on its next tick, so that it can't be gone forward
+ *   to.
+ *
+ * @category Running
+ */
+export const keep = (
+  app: Kept,
+  options?: { readonly last?: number }
+): Effect.Effect<void, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    between(
+      app,
+      "keep",
+      "The turns of a game are kept from between two ticks."
+    );
+    const { after, events, world } = partsOf(app);
+    if (kept.has(world)) {
+      throw new Error(
+        "Timeline.keep() was called on an app whose turns are kept already. Keep them once."
+      );
+    }
+    const last = options?.last ?? 100;
+    if (!Number.isSafeInteger(last) || last < 1) {
+      throw new Error(
+        `Timeline.keep() was given ${last} turns to keep: a whole number from 1 up.`
+      );
+    }
+    const turns = new Turns(app, last, events.handle(Asked));
+    const step = () =>
+      Effect.sync(() => {
+        turns.moved();
+      });
+    kept.set(world, turns);
+    after.add(step);
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        after.delete(step);
+        kept.delete(world);
+      })
+    );
+  });
+
+/**
+ * Goes back a turn of a game whose turns `Timeline.keep` keeps: the game is
+ * as it was before its last turn, in place, and succeeds with whether there
+ * was a turn to go back. Run it between ticks: it dies anywhere else, and on
+ * an app whose turns nothing keeps.
+ *
+ * It goes back as `Timeline.rewind` does, and the log goes back with it, so a
+ * recording holds the turns that are left and replays to the game as it is.
+ * A game's keys and its UI ask for it with `Timeline.Undo`.
+ *
+ * @category Running
+ */
+export const undo = (app: Game): Effect.Effect<boolean> =>
+  Effect.sync(() => {
+    between(app, "undo", "A turn is gone back between ticks.");
+    return turnsOf(app, "undo").go("undo");
+  });
+
+/**
+ * Goes forward again a turn that `Timeline.undo` went back, and succeeds with
+ * whether there was one: the game is as it was before the undo, its log
+ * with it. Run it between ticks, before the game moves on: a tick, a move or
+ * a load gives up every turn ahead.
+ *
+ * @category Running
+ */
+export const redo = (app: Game): Effect.Effect<boolean> =>
+  Effect.sync(() => {
+    between(app, "redo", "A turn is gone forward between ticks.");
+    return turnsOf(app, "redo").go("redo");
   });

@@ -185,12 +185,8 @@ export class Intake implements Store<IntakeMoment> {
     this.queued = moment.queued.slice();
     this.wanted = moment.wanted;
     this.rest = moment.rest;
-    for (const action of this.queued) {
-      // It is waiting again: what became of it has not happened.
-      if (action.entry !== undefined) {
-        delete action.entry.refused;
-      }
-    }
+    // What became of each, which has not happened again yet, is the log's to
+    // take back, and to keep for a rewind forward.
   }
 
   clear(): void {
