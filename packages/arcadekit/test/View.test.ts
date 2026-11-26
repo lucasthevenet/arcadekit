@@ -500,7 +500,62 @@ describe("a view", () => {
       }
     );
 
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, four levels down
+        when: function* () {
+          return { a: { b: { c: { purse: yield* Purse } } } };
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole, seven levels down
+        when: function* () {
+          return [[[{ a: { b: { c: yield* Purse } } }]]] as const;
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      {
+        // @ts-expect-error a singleton read whole from the world
+        when: function* () {
+          return (yield* World).singleton(Purse);
+        },
+      },
+      function* () {
+        return { gold: 0 };
+      }
+    );
+    View.publish(
+      Gold,
+      // @ts-expect-error a singleton read whole from the world, as the value
+      function* () {
+        return (yield* World).singleton(Purse);
+      }
+    );
+    System.frame("vw/PublishWhole", function* () {
+      const port = yield* View.Port;
+      // @ts-expect-error a singleton read whole, published through the port
+      port.publish(Gold, yield* Purse);
+      port.publish(Gold, { gold: (yield* World).singleton(Purse).gold });
+    });
+
     // A field, a spread and a value built from them are data.
+    interface Branch {
+      readonly label: string;
+      readonly children: readonly Branch[];
+    }
+    const Tree = View.define<Branch>("vw/Tree", { label: "", children: [] });
     const Rows = View.define("vw/Rows", {
       rows: [] as readonly { readonly gold: number }[],
     });
@@ -522,6 +577,7 @@ describe("a view", () => {
           when: function* () {
             return {
               purse: { ...(yield* Purse) },
+              tags: ["gold"],
               seen: new Map([["gold", (yield* Purse).gold]]),
             };
           },
@@ -535,11 +591,16 @@ describe("a view", () => {
         const { gold } = yield* Purse;
         return { rows: [gold, gold * 2].map((one) => ({ gold: one })) };
       }),
+      View.publish(Tree, function* () {
+        const { gold } = yield* Purse;
+        return { label: `${gold}`, children: [{ label: "", children: [] }] };
+      }),
     ];
     expect(taken.map((system) => system.name)).toEqual([
       "View.publish(vw/Gold)",
       "View.publish(vw/Gold)",
       "View.publish(vw/Rows)",
+      "View.publish(vw/Tree)",
     ]);
   });
 

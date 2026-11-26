@@ -86,10 +86,10 @@ export const define = <A>(name: string, initial: A): View<A> => ({
 });
 
 /**
- * The singleton reads in `A`, as a union, at most four levels deep. A deeper
- * search overflows the compiler on ordinary data.
+ * The singleton reads in `A`, in its arrays and objects up to 32 levels deep.
+ * A recursive type has no last level, so the search stops there.
  */
-type Held<A, Depth extends unknown[] = []> = Depth["length"] extends 4
+type Held<A, Depth extends unknown[] = []> = Depth["length"] extends 32
   ? never
   : A extends Singleton.Read<{}>
     ? A
@@ -283,9 +283,14 @@ export interface PortShape {
   /**
    * Publishes a view. It sets the view's value and notifies the UI, unless the
    * value is unchanged, and returns whether it published. A system of the frame
-   * stage publishes, and a system of the tick can't require `View.Port`.
+   * stage publishes, and a system of the tick can't require `View.Port`. A
+   * value that holds a singleton read whole doesn't compile, as for
+   * `View.publish`.
    */
-  readonly publish: <A>(view: View<A>, value: A) => boolean;
+  readonly publish: <A, V extends A>(
+    view: View<A>,
+    value: V & Fresh<V>
+  ) => boolean;
 }
 
 /**
@@ -474,9 +479,10 @@ export function layer(_game: unknown, mount: Mount): Layer.Layer<never> {
  *   })
  *
  * `when` and the body return data, such as `(yield* Purse).gold` or a spread
- * of `yield* Purse`. A singleton read whole, `yield* Purse`, doesn't compile
- * as either, even inside an array or an object: it is the world's own object,
- * the same every frame, so it would never differ.
+ * of `yield* Purse`. A singleton read whole, `yield* Purse` or
+ * `(yield* World).singleton(Purse)`, doesn't compile as either, even inside
+ * arrays and objects up to 32 levels deep: it is the world's own object, the
+ * same every frame, so it would never differ.
  *
  * **Gotchas**
  *
@@ -539,7 +545,8 @@ export function publish<
     return System.raw(name, "frame", function* () {
       const port = yield* Port;
       if (port.watched(view)) {
-        port.publish(view, yield* read);
+        // `View.publish` refused a read whole when it was given the body.
+        port.publish<unknown, unknown>(view, yield* read);
       }
     });
   }
@@ -562,7 +569,7 @@ export function publish<
       memo = { inputs: now, value: yield* read };
       last.set(port, memo);
     }
-    port.publish(view, memo.value);
+    port.publish<unknown, unknown>(view, memo.value);
   });
 }
 
@@ -586,5 +593,5 @@ export function publish<
 export const reset = <A>(view: View<A>): Effect.Effect<void, never, Port> =>
   // Where no UI is there, this publishes to nobody.
   Effect.map(Effect.service(Port), (port) => {
-    port.publish(view, view.initial);
+    port.publish<unknown, unknown>(view, view.initial);
   });

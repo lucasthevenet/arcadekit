@@ -35,11 +35,11 @@ declare abstract class LiveObject {
 interface Live extends LiveObject {}
 
 /**
- * A singleton's value as `yield*` reads it: the world's own object, read-only,
- * and the same object on every read. Its fields are plain data, and so is a
- * spread of it, `{ ...(yield* Score) }`. Returned whole, it is refused as the
- * value of a view and as what `View.publish`'s `when` returns, which would
- * never differ from one frame to the next.
+ * A singleton's value as `yield*` and `World.singleton` read it: the world's
+ * own object, read-only, and the same object on every read. Its fields are
+ * plain data, and so is a spread of it, `{ ...(yield* Score) }`. Whole, it is
+ * refused as a view's value, by `View.publish` and `View.Port.publish`, and as
+ * what `when` returns, since it would never differ from one frame to the next.
  *
  * @category Models
  */
@@ -75,9 +75,8 @@ export class Singleton<S extends Schema>
   }
 
   asEffect(): Effect.Effect<Read<S>, never, World> {
-    return (this.effect ??= Effect.map(
-      Effect.service(World),
-      (world) => world.singleton(this) as Read<S>
+    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
+      world.singleton(this)
     ));
   }
 

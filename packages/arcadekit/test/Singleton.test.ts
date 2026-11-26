@@ -110,6 +110,11 @@ describe("a singleton", () => {
       player: number;
       round: number;
     }>();
+    const world = Effect.runSync(app.read(World));
+    expectTypeOf(world.singleton(Turn)).toEqualTypeOf<
+      Singleton.Read<typeof Turn.component.schema>
+    >();
+    expect(world.singleton(Turn)).toBe(turn);
     expect(Effect.runSync(app.read(Turn))).toBe(turn);
     expect({ ...turn }).toEqual({ player: 1, round: 0 });
   });
