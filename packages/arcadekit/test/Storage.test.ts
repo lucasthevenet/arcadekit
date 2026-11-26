@@ -1057,6 +1057,7 @@ describe("what each hands its callback", () => {
     u32: Field.u32,
     u16: Field.u16,
     u8: Field.u8,
+    bool: Field.bool,
     entity: Field.entity,
     json: Field.json<string>(),
     ref: Field.ref<Date>({
@@ -1077,6 +1078,9 @@ describe("what each hands its callback", () => {
     u32: 3_000_000_000 + n,
     u16: 60_000 + n,
     u8: (200 + n) & 255,
+    // Below 50, unlike the next row's, and unlike n + 50's and n + 100's,
+    // which the writes below give.
+    bool: n % 2 === 0 ? n < 50 : n >= 50,
     entity: entityOf(n + 7),
     json: `text ${n}`,
     ref: new Date(1000 * n),
