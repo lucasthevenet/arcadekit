@@ -24,7 +24,7 @@ import { Commands, Events, Frame, Random, Time, World } from "../Services.ts";
 import type { FrameState, TimeState } from "../Services.ts";
 import * as System from "../System.ts";
 import type { EventBus } from "./eventBus.ts";
-import { handed, hearing, reading } from "./handed.ts";
+import { TIME, handed, hearing, reading } from "./handed.ts";
 import { Board } from "./input.ts";
 import type { Undrawn } from "./input.ts";
 
@@ -44,7 +44,7 @@ export const READER = "frame:";
  * @internal
  */
 export const GameTime = Component.singleton(
-  "arcadekit/Time",
+  TIME,
   { tick: Field.f64, elapsed: Field.f64, delta: Field.f64 },
   { tick: 0, elapsed: 0, delta: 0 }
 );

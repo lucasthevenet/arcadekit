@@ -2320,7 +2320,9 @@ export class World {
    * - the order queries visit entities in: tables in the order they were
    *   created, and the rows of each table in order
    * - the ids the next entities will get
-   * - every singleton that has been written, by name
+   * - every singleton that has been written, by name. In an app's world, that
+   *   includes the game's time, `arcadekit/Time`, which every tick writes, so
+   *   two games that differ only in how many ticks they ran hash differently
    * - the state of the random number generator
    * - what each store attached to the world says a simulation can tell apart
    *   of what it holds. In an app's world, that is the actions queued for the
@@ -2360,6 +2362,14 @@ export class World {
    */
   _fullHash(): number {
     return this.hashing(true, undefined, true);
+  }
+
+  /**
+   * @internal
+   * `hash()` without one singleton: what a game holds apart from its clock.
+   */
+  _hashWithout(single: ComponentDef): number {
+    return this.hashing(true, single, false);
   }
 
   /**

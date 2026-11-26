@@ -20,6 +20,13 @@ import type * as Singleton from "../Singleton.ts";
 import type { EventBus } from "./eventBus.ts";
 
 /**
+ * The name of the singleton that holds a game's time, `Time`.
+ *
+ * @internal
+ */
+export const TIME = "arcadekit/Time";
+
+/**
  * The world as the frame stage, the input stage and `app.read` are handed it:
  * an object of its own, which reads the world behind it and has nothing that
  * changes it. No entry exports this class, so no `instanceof` and no public
@@ -51,8 +58,12 @@ class Read implements ReadingWorld {
     return this.#world.has(entity, def);
   }
 
-  hash(): number {
-    return this.#world.hash();
+  hash(options?: { readonly time?: boolean }): number {
+    const clock =
+      options?.time === false ? this.#world.component(TIME) : undefined;
+    return clock === undefined
+      ? this.#world.hash()
+      : this.#world._hashWithout(clock);
   }
 
   holds<S extends Schema>(spec: SingletonSpec<S>): boolean {

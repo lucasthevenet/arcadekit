@@ -60,6 +60,7 @@ const IntakeData = Schema.Struct({
       from: Schema.optionalKey(Schema.String),
     })
   ),
+  rests: Schema.optionalKey(Schema.Literal(true)),
 });
 
 /** What the intake holds at a moment: the actions as they are, with no schema. */
@@ -87,9 +88,10 @@ export class Intake implements Store<IntakeMoment> {
    * Whether the game wants its next tick: its last tick changed more than its
    * time, or an action was dispatched since. A game that has not ticked yet
    * is taken to want one. It goes back with a rewind and with a refused
-   * action, and is neither hashed nor saved: a game that ticks in real time
-   * is the same game whether or not it would rest, and a loaded game's first
-   * tick always runs.
+   * action. It is not hashed, since a game that ticks in real time is the
+   * same game whether or not it would rest. A save holds that it was not
+   * wanted, so that a game loaded from a save of one at rest is at rest,
+   * and runs no tick its player didn't ask for.
    */
   wanted = true;
   /**
@@ -118,7 +120,7 @@ export class Intake implements Store<IntakeMoment> {
 
   save(): unknown {
     if (this.queued.length === 0) {
-      return undefined;
+      return this.wanted ? undefined : { queued: [], rests: true };
     }
     const queued = this.queued.map(({ codec, from, name, payload }) => {
       let json = payload;
@@ -142,7 +144,7 @@ export class Intake implements Store<IntakeMoment> {
         ? { name, payload: json }
         : { name, payload: json, from };
     });
-    return { queued };
+    return this.wanted ? { queued } : { queued, rests: true };
   }
 
   load(data: unknown): void {
@@ -153,6 +155,7 @@ export class Intake implements Store<IntakeMoment> {
         `Can't load the actions queued for the next tick: they are not { queued }, with each action { name, payload, from? }: ${said(Cause.squash(saved.cause))}`
       );
     }
+    this.wanted = saved.value.rests !== true;
     // In the JSON form they were saved in, checked again when applied.
     this.queued = saved.value.queued.map(({ from, name, payload }) => ({
       name,

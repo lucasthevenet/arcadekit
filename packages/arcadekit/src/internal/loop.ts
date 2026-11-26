@@ -543,8 +543,10 @@ export const make = (parts: Parts): Loop => {
       return exit;
     },
     settled: () => {
-      if (!resting) {
-        // What the next tick is compared with: the world as it is now.
+      // What the next tick is compared with: the world as it is now, the
+      // first time, and after a save was loaded into the app, which let go
+      // of what the game before it was compared with.
+      if (!resting || intake.rest === undefined) {
         resting = true;
         intake.rest = world._frameHash(false, Stage.GameTime.component);
       }

@@ -131,7 +131,8 @@ Browser.runMain(
 - `app.settled` is false while the last tick changed more than the game's time. It is also false while work is pending: an action to apply, an action dispatched since the last tick, a state to enter, a fiber that is due, or an event that some system hasn't read.
 - A running countdown or a body in flight keeps the game ticking for as long as it moves, and the game declares nothing for it. The game rests after the first tick that changes nothing.
 - From the first time `app.settled` is read, the app hashes its world after each tick to tell whether the tick changed it. The hash costs about 10 µs for a thousand entities and 0.9 ms for a hundred thousand. A game that ticks in real time never reads `app.settled`, and pays nothing.
-- A newly created or loaded app isn't settled. It runs one tick, and rests after it if that tick changed nothing.
+- A newly created app isn't settled. It runs one tick, and rests after it if that tick changed nothing.
+- A save holds whether the game was at rest. An app made from a save of a game at rest, with `App.make(game, { save })`, is at rest too, and so is one that loads it with `Save.load(app, save)`: it runs no tick before its player's first action, so it goes on tick for tick as the game it was saved from.
 - The frame stage runs every frame, at rest too, with a `Frame.alpha` of 1, so interpolated drawing draws the game where it is.
 - Resting isn't part of the game. A recording holds the actions, their ticks, and the tick the game had reached. A replay runs them back to back and ends on the same hash.
 - A frame of a game at rest, with device input, a state, and a view, costs about 5 µs. It reads the devices, checks the app, and runs the frame stage.

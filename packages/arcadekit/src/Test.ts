@@ -93,7 +93,8 @@ export interface Test<E = never, HU = never, U = undefined> {
   /**
    * Steps until the app is settled, as a driver that ticks only when needed
    * would, then runs the frame stage, and succeeds with the number of ticks it
-   * ran. A new app has not settled, so it ticks at least once. It dies after
+   * ran. A new app has not settled, so it ticks at least once, and one loaded
+   * from a save of a game at rest has, so it runs no tick. It dies after
    * `limit` ticks, 1000 by default, with a game that never settles.
    */
   readonly rest: (limit?: number) => Effect.Effect<number, E>;
