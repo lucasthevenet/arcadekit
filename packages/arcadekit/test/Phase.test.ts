@@ -64,7 +64,7 @@ describe("what an app is running", () => {
         const named = 'a handler of "ph/Call"';
         const calls: [
           string,
-          (app: App.App) => Effect.Effect<unknown, Save.Refused>,
+          (app: App.Any<never>) => Effect.Effect<unknown, Save.Refused>,
           string,
         ][] = [
           ["App.tick", (app) => app.tick(1), named],
@@ -82,7 +82,7 @@ describe("what an app is running", () => {
           ["inspect()", (app) => app.inspect(), named],
         ];
         for (const [name, call, busy] of calls) {
-          let app: App.App | undefined;
+          let app: App.Any<never> | undefined;
           const Call = Action.define("ph/Call", Schema.Struct({}));
           const calling = Action.handler(Call, function* () {
             yield* Effect.orDie(call(app!));
