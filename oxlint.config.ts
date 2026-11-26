@@ -368,25 +368,6 @@ export default defineConfig({
       },
     },
     {
-      // An example is a game: it imports arcadekit and @arcadekit/three by
-      // their entries, as a game does, and never a file of a package.
-      files: ["examples/**"],
-      rules: {
-        "no-restricted-imports": [
-          "error",
-          {
-            patterns: [
-              {
-                group: ["**/packages/**"],
-                message:
-                  'An example imports a package by its entries, as a game does: "arcadekit", "arcadekit/net" or "@arcadekit/three", never a file of packages/. Add the package to the example\'s dependencies if it is not there.',
-              },
-            ],
-          },
-        ],
-      },
-    },
-    {
       // The storage core is plain TypeScript, with no Effect: its errors are
       // thrown, and App turns them into tagged ones.
       files: ["packages/arcadekit/src/ecs/**"],
