@@ -54,6 +54,7 @@ export * as Plugin from "./Plugin.ts";
 export * as Query from "./Query.ts";
 export * as Resource from "./Resource.ts";
 export * as Save from "./Save.ts";
+export * as Setting from "./Setting.ts";
 export * as Singleton from "./Singleton.ts";
 export * as Sound from "./Sound.ts";
 export * as State from "./State.ts";

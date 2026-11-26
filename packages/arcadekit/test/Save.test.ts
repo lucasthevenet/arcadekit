@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 
 import {
   World as EcsWorld,
@@ -9,8 +9,10 @@ import {
 import {
   Action,
   App,
+  Assets,
   Commands,
   Component,
+  Driver,
   Event,
   Field,
   Journal,
@@ -18,11 +20,16 @@ import {
   Query,
   Random,
   Save,
+  Sound,
+  State,
   System,
   Time,
+  Timeline,
+  View,
   World,
 } from "../src/index.ts";
 import type { JsonValue } from "../src/index.ts";
+import * as Build from "../src/internal/build.ts";
 import { thrown } from "./checks.ts";
 
 /** What one store of a save's world held. */
@@ -134,12 +141,12 @@ const Bot = System.tick("Bot", function* () {
     actions.enqueue(Double, {});
   }
 });
-const Sound = System.tick("Sound", function* () {
+const Sounding = System.tick("Sound", function* () {
   const { tick } = yield* Time;
   (yield* Sounded.emits).emit({ tick, at: new Date(tick * 1000) });
 });
 /**
- * Reads what Sound emits on the tick it is emitted, and Listen on the next:
+ * Reads what Sounding emits on the tick it is emitted, and Listen on the next:
  * the two have read different amounts when a save is taken. Each event is
  * counted once here, so reading one again after a load would show.
  */
@@ -159,7 +166,7 @@ const Pulsing = System.tick("Pulsing", function* () {
 });
 
 const Game = Plugin.make("sv/Game", {
-  systems: [Listen, Drift, Bot, Sound, Echo, Pulsing],
+  systems: [Listen, Drift, Bot, Sounding, Echo, Pulsing],
   handlers: [add, double, scatter, pulse],
   setup: Effect.gen(function* () {
     setups++;
@@ -758,7 +765,7 @@ describe("a save that cannot be loaded", () => {
         const { save } = yield* record(10, 5);
         // No plugin lists the components or the waiting events.
         const Bare = Plugin.make("sv/Bare", {
-          systems: [Listen, Drift, Bot, Sound, Echo],
+          systems: [Listen, Drift, Bot, Sounding, Echo],
           handlers: [add, double, scatter, pulse],
         });
         const world = readSnapshot(save.world);
@@ -780,5 +787,401 @@ describe("a save that cannot be loaded", () => {
           'The snapshot holds an event named "sv/Never" waiting to be read, which this program doesn\'t define: it was renamed or removed since. A migration changes the events and the queued actions of a save in `world.stores`.'
         );
       })
+  );
+});
+
+// --- a save loaded into the app that is running -------------------------------------
+
+/** Plays `ticks` ticks of moves from `first` on. */
+const played = Effect.fnUntraced(function* (
+  app: GameApp,
+  first: number,
+  ticks: number
+) {
+  for (let tick = first; tick < first + ticks; tick++) {
+    yield* move(app, tick);
+    yield* app.tick(1 / 60);
+  }
+});
+
+describe("a save loaded in place", () => {
+  it.effect(
+    "is the game a new app makes from the save, and plays on to the same hashes",
+    () =>
+      Effect.gen(function* () {
+        for (const saveAt of [0, 7, 30]) {
+          yield* withApp(App.make(Played, start), (app, world) =>
+            Effect.gen(function* () {
+              yield* played(app, 0, saveAt);
+              // Some of what was asked for is waiting when it is saved.
+              yield* move(app, saveAt);
+              const save = unwrap(yield* Effect.exit(app.save()));
+              const then = { hash: world.hash(), time: { ...app.time } };
+              yield* played(app, saveAt, 20);
+              expect(world.hash()).not.toBe(then.hash);
+
+              yield* app.load(save);
+              expect(world.hash()).toBe(then.hash);
+              expect(app.time).toEqual(then.time);
+              // Its log starts again, as an app made from the save starts.
+              expect(app.actionLog).toEqual([]);
+              yield* withApp(
+                App.make(Played, { save, checkpointEvery: 1 }),
+                (fresh, freshWorld) =>
+                  Effect.gen(function* () {
+                    expect(freshWorld.hash()).toBe(then.hash);
+                    for (let tick = 100; tick < 140; tick++) {
+                      yield* move(app, tick);
+                      yield* move(fresh, tick);
+                      yield* app.tick(1 / 60);
+                      yield* fresh.tick(1 / 60);
+                      expect(world.hash()).toBe(freshWorld.hash());
+                    }
+                    expect(yield* talliesOf(app)).toEqual(
+                      yield* talliesOf(fresh)
+                    );
+                    expect(app.actionLog).toEqual(fresh.actionLog);
+                  })
+              );
+              // What it played since the load is recorded from the save, and
+              // replays to where it is.
+              const replayed = yield* Journal.replay(
+                yield* app.record(),
+                Played,
+                { checkpointEvery: 1 }
+              );
+              expect((yield* replayed.read(World)).hash()).toBe(world.hash());
+            })
+          );
+        }
+      })
+  );
+
+  it.effect(
+    "goes on with the states the save holds, a move it was waiting for among them",
+    () =>
+      Effect.gen(function* () {
+        const Phase = State.define("sv/Phase", ["menu", "playing"]);
+        const Begin = Action.define("sv/Begin", Schema.Struct({}));
+        // Nothing but the handler names the state: the app that loads the
+        // save has never met it.
+        const Phased = App.define({
+          handlers: [
+            Action.handler(Begin, function* () {
+              (yield* Phase.sets).set("playing");
+            }),
+          ],
+        });
+        // Saved with the move to "playing" asked for, and not made yet.
+        const save = yield* withApp(App.make(Phased), (app) =>
+          Effect.gen(function* () {
+            yield* app.dispatch(Begin, {});
+            return unwrap(yield* Effect.exit(app.save()));
+          })
+        );
+        yield* withApp(App.make(Phased), (app, world) =>
+          Effect.gen(function* () {
+            yield* app.tick(1 / 60);
+            yield* app.load(save);
+            const fresh = yield* App.make(Phased, { save });
+            const freshWorld = yield* fresh.read(World);
+            yield* app.tick(1 / 60);
+            yield* fresh.tick(1 / 60);
+            expect((yield* app.read(Phase)).value).toBe("playing");
+            expect((yield* fresh.read(Phase)).value).toBe("playing");
+            expect(world.hash()).toBe(freshWorld.hash());
+          })
+        );
+      })
+  );
+
+  it.effect(
+    "has the stages between ticks hear the loaded game, and nothing of the game it replaced",
+    () =>
+      Effect.gen(function* () {
+        const Rang = Event.define("sv/Rang", Schema.Struct({ n: Schema.Int }));
+        const Ring = Action.define("sv/Ring", Schema.Struct({ n: Schema.Int }));
+        const heard: number[] = [];
+        const Rings = App.define({
+          systems: [
+            System.frame("sv/Hear", function* () {
+              for (const rang of (yield* Rang).read()) {
+                heard.push(rang.n);
+              }
+            }),
+          ],
+          handlers: [
+            Action.handler(Ring, function* ({ n }) {
+              (yield* Rang.emits).emit({ n });
+            }),
+          ],
+        });
+        yield* withApp(App.make(Rings), (app) =>
+          Effect.gen(function* () {
+            yield* app.enqueue(Ring, { n: 1 });
+            yield* app.tick(1 / 60);
+            yield* app.frame();
+            const save = unwrap(yield* Effect.exit(app.save()));
+            // Rung, and not heard yet when the save is loaded.
+            yield* app.enqueue(Ring, { n: 2 });
+            yield* app.tick(1 / 60);
+            yield* app.load(save);
+            yield* app.frame();
+            yield* app.enqueue(Ring, { n: 3 });
+            yield* app.tick(1 / 60);
+            yield* app.frame();
+            expect(heard).toEqual([1, 3]);
+          })
+        );
+      })
+  );
+
+  it.effect(
+    "is refused as App.make refuses it, and leaves the game as it was",
+    () =>
+      Effect.gen(function* () {
+        const { save } = yield* record(10, 5);
+        const contents = readSnapshot(save.world);
+        const waiting = contents.stores.find(
+          (store) => store.name === Event.STORE
+        )!.data as { name: string; waiting: unknown[]; read: object }[];
+        waiting.push({ name: "sv/Never", waiting: [1], read: {} });
+        const refused = [
+          // Damaged, which is found as its world is read.
+          { ...save, world: save.world.subarray(0, save.world.length - 9) },
+          // An event this program doesn't define, found once the entities and
+          // the singletons are read.
+          { ...save, world: writeSnapshot(contents) },
+          { ...save, version: 3 },
+        ];
+        const twin = yield* App.make(Played, start);
+        const twinWorld = yield* twin.read(World);
+        yield* withApp(App.make(Played, start), (app, world) =>
+          Effect.gen(function* () {
+            yield* played(app, 0, 20);
+            yield* played(twin, 0, 20);
+            const before = {
+              hash: world.hash(),
+              time: { ...app.time },
+              log: structuredClone(app.actionLog),
+            };
+            const problems = [];
+            for (const one of refused) {
+              const error = refusal(yield* Effect.exit(app.load(one)));
+              expect(error).toBeInstanceOf(Save.LoadRefused);
+              problems.push(error.problem);
+            }
+            expect(["truncated", "corrupt"]).toContain(problems[0]);
+            expect(problems.slice(1)).toEqual([
+              "store changed",
+              "newer version",
+            ]);
+            expect({
+              hash: world.hash(),
+              time: { ...app.time },
+              log: app.actionLog,
+            }).toEqual(before);
+            // And it plays on as the game that never tried does.
+            for (let tick = 20; tick < 40; tick++) {
+              yield* played(app, tick, 1);
+              yield* played(twin, tick, 1);
+              expect(world.hash()).toBe(twinWorld.hash());
+            }
+          })
+        );
+      })
+  );
+
+  it.effect(
+    "is loaded between ticks, into an app nobody else steps, and leaves the moments of the game before it behind",
+    () =>
+      Effect.gen(function* () {
+        const { save } = yield* record(10, 5);
+        let app: App.Any | undefined;
+        let inTick: unknown;
+        const Greedy = System.tick("sv/Greedy", function* () {
+          const loaded = yield* Effect.exit(app!.load(save));
+          inTick = Exit.isFailure(loaded)
+            ? Cause.squash(loaded.cause)
+            : undefined;
+        });
+        yield* withApp(App.make(App.define({ systems: [Greedy] })), (made) =>
+          Effect.gen(function* () {
+            app = made;
+            yield* made.tick(1);
+          })
+        );
+        expect(String(inTick)).toMatch(/load\(\) was called during a tick/);
+
+        const steered = yield* Build.build(Played, start);
+        steered.take(() => {});
+        expect(yield* thrown(steered.app.load(save))).toThrow(
+          /load\(\) was called on an app that a session has taken over/
+        );
+
+        yield* withApp(App.make(Played, start), (made) =>
+          Effect.gen(function* () {
+            const before = unwrap(yield* Effect.exit(Timeline.capture(made)));
+            yield* made.tick(1 / 60);
+            yield* made.load(save);
+            expect(yield* thrown(Timeline.rewind(made, before))).toThrow(
+              "Timeline.rewind() was given a moment captured before the app loaded a save, of the game the load replaced. To go back there, save that game and load the save."
+            );
+            const since = unwrap(yield* Effect.exit(Timeline.capture(made)));
+            const loaded = yield* talliesOf(made);
+            yield* played(made, 0, 3);
+            yield* Timeline.rewind(made, since);
+            expect(yield* talliesOf(made)).toEqual(loaded);
+          })
+        );
+      })
+  );
+});
+
+// --- a game in a page, saved to a slot and loaded from it ---------------------------
+
+const Ball = Component.define("sv/Ball", { x: Field.f32, speed: Field.f32 });
+const Rolling = Query.all(Ball).pipe(Query.writes(Ball));
+const Balls = Query.all(Ball);
+const Kick = Action.define("sv/Kick", Schema.Struct({ by: Schema.Number }));
+const Lit = State.define("sv/Lit", ["dark", "lit"]);
+const Distance = View.define("sv/Distance", 0);
+const Tunes = Sound.sheet("sv/Tunes", { theme: "/theme.ogg" });
+/** Where each frame drew the balls. */
+const drawn: number[][] = [];
+
+const Rolled = Plugin.make("sv/Rolls", {
+  plugins: [View.plugin, Sound.plugin, Assets.plugin],
+  systems: [
+    System.tick("sv/Roll", function* () {
+      const { delta } = yield* Time;
+      (yield* Rolling).each((ball) => {
+        ball.x += ball.speed * delta;
+      });
+    }),
+    System.frame("sv/Draw", function* () {
+      const xs: number[] = [];
+      (yield* Balls).each((ball) => {
+        xs.push(ball.x);
+      });
+      drawn.push(xs);
+    }),
+    View.publish(Distance, function* () {
+      let sum = 0;
+      (yield* Balls).each((ball) => {
+        sum += ball.x;
+      });
+      return sum;
+    }),
+    Sound.music("sv/Theme", function* () {
+      return (yield* Lit).value === "lit" ? Tunes.theme : undefined;
+    }),
+  ],
+  handlers: [
+    Action.handler(Kick, function* ({ by }) {
+      (yield* Rolling).each((ball) => {
+        ball.speed += by;
+      });
+      (yield* Lit.sets).set("lit");
+    }),
+  ],
+  setup: Effect.map(Commands.spawns(Ball), (commands) => {
+    commands.spawn(Ball.of({ x: 0, speed: 1 }));
+    commands.spawn(Ball.of({ x: 10, speed: -1 }));
+  }),
+});
+const Rolls = App.define({ plugins: [Rolled] });
+
+describe("a game saved to a slot", () => {
+  it.effect(
+    "is loaded from it into the app that runs, with its frame, its view and its music going on",
+    () =>
+      Effect.gen(function* () {
+        drawn.length = 0;
+        const display = Driver.makeManualDisplay();
+        const sound = Sound.makeRecorder();
+        let ui: View.Bridge | undefined;
+        let made:
+          | Effect.Success<ReturnType<typeof App.make<[], [], [typeof Rolled]>>>
+          | undefined;
+        yield* Effect.forkScoped(
+          Driver.run(Rolls, {
+            hz: 60,
+            seed: 1,
+            ready: (app) =>
+              Effect.sync(() => {
+                made = app;
+              }),
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                Driver.layer(display),
+                Sound.layer(sound),
+                View.mount(Rolls, (bridge) => {
+                  ui = bridge;
+                })
+              )
+            )
+          ),
+          { startImmediately: true }
+        );
+        let now = 0;
+        const frames = (count: number) => {
+          for (let i = 0; i < count; i++) {
+            display.frame(now);
+            now += 1000 / 60;
+          }
+        };
+        const app = made!;
+        const world = yield* app.read(World);
+        ui!.subscribe(Distance, () => {});
+        frames(1);
+        yield* app.enqueue(Kick, { by: 2 });
+        frames(30);
+        expect(Object.fromEntries(sound.playing)).toEqual({ music: "theme" });
+
+        // A button that saves to a slot.
+        yield* Save.write("slot2", yield* app.save());
+        const saved = { hash: world.hash(), tick: app.time.tick };
+        yield* app.enqueue(Kick, { by: 5 });
+        frames(30);
+        expect(world.hash()).not.toBe(saved.hash);
+
+        // And one that loads from it.
+        const scored = sound.scored.length;
+        const slot = yield* Save.read("slot2");
+        yield* app.load(Option.getOrThrow(slot));
+        expect(world.hash()).toBe(saved.hash);
+        expect(app.time.tick).toBe(saved.tick);
+
+        // The same frame loop goes on with the loaded game: it draws it,
+        // shows it, and the theme it was playing plays on.
+        const draws = drawn.length;
+        frames(10);
+        expect(drawn.length).toBe(draws + 10);
+        const xs: number[] = [];
+        (yield* app.read(Balls)).each((ball) => {
+          xs.push(ball.x);
+        });
+        expect(drawn.at(-1)).toEqual(xs);
+        expect(ui!.get(Distance)).toBeCloseTo(xs[0]! + xs[1]!, 4);
+        expect(app.time.tick).toBe(saved.tick + 10);
+        expect(Object.fromEntries(sound.playing)).toEqual({ music: "theme" });
+        expect(sound.scored.length).toBe(scored);
+      }).pipe(Effect.scoped, Effect.provide(Save.layer(Save.makeMemory())))
+  );
+
+  it.effect("is empty until something is written to it", () =>
+    Effect.gen(function* () {
+      expect(Option.isNone(yield* Save.read("nothing"))).toBe(true);
+      const { save } = yield* record(3, 1);
+      yield* Save.write("one", save);
+      yield* Save.write("two", save);
+      const store = yield* Save.Store;
+      expect((yield* store.slots).toSorted()).toEqual(["one", "two"]);
+      yield* store.remove("one");
+      expect(yield* store.slots).toEqual(["two"]);
+      expect(Option.getOrThrow(yield* Save.read("two"))).toEqual(save);
+    }).pipe(Effect.provide(Save.layer(Save.makeMemory())))
   );
 });

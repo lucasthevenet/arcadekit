@@ -2,6 +2,7 @@ import type { CommandBuffer } from "../ecs/commands.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World } from "../ecs/world.ts";
 import type { EventBus } from "./eventBus.ts";
+import type { Log } from "./journal.ts";
 import type { TickDispatcher } from "./tickScheduler.ts";
 
 /**
@@ -16,6 +17,7 @@ export interface Parts {
   readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
   readonly dispatcher: TickDispatcher;
+  readonly log: Log;
 }
 
 const held = new WeakMap<object, Parts>();

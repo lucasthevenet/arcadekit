@@ -77,7 +77,10 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
       modules: ["browser", "browser/Browser", "browser/Audio"],
     },
     { label: "Media", modules: ["Assets", "Input", "Sound"] },
-    { label: "Saves", modules: ["Journal", "Migrate", "Save", "Timeline"] },
+    {
+      label: "Saves",
+      modules: ["Journal", "Migrate", "Save", "Setting", "Timeline"],
+    },
     {
       label: "Net",
       modules: [

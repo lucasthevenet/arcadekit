@@ -3,10 +3,18 @@
  * as a snapshot, which holds everything that decides what the next tick does.
  *
  *   const save = yield* app.save()                 // fails with Save.Refused
- *   const bytes = Save.encode(save)                // for a file or the network
+ *   yield* app.load(save)                          // the same app, where it was
  *
+ *   yield* Save.write("slot2", save)               // kept in Save.Store
+ *   const saved = yield* Save.read("slot2")        // an Option
+ *
+ *   const bytes = Save.encode(save)                // for a file or the network
  *   const loaded = yield* Save.decode(bytes)       // fails with Save.LoadRefused
- *   const again = yield* App.make(game, { save: loaded }) // the game, where it was
+ *   const again = yield* App.make(game, { save: loaded }) // a new app, where it was
+ *
+ * A save is kept in a slot of `Save.Store`, which a page provides with
+ * `Save.layer(Browser.saves(name))` and a test with
+ * `Save.layer(Save.makeMemory())`.
  *
  * Its world holds the game's time, the actions queued for the next tick, the
  * events waiting to be read with where each system had read to, and what
@@ -20,7 +28,16 @@
  *   const tail = yield* app.record(save)
  *   const present = yield* Journal.replay(tail, game)
  */
-import { Cause, Data, Exit, Schema } from "effect";
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Schema,
+} from "effect";
 
 import { readSnapshot, writeSnapshot } from "./ecs/contents.ts";
 import type { SnapshotContents } from "./ecs/contents.ts";
@@ -301,6 +318,127 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
     world: bytes.slice(12 + length),
   });
 };
+
+// --- slots: where a program keeps its saves ----------------------------------------
+
+/**
+ * Where a program keeps its saves, each as its bytes under the name of its
+ * slot. A page keeps them in its local storage, with `Browser.saves(name)`,
+ * and a test in memory, with `Save.makeMemory()`.
+ *
+ * @category Services
+ */
+export interface StoreShape {
+  /** Returns the bytes a slot holds, or undefined for an empty slot. */
+  readonly get: (
+    slot: string
+  ) => Effect.Effect<Uint8Array | undefined, StoreFailed>;
+  /** Keeps bytes in a slot, in place of what it held. */
+  readonly set: (
+    slot: string,
+    bytes: Uint8Array
+  ) => Effect.Effect<void, StoreFailed>;
+  /** Empties a slot. An empty slot stays empty. */
+  readonly remove: (slot: string) => Effect.Effect<void, StoreFailed>;
+  /** The slots that hold something, by name. */
+  readonly slots: Effect.Effect<readonly string[], StoreFailed>;
+}
+
+/**
+ * Where a program keeps its saves, which `Save.layer` provides, for
+ * `Save.write` and `Save.read`. It is code outside the game that saves to a
+ * slot and loads from one, between ticks.
+ *
+ * @category Services
+ */
+export class Store extends Context.Service<Store, StoreShape>()(
+  "arcadekit/Save.Store"
+) {}
+
+/**
+ * Returns a layer that provides where saves are kept, such as
+ * `Browser.saves(name)` in a page or `Save.makeMemory()` in a test, as
+ * `Save.Store`.
+ *
+ * @category Layers
+ */
+export const layer = (store: StoreShape): Layer.Layer<Store> =>
+  Layer.succeed(Store, store);
+
+/**
+ * Makes a store of saves in memory, for a test or a tool. Two layers given
+ * one store share its slots, as two visits to a page share its storage.
+ *
+ * @category Testing
+ */
+export const makeMemory = (): StoreShape => {
+  const slots = new Map<string, Uint8Array>();
+  return {
+    get: (slot) => Effect.sync(() => slots.get(slot)?.slice()),
+    set: (slot, bytes) =>
+      Effect.sync(() => {
+        slots.set(slot, bytes.slice());
+      }),
+    remove: (slot) =>
+      Effect.sync(() => {
+        slots.delete(slot);
+      }),
+    slots: Effect.sync(() => [...slots.keys()]),
+  };
+};
+
+/**
+ * Where saves are kept couldn't do what it was asked, such as a page whose
+ * storage is full or turned off.
+ *
+ * @category Errors
+ */
+export class StoreFailed extends Data.TaggedError("SaveStoreFailed")<{
+  /** The slot it was asked about, if one. */
+  readonly slot: string | undefined;
+  readonly message: string;
+}> {}
+
+/**
+ * Keeps a save in a slot of `Save.Store`, as its bytes, in place of what the
+ * slot held.
+ *
+ *   yield* Save.write("slot2", yield* app.save())
+ *
+ * It fails with `Save.StoreFailed` when the store can't keep it, as when a
+ * page's storage is full.
+ *
+ * @category Running
+ */
+export const write = Effect.fn("Save.write")(function* (
+  slot: string,
+  save: Save
+) {
+  const store = yield* Store;
+  yield* store.set(slot, encode(save));
+});
+
+/**
+ * Reads the save a slot of `Save.Store` holds, or none for an empty slot.
+ *
+ *   const saved = yield* Save.read("slot2")
+ *   if (Option.isSome(saved)) yield* app.load(saved.value)
+ *
+ * It fails with `Save.LoadRefused` when what the slot holds isn't a save this
+ * version of arcadekit reads, as `Save.decode` does, and with
+ * `Save.StoreFailed` when the store can't be read. Whether the game loads the
+ * save is checked when it is loaded.
+ *
+ * @category Running
+ */
+export const read = Effect.fn("Save.read")(function* (slot: string) {
+  const store = yield* Store;
+  const bytes = yield* store.get(slot);
+  if (bytes === undefined) {
+    return Option.none<Save>();
+  }
+  return Option.some(yield* decode(bytes));
+});
 
 /**
  * The name of the store that holds what an app's change queries have yet to

@@ -59,7 +59,9 @@ class Held implements Moment {
     readonly told: Told,
     readonly changes: SavedChanges[],
     /** Whether `changes` holds the frame and input stages' places too. */
-    readonly stages: boolean
+    readonly stages: boolean,
+    /** How many saves the app had loaded in place: a load leaves it behind. */
+    readonly loads: number
   ) {}
 }
 
@@ -95,7 +97,7 @@ export const capture = (
   Effect.suspend(() => {
     between(app, "capture", "A game is captured between ticks.");
     const { time } = app;
-    const { commands, events, world } = partsOf(app);
+    const { commands, events, log, world } = partsOf(app);
     return Exit.map(
       taking(commands, "capture", () => world._capture()),
       (of): Moment =>
@@ -111,7 +113,8 @@ export const capture = (
               ? undefined
               : (reader) => !reader.startsWith(READER)
           ),
-          options?.stages === true
+          options?.stages === true,
+          log.loads
         )
     );
   });
@@ -120,7 +123,8 @@ export const capture = (
  * Puts a game back, in place, to a moment `capture` took of it. The app, its
  * world and its services stay the same objects, and hold what they held
  * then. Its log goes back to the length it had. Run it between ticks, with
- * a moment of this app: it dies otherwise.
+ * a moment of this app captured since it last loaded a save with `app.load`:
+ * it dies otherwise.
  *
  * The game plays on from there. The frame and input stages, and code outside
  * the game that reads an event, hear every event it emits from then on,
@@ -153,10 +157,15 @@ export const rewind = (
 ): Effect.Effect<void> =>
   Effect.sync(() => {
     between(app, "rewind", "A game is put back between ticks.");
-    const { commands, dispatcher, events, world } = partsOf(app);
+    const { commands, dispatcher, events, log, world } = partsOf(app);
     if (!(moment instanceof Held) || moment.of !== world) {
       throw new Error(
         "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
+      );
+    }
+    if (moment.loads !== log.loads) {
+      throw new Error(
+        "Timeline.rewind() was given a moment captured before the app loaded a save, of the game the load replaced. To go back there, save that game and load the save."
       );
     }
     dispatcher.flush();

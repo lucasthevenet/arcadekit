@@ -127,6 +127,11 @@
       "types": "./dist/Services.d.ts",
       "default": "./dist/Services.js"
     },
+    "./Setting": {
+      "source": "./src/Setting.ts",
+      "types": "./dist/Setting.d.ts",
+      "default": "./dist/Setting.js"
+    },
     "./Singleton": {
       "source": "./src/Singleton.ts",
       "types": "./dist/Singleton.d.ts",

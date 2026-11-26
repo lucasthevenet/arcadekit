@@ -629,6 +629,16 @@ export class EventBus implements ReadingEvents {
   }
 
   /**
+   * Called when the app has loaded a save in place, at tick `tick`: the
+   * stages between ticks and outside code hear the loaded game from here on,
+   * and nothing the game it replaced told them.
+   * @internal
+   */
+  restarted(tick: number): void {
+    this.outbox.restart(tick);
+  }
+
+  /**
    * Called when the game has gone back to a moment, with what `mark` gave
    * for it. With `again`, it went back to run the same ticks again, and the
    * stages don't hear twice what they heard of them.

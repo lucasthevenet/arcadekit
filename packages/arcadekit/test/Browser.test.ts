@@ -26,12 +26,15 @@ import {
   Input,
   Plugin,
   Query,
+  Save,
+  Setting,
   Sound,
   System,
   Time,
+  World,
 } from "../src/index.ts";
 import { Message, Session, Transport } from "../src/net/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 import * as Menu from "./volumeMenu.ts";
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
@@ -905,6 +908,164 @@ describe("Browser.layer", () => {
         );
         expect(own).toEqual({ level: "mine", rooted: "mine", far: "mine" });
         expect(asked).toEqual([]);
+      })
+  );
+});
+
+/** A page's local storage, which outlives a visit to the page: a reload keeps it. */
+const makeStorage = () => {
+  const items = new Map<string, string>();
+  let full = false;
+  return {
+    items,
+    fill: () => {
+      full = true;
+    },
+    storage: {
+      get length() {
+        return items.size;
+      },
+      key: (index: number) => [...items.keys()][index] ?? null,
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (full) {
+          throw new Error("The quota has been exceeded.");
+        }
+        items.set(key, value);
+      },
+      removeItem: (key: string) => {
+        items.delete(key);
+      },
+    },
+  };
+};
+
+describe("what a page keeps beyond a visit", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.effect(
+    "is a game's saves and settings, in its local storage under its name, through a reload",
+    () =>
+      Effect.gen(function* () {
+        const page = makeStorage();
+        vi.stubGlobal("localStorage", page.storage);
+        const Volume = Setting.define("br/Volume", Schema.Number, 1);
+        const app = yield* App.make(App.define({ plugins: [Flying] }));
+        yield* app.tick(1 / 60);
+        const save = unwrap(yield* Effect.exit(app.save()));
+        const hash = (yield* app.read(World)).hash();
+
+        // A visit: it saves to a slot, and sets the volume.
+        const visit = <A, E>(
+          effect: Effect.Effect<A, E, Save.Store | Setting.Store>
+        ) =>
+          effect.pipe(
+            Effect.provide(
+              Layer.merge(
+                Save.layer(Browser.saves("mine")),
+                Setting.layer(Browser.settings("mine"))
+              )
+            )
+          );
+        yield* visit(
+          Effect.gen(function* () {
+            yield* Save.write("slot2", save);
+            yield* Setting.set(Volume, 0.5);
+          })
+        );
+        expect([...page.items.keys()].toSorted()).toEqual([
+          "mine/save/slot2",
+          "mine/setting/br/Volume",
+        ]);
+        expect(page.items.get("mine/setting/br/Volume")).toBe("0.5");
+
+        // The next, after a reload: what the first kept is there.
+        const kept = yield* visit(
+          Effect.gen(function* () {
+            return {
+              slots: yield* (yield* Save.Store).slots,
+              save: yield* Save.read("slot2"),
+              volume: yield* Volume,
+            };
+          })
+        );
+        expect(kept.slots).toEqual(["slot2"]);
+        expect(kept.volume).toBe(0.5);
+        yield* app.tick(1 / 60);
+        yield* app.load(Option.getOrThrow(kept.save));
+        expect((yield* app.read(World)).hash()).toBe(hash);
+
+        // Another game of the same site keeps its own.
+        expect(
+          yield* Effect.provide(
+            Effect.gen(function* () {
+              return {
+                slots: yield* (yield* Save.Store).slots,
+                volume: yield* Volume,
+              };
+            }),
+            Layer.merge(
+              Save.layer(Browser.saves("theirs")),
+              Setting.layer(Browser.settings("theirs"))
+            )
+          )
+        ).toEqual({ slots: [], volume: 1 });
+      })
+  );
+
+  it.effect(
+    "fails to keep what a full storage refuses, and says where it was to go",
+    () =>
+      Effect.gen(function* () {
+        const page = makeStorage();
+        vi.stubGlobal("localStorage", page.storage);
+        page.fill();
+        const Volume = Setting.define("br/Loudness", Schema.Number, 1);
+        const app = yield* App.make(App.define({ plugins: [Flying] }));
+        const save = unwrap(yield* Effect.exit(app.save()));
+        const written = yield* Effect.flip(
+          Save.write("auto", save).pipe(
+            Effect.provide(Save.layer(Browser.saves("mine")))
+          )
+        );
+        expect(written).toEqual(
+          new Save.StoreFailed({
+            slot: "auto",
+            message:
+              'The page\'s storage could not keep the slot "auto": The quota has been exceeded.',
+          })
+        );
+        const set = yield* Effect.flip(
+          Setting.set(Volume, 0.2).pipe(
+            Effect.provide(Setting.layer(Browser.settings("mine")))
+          )
+        );
+        expect(set).toEqual(
+          new Setting.StoreFailed({
+            key: "br/Loudness",
+            message:
+              'The page\'s storage could not keep the setting "br/Loudness": The quota has been exceeded.',
+          })
+        );
+        expect(
+          yield* Effect.provide(Volume, Setting.layer(Browser.settings("mine")))
+        ).toBe(1);
+        // What isn't a save's text is refused as one.
+        page.items.set("mine/save/bad", "%%%");
+        const bad = yield* Effect.flip(
+          Save.read("bad").pipe(
+            Effect.provide(Save.layer(Browser.saves("mine")))
+          )
+        );
+        expect(bad).toEqual(
+          new Save.StoreFailed({
+            slot: "bad",
+            message:
+              'The page\'s storage could not read the slot "bad": what it holds is not the base64 text of a save',
+          })
+        );
       })
   );
 });

@@ -225,7 +225,7 @@ type InputBan =
 type LayerBan = Sim | Commands | Writes<string> | Adds<string>;
 
 const TICK_MSG =
-  "A tick reads and changes the simulation, and requires only its built-in services, queries, singletons, states, events and resources. Keep the game's state in the world (a cache that is rebuilt in a transient field of a singleton), make configuration a Resource, draw and play with System.frame, and read the devices with System.input." as const;
+  "A tick reads and changes the simulation, and requires only its built-in services, queries, singletons, states, events and resources. Keep the game's state in the world (a cache that is rebuilt in a transient field of a singleton), make configuration a Resource, bring in what a Setting changes of the game with an action, draw and play with System.frame, and read the devices with System.input." as const;
 const FRAME_MSG =
   "A frame system draws and plays. It cannot change the game: no commands, world.set, query writes, event emit or state set. Read Input.Devices from System.input. It has no scope to load into: hold a bundle with Assets.during." as const;
 const INPUT_MSG =

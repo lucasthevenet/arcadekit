@@ -124,6 +124,41 @@ export const build = <
     );
   });
 
+/**
+ * Attaches to a world the stores an app keeps in its world, before the world
+ * loads a save, which may hold some of each. The app's log is attached later,
+ * since it saves nothing.
+ */
+const storesOf = (world: EcsWorld) => {
+  const events = new EventBus(world);
+  const intake = new Intake();
+  world._attach(intake);
+  world._attach(
+    new Visits(world, (reader) => !reader.startsWith(Stage.READER))
+  );
+  return { events, intake };
+};
+
+/**
+ * Loads a save into a world of its own, with the stores of an app's world,
+ * as the app's world would load it: what `app.load` tries before it puts its
+ * own world back to the save, so that a save it refuses leaves the app as it
+ * was. It returns the save as it was loaded, brought up to `version`.
+ */
+const tried = (
+  save: Save.Save,
+  version: number,
+  migrations: readonly Save.Migration[]
+): Exit.Exit<Save.Save, Save.LoadRefused> => {
+  const world = new EcsWorld();
+  storesOf(world);
+  const loaded = into(world, save, version, migrations);
+  if (Exit.isFailure(loaded)) {
+    return loaded;
+  }
+  return Exit.map(refuseRemovedScopes(world), () => loaded.value);
+};
+
 /** Puts an app together in `scope`, which is the app's. */
 const assemble = <
   S extends Systems,
@@ -149,13 +184,7 @@ const assemble = <
     const world = new EcsWorld(seed === undefined ? undefined : { seed });
     world._checkReads = start.verifyFrames === true;
     const commands = new CommandBuffer<Spawned>(world);
-    const events = new EventBus(world);
-    // Attached before the world loads a save, which may hold some of each.
-    const intake = new Intake();
-    world._attach(intake);
-    world._attach(
-      new Visits(world, (reader) => !reader.startsWith(Stage.READER))
-    );
+    const { events, intake } = storesOf(world);
     const dispatcher = new TickDispatcher();
     const scheduler = new TickScheduler(dispatcher);
 
@@ -367,6 +396,31 @@ const assemble = <
           );
           return takeSave(world, commands, version, log.entries.length);
         }),
+      load: (given) =>
+        Effect.suspend(() => {
+          runner.whileIdle(
+            (busy) =>
+              `load() was called during a ${busy}. A save is loaded between ticks.`
+          );
+          if (inbox.diverted !== undefined) {
+            throw new Error(
+              "load() was called on an app that a session has taken over. It would put this machine's game where the other peers' are not. A session's peers start from one save together: make each peer's app from it with App.make(game, { save })."
+            );
+          }
+          const loaded = tried(given, version, game.migrations);
+          if (Exit.isFailure(loaded)) {
+            return loaded;
+          }
+          // The save loads: from here on nothing fails, and the app is the
+          // one App.make would make from it, with its own layers and stages.
+          dispatcher.flush();
+          commands.rollback(0);
+          world.restore(loaded.value.world);
+          prepare(world, schedule.hooked, true);
+          events.restarted(time.tick);
+          log.restart(loaded.value);
+          return Exit.void;
+        }),
       get settled() {
         return loop.settled();
       },
@@ -421,7 +475,7 @@ const assemble = <
           inbox.enqueueByName(name, payload, from);
         }),
     };
-    hold(app, { world, commands, events, dispatcher });
+    hold(app, { world, commands, events, dispatcher, log });
     const take: Built<TickError<S, P>>["take"] = (issued) => {
       if (inbox.diverted !== undefined) {
         throw new Error(

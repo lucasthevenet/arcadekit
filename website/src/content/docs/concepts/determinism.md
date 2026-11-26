@@ -56,7 +56,7 @@ Two worlds built by the same operations in the same order hash equal. Changing o
 
 The hash doesn't depend on anything a simulation can't observe: a table's capacity, leftover data in a column past its last row, which queries were created, the order a sparse component's members joined in, or the order the program defined its components in. Every `NaN` counts as the same `NaN`, because engines don't agree on a `NaN`'s bits. `0` and `-0` differ.
 
-- A non-numeric field counts as it is [saved](../guides/saving-and-loading.md#snapshot-a-world): a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all.
+- A non-numeric field counts as it is [saved](../guides/snapshots.md#snapshot-a-world-and-load-it): a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all.
 - It uses 32-bit integer arithmetic on each field's bits, so it is identical on every machine and in every JavaScript engine.
 - It changes nothing in the world, so you can call it at any time. It costs about 8 ns per entity with four float fields.
 - It doesn't cover where each reader is: how far a system has read the events, or what change queries haven't visited. Where a reader is belongs to the reader, so a plugin that only watches a game doesn't change the game's hash. Two games with the same hash can still differ there, until the difference reaches the world. A [save](../guides/saving-and-loading.md) holds where each reader is.
