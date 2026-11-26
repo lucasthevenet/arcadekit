@@ -39,6 +39,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { Entity, Rng } from "../src/index.ts";
+import { VISITS } from "../src/internal/save.ts";
 import type { BuiltIn } from "../src/Services.ts";
 import { thrown } from "./checks.ts";
 
@@ -929,7 +930,7 @@ describe("what the frame stage reads", () => {
         }
         // The save knows the simulation's reader and not the frame's.
         const visits = readSnapshot(save.value.world).stores.find(
-          (store) => store.name === Save.VISITS
+          (store) => store.name === VISITS
         )?.data as { readers: Record<string, number> }[];
         const readers = visits.flatMap((changes) =>
           Object.keys(changes.readers)

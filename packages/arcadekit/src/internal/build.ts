@@ -23,6 +23,7 @@ import { CommandBuffer } from "../ecs/commands.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import { World as EcsWorld } from "../ecs/world.ts";
 import * as Input from "../Input.ts";
+import type { Migration } from "../Migrate.ts";
 import * as Plugin from "../Plugin.ts";
 import * as Save from "../Save.ts";
 import { Time, World } from "../Services.ts";
@@ -149,7 +150,7 @@ const storesOf = (world: EcsWorld) => {
 const tried = (
   save: Save.Save,
   version: number,
-  migrations: readonly Save.Migration[]
+  migrations: readonly Migration[]
 ): Exit.Exit<Save.Save, Save.LoadRefused> => {
   const world = new EcsWorld();
   storesOf(world);

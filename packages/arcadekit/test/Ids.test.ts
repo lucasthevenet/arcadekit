@@ -283,11 +283,11 @@ describe("an entity's id", () => {
     const world = new World();
     world.spawn(Body.of({ x: 1 }));
     const contents = readSnapshot(world.snapshot());
-    Migrate.addField(contents, "id/Body", "by", "entity", idOf(wide));
     const Bodied = Component.define("id/Body", {
       x: Field.f32,
       by: Field.entity,
     });
+    new Migrate.Contents(contents).addField(Bodied, "by", wide);
     const moved = new World();
     moved.load(writeSnapshot(contents), [Bodied]);
     expect(moved.get(entityOf(0), Bodied)).toEqual({ x: 1, by: wide });

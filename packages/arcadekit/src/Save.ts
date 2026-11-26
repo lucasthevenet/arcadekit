@@ -41,14 +41,10 @@ import {
 import type { Scope } from "effect";
 
 import type * as App from "./App.ts";
-import { readSnapshot, writeSnapshot } from "./ecs/contents.ts";
-import type { SnapshotContents } from "./ecs/contents.ts";
-import { SnapshotError } from "./ecs/snapshot.ts";
 import type { SnapshotProblem } from "./ecs/snapshot.ts";
 import * as Event from "./Event.ts";
 import { said } from "./internal/intake.ts";
 import { partsOf } from "./internal/parts.ts";
-import { loading } from "./internal/save.ts";
 
 /**
  * A game captured between two ticks, which `Save.make(app)` makes: the game's
@@ -174,120 +170,6 @@ export class LoadRefused extends Data.TaggedError("SaveLoadRefused")<{
     | "migration failed";
   readonly message: string;
 }> {}
-
-/**
- * A save in a plain form that describes itself, for a migration to edit. Its
- * world lists components by name with their fields, as the snapshot describes
- * them, so a migration can read it whatever the game's components are now.
- * `Migrate` makes the common changes.
- *
- * @category Models
- */
-export interface Contents {
-  /**
-   * The world. Its `stores` hold, each under its name, what an app keeps of a
-   * game beside its entities:
-   *
-   * - `Action.INTAKE`: `{ queued }`, the actions that were queued, each
-   *   `{ name, payload, from? }` with its payload in JSON form;
-   * - `Event.STORE`: for each event that was waiting, `{ name, waiting,
-   *   read }`, its events in JSON form and how many each system had read;
-   * - `Save.VISITS`: what change queries hadn't visited yet, by component
-   *   name. Entries under a name the game no longer has are dropped when the
-   *   save is loaded: the queries watching the component then start over,
-   *   with every entity counting as changed.
-   */
-  world: SnapshotContents;
-}
-
-/**
- * Turns a save written by version `from` of a game into one of version
- * `from + 1`, by editing in place the contents it receives.
- *
- * **Gotchas**
- *
- * - A migration turns an old save into a new game, and the log recorded
- *   before it no longer replays against it.
- * - A migration that comes with a schema change updates the payloads in
- *   `world.stores` too. A waiting event that its schema no longer takes makes
- *   the load fail with `"store changed"`. A queued action that its schema no
- *   longer takes is refused when it is applied, as an `Action.Rejected` event.
- *
- * @category Models
- */
-export interface Migration {
-  readonly from: number;
-  readonly migrate: (contents: Contents) => void;
-}
-
-/**
- * Migrates a save to a version of the game, one migration at a time. A save
- * already at that version is returned unchanged.
- *
- * Fails with `LoadRefused`: `"newer version"` for a save from a later version,
- * `"no migration"` when a step is missing, `"migration failed"` when a
- * migration throws or leaves a value that can't be saved, and a snapshot's
- * own problems when the save's world can't be read or written back.
- *
- * @category Migrations
- */
-export const migrate = (
-  save: Save,
-  version: number,
-  migrations: readonly Migration[]
-): Exit.Exit<Save, LoadRefused> => {
-  if (save.version === version) {
-    return Exit.succeed(save);
-  }
-  if (save.version > version) {
-    return refuse(
-      "newer version",
-      `The save was written by version ${save.version} of the game, and this is version ${version}. A game cannot read what a later version of itself wrote.`
-    );
-  }
-  let contents: Contents;
-  try {
-    contents = { world: readSnapshot(save.world) };
-  } catch (error) {
-    if (error instanceof SnapshotError) {
-      return refuse(loading(error), error.message);
-    }
-    throw error;
-  }
-  for (let from = save.version; from < version; from++) {
-    const step = migrations.find((migration) => migration.from === from);
-    if (step === undefined) {
-      return refuse(
-        "no migration",
-        `The save was written by version ${save.version} of the game, and this is version ${version}. There is no migration from version ${from} to version ${from + 1}.`
-      );
-    }
-    try {
-      step.migrate(contents);
-    } catch (error) {
-      return refuse(
-        "migration failed",
-        `The migration from version ${from} to version ${from + 1} failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-  try {
-    return Exit.succeed({
-      version,
-      world: writeSnapshot(contents.world),
-    });
-  } catch (error) {
-    if (!(error instanceof SnapshotError)) {
-      throw error;
-    }
-    return error.problem === "cannot be saved"
-      ? refuse(
-          "migration failed",
-          `The migrations from version ${save.version} to version ${version} left a world that can't be written back: ${error.message}`
-        )
-      : refuse(loading(error), error.message);
-  }
-};
 
 /** "AKSV": arcadekit save. */
 const MAGIC = 0x56534b41;
@@ -580,14 +462,3 @@ export const autosave = (
       })
     );
   });
-
-/**
- * The name of the store that holds what an app's change queries have yet to
- * visit, as a snapshot has it: `readSnapshot(save.world).stores`. It holds
- * what `world.saveChanges()` returns for the systems of the tick and the
- * handlers: one entry per component and kind of change,
- * `{ component, kind, entries, readers }`.
- *
- * @category Constants
- */
-export const VISITS = "arcadekit/changes";

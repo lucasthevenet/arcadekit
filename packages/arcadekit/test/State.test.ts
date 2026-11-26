@@ -1303,7 +1303,7 @@ describe("an entity scoped to a state", () => {
           Exit.fail(
             new Save.LoadRefused({
               problem: "unknown component",
-              message: `The save holds "st/Lever.Scoped.gone", the tag of a value the state "st/Lever" no longer has. Its values are: ${After.values.join(", ")}. A migration renames or removes a component in a save.`,
+              message: `The save holds "st/Lever.Scoped.gone", the tag of a value the state "st/Lever" no longer has. Its values are: ${After.values.join(", ")}. A step of \`Migrate.step\` renames the value, and its tag with it, with \`renameStateValue\`.`,
             })
           )
         );

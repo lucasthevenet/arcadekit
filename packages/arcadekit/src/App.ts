@@ -54,6 +54,7 @@ import type { Entity } from "./ecs/component.ts";
 import type { Placed } from "./ecs/spawned.ts";
 import { build } from "./internal/build.ts";
 import { versionOf } from "./internal/save.ts";
+import type * as Migrate from "./Migrate.ts";
 import * as Plugin from "./Plugin.ts";
 import * as Save from "./Save.ts";
 import type { BuiltIn, Time, TimeState, World } from "./Services.ts";
@@ -581,7 +582,7 @@ export interface Options<
    * version, each from `from` to `from + 1`. Only a game made from a save
    * uses them.
    */
-  readonly migrations?: readonly Save.Migration[];
+  readonly migrations?: readonly Migrate.Migration[];
   /** The systems that belong to the game itself, not to a plugin. */
   readonly systems?: readonly [...S];
   /** The handlers that belong to the game itself, not to a plugin. */
@@ -606,7 +607,7 @@ export interface Game<
   readonly handlers: readonly [...H];
   /** The game's version, 0 when it was given none. */
   readonly version: number;
-  readonly migrations: readonly Save.Migration[];
+  readonly migrations: readonly Migrate.Migration[];
 }
 
 /**
@@ -748,7 +749,7 @@ export class FrameChangedWorld extends Data.TaggedError(
  *   define or one whose fields have changed, or because its bytes are
  *   damaged. It also fails when the save is from another version of the game
  *   and the game's `migrations` don't bring it up to this one. See
- *   `Save.migrate`.
+ *   `Migrate.migrate`.
  * - The app has a scope of its own, which `app.close` closes, so making it
  *   requires none. In that scope it builds its plugins' layers and listens to
  *   the devices of `Input.Source`. With `Sound.plugin`, it also opens

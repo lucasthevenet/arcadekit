@@ -749,7 +749,7 @@ describe("a save that cannot be loaded", () => {
         expect(error).toBeInstanceOf(Save.LoadRefused);
         expect(error.problem).toBe("store changed");
         expect(error.message).toMatch(
-          /^Can't load the "sv\/Sounded" events waiting to be read: one is in a form that is no longer taken: .*A migration changes the events and the queued actions of a save in `world.stores`\.$/s
+          /^Can't load the "sv\/Sounded" events waiting to be read: one is in a form that is no longer taken: .*A step of `Migrate.step` renames them with `renameEvent` and `renameAction`, and changes their payloads with `mapPayloads`\.$/s
         );
       })
   );
@@ -771,7 +771,7 @@ describe("a save that cannot be loaded", () => {
         expect(error).toBeInstanceOf(Save.LoadRefused);
         expect(error.problem).toBe("unknown component");
         expect(error.message).toMatch(
-          /"sv\/Gone", which this program doesn't define.* A migration renames or removes a component in a save\.$/su
+          /"sv\/Gone", which this program doesn't define.* A step of `Migrate\.step` renames it to its definition with `renameComponent`, or removes it with `removeComponent`\.$/su
         );
       })
   );
@@ -802,7 +802,7 @@ describe("a save that cannot be loaded", () => {
         expect(error).toBeInstanceOf(Save.LoadRefused);
         expect(error.problem).toBe("store changed");
         expect(error.message).toBe(
-          'The snapshot holds an event named "sv/Never" waiting to be read, which this program doesn\'t define: it was renamed or removed since. A migration changes the events and the queued actions of a save in `world.stores`.'
+          'The snapshot holds an event named "sv/Never" waiting to be read, which this program doesn\'t define: it was renamed or removed since. A step of `Migrate.step` renames them with `renameEvent` and `renameAction`, and changes their payloads with `mapPayloads`.'
         );
       })
   );

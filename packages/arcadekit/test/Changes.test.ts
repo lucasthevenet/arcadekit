@@ -32,12 +32,13 @@ import type {
   SavedChanges,
   SnapshotContents,
 } from "../src/index.ts";
+import { VISITS } from "../src/internal/save.ts";
 import { expectChecked, makeChecks } from "./checks.ts";
 import { placedIn } from "./placed.ts";
 
 /** What the change queries of a snapshot's world had yet to visit. */
 const visitsOf = (world: SnapshotContents): SavedChanges[] =>
-  (world.stores.find((store) => store.name === Save.VISITS)?.data ??
+  (world.stores.find((store) => store.name === VISITS)?.data ??
     []) as SavedChanges[];
 const visitsIn = (save: Save.Save): SavedChanges[] =>
   visitsOf(readSnapshot(save.world));
@@ -1641,19 +1642,12 @@ describe("change queries in an app", () => {
             handlers: [after],
             version: 1,
             migrations: [
-              {
-                from: 0,
-                migrate: (contents) => {
-                  Migrate.renameComponent(
-                    contents.world,
-                    "ch/Position",
-                    "ch/Place"
-                  );
-                  expect(
-                    visitsOf(contents.world).map((each) => each.component)
-                  ).toEqual(["ch/Health", "ch/Place", "ch/Place"]);
-                },
-              },
+              Migrate.step(0, (contents) => {
+                contents.renameComponent("ch/Position", Place);
+                expect(
+                  visitsOf(contents.world).map((each) => each.component)
+                ).toEqual(["ch/Health", "ch/Place", "ch/Place"]);
+              }),
             ],
           }),
           { save: save.value }
@@ -1679,7 +1673,7 @@ describe("change queries in an app", () => {
         /** The save, with what its change queries had yet to visit replaced. */
         const withVisits = (visits: unknown): Save.Save => {
           const world = readSnapshot(save.value.world);
-          world.stores = [{ name: Save.VISITS, data: visits }];
+          world.stores = [{ name: VISITS, data: visits }];
           return { ...save.value, world: writeSnapshot(world) };
         };
         const damaged = withVisits([

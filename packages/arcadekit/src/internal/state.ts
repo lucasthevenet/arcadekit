@@ -91,7 +91,7 @@ const valueOf = <V extends string>(state: State<V>, held: string): V => {
   const value = state.values.find((one) => one === held);
   if (value === undefined) {
     throw new Error(
-      `The state "${state.name}" holds "${held}", which is not one of its values: ${state.values.join(", ")}. A migration renames a state's values in a save.`
+      `The state "${state.name}" holds "${held}", which is not one of its values: ${state.values.join(", ")}. A step of \`Migrate.step\` renames a value with \`renameStateValue\`.`
     );
   }
   return value;
@@ -234,7 +234,7 @@ export const refuseRemovedScopes = (
       return Exit.fail(
         new LoadRefused({
           problem: "unknown component",
-          message: `The save holds "${name}", the tag of a value the state "${maker.name}" no longer has. Its values are: ${newest?.values.join(", ")}. A migration renames or removes a component in a save.`,
+          message: `The save holds "${name}", the tag of a value the state "${maker.name}" no longer has. Its values are: ${newest?.values.join(", ")}. A step of \`Migrate.step\` renames the value, and its tag with it, with \`renameStateValue\`.`,
         })
       );
     }
