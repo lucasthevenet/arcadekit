@@ -6,23 +6,29 @@ import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import type { Object3D, Scene as ThreeScene } from "three";
 
-import type {
-  ObjectsFromOptions,
-  ObjectsOptions,
-  ObjectsShared,
-} from "../Objects.ts";
+import type { ObjectsOptions, ObjectsShared } from "../Objects.ts";
 import { Scene } from "../Scene.ts";
 import type { Entries, Needs } from "../Three.ts";
 import { FromAssets } from "./assets.ts";
 import type { Angle, Columns, Xy, Xyz, Xyzw } from "./columns.ts";
 import { Holdings } from "./holdings.ts";
 import type { Kept } from "./holdings.ts";
-import { isFlat, required } from "./kind.ts";
+import { isFlat, placedBy, required } from "./kind.ts";
+import type { Placeable, Placing } from "./kind.ts";
 import { smoothOf } from "./smooth.ts";
 import type { Smooth } from "./smooth.ts";
 
+/** The options of `Gltf.objects`, as its system reads them. */
+interface Bundled<
+  B extends Entries,
+  O extends Object3D,
+> extends ObjectsShared<O> {
+  readonly from: Assets.Bundle<B>;
+  readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
+}
+
 /** Either set of options, as the class that keeps the objects sees them. */
-interface ObjectsOf<O extends Object3D> extends ObjectsShared<O> {
+interface ObjectsOf<O extends Object3D> extends ObjectsShared<O>, Placing {
   // Handed the assets of its bundle, or none for a kind without one.
   readonly make: (entity: Entity, assets: never) => O;
 }
@@ -317,19 +323,9 @@ class Objects<O extends Object3D> implements Kept {
     this.holdings.letGo();
   }
 }
-/**
- * The system of `Three.objects`, for either set of options.
- *
- * @internal
- */
-export const objects = <O extends Object3D>(
-  name: string,
-  options: ObjectsOptions<O> | ObjectsFromOptions<Entries, O>
-): System.System<never, Needs | Assets.Store, string, "frame"> => {
-  const from = "from" in options ? options.from : undefined;
+/** Reads a kind's query each frame and places its objects. */
+const placer = <O extends Object3D>(options: ObjectsShared<O> & Placing) => {
   const smooth = options.smooth === true;
-  const marked = required(options);
-  const excluded = options.without ?? [];
   const { Position, Rotation, Scale } = options.transform;
   // One query for every entity of the kind, handed a rotation and a scale
   // for the tables that have them.
@@ -337,45 +333,77 @@ export const objects = <O extends Object3D>(
     Position,
     Query.maybe(Rotation),
     Query.maybe(Scale)
-  ).pipe(Query.with(...marked), Query.without(...excluded));
-  return System.frame(name, function* () {
-    const kept = yield* Scene;
+  ).pipe(
+    Query.with(...required(options)),
+    Query.without(...(options.without ?? []))
+  );
+  return function* (held: Objects<O>) {
     const placed = yield* Placed;
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
-    let held: Objects<O> | undefined;
-    if (from === undefined) {
-      held = kept._kept.get(name) as Objects<O> | undefined;
-      if (held === undefined) {
-        held = new Objects(
-          kept.scene,
-          options,
-          undefined,
-          new Holdings(kept._owned)
-        );
-        kept._kept.set(name, held);
-      }
-    } else {
-      let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
-      if (sourced === undefined) {
-        const { _owned, scene } = kept;
-        sourced = new FromAssets(
-          yield* Assets.Store,
-          from,
-          (assets) => new Objects(scene, options, assets, new Holdings(_owned))
-        );
-        kept._kept.set(name, sourced);
-      }
-      held = sourced.now();
-      // Its assets are not there: there is nothing to make an object of.
-      if (held === undefined) {
-        return;
-      }
-    }
     // Every entity that is one of these is found here, and its object made
     // if it is missing; whatever was not found is let go at the end.
     held.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
     placed.eachChunk(held.draw);
     held.finish();
+  };
+};
+
+/**
+ * The system of `Three.objects`.
+ *
+ * @internal
+ */
+export const objects = <O extends Object3D>(
+  name: string,
+  of: Placeable<ObjectsOptions<O>>
+): System.System<never, Needs, string, "frame"> => {
+  const options = { ...of, transform: placedBy(of.transform) };
+  const place = placer(options);
+  return System.frame(name, function* () {
+    const kept = yield* Scene;
+    let held = kept._kept.get(name) as Objects<O> | undefined;
+    if (held === undefined) {
+      held = new Objects(
+        kept.scene,
+        options,
+        undefined,
+        new Holdings(kept._owned)
+      );
+      kept._kept.set(name, held);
+    }
+    yield* place(held);
+  });
+};
+
+/**
+ * The system of `Gltf.objects`.
+ *
+ * @internal
+ */
+export const bundledObjects = <B extends Entries, O extends Object3D>(
+  name: string,
+  of: Placeable<Bundled<B, O>>
+): System.System<never, Needs | Assets.Store, string, "frame"> => {
+  const options = { ...of, transform: placedBy(of.transform) };
+  const place = placer(options);
+  return System.frame(name, function* () {
+    const kept = yield* Scene;
+    let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
+    if (sourced === undefined) {
+      const { _owned, scene } = kept;
+      sourced = new FromAssets(
+        yield* Assets.Store,
+        options.from,
+        (assets) => new Objects(scene, options, assets, new Holdings(_owned))
+      );
+      kept._kept.set(name, sourced);
+    }
+    const held = sourced.now();
+    // Its assets are not there: there is nothing to make an object of.
+    if (held === undefined) {
+      return;
+    }
+    yield* place(held);
   });
 };

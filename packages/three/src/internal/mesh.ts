@@ -12,6 +12,7 @@ import type { InstancesOptions } from "../Instances.ts";
 import type { Angle, Columns, Rgb, Xy, Xyz, Xyzw } from "./columns.ts";
 import type { Holdings, Kept } from "./holdings.ts";
 import { isFlat } from "./kind.ts";
+import type { Placing } from "./kind.ts";
 import * as matrices from "./matrices.ts";
 import { smoothOf } from "./smooth.ts";
 import type { Smooth } from "./smooth.ts";
@@ -74,7 +75,7 @@ export class Instances implements Kept {
   constructor(
     scene: ThreeScene,
     name: string,
-    options: InstancesOptions,
+    options: InstancesOptions & Placing,
     private readonly holdings: Holdings
   ) {
     holdings.hold(options.geometry);

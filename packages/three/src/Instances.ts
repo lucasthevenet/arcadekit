@@ -13,13 +13,12 @@
  * `@arcadekit/three/Three` gives the same exports. The system it makes
  * requires `Three.plugin`.
  */
-import type * as Assets from "arcadekit/Assets";
 import type * as Color from "arcadekit/Color";
 import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
 import * as internal from "./internal/instances.ts";
-import type { Entries, Needs, TransformOf, Which } from "./Three.ts";
+import type { Needs, TransformOf, Which } from "./Three.ts";
 
 /**
  * How an instance looks: its mesh's geometry and material.
@@ -32,7 +31,7 @@ export interface Look {
 }
 
 /**
- * The options of `Three.instances`, wherever its look comes from.
+ * The options of `Three.instances` and `Gltf.instances`.
  *
  * @category Options
  */
@@ -78,36 +77,12 @@ export interface InstancesShared extends Which {
 }
 
 /**
- * Options for instances whose look exists when the system is created.
+ * The options of `Three.instances`, whose look exists when the system is
+ * created.
  *
  * @category Options
  */
 export interface InstancesOptions extends InstancesShared, Look {}
-/**
- * Options for instances whose look is built from assets that are loaded later
- * and released again, such as a level's.
- *
- * @category Options
- */
-export interface InstancesFromOptions<
-  B extends Entries,
-  L extends Look = Look,
-> extends InstancesShared {
-  /** The bundle the look is built from. The instances are drawn while it is loaded. */
-  readonly from: Assets.Bundle<B>;
-  /**
-   * Builds the look from the bundle's assets, once each time they are loaded.
-   * Anything it returns besides a geometry and a material is kept for `free`.
-   */
-  readonly look: (assets: Assets.Loaded<B>) => L;
-  /**
-   * Called with what `look` returned, after the mesh is removed from the scene,
-   * when the assets are released or the app is closed. Use it to dispose
-   * of anything `look` created besides the geometry and the material, which are
-   * disposed of for you. The bundle releases the assets themselves.
-   */
-  readonly free?: (look: L) => void;
-}
 
 /**
  * Makes a frame-stage system that draws every entity of a kind as one instance
@@ -170,58 +145,18 @@ export interface InstancesFromOptions<
  * - What interpolation keeps, each component's value a tick ago, isn't part of
  *   the world. The game's hash, log and save are the same with it or without.
  *
- * A look built from assets, such as a level's texture, is given as the bundle
- * it comes `from` and a function that builds it:
- *
- *   const Rocks = Three.instances("game/Rocks", {
- *     of: Rock,
- *     transform: Transform3d,
- *     from: Forest,
- *     look: ({ bark }) => ({
- *       geometry: new IcosahedronGeometry(1),
- *       material: new MeshStandardMaterial({ map: bark }),
- *     }),
- *   })
- *
- * - The entities are drawn only while the app has the bundle loaded, which
- *   `Assets.during` or a system of your own manages. At any other time, no
- *   mesh of the kind is in the scene.
- * - `look` is called once each time the bundle loads. When the bundle is
- *   released or the app is closed, the mesh is disposed of, with the
- *   geometry and the material once no other system draws with them. Then
- *   `free` receives what `look` returned. A mesh built from a reloaded bundle
- *   starts with the room the previous one had grown to.
- * - It also requires `Assets.plugin`, as the system's type shows.
- *
  * **Gotchas**
  *
  * - Instances are drawn in no particular order.
  *
  * @category Systems
  */
-export function instances<
-  B extends Entries,
-  const O extends Which["of"],
-  L extends Look = Look,
->(
-  name: string,
-  options: InstancesFromOptions<B, L> & {
-    readonly of: O;
-    readonly transform: TransformOf<O>;
-  }
-): System.System<never, Needs | Assets.Store, string, "frame">;
 export function instances<const O extends Which["of"]>(
   name: string,
   options: InstancesOptions & {
     readonly of: O;
     readonly transform: TransformOf<O>;
   }
-): System.System<never, Needs, string, "frame">;
-// One body for both: the system of a look that is there asks for no store of
-// assets, which the second signature says.
-export function instances(
-  name: string,
-  options: InstancesOptions | InstancesFromOptions<Entries>
-): System.System<never, Needs | Assets.Store, string, "frame"> {
+): System.System<never, Needs, string, "frame"> {
   return internal.instances(name, options);
 }
