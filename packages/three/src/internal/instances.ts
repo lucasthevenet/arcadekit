@@ -92,11 +92,11 @@ export const instances = (
 };
 
 /**
- * The system of `Three.instancesFrom`.
+ * The system of `Gltf.instances`.
  *
  * @internal
  */
-export const instancesFrom = <B extends Entries, L extends Look>(
+export const bundledInstances = <B extends Entries, L extends Look>(
   name: string,
   of: Placeable<InstancesFromOptions<B, L>>
 ): System.System<never, Needs | Assets.Store, string, "frame"> => {

@@ -9,7 +9,7 @@
  *   })
  *
  *   // One object per entity, made from the model while the bundle is loaded.
- *   const Ships = Three.objectsFrom("game/Ships", {
+ *   const Ships = Gltf.objects("game/Ships", {
  *     of: Ship,
  *     transform: Transform3d,
  *     from: Fleet,
@@ -17,7 +17,7 @@
  *   })
  *
  *   // Or a crowd, each entity an instance of one of a model's meshes.
- *   const Rocks = Three.instancesFrom("game/Rocks", {
+ *   const Rocks = Gltf.instances("game/Rocks", {
  *     of: Rock,
  *     transform: Transform3d,
  *     from: Fleet,
@@ -35,6 +35,7 @@
  * which a game without models doesn't need to ship.
  */
 import * as Assets from "arcadekit/Assets";
+import type * as System from "arcadekit/System";
 import { Effect, Schema } from "effect";
 import type {
   BufferGeometry,
@@ -47,6 +48,8 @@ import type {
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
 
+import * as internalInstances from "./internal/instances.ts";
+import * as internalObjects from "./internal/objects.ts";
 import * as Three from "./Three.ts";
 
 /**
@@ -480,7 +483,7 @@ export const model = (
 
 /**
  * Returns a model's mesh by name, or its first mesh when given no name. A mesh
- * has a geometry and a material, so it is a look that `Three.instancesFrom`
+ * has a geometry and a material, so it is a look that `Gltf.instances`
  * accepts.
  *
  *   look: ({ rock }) => Gltf.mesh(rock, "Boulder")
@@ -521,3 +524,88 @@ export const mesh = (of: Model, name?: string): Mesh => {
   }
   return wanted;
 };
+
+/**
+ * Makes a frame-stage system that draws every entity of a kind as one instance
+ * of one mesh, whose look is built from assets, such as a level's texture. It
+ * is given as the bundle the look comes `from` and a function that builds it:
+ *
+ *   const Rocks = Gltf.instances("game/Rocks", {
+ *     of: Rock,
+ *     transform: Transform3d,
+ *     from: Forest,
+ *     look: ({ bark }) => ({
+ *       geometry: new IcosahedronGeometry(1),
+ *       material: new MeshStandardMaterial({ map: bark }),
+ *     }),
+ *   })
+ *
+ * **Details**
+ *
+ * It draws as `Three.instances` does, which says how, with a look that exists
+ * only while its assets are loaded:
+ *
+ * - The entities are drawn only while the app has the bundle loaded, which
+ *   `Assets.during` or a system of your own manages. At any other time, no
+ *   mesh of the kind is in the scene.
+ * - `look` is called once each time the bundle loads. When the bundle is
+ *   released or the app is closed, the mesh is disposed of, with the
+ *   geometry and the material once no other system draws with them. Then
+ *   `free` receives what `look` returned. A mesh built from a reloaded bundle
+ *   starts with the room the previous one had grown to.
+ * - It also requires `Assets.plugin`, as the system's type shows.
+ *
+ * @category Systems
+ */
+export function instances<
+  B extends Three.Entries,
+  const O extends Three.Which["of"],
+  L extends Three.Look = Three.Look,
+>(
+  name: string,
+  options: Three.InstancesFromOptions<B, L> & {
+    readonly of: O;
+    readonly transform: Three.TransformOf<O>;
+  }
+): System.System<never, Three.Needs | Assets.Store, string, "frame"> {
+  return internalInstances.bundledInstances(name, options);
+}
+
+/**
+ * Makes a frame-stage system that keeps one `Object3D` per entity of a kind,
+ * built from assets, such as a level's models. It names the bundle they come
+ * `from`, and `make` receives its assets:
+ *
+ *   const Trees = Gltf.objects("game/Trees", {
+ *     of: Tree,
+ *     transform: Transform3d,
+ *     from: Forest,
+ *     make: (entity, { oak }) => oak.scene.clone(),
+ *   })
+ *
+ * **Details**
+ *
+ * It keeps its objects as `Three.objects` does, which says how, while the
+ * assets are loaded:
+ *
+ * - Objects exist only while the app has the bundle loaded. Each is created in
+ *   the frame the bundle loads. When the bundle is released, every object is
+ *   removed and passed to `free` before the scene is next rendered. When the
+ *   bundle loads again, each object is created again.
+ * - It also requires `Assets.plugin`, as the system's type shows.
+ *
+ * @category Systems
+ */
+export function objects<
+  B extends Three.Entries,
+  const K extends Three.Which["of"],
+  O extends Object3D = Object3D,
+>(
+  name: string,
+  options: Three.ObjectsFromOptions<B, O> & {
+    readonly of: K;
+    readonly transform: Three.TransformOf<K>;
+  }
+): System.System<never, Three.Needs | Assets.Store, string, "frame"> {
+  return internalObjects.bundledObjects(name, options);
+}

@@ -372,11 +372,11 @@ export const objects = <O extends Object3D>(
 };
 
 /**
- * The system of `Three.objectsFrom`.
+ * The system of `Gltf.objects`.
  *
  * @internal
  */
-export const objectsFrom = <B extends Entries, O extends Object3D>(
+export const bundledObjects = <B extends Entries, O extends Object3D>(
   name: string,
   of: Placeable<ObjectsFromOptions<B, O>>
 ): System.System<never, Needs | Assets.Store, string, "frame"> => {

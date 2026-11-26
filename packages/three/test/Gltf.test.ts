@@ -639,13 +639,13 @@ describe("a level's models", () => {
   it("are what its objects and its instances are made of, for as long as the level", async () => {
     const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
     const Fleet = Assets.bundle("gl/Fleet", { ship: Gltf.model("/tri.glb") });
-    const Ships = Three.objectsFrom("gl/Ships", {
+    const Ships = Gltf.objects("gl/Ships", {
       of: Ship,
       transform: Transform3d,
       from: Fleet,
       make: (_entity, { ship }) => ship.scene.clone(),
     });
-    const Rocks = Three.instancesFrom("gl/Rocks", {
+    const Rocks = Gltf.instances("gl/Rocks", {
       of: Rock,
       transform: Transform3d,
       from: Fleet,

@@ -3,12 +3,12 @@ title: "Textures and models"
 description: "Build a level's look from its files: Three.texture and Gltf.model are bundle assets, and instances and objects built from them are drawn while the bundle is loaded."
 ---
 
-A level's **textures** and **models** are [assets](assets.md) of its bundle. They load when the game enters the level and are released when it leaves. A kind whose look is built from them is made with `Three.instancesFrom` or `Three.objectsFrom`, and names the bundle it comes `from`. A geometry and a material passed to [`Three.instances`](instances-and-objects.md) directly exist from when the system is made, and need no bundle.
+A level's **textures** and **models** are [assets](assets.md) of its bundle. They load when the game enters the level and are released when it leaves. A kind whose look is built from them is made with `Gltf.instances` or `Gltf.objects`, and names the bundle it comes `from`. A geometry and a material passed to [`Three.instances`](instances-and-objects.md) directly exist from when the system is made, and need no bundle.
 
 ## Build a look from a bundle
 
 ```ts
-import { Three } from "@arcadekit/three";
+import { Gltf, Three } from "@arcadekit/three";
 import { Assets, Component, Plugin, State, Transform3d } from "arcadekit";
 import { CylinderGeometry, MeshStandardMaterial } from "three";
 
@@ -19,7 +19,7 @@ const Forest = Assets.bundle("game/Forest", {
   bark: Three.texture("/bark.png"),
 });
 
-const Trees = Three.instancesFrom("game/Trees", {
+const Trees = Gltf.instances("game/Trees", {
   of: Tree,
   transform: Transform3d,
   from: Forest,
@@ -91,7 +91,7 @@ const Fleet = Assets.bundle("game/Fleet", {
 });
 
 // One object each: a copy of the model's scene.
-const Ships = Three.objectsFrom("game/Ships", {
+const Ships = Gltf.objects("game/Ships", {
   of: Ship,
   transform: Transform3d,
   from: Fleet,
@@ -99,7 +99,7 @@ const Ships = Three.objectsFrom("game/Ships", {
 });
 
 // Or a crowd, each an instance of one of its meshes.
-const Rocks = Three.instancesFrom("game/Rocks", {
+const Rocks = Gltf.instances("game/Rocks", {
   of: Rock,
   transform: Transform3d,
   from: Fleet,
@@ -113,7 +113,7 @@ const Rocks = Three.instancesFrom("game/Rocks", {
 - When the scope it was loaded in closes, every geometry, material, and texture of the model is disposed of, and its images are closed.
 - A model is shared across the whole bundle. An object made with `scene.clone()` shares the model's geometries and materials. A clone is cheap and leaves nothing to `free`, but changing one copy's material changes them all.
 - `Gltf.mesh(model, name)` returns one of the model's meshes. It finds the mesh by the name of its node, as an editor shows it, or by the mesh's own name when its node has none. Without a name, it returns the first mesh. A mesh with several materials is several meshes under that name, and `Gltf.mesh` returns the first.
-- A mesh has a geometry and a material, which is exactly what `Three.instancesFrom` accepts from `look`. When no mesh has the name, `Gltf.mesh` throws an error that lists the meshes the model has.
+- A mesh has a geometry and a material, which is exactly what `Gltf.instances` accepts from `look`. When no mesh has the name, `Gltf.mesh` throws an error that lists the meshes the model has.
 - `Gltf.model(url, { files, prepare })` passes the loader to `prepare` before the model is parsed, for what compressed models need: `loader.setDRACOLoader(...)`, `setKTX2Loader`, or `setMeshoptDecoder`. A DRACO or KTX2 loader fetches files of its own, so make it in `prepare` with the manager `prepare` receives, and list its files in `files`. `Assets.Loader` fetches them, and the decoder is disposed of once the model is parsed. A decoder made without that manager fails the bundle, and a file missing from `files` fails it with that file's URL.
 
 - A model's animations are loaded but not played. `scene.clone()` doesn't copy a skinned model correctly, so clone one with Three.js's `SkeletonUtils.clone`.
@@ -136,7 +136,7 @@ export const ship = Gltf.model("/ship.glb", {
 
 ## Build objects from a bundle
 
-`Three.objectsFrom` names the bundle its objects come `from`, as `Three.instancesFrom` does. `make` receives the bundle's assets as well as the entity, as in `Ships` above.
+`Gltf.objects` names the bundle its objects come `from`, as `Gltf.instances` does. `make` receives the bundle's assets as well as the entity, as in `Ships` above.
 
 - Objects exist while the app has the bundle loaded. On the frame the bundle loads, every entity of the kind gets an object built from the loaded assets. When the bundle is released, every object is removed from the scene and passed to `free` before the scene is next drawn. When the bundle loads again, each object is rebuilt.
 - Everything else works as for [objects](instances-and-objects.md#keep-one-object-per-entity) and for instances built from assets. The system requires `Assets.plugin`, and nothing is drawn with released assets.

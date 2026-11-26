@@ -22,7 +22,7 @@ import * as internal from "./internal/objects.ts";
 import type { Entries, Needs, TransformOf, Which } from "./Three.ts";
 
 /**
- * The options of `Three.objects` and `Three.objectsFrom`.
+ * The options of `Three.objects` and `Gltf.objects`.
  *
  * @category Options
  */
@@ -55,7 +55,7 @@ export interface ObjectsOptions<
 }
 
 /**
- * The options of `Three.objectsFrom`, whose objects are built from assets that
+ * The options of `Gltf.objects`, whose objects are built from assets that
  * are loaded later and released again, such as a level's models.
  *
  * @category Options
@@ -130,43 +130,4 @@ export function objects<
   }
 ): System.System<never, Needs, string, "frame"> {
   return internal.objects(name, options);
-}
-
-/**
- * Makes a frame-stage system that keeps one `Object3D` per entity of a kind,
- * built from assets, such as a level's models. It names the bundle they come
- * `from`, and `make` receives its assets:
- *
- *   const Trees = Three.objectsFrom("game/Trees", {
- *     of: Tree,
- *     transform: Transform3d,
- *     from: Forest,
- *     make: (entity, { oak }) => oak.scene.clone(),
- *   })
- *
- * **Details**
- *
- * It keeps its objects as `Three.objects` does, which says how, while the
- * assets are loaded:
- *
- * - Objects exist only while the app has the bundle loaded. Each is created in
- *   the frame the bundle loads. When the bundle is released, every object is
- *   removed and passed to `free` before the scene is next rendered. When the
- *   bundle loads again, each object is created again.
- * - It also requires `Assets.plugin`, as the system's type shows.
- *
- * @category Systems
- */
-export function objectsFrom<
-  B extends Entries,
-  const K extends Which["of"],
-  O extends Object3D = Object3D,
->(
-  name: string,
-  options: ObjectsFromOptions<B, O> & {
-    readonly of: K;
-    readonly transform: TransformOf<K>;
-  }
-): System.System<never, Needs | Assets.Store, string, "frame"> {
-  return internal.objectsFrom(name, options);
 }

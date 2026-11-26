@@ -644,7 +644,7 @@ describe("Three.instances", () => {
 import type { ComponentDef } from "arcadekit/ecs";
 import { BoxGeometry, MeshBasicMaterial, Object3D } from "three";
 
-import { Three } from "${three}";
+import { Gltf, Three } from "${three}";
 
 const geometry = new BoxGeometry();
 const material = new MeshBasicMaterial();
@@ -657,14 +657,14 @@ Three.objects("game/Ships", { of: Heavy, transform: Transform3d, make });
 Three.objects("game/Pieces", { of: Heavy, transform: Transform2d, make });
 
 const Forest = Assets.bundle("game/Forest", { notes: Assets.text("/notes.txt") });
-Three.instancesFrom("game/Trees", { of: Heavy, transform: Transform3d, from: Forest, look: () => ({ geometry, material }) });
-Three.objectsFrom("game/Deer", { of: Heavy, transform: Transform2d, from: Forest, make });
+Gltf.instances("game/Trees", { of: Heavy, transform: Transform3d, from: Forest, look: () => ({ geometry, material }) });
+Gltf.objects("game/Deer", { of: Heavy, transform: Transform2d, from: Forest, make });
 
 const Rock = Component.tag("game/Rock", { requires: [Transform3d.Position] });
 const bare: ComponentDef = Rock;
 const bares: readonly ComponentDef[] = [Rock];
 Three.instances("game/Bare", { of: bare, transform: Transform3d, geometry, material });
-Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Forest, make });
+Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, make });
 `
     );
     writeFileSync(
@@ -691,10 +691,10 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
       refused(13, 44, 2),
       refused(14, 42, 3),
       refused(15, 43, 2),
-      refused(18, 48, 3),
-      refused(19, 45, 2),
+      refused(18, 43, 3),
+      refused(19, 40, 2),
       refused(24, 42, 3),
-      refused(25, 46, 3),
+      refused(25, 41, 3),
     ]);
   });
 

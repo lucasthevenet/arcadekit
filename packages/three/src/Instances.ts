@@ -32,7 +32,7 @@ export interface Look {
 }
 
 /**
- * The options of `Three.instances` and `Three.instancesFrom`.
+ * The options of `Three.instances` and `Gltf.instances`.
  *
  * @category Options
  */
@@ -85,7 +85,7 @@ export interface InstancesShared extends Which {
  */
 export interface InstancesOptions extends InstancesShared, Look {}
 /**
- * The options of `Three.instancesFrom`, whose look is built from assets that
+ * The options of `Gltf.instances`, whose look is built from assets that
  * are loaded later and released again, such as a level's.
  *
  * @category Options
@@ -185,50 +185,4 @@ export function instances<const O extends Which["of"]>(
   }
 ): System.System<never, Needs, string, "frame"> {
   return internal.instances(name, options);
-}
-
-/**
- * Makes a frame-stage system that draws every entity of a kind as one instance
- * of one mesh, whose look is built from assets, such as a level's texture. It
- * is given as the bundle the look comes `from` and a function that builds it:
- *
- *   const Rocks = Three.instancesFrom("game/Rocks", {
- *     of: Rock,
- *     transform: Transform3d,
- *     from: Forest,
- *     look: ({ bark }) => ({
- *       geometry: new IcosahedronGeometry(1),
- *       material: new MeshStandardMaterial({ map: bark }),
- *     }),
- *   })
- *
- * **Details**
- *
- * It draws as `Three.instances` does, which says how, with a look that exists
- * only while its assets are loaded:
- *
- * - The entities are drawn only while the app has the bundle loaded, which
- *   `Assets.during` or a system of your own manages. At any other time, no
- *   mesh of the kind is in the scene.
- * - `look` is called once each time the bundle loads. When the bundle is
- *   released or the app is closed, the mesh is disposed of, with the
- *   geometry and the material once no other system draws with them. Then
- *   `free` receives what `look` returned. A mesh built from a reloaded bundle
- *   starts with the room the previous one had grown to.
- * - It also requires `Assets.plugin`, as the system's type shows.
- *
- * @category Systems
- */
-export function instancesFrom<
-  B extends Entries,
-  const O extends Which["of"],
-  L extends Look = Look,
->(
-  name: string,
-  options: InstancesFromOptions<B, L> & {
-    readonly of: O;
-    readonly transform: TransformOf<O>;
-  }
-): System.System<never, Needs | Assets.Store, string, "frame"> {
-  return internal.instancesFrom(name, options);
 }
