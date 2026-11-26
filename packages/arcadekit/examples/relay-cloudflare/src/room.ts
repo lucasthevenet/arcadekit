@@ -10,7 +10,7 @@
  * told.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare";
-import { Cause, Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { HttpServerRequest } from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
@@ -63,35 +63,38 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
           // Anyone may take any free name here. A game's relay proves the
           // name from what the request carries, a token or a session, and
           // passes it instead of Relay.anyone.
-          const joined = Relay.join(
+          const joined = yield* Relay.join(
             request.url,
             Relay.anyone,
             everyone.map(({ member }) => member)
           );
-          if (Exit.isFailure(joined)) {
-            // Turned away at the door, with the status and the reason. A
-            // page learns only that it did not connect: a host that closes
-            // an accepted socket instead can tell it why, but a socket
-            // closed in the same breath as it is accepted was left
-            // half-closed by workerd when this was tried.
-            const refused = Cause.squash(joined.cause) as Relay.Refused;
-            return HttpServerResponse.text(refused.message, {
-              status: refused.status,
-            });
-          }
           const [response, socket] = yield* Cloudflare.upgrade();
-          yield* socket.setAttachment(Relay.Member, joined.value);
+          yield* socket.setAttachment(Relay.Member, joined);
           // The room is told who came in, and the newcomer who is there.
-          const now = [...everyone, { member: joined.value, socket }];
+          const now = [...everyone, { member: joined, socket }];
           yield* deliver(
             Relay.joined(
-              joined.value,
+              joined,
               now.map(({ member }) => member)
             ),
             now
           );
           return response;
-        }).pipe(Effect.orDie),
+        }).pipe(
+          // Turned away at the door, with the status and the reason. A
+          // page learns only that it did not connect: a host that closes
+          // an accepted socket instead can tell it why, but a socket
+          // closed in the same breath as it is accepted was left
+          // half-closed by workerd when this was tried.
+          Effect.catchTag("RelayRefused", (refused) =>
+            Effect.succeed(
+              HttpServerResponse.text(refused.message, {
+                status: refused.status,
+              })
+            )
+          ),
+          Effect.orDie
+        ),
 
         webSocketMessage: Effect.fn(function* (
           socket: Cloudflare.WebSocket,
@@ -104,17 +107,16 @@ export default class Room extends Cloudflare.DurableObject<Room>()(
             return;
           }
           const everyone = yield* present;
-          const deliveries = Relay.forward(
+          yield* Relay.forward(
             from.value,
             data,
             everyone.map(({ member }) => member)
+          ).pipe(
+            Effect.flatMap((deliveries) => deliver(deliveries, everyone)),
+            Effect.catchTag("RelayRefused", (refused) =>
+              socket.close(refused.code, refused.reason)
+            )
           );
-          if (Exit.isFailure(deliveries)) {
-            const refused = Cause.squash(deliveries.cause) as Relay.Refused;
-            yield* socket.close(refused.code, refused.reason);
-            return;
-          }
-          yield* deliver(deliveries.value, everyone);
         }),
 
         webSocketClose: Effect.fn(function* (

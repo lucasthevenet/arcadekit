@@ -11,7 +11,7 @@ A **relay** is where peers on different machines meet. Each peer opens a WebSock
 
 ```ts
 import * as Relay from "arcadekit/net/Relay";
-import { Cause, Exit } from "effect";
+import { Exit, Option } from "effect";
 
 // What the host knows: who is connected, and each member's socket.
 declare const present: readonly Relay.Member[];
@@ -23,8 +23,8 @@ declare const proven: Relay.Proven;
 export const onConnect = (url: string, socket: WebSocket) => {
   const joined = Relay.join(url, proven, present); // Exit<Member, Refused>
   if (Exit.isFailure(joined)) {
-    const refused = Cause.squash(joined.cause) as Relay.Refused;
-    socket.close(refused.code, refused.reason);
+    const refused = Option.getOrUndefined(Exit.findErrorOption(joined));
+    socket.close(refused?.code, refused?.reason);
     return undefined;
   }
   // The room is told who came in, and the newcomer who is there.
@@ -41,8 +41,8 @@ export const onConnect = (url: string, socket: WebSocket) => {
 export const onMessage = (from: Relay.Member, data: string | ArrayBuffer) => {
   const deliveries = Relay.forward(from, data, present); // Exit<Delivery[], Refused>
   if (Exit.isFailure(deliveries)) {
-    const refused = Cause.squash(deliveries.cause) as Relay.Refused;
-    socketOf(from).close(refused.code, refused.reason);
+    const refused = Option.getOrUndefined(Exit.findErrorOption(deliveries));
+    socketOf(from).close(refused?.code, refused?.reason);
     return;
   }
   for (const { to, data } of deliveries.value) {
@@ -76,6 +76,8 @@ A refusal is a `Relay.Refused`:
 - The host closes the socket with its `code` and `reason`. The reason is short, such as `"name taken"`, since a close frame carries at most 123 bytes, and `Transport.layerWebSocket` passes it to the peer whose socket closed.
 - Its `message` gives more detail, with names, for logs.
 - Its `status` is the matching HTTP status, for a host that rejects the request instead of upgrading it. A page learns nothing from an HTTP rejection, so a host that wants the peer to know why accepts the socket and then closes it.
+
+`Exit.findErrorOption` reads the refusal out of the `Exit`, typed, as an `Option<Relay.Refused>`. It is `None` only when the relay failed with a defect, a bug in the relay, and the host above then closes the socket with no code. A host written in `Effect.gen` can `yield*` the `Exit` instead, since an `Exit` is an `Effect`, and handle the refusal with `Effect.catchTag("RelayRefused", ...)`.
 
 ## Check who connects under a name
 

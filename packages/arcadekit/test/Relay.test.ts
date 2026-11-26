@@ -1,7 +1,7 @@
-import { Cause, Effect, Exit, Result, Scope } from "effect";
+import { Cause, Effect, Exit, Option, Result, Scope } from "effect";
 import { Socket } from "effect/socket";
 import { TestClock } from "effect/testing";
-import { afterEach, assert, describe, expect, it } from "vitest";
+import { afterEach, assert, describe, expect, expectTypeOf, it } from "vitest";
 import { WebSocketServer } from "ws";
 
 import { Input, World } from "../src/index.ts";
@@ -75,7 +75,10 @@ const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   if (Exit.isSuccess(exit)) {
     throw new Error("it was let through");
   }
-  return Cause.squash(exit.cause) as Relay.Refused;
+  return Option.getOrThrowWith(
+    Exit.findErrorOption(exit),
+    () => new Error("it failed with no refusal", { cause: exit.cause })
+  );
 };
 
 const joined = <A>(exit: Exit.Exit<A, Relay.Refused>): A => {
@@ -165,6 +168,16 @@ describe("a peer that asks to come in", () => {
         status: 409,
         code: 1008,
       })
+    );
+  });
+
+  it("is refused with the error typed, so a host reads it without a cast", () => {
+    const refused = Exit.findErrorOption(
+      Relay.join("/blue?peer=ada", Relay.anyone, [ada])
+    );
+    expectTypeOf(refused).toEqualTypeOf<Option.Option<Relay.Refused>>();
+    expect(Option.map(refused, ({ reason }) => reason)).toEqual(
+      Option.some("name taken")
     );
   });
 
@@ -540,7 +553,7 @@ const serve = async (options?: Relay.Options) => {
       socket.send(sent)
     );
     if (Exit.isFailure(connection)) {
-      const refused = Cause.squash(connection.cause) as Relay.Refused;
+      const refused = refusal(connection);
       socket.close(refused.code, refused.reason);
       return;
     }
@@ -555,7 +568,7 @@ const serve = async (options?: Relay.Options) => {
         isBinary ? bytes : new TextDecoder().decode(bytes)
       );
       if (Exit.isFailure(received)) {
-        const refused = Cause.squash(received.cause) as Relay.Refused;
+        const refused = refusal(received);
         closes.push({ peer: member.peer, code: refused.code });
         socket.close(refused.code, refused.reason);
       }

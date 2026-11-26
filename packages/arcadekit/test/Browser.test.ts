@@ -6,6 +6,7 @@ import {
   Fiber,
   Layer,
   Logger,
+  Option,
   Schema,
   Scope,
 } from "effect";
@@ -749,9 +750,7 @@ describe("a picture", () => {
         Effect.provide(Assets.layerMemory(files))
       )
     );
-    const error = Cause.squash(
-      (exit as Exit.Failure<never, unknown>).cause
-    ) as Assets.AssetFailed;
+    const error = Option.getOrThrow(Exit.findErrorOption(exit));
     expect(error).toBeInstanceOf(Assets.AssetFailed);
     expect(error.message).toBe(
       "It could not be made a picture: The source image could not be decoded."

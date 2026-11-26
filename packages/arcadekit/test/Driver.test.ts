@@ -1,4 +1,14 @@
-import { Cause, Data, Effect, Exit, Fiber, Layer, Schema, Scope } from "effect";
+import {
+  Cause,
+  Data,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Result,
+  Schema,
+  Scope,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
@@ -410,10 +420,9 @@ describe("the frame loop", () => {
     turn(display, 2, 0);
     const exit = await Effect.runPromise(Fiber.await(fiber));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(
-      (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
-        .message
-    ).toBe("the canvas is gone");
+    const defect = Result.getOrThrow(Exit.findDefect(exit));
+    assert.instanceOf(defect, Error);
+    expect(defect.message).toBe("the canvas is gone");
     expect(display.pending).toBe(0);
     expect(display.watching).toBe(0);
   });

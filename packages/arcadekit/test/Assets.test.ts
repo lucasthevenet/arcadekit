@@ -7,6 +7,7 @@ import {
   Layer,
   Logger,
   Option,
+  Result,
   Schema,
   Scope,
 } from "effect";
@@ -267,9 +268,7 @@ describe("an asset", () => {
     const failure = async (file: string | Uint8Array) => {
       const exit = await tryLoad(file);
       expect(Exit.isFailure(exit)).toBe(true);
-      return Cause.squash(
-        (exit as Exit.Failure<never, unknown>).cause
-      ) as Assets.AssetFailed;
+      return Option.getOrThrow(Exit.findErrorOption(exit));
     };
     expect(await tryLoad('{"walls":2,"name":"Ok"}')).toEqual(
       Exit.succeed({ layout: { walls: 2, name: "Ok" } })
@@ -298,13 +297,9 @@ describe("an asset", () => {
       )
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(
-      (
-        Cause.squash(
-          (exit as Exit.Failure<never, unknown>).cause
-        ) as Assets.AssetFailed
-      ).message
-    ).toMatch(/^It is not text/);
+    expect(Option.getOrThrow(Exit.findErrorOption(exit)).message).toMatch(
+      /^It is not text/
+    );
   });
 
   it("comes by fetch unless told otherwise, and an interrupted load gives the request up", async () => {
@@ -365,13 +360,7 @@ describe("an asset", () => {
     );
     // So may a file whose download was cut off.
     const cut = await Effect.runPromiseExit(one("/cut.txt"));
-    expect(
-      (
-        Cause.squash(
-          (cut as Exit.Failure<never, unknown>).cause
-        ) as Assets.AssetFailed
-      ).transient
-    ).toBe(true);
+    expect(Option.getOrThrow(Exit.findErrorOption(cut)).transient).toBe(true);
     // A request that never answers, and a load that is interrupted.
     const fiber = Effect.runFork(one("/slow.txt"));
     await settle();
@@ -932,10 +921,11 @@ describe("a level's assets", () => {
           )
         );
         expect(Exit.isFailure(twice)).toBe(true);
-        expect(
-          (Cause.squash((twice as Exit.Failure<never, never>).cause) as Error)
-            .message
-        ).toMatch(/Duplicate system name "Assets\.during\(as\/Forest\)"/);
+        const duplicate = Result.getOrThrow(Exit.findDefect(twice));
+        assert.instanceOf(duplicate, Error);
+        expect(duplicate.message).toMatch(
+          /Duplicate system name "Assets\.during\(as\/Forest\)"/
+        );
         // Kept for two states by one condition that holds in both.
         const log: string[] = [];
         const Shared = Assets.bundle("as/Shared", {
