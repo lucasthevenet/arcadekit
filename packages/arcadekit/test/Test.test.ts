@@ -72,6 +72,20 @@ describe("a game under test", () => {
       })
   );
 
+  it.effect("makes stand-ins of its own each time it runs", () =>
+    Effect.gen(function* () {
+      const making = Test.make(Game);
+      const one = yield* making;
+      const two = yield* making;
+      one.input.press("KeyW");
+      yield* one.step();
+      yield* two.step();
+      expect((yield* one.app.read(Score)).points).toBe(1);
+      expect((yield* two.app.read(Score)).points).toBe(0);
+      expect(two.sound.played).toEqual([]);
+    })
+  );
+
   it.effect(
     "rests: it steps until the app is settled, and says how many ticks that took",
     () =>
