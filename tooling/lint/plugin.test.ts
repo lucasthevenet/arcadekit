@@ -177,7 +177,7 @@ new RuleTester().run("no-run-in-tests", plugin.rules["no-run-in-tests"], {
     errors: [
       {
         message:
-          /runs an Effect by hand\. A test is an Effect itself: write it with it\.effect/u,
+          /runs an Effect by hand\. A test is an Effect itself: write it with it\.effect.* A helper of a test returns the effect for the test to yield\*\.$/u,
       },
     ],
   })),
