@@ -59,6 +59,7 @@ export { EntityId } from "./Schemas.ts";
 export * from "./Services.ts";
 export * as System from "./System.ts";
 export * as Timeline from "./Timeline.ts";
+export * as Timer from "./Timer.ts";
 export * as Transform2d from "./Transform2d.ts";
 export * as Transform3d from "./Transform3d.ts";
 export * as View from "./View.ts";

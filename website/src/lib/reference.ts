@@ -61,6 +61,7 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
         "Singleton",
         "State",
         "System",
+        "Timer",
         "Transform2d",
         "Transform3d",
         "View",

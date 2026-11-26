@@ -21,9 +21,9 @@ import {
   Singleton,
   System,
   Time,
+  Timer,
   World,
 } from "../../src/index.ts";
-import * as Lifetime from "./lifetime/index.ts";
 import * as Physics from "./physics/index.ts";
 import * as Sketch from "./sketch/index.ts";
 
@@ -34,7 +34,7 @@ const { Frozen, Gravity, Position, Velocity } = Physics;
 // and a replay or a rewind picks it up where it was.
 const Spray = Singleton.define(
   "demo/Spray",
-  { wave: Field.u8, wait: Field.f32 },
+  { wave: Field.u8, wait: Timer.field },
   { wave: 0, wait: 0 }
 );
 const WAVES = 5;
@@ -43,24 +43,20 @@ const Fountain = System.tick("Fountain", function* () {
   if (spray.wave >= WAVES) {
     return;
   }
-  spray.wait -= (yield* Time).delta;
-  if (spray.wait > 0) {
+  spray.wait = Timer.tick(spray.wait, (yield* Time).delta);
+  if (!Timer.ready(spray.wait)) {
     return;
   }
   spray.wave += 1;
   spray.wait = 0.5;
-  const commands = yield* Commands.spawns(
-    Position,
-    Velocity,
-    Lifetime.Lifetime
-  );
+  const commands = yield* Commands.spawns(Position, Velocity, Timer.Lifetime);
   // Seeded: the same seed sprays the same fountain on every run and machine.
   const random = yield* Random;
   for (let i = 0; i < 100; i++) {
     commands.spawn(
       Position.of({ x: 0, y: 0 }),
       Velocity.of({ x: random.next() * 10 - 5, y: 8 + spray.wave }),
-      Lifetime.Lifetime.of({ seconds: 1 + random.next() })
+      Timer.lifetime(1 + random.next())
     );
   }
 });
@@ -91,7 +87,7 @@ const launch = Action.handler(Launch, function* ({ speed }) {
 const Name = Component.define("demo/Name", { value: Field.json<string>() });
 const Named = Query.all(Name, Position);
 const Demo = Plugin.make("Demo", {
-  plugins: [Physics.plugin, Lifetime.plugin, Sketch.plugin],
+  plugins: [Physics.plugin, Timer.plugin, Sketch.plugin],
   systems: [Fountain],
   handlers: [thaw, launch],
   // A rock, held in the air until it thaws.

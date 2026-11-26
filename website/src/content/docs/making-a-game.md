@@ -35,6 +35,7 @@ import {
   Singleton,
   System,
   Time,
+  Timer,
 } from "arcadekit";
 import { Effect, Schema } from "effect";
 
@@ -130,27 +131,19 @@ const move = Action.handler(Move, function* ({ dx }) {
 
 ## Coins that keep coming
 
-A coin falls every second. A system runs to the end of its tick and waits for nothing. The time until the next coin is therefore kept in the world, in a singleton, and a system counts it down. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
+A coin falls every second. A system runs to the end of its tick and waits for nothing, so the time until the next coin is a number in the world that goes down on every tick. `Timer.every(1)` keeps it, and runs the system once per second of game time. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
 
 ```ts title="rules.ts"
-const Cloud = Singleton.define("catch/Cloud", { wait: Field.f32 }, { wait: 0 });
-
 const Rain = System.tick("catch/Rain", function* () {
-  const cloud = yield* Cloud.writes;
-  cloud.wait -= (yield* Time).delta;
-  if (cloud.wait > 0) {
-    return;
-  }
-  cloud.wait += 1;
   const random = yield* Random;
   (yield* Commands.spawns(Position, Fall)).spawn(
     Position.of({ x: random.next() * 8 - 4, y: 10 }),
     Fall.of({ speed: 2 + random.next() * 3 })
   );
-});
+}).pipe(Timer.every(1));
 ```
 
-The wait is one second of game time, which only advances as the game ticks. Because it is in the world, a save holds it, and a replay counts it down the same way.
+Game time only advances as the game ticks. The time left to the next coin is a singleton of the world, so a save holds it, and a replay counts it down the same way. [Timers](guides/timers.md) covers cooldowns and lifetimes too.
 
 ## The plugin
 
