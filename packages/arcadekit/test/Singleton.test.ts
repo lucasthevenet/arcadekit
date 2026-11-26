@@ -666,7 +666,9 @@ describe("a singleton in an app", () => {
       expect(world.hash()).toBe(before);
       for (let move = 0; move < 12; move++) {
         yield* app.dispatch(EndTurn, { player: (move % 2) + 1 });
-        yield* Effect.exit(app.dispatch(Cheat, {}));
+        expect(yield* Effect.exit(app.dispatch(Cheat, {}))).toEqual(
+          Exit.fail(Caught.make({}))
+        );
         yield* app.enqueue(Cheat, {});
         yield* app.tick(1);
       }
