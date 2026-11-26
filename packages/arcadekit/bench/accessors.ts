@@ -27,6 +27,7 @@ import {
   EntityId,
   Event,
   Field,
+  Grid,
   Input,
   Overlap,
   Plugin,
@@ -636,6 +637,36 @@ const pairing = (): number => {
   });
 };
 
+const Cell = Component.define("bench/Cell", { x: Field.i32, y: Field.i32 });
+const Creatures = Query.all(Cell);
+
+/**
+ * A thousand creatures on a map of 80 by 50, and one of them moves: what
+ * that costs the next `Grid.occupants`, which works out who is where afresh.
+ */
+const occupying = (): number => {
+  const world = new World();
+  let seed = 1;
+  const next = () => {
+    seed = (seed * 16_807) % 2_147_483_647;
+    return seed / 2_147_483_647;
+  };
+  for (let i = 0; i < 1000; i++) {
+    world.spawn(
+      Cell.of({ x: Math.floor(next() * 80), y: Math.floor(next() * 50) })
+    );
+  }
+  const map = Grid.fill(80, 50);
+  const view = world.view(Creatures);
+  const mover = view.entities()[500]!;
+  let step = 0;
+  return measure(() => {
+    step = (step + 1) % 80;
+    world.set(mover, Cell, { x: step, y: 25 });
+    Grid.occupants(map, view).first(step, 25);
+  });
+};
+
 const variants: Record<string, Variant> = {
   // The storage core's own, which `bench/core.ts` holds and CI compares.
   ...coreVariants,
@@ -898,6 +929,11 @@ const variants: Record<string, Variant> = {
     unit: "matches",
     label: "Overlap.pairs: 1,000 circles against 1,000",
     run: pairing,
+  },
+  occupants: {
+    unit: "matches",
+    label: "Grid.occupants: one of 1,000 moves on 80 by 50",
+    run: occupying,
   },
 };
 

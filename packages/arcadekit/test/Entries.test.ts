@@ -159,7 +159,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(40);
+    expect(entries.length).toBe(41);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -243,6 +243,7 @@ describe("the package's entries", () => {
       "Driver",
       "Event",
       "Field",
+      "Grid",
       "Input",
       "Journal",
       "Migrate",

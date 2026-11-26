@@ -72,6 +72,11 @@
       "types": "./dist/Field.d.ts",
       "default": "./dist/Field.js"
     },
+    "./Grid": {
+      "source": "./src/Grid.ts",
+      "types": "./dist/Grid.d.ts",
+      "default": "./dist/Grid.js"
+    },
     "./Input": {
       "source": "./src/Input.ts",
       "types": "./dist/Input.d.ts",
