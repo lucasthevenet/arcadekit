@@ -6,12 +6,7 @@ import { isPlain } from "../ecs/store.ts";
 import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
 import { STORE, decode, encode } from "../Event.ts";
-import type {
-  Emitter,
-  Event as EventDef,
-  Invalid as InvalidEvent,
-  ReadingEvents,
-} from "../Event.ts";
+import type { Emitter, Event, Invalid, ReadingEvents } from "../Event.ts";
 import { Outbox } from "./outbox.ts";
 import type { Stage, Told } from "./outbox.ts";
 
@@ -27,15 +22,15 @@ const placedLater = <P>(payload: WithSpawned<P>): P => payload as P;
 // save that holds one it hasn't met yet. Of two definitions with one name, as
 // a module that is loaded again under hot reload makes, it is the newer. An
 // app that meets both refuses the second.
-const defined = new Map<string, EventDef<unknown>>();
+const defined = new Map<string, Event<unknown>>();
 
 /** @internal Notes an event that was just defined, the newest of its name. */
-export const defining = (def: EventDef<unknown>): void => {
+export const defining = (def: Event<unknown>): void => {
   defined.set(def.name, def);
 };
 
 /** What an `Event.Invalid` says was wrong. */
-const describeFailure = (cause: Cause.Cause<InvalidEvent>): string => {
+const describeFailure = (cause: Cause.Cause<Invalid>): string => {
   const error = Cause.squash(cause);
   return error instanceof Error ? error.message : String(error);
 };
@@ -48,7 +43,7 @@ const EMPTY: readonly never[] = Object.freeze([]);
  * @internal
  */
 export interface Emitted {
-  readonly def: EventDef<unknown>;
+  readonly def: Event<unknown>;
   readonly payload: unknown;
 }
 
@@ -58,7 +53,7 @@ export interface Emitted {
 
 /** One event's values waiting in the world, and where each reader of the tick is. */
 class Channel<P> {
-  readonly def: EventDef<P>;
+  readonly def: Event<P>;
   /** What the tick can still read, oldest first. */
   values: P[] = [];
   /**
@@ -77,7 +72,7 @@ class Channel<P> {
   /** Where it ended when that run first emitted to it: what the run reads up to. */
   endBefore = 0;
 
-  constructor(def: EventDef<P>) {
+  constructor(def: Event<P>) {
     this.def = def;
   }
 
@@ -128,7 +123,7 @@ class Waiting implements Store<WaitingMoment> {
   // definition's own `P`, which a Map's type cannot say, so `channel` below
   // is the one place that restores it.
   private readonly channels = new Map<object, Channel<unknown>>();
-  private readonly names = new Map<string, EventDef<unknown>>();
+  private readonly names = new Map<string, Event<unknown>>();
   private readonly order: Channel<unknown>[] = [];
   /**
    * Every event emitted since `take`, in order: what the stages between ticks
@@ -156,7 +151,7 @@ class Waiting implements Store<WaitingMoment> {
     this.world = world;
   }
 
-  channel<P>(def: EventDef<P>): Channel<P> {
+  channel<P>(def: Event<P>): Channel<P> {
     const existing = this.channels.get(def);
     if (existing !== undefined) {
       return existing as Channel<P>;
@@ -428,7 +423,7 @@ class Waiting implements Store<WaitingMoment> {
 }
 
 /** The refusal of an event emitted by code that is not the simulation's. */
-const outside = (def: EventDef<unknown>): Error =>
+const outside = (def: Event<unknown>): Error =>
   new Error(
     `The event "${def.name}" was emitted from outside the simulation. No log holds an event, so a replay of the game would not have it, and neither would another peer. Issue an action whose handler emits it, with app.enqueue or app.dispatch.`
   );
@@ -483,7 +478,7 @@ export class EventBus implements ReadingEvents {
    * can't emit. Any other caller gets a new handle, which reads each event
    * emitted from now on, once the code that emitted it has ended.
    */
-  handle<P>(def: EventDef<P>): Emitter<P> {
+  handle<P>(def: Event<P>): Emitter<P> {
     const channel = this.waiting.channel(def);
     const { reader, stage, waiting } = this;
     if (reader === undefined) {
@@ -527,7 +522,7 @@ export class EventBus implements ReadingEvents {
    * would have it. Code outside the simulation issues an action whose
    * handler emits the event.
    */
-  emit<P>(def: EventDef<P>, payload: P): void {
+  emit<P>(def: Event<P>, payload: P): void {
     const channel = this.waiting.channel(def);
     if (this.reader === undefined) {
       throw outside(def);
@@ -540,7 +535,7 @@ export class EventBus implements ReadingEvents {
    * is running: that a queued action was refused.
    * @internal
    */
-  _emit<P>(def: EventDef<P>, payload: P): void {
+  _emit<P>(def: Event<P>, payload: P): void {
     this.waiting.emit(this.waiting.channel(def), payload);
   }
 
@@ -548,7 +543,7 @@ export class EventBus implements ReadingEvents {
    * Returns how many events of a type the tick can still read, for tests and
    * tools.
    */
-  pending<P>(def: EventDef<P>): number {
+  pending<P>(def: Event<P>): number {
     return this.waiting.channel(def).values.length;
   }
 

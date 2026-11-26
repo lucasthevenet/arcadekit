@@ -10,7 +10,7 @@
  * are heard afresh. After a session takes a game back to run the same ticks
  * again, each event of those ticks is heard once.
  */
-import type { Emitter, Event as EventDef } from "../Event.ts";
+import type { Emitter, Event } from "../Event.ts";
 import type { Emitted } from "./eventBus.ts";
 
 const EMPTY: readonly never[] = Object.freeze([]);
@@ -58,7 +58,7 @@ export type Stage = "frame" | "input";
  */
 export class Listener<P> implements Emitter<P> {
   private readonly outbox: Outbox;
-  readonly def: EventDef<P>;
+  readonly def: Event<P>;
   /** The stage it is a system of, or undefined for outside code. */
   readonly stage: Stage | undefined;
   /** The last of what was told that it has read. */
@@ -72,7 +72,7 @@ export class Listener<P> implements Emitter<P> {
 
   constructor(
     outbox: Outbox,
-    def: EventDef<P>,
+    def: Event<P>,
     stage: Stage | undefined,
     after: Told
   ) {
@@ -247,7 +247,7 @@ export class Outbox {
    * Returns the place of a system of a stage in one event, the same one each
    * time.
    */
-  listener<P>(system: string, def: EventDef<P>, stage: Stage): Listener<P> {
+  listener<P>(system: string, def: Event<P>, stage: Stage): Listener<P> {
     let mine = this.listeners.get(system);
     if (mine === undefined) {
       mine = new Map();
@@ -267,7 +267,7 @@ export class Outbox {
   }
 
   /** Returns a place for outside code, which hears what is told from now on. */
-  outside<P>(def: EventDef<P>): Listener<P> {
+  outside<P>(def: Event<P>): Listener<P> {
     const listener = new Listener(this, def, undefined, this.tail);
     const outsider = new WeakRef<Listener<unknown>>(listener);
     this.outsiders.add(outsider);

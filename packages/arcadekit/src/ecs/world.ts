@@ -1244,7 +1244,9 @@ export class World {
         const column = columns[field]!;
         Object.defineProperty(value, field, {
           enumerable: true,
-          get: () => column[0],
+          get: def.bools.includes(field)
+            ? () => column[0] !== 0
+            : () => column[0],
           set: (to: unknown) => {
             this.writing(made);
             column[0] = to;

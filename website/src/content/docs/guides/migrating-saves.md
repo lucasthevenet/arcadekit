@@ -82,7 +82,7 @@ A step is given the save as `Migrate.Contents`, which changes it in place. Each 
 
 - A field the definition doesn't have doesn't compile, nor does a value of the wrong type for one, nor a state's value it doesn't have.
 - Each change throws, naming what it was asked for and what the save holds, when the save doesn't hold it. A migration that throws refuses the save with `"migration failed"`.
-- A field of a number type also throws for a value it can't hold, such as a fraction in an `i32`, or 300 in a `u8`, which the typed array would store as something else. An entity is kept as its id, and a `ref` field encoded by its codec.
+- A field of a number type also throws for a value it can't hold, such as a fraction in an `i32`, or 300 in a `u8`, which the typed array would store as something else. An entity is kept as its id, a `Field.bool` as 1 or 0, and a `ref` field encoded by its codec.
 - Entities keep their ids, and two tables that only a removed component kept apart are merged.
 - A state's value that was renamed in the game and not in the save leaves a tag of a value the state no longer has, and the load is refused with `"unknown component"`. `renameStateValue` renames the tag with the value.
 - A migration turns an old save into a new game, so the log recorded before it doesn't replay against the migrated save.

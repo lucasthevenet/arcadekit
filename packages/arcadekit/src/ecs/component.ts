@@ -146,8 +146,8 @@ export const isBoxed = (kind: FieldKind): boolean =>
  * **Gotchas**
  *
  * - When `encode` throws, `World.snapshot` throws a `SnapshotError` whose
- *   problem is `"cannot be saved"` and names the field. `World.hash` throws
- *   the codec's own error.
+ *   problem is `"cannot be saved"`, and whose message names the field and
+ *   says what `encode` threw. `World.hash` throws the codec's own error.
  * - When `decode` throws, the load throws a `SnapshotError` whose problem is
  *   `"component changed"`.
  * - `World.hash` calls `encode` once for every value of the field.
@@ -177,10 +177,15 @@ export interface FieldDef<T, C> {
   /**
    * What the field holds in a component added or spawned bare, with no value:
    * a `json` or `ref` field's, given where the field is made. It is absent on
-   * a number field, which holds 0, and on a `transient` field, which holds
-   * undefined.
+   * a number field, which holds 0, on a `Field.bool`, which holds `false`, and
+   * on a `transient` field, which holds undefined.
    */
   readonly initial?: T;
+  /**
+   * True for `Field.bool`, a `u8` field read as `false` for 0 and `true` for
+   * any other number, and written as 0 or 1. Undefined on any other.
+   */
+  readonly bool?: true;
   /** Never set: it carries `T` in the type. */
   readonly _T?: T;
   /** Never set: it carries `C` in the type. */
@@ -188,6 +193,8 @@ export interface FieldDef<T, C> {
 }
 
 const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
+
+const bool: FieldDef<boolean, Uint8Array> = { kind: "u8", bool: true };
 
 /**
  * The field types a component is made of. A number field is a column of a
@@ -217,6 +224,11 @@ export const Field = {
   u16: field<number, Uint16Array>("u16"),
   /** An unsigned 8-bit integer, in a `Uint8Array`. */
   u8: field<number, Uint8Array>("u8"),
+  /**
+   * `true` or `false`, as 1 or 0 in a `Uint8Array`. It is a `u8` field to a
+   * snapshot and the hash, and reads as a boolean everywhere else.
+   */
+  bool,
   /**
    * An entity's id, in a `Float64Array`. It holds whatever id was written,
    * and is stale once its entity is despawned, so it reads as an
@@ -297,10 +309,13 @@ export type ColumnsOf<S extends Schema> = {
   readonly [K in keyof S]: S[K] extends FieldDef<unknown, infer C> ? C : never;
 };
 
-/** The columns of a component a query only reads: indexable, but not assignable. */
+/**
+ * The columns of a component a query only reads: indexable, but not
+ * assignable. A `Field.bool` is its numbers, 0 and 1.
+ */
 export type ReadonlyColumnsOf<S extends Schema> = {
   readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown>
-    ? ReadonlyColumn<T>
+    ? ReadonlyColumn<[T] extends [boolean] ? number : T>
     : never;
 };
 
@@ -483,6 +498,11 @@ export interface ComponentDef<
   /** For each field, the codec of a `ref` field, or undefined for any other. */
   readonly codecs: readonly (RefCodec<unknown> | undefined)[];
   /**
+   * The names of its fields that are `Field.bool`, each a `u8` read as a
+   * boolean, in the order of `fields`.
+   */
+  readonly bools: readonly string[];
+  /**
    * Where its data is stored. The type carries it too, so that a query knows
    * which of its terms are in the table's rows.
    */
@@ -502,8 +522,9 @@ export interface ComponentDef<
   /**
    * Its value when it is added or spawned bare, with no value: the `initial`
    * `Component.define` was given, or else the `initial` of each `json` and
-   * `ref` field, with 0 in a number field and undefined in a `transient` one.
-   * It is undefined when that value is all zeros. See `Component.define`.
+   * `ref` field, with 0 in a number field, `false` in a `Field.bool` and
+   * undefined in a `transient` field. It is undefined when that value is all
+   * zeros. See `Component.define`.
    */
   readonly initial: Readonly<ValueOf<S>> | undefined;
   /**
@@ -918,6 +939,31 @@ const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
   };
 };
 
+/** Defines a `Field.bool`: a `u8` column, read and written as booleans. */
+const defineBool: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Uint8Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i] !== 0,
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: boolean) => {
+              column[row.i] = value ? 1 : 0;
+            }
+          : (value: boolean) => {
+              column[row.i] = value ? 1 : 0;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Uint8Array;
+  };
+};
+
 const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
   f32: defineF32,
   f64: defineF64,
@@ -942,7 +988,7 @@ export const makeAccessor = (
   mode: AccessorMode,
   row: Row
 ): Accessor => {
-  const { fields, kinds, name } = def;
+  const { bools, fields, kinds, name } = def;
   const noting: Noting | undefined =
     mode === "notes"
       ? {
@@ -952,7 +998,7 @@ export const makeAccessor = (
       : undefined;
   const target = {};
   const binders = fields.map((field, f) =>
-    DEFINE_FIELD[kinds[f]!](
+    (bools.includes(field) ? defineBool : DEFINE_FIELD[kinds[f]!])(
       target,
       field,
       row,
@@ -988,7 +1034,11 @@ const bareOf = <S extends Schema>(schema: S): ValueOf<S> | undefined => {
   }
   const value: Record<string, unknown> = {};
   for (const [name, fieldDef] of fieldDefs) {
-    value[name] = isBoxed(fieldDef.kind) ? fieldDef.initial : 0;
+    value[name] = isBoxed(fieldDef.kind)
+      ? fieldDef.initial
+      : fieldDef.bool === true
+        ? false
+        : 0;
   }
   return value as ValueOf<S>;
 };
@@ -1016,6 +1066,7 @@ const define = <
     fields,
     kinds: Object.values(schema).map((fieldDef) => fieldDef.kind),
     codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
+    bools: fields.filter((field) => schema[field]!.bool === true),
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
     single: options?.single === true,

@@ -35,7 +35,13 @@ import type {
   SingletonSpec,
 } from "./ecs/component.ts";
 import { whole } from "./internal/handed.ts";
-import { defining, handleOf, scopeOf, scopingOf } from "./internal/state.ts";
+import {
+  defining,
+  handleOf,
+  readerOf,
+  scopeOf,
+  scopingOf,
+} from "./internal/state.ts";
 import { triggered } from "./internal/system.ts";
 import type { AddsOf } from "./Query.ts";
 import { World } from "./Services.ts";
@@ -125,18 +131,9 @@ export class State<V extends string, N extends string = string>
   }
 
   asEffect(): Effect.Effect<Reader<V>, never, World> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) => {
-      const handle = handleOf(whole(world), this);
-      return {
-        get value() {
-          return handle.value;
-        },
-        get next() {
-          return handle.next;
-        },
-        is: (...values: readonly V[]) => handle.is(...values),
-      };
-    }));
+    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
+      readerOf(whole(world), this)
+    ));
   }
 
   /**

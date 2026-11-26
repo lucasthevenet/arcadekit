@@ -182,6 +182,10 @@ const GaugeU32 = Component.define("mg/Gauge", {
   z: Field.u32,
 });
 const GaugeU8 = Component.define("mg/Gauge", { level: Field.u8, z: Field.u8 });
+const GaugeBool = Component.define("mg/Gauge", {
+  level: Field.u8,
+  z: Field.bool,
+});
 
 // --- what a save holds beside its components, in version 0 and in version 1 ----------
 
@@ -294,6 +298,7 @@ describe("a snapshot read without the program's components", () => {
       unsigned: Field.u32,
       short: Field.u16,
       byte: Field.u8,
+      flag: Field.bool,
       other: Field.entity,
       data: Field.json<JsonValue>(null),
       when: Field.ref<Date>(
@@ -315,6 +320,7 @@ describe("a snapshot read without the program's components", () => {
       unsigned: 4_000_000_000 - n,
       short: 65_000 - n,
       byte: n % 256,
+      flag: n % 3 === 0,
       other: entityOf(n),
       data: [n, { n }, `text ${n}`, null, undefined, 5n][n % 6],
       when: new Date(n * 1000),
@@ -631,6 +637,11 @@ describe("a save from another version of the game", () => {
         (one) => one.mapField(GaugeU8, "level", (level: number) => level * 100),
         'The u8 field "level" of "mg/Gauge" cannot hold 300',
       ],
+      [
+        // @ts-expect-error a bool field is given a number
+        (one) => one.addField(GaugeBool, "z", 1),
+        'The bool field "z" of "mg/Gauge" cannot hold 1: it holds true or false.',
+      ],
     ];
     for (const [change, message] of cases) {
       const error = failing(change);
@@ -825,6 +836,46 @@ describe("a save from another version of the game", () => {
       { d: "new", a: { was: 1 }, b: 0.5, c: entities[0], e: 500, f: 0.5 },
       { d: "new", a: { was: 2 }, b: 1, c: entities[0], e: 500, f: 0.5 },
       { d: "new", a: { was: 3 }, b: 1.5, c: entities[0], e: 500, f: 0.5 },
+    ]);
+  });
+
+  it("turns a u8 field into a bool field and back, with values of the field's own kind", () => {
+    const Switch = Component.define("mg/Switch", { on: Field.u8 });
+    const SwitchBool = Component.define("mg/Switch", {
+      on: Field.bool,
+      lit: Field.bool,
+    });
+    const SwitchU8 = Component.define("mg/Switch", {
+      on: Field.u8,
+      lit: Field.u8,
+    });
+    const world = new EcsWorld();
+    const entities = [0, 1, 7].map((on) => world.spawn(Switch.of({ on })));
+    const contents = readSnapshot(world.snapshot());
+    const save = new Migrate.Contents(contents);
+    // The save holds a bool field as a u8, so `map` is given its number.
+    save.mapField(SwitchBool, "on", (on: number) => on === 1);
+    save.addField(SwitchBool, "lit", true);
+    expect(contents.components[0]!.fields).toEqual([
+      { name: "on", kind: "u8" },
+      { name: "lit", kind: "u8" },
+    ]);
+    const loaded = new EcsWorld();
+    loaded.load(writeSnapshot(contents), [SwitchBool]);
+    expect(entities.map((entity) => loaded.get(entity, SwitchBool))).toEqual([
+      { on: false, lit: true },
+      { on: true, lit: true },
+      { on: false, lit: true },
+    ]);
+
+    const back = readSnapshot(loaded.snapshot());
+    new Migrate.Contents(back).mapField(SwitchU8, "on", (on: number) => on * 5);
+    const again = new EcsWorld();
+    again.load(writeSnapshot(back), [SwitchU8]);
+    expect(entities.map((entity) => again.get(entity, SwitchU8))).toEqual([
+      { on: 0, lit: 1 },
+      { on: 5, lit: 1 },
+      { on: 0, lit: 1 },
     ]);
   });
 });

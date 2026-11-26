@@ -134,6 +134,10 @@ export interface Options {
  * - A key's code is its `KeyboardEvent.code`. A held key counts as pressed
  *   once, and every key and pointer button is released when the page loses
  *   focus.
+ * - A key whose code is none of `Input.KeyCode` is not heard. The first time
+ *   each such code comes, a warning through Effect's logger names it, since a
+ *   browser can send a code the specification does not list yet. The empty
+ *   code and `"Unidentified"` are no key, and are not warned of.
  * - The pointer is a mouse, a pen or a finger. `PointerX` and `PointerY` are
  *   CSS pixels from the top-left of `target`. Presses are detected on `target`,
  *   and moves and releases anywhere on the page.
