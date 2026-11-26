@@ -39,6 +39,7 @@ Other values use a field type that declares how snapshots and the hash treat the
 
 | Field | Holds | Saved and hashed |
 | --- | --- | --- |
+| `Field.bool` | `true` or `false`, as 1 or 0 in a `Uint8Array`, which `eachChunk` hands out as it is | As a `u8`, so a save written while the field was a `Field.u8` loads with no migration |
 | `Field.json<T>()` | Plain data: a string, number, boolean, bigint, `null` or `undefined`, or an array or object of strings, numbers, booleans and `null` | As is. Arrays and objects as the text `JSON.stringify` produces |
 | `Field.schema(schema)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON encoding |
 | `Field.ref<T>(codec)` | Any value, with your own `encode` and `decode` to plain data and back | In its encoded form |

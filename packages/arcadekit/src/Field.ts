@@ -48,11 +48,29 @@ export const u32 = Field.u32;
  */
 export const u16 = Field.u16;
 /**
- * An unsigned 8-bit integer, in a `Uint8Array`, for a flag or a small count.
+ * An unsigned 8-bit integer, in a `Uint8Array`, for a small count. A flag is
+ * a `Field.bool`.
  *
  * @category Fields
  */
 export const u8 = Field.u8;
+/**
+ * `true` or `false`, kept as 1 or 0 in a `Uint8Array`, for a flag such as
+ * whether a door is open. It is `false` in a component added or spawned bare.
+ *
+ * **Gotchas**
+ *
+ * - `eachChunk` hands out its column as it is, a `Uint8Array` of 0 and 1,
+ *   which a loop reads and writes as numbers. Any number but 0 written there
+ *   reads as `true`.
+ * - A snapshot and the hash take it for a `Field.u8`. A save written while
+ *   the field was a `Field.u8` loads with no migration, 0 as `false` and any
+ *   other number as `true`, and a field changed from `Field.bool` to
+ *   `Field.u8` loads as 0 and 1.
+ *
+ * @category Fields
+ */
+export const bool = Field.bool;
 /**
  * A reference to another entity, such as a target or a parent. The id is stored
  * in a `Float64Array`, eight bytes per row, and is saved and hashed as a

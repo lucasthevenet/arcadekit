@@ -1,9 +1,9 @@
 import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { World as EcsWorld, SnapshotError } from "../src/ecs/index.ts";
 import type { ComponentDef } from "../src/ecs/index.ts";
-import { Component, Field, Query } from "../src/index.ts";
+import { Component, Field, Query, Singleton } from "../src/index.ts";
 import type { Entity, JsonValue, RefCodec } from "../src/index.ts";
 
 const dates: RefCodec<Date> = {
@@ -335,6 +335,150 @@ describe("a field that is not a number", () => {
     expect(back[11]).toEqual({ when: "1970-01-01T00:00:00.000Z", bad: null });
     // The hash is of the saved form, so it agrees all the same.
     expect(copy.hash()).toBe(world.hash());
+  });
+});
+
+describe("a bool field", () => {
+  const Door = Component.define("fld/Door", {
+    open: Field.bool,
+    label: Field.json<string>(),
+  });
+  const Lever = Singleton.define(
+    "fld/Lever",
+    { pulled: Field.bool, pulls: Field.u8 },
+    { pulled: true, pulls: 1 }
+  );
+
+  it("reads and writes true and false, and is false in a component spawned bare", () => {
+    const world = new EcsWorld();
+    const bare = world.spawn(Door);
+    const front = world.spawn(Door.of({ open: true, label: "front" }));
+    expect(world.get(bare, Door)).toEqual({ open: false, label: undefined });
+    expect(world.get(front, Door)).toEqual({ open: true, label: "front" });
+    expectTypeOf(world.get(bare, Door)!.open).toEqualTypeOf<boolean>();
+
+    world.set(front, Door, { open: false });
+    expect(world.get(front, Door)!.open).toBe(false);
+    const doors = world.view(Query.all(Door).pipe(Query.writes(Door)));
+    const read: unknown[] = [];
+    doors.each((door) => {
+      expectTypeOf(door.open).toEqualTypeOf<boolean>();
+      read.push(door.open);
+      door.open = !door.open;
+    });
+    expect(read).toEqual([false, false]);
+    expect(world.get(bare, Door)).toEqual({ open: true, label: undefined });
+    expect(world.get(front, Door)).toEqual({ open: true, label: "front" });
+
+    const lever = world.singleton(Lever);
+    expect([lever.pulled, lever.pulls]).toEqual([true, 1]);
+    lever.pulled = false;
+    expect(lever.pulled).toBe(false);
+    // What a tool reads of the world, as `app.inspect()` gives it.
+    expect(world.contents().entities[0]!.components["fld/Door"]).toEqual({
+      open: true,
+      label: undefined,
+    });
+    expect(world.contents().singletons["fld/Lever"]).toEqual({
+      pulled: false,
+      pulls: 1,
+    });
+
+    // Only compiled: a number is no boolean.
+    const numbers = (): void => {
+      // @ts-expect-error a bool field is given true or false
+      Door.of({ open: 1, label: "back" });
+      // @ts-expect-error in set, too
+      world.set(front, Door, { open: 0 });
+      doors.each((door) => {
+        // @ts-expect-error and in each
+        door.open = 1;
+      });
+    };
+    void numbers;
+  });
+
+  it("refuses an assignment where it is only read, and is put back by a rollback", () => {
+    const world = new EcsWorld();
+    const door = world.spawn(Door.of({ open: true, label: "front" }));
+    expect(() =>
+      world.view(Query.all(Door)).each((read) => {
+        (read as { open: boolean }).open = false;
+      })
+    ).toThrow(
+      /"fld\/Door\.open" was assigned to through a query that only reads/
+    );
+    world.begin();
+    world.view(Query.all(Door).pipe(Query.writes(Door))).each((written) => {
+      written.open = false;
+    });
+    expect(world.get(door, Door)!.open).toBe(false);
+    world.rollback();
+    expect(world.get(door, Door)!.open).toBe(true);
+  });
+
+  it("is handed to eachChunk as its column, a Uint8Array of 0 for false and 1 for true", () => {
+    const world = new EcsWorld();
+    const doors = [true, false, true].map((open) =>
+      world.spawn(Door.of({ open, label: "" }))
+    );
+    world
+      .view(Query.all(Door).pipe(Query.writes(Door)))
+      .eachChunk((start, end, door) => {
+        expectTypeOf(door.open).toEqualTypeOf<Uint8Array>();
+        expect(door.open).toBeInstanceOf(Uint8Array);
+        expect(Array.from(door.open.subarray(start, end))).toEqual([1, 0, 1]);
+        door.open[start + 1] = 1;
+      });
+    expect(doors.map((door) => world.get(door, Door)!.open)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    world.view(Query.all(Door)).eachChunk((start, _end, door) => {
+      expectTypeOf(door.open[start]).toEqualTypeOf<number | undefined>();
+    });
+  });
+
+  it("is saved and hashed as a u8 of 0 and 1, so a save of either kind loads as the other", () => {
+    const Switch = Component.define("fld/Switch", { on: Field.bool });
+    const SwitchU8 = Component.define("fld/Switch", { on: Field.u8 });
+    const world = new EcsWorld({ seed: 3 });
+    const entities = [true, false, true].map((on) =>
+      world.spawn(Switch.of({ on }))
+    );
+    const asU8 = new EcsWorld({ seed: 3 });
+    for (const on of [1, 0, 1]) {
+      asU8.spawn(SwitchU8.of({ on }));
+    }
+    expect(world.snapshot()).toEqual(asU8.snapshot());
+    expect(world.hash()).toBe(asU8.hash());
+
+    const loaded = new EcsWorld();
+    loaded.load(world.snapshot(), [Switch]);
+    expect(entities.map((entity) => loaded.get(entity, Switch)!.on)).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    expect(loaded.hash()).toBe(world.hash());
+    world.set(entities[1]!, Switch, { on: true });
+    expect(world.hash()).not.toBe(loaded.hash());
+
+    // Loaded with no migration, either way: any number but 0 is true.
+    asU8.set(entities[2]!, SwitchU8, { on: 7 });
+    const fromU8 = new EcsWorld();
+    fromU8.load(asU8.snapshot(), [Switch]);
+    expect(entities.map((entity) => fromU8.get(entity, Switch)!.on)).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    const toU8 = new EcsWorld();
+    toU8.load(loaded.snapshot(), [SwitchU8]);
+    expect(entities.map((entity) => toU8.get(entity, SwitchU8)!.on)).toEqual([
+      1, 0, 1,
+    ]);
   });
 });
 
