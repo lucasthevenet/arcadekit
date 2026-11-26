@@ -21,7 +21,7 @@
  * 4. Drop the events that every system has seen.
  *
  * The action log records the world's hash before the first action or tick,
- * and at the end of every `checkpointEvery`th tick.
+ * and at the end of every `hashEvery`th tick.
  *
  * Between ticks, `frame` runs the systems of the frame stage, which draw the
  * game and receive how far the frame is between two ticks. Just before a
@@ -54,7 +54,6 @@ import type { Entity } from "./ecs/component.ts";
 import type { Placed } from "./ecs/spawned.ts";
 import { build } from "./internal/build.ts";
 import { versionOf } from "./internal/save.ts";
-import * as Journal from "./Journal.ts";
 import * as Plugin from "./Plugin.ts";
 import * as Save from "./Save.ts";
 import type { BuiltIn, Time, TimeState, World } from "./Services.ts";
@@ -208,7 +207,7 @@ export type Phase = "idle" | "tick" | "frame" | "input" | "handler";
  * are values to read.
  *
  *   yield* app.tick(1 / 60)
- *   const save = yield* app.save()
+ *   const save = yield* Save.make(app)
  *
  * **When to use**
  *
@@ -252,11 +251,11 @@ export interface Any {
   /** The names of the input-stage systems, in the order they run. */
   readonly inputOrder: readonly string[];
   /**
-   * What the app is running right now. A game is stepped, saved, loaded,
-   * captured, put back, recorded, checkpointed and inspected only in
-   * `"idle"`. Each of
-   * those dies in any other phase, which includes a handler that `dispatch`
-   * runs, since a refusal takes back that handler's work.
+   * What the app is running right now. A game is stepped, inspected, saved,
+   * loaded, captured, put back and recorded, and a hash check is taken of it,
+   * only in `"idle"`. Each of those dies in any other phase, which includes a
+   * handler that `dispatch` runs, since a refusal takes back that handler's
+   * work.
    */
   readonly phase: Phase;
   /**
@@ -366,71 +365,13 @@ export interface Any {
   ) => Effect.Effect<void>;
   /**
    * Every action that entered the game from outside, in arrival order, with
-   * checkpoints of the world's hash among them. It holds every dispatched
+   * hash checks of the world's hash among them. It holds every dispatched
    * action that was accepted, and every action enqueued as input, whatever
    * its outcome. It leaves out the actions that a system, a handler or a
    * plugin's setup enqueued, since a replay's own simulation issues them
    * again. The log is enough to replay the game and to verify the replay.
    */
   readonly actionLog: readonly Action.LogEntry[];
-  /**
-   * Returns the game as it was played, to play again with `Journal.replay`:
-   * how it began, the action log, the delta of every tick, the ticks it
-   * begins and ends at, and the world's hash where it ends. The recording
-   * begins where this app began, from its seed or from the save it was made
-   * from. With `since`, a save this app made, it begins at that save and
-   * holds it, and replaying it returns to the present from that save. Run it
-   * only between ticks, since it dies anywhere else.
-   *
-   * An app made from a save keeps that save for as long as it lives, to
-   * record from.
-   */
-  readonly record: (since?: Save.Save) => Effect.Effect<Journal.Recording>;
-  /**
-   * Saves the game as it is, to load later with `app.load(save)` or
-   * `App.make(game, { save })`.
-   * The save holds the world and the length of the log. The world holds the
-   * time, the actions queued for the next tick, the events waiting to be
-   * read, and what the change queries haven't visited yet. Run it only
-   * between ticks, since it dies anywhere else.
-   *
-   * It fails with `Save.Refused`, which names what is in the way: a
-   * queued action or a waiting event whose payload its schema doesn't take, a
-   * field that holds a value that can't be saved, or commands queued but not
-   * applied.
-   */
-  readonly save: () => Effect.Effect<Save.Save, Save.Refused>;
-  /**
-   * Loads a save into this app, in place of the game it plays: the app, its
-   * plugins' layers, its frame and input stages, its views and its sound stay
-   * as they are, and its game is the one the save holds. The save is brought
-   * up to the game's version with its migrations first, as `App.make` brings
-   * one. Run it only between ticks, since it dies anywhere else.
-   *
-   *   const save = yield* app.save()
-   *   yield* app.tick(1 / 60)
-   *   yield* app.load(save)                // the game where it was saved
-   *
-   * The app is then the one `App.make(game, { save })` would make, ticks and
-   * hashes as that one would, and is played by the same driver. Its action log
-   * starts over, as that app's starts empty, and `app.record()` records from
-   * the save. A moment captured before the load is refused by
-   * `Timeline.rewind`. The frame and input stages, and code outside the game
-   * that reads an event, hear the loaded game from then on, and their change
-   * queries visit every entity again.
-   *
-   * It fails with `Save.LoadRefused` for a save the game can't load, as
-   * `App.make` does, and the app is then as it was. It dies on an app that a
-   * session has taken over, where it would move this machine's game alone.
-   */
-  readonly load: (save: Save.Save) => Effect.Effect<void, Save.LoadRefused>;
-  /**
-   * Records the world's hash in the action log now, and returns it. Use it for
-   * points the game wants verified beyond the ones `checkpointEvery` records,
-   * such as when it is saved. Run it only between ticks, since it dies
-   * anywhere else.
-   */
-  readonly checkpoint: () => Effect.Effect<number>;
   /**
    * Copies what the game holds and what it did last as plain data, to read in
    * a debugger or the console, or to show in a game's own UI. The copy, an
@@ -584,8 +525,7 @@ export interface App<E = never, HU = never> extends Any {
 /**
  * An app that something else steps, such as a session, which runs a tick
  * when every peer may, or a sync test. It is the app without what would move
- * this machine's game alone: `tick`, `dispatch`, `dispatchByName` and
- * `load`. It has
+ * this machine's game alone: `tick`, `dispatch` and `dispatchByName`. It has
  * no `close` either, because whatever steps it
  * closes it. Its world, time, frame and input stages, log, saves and
  * recordings are an app's. An action given to `enqueue` is applied when
@@ -600,7 +540,7 @@ export interface App<E = never, HU = never> extends Any {
  */
 export type Steered<E = never, HU = never> = Omit<
   App<E, HU>,
-  "close" | "dispatch" | "dispatchByName" | "tick" | "enqueueByName" | "load"
+  "close" | "dispatch" | "dispatchByName" | "tick" | "enqueueByName"
 > & {
   /** Like `App.enqueueByName`. A session stamps who issued it. */
   readonly enqueueByName: (
@@ -715,8 +655,8 @@ export const define = <
  * **Details**
  *
  * A recording says where its game started with the same `seed` or `save`.
- * `Journal.replay` makes its app from that, and takes the rest of these
- * options as its `Journal.ReplayOptions`.
+ * `Replay.verify` makes its app from that, and takes the rest of these
+ * options as its `Replay.Options`.
  *
  * @category Options
  */
@@ -743,7 +683,7 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
    * of one world hash each time. Defaults to 60. A turn-based game wants 1,
    * and 0 records none.
    */
-  readonly checkpointEvery?: number;
+  readonly hashEvery?: number;
   /**
    * Checks what the compiler was told to let through. Use it in development
    * and tests.
@@ -798,11 +738,11 @@ export class FrameChangedWorld extends Data.TaggedError(
  * **Details**
  *
  * - To load a save into an app that is running, with its layers, its stages
- *   and its driver as they are, use `app.load(save)`.
+ *   and its driver as they are, use `Save.load(app, save)`.
  * - An app made from a save starts with an empty action log. To return to
  *   where the game had got to, replay what the first app recorded since the
- *   save, `app.record(save)`, with `Journal.replay`, which checks the
- *   recording against the log's checkpoints as it goes.
+ *   save, `Replay.record(app, save)`, with `Replay.verify`, which checks the
+ *   recording against the log's hash checks as it goes.
  * - With `save`, it fails with `Save.LoadRefused` when the save's world can't
  *   be loaded, because the world holds a component this program doesn't
  *   define or one whose fields have changed, or because its bytes are

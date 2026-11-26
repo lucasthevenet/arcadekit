@@ -38,7 +38,7 @@ describe("a peer's comparison of what the peers were made with", () => {
   });
 });
 
-describe("a peer's comparison of checkpoints", () => {
+describe("a peer's comparison of hash checks", () => {
   it("sends each of its own once, and only when its tick is final", () => {
     const drift = ada();
     drift.took(0, 10);
@@ -135,7 +135,7 @@ describe("a peer's comparison of checkpoints", () => {
     expect(drift.compare(1, 1)).toMatchObject({ tick: 1, agreedAt: 0 });
   });
 
-  it("takes a peer's checkpoints in the order it sent them, whatever order its messages come in", () => {
+  it("takes a peer's hash checks in the order it sent them, whatever order its messages come in", () => {
     const drift = ada();
     drift.took(0, 10);
     drift.took(1, 11);
@@ -155,7 +155,7 @@ describe("a peer's comparison of checkpoints", () => {
     expect(drift.compare(9, 9)).toMatchObject({ tick: 9 });
   });
 
-  it("holds nothing against a checkpoint it took none for, or from a name that is no peer", () => {
+  it("holds nothing against a hash check it took none for, or from a name that is no peer", () => {
     const drift = ada();
     drift.took(0, 10);
     // One grace took by hand, at a tick ada's log records none for.
@@ -172,7 +172,7 @@ describe("a peer's comparison of checkpoints", () => {
     expect(drift.unanswered).toBe(1);
   });
 
-  it("lets go of a checkpoint no peer has answered in 600 ticks", () => {
+  it("lets go of a hash check no peer has answered in 600 ticks", () => {
     const drift = ada();
     drift.took(0, 10);
     drift.compare(0, 0);

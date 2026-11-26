@@ -104,7 +104,7 @@ const savedByVersion0 = Effect.fnUntraced(function* () {
         yield* app.tick(1);
         yield* app.enqueue(Heal0, { amount: 3 });
         const entities = spawned.map((id) => placedIn(world, id));
-        return { save: unwrap(yield* Effect.exit(app.save())), entities };
+        return { save: unwrap(yield* Effect.exit(Save.make(app))), entities };
       })
   );
 });
@@ -323,7 +323,7 @@ describe("a save from another version of the game", () => {
       expect((yield* savedByVersion0()).save.version).toBe(0);
       yield* withApp(App.make(App.define({ version: 7 })), (app) =>
         Effect.gen(function* () {
-          const save = unwrap(yield* Effect.exit(app.save()));
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
           expect(save.version).toBe(7);
           expect(unwrap(Save.decode(Save.encode(save))).version).toBe(7);
         })
@@ -366,7 +366,7 @@ describe("a save from another version of the game", () => {
               { power: 600, note: "buff 6", fresh: undefined },
             ]);
             const known = readSnapshot(
-              unwrap(yield* Effect.exit(app.save())).world
+              unwrap(yield* Effect.exit(Save.make(app))).world
             ).components.map(({ name }) => name);
             expect(known).toContain("mg/Health");
             expect(known).not.toContain("mg/Old");
@@ -386,7 +386,7 @@ describe("a save from another version of the game", () => {
             expect(app.time.tick).toBe(2);
 
             // What it saves now is a save of version 2, which loads as it is.
-            const again = unwrap(yield* Effect.exit(app.save()));
+            const again = unwrap(yield* Effect.exit(Save.make(app)));
             expect(again.version).toBe(2);
             yield* withApp(App.make(Version2, { save: again }), (_, reloaded) =>
               Effect.gen(function* () {
@@ -442,7 +442,7 @@ describe("a save from another version of the game", () => {
         App.make(App.define({ plugins: [Game2], version: 3 })),
         (app) =>
           Effect.gen(function* () {
-            return unwrap(yield* Effect.exit(app.save()));
+            return unwrap(yield* Effect.exit(Save.make(app)));
           })
       );
       const error = refusal(yield* Effect.exit(App.make(Version2, { save })));

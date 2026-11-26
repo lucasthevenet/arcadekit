@@ -98,7 +98,7 @@ NodeRuntime.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }));
 
 ## Tick only when needed
 
-A turn-based game, a puzzle, or a menu has nothing to do between moves. Ticking 60 times a second anyway runs its systems, advances its time, and fills its log with checkpoints for nothing. With `ticks: "whenNeeded"`, the loop draws every frame but ticks only while the game changes:
+A turn-based game, a puzzle, or a menu has nothing to do between moves. Ticking 60 times a second anyway runs its systems, advances its time, and fills its log with hash checks for nothing. With `ticks: "whenNeeded"`, the loop draws every frame but ticks only while the game changes:
 
 ```ts
 import { App, Driver, Field, Plugin, Singleton, System, Time } from "arcadekit";

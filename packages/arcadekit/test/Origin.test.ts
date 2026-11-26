@@ -6,7 +6,7 @@ import { readSnapshot } from "../src/ecs/index.ts";
 import {
   Action,
   App,
-  Journal,
+  Replay,
   Save,
   System,
   Time,
@@ -97,7 +97,7 @@ describe("who issued an action", () => {
           yield* app.enqueueByName("ls/Tip", { amount: 5 }, "grace");
           yield* app.enqueueByName("ls/Tip", { amount: 9 }, "mallory");
           yield* app.tick(DELTA);
-          return { recording: yield* app.record(), hash: world.hash() };
+          return { recording: yield* Replay.record(app), hash: world.hash() };
         })
       );
       const { log } = recorded.recording;
@@ -120,12 +120,12 @@ describe("who issued an action", () => {
         },
       ]);
       // As bytes and back, as a log that is kept would be.
-      const bytes = unwrap(Journal.encode(recorded.recording));
-      const read = Journal.decode(bytes);
+      const bytes = unwrap(Replay.encode(recorded.recording));
+      const read = Replay.decode(bytes);
       expect(read).toEqual(Exit.succeed(recorded.recording));
       assert(Exit.isSuccess(read));
       yield* withApp(
-        Journal.replay(read.value, CoinGame, { checkpointEvery: 1 }),
+        Replay.verify(read.value, CoinGame, { hashEvery: 1 }),
         (_, world) =>
           Effect.gen(function* () {
             expect(world.hash()).toBe(recorded.hash);
@@ -134,7 +134,7 @@ describe("who issued an action", () => {
       );
       // A log that had lost who issued each is another game, and says so.
       const anonymous = log.map((entry) => {
-        if (Action.isCheckpoint(entry)) {
+        if (Action.isHashCheck(entry)) {
           return entry;
         }
         const { from: _, ...rest } = entry;
@@ -142,16 +142,16 @@ describe("who issued an action", () => {
       });
       const Written = SchemaBinary.toCodec(Layout);
       const fields = unwrap(Schema.decodeExit(Written)(bytes));
-      const alteredRecording = Journal.decode(
+      const alteredRecording = Replay.decode(
         unwrap(Schema.encodeExit(Written)({ ...fields, log: anonymous }))
       );
       assert(Exit.isSuccess(alteredRecording));
       const diverged = yield* Effect.flip(
-        Journal.replay(alteredRecording.value, CoinGame, {
-          checkpointEvery: 1,
+        Replay.verify(alteredRecording.value, CoinGame, {
+          hashEvery: 1,
         })
       );
-      expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
+      expect(diverged).toBeInstanceOf(Replay.Diverged);
       // A name is text, and one that isn't is bytes of another layout.
       const numbered = SchemaBinary.toCodec(
         Schema.Struct({
@@ -168,7 +168,7 @@ describe("who issued an action", () => {
       );
       expect(
         Exit.isFailure(
-          Journal.decode(
+          Replay.decode(
             unwrap(
               Schema.encodeExit(numbered)({
                 ...fields,
@@ -189,7 +189,7 @@ describe("who issued an action", () => {
           Effect.gen(function* () {
             yield* app.tick(DELTA);
             yield* app.enqueueByName("ls/Tip", { amount: 6 }, "grace");
-            const save = yield* Effect.exit(app.save());
+            const save = yield* Effect.exit(Save.make(app));
             if (Exit.isFailure(save)) {
               throw new Error("the game could not be saved");
             }
@@ -223,7 +223,7 @@ describe("who issued an action", () => {
         {
           const app = yield* App.make(CoinGame, {
             save: read.value,
-            checkpointEvery: 1,
+            hashEvery: 1,
           });
           yield* app.tick(DELTA);
           const { ada, grace } = yield* app.read(Purse);

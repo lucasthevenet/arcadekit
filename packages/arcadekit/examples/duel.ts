@@ -21,9 +21,9 @@ import {
   EntityId,
   Event,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
   Save,
   Singleton,
   System,
@@ -220,11 +220,11 @@ const fighter = (app: App.Any, name: string): Effect.Effect<Entity> =>
   });
 
 const program = Effect.gen(function* () {
-  // One tick per move, so a checkpoint of the world's hash after every tick
+  // One tick per move, so a hash check of the world's hash after every tick
   // costs nothing and lets a replay say exactly where it went another way.
   // Held in the program's scope, which closes it when the program ends.
   const app = yield* Effect.acquireRelease(
-    App.make(App.define({ plugins: [Commentary] }), { checkpointEvery: 1 }),
+    App.make(App.define({ plugins: [Commentary] }), { hashEvery: 1 }),
     (made) => made.close
   );
   const knight = yield* fighter(app, "Knight");
@@ -290,20 +290,20 @@ const program = Effect.gen(function* () {
   // back, it reproduces this game in a fresh one, which checks itself against
   // those hashes as it goes. The replay installs only the rules, so it is
   // silent.
-  const saved = yield* Journal.encode(yield* app.record());
-  yield* Console.log(`saved: ${saved.byteLength} bytes`);
+  const recorded = yield* Replay.encode(yield* Replay.record(app));
+  yield* Console.log(`recorded: ${recorded.byteLength} bytes`);
   // A fresh app, held in a scope that closes it when the replay is over.
   const replay = Effect.fnUntraced(function* (bytes: Uint8Array) {
-    const loaded = Journal.decode(bytes);
+    const loaded = Replay.decode(bytes);
     if (Exit.isFailure(loaded)) {
-      return "not a save file";
+      return "not a recording";
     }
     // The replay makes its app from how the game began, its seed, and that
     // app seats the fighters as the game did, in its setup. A replay that
     // goes another way fails, and says where.
     return yield* Effect.acquireRelease(
-      Journal.replay(loaded.value, App.define({ plugins: [Rules] }), {
-        checkpointEvery: 1,
+      Replay.verify(loaded.value, App.define({ plugins: [Rules] }), {
+        hashEvery: 1,
       }),
       (replayed) => replayed.close
     ).pipe(
@@ -315,17 +315,17 @@ const program = Effect.gen(function* () {
       Effect.catch((why) => Effect.succeed(`stopped: ${why.message}`))
     );
   }, Effect.scoped);
-  yield* Console.log(`replayed -> ${yield* replay(saved)}`);
+  yield* Console.log(`replayed -> ${yield* replay(recorded)}`);
   // A payload is in its JSON form among the bytes, which someone edits in
   // place.
   const edited = (from: string, to: string): Uint8Array => {
-    const bytes = Buffer.from(saved);
+    const bytes = Buffer.from(recorded);
     bytes.write(to, bytes.indexOf(from));
     return bytes;
   };
-  // Someone edits the save so that a player who does not exist passes.
+  // Someone edits the recording so that a player who does not exist passes.
   yield* Console.log(
-    `edited save -> ${yield* replay(edited('"player":1', '"player":3'))}`
+    `edited recording -> ${yield* replay(edited('"player":1', '"player":3'))}`
   );
   // Someone edits it so that the Knight's first strike lands on the Knight.
   // The rules allow that move, so nothing is refused: the hash gives it away.
@@ -338,7 +338,7 @@ const program = Effect.gen(function* () {
 
   // A save is the game as it stands, as bytes. Loaded into the rules alone,
   // it is the same fight at the same point: no replay, and no setup run.
-  const save = yield* Effect.exit(app.save());
+  const save = yield* Effect.exit(Save.make(app));
   if (Exit.isSuccess(save)) {
     const file = Save.encode(save.value);
     const read = Save.decode(file);

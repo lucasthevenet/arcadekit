@@ -300,7 +300,7 @@ export interface Session<E = never, HU = never> extends Paced<
     /** How many messages this peer keeps that some other peer hasn't heard. */
     readonly unheard: number;
     /**
-     * How many of its checkpoints are waiting for a peer's hash. A checkpoint
+     * How many of its hash checks are waiting for a peer's hash. A hash check
      * that is never answered, because no other peer records one at that tick,
      * is discarded after 600 ticks.
      */
@@ -385,7 +385,7 @@ const simulates = (
  *   states, the actions it handles, and its version.
  * - Another seed, another save of the same tick, or two systems of one name
  *   that do different things are found by the worlds' hashes instead, as
- *   `Drift.Drifted`: a seed or a save at the checkpoint every peer takes as
+ *   `Drift.Drifted`: a seed or a save at the hash check every peer takes as
  *   it begins, and a system once it has changed a world.
  *
  * @category Constructors

@@ -37,7 +37,7 @@ A session makes its app and steps it, so nothing can advance one machine's game 
 
 Actions the simulation issues itself with `Actions`, such as a bot's move, aren't sent. Every peer's simulation issues them on its own.
 
-Every peer's log is an ordinary log, identical entry for entry across peers. [`Journal.replay`](../guides/replays.md) plays it back as a single-player game.
+Every peer's log is an ordinary log, identical entry for entry across peers. [`Replay.verify`](../guides/replays.md) plays it back as a single-player game.
 
 A session holds no socket and no timer. It receives the messages that arrived and returns the ones to send. A `Transport` carries them, between tabs with a `BroadcastChannel`, or between machines through a relay.
 
@@ -51,7 +51,7 @@ A handler receives the peer that issued an action, `{ from }`, beside the payloa
 
 Each peer's first message says what the peer was made with: what its game simulates, its `hz`, the names of every peer, and the tick it begins at. The seed is not among them. Peers made otherwise stop with `Drift.Unlike` before any of them runs a tick it is sure of.
 
-After that, peers exchange the world's hash at their checkpoints. When every peer has reported its hash for a tick and the hashes differ, every session stops with `Drift.Drifted`. The report gives the tick, each peer's hash, and the last tick they agreed on. A different seed is found this way, and so is a system that reads the clock, `Math.random` or the order of a `Set`, at the first checkpoint after it changes the world. [Determinism](determinism.md) lists what a game must do to stay in sync.
+After that, peers exchange the world's hash at their hash checks. When every peer has reported its hash for a tick and the hashes differ, every session stops with `Drift.Drifted`. The report gives the tick, each peer's hash, and the last tick they agreed on. A different seed is found this way, and so is a system that reads the clock, `Math.random` or the order of a `Set`, at the first hash check after it changes the world. [Determinism](determinism.md) lists what a game must do to stay in sync.
 
 Only the world's hash is compared. It covers the actions queued and the events waiting. A difference it doesn't cover is found only once it reaches the world, and the report names that tick, not the tick the difference started on. Such differences are how far a system has read, a system's own variables, and state held in a service.
 

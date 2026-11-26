@@ -8,7 +8,15 @@ A **save** captures a game between two ticks. A game loaded from a save continue
 ## Save a game and load it again
 
 ```ts
-import { App, Commands, Component, Field, Plugin, World } from "arcadekit";
+import {
+  App,
+  Commands,
+  Component,
+  Field,
+  Plugin,
+  Save,
+  World,
+} from "arcadekit";
 import { Effect } from "effect";
 
 const Position = Component.define("game/Position", { x: Field.f32 });
@@ -26,20 +34,20 @@ const program = Effect.gen(function* () {
   );
   const world = yield* app.read(World);
   yield* app.tick(1 / 60);
-  const save = yield* app.save(); // fails with Save.Refused
+  const save = yield* Save.make(app); // fails with Save.Refused
   const saved = world.hash();
 
   yield* app.tick(1 / 60);
-  yield* app.load(save); // fails with Save.LoadRefused
+  yield* Save.load(app, save); // fails with Save.LoadRefused
   world.hash() === saved; // true
 }).pipe(Effect.scoped);
 ```
 
-`app.save()` works between two ticks. The save holds the world as a [snapshot](snapshots.md), and the length the action log had. The snapshot holds the game's time, the actions queued for the next tick, the simulation's own among them, the events waiting to be read with each system's place in them, and what change queries haven't visited.
+`Save.make(app)` works between two ticks. The save holds the world as a [snapshot](snapshots.md), which holds the game's time, the actions queued for the next tick, the simulation's own among them, the events waiting to be read with each system's place in them, and what change queries haven't visited.
 
-`app.load(save)` puts the game the save holds into the app that runs, between two ticks. The app, its plugins' layers, its frame and input stages, its views and its sound stay as they are, and so does the driver that runs it: a page keeps drawing and playing as it was. The app is then the one `App.make(game, { save })` would make, and plays on to the same hashes.
+`Save.load(app, save)` puts the game the save holds into the app that runs, between two ticks. The app, its plugins' layers, its frame and input stages, its views and its sound stay as they are, and so does the driver that runs it: a page keeps drawing and playing as it was. The app is then the one `App.make(game, { save })` would make, and plays on to the same hashes.
 
-- Its action log starts over, as that app's starts empty, and `app.record()` records from the save.
+- Its action log starts over, as that app's starts empty, and `Replay.record(app)` records from the save.
 - The frame and input stages hear the loaded game from then on, and nothing of the game it replaced. Their change queries visit every entity again, so what draws draws all of it.
 - A moment captured with `Timeline.capture` before the load is of the game the load replaced, and `Timeline.rewind` refuses it.
 - A save it refuses, with the reasons [below](#read-why-a-load-was-refused), leaves the app as it was.
@@ -63,11 +71,13 @@ Browser.runMain(
         // A button runs an Effect of its own, with what the game was given.
         const run = Effect.runForkWith(yield* Effect.context<Save.Store>());
         button("#save").onclick = () =>
-          run(Effect.flatMap(app.save(), (save) => Save.write("slot2", save)));
+          run(
+            Effect.flatMap(Save.make(app), (save) => Save.write("slot2", save))
+          );
         button("#load").onclick = () =>
           run(
             Effect.flatMap(Save.read("slot2"), (saved) =>
-              Option.isSome(saved) ? app.load(saved.value) : Effect.void
+              Option.isSome(saved) ? Save.load(app, saved.value) : Effect.void
             )
           );
       }),
@@ -76,7 +86,7 @@ Browser.runMain(
 );
 ```
 
-A **slot** is a name a save is kept under in `Save.Store`. `Save.write(slot, save)` keeps it, in place of what the slot held, and `Save.read(slot)` reads it back, or none for an empty slot. A click runs between two frames, so between two ticks, where `app.save()` and `app.load` work. The game goes on drawing and playing through a load.
+A **slot** is a name a save is kept under in `Save.Store`. `Save.write(slot, save)` keeps it, in place of what the slot held, and `Save.read(slot)` reads it back, or none for an empty slot. A click runs between two frames, so between two ticks, where `Save.make(app)` and `Save.load` work. The game goes on drawing and playing through a load.
 
 | Store | Keeps the saves |
 | --- | --- |
@@ -98,7 +108,7 @@ import { Effect } from "effect";
 const Level = Singleton.define("game/Level", { won: Field.u8 }, { won: 0 });
 
 // The rules say when: once the level is won, and every minute of play.
-const Checkpoint = System.tick("game/Checkpoint", function* () {
+const LevelEnd = System.tick("game/LevelEnd", function* () {
   if ((yield* Level).won === 1) {
     (yield* Save.Asked.emits).emit({ slot: "level" });
   }
@@ -106,7 +116,7 @@ const Checkpoint = System.tick("game/Checkpoint", function* () {
 const Autosave = System.tick("game/Autosave", function* () {
   (yield* Save.Asked.emits).emit({ slot: "auto" });
 }).pipe(Timer.every(60));
-const Game = App.define({ systems: [Checkpoint, Autosave] });
+const Game = App.define({ systems: [LevelEnd, Autosave] });
 
 Browser.runMain(
   Driver.run(Game, { hz: 60, ready: (app) => Save.autosave(app) }).pipe(
@@ -144,22 +154,22 @@ To return the same app to an earlier moment in the same run, use `Timeline.captu
 - **Keep what the game is in the middle of in the world.** Work that takes [many ticks](systems.md#spread-work-over-many-ticks), such as a countdown or a wave of enemies, keeps its place in a component, a singleton or a state, so a save holds it.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.
 
-`app.save()` fails with `Save.Refused`, whose message names the problem, when commands are queued, when a field holds a value that can't be saved, or when a queued action or a waiting event has a payload its schema doesn't take.
+`Save.make(app)` fails with `Save.Refused`, whose message names the problem, when commands are queued, when a field holds a value that can't be saved, or when a queued action or a waiting event has a payload its schema doesn't take.
 
 These aren't saved: `Field.transient` fields, which are `undefined` after a load, and anything kept outside the world, such as a variable of a module.
 
 ## Return to the present from a save
 
 ```ts sketch
-const tail = yield * game.record(save); // from the save's tick to now
-const app = yield * Journal.replay(tail, Game);
+const tail = yield * Replay.record(game, save); // from the save's tick to now
+const app = yield * Replay.verify(tail, Game);
 ```
 
 A save records the length the action log had, `save.logLength`. Record what the game played since its last save, and replay only that tail to return to the present. The tail holds the save, so replaying it costs the same however long the game has run.
 
-`app.record(save)` takes a save the app made itself, and dies for one whose tick its log doesn't reach. An app made from a save starts its own log empty, and a recording of it begins at that save.
+`Replay.record(app, save)` takes a save the app made itself, the one `Save.make` gave, and dies for any other, and for one its log no longer reaches because the game went back to before it. An app made from a save starts its own log empty, and a recording of it begins at that save.
 
-The [replay](replays.md) checks itself against the tail's checkpoints, so a save that didn't restore the game exactly is caught at the next checkpoint.
+The [replay](replays.md) checks itself against the tail's hash checks, so a save that didn't restore the game exactly is caught at the next hash check.
 
 ## Read why a load was refused
 

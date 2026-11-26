@@ -20,7 +20,7 @@ import type { Spawned } from "../ecs/spawned.ts";
 import type { World } from "../ecs/world.ts";
 import type { EventBus } from "./eventBus.ts";
 import { Intake, jsonOf, said } from "./intake.ts";
-import type { Log } from "./journal.ts";
+import type { Log } from "./log.ts";
 import type { Runner } from "./runner.ts";
 import { GameTime } from "./stage.ts";
 

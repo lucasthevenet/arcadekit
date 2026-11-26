@@ -8,9 +8,10 @@ import {
   Component,
   Driver,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
+  Save,
   Singleton,
   State,
   System,
@@ -124,7 +125,7 @@ const play = Effect.fnUntraced(function* (
   worked.hud = 0;
   worked.menu = 0;
   const game = App.define({ plugins: [Game, begun(start)] });
-  const made = App.make(game, { seed, checkpointEvery: 1 });
+  const made = App.make(game, { seed, hashEvery: 1 });
   return yield* mount === undefined
     ? made
     : made.pipe(Effect.provide(View.mount(game, mount)));
@@ -143,7 +144,7 @@ const playWithUi = Effect.fnUntraced(function* (
 const Unknown = Action.define("vw/Unknown", Schema.Struct({}));
 
 const isAction = (entry: Action.LogEntry): entry is Action.Logged =>
-  !Action.isCheckpoint(entry);
+  !Action.isHashCheck(entry);
 
 const coinsOf = Effect.fnUntraced(function* (app: App.Any) {
   return (yield* app.read(Coins)).count();
@@ -857,7 +858,7 @@ describe("what the UI sends", () => {
         const kept = keeper<Sends>();
         const app = yield* App.make(Funded, {
           seed: 1,
-          checkpointEvery: 1,
+          hashEvery: 1,
         }).pipe(Effect.provide(View.mount(Funded, kept.mount)));
         const ui = kept.ui();
         ui.send(Buy, { price: 3 });
@@ -869,11 +870,11 @@ describe("what the UI sends", () => {
         yield* app.tick(1);
         expect(yield* coinsOf(app)).toBe(1);
         expect(yield* goldOf(app)).toBe(3);
-        const recording = yield* app.record();
+        const recording = yield* Replay.record(app);
         expect(
           recording.log
-            .filter((entry) => !Action.isCheckpoint(entry))
-            .map((entry) => (Action.isCheckpoint(entry) ? "" : entry.name))
+            .filter((entry) => !Action.isHashCheck(entry))
+            .map((entry) => (Action.isHashCheck(entry) ? "" : entry.name))
         ).toEqual(["vw/Buy", "vw/Start"]);
         // A replay with a UI of its own that is sending things is told what
         // the log says and nothing else.
@@ -881,13 +882,13 @@ describe("what the UI sends", () => {
           other.send(Buy, { price: 1 });
           other.send(Buy, { price: 1 });
         });
-        const again = yield* Journal.replay(recording, Funded, {
-          checkpointEvery: 1,
+        const again = yield* Replay.verify(recording, Funded, {
+          hashEvery: 1,
         }).pipe(Effect.provide(sending));
         expect(yield* hashOf(again)).toBe(yield* hashOf(app));
         expect(yield* coinsOf(again)).toBe(1);
         expect(
-          again.actionLog.filter((entry) => !Action.isCheckpoint(entry)).length
+          again.actionLog.filter((entry) => !Action.isHashCheck(entry)).length
         ).toBe(2);
       })
   );
@@ -903,12 +904,12 @@ describe("what the UI sends", () => {
         ui.send(Buy, { price: 4 });
         // Nothing happens until the game takes it.
         expect(
-          app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
+          app.actionLog.filter((entry) => !Action.isHashCheck(entry))
         ).toEqual([]);
         expect(yield* goldOf(app)).toBe(5);
         yield* app.input();
         expect(
-          app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
+          app.actionLog.filter((entry) => !Action.isHashCheck(entry))
         ).toEqual([
           { tick: 0, name: "vw/Buy", payload: { price: 3 }, queued: true },
           { tick: 0, name: "vw/Start", payload: {}, queued: true },
@@ -922,7 +923,7 @@ describe("what the UI sends", () => {
         yield* app.frame();
         expect(ui.get(Menu)).toEqual({ phase: "playing" });
         const logged = app.actionLog.filter(
-          (entry): entry is Action.Logged => !Action.isCheckpoint(entry)
+          (entry): entry is Action.Logged => !Action.isHashCheck(entry)
         );
         expect(logged.map((entry) => entry.refused)).toEqual([
           undefined,
@@ -933,7 +934,7 @@ describe("what the UI sends", () => {
         yield* app.input();
         yield* app.tick(1);
         expect(
-          app.actionLog.filter((entry) => !Action.isCheckpoint(entry)).length
+          app.actionLog.filter((entry) => !Action.isHashCheck(entry)).length
         ).toBe(3);
       })
   );
@@ -993,7 +994,7 @@ describe("what the UI sends", () => {
       Effect.gen(function* () {
         // The game, begun with a coin.
         const Kept = App.define({ plugins: [Game, begun({ coins: [1] })] });
-        const start = { seed: 11, checkpointEvery: 1 } as const;
+        const start = { seed: 11, hashEvery: 1 } as const;
         const kept = keeper<Sends>();
         const app = yield* App.make(Kept, start).pipe(
           Effect.provide(View.mount(Kept, kept.mount))
@@ -1017,9 +1018,9 @@ describe("what the UI sends", () => {
         expect(yield* coinsOf(app)).toBe(2);
 
         // No bridge, no input stage and no frame: a server, or a replay.
-        const played = yield* app.record();
-        const again = yield* Journal.replay(played, Kept, {
-          checkpointEvery: 1,
+        const played = yield* Replay.record(app);
+        const again = yield* Replay.verify(played, Kept, {
+          hashEvery: 1,
         });
         expect(yield* hashOf(again)).toBe(hashes.at(-1));
         expect(yield* coinsOf(again)).toBe(2);
@@ -1132,7 +1133,7 @@ describe("the bridge", () => {
         const kept = keeper();
         const seen = App.make(Watched, {
           seed: 4,
-          checkpointEvery: 1,
+          hashEvery: 1,
           verifyFrames: true,
         }).pipe(Effect.provide(View.mount(Watched, kept.mount)));
         const watched = yield* seen;
@@ -1151,8 +1152,8 @@ describe("the bridge", () => {
         }
         expect(watched.actionLog).toEqual(alone.actionLog);
         const saves = [
-          yield* Effect.exit(watched.save()),
-          yield* Effect.exit(alone.save()),
+          yield* Effect.exit(Save.make(watched)),
+          yield* Effect.exit(Save.make(alone)),
         ].map((save) => (Exit.isSuccess(save) ? save.value : undefined));
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);

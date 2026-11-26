@@ -31,7 +31,7 @@ import { EventBus } from "./eventBus.ts";
 import { reading } from "./handed.ts";
 import * as Inbox from "./inbox.ts";
 import { Intake } from "./intake.ts";
-import { Log } from "./journal.ts";
+import { Log } from "./log.ts";
 import * as Loop from "./loop.ts";
 import { hold, moved } from "./parts.ts";
 import type { Parts } from "./parts.ts";
@@ -220,7 +220,7 @@ const assemble = <
     const log = new Log(
       world,
       time,
-      start.checkpointEvery ?? 60,
+      start.hashEvery ?? 60,
       save === undefined ? { seed: seed ?? 0 } : { save }
     );
     world._attach(log);
@@ -338,7 +338,84 @@ const assemble = <
     const input = (): Effect.Effect<void, TickError<S, P>> =>
       Effect.suspend(() => loop.input() as Ran);
     const after: Parts["after"] = new Set();
-    const parts: Parts = { world, commands, events, dispatcher, log, after };
+    // Where in the log each save this app made, or started from, was taken,
+    // for a recording since it.
+    const made = new WeakMap<Save.Save, number>();
+    if (given !== undefined && save !== undefined) {
+      made.set(given, 0);
+      made.set(save, 0);
+    }
+    const parts: Parts = {
+      world,
+      commands,
+      events,
+      dispatcher,
+      log,
+      after,
+      save: () =>
+        Effect.suspend(() => {
+          runner.whileIdle(
+            (busy) =>
+              `Save.make() was called during a ${busy}. A game is saved between ticks.`
+          );
+          return Exit.map(takeSave(world, commands, version), (taken) => {
+            made.set(taken, log.entries.length);
+            return taken;
+          });
+        }),
+      load: (loading) =>
+        Effect.suspend((): Effect.Effect<void, Save.LoadRefused> => {
+          runner.whileIdle(
+            (busy) =>
+              `Save.load() was called during a ${busy}. A save is loaded between ticks.`
+          );
+          if (inbox.diverted !== undefined) {
+            throw new Error(
+              "Save.load() was called on an app that a session has taken over. It would put this machine's game where the other peers' are not. A session's peers start from one save together: make each peer's app from it with App.make(game, { save })."
+            );
+          }
+          const loaded = tried(loading, version, game.migrations);
+          if (Exit.isFailure(loaded)) {
+            return loaded;
+          }
+          // The save loads: from here on nothing fails, and the app is the
+          // one App.make would make from it, with its own layers and stages.
+          dispatcher.flush();
+          commands.rollback(0);
+          world.restore(loaded.value.world);
+          prepare(world, schedule.hooked, true);
+          events.restarted(time.tick);
+          log.restart(loaded.value);
+          made.set(loading, 0);
+          made.set(loaded.value, 0);
+          return then(Exit.void);
+        }),
+      record: (since) =>
+        Effect.sync(() => {
+          runner.whileIdle(
+            (busy) =>
+              `Replay.record() was called during a ${busy}. A game is recorded between ticks.`
+          );
+          if (since === undefined) {
+            return log.record(undefined);
+          }
+          const at = made.get(since);
+          if (at === undefined) {
+            throw new Error(
+              "Replay.record() was given a save that this app didn't make, or didn't start from: its log doesn't say where the save is in it. Record since a save of this app, as Save.make made it, or record all of it."
+            );
+          }
+          return log.record({ save: since, logLength: at });
+        }),
+      hashCheck: () =>
+        Effect.sync(() => {
+          runner.whileIdle(
+            (busy) =>
+              `Replay.hashCheck() was called during a ${busy}. A hash check is taken between ticks, where a replay can compare it.`
+          );
+          return log.hashCheck();
+        }),
+    };
     /** What ran, then what code outside the game has the app do once it has. */
     const then = <A, E>(ran: Exit.Exit<A, E>): Effect.Effect<A, E> =>
       after.size === 0 || Exit.isFailure(ran)
@@ -388,47 +465,6 @@ const assemble = <
       frameOrder: schedule.frame.map((turn) => turn.system.name),
       inputOrder: schedule.input.map((turn) => turn.system.name),
       actionLog: log.entries,
-      record: (since) =>
-        Effect.sync(() => {
-          runner.whileIdle(
-            (busy) =>
-              `record() was called during a ${busy}. A game is recorded between ticks.`
-          );
-          return log.record(since);
-        }),
-      save: () =>
-        Effect.suspend(() => {
-          runner.whileIdle(
-            (busy) =>
-              `save() was called during a ${busy}. A game is saved between ticks.`
-          );
-          return takeSave(world, commands, version, log.entries.length);
-        }),
-      load: (given) =>
-        Effect.suspend((): Effect.Effect<void, Save.LoadRefused> => {
-          runner.whileIdle(
-            (busy) =>
-              `load() was called during a ${busy}. A save is loaded between ticks.`
-          );
-          if (inbox.diverted !== undefined) {
-            throw new Error(
-              "load() was called on an app that a session has taken over. It would put this machine's game where the other peers' are not. A session's peers start from one save together: make each peer's app from it with App.make(game, { save })."
-            );
-          }
-          const loaded = tried(given, version, game.migrations);
-          if (Exit.isFailure(loaded)) {
-            return loaded;
-          }
-          // The save loads: from here on nothing fails, and the app is the
-          // one App.make would make from it, with its own layers and stages.
-          dispatcher.flush();
-          commands.rollback(0);
-          world.restore(loaded.value.world);
-          prepare(world, schedule.hooked, true);
-          events.restarted(time.tick);
-          log.restart(loaded.value);
-          return then(Exit.void);
-        }),
       get settled() {
         return loop.settled();
       },
@@ -449,14 +485,6 @@ const assemble = <
             })),
             events: events.lastTick(),
           };
-        }),
-      checkpoint: () =>
-        Effect.sync(() => {
-          runner.whileIdle(
-            (busy) =>
-              `checkpoint() was called during a ${busy}. A checkpoint is taken between ticks, where a replay can compare it.`
-          );
-          return log.checkpoint();
         }),
       close: Scope.close(scope, Exit.void),
       tick,

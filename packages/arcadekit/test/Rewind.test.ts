@@ -17,9 +17,9 @@ import {
   Events,
   Field,
   Input,
-  Journal,
   Plugin,
   Query,
+  Replay,
   Save,
   Singleton,
   System,
@@ -104,7 +104,7 @@ describe("a game that is put back to a moment", () => {
             const moment = yield* captured(app);
             expect(moment.tick).toBe(40);
             const then = {
-              save: yield* Effect.exit(app.save()),
+              save: yield* Effect.exit(Save.make(app)),
               log: structuredClone(app.actionLog),
               time: { ...app.time },
               settled: app.settled,
@@ -117,7 +117,7 @@ describe("a game that is put back to a moment", () => {
             expect(world.hash()).not.toBe(first.at(-1));
             yield* Timeline.rewind(app, moment);
             expect({
-              save: yield* Effect.exit(app.save()),
+              save: yield* Effect.exit(Save.make(app)),
               log: app.actionLog,
               time: { ...app.time },
               settled: app.settled,
@@ -168,10 +168,10 @@ describe("a game that is put back to a moment", () => {
                   expect(world.hash()).toBe(to.hash);
                 }
               }
-              const replayed = yield* Journal.replay(
-                yield* app.record(),
+              const replayed = yield* Replay.verify(
+                yield* Replay.record(app),
                 CoinGame,
-                { checkpointEvery: 1 }
+                { hashEvery: 1 }
               );
               expect((yield* replayed.read(World)).hash()).toBe(world.hash());
             })
@@ -568,7 +568,7 @@ describe("what the input stage issues, across a rewind and a save", () => {
         Effect.gen(function* () {
           yield* app.tick(DELTA);
           yield* app.input();
-          const save = yield* Effect.exit(app.save());
+          const save = yield* Effect.exit(Save.make(app));
           if (Exit.isFailure(save)) {
             throw new Error("the game could not be saved");
           }
@@ -597,7 +597,7 @@ describe("what the input stage issues, across a rewind and a save", () => {
               const before = world.hash();
               yield* app.input();
               expect(world.hash()).toBe(before);
-              const save = yield* Effect.exit(app.save());
+              const save = yield* Effect.exit(Save.make(app));
               if (Exit.isFailure(save)) {
                 throw new Error("the game could not be saved");
               }
@@ -854,8 +854,8 @@ describe("what the stages between ticks hear across a rewind", () => {
               expect((yield* back.read(World)).hash()).toBe(
                 (yield* straight.read(World)).hash()
               );
-              expect(yield* Effect.exit(back.save())).toEqual(
-                yield* Effect.exit(straight.save())
+              expect(yield* Effect.exit(Save.make(back))).toEqual(
+                yield* Effect.exit(Save.make(straight))
               );
               expect(one.heard.frame).toEqual(other.heard.frame);
             })
@@ -1199,14 +1199,14 @@ describe("Session.syncTest", () => {
           }
           return {
             hashes,
-            recording: Journal.encode(yield* app.record()),
+            recording: Replay.encode(yield* Replay.record(app)),
             checked: test.checked,
           };
         });
         const played = Effect.fnUntraced(function* (checked: boolean) {
           return checked
             ? yield* withMade(
-                Session.syncTest(CoinGame, { seed: 5, checkpointEvery: 1 }),
+                Session.syncTest(CoinGame, { seed: 5, hashEvery: 1 }),
                 stepped
               )
             : yield* withApp(game(5, 1), (app) =>
@@ -1420,7 +1420,10 @@ describe("the turns of a game kept by Timeline.keep", () => {
         expect(world.hash()).toBe(hashes[2]);
         expect(ui!.get(Where)).toEqual({ x: 1, y: 1 });
         // The log went with it: what it records is the two turns left.
-        const replayed = yield* Journal.replay(yield* app.record(), Puzzle);
+        const replayed = yield* Replay.verify(
+          yield* Replay.record(app),
+          Puzzle
+        );
         expect((yield* replayed.read(World)).hash()).toBe(hashes[2]);
         expect(moves(app.actionLog).map((entry) => entry.name)).toEqual([
           "vr/Step",
@@ -1459,9 +1462,9 @@ describe("the turns of a game kept by Timeline.keep", () => {
           expect(yield* Timeline.redo(app)).toBe(true);
           expect(world.hash()).toBe(one);
 
-          const save = unwrap(yield* Effect.exit(app.save()));
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
           yield* app.dispatch(Step, { dx: 1, dy: 0 });
-          yield* app.load(save);
+          yield* Save.load(app, save);
           expect(yield* Timeline.undo(app)).toBe(false);
           expect(yield* Timeline.redo(app)).toBe(false);
         }).pipe(Effect.scoped)

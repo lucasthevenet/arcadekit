@@ -21,10 +21,10 @@ import {
   Field,
   Frame,
   Input,
-  Journal,
   Plugin,
   Query,
   Random,
+  Replay,
   Save,
   Singleton,
   State,
@@ -124,7 +124,7 @@ const reports = (app: App.Any): unknown[] =>
   app.actionLog
     .filter(
       (entry): entry is Action.Logged =>
-        !Action.isCheckpoint(entry) && entry.name === "arcadekit/Input.Report"
+        !Action.isHashCheck(entry) && entry.name === "arcadekit/Input.Report"
     )
     .map((entry) => entry.payload);
 
@@ -333,7 +333,7 @@ describe("the input stage", () => {
               handlers: [bump],
               systems: [Vandal],
             }),
-            { checkpointEvery: 1, seed: 3 }
+            { hashEvery: 1, seed: 3 }
           );
           yield* app.tick(1);
           const before = yield* hashOf(app);
@@ -344,7 +344,7 @@ describe("the input stage", () => {
           expect((yield* app.inspect()).stores, what).not.toHaveProperty([
             Event.STORE,
           ]);
-          expect(Exit.isSuccess(yield* Effect.exit(app.save())), what).toBe(
+          expect(Exit.isSuccess(yield* Effect.exit(Save.make(app))), what).toBe(
             true
           );
           // And the app is not left frozen, or in the middle of the stage.
@@ -385,9 +385,9 @@ describe("the input stage", () => {
           expect(yield* thrown(made.input())).toThrow(
             /App\.frame was called from inside a run of the input stage/
           );
-          reach = Effect.orDie(made.save());
+          reach = Effect.orDie(Save.make(made));
           expect(yield* thrown(made.input())).toThrow(
-            /save\(\) was called during/
+            /Save\.make\(\) was called during/
           );
           reach = Effect.void;
           yield* made.input();
@@ -527,7 +527,7 @@ describe("the input stage", () => {
           });
           const app = yield* App.make(
             App.define({ handlers: [bump], systems: [Press, Look] }),
-            { checkpointEvery: 0 }
+            { hashEvery: 0 }
           );
           source.press("Enter");
           yield* app.input();
@@ -657,8 +657,8 @@ describe("the input stage", () => {
         expect(drawn).toEqual([1, 2, 3, 4]);
         // The game cannot tell that its devices are read.
         expect(yield* hashOf(app)).toBe(yield* hashOf(plain));
-        const save = yield* Effect.exit(app.save());
-        const bare = yield* Effect.exit(plain.save());
+        const save = yield* Effect.exit(Save.make(app));
+        const bare = yield* Effect.exit(Save.make(plain));
         assert(Exit.isSuccess(save) && Exit.isSuccess(bare));
         expect(waitingIn(save.value)).toEqual(waitingIn(bare.value));
       })
@@ -751,7 +751,7 @@ describe("the input stage", () => {
           // And the game cannot tell that anyone was listening.
           expect(yield* hashOf(alone)).toBe(yield* hashOf(bare));
           const saves = yield* Effect.forEach([alone, together, bare], (app) =>
-            Effect.exit(app.save())
+            Effect.exit(Save.make(app))
           );
           const events = saves.map((save) => {
             assert(Exit.isSuccess(save));
@@ -874,7 +874,7 @@ describe("the input stage", () => {
         const source = Input.makeManualSource();
         yield* Effect.gen(function* () {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           });
           // With no `app.input()`, the key is not heard.
           source.press("ArrowRight");
@@ -946,17 +946,17 @@ describe("the input stage", () => {
     () =>
       Effect.gen(function* () {
         const source = Input.makeManualSource();
-        let recording: Journal.Recording | undefined;
+        let recording: Replay.Recording | undefined;
         let hash = 0;
         yield* Effect.gen(function* () {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
-            checkpointEvery: 1,
+            hashEvery: 1,
           });
           source.press("ArrowRight");
           yield* app.input();
           yield* app.tick(1);
           yield* app.tick(1);
-          recording = yield* app.record();
+          recording = yield* Replay.record(app);
           hash = yield* hashOf(app);
           expect((yield* ship(app)).x).toBe(20);
         }).pipe(withSource(source));
@@ -965,10 +965,10 @@ describe("the input stage", () => {
         here.press("ArrowLeft");
         here.tap("Space");
         yield* Effect.gen(function* () {
-          const again = yield* Journal.replay(
+          const again = yield* Replay.verify(
             recording!,
             App.define({ plugins: [Flying] }),
-            { checkpointEvery: 1 }
+            { hashEvery: 1 }
           );
           expect(yield* hashOf(again)).toBe(hash);
           expect(yield* ship(again)).toEqual({ x: 20, shots: 0 });
@@ -1300,7 +1300,7 @@ describe("the picture of the devices in the world", () => {
         const source = Input.makeManualSource();
         const { hashes, played, text, ticks } = yield* Effect.gen(function* () {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
-            checkpointEvery: 1,
+            hashEvery: 1,
             seed: 9,
           });
           const step = Driver.fixedStep(app, { hz: 10 });
@@ -1335,7 +1335,7 @@ describe("the picture of the devices in the world", () => {
           ]);
           return {
             hashes: tickHashes,
-            text: unwrap(Journal.encode(yield* app.record())),
+            text: unwrap(Replay.encode(yield* Replay.record(app))),
             played: yield* ship(app),
             ticks: app.time.tick,
           };
@@ -1346,35 +1346,35 @@ describe("the picture of the devices in the world", () => {
         expect(ticks).toBe(7);
 
         // The replay is given no source, and its input stage is never run.
-        const decoded = Journal.decode(text);
+        const decoded = Replay.decode(text);
         assert(Exit.isSuccess(decoded));
         const recording = decoded.value;
         const entries = recording.log;
-        const again = yield* Journal.replay(
+        const again = yield* Replay.verify(
           recording,
           App.define({ plugins: [Flying] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         expect(yield* ship(again)).toEqual(played);
         expect(yield* hashOf(again)).toBe(hashes.at(-1));
-        // Checked against every tick's checkpoint on the way.
+        // Checked against every tick's hash check on the way.
         expect(
-          entries.filter((entry) => Action.isCheckpoint(entry)).length
+          entries.filter((entry) => Action.isHashCheck(entry)).length
         ).toBe(ticks + 1);
         // A log that says another key was held is another game.
         const altered = entries.map((entry) =>
-          !Action.isCheckpoint(entry) &&
+          !Action.isHashCheck(entry) &&
           JSON.stringify(entry.payload) === '{"down":["ArrowRight"]}'
             ? { ...entry, payload: { down: ["ArrowLeft"] } }
             : entry
         );
         const alteredRecording = { ...recording, log: altered };
         const diverged = yield* Effect.flip(
-          Journal.replay(alteredRecording, App.define({ plugins: [Flying] }), {
-            checkpointEvery: 1,
+          Replay.verify(alteredRecording, App.define({ plugins: [Flying] }), {
+            hashEvery: 1,
           })
         );
-        expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
+        expect(diverged).toBeInstanceOf(Replay.Diverged);
       })
   );
 
@@ -1385,7 +1385,7 @@ describe("the picture of the devices in the world", () => {
         const source = Input.makeManualSource();
         yield* Effect.gen(function* () {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           });
           const Bare = Plugin.make("Bare", {
             setup: Effect.map(Commands.spawns(Ship), (commands) => {
@@ -1393,7 +1393,7 @@ describe("the picture of the devices in the world", () => {
             }),
           });
           const bare = yield* App.make(App.define({ plugins: [Bare] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           });
           for (let i = 0; i < 3; i++) {
             yield* app.input();
@@ -1535,7 +1535,7 @@ describe("the picture of the devices in the world", () => {
         const source = Input.makeManualSource();
         const { hashes, log } = yield* Effect.gen(function* () {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           });
           const step = Driver.fixedStep(app, { hz: 10 });
           const seen: number[] = [];
@@ -1558,7 +1558,7 @@ describe("the picture of the devices in the world", () => {
         // peer on another machine is, or a recording played back at speed.
         {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           });
           const step = Driver.fixedStep(app, { hz: 10 });
           for (let tick = 0; tick < hashes.length; tick++) {
@@ -1590,7 +1590,7 @@ describe("the picture of the devices in the world", () => {
         const source = Input.makeManualSource();
         yield* Effect.gen(function* () {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           });
           const step = Effect.fnUntraced(function* () {
             yield* app.input();
@@ -1665,7 +1665,7 @@ describe("the picture of the devices in the world", () => {
           yield* app.input();
           yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(10);
-          const taken = yield* Effect.exit(app.save());
+          const taken = yield* Effect.exit(Save.make(app));
           assert(Exit.isSuccess(taken));
           return taken.value;
         }).pipe(withSource(source));
@@ -1932,7 +1932,7 @@ describe("bindings", () => {
         yield* Effect.gen(function* () {
           done.length = 0;
           const app = yield* App.make(App.define({ plugins: [Game] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           });
           expect(app.inputOrder).toEqual(["in/Controls"]);
           const step = Effect.fnUntraced(function* () {
@@ -1968,7 +1968,7 @@ describe("bindings", () => {
           expect(done.slice(4)).toEqual(["jump at 5", "land"]);
           expect(
             app.actionLog.map((entry) =>
-              Action.isCheckpoint(entry) ? "?" : entry.name
+              Action.isHashCheck(entry) ? "?" : entry.name
             )
           ).toEqual([
             "in/Jump",
@@ -1990,7 +1990,7 @@ describe("bindings", () => {
         const recording = yield* Effect.gen(function* () {
           done.length = 0;
           const app = yield* App.make(App.define({ plugins: [Game] }), {
-            checkpointEvery: 1,
+            hashEvery: 1,
           });
           source.press("Space");
           source.move(Input.pointerX, 7);
@@ -1999,22 +1999,22 @@ describe("bindings", () => {
           source.tap(Input.pointerButton());
           yield* app.input();
           yield* app.tick(1);
-          return yield* app.record();
+          return yield* Replay.record(app);
         }).pipe(withSource(source));
         const { log } = recording;
         const played = [...done];
         expect(played).toEqual(["jump at 0", "aim 7", "fire 7,0"]);
-        expect(log.filter((entry) => !Action.isCheckpoint(entry))).toEqual([
+        expect(log.filter((entry) => !Action.isHashCheck(entry))).toEqual([
           { tick: 0, name: "in/Jump", payload: null, queued: true },
           { tick: 0, name: "in/Aim", payload: { x: 7 }, queued: true },
           { tick: 1, name: "in/Fire", payload: { x: 7, y: 0 }, queued: true },
         ]);
         done.length = 0;
         // The same handlers, and nothing that listens to a device.
-        const again = yield* Journal.replay(
+        const again = yield* Replay.verify(
           recording,
           App.define({ handlers }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         expect(again.inputOrder).toEqual([]);
         expect(done).toEqual(played);

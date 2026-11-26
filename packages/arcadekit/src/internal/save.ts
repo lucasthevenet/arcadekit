@@ -51,7 +51,7 @@ export const taking = <A>(
 };
 
 /**
- * `app.save()`: a save of a world, for a game of a version whose log has a
+ * `Save.make(app)`: a save of a world, for a game of a version whose log has a
  * length.
  *
  * @internal
@@ -59,12 +59,11 @@ export const taking = <A>(
 export const takeSave = (
   world: World,
   commands: CommandBuffer<Entity | Spawned>,
-  version: number,
-  logLength: number
+  version: number
 ): Exit.Exit<Save, SaveRefused> =>
   Exit.map(
     taking(commands, "save", () => world.snapshot()),
-    (bytes) => ({ version, world: bytes, logLength })
+    (bytes) => ({ version, world: bytes })
   );
 
 /**

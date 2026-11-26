@@ -73,7 +73,7 @@ const check = Effect.gen(function* () {
   const seats = [];
   for (const peer of ["ada", "grace"]) {
     const session = yield* Session.make(App.define({ handlers: [tip] }), {
-      checkpointEvery: 1,
+      hashEvery: 1,
       me: peer,
       others: [peer === "ada" ? "grace" : "ada"],
       hz: 30,
@@ -190,7 +190,7 @@ const check = Effect.gen(function* () {
   for (const [at, lobby] of met.entries()) {
     const session = yield* Session.make(App.define({ handlers: [tip] }), {
       ...starts[at]!,
-      checkpointEvery: 1,
+      hashEvery: 1,
       hz: 30,
     });
     played.push({

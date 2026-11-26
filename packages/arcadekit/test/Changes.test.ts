@@ -17,10 +17,10 @@ import {
   Component,
   EntityId,
   Field,
-  Journal,
   Migrate,
   Plugin,
   Query,
+  Replay,
   Save,
   System,
   Time,
@@ -1384,11 +1384,11 @@ const Game = App.define(
 );
 
 const game = (
-  options: { checkpointEvery?: number } = {}
+  options: { hashEvery?: number } = {}
 ): Effect.Effect<
   App.App<never, typeof push | typeof spawn | typeof cull>,
   never
-> => App.make(Game, { checkpointEvery: options.checkpointEvery ?? 1 });
+> => App.make(Game, { hashEvery: options.hashEvery ?? 1 });
 
 /** A game with a move every tick, some of them refused. */
 const play = Effect.fnUntraced(function* (
@@ -1511,16 +1511,16 @@ describe("change queries in an app", () => {
   );
 
   it.effect(
-    "replay, with refused actions among them, checkpoint by checkpoint",
+    "replay, with refused actions among them, hash check by hash check",
     () =>
       Effect.gen(function* () {
         const app = yield* game();
         yield* play(app, 0, 40);
         expect((yield* tallyOf(app)).moved).toBeGreaterThan(40);
         expect((yield* tallyOf(app)).gone).toBeGreaterThan(2);
-        const played = yield* app.record();
-        const again = yield* Journal.replay(played, Game, {
-          checkpointEvery: 1,
+        const played = yield* Replay.record(app);
+        const again = yield* Replay.verify(played, Game, {
+          hashEvery: 1,
         });
         expect((yield* again.read(World)).hash()).toBe(
           (yield* app.read(World)).hash()
@@ -1538,7 +1538,7 @@ describe("change queries in an app", () => {
           yield* play(app, 0, savedAt);
           // Between ticks, with changes waiting for both systems.
           yield* app.dispatchByName("ch/Push", { slot: 2, refuse: false });
-          const save = yield* Effect.exit(app.save());
+          const save = yield* Effect.exit(Save.make(app));
           if (Exit.isFailure(save)) {
             throw new Error("the save was refused");
           }
@@ -1552,10 +1552,10 @@ describe("change queries in an app", () => {
           expect(visitsIn(save.value).length > 0).toBe(savedAt > 0);
           yield* play(app, savedAt, savedAt + 12);
           // The tail of the original's log replays in a game loaded from the
-          // save that was read, and every checkpoint of it holds.
-          const played = yield* app.record(read.value);
-          const loaded = yield* Journal.replay(played, Game, {
-            checkpointEvery: 1,
+          // save, which is the one that was read, and every hash check holds.
+          const played = yield* Replay.record(app, save.value);
+          const loaded = yield* Replay.verify(played, Game, {
+            hashEvery: 1,
           });
           expect(yield* tallyOf(loaded)).toEqual(yield* tallyOf(app));
           expect((yield* loaded.read(World)).hash()).toBe(
@@ -1632,7 +1632,7 @@ describe("change queries in an app", () => {
         yield* app.dispatch(Hit, {
           entity: placedIn(yield* app.read(World), second),
         });
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -1672,7 +1672,7 @@ describe("change queries in an app", () => {
       Effect.gen(function* () {
         const app = yield* game();
         yield* play(app, 0, 3);
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }

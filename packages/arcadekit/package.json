@@ -82,11 +82,6 @@
       "types": "./dist/Input.d.ts",
       "default": "./dist/Input.js"
     },
-    "./Journal": {
-      "source": "./src/Journal.ts",
-      "types": "./dist/Journal.d.ts",
-      "default": "./dist/Journal.js"
-    },
     "./Migrate": {
       "source": "./src/Migrate.ts",
       "types": "./dist/Migrate.d.ts",
@@ -106,6 +101,11 @@
       "source": "./src/Query.ts",
       "types": "./dist/Query.d.ts",
       "default": "./dist/Query.js"
+    },
+    "./Replay": {
+      "source": "./src/Replay.ts",
+      "types": "./dist/Replay.d.ts",
+      "default": "./dist/Replay.js"
     },
     "./Resource": {
       "source": "./src/Resource.ts",

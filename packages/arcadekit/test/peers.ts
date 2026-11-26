@@ -216,8 +216,8 @@ export const CoinGame = App.define({
   systems: [Tally, Drift, Bot, Fault, Controls, Hear] as const,
   handlers: [drop, take, tip, fire, mint, whisper] as const,
 });
-export const game = (seed = 5, checkpointEvery = 1) =>
-  App.make(CoinGame, { seed, checkpointEvery });
+export const game = (seed = 5, hashEvery = 1) =>
+  App.make(CoinGame, { seed, hashEvery });
 export type Game = Effect.Success<ReturnType<typeof game>>;
 
 /** What each of the two players has in the purse. */
@@ -250,8 +250,8 @@ export interface Setup {
   readonly delay?: number;
   /** The seed of each peer's game, by name: all the same unless told. */
   readonly seeds?: Readonly<Record<string, number>>;
-  /** How often each peer's log records a checkpoint, by name: 1 unless told. */
-  readonly checkpointEvery?: Readonly<Record<string, number>>;
+  /** How often each peer's log records a hash check, by name: 1 unless told. */
+  readonly hashEvery?: Readonly<Record<string, number>>;
   /** How far the sessions run ahead: not at all unless told. */
   readonly ahead?: number;
   /** Whether each peer is given the others the other way round from the last. */
@@ -270,7 +270,7 @@ export const withPeers = <A, E = never>(
       const others = names.filter((other) => other !== name);
       const session = yield* Session.make(CoinGame, {
         seed: setup.seeds?.[name] ?? 5,
-        checkpointEvery: setup.checkpointEvery?.[name] ?? 1,
+        hashEvery: setup.hashEvery?.[name] ?? 1,
         me: name,
         others:
           setup.shuffled === true && peers.length % 2 === 1
@@ -435,7 +435,7 @@ export const players = (seed: number) => {
 };
 
 export const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
-  log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+  log.filter((entry): entry is Action.Logged => !Action.isHashCheck(entry));
 
 /**
  * Rounds of a game that is expected to stop: every peer is handed what

@@ -23,6 +23,7 @@ import {
   Field,
   Plugin,
   Query,
+  Save,
   System,
   Time,
   Transform2d,
@@ -1728,7 +1729,7 @@ describe("a flat game's Transform2d", () => {
           Flat.Rotation.of({ angle: 1 }),
           Flat.Scale.of({ x: 2, y: 2 })
         );
-        const save = yield* Effect.exit(first.app.save());
+        const save = yield* Effect.exit(Save.make(first.app));
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }
@@ -2587,13 +2588,13 @@ describe("an entity drawn between two ticks", () => {
         });
         const drawnGame = yield* start(
           App.make(App.define({ plugins: [Drawn] }), {
-            checkpointEvery: 1,
+            hashEvery: 1,
             verifyFrames: true,
           }),
           makeRenderer()
         );
         const bareApp = yield* App.make(App.define({ plugins: [Rules] }), {
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         const bare = {
           app: bareApp,
@@ -2618,8 +2619,8 @@ describe("an entity drawn between two ticks", () => {
         }
         expect(drawnGame.app.actionLog).toEqual(bare.app.actionLog);
         const saves = [
-          yield* Effect.exit(drawnGame.app.save()),
-          yield* Effect.exit(bare.app.save()),
+          yield* Effect.exit(Save.make(drawnGame.app)),
+          yield* Effect.exit(Save.make(bare.app)),
         ].map((save) => (Exit.isSuccess(save) ? save.value : undefined));
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);
@@ -3709,7 +3710,7 @@ describe("Three.objects", () => {
         yield* first.app.frame();
         yield* first.app.tick(1 / 60);
         const hash = first.world.hash();
-        const save = yield* Effect.exit(first.app.save());
+        const save = yield* Effect.exit(Save.make(first.app));
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }
@@ -3879,14 +3880,14 @@ describe("Three.plugin", () => {
         const { app: drawnGame, world: drawnWorld } = yield* start(
           App.make(App.define({ plugins: [Drawn] }), {
             seed: 3,
-            checkpointEvery: 1,
+            hashEvery: 1,
             verifyFrames: true,
           }),
           renderer
         );
         const bare = yield* App.make(App.define({ plugins: [Rules] }), {
           seed: 3,
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         const bareWorld = yield* bare.read(World);
         for (let tick = 0; tick < 60; tick++) {

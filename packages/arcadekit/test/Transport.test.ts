@@ -12,8 +12,8 @@ import {
   App,
   Driver,
   Input,
-  Journal,
   Plugin,
+  Replay,
   Save,
   World,
 } from "../src/index.ts";
@@ -65,7 +65,7 @@ const seated = (
       const source = Input.makeManualSource();
       const session = yield* Session.make(CoinGame, {
         seed: 5,
-        checkpointEvery: 1,
+        hashEvery: 1,
         me: name,
         others: playing.filter((other) => other !== name),
         hz: HZ,
@@ -323,9 +323,9 @@ describe("a session joined to a transport", () => {
               expect(ada.session.drifted).toBeUndefined();
               // Only a game played with rollback goes back.
               expect(ada.session.stats.rewinds > 0).toBe(ahead !== undefined);
-              const whole = yield* ada.app.record();
-              const alone = yield* Journal.replay(whole, CoinGame, {
-                checkpointEvery: 1,
+              const whole = yield* Replay.record(ada.app);
+              const alone = yield* Replay.verify(whole, CoinGame, {
+                hashEvery: 1,
               });
               expect((yield* alone.read(World)).hash()).toBe(ada.world.hash());
             })
@@ -637,7 +637,7 @@ describe("a session joined to a transport", () => {
                   Effect.flatMap(
                     Session.make(CoinGame, {
                       seed: 5,
-                      checkpointEvery: 1,
+                      hashEvery: 1,
                       me: "ada",
                       others: ["grace"],
                       hz: HZ,
@@ -709,7 +709,7 @@ describe("a session joined to a transport", () => {
       const hub = Transport.makeHub();
       const session = yield* Session.make(CoinGame, {
         seed: 5,
-        checkpointEvery: 1,
+        hashEvery: 1,
         me: "ada",
         others: [],
         hz: HZ,
@@ -733,7 +733,7 @@ describe("a session joined to a transport", () => {
     Effect.gen(function* () {
       const session = yield* Session.make(CoinGame, {
         seed: 5,
-        checkpointEvery: 1,
+        hashEvery: 1,
         me: "ada",
         others: [],
         hz: HZ,

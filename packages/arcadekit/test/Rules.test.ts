@@ -11,10 +11,10 @@ import {
   Event,
   Events,
   Field,
-  Journal,
   Plugin,
   Query,
   Random,
+  Replay,
   System,
   Time,
 } from "../src/index.ts";
@@ -52,9 +52,9 @@ const waiting = Effect.fnUntraced(function* (app: App.Any) {
   return (yield* app.inspect()).stores[Event.STORE];
 });
 
-/** The applied actions of a log, without the checkpoints recorded among them. */
+/** The applied actions of a log, without the hash checks recorded among them. */
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
-  log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+  log.filter((entry): entry is Action.Logged => !Action.isHashCheck(entry));
 
 describe("events", () => {
   it.effect(
@@ -834,7 +834,7 @@ describe("replay", () => {
             yield* app.tick(1);
             yield* app.tick(1);
             return {
-              recording: yield* app.record(),
+              recording: yield* Replay.record(app),
               state: yield* snapshot(app),
             };
           })
@@ -862,7 +862,7 @@ describe("replay", () => {
       expect(original.state[0]).toBe("tick=7 entities=3");
 
       const replayed = yield* withApp(
-        Journal.replay(original.recording, Duel),
+        Replay.verify(original.recording, Duel),
         (app) =>
           Effect.gen(function* () {
             return { log: [...app.actionLog], state: yield* snapshot(app) };

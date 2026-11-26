@@ -17,11 +17,11 @@ A peer's first message says what the peer was made with: a hash of what its game
 
 ## Read where peers drifted apart
 
-Each peer sends the others the [checkpoints](replays.md#verify-a-replay-with-checkpoints) its log records, each the world's hash at a tick, inside the messages it sends anyway. When every peer has reported its hash for a tick and the hashes differ, every session stops with `Drift.Drifted`. `session.tick()` fails with it, and the failure stops a driver, on that tick and every later one. `session.drifted` keeps it for a UI to show, and so does the connection `Driver.run` hands to `ready`. `Driver.run` fails with it, so a program catches it by its tag, `"DriftDrifted"`, as [drive a session](sessions.md#drive-a-session) shows.
+Each peer sends the others the [hash checks](replays.md#verify-a-replay-with-hash-checks) its log records, each the world's hash at a tick, inside the messages it sends anyway. When every peer has reported its hash for a tick and the hashes differ, every session stops with `Drift.Drifted`. `session.tick()` fails with it, and the failure stops a driver, on that tick and every later one. `session.drifted` keeps it for a UI to show, and so does the connection `Driver.run` hands to `ready`. `Driver.run` fails with it, so a program catches it by its tag, `"DriftDrifted"`, as [drive a session](sessions.md#drive-a-session) shows.
 
-- The report holds the tick, every peer's hash by name, and `agreedAt`, the last tick the hashes matched. With three or more peers, the hashes show which peer is the odd one out. With a checkpoint every tick, `agreedAt` is the tick before they diverged.
+- The report holds the tick, every peer's hash by name, and `agreedAt`, the last tick the hashes matched. With three or more peers, the hashes show which peer is the odd one out. With a hash check every tick, `agreedAt` is the tick before they diverged.
 - A peer that stops sends its hash first, so the others stop with the same report instead of waiting for it.
-- A checkpoint adds about 30 bytes to a message. The hash is the one the app already computes for its log.
+- A hash check adds about 30 bytes to a message. The hash is the one the app already computes for its log.
 
 What the hash doesn't cover is detected only once it [reaches the world](../concepts/several-players.md#peers-that-drift-apart-stop).
 
@@ -29,13 +29,13 @@ What the hash doesn't cover is detected only once it [reaches the world](../conc
 
 Drift is caught within a bounded number of ticks, however slow the network:
 
-- A peer whose `ahead` is 0 runs at most `checkpointEvery - 1 + delay` ticks past the first tick whose world differed, where `delay` is the largest any peer uses. With a checkpoint every tick and a delay of 2, that is two ticks.
+- A peer whose `ahead` is 0 runs at most `hashEvery - 1 + delay` ticks past the first tick whose world differed, where `delay` is the largest any peer uses. With a hash check every tick and a delay of 2, that is two ticks.
 - A peer that runs ahead runs at most `2 × ahead` ticks more, since it sends a tick's hash once every peer has sent their actions for that tick.
 
-`Session.make` takes `checkpointEvery` as `App.make` does. A smaller value catches drift sooner, at the cost of one hash of the world per checkpoint.
+`Session.make` takes `hashEvery` as `App.make` does. A smaller value catches drift sooner, at the cost of one hash of the world per hash check.
 
-- The peers compare their starting state first, whatever `checkpointEvery` is, since a session records a checkpoint when it begins. Peers whose `ahead` is 0, made with a different seed or with different entities spawned at startup, never run a tick, and the report says they didn't start from the same state. A peer that runs ahead may run some ticks before the report comes, within the bound above.
-- After that, peers compare what their logs record: every 60 ticks by default, and nothing more with `checkpointEvery: 0`. Peers with different intervals compare the ticks both record. A checkpoint one peer records by hand with `app.checkpoint()` isn't held against the others.
+- The peers compare their starting state first, whatever `hashEvery` is, since a session records a hash check when it begins. Peers whose `ahead` is 0, made with a different seed or with different entities spawned at startup, never run a tick, and the report says they didn't start from the same state. A peer that runs ahead may run some ticks before the report comes, within the bound above.
+- After that, peers compare what their logs record: every 60 ticks by default, and nothing more with `hashEvery: 0`. Peers with different intervals compare the ticks both record. A hash check one peer records by hand with `Replay.hashCheck(app)` isn't held against the others.
 
 ## Start again after drift
 

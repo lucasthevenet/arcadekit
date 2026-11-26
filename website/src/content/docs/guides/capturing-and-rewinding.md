@@ -102,6 +102,18 @@ Browser.runMain(
 - To run the same ticks again, as a rollback session does, pass `{ again: true }` to `Timeline.rewind`. Each of them then hears each event once. An event that a tick emits again, with the same payload, isn't heard twice. The two stages' change queries visit only what can differ from what they saw: what they had yet to visit, and the entities that the ticks given up or the ticks run again changed, spawned or despawned.
 - For a rewind that comes before the two stages run again, capture with `Timeline.capture(app, { stages: true })`. The moment also keeps the stages' place in what changed, and their change queries go on from where they were.
 
+## Tell a moment from a save, a recording and a snapshot
+
+A game is kept in one of five ways, each with a name of its own:
+
+| It is | Holds | Made by | For |
+| --- | --- | --- | --- |
+| A **moment**, `Timeline.Moment` | The game, in memory | `Timeline.capture(app)` | Going back in the same app: an undo, a rollback |
+| A **save**, `Save.Save` | The game, as bytes it encodes to | `Save.make(app)` | Going on later, in this app with `Save.load` or in another with `App.make` |
+| A **recording**, `Replay.Recording` | How the game began, and its log | `Replay.record(app)` | Playing the game again: `Replay.verify`, `Replay.play` |
+| A **snapshot** | A world, as bytes | `world.snapshot()` | What a save holds of the world, and the storage core's own copy of one |
+| A **hash check**, `Action.HashCheck` | The world's hash at a tick | `hashEvery`, `Replay.hashCheck(app)` | Comparing two runs of a game: a replay with its recording, peers with each other |
+
 ## Read more
 
 - [Saving and loading](saving-and-loading.md), for a game kept beyond one run of the program.

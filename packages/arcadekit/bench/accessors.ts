@@ -166,9 +166,9 @@ const scanReads = Action.handler(Scan, function* () {
 
 /** The game a dispatch is measured in: N entities, and the two actions. */
 const dispatchable = () =>
-  // No checkpoints: this measures the action, not the hash.
+  // No hash checks: this measures the action, not the hash.
   App.make(App.define({ plugins: [Populated], handlers: [nudge, sweep] }), {
-    checkpointEvery: 0,
+    hashEvery: 0,
   });
 
 /**
@@ -243,7 +243,7 @@ const listening = (changing: boolean): number =>
     Effect.gen(function* () {
       const source = Input.makeManualSource();
       const app = yield* App.make(App.define({ plugins: [Input.plugin] }), {
-        checkpointEvery: 0,
+        hashEvery: 0,
       }).pipe(Effect.provide(Input.layer(source)));
       for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
         source.press(code);
@@ -310,7 +310,7 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
       const ui = View.mount(WithHud, (bridge) => {
         bridge.subscribe(Hud, () => {});
       });
-      const made = App.make(WithHud, { checkpointEvery: 0 });
+      const made = App.make(WithHud, { hashEvery: 0 });
       const app = yield* mode === "nobody"
         ? made
         : made.pipe(Effect.provide(ui));
@@ -352,7 +352,7 @@ const sounding = (happening: boolean): number =>
       );
       const app = yield* App.make(
         App.define({ plugins: [Sound.plugin], systems: [Score, Cues] }),
-        { checkpointEvery: 0 }
+        { hashEvery: 0 }
       ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
       return yield* measureEffect(
         () => app.frame(),
@@ -380,7 +380,7 @@ const scoring = (): number =>
       });
       const app = yield* App.make(
         App.define({ plugins: [Sound.plugin], systems: [Score] }),
-        { checkpointEvery: 0 }
+        { hashEvery: 0 }
       ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
       return yield* measureEffect(() => app.frame(), 50_000, 20_000);
     })
@@ -405,7 +405,7 @@ const atRest = (): number =>
         plugins: [Input.plugin, View.plugin],
         systems: [Show],
       });
-      const app = yield* App.make(Resting, { checkpointEvery: 0 }).pipe(
+      const app = yield* App.make(Resting, { hashEvery: 0 }).pipe(
         Effect.provide(
           Layer.merge(
             Input.layer(source),
@@ -575,7 +575,7 @@ const scanned = (handler: typeof scanPlain): number =>
     Effect.gen(function* () {
       const app = yield* App.make(
         App.define({ plugins: [Populated], handlers: [handler] }),
-        { checkpointEvery: 0 }
+        { hashEvery: 0 }
       );
       return yield* measureEffect(
         () => Effect.exit(app.dispatch(Scan, {})),

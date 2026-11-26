@@ -3,7 +3,7 @@ import { Brand } from "effect";
 import type * as Action from "../Action.ts";
 import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
-import type { Origin, Recording } from "../Journal.ts";
+import type { Origin, Recording } from "../Replay.ts";
 import type * as Save from "../Save.ts";
 import { singleton } from "./save.ts";
 import { GameTime } from "./stage.ts";
@@ -64,7 +64,7 @@ export interface Since {
 
 /**
  * The log an app keeps of its game: what entered it from outside, the
- * checkpoints of its world's hash, and how long each tick was. It is about
+ * hash checks of its world's hash, and how long each tick was. It is about
  * the run and not the game, so no snapshot holds it and the hash doesn't
  * cover it. It is a store of the app's world all the same, for one thing: a
  * rewind takes it back to the length it had, with the world.
@@ -72,7 +72,7 @@ export interface Since {
  * @internal
  */
 export class Log implements Store<Since> {
-  readonly name = "arcadekit/journal";
+  readonly name = "arcadekit/log";
   // What comes from outside is logged as it arrives, between ticks too.
   readonly betweenTicks = true;
   /** What `app.actionLog` is. */
@@ -85,7 +85,7 @@ export class Log implements Store<Since> {
   private last: Change = begun();
   private readonly world: World;
   private readonly time: { readonly tick: number };
-  private readonly checkpointEvery: number;
+  private readonly hashEvery: number;
   /** How the game began when its app was made, or last loaded a save. */
   private origin: Origin;
   /**
@@ -97,18 +97,18 @@ export class Log implements Store<Since> {
   constructor(
     world: World,
     time: { readonly tick: number },
-    checkpointEvery: number,
+    hashEvery: number,
     origin: Origin
   ) {
-    if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
+    if (!Number.isSafeInteger(hashEvery) || hashEvery < 0) {
       throw new Error(
-        `checkpointEvery must be a whole number of ticks, 0 for none, and this one is ${checkpointEvery}.`
+        `hashEvery must be a whole number of ticks, 0 for none, and this one is ${hashEvery}.`
       );
     }
     this.world = world;
     this.time = time;
     this.began = time.tick;
-    this.checkpointEvery = checkpointEvery;
+    this.hashEvery = hashEvery;
     this.origin = origin;
   }
 
@@ -137,7 +137,7 @@ export class Log implements Store<Since> {
   }
 
   /** Records the world's hash now, and returns it. */
-  checkpoint(): number {
+  hashCheck(): number {
     const hash = this.world._fullHash();
     this.log({ tick: this.time.tick, hash });
     return hash;
@@ -155,11 +155,11 @@ export class Log implements Store<Since> {
    * runs. The state the game starts from is whatever the world holds then:
    * setup and the caller have spawned what they spawn by then, and a replay
    * checks it has the same. A game has started once its log holds anything:
-   * a checkpoint the game took by hand before starting already is the first.
+   * a hash check the game took by hand before starting already is the first.
    */
   start(): void {
-    if (this.checkpointEvery > 0 && this.entries.length === 0) {
-      this.checkpoint();
+    if (this.hashEvery > 0 && this.entries.length === 0) {
+      this.hashCheck();
     }
   }
 
@@ -211,11 +211,11 @@ export class Log implements Store<Since> {
     }
   }
 
-  /** A tick has run: a checkpoint, if one is due. */
+  /** A tick has run: a hash check, if one is due. */
   ticked(): void {
-    const { checkpointEvery } = this;
-    if (checkpointEvery > 0 && this.time.tick % checkpointEvery === 0) {
-      this.checkpoint();
+    const { hashEvery } = this;
+    if (hashEvery > 0 && this.time.tick % hashEvery === 0) {
+      this.hashCheck();
     }
   }
 
@@ -319,9 +319,11 @@ export class Log implements Store<Since> {
   }
 
   /** The game as it was played: all of it, or what came since a save. */
-  record(since: Save.Save | undefined): Recording {
+  record(
+    since: { readonly save: Save.Save; readonly logLength: number } | undefined
+  ): Recording {
     const { began, deltas, entries, time } = this;
-    const start = since === undefined ? began : tickOf(since);
+    const start = since === undefined ? began : tickOf(since.save);
     const from = since?.logLength ?? 0;
     if (
       start < began ||
@@ -331,7 +333,7 @@ export class Log implements Store<Since> {
       (entries[from]?.tick ?? start) < start
     ) {
       throw new Error(
-        `record() was given a save of tick ${start} that this app didn't make: its log doesn't reach it there. Record since a save of this app, or record all of it.`
+        `Replay.record() was given a save of tick ${start} that this app's log no longer reaches there: the game went back to before it, or a save was loaded since. Record since a save it made later, or record all of it.`
       );
     }
     // The run that was under way at the start begins there.
@@ -340,7 +342,7 @@ export class Log implements Store<Since> {
       first++;
     }
     return recorded({
-      ...(since === undefined ? this.origin : { save: since }),
+      ...(since === undefined ? this.origin : { save: since.save }),
       start,
       end: time.tick,
       endHash: this.world._fullHash(),

@@ -954,7 +954,7 @@ describe("what a page keeps beyond a visit", () => {
         const Volume = Setting.define("br/Volume", Schema.Number, 1);
         const app = yield* App.make(App.define({ plugins: [Flying] }));
         yield* app.tick(1 / 60);
-        const save = unwrap(yield* Effect.exit(app.save()));
+        const save = unwrap(yield* Effect.exit(Save.make(app)));
         const hash = (yield* app.read(World)).hash();
 
         // A visit: it saves to a slot, and sets the volume.
@@ -994,7 +994,7 @@ describe("what a page keeps beyond a visit", () => {
         expect(kept.slots).toEqual(["slot2"]);
         expect(kept.volume).toBe(0.5);
         yield* app.tick(1 / 60);
-        yield* app.load(Option.getOrThrow(kept.save));
+        yield* Save.load(app, Option.getOrThrow(kept.save));
         expect((yield* app.read(World)).hash()).toBe(hash);
 
         // Another game of the same site keeps its own.
@@ -1024,7 +1024,7 @@ describe("what a page keeps beyond a visit", () => {
         page.fill();
         const Volume = Setting.define("br/Loudness", Schema.Number, 1);
         const app = yield* App.make(App.define({ plugins: [Flying] }));
-        const save = unwrap(yield* Effect.exit(app.save()));
+        const save = unwrap(yield* Effect.exit(Save.make(app)));
         const written = yield* Effect.flip(
           Save.write("auto", save).pipe(
             Effect.provide(Save.layer(Browser.saves("mine")))

@@ -11,9 +11,10 @@ import {
   Field,
   Frame,
   Input,
-  Journal,
   Plugin,
   Query,
+  Replay,
+  Save,
   Singleton,
   State,
   System,
@@ -91,7 +92,7 @@ describe("app.settled", () => {
     "is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked",
     () =>
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({}), { checkpointEvery: 0 });
+        const app = yield* App.make(App.define({}), { hashEvery: 0 });
         // A game that has not ticked yet has not been asked whether it has
         // anything to do.
         expect(app.settled).toBe(false);
@@ -251,7 +252,7 @@ describe("app.settled", () => {
   it.effect("is not changed by looking, nor by the stages between ticks", () =>
     Effect.gen(function* () {
       const app = yield* App.make(App.define({ plugins: [Rules] }), {
-        checkpointEvery: 1,
+        hashEvery: 1,
       });
       const world = yield* worldOf(app);
       const before = world.hash();
@@ -298,7 +299,7 @@ describe("a game that ticks when its player moves", () => {
     const handed: View.Bridge<typeof Begin | typeof Move>[] = [];
     const source = Input.makeManualSource();
     const app = yield* App.make(Played, {
-      checkpointEvery: 1,
+      hashEvery: 1,
       seed: 5,
     }).pipe(
       Effect.provide(
@@ -394,9 +395,9 @@ describe("a game that ticks when its player moves", () => {
         yield* frame(200);
         expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
         // The same game with no UI, no devices and no rest: tick after tick.
-        const played = yield* app.record();
-        const again = yield* Journal.replay(played, Played, {
-          checkpointEvery: 1,
+        const played = yield* Replay.record(app);
+        const again = yield* Replay.verify(played, Played, {
+          hashEvery: 1,
         });
         const replayed = yield* worldOf(again);
         expect(replayed.hash()).toBe((yield* worldOf(app)).hash());
@@ -546,7 +547,7 @@ describe("a game that changes", () => {
         yield* app.tick(1);
         yield* app.tick(1);
         expect((yield* worldOf(app)).singleton(Clock).left).toBe(4);
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         expect(save._tag).toBe("Success");
         if (save._tag !== "Success") {
           return;

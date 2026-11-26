@@ -271,7 +271,7 @@ describe("Driver.run", () => {
           { startImmediately: true }
         );
         turn(display, 6);
-        const taken = yield* Effect.exit(made!.save());
+        const taken = yield* Effect.exit(Save.make(made!));
         assert(Exit.isSuccess(taken));
         const save = taken.value;
         expect(made!.time.tick).toBe(5);

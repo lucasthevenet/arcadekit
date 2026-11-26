@@ -24,10 +24,11 @@ import {
   Field,
   Frame,
   Input,
-  Journal,
   Plugin,
   Query,
   Random,
+  Replay,
+  Save,
   Singleton,
   State,
   System,
@@ -663,10 +664,10 @@ describe("a level's assets", () => {
         };
         const seen = yield* App.make(
           App.define({ plugins: [drawnGame.Game] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
         const unseen = yield* App.make(App.define({ plugins: [bare.Game] }), {
-          checkpointEvery: 1,
+          hashEvery: 1,
         }).pipe(Effect.provideService(Assets.Loader, counting));
         for (const to of ["forest", "cave", "menu"] as const) {
           yield* seen.dispatch(drawnGame.Go, { to });
@@ -682,11 +683,11 @@ describe("a level's assets", () => {
         expect(bare.log).toEqual([]);
         expect(drawnGame.log.length).toBe(4);
         // The log of one replays in the other, which has no files.
-        const played = yield* seen.record();
-        const again = yield* Journal.replay(
+        const played = yield* Replay.record(seen);
+        const again = yield* Replay.verify(
           played,
           App.define({ plugins: [bare.Game] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         ).pipe(Effect.provideService(Assets.Loader, counting));
         expect((yield* again.read(World)).hash()).toBe(
           (yield* seen.read(World)).hash()
@@ -869,7 +870,7 @@ describe("a level's assets", () => {
         const slow = makeSlowLoader();
         const { hash, recording } = yield* Effect.gen(function* () {
           const app = yield* App.make(App.define({ plugins: [Shown] }), {
-            checkpointEvery: 1,
+            hashEvery: 1,
           });
           const step = Driver.fixedStep(app, { hz: 10 });
           yield* step(0.1);
@@ -888,8 +889,7 @@ describe("a level's assets", () => {
           // Issued once.
           expect(
             app.actionLog.filter(
-              (entry) =>
-                !Action.isCheckpoint(entry) && entry.name === "as/Build"
+              (entry) => !Action.isHashCheck(entry) && entry.name === "as/Build"
             )
           ).toEqual([
             {
@@ -901,14 +901,14 @@ describe("a level's assets", () => {
           ]);
           return {
             hash: (yield* app.read(World)).hash(),
-            recording: yield* app.record(),
+            recording: yield* Replay.record(app),
           };
         }).pipe(Effect.provideService(Assets.Loader, slow.loader));
         // The replay has the rules and nothing that loads or draws.
-        const again = yield* Journal.replay(
+        const again = yield* Replay.verify(
           recording,
           App.define({ plugins: [Rules] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         expect((yield* again.read(World)).hash()).toBe(hash);
         expect((yield* again.read(Query.all(Wall))).count()).toBe(4);
@@ -923,7 +923,7 @@ describe("a level's assets", () => {
         yield* app.dispatch(Go, { to: "forest" });
         yield* app.tick(1);
         yield* app.frame();
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         assert(Exit.isSuccess(save));
         const loaded = yield* App.make(App.define({ plugins: [Game] }), {
           save: save.value,
@@ -1277,7 +1277,7 @@ describe("levels as data", () => {
     systems: [Assets.during(level, Levels)],
   });
   const LevelGame = App.define({ plugins: [Shown] });
-  const makeLevels = () => App.make(LevelGame, { checkpointEvery: 1 });
+  const makeLevels = () => App.make(LevelGame, { hashEvery: 1 });
   const files = {
     "/levels/1.json": '{"walls":[]}',
     "/levels/2.json": '{"walls":[4,5]}',
@@ -1296,7 +1296,7 @@ describe("levels as data", () => {
   });
   const handedOver = (log: readonly Action.LogEntry[]) =>
     log.flatMap((entry) =>
-      !Action.isCheckpoint(entry) &&
+      !Action.isHashCheck(entry) &&
       entry.name === "arcadekit/Assets.onReady(lv/Level)"
         ? [entry.payload]
         : []
@@ -1366,10 +1366,10 @@ describe("levels as data", () => {
         const hash = (yield* one.read(World)).hash();
         expect((yield* two.read(World)).hash()).toBe(hash);
         expect((yield* one.read(Query.all(Wall))).count()).toBe(2);
-        const replayed = yield* Journal.replay(
-          yield* one.record(),
+        const replayed = yield* Replay.verify(
+          yield* Replay.record(one),
           App.define({ plugins: [Rules] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         expect((yield* replayed.read(World)).hash()).toBe(hash);
       }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))))
@@ -1384,8 +1384,8 @@ describe("levels as data", () => {
         yield* play(one);
         expect(yield* buildsOf(one)).toBe(1);
         const loaded = yield* App.make(LevelGame, {
-          checkpointEvery: 1,
-          save: yield* one.save(),
+          hashEvery: 1,
+          save: yield* Save.make(one),
         });
         // Its bundle loads again, and the world has what it holds already.
         yield* play(loaded);

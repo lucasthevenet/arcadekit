@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Layer } from "effect";
 
-import { App, Plugin, Save, World } from "../src/index.ts";
+import { App, Plugin, Replay, Save, World } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";
 import { Session } from "../src/net/index.ts";
 import { thrown } from "./checks.ts";
@@ -27,7 +27,7 @@ describe("a session", () => {
       const session = yield* Session.make(CoinGame, {
         ...alone,
         seed: 5,
-        checkpointEvery: 1,
+        hashEvery: 1,
       });
       const { app } = session;
       expect(app.time.tick).toBe(0);
@@ -41,7 +41,7 @@ describe("a session", () => {
       expect(yield* session.tick()).toBe(true);
       expect(app.time.tick).toBe(1);
       // A recording of it says how it began, as an app's does.
-      expect((yield* app.record()).seed).toBe(5);
+      expect((yield* Replay.record(app)).seed).toBe(5);
     })
   );
 
@@ -94,7 +94,7 @@ describe("a session", () => {
         for (let i = 0; i < 4; i++) {
           yield* played.tick(DELTA);
         }
-        const saved = yield* Effect.exit(played.save());
+        const saved = yield* Effect.exit(Save.make(played));
         assert(Exit.isSuccess(saved));
         const save = {
           save: saved.value,
@@ -222,7 +222,7 @@ describe("taking an app over", () => {
       expect(test.checked).toBe(5);
       expect(test.app.time.tick).toBe(5);
       // Each tick is in the log and the recording once.
-      expect(yield* test.app.record()).toMatchObject({
+      expect(yield* Replay.record(test.app)).toMatchObject({
         seed: 5,
         start: 0,
         end: 5,

@@ -3,11 +3,11 @@
  *
  * Before anything else, each peer says in its first message what it was made
  * with, `Message.Made`. A peer that hears another was made otherwise stops
- * with `Unlike`. After that, each peer's log records checkpoints, its world's
+ * with `Unlike`. After that, each peer's log records hash checks, its world's
  * hash at a tick, and the peers send them to each other with the messages
  * they send anyway.
  *
- * A `Comparison` is one peer's side of that. It is told the checkpoints this
+ * A `Comparison` is one peer's side of that. It is told the hash checks this
  * peer takes and the ones the others sent, and says which of its own to send.
  * It compares the hashes of a tick once every peer has sent its own and the
  * tick is final. The first tick whose hashes differ makes it report
@@ -31,13 +31,13 @@ import type { Made } from "./Message.ts";
  * The peers are no longer playing the same game: at one tick, their worlds'
  * hashes differed. Every later tick of the session fails with this error.
  *
- * Drift is found within a bounded number of ticks. A checkpoint is recorded
- * every `checkpointEvery` ticks, and travels with the message for the tick
+ * Drift is found within a bounded number of ticks. A hash check is recorded
+ * every `hashEvery` ticks, and travels with the message for the tick
  * `delay` ahead, a message no peer can run that tick without. So no peer runs
- * more than `checkpointEvery - 1 + delay` ticks past the first tick whose
+ * more than `hashEvery - 1 + delay` ticks past the first tick whose
  * world differed, where `delay` is the largest any peer uses. A session that
  * runs ahead sends a tick's hash only once every peer has sent its actions
- * for that tick, so its bound is `checkpointEvery - 1 + delay + 2 × ahead`
+ * for that tick, so its bound is `hashEvery - 1 + delay + 2 × ahead`
  * ticks.
  *
  * What is compared is the world's hash, which covers the actions queued for
@@ -48,7 +48,7 @@ import type { Made } from "./Message.ts";
  * @category Errors
  */
 export class Drifted extends Data.TaggedError("DriftDrifted")<{
-  /** The tick of the first checkpoint whose hashes differ. */
+  /** The tick of the first hash check whose hashes differ. */
   readonly tick: number;
   /** The peer that found it, which is this one. */
   readonly peer: string;
@@ -66,7 +66,7 @@ export class Drifted extends Data.TaggedError("DriftDrifted")<{
       .join(", ");
     const since =
       this.agreedAt === undefined
-        ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same seed, and that the plugins' setups spawn the same things on each"
+        ? "No earlier hash check matched, so they did not start from the same state: check that every peer was made with the same seed, and that the plugins' setups spawn the same things on each"
         : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers whose systems of the same name do different things`;
     return `The peers are no longer playing the same game. At tick ${this.tick} the hashes of their worlds are: ${hashes} (found by "${this.peer}"). ${since}.`;
   }
@@ -130,11 +130,11 @@ export class Unlike extends Data.TaggedError("DriftUnlike")<{
   }
 }
 
-/** How many ticks an unanswered checkpoint is kept. */
+/** How many ticks an unanswered hash check is kept. */
 const UNANSWERED = 600;
 
 /**
- * One peer's comparison of its checkpoints with the other peers', from
+ * One peer's comparison of its hash checks with the other peers', from
  * `Drift.make`.
  *
  * @category Models
@@ -153,20 +153,20 @@ export interface Comparison {
    */
   readonly took: (tick: number, hash: number) => void;
   /**
-   * Tells it the checkpoints a peer's message carried, where `sent` is the
-   * tick the message is for. It takes a peer's checkpoints in the order the
+   * Tells it the hash checks a peer's message carried, where `sent` is the
+   * tick the message is for. It takes a peer's hash checks in the order the
    * peer sent them, whatever order its messages arrive in, so the last tick
    * the peers agreed at is known when the next one differs.
    */
   readonly heard: (
     from: string,
     sent: number,
-    checkpoints: readonly Action.Checkpoint[]
+    hashChecks: readonly Action.HashCheck[]
   ) => void;
   /**
    * Makes this peer's hashes final up to the tick `final`, and compares
-   * every checkpoint up to it that this peer and all the others have. `now`
-   * is the tick the game is at, and a checkpoint no peer has answered in 600
+   * every hash check up to it that this peer and all the others have. `now`
+   * is the tick the game is at, and a hash check no peer has answered in 600
    * ticks is dropped. Returns `Drifted` or `Unlike` once the peers have
    * drifted or were found unlike, and compares nothing from then on.
    */
@@ -175,16 +175,16 @@ export interface Comparison {
     now: number
   ) => Drifted | Unlike | undefined;
   /**
-   * Returns this peer's final checkpoints that it hasn't sent yet, for its
+   * Returns this peer's final hash checks that it hasn't sent yet, for its
    * next message, and forgets them. The next call returns only newer ones.
    */
-  readonly unsent: () => readonly Action.Checkpoint[];
+  readonly unsent: () => readonly Action.HashCheck[];
   /**
    * Why the peers have drifted, once `compare` has found that they have, or
    * why they were never alike, once `told` has.
    */
   readonly drifted: Drifted | Unlike | undefined;
-  /** How many of this peer's final checkpoints are waiting for a peer's hash. */
+  /** How many of this peer's final hash checks are waiting for a peer's hash. */
   readonly unanswered: number;
 }
 
@@ -207,15 +207,15 @@ export const make = (options: {
   const mine = new Map<number, number>();
   // The other peers' hashes, by tick and then by name.
   const theirs = new Map<number, Map<string, number>>();
-  // Per peer, the checkpoints of messages that came ahead of an earlier
-  // one, and the tick of the next message to take checkpoints from.
-  const early = new Map<string, Map<number, readonly Action.Checkpoint[]>>();
+  // Per peer, the hash checks of messages that came ahead of an earlier
+  // one, and the tick of the next message to take hash checks from.
+  const early = new Map<string, Map<number, readonly Action.HashCheck[]>>();
   const next = new Map<string, number>();
   for (const name of peers) {
     early.set(name, new Map());
     next.set(name, start);
   }
-  let unsent: Action.Checkpoint[] = [];
+  let unsent: Action.HashCheck[] = [];
   let drifted: Drifted | Unlike | undefined;
   let agreedAt: number | undefined;
 
@@ -238,13 +238,13 @@ export const make = (options: {
     took(tick, hash) {
       taken.set(tick, hash);
     },
-    heard(from, sent, checkpoints) {
+    heard(from, sent, hashChecks) {
       const waiting = early.get(from);
       if (waiting === undefined) {
         // Not a peer of the game.
         return;
       }
-      waiting.set(sent, checkpoints);
+      waiting.set(sent, hashChecks);
       let expected = next.get(from)!;
       for (
         let due = waiting.get(expected);
@@ -292,7 +292,7 @@ export const make = (options: {
         const said = theirs.get(tick)!;
         const hash = mine.get(tick);
         if (hash === undefined) {
-          // Nothing to hold it against: a checkpoint the other peer took by
+          // Nothing to hold it against: a hash check the other peer took by
           // hand, or one of a schedule that is not this peer's.
           theirs.delete(tick);
           continue;
@@ -321,9 +321,9 @@ export const make = (options: {
       return undefined;
     },
     unsent() {
-      const checkpoints = unsent;
+      const hashChecks = unsent;
       unsent = [];
-      return checkpoints;
+      return hashChecks;
     },
     get drifted() {
       return drifted;

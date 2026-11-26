@@ -55,8 +55,8 @@ Every variant does the same work, `pos += vel * dt`:
 - Hashing what changed costs about 1.4 ns per 32-bit field per entity, with an entity's id counting as two fields when its table's rows changed. A sparse component's field costs about four times as much, because its members are hashed one by one so that their order doesn't matter.
 - A capture copies what changed and shares the rest with the moment before. Ten moments of a game that moves every entity each tick hold 10.5 MB, where ten snapshots hold 28 MB, and 2.7 MB when one table in a hundred moves.
 - A rewind copies back what changed since the moment. It also drops every query's view, which each system builds again when it next runs: about 6 µs per view, measured with 50 views over 100 tables.
-- An app's hash also encodes each queued action and each waiting event through its schema. Each costs about 0.6 µs for a payload of four fields, and 256 events cost 0.15 ms at every checkpoint.
-- A [checkpoint](replays.md) hashes every column, whatever changed, so that a write that went around `Query.writes` still shows up. It is one hash every `checkpointEvery` ticks, 60 by default: over the world of 100,000 entities, checkpoints average 14 µs per tick.
+- An app's hash also encodes each queued action and each waiting event through its schema. Each costs about 0.6 µs for a payload of four fields, and 256 events cost 0.15 ms at every hash check.
+- A [hash check](replays.md) hashes every column, whatever changed, so that a write that went around `Query.writes` still shows up. It is one hash every `hashEvery` ticks, 60 by default: over the world of 100,000 entities, hash checks average 14 µs per tick.
 - A [rollback session](sessions.md) pays one capture per uncertain tick: 0.08 ms for 100,000 entities when a tick moves all of them. A misprediction costs a rewind, 0.04 ms, plus running the ticks since then again.
 
 ## Change queries

@@ -11,9 +11,10 @@ import {
   EntityId,
   Event,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
+  Save,
   System,
   World,
 } from "../src/index.ts";
@@ -88,9 +89,9 @@ const withApp = <A, T, E = never, E2 = never>(
   use: (made: A) => Effect.Effect<T, E2>
 ) => Effect.flatMap(make, use);
 
-/** The applied actions of a log, without the checkpoints recorded among them. */
+/** The applied actions of a log, without the hash checks recorded among them. */
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
-  log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+  log.filter((entry): entry is Action.Logged => !Action.isHashCheck(entry));
 
 const failure = <E>(exit: Exit.Exit<unknown, E>): E => {
   if (!Exit.isFailure(exit)) {
@@ -603,7 +604,7 @@ describe("saving and replaying", () => {
         yield* app.dispatch(Rename, { name: "x" });
         yield* app.tick(1);
         return {
-          bytes: unwrap(Journal.encode(yield* app.record())),
+          bytes: unwrap(Replay.encode(yield* Replay.record(app))),
           hp: world.get(target, Health)!.hp,
         };
       })
@@ -617,11 +618,9 @@ describe("saving and replaying", () => {
   /** Fields written as a recording's bytes, as a player edits a file. */
   const written = (fields: typeof Layout.Type) =>
     unwrap(Schema.encodeExit(Written)(fields));
-  const replayInto = Effect.fnUntraced(function* (
-    recording: Journal.Recording
-  ) {
+  const replayInto = Effect.fnUntraced(function* (recording: Replay.Recording) {
     return yield* withApp(
-      begin(Journal.replay(recording, Game)),
+      begin(Replay.verify(recording, Game)),
       ({ world, target }) => Effect.sync(() => world.get(target, Health)!.hp)
     );
   });
@@ -632,8 +631,8 @@ describe("saving and replaying", () => {
   const withLog = (
     bytes: Uint8Array<ArrayBuffer>,
     log: readonly Action.LogEntry[]
-  ): Journal.Recording => {
-    const read = Journal.decode(written({ ...fieldsIn(bytes), log }));
+  ): Replay.Recording => {
+    const read = Replay.decode(written({ ...fieldsIn(bytes), log }));
     assert(Exit.isSuccess(read));
     return read.value;
   };
@@ -642,7 +641,7 @@ describe("saving and replaying", () => {
     const entry = log[index];
     assert(
       entry !== undefined &&
-        !Action.isCheckpoint(entry) &&
+        !Action.isHashCheck(entry) &&
         Predicate.isObject(entry.payload)
     );
     return { ...entry, payload: entry.payload };
@@ -656,7 +655,7 @@ describe("saving and replaying", () => {
         expect(saved.hp).toBe(35);
         expect(saved.bytes).toBeInstanceOf(Uint8Array);
 
-        const loaded = Journal.decode(saved.bytes);
+        const loaded = Replay.decode(saved.bytes);
         expect(Exit.isSuccess(loaded)).toBe(true);
         if (!Exit.isSuccess(loaded)) {
           return;
@@ -685,9 +684,9 @@ describe("saving and replaying", () => {
             for (let tick = 0; tick < ticks; tick++) {
               yield* app.tick(1);
             }
-            const save = yield* Effect.exit(app.save());
+            const save = yield* Effect.exit(Save.make(app));
             assert(Exit.isSuccess(save));
-            return unwrap(Journal.encode(yield* app.record(save.value)));
+            return unwrap(Replay.encode(yield* Replay.record(app, save.value)));
           })
         );
       });
@@ -750,17 +749,17 @@ describe("saving and replaying", () => {
           }),
         ],
       ] as const) {
-        expect(Exit.isFailure(Journal.decode(bytes)), what).toBe(true);
+        expect(Exit.isFailure(Replay.decode(bytes)), what).toBe(true);
       }
-      expect(Exit.isSuccess(Journal.decode(anyStart(valid)))).toBe(true);
-      expect(Exit.isSuccess(Journal.decode(written(valid)))).toBe(true);
+      expect(Exit.isSuccess(Replay.decode(anyStart(valid)))).toBe(true);
+      expect(Exit.isSuccess(Replay.decode(written(valid)))).toBe(true);
       expect(fieldsIn(yield* since(4))).toMatchObject({
         start: 4,
         end: 4,
         deltas: [],
         log: [],
       });
-      expect(Exit.isSuccess(Journal.decode(yield* since(4)))).toBe(true);
+      expect(Exit.isSuccess(Replay.decode(yield* since(4)))).toBe(true);
     })
   );
 
@@ -790,7 +789,7 @@ describe("saving and replaying", () => {
 
     const recordingBytes =
       "73208895aad41f34022a09a8faeec319087b226478223a317da18ac6d52d00b0deb7ce4606672f4d6f7665a887b0f34a03616461070b02feffffff1fe1cab791280ef9cde0ca3200d1dacea33504b0d1d6d56218011600a4e1d8da050200a1f885d80610111111111111913ff1c7a6a76a80890f";
-    const recording = Journal.decode(bytesOf(recordingBytes));
+    const recording = Replay.decode(bytesOf(recordingBytes));
     assert(Exit.isSuccess(recording));
     expect(recording.value).toEqual({
       seed: 7,
@@ -803,20 +802,20 @@ describe("saving and replaying", () => {
         { tick: 1, hash: 4_294_967_295 },
       ],
     });
-    expect(hex(unwrap(Journal.encode(recording.value)))).toBe(recordingBytes);
+    expect(hex(unwrap(Replay.encode(recording.value)))).toBe(recordingBytes);
   });
 
   it.effect("stops a replay at the first entry that no longer applies", () =>
     Effect.gen(function* () {
       const saved = yield* record();
-      // Entry 0 is the checkpoint of the state the game started from; the four
+      // Entry 0 is the hash check of the state the game started from; the four
       // actions follow it.
       const { log } = fieldsIn(saved.bytes);
       expect(
         log.map((entry) =>
-          Action.isCheckpoint(entry) ? "checkpoint" : entry.name
+          Action.isHashCheck(entry) ? "hash check" : entry.name
         )
-      ).toEqual(["checkpoint", "Damage", "Damage", "Damage", "Rename"]);
+      ).toEqual(["hash check", "Damage", "Damage", "Damage", "Rename"]);
 
       // An edited save file: a hit far above what the schema allows.
       const hit = actionAt(log, 2);
@@ -827,7 +826,7 @@ describe("saving and replaying", () => {
       const caught = yield* Effect.flip(
         replayInto(withLog(saved.bytes, edited))
       );
-      assert(caught instanceof Journal.ReplayDiverged, "the replay diverged");
+      assert(caught instanceof Replay.Diverged, "the replay diverged");
       expect(caught.index).toBe(2);
       expect(caught.tick).toBe(1);
       // It was enqueued, so the replay enqueues it too, and stops after the
@@ -857,7 +856,7 @@ describe("saving and replaying", () => {
       const late = log.with(4, { ...actionAt(log, 4), tick: 99 });
       expect(
         Exit.isFailure(
-          Journal.decode(written({ ...fieldsIn(saved.bytes), log: late }))
+          Replay.decode(written({ ...fieldsIn(saved.bytes), log: late }))
         )
       ).toBe(true);
     })

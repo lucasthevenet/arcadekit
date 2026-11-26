@@ -9,9 +9,9 @@ import {
   Component,
   Event,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
   Save,
   Singleton,
   State,
@@ -558,7 +558,7 @@ describe("hooks", () => {
     ] as const;
   const start = (
     game: App.Game<readonly System.System<never, World>[], readonly [typeof go]>
-  ) => App.make(game, { checkpointEvery: 1 });
+  ) => App.make(game, { hashEvery: 1 });
   const game = (ran: string[]) =>
     start(App.define({ systems: hooks(ran), handlers: [go] }));
 
@@ -899,11 +899,11 @@ describe("a state in a save", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }), {
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         // Before the first tick nothing has been entered or written.
         const fresh = yield* App.make(App.define({ plugins: [Rules] }), {
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         const world = yield* app.read(World);
         expect((yield* fresh.read(World)).hash()).toBe(world.hash());
@@ -912,7 +912,7 @@ describe("a state in a save", () => {
         expect(world.hash()).not.toBe((yield* fresh.read(World)).hash());
         // Saved with a move asked for and not made yet.
         yield* app.dispatch(Next, {});
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -922,7 +922,7 @@ describe("a state in a save", () => {
         }
         const loaded = yield* App.make(App.define({ plugins: [Rules] }), {
           save: read.value,
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         const loadedWorld = yield* loaded.read(World);
         expect(loadedWorld.hash()).toBe(world.hash());
@@ -942,11 +942,11 @@ describe("a state in a save", () => {
         expect(x).toBe(3);
 
         // And the whole game replays, hooks and conditions with it.
-        const played = yield* app.record();
-        const again = yield* Journal.replay(
+        const played = yield* Replay.record(app);
+        const again = yield* Replay.verify(
           played,
           App.define({ plugins: [Rules] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         expect((yield* again.read(World)).hash()).toBe(world.hash());
       })
@@ -965,7 +965,7 @@ describe("a state in a save", () => {
         const app = yield* App.make(App.define({ handlers: [prop] }));
         expect(yield* Effect.exit(app.dispatch(Prop, {}))).toEqual(Exit.void);
         yield* app.tick(1);
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         assert(Exit.isSuccess(save));
         const loaded = yield* App.make(App.define({}), { save: save.value });
         const exit = yield* Effect.exit(
@@ -987,7 +987,7 @@ describe("a state in a save", () => {
         expect(Exit.isSuccess(yield* Effect.exit(app.dispatch(Next, {})))).toBe(
           true
         );
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -1232,7 +1232,7 @@ describe("an entity scoped to a state", () => {
         const app = yield* App.make(game);
         yield* app.dispatch(Go, { to: "playing", refuse: false });
         yield* app.tick(1);
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -1293,7 +1293,7 @@ describe("an entity scoped to a state", () => {
         });
         const app = yield* App.make(App.define({ handlers: [pull] }));
         expect(yield* Effect.exit(app.dispatch(Pull, {}))).toEqual(Exit.void);
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         assert(Exit.isSuccess(save));
         const After = State.define("st/Lever", ["up", "down"]);
         const loaded = yield* Effect.exit(

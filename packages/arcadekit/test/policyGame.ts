@@ -248,7 +248,7 @@ export const play = (): Record<string, unknown> =>
       refusals.length = 0;
       noticed = 0;
       drawn = 0;
-      const app = yield* App.make(Game, { seed: 7, checkpointEvery: 1 });
+      const app = yield* App.make(Game, { seed: 7, hashEvery: 1 });
       const world = yield* app.read(World);
       const outcomes: string[] = [];
       for (let tick = 0; tick < 6; tick++) {
@@ -262,7 +262,7 @@ export const play = (): Record<string, unknown> =>
           outcomes.push(Exit.isSuccess(exit) ? "paid" : "refused");
         }
       }
-      const saved = yield* Effect.exit(app.save());
+      const saved = yield* Effect.exit(Save.make(app));
       if (Exit.isFailure(saved)) {
         return { failed: "save" };
       }
@@ -273,7 +273,7 @@ export const play = (): Record<string, unknown> =>
       }
       const again = yield* App.make(Game, {
         save: read.value,
-        checkpointEvery: 1,
+        hashEvery: 1,
       });
       yield* again.tick(1 / 60);
       yield* app.tick(1 / 60);

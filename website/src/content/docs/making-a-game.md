@@ -164,7 +164,7 @@ Each method of an app returns an Effect, so a test is an Effect too: `it.effect`
 
 ```ts title="rules.test.ts"
 import { expect, it } from "@effect/vitest";
-import { App, Commands, Journal, Plugin, World } from "arcadekit";
+import { App, Commands, Plugin, Replay, World } from "arcadekit";
 import { Effect, Exit } from "effect";
 
 import { Basket, Fall, Move, Position, Rules } from "./rules";
@@ -209,7 +209,7 @@ it.effect("refuses a move once the game is over", () =>
 
 `app.dispatch` applies an action immediately, and fails with the action's refusal: `Effect.exit` turns that into a value to look at. `app.enqueue` instead queues the action for the start of the next tick, as a real-time game needs. Code outside the game has no other way to change it, because `app.read` takes nothing that writes.
 
-A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation. `app.record()` gives that log with the seed the game began with and how long each tick was. `Journal.replay` plays the recording in an app made from that seed, and checks the world's hash along the way:
+A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation. `Replay.record(app)` gives that log with the seed the game began with and how long each tick was. `Replay.verify` plays the recording in an app made from that seed, and checks the world's hash along the way:
 
 ```ts title="rules.test.ts"
 it.effect("plays the same game again from its log", () =>
@@ -220,8 +220,8 @@ it.effect("plays the same game again from its log", () =>
       yield* game.tick(1 / 60);
     }
 
-    const recording = yield* game.record();
-    const again = yield* Journal.replay(recording, Catch);
+    const recording = yield* Replay.record(game);
+    const again = yield* Replay.verify(recording, Catch);
     const hash = (app: App.Any) =>
       Effect.map(app.read(World), (world) => world.hash());
     expect(yield* hash(again)).toBe(yield* hash(game));
@@ -231,7 +231,7 @@ it.effect("plays the same game again from its log", () =>
 
 Run `pnpm vitest run`, and the three tests pass.
 
-If anything in the rules read the clock or called `Math.random`, the replay would fail with `Journal.ReplayDiverged` at the first checkpoint where the two worlds differ. The app takes a checkpoint every 60 ticks by default.
+If anything in the rules read the clock or called `Math.random`, the replay would fail with `Replay.Diverged` at the first hash check where the two worlds differ. The app takes a hash check every 60 ticks by default.
 
 ## Play it in a page
 

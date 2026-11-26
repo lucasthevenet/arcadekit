@@ -34,7 +34,7 @@ const play = Effect.fnUntraced(function* (
   for (const [at, lobby] of lobbies.entries()) {
     const session = yield* Session.make(CoinGame, {
       ...starts[at]!,
-      checkpointEvery: 1,
+      hashEvery: 1,
       hz: HZ,
     }).pipe(Effect.provide(Input.layer(Input.makeManualSource())));
     const connected = yield* Effect.acquireRelease(
@@ -336,7 +336,7 @@ describe("a lobby", () => {
           for (const start of [dunes[0]!, lakes[1]!]) {
             const session = yield* Session.make(CoinGame, {
               ...start,
-              checkpointEvery: 1,
+              hashEvery: 1,
               hz: HZ,
             });
             sessions.push(

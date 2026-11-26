@@ -80,7 +80,7 @@ A session runs ahead with [rollback](../concepts/several-players.md#rollback-pre
 - `session.confirmed` is the number of final ticks. Any later tick may still be resimulated. `session.stats.rewinds` and `session.stats.resimulated` measure the cost.
 - A message with no actions for a tick that already ran costs nothing, since the prediction was right.
 
-Before each tick it isn't sure of, the session captures the game with [`Timeline.capture`](capturing-and-rewinding.md). It releases the capture once every peer has sent their actions for that tick. `session.stats.kept` is the number of captures it holds, never more than `ahead`. `session.stats` holds what a debug overlay shows beside it: the messages held, those some peer hasn't heard, the checkpoints waiting for an answer, the rewinds and the ticks resimulated.
+Before each tick it isn't sure of, the session captures the game with [`Timeline.capture`](capturing-and-rewinding.md). It releases the capture once every peer has sent their actions for that tick. `session.stats.kept` is the number of captures it holds, never more than `ahead`. `session.stats` holds what a debug overlay shows beside it: the messages held, those some peer hasn't heard, the hash checks waiting for an answer, the rewinds and the ticks resimulated.
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one. A very large world pays that cost on each uncertain tick.

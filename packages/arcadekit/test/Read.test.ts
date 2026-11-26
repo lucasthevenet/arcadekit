@@ -9,9 +9,9 @@ import {
   Component,
   Event,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
   Singleton,
   State,
   System,
@@ -121,7 +121,7 @@ describe("a game, from outside it", () => {
     "is replayed to the same world, since what changed it is in the log",
     () =>
       Effect.gen(function* () {
-        const app = yield* App.make(Game, { checkpointEvery: 0 });
+        const app = yield* App.make(Game, { hashEvery: 0 });
         for (let n = 0; n < 5; n++) {
           yield* app.tick(1 / 60);
         }
@@ -130,10 +130,10 @@ describe("a game, from outside it", () => {
           yield* app.tick(1 / 60);
         }
         const count = (yield* app.read(World)).entityCount;
-        const recording = yield* app.record();
+        const recording = yield* Replay.record(app);
         expect(count).toBe(2);
-        const replayed = yield* Journal.replay(recording, Game, {
-          checkpointEvery: 0,
+        const replayed = yield* Replay.verify(recording, Game, {
+          hashEvery: 0,
         });
         expect((yield* replayed.read(World)).entityCount).toBe(count);
       })

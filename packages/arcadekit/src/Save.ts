@@ -2,8 +2,8 @@
  * A save is a game captured between two ticks, to continue later: its world
  * as a snapshot, which holds everything that decides what the next tick does.
  *
- *   const save = yield* app.save()                 // fails with Save.Refused
- *   yield* app.load(save)                          // the same app, where it was
+ *   const save = yield* Save.make(app)            // fails with Save.Refused
+ *   yield* Save.load(app, save)                   // the same app, where it was
  *
  *   yield* Save.write("slot2", save)               // kept in Save.Store
  *   const saved = yield* Save.read("slot2")        // an Option
@@ -21,12 +21,12 @@
  * change queries haven't visited yet. Everything a game is in the middle of
  * is in the world, so the save holds all of it.
  *
- * Everything logged after a save is the game's tail, and `app.record(save)`
- * records it with the save. Replaying that recording brings the game back to
- * the present, however long it has run:
+ * Everything logged after a save is the game's tail, and
+ * `Replay.record(app, save)` records it with the save. Replaying that
+ * recording brings the game back to the present, however long it has run:
  *
- *   const tail = yield* app.record(save)
- *   const present = yield* Journal.replay(tail, game)
+ *   const tail = yield* Replay.record(app, save)
+ *   const present = yield* Replay.verify(tail, game)
  */
 import {
   Cause,
@@ -51,9 +51,9 @@ import { partsOf } from "./internal/parts.ts";
 import { loading } from "./internal/save.ts";
 
 /**
- * A game captured between two ticks, which `app.save()` makes: the game's
- * version, its world as a snapshot, and the length of its log. `Save.encode`
- * turns it into bytes, and `App.make` continues the game from it.
+ * A game captured between two ticks, which `Save.make(app)` makes: the game's
+ * version and its world as a snapshot. `Save.encode` turns it into bytes,
+ * `Save.load` puts it back into an app, and `App.make` makes an app from it.
  *
  * @category Models
  */
@@ -72,12 +72,67 @@ export interface Save {
    * to be read, and what change queries haven't visited yet.
    */
   readonly world: Uint8Array;
-  /**
-   * The number of entries the app's action log held when the save was taken.
-   * Everything logged after them is the tail that `app.record(save)` records.
-   */
-  readonly logLength: number;
 }
+
+/**
+ * Saves the game as it is, between ticks, to load later with `Save.load` or
+ * `App.make(game, { save })`. The save holds the game's world, which holds
+ * its time, the actions queued for the next tick, the events waiting to be
+ * read, and what the change queries haven't visited yet. Run it only between
+ * ticks, since it dies anywhere else.
+ *
+ *   const save = yield* Save.make(app)
+ *
+ * It fails with `Save.Refused`, which names what is in the way: a queued
+ * action or a waiting event whose payload its schema doesn't take, a field
+ * that holds a value that can't be saved, or commands queued but not applied.
+ *
+ * **Details**
+ *
+ * The app knows where in its log each save it made was taken, so that
+ * `Replay.record(app, save)` records what it played since.
+ *
+ * @category Constructors
+ */
+export const make = (
+  app: Pick<App.Any, "phase">
+): Effect.Effect<Save, Refused> => Effect.suspend(() => partsOf(app).save());
+
+/**
+ * Loads a save into an app, in place of the game it plays: the app, its
+ * plugins' layers, its frame and input stages, its views and its sound stay
+ * as they are, and its game is the one the save holds. The save is brought up
+ * to the game's version with its migrations first, as `App.make` brings one.
+ * Run it only between ticks, since it dies anywhere else.
+ *
+ *   const save = yield* Save.make(app)
+ *   yield* app.tick(1 / 60)
+ *   yield* Save.load(app, save)                  // the game where it was saved
+ *
+ * The app is then the one `App.make(game, { save })` would make, ticks and
+ * hashes as that one would, and is played by the same driver. Its action log
+ * starts over, as that app's starts empty, and `Replay.record(app)` records
+ * from the save. A moment captured before the load is refused by
+ * `Timeline.rewind`. The frame and input stages, and code outside the game
+ * that reads an event, hear the loaded game from then on, and their change
+ * queries visit every entity again.
+ *
+ * It fails with `Save.LoadRefused` for a save the game can't load, as
+ * `App.make` does, and the app is then as it was.
+ *
+ * **Gotchas**
+ *
+ * - An app a session steps has no `tick`, and doesn't compile here: a load
+ *   would move this machine's game alone. One that a session has taken over
+ *   dies.
+ *
+ * @category Running
+ */
+export const load = (
+  app: Pick<App.Any, "phase" | "tick">,
+  save: Save
+): Effect.Effect<void, LoadRefused> =>
+  Effect.suspend(() => partsOf(app).load(save));
 
 /**
  * The game can't be saved as it is. Its message names the cause: a queued
@@ -220,7 +275,6 @@ export const migrate = (
     return Exit.succeed({
       version,
       world: writeSnapshot(contents.world),
-      logLength: save.logLength,
     });
   } catch (error) {
     if (!(error instanceof SnapshotError)) {
@@ -239,16 +293,14 @@ export const migrate = (
 const MAGIC = 0x56534b41;
 // 2: the game's time, its queued actions and its waiting events are in the
 // world, not beside it. 3: so is where each system had read the events to,
-// and what its change queries had yet to visit.
-const FORMAT = 3;
+// and what its change queries had yet to visit. 4: no length of the log that
+// made it, which format 3 held and which a save of 3 is read without.
+const FORMAT = 4;
+/** The oldest format this version reads. */
+const OLDEST = 3;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-const Header = Schema.fromJsonString(
-  Schema.Struct({
-    version: Count,
-    logLength: Count,
-  })
-);
+const Header = Schema.fromJsonString(Schema.Struct({ version: Count }));
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -260,8 +312,8 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true });
  * @category Codecs
  */
 export const encode = (save: Save): Uint8Array => {
-  const { world, ...rest } = save;
-  const json = textEncoder.encode(JSON.stringify(rest));
+  const { version, world } = save;
+  const json = textEncoder.encode(JSON.stringify({ version }));
   const bytes = new Uint8Array(12 + json.length + world.length);
   const view = new DataView(bytes.buffer);
   view.setUint32(0, MAGIC, true);
@@ -294,10 +346,10 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
     return refuse("not a save", "These bytes are not a saved game.");
   }
   const format = view.getUint32(4, true);
-  if (format !== FORMAT) {
+  if (format < OLDEST || format > FORMAT) {
     return refuse(
-      format < FORMAT ? "older format" : "newer format",
-      `The save is in format ${format}, and this version reads format ${FORMAT}.`
+      format < OLDEST ? "older format" : "newer format",
+      `The save is in format ${format}, and this version reads formats ${OLDEST} to ${FORMAT}.`
     );
   }
   const length = view.getUint32(8, true);
@@ -319,7 +371,7 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
     );
   }
   return Exit.succeed({
-    ...header.value,
+    version: header.value.version,
     world: bytes.slice(12 + length),
   });
 };
@@ -408,7 +460,7 @@ export class StoreFailed extends Data.TaggedError("SaveStoreFailed")<{
  * Keeps a save in a slot of `Save.Store`, as its bytes, in place of what the
  * slot held.
  *
- *   yield* Save.write("slot2", yield* app.save())
+ *   yield* Save.write("slot2", yield* Save.make(app))
  *
  * It fails with `Save.StoreFailed` when the store can't keep it, as when a
  * page's storage is full.
@@ -427,7 +479,7 @@ export const write = Effect.fn("Save.write")(function* (
  * Reads the save a slot of `Save.Store` holds, or none for an empty slot.
  *
  *   const saved = yield* Save.read("slot2")
- *   if (Option.isSome(saved)) yield* app.load(saved.value)
+ *   if (Option.isSome(saved)) yield* Save.load(app, saved.value)
  *
  * It fails with `Save.LoadRefused` when what the slot holds isn't a save this
  * version of arcadekit reads, as `Save.decode` does, and with
@@ -453,7 +505,7 @@ export const read = Effect.fn("Save.read")(function* (slot: string) {
  * `Save.autosave` keeps the app's saves. It is an event like any other, so a
  * replay asks again, and a game whose saves nothing keeps asks for nothing.
  *
- *   const LevelEnd = State.onEnter(Level, "won", "game/Checkpoint", function* () {
+ *   const LevelEnd = State.onEnter(Level, "won", "game/LevelEnd", function* () {
  *     (yield* Save.Asked.emits).emit({ slot: "auto" })
  *   })
  *   const Every = System.tick("game/Autosave", function* () {
@@ -489,7 +541,7 @@ export const Asked = Event.define(
  * @category Running
  */
 export const autosave = (
-  app: Pick<App.Any, "phase" | "save">
+  app: Pick<App.Any, "phase">
 ): Effect.Effect<void, never, Store | Scope.Scope> =>
   Effect.gen(function* () {
     if (app.phase !== "idle") {
@@ -505,7 +557,7 @@ export const autosave = (
       if (slots.length === 0) {
         return;
       }
-      const taken = yield* Effect.exit(app.save());
+      const taken = yield* Effect.exit(make(app));
       if (Exit.isFailure(taken)) {
         return yield* Effect.logError(
           `Save.autosave could not take the save the game asked for in ${slots.map((slot) => `"${slot}"`).join(", ")}: ${said(Cause.squash(taken.cause))}`

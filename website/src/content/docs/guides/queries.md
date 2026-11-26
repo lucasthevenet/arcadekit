@@ -194,7 +194,7 @@ Use a change query for data that changes occasionally. For a system that visits 
 
 ### Keep unvisited changes across a save
 
-`app.save()` saves what change queries haven't visited, along with each system's position. A loaded game therefore reacts to the changes the saved one hadn't visited. `world.snapshot()` and the world's hash don't include them, because they belong to the readers, not the world. A plugin that only watches therefore doesn't change the hash of the game it observes. With the storage core alone, `world.saveChanges()` and `world.restoreChanges()` carry them beside a snapshot.
+`Save.make(app)` saves what change queries haven't visited, along with each system's position. A loaded game therefore reacts to the changes the saved one hadn't visited. `world.snapshot()` and the world's hash don't include them, because they belong to the readers, not the world. A plugin that only watches therefore doesn't change the hash of the game it observes. With the storage core alone, `world.saveChanges()` and `world.restoreChanges()` carry them beside a snapshot.
 
 ## Count and list entities
 
