@@ -7,8 +7,9 @@ import {
   Assets,
   Event,
   Field,
-  Journal,
   Plugin,
+  Replay,
+  Save,
   Singleton,
   Sound,
   State,
@@ -118,10 +119,7 @@ const play = Effect.fnUntraced(function* (
   output?: Sound.Speaker
 ) {
   asked = 0;
-  const { app, close } = yield* start(
-    App.make(game, { checkpointEvery: 1 }),
-    output
-  );
+  const { app, close } = yield* start(App.make(game, { hashEvery: 1 }), output);
   return {
     app,
     close,
@@ -306,7 +304,7 @@ describe("Sound.music", () => {
         );
         // The rules alone: no output, and no system that plays.
         const deaf = yield* start(
-          App.make(App.define({ plugins: [Rules] }), { checkpointEvery: 1 })
+          App.make(App.define({ plugins: [Rules] }), { hashEvery: 1 })
         );
         for (const app of [heard.app, deaf.app]) {
           yield* app.dispatch(Go, { to: "cave" });
@@ -320,8 +318,8 @@ describe("Sound.music", () => {
         expect(yield* hashOf(heard.app)).toBe(yield* hashOf(deaf.app));
         expect(heard.app.actionLog).toEqual(deaf.app.actionLog);
         const saves = [
-          yield* Effect.exit(heard.app.save()),
-          yield* Effect.exit(deaf.app.save()),
+          yield* Effect.exit(Save.make(heard.app)),
+          yield* Effect.exit(Save.make(deaf.app)),
         ].map((save) => (Exit.isSuccess(save) ? save.value : undefined));
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);
@@ -342,10 +340,10 @@ describe("Sound.music", () => {
         ]);
         // And a replay, which runs no frame, is silent.
         const replayed = Sound.makeRecorder();
-        const played = yield* heard.app.record();
+        const played = yield* Replay.record(heard.app);
         const other = yield* start(
-          Journal.replay(played, App.define({ plugins, systems: [Score] }), {
-            checkpointEvery: 1,
+          Replay.verify(played, App.define({ plugins, systems: [Score] }), {
+            hashEvery: 1,
           }),
           replayed
         );

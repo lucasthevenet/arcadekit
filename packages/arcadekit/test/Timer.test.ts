@@ -7,9 +7,10 @@ import {
   Commands,
   Component,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
+  Save,
   Singleton,
   System,
   Time,
@@ -277,8 +278,8 @@ describe("timers in the world", () => {
       const first = yield* played(app, 0, 30);
       expect(first.log.shots.length).toBeGreaterThan(3);
       expect(first.log.waves.length).toBe(7);
-      const again = yield* Journal.replay(yield* app.record(), Shooter, {
-        checkpointEvery: 1,
+      const again = yield* Replay.verify(yield* Replay.record(app), Shooter, {
+        hashEvery: 1,
       });
       expect(yield* again.read(Log)).toEqual(first.log);
       expect(yield* hashOf(again)).toBe(first.hash);
@@ -291,7 +292,7 @@ describe("timers in the world", () => {
       const app = yield* App.make(Shooter);
       // Mid-cooldown and mid-period.
       yield* played(app, 0, 11);
-      const loaded = yield* App.make(Shooter, { save: yield* app.save() });
+      const loaded = yield* App.make(Shooter, { save: yield* Save.make(app) });
       expect(yield* played(loaded, 11, 30)).toEqual(whole);
     })
   );

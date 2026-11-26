@@ -49,7 +49,7 @@ const seatAt = (url: string, name: string) =>
     const source = Input.makeManualSource();
     const session = yield* Session.make(CoinGame, {
       seed: 5,
-      checkpointEvery: 1,
+      hashEvery: 1,
       me: name,
       others: ["ada", "grace"].filter((other) => other !== name),
       hz: HZ,

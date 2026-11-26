@@ -9,9 +9,10 @@ import {
   Driver,
   Event,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
+  Save,
   Singleton,
   Sound,
   State,
@@ -134,7 +135,7 @@ const play = Effect.fnUntraced(function* (
   seed = 1
 ) {
   asked = 0;
-  const made = App.make(Noisy, { seed, checkpointEvery: 1 });
+  const made = App.make(Noisy, { seed, hashEvery: 1 });
   return yield* output === undefined
     ? made
     : made.pipe(Effect.provide(Sound.layer(output)));
@@ -156,7 +157,7 @@ describe("Sound.cues", () => {
         const sound = Sound.makeRecorder();
         const built = yield* Build.build(Noisy, {
           seed: 1,
-          checkpointEvery: 1,
+          hashEvery: 1,
         }).pipe(Effect.provide(Sound.layer(sound)));
         const session = steered(built);
         const { app } = session;
@@ -538,13 +539,13 @@ describe("a game with sound", () => {
         const sound = Sound.makeRecorder();
         const heard = yield* App.make(App.define({ plugins: [Game] }), {
           seed: 9,
-          checkpointEvery: 1,
+          hashEvery: 1,
           verifyFrames: true,
         }).pipe(Effect.provide(Sound.layer(sound)));
         // No output, and no system that plays: the rules alone.
         const deaf = yield* App.make(App.define({ plugins: [Rules] }), {
           seed: 9,
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         for (const app of [heard, deaf]) {
           yield* app.dispatch(Drop, { height: 2 });
@@ -560,8 +561,8 @@ describe("a game with sound", () => {
         }
         expect(heard.actionLog).toEqual(deaf.actionLog);
         const saves = [
-          yield* Effect.exit(heard.save()),
-          yield* Effect.exit(deaf.save()),
+          yield* Effect.exit(Save.make(heard)),
+          yield* Effect.exit(Save.make(deaf)),
         ].map((save) => (Exit.isSuccess(save) ? save.value : undefined));
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);
@@ -589,9 +590,9 @@ describe("a game with sound", () => {
         }
         expect(sound.played.length).toBeGreaterThan(1);
         const again = Sound.makeRecorder();
-        const recording = yield* app.record();
-        const replayed = yield* Journal.replay(recording, Noisy, {
-          checkpointEvery: 1,
+        const recording = yield* Replay.record(app);
+        const replayed = yield* Replay.verify(recording, Noisy, {
+          hashEvery: 1,
         }).pipe(Effect.provide(Sound.layer(again)));
         expect((yield* replayed.read(World)).hash()).toBe(
           (yield* app.read(World)).hash()

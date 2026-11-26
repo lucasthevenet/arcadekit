@@ -26,10 +26,10 @@ import {
   Events,
   Field,
   Frame,
-  Journal,
   Plugin,
   Query,
   Random,
+  Replay,
   Save,
   Singleton,
   State,
@@ -637,7 +637,7 @@ describe("the frame stage", () => {
             systems: [Roll, Button],
             handlers: [kick],
           }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         for (let n = 0; n < 5; n++) {
           yield* app.tick(1);
@@ -645,16 +645,16 @@ describe("the frame stage", () => {
         }
         expect(yield* ballsOf(app)).toEqual([{ x: 1 + 1 + 1 + 5 + 5, vx: 5 }]);
         expect(
-          app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
+          app.actionLog.filter((entry) => !Action.isHashCheck(entry))
         ).toEqual([
           { tick: 3, name: "fr/Kick", payload: { by: 4 }, queued: true },
         ]);
         // The replay has no button and draws no frame.
-        const played = yield* app.record();
-        const headless = yield* Journal.replay(
+        const played = yield* Replay.record(app);
+        const headless = yield* Replay.verify(
           played,
           App.define({ plugins: [Begin], systems: [Roll], handlers: [kick] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         expect((yield* headless.read(World)).hash()).toBe(
           (yield* app.read(World)).hash()
@@ -672,7 +672,7 @@ describe("the frame stage", () => {
             systems: [Hasty],
             handlers: [kick],
           }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         own = hasty;
         expect(yield* thrown(hasty.frame())).toThrow(
@@ -710,9 +710,9 @@ describe("the frame stage", () => {
         expect(yield* thrown(app.frame())).toThrow(
           /App\.frame was called from inside a frame/
         );
-        inFrame = Effect.orDie(app.save());
+        inFrame = Effect.orDie(Save.make(app));
         expect(yield* thrown(app.frame())).toThrow(
-          /save\(\) was called during/
+          /Save\.make\(\) was called during/
         );
         inFrame = undefined;
         inTick = app.frame();
@@ -829,7 +829,7 @@ describe("what the frame stage reads", () => {
         // Nor can a save: it holds what the simulation has yet to read, and
         // nothing that was only kept for the frame stage, or of its readers.
         const saves = yield* Effect.forEach([again, headless], (each) =>
-          Effect.map(each.save(), (save) => readSnapshot(save.world).stores)
+          Effect.map(Save.make(each), (save) => readSnapshot(save.world).stores)
         );
         expect(saves[0]).toEqual(saves[1]);
         expect(saves[0]).toEqual([
@@ -911,7 +911,7 @@ describe("what the frame stage reads", () => {
           plugins: [racked({ x: 0, vx: 0 }, { x: 1, vx: 0 }, { x: 2, vx: 0 })],
           systems: [Nudge, Count, Draw],
         });
-        const app = yield* App.make(BallGame, { checkpointEvery: 1 });
+        const app = yield* App.make(BallGame, { hashEvery: 1 });
         yield* app.frame();
         yield* app.tick(1);
         yield* app.tick(1);
@@ -923,7 +923,7 @@ describe("what the frame stage reads", () => {
         expect(counted).toEqual([3, 1]);
 
         yield* app.tick(1);
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -942,7 +942,7 @@ describe("what the frame stage reads", () => {
         }
         const loaded = yield* App.make(BallGame, {
           save: read.value,
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         drawn.length = 0;
         counted.length = 0;
@@ -994,7 +994,7 @@ describe("what the frame stage reads", () => {
         ) =>
           Effect.gen(function* () {
             const app = yield* App.make(game, {
-              checkpointEvery: 1,
+              hashEvery: 1,
               seed: 3,
               verifyFrames: true,
             });
@@ -1016,8 +1016,8 @@ describe("what the frame stage reads", () => {
         }
         expect(drawn.actionLog).toEqual(undrawn.actionLog);
         const saved = [
-          yield* Effect.exit(drawn.save()),
-          yield* Effect.exit(undrawn.save()),
+          yield* Effect.exit(Save.make(drawn)),
+          yield* Effect.exit(Save.make(undrawn)),
         ].map((save) =>
           Exit.isSuccess(save) ? Save.encode(save.value) : undefined
         );
@@ -1219,8 +1219,8 @@ describe("what a frame or input system keeps", () => {
         expect((yield* app.read(World)).hash()).toBe(
           (yield* bare.read(World)).hash()
         );
-        expect(Save.encode(yield* app.save())).toEqual(
-          Save.encode(yield* bare.save())
+        expect(Save.encode(yield* Save.make(app))).toEqual(
+          Save.encode(yield* Save.make(bare))
         );
       })
   );

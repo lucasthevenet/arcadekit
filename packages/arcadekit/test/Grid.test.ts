@@ -234,7 +234,7 @@ describe("who is on a tile", () => {
       }
       const then = yield* occupantsOf(app);
       const moment = yield* Timeline.capture(app);
-      const save = yield* app.save();
+      const save = yield* Save.make(app);
       for (let i = 0; i < 30; i++) {
         yield* app.tick(1);
       }
@@ -275,7 +275,7 @@ describe("a map in the world", () => {
       expect((yield* app.read(Floor)).tiles.at(0, 0)).toBe(WALL);
       yield* app.dispatch(Dig, { x: 0, y: 0, refuse: false });
       expect(world.hash()).not.toBe(before);
-      const save = yield* app.save();
+      const save = yield* Save.make(app);
       const bytes = Save.encode(save);
       const loaded = yield* App.make(Rogue, {
         save: yield* Save.decode(bytes),
@@ -298,7 +298,7 @@ describe("a map in the world", () => {
       });
       const app = yield* App.make(App.define({ handlers: [wrong] }));
       yield* app.dispatch(Wrong, {});
-      expect(yield* Effect.exit(app.save())).toEqual(
+      expect(yield* Effect.exit(Save.make(app))).toEqual(
         Exit.fail(
           new Save.Refused({
             message: `"gr/Small.tiles" holds a value its codec did not turn into plain data (an object).`,

@@ -79,7 +79,7 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
     { label: "Media", modules: ["Assets", "Input", "Sound"] },
     {
       label: "Saves",
-      modules: ["Journal", "Migrate", "Save", "Setting", "Timeline"],
+      modules: ["Migrate", "Replay", "Save", "Setting", "Timeline"],
     },
     {
       label: "Net",

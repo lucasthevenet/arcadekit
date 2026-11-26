@@ -8,9 +8,9 @@ import {
   Component,
   Event,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
   Save,
   Singleton,
   System,
@@ -175,9 +175,9 @@ describe("a rollback session", () => {
               // And the game a single app plays when it is given those actions
               // on those ticks and never goes back: the replay holds every
               // tick's hash against the log's, and ends on the same one.
-              const played = yield* ada.app.record();
+              const played = yield* Replay.record(ada.app);
               yield* withApp(
-                Journal.replay(played, CoinGame, { checkpointEvery: 1 }),
+                Replay.verify(played, CoinGame, { hashEvery: 1 }),
                 (_, alone) =>
                   Effect.gen(function* () {
                     expect(alone.hash(), where).toBe(ada.world.hash());
@@ -210,10 +210,10 @@ describe("a rollback session", () => {
           expect(other.session.drifted).toBeUndefined();
         }
         expect(first.session.stats.rewinds).toBeGreaterThan(5);
-        const recording = yield* first.app.record();
+        const recording = yield* Replay.record(first.app);
         expect(recording.end).toBe(ticks);
         yield* withApp(
-          Journal.replay(recording, CoinGame, { checkpointEvery: 1 }),
+          Replay.verify(recording, CoinGame, { hashEvery: 1 }),
           (_, alone) =>
             Effect.gen(function* () {
               expect(alone.hash()).toBe(first.world.hash());
@@ -376,7 +376,7 @@ describe("a rollback session", () => {
       const counted = Effect.map(
         Session.make(CoinGame, {
           seed: 5,
-          checkpointEvery: 1,
+          hashEvery: 1,
           me: "ada",
           others: ["grace"],
           hz: HZ,
@@ -438,7 +438,7 @@ describe("a rollback session", () => {
         yield* withMade(
           Session.make(CoinGame, {
             seed: 5,
-            checkpointEvery: 1,
+            hashEvery: 1,
             me: "ada",
             others: ["grace"],
             hz: HZ,
@@ -460,7 +460,7 @@ describe("a rollback session", () => {
               withMade(
                 Session.make(CoinGame, {
                   seed: 5,
-                  checkpointEvery: 1,
+                  hashEvery: 1,
                   me: "ada",
                   others: [],
                   hz: HZ,
@@ -561,7 +561,7 @@ describe("a rollback session", () => {
   );
 
   it.effect(
-    "catches peers that have come apart, within checkpointEvery - 1 + delay + twice how far it runs ahead",
+    "catches peers that have come apart, within hashEvery - 1 + delay + twice how far it runs ahead",
     () =>
       Effect.gen(function* () {
         const at = 23;
@@ -571,22 +571,22 @@ describe("a rollback session", () => {
           [10, 0, 8, { min: 0, max: 0 }],
           [1, 2, 2, { min: 3, max: 9 }],
         ] as const) {
-          const where = `checkpointEvery ${every}, delay ${delay}, ahead ${ahead}`;
+          const where = `hashEvery ${every}, delay ${delay}, ahead ${ahead}`;
           yield* withPeers(
             ["ada", "grace"],
-            { ahead, delay, checkpointEvery: { ada: every, grace: every } },
+            { ahead, delay, hashEvery: { ada: every, grace: every } },
             (peers) =>
               Effect.gen(function* () {
                 setGlitch({ tick: at, apps: "all" });
                 const net = network(every + delay + ahead, lag);
                 yield* peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
                 const stopped = yield* untilStopped(peers, net, 800);
-                const checkpoint = Math.ceil(at / every) * every;
+                const hashCheck = Math.ceil(at / every) * every;
                 for (const peer of peers) {
                   const drifted = stopped.get(peer.name) as Drift.Drifted;
                   expect(drifted, where).toBeInstanceOf(Drift.Drifted);
-                  expect(drifted.tick, where).toBe(checkpoint);
-                  expect(drifted.agreedAt, where).toBe(checkpoint - every);
+                  expect(drifted.tick, where).toBe(hashCheck);
+                  expect(drifted.agreedAt, where).toBe(hashCheck - every);
                   expect(drifted.hashes.ada, where).not.toBe(
                     drifted.hashes.grace
                   );

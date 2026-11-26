@@ -17,9 +17,9 @@ import {
   Component,
   EntityId,
   Field,
-  Journal,
   Plugin,
   Query,
+  Replay,
   Save,
   System,
   World,
@@ -842,7 +842,7 @@ const Orchard = App.define({
 const Trees = Query.all(Body).pipe(Query.without(ChildOf));
 
 const orchard = Effect.gen(function* () {
-  const app = yield* App.make(Orchard, { checkpointEvery: 1 });
+  const app = yield* App.make(Orchard, { hashEvery: 1 });
   const world = yield* app.read(World);
   // In the order planted.
   const [first, second, third] = (yield* app.read(Trees)).entities();
@@ -939,9 +939,9 @@ describe("relations in an app", () => {
         // One tree is left, with the branches of three ticks and its first.
         expect(world.entityCount).toBe(5);
 
-        const played = yield* app.record();
-        const again = yield* Journal.replay(played, Orchard, {
-          checkpointEvery: 1,
+        const played = yield* Replay.record(app);
+        const again = yield* Replay.verify(played, Orchard, {
+          hashEvery: 1,
         });
         expect((yield* again.read(World)).hash()).toBe(world.hash());
       })
@@ -955,7 +955,7 @@ describe("relations in an app", () => {
         trees: [first, , third],
       } = yield* orchard;
       yield* app.tick(1);
-      const save = yield* Effect.exit(app.save());
+      const save = yield* Effect.exit(Save.make(app));
       if (Exit.isFailure(save)) {
         throw new Error("the save was refused");
       }
@@ -965,7 +965,7 @@ describe("relations in an app", () => {
       }
       const loaded = yield* App.make(
         App.define({ systems: [Grow], handlers: [fell, graft] }),
-        { save: read.value, checkpointEvery: 1 }
+        { save: read.value, hashEvery: 1 }
       );
       for (const each of [app, loaded]) {
         yield* each.dispatch(Fell, { tree: third });

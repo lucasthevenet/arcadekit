@@ -1,6 +1,6 @@
 /**
  * How a recording is laid out in bytes: each field and what it holds, which
- * `Journal.encode` writes and `Journal.decode` reads before it checks that the
+ * `Replay.encode` writes and `Replay.decode` reads before it checks that the
  * recording holds together.
  */
 import { Schema, SchemaTransformation } from "effect";
@@ -12,7 +12,7 @@ const Hash = Schema.Int.check(
 );
 
 // Written as a pair, since two entries of one log in bytes must differ in kind.
-const Checkpoint = Schema.Tuple([Tick, Hash]).pipe(
+const HashCheck = Schema.Tuple([Tick, Hash]).pipe(
   Schema.decodeTo(
     Schema.Struct({ tick: Tick, hash: Hash }),
     SchemaTransformation.transform({
@@ -44,7 +44,7 @@ export const Layout = Schema.Struct({
         queued: Schema.optionalKey(Schema.Literal(true)),
         refused: Schema.optionalKey(Schema.String),
       }),
-      Checkpoint,
+      HashCheck,
     ])
   ),
 });

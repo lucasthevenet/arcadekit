@@ -177,7 +177,7 @@ Three.js builds scenes and meshes under Node as it does in a page. After a frame
 
 ## Check a game against its replay
 
-Play a game in a test, replay its recording with `Journal.replay(recording, game)`, and assert that both end on the same hash. The replay catches a system that reads the clock or `Math.random`, at the first checkpoint after it does so. See [replays](replays.md).
+Play a game in a test, replay its recording with `Replay.verify(recording, game)`, and assert that both end on the same hash. The replay catches a system that reads the clock or `Math.random`, at the first hash check after it does so. See [replays](replays.md).
 
 ## Read more
 

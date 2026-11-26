@@ -36,11 +36,11 @@
  *
  * `app.actionLog` holds every action from outside the simulation, except a
  * dispatched action that was refused, which changed nothing. Among the
- * actions, it holds a checkpoint of the world's hash at a regular interval of
+ * actions, it holds a hash check of the world's hash at a regular interval of
  * ticks. An action that a system or a handler issues with the `Actions`
  * service isn't logged, since a replay's own simulation issues it again.
  * Replaying the log into a fresh app reproduces the game, and stops at the
- * first checkpoint that doesn't match.
+ * first hash check that doesn't match.
  */
 import { Context, Effect, Schema } from "effect";
 
@@ -375,7 +375,7 @@ export interface Logged {
  *
  * @category Models
  */
-export interface Checkpoint {
+export interface HashCheck {
   /** The number of ticks completed when the hash was taken. */
   readonly tick: number;
   /** `world.hash()` at that point. */
@@ -383,19 +383,19 @@ export interface Checkpoint {
 }
 
 /**
- * An entry of `app.actionLog`: an applied action, or a checkpoint.
+ * An entry of `app.actionLog`: an applied action, or a hash check.
  *
  * @category Models
  */
-export type LogEntry = Logged | Checkpoint;
+export type LogEntry = Logged | HashCheck;
 
 /**
- * Returns whether a log entry is a checkpoint, the world's hash at a tick,
+ * Returns whether a log entry is a hash check, the world's hash at a tick,
  * rather than an action.
  *
  * @category Guards
  */
-export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
+export const isHashCheck = (entry: LogEntry): entry is HashCheck =>
   "hash" in entry;
 
 /**

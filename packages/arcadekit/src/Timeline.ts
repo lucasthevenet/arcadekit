@@ -30,7 +30,7 @@ import type { SavedChanges } from "./ecs/changes.ts";
 import type { World, Moment as WorldMoment } from "./ecs/world.ts";
 import * as Event from "./Event.ts";
 import { said } from "./internal/intake.ts";
-import type { Since } from "./internal/journal.ts";
+import type { Since } from "./internal/log.ts";
 import type { Told } from "./internal/outbox.ts";
 import { moved, partsOf } from "./internal/parts.ts";
 import { taking } from "./internal/save.ts";
@@ -329,7 +329,7 @@ class Turns {
         .slice(this.standing.since.logLength)
         .some(
           (entry) =>
-            !Action.isCheckpoint(entry) &&
+            !Action.isHashCheck(entry) &&
             entry.name !== Undo.name &&
             entry.name !== Redo.name
         )

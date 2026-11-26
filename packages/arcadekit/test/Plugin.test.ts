@@ -12,6 +12,7 @@ import {
   Plugin,
   Query,
   Resource,
+  Save,
   System,
   Time,
   World,
@@ -383,7 +384,7 @@ describe("plugins", () => {
           Effect.gen(function* () {
             yield* app.tick(1);
             expect(yield* app.read(entities)).toBe(1);
-            return yield* Effect.exit(app.save());
+            return yield* Effect.exit(Save.make(app));
           })
         );
         assert(Exit.isSuccess(save));

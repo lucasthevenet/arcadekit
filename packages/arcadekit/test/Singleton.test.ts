@@ -16,10 +16,10 @@ import {
   App,
   Commands,
   Field,
-  Journal,
   Migrate,
   Plugin,
   Query,
+  Replay,
   Save,
   Singleton,
   System,
@@ -628,7 +628,7 @@ describe("a singleton in an app", () => {
         });
         const app = yield* App.make(
           App.define({ plugins: [Rules], systems: [Watch] }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         const world = yield* app.read(World);
         expect(
@@ -660,7 +660,7 @@ describe("a singleton in an app", () => {
   it.effect("is as it was after a refused action, and the game replays", () =>
     Effect.gen(function* () {
       const game = App.define({ plugins: [Rules] });
-      const app = yield* App.make(game, { checkpointEvery: 1 });
+      const app = yield* App.make(game, { hashEvery: 1 });
       const world = yield* app.read(World);
       const before = world.hash();
       expect(Exit.isFailure(yield* Effect.exit(app.dispatch(Cheat, {})))).toBe(
@@ -679,9 +679,9 @@ describe("a singleton in an app", () => {
         round: 12,
       });
       expect(world.singleton(Score).points).toBe(42);
-      const played = yield* app.record();
-      const again = yield* Journal.replay(played, game, {
-        checkpointEvery: 1,
+      const played = yield* Replay.record(app);
+      const again = yield* Replay.verify(played, game, {
+        hashEvery: 1,
       });
       expect((yield* again.read(World)).hash()).toBe(world.hash());
     })
@@ -692,7 +692,7 @@ describe("a singleton in an app", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }), {
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         const world = yield* app.read(World);
         for (let move = 0; move < 5; move++) {
@@ -700,7 +700,7 @@ describe("a singleton in an app", () => {
           yield* app.tick(1);
         }
         const savedHash = world.hash();
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -710,7 +710,7 @@ describe("a singleton in an app", () => {
         }
         const loaded = yield* App.make(App.define({ plugins: [Rules] }), {
           save: read.value,
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         const loadedWorld = yield* loaded.read(World);
         expect(loadedWorld.hash()).toBe(world.hash());
@@ -805,7 +805,7 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
         const moment = yield* Effect.exit(Timeline.capture(app));
         expect(Exit.isSuccess(moment)).toBe(true);
         // A save doesn't hold it: the loaded game builds it again.
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         expect(Exit.isSuccess(save)).toBe(true);
         if (Exit.isFailure(save) || Exit.isFailure(moment)) {
           return;

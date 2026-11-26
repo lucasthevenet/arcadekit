@@ -9,10 +9,10 @@ import {
   Commands,
   Component,
   Field,
-  Journal,
   Plugin,
   Query,
   Random,
+  Replay,
   Singleton,
   System,
   World,
@@ -344,7 +344,7 @@ const snapshot = Effect.fnUntraced(function* (app: App.Any) {
     sparks,
     dice,
     log: app.actionLog,
-    recording: yield* app.record(),
+    recording: yield* Replay.record(app),
     hash,
   };
 });
@@ -427,13 +427,13 @@ describe("the Random service", () => {
           })
         );
       });
-      const replayOf = (recording: Journal.Recording) => {
+      const replayOf = (recording: Replay.Recording) => {
         // Through bytes and back, as a save file would be.
-        const loaded = Journal.decode(unwrap(Journal.encode(recording)));
+        const loaded = Replay.decode(unwrap(Replay.encode(recording)));
         if (Exit.isFailure(loaded)) {
           throw new Error("the log did not survive being written down");
         }
-        return Journal.replay(loaded.value, Game);
+        return Replay.verify(loaded.value, Game);
       };
 
       const recorded = yield* record(31);
@@ -448,7 +448,7 @@ describe("the Random service", () => {
         Effect.flip(replayOf({ ...recording, seed: 32 })),
         (error) => Effect.sync(() => error)
       );
-      expect(diverged).toBeInstanceOf(Journal.ReplayDiverged);
+      expect(diverged).toBeInstanceOf(Replay.Diverged);
       expect(diverged.message).toMatch(
         /the world's hash at tick 0 .* check the seed/
       );

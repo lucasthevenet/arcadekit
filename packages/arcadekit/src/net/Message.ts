@@ -2,7 +2,7 @@
  * What the peers of a session send each other, and its form in bytes.
  *
  * A peer sends one message for every tick: everything its player issued for
- * that tick, usually nothing, and the checkpoints its log recorded since its
+ * that tick, usually nothing, and the hash checks its log recorded since its
  * last message. Its first message also says what it was made with, `Made`,
  * which the others compare with their own before anything else. Every message
  * says how far the peer has heard the others, `heard`, so each peer keeps
@@ -47,7 +47,7 @@ export const Message = Schema.Struct({
     Schema.Struct({ name: Schema.String, payload: Schema.Unknown })
   ),
   /**
-   * The checkpoints the peer's log recorded since its last message: its world's
+   * The hash checks the peer's log recorded since its last message: its world's
    * hash, and at which tick. Omitted when there are none.
    */
   checkpoints: Schema.optionalKey(

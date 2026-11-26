@@ -209,7 +209,7 @@ describe("Transform2d", () => {
         const Flat = App.define({ plugins: [Deal] });
         const app = yield* App.make(Flat);
         const made = (yield* app.read(World)).hash();
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }
@@ -325,7 +325,7 @@ describe("Transform2d.smooth", () => {
           }
           ended.push({
             hash: (yield* app.read(World)).hash(),
-            save: Save.encode(yield* app.save()),
+            save: Save.encode(yield* Save.make(app)),
           });
         }
         expect(ended[0]).toEqual(ended[1]);

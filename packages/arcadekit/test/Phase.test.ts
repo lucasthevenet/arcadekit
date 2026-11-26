@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
 
-import { Action, App, Save, System, Timeline } from "../src/index.ts";
+import { Action, App, Replay, Save, System, Timeline } from "../src/index.ts";
 import { withApp } from "./peers.ts";
 
 describe("what an app is running", () => {
@@ -70,15 +70,15 @@ describe("what an app is running", () => {
           ["App.tick", (app) => app.tick(1), named],
           ["App.frame", (app) => app.frame(), named],
           ["App.input", (app) => app.input(), named],
-          ["save()", (app) => app.save(), named],
+          ["Save.make()", (app) => Save.make(app), named],
           // Another module's: it knows a handler is running, and not which.
           [
             "Timeline.capture()",
             (app) => Timeline.capture(app),
             "an action's handler",
           ],
-          ["record()", (app) => app.record(), named],
-          ["checkpoint()", (app) => app.checkpoint(), named],
+          ["Replay.record()", (app) => Replay.record(app), named],
+          ["Replay.hashCheck()", (app) => Replay.hashCheck(app), named],
           ["inspect()", (app) => app.inspect(), named],
         ];
         for (const [name, call, busy] of calls) {

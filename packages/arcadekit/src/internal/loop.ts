@@ -24,7 +24,7 @@ import * as State from "../State.ts";
 import type { EventBus } from "./eventBus.ts";
 import type { Inbox } from "./inbox.ts";
 import { Intake } from "./intake.ts";
-import type { Log } from "./journal.ts";
+import type { Log } from "./log.ts";
 import type { Runner } from "./runner.ts";
 import type * as Schedule from "./schedule.ts";
 import * as Stage from "./stage.ts";

@@ -401,7 +401,7 @@ describe("a query, which writes only what it names, in an app", () => {
             systems: [Move, Watch],
             handlers: [survey],
           }),
-          { checkpointEvery: 1 }
+          { hashEvery: 1 }
         );
         const world = yield* app.read(World);
         yield* app.tick(1);

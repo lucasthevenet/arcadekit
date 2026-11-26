@@ -3,8 +3,10 @@ import { Effect } from "effect";
 import type { CommandBuffer } from "../ecs/commands.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World } from "../ecs/world.ts";
+import type { Recording } from "../Replay.ts";
+import type { LoadRefused, Refused, Save } from "../Save.ts";
 import type { EventBus } from "./eventBus.ts";
-import type { Log } from "./journal.ts";
+import type { Log } from "./log.ts";
 import type { TickDispatcher } from "./tickScheduler.ts";
 
 /**
@@ -27,6 +29,14 @@ export interface Parts {
    * turns there, and `Save.autosave` the saves the game asks for.
    */
   readonly after: Set<() => Effect.Effect<void>>;
+  /** Takes the game's save between ticks: `Save.make`. */
+  readonly save: () => Effect.Effect<Save, Refused>;
+  /** Loads a save in place of the game, between ticks: `Save.load`. */
+  readonly load: (save: Save) => Effect.Effect<void, LoadRefused>;
+  /** The game as it was played, or since a save it made: `Replay.record`. */
+  readonly record: (since: Save | undefined) => Effect.Effect<Recording>;
+  /** Records the world's hash in the log now: `Replay.hashCheck`. */
+  readonly hashCheck: () => Effect.Effect<number>;
 }
 
 /**

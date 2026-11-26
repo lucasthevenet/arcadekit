@@ -16,7 +16,7 @@ const Keys = System.input("game/Keys", function* () {
   (yield* Action.Actions).enqueue(Timeline.Undo, undefined);
 });
 ui.send(Timeline.Redo);
-const Checkpoint = System.tick("game/Checkpoint", function* () {
+const LevelEnd = System.tick("game/LevelEnd", function* () {
   (yield* Save.Asked.emits).emit({ slot: "level" });
 });
 ```

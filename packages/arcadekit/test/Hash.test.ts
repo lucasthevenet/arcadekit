@@ -130,7 +130,7 @@ describe("the hash of a world", () => {
     world.add(b, Chilled);
     world.despawn(world.spawn(Marked));
     world.random.next();
-    // A different number here means every checkpoint in every recorded log
+    // A different number here means every hash check in every recorded log
     // stops matching, so the change has to be meant.
     expect(world.hash()).toBe(KNOWN_HASH);
   });
@@ -818,7 +818,7 @@ describe("the hash of an app's world", () => {
     const make = () =>
       App.make(App.define({ systems: [Ring, Watch], handlers: [push] }), {
         seed: 5,
-        checkpointEvery: 0,
+        hashEvery: 0,
       });
     const after = Effect.fnUntraced(function* (
       ring: number | undefined,

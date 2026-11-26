@@ -301,7 +301,7 @@ export const without: {
  *   one position per query, shared by every caller there.
  * - With several components, or combined with `Query.added`, an entity is
  *   visited when any one of them fired.
- * - `app.save()` saves what a query has yet to visit, with each reader's
+ * - `Save.make(app)` saves what a query has yet to visit, with each reader's
  *   position. It isn't part of the world's snapshot or hash.
  *
  * **Gotchas**

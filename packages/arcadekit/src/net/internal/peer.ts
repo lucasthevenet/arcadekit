@@ -3,6 +3,7 @@ import { Effect, Exit } from "effect";
 import * as Action from "../../Action.ts";
 import type * as App from "../../App.ts";
 import type { Reins } from "../../internal/build.ts";
+import * as Replay from "../../Replay.ts";
 import type * as Save from "../../Save.ts";
 import * as Timeline from "../../Timeline.ts";
 import * as Drift from "../Drift.ts";
@@ -35,7 +36,7 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  */
 export type PeerApp<E> = Pick<
   App.App<E>,
-  "actionLog" | "checkpoint" | "close" | "frame" | "input"
+  "actionLog" | "close" | "frame" | "input"
 > &
   Timeline.Game;
 
@@ -153,13 +154,13 @@ export const build = <E, A extends PeerApp<E>>(
       }
       own.set(tick, actions);
       have.set(peer, tick + 1);
-      // The checkpoints go with the first message there is to send.
-      const checkpoints = drift.unsent();
+      // The hash checks go with the first message there is to send.
+      const hashChecks = drift.unsent();
       const message: Message = {
         from: peer,
         tick,
         actions,
-        ...(checkpoints.length === 0 ? {} : { checkpoints }),
+        ...(hashChecks.length === 0 ? {} : { checkpoints: hashChecks }),
         ...(tick === start ? { made } : {}),
         ...(acked.size === 0
           ? {}
@@ -181,12 +182,12 @@ export const build = <E, A extends PeerApp<E>>(
   let rewinds = 0;
   let resimulated = 0;
 
-  // --- drift: the peers compare the checkpoints their logs record ----------
+  // --- drift: the peers compare the hash checks their logs record ----------
   const drift = Drift.make({ peer, made });
   let begun = false;
 
   /**
-   * Compares every checkpoint that this peer and all the others have, up
+   * Compares every hash check that this peer and all the others have, up
    * to the last final tick. Not while a tick is known to be wrong: its hash
    * is of a game that is about to be run again.
    */
@@ -217,11 +218,11 @@ export const build = <E, A extends PeerApp<E>>(
       }
     }
     const exit = yield* Effect.exit(reins.tick(delta));
-    // The checkpoint the tick recorded, if it did.
+    // The hash check the tick recorded, if it did.
     const last = app.actionLog.at(-1);
     if (
       last !== undefined &&
-      Action.isCheckpoint(last) &&
+      Action.isHashCheck(last) &&
       last.tick === app.time.tick
     ) {
       drift.took(last.tick, last.hash);
@@ -263,13 +264,13 @@ export const build = <E, A extends PeerApp<E>>(
     if (!begun) {
       begun = true;
       // The state the peers start from is the first thing they compare,
-      // whatever the app's `checkpointEvery`: no tick runs before it.
+      // whatever the app's `hashEvery`: no tick runs before it.
       const last = app.actionLog.at(-1);
       drift.took(
         now,
-        last !== undefined && Action.isCheckpoint(last) && last.tick === now
+        last !== undefined && Action.isHashCheck(last) && last.tick === now
           ? last.hash
-          : yield* app.checkpoint()
+          : yield* Replay.hashCheck(app)
       );
     }
     let failed: Exit.Exit<never, E | Save.Refused> | undefined;
@@ -311,7 +312,7 @@ export const build = <E, A extends PeerApp<E>>(
     if (Exit.isFailure(exit) && app.time.tick === now) {
       return yield* Exit.failCause(exit.cause);
     }
-    // The checkpoint this tick recorded, against what the others said of it.
+    // The hash check this tick recorded, against what the others said of it.
     compare();
     if (drift.drifted !== undefined && Exit.isSuccess(exit)) {
       return yield* stop(drift.drifted);

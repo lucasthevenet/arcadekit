@@ -61,7 +61,7 @@ The hash doesn't depend on anything a simulation can't observe: a table's capaci
 - It changes nothing in the world, so you can call it at any time. It costs about 8 ns per entity with four float fields.
 - It doesn't cover where each reader is: how far a system has read the events, or what change queries haven't visited. Where a reader is belongs to the reader, so a plugin that only watches a game doesn't change the game's hash. Two games with the same hash can still differ there, until the difference reaches the world. A [save](../guides/saving-and-loading.md) holds where each reader is.
 
-The app records the hash in its log every `checkpointEvery` ticks, 60 by default. A replay compares its own world at each checkpoint, and stops at the first mismatch with `Journal.ReplayDiverged`, which reports the tick and when the two last agreed. [Verify a replay with checkpoints](../guides/replays.md#verify-a-replay-with-checkpoints) covers how often to record one, and what it costs.
+The app records the hash in its log every `hashEvery` ticks, 60 by default. A replay compares its own world at each hash check, and stops at the first mismatch with `Replay.Diverged`, which reports the tick and when the two last agreed. [Verify a replay with hash checks](../guides/replays.md#verify-a-replay-with-hash-checks) covers how often to record one, and what it costs.
 
 ## Refused actions leave no trace
 
@@ -79,7 +79,7 @@ The type checker and the default checks at run time miss these ways to break det
 - State a tick reads from outside the world, in a service, a plugin or a module, isn't put back by a rewind, so a rollback session runs the tick again differently. Only `Session.syncTest` detects it, by running each tick twice from the same moment. See [testing several peers](../guides/testing-peers.md#check-that-a-rewind-runs-the-same).
 - The hash doesn't cover [where each reader is](#the-worlds-hash-covers-what-a-simulation-can-observe), so two games with the same hash can still diverge.
 
-In a multiplayer game, a broken rule is caught at the first checkpoint after it changes the world. Peers compare the hashes of their worlds, and every session stops with `Drift.Drifted`, which reports the last tick they agreed on. To test such a game, run two peers side by side and compare their hashes, as [testing several peers](../guides/testing-peers.md#connect-several-peers) shows.
+In a multiplayer game, a broken rule is caught at the first hash check after it changes the world. Peers compare the hashes of their worlds, and every session stops with `Drift.Drifted`, which reports the last tick they agreed on. To test such a game, run two peers side by side and compare their hashes, as [testing several peers](../guides/testing-peers.md#connect-several-peers) shows.
 
 ## Read more
 

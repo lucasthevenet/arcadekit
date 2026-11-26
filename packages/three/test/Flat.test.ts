@@ -165,7 +165,7 @@ const play = Effect.fnUntraced(function* (
   const app = yield* App.make(
     App.define({ plugins: [lookOf(height, smooth)] }),
     {
-      checkpointEvery: 0,
+      hashEvery: 0,
     }
   ).pipe(
     Effect.provide(

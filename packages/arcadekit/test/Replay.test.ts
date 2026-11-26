@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Layer, Schema } from "effect";
+import { Cause, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 import { entityOf } from "../src/ecs/component.ts";
@@ -9,12 +9,14 @@ import {
   App,
   Commands,
   Component,
+  Driver,
   EntityId,
+  Event,
   Field,
-  Journal,
   Plugin,
   Query,
   Random,
+  Replay,
   Save,
   Singleton,
   System,
@@ -94,7 +96,7 @@ type Faulty = System.System<never, BuiltIn>;
 
 interface Options {
   readonly seed?: number;
-  readonly checkpointEvery?: number;
+  readonly hashEvery?: number;
   readonly faulty?: Faulty;
   /** The values of the coins the game starts with: none unless told. */
   readonly coins?: readonly number[];
@@ -121,15 +123,13 @@ const coinGame = (
     handlers: [drop, take],
   });
 
-const checkpointing = (options: Options) =>
-  options.checkpointEvery === undefined
-    ? {}
-    : { checkpointEvery: options.checkpointEvery };
+const hashChecking = (options: Options) =>
+  options.hashEvery === undefined ? {} : { hashEvery: options.hashEvery };
 
 const game = (options: Options = {}) =>
   App.make(coinGame(options.faulty, options.coins), {
     seed: options.seed ?? 1,
-    ...checkpointing(options),
+    ...hashChecking(options),
   });
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */
@@ -143,18 +143,18 @@ const withApp = <T extends Pick<App.Any, "read">, A, E2 = never>(
 
 /** What stopped a replay that the test expects to diverge. */
 const stoppedBy = <A extends App.Any>(
-  replay: Effect.Effect<A, Journal.ReplayDiverged<A> | Save.LoadRefused>
+  replay: Effect.Effect<A, Replay.Diverged<A> | Save.LoadRefused>
 ) =>
   replay.pipe(
     Effect.flatMap(() => Effect.die("it went the way the game went")),
-    Effect.catchTag("JournalReplayDiverged", Effect.succeed),
+    Effect.catchTag("ReplayDiverged", Effect.succeed),
     Effect.orDie
   );
 
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
-  log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
-const checkpoints = (log: readonly Action.LogEntry[]): Action.Checkpoint[] =>
-  log.filter((entry) => Action.isCheckpoint(entry));
+  log.filter((entry): entry is Action.Logged => !Action.isHashCheck(entry));
+const hashChecks = (log: readonly Action.LogEntry[]): Action.HashCheck[] =>
+  log.filter((entry) => Action.isHashCheck(entry));
 
 /**
  * Plays a game of random moves, every one of them accepted, and returns its
@@ -187,7 +187,7 @@ const record = Effect.fnUntraced(function* (
         hashes.push(world.hash());
       }
       return {
-        recording: yield* app.record(),
+        recording: yield* Replay.record(app),
         log: [...app.actionLog],
         hashes,
         starting,
@@ -200,8 +200,8 @@ const record = Effect.fnUntraced(function* (
 
 /** A recording's fields as its bytes hold them, each checked on its own. */
 const Written = SchemaBinary.toCodec(Layout);
-const fieldsOf = (recording: Journal.Recording) =>
-  Journal.encode(recording).pipe(unwrap, Schema.decodeExit(Written), unwrap);
+const fieldsOf = (recording: Replay.Recording) =>
+  Replay.encode(recording).pipe(unwrap, Schema.decodeExit(Written), unwrap);
 /** Fields written as a recording's bytes, as a file edited by hand. */
 const written = (fields: typeof Layout.Type) =>
   unwrap(Schema.encodeExit(Written)(fields));
@@ -211,10 +211,10 @@ const written = (fields: typeof Layout.Type) =>
  * and read back.
  */
 const altered = (
-  recording: Journal.Recording,
+  recording: Replay.Recording,
   fields: Partial<typeof Layout.Type>
-): Journal.Recording => {
-  const read = Journal.decode(written({ ...fieldsOf(recording), ...fields }));
+): Replay.Recording => {
+  const read = Replay.decode(written({ ...fieldsOf(recording), ...fields }));
   assert(Exit.isSuccess(read));
   return read.value;
 };
@@ -223,16 +223,16 @@ const altered = (
  * Replays a recording into the coin game `options` make, and returns what
  * stopped it, if anything did, with the app as the replay left it.
  */
-const replayInto = (options: Options, recording: Journal.Recording) =>
+const replayInto = (options: Options, recording: Replay.Recording) =>
   Effect.gen(function* () {
     // A replay that stops holds its app where it stopped.
-    const { app, stopped } = yield* Journal.replay(
+    const { app, stopped } = yield* Replay.verify(
       recording,
       coinGame(options.faulty, options.coins),
-      checkpointing(options)
+      hashChecking(options)
     ).pipe(
       Effect.map((app) => ({ app, stopped: undefined })),
-      Effect.catchTag("JournalReplayDiverged", (diverged) =>
+      Effect.catchTag("ReplayDiverged", (diverged) =>
         Effect.succeed({ app: diverged.app, stopped: diverged })
       ),
       Effect.orDie
@@ -245,34 +245,34 @@ const replayInto = (options: Options, recording: Journal.Recording) =>
     };
   });
 
-describe("checkpoints", () => {
+describe("hash checks", () => {
   it.effect(
     "are recorded before the first action or tick, and after every tick the interval divides",
     () =>
       Effect.gen(function* () {
-        const recorded = yield* record({ ticks: 10, checkpointEvery: 3 });
-        expect(checkpoints(recorded.log).map((entry) => entry.tick)).toEqual([
+        const recorded = yield* record({ ticks: 10, hashEvery: 3 });
+        expect(hashChecks(recorded.log).map((entry) => entry.tick)).toEqual([
           0, 3, 6, 9,
         ]);
         // Each is the world's hash at that point: the first before anything
         // happened, the others when that many ticks had completed.
-        expect(checkpoints(recorded.log).map((entry) => entry.hash)).toEqual([
+        expect(hashChecks(recorded.log).map((entry) => entry.hash)).toEqual([
           recorded.starting,
           recorded.hashes[2],
           recorded.hashes[5],
           recorded.hashes[8],
         ]);
-        // The log is in the order things happened: the first checkpoint, then
-        // the first move, and each later checkpoint ahead of the moves that
+        // The log is in the order things happened: the first hash check, then
+        // the first move, and each later hash check ahead of the moves that
         // were made once its tick had completed.
-        expect(Action.isCheckpoint(recorded.log[0]!)).toBe(true);
+        expect(Action.isHashCheck(recorded.log[0]!)).toBe(true);
         for (let i = 1; i < recorded.log.length; i++) {
           expect(recorded.log[i]!.tick).toBeGreaterThanOrEqual(
             recorded.log[i - 1]!.tick
           );
         }
         const third = recorded.log.findIndex(
-          (entry) => Action.isCheckpoint(entry) && entry.tick === 3
+          (entry) => Action.isHashCheck(entry) && entry.tick === 3
         );
         expect(
           recorded.log.slice(0, third).every((entry) => entry.tick < 3)
@@ -292,19 +292,17 @@ describe("checkpoints", () => {
         const Mint = System.tick("Mint", function* () {
           (yield* Commands.spawns(Coin)).spawn(Coin.of({ value: 1, x: 0 }));
         });
-        yield* withApp(
-          game({ checkpointEvery: 1, faulty: Mint }),
-          (app, world) =>
-            Effect.gen(function* () {
-              for (let tick = 1; tick <= 5; tick++) {
-                yield* app.tick(1 / 60);
-                expect(world.entityCount).toBe(tick);
-                expect(app.actionLog.at(-1)).toEqual({
-                  tick,
-                  hash: world.hash(),
-                });
-              }
-            })
+        yield* withApp(game({ hashEvery: 1, faulty: Mint }), (app, world) =>
+          Effect.gen(function* () {
+            for (let tick = 1; tick <= 5; tick++) {
+              yield* app.tick(1 / 60);
+              expect(world.entityCount).toBe(tick);
+              expect(app.actionLog.at(-1)).toEqual({
+                tick,
+                hash: world.hash(),
+              });
+            }
+          })
         );
       })
   );
@@ -313,11 +311,11 @@ describe("checkpoints", () => {
     "come every 60 ticks unless told otherwise, every tick with 1, and never with 0",
     () =>
       Effect.gen(function* () {
-        const ticksOf = Effect.fnUntraced(function* (checkpointEvery?: number) {
-          return checkpoints(
+        const ticksOf = Effect.fnUntraced(function* (hashEvery?: number) {
+          return hashChecks(
             (yield* record({
               ticks: 130,
-              ...(checkpointEvery === undefined ? {} : { checkpointEvery }),
+              ...(hashEvery === undefined ? {} : { hashEvery }),
             })).log
           ).map((entry) => entry.tick);
         });
@@ -331,9 +329,9 @@ describe("checkpoints", () => {
         for (const bad of [-1, 1.5, Number.NaN, Infinity]) {
           expect(
             yield* thrown(
-              withApp(game({ checkpointEvery: bad }), () => Effect.succeed(0))
+              withApp(game({ hashEvery: bad }), () => Effect.succeed(0))
             )
-          ).toThrow(/checkpointEvery must be a whole number of ticks/);
+          ).toThrow(/hashEvery must be a whole number of ticks/);
         }
       })
   );
@@ -370,7 +368,7 @@ describe("checkpoints", () => {
               const starting = world.hash();
               yield* first(app, coin);
               expect(app.actionLog[0]).toEqual({ tick: 0, hash: starting });
-              expect(checkpoints(app.actionLog).length).toBe(1);
+              expect(hashChecks(app.actionLog).length).toBe(1);
             })
           );
         }
@@ -379,37 +377,37 @@ describe("checkpoints", () => {
 
   it.effect("can be asked for between ticks, and not during one", () =>
     Effect.gen(function* () {
-      yield* withApp(game({ checkpointEvery: 0, coins: [1] }), (app, world) =>
+      yield* withApp(game({ hashEvery: 0, coins: [1] }), (app, world) =>
         Effect.gen(function* () {
           yield* app.tick(1);
           yield* app.tick(1);
           expect(app.actionLog).toEqual([]);
-          const hash = yield* app.checkpoint();
+          const hash = yield* Replay.hashCheck(app);
           expect(hash).toBe(world.hash());
           expect(app.actionLog).toEqual([{ tick: 2, hash }]);
           yield* app.dispatch(Drop, { value: 2 });
-          yield* app.checkpoint();
+          yield* Replay.hashCheck(app);
           expect(
-            app.actionLog.map((entry) => Action.isCheckpoint(entry))
+            app.actionLog.map((entry) => Action.isHashCheck(entry))
           ).toEqual([true, false, true]);
-          expect(checkpoints(app.actionLog)[1]!.hash).not.toBe(hash);
+          expect(hashChecks(app.actionLog)[1]!.hash).not.toBe(hash);
         })
       );
 
-      // One taken by hand before the game starts is the starting checkpoint.
-      yield* withApp(game({ checkpointEvery: 5, coins: [1] }), (app) =>
+      // One taken by hand before the game starts is the starting hash check.
+      yield* withApp(game({ hashEvery: 5, coins: [1] }), (app) =>
         Effect.gen(function* () {
-          yield* app.checkpoint();
+          yield* Replay.hashCheck(app);
           yield* app.tick(1);
-          expect(checkpoints(app.actionLog).map((entry) => entry.tick)).toEqual(
-            [0]
-          );
+          expect(hashChecks(app.actionLog).map((entry) => entry.tick)).toEqual([
+            0,
+          ]);
         })
       );
 
       let inside: unknown;
       const Asks = System.tick("Asks", function* () {
-        const asked = yield* Effect.exit(asking!.checkpoint());
+        const asked = yield* Effect.exit(Replay.hashCheck(asking!));
         inside = Exit.isFailure(asked) ? Cause.squash(asked.cause) : undefined;
       });
       let asking: App.Any | undefined;
@@ -419,14 +417,14 @@ describe("checkpoints", () => {
           yield* app.tick(1);
         })
       );
-      expect(String(inside)).toMatch(/checkpoint\(\) was called during a tick/);
+      expect(String(inside)).toMatch(/hashCheck\(\) was called during a tick/);
     })
   );
 
   it.effect("survive being written down, and a malformed one is refused", () =>
     Effect.gen(function* () {
-      const recorded = yield* record({ ticks: 12, checkpointEvery: 4 });
-      const loaded = Journal.decode(unwrap(Journal.encode(recorded.recording)));
+      const recorded = yield* record({ ticks: 12, hashEvery: 4 });
+      const loaded = Replay.decode(unwrap(Replay.encode(recorded.recording)));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(
         recorded.recording
       );
@@ -434,7 +432,7 @@ describe("checkpoints", () => {
         tick: 0,
         hash: recorded.starting,
       });
-      /** A checkpoint as its bytes hold it, its tick and its hash, unchecked. */
+      /** A hash check as its bytes hold it, its tick and its hash, unchecked. */
       const Holding = SchemaBinary.toCodec(
         Schema.Struct({
           ...Layout.fields,
@@ -449,7 +447,7 @@ describe("checkpoints", () => {
       const holding = (fields: typeof Holding.Type) =>
         unwrap(Schema.encodeExit(Holding)(fields));
       const fields = fieldsOf(recorded.recording);
-      const largest = Journal.decode(
+      const largest = Replay.decode(
         holding({ ...fields, log: [[0, 2 ** 32 - 1]] })
       );
       expect(Exit.isSuccess(largest) && largest.value.log).toEqual([
@@ -460,7 +458,7 @@ describe("checkpoints", () => {
         [0, 2 ** 32],
         [-1, 12],
       ] as const) {
-        const refused = Journal.decode(holding({ ...fields, log: [entry] }));
+        const refused = Replay.decode(holding({ ...fields, log: [entry] }));
         expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
       }
       // A log of entries of another kind.
@@ -474,7 +472,7 @@ describe("checkpoints", () => {
       );
       expect(
         Exit.isFailure(
-          Journal.decode(
+          Replay.decode(
             unwrap(
               Schema.encodeExit(otherwise)({
                 ...fields,
@@ -484,8 +482,8 @@ describe("checkpoints", () => {
           )
         )
       ).toBe(true);
-      expect(Action.isCheckpoint({ tick: 1, hash: 0 })).toBe(true);
-      expect(Action.isCheckpoint({ tick: 1, name: "x", payload: 0 })).toBe(
+      expect(Action.isHashCheck({ tick: 1, hash: 0 })).toBe(true);
+      expect(Action.isHashCheck({ tick: 1, name: "x", payload: 0 })).toBe(
         false
       );
     })
@@ -493,19 +491,19 @@ describe("checkpoints", () => {
 });
 
 describe("a replay that checks itself", () => {
-  it.effect("passes every checkpoint when it goes the way the game went", () =>
+  it.effect("passes every hash check when it goes the way the game went", () =>
     Effect.gen(function* () {
-      for (const checkpointEvery of [1, 7, 60]) {
-        const recorded = yield* record({ ticks: 150, checkpointEvery });
+      for (const hashEvery of [1, 7, 60]) {
+        const recorded = yield* record({ ticks: 150, hashEvery });
         const replayed = yield* replayInto({}, recorded.recording);
         expect(replayed.stopped).toBeUndefined();
         expect(replayed.tick).toBe(150);
         expect(replayed.hash).toBe(recorded.hashes.at(-1));
       }
       // Recording as it replays, it writes the same log again.
-      const recorded = yield* record({ ticks: 40, checkpointEvery: 1 });
+      const recorded = yield* record({ ticks: 40, hashEvery: 1 });
       expect(
-        (yield* replayInto({ checkpointEvery: 1 }, recorded.recording)).log
+        (yield* replayInto({ hashEvery: 1 }, recorded.recording)).log
       ).toEqual(recorded.log);
     })
   );
@@ -514,16 +512,16 @@ describe("a replay that checks itself", () => {
     "stops at the tick it diverged on, not at the next refused action",
     () =>
       Effect.gen(function* () {
-        // The game is recorded with a checkpoint every tick. In the build that
+        // The game is recorded with a hash check every tick. In the build that
         // replays it, a coin's position is off by a millionth on tick 40. No
         // rule is broken by that, and no action is refused because of it.
-        const recorded = yield* record({ ticks: 120, checkpointEvery: 1 });
+        const recorded = yield* record({ ticks: 120, hashEvery: 1 });
         const replayed = yield* replayInto(
           { faulty: fault(40, "nudge") },
           recorded.recording
         );
         const stopped = replayed.stopped!;
-        expect(stopped).toBeInstanceOf(Journal.ReplayDiverged);
+        expect(stopped).toBeInstanceOf(Replay.Diverged);
         expect(stopped.tick).toBe(40);
         // It stopped there: no later tick ran and no later move was applied.
         expect(replayed.tick).toBe(40);
@@ -534,8 +532,8 @@ describe("a replay that checks itself", () => {
           true
         );
 
-        const reason = stopped.reason as Journal.HashMismatch;
-        expect(reason).toBeInstanceOf(Journal.HashMismatch);
+        const reason = stopped.reason as Replay.HashMismatch;
+        expect(reason).toBeInstanceOf(Replay.HashMismatch);
         expect(reason.tick).toBe(40);
         expect(reason.agreedAt).toBe(39);
         expect(reason.expected).toBe(recorded.hashes[39]);
@@ -544,7 +542,7 @@ describe("a replay that checks itself", () => {
         expect(stopped.entry).toEqual({ tick: 40, hash: recorded.hashes[39] });
         expect(recorded.log[stopped.index]).toEqual(stopped.entry);
         expect(stopped.message).toBe(
-          `The replay diverged from its log (entry ${stopped.index}): the world's hash at tick 40 is ${reason.actual}, and ${reason.expected} was recorded. The last checkpoint that matched was at tick 39.`
+          `The replay diverged from its log (entry ${stopped.index}): the world's hash at tick 40 is ${reason.actual}, and ${reason.expected} was recorded. The last hash check that matched was at tick 39.`
         );
       })
   );
@@ -553,19 +551,19 @@ describe("a replay that checks itself", () => {
     "fails with its app where it stopped, an app of its game to look at",
     () =>
       Effect.gen(function* () {
-        const recorded = yield* record({ ticks: 60, checkpointEvery: 1 });
-        const looked = yield* Journal.replay(
+        const recorded = yield* record({ ticks: 60, hashEvery: 1 });
+        const looked = yield* Replay.verify(
           recorded.recording,
           coinGame(fault(20, "lose")),
           {
-            checkpointEvery: 1,
+            hashEvery: 1,
           }
         ).pipe(
           Effect.flatMap(() => Effect.die("it went the way the game went")),
-          Effect.catchTag("JournalReplayDiverged", (diverged) =>
+          Effect.catchTag("ReplayDiverged", (diverged) =>
             Effect.gen(function* () {
               const { app, reason } = diverged;
-              assert(reason instanceof Journal.HashMismatch);
+              assert(reason instanceof Replay.HashMismatch);
               const seen = {
                 stoppedAt: diverged.tick,
                 tick: app.time.tick,
@@ -591,7 +589,7 @@ describe("a replay that checks itself", () => {
           )
         );
         // Where the build that loses a coin on tick 20 stopped: at that tick's
-        // checkpoint, with the world whose hash it compared.
+        // hash check, with the world whose hash it compared.
         expect(looked.stoppedAt).toBe(20);
         expect(looked.tick).toBe(20);
         expect(looked.hash).toBe(looked.reason.actual);
@@ -620,19 +618,19 @@ describe("a replay that checks itself", () => {
             systems: [Drift, faulty],
             handlers: [drop, take],
           });
-        const recorded = yield* record({ ticks: 30, checkpointEvery: 1 });
+        const recorded = yield* record({ ticks: 30, hashEvery: 1 });
         const stopped = yield* stoppedBy(
-          Journal.replay(recorded.recording, heldGame(fault(10, "lose")), {
-            checkpointEvery: 1,
+          Replay.verify(recorded.recording, heldGame(fault(10, "lose")), {
+            hashEvery: 1,
           })
         );
         expect(held).toEqual(["acquired", "released"]);
         // Closed, it is there to read.
-        const reason = stopped.reason as Journal.HashMismatch;
+        const reason = stopped.reason as Replay.HashMismatch;
         expect((yield* stopped.app.read(World)).hash()).toBe(reason.actual);
 
         held.length = 0;
-        const app = yield* Journal.replay(
+        const app = yield* Replay.verify(
           recorded.recording,
           heldGame(fault(-1, "nudge"))
         );
@@ -647,10 +645,10 @@ describe("a replay that checks itself", () => {
     "without them runs on until an action happens to be refused, or to its end, where it fails",
     () =>
       Effect.gen(function* () {
-        // The same recording with its checkpoints taken out. The faulty build
+        // The same recording with its hash checks taken out. The faulty build
         // loses the oldest coin on tick 40, and the game takes that coin on tick
         // 100.
-        const recorded = yield* record({ ticks: 100, checkpointEvery: 1 });
+        const recorded = yield* record({ ticks: 100, hashEvery: 1 });
         const oldest = recorded.coins[0]!;
         const log = [
           ...recorded.log,
@@ -674,12 +672,12 @@ describe("a replay that checks itself", () => {
           altered(recorded.recording, { log, end: 110 })
         );
         expect(checked.stopped!.tick).toBe(40);
-        expect(checked.stopped!.reason).toBeInstanceOf(Journal.HashMismatch);
+        expect(checked.stopped!.reason).toBeInstanceOf(Replay.HashMismatch);
 
-        // A fault that breaks no rule, in a game recorded with no checkpoints,
+        // A fault that breaks no rule, in a game recorded with no hash checks,
         // shows at the end: the replay's world isn't the one the game ended on.
-        const unchecked = yield* record({ ticks: 100, checkpointEvery: 0 });
-        expect(checkpoints(unchecked.log)).toEqual([]);
+        const unchecked = yield* record({ ticks: 100, hashEvery: 0 });
+        expect(hashChecks(unchecked.log)).toEqual([]);
         expect(unchecked.recording.endHash).toBe(unchecked.hashes.at(-1));
         expect(
           (yield* replayInto({}, unchecked.recording)).stopped
@@ -694,8 +692,8 @@ describe("a replay that checks itself", () => {
           tick: 100,
           hash: unchecked.hashes.at(-1),
         });
-        const reason = silent.stopped!.reason as Journal.HashMismatch;
-        expect(reason).toBeInstanceOf(Journal.HashMismatch);
+        const reason = silent.stopped!.reason as Replay.HashMismatch;
+        expect(reason).toBeInstanceOf(Replay.HashMismatch);
         expect(reason.expected).toBe(unchecked.hashes.at(-1));
         expect(reason.actual).toBe(silent.hash);
         expect(reason.agreedAt).toBeUndefined();
@@ -703,20 +701,20 @@ describe("a replay that checks itself", () => {
   );
 
   it.effect(
-    "stops at the first checkpoint after it diverged when they are further apart, and names the last that matched",
+    "stops at the first hash check after it diverged when they are further apart, and names the last that matched",
     () =>
       Effect.gen(function* () {
-        const recorded = yield* record({ ticks: 120, checkpointEvery: 10 });
+        const recorded = yield* record({ ticks: 120, hashEvery: 10 });
         const replayed = yield* replayInto(
           { faulty: fault(43, "nudge") },
           recorded.recording
         );
         expect(replayed.stopped!.tick).toBe(50);
         expect(replayed.tick).toBe(50);
-        const reason = replayed.stopped!.reason as Journal.HashMismatch;
+        const reason = replayed.stopped!.reason as Replay.HashMismatch;
         expect(reason.agreedAt).toBe(40);
         expect(reason.expected).toBe(recorded.hashes[49]);
-        // A fault on a checkpoint's own tick is caught by that checkpoint.
+        // A fault on a hash check's own tick is caught by that hash check.
         const onIt = yield* replayInto(
           { faulty: fault(50, "nudge") },
           recorded.recording
@@ -727,7 +725,7 @@ describe("a replay that checks itself", () => {
           recorded.recording
         );
         expect(after.stopped!.tick).toBe(60);
-        expect((after.stopped!.reason as Journal.HashMismatch).agreedAt).toBe(
+        expect((after.stopped!.reason as Replay.HashMismatch).agreedAt).toBe(
           50
         );
       })
@@ -745,11 +743,11 @@ describe("a replay that checks itself", () => {
         expect(otherSeed.stopped!.tick).toBe(0);
         expect(otherSeed.tick).toBe(0);
         expect(otherSeed.stopped!.index).toBe(0);
-        const reason = otherSeed.stopped!.reason as Journal.HashMismatch;
+        const reason = otherSeed.stopped!.reason as Replay.HashMismatch;
         expect(reason.agreedAt).toBeUndefined();
         expect(reason.expected).toBe(recorded.starting);
         expect(otherSeed.stopped!.message).toMatch(
-          /No earlier checkpoint matched, so the two did not start from the same state: check the seed, and what the plugins' setups spawn\.$/
+          /No earlier hash check matched, so the two did not start from the same state: check the seed, and what the plugins' setups spawn\.$/
         );
         // Nothing was applied to a world that was wrong from the start.
         expect(moves(otherSeed.log)).toEqual([]);
@@ -768,7 +766,7 @@ describe("a replay that checks itself", () => {
     "catches a log that was edited into another game the rules allow",
     () =>
       Effect.gen(function* () {
-        const recorded = yield* record({ ticks: 60, checkpointEvery: 1 });
+        const recorded = yield* record({ ticks: 60, hashEvery: 1 });
         const edit = Effect.fnUntraced(function* (
           change: (log: Action.LogEntry[]) => void
         ) {
@@ -778,7 +776,7 @@ describe("a replay that checks itself", () => {
             .stopped;
         });
         const drops = recorded.log.flatMap((entry, index) =>
-          !Action.isCheckpoint(entry) &&
+          !Action.isHashCheck(entry) &&
           entry.name === "rp/Drop" &&
           entry.tick > 5
             ? [index]
@@ -793,9 +791,9 @@ describe("a replay that checks itself", () => {
           const { value } = drop.payload as { readonly value: number };
           log[at] = { ...drop, payload: { value: value + 1 } };
         });
-        expect(changed!.reason).toBeInstanceOf(Journal.HashMismatch);
+        expect(changed!.reason).toBeInstanceOf(Replay.HashMismatch);
         expect(changed!.tick).toBe(tick + 1);
-        expect((changed!.reason as Journal.HashMismatch).agreedAt).toBe(tick);
+        expect((changed!.reason as Replay.HashMismatch).agreedAt).toBe(tick);
 
         // A move taken out, and a move put in.
         const removed = yield* edit((log) => {
@@ -807,16 +805,16 @@ describe("a replay that checks itself", () => {
         });
         expect(added!.tick).toBe(tick + 1);
 
-        // A checkpoint that was altered is itself the entry that does not hold.
+        // A hash check that was altered is itself the entry that does not hold.
         const forged = yield* edit((log) => {
           const index = log.findIndex(
-            (entry) => entry.tick === 20 && Action.isCheckpoint(entry)
+            (entry) => entry.tick === 20 && Action.isHashCheck(entry)
           );
-          const checkpoint = log[index] as Action.Checkpoint;
-          log[index] = { ...checkpoint, hash: (checkpoint.hash ^ 1) >>> 0 };
+          const hashCheck = log[index] as Action.HashCheck;
+          log[index] = { ...hashCheck, hash: (hashCheck.hash ^ 1) >>> 0 };
         });
         expect(forged!.tick).toBe(20);
-        expect((forged!.reason as Journal.HashMismatch).agreedAt).toBe(19);
+        expect((forged!.reason as Replay.HashMismatch).agreedAt).toBe(19);
       })
   );
 
@@ -835,7 +833,7 @@ describe("a replay that checks itself", () => {
         }
       });
       const recorded = yield* withApp(
-        game({ checkpointEvery: 1, faulty: Behind }),
+        game({ hashEvery: 1, faulty: Behind }),
         (app) =>
           Effect.gen(function* () {
             for (let tick = 0; tick < 20; tick++) {
@@ -845,12 +843,12 @@ describe("a replay that checks itself", () => {
               yield* app.dispatch(Drop, { value: 1 });
               yield* app.tick(1 / 60);
             }
-            return yield* app.record();
+            return yield* Replay.record(app);
           })
       );
       const replayed = yield* replayInto({}, recorded);
       expect(replayed.stopped!.tick).toBe(9);
-      expect((replayed.stopped!.reason as Journal.HashMismatch).agreedAt).toBe(
+      expect((replayed.stopped!.reason as Replay.HashMismatch).agreedAt).toBe(
         8
       );
     })
@@ -860,7 +858,7 @@ describe("a replay that checks itself", () => {
     "says so when a queued action meets another fate than the log records",
     () =>
       Effect.gen(function* () {
-        const recorded = yield* withApp(game({ checkpointEvery: 0 }), (app) =>
+        const recorded = yield* withApp(game({ hashEvery: 0 }), (app) =>
           Effect.gen(function* () {
             const dropped = yield* Effect.exit(
               app.dispatch(Drop, { value: 4 })
@@ -871,7 +869,7 @@ describe("a replay that checks itself", () => {
             yield* app.enqueue(Take, { coin }); // refused: the coin is gone by then
             yield* app.tick(1 / 60);
             yield* app.tick(1 / 60);
-            return yield* app.record();
+            return yield* Replay.record(app);
           })
         );
         expect(moves(recorded.log).map((entry) => entry.refused)).toEqual([
@@ -1020,10 +1018,10 @@ const busyGame = (value = 1) =>
     systems: [Bot, Referee, Heckler],
     handlers: [double, add, chain],
   });
-const busy = (checkpointEvery = 1, value = 1) =>
-  App.make(busyGame(value), { seed: 4, checkpointEvery });
-const replayBusy = (recording: Journal.Recording) =>
-  Journal.replay(recording, busyGame(), { checkpointEvery: 1 });
+const busy = (hashEvery = 1, value = 1) =>
+  App.make(busyGame(value), { seed: 4, hashEvery });
+const replayBusy = (recording: Replay.Recording) =>
+  Replay.verify(recording, busyGame(), { hashEvery: 1 });
 
 describe("the action log", () => {
   it.effect(
@@ -1069,7 +1067,7 @@ describe("the action log", () => {
           yield* app.tick(1);
           expect(
             app.actionLog.map((entry) =>
-              Action.isCheckpoint(entry) ? "?" : [entry.name, entry.refused]
+              Action.isHashCheck(entry) ? "?" : [entry.name, entry.refused]
             )
           ).toEqual([
             ["rp/Double", "TooBig"],
@@ -1095,7 +1093,7 @@ describe("the action log", () => {
         log,
       });
       expect(recording.log).toEqual(log);
-      const loaded = Journal.decode(unwrap(Journal.encode(recording)));
+      const loaded = Replay.decode(unwrap(Replay.encode(recording)));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recording);
       // A mark of another kind is bytes in another layout.
       const marked = SchemaBinary.toCodec(
@@ -1111,7 +1109,7 @@ describe("the action log", () => {
           ),
         })
       );
-      const refused = Journal.decode(
+      const refused = Replay.decode(
         unwrap(
           Schema.encodeExit(marked)({
             ...fieldsOf(recording),
@@ -1149,7 +1147,7 @@ describe("app.enqueue from inside the simulation", () => {
         systems: [Clock],
         handlers: [add, relay],
       }),
-      { checkpointEvery: 1 }
+      { hashEvery: 1 }
     );
     enqueue = (by) => Effect.orDie(app.enqueue(Add, { by }));
     return app;
@@ -1173,11 +1171,11 @@ describe("app.enqueue from inside the simulation", () => {
       }),
     ],
   });
-  const replayed = Effect.fnUntraced(function* (recording: Journal.Recording) {
+  const replayed = Effect.fnUntraced(function* (recording: Replay.Recording) {
     return yield* withApp(
       Effect.orDie(
-        Journal.replay(recording, Relaying, {
-          checkpointEvery: 1,
+        Replay.verify(recording, Relaying, {
+          hashEvery: 1,
         })
       ),
       (app, world) =>
@@ -1197,7 +1195,7 @@ describe("app.enqueue from inside the simulation", () => {
               yield* app.tick(1);
             }
             return {
-              recording: yield* app.record(),
+              recording: yield* Replay.record(app),
               value: (yield* tallyOf(app)).value,
               hash: world.hash(),
             };
@@ -1226,7 +1224,7 @@ describe("app.enqueue from inside the simulation", () => {
             ).toBe(true);
             yield* app.tick(1);
             return {
-              recording: yield* app.record(),
+              recording: yield* Replay.record(app),
               value: (yield* tallyOf(app)).value,
               hash: world.hash(),
             };
@@ -1255,7 +1253,7 @@ describe("app.enqueue from inside the simulation", () => {
         });
         yield* withApp(
           App.make(App.define({ plugins: [counting(0), Opening] }), {
-            checkpointEvery: 0,
+            hashEvery: 0,
           }),
           (app) =>
             Effect.gen(function* () {
@@ -1304,13 +1302,13 @@ describe("a game whose simulation issues actions itself", () => {
     }
   });
 
-  it.effect("replays from its log, checkpoint by checkpoint", () =>
+  it.effect("replays from its log, hash check by hash check", () =>
     Effect.gen(function* () {
       const recorded = yield* withApp(busy(), (app, world) =>
         Effect.gen(function* () {
           yield* play(app);
           return {
-            recording: yield* app.record(),
+            recording: yield* Replay.record(app),
             log: [...app.actionLog],
             hash: world.hash(),
             tally: yield* tallyOf(app),
@@ -1357,13 +1355,13 @@ describe("a game whose simulation issues actions itself", () => {
             for (let i = 0; i < 9; i++) {
               yield* app.tick(1);
             }
-            return yield* app.record();
+            return yield* Replay.record(app);
           })
         );
         expect(moves(recorded.log)).toEqual([]);
         const withBotMoves = [...recorded.log];
         const at = withBotMoves.findIndex(
-          (entry) => Action.isCheckpoint(entry) && entry.tick === 3
+          (entry) => Action.isHashCheck(entry) && entry.tick === 3
         );
         withBotMoves.splice(at + 1, 0, {
           tick: 3,
@@ -1373,7 +1371,7 @@ describe("a game whose simulation issues actions itself", () => {
         const stopped = yield* stoppedBy(
           replayBusy(altered(recorded, { log: withBotMoves }))
         );
-        expect(stopped.reason).toBeInstanceOf(Journal.HashMismatch);
+        expect(stopped.reason).toBeInstanceOf(Replay.HashMismatch);
         expect(stopped.tick).toBe(4);
         // And as it is recorded, it replays.
         yield* withApp(Effect.orDie(replayBusy(recorded)), (app) =>
@@ -1396,7 +1394,7 @@ describe("a game whose simulation issues actions itself", () => {
           plugins: [counting(1)],
           handlers: [double, add, chain],
         });
-        const make = App.make(Ordered, { checkpointEvery: 1 });
+        const make = App.make(Ordered, { hashEvery: 1 });
         const play = Effect.fnUntraced(function* (
           first: "enqueue" | "dispatch"
         ) {
@@ -1412,18 +1410,18 @@ describe("a game whose simulation issues actions itself", () => {
               yield* app.tick(1);
               return {
                 value: (yield* tallyOf(app)).value,
-                recording: yield* app.record(),
+                recording: yield* Replay.record(app),
               };
             })
           );
         });
         const replay = Effect.fnUntraced(function* (
-          recording: Journal.Recording
+          recording: Replay.Recording
         ) {
           return yield* withApp(
             Effect.orDie(
-              Journal.replay(recording, Ordered, {
-                checkpointEvery: 1,
+              Replay.verify(recording, Ordered, {
+                hashEvery: 1,
               })
             ),
             (app) =>
@@ -1469,9 +1467,9 @@ describe("a recording", () => {
     systems: [Walk],
     handlers: [drop],
   });
-  const walking = App.make(Walking, { checkpointEvery: 1 });
-  const replayWalking = (recording: Journal.Recording) =>
-    Effect.orDie(Journal.replay(recording, Walking, { checkpointEvery: 1 }));
+  const walking = App.make(Walking, { hashEvery: 1 });
+  const replayWalking = (recording: Replay.Recording) =>
+    Effect.orDie(Replay.verify(recording, Walking, { hashEvery: 1 }));
   const steps = [1 / 60, 1 / 60, 1 / 60, 1 / 30, 1 / 30, 1 / 60];
 
   it.effect(
@@ -1484,7 +1482,7 @@ describe("a recording", () => {
               yield* app.dispatch(Drop, { value: 1 });
               yield* app.tick(delta);
             }
-            return { recording: yield* app.record(), hash: world.hash() };
+            return { recording: yield* Replay.record(app), hash: world.hash() };
           })
         );
         expect(recorded.recording).toMatchObject({
@@ -1496,8 +1494,8 @@ describe("a recording", () => {
             { tick: 5, delta: 1 / 60 },
           ],
         });
-        const decoded = Journal.decode(
-          unwrap(Journal.encode(recorded.recording))
+        const decoded = Replay.decode(
+          unwrap(Replay.encode(recorded.recording))
         );
         expect(decoded).toEqual(Exit.succeed(recorded.recording));
         yield* withApp(replayWalking(recorded.recording), (app, world) =>
@@ -1519,11 +1517,11 @@ describe("a recording", () => {
           yield* app.tick(1 / 30);
           yield* app.tick(1 / 30);
           yield* app.dispatch(Drop, { value: 2 });
-          const save = yield* Effect.exit(app.save());
+          const save = yield* Effect.exit(Save.make(app));
           assert(Exit.isSuccess(save));
           yield* app.tick(1 / 30);
           yield* app.tick(1 / 60);
-          const tail = yield* app.record(save.value);
+          const tail = yield* Replay.record(app, save.value);
           expect(tail).toMatchObject({
             start: 3,
             end: 5,
@@ -1547,7 +1545,7 @@ describe("a recording", () => {
         yield* app.tick(1 / 30);
         yield* Timeline.rewind(app, moment.value);
         yield* app.tick(1 / 60);
-        expect(yield* app.record()).toMatchObject({
+        expect(yield* Replay.record(app)).toMatchObject({
           end: 2,
           deltas: [{ tick: 0, delta: 1 / 60 }],
         });
@@ -1565,12 +1563,12 @@ describe("a recording", () => {
             for (let i = 0; i < 5; i++) {
               yield* other.tick(1 / 60);
             }
-            return yield* Effect.exit(other.save());
+            return yield* Effect.exit(Save.make(other));
           })
         );
         assert(Exit.isSuccess(ahead));
-        expect(yield* thrown(app.record(ahead.value))).toThrow(
-          /record\(\) was given a save of tick 5 that this app didn't make/
+        expect(yield* thrown(Replay.record(app, ahead.value))).toThrow(
+          /Replay\.record\(\) was given a save that this app didn't make/
         );
       })
     )
@@ -1579,12 +1577,12 @@ describe("a recording", () => {
 
 describe("how a recorded game began", () => {
   /** What the schema said was wrong with a recording's bytes. */
-  /** What `Journal.decode` refuses bytes with: its problem, then its message. */
+  /** What `Replay.decode` refuses bytes with: its problem, then its message. */
   const refusal = (bytes: Uint8Array): string => {
-    const read = Journal.decode(bytes);
+    const read = Replay.decode(bytes);
     assert(Exit.isFailure(read));
     const error = Cause.squash(read.cause);
-    assert(error instanceof Journal.Invalid);
+    assert(error instanceof Replay.Invalid);
     return `${error.problem}: ${error.message}`;
   };
   /** Plays `ticks` ticks of a seeded game, dropping a coin on each. */
@@ -1602,20 +1600,20 @@ describe("how a recorded game began", () => {
         const recorded = yield* record({
           ticks: 40,
           seed: 5,
-          checkpointEvery: 1,
+          hashEvery: 1,
         });
         expect(recorded.recording.seed).toBe(5);
         expect(recorded.recording.save).toBeUndefined();
         // The game and the recording, and no seed said again: the replay makes
         // its app from how the game began, and its own recording says so.
         const replayed = yield* withApp(
-          Effect.orDie(Journal.replay(recorded.recording, coinGame())),
+          Effect.orDie(Replay.verify(recorded.recording, coinGame())),
           (app, world) =>
             Effect.gen(function* () {
               return {
                 tick: app.time.tick,
                 hash: world.hash(),
-                seed: (yield* app.record()).seed,
+                seed: (yield* Replay.record(app)).seed,
               };
             })
         );
@@ -1628,42 +1626,42 @@ describe("how a recorded game began", () => {
         // what `App.make` takes.
         const { save } = yield* withApp(game(), (app) =>
           Effect.gen(function* () {
-            const saved = yield* Effect.exit(app.save());
+            const saved = yield* Effect.exit(Save.make(app));
             assert(Exit.isSuccess(saved));
             return { save: saved.value };
           })
         );
-        const origin: Journal.Origin = { seed: 6 };
-        const options = { seed: 6, checkpointEvery: 1 };
-        void Journal.replay(
+        const origin: Replay.Origin = { seed: 6 };
+        const options = { seed: 6, hashEvery: 1 };
+        void Replay.verify(
           recorded.recording,
           coinGame(),
           // @ts-expect-error the recording holds its seed
           { seed: 6 }
         );
-        void Journal.replay(
+        void Replay.verify(
           recorded.recording,
           coinGame(),
           // @ts-expect-error the recording holds its seed or its save
           { save }
         );
-        void Journal.replay(
+        void Replay.verify(
           recorded.recording,
           coinGame(),
           // @ts-expect-error nor spread from how a game began
-          { ...origin, checkpointEvery: 1 }
+          { ...origin, hashEvery: 1 }
         );
         // @ts-expect-error nor in a variable
-        void Journal.replay(recorded.recording, coinGame(), options);
+        void Replay.verify(recorded.recording, coinGame(), options);
         // A game made with no seed began with seed 0, and its recording says so.
         yield* withApp(App.make(coinGame()), (app) =>
           Effect.gen(function* () {
-            expect((yield* app.record()).seed).toBe(0);
+            expect((yield* Replay.record(app)).seed).toBe(0);
           })
         );
         // Through bytes and back.
         expect(
-          Journal.decode(unwrap(Journal.encode(recorded.recording)))
+          Replay.decode(unwrap(Replay.encode(recorded.recording)))
         ).toEqual(Exit.succeed(recorded.recording));
       })
   );
@@ -1673,17 +1671,17 @@ describe("how a recorded game began", () => {
     () =>
       Effect.gen(function* () {
         const played = yield* withApp(
-          game({ seed: 3, checkpointEvery: 1 }),
+          game({ seed: 3, hashEvery: 1 }),
           (app, world) =>
             Effect.gen(function* () {
               yield* drops(app, 10);
-              const saved = yield* Effect.exit(app.save());
+              const saved = yield* Effect.exit(Save.make(app));
               assert(Exit.isSuccess(saved));
               yield* drops(app, 20);
               return {
                 save: saved.value,
-                tail: yield* app.record(saved.value),
-                whole: yield* app.record(),
+                tail: yield* Replay.record(app, saved.value),
+                whole: yield* Replay.record(app),
                 hash: world.hash(),
               };
             })
@@ -1697,19 +1695,17 @@ describe("how a recorded game began", () => {
         expect(played.whole.save).toBeUndefined();
 
         // In bytes, the recording holds the save, and reads back as it was.
-        const read = Journal.decode(unwrap(Journal.encode(tail)));
+        const read = Replay.decode(unwrap(Replay.encode(tail)));
         assert(Exit.isSuccess(read));
         expect(read.value).toEqual(tail);
         const present = yield* withApp(
-          Effect.orDie(
-            Journal.replay(read.value, coinGame(), { checkpointEvery: 1 })
-          ),
+          Effect.orDie(Replay.verify(read.value, coinGame(), { hashEvery: 1 })),
           (app, world) =>
             Effect.gen(function* () {
               return {
                 tick: app.time.tick,
                 hash: world.hash(),
-                save: (yield* app.record()).save,
+                save: (yield* Replay.record(app)).save,
               };
             })
         );
@@ -1719,7 +1715,7 @@ describe("how a recorded game began", () => {
         yield* withApp(Effect.orDie(App.make(coinGame(), { save })), (app) =>
           Effect.gen(function* () {
             yield* drops(app, 2);
-            const recording = yield* app.record();
+            const recording = yield* Replay.record(app);
             expect(recording.save).toEqual(save);
             expect(recording).toMatchObject({ start: 10, end: 12 });
           })
@@ -1734,24 +1730,24 @@ describe("how a recorded game began", () => {
         const { save, tail, whole } = yield* withApp(game({ seed: 3 }), (app) =>
           Effect.gen(function* () {
             yield* drops(app, 4);
-            const saved = yield* Effect.exit(app.save());
+            const saved = yield* Effect.exit(Save.make(app));
             assert(Exit.isSuccess(saved));
             yield* drops(app, 2);
             return {
               save: saved.value,
-              tail: yield* app.record(saved.value),
-              whole: yield* app.record(),
+              tail: yield* Replay.record(app, saved.value),
+              whole: yield* Replay.record(app),
             };
           })
         );
-        const fromSeed = unwrap(Journal.encode(whole));
-        const fromSave = unwrap(Journal.encode(tail));
+        const fromSeed = unwrap(Replay.encode(whole));
+        const fromSave = unwrap(Replay.encode(tail));
         for (const bytes of [fromSeed, fromSave]) {
           expect(bytes).toBeInstanceOf(Uint8Array);
           expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
         }
-        expect(Journal.decode(fromSeed)).toEqual(Exit.succeed(whole));
-        expect(Journal.decode(fromSave)).toEqual(Exit.succeed(tail));
+        expect(Replay.decode(fromSeed)).toEqual(Exit.succeed(whole));
+        expect(Replay.decode(fromSave)).toEqual(Exit.succeed(tail));
         expect(
           Buffer.from(fromSave).includes(Buffer.from(Save.encode(save)))
         ).toBe(true);
@@ -1763,14 +1759,14 @@ describe("how a recorded game began", () => {
       Effect.gen(function* () {
         yield* app.enqueueByName("rp/Nothing", { n: 1n });
         yield* app.tick(1 / 60);
-        const recording = yield* app.record();
-        const written = Journal.encode(recording);
+        const recording = yield* Replay.record(app);
+        const written = Replay.encode(recording);
         assert(Exit.isFailure(written));
         expect(Cause.squash(written.cause)).toMatchObject({
-          _tag: "JournalInvalid",
+          _tag: "ReplayInvalid",
           problem: "no JSON form",
         });
-        expect(Cause.squash(written.cause)).toBeInstanceOf(Journal.Invalid);
+        expect(Cause.squash(written.cause)).toBeInstanceOf(Replay.Invalid);
       })
     )
   );
@@ -1780,21 +1776,21 @@ describe("how a recorded game began", () => {
       const { save, tail, whole } = yield* withApp(game({ seed: 3 }), (app) =>
         Effect.gen(function* () {
           yield* drops(app, 4);
-          const saved = yield* Effect.exit(app.save());
+          const saved = yield* Effect.exit(Save.make(app));
           assert(Exit.isSuccess(saved));
           yield* drops(app, 2);
           return {
             save: saved.value,
-            tail: yield* app.record(saved.value),
-            whole: yield* app.record(),
+            tail: yield* Replay.record(app, saved.value),
+            whole: yield* Replay.record(app),
           };
         })
       );
       const fromSeed = fieldsOf(whole);
       const fromSave = fieldsOf(tail);
 
-      // Only `app.record()` and `Journal.decode` make a recording.
-      const byHand: Journal.Played & Journal.Origin = {
+      // Only `Replay.record(app)` and `Replay.decode` make a recording.
+      const byHand: Replay.Played & Replay.Origin = {
         seed: 3,
         start: 0,
         end: 0,
@@ -1803,7 +1799,7 @@ describe("how a recorded game began", () => {
         log: [],
       };
       // @ts-expect-error a recording written by hand is not one
-      void (() => Journal.replay(byHand, coinGame()));
+      void (() => Replay.verify(byHand, coinGame()));
 
       // A recording as an earlier version wrote it, as text.
       expect(refusal(new TextEncoder().encode(JSON.stringify(whole)))).toMatch(
@@ -1849,5 +1845,167 @@ describe("how a recorded game began", () => {
         refusal(written({ ...fromSave, save: Save.encode(save).slice(0, 40) }))
       ).toMatch(/its save can't be read/);
     })
+  );
+});
+
+// --- a recording a person watches -----------------------------------------------------
+
+const Runner = Component.define("rp/Runner", {
+  x: Field.f32,
+  speed: Field.f32,
+});
+const Running = Query.all(Runner).pipe(Query.writes(Runner));
+const Runners = Query.all(Runner);
+const Sprint = Action.define("rp/Sprint", Schema.Struct({ by: Schema.Number }));
+const Sprinted = Event.define(
+  "rp/Sprinted",
+  Schema.Struct({ by: Schema.Number })
+);
+/** What the frame stage drew, and heard. */
+const shown = { drawn: [] as number[], heard: [] as number[] };
+const Race = App.define({
+  plugins: [
+    Plugin.make("rp/Track", {
+      setup: Effect.map(Commands.spawns(Runner), (commands) => {
+        commands.spawn(Runner.of({ x: 0, speed: 1 }));
+        commands.spawn(Runner.of({ x: 5, speed: 2 }));
+      }),
+    }),
+  ],
+  systems: [
+    System.tick("rp/Run", function* () {
+      const { delta } = yield* Time;
+      (yield* Running).each((runner) => {
+        runner.x += runner.speed * delta;
+      });
+    }),
+    System.frame("rp/Draw", function* () {
+      let lead = 0;
+      (yield* Runners).each((runner) => {
+        lead = Math.max(lead, runner.x);
+      });
+      shown.drawn.push(lead);
+      for (const { by } of (yield* Sprinted).read()) {
+        shown.heard.push(by);
+      }
+    }),
+  ],
+  handlers: [
+    Action.handler(Sprint, function* ({ by }) {
+      (yield* Running).each((runner) => {
+        runner.speed += by;
+      });
+      (yield* Sprinted.emits).emit({ by });
+    }),
+  ],
+});
+
+describe("a recording a person watches", () => {
+  it.effect(
+    "plays at its own pace in a driver, and pauses, goes faster and goes to any tick, to end on its hash",
+    () =>
+      Effect.gen(function* () {
+        // The race as it was played, with the world's hash at every tick.
+        const raced = yield* App.make(Race, { seed: 3, hashEvery: 1 });
+        const world = yield* raced.read(World);
+        const hashes = new Map<number, number>([[0, world.hash()]]);
+        for (let tick = 0; tick < 150; tick++) {
+          if (tick % 40 === 5) {
+            yield* raced.enqueue(Sprint, { by: tick / 10 });
+          }
+          yield* raced.tick(1 / 60);
+          hashes.set(raced.time.tick, world.hash());
+        }
+        const recording = yield* Replay.record(raced);
+
+        const display = Driver.makeManualDisplay();
+        let player: Replay.Player<App.Any, never> | undefined;
+        yield* Effect.forkScoped(
+          Driver.run(Replay.play(recording, Race), {
+            ready: (made) =>
+              Effect.sync(() => {
+                player = made;
+              }),
+          }).pipe(Effect.provide(Driver.layer(display))),
+          { startImmediately: true }
+        );
+        let now = 0;
+        const frames = (count: number) => {
+          for (let i = 0; i < count; i++) {
+            display.frame(now);
+            now += 1000 / 60;
+          }
+        };
+        const watched = player!;
+        const at = () => watched.app.time.tick;
+        const hash = Effect.map(watched.app.read(World), (one) => one.hash());
+        shown.drawn.length = 0;
+        // A tick of the recording a frame, and the frame stage draws it.
+        frames(11);
+        expect(at()).toBe(10);
+        expect(yield* hash).toBe(hashes.get(10));
+        expect(shown.drawn.length).toBe(11);
+        expect(shown.heard).toEqual([0.5]);
+        // Paused, it draws where it is.
+        yield* watched.pause;
+        frames(5);
+        expect(at()).toBe(10);
+        expect(shown.drawn.length).toBe(16);
+        // Twice as fast.
+        yield* watched.play(2);
+        frames(10);
+        expect(at()).toBe(30);
+        expect(yield* hash).toBe(hashes.get(30));
+        // Back, and on again, to where the game was there.
+        yield* watched.seek(7);
+        expect(at()).toBe(7);
+        expect(yield* hash).toBe(hashes.get(7));
+        yield* watched.seek(120);
+        expect(yield* hash).toBe(hashes.get(120));
+        // What it went past isn't heard.
+        shown.heard.length = 0;
+        frames(1);
+        expect(shown.heard).toEqual([]);
+        // To the end, where it stands still.
+        yield* watched.play();
+        frames(40);
+        expect(at()).toBe(150);
+        expect(watched.ended).toBe(true);
+        expect(yield* hash).toBe(recording.endHash);
+        frames(5);
+        expect(at()).toBe(150);
+        // And back from the end.
+        yield* watched.seek(0);
+        expect(watched.ended).toBe(false);
+        expect(yield* hash).toBe(hashes.get(0));
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect("stops the driver where the recording doesn't replay", () =>
+    Effect.gen(function* () {
+      const raced = yield* App.make(Race, { seed: 3, hashEvery: 1 });
+      for (let tick = 0; tick < 20; tick++) {
+        yield* raced.tick(1 / 60);
+      }
+      const bytes = yield* Replay.encode(yield* Replay.record(raced));
+      // Decoded by a game that runs another way: its runners don't run.
+      const Still = App.define({ systems: [], handlers: [] });
+      const recording = yield* Replay.decode(bytes);
+      const display = Driver.makeManualDisplay();
+      const fiber = yield* Effect.forkScoped(
+        Effect.exit(
+          Driver.run(Replay.play(recording, Still)).pipe(
+            Effect.provide(Driver.layer(display))
+          )
+        ),
+        { startImmediately: true }
+      );
+      for (let i = 0; i < 30 && fiber.pollUnsafe() === undefined; i++) {
+        display.frame(i * 20);
+      }
+      const exit = yield* Fiber.join(fiber);
+      assert(Exit.isFailure(exit));
+      expect(Cause.squash(exit.cause)).toBeInstanceOf(Replay.Diverged);
+    }).pipe(Effect.scoped)
   );
 });

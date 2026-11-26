@@ -206,7 +206,7 @@ describe("Transform3d", () => {
         });
         const app = yield* App.make(Game);
         const made = yield* app.read(rocks);
-        const save = yield* Effect.exit(app.save());
+        const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }

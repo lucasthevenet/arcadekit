@@ -155,7 +155,7 @@ new RuleTester().run("no-run-in-tests", plugin.rules["no-run-in-tests"], {
   invalid: [
     "Effect.runSync(App.make(Game));",
     "await Effect.runPromise(App.make(Game));",
-    "const exit = Effect.runSyncExit(app.save());",
+    "const exit = Effect.runSyncExit(Save.make(app));",
     "const exit = await Effect.runPromiseExit(load);",
     "Effect.runSyncWith(services)(app.read(World));",
     "Effect.gen(function* () {}).pipe(Effect.runSync);",

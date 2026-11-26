@@ -8,7 +8,7 @@ import {
   Driver,
   Event,
   Input,
-  Journal,
+  Replay,
   Save,
   System,
   Time,
@@ -133,10 +133,10 @@ describe("a lockstep session", () => {
         }
         const ticks = yield* catchUp(peers, net);
         const [ada] = peers as [Peer];
-        const recording = yield* ada.app.record();
+        const recording = yield* Replay.record(ada.app);
         expect(recording.end).toBe(ticks);
         yield* withApp(
-          Journal.replay(recording, CoinGame, { checkpointEvery: 1 }),
+          Replay.verify(recording, CoinGame, { hashEvery: 1 }),
           (_, alone) =>
             Effect.gen(function* () {
               expect(alone.hash()).toBe(ada.world.hash());
@@ -636,7 +636,7 @@ describe("a lockstep session", () => {
         const coin = dropped.value;
         yield* going.enqueueByName("ls/Take", { by: "ada", coin }, "ada");
         yield* going.enqueueByName("ls/Take", { by: "grace", coin }, "grace");
-        const saved = yield* Effect.exit(going.save());
+        const saved = yield* Effect.exit(Save.make(going));
         assert(Exit.isSuccess(saved));
         const loaded = yield* App.make(CoinGame, { save: saved.value });
         untaken.length = 0;
@@ -879,7 +879,7 @@ describe("a lockstep session", () => {
       );
       // Nor is an app taken over twice.
       yield* withMade(
-        Build.build(CoinGame, { seed: 5, checkpointEvery: 1 }),
+        Build.build(CoinGame, { seed: 5, hashEvery: 1 }),
         ({ take }) =>
           Effect.gen(function* () {
             take(() => {});
@@ -894,7 +894,7 @@ describe("a lockstep session", () => {
       const source = Input.makeManualSource();
       const { app, take } = yield* Build.build(CoinGame, {
         seed: 5,
-        checkpointEvery: 1,
+        hashEvery: 1,
       }).pipe(Effect.provide(Input.layer(source)));
       const taken: string[] = [];
       const reins = take((name) => {
@@ -919,7 +919,7 @@ describe("a lockstep session", () => {
     "tells whoever stepped a tick of its systems, and nobody of the next",
     () =>
       withMade(
-        Build.build(CoinGame, { seed: 5, checkpointEvery: 1 }),
+        Build.build(CoinGame, { seed: 5, hashEvery: 1 }),
         ({ app, take }) =>
           Effect.gen(function* () {
             const reins = take(() => {});
@@ -947,7 +947,7 @@ describe("a lockstep session", () => {
         return yield* withMade(
           Session.make(CoinGame, {
             seed: 5,
-            checkpointEvery: 1,
+            hashEvery: 1,
             me: "ada",
             others: ["grace"],
             hz: HZ,
@@ -982,12 +982,12 @@ describe("a lockstep session", () => {
         for (let i = 0; i < 9; i++) {
           yield* going.tick(DELTA);
         }
-        const saved = yield* Effect.exit(going.save());
+        const saved = yield* Effect.exit(Save.make(going));
         assert(Exit.isSuccess(saved));
         const peerOf = (me: string) =>
           Session.make(CoinGame, {
             save: saved.value,
-            checkpointEvery: 1,
+            hashEvery: 1,
             me,
             others: [me === "ada" ? "grace" : "ada"],
             hz: HZ,
@@ -1004,7 +1004,7 @@ describe("a lockstep session", () => {
         const said = ada.outgoing();
         expect(said.map((message) => message.tick)).toEqual([9, 10]);
         // Where it starts is the first thing it says: the session takes
-        // the checkpoint, once.
+        // the hash check, once.
         const start = { tick: 9, hash: world.hash() };
         expect(said[0]!.checkpoints).toEqual([start]);
         expect(ada.app.actionLog).toEqual([start]);
@@ -1017,14 +1017,14 @@ describe("a lockstep session", () => {
         // The tick took none for where it started: the log has the one.
         expect(
           ada.app.actionLog.filter(
-            (entry) => Action.isCheckpoint(entry) && entry.tick === 9
+            (entry) => Action.isHashCheck(entry) && entry.tick === 9
           )
         ).toEqual([start]);
 
-        // A checkpoint the game took itself where it starts is the one
+        // A hash check the game took itself where it starts is the one
         // sent, and the session takes no second.
         const edsger = yield* peerOf("ada");
-        const own = yield* edsger.app.checkpoint();
+        const own = yield* Replay.hashCheck(edsger.app);
         expect(yield* edsger.tick()).toBe(false);
         expect(edsger.outgoing()[0]!.checkpoints).toEqual([
           { tick: 9, hash: own },
@@ -1040,7 +1040,7 @@ describe("peers that have come apart", () => {
   });
 
   it.effect(
-    "are caught within checkpointEvery - 1 + delay ticks of a system that is not deterministic",
+    "are caught within hashEvery - 1 + delay ticks of a system that is not deterministic",
     () =>
       Effect.gen(function* () {
         const at = 23;
@@ -1052,23 +1052,23 @@ describe("peers that have come apart", () => {
             ]) {
               yield* withPeers(
                 ["ada", "grace"],
-                { delay, checkpointEvery: { ada: every, grace: every } },
+                { delay, hashEvery: { ada: every, grace: every } },
                 (peers) =>
                   Effect.gen(function* () {
                     setGlitch({ tick: at, apps: "all" });
                     const net = network(every * 10 + delay, lag);
                     yield* peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
                     const stopped = yield* untilStopped(peers, net, 600);
-                    const where = `checkpointEvery ${every}, delay ${delay}, lag ${lag.max}`;
-                    // The first checkpoint at or after the tick that differed.
-                    const checkpoint = Math.ceil(at / every) * every;
+                    const where = `hashEvery ${every}, delay ${delay}, lag ${lag.max}`;
+                    // The first hash check at or after the tick that differed.
+                    const hashCheck = Math.ceil(at / every) * every;
                     for (const peer of peers) {
                       const reason = stopped.get(peer.name);
                       expect(reason, where).toBeInstanceOf(Drift.Drifted);
                       const drifted = reason as Drift.Drifted;
-                      expect(drifted.tick, where).toBe(checkpoint);
+                      expect(drifted.tick, where).toBe(hashCheck);
                       expect(drifted.peer, where).toBe(peer.name);
-                      expect(drifted.agreedAt, where).toBe(checkpoint - every);
+                      expect(drifted.agreedAt, where).toBe(hashCheck - every);
                       expect(Object.keys(drifted.hashes), where).toEqual([
                         "ada",
                         "grace",
@@ -1078,10 +1078,10 @@ describe("peers that have come apart", () => {
                       );
                       // No further than this, however slow the network.
                       expect(peer.app.time.tick, where).toBeGreaterThanOrEqual(
-                        checkpoint
+                        hashCheck
                       );
                       expect(peer.app.time.tick, where).toBeLessThanOrEqual(
-                        checkpoint + delay
+                        hashCheck + delay
                       );
                       expect(peer.app.time.tick, where).toBeLessThanOrEqual(
                         at + every - 1 + delay
@@ -1168,7 +1168,7 @@ describe("peers that have come apart", () => {
   );
 
   it.effect(
-    "let go of the checkpoints that were answered, and in time of the ones that never are",
+    "let go of the hash checks that were answered, and in time of the ones that never are",
     () =>
       Effect.gen(function* () {
         yield* withPeers(["ada", "grace"], {}, (peers) =>
@@ -1188,7 +1188,7 @@ describe("peers that have come apart", () => {
         yield* withMade(
           Session.make(CoinGame, {
             seed: 5,
-            checkpointEvery: 1,
+            hashEvery: 1,
             me: "ada",
             others: [],
             hz: HZ,
@@ -1213,7 +1213,7 @@ describe("peers that have come apart", () => {
         ["ada", "grace"],
         {
           seeds: { ada: 1, grace: 2 },
-          checkpointEvery: { ada: 60, grace: 60 },
+          hashEvery: { ada: 60, grace: 60 },
         },
         (peers) =>
           Effect.gen(function* () {
@@ -1234,14 +1234,14 @@ describe("peers that have come apart", () => {
   );
 
   it.effect(
-    "compare the state they start from even when their logs record no checkpoint",
+    "compare the state they start from even when their logs record no hash check",
     () =>
       Effect.gen(function* () {
         yield* withPeers(
           ["ada", "grace"],
           {
             seeds: { ada: 1, grace: 2 },
-            checkpointEvery: { ada: 0, grace: 0 },
+            hashEvery: { ada: 0, grace: 0 },
           },
           (peers) =>
             Effect.gen(function* () {
@@ -1255,10 +1255,10 @@ describe("peers that have come apart", () => {
               expect(peers[0]!.app.time.tick).toBe(0);
             })
         );
-        // And nothing after it: with no checkpoints there is nothing to compare.
+        // And nothing after it: with no hash checks there is nothing to compare.
         yield* withPeers(
           ["ada", "grace"],
-          { checkpointEvery: { ada: 0, grace: 0 } },
+          { hashEvery: { ada: 0, grace: 0 } },
           (peers) =>
             Effect.gen(function* () {
               setGlitch({ tick: 9, apps: "all" });
@@ -1310,11 +1310,11 @@ describe("peers that have come apart", () => {
   );
 
   it.effect(
-    "compare the checkpoints they both have, when one records more than the other",
+    "compare the hash checks they both have, when one records more than the other",
     () =>
       withPeers(
         ["ada", "grace"],
-        { delay: 1, checkpointEvery: { ada: 2, grace: 6 } },
+        { delay: 1, hashEvery: { ada: 2, grace: 6 } },
         (peers) =>
           Effect.gen(function* () {
             const net = network(3, { min: 0, max: 2 });
@@ -1326,7 +1326,7 @@ describe("peers that have come apart", () => {
               yield* round(peers, net);
               if (i === 40) {
                 // One taken by hand, at a tick of nobody's schedule.
-                yield* ada.app.checkpoint();
+                yield* Replay.hashCheck(ada.app);
               }
             }
             // A healthy game is not stopped by what one peer alone recorded.
@@ -1533,7 +1533,7 @@ describe("peers that were not made alike", () => {
             for (let i = 0; i < 9; i++) {
               yield* going.tick(DELTA);
             }
-            const save = yield* Effect.exit(going.save());
+            const save = yield* Effect.exit(Save.make(going));
             assert(Exit.isSuccess(save));
             return save.value;
           })
@@ -1755,7 +1755,7 @@ describe("a message between peers", () => {
           ] as const
       ),
       [
-        "a checkpoint before the first tick",
+        "a hash check before the first tick",
         unchecked({ ...message, checkpoints: [{ tick: -1, hash: 1 }] }),
       ],
       [

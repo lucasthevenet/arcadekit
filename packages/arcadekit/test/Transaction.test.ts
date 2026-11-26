@@ -12,10 +12,10 @@ import {
   EntityId,
   Event,
   Field,
-  Journal,
   Plugin,
   Query,
   Random,
+  Replay,
   System,
   Time,
   World,
@@ -673,9 +673,9 @@ const Game = App.define({
 });
 
 /** The game, its world, its bodies, and the entities it began with. */
-const game = (checkpointEvery = 1) =>
+const game = (hashEvery = 1) =>
   Effect.gen(function* () {
-    const app = yield* App.make(Game, { seed: 9, checkpointEvery });
+    const app = yield* App.make(Game, { seed: 9, hashEvery });
     const world = yield* app.read(World);
     const bodies = yield* app.read(Query.all(Body));
     // In the order they were spawned in: each begins at an x of its own.
@@ -1018,11 +1018,14 @@ describe("an action that is refused", () => {
                 refuse: false,
               });
               yield* app.tick(1);
-              return { recording: yield* app.record(), hash: world.hash() };
+              return {
+                recording: yield* Replay.record(app),
+                hash: world.hash(),
+              };
             })
         );
         const replayed = yield* withApp(
-          Journal.replay(recording, Game, { checkpointEvery: 1 }).pipe(
+          Replay.verify(recording, Game, { hashEvery: 1 }).pipe(
             Effect.flatMap((app) => app.read(World))
           ),
           (world) => Effect.sync(() => world.hash())
@@ -1174,12 +1177,12 @@ describe("an action that is accepted", () => {
 
 describe("a game full of refused actions", () => {
   it.effect(
-    "replays from its log, checkpoint by checkpoint, as if they had never been tried",
+    "replays from its log, hash check by hash check, as if they had never been tried",
     () =>
       Effect.gen(function* () {
         // Refused actions are not in the log, so a replay never runs them. If one
         // of them left anything in the world, the replay's hash would differ at
-        // the next checkpoint. Random steps, random targets, half of them refused.
+        // the next hash check. Random steps, random targets, half of them refused.
         const steps = everyStep;
         for (const seed of [1, 2, 3]) {
           const recorded = yield* withApp(game(), ({ app, world, entities }) =>
@@ -1207,7 +1210,7 @@ describe("a game full of refused actions", () => {
                 yield* app.tick(1 / 60);
               }
               return {
-                recording: yield* app.record(),
+                recording: yield* Replay.record(app),
                 refusedCount,
                 hash: world.hash(),
               };
@@ -1216,8 +1219,8 @@ describe("a game full of refused actions", () => {
           expect(recorded.refusedCount).toBeGreaterThan(20);
 
           const replayed = yield* withApp(
-            Journal.replay(recorded.recording, Game, {
-              checkpointEvery: 1,
+            Replay.verify(recorded.recording, Game, {
+              hashEvery: 1,
             }).pipe(Effect.flatMap((app) => app.read(World))),
             (world) => Effect.sync(() => world.hash())
           );
