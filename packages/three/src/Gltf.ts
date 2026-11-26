@@ -35,6 +35,7 @@
  * which a game without models doesn't need to ship.
  */
 import * as Assets from "arcadekit/Assets";
+import type { Entity } from "arcadekit/ecs";
 import type * as System from "arcadekit/System";
 import { Effect, Schema } from "effect";
 import type {
@@ -526,6 +527,53 @@ export const mesh = (of: Model, name?: string): Mesh => {
 };
 
 /**
+ * The options of `Gltf.instances`, whose look is built from assets that
+ * are loaded later and released again, such as a level's.
+ *
+ * @category Options
+ */
+export interface InstancesOptions<
+  B extends Three.Entries,
+  L extends Three.Look = Three.Look,
+>
+  extends Three.InstancesShared {
+  /** The bundle the look is built from. The instances are drawn while it is loaded. */
+  readonly from: Assets.Bundle<B>;
+  /**
+   * Builds the look from the bundle's assets, once each time they are loaded.
+   * Anything it returns besides a geometry and a material is kept for `free`.
+   */
+  readonly look: (assets: Assets.Loaded<B>) => L;
+  /**
+   * Called with what `look` returned, after the mesh is removed from the scene,
+   * when the assets are released or the app is closed. Use it to dispose
+   * of anything `look` created besides the geometry and the material, which are
+   * disposed of for you. The bundle releases the assets themselves.
+   */
+  readonly free?: (look: L) => void;
+}
+
+/**
+ * The options of `Gltf.objects`, whose objects are built from assets that
+ * are loaded later and released again, such as a level's models.
+ *
+ * @category Options
+ */
+export interface ObjectsOptions<
+  B extends Three.Entries,
+  O extends Object3D = Object3D,
+> extends Three.ObjectsShared<O> {
+  /** The bundle the objects are built from. Objects exist while it is loaded. */
+  readonly from: Assets.Bundle<B>;
+  /**
+   * Creates an entity's object from the bundle's assets. It is called on the
+   * first frame that the entity matches and the assets are loaded, and again
+   * each time the assets load again.
+   */
+  readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
+}
+
+/**
  * Makes a frame-stage system that draws every entity of a kind as one instance
  * of one mesh, whose look is built from assets, such as a level's texture. It
  * is given as the bundle the look comes `from` and a function that builds it:
@@ -563,7 +611,7 @@ export function instances<
   L extends Three.Look = Three.Look,
 >(
   name: string,
-  options: Three.InstancesFromOptions<B, L> & {
+  options: InstancesOptions<B, L> & {
     readonly of: O;
     readonly transform: Three.TransformOf<O>;
   }
@@ -602,7 +650,7 @@ export function objects<
   O extends Object3D = Object3D,
 >(
   name: string,
-  options: Three.ObjectsFromOptions<B, O> & {
+  options: ObjectsOptions<B, O> & {
     readonly of: K;
     readonly transform: Three.TransformOf<K>;
   }

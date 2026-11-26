@@ -3,12 +3,7 @@ import * as Query from "arcadekit/Query";
 import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 
-import type {
-  InstancesFromOptions,
-  InstancesOptions,
-  InstancesShared,
-  Look,
-} from "../Instances.ts";
+import type { InstancesOptions, InstancesShared, Look } from "../Instances.ts";
 import { Scene } from "../Scene.ts";
 import type { Entries, Needs } from "../Three.ts";
 import { FromAssets } from "./assets.ts";
@@ -17,6 +12,13 @@ import type { Kept } from "./holdings.ts";
 import { placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
 import { Instances } from "./mesh.ts";
+
+/** The options of `Gltf.instances`, as its system reads them. */
+interface Bundled<B extends Entries, L extends Look> extends InstancesShared {
+  readonly from: Assets.Bundle<B>;
+  readonly look: (assets: Assets.Loaded<B>) => L;
+  readonly free?: (look: L) => void;
+}
 
 /** The instances of a look built from assets, while those assets are loaded. */
 interface Sourced extends Kept {
@@ -98,7 +100,7 @@ export const instances = (
  */
 export const bundledInstances = <B extends Entries, L extends Look>(
   name: string,
-  of: Placeable<InstancesFromOptions<B, L>>
+  of: Placeable<Bundled<B, L>>
 ): System.System<never, Needs | Assets.Store, string, "frame"> => {
   const options = { ...of, transform: placedBy(of.transform) };
   const draw = drawer(options);

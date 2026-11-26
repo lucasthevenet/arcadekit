@@ -6,11 +6,7 @@ import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import type { Object3D, Scene as ThreeScene } from "three";
 
-import type {
-  ObjectsFromOptions,
-  ObjectsOptions,
-  ObjectsShared,
-} from "../Objects.ts";
+import type { ObjectsOptions, ObjectsShared } from "../Objects.ts";
 import { Scene } from "../Scene.ts";
 import type { Entries, Needs } from "../Three.ts";
 import { FromAssets } from "./assets.ts";
@@ -21,6 +17,15 @@ import { isFlat, placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
 import { smoothOf } from "./smooth.ts";
 import type { Smooth } from "./smooth.ts";
+
+/** The options of `Gltf.objects`, as its system reads them. */
+interface Bundled<
+  B extends Entries,
+  O extends Object3D,
+> extends ObjectsShared<O> {
+  readonly from: Assets.Bundle<B>;
+  readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
+}
 
 /** Either set of options, as the class that keeps the objects sees them. */
 interface ObjectsOf<O extends Object3D> extends ObjectsShared<O>, Placing {
@@ -378,7 +383,7 @@ export const objects = <O extends Object3D>(
  */
 export const bundledObjects = <B extends Entries, O extends Object3D>(
   name: string,
-  of: Placeable<ObjectsFromOptions<B, O>>
+  of: Placeable<Bundled<B, O>>
 ): System.System<never, Needs | Assets.Store, string, "frame"> => {
   const options = { ...of, transform: placedBy(of.transform) };
   const place = placer(options);

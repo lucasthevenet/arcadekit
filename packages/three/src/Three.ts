@@ -75,18 +75,9 @@ export type { FitOptions, RendererLike, RendererShape } from "./Renderer.ts";
 export { manager, texture } from "./Assets.ts";
 export type { TextureOptions } from "./Assets.ts";
 export { instances } from "./Instances.ts";
-export type {
-  InstancesFromOptions,
-  InstancesOptions,
-  InstancesShared,
-  Look,
-} from "./Instances.ts";
+export type { InstancesOptions, InstancesShared, Look } from "./Instances.ts";
 export { objects } from "./Objects.ts";
-export type {
-  ObjectsFromOptions,
-  ObjectsOptions,
-  ObjectsShared,
-} from "./Objects.ts";
+export type { ObjectsOptions, ObjectsShared } from "./Objects.ts";
 
 /**
  * Which entities a drawing system draws. `Three.instances`, `Three.objects`

@@ -13,13 +13,12 @@
  * `@arcadekit/three/Three` gives the same exports. The system it makes
  * requires `Three.plugin`.
  */
-import type * as Assets from "arcadekit/Assets";
 import type { Entity } from "arcadekit/ecs";
 import type * as System from "arcadekit/System";
 import type { Object3D } from "three";
 
 import * as internal from "./internal/objects.ts";
-import type { Entries, Needs, TransformOf, Which } from "./Three.ts";
+import type { Needs, TransformOf, Which } from "./Three.ts";
 
 /**
  * The options of `Three.objects` and `Gltf.objects`.
@@ -52,26 +51,6 @@ export interface ObjectsOptions<
    * object is added to the scene, and given the entity's transform.
    */
   readonly make: (entity: Entity) => O;
-}
-
-/**
- * The options of `Gltf.objects`, whose objects are built from assets that
- * are loaded later and released again, such as a level's models.
- *
- * @category Options
- */
-export interface ObjectsFromOptions<
-  B extends Entries,
-  O extends Object3D = Object3D,
-> extends ObjectsShared<O> {
-  /** The bundle the objects are built from. Objects exist while it is loaded. */
-  readonly from: Assets.Bundle<B>;
-  /**
-   * Creates an entity's object from the bundle's assets. It is called on the
-   * first frame that the entity matches and the assets are loaded, and again
-   * each time the assets load again.
-   */
-  readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
 }
 
 /**

@@ -7,5 +7,6 @@ A kind whose look or objects are built from a bundle is made with `Gltf.instance
 **Breaking**
 
 - `Three.instances(name, { from, look, … })` is now `Gltf.instances(name, { from, look, … })`, and `Three.objects(name, { from, make, … })` is now `Gltf.objects(name, { from, make, … })`. The options are the same, and the bundle may hold any assets, textures included. Import `Gltf` from `@arcadekit/three` or `@arcadekit/three/Gltf`.
+- Their option types `Three.InstancesFromOptions` and `Three.ObjectsFromOptions` are now `Gltf.InstancesOptions` and `Gltf.ObjectsOptions`. `Three.InstancesOptions` and `Three.ObjectsOptions` remain the options of `Three.instances` and `Three.objects`.
 - `Three.Which` no longer has `transform`. Each function still takes `transform`, typed as `Three.TransformOf` of its `of`. Code that read `Three.Which["transform"]` writes `typeof Transform3d | typeof Transform2d`.
 - `Three.TransformOf<O>` for an `of` that requires neither `Position` is now `{ readonly Position: { readonly name: <reason> } }`, without the two transform modules in it.

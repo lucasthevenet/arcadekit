@@ -13,13 +13,12 @@
  * `@arcadekit/three/Three` gives the same exports. The system it makes
  * requires `Three.plugin`.
  */
-import type * as Assets from "arcadekit/Assets";
 import type * as Color from "arcadekit/Color";
 import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
 import * as internal from "./internal/instances.ts";
-import type { Entries, Needs, TransformOf, Which } from "./Three.ts";
+import type { Needs, TransformOf, Which } from "./Three.ts";
 
 /**
  * How an instance looks: its mesh's geometry and material.
@@ -84,31 +83,6 @@ export interface InstancesShared extends Which {
  * @category Options
  */
 export interface InstancesOptions extends InstancesShared, Look {}
-/**
- * The options of `Gltf.instances`, whose look is built from assets that
- * are loaded later and released again, such as a level's.
- *
- * @category Options
- */
-export interface InstancesFromOptions<
-  B extends Entries,
-  L extends Look = Look,
-> extends InstancesShared {
-  /** The bundle the look is built from. The instances are drawn while it is loaded. */
-  readonly from: Assets.Bundle<B>;
-  /**
-   * Builds the look from the bundle's assets, once each time they are loaded.
-   * Anything it returns besides a geometry and a material is kept for `free`.
-   */
-  readonly look: (assets: Assets.Loaded<B>) => L;
-  /**
-   * Called with what `look` returned, after the mesh is removed from the scene,
-   * when the assets are released or the app is closed. Use it to dispose
-   * of anything `look` created besides the geometry and the material, which are
-   * disposed of for you. The bundle releases the assets themselves.
-   */
-  readonly free?: (look: L) => void;
-}
 
 /**
  * Makes a frame-stage system that draws every entity of a kind as one instance
