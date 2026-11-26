@@ -337,7 +337,7 @@ export interface Any {
    * Like `dispatch`, for actions that arrive as data, such as network
    * messages, saved games and replays. It takes the payload in its JSON form
    * and validates it against the action's schema. An unknown name or an
-   * invalid payload is a failure, `Action.UnknownAction` or
+   * invalid payload is a failure, `Action.Unknown` or
    * `Action.InvalidPayload`, and never a crash. `from` names the issuer, as
    * for `enqueueByName`.
    */
@@ -392,12 +392,12 @@ export interface Any {
    * read, and what the change queries haven't visited yet. Run it only
    * between ticks, since it dies anywhere else.
    *
-   * It fails with `Save.SaveRefused`, which names what is in the way: a
+   * It fails with `Save.Refused`, which names what is in the way: a
    * queued action or a waiting event whose payload its schema doesn't take, a
    * field that holds a value that can't be saved, or commands queued but not
    * applied.
    */
-  readonly save: () => Effect.Effect<Save.Save, Save.SaveRefused>;
+  readonly save: () => Effect.Effect<Save.Save, Save.Refused>;
   /**
    * Records the world's hash in the action log now, and returns it. Use it for
    * points the game wants verified beyond the ones `checkpointEvery` records,
@@ -505,13 +505,13 @@ export interface App<E = never, HU = never> extends Any {
    * `tick` does.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>>,
+    action: Action.Action<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
   ) => Effect.Effect<Placed<ResultFor<HU, N>>, FailureFor<HU, N>>;
   /**
    * Applies an action that arrives as data, as `App.Any`'s `dispatchByName`
    * does. It fails with what the game refuses an action with, with
-   * `Action.UnknownAction` for a name the game has no handler for, and with
+   * `Action.Unknown` for a name the game has no handler for, and with
    * `Action.InvalidPayload` for a payload its schema doesn't take.
    */
   readonly dispatchByName: (
@@ -520,7 +520,7 @@ export interface App<E = never, HU = never> extends Any {
     from?: string
   ) => Effect.Effect<
     unknown,
-    Refusals<HU> | Action.UnknownAction | Action.InvalidPayload
+    Refusals<HU> | Action.Unknown | Action.InvalidPayload
   >;
   /**
    * Queues an action for the start of the next tick. A refusal when it is
@@ -539,7 +539,7 @@ export interface App<E = never, HU = never> extends Any {
    * could then be neither logged nor sent to the other peers.
    */
   readonly enqueue: <N extends ActionNames<HU>>(
-    action: Action.ActionDef<N, PayloadFor<HU, N>>,
+    action: Action.Action<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
   ) => Effect.Effect<void, Action.InvalidPayload>;
   /**
@@ -743,7 +743,9 @@ export interface StartOptions<SV extends Save.Save | undefined = undefined> {
  *
  * @category Errors
  */
-export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
+export class FrameChangedWorld extends Data.TaggedError(
+  "AppFrameChangedWorld"
+)<{
   /** The stage the system belongs to. */
   readonly stage: "frame" | "input";
   /** The system after which the world had changed. */

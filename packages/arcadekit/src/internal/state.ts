@@ -5,7 +5,7 @@ import type { ComponentDef } from "../ecs/component.ts";
 import type { World as EcsWorld } from "../ecs/world.ts";
 import * as Query from "../Query.ts";
 import { LoadRefused } from "../Save.ts";
-import type { Move, State, StateHandle } from "../State.ts";
+import type { Move, Setter, State } from "../State.ts";
 
 /** A value's tag, and the query of the entities that have it. */
 interface Scope<V extends string, N extends string> {
@@ -68,7 +68,7 @@ const known = new WeakMap<EcsWorld, Registry>();
 export interface Registry {
   /** Sorted by name, so transitions happen in the same order everywhere. */
   states: State<string>[];
-  readonly handles: Map<State<string>, StateHandle<string>>;
+  readonly handles: Map<State<string>, Setter<string>>;
   /** The states a hook waits for, which are entered on the first tick. */
   readonly hooked: Set<State<string>>;
 }
@@ -101,14 +101,14 @@ const valueOf = <V extends string>(state: State<V>, held: string): V => {
 export const handleOf = <V extends string>(
   world: EcsWorld,
   state: State<V>
-): StateHandle<V> => {
+): Setter<V> => {
   const registry = registryOf(world);
   const found = registry.handles.get(state);
   if (found !== undefined) {
-    return found as StateHandle<V>;
+    return found as Setter<V>;
   }
   const held = world.singleton(state);
-  const handle: StateHandle<V> = {
+  const handle: Setter<V> = {
     get value() {
       return valueOf(state, held.value);
     },

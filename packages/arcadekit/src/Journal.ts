@@ -18,7 +18,7 @@
  * doesn't match, or at its end on a world with another hash than the
  * recorded game ended on.
  */
-import { Brand, Cause, Data, Effect, Exit, Schema, SchemaIssue } from "effect";
+import { Brand, Cause, Data, Effect, Exit, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 import * as Action from "./Action.ts";
@@ -153,60 +153,80 @@ const codec = SchemaBinary.toCodec(RecordingSchema);
 const OPEN_BRACE = 0x7b;
 
 /**
+ * A recording that can't be written as bytes, or bytes that aren't a
+ * recording. `problem` names the kind of failure:
+ *
+ * - `"no JSON form"`: a payload in the recording's log has no JSON form, as a
+ *   bigint, or no payload at all, given to `app.enqueueByName` under a name
+ *   the game doesn't have;
+ * - `"not a recording"`: the bytes aren't a recording, or one whose structure
+ *   doesn't hold;
+ * - `"older format"`: an earlier version of arcadekit wrote it as text, and
+ *   this version reads a recording in bytes.
+ *
+ * @category Errors
+ */
+export class Invalid extends Data.TaggedError("JournalInvalid")<{
+  readonly problem: "no JSON form" | "not a recording" | "older format";
+  readonly message: string;
+}> {}
+
+/**
  * Encodes a recording in bytes, for a file or the network. A recording made
  * since a save holds the save, as the bytes `Save.encode` writes, which are
  * most of it. The bytes are the recording's own, in a buffer of their own.
  *
- * **Gotchas**
- *
- * It throws when a payload in the log has no JSON form: a bigint, or no
- * payload at all, given to `app.enqueueByName` under a name the game doesn't
- * have.
+ * Fails with `Journal.Invalid`, `"no JSON form"`, when a payload in the log
+ * has no JSON form.
  *
  * @category Codecs
  */
-export const encode = (recording: Recording): Uint8Array<ArrayBuffer> => {
+export const encode = (
+  recording: Recording
+): Exit.Exit<Uint8Array<ArrayBuffer>, Invalid> => {
   const { save, ...rest } = recording;
   const bytes = Schema.encodeExit(codec)(
     save === undefined ? rest : { ...rest, save: Save.encode(save) }
   );
-  if (Exit.isFailure(bytes)) {
-    throw new Error(
-      "Journal.encode can't write this recording: a payload in its log has no JSON form. An action enqueued by a name the game doesn't have is logged with the payload it was given.",
-      { cause: Cause.squash(bytes.cause) }
-    );
-  }
-  return bytes.value.slice();
+  return Exit.isFailure(bytes)
+    ? Exit.fail(
+        new Invalid({
+          problem: "no JSON form",
+          message: `Journal.encode can't write this recording: a payload in its log has no JSON form. An action enqueued by a name the game doesn't have is logged with the payload it was given. ${said(Cause.squash(bytes.cause))}`,
+        })
+      )
+    : Exit.succeed(bytes.value.slice());
 };
 
 /**
- * Decodes a recording from bytes, and fails with a `Schema.SchemaError` on
- * bytes that aren't one. It checks the recording's own structure: that it
- * says how its game began, that a save it holds decodes and was made at the
- * tick the recording begins at, and that its log and its runs of deltas are
- * in order and within it. A replay checks the rest: each payload against its
- * action's schema, and each checkpoint and its `endHash` against the world.
+ * Decodes a recording from bytes. It checks the recording's own structure:
+ * that it says how its game began, that a save it holds decodes and was made
+ * at the tick the recording begins at, and that its log and its runs of
+ * deltas are in order and within it. A replay checks the rest: each payload
+ * against its action's schema, and each checkpoint and its `endHash` against
+ * the world.
  *
- * A recording that an earlier version of arcadekit wrote as text is refused,
- * with a message that begins `older format`.
+ * Fails with `Journal.Invalid`: `"not a recording"` for bytes that aren't
+ * one, and `"older format"` for a recording that an earlier version of
+ * arcadekit wrote as text.
  *
  * @category Codecs
  */
-export const decode = (
-  bytes: Uint8Array
-): Exit.Exit<Recording, Schema.SchemaError> => {
+export const decode = (bytes: Uint8Array): Exit.Exit<Recording, Invalid> => {
   const read = Schema.decodeUnknownExit(codec)(bytes);
   if (Exit.isFailure(read)) {
-    return bytes[0] === OPEN_BRACE
-      ? Exit.fail(
-          new Schema.SchemaError(
-            new SchemaIssue.InvalidValue({
-              message:
-                "older format: it was written as text by an earlier arcadekit, and this version reads a recording in bytes",
-            })
-          )
-        )
-      : Exit.failCause(read.cause);
+    return Exit.fail(
+      bytes[0] === OPEN_BRACE
+        ? new Invalid({
+            problem: "older format",
+            message:
+              "It was written as text by an earlier arcadekit, and this version reads a recording in bytes.",
+          })
+        : new Invalid({
+            problem: "not a recording",
+            message: said(Cause.squash(read.cause)),
+          })
+    );
   }
   const { save, seed, ...played } = read.value;
   if (save === undefined) {
@@ -225,7 +245,7 @@ export const decode = (
  *
  * @category Errors
  */
-export class HashMismatch extends Data.TaggedError("HashMismatch")<{
+export class HashMismatch extends Data.TaggedError("JournalHashMismatch")<{
   /** The tick both hashes were taken at. */
   readonly tick: number;
   /** The recorded hash. */
@@ -249,7 +269,7 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
  * replay's app, stopped where it diverged, to look at.
  *
  *   Journal.replay(recording, Duel).pipe(
- *     Effect.catchTag("ReplayDiverged", (diverged) =>
+ *     Effect.catchTag("JournalReplayDiverged", (diverged) =>
  *       diverged.app.read(World)  // the world where the replay stopped
  *     )
  *   )
@@ -259,7 +279,7 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
  */
 export class ReplayDiverged<
   A extends App.Any = App.Any,
-> extends Data.TaggedError("ReplayDiverged")<{
+> extends Data.TaggedError("JournalReplayDiverged")<{
   /**
    * The position in the log of the entry that failed to match, or the log's
    * length when the replay ended on another world than the recording did.

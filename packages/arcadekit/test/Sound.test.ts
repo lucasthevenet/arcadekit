@@ -377,7 +377,7 @@ describe("Sound.Player", () => {
     "plays for a system of the frame stage, as it is told, once the frame's systems have run",
     () =>
       Effect.gen(function* () {
-        let clicks: readonly (Sound.Options | undefined)[] = [];
+        let clicks: readonly (Sound.PlayOptions | undefined)[] = [];
         const heard: number[] = [];
         const sound = Sound.makeRecorder();
         const Click = System.frame("sd/Click", function* () {
@@ -392,7 +392,7 @@ describe("Sound.Player", () => {
           App.define({ plugins: [Sound.plugin], systems: [Click] })
         ).pipe(Effect.provide(Sound.layer(sound)));
         const frame = Effect.fnUntraced(function* (
-          ...asked: (Sound.Options | undefined)[]
+          ...asked: (Sound.PlayOptions | undefined)[]
         ) {
           clicks = asked;
           sound.played.length = 0;

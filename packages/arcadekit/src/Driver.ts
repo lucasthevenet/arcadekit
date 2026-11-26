@@ -558,7 +558,7 @@ export interface Closes {
  *
  * @category Options
  */
-export interface Ready<A, E, R> {
+export interface ReadyOptions<A, E, R> {
   /**
    * Runs once the app is made, before its first frame, with the app. The run
    * closes the app however it ends, so the app is closed when `ready` fails.
@@ -576,7 +576,7 @@ const runMade = <
   R2,
 >(
   made: Effect.Effect<A, E, R>,
-  options: ((StepOptions | PacedOptions) & Ready<A, E2, R2>) | undefined
+  options: ((StepOptions | PacedOptions) & ReadyOptions<A, E2, R2>) | undefined
 ): Effect.Effect<never, E | E2 | E3, Exclude<R | R2, Scope.Scope>> =>
   // Closed however `ready` or the loop ends, with nothing between the making
   // and them that an interruption could slip into.
@@ -636,7 +636,7 @@ const runMade = <
  * closes the connection when it ends, and the connection's `close` closes
  * the session. It fails with what the session's tick fails with: what the
  * game's systems fail with, `Drift.Unlike`, `Drift.Drifted`,
- * `Save.SaveRefused` and `Transport.Left`.
+ * `Save.Refused` and `Transport.Left`.
  *
  * @category Running
  */
@@ -651,7 +651,7 @@ export function run<
   game: App.Game<S, H, P>,
   options: StepOptions &
     App.StartOptions<SV> &
-    Ready<App.App<App.TickError<S, P>, App.AllHandlers<H, P>>, E2, R2>
+    ReadyOptions<App.App<App.TickError<S, P>, App.AllHandlers<H, P>>, E2, R2>
 ): Effect.Effect<
   never,
   | Plugin.ErrorOf<P[number]>
@@ -668,7 +668,7 @@ export function run<
   R2 = never,
 >(
   session: Effect.Effect<A, E, R>,
-  options?: PacedOptions & Ready<A, E2, R2>
+  options?: PacedOptions & ReadyOptions<A, E2, R2>
 ): Effect.Effect<never, E | E2 | FailureOf<A>, Exclude<R | R2, Scope.Scope>>;
 export function run<
   S extends App.Systems,

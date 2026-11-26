@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 
-import { AssetFailed } from "../Assets.ts";
+import { Failed as AssetFailed } from "../Assets.ts";
 import type { LoaderShape } from "../Assets.ts";
 
 // What a request that got no answer says: what was asked, and why.

@@ -111,7 +111,7 @@ type Fresh<A> = [Held<A>] extends [never]
 
 /** Omitted for an action that takes no payload. */
 type PayloadArgument<P> = undefined extends P ? [payload?: P] : [payload: P];
-type PayloadOf<D> = D extends Action.ActionDef<string, infer P> ? P : never;
+type PayloadOf<D> = D extends Action.Action<string, infer P> ? P : never;
 /** The actions of a union of handlers. Distributive: none for no handler. */
 type ActionOf<HU> = HU extends Action.AnyHandler ? HU["action"] : never;
 
@@ -121,7 +121,7 @@ type ActionOf<HU> = HU extends Action.AnyHandler ? HU["action"] : never;
  * @category Models
  */
 export interface Sent {
-  readonly action: Action.AnyActionDef;
+  readonly action: Action.Any;
   readonly payload: unknown;
 }
 
@@ -142,7 +142,7 @@ export interface Sent {
  */
 export interface Bridge<
   // Without `in`, the compiler takes a bridge for one that sends more.
-  in Sends extends Action.AnyActionDef = never,
+  in Sends extends Action.Any = never,
 > {
   /**
    * Returns a view's last published value, or its initial value. It is the same
@@ -165,7 +165,7 @@ export interface Bridge<
    * issued before the game's next tick, logged, and applied or refused by its
    * handler, just as a key bound to it would be.
    */
-  readonly send: <D extends Action.AnyActionDef>(
+  readonly send: <D extends Action.Any>(
     // Not `D extends Sends`, under which an action of no handler that takes
     // no payload is reported as a payload missing.
     action: D & Sends,
@@ -186,7 +186,7 @@ interface Slot {
 
 /** A UI's bridge, and the app's end of it. */
 interface Opened extends PortValue {
-  readonly ui: Bridge<Action.AnyActionDef>;
+  readonly ui: Bridge<Action.Any>;
 }
 
 const open = (): Opened => {
@@ -204,7 +204,7 @@ const open = (): Opened => {
     }
     return slot;
   };
-  const ui: Bridge<Action.AnyActionDef> = {
+  const ui: Bridge<Action.Any> = {
     get(view) {
       const slot = slotOf(view);
       slot.asked = true;
@@ -312,7 +312,7 @@ export class Port extends Context.Service<Port, PortShape>()(
 ) {}
 
 /** What the UI of an app is handed its bridge by, if it has a UI. */
-type Mount = (ui: Bridge<Action.AnyActionDef>) => void | (() => void);
+type Mount = (ui: Bridge<Action.Any>) => void | (() => void);
 
 const Ui = Context.Reference<Mount | undefined>("arcadekit/View.Ui", {
   defaultValue: () => undefined,

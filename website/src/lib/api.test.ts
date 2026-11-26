@@ -135,7 +135,7 @@ describe.runIf(built)("a module's page", () => {
 
   it("leaves private and @internal members out of a class, with their comments", () => {
     const state = signatureOf("State", "State");
-    expect(state).toContain("get sets(): Effect.Effect<StateHandle<V>");
+    expect(state).toContain("get sets(): Effect.Effect<Setter<V>");
     expect(state).not.toMatch(/private|effect:|writing:/u);
     const world = signatureOf("ecs", "World", "ecs/index.ts");
     expect(world).toContain("class World");
@@ -166,9 +166,7 @@ describe.runIf(built)("a module's page", () => {
     const actions = signatureOf("Action", "Actions");
     expect(actions).not.toContain("Actions_base");
     expect(actions).toContain("readonly enqueue:");
-    expect(actions).toContain(
-      "readonly handles: (action: AnyActionDef) => boolean;"
-    );
+    expect(actions).toContain("readonly handles: (action: Any) => boolean;");
   });
 
   it("starts with the module's comment and how to import it", () => {

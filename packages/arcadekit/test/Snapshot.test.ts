@@ -9,8 +9,9 @@ import {
   SnapshotError,
 } from "../src/ecs/index.ts";
 import { Component } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import { Field, Migrate, Query } from "../src/index.ts";
-import type { ComponentDef, JsonValue } from "../src/index.ts";
+import type { JsonValue } from "../src/index.ts";
 import { Shouts } from "./stores.ts";
 
 // One component of every field kind, in a table and in a sparse set.

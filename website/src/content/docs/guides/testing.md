@@ -108,7 +108,7 @@ import { Effect } from "effect";
 const arrive = new Map<string, (bytes: Uint8Array) => void>();
 export const slowLoader: Assets.LoaderShape = {
   bytes: (url) =>
-    Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+    Effect.callback<Uint8Array, Assets.Failed>((resume) => {
       arrive.set(url, (bytes) => resume(Effect.succeed(bytes)));
     }),
 };

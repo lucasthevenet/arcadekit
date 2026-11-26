@@ -7,7 +7,12 @@ import { SnapshotError } from "../ecs/snapshot.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
-import { LoadRefused, SaveRefused, VISITS, migrate } from "../Save.ts";
+import {
+  LoadRefused,
+  Refused as SaveRefused,
+  VISITS,
+  migrate,
+} from "../Save.ts";
 import type { Migration, Save } from "../Save.ts";
 
 /** Says what a failed decoding found wrong. */
@@ -102,7 +107,7 @@ export const into = (
     }
     return Exit.fail(
       new LoadRefused({
-        problem: error.problem,
+        problem: loading(error),
         message:
           error.problem === "unknown component"
             ? `${error.message} A migration renames or removes a component in a save.`
@@ -203,3 +208,18 @@ export class Visits implements Store<undefined> {
     return undefined;
   }
 }
+
+/**
+ * @internal A snapshot's problem as a load meets it. A load reads a snapshot
+ * into an empty world, so it never meets the other two, and one that does is
+ * a defect.
+ */
+export const loading = (error: SnapshotError): LoadRefused["problem"] => {
+  if (
+    error.problem === "world not empty" ||
+    error.problem === "cannot be saved"
+  ) {
+    throw error;
+  }
+  return error.problem;
+};

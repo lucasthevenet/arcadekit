@@ -33,7 +33,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { Rng } from "../src/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
@@ -1335,7 +1335,7 @@ describe("the picture of the devices in the world", () => {
           ]);
           return {
             hashes: tickHashes,
-            text: Journal.encode(yield* app.record()),
+            text: unwrap(Journal.encode(yield* app.record())),
             played: yield* ship(app),
             ticks: app.time.tick,
           };

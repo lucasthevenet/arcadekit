@@ -14,7 +14,7 @@
  * which it sends as text: a message comes as bytes and a notice as text, so
  * what carries them tells the two apart.
  */
-import { Cause, Exit, Schema } from "effect";
+import { Cause, Data, Exit, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -116,9 +116,37 @@ const NoticeSchema = Schema.fromJsonString(
 );
 
 /**
+ * A message that can't be written as bytes, or bytes or text that aren't a
+ * message or a notice. `problem` names which: `"not a message"` or
+ * `"not a notice"`.
+ *
+ * @category Errors
+ */
+export class Invalid extends Data.TaggedError("MessageInvalid")<{
+  readonly problem: "not a message" | "not a notice";
+  readonly message: string;
+}> {}
+
+/** What a failed encoding or decoding says, as Effect's `Schema` found it. */
+const invalid = (
+  problem: Invalid["problem"],
+  cause: Cause.Cause<unknown>
+): Invalid => {
+  const error = Cause.squash(cause);
+  return new Invalid({
+    problem,
+    message: error instanceof Error ? error.message : String(error),
+  });
+};
+
+/**
  * Encodes a message in bytes, for whatever carries it. The bytes are the
  * message's own, in a buffer of their own, so a carrier may keep them or hand
  * their buffer on.
+ *
+ * Fails with `Message.Invalid`, `"not a message"`, when it is given what
+ * isn't one: a session writes every tick and hash as a whole number, 0 or
+ * more, and every payload in its JSON form.
  *
  * **Gotchas**
  *
@@ -127,29 +155,28 @@ const NoticeSchema = Schema.fromJsonString(
  *
  * @category Codecs
  */
-export const encode = (message: Message): Uint8Array<ArrayBuffer> => {
+export const encode = (
+  message: Message
+): Exit.Exit<Uint8Array<ArrayBuffer>, Invalid> => {
   const bytes = Schema.encodeExit(codec)(message);
-  if (Exit.isFailure(bytes)) {
-    throw new Error(
-      "Message.encode was given what isn't a message. A session writes every tick and hash as a whole number, 0 or more, and every payload in its JSON form.",
-      { cause: Cause.squash(bytes.cause) }
-    );
-  }
-  return bytes.value.slice();
+  return Exit.isFailure(bytes)
+    ? Exit.fail(invalid("not a message", bytes.cause))
+    : Exit.succeed(bytes.value.slice());
 };
 
 /**
- * Decodes a message from bytes, and fails with a `Schema.SchemaError` on bytes
- * that aren't one, whole and nothing more. It checks the message's own
- * structure. Each payload is checked against its action's schema when the
- * action is applied, and every peer refuses a payload that fails.
+ * Decodes a message from bytes, and fails with `Message.Invalid`,
+ * `"not a message"`, on bytes that aren't one, whole and nothing more. It
+ * checks the message's own structure. Each payload is checked against its
+ * action's schema when the action is applied, and every peer refuses a payload
+ * that fails.
  *
  * @category Codecs
  */
-export const decode = (
-  bytes: Uint8Array
-): Exit.Exit<Message, Schema.SchemaError> =>
-  Schema.decodeUnknownExit(codec)(bytes);
+export const decode = (bytes: Uint8Array): Exit.Exit<Message, Invalid> =>
+  Exit.mapError(Schema.decodeUnknownExit(codec)(bytes), (error) =>
+    invalid("not a message", Cause.fail(error))
+  );
 
 /**
  * Encodes a relay's notice as text.
@@ -159,12 +186,12 @@ export const decode = (
 export const encodeNotice = (notice: Notice): string => JSON.stringify(notice);
 
 /**
- * Decodes a relay's notice from text, and fails on text that isn't a
- * notice.
+ * Decodes a relay's notice from text, and fails with `Message.Invalid`,
+ * `"not a notice"`, on text that isn't one.
  *
  * @category Codecs
  */
-export const decodeNotice = (
-  text: string
-): Exit.Exit<Notice, Schema.SchemaError> =>
-  Schema.decodeExit(NoticeSchema)(text);
+export const decodeNotice = (text: string): Exit.Exit<Notice, Invalid> =>
+  Exit.mapError(Schema.decodeExit(NoticeSchema)(text), (error) =>
+    invalid("not a notice", Cause.fail(error))
+  );

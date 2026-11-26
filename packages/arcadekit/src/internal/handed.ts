@@ -9,7 +9,11 @@ import type { PatchOf, RelationDef } from "../ecs/relation.ts";
 import { placed } from "../ecs/spawned.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World as EcsWorld } from "../ecs/world.ts";
-import type { EventDef, EventReader, ReadingEvents } from "../Event.ts";
+import type {
+  Event as EventDef,
+  Reader as EventReader,
+  ReadingEvents,
+} from "../Event.ts";
 import type { ReadingWorld, WritingWorld } from "../Services.ts";
 import type * as Singleton from "../Singleton.ts";
 import type { EventBus } from "./eventBus.ts";

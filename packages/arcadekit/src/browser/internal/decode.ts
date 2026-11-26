@@ -31,7 +31,7 @@ export const sound = (url: string): Assets.Asset<Sound.Clip> =>
       // A copy: decoding keeps the buffer it is given.
       try: async () => Sound.clip(at, await decodeOffline(data.slice().buffer)),
       catch: (error) =>
-        new Assets.AssetFailed({
+        new Assets.Failed({
           url: at,
           message: `It could not be made a sound: ${describe(error)}`,
         }),
@@ -51,7 +51,7 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
           // A copy: a Blob wants bytes that nothing else can change.
           createImageBitmap(new Blob([data.slice()])),
         catch: (error) =>
-          new Assets.AssetFailed({
+          new Assets.Failed({
             url: at,
             message: `It could not be made a picture: ${describe(error)}`,
           }),

@@ -61,8 +61,8 @@ const tracked = (url: string, log: string[]) =>
 
 /** An asset failed, at this URL and for this reason. */
 const expectFailed = (error: unknown, url: string, message: string): void => {
-  expect(error).toBeInstanceOf(Assets.AssetFailed);
-  expect(error).toEqual(new Assets.AssetFailed({ url, message }));
+  expect(error).toBeInstanceOf(Assets.Failed);
+  expect(error).toEqual(new Assets.Failed({ url, message }));
 };
 
 const files = {
@@ -92,12 +92,12 @@ const makeSlowLoader = () => {
   const givenUp: string[] = [];
   const loader: Assets.LoaderShape = {
     bytes: (url) =>
-      Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+      Effect.callback<Uint8Array, Assets.Failed>((resume) => {
         asked.push(url);
         waiting.set(url, {
           arrive: (bytes) => resume(Effect.succeed(bytes)),
           fail: (message) =>
-            resume(Effect.fail(new Assets.AssetFailed({ url, message }))),
+            resume(Effect.fail(new Assets.Failed({ url, message }))),
         });
         return Effect.sync(() => {
           givenUp.push(url);
@@ -150,7 +150,7 @@ describe("a failure, in these tests", () => {
     // tooling/build/vitest-setup.ts sees to it: without it the first of these
     // passes whatever the two messages are.
     const failed = (url: string, message: string) =>
-      new Assets.AssetFailed({ url, message });
+      new Assets.Failed({ url, message });
     expect(failed("/a", "It is not there.")).not.toEqual(
       failed("/a", "It is not JSON.")
     );
@@ -275,11 +275,11 @@ describe("an asset", () => {
         Exit.succeed({ layout: { walls: 2, name: "Ok" } })
       );
       const notJson = yield* failure("<html>");
-      expect(notJson).toBeInstanceOf(Assets.AssetFailed);
+      expect(notJson).toBeInstanceOf(Assets.Failed);
       expect(notJson.url).toBe("/layout.json");
       expect(notJson.message).toMatch(/^It is not JSON/);
       const wrongShape = yield* failure('{"walls":-1,"name":"Bad"}');
-      expect(wrongShape).toBeInstanceOf(Assets.AssetFailed);
+      expect(wrongShape).toBeInstanceOf(Assets.Failed);
       expect(wrongShape.url).toBe("/layout.json");
       expect(wrongShape.message).not.toMatch(/^It is not JSON/);
       expect((yield* failure('{"walls":2}')).url).toBe("/layout.json");
@@ -357,7 +357,7 @@ describe("an asset", () => {
         expect(
           Cause.squash((busy as Exit.Failure<never, unknown>).cause)
         ).toEqual(
-          new Assets.AssetFailed({
+          new Assets.Failed({
             url: "/busy.txt",
             message: "The server answered 503",
             transient: true,
@@ -562,7 +562,7 @@ describe("a level's assets", () => {
         const { Forest, Game, Go, drawn, log } = makeGame();
         const slow = makeSlowLoader();
         const logged: unknown[] = [];
-        const errors: Assets.AssetFailed[] = [];
+        const errors: Assets.Failed[] = [];
         const Peek = System.frame("Peek", function* () {
           const forest = yield* Forest;
           if (forest._tag === "Failed") {
@@ -1093,7 +1093,7 @@ describe("a level's assets", () => {
               return url === "/forest.png" &&
                 asked.filter((one) => one === url).length === 1
                 ? Effect.fail(
-                    new Assets.AssetFailed({
+                    new Assets.Failed({
                       url,
                       message: "The server answered 503",
                       transient: true,

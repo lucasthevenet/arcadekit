@@ -1,7 +1,8 @@
 import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
-import type { ComponentDef, Spawned } from "../src/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
+import type { Spawned } from "../src/index.ts";
 import {
   Action,
   App,

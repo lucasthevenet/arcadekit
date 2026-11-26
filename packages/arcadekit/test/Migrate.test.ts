@@ -13,6 +13,7 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import type { JsonValue, Spawned } from "../src/index.ts";
 import {
   Action,
@@ -26,7 +27,7 @@ import {
   Save,
   World,
 } from "../src/index.ts";
-import type { ComponentDef, Entity } from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 import { placedIn } from "./placed.ts";
 
 /** Runs `use` with an app and its world, as `app.read(World)` gives it. */

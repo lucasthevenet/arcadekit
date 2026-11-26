@@ -238,12 +238,12 @@ const pack = (
   data: Uint8Array,
   url: string,
   loader: Assets.LoaderShape
-): Effect.Effect<ArrayBuffer, Assets.AssetFailed> =>
+): Effect.Effect<ArrayBuffer, Assets.Failed> =>
   Effect.gen(function* () {
     const { binary, document } = yield* Effect.try({
       try: () => read(data),
       catch: (error) =>
-        new Assets.AssetFailed({
+        new Assets.Failed({
           url,
           message: `It is not a glTF model: ${describe(error)}`,
         }),
@@ -265,13 +265,13 @@ const pack = (
       uri: string
     ): Effect.Effect<
       { readonly bytes: Uint8Array; readonly type: string },
-      Assets.AssetFailed
+      Assets.Failed
     > =>
       uri.startsWith("data:")
         ? Effect.try({
             try: () => fromDataUri(uri),
             catch: (error) =>
-              new Assets.AssetFailed({
+              new Assets.Failed({
                 url,
                 message: `A file written into it could not be read: ${describe(error)}`,
               }),
@@ -420,7 +420,7 @@ const dispose = (model: Model): void => {
  *   files therefore serve them. A missing file fails the bundle with its own
  *   URL. Leaving a level while its model is still loading cancels those
  *   requests.
- * - A file that isn't a valid model fails the bundle with `Assets.AssetFailed`,
+ * - A file that isn't a valid model fails the bundle with `Assets.Failed`,
  *   which says what was wrong.
  * - Set what a compressed model needs on the loader, in `prepare`, and list
  *   the files its decoders fetch in `files`. They are fetched through
@@ -454,7 +454,7 @@ export const model = (
         (decoder) => decoder !== null
       );
       if (decoders.some((decoder) => decoder.manager !== manager)) {
-        return yield* new Assets.AssetFailed({
+        return yield* new Assets.Failed({
           url: at,
           message:
             "A decoder set in `prepare` was not made with the manager `prepare` receives, so it would fetch its files around `Assets.Loader`.",
@@ -464,7 +464,7 @@ export const model = (
         Effect.tryPromise({
           try: () => loader.parseAsync(packed, ""),
           catch: (error) =>
-            new Assets.AssetFailed({
+            new Assets.Failed({
               url: at,
               message: `It could not be made a model: ${describe(error)}`,
             }),
@@ -607,7 +607,7 @@ export interface ObjectsOptions<
  */
 export function instances<
   B extends Three.Entries,
-  const O extends Three.Which["of"],
+  const O extends Three.KindOptions["of"],
   L extends Three.Look = Three.Look,
 >(
   name: string,
@@ -646,7 +646,7 @@ export function instances<
  */
 export function objects<
   B extends Three.Entries,
-  const K extends Three.Which["of"],
+  const K extends Three.KindOptions["of"],
   O extends Object3D = Object3D,
 >(
   name: string,

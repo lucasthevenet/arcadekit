@@ -109,10 +109,7 @@ const play = Effect.fnUntraced(function* (
     app,
     close,
     /** The game does something, a tick applies it, and a frame is heard. */
-    step: Effect.fnUntraced(function* (
-      action: Action.AnyActionDef,
-      payload: unknown
-    ) {
+    step: Effect.fnUntraced(function* (action: Action.Any, payload: unknown) {
       yield* Effect.asVoid(app.dispatch(action as never, payload as never));
       yield* app.tick(0.1);
       yield* app.frame();
@@ -978,7 +975,7 @@ describe("a level's cues", () => {
           sound
         );
         const step = Effect.fnUntraced(function* (
-          action: Action.AnyActionDef,
+          action: Action.Any,
           payload: unknown
         ) {
           yield* Effect.asVoid(app.dispatch(action as never, payload as never));

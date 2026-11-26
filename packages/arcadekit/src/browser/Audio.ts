@@ -25,7 +25,7 @@ import * as decode from "./internal/decode.ts";
  *
  * @category Models
  */
-export interface AudioLike {
+export interface ContextLike {
   readonly destination: unknown;
   readonly state?: string;
   /** Its own clock, in seconds, which times fades. */

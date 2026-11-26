@@ -1134,7 +1134,7 @@ describe("Session.syncTest", () => {
           readonly app: SteeredGame;
           readonly tick: (
             delta: number
-          ) => Effect.Effect<void, Session.RewindDiverged | Save.SaveRefused>;
+          ) => Effect.Effect<void, Session.RewindDiverged | Save.Refused>;
           readonly checked: number;
         }) {
           const { app } = test;

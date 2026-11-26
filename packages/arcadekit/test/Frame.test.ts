@@ -15,6 +15,7 @@ import {
   World as EcsWorld,
   readSnapshot,
 } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -36,7 +37,7 @@ import {
   Time,
   World,
 } from "../src/index.ts";
-import type { ComponentDef, Entity, Rng } from "../src/index.ts";
+import type { Entity, Rng } from "../src/index.ts";
 import type { BuiltIn } from "../src/Services.ts";
 import { thrown } from "./checks.ts";
 

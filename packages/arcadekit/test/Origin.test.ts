@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 import { readSnapshot } from "../src/ecs/index.ts";
@@ -13,7 +13,7 @@ import {
   Timeline,
 } from "../src/index.ts";
 import { Layout } from "../src/internal/recording.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 import {
   CoinGame,
   DELTA,
@@ -30,13 +30,6 @@ import {
   withPeers,
 } from "./peers.ts";
 import type { Peer } from "./peers.ts";
-
-const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
-  if (Exit.isFailure(exit)) {
-    throw Cause.squash(exit.cause);
-  }
-  return exit.value;
-};
 
 describe("who issued an action", () => {
   it.effect("is told to its handler when the action came with a name", () =>
@@ -127,7 +120,7 @@ describe("who issued an action", () => {
         },
       ]);
       // As bytes and back, as a log that is kept would be.
-      const bytes = Journal.encode(recorded.recording);
+      const bytes = unwrap(Journal.encode(recorded.recording));
       const read = Journal.decode(bytes);
       expect(read).toEqual(Exit.succeed(recorded.recording));
       assert(Exit.isSuccess(read));

@@ -76,9 +76,9 @@ interface Parsed {
 }
 
 const InvalidJson = Schema.toCodecJson(Action.InvalidPayload);
-const UnknownJson = Schema.toCodecJson(Action.UnknownAction);
+const UnknownJson = Schema.toCodecJson(Action.Unknown);
 const isRejected = Schema.is(Action.Rejected.codec);
-const isUnknown = Schema.is(Action.UnknownAction);
+const isUnknown = Schema.is(Action.Unknown);
 
 /**
  * An app's inbox. The app's `enqueue`, `dispatch` and their by-name forms
@@ -100,7 +100,7 @@ export class Inbox {
   }
 
   /** Whether the game has a handler for an action. */
-  handles(action: Action.AnyActionDef): boolean {
+  handles(action: Action.Any): boolean {
     return this.parts.handlers.has(action.name);
   }
 
@@ -127,7 +127,7 @@ export class Inbox {
    * throws.
    */
   enqueue(
-    action: Action.AnyActionDef,
+    action: Action.Any,
     payload: unknown
   ): Exit.Exit<void, Action.InvalidPayload> {
     const { handlers, intake, log, runner } = this.parts;
@@ -180,7 +180,7 @@ export class Inbox {
    * checked. Outside the simulation, `Actions.enqueue` is called only from the
    * frame and input stages, and a payload the schema can't encode throws there.
    */
-  issue(action: Action.AnyActionDef, payload: unknown): void {
+  issue(action: Action.Any, payload: unknown): void {
     const exit = this.enqueue(action, payload);
     if (Exit.isFailure(exit)) {
       throw new Error(
@@ -227,10 +227,7 @@ export class Inbox {
    * handler returned or failed with. It throws during a tick, a stage or a
    * handler, and on an app that a session has taken over.
    */
-  dispatch(
-    action: Action.AnyActionDef,
-    payload: unknown
-  ): Exit.Exit<unknown, unknown> {
+  dispatch(action: Action.Any, payload: unknown): Exit.Exit<unknown, unknown> {
     this.betweenTicks(action.name);
     // A typed dispatch of an action nobody handles is a programming error.
     if (!this.handles(action)) {
@@ -379,11 +376,11 @@ export class Inbox {
     name: string,
     payload: unknown,
     form: "json" | "value"
-  ): Exit.Exit<Parsed, Action.InvalidPayload | Action.UnknownAction> {
+  ): Exit.Exit<Parsed, Action.InvalidPayload | Action.Unknown> {
     const { handlers, log } = this.parts;
     const handler = handlers.get(name);
     if (handler === undefined) {
-      return Exit.fail(Action.UnknownAction.make({ action: name }));
+      return Exit.fail(Action.Unknown.make({ action: name }));
     }
     log.start();
 

@@ -240,7 +240,7 @@ export const build = <E, A extends PeerApp<E>>(
 
   const ticking: Effect.Effect<
     boolean,
-    E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
+    E | Drift.Unlike | Drift.Drifted | Save.Refused
   > = Effect.gen(function* () {
     const now = app.time.tick;
     if (!begun) {
@@ -255,7 +255,7 @@ export const build = <E, A extends PeerApp<E>>(
           : yield* app.checkpoint()
       );
     }
-    let failed: Exit.Exit<never, E | Save.SaveRefused> | undefined;
+    let failed: Exit.Exit<never, E | Save.Refused> | undefined;
     if (wrong !== undefined) {
       // A message came for a tick that had run without it. Back to before
       // that tick, and forward again with what is known now.

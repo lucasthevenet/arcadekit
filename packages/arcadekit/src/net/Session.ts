@@ -308,7 +308,7 @@ export const make = <
  *
  * @category Errors
  */
-export class RewindDiverged extends Data.TaggedError("RewindDiverged")<{
+export class RewindDiverged extends Data.TaggedError("SessionRewindDiverged")<{
   /** The tick that ran differently. */
   readonly tick: number;
   /**
@@ -340,13 +340,13 @@ export interface SyncTest<E = never, HU = never> {
   readonly app: App.Steered<E, HU>;
   /**
    * Runs the input stage, then the tick twice from the same moment. It fails
-   * with what the game's systems fail with, with `Save.SaveRefused` when the
+   * with what the game's systems fail with, with `Save.Refused` when the
    * game can't be captured before the tick, and the tick doesn't run then,
    * and with `RewindDiverged` when the two runs differ.
    */
   readonly tick: (
     delta: number
-  ) => Effect.Effect<void, E | Save.SaveRefused | RewindDiverged>;
+  ) => Effect.Effect<void, E | Save.Refused | RewindDiverged>;
   /** The app's frame stage, as `app.frame` runs it. */
   readonly frame: (alpha?: number, delta?: number) => Effect.Effect<void, E>;
   /** How many ticks it has run twice. */

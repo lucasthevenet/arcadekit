@@ -106,7 +106,7 @@ const begun = ({ coins = [], gold }: Begun) =>
 type Sends = typeof Start | typeof Buy | typeof Ping;
 
 /** A UI that keeps the bridge its app hands it, and does nothing else. */
-const keeper = <S extends Action.AnyActionDef = never>() => {
+const keeper = <S extends Action.Any = never>() => {
   const handed: View.Bridge<S>[] = [];
   return {
     mount: (ui: View.Bridge<S>): void => {

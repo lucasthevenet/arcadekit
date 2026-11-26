@@ -798,7 +798,7 @@ describe("a picture", () => {
           Effect.provide(Assets.layerMemory(files))
         );
         const error = Option.getOrThrow(Exit.findErrorOption(exit));
-        expect(error).toBeInstanceOf(Assets.AssetFailed);
+        expect(error).toBeInstanceOf(Assets.Failed);
         expect(error.message).toBe(
           "It could not be made a picture: The source image could not be decoded."
         );
@@ -1534,7 +1534,7 @@ describe("a page's sound", () => {
         const givenUp: string[] = [];
         const loader: Assets.LoaderShape = {
           bytes: (url) =>
-            Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+            Effect.callback<Uint8Array, Assets.Failed>((resume) => {
               waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));
               return Effect.sync(() => {
                 givenUp.push(url);
@@ -2048,7 +2048,7 @@ describe("a page's sound", () => {
         const waiting = new Map<string, (bytes: Uint8Array) => void>();
         const loader: Assets.LoaderShape = {
           bytes: (url) =>
-            Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+            Effect.callback<Uint8Array, Assets.Failed>((resume) => {
               waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));
             }),
         };
@@ -2212,9 +2212,9 @@ describe("a page's sound", () => {
         const error = Cause.squash(
           (exit as Exit.Failure<never, unknown>).cause
         );
-        expect(error).toBeInstanceOf(Assets.AssetFailed);
-        expect((error as Assets.AssetFailed).url).toBe("/noise.wav");
-        expect((error as Assets.AssetFailed).message).toBe(
+        expect(error).toBeInstanceOf(Assets.Failed);
+        expect((error as Assets.Failed).url).toBe("/noise.wav");
+        expect((error as Assets.Failed).message).toBe(
           "It could not be made a sound: Unable to decode audio data"
         );
       })

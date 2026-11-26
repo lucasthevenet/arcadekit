@@ -34,7 +34,7 @@ const program = Effect.gen(function* () {
   );
   yield* app.tick(1 / 60);
 
-  const saved = yield* Effect.exit(app.save()); // fails with SaveRefused
+  const saved = yield* Effect.exit(app.save()); // fails with Save.Refused
   if (Exit.isFailure(saved)) {
     return;
   }
@@ -67,7 +67,7 @@ To return the same app to an earlier moment in the same run, use `Timeline.captu
 - **Keep what the game is in the middle of in the world.** Work that takes [many ticks](systems.md#spread-work-over-many-ticks), such as a countdown or a wave of enemies, keeps its place in a component, a singleton or a state, so a save holds it.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.
 
-`app.save()` fails with `Save.SaveRefused`, whose message names the problem, when commands are queued, when a field holds a value that can't be saved, or when a queued action or a waiting event has a payload its schema doesn't take.
+`app.save()` fails with `Save.Refused`, whose message names the problem, when commands are queued, when a field holds a value that can't be saved, or when a queued action or a waiting event has a payload its schema doesn't take.
 
 These aren't saved: `Field.transient` fields, which are `undefined` after a load, and anything kept outside the world, such as a variable of a module.
 

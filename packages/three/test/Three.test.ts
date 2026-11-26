@@ -619,7 +619,7 @@ describe("Three.instances", () => {
           geometry,
           material,
         });
-      const tied = <const O extends Three.Which["of"]>(
+      const tied = <const O extends Three.KindOptions["of"]>(
         of: O,
         transform: Three.TransformOf<O>
       ) => Three.instances("th/Tied", { of, transform, geometry, material });
@@ -705,7 +705,7 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
       { cwd: dir, encoding: "utf-8" }
     );
     rmSync(dir, { recursive: true });
-    const reason = `"The kind's \\"of\\" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Add the kind's transform's Position to its component's requires, and type it as that component, not as a ComponentDef."`;
+    const reason = `"The kind's \\"of\\" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Add the kind's transform's Position to its component's requires, and type it as that component itself."`;
     const refused = (line: number, column: number, dimensions: 2 | 3) =>
       `game.ts(${line},${column}): error TS2322: Type 'typeof import("${repo}/packages/arcadekit/src/Transform${dimensions}d")' is not assignable to type '{ readonly Position: { readonly name: ${reason}; }; }'.
   The types of 'Position.name' are incompatible between these types.
@@ -1122,7 +1122,7 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
         });
         // Half of them in three dimensions, and half in the plane: a kind of
         // each transform.
-        const crowd = <const O extends Three.Which["of"]>(
+        const crowd = <const O extends Three.KindOptions["of"]>(
           name: string,
           of: O,
           transform: Three.TransformOf<O>
@@ -1764,7 +1764,7 @@ describe("an entity drawn between two ticks", () => {
       }
     );
   });
-  const smoothed = <const O extends Three.Which["of"]>(
+  const smoothed = <const O extends Three.KindOptions["of"]>(
     name: string,
     of: O,
     transform: Three.TransformOf<O>
@@ -1993,7 +1993,7 @@ describe("an entity drawn between two ticks", () => {
     "is drawn where it is when it went further in a tick than it was told an entity can",
     () =>
       Effect.gen(function* () {
-        const wrapping = <const O extends Three.Which["of"]>(
+        const wrapping = <const O extends Three.KindOptions["of"]>(
           name: string,
           of: O,
           transform: Three.TransformOf<O>
@@ -2402,7 +2402,7 @@ describe("an entity drawn between two ticks", () => {
   it.effect("places an object of Three.objects the same way", () =>
     Effect.gen(function* () {
       const made = new Map<Entity, Object3D>();
-      const ships = <const O extends Three.Which["of"]>(
+      const ships = <const O extends Three.KindOptions["of"]>(
         name: string,
         of: O,
         transform: Three.TransformOf<O>
@@ -2629,7 +2629,7 @@ describe("an entity drawn between two ticks", () => {
 
 describe("a colour per instance", () => {
   const Flat = Transform2d;
-  const painted = <const O extends Three.Which["of"]>(
+  const painted = <const O extends Three.KindOptions["of"]>(
     name: string,
     of: O,
     transform: Three.TransformOf<O>

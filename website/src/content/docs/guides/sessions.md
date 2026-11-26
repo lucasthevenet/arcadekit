@@ -42,7 +42,7 @@ const program = Effect.gen(function* () {
 
 Everything a multiplayer game needs is in `arcadekit/net`, not in `arcadekit`, so a single-player game loads none of it. `Session.make` takes the game, as `App.make` does, and makes the session's app with it. `session.app` has no `tick` and no `dispatch`, since either would move this machine's game alone, so stepping it yourself doesn't compile. Its world, its `enqueue`, its saves and its recordings are an app's. It has no `close` either. `session.close` closes it, as `app.close` closes an app.
 
-Pass each message from another peer to `session.receive(message)`. Usually a [transport](transports-and-relays.md) carries messages both ways and a driver steps the session, so your game never calls these itself. To carry messages some other way, turn them into bytes with `Message.encode` and back with `Message.decode`. `Message.decode` returns an `Exit`, which fails for bytes that aren't a message.
+Pass each message from another peer to `session.receive(message)`. Usually a [transport](transports-and-relays.md) carries messages both ways and a driver steps the session, so your game never calls these itself. To carry messages some other way, turn them into bytes with `Message.encode` and back with `Message.decode`. Each returns an `Exit`, which fails with `Message.Invalid` for what isn't a message.
 
 - Make every peer alike: the same game, the same seed or save, the same `delta` and the same peer names. A peer made with another game, `delta`, names or starting tick stops every peer with `Drift.Unlike`. A different seed shows as `Drift.Drifted`. See [detecting drift](detecting-drift.md).
 - A session begins at whatever tick its app does, so a game can start from a save that every peer loaded.
@@ -83,7 +83,7 @@ Before each tick it isn't sure of, the session captures the game with [`Timeline
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one. A very large world pays that cost on each uncertain tick.
-- When the game can't be captured, because a field holds a value no snapshot can store, the tick doesn't run, and `session.tick()` fails with `Save.SaveRefused`.
+- When the game can't be captured, because a field holds a value no snapshot can store, the tick doesn't run, and `session.tick()` fails with `Save.Refused`.
 
 ## Drive a session
 

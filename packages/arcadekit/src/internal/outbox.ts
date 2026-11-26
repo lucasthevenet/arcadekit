@@ -10,7 +10,7 @@
  * are heard afresh. After a session takes a game back to run the same ticks
  * again, each event of those ticks is heard once.
  */
-import type { EventDef, EventHandle } from "../Event.ts";
+import type { Emitter, Event as EventDef } from "../Event.ts";
 import type { Emitted } from "./eventBus.ts";
 
 const EMPTY: readonly never[] = Object.freeze([]);
@@ -56,7 +56,7 @@ export type Stage = "frame" | "input";
  *
  * @category Models
  */
-export class Listener<P> implements EventHandle<P> {
+export class Listener<P> implements Emitter<P> {
   private readonly outbox: Outbox;
   readonly def: EventDef<P>;
   /** The stage it is a system of, or undefined for outside code. */

@@ -636,7 +636,7 @@ describe("a rollback session", () => {
               expect(Exit.isFailure(exit)).toBe(true);
               const refused = Exit.isFailure(exit) ? exit.cause : undefined;
               expect(String(refused)).toMatch(/rb\/Holder/u);
-              expect(yield* thrown(session.tick())).toThrow(Save.SaveRefused);
+              expect(yield* thrown(session.tick())).toThrow(Save.Refused);
               // The tick did not run.
               expect(app.time.tick).toBe(2);
             })

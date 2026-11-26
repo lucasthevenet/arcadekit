@@ -18,7 +18,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 
 const withApp = <T, A, E = never, E2 = never>(
   make: Effect.Effect<T, E>,
@@ -429,7 +429,7 @@ describe("the Random service", () => {
       });
       const replayOf = (recording: Journal.Recording) => {
         // Through bytes and back, as a save file would be.
-        const loaded = Journal.decode(Journal.encode(recording));
+        const loaded = Journal.decode(unwrap(Journal.encode(recording)));
         if (Exit.isFailure(loaded)) {
           throw new Error("the log did not survive being written down");
         }

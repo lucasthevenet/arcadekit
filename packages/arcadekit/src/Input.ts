@@ -142,7 +142,7 @@ export interface Listener {
  *
  * @category Services
  */
-export interface Source {
+export interface SourceShape {
   /**
    * Starts listening to the devices in the current scope, and stops when that
    * scope closes.
@@ -159,7 +159,7 @@ const NOTHING: Sample = {
 };
 
 /** No devices at all, which differs from devices with nothing pressed. */
-const noSource: Source = {
+const noSource: SourceShape = {
   listen: Effect.succeed({ sample: () => NOTHING }),
 };
 
@@ -185,10 +185,10 @@ const noSource: Source = {
  *
  * @category Services
  */
-export const Source: Context.Reference<Source> = Context.Reference<Source>(
-  "arcadekit/Input.Source",
-  { defaultValue: () => noSource }
-);
+export const Source: Context.Reference<SourceShape> =
+  Context.Reference<SourceShape>("arcadekit/Input.Source", {
+    defaultValue: () => noSource,
+  });
 
 /**
  * Listens to the devices of `Input.Source` in the current scope, and stops
@@ -761,7 +761,7 @@ export const plugin = Plugin.make("arcadekit/Input", {
 // --- bindings: from the devices to the game's own actions -------------------------
 
 type Enqueue = <N extends string, P>(
-  action: Action.ActionDef<N, P>,
+  action: Action.Action<N, P>,
   payload: P
 ) => void;
 
@@ -796,7 +796,7 @@ const binding =
   (among: (devices: Sample) => readonly string[]) =>
   <N extends string, P>(
     codes: string | readonly string[],
-    action: Action.ActionDef<N, P>,
+    action: Action.Action<N, P>,
     ...payload: PayloadArgument<P>
   ): Binding => {
     const watched = typeof codes === "string" ? [codes] : codes;

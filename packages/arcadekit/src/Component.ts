@@ -13,6 +13,36 @@
  * makes.
  */
 import { Component } from "./ecs/component.ts";
+import type { ComponentDef, Schema, Storage } from "./ecs/component.ts";
+import type { RelationDef } from "./ecs/relation.ts";
+
+/**
+ * A component's definition, as `Component.define`, `Component.tag` and
+ * `Component.relation` return it. A query names it as a term, and
+ * `Position.of({ x: 0, y: 0 })` pairs it with a value for `spawn` and `add`.
+ * It is the storage core's `ComponentDef`.
+ *
+ * @typeParam S its fields, by name
+ * @typeParam St where its data is stored
+ * @typeParam N its name, which the compiler reads
+ * @typeParam R the names of the components a spawn or an add of it fills in
+ *
+ * @category Models
+ */
+export type Component<
+  S extends Schema = Schema,
+  St extends Storage = Storage,
+  N extends string = string,
+  R extends string = string,
+> = ComponentDef<S, St, N, R>;
+
+/**
+ * A relation's definition, as `Component.relation` returns it: a component
+ * whose `target` the world keeps track of. `World.sources` takes one.
+ *
+ * @category Models
+ */
+export type Relation = RelationDef;
 
 /**
  * Defines a component with data. Each numeric field is a column of a typed

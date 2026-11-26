@@ -73,7 +73,7 @@ const Forest = Assets.bundle("game/Forest", {
 - The texture is a colour image, in sRGB, unless `prepare` says otherwise.
 - Set the orientation with `flipY`, not in `prepare`. A bitmap is flipped while it is decoded, and Three.js ignores `flipY` on a texture made from a bitmap. `prepare` receives the texture without its `flipY`, so setting it there doesn't compile.
 - The page's `createImageBitmap` decodes the texture, off the page's main thread. Node has no `createImageBitmap`, so textures are for pages.
-- A file that isn't an image fails the bundle, like any asset that can't be created, with an `Assets.AssetFailed` that names the URL.
+- A file that isn't an image fails the bundle, like any asset that can't be created, with an `Assets.Failed` that names the URL.
 
 ## Load a glTF model
 
@@ -118,7 +118,7 @@ const Rocks = Gltf.instances("game/Rocks", {
 
 - A model's animations are loaded but not played. `scene.clone()` doesn't copy a skinned model correctly, so clone one with Three.js's `SkeletonUtils.clone`.
 - The page decodes a model's images, as it does for `Three.texture`, so a model with images is for pages. A model without images loads anywhere.
-- A file that isn't a model fails the bundle with an `Assets.AssetFailed` that says what was wrong with it.
+- A file that isn't a model fails the bundle with an `Assets.Failed` that says what was wrong with it.
 
 A model compressed with DRACO, with the decoder's files in `/draco/`:
 

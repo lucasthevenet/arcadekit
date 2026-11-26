@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Schema } from "effect";
 
 import { idOf } from "../src/ecs/component.ts";
 import { World as EcsWorld } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -16,7 +17,7 @@ import {
   System,
   World,
 } from "../src/index.ts";
-import type { ComponentDef, Entity } from "../src/index.ts";
+import type { Entity } from "../src/index.ts";
 import { thrown } from "./checks.ts";
 
 // Two components with the same fields: a query has to tell them apart.

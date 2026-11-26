@@ -47,7 +47,7 @@ import type { Sim } from "./Services.ts";
  *
  * @category Models
  */
-export interface EventReader<P> {
+export interface Reader<P> {
   /**
    * Returns the events not yet seen through this handle, oldest first. In the
    * tick, they are the events emitted before the code reading them began to
@@ -64,11 +64,11 @@ export interface EventReader<P> {
  *
  * @category Models
  */
-export interface EventHandle<P> extends EventReader<P> {
+export interface Emitter<P> extends Reader<P> {
   /**
    * Queues an event. It is a plain synchronous call, so a query loop can make
    * it. It is a method, so a handle of any payload is an
-   * `EventHandle<unknown>`. An entity in the payload may be one that
+   * `Emitter<unknown>`. An entity in the payload may be one that
    * `Commands.spawn` returned, since the event is read once that entity is
    * placed.
    */
@@ -77,31 +77,25 @@ export interface EventHandle<P> extends EventReader<P> {
 
 /**
  * An event type, as `Event.define` makes it. It is an Effect, and `yield*`
- * returns its `EventReader` in the current app.
+ * returns its `Event.Reader` in the current app.
  *
  * @category Models
  */
-export class EventDef<P> extends Effectable.Class<
-  EventReader<P>,
-  never,
-  Events
-> {
+export class Event<P> extends Effectable.Class<Reader<P>, never, Events> {
   readonly name: string;
   /** Converts a payload to and from JSON. Derived from the event's schema. */
   readonly codec: Schema.Codec<P, unknown>;
-  private effect: Effect.Effect<EventReader<P>, never, Events> | undefined;
-  private emitting:
-    | Effect.Effect<EventHandle<P>, never, Events | Sim>
-    | undefined;
+  private effect: Effect.Effect<Reader<P>, never, Events> | undefined;
+  private emitting: Effect.Effect<Emitter<P>, never, Events | Sim> | undefined;
 
   constructor(name: string, codec: Schema.Codec<P, unknown>) {
     super();
     this.name = name;
     this.codec = codec;
-    defining(this as EventDef<unknown>);
+    defining(this as Event<unknown>);
   }
 
-  asEffect(): Effect.Effect<EventReader<P>, never, Events> {
+  asEffect(): Effect.Effect<Reader<P>, never, Events> {
     return (this.effect ??= Effect.map(Effect.service(Events), (bus) => {
       const handle = bus.handle(this);
       return { read: () => handle.read() };
@@ -113,7 +107,7 @@ export class EventDef<P> extends Effectable.Class<
    * requirements, and a system of the frame or input stage that requires
    * `Sim` doesn't compile.
    */
-  get emits(): Effect.Effect<EventHandle<P>, never, Events | Sim> {
+  get emits(): Effect.Effect<Emitter<P>, never, Events | Sim> {
     return (this.emitting ??= Effect.map(Effect.service(Events), (bus) => {
       if (!(bus instanceof EventBus)) {
         throw new Error(
@@ -140,16 +134,16 @@ export class EventDef<P> extends Effectable.Class<
  *
  * @category Constructors
  */
-export function define(name: string): EventDef<void>;
+export function define(name: string): Event<void>;
 export function define<S extends Schema.Codec<unknown, unknown>>(
   name: string,
   payload: S
-): EventDef<S["Type"]>;
+): Event<S["Type"]>;
 export function define(
   name: string,
   payload: Schema.Codec<unknown, unknown> = Schema.Void
-): EventDef<unknown> {
-  return new EventDef<unknown>(name, Schema.toCodecJson(payload));
+): Event<unknown> {
+  return new Event<unknown>(name, Schema.toCodecJson(payload));
 }
 
 /**
@@ -157,23 +151,23 @@ export function define(
  *
  * @category Errors
  */
-export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
+export class Invalid extends Data.TaggedError("EventInvalid")<{
   readonly event: string;
   /** What was wrong, as the schema reported it. */
   readonly message: string;
 }> {}
 
 const convert = <P, A>(
-  def: EventDef<P>,
+  def: Event<P>,
   run: (codec: Schema.Codec<P, unknown>) => Exit.Exit<A, unknown>
-): Exit.Exit<A, InvalidEvent> => {
+): Exit.Exit<A, Invalid> => {
   const exit = run(def.codec);
   if (Exit.isSuccess(exit)) {
     return Exit.succeed(exit.value);
   }
   const error = Cause.squash(exit.cause);
   return Exit.fail(
-    new InvalidEvent({
+    new Invalid({
       event: def.name,
       message: error instanceof Error ? error.message : String(error),
     })
@@ -182,28 +176,28 @@ const convert = <P, A>(
 
 /**
  * Encodes an event's payload to the JSON form a save holds it in, for a tool
- * or a message to another program. Fails with `InvalidEvent` when the event's
+ * or a message to another program. Fails with `Event.Invalid` when the event's
  * schema rejects the payload.
  *
  * @category Codecs
  */
 export const encode = <P>(
-  def: EventDef<P>,
+  def: Event<P>,
   payload: P
-): Exit.Exit<unknown, InvalidEvent> =>
+): Exit.Exit<unknown, Invalid> =>
   convert(def, (codec) => Schema.encodeUnknownExit(codec)(payload));
 
 /**
  * Decodes an event's payload from its JSON form, and validates it against the
- * event's schema. Fails with `InvalidEvent` when the data doesn't match the
+ * event's schema. Fails with `Event.Invalid` when the data doesn't match the
  * schema.
  *
  * @category Codecs
  */
 export const decode = <P>(
-  def: EventDef<P>,
+  def: Event<P>,
   data: unknown
-): Exit.Exit<P, InvalidEvent> =>
+): Exit.Exit<P, Invalid> =>
   convert(def, (codec) => Schema.decodeUnknownExit(codec)(data));
 
 /**
@@ -225,5 +219,5 @@ export const STORE = "arcadekit/events";
  */
 export interface ReadingEvents {
   /** Returns a handle to an event type, which reads it. */
-  handle<P>(def: EventDef<P>): EventReader<P>;
+  handle<P>(def: Event<P>): Reader<P>;
 }

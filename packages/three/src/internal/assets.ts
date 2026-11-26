@@ -87,7 +87,7 @@ export const texture = (
           return made;
         },
         catch: (error) =>
-          new Assets.AssetFailed({
+          new Assets.Failed({
             url: at,
             message: `It could not be made a texture: ${
               error instanceof Error
@@ -112,7 +112,7 @@ export const texture = (
  */
 export const manager = (
   files: ReadonlyArray<string>
-): Effect.Effect<LoadingManager, Assets.AssetFailed, Scope.Scope> =>
+): Effect.Effect<LoadingManager, Assets.Failed, Scope.Scope> =>
   Effect.gen(function* () {
     const loader = yield* Assets.Loader;
     const fetched = yield* Effect.forEach(files, loader.bytes, {

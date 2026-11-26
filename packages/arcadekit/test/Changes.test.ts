@@ -7,6 +7,7 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/ecs/index.ts";
+import type { ComponentDef } from "../src/ecs/index.ts";
 import type { Terms } from "../src/ecs/query.ts";
 import type { Spawned } from "../src/index.ts";
 import {
@@ -26,7 +27,6 @@ import {
   World,
 } from "../src/index.ts";
 import type {
-  ComponentDef,
   Entity,
   EntityColumn,
   SavedChanges,
@@ -1696,7 +1696,7 @@ describe("change queries in an app", () => {
         expect(
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
         ).toMatchObject({
-          _tag: "LoadRefused",
+          _tag: "SaveLoadRefused",
           problem: "corrupt",
           message: expect.stringContaining(
             'the changes it holds for "ch/Position" name an entity that cannot be'
@@ -1708,7 +1708,7 @@ describe("change queries in an app", () => {
         );
         expect(
           Exit.isFailure(misshapen) ? Cause.squash(misshapen.cause) : undefined
-        ).toMatchObject({ _tag: "LoadRefused", problem: "corrupt" });
+        ).toMatchObject({ _tag: "SaveLoadRefused", problem: "corrupt" });
       })
   );
 });

@@ -43,7 +43,6 @@ import {
   Schedule,
   Scope,
 } from "effect";
-import type { Schema } from "effect";
 import { Socket } from "effect/socket";
 
 import type { Paced } from "../Driver.ts";
@@ -310,7 +309,7 @@ export interface Wire {
  *
  * @category Models
  */
-export interface WireTransport extends Listener {
+export interface OverWire extends Listener {
   /**
    * Stops listening to the wire. `send` and `receive` throw from then on, so
    * a game doesn't wait for messages that can no longer arrive.
@@ -323,11 +322,24 @@ export interface WireTransport extends Listener {
   readonly dropped: number;
 }
 
+/**
+ * The bytes of a message a session made. A session writes every tick and hash
+ * as a whole number and every payload in its JSON form, so one that isn't a
+ * message is a defect.
+ */
+const bytesOf = (message: Message.Message): Uint8Array<ArrayBuffer> => {
+  const bytes = Message.encode(message);
+  if (Exit.isFailure(bytes)) {
+    throw Cause.squash(bytes.cause);
+  }
+  return bytes.value;
+};
+
 /** What a frame from another peer is: a message in bytes, a relay's notice in text, or neither. */
 const arrival = (
   data: string | Uint8Array
 ): Message.Message | Message.Notice | undefined => {
-  const read: Exit.Exit<Message.Message | Message.Notice, Schema.SchemaError> =
+  const read: Exit.Exit<Message.Message | Message.Notice, Message.Invalid> =
     typeof data === "string"
       ? Message.decodeNotice(data)
       : Message.decode(data);
@@ -350,7 +362,7 @@ const arrival = (
  *
  * @category Constructors
  */
-export const fromWire = (wire: Wire): WireTransport => {
+export const fromWire = (wire: Wire): OverWire => {
   let inbox: (Message.Message | Message.Notice)[] = [];
   let dropped = 0;
   let open = true;
@@ -372,7 +384,7 @@ export const fromWire = (wire: Wire): WireTransport => {
   return {
     send(message) {
       use();
-      wire.send(Message.encode(message));
+      wire.send(bytesOf(message));
     },
     receive() {
       use();
@@ -446,7 +458,7 @@ export const layerBroadcastChannel = (
           })
       ),
       (held): Listener => {
-        const use = (): WireTransport => {
+        const use = (): OverWire => {
           if (!held.open) {
             throw new Error(
               `The transport "${name}" was used after it was let go, and its channel closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
@@ -653,7 +665,7 @@ export const layerWebSocket = (
         Effect.forkScoped
       );
 
-      const use = (): WireTransport => {
+      const use = (): OverWire => {
         if (!listening) {
           throw new Error(
             `The transport to ${url} was used after it was let go, and its socket closed: the connection Transport.connect made was closed, or the scope Transport.listen ran in had ended. It would hear nothing for ever: use it through a connection that is open.`
@@ -788,7 +800,7 @@ export const makeHub = (options: HubOptions = {}): Hub => {
           if (cut.has(peer)) {
             return;
           }
-          const encoded = Message.encode(message);
+          const encoded = bytesOf(message);
           for (const [other, theirs] of flights) {
             if (other !== peer && !cut.has(other)) {
               theirs.push({

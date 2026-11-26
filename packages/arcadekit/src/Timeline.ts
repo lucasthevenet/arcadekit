@@ -2,7 +2,7 @@
  * Going back in a game: a moment of it, captured in memory, and the rewind
  * that puts the same app back to it.
  *
- *   const moment = yield* Timeline.capture(app)   // fails with Save.SaveRefused
+ *   const moment = yield* Timeline.capture(app)   // fails with Save.Refused
  *   yield* app.tick(1 / 60)
  *   yield* Timeline.rewind(app, moment)           // the same app, as it was
  *
@@ -83,7 +83,7 @@ const between = (app: Game, call: string, rule: string): void => {
  * their change queries visit everything again after a rewind, unless the
  * rewind is to run the same ticks again.
  *
- * Fails with `Save.SaveRefused` when the world can't be captured: a field
+ * Fails with `Save.Refused` when the world can't be captured: a field
  * holds a value that can't be saved, or commands are queued but not applied.
  *
  * @category Running
@@ -91,7 +91,7 @@ const between = (app: Game, call: string, rule: string): void => {
 export const capture = (
   app: Game,
   options?: { readonly stages?: boolean }
-): Effect.Effect<Moment, Save.SaveRefused> =>
+): Effect.Effect<Moment, Save.Refused> =>
   Effect.suspend(() => {
     between(app, "capture", "A game is captured between ticks.");
     const { time } = app;

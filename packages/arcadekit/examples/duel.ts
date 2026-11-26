@@ -253,7 +253,7 @@ const program = Effect.gen(function* () {
             case "NoSuchFighter": {
               return "refused, that fighter is not in the game";
             }
-            case "InvalidPayload": {
+            case "ActionInvalidPayload": {
               return `refused, malformed move (${error.message})`;
             }
           }
@@ -290,7 +290,7 @@ const program = Effect.gen(function* () {
   // back, it reproduces this game in a fresh one, which checks itself against
   // those hashes as it goes. The replay installs only the rules, so it is
   // silent.
-  const saved = Journal.encode(yield* app.record());
+  const saved = yield* Journal.encode(yield* app.record());
   yield* Console.log(`saved: ${saved.byteLength} bytes`);
   // A fresh app, held in a scope that closes it when the replay is over.
   const replay = Effect.fnUntraced(function* (bytes: Uint8Array) {

@@ -19,7 +19,7 @@ import {
 } from "../src/index.ts";
 import { Layout } from "../src/internal/recording.ts";
 import { Message } from "../src/net/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 
 const Health = Component.define("sc/Health", { hp: Field.i32 });
 
@@ -148,7 +148,7 @@ describe("actions with a schema", () => {
             })
           );
           const error = failure(exit);
-          assert(error._tag === "InvalidPayload");
+          assert(error._tag === "ActionInvalidPayload");
           expect(error.action).toBe("Damage");
           expect(error.message).toMatch(/amount/);
           // The handler never ran, nothing changed, nothing was logged.
@@ -212,10 +212,10 @@ describe("actions with a schema", () => {
         }
         expect(
           failure(yield* Effect.exit(app.dispatchByName("Nope", {})))
-        ).toEqual(Action.UnknownAction.make({ action: "Nope" }));
+        ).toEqual(Action.Unknown.make({ action: "Nope" }));
         expect(
           failure(yield* Effect.exit(app.dispatchByName("constructor", {})))
-        ).toBeInstanceOf(Action.UnknownAction);
+        ).toBeInstanceOf(Action.Unknown);
 
         // A well-formed payload can still be refused by the rules.
         const dead = entityOf(4000);
@@ -300,8 +300,8 @@ describe("actions with a schema", () => {
             yield* app.tick(1);
             expect(world.get(target, Health)).toEqual({ hp: 43 });
             expect(rejected).toEqual([
-              "Damage: InvalidPayload",
-              "Teleport: UnknownAction",
+              "Damage: ActionInvalidPayload",
+              "Teleport: ActionUnknown",
               "Damage: NoSuchTarget",
             ]);
             // A refusal is data: the payload and the error in their JSON form. It
@@ -347,7 +347,7 @@ describe("actions with a schema", () => {
               Option.getOrThrow(invalid as Option.Option<Error>).message
             );
             expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/);
-            expect(moves(app.actionLog)[2]!.refused).toBe("UnknownAction");
+            expect(moves(app.actionLog)[2]!.refused).toBe("ActionUnknown");
             expect(moves(app.actionLog)[3]!.payload).toEqual({
               target,
               amount: 2,
@@ -500,7 +500,7 @@ describe("events with a schema", () => {
       { ...payload, at: new Date(Number.NaN) },
     ]) {
       const error = failure(Event.encode(Hit, bad));
-      expect(error).toBeInstanceOf(Event.InvalidEvent);
+      expect(error).toBeInstanceOf(Event.Invalid);
       expect(error.event).toBe("sc/Hit");
     }
     for (const bad of [
@@ -511,7 +511,7 @@ describe("events with a schema", () => {
       null,
     ]) {
       const error = failure(Event.decode(Hit, bad));
-      expect(error).toBeInstanceOf(Event.InvalidEvent);
+      expect(error).toBeInstanceOf(Event.Invalid);
       expect(error.event).toBe("sc/Hit");
       expect(error.message.length).toBeGreaterThan(0);
     }
@@ -585,13 +585,6 @@ describe("events with a schema", () => {
   );
 });
 
-const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
-  if (Exit.isFailure(exit)) {
-    throw Cause.squash(exit.cause);
-  }
-  return exit.value;
-};
-
 describe("saving and replaying", () => {
   const record = Effect.fnUntraced(function* () {
     return yield* withApp(game, ({ app, world, target }) =>
@@ -610,7 +603,7 @@ describe("saving and replaying", () => {
         yield* app.dispatch(Rename, { name: "x" });
         yield* app.tick(1);
         return {
-          bytes: Journal.encode(yield* app.record()),
+          bytes: unwrap(Journal.encode(yield* app.record())),
           hp: world.get(target, Health)!.hp,
         };
       })
@@ -694,7 +687,7 @@ describe("saving and replaying", () => {
             }
             const save = yield* Effect.exit(app.save());
             assert(Exit.isSuccess(save));
-            return Journal.encode(yield* app.record(save.value));
+            return unwrap(Journal.encode(yield* app.record(save.value)));
           })
         );
       });
@@ -788,7 +781,7 @@ describe("saving and replaying", () => {
     };
     const messageBytes =
       "492103371702b2a5d7db070c010a000302160afeffffff1f18036164611401120003107b226478223a317d0c672f4d6f76651609020361646103626f62c6010008111111111111913f14";
-    expect(hex(Message.encode(message))).toBe(messageBytes);
+    expect(hex(unwrap(Message.encode(message)))).toBe(messageBytes);
     expect(Message.decode(bytesOf(messageBytes))).toEqual(
       Exit.succeed(message)
     );
@@ -808,7 +801,7 @@ describe("saving and replaying", () => {
         { tick: 1, hash: 4_294_967_295 },
       ],
     });
-    expect(hex(Journal.encode(recording.value))).toBe(recordingBytes);
+    expect(hex(unwrap(Journal.encode(recording.value)))).toBe(recordingBytes);
   });
 
   it.effect("stops a replay at the first entry that no longer applies", () =>

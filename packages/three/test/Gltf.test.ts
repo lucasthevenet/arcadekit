@@ -122,7 +122,7 @@ const makeLoader = (files: Readonly<Record<string, Uint8Array | string>>) => {
         const file = Object.hasOwn(files, url) ? files[url] : undefined;
         return file === undefined
           ? Effect.fail(
-              new Assets.AssetFailed({ url, message: "There is no such file." })
+              new Assets.Failed({ url, message: "There is no such file." })
             )
           : Effect.succeed(
               typeof file === "string" ? new TextEncoder().encode(file) : file
@@ -312,24 +312,24 @@ describe("a model", () => {
           }),
         };
         expect((yield* load("/m/tri.gltf", files)).failure).toEqual(
-          new Assets.AssetFailed({
+          new Assets.Failed({
             url: "/m/gone.bin",
             message: "There is no such file.",
           })
         );
         const garbage = (yield* load("/garbage.glb", files))
-          .failure as Assets.AssetFailed;
-        expect(garbage).toBeInstanceOf(Assets.AssetFailed);
+          .failure as Assets.Failed;
+        expect(garbage).toBeInstanceOf(Assets.Failed);
         expect(garbage.url).toBe("/garbage.glb");
         expect(garbage.message).toMatch(/^It is not a glTF model: /u);
         const hollow = (yield* load("/hollow.glb", files))
-          .failure as Assets.AssetFailed;
+          .failure as Assets.Failed;
         expect([hollow.url, hollow.message]).toEqual([
           "/hollow.glb",
           "It is not a glTF model: It is a binary glTF with no JSON in it.",
         ]);
         expect((yield* load("/shapeless.gltf", files)).failure).toEqual(
-          new Assets.AssetFailed({
+          new Assets.Failed({
             url: "/shapeless.gltf",
             message:
               "It is not a glTF model: Its JSON is not a glTF document: its buffers, buffer views or images are not as glTF has them.",
@@ -337,18 +337,17 @@ describe("a model", () => {
         );
         // JSON, and no model: Three.js says what it makes of it.
         const empty = (yield* load("/empty.gltf", files))
-          .failure as Assets.AssetFailed;
-        expect(empty).toBeInstanceOf(Assets.AssetFailed);
+          .failure as Assets.Failed;
+        expect(empty).toBeInstanceOf(Assets.Failed);
         expect(empty.url).toBe("/empty.gltf");
         expect(empty.message).toMatch(/^It could not be made a model: .+/u);
-        const bad = (yield* load("/bad.gltf", files))
-          .failure as Assets.AssetFailed;
+        const bad = (yield* load("/bad.gltf", files)).failure as Assets.Failed;
         expect(bad.url).toBe("/bad.gltf");
         expect(bad.message).toMatch(
           /^A file written into it could not be read: .+/u
         );
         expect((yield* load("/plain.gltf", files)).failure).toEqual(
-          new Assets.AssetFailed({
+          new Assets.Failed({
             url: "/plain.gltf",
             message:
               "A file written into it could not be read: It is a data URI that is not base64.",
@@ -382,7 +381,7 @@ describe("a model", () => {
                     )
                   )
                 )
-              : Effect.callback<Uint8Array, Assets.AssetFailed>(() => {
+              : Effect.callback<Uint8Array, Assets.Failed>(() => {
                   waiting.push(url);
                   return Effect.sync(() => {
                     givenUp.push(url);
@@ -490,7 +489,7 @@ describe("a model", () => {
             },
           }
         );
-        expect(failure).toBeInstanceOf(Assets.AssetFailed);
+        expect(failure).toBeInstanceOf(Assets.Failed);
         expect(failure).toMatchObject({
           url: "/tri.glb",
           message: expect.stringContaining("not made with the manager"),

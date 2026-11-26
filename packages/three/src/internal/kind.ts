@@ -2,7 +2,7 @@ import type { ComponentDef } from "arcadekit/ecs";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
 
-import type { Which } from "../Three.ts";
+import type { KindOptions } from "../Three.ts";
 
 /** The module whose components place the entities of a kind. */
 type Transform = typeof Transform3d | typeof Transform2d;
@@ -42,7 +42,7 @@ export const placedBy = (transform: {
  *
  * @internal
  */
-export const required = (which: Which): readonly ComponentDef[] =>
+export const required = (which: KindOptions): readonly ComponentDef[] =>
   "id" in which.of ? [which.of] : which.of;
 
 /**

@@ -62,7 +62,7 @@ export interface TextureOptions {
  *   it, because a bitmap is flipped when it is decoded and Three.js ignores a
  *   bitmap's `flipY` afterwards.
  * - It is decoded off the page's main thread, with `createImageBitmap`.
- * - A file that isn't an image fails the bundle with `Assets.AssetFailed`,
+ * - A file that isn't an image fails the bundle with `Assets.Failed`,
  *   which names the URL.
  *
  * **Gotchas**
@@ -94,7 +94,7 @@ export const texture: (
  * **Details**
  *
  * - The files are fetched in parallel, and the manager is made once they have
- *   all arrived. A missing file fails with `Assets.AssetFailed`, which names it.
+ *   all arrived. A missing file fails with `Assets.Failed`, which names it.
  * - A loader asks for a file by the URL it resolved: its path, then the name it
  *   was given. The manager matches that URL exactly against the files given.
  * - The files are held until the scope closes.
@@ -110,5 +110,5 @@ export const texture: (
  */
 export const manager: (
   files: ReadonlyArray<string>
-) => Effect.Effect<LoadingManager, Assets.AssetFailed, Scope.Scope> =
+) => Effect.Effect<LoadingManager, Assets.Failed, Scope.Scope> =
   internal.manager;

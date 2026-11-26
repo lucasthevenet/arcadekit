@@ -13,7 +13,7 @@ import { WebSocketServer } from "ws";
 
 import { Input, World } from "../src/index.ts";
 import { Message, Relay, Session, Transport } from "../src/net/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 import { CoinGame, DELTA, moves, players, purseOf } from "./peers.ts";
 import type { Peer } from "./peers.ts";
 
@@ -26,7 +26,8 @@ const bytes = (
   from: string,
   tick: number,
   value = 0
-): Uint8Array<ArrayBuffer> => Message.encode(message(from, tick, value));
+): Uint8Array<ArrayBuffer> =>
+  unwrap(Message.encode(message(from, tick, value)));
 const notice = (told: Message.Notice): string => Message.encodeNotice(told);
 
 /** The messages among what arrived, without the relay's notices. */
@@ -284,12 +285,14 @@ describe("what a member sent", () => {
   });
 
   it("is passed on as the bytes it came in, unchanged, whether in a buffer of their own or a view of a larger one", () => {
-    const sent = Message.encode({
-      ...message("ada", 0, 3),
-      checkpoints: [{ tick: 0, hash: 7 }],
-      made: { game: 3, delta: DELTA, peers: ["ada", "grace"], start: 0 },
-      heard: 0,
-    });
+    const sent = unwrap(
+      Message.encode({
+        ...message("ada", 0, 3),
+        checkpoints: [{ tick: 0, hash: 7 }],
+        made: { game: 3, delta: DELTA, peers: ["ada", "grace"], start: 0 },
+        heard: 0,
+      })
+    );
     const kept = sent.slice();
     const framed = new Uint8Array(sent.byteLength + 8);
     framed.set(sent, 4);
@@ -343,10 +346,12 @@ describe("what a member sent", () => {
   });
 
   it("is refused when it is longer than the relay takes, in bytes", () => {
-    const long = Message.encode({
-      ...message("ada", 1),
-      actions: [{ name: "ls/Tip", payload: "é".repeat(200) }],
-    });
+    const long = unwrap(
+      Message.encode({
+        ...message("ada", 1),
+        actions: [{ name: "ls/Tip", payload: "é".repeat(200) }],
+      })
+    );
     const most = { maxLength: long.byteLength };
     expect(Exit.isSuccess(Relay.forward(ada, long, [ada, grace], most))).toBe(
       true
@@ -367,10 +372,12 @@ describe("what a member sent", () => {
     );
     // 65,536 bytes, unless told.
     expect(Exit.isSuccess(Relay.forward(ada, long, [ada, grace]))).toBe(true);
-    const huge = Message.encode({
-      ...message("ada", 1),
-      actions: [{ name: "ls/Tip", payload: "x".repeat(65_536) }],
-    });
+    const huge = unwrap(
+      Message.encode({
+        ...message("ada", 1),
+        actions: [{ name: "ls/Tip", payload: "x".repeat(65_536) }],
+      })
+    );
     expect(refusal(Relay.forward(ada, huge, [ada, grace])).reason).toBe(
       "too long"
     );

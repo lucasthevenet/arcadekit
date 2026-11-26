@@ -2,7 +2,7 @@
  * A save is a game captured between two ticks, to continue later: its world
  * as a snapshot, which holds everything that decides what the next tick does.
  *
- *   const save = yield* app.save()                 // fails with Save.SaveRefused
+ *   const save = yield* app.save()                 // fails with Save.Refused
  *   const bytes = Save.encode(save)                // for a file or the network
  *
  *   const loaded = yield* Save.decode(bytes)       // fails with Save.LoadRefused
@@ -26,6 +26,7 @@ import { readSnapshot, writeSnapshot } from "./ecs/contents.ts";
 import type { SnapshotContents } from "./ecs/contents.ts";
 import { SnapshotError } from "./ecs/snapshot.ts";
 import type { SnapshotProblem } from "./ecs/snapshot.ts";
+import { loading } from "./internal/save.ts";
 
 /**
  * A game captured between two ticks, which `app.save()` makes: the game's
@@ -63,30 +64,32 @@ export interface Save {
  *
  * @category Errors
  */
-export class SaveRefused extends Data.TaggedError("SaveRefused")<{
+export class Refused extends Data.TaggedError("SaveRefused")<{
   readonly message: string;
 }> {}
 
 /**
  * A save couldn't be loaded. `problem` names the kind of failure:
  *
- * - one of a snapshot's problems, such as `"corrupt"` or `"unknown component"`;
+ * - one of a snapshot's problems that a load meets, such as `"corrupt"` or
+ *   `"unknown component"`;
  * - `"not a save"`: the bytes aren't a saved game at all;
  * - `"older format"`: an earlier version of arcadekit wrote the save, in a
  *   format this version doesn't read;
  * - `"newer version"`: a later version of the game wrote the save;
  * - `"no migration"`: an earlier version wrote it, and the game has no
  *   migration from that version;
- * - `"migration failed"`: a migration threw.
+ * - `"migration failed"`: a migration threw, or left a value that can't be
+ *   saved.
  *
  * An event waiting to be read that this program doesn't define, or one in a
  * form its schema no longer takes, is the snapshot's `"store changed"`.
  *
  * @category Errors
  */
-export class LoadRefused extends Data.TaggedError("LoadRefused")<{
+export class LoadRefused extends Data.TaggedError("SaveLoadRefused")<{
   readonly problem:
-    | SnapshotProblem
+    | Exclude<SnapshotProblem, "world not empty" | "cannot be saved">
     | "not a save"
     | "older format"
     | "newer version"
@@ -146,8 +149,8 @@ export interface Migration {
  *
  * Fails with `LoadRefused`: `"newer version"` for a save from a later version,
  * `"no migration"` when a step is missing, `"migration failed"` when a
- * migration throws, and a snapshot's own problems when the save's world can't
- * be read or written back.
+ * migration throws or leaves a value that can't be saved, and a snapshot's
+ * own problems when the save's world can't be read or written back.
  *
  * @category Migrations
  */
@@ -165,37 +168,48 @@ export const migrate = (
       `The save was written by version ${save.version} of the game, and this is version ${version}. A game cannot read what a later version of itself wrote.`
     );
   }
+  let contents: Contents;
   try {
-    const contents: Contents = {
-      world: readSnapshot(save.world),
-    };
-    for (let from = save.version; from < version; from++) {
-      const step = migrations.find((migration) => migration.from === from);
-      if (step === undefined) {
-        return refuse(
-          "no migration",
-          `The save was written by version ${save.version} of the game, and this is version ${version}. There is no migration from version ${from} to version ${from + 1}.`
-        );
-      }
-      try {
-        step.migrate(contents);
-      } catch (error) {
-        return refuse(
-          "migration failed",
-          `The migration from version ${from} to version ${from + 1} failed: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
+    contents = { world: readSnapshot(save.world) };
+  } catch (error) {
+    if (error instanceof SnapshotError) {
+      return refuse(loading(error), error.message);
     }
+    throw error;
+  }
+  for (let from = save.version; from < version; from++) {
+    const step = migrations.find((migration) => migration.from === from);
+    if (step === undefined) {
+      return refuse(
+        "no migration",
+        `The save was written by version ${save.version} of the game, and this is version ${version}. There is no migration from version ${from} to version ${from + 1}.`
+      );
+    }
+    try {
+      step.migrate(contents);
+    } catch (error) {
+      return refuse(
+        "migration failed",
+        `The migration from version ${from} to version ${from + 1} failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+  try {
     return Exit.succeed({
       version,
       world: writeSnapshot(contents.world),
       logLength: save.logLength,
     });
   } catch (error) {
-    if (error instanceof SnapshotError) {
-      return refuse(error.problem, error.message);
+    if (!(error instanceof SnapshotError)) {
+      throw error;
     }
-    throw error;
+    return error.problem === "cannot be saved"
+      ? refuse(
+          "migration failed",
+          `The migrations from version ${save.version} to version ${version} left a world that can't be written back: ${error.message}`
+        )
+      : refuse(loading(error), error.message);
   }
 };
 

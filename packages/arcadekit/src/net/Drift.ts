@@ -46,7 +46,7 @@ import type { Made } from "./Message.ts";
  *
  * @category Errors
  */
-export class Drifted extends Data.TaggedError("Drifted")<{
+export class Drifted extends Data.TaggedError("DriftDrifted")<{
   /** The tick of the first checkpoint whose hashes differ. */
   readonly tick: number;
   /** The peer that found it, which is this one. */
@@ -95,7 +95,7 @@ const list = (names: readonly string[]): string =>
  *
  * @category Errors
  */
-export class Unlike extends Data.TaggedError("Unlike")<{
+export class Unlike extends Data.TaggedError("DriftUnlike")<{
   /** The peer that found it, which is this one. */
   readonly peer: string;
   /** The peer whose first message said otherwise. */

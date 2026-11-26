@@ -34,9 +34,9 @@ const program = Effect.gen(function* () {
   for (let i = 0; i < 10; i++) {
     yield* game.tick(1 / 60);
   }
-  const bytes = Journal.encode(yield* game.record()); // for a file
+  const bytes = yield* Journal.encode(yield* game.record()); // for a file
 
-  const recording = yield* Journal.decode(bytes); // fails on bytes that aren't one
+  const recording = yield* Journal.decode(bytes); // fails with Journal.Invalid on bytes that aren't one
   // The replay makes its app from how the recorded game began: its seed.
   const again = yield* Effect.acquireRelease(
     Journal.replay(recording, Game, { checkpointEvery: 1 }), // fails with Journal.ReplayDiverged
@@ -86,7 +86,7 @@ Once it has played the last tick, the replay compares its world with the recordi
 
 ```ts sketch
 yield* Journal.replay(recording, Game).pipe(
-  Effect.catchTag("ReplayDiverged", (diverged) =>
+  Effect.catchTag("JournalReplayDiverged", (diverged) =>
     Effect.map(diverged.app.read(World), (world) => /* … */)
   )
 );

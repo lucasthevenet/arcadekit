@@ -18,7 +18,6 @@ export * as Color from "./Color.ts";
 export * as Component from "./Component.ts";
 export * as Driver from "./Driver.ts";
 export type {
-  ComponentDef,
   Entity,
   FieldDef,
   OnTargetDespawn,
@@ -26,7 +25,6 @@ export type {
   RequiredOf,
   SingletonSpec,
 } from "./ecs/component.ts";
-export type { RelationDef } from "./ecs/relation.ts";
 export type { JsonValue } from "./ecs/frozen.ts";
 export type { Rng } from "./ecs/random.ts";
 export type { Placed, Spawned, WithSpawned } from "./ecs/spawned.ts";
