@@ -661,3 +661,56 @@ new RuleTester().run("names", plugin.rules.names, {
     })),
   ],
 });
+
+new RuleTester().run("no-empty-payload", plugin.rules["no-empty-payload"], {
+  valid: [
+    {
+      name: "an action and an event with no payload give no schema",
+      code: `const Pass = Action.define("duel/Pass");\nconst Started = Event.define("game/Started");`,
+    },
+    {
+      name: "an action with no payload and an error gives Schema.Void",
+      code: `const Pass = Action.define("duel/Pass", Schema.Void, { error: Tired });`,
+    },
+    {
+      name: "a payload with fields",
+      code: `const Move = Action.define("duel/Move", Schema.Struct({ dx: Schema.Number }));\nconst Hit = Event.define("duel/Hit", Schema.Struct({ by: Schema.String }));`,
+    },
+    {
+      name: "an empty struct that is no action's or event's payload",
+      code: `const Nothing = Schema.Struct({});\nconst Tag = Singleton.define("duel/Tag", Schema.Struct({}));`,
+    },
+  ],
+  invalid: [
+    {
+      name: "an action with no payload gives an empty struct",
+      code: `const Pass = Action.define("duel/Pass", Schema.Struct({}));`,
+      errors: [
+        {
+          message:
+            /^Schema\.Struct\(\{\}\) is a payload with nothing in it, which every call must still give as \{\}\. Give no schema: Action\.define\("duel\/Pass"\), dispatched as app\.dispatch\(Pass\)\.$/u,
+        },
+      ],
+    },
+    {
+      name: "an event with no payload gives an empty struct",
+      code: `const Started = Event.define("game/Started", Schema.Struct({}));`,
+      errors: [
+        {
+          message:
+            /Give no schema: Event\.define\("game\/Started"\), emitted as emit\(\)\.$/u,
+        },
+      ],
+    },
+    {
+      name: "an action with an error gives an empty struct",
+      code: `const Pass = Action.define("duel/Pass", Schema.Struct({}), { error: Tired });`,
+      errors: [
+        {
+          message:
+            /An action with an error and no payload takes Schema\.Void: Action\.define\("duel\/Pass", Schema\.Void, \{ error \}\), dispatched as app\.dispatch\(Pass\)\.$/u,
+        },
+      ],
+    },
+  ],
+});

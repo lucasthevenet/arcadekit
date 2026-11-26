@@ -11,7 +11,8 @@
 //   is highlighted as TypeScript and nothing compiles it.
 //
 // The blocks are written to `.snippets/`, a folder for each page, and compiled there with the
-// site's own dependencies, which name both packages. An error is reported at the page and line
+// site's own dependencies, which name both packages, and held to the rules of
+// tooling/lint/plugin.ts that a game's code is held to. An error is reported at the page and line
 // it is on. Then the files whose title ends in `.test.ts` are run, with the repository's Vitest:
 // a page that shows a test shows one that passes.
 import { spawnSync } from "node:child_process";
@@ -147,6 +148,39 @@ if (tsc.status !== 0) {
   process.exit(1);
 }
 console.log(`${blocks} blocks of the site's pages compile.`);
+
+// Oxlint walks past a folder whose name starts with a dot, so it is given each file.
+const oxlintrc = path.join(out, ".oxlintrc.json");
+writeFileSync(
+  oxlintrc,
+  JSON.stringify({
+    categories: { correctness: "off" },
+    jsPlugins: [path.join(root, "tooling/lint/plugin.ts")],
+    rules: { "arcadekit/no-empty-payload": "error" },
+  })
+);
+const oxlint = spawnSync(
+  "oxlint",
+  ["-c", oxlintrc, "--format", "unix", ...origins.keys()],
+  { cwd: out, encoding: "utf-8", shell: process.platform === "win32" }
+);
+if (oxlint.status !== 0) {
+  const PROBLEM = /^(?<file>[^:]+):(?<line>\d+):\d+: (?<message>.*)$/u;
+  const problems = `${oxlint.stdout ?? ""}${oxlint.stderr ?? ""}`
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => {
+      const match = PROBLEM.exec(line);
+      const origin =
+        match && originOf(match.groups.file, Number(match.groups.line));
+      return origin ? `${origin}: ${match.groups.message}` : line;
+    });
+  console.error(problems.join("\n"));
+  console.error(
+    `\nThe blocks of the site's pages break a rule of arcadekit's.`
+  );
+  process.exit(1);
+}
 
 const tests = [...origins.keys()].filter((file) => file.endsWith(".test.ts"));
 if (tests.length > 0) {

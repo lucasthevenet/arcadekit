@@ -1,6 +1,6 @@
 // The Oxlint plugin `arcadekit`: the rules of what a file of a published package may import,
-// contain or export. oxlint.config.ts turns them on for packages/*/src, no-outside-state for
-// the benchmarks and examples/ too, and no-run-in-tests for the tests of both.
+// contain or export. oxlint.config.ts turns them on for packages/*/src, no-outside-state and
+// no-empty-payload for the benchmarks and examples/ too, and no-run-in-tests for the tests of both.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 
@@ -1382,6 +1382,59 @@ const names: Rule = {
   },
 };
 
+/** `Action.define` for `Action.define(...)`: the name of a call to a member of a namespace. */
+const dottedName = (callee: Callee): string | undefined =>
+  callee.type === "MemberExpression" &&
+  !callee.computed &&
+  callee.object.type === "Identifier" &&
+  callee.property.type === "Identifier"
+    ? `${callee.object.name}.${callee.property.name}`
+    : undefined;
+
+/** What each definer defines with no payload, and how a game then issues it, with none. */
+const withNone = new Map([
+  [
+    "Action.define",
+    'Action.define("duel/Pass"), dispatched as app.dispatch(Pass)',
+  ],
+  ["Event.define", 'Event.define("game/Started"), emitted as emit()'],
+]);
+
+const noEmptyPayload: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "An action or an event with no payload is defined with no schema, not with Schema.Struct({}).",
+    },
+  },
+  create: (context) => ({
+    CallExpression: (node) => {
+      const name = dottedName(node.callee);
+      const none = name === undefined ? undefined : withNone.get(name);
+      const [, payload, options] = node.arguments;
+      if (
+        none === undefined ||
+        payload?.type !== "CallExpression" ||
+        dottedName(payload.callee) !== "Schema.Struct" ||
+        payload.arguments.length !== 1 ||
+        payload.arguments[0]?.type !== "ObjectExpression" ||
+        payload.arguments[0].properties.length > 0
+      ) {
+        return;
+      }
+      context.report({
+        node: payload,
+        message: `Schema.Struct({}) is a payload with nothing in it, which every call must still give as {}. ${
+          options === undefined
+            ? `Give no schema: ${none}.`
+            : `An action with an error and no payload takes Schema.Void: Action.define("duel/Pass", Schema.Void, { error }), dispatched as app.dispatch(Pass).`
+        }`,
+      });
+    },
+  }),
+};
+
 export default {
   meta: { name: "arcadekit" },
   rules: {
@@ -1394,5 +1447,6 @@ export default {
     "id-casts": idCasts,
     "no-unused-internal": noUnusedInternal,
     names,
+    "no-empty-payload": noEmptyPayload,
   },
 };

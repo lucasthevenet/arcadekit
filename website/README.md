@@ -37,6 +37,7 @@ Every `ts` block of a page under `src/content/docs/` is compiled against the pac
 
 - A block is a program of its own: it imports what it uses.
 - A block with a title, ` ```ts title="rules.ts" `, is that file of its page, and Starlight shows the title over it. Another block of the page can import it by its whole name, `"./rules.ts"`, as the repository's own resolution, `NodeNext`, asks, and a later block with the same title adds to the end of it. So a walkthrough can build a game a file at a time.
+- A block is linted with the rule of the Oxlint plugin `arcadekit`, [`tooling/lint/plugin.ts`](../tooling/lint/plugin.ts), that holds a game's code: `arcadekit/no-empty-payload`, an action or an event with no payload is defined with no schema.
 - A file whose title ends in `.test.ts` is run with Vitest: a page that shows a test shows one that passes.
 - A block fenced ` ```ts sketch ` is a sketch, with `/* … */` where a game's own code goes. It is highlighted as TypeScript and nothing compiles it.
 
