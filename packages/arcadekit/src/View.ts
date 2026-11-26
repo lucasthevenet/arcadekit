@@ -163,7 +163,7 @@ export interface Bridge<
   /**
    * Requests one of the bridge's actions from the game, with its payload. It is
    * issued before the game's next tick, logged, and applied or refused by its
-   * handler, just as a key bound to it would be.
+   * handler, just as one an input system issues for a key would be.
    */
   readonly send: <D extends Action.Any>(
     // Not `D extends Sends`, under which an action of no handler that takes

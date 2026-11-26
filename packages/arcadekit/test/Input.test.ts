@@ -26,9 +26,11 @@ import {
   Random,
   Replay,
   Save,
+  Setting,
   Singleton,
   State,
   System,
+  Test,
   Time,
   Timeline,
   World,
@@ -1217,7 +1219,6 @@ describe("the picture of the devices in the world", () => {
           const pointer = yield* Input.Pointer;
           const pad = yield* Input.Gamepad();
           const other = yield* Input.Gamepad(1);
-          const keys = yield* Input.Keyboard;
           seen = {
             at: [pointer.x, pointer.y],
             main: [pointer.down(), pointer.pressed(), pointer.released()],
@@ -1225,7 +1226,6 @@ describe("the picture of the devices in the world", () => {
             stick: [pad.axis(0), pad.axis(1), pad.axis(2)],
             a: [pad.down(0), pad.pressed(0), pad.released(0)],
             other: [other.axis(0), other.down(0), other.pressed(3)],
-            key: keys.down("Pointer0"),
           };
         });
         const app = yield* App.make(
@@ -1240,7 +1240,6 @@ describe("the picture of the devices in the world", () => {
           stick: [0, 0, 0],
           a: [false, false, false],
           other: [0, false, false],
-          key: false,
         });
         source.move(Input.pointerX, 120);
         source.move(Input.pointerY, 45.5);
@@ -1258,7 +1257,6 @@ describe("the picture of the devices in the world", () => {
           stick: [0, -0.75, 0],
           a: [true, true, false],
           other: [0.5, false, true],
-          key: false,
         });
         source.release(Input.pointerButton(2));
         source.press(Input.pointerButton());
@@ -1273,7 +1271,6 @@ describe("the picture of the devices in the world", () => {
           stick: [0, 0, 0],
           a: [false, false, true],
           other: [0.5, false, false],
-          key: true,
         });
         // The codes are what they say.
         expect([
@@ -1733,20 +1730,23 @@ describe("the picture of the devices in the world", () => {
             `system ${(yield* Time).tick}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
           );
         });
-        // The key is bound to the action, so both arrive in the same tick: the
-        // report first, since the plugin's system runs before the binding.
-        const Controls = Input.bind(
-          "in/ProbeKeys",
-          Input.onPress("Space", Probe, {}),
-          Input.onRelease("Space", Probe, {})
-        );
+        // An input system issues the action when the key goes down or up, so
+        // both arrive in the same tick: the report first, since the plugin's
+        // system runs before the game's.
+        const Key = Input.button("in/ProbeKey", ["Space"]);
+        const Probing = System.input("in/Probing", function* () {
+          const key = yield* Key;
+          if (key.pressed || key.released) {
+            (yield* Action.Actions).enqueue(Probe, {});
+          }
+        });
         const source = Input.makeManualSource();
         yield* Effect.gen(function* () {
           const app = yield* App.make(
             App.define({
-              plugins: [Input.plugin],
+              plugins: [Input.controls("in/ProbeKeys", [Key])],
               handlers: [probe],
-              systems: [Controls, Look],
+              systems: [Probing, Look],
             })
           );
           const step = Effect.fnUntraced(function* () {
@@ -2115,57 +2115,548 @@ describe("the picture of the devices in the world", () => {
   );
 });
 
-describe("bindings", () => {
-  const Jump = Action.define("in/Jump");
-  const Land = Action.define("in/Land", Schema.Struct({}));
+describe("controls", () => {
+  const Jump = Input.button("in/Jump", [
+    "Space",
+    "KeyW",
+    Input.padButton(0, 0),
+  ]);
+  const Steer = Input.axis("in/Steer", {
+    negative: ["ArrowLeft"],
+    positive: ["ArrowRight"],
+    pad: Input.padAxis(0, 0),
+  });
+  const Move = Input.stick("in/Move", {
+    left: ["KeyA"],
+    right: ["KeyD"],
+    up: ["KeyW"],
+    down: ["KeyS"],
+    pad: Input.padStick(0, "left"),
+  });
+  const Controls = Input.controls("in/Controls", [Jump, Steer, Move]);
+  /** A button's state in a tick, in a form that compares. */
+  const said = (tick: number, state: Input.ButtonState): string =>
+    `${tick}:${state.held ? " held" : ""}${state.pressed ? " pressed" : ""}${state.released ? " released" : ""}`;
+  const rounded = (values: readonly number[]): number[] =>
+    values.map((value) => Math.round(value * 1000) / 1000);
+
+  it("are read where an Input.controls declares them, are named with a slash, and are bound to codes that are codes", () => {
+    const reads = [
+      System.tick("in/Tick", function* () {
+        void (yield* Jump).held;
+      }),
+      System.frame("in/Frame", function* () {
+        void (yield* Steer);
+      }),
+      System.input("in/Input", function* () {
+        void (yield* Move).x;
+      }),
+    ] as const;
+    for (const system of reads) {
+      // Input.plugin keeps the devices, and declares no control.
+      expectTypeOf(
+        App.make(App.define({ plugins: [Input.plugin], systems: [system] }))
+      ).not.toExtend<Effect.Effect<unknown, never>>();
+      expectTypeOf(
+        App.make(App.define({ plugins: [Controls], systems: [system] }))
+      ).toExtend<Effect.Effect<unknown, never>>();
+    }
+    const Probe = Action.define("in/ProbeJump", Schema.Struct({}));
+    const probe = Action.handler(Probe, function* () {
+      void (yield* Jump).pressed;
+    });
+    expectTypeOf(
+      App.make(App.define({ plugins: [Input.plugin], handlers: [probe] }))
+    ).not.toExtend<Effect.Effect<unknown, never>>();
+    expectTypeOf(
+      App.make(App.define({ plugins: [Controls], handlers: [probe] }))
+    ).toExtend<Effect.Effect<unknown, never>>();
+    expectTypeOf(Jump).toExtend<
+      Effect.Effect<Input.ButtonState, never, Input.Declared<"in/Jump">>
+    >();
+    expectTypeOf(Move).toExtend<
+      Effect.Effect<Input.StickState, never, Input.Declared<"in/Move">>
+    >();
+    // A name is its feature and what it is, and a code is one a device has.
+    const refused = [
+      // @ts-expect-error a name with no slash
+      Input.button("Jump", ["Space"]),
+      Input.button("in/Typo", [
+        // @ts-expect-error a key's code spelt wrong
+        "Spce",
+      ]),
+      Input.axis("in/Typo", {
+        // @ts-expect-error the pointer's place is no gamepad's axis
+        pad: Input.pointerX,
+      }),
+      Input.rebind(
+        Steer,
+        // @ts-expect-error an axis is not bound to a list of codes
+        ["KeyK"]
+      ),
+    ];
+    expect(refused.length).toBe(4);
+    const source = Input.makeManualSource();
+    // @ts-expect-error a key's code spelt wrong
+    source.press("Arrowleft");
+    System.tick("in/Keys", function* () {
+      const keys = yield* Input.Keyboard;
+      // @ts-expect-error a pointer's button is no key
+      return keys.down(Input.pointerButton()) ? undefined : undefined;
+    });
+    expect([
+      Input.isKeyCode("Space"),
+      Input.isKeyCode("Spce"),
+      Input.isKeyCode("Pointer0"),
+      Input.isKeyCode(""),
+    ]).toEqual([true, false, false, false]);
+    expect(Input.padStick(1, "right")).toEqual({
+      x: "Pad1Axis2",
+      y: "Pad1Axis3",
+    });
+    // Rebinding is a setting, which the tick doesn't touch, and takes the
+    // control's own bindings.
+    System.tick(
+      "in/Rebind",
+      // @ts-expect-error the tick does not rebind
+      function* () {
+        yield* Input.rebind(Jump, ["KeyK"]);
+      }
+    );
+  });
+
+  it.effect(
+    "hold a button while any of its codes is down, and press and release it once, as the tick sees it",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          const seen: string[] = [];
+          const Look = System.tick("in/Look", function* () {
+            seen.push(said((yield* Time).tick, yield* Jump));
+          });
+          const app = yield* App.make(
+            App.define({ plugins: [Controls], systems: [Look] }),
+            { hashEvery: 0 }
+          );
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          yield* step();
+          source.press("Space");
+          yield* step();
+          // A second of its codes, while the first is held, is no new press.
+          source.press("KeyW");
+          yield* step();
+          // Nor is letting go of one while the other is held a release.
+          source.release("Space");
+          yield* step();
+          source.release("KeyW");
+          yield* step();
+          source.tap(Input.padButton(0, 0));
+          yield* step();
+          yield* step();
+          // Let go and pressed again between two samples: it went up, it went
+          // down, and it is held.
+          source.press("Space");
+          yield* step();
+          source.release("Space");
+          source.press("Space");
+          yield* step();
+          expect(seen).toEqual([
+            "1:",
+            "2: held pressed",
+            "3: held",
+            "4: held",
+            "5: released",
+            "6: pressed released",
+            "7:",
+            "8: held pressed",
+            "9: held pressed released",
+          ]);
+          // In the log by its name, beside the device's own code.
+          expect(reports(app).slice(0, 2)).toEqual([
+            { down: ["Space", "in/Jump"] },
+            { down: ["KeyW"], axes: { "in/Move.y": 1 } },
+          ]);
+          // A report from elsewhere drives it, with no input stage run.
+          const bare = yield* App.make(
+            App.define({ plugins: [Controls], systems: [Look] })
+          );
+          seen.length = 0;
+          yield* bare.dispatch(Input.Report, { down: ["in/Jump"] });
+          yield* bare.tick(1);
+          expect(seen).toEqual(["1: held pressed"]);
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
+    "give an axis from -1 to 1, and a stick of length 1 at most with y up, from keys and a gamepad",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          const seen: number[][] = [];
+          const Look = System.tick("in/Look", function* () {
+            const move = yield* Move;
+            seen.push(rounded([yield* Steer, move.x, move.y]));
+          });
+          const app = yield* App.make(
+            App.define({ plugins: [Controls], systems: [Look] })
+          );
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          const pad = Input.padStick(0, "left");
+          const moves: (() => void)[] = [
+            () => {},
+            () => source.press("ArrowRight"),
+            // Both ways at once is neither.
+            () => source.press("ArrowLeft"),
+            () => {
+              source.releaseAll();
+              source.move(pad.x, 0.5);
+            },
+            // Inside the stick's dead zone, which the axis has not.
+            () => source.move(pad.x, 0.1),
+            // A gamepad's up is -1, and a stick's is 1.
+            () => {
+              source.move(pad.x, 0);
+              source.move(pad.y, -1);
+            },
+            // Two keys at once are a diagonal of length 1.
+            () => {
+              source.move(pad.y, 0);
+              source.press("KeyD");
+              source.press("KeyW");
+            },
+            // The keys and the gamepad together go no further than 1.
+            () => {
+              source.release("KeyW");
+              source.move(pad.x, 1);
+            },
+          ];
+          for (const move of moves) {
+            move();
+            yield* step();
+          }
+          expect(seen).toEqual([
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 0, 0],
+            [0.5, 0.375, 0],
+            [0.1, 0, 0],
+            [0, 0, 1],
+            [0, 0.707, 0.707],
+            [1, 1, 0],
+          ]);
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
+    "are read by every stage: the tick in its tick, a frame since the last frame, and the input stage from its sample",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          const seen: string[] = [];
+          const Flash = System.frame("in/Flash", function* () {
+            const jump = yield* Jump;
+            const { count } = yield* Frame;
+            seen.push(`frame ${count}${jump.pressed ? " pressed" : ""}`);
+          });
+          const Hear = System.input("in/Hear", function* () {
+            const jump = yield* Jump;
+            const pointer = yield* Input.Pointer;
+            seen.push(
+              `input${jump.held ? " held" : ""}${jump.pressed ? " pressed" : ""} ${pointer.x},${pointer.y}`
+            );
+          });
+          const Look = System.tick("in/Look", function* () {
+            seen.push(said((yield* Time).tick, yield* Jump));
+          });
+          const app = yield* App.make(
+            App.define({ plugins: [Controls], systems: [Look, Hear, Flash] })
+          );
+          source.press("KeyW");
+          source.move(Input.pointerX, 12);
+          source.move(Input.pointerY, 34);
+          yield* app.input();
+          yield* app.tick(1);
+          yield* app.frame(0.3);
+          yield* app.frame(0.6);
+          yield* app.input();
+          yield* app.tick(1);
+          yield* app.frame();
+          expect(seen).toEqual([
+            // The input stage reads the sample it was given, ahead of the
+            // world, which hears of it at the next tick.
+            "input held pressed 12,34",
+            "1: held pressed",
+            "frame 1 pressed",
+            "frame 2",
+            "input held 12,34",
+            "2: held",
+            "frame 3",
+          ]);
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
+    "are rebound by a frame or an input system from the next sample on, for one app, outside the world",
+    () =>
+      Effect.gen(function* () {
+        const shown: string[] = [];
+        const Settings = System.input("in/Settings", function* () {
+          const { pressed } = yield* Input.Devices;
+          if (pressed.includes("Enter")) {
+            yield* Input.rebind(Jump, ["KeyK"]);
+          }
+          if (pressed.includes("Escape")) {
+            yield* Input.rebind(Jump, Jump.bindings);
+          }
+          shown.push((yield* Input.bindingsOf(Jump)).join(" "));
+        });
+        const seen: string[] = [];
+        const Look = System.tick("in/Look", function* () {
+          seen.push(said((yield* Time).tick, yield* Jump));
+        });
+        const Game = App.define({
+          plugins: [Controls],
+          systems: [Settings, Look],
+        });
+        // The same game with no menu to rebind it.
+        const Plain = App.define({ plugins: [Controls], systems: [Look] });
+        const source = Input.makeManualSource();
+        const other = Input.makeManualSource();
+        const app = yield* App.make(Game, { hashEvery: 0 }).pipe(
+          withSource(source)
+        );
+        const plain = yield* App.make(Plain, { hashEvery: 0 }).pipe(
+          withSource(other)
+        );
+        const step = Effect.fnUntraced(function* () {
+          for (const each of [app, plain]) {
+            yield* each.input();
+            yield* each.tick(1);
+          }
+        });
+        source.tap("Enter");
+        other.tap("Enter");
+        yield* step();
+        // The world, the log and a save know nothing of it.
+        expect(shown).toEqual(["KeyK"]);
+        expect(yield* hashOf(app)).toBe(yield* hashOf(plain));
+        expect(reports(app)).toEqual(reports(plain));
+        // The key it is bound to now holds it, in this app alone.
+        seen.length = 0;
+        source.tap("KeyK");
+        other.tap("KeyK");
+        yield* step();
+        source.tap("Space");
+        other.tap("Space");
+        yield* step();
+        expect(seen).toEqual([
+          "2: pressed released",
+          "2:",
+          "3:",
+          "3: pressed released",
+        ]);
+        // A save holds none of it: another app of the game, loaded from it,
+        // is bound as declared.
+        const taken = yield* Effect.exit(Save.make(app));
+        assert(Exit.isSuccess(taken));
+        const loaded = yield* App.make(Game, { save: taken.value }).pipe(
+          withSource(other)
+        );
+        shown.length = 0;
+        yield* loaded.input();
+        expect(shown).toEqual(["Space KeyW Pad0Button0"]);
+        // And the bindings it was declared with are put back.
+        seen.length = 0;
+        source.tap("Escape");
+        yield* app.input();
+        yield* app.tick(1);
+        source.tap("Space");
+        yield* app.input();
+        yield* app.tick(1);
+        expect(seen).toEqual(["4:", "5: pressed released"]);
+      })
+  );
+
+  it.effect(
+    "refuse two controls of one name, or a stick and an axis that keep the same state",
+    () =>
+      Effect.gen(function* () {
+        const Again = Input.button("in/Jump", ["KeyZ"]);
+        expect(
+          yield* thrown(
+            App.make(
+              App.define({
+                plugins: [Controls, Input.controls("in/More", [Again])],
+              })
+            )
+          )
+        ).toThrow(
+          'The control "in/Jump" was declared where "in/Jump" already was'
+        );
+        const Half = Input.axis("in/Move.x", { positive: ["KeyZ"] });
+        expect(
+          yield* thrown(
+            App.make(
+              App.define({
+                plugins: [Controls, Input.controls("in/Half", [Half])],
+              })
+            )
+          )
+        ).toThrow(
+          'The control "in/Move.x" was declared where "in/Move" already was'
+        );
+      })
+  );
+});
+
+describe("an input system", () => {
+  const Leap = Action.define("in/Leap");
   const Fire = Action.define(
     "in/Fire",
     Schema.Struct({ x: Schema.Finite, y: Schema.Finite })
   );
-  const Aim = Action.define("in/Aim", Schema.Struct({ x: Schema.Finite }));
   const done: string[] = [];
   const handlers = [
-    Action.handler(Jump, function* () {
-      done.push(`jump at ${(yield* Time).tick}`);
-    }),
-    Action.handler(Land, function* () {
-      done.push("land");
+    Action.handler(Leap, function* () {
+      done.push(`leap at ${(yield* Time).tick}`);
     }),
     Action.handler(Fire, function* ({ x, y }) {
       done.push(`fire ${x},${y}`);
     }),
-    Action.handler(Aim, function* ({ x }) {
-      done.push(`aim ${x}`);
-    }),
   ] as const;
-  const Controls = Input.bind(
-    "in/Controls",
-    Input.onPress(["Space", Input.padButton(0, 0)], Jump),
-    Input.onRelease("Space", Land, {}),
-    Input.onPress(Input.pointerButton(), Fire, (devices) => ({
-      x: devices.axes.get(Input.pointerX) ?? 0,
-      y: devices.axes.get(Input.pointerY) ?? 0,
-    })),
-    Input.onMove([Input.pointerX, Input.padAxis(0, 0)], Aim, (devices) => ({
-      x: devices.axes.get(Input.pointerX) ?? 0,
-    }))
-  );
-  const Game = Plugin.make("Game", { handlers, systems: [Controls] });
+  const Jump = Input.button("in/Jump", ["Space", Input.padButton(0, 0)]);
+  const Shoot = Input.button("in/Shoot", [Input.pointerButton()]);
+  // What a game of several players does with its controls: issues actions of
+  // its own, which can carry the player.
+  const Issue = System.input("in/Issue", function* () {
+    const actions = yield* Action.Actions;
+    if ((yield* Jump).pressed) {
+      actions.enqueue(Leap, undefined);
+    }
+    if ((yield* Shoot).pressed) {
+      const pointer = yield* Input.Pointer;
+      actions.enqueue(Fire, { x: pointer.x, y: pointer.y });
+    }
+  });
+  const Keys = Input.controls("in/Keys", [Jump, Shoot]);
+  const Game = Plugin.make("Game", {
+    plugins: [Keys],
+    handlers,
+    systems: [Issue],
+  });
+  const issued = (app: App.Any): string[] =>
+    app.actionLog.flatMap((entry) =>
+      Action.isHashCheck(entry) || entry.name === Input.Report.name
+        ? []
+        : [entry.name]
+    );
 
   it.effect(
-    "throw for a payload the action's schema refuses, which no other peer could hear of",
+    "issues the game's own actions from its controls, once for each press",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          done.length = 0;
+          const app = yield* App.make(App.define({ plugins: [Game] }), {
+            hashEvery: 0,
+          });
+          expect(app.inputOrder).toEqual(["arcadekit/Input.Read", "in/Issue"]);
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          yield* step();
+          expect(done).toEqual([]);
+          // Two of its codes at once is one press.
+          source.press("Space");
+          source.press(Input.padButton(0, 0));
+          yield* step();
+          expect(done).toEqual(["leap at 1"]);
+          // One let go while the other is held, then tapped again: nothing
+          // more.
+          source.release("Space");
+          yield* step();
+          source.tap("Space");
+          yield* step();
+          expect(done.length).toBe(1);
+          source.release(Input.padButton(0, 0));
+          source.move(Input.pointerX, 40);
+          source.move(Input.pointerY, 30);
+          source.press(Input.pointerButton());
+          yield* step();
+          expect(done.slice(1)).toEqual(["fire 40,30"]);
+          // A button of the pointer that is not the main one fires nothing.
+          source.press(Input.pointerButton(1));
+          yield* step();
+          expect(done.length).toBe(2);
+          source.tap("Space");
+          yield* step();
+          expect(done.slice(2)).toEqual(["leap at 6"]);
+          expect(issued(app)).toEqual(["in/Leap", "in/Fire", "in/Leap"]);
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
+    "is in the log as the actions it issued, so a replay has them and reads no device",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        const recording = yield* Effect.gen(function* () {
+          done.length = 0;
+          const app = yield* App.make(App.define({ plugins: [Game] }), {
+            hashEvery: 1,
+          });
+          source.press("Space");
+          source.move(Input.pointerX, 7);
+          yield* app.input();
+          yield* app.tick(1);
+          source.tap(Input.pointerButton());
+          yield* app.input();
+          yield* app.tick(1);
+          return yield* Replay.record(app);
+        }).pipe(withSource(source));
+        const played = [...done];
+        expect(played).toEqual(["leap at 0", "fire 7,0"]);
+        done.length = 0;
+        // The replay runs no input stage: what the controls said, and the
+        // actions issued from them, are in the log.
+        yield* Replay.verify(recording, App.define({ plugins: [Game] }), {
+          hashEvery: 1,
+        });
+        expect(done).toEqual(played);
+      })
+  );
+
+  it.effect(
+    "throws for a payload the action's schema refuses, which no other peer could hear of",
     () =>
       Effect.gen(function* () {
         const Step = Action.define(
           "in/Step",
           Schema.Struct({ by: Schema.Int })
         );
-        const Walk = Input.bind(
-          "in/Walk",
-          Input.onMove(Input.pointerX, Step, (devices) => ({
-            by: devices.axes.get(Input.pointerX) ?? 0,
-          }))
-        );
+        const Walk = System.input("in/Walk", function* () {
+          const devices = yield* Input.Devices;
+          if (devices.moved.includes(Input.pointerX)) {
+            (yield* Action.Actions).enqueue(Step, {
+              by: devices.axes.get(Input.pointerX) ?? 0,
+            });
+          }
+        });
         const source = Input.makeManualSource();
         yield* Effect.gen(function* () {
           const app = yield* App.make(
@@ -2184,137 +2675,256 @@ describe("bindings", () => {
       })
   );
 
-  it.effect(
-    "issue the game's own actions when their moment comes, once each, in the order they were given",
-    () =>
-      Effect.gen(function* () {
-        const source = Input.makeManualSource();
-        yield* Effect.gen(function* () {
-          done.length = 0;
-          const app = yield* App.make(App.define({ plugins: [Game] }), {
-            hashEvery: 0,
-          });
-          expect(app.inputOrder).toEqual(["in/Controls"]);
-          const step = Effect.fnUntraced(function* () {
-            yield* app.input();
-            yield* app.tick(1);
-          });
-          yield* step();
-          expect(done).toEqual([]);
-          // Two of its codes at once is one press.
-          source.press("Space");
-          source.press(Input.padButton(0, 0));
-          yield* step();
-          expect(done).toEqual(["jump at 1"]);
-          // Held: nothing more.
-          yield* step();
-          expect(done.length).toBe(1);
-          source.release("Space");
-          source.move(Input.pointerX, 40);
-          source.move(Input.pointerY, 30);
-          source.press(Input.pointerButton());
-          yield* step();
-          expect(done.slice(1)).toEqual(["land", "fire 40,30", "aim 40"]);
-          // An axis nobody is bound to moves nothing, and a button of the
-          // pointer that is not the main one fires nothing.
-          source.move(Input.pointerY, 31);
-          source.press(Input.pointerButton(1));
-          source.release(Input.padButton(0, 0));
-          yield* step();
-          expect(done.length).toBe(4);
-          // A tap is a press and a release.
-          source.tap("Space");
-          yield* step();
-          expect(done.slice(4)).toEqual(["jump at 5", "land"]);
-          expect(
-            app.actionLog.map((entry) =>
-              Action.isHashCheck(entry) ? "?" : entry.name
-            )
-          ).toEqual([
-            "in/Jump",
-            "in/Land",
-            "in/Fire",
-            "in/Aim",
-            "in/Jump",
-            "in/Land",
-          ]);
-        }).pipe(withSource(source));
-      })
-  );
-
-  it.effect(
-    "are in the log as those actions, so a replay has them and reads no device",
-    () =>
-      Effect.gen(function* () {
-        const source = Input.makeManualSource();
-        const recording = yield* Effect.gen(function* () {
-          done.length = 0;
-          const app = yield* App.make(App.define({ plugins: [Game] }), {
-            hashEvery: 1,
-          });
-          source.press("Space");
-          source.move(Input.pointerX, 7);
-          yield* app.input();
-          yield* app.tick(1);
-          source.tap(Input.pointerButton());
-          yield* app.input();
-          yield* app.tick(1);
-          return yield* Replay.record(app);
-        }).pipe(withSource(source));
-        const { log } = recording;
-        const played = [...done];
-        expect(played).toEqual(["jump at 0", "aim 7", "fire 7,0"]);
-        expect(log.filter((entry) => !Action.isHashCheck(entry))).toEqual([
-          { tick: 0, name: "in/Jump", payload: null, queued: true },
-          { tick: 0, name: "in/Aim", payload: { x: 7 }, queued: true },
-          { tick: 1, name: "in/Fire", payload: { x: 7, y: 0 }, queued: true },
-        ]);
-        done.length = 0;
-        // The same handlers, and nothing that listens to a device.
-        const again = yield* Replay.verify(
-          recording,
-          App.define({ handlers }),
-          { hashEvery: 1 }
-        );
-        expect(again.inputOrder).toEqual([]);
-        expect(done).toEqual(played);
-      })
-  );
-
-  it.effect("say so when the action they are bound to has no handler", () =>
+  it.effect("says so when the action it issues has no handler", () =>
     Effect.gen(function* () {
       const source = Input.makeManualSource();
       yield* Effect.gen(function* () {
-        const app = yield* App.make(App.define({ systems: [Controls] }));
+        const app = yield* App.make(
+          App.define({ plugins: [Keys], systems: [Issue] })
+        );
         yield* app.input();
         source.press("Space");
         expect(yield* thrown(app.input())).toThrow(
-          /No handler for action "in\/Jump"/
+          /No handler for action "in\/Leap"/
         );
       }).pipe(withSource(source));
     })
   );
+});
 
-  it("take a payload that the compiler checks against the action", () => {
-    expectTypeOf(
-      Input.onPress("KeyF", Fire, { x: 1, y: 2 })
-    ).toEqualTypeOf<Input.Binding>();
-    expectTypeOf(Input.onPress("KeyJ", Jump)).toEqualTypeOf<Input.Binding>();
-    Input.onPress(
-      "KeyF",
-      Fire,
-      // @ts-expect-error a payload that is not the action's
-      { x: 1 }
-    );
-    // @ts-expect-error an action with a payload needs one
-    Input.onPress("KeyF", Fire);
-    Input.onMove(
-      Input.pointerX,
-      Aim,
-      // @ts-expect-error a function that gives something else
-      () => ({ y: 1 })
-    );
+describe("a platformer", () => {
+  const Jump = Input.button("pf/Jump", ["Space", Input.padButton(0, 0)]);
+  const Move = Input.axis("pf/Move", {
+    negative: ["ArrowLeft", "KeyA"],
+    positive: ["ArrowRight", "KeyD"],
+    pad: Input.padAxis(0, 0),
   });
+  const Hero = Singleton.define(
+    "pf/Hero",
+    { x: Field.f64, y: Field.f64, rise: Field.f64, jumps: Field.i32 },
+    { x: 0, y: 0, rise: 0, jumps: 0 }
+  );
+  // The rules read what the player does, and no key.
+  const Run = System.tick("pf/Run", function* () {
+    const hero = yield* Hero.writes;
+    const { delta } = yield* Time;
+    hero.x += 6 * (yield* Move) * delta;
+    if ((yield* Jump).pressed && hero.y === 0) {
+      hero.rise = 12;
+      hero.jumps += 1;
+    }
+    hero.rise -= 30 * delta;
+    hero.y = Math.max(0, hero.y + hero.rise * delta);
+    if (hero.y === 0) {
+      hero.rise = 0;
+    }
+  });
+  // What draws it flashes once for each press of the jump.
+  const flashes: number[] = [];
+  const Flash = System.frame("pf/Flash", function* () {
+    if ((yield* Jump).pressed) {
+      flashes.push((yield* Frame).count);
+    }
+  });
+  // A settings menu: R, then the key the jump is to be, with the pad's B.
+  const Menu = System.local(() => ({ asking: false }));
+  const Settings = System.input("pf/Settings", function* () {
+    const menu = yield* Menu;
+    const { pressed } = yield* Input.Devices;
+    if (!menu.asking) {
+      menu.asking = pressed.includes("KeyR");
+      return;
+    }
+    const key = pressed.find(Input.isKeyCode);
+    if (key !== undefined) {
+      yield* Input.rebind(Jump, [key, Input.padButton(0, 1)]);
+      menu.asking = false;
+    }
+  });
+  const Controls = Input.controls("pf/Controls", [Jump, Move]);
+  const Platformer = App.define({
+    plugins: [Controls],
+    systems: [Run, Flash, Settings],
+  });
+
+  it.effect(
+    "is rebound by code outside its systems, as a settings menu is, and keeps its keys in a setting across a reload",
+    () =>
+      Effect.gen(function* () {
+        // The page keeps the jump's keys in a setting, in their JSON form.
+        const JumpKeys = Setting.define(
+          "pf/JumpKeys",
+          Jump.schema,
+          Jump.bindings
+        );
+        const store = Setting.makeMemory();
+        // What a page does when its game starts: the keys it kept, applied.
+        const start = Effect.fnUntraced(function* () {
+          const game = yield* Test.make(Platformer, { seed: 3 });
+          const settings = Input.settingsOf(game.app, Controls);
+          yield* settings.rebind(Jump, yield* JumpKeys);
+          return { game, settings };
+        });
+        const jumped = Effect.fnUntraced(function* (
+          game: Effect.Success<ReturnType<typeof start>>["game"],
+          code: Input.ButtonCode
+        ) {
+          const before = (yield* game.app.read(Hero)).jumps;
+          game.input.tap(code);
+          for (let i = 0; i < 60; i++) {
+            yield* game.step();
+          }
+          return (yield* game.app.read(Hero)).jumps > before;
+        });
+        const { game, settings } = yield* start().pipe(
+          Effect.provide(Setting.layer(store))
+        );
+        expect(yield* settings.bindingsOf(Jump)).toEqual(Jump.bindings);
+        // The page's menu, which runs in no system, makes K the jump, and
+        // keeps it. The game itself holds none of it.
+        const hash = yield* hashOf(game.app);
+        yield* settings.rebind(Jump, ["KeyK"]);
+        yield* Setting.set(JumpKeys, ["KeyK"]).pipe(
+          Effect.provide(Setting.layer(store))
+        );
+        expect(yield* hashOf(game.app)).toBe(hash);
+        expect(store.get("pf/JumpKeys")).toBe('["KeyK"]');
+        expect(yield* jumped(game, "KeyK")).toBe(true);
+        expect(yield* jumped(game, "Space")).toBe(false);
+        // A reload: a new app, given what the store kept.
+        const next = yield* start().pipe(Effect.provide(Setting.layer(store)));
+        expect(yield* next.settings.bindingsOf(Jump)).toEqual(["KeyK"]);
+        expect(yield* jumped(next.game, "KeyK")).toBe(true);
+        expect(yield* jumped(next.game, "Space")).toBe(false);
+        // A kept text the schema refuses, a key that is none, is the keys
+        // the control was declared with.
+        const spelt = Setting.makeMemory({ "pf/JumpKeys": '["Spce"]' });
+        expect(
+          yield* Effect.provide(JumpKeys.asEffect(), Setting.layer(spelt))
+        ).toEqual(Jump.bindings);
+        // What the game's own menu, an input system, rebinds is what the
+        // page's reads.
+        expect(yield* settings.bindingsOf(Move)).toEqual(Move.bindings);
+        game.input.tap("KeyR");
+        yield* game.step();
+        game.input.tap("KeyX");
+        yield* game.step();
+        expect(yield* settings.bindingsOf(Jump)).toEqual([
+          "KeyX",
+          Input.padButton(0, 1),
+        ]);
+        // It takes only the controls the plugin declares, and an app made
+        // with the plugin.
+        const Other = Input.button("pf/Other", ["KeyO"]);
+        const refused = [
+          // @ts-expect-error a control the plugin does not declare
+          settings.rebind(Other, ["KeyO"]),
+          settings.rebind(
+            Move,
+            // @ts-expect-error a stick is not bound to a list of codes
+            ["KeyO"]
+          ),
+        ];
+        expect(refused.length).toBe(2);
+        const bare = yield* App.make(App.define({}));
+        expect(() => Input.settingsOf(bare, Controls)).toThrow(
+          'Input.settingsOf was given an app without the plugin "pf/Controls"'
+        );
+      })
+  );
+
+  it.effect(
+    "runs and jumps from keys and a pad, is rebound while it runs, flashes once a jump, and replays to the same hash",
+    () =>
+      Effect.gen(function* () {
+        flashes.length = 0;
+        const game = yield* Test.make(Platformer, { seed: 3 });
+        const hero = Effect.fnUntraced(function* () {
+          const { jumps, x, y } = yield* game.app.read(Hero);
+          return { jumps, x: Math.round(x * 1000) / 1000, y };
+        });
+        const steps = Effect.fnUntraced(function* (count: number) {
+          for (let i = 0; i < count; i++) {
+            yield* game.step();
+          }
+        });
+        // Right for half a second with a key, then left with the pad's
+        // stick halfway over.
+        game.input.press("ArrowRight");
+        yield* steps(30);
+        game.input.release("ArrowRight");
+        game.input.move(Input.padAxis(0, 0), -0.5);
+        yield* steps(30);
+        game.input.move(Input.padAxis(0, 0), 0);
+        expect(yield* hero()).toEqual({ jumps: 0, x: 1.5, y: 0 });
+        // A jump, drawn in three frames of its tick: one flash.
+        game.input.press("Space");
+        yield* game.step();
+        yield* game.app.frame(0.5);
+        yield* game.app.frame(0.9);
+        game.input.release("Space");
+        yield* steps(60);
+        expect((yield* hero()).jumps).toBe(1);
+        // The pad's A jumps too.
+        game.input.tap(Input.padButton(0, 0));
+        yield* steps(60);
+        // The player makes X the jump: the space bar no longer jumps.
+        game.input.tap("KeyR");
+        yield* game.step();
+        game.input.tap("KeyX");
+        yield* game.step();
+        game.input.tap("Space");
+        yield* steps(60);
+        expect(yield* hero()).toEqual({ jumps: 2, x: 1.5, y: 0 });
+        game.input.tap("KeyX");
+        yield* steps(60);
+        game.input.tap(Input.padButton(0, 1));
+        yield* steps(60);
+        expect(yield* hero()).toEqual({ jumps: 4, x: 1.5, y: 0 });
+        expect(flashes.length).toBe(4);
+        // The recording plays the same game, with no devices and the
+        // bindings the controls were declared with.
+        const recording = yield* Replay.record(game.app);
+        const again = yield* Replay.verify(recording, Platformer);
+        expect(yield* hashOf(again)).toBe(yield* hashOf(game.app));
+        const replayed = yield* again.read(Hero);
+        expect(replayed.jumps).toBe(4);
+      })
+  );
+
+  it.effect(
+    "plays the same when each tick is run again, as a rollback session runs it, and still flashes once a jump",
+    () =>
+      Effect.gen(function* () {
+        flashes.length = 0;
+        const source = Input.makeManualSource();
+        const test = yield* Session.syncTest(Platformer, { seed: 3 }).pipe(
+          withSource(source)
+        );
+        const steps = Effect.fnUntraced(function* (count: number) {
+          for (let i = 0; i < count; i++) {
+            yield* test.tick(1 / 60);
+            yield* test.frame();
+          }
+        });
+        source.press("ArrowRight");
+        yield* steps(20);
+        source.release("ArrowRight");
+        source.tap("Space");
+        yield* steps(60);
+        source.tap("KeyR");
+        yield* steps(1);
+        source.tap("KeyX");
+        yield* steps(1);
+        source.tap("KeyX");
+        source.move(Input.padAxis(0, 0), -1);
+        yield* steps(60);
+        // Each tick ran twice to the same hash, system by system.
+        expect(test.checked).toBe(142);
+        const { jumps } = yield* test.app.read(Hero);
+        expect([jumps, flashes.length]).toEqual([2, 2]);
+      })
+  );
 });
 
 describe("a source worked by hand", () => {

@@ -24,7 +24,13 @@ import { dual } from "effect/Function";
 import type { Pipeable } from "effect/Pipeable";
 
 import type { Actions } from "./Action.ts";
-import type { Devices, Gamepads, Keyboard, Pointer } from "./Input.ts";
+import type {
+  Declared,
+  Devices,
+  Gamepads,
+  Keyboard,
+  Pointer,
+} from "./Input.ts";
 import { build, make, simulating } from "./internal/system.ts";
 import type { Intake } from "./internal/view.ts";
 import type { Access, Adds, Writes } from "./Query.ts";
@@ -188,7 +194,8 @@ type Refused<R, Ban> =
 /**
  * What the tick may require: the built-in services of the simulation, and
  * what yielding a query, a singleton, a state or an event puts there, and
- * the devices' state that `Input.plugin` keeps in the world. A resource
+ * the state of the devices and of the controls that `Input.plugin` keeps in
+ * the world. A resource
  * requires nothing. A service of the game's own would keep what no
  * save, rewind or refused action sees.
  */
@@ -204,6 +211,7 @@ type TickBan = Only<
   | Keyboard
   | Pointer
   | Gamepads
+  | Declared<string>
 >;
 type FrameBan =
   | Sim
@@ -318,10 +326,10 @@ export type LayerGated<L extends Layer.Layer<never, unknown, unknown>> =
  *
  * The body can require what a tick provides: `World`, `Time`, `Commands`,
  * `Events`, `Actions` and `Random`, the queries, singletons, states, events
- * and resources it yields, and `Input.Keyboard`, `Input.Pointer` and
- * `Input.Gamepads`, which `Input.plugin` provides. Anything else does not
- * compile. `Frame`,
- * `Sound`, `View`, `Assets` and `Input.Devices` are real time, and belong to
+ * and resources it yields, the controls that `Input.controls` declares, and
+ * `Input.Keyboard`, `Input.Pointer` and `Input.Gamepads`, which `Input.plugin`
+ * provides. Anything else does not compile. `Frame`, `Sound`, `View`,
+ * `Assets`, `Input.Devices` and `Input.rebind` are real time, and belong to
  * `System.frame` or `System.input`. A service of the game's own would hold
  * what no save, rewind or refused action sees. Keep the game's state in the
  * world, and a cache rebuilt from it in a `Field.transient` field of a

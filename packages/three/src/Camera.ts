@@ -13,11 +13,7 @@
  *   })
  *
  *   // In an input-stage system: where the pointer is, in the game's units.
- *   const devices = yield* Input.Devices
- *   const at = yield* Camera.toPlane({
- *     x: devices.axes.get(Input.pointerX) ?? 0,
- *     y: devices.axes.get(Input.pointerY) ?? 0,
- *   })
+ *   const at = yield* Camera.toPlane(yield* Input.Pointer)
  *
  * `@arcadekit/three/Three` gives the same exports. The pointer is in CSS
  * pixels from the canvas's top left, with y down, and the game's plane has y
@@ -147,13 +143,11 @@ export const camera2d: (
  * `Three.Scene`'s camera and canvas size as the scene was last rendered: what
  * the player saw when they clicked.
  *
+ *   const Click = Input.button("game/Click", [Input.pointerButton()])
+ *
  *   const Aim = System.input("game/Aim", function* () {
- *     const devices = yield* Input.Devices
- *     if (devices.pressed.includes(Input.pointerButton())) {
- *       const at = yield* Three.toPlane({
- *         x: devices.axes.get(Input.pointerX) ?? 0,
- *         y: devices.axes.get(Input.pointerY) ?? 0,
- *       })
+ *     if ((yield* Click).pressed) {
+ *       const at = yield* Three.toPlane(yield* Input.Pointer)
  *       ;(yield* Action.Actions).enqueue(Fire, at)  // at.x, at.y in the game's units
  *     }
  *   })

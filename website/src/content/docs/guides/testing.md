@@ -52,27 +52,38 @@ A test changes the game as a player does, with an action. It sets the scene with
 ## Drive the devices
 
 ```ts title="rules.test.ts"
-import { Input } from "arcadekit";
+import { Input, System } from "arcadekit";
 
-it.effect("hears a key", () =>
+it.effect("hears a key and a stick", () =>
   Effect.gen(function* () {
-    const Keys = Input.bind(
-      "game/Keys",
-      Input.onPress("Space", Add, { points: 1 })
-    );
+    const Coin = Input.button("game/Coin", ["Space", Input.padButton(0, 0)]);
+    const Lean = Input.axis("game/Lean", { pad: Input.padAxis(0, 0) });
+    const Count = System.tick("game/Count", function* () {
+      const score = yield* Score.writes;
+      if ((yield* Coin).pressed) {
+        score.points += 1;
+      }
+      if ((yield* Lean) > 0.5) {
+        score.points += 10;
+      }
+    });
     const game = yield* Test.make(
-      App.define({ plugins: [Rules], systems: [Keys] })
+      App.define({
+        plugins: [Rules, Input.controls("game/Controls", [Coin, Lean])],
+        systems: [Count],
+      })
     );
     game.input.press("Space");
+    game.input.move(Input.padAxis(0, 0), 0.8);
     yield* game.step(); // reads the devices, then ticks
-    expect((yield* game.app.read(Score)).points).toBe(1);
+    expect((yield* game.app.read(Score)).points).toBe(11);
   })
 );
 ```
 
-`game.input` is a source the test drives by hand. `press`, `release`, `tap` and `move` act as the devices. A step's input stage reads them, as a driver does in a page, and its tick receives the input.
+`game.input` is a source the test drives by hand. `press`, `release`, `tap` and `move` act as the devices, with the codes a device gives, and each control follows the codes it is bound to. A step's input stage reads them, as a driver does in a page, and its tick receives what the controls said.
 
-To test what a game does with a key, you don't need a device. Enqueue the action the key is bound to, or `Input.Report`, the action that updates the device state. The next input stage reads the source and overrides a report made by hand, so a test that reports by hand ticks with `yield* game.app.tick(delta)`, which reads no device.
+To test what a game does with a control, you don't need a device. Enqueue the action the game issues from it, or `Input.Report` with the control's name, such as `{ down: ["game/Coin"] }`. The next input stage reads the source and overrides a report made by hand, so a test that reports by hand ticks with `yield* game.app.tick(delta)`, which reads no device.
 
 ## Record the sound
 

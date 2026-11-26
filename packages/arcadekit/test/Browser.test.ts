@@ -557,6 +557,39 @@ describe("a page's devices", () => {
       })
   );
 
+  it.effect(
+    "does not hear a key whose code is no key's, and takes only keys' codes to prevent",
+    () =>
+      Effect.gen(function* () {
+        const page = new Listened();
+        yield* run(
+          Effect.gen(function* () {
+            const listener = yield* Input.listen;
+            // The empty code of a virtual keyboard, and a key the browser
+            // could not name.
+            page.send("keydown", { code: "", repeat: false });
+            page.send("keydown", { code: "Unidentified", repeat: false });
+            page.send("keydown", { code: "KeyQ", repeat: false });
+            page.send("keyup", { code: "" });
+            expect(told(listener.sample())).toEqual({
+              down: ["KeyQ"],
+              pressed: ["KeyQ"],
+              released: [],
+              axes: {},
+              moved: [],
+            });
+          }).pipe(
+            Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
+          )
+        );
+        const spelt = Browser.layer({
+          // @ts-expect-error a key's code spelt wrong
+          preventDefault: ["Spcae"],
+        });
+        expect(spelt).toBeDefined();
+      })
+  );
+
   it.effect("reads the gamepads when it is sampled", () =>
     Effect.gen(function* () {
       const page = new Listened();

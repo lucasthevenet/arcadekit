@@ -149,12 +149,18 @@ const Wheel = System.tick("Wheel", function* () {
   });
 });
 
+// Where the player steers the ship, with the arrows or a gamepad's stick.
+const Fly = Input.stick("page/Fly", {
+  left: ["ArrowLeft"],
+  right: ["ArrowRight"],
+  up: ["ArrowUp"],
+  down: ["ArrowDown"],
+  pad: Input.padStick(0, "left"),
+});
+
 const Steer = System.tick("Steer", function* () {
-  const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
-  const x =
-    (keys.down("ArrowRight") ? 1 : 0) - (keys.down("ArrowLeft") ? 1 : 0);
-  const y = (keys.down("ArrowUp") ? 1 : 0) - (keys.down("ArrowDown") ? 1 : 0);
+  const { x, y } = yield* Fly;
   if (x === 0 && y === 0) {
     return;
   }
@@ -168,7 +174,7 @@ const Steer = System.tick("Steer", function* () {
 });
 
 const Rules = Plugin.make("page/Rules", {
-  plugins: [Input.plugin],
+  plugins: [Input.controls("page/Controls", [Fly])],
   systems: [Steer, Drift, Turn, Wheel],
   setup: Effect.gen(function* () {
     const commands = yield* Commands.spawns(

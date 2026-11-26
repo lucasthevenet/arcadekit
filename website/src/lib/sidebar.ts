@@ -103,6 +103,7 @@ export const OUTLINE: readonly (Group & {
     items: [
       "guides/running-a-game",
       "guides/input",
+      "guides/devices",
       "guides/assets",
       "guides/sound",
       "guides/sound-in-a-page",

@@ -8,6 +8,7 @@ import type { LoadRefused, Refused, Save } from "../Save.ts";
 import type { EventBus } from "./eventBus.ts";
 import type { Undrawn } from "./input.ts";
 import type { Log } from "./log.ts";
+import type { LocalStore } from "./stage.ts";
 import type { TickDispatcher } from "./tickScheduler.ts";
 
 /**
@@ -40,6 +41,8 @@ export interface Parts {
   readonly hashCheck: () => Effect.Effect<number>;
   /** Which ticks the frame stage has drawn, which a rewind or a load tells. */
   readonly undrawn: Undrawn;
+  /** What the app's frame and input systems keep, its settings among them. */
+  readonly locals: LocalStore;
 }
 
 /**

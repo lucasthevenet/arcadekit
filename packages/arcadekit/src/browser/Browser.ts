@@ -24,6 +24,7 @@ import type { Layer, Runtime } from "effect";
 
 import type * as Assets from "../Assets.ts";
 import type * as Driver from "../Driver.ts";
+import type * as Input from "../Input.ts";
 import type * as Save from "../Save.ts";
 import type * as Setting from "../Setting.ts";
 import type * as Sound from "../Sound.ts";
@@ -82,7 +83,7 @@ export interface Options {
    * The codes of the keys whose default action in the page is prevented, such
    * as the arrows and the space bar, which scroll it.
    */
-  readonly preventDefault?: readonly string[];
+  readonly preventDefault?: readonly Input.KeyCode[];
   /**
    * How far from center a gamepad axis must move to register. Anything
    * closer reads as 0. Defaults to 0.1. Values are rounded to two decimals,

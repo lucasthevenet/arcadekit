@@ -25,7 +25,7 @@ import type { FrameState, TimeState } from "../Services.ts";
 import * as System from "../System.ts";
 import type { EventBus } from "./eventBus.ts";
 import { handed, hearing, reading } from "./handed.ts";
-import { Views } from "./input.ts";
+import { Board } from "./input.ts";
 import type { Undrawn } from "./input.ts";
 
 /**
@@ -176,8 +176,9 @@ export const between = (
 
 /**
  * Makes what the frame stage is given from what the stages between ticks
- * share. It adds the frame being drawn, and the devices as a frame reads
- * them: what changed since the last frame, not in the last tick.
+ * share. It adds the frame being drawn, and with `Input.plugin` the devices
+ * and the controls as a frame reads them: what changed since the last frame,
+ * not in the last tick.
  *
  * @category Constructors
  */
@@ -191,20 +192,30 @@ export const frame = (
   }
 ): Context.Context<unknown> => {
   const drawn = Context.add(context, Frame, parts.frame);
-  const views = Context.getOption(context, Views);
-  return Option.isSome(views)
-    ? Context.merge(drawn, views.value.frame(parts.undrawn))
+  const board = Context.getOption(context, Board);
+  return Option.isSome(board)
+    ? Context.merge(drawn, board.value.frame(parts.undrawn))
     : drawn;
 };
 
 /**
  * Makes what the input stage is given from what the stages between ticks
  * share. It adds what the devices say, one sample of them taken when the
- * stage begins.
+ * stage begins, and with `Input.plugin` the devices and the controls as that
+ * sample says them, with the app's bindings.
  *
  * @category Constructors
  */
 export const input = (
   context: Context.Context<unknown>,
   devices: Input.Sample
-): Context.Context<unknown> => Context.add(context, Input.Devices, devices);
+): Context.Context<unknown> => {
+  const heard = Context.add(context, Input.Devices, devices);
+  const board = Context.getOption(context, Board);
+  return Option.isSome(board)
+    ? Context.merge(
+        heard,
+        board.value.input(devices, Context.get(context, System.Locals))
+      )
+    : heard;
+};

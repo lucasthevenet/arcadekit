@@ -32,14 +32,20 @@ const Hud = View.define("ts/Hud", { points: 0 });
 const Sfx = Sound.sheet("ts/Sfx", { coin: "/coin.wav" });
 
 const Rules = Plugin.make("ts/Rules", { handlers: [add] });
+const Coin = Input.button("ts/Coin", ["KeyW"]);
 const Game = App.define({
   plugins: [
     Rules,
     Sound.plugin,
     View.plugin,
     Plugin.make("ts/Looks", {
+      plugins: [Input.controls("ts/Controls", [Coin])],
       systems: [
-        Input.bind("ts/Keys", Input.onPress("KeyW", Add, { points: 1 })),
+        System.input("ts/Keys", function* () {
+          if ((yield* Coin).pressed) {
+            (yield* Action.Actions).enqueue(Add, { points: 1 });
+          }
+        }),
         Sound.cues("ts/Cues", Sound.on(Scored, Sfx.coin)),
         View.publish(Hud, function* () {
           return { points: (yield* Score).points };

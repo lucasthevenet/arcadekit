@@ -358,6 +358,7 @@ const assemble = <
       log,
       after,
       undrawn,
+      locals,
       save: () =>
         Effect.suspend(() => {
           runner.whileIdle(

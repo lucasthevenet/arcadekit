@@ -232,20 +232,41 @@ const idling = (power: "on" | "off"): number =>
     })
   );
 
+/** A game's controls, as a platformer has them: a jump, a stick and a fire. */
+const Controls = Input.controls("bench/Controls", [
+  Input.button("bench/Jump", ["Space", "KeyW", Input.padButton(0, 0)]),
+  Input.button("bench/Fire", [Input.pointerButton(), Input.padButton(0, 2)]),
+  Input.stick("bench/Move", {
+    left: ["ArrowLeft", "KeyA"],
+    right: ["ArrowRight", "KeyD"],
+    up: ["ArrowUp"],
+    down: ["ArrowDown", "KeyS"],
+    pad: Input.padStick(0, "left"),
+  }),
+]);
+
 /**
  * Median milliseconds of reading the devices into the world: three keys
  * held and the pointer somewhere. With `changing`, a fourth key goes down
  * or up before each pass, and the pass includes the tick that applies the
  * report; without, nothing changes and the pass is the input stage alone.
+ * With `controls`, the game declares three controls, which the stage works
+ * out from the devices each time.
  */
-const listening = (changing: boolean): number =>
+const listening = (changing: boolean, controls = false): number =>
   Effect.runSync(
     Effect.gen(function* () {
       const source = Input.makeManualSource();
-      const app = yield* App.make(App.define({ plugins: [Input.plugin] }), {
-        hashEvery: 0,
-      }).pipe(Effect.provide(Input.layer(source)));
-      for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
+      const app = yield* App.make(
+        App.define({ plugins: [controls ? Controls : Input.plugin] }),
+        { hashEvery: 0 }
+      ).pipe(Effect.provide(Input.layer(source)));
+      const held: readonly Input.ButtonCode[] = [
+        "ArrowLeft",
+        "ShiftLeft",
+        Input.pointerButton(),
+      ];
+      for (const code of held) {
         source.press(code);
       }
       source.move(Input.pointerX, 120);
@@ -828,6 +849,16 @@ const variants: Record<string, Variant> = {
     unit: "matches",
     label: "app.input and app.tick: one key went down or up",
     run: () => listening(true),
+  },
+  inputControls: {
+    unit: "matches",
+    label: "app.input: the same, with three controls",
+    run: () => listening(false, true),
+  },
+  inputControlsChanged: {
+    unit: "matches",
+    label: "app.input and app.tick: a key of a control changed",
+    run: () => listening(true, true),
   },
 
   // The view bridge: one view of four fields, worked out and compared in

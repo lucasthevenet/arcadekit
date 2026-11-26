@@ -203,10 +203,12 @@ export const Hear = System.input("ls/Hear", function* () {
   }
   untaken.push(...(yield* Action.rejected(Take)).read());
 });
-export const Controls = Input.bind(
-  "ls/Controls",
-  Input.onPress("Space", Fire, {})
-);
+/** The space bar fires: an action of the game's own, as a game of several peers issues one. */
+export const Controls = System.input("ls/Controls", function* () {
+  if ((yield* Input.Devices).pressed.includes("Space")) {
+    (yield* Action.Actions).enqueue(Fire, {});
+  }
+});
 
 export const HZ = 30;
 export const DELTA = 1 / HZ;

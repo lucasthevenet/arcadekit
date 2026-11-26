@@ -61,22 +61,37 @@ const Caught = Event.define(
 const Started = Event.define("page/Started", Schema.Struct({}));
 const playing = System.runIf(State.is(Phase, "playing"));
 
-// The devices, as the game has them this tick: the same picture for every
-// system, and the same in a replay, which has no keyboard.
+// What the player does, and the keys and buttons it is bound to. The rules
+// read these, and no key: the same for every system of a tick, and the same
+// in a replay, which has no keyboard.
+const Move = Input.axis("page/Move", {
+  negative: ["ArrowLeft", "KeyA"],
+  positive: ["ArrowRight", "KeyD"],
+  pad: Input.padAxis(0, 0),
+});
+const Drag = Input.button("page/Drag", [Input.pointerButton()]);
+const Go = Input.button("page/Go", ["Enter", Input.padButton(0, 0)]);
+const Leave = Input.button("page/Leave", ["KeyQ"]);
+const Pause = Input.button("page/Pause", [
+  "KeyP",
+  "Escape",
+  Input.padButton(0, 9),
+]);
+const Controls = Input.controls("page/Controls", [
+  Move,
+  Drag,
+  Go,
+  Leave,
+  Pause,
+]);
+
 const Steer = System.tick("Steer", function* () {
-  const keys = yield* Input.Keyboard;
-  const pointer = yield* Input.Pointer;
   const basket = yield* Basket.writes;
   const { delta } = yield* Time;
-  let { x } = basket;
-  if (keys.down("ArrowLeft")) {
-    x -= BASKET.speed * delta;
-  }
-  if (keys.down("ArrowRight")) {
-    x += BASKET.speed * delta;
-  }
-  if (pointer.down()) {
-    ({ x } = pointer);
+  let x = basket.x + (yield* Move) * BASKET.speed * delta;
+  // Dragged, it is where the pointer is.
+  if ((yield* Drag).held) {
+    ({ x } = yield* Input.Pointer);
   }
   x = Math.min(WIDTH - BASKET.width / 2, Math.max(BASKET.width / 2, x));
   if (x !== basket.x) {
@@ -177,12 +192,20 @@ const scatter = Action.handler(
   }
 );
 
-const Controls = Input.bind(
-  "page/Controls",
-  Input.onPress("Enter", Start, {}),
-  Input.onPress("KeyQ", Quit, {}),
-  Input.onPress(["KeyP", "Escape", Input.padButton(0, 9)], TogglePause, {})
-);
+// The menu's keys send what the UI's buttons send: each press, once, as the
+// same action.
+const Keys = System.input("page/Keys", function* () {
+  const actions = yield* Action.Actions;
+  if ((yield* Go).pressed) {
+    actions.enqueue(Start, {});
+  }
+  if ((yield* Leave).pressed) {
+    actions.enqueue(Quit, {});
+  }
+  if ((yield* Pause).pressed) {
+    actions.enqueue(TogglePause, {});
+  }
+});
 
 // --- a level's assets ------------------------------------------------------------
 // Loaded when the level starts and let go when the game leaves it: the
@@ -295,12 +318,12 @@ const ShowHud = View.publish(Hud, function* () {
 });
 
 export const Game = Plugin.make("Game", {
-  plugins: [Input.plugin, Assets.plugin, View.plugin, Sound.plugin, Begin],
+  plugins: [Controls, Assets.plugin, View.plugin, Sound.plugin, Begin],
   handlers,
   systems: [
     Steer,
     Fall,
-    Controls,
+    Keys,
     LevelAssets,
     Draw,
     Cues,
