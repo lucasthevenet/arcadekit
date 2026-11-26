@@ -44,15 +44,20 @@ export class Log implements Store<Since> {
   readonly betweenTicks = true;
   /** What `app.actionLog` is. */
   readonly entries: Action.LogEntry[] = [];
-  /** The number of ticks the game had run when its app was made. */
-  private readonly began: number;
+  /** The number of ticks the game had run when its app was made, or last loaded a save. */
+  private began: number;
   /** The delta of every tick run since, in runs of ticks that took the same. */
   private readonly deltas: { tick: number; delta: number }[] = [];
   private readonly world: World;
   private readonly time: { readonly tick: number };
   private readonly checkpointEvery: number;
-  /** How the game began when its app was made. */
-  private readonly origin: Origin;
+  /** How the game began when its app was made, or last loaded a save. */
+  private origin: Origin;
+  /**
+   * How many saves the app has loaded in place. A moment of its game holds
+   * it: one taken before a load is of a game the log no longer follows.
+   */
+  loads = 0;
 
   constructor(
     world: World,
@@ -70,6 +75,18 @@ export class Log implements Store<Since> {
     this.began = time.tick;
     this.checkpointEvery = checkpointEvery;
     this.origin = origin;
+  }
+
+  /**
+   * Starts the log over at a save the app has just loaded in place, as the log
+   * of an app made from it would start.
+   */
+  restart(save: Save.Save): void {
+    this.entries.length = 0;
+    this.deltas.length = 0;
+    this.began = this.time.tick;
+    this.origin = { save };
+    this.loads++;
   }
 
   /** Records the world's hash now, and returns it. */

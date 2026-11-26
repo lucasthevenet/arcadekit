@@ -12,7 +12,9 @@ import type { ReadingWorld, WritingWorld } from "../src/index.ts";
 import * as Input from "../src/Input.ts";
 import * as Net from "../src/net/index.ts";
 import * as Transport from "../src/net/Transport.ts";
+import * as Save from "../src/Save.ts";
 import * as Services from "../src/Services.ts";
+import * as Setting from "../src/Setting.ts";
 import * as Sound from "../src/Sound.ts";
 import * as System from "../src/System.ts";
 import * as View from "../src/View.ts";
@@ -170,7 +172,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./net");
     expect(entries).toContain("./net/Session");
     expect(entries).toContain("./ecs");
-    expect(entries.length).toBe(42);
+    expect(entries.length).toBe(43);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -263,6 +265,7 @@ describe("the package's entries", () => {
       "Query",
       "Resource",
       "Save",
+      "Setting",
       "Singleton",
       "Sound",
       "State",
@@ -441,6 +444,8 @@ const provided = [
   providing(Sound.Output, Sound.layer(Sound.makeRecorder())),
   providing(Driver.Display, Driver.layer(Driver.makeManualDisplay())),
   providing(Assets.Loader, Assets.layer(Assets.makeMemory({}))),
+  providing(Save.Store, Save.layer(Save.makeMemory())),
+  providing(Setting.Store, Setting.layer(Setting.makeMemory())),
   providing(
     Transport.Transport,
     Transport.layer(Transport.makeHub().port("ada"))

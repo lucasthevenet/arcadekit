@@ -24,10 +24,13 @@ import type { Layer, Runtime } from "effect";
 
 import type * as Assets from "../Assets.ts";
 import type * as Driver from "../Driver.ts";
+import type * as Save from "../Save.ts";
+import type * as Setting from "../Setting.ts";
 import type * as Sound from "../Sound.ts";
 import type { ContextLike, MediaLike } from "./Audio.ts";
 import * as decode from "./internal/decode.ts";
 import * as page from "./internal/page.ts";
+import * as storage from "./internal/storage.ts";
 
 /**
  * A page's display, on which a frame is due once per repaint, with
@@ -153,6 +156,34 @@ export interface Options {
  */
 export const layer = (options: Options = {}): Layer.Layer<never> =>
   page.layer(options);
+
+/**
+ * Where a page keeps a game's saves: its local storage, under the game's
+ * name, so that two games of one site keep apart. Give it to `Save.layer`.
+ *
+ *   Effect.provide(Save.layer(Browser.saves("mygame")))
+ *
+ * **Gotchas**
+ *
+ * - A page's local storage holds about 5 MB for its whole site, and a save
+ *   is kept there as base64 text, a third larger than its bytes. A save that
+ *   doesn't fit fails `Save.write` with `Save.StoreFailed`.
+ *
+ * @category Services
+ */
+export const saves = (name: string): Save.StoreShape => storage.saves(name);
+
+/**
+ * Where a page keeps a game's settings: its local storage, under the game's
+ * name. Give it to `Setting.layer`. A setting is read from the storage the
+ * first time it is asked for, and from memory after.
+ *
+ *   Effect.provide(Setting.layer(Browser.settings("mygame")))
+ *
+ * @category Services
+ */
+export const settings = (name: string): Setting.StoreShape =>
+  storage.settings(name);
 
 /**
  * Makes an image asset, an `ImageBitmap` decoded and ready to draw, which is

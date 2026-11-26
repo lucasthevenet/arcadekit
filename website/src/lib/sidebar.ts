@@ -119,6 +119,8 @@ export const OUTLINE: readonly (Group & {
     label: "Saves and replays",
     items: [
       "guides/saving-and-loading",
+      "guides/settings",
+      "guides/snapshots",
       "guides/migrating-saves",
       "guides/capturing-and-rewinding",
       "guides/replays",

@@ -1,23 +1,15 @@
 ---
 title: "Saving and loading"
-description: "A save captures a game between two ticks, and a game loaded from it continues exactly as the saved one would have. Learn how to save, load, and read why a load was refused."
+description: "A save captures a game between two ticks, and a game loaded from it continues exactly as the saved one would have. Learn how to save, load in place, keep saves in slots, and read why a load was refused."
 ---
 
-A **save** captures a game between two ticks. A game loaded from a save continues exactly as the saved game would have. [Migrating old saves](migrating-saves.md) covers saves that an older version of the game wrote.
+A **save** captures a game between two ticks. A game loaded from a save continues exactly as the saved game would have. [Migrating old saves](migrating-saves.md) covers saves that an older version of the game wrote, and [settings](settings.md) what a game keeps that isn't the game.
 
-## Save and load a game
+## Save a game and load it again
 
 ```ts
-import {
-  App,
-  Commands,
-  Component,
-  Field,
-  Plugin,
-  Save,
-  World,
-} from "arcadekit";
-import { Effect, Exit } from "effect";
+import { App, Commands, Component, Field, Plugin, World } from "arcadekit";
+import { Effect } from "effect";
 
 const Position = Component.define("game/Position", { x: Field.f32 });
 const Rules = Plugin.make("game/Rules", {
@@ -32,32 +24,81 @@ const program = Effect.gen(function* () {
     App.make(Game),
     (made) => made.close
   );
+  const world = yield* app.read(World);
   yield* app.tick(1 / 60);
+  const save = yield* app.save(); // fails with Save.Refused
+  const saved = world.hash();
 
-  const saved = yield* Effect.exit(app.save()); // fails with Save.Refused
-  if (Exit.isFailure(saved)) {
-    return;
-  }
-  const bytes = Save.encode(saved.value); // a Uint8Array, for a file
-
-  const read = Save.decode(bytes); // Exit<Save, LoadRefused>
-  if (Exit.isSuccess(read)) {
-    const again = yield* Effect.acquireRelease(
-      App.make(Game, { save: read.value }),
-      (made) => made.close
-    );
-    const loaded = yield* again.read(World);
-    const played = yield* app.read(World);
-    loaded.hash() === played.hash(); // true
-  }
+  yield* app.tick(1 / 60);
+  yield* app.load(save); // fails with Save.LoadRefused
+  world.hash() === saved; // true
 }).pipe(Effect.scoped);
 ```
 
-`app.save()` works between two ticks. The save holds the world as a [snapshot](#snapshot-a-world), and the length the action log had. The snapshot holds the game's time, the actions queued for the next tick, the simulation's own among them, the events waiting to be read with each system's place in them, and what change queries haven't visited.
+`app.save()` works between two ticks. The save holds the world as a [snapshot](snapshots.md), and the length the action log had. The snapshot holds the game's time, the actions queued for the next tick, the simulation's own among them, the events waiting to be read with each system's place in them, and what change queries haven't visited.
+
+`app.load(save)` puts the game the save holds into the app that runs, between two ticks. The app, its plugins' layers, its frame and input stages, its views and its sound stay as they are, and so does the driver that runs it: a page keeps drawing and playing as it was. The app is then the one `App.make(game, { save })` would make, and plays on to the same hashes.
+
+- Its action log starts over, as that app's starts empty, and `app.record()` records from the save.
+- The frame and input stages hear the loaded game from then on, and nothing of the game it replaced. Their change queries visit every entity again, so what draws draws all of it.
+- A moment captured with `Timeline.capture` before the load is of the game the load replaced, and `Timeline.rewind` refuses it.
+- A save it refuses, with the reasons [below](#read-why-a-load-was-refused), leaves the app as it was.
+- It dies on an app that a [session](sessions.md) has taken over, where it would move this machine's game alone.
+
+## Keep saves in slots
+
+```ts
+import { App, Driver, Plugin, Save } from "arcadekit";
+import { Browser } from "arcadekit/browser";
+import { Effect, Option } from "effect";
+
+const Game = App.define({ plugins: [Plugin.make("game/Game", {})] });
+const button = (id: string) => document.querySelector<HTMLElement>(id)!;
+
+Browser.runMain(
+  Driver.run(Game, {
+    hz: 60,
+    ready: (app) =>
+      Effect.gen(function* () {
+        // A button runs an Effect of its own, with what the game was given.
+        const run = Effect.runForkWith(yield* Effect.context<Save.Store>());
+        button("#save").onclick = () =>
+          run(Effect.flatMap(app.save(), (save) => Save.write("slot2", save)));
+        button("#load").onclick = () =>
+          run(
+            Effect.flatMap(Save.read("slot2"), (saved) =>
+              Option.isSome(saved) ? app.load(saved.value) : Effect.void
+            )
+          );
+      }),
+  }).pipe(Effect.provide(Save.layer(Browser.saves("mygame")))),
+  { target: document.querySelector("canvas")! }
+);
+```
+
+A **slot** is a name a save is kept under in `Save.Store`. `Save.write(slot, save)` keeps it, in place of what the slot held, and `Save.read(slot)` reads it back, or none for an empty slot. A click runs between two frames, so between two ticks, where `app.save()` and `app.load` work. The game goes on drawing and playing through a load.
+
+| Store | Keeps the saves |
+| --- | --- |
+| `Browser.saves(name)` | In the page's local storage, under the game's name, through a reload |
+| `Save.makeMemory()` | In memory, for a test |
+| One of your own | Wherever it keeps them: a `Save.StoreShape`, given to `Save.layer` |
+
+- `(yield* Save.Store).slots` lists the slots that hold a save, for a menu of saved games, and `remove(slot)` empties one.
+- `Save.write` and `Save.read` fail with `Save.StoreFailed` when the store can't keep or read a slot, and `Save.read` with `Save.LoadRefused` when the slot holds what isn't a save.
+- A page's local storage holds about 5 MB for its whole site, and keeps a save as base64 text, a third larger than its bytes.
+
+## Start a game from a save
+
+```ts sketch
+const bytes = Save.encode(save); // a Uint8Array, for a file
+const read = yield * Save.decode(bytes); // fails with Save.LoadRefused
+const again = yield * App.make(Game, { save: read });
+```
 
 `Save.encode` writes a short header and a little JSON text, then the snapshot unchanged. For 100,000 entities with four float fields, a save is 2.8 MB and takes about 0.7 ms.
 
-`App.make(game, { save })` continues a game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds what each setup spawned. To start a page from a save, give it to `Driver.run`, as in `Driver.run(game, { hz: 60, save })`. A save holds where the game's random sequence had got to, so `App.make` takes `save` or `seed`, not both.
+`App.make(game, { save })` makes a new app that continues the game from a save. Pass the game the save was made with. No plugin's `setup` runs, since the save already holds what each setup spawned. To start a page from a save, give it to `Driver.run`, as in `Driver.run(game, { hz: 60, save })`. A save holds where the game's random sequence had got to, so `App.make` takes `save` or `seed`, not both.
 
 To return the same app to an earlier moment in the same run, use `Timeline.capture(app)` and `Timeline.rewind(app, moment)`, which work in memory. See [capturing and rewinding](capturing-and-rewinding.md).
 
@@ -102,44 +143,7 @@ The [replay](replays.md) checks itself against the tail's checkpoints, so a save
 | `"unknown store"` | Holds what the world it was loaded into has no store for, such as queued actions in a world with no app |
 | `"component changed"` | Holds a component whose fields differ from the game's after any migrations ran. The message lists both |
 
-## Snapshot a world
-
-```ts
-import { Component, Field } from "arcadekit";
-import { World } from "arcadekit/ecs";
-
-const Position = Component.define("game/Position", {
-  x: Field.f32,
-  y: Field.f32,
-});
-
-const world = new World();
-world.spawn(Position.of({ x: 1, y: 2 }));
-const bytes = world.snapshot(); // a Uint8Array
-
-const copy = new World();
-copy.load(bytes);
-copy.hash() === world.hash(); // true
-```
-
-`world.snapshot()` writes the whole world to bytes: every table and sparse set, the singletons that have been written, the upcoming entity ids, the random generator's state, and in an app's world the actions queued for the next tick and the events waiting to be read. A world that loads the bytes hashes the same and goes on the same way: the same iteration order, the same ids for new entities, the same random numbers. Saves are built on snapshots.
-
-- **Its size is close to the data's.** A numeric column is written as its raw bytes, so an entity with two `f32` fields takes 20 bytes: 8 for the id, 8 for the floats and 4 for the generation. With four float fields, taking a snapshot costs 7 ns per entity and loading it 21 ns.
-- **Components are stored by name**, with their field names and types, so a snapshot doesn't depend on the order a program defines its components in. `load` finds each one by its name among the components the program defines, and refuses a snapshot that holds one it doesn't.
-- **Non-numeric fields are saved as [their type specifies](components.md#choose-a-field-type).** In a `json` field, strings, numbers, booleans, bigints, `null` and `undefined` round-trip exactly, `-0` and `NaN` included, while arrays and objects go through JSON text. A `schema` or `ref` field is saved in its encoded form, and a `transient` field not at all.
-- **`load` fills an empty world**: one that has never held an entity or written a singleton, and holds no queued action or waiting event. A world loads what an app's stores held only when it is that app's. A world of the storage core alone, made with `new World()` of `arcadekit/ecs`, refuses a snapshot that holds queued actions or waiting events, with `"unknown store"`.
-- **`world.restore(bytes)` replaces everything in a world in use with a snapshot**, for 16 ns per entity. It is meant for a snapshot the world took itself, or one from a world built the same way. Afterwards, the world is what a new world loaded from the snapshot would be. In an app's world, that includes the game's time, the queued actions, the waiting events, and each system's place in them and in what changed. Singleton values keep their object identity, and `world.random` stays the same generator. A view or `removed` reader obtained before throws when used, asking to be obtained again, as a system does every tick. In a world with no app, pending changes for change queries are dropped: `world.restoreChanges` restores what `world.saveChanges` returned.
-- **The format is versioned.** This version writes format 4, and also reads formats 1 to 3.
-
-Every failure of `snapshot`, `load` or `restore` is a `SnapshotError` of `arcadekit/ecs`. Its `problem` is one of the table's, except the four only a save has: `"not a save"`, `"newer version"`, `"no migration"` and `"migration failed"`. It can also be one of two more:
-
-- `"world not empty"`, from `load`.
-- `"cannot be saved"`, when a field, a queued action or a waiting event holds a value with no saved form, or a spawn is queued on a `CommandBuffer` and not applied.
-
-`load` refuses damaged bytes rather than trusting them. It checks every count against the bytes left before it allocates anything for it, refuses an entity in two rows or in a freed slot, and refuses text that isn't valid. A damaged number inside a column looks like any other number, and loads as that number.
-
-`readSnapshot` and `writeSnapshot` of `arcadekit/ecs` turn a snapshot into a plain description and back, without component definitions, for tools that inspect or edit snapshots.
-
 ## Read more
 
+- [Settings](settings.md), for what a game keeps that isn't the game.
 - [`Save`](/reference/arcadekit/Save) and [`Migrate`](/reference/arcadekit/Migrate) in the API reference.

@@ -98,7 +98,7 @@ describe("a package's page", () => {
       "### Net",
     ]);
     expect(blocks.at(-3)).toBe(
-      "- [Timeline](/reference/arcadekit/Timeline)\n- [Save](/reference/arcadekit/Save)\n- [Migrate](/reference/arcadekit/Migrate)\n- [Journal](/reference/arcadekit/Journal)"
+      "- [Timeline](/reference/arcadekit/Timeline)\n- [Setting](/reference/arcadekit/Setting)\n- [Save](/reference/arcadekit/Save)\n- [Migrate](/reference/arcadekit/Migrate)\n- [Journal](/reference/arcadekit/Journal)"
     );
   });
 });

@@ -252,8 +252,9 @@ export interface Any {
   /** The names of the input-stage systems, in the order they run. */
   readonly inputOrder: readonly string[];
   /**
-   * What the app is running right now. A game is stepped, saved, captured,
-   * put back, recorded, checkpointed and inspected only in `"idle"`. Each of
+   * What the app is running right now. A game is stepped, saved, loaded,
+   * captured, put back, recorded, checkpointed and inspected only in
+   * `"idle"`. Each of
    * those dies in any other phase, which includes a handler that `dispatch`
    * runs, since a refusal takes back that handler's work.
    */
@@ -386,7 +387,8 @@ export interface Any {
    */
   readonly record: (since?: Save.Save) => Effect.Effect<Journal.Recording>;
   /**
-   * Saves the game as it is, to load later with `App.make(game, { save })`.
+   * Saves the game as it is, to load later with `app.load(save)` or
+   * `App.make(game, { save })`.
    * The save holds the world and the length of the log. The world holds the
    * time, the actions queued for the next tick, the events waiting to be
    * read, and what the change queries haven't visited yet. Run it only
@@ -398,6 +400,30 @@ export interface Any {
    * applied.
    */
   readonly save: () => Effect.Effect<Save.Save, Save.Refused>;
+  /**
+   * Loads a save into this app, in place of the game it plays: the app, its
+   * plugins' layers, its frame and input stages, its views and its sound stay
+   * as they are, and its game is the one the save holds. The save is brought
+   * up to the game's version with its migrations first, as `App.make` brings
+   * one. Run it only between ticks, since it dies anywhere else.
+   *
+   *   const save = yield* app.save()
+   *   yield* app.tick(1 / 60)
+   *   yield* app.load(save)                // the game where it was saved
+   *
+   * The app is then the one `App.make(game, { save })` would make, ticks and
+   * hashes as that one would, and is played by the same driver. Its action log
+   * starts over, as that app's starts empty, and `app.record()` records from
+   * the save. A moment captured before the load is refused by
+   * `Timeline.rewind`. The frame and input stages, and code outside the game
+   * that reads an event, hear the loaded game from then on, and their change
+   * queries visit every entity again.
+   *
+   * It fails with `Save.LoadRefused` for a save the game can't load, as
+   * `App.make` does, and the app is then as it was. It dies on an app that a
+   * session has taken over, where it would move this machine's game alone.
+   */
+  readonly load: (save: Save.Save) => Effect.Effect<void, Save.LoadRefused>;
   /**
    * Records the world's hash in the action log now, and returns it. Use it for
    * points the game wants verified beyond the ones `checkpointEvery` records,
@@ -558,7 +584,8 @@ export interface App<E = never, HU = never> extends Any {
 /**
  * An app that something else steps, such as a session, which runs a tick
  * when every peer may, or a sync test. It is the app without what would move
- * this machine's game alone: `tick`, `dispatch` and `dispatchByName`. It has
+ * this machine's game alone: `tick`, `dispatch`, `dispatchByName` and
+ * `load`. It has
  * no `close` either, because whatever steps it
  * closes it. Its world, time, frame and input stages, log, saves and
  * recordings are an app's. An action given to `enqueue` is applied when
@@ -573,7 +600,7 @@ export interface App<E = never, HU = never> extends Any {
  */
 export type Steered<E = never, HU = never> = Omit<
   App<E, HU>,
-  "close" | "dispatch" | "dispatchByName" | "tick" | "enqueueByName"
+  "close" | "dispatch" | "dispatchByName" | "tick" | "enqueueByName" | "load"
 > & {
   /** Like `App.enqueueByName`. A session stamps who issued it. */
   readonly enqueueByName: (
@@ -770,6 +797,8 @@ export class FrameChangedWorld extends Data.TaggedError(
  *
  * **Details**
  *
+ * - To load a save into an app that is running, with its layers, its stages
+ *   and its driver as they are, use `app.load(save)`.
  * - An app made from a save starts with an empty action log. To return to
  *   where the game had got to, replay what the first app recorded since the
  *   save, `app.record(save)`, with `Journal.replay`, which checks the

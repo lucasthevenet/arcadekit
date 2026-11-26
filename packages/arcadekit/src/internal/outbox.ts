@@ -382,6 +382,23 @@ export class Outbox {
   }
 
   /**
+   * Starts everyone over at the end of what was told, after the app loaded a
+   * save in place at tick `tick`: what the game told before is of another game,
+   * and nobody hears it.
+   */
+  restart(tick: number): void {
+    this.since = [];
+    this.last = {};
+    for (const listener of this.each()) {
+      listener.after = this.tail;
+      listener.echo = undefined;
+    }
+    for (const stage of this.seen.keys()) {
+      this.seen.set(stage, { told: this.tail, tick });
+    }
+  }
+
+  /**
    * Returns the events told in the last tick, and between it and the one
    * before, by event name, in the order they were emitted.
    */
