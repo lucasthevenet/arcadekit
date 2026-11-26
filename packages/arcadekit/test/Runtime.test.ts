@@ -361,7 +361,7 @@ describe("systems", () => {
   );
 
   it.effect(
-    "surface typed failures through tickExit, and tick() throws them",
+    "fail their tick with a typed failure, which the tick fails with",
     () =>
       Effect.gen(function* () {
         class OutOfBounds extends Data.TaggedError("OutOfBounds")<{
@@ -390,8 +390,9 @@ describe("systems", () => {
             yield* app.dispatch(Place, { x: 5 });
             expect(Exit.isSuccess(yield* Effect.exit(app.tick(1)))).toBe(true);
             yield* app.dispatch(Place, { x: 500 });
-            const exit = yield* Effect.exit(app.tick(1));
-            expect(Exit.isFailure(exit)).toBe(true);
+            expect(yield* Effect.exit(app.tick(1))).toEqual(
+              Exit.fail(new OutOfBounds({ x: 500 }))
+            );
             expect(yield* thrown(app.tick(1))).toThrow(OutOfBounds);
           })
         );
