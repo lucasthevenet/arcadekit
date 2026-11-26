@@ -11,7 +11,7 @@
  * A service a stage may not use is absent there, and the types refuse a
  * request for it. `Loop` runs the stages.
  */
-import { Context, Random as EffectRandom } from "effect";
+import { Context, Random as EffectRandom, Option } from "effect";
 
 import * as Action from "../Action.ts";
 import type { CommandBuffer } from "../ecs/commands.ts";
@@ -25,6 +25,8 @@ import type { FrameState, TimeState } from "../Services.ts";
 import * as System from "../System.ts";
 import type { EventBus } from "./eventBus.ts";
 import { handed, hearing, reading } from "./handed.ts";
+import { Views } from "./input.ts";
+import type { Undrawn } from "./input.ts";
 
 /**
  * The prefix of a reader's name in the world's change logs when it is a
@@ -136,22 +138,20 @@ export class LocalStore {
 }
 
 /**
- * Makes what the frame stage is given from what the app's plugins and its
- * caller provide. It is handed a world that reads, events that read, and no
- * `Commands`: an object of their own each, with nothing that changes the game
- * even to a cast. What is random there comes from a generator of its own,
- * seeded with `seed`, which is no part of the world. An action issued there
- * is input from outside.
+ * Makes what the two stages between ticks share from what the app's plugins
+ * and its caller provide. It is handed a world that reads, events that read,
+ * and no `Commands`: an object of their own each, with nothing that changes
+ * the game even to a cast. What is random there comes from a generator of its
+ * own, seeded with `seed`, which is no part of the world. An action issued
+ * there is input from outside.
  *
  * @category Constructors
  */
-export const frame = (
+export const between = (
   context: Context.Context<unknown>,
   parts: {
     readonly world: EcsWorld;
     readonly time: Readonly<TimeState>;
-    /** The frame being drawn, which the app writes before each run. */
-    readonly frame: Readonly<FrameState>;
     readonly events: EventBus;
     readonly actions: Actions;
     readonly seed: number;
@@ -160,27 +160,51 @@ export const frame = (
   }
 ): Context.Context<unknown> => {
   const random = new Rng(parts.seed);
-  return Context.omit(Commands)(context).pipe(
+  // Omitted last, which leaves one flat map: each service added is a layer
+  // that every later lookup walks through first.
+  return context.pipe(
     Context.add(System.Locals, parts.locals),
     Context.add(World, reading(parts.world)),
     Context.add(Time, parts.time),
-    Context.add(Frame, parts.frame),
     Context.add(Events, hearing(parts.events)),
     Context.add(Action.Actions, parts.actions),
     Context.add(Random, random),
-    Context.add(EffectRandom.Random, effectRandom(random))
+    Context.add(EffectRandom.Random, effectRandom(random)),
+    Context.omit(Commands)
   );
 };
 
 /**
- * Makes what the input stage is given from what the frame stage is given. It
- * adds what the devices say, one sample of them taken when the stage begins,
- * and leaves out the frame.
+ * Makes what the frame stage is given from what the stages between ticks
+ * share. It adds the frame being drawn, and the devices as a frame reads
+ * them: what changed since the last frame, not in the last tick.
+ *
+ * @category Constructors
+ */
+export const frame = (
+  context: Context.Context<unknown>,
+  parts: {
+    /** The frame being drawn, which the app writes before each run. */
+    readonly frame: Readonly<FrameState>;
+    /** The ticks no frame has drawn yet, which the loop keeps. */
+    readonly undrawn: Readonly<Undrawn>;
+  }
+): Context.Context<unknown> => {
+  const drawn = Context.add(context, Frame, parts.frame);
+  const views = Context.getOption(context, Views);
+  return Option.isSome(views)
+    ? Context.merge(drawn, views.value.frame(parts.undrawn))
+    : drawn;
+};
+
+/**
+ * Makes what the input stage is given from what the stages between ticks
+ * share. It adds what the devices say, one sample of them taken when the
+ * stage begins.
  *
  * @category Constructors
  */
 export const input = (
   context: Context.Context<unknown>,
   devices: Input.Sample
-): Context.Context<unknown> =>
-  Context.omit(Frame)(context).pipe(Context.add(Input.Devices, devices));
+): Context.Context<unknown> => Context.add(context, Input.Devices, devices);
