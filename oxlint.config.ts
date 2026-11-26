@@ -296,6 +296,12 @@ export default defineConfig({
       },
     },
     {
+      // A test of a package is an Effect itself, with it.effect, and runs
+      // none by hand.
+      files: ["packages/*/test/**/*.test.ts"],
+      rules: { "arcadekit/no-run-in-tests": "error" },
+    },
+    {
       // The code of the tick keeps what it changes in the world, except in
       // the tests, which record what systems did in arrays outside them.
       files: ["packages/**"],
