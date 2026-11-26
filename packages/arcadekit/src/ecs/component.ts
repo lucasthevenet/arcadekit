@@ -427,6 +427,12 @@ export interface Accessor {
     entities?: Uint32Array | Float64Array,
     log?: WriteLog
   ): void;
+  /**
+   * Points the fields at columns that throw when read or written, once the
+   * world's entities changed: kept, the accessor would read and write a row
+   * that is now another entity's, or a column the table no longer uses.
+   */
+  retract(): void;
 }
 
 /**
@@ -726,6 +732,14 @@ const refuse = (message: string) => (): never => {
   throw new Error(message);
 };
 
+// A typed array ignores an index it doesn't have, so a retracted accessor's
+// refusal is in its column, and the getters and setters check nothing.
+const refusing = (message: string): Float32Array =>
+  new Proxy(new Float32Array(0), {
+    get: refuse(message),
+    set: refuse(message),
+  });
+
 // The seven that follow differ in the type of `column` and in nothing
 // else. They are not one function given the type: see above.
 
@@ -952,6 +966,7 @@ export const makeAccessor = (
             : undefined
     )
   );
+  let retracted: Column[] | undefined;
   return {
     fields: Object.create(target) as object,
     bind(columns, entities, log) {
@@ -961,6 +976,16 @@ export const makeAccessor = (
       if (noting !== undefined) {
         noting.entities = entities!;
         noting.log = log!;
+      }
+    },
+    retract() {
+      retracted ??= fields.map((field) =>
+        refusing(
+          `"${name}.${field}" was used through an accessor that each() or single() handed out before the world's entities last changed. A spawn, a despawn, an add or a remove, and a restore or a rewind, can move an entity to another row, and the accessor would read and write another entity's. Read the entity again with world.get(entity, ${name.split("/").pop()}), or ask the query again. To change the world's entities while you hold an accessor, queue the change on Commands.`
+        )
+      );
+      for (let f = 0; f < binders.length; f++) {
+        binders[f]!(retracted[f]!);
       }
     },
   };

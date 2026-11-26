@@ -64,8 +64,8 @@ import {
   finish,
   shapeOf,
 } from "./hash.ts";
-import { QueryView, describeSpec } from "./query.ts";
-import type { QuerySpec, Terms } from "./query.ts";
+import { QueryView, describeSpec, retract } from "./query.ts";
+import type { Loop, QuerySpec, Terms } from "./query.ts";
 import { Rng } from "./random.ts";
 import { NOT_PLACED, WHOLE } from "./records.ts";
 import type { Saved, Single } from "./records.ts";
@@ -289,6 +289,8 @@ export class World {
 
   /** @internal Depth of query iteration in progress. */
   _iterating = 0;
+  /** The loops whose accessors are out, until the world's entities change. */
+  private readonly handedOut: Loop[] = [];
   /**
    * @internal How many times `restore` has put a snapshot back. A view
    * made before the last of them holds tables that are gone.
@@ -516,6 +518,7 @@ export class World {
 
   /** @internal */
   _place(entity: Entity, inputs: readonly ComponentInput[]): void {
+    this.retractAccessors();
     const index = entityIndex(entity);
     const placing: ComponentInput[] = [];
     const tableDefs: ComponentDef[] = [];
@@ -636,7 +639,7 @@ export class World {
   spawn<const I extends readonly ComponentInput[]>(
     ...inputs: { readonly [K in keyof I]: I[K] & Targeted<I[K]> }
   ): Entity {
-    this.assertNotIterating("spawn");
+    this.changing("spawn");
     // Before an id is reserved, so a refused component leaves nothing behind.
     this._registerAll(inputs);
     const entity = this._reserve();
@@ -653,7 +656,7 @@ export class World {
    * order.
    */
   despawn(entity: Entity): boolean {
-    this.assertNotIterating("despawn");
+    this.changing("despawn");
     if (!this.isAlive(entity)) {
       return false;
     }
@@ -759,7 +762,7 @@ export class World {
     entity: Entity,
     input: I & Targeted<I>
   ): boolean {
-    this.assertNotIterating("add");
+    this.changing("add");
     if (!this.isAlive(entity)) {
       return false;
     }
@@ -903,7 +906,7 @@ export class World {
    * or didn't have the component.
    */
   remove(entity: Entity, def: ComponentDef): boolean {
-    this.assertNotIterating("remove");
+    this.changing("remove");
     if (!this.isAlive(entity)) {
       return false;
     }
@@ -1972,7 +1975,7 @@ export class World {
       );
     }
     // Not in a frozen world either, nor in the middle of a loop.
-    this.assertNotIterating("restore");
+    this.changing("restore");
     const unplaced = this.unplaced();
     if (unplaced > 0) {
       throw new Error(
@@ -2982,7 +2985,12 @@ export class World {
     return newRow;
   }
 
-  private assertNotIterating(op: string): void {
+  /**
+   * Refuses a change of the world's entities where it can't be made, and
+   * otherwise retracts the accessors that loops handed out, which it may
+   * leave on rows that are other entities' now.
+   */
+  private changing(op: string): void {
     if (this._frozen) {
       throw new Error(frozenWrite(`World.${op}()`));
     }
@@ -2995,6 +3003,23 @@ export class World {
       throw new Error(
         `World.${op}() called while a query is iterating. Queue it on a CommandBuffer and apply it after the loop.`
       );
+    }
+    this.retractAccessors();
+  }
+
+  /** @internal A loop hands out accessors, which the world's next change of its entities retracts. */
+  _handOut(loop: Loop): void {
+    loop.handedOut = true;
+    this.handedOut.push(loop);
+  }
+
+  private retractAccessors(): void {
+    const { handedOut } = this;
+    if (handedOut.length > 0) {
+      for (const loop of handedOut) {
+        retract(loop);
+      }
+      handedOut.length = 0;
     }
   }
 }
