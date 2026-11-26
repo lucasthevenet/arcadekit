@@ -29,6 +29,7 @@ import { Component, Field } from "./ecs/component.ts";
 import type { Entity } from "./ecs/component.ts";
 import type { EntityColumn } from "./ecs/query.ts";
 import { Row, smoothing } from "./internal/smooth.ts";
+import { cosine, sine } from "./internal/trig.ts";
 import type { Frame, Time } from "./Services.ts";
 
 /**
@@ -79,7 +80,10 @@ export const Scale = Component.define(
  *   Transform3d.axisAngle(0, 1, 0, Math.PI)   // half a turn about y
  *
  * The axis is a direction of any non-zero length, and a zero axis gives no
- * rotation. The result has length 1.
+ * rotation. The result has length 1, and is the same in every JavaScript
+ * engine, so a tick may call it. A rotation written out with `Math.sin` and
+ * `Math.cos` may differ in its last bit, since ECMAScript lets each engine
+ * round them its own way.
  *
  * **Gotchas**
  *
@@ -94,14 +98,15 @@ export const axisAngle = (
   z: number,
   angle: number
 ): { x: number; y: number; z: number; w: number } => {
-  const length = Math.hypot(x, y, z);
-  if (length === 0) {
+  const largest = Math.max(Math.abs(x), Math.abs(y), Math.abs(z));
+  if (largest === 0) {
     return { x: 0, y: 0, z: 0, w: 1 };
   }
-  // Over the axis's length: the angle would be another for an axis that
-  // is not of length 1, and not only the quaternion's length.
-  const sin = Math.sin(angle / 2) / length;
-  return { x: x * sin, y: y * sin, z: z * sin, w: Math.cos(angle / 2) };
+  const ax = x / largest;
+  const ay = y / largest;
+  const az = z / largest;
+  const sin = sine(angle / 2) / Math.sqrt(ax * ax + ay * ay + az * az);
+  return { x: ax * sin, y: ay * sin, z: az * sin, w: cosine(angle / 2) };
 };
 
 /**
