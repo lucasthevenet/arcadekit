@@ -1,6 +1,5 @@
 import * as Assets from "arcadekit/Assets";
 import * as Query from "arcadekit/Query";
-import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 
 import type { InstancesOptions, InstancesShared, Look } from "../Instances.ts";
@@ -12,6 +11,7 @@ import type { Kept } from "./holdings.ts";
 import { placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
 import { Instances } from "./mesh.ts";
+import { stores } from "./smooth.ts";
 
 /** The options of `Gltf.instances`, as its system reads them. */
 interface Bundled<B extends Entries, L extends Look> extends InstancesShared {
@@ -52,11 +52,9 @@ const drawer = (options: InstancesShared & Placing) => {
           Query.maybe(color)
         ).pipe(Query.with(...marked), Query.without(...excluded));
   return function* (drawn: Instances) {
-    // Which tick the game is at and how far towards the next the frame is:
-    // asked only by a system that draws between the two.
-    const tick = smooth ? (yield* Time).tick : 0;
-    const frame = smooth ? yield* Frame : undefined;
-    drawn.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
+    // What the app keeps of a tick ago: asked only by a system that draws
+    // between the two.
+    drawn.begin(smooth ? yield* stores : undefined);
     if (Painted === undefined) {
       (yield* Plain).eachChunk(drawn.drawPlain);
     } else {

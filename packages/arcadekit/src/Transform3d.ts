@@ -19,8 +19,17 @@
  * something that only has a location. Add `Rotation` and `Scale` for things
  * that turn or have a size of their own. A save names each by module and
  * component, as the world does, such as `"arcadekit/Transform3d.Position"`.
+ *
+ * A frame system draws an entity between its last two ticks with
+ * `Transform3d.smooth`, from what the app keeps outside the world.
  */
+import type { Effect } from "effect";
+
 import { Component, Field } from "./ecs/component.ts";
+import type { Entity } from "./ecs/component.ts";
+import type { EntityColumn } from "./ecs/query.ts";
+import { Row, smoothing } from "./internal/smooth.ts";
+import type { Frame, Time } from "./Services.ts";
 
 /**
  * An entity's position, in the game's units. Added without a value, it is at
@@ -94,3 +103,187 @@ export const axisAngle = (
   const sin = Math.sin(angle / 2) / length;
   return { x: x * sin, y: y * sin, z: z * sin, w: Math.cos(angle / 2) };
 };
+
+/**
+ * A frame's reads of where an entity is drawn between its last two ticks, as
+ * `Transform3d.smooth` hands them. Each is `Frame.alpha` of the way from the
+ * entity's value a tick ago to the value it is given, the entity's value now.
+ *
+ * An entity not read in the previous frame, by any frame system or by
+ * `@arcadekit/three`, is drawn where it is. That includes a new entity, one in
+ * a slot that belonged to another, and every entity in an app's first frame.
+ * Each call of `position`, `rotation` and `scale` returns a new object.
+ * `positions`, `rotations` and `scales` blend a run of rows that `eachChunk`
+ * hands out, for a loop over columns, and allocate nothing per entity.
+ *
+ * @category Models
+ */
+export interface Smooth {
+  /**
+   * Returns where an entity is drawn, given its `Position`. One that moved
+   * farther than `snap` in a tick, such as one that was teleported, is drawn
+   * at `position`. Without `snap`, any distance is motion.
+   */
+  readonly position: (
+    entity: Entity,
+    position: { readonly x: number; readonly y: number; readonly z: number },
+    snap?: number
+  ) => { x: number; y: number; z: number };
+  /**
+   * Returns the rotation an entity is drawn at, given its `Rotation`, turned
+   * along the shorter arc. Like a `Rotation`, it is of any length, and only its
+   * direction matters.
+   */
+  readonly rotation: (
+    entity: Entity,
+    rotation: {
+      readonly x: number;
+      readonly y: number;
+      readonly z: number;
+      readonly w: number;
+    }
+  ) => { x: number; y: number; z: number; w: number };
+  /** Returns the size an entity is drawn at, given its `Scale`. */
+  readonly scale: (
+    entity: Entity,
+    scale: { readonly x: number; readonly y: number; readonly z: number }
+  ) => { x: number; y: number; z: number };
+  /**
+   * Blends the positions of a run of rows, as `eachChunk` hands them, into
+   * columns of the app's own, which it returns: row `i` of the result is where
+   * the entity of row `i` is drawn. The next call overwrites them.
+   */
+  readonly positions: (
+    start: number,
+    end: number,
+    position: { readonly x: Column; readonly y: Column; readonly z: Column },
+    entities: EntityColumn,
+    snap?: number
+  ) => {
+    readonly x: Float32Array;
+    readonly y: Float32Array;
+    readonly z: Float32Array;
+  };
+  /** Blends the rotations of a run of rows, as `positions` does. */
+  readonly rotations: (
+    start: number,
+    end: number,
+    rotation: {
+      readonly x: Column;
+      readonly y: Column;
+      readonly z: Column;
+      readonly w: Column;
+    },
+    entities: EntityColumn
+  ) => {
+    readonly x: Float32Array;
+    readonly y: Float32Array;
+    readonly z: Float32Array;
+    readonly w: Float32Array;
+  };
+  /** Blends the scales of a run of rows, as `positions` does. */
+  readonly scales: (
+    start: number,
+    end: number,
+    scale: { readonly x: Column; readonly y: Column; readonly z: Column },
+    entities: EntityColumn
+  ) => {
+    readonly x: Float32Array;
+    readonly y: Float32Array;
+    readonly z: Float32Array;
+  };
+}
+
+/** A numeric column, as `eachChunk` hands it. */
+type Column = { readonly [row: number]: number };
+
+const row = new Row();
+
+/**
+ * Where a frame system draws its entities between their last two ticks, from
+ * what the app keeps of their positions, rotations and scales outside the
+ * world.
+ *
+ *   const Follow = System.frame("game/Follow", function* () {
+ *     const smooth = yield* Transform3d.smooth
+ *     ;(yield* Players).each((position, _player, entity) => {
+ *       const at = smooth.position(entity, position, 50)
+ *       camera.position.set(at.x, at.y + 10, at.z + 20)
+ *     })
+ *   })
+ *
+ * **When to use**
+ *
+ * Use to draw an entity in a frame system of your own, such as a camera that
+ * follows it, as smoothly as `@arcadekit/three` draws a kind with
+ * `smooth: true`. Both read the same store, so the camera stays on an entity
+ * that `Three.instances` or `Three.objects` draws between ticks.
+ *
+ * **Details**
+ *
+ * - It requires `Frame`, so only a frame system can yield it.
+ * - The app records an entity's value when a frame first reads it, and nothing
+ *   before: a game that reads nothing smoothly keeps nothing. What it keeps is
+ *   not in the world, so the game's hash, log and save are the same with it or
+ *   without.
+ * - At an `alpha` of 0, just after a tick, an entity is drawn where it was
+ *   before that tick. `app.frame()` draws at an `alpha` of 1, where the last
+ *   tick left it, and so does a game that ticks only when needed, while it
+ *   rests.
+ * - When several ticks ran since the last frame, an entity moves from where it
+ *   was in that frame. When none ran, it stays between the same two values.
+ *
+ * @category Services
+ */
+export const smooth: Effect.Effect<Smooth, never, Frame | Time> = smoothing(
+  (store): Smooth => ({
+    positions: (start, end, position, entities, snap) =>
+      store.lerp3
+        .of(Position)
+        .blend(start, end, position.x, position.y, position.z, entities, snap),
+    rotations: (start, end, rotation, entities) =>
+      store.nlerp4
+        .of(Rotation)
+        .blend(
+          start,
+          end,
+          rotation.x,
+          rotation.y,
+          rotation.z,
+          rotation.w,
+          entities
+        ),
+    scales: (start, end, scale, entities) =>
+      store.lerp3
+        .of(Scale)
+        .blend(start, end, scale.x, scale.y, scale.z, entities),
+    position: (entity, position, snap) => {
+      row.a[0] = position.x;
+      row.b[0] = position.y;
+      row.c[0] = position.z;
+      const out = store.lerp3
+        .of(Position)
+        .blend(0, 1, row.a, row.b, row.c, row.of(entity), snap);
+      return { x: out.x[0]!, y: out.y[0]!, z: out.z[0]! };
+    },
+    rotation: (entity, rotation) => {
+      row.a[0] = rotation.x;
+      row.b[0] = rotation.y;
+      row.c[0] = rotation.z;
+      row.d[0] = rotation.w;
+      const out = store.nlerp4
+        .of(Rotation)
+        .blend(0, 1, row.a, row.b, row.c, row.d, row.of(entity));
+      return { x: out.x[0]!, y: out.y[0]!, z: out.z[0]!, w: out.w[0]! };
+    },
+    scale: (entity, scale) => {
+      row.a[0] = scale.x;
+      row.b[0] = scale.y;
+      row.c[0] = scale.z;
+      const out = store.lerp3
+        .of(Scale)
+        .blend(0, 1, row.a, row.b, row.c, row.of(entity));
+      return { x: out.x[0]!, y: out.y[0]!, z: out.z[0]! };
+    },
+  })
+);

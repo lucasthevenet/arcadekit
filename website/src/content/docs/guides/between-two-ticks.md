@@ -1,6 +1,6 @@
 ---
 title: "Interpolation"
-description: "Ticks and frames don't line up. With smooth: true, @arcadekit/three draws each entity between its last two positions, so steady motion looks steady."
+description: "Ticks and frames don't line up. With smooth: true, @arcadekit/three draws each entity between its last two positions, so steady motion looks steady, and Transform2d.smooth does the same for a frame system of your own."
 ---
 
 **Interpolation** draws each entity between its last two positions, so that steady motion looks steady. A game ticks 60 times a second while a screen shows as many frames as it can, so ticks and frames don't line up. Some frames follow one tick, some two, and some none. An entity drawn where the last tick left it stutters even when it moves at a steady speed. See [ticks and frames](../concepts/ticks-and-frames.md).
@@ -35,7 +35,7 @@ A real-time game wants interpolation. It is off by default because the picture i
 ## Predict where an entity is drawn
 
 - Positions and scales are interpolated linearly. Rotations take the shorter path. A quaternion turns towards whichever of the target and its negation is closer, and a flat game's angle turns the shorter way round.
-- An entity not drawn in the previous frame is drawn where it is. That includes a new entity, one that reuses another's slot, one that was hidden, and every entity in the first frame, after a load, or after a frame in which the system didn't run.
+- An entity not drawn in the previous frame is drawn where it is. That includes a new entity, one that reuses another's slot, one that was hidden, and every entity in the first frame, after a load, or after a frame in which no system drew it.
 - `snap` is how far an entity can move in one tick and still be interpolated, in scene units, one distance per kind. An entity that moved further, such as one that wrapped from one edge of the world to the other, is drawn where it is. Without `snap`, any distance counts as motion.
 - When several ticks ran since the last frame, an entity starts from where it was last drawn, more than a tick back, so it moves faster for that one frame. When no tick ran, it stays between the same two positions as in the previous frame.
 - A position changed without a tick, by an action dispatched between ticks, becomes the target, and the entity moves to it from where it was coming from.
@@ -43,13 +43,41 @@ A real-time game wants interpolation. It is off by default because the picture i
 
 ## Check what interpolation stores and costs
 
-The system stores the previous value of each component per entity, outside the world. A game drawn this way has the same hash, log, and save as one that isn't drawn at all.
+The app stores the previous value of each component per entity, outside the world, from the first frame that draws the entity smoothly. A game that draws nothing smoothly stores nothing. A game drawn this way has the same hash, log, and save as one that isn't drawn at all.
 
 Interpolation costs about 17 ns more per entity per frame for a position, and 54 ns more for a position, a rotation, and a scale.
 
 ## Interpolate in your own frame system
 
-To interpolate in a frame system of your own, compute the position at `(yield* Frame).alpha` from a velocity or a previous position that your simulation keeps, as the frame example in [ticks and frames](../concepts/ticks-and-frames.md#drawing-never-changes-the-game) does.
+A frame system of your own, such as one that draws on a canvas or moves a camera, interpolates with `Transform2d.smooth` or `Transform3d.smooth`:
+
+```ts
+import { Component, Query, System, Transform2d } from "arcadekit";
+
+const Player = Component.tag("game/Player", {
+  requires: [Transform2d.Position],
+});
+const Players = Query.all(Transform2d.Position).pipe(Query.with(Player));
+
+const context = document.querySelector("canvas")!.getContext("2d")!;
+
+const Draw = System.frame("game/Draw", function* () {
+  const smooth = yield* Transform2d.smooth;
+  (yield* Players).each((position, entity) => {
+    const at = smooth.position(entity, position, 64); // 64 is a jump, not motion
+    context.fillRect(at.x, at.y, 8, 8);
+  });
+});
+```
+
+- `smooth.position`, `smooth.rotation` and `smooth.scale` take an entity and its component as the query hands it, and return where, at what angle and at what size it is drawn. `snap`, the third argument of `position`, works as the option of the same name.
+- `smooth.positions`, `smooth.rotations` and `smooth.scales` do the same for a run of rows that `eachChunk` hands out, into columns of the app's own that the next call overwrites, and allocate nothing per entity.
+- `Color.smooth` gives `color` and `colors`, which blend an entity's `Color.Rgb` however far it changed.
+- The rules above hold for it: an entity read in the previous frame comes from where it was, and every other one is drawn where it is.
+- It reads the same store as `Three.instances` and `Three.objects`. A camera that follows an entity drawn with `smooth: true` stays on it between ticks, and an entity one system read in the previous frame comes from where it was for every system.
+- It requires `Frame`, so a system of the tick or the input stage that asks for it doesn't compile.
+
+The game keeps no previous position of its own for this, and nothing of it is in the world.
 
 ## Read more
 

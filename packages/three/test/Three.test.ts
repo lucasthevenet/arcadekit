@@ -2625,6 +2625,38 @@ describe("an entity drawn between two ticks", () => {
         expect(saves[0]).toEqual(saves[1]);
       })
   );
+
+  it.effect(
+    "is where a camera of the game's own that follows it puts it, between every two ticks",
+    () =>
+      Effect.gen(function* () {
+        const followed: number[] = [];
+        const Follow = System.frame("th/Follow", function* () {
+          const smooth = yield* Transform3d.smooth;
+          (yield* Query.all(Position).pipe(Query.with(Rock))).each(
+            (position, entity) => {
+              followed.push(smooth.position(entity, position).x);
+            }
+          );
+        });
+        const { app, hand, mesh } = yield* play(
+          App.define({ plugins, systems: [Slide, Follow, Smoothed] })
+        );
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        const drawn: number[] = [];
+        yield* app.frame(0.5);
+        drawn.push(xAt(mesh(), 1));
+        for (let tick = 0; tick < 2; tick++) {
+          yield* app.tick(1);
+          for (const alpha of [0, 0.5, 1]) {
+            yield* app.frame(alpha);
+            drawn.push(xAt(mesh(), 1));
+          }
+        }
+        expect(drawn).toEqual([0, 0, 5, 10, 10, 15, 20]);
+        expect(followed).toEqual(drawn);
+      })
+  );
 });
 
 describe("a colour per instance", () => {

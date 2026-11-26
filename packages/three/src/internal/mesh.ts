@@ -15,7 +15,7 @@ import { isFlat } from "./kind.ts";
 import type { Placing } from "./kind.ts";
 import * as matrices from "./matrices.ts";
 import { smoothOf } from "./smooth.ts";
-import type { Smooth } from "./smooth.ts";
+import type { Smooth, Stores } from "./smooth.ts";
 
 /**
  * How finely a colour is converted; the table has one more entry than this.
@@ -176,11 +176,7 @@ export class Instances implements Kept {
     const { space } = color;
     let { r, g, b } = color;
     if (this.smooth !== undefined) {
-      ({
-        x: r,
-        y: g,
-        z: b,
-      } = this.smooth.color.run(start, end, r, g, b, entities));
+      ({ x: r, y: g, z: b } = this.smooth.color(start, end, r, g, b, entities));
     }
     let at = from * 3;
     for (let i = start; i < end; i++) {
@@ -268,9 +264,12 @@ export class Instances implements Kept {
     return at * 16;
   }
 
-  begin(tick: number, alpha: number, frame: number): void {
+  /** Starts a frame, with the app's store when the kind is drawn smoothly. */
+  begin(stores: Stores | undefined): void {
     this.count = 0;
-    this.smooth?.begin(tick, alpha, frame);
+    if (stores !== undefined) {
+      this.smooth?.begin(stores);
+    }
   }
 
   readonly placed = (
@@ -281,7 +280,7 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
+      position = smooth.position(start, end, position, entities);
     }
     const at = this.reserve(end - start);
     matrices.placed(this.array, at, start, end, position);
@@ -296,8 +295,8 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
-      scale = smooth.scale.blend(start, end, scale, entities);
+      position = smooth.position(start, end, position, entities);
+      scale = smooth.scale(start, end, scale, entities);
     }
     const at = this.reserve(end - start);
     matrices.sized(this.array, at, start, end, position, scale);
@@ -312,8 +311,8 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
-      rotation = smooth.rotation.blend(start, end, rotation, entities);
+      position = smooth.position(start, end, position, entities);
+      rotation = smooth.rotation(start, end, rotation, entities);
     }
     const at = this.reserve(end - start);
     matrices.turned(this.array, at, start, end, position, rotation);
@@ -329,9 +328,9 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.position.blend(start, end, position, entities);
-      rotation = smooth.rotation.blend(start, end, rotation, entities);
-      scale = smooth.scale.blend(start, end, scale, entities);
+      position = smooth.position(start, end, position, entities);
+      rotation = smooth.rotation(start, end, rotation, entities);
+      scale = smooth.scale(start, end, scale, entities);
     }
     const at = this.reserve(end - start);
     matrices.whole(this.array, at, start, end, position, rotation, scale);
@@ -345,7 +344,7 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
+      position = smooth.flatPosition(start, end, position, entities);
     }
     const at = this.reserve(end - start);
     matrices.placedFlat(this.array, at, start, end, position);
@@ -360,8 +359,8 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
-      scale = smooth.flatScale.blend(start, end, scale, entities);
+      position = smooth.flatPosition(start, end, position, entities);
+      scale = smooth.flatScale(start, end, scale, entities);
     }
     const at = this.reserve(end - start);
     matrices.sizedFlat(this.array, at, start, end, position, scale);
@@ -376,8 +375,8 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
-      rotation = smooth.flatRotation.blend(start, end, rotation, entities);
+      position = smooth.flatPosition(start, end, position, entities);
+      rotation = smooth.flatRotation(start, end, rotation, entities);
     }
     const at = this.reserve(end - start);
     matrices.turnedFlat(this.array, at, start, end, position, rotation);
@@ -393,9 +392,9 @@ export class Instances implements Kept {
   ): void => {
     const { smooth } = this;
     if (smooth !== undefined) {
-      position = smooth.flatPosition.blend(start, end, position, entities);
-      rotation = smooth.flatRotation.blend(start, end, rotation, entities);
-      scale = smooth.flatScale.blend(start, end, scale, entities);
+      position = smooth.flatPosition(start, end, position, entities);
+      rotation = smooth.flatRotation(start, end, rotation, entities);
+      scale = smooth.flatScale(start, end, scale, entities);
     }
     const at = this.reserve(end - start);
     matrices.wholeFlat(this.array, at, start, end, position, rotation, scale);

@@ -135,15 +135,18 @@ export interface InstancesOptions extends InstancesShared, Look {}
  *   the shorter arc.
  * - An entity that wasn't drawn in the previous frame is drawn where it is: a
  *   new entity, one in a slot that belonged to another, one that was hidden,
- *   and every entity on the first frame, after a load, or after a frame the
- *   system didn't run in. So is an entity that moved farther than `snap` in a
- *   tick.
+ *   and every entity on the first frame, after a load, or after a frame in
+ *   which no system drew it smoothly. So is an entity that moved farther than
+ *   `snap` in a tick.
+ * - It reads the app's store, as `Transform3d.smooth` and `Transform2d.smooth`
+ *   do, so a frame system of the game's own, such as a camera that follows an
+ *   entity, draws it where its instance is.
  * - When several ticks ran since the last frame, an entity moves from where it
  *   was last drawn. When none ran, it stays between the same two positions as
  *   in the previous frame. A position changed without a tick becomes the new
  *   end of that move, which keeps its start.
- * - What interpolation keeps, each component's value a tick ago, isn't part of
- *   the world. The game's hash, log and save are the same with it or without.
+ * - What interpolation keeps, each component's value a tick ago, is the app's,
+ *   and isn't part of the world. The game's hash, log and save are the same with it or without.
  *
  * **Gotchas**
  *
