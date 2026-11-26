@@ -57,7 +57,7 @@ const Monster = Component.define("gr/Monster", { hp: Field.i32 });
 
 const Creatures = Query.all(Pos);
 const Wandering = Query.all(Pos, Monster).pipe(Query.writes(Pos, Monster));
-const Walkers = Query.all(Pos, Player).pipe(Query.writes(Pos));
+const Walkers = Query.all(Pos).pipe(Query.with(Player), Query.writes(Pos));
 
 class Blocked extends Schema.TaggedError<Blocked>()("GridTestBlocked", {
   by: Schema.String,

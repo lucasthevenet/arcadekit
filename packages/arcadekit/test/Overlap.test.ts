@@ -118,8 +118,12 @@ describe("the pairs of two queries", () => {
         [Overlap.Box, Overlap.Circle],
         [Overlap.Box, Overlap.Box],
       ] as const) {
-        const reds = world.view(Query.all(Transform2d.Position, first, Red));
-        const blues = world.view(Query.all(Transform2d.Position, second, Blue));
+        const reds = world.view(
+          Query.all(Transform2d.Position, first).pipe(Query.with(Red))
+        );
+        const blues = world.view(
+          Query.all(Transform2d.Position, second).pipe(Query.with(Blue))
+        );
         const found: [Entity, Entity][] = [];
         Overlap.pairs(NONE, reds, blues, (red, blue) => {
           found.push([red, blue]);

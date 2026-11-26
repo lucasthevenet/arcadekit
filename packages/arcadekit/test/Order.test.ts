@@ -293,7 +293,7 @@ describe("the order of systems", () => {
 
 describe("what a system spawns and sets", () => {
   const Dot = Component.tag("or/Dot");
-  const NewDots = Query.all(Dot).pipe(Query.added(Dot));
+  const NewDots = Query.all().pipe(Query.added(Dot));
   /** Spawns a dot each tick. */
   const Grow = System.tick("Grow", function* () {
     (yield* Commands.spawns(Dot)).spawn(Dot);
@@ -516,7 +516,7 @@ describe("what a spawn fills in", () => {
     () =>
       Effect.gen(function* () {
         const playing = State.scoped(Phase, "playing");
-        const NewInPlay = Query.all(playing).pipe(Query.added(playing));
+        const NewInPlay = Query.all().pipe(Query.added(playing));
         const Scoped = System.tick("Scoped", function* () {
           (yield* Commands.spawns(Rock, playing)).spawn(Rock, playing);
         });

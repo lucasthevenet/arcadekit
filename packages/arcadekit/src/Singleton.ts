@@ -34,6 +34,14 @@ declare abstract class LiveObject {
 }
 interface Live extends LiveObject {}
 
+declare const WritesBrand: unique symbol;
+
+// The same, for the value that `writes` gives: a read is not a write.
+declare abstract class WritesObject {
+  get [WritesBrand](): true;
+}
+interface Writes extends WritesObject {}
+
 /**
  * A singleton's value as `yield*` and `World.singleton` read it: the world's
  * own object, read-only, and the same object on every read. Its fields are
@@ -44,6 +52,23 @@ interface Live extends LiveObject {}
  * @category Models
  */
 export type Read<S extends Schema> = Readonly<ValueOf<S>> & Live;
+
+/**
+ * The value `yield* T.writes` gives for the singleton `T`: the world's own
+ * object, as `Singleton.Read` is, with fields that can be assigned. A plain
+ * function that writes a singleton for the system that calls it takes one.
+ *
+ *   const Score = Singleton.define("game/Score", { points: Field.u32 }, { points: 0 })
+ *
+ *   const award = (score: Singleton.Write<typeof Score>, points: number) => {
+ *     score.points += points
+ *   }
+ *   award(yield* Score.writes, 10)   // in a system of the tick
+ *
+ * @category Models
+ */
+export type Write<T extends Singleton<Schema>> =
+  T extends Singleton<infer S> ? ValueOf<S> & Live & Writes : never;
 
 /**
  * A singleton's definition, as `Singleton.define` makes it. It is an Effect,
@@ -60,7 +85,9 @@ export class Singleton<S extends Schema>
   implements SingletonSpec<S>
 {
   private effect: Effect.Effect<Read<S>, never, World> | undefined;
-  private writing: Effect.Effect<ValueOf<S>, never, World | Sim> | undefined;
+  private writing:
+    | Effect.Effect<ValueOf<S> & Live & Writes, never, World | Sim>
+    | undefined;
 
   constructor(
     readonly component: ComponentDef<S>,
@@ -85,9 +112,10 @@ export class Singleton<S extends Schema>
    * to the system's requirements, and a system of the frame or input stage
    * that requires `Sim` doesn't compile.
    */
-  get writes(): Effect.Effect<ValueOf<S>, never, World | Sim> {
-    return (this.writing ??= Effect.map(Effect.service(World), (world) =>
-      world.singleton(this)
+  get writes(): Effect.Effect<ValueOf<S> & Live & Writes, never, World | Sim> {
+    return (this.writing ??= Effect.map(
+      Effect.service(World),
+      (world) => world.singleton(this) as ValueOf<S> & Live & Writes
     ));
   }
 }

@@ -82,7 +82,9 @@ import {
 const Bullet = Component.tag("game/Bullet");
 const Enemy = Component.define("game/Enemy", { hp: Field.i32 });
 
-const Bullets = Query.all(Transform2d.Position, Overlap.Circle, Bullet);
+const Bullets = Query.all(Transform2d.Position, Overlap.Circle).pipe(
+  Query.with(Bullet)
+);
 const Enemies = Query.all(Transform2d.Position, Overlap.Circle, Enemy);
 
 export const Hit = System.tick("game/Hit", function* () {

@@ -115,6 +115,7 @@ describe("a frozen world", () => {
     // Reading.
     expect(world.get(ball, Ball)).toEqual({ x: 1, vx: 2 });
     expect(world.view(Balls).count()).toBe(2);
+    expect(world.view(Query.all(Ball, Glow)).single()[0].x).toBe(1);
     expect(world.singleton(Score).points).toBe(7);
     let sum = 0;
     world.view(Balls).each((row) => {
@@ -164,6 +165,15 @@ describe("a frozen world", () => {
             .each((row) => {
               row.x = 0;
             }),
+      ],
+      [
+        'An assignment to "fr/Ball.x"',
+        () => {
+          const [row] = world
+            .view(Query.all(Ball, Glow).pipe(Query.writes(Ball)))
+            .single();
+          row.x = 0;
+        },
       ],
       [
         'An assignment to "fr/Glow.level"',

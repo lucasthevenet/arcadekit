@@ -67,7 +67,9 @@ const Fountain = System.tick("Fountain", function* () {
 const Thaw = Action.define("demo/Thaw");
 const thaw = Action.handler(Thaw, function* () {
   const commands = yield* Commands;
-  for (const entity of (yield* Query.all(Frozen)).entities()) {
+  for (const entity of (yield* Query.all().pipe(
+    Query.with(Frozen)
+  )).entities()) {
     commands.remove(entity, Frozen);
   }
 });

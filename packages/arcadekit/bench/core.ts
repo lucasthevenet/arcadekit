@@ -122,6 +122,9 @@ const family = (world: World): Entity[] => {
 };
 
 const Moving = query([Position, Velocity]);
+/** The one entity of its table: what a game has one of, such as its player. */
+const Player = Component.tag("bench/Player");
+const Players = query([Position], { withDefs: [Player] });
 /** The entities of `spread`'s last table, and no others: 1 table in 100. */
 const OneTable = query([Position, Velocity], { withDefs: spreadTags });
 
@@ -800,6 +803,61 @@ export const variants: Record<string, Variant> = {
             watcher.each((vel) => {
               sink += vel.x;
             });
+          }
+        },
+        2000,
+        500
+      );
+      void sink;
+      return ms / 1000;
+    },
+  },
+  single: {
+    unit: "visit",
+    label: "single: the one player among 100,000, read and written",
+    run: () => {
+      const world = new World();
+      populate(world);
+      world.spawn(Position.of({ x: 0, y: 0 }), Velocity, Player);
+      const players = world.view(Players);
+      let sink = 0;
+      const ms = measure(
+        () => {
+          // A thousand reads a sample: one is too short to time.
+          for (let i = 0; i < 1000; i++) {
+            const [position] = players.single();
+            position.x += DT;
+            sink += position.y;
+          }
+        },
+        2000,
+        500
+      );
+      void sink;
+      return ms / 1000;
+    },
+  },
+  singleByEach: {
+    unit: "visit",
+    label: "the same, written by hand with each",
+    run: () => {
+      const world = new World();
+      populate(world);
+      world.spawn(Position.of({ x: 0, y: 0 }), Velocity, Player);
+      const players = world.view(Players);
+      let sink = 0;
+      const ms = measure(
+        () => {
+          for (let i = 0; i < 1000; i++) {
+            let seen = 0;
+            players.each((position) => {
+              seen++;
+              position.x += DT;
+              sink += position.y;
+            });
+            if (seen !== 1) {
+              throw new Error(`${seen} players`);
+            }
           }
         },
         2000,

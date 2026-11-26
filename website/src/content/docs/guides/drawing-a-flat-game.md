@@ -54,9 +54,8 @@ export const Rules = Plugin.make("game/Rules", {
   handlers: [
     Action.handler(Aim, function* ({ x, y }) {
       const aimed = yield* Aimed.writes;
-      (yield* Players).each((at) => {
-        aimed.angle = Math.atan2(y - at.y, x - at.x);
-      });
+      const [at] = (yield* Players).single();
+      aimed.angle = Math.atan2(y - at.y, x - at.x);
     }),
   ],
 });

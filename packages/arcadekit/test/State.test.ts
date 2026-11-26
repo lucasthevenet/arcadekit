@@ -1362,7 +1362,7 @@ describe("an entity scoped to a state", () => {
     const Spawn = System.tick("Spawn", function* () {
       (yield* Commands.spawns(Wall, playing)).spawn(Wall.of({ n: 1 }), playing);
     });
-    const NewInLevel = Query.all(State.scoped(Level, "playing")).pipe(
+    const NewInLevel = Query.all().pipe(
       Query.added(State.scoped(Level, "playing"))
     );
     const Count = System.tick("Count", function* () {
@@ -1373,7 +1373,7 @@ describe("an entity scoped to a state", () => {
     ] extends [never]
       ? "nothing"
       : "misordered" = "nothing";
-    const NewInPhase = Query.all(playing).pipe(Query.added(playing));
+    const NewInPhase = Query.all().pipe(Query.added(playing));
     const Late = System.tick("Late", function* () {
       (yield* NewInPhase).count();
     });

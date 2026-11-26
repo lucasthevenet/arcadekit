@@ -69,6 +69,11 @@ const Both = Query.all(Body, Aura).pipe(
   Query.writes(Body, Aura),
   Query.without(Chilled)
 );
+/** The first entity of `populated`, the one of its tables that has every tag. */
+const First = Query.all(Body, Aura).pipe(
+  Query.with(Marked, Chilled),
+  Query.writes(Body, Aura)
+);
 
 /** A world with a few tables, some sparse members and some freed slots. */
 const populated = (): { world: EcsWorld; entities: Entity[] } => {
@@ -192,6 +197,11 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
         aura.columns.short[aura.indexOf(ids[i]!)] = 8;
       }
     });
+  },
+  "single over the one entity of a query": (world) => {
+    const [body, aura] = world.view(First).single();
+    body.x = 55;
+    aura.note = "single";
   },
   "a row, then its whole column, then the row again": (world, entities) => {
     world.set(entities[2]!, Body, { x: 10 });

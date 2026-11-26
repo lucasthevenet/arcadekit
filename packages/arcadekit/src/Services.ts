@@ -26,7 +26,7 @@ import type { Spawned } from "./ecs/spawned.ts";
 import type { World as EcsWorld } from "./ecs/world.ts";
 import type { ReadingEvents } from "./Event.ts";
 import type { Devices } from "./Input.ts";
-import { writing } from "./internal/handed.ts";
+import { spawning, writing } from "./internal/handed.ts";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query.ts";
 import type * as Singleton from "./Singleton.ts";
 import type { Locals } from "./System.ts";
@@ -44,10 +44,20 @@ export class Sim extends Context.Service<
   { readonly "~arcadekit/Sim": true }
 >()("arcadekit/Services.Sim") {}
 
-/** What `set` is told of a component its world was not asked for. */
-type Settable<C extends string, N extends string> = C extends N
+/**
+ * What `set` is told of a component its world was not asked for: nothing when
+ * `C` is one of `N`, since a function that takes any of `N` takes `C`. `N` is
+ * only in the type checked, never in the one it is checked against, so that
+ * the compiler can compare two worlds that set different components: one
+ * that sets more is a world that sets less.
+ */
+type Settable<C extends string, N extends string> = [
+  (name: N) => void,
+] extends [(name: C) => void]
   ? unknown
-  : `World.writes was not given "${C}". Add it where the world is asked for: yield* World.writes(...), with every component this system sets.`;
+  : Unasked<C>;
+type Unasked<C extends string> =
+  `World.writes was not given "${C}". Add it where the world is asked for: yield* World.writes(...), with every component this system sets.`;
 
 /**
  * The world as `yield* World` and `app.read` hand it, which reads and has no
@@ -107,9 +117,19 @@ export interface ReadingWorld extends Pick<
  *   `Commands`.
  * - The set of entities changes through `Commands` alone.
  *
+ * **When to use**
+ *
+ * Use as the parameter of a plain function that a system and a handler both
+ * call, typed for what the function sets. A world that sets more is one
+ * that sets less, so the function takes the world of any system that sets
+ * those components, and others:
+ *
+ *   const heal = (world: WritingWorld<"game/Health">, target: Entity) => { ... }
+ *   heal(yield* World.writes(Health, Position), target)
+ *
  * @category Models
  */
-export interface WritingWorld<N extends string> extends ReadingWorld {
+export interface WritingWorld<in N extends string> extends ReadingWorld {
   set<S extends Schema, St extends Storage, C extends string>(
     entity: Entity,
     def: ComponentDef<S, St, C> & Settable<C, N>,
@@ -207,16 +227,20 @@ export class Frame extends Context.Service<Frame, Readonly<FrameState>>()(
 /**
  * What `spawn` and `add` are told of a component their commands were not asked
  * for. Nothing of a relation given bare: `Targeted` tells that, and two
- * messages would make one `never`.
+ * messages would make one `never`. As with `Settable`, `N` is only in the
+ * types checked, so that commands that spawn more are commands that spawn
+ * less.
  */
 type Spawnable<I, N extends string> =
   unknown extends Targeted<I>
     ? [N] extends [never]
       ? "These commands were asked for with yield* Commands, which despawn and remove. To spawn or add, ask for them with yield* Commands.spawns(...), naming each component this system spawns or adds."
-      : NameOf<I> extends N
+      : [(name: N) => void] extends [(name: NameOf<I>) => void]
         ? unknown
-        : `Commands.spawns was not given "${NameOf<I>}". Add it where the commands are asked for: yield* Commands.spawns(...), with every component this system spawns or adds.`
+        : Unspawned<NameOf<I>>
     : unknown;
+type Unspawned<C extends string> =
+  `Commands.spawns was not given "${C}". Add it where the commands are asked for: yield* Commands.spawns(...), with every component this system spawns or adds.`;
 
 // One component at a time, so that one whose requirements the compiler only
 // knows as `string` doesn't make the union `string` and hide the others'.
@@ -231,11 +255,13 @@ type Filled<D> = D extends unknown
  * The commands of a system or a handler, which change the set of entities.
  * They are queued, and applied when the system or handler finishes. They
  * despawn and remove, and they spawn and add the components named `N`, those
- * that `Commands.spawns` was given.
+ * that `Commands.spawns` was given. Commands that spawn more are commands
+ * that spawn less, so a plain function typed `Spawning<"game/Spark">` takes
+ * the commands of any system that spawns sparks, and others.
  *
  * @category Models
  */
-export interface Spawning<N extends string> {
+export interface Spawning<in N extends string> {
   /**
    * Queues a new entity with these components, and returns its id at once.
    * The id is a `Spawned` id, since the entity is placed when the system
@@ -292,7 +318,10 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
     Spawning<NameOf<D[number]>>,
     never,
     Commands | AddsOf<NameOf<D[number]> | Filled<D[number]>>
-  > => Effect.service(Commands);
+  > =>
+    Effect.map(Effect.service(Commands), (commands) =>
+      spawning<NameOf<D[number]>>(commands)
+    );
 }
 
 /**

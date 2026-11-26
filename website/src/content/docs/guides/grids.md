@@ -65,7 +65,7 @@ const Pos = Component.define("rogue/Pos", { x: Field.i32, y: Field.i32 });
 const Player = Component.tag("rogue/Player");
 
 const Creatures = Query.all(Pos);
-const Players = Query.all(Pos, Player).pipe(Query.writes(Pos));
+const Players = Query.all(Pos).pipe(Query.with(Player), Query.writes(Pos));
 
 class Blocked extends Schema.TaggedError<Blocked>()("RogueBlocked", {}) {}
 
@@ -78,18 +78,12 @@ const Step = Action.define(
 export const step = Action.handler(Step, function* ({ dx, dy }) {
   const { tiles } = yield* Floor;
   const here = Grid.occupants(tiles, yield* Creatures);
-  let blocked = false;
-  (yield* Players).each((pos) => {
-    if (here.first(pos.x + dx, pos.y + dy) !== undefined) {
-      blocked = true;
-      return;
-    }
-    pos.x += dx;
-    pos.y += dy;
-  });
-  if (blocked) {
+  const [pos] = (yield* Players).single();
+  if (here.first(pos.x + dx, pos.y + dy) !== undefined) {
     return yield* Blocked.make({});
   }
+  pos.x += dx;
+  pos.y += dy;
 });
 ```
 

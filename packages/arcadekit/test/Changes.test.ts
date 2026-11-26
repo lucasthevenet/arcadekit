@@ -154,6 +154,14 @@ describe("a change query", () => {
       }
     });
     expect(moved.entities()).toEqual([entities[6], entities[9]]);
+
+    world.add(entities[7]!, Boss);
+    const [boss] = world
+      .view(Query.all(Position).pipe(Query.with(Boss), Query.writes(Position)))
+      .single();
+    expect(moved.entities()).toEqual([]);
+    boss.x = 70;
+    expect(moved.entities()).toEqual([entities[7]]);
   });
 
   it("counts every row that eachChunk hands out of what it writes as written", () => {

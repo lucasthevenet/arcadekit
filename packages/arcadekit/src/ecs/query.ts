@@ -257,7 +257,8 @@ type OnRun = (table: Table, start: number, end: number) => void;
 /**
  * A query resolved against one world, as `World.view` returns it and a system
  * gets it from `yield* SomeQuery`. `each` and `eachChunk` visit the entities
- * that match, and `count` and `entities` read them.
+ * that match, `single` hands out the one it matches, and `count` and
+ * `entities` read them.
  *
  * Every visit goes in the same order: tables in the order they were created,
  * and the rows of each table in order.
@@ -1338,6 +1339,49 @@ export class QueryView<D extends Terms = Terms> {
   }
 
   /**
+   * Returns the one entity the view matches, as `each` would hand it out: an
+   * accessor for each term, then its id. Use it for what a game has one of,
+   * such as its player.
+   *
+   *   const Players = Query.all(Position).pipe(Query.with(Player))
+   *   const [position, player] = (yield* Players).single()
+   *
+   * It throws when the view matches no entity, or more than one, and the
+   * error names the query and how many it matched. A change query has no
+   * one entity, and throws too.
+   *
+   * **Gotchas**
+   *
+   * The accessors are the view's own, as in `each`: they read and write the
+   * entity until the world's entities change, when the commands are applied.
+   * Ask for it again then, as a system does every tick.
+   */
+  single(): [...AccessorsOf<D>, entity: Entity] {
+    if (this.watching) {
+      throw new Error(
+        `single() was called on a change query, ${shown(this.spec)}, which visits only what changed since its last visit. Read the one entity with a query without Query.changed or Query.added.`
+      );
+    }
+    let matched = 0;
+    let found: [...AccessorsOf<D>, entity: Entity] | undefined;
+    this._each((...args) => {
+      if (matched++ === 0) {
+        found = args;
+      }
+    }, undefined);
+    if (matched !== 1 || found === undefined) {
+      throw new Error(
+        `single() found ${matched} entities of ${shown(this.spec)}, and reads exactly one. ${
+          matched === 0
+            ? "Spawn it before the systems that read it, or check view.count() first."
+            : "Narrow the query with Query.with or Query.without, or visit them all with each()."
+        }`
+      );
+    }
+    return found;
+  }
+
+  /**
    * Returns the matching entities in the order a loop visits them, as a new
    * array. For a change query, the call is a visit, as `each` is.
    */
@@ -1398,6 +1442,15 @@ export class QueryView<D extends Terms = Terms> {
     return new PointingView(this, relation, target);
   }
 }
+
+/** A query as an error names it: what it takes, and what narrows it. */
+const shown = (spec: QuerySpec): string => {
+  const names = (defs: readonly ComponentDef[]): string =>
+    defs.map((def) => `"${def.name}"`).join(", ");
+  const narrowed = (label: string, defs: readonly ComponentDef[]): string =>
+    defs.length === 0 ? "" : `, ${label} ${names(defs)}`;
+  return `the query of ${spec.terms.length === 0 ? "no terms" : names(spec.terms)}${narrowed("with", spec.withDefs)}${narrowed("without", spec.withoutDefs)}`;
+};
 
 /** The names of a query's terms that are relations. */
 type RelationNamesOf<D extends Terms> = {

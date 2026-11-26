@@ -60,6 +60,73 @@ const Fountain = System.tick("game/Fountain", function* () {
 
 The fountain's progress is in the world, so a [save](saving-and-loading.md) holds it, a replay or a rewind picks it up where it was, and the world's hash covers it. A game that [ticks only when needed](running-a-game.md#tick-only-when-needed) keeps ticking while the fountain counts down, because each tick changes the world.
 
+## Share a rule between systems with a plain function
+
+A rule that a system and an action's handler both apply is a plain function. It takes what the system was handed, typed for what the function uses:
+
+```ts
+import {
+  Action,
+  Commands,
+  Component,
+  EntityId,
+  Field,
+  Query,
+  Singleton,
+  System,
+  World,
+} from "arcadekit";
+import type { Entity, Spawning, WritingWorld } from "arcadekit";
+import { Schema } from "effect";
+
+const Health = Component.define("game/Health", { hp: Field.i32 });
+const Position = Component.define("game/Position", { x: Field.f32 });
+const Spark = Component.tag("game/Spark");
+const Score = Singleton.define("game/Score", { hits: Field.u32 }, { hits: 0 });
+
+const strike = (
+  world: WritingWorld<"game/Health">,
+  commands: Spawning<"game/Spark">,
+  score: Singleton.Write<typeof Score>,
+  target: Entity
+): void => {
+  world.set(target, Health, { hp: world.get(target, Health)!.hp - 1 });
+  commands.spawn(Spark);
+  score.hits += 1;
+};
+
+const Strike = Action.define(
+  "game/Strike",
+  Schema.Struct({ target: EntityId })
+);
+export const struck = Action.handler(Strike, function* ({ target }) {
+  strike(
+    yield* World.writes(Health),
+    yield* Commands.spawns(Spark),
+    yield* Score.writes,
+    target
+  );
+});
+
+const Falling = Query.all(Position).pipe(Query.with(Health));
+
+export const Fall = System.tick("game/Fall", function* () {
+  const world = yield* World.writes(Health, Position);
+  const commands = yield* Commands.spawns(Spark, Position);
+  const score = yield* Score.writes;
+  for (const target of (yield* Falling).entities()) {
+    if (world.get(target, Position)!.x < 0) {
+      strike(world, commands, score, target);
+      world.set(target, Position, { x: 0 });
+    }
+  }
+});
+```
+
+- `WritingWorld<N>` is the world that sets the components named `N`. A world that sets more is one too, so `Fall`'s world, which sets health and positions, is a world that sets health. One that sets less, or only reads, doesn't compile.
+- `Spawning<N>` is the same for commands, and `Singleton.Write<typeof Score>` is what `yield* Score.writes` gives.
+- The function asks for nothing with `yield*`, so it adds nothing to a system's requirements. What the system asked for is what the [order check](#order-systems) reads, so the system names what the function writes.
+
 ## Order systems
 
 Systems run in the order they are listed. A plugin's systems run before the app's own, and a plugin's dependencies' systems run before the plugin's.

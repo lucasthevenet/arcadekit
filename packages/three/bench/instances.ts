@@ -332,7 +332,9 @@ variant(
         })
       );
       return {
-        entities: (yield* app.read(Query.all(Thing))).entities(),
+        entities: (yield* app.read(
+          Query.all().pipe(Query.with(Thing))
+        )).entities(),
         world: yield* app.read(World),
       };
     })

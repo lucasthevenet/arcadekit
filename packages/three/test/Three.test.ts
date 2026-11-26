@@ -3120,11 +3120,12 @@ describe("a colour per instance", () => {
     "refuses a colour that is no number, as a division by zero leaves it",
     () =>
       Effect.gen(function* () {
-        const Painting = Query.all(Rock, Color.Rgb).pipe(
+        const Painting = Query.all(Color.Rgb).pipe(
+          Query.with(Rock),
           Query.writes(Color.Rgb)
         );
         const Spoil = System.tick("th/Spoil", function* () {
-          (yield* Painting).eachChunk((from, to, _rock, color) => {
+          (yield* Painting).eachChunk((from, to, color) => {
             for (let i = from; i < to; i++) {
               color.r[i] = color.r[i]! / 0;
             }
