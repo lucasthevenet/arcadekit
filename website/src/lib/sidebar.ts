@@ -85,6 +85,7 @@ export const OUTLINE: readonly (Group & {
     label: "The simulation",
     items: [
       "guides/components",
+      "guides/singletons",
       "guides/relations",
       "guides/transforms",
       "guides/queries",
@@ -141,7 +142,7 @@ export const OUTLINE: readonly (Group & {
   {
     topic: "guides",
     label: "Testing",
-    items: ["guides/testing", "guides/testing-peers"],
+    items: ["guides/testing", "guides/testing-by-hand", "guides/testing-peers"],
   },
   { topic: "guides", label: "Debugging", items: ["guides/debugging"] },
   {
