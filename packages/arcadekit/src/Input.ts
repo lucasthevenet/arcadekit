@@ -49,8 +49,11 @@ import * as Action from "./Action.ts";
 import type { World as EcsWorld } from "./ecs/world.ts";
 import * as Field from "./Field.ts";
 import { whole } from "./internal/handed.ts";
+import { Views } from "./internal/input.ts";
+import type { Undrawn } from "./internal/input.ts";
 import * as Plugin from "./Plugin.ts";
 import { Time, World } from "./Services.ts";
+import type { TimeState } from "./Services.ts";
 import * as Singleton from "./Singleton.ts";
 import * as System from "./System.ts";
 
@@ -337,8 +340,8 @@ const Held = Singleton.define(
   "arcadekit/Input",
   {
     /**
-     * Every button held down, and the ones that went up in the last tick that
-     * received a report.
+     * Every button that has been down, and the ticks it last went down and
+     * up in: a frame after several ticks reads them.
      */
     buttons: Field.json<Buttons>(),
     /** Every axis not at 0. */
@@ -394,17 +397,8 @@ const nextButtons = (
   payload: ReportPayload,
   tick: number
 ): Buttons | undefined => {
-  const after: Record<string, Marks> = {};
+  const after: Record<string, Marks> = { ...before };
   let changed = false;
-  for (const code of Object.keys(before)) {
-    const marks = before[code]!;
-    // A button that is up is remembered for the tick it went up in.
-    if (marks[0] === 1 || marks[2] >= tick) {
-      after[code] = marks;
-    } else {
-      changed = true;
-    }
-  }
   for (const code of payload.up ?? []) {
     const marks = after[code];
     if (marks !== undefined && marks[0] === 1) {
@@ -577,9 +571,9 @@ const Read = System.input("arcadekit/Input.Read", function* () {
 export interface KeyboardView {
   /** Returns whether a key is held down, given its `KeyboardEvent.code`. */
   readonly down: (code: string) => boolean;
-  /** Returns whether a key went down in this tick, whether or not it is still held. */
+  /** Returns whether a key went down in this tick, or for a frame system since the last frame, whether or not it is still held. */
   readonly pressed: (code: string) => boolean;
-  /** Returns whether a key went up in this tick. */
+  /** Returns whether a key went up in this tick, or for a frame system since the last frame. */
   readonly released: (code: string) => boolean;
 }
 
@@ -595,9 +589,9 @@ export interface PointerView {
   readonly y: number;
   /** Returns whether a button is held down. The button defaults to 0, the primary button. */
   readonly down: (button?: number) => boolean;
-  /** Returns whether a button went down in this tick. The button defaults to 0, the primary button. */
+  /** Returns whether a button went down in this tick, or for a frame system since the last frame. The button defaults to 0, the primary button. */
   readonly pressed: (button?: number) => boolean;
-  /** Returns whether a button went up in this tick. The button defaults to 0, the primary button. */
+  /** Returns whether a button went up in this tick, or for a frame system since the last frame. The button defaults to 0, the primary button. */
   readonly released: (button?: number) => boolean;
 }
 
@@ -611,9 +605,9 @@ export interface GamepadView {
   readonly axis: (axis: number) => number;
   /** Returns whether a button is held down. */
   readonly down: (button: number) => boolean;
-  /** Returns whether a button went down in this tick. */
+  /** Returns whether a button went down in this tick, or for a frame system since the last frame. */
   readonly pressed: (button: number) => boolean;
-  /** Returns whether a button went up in this tick. */
+  /** Returns whether a button went up in this tick, or for a frame system since the last frame. */
   readonly released: (button: number) => boolean;
 }
 
@@ -631,6 +625,14 @@ export interface GamepadView {
  * change. A system that runs every tick sees each change once. The handlers of
  * the actions applied at the start of that tick see it too: an action bound to
  * a key sees the press that issued it.
+ *
+ * A frame system is told what changed in the ticks since the last frame, so it
+ * too sees each change once, in the first frame after its tick, however many
+ * frames a tick has or ticks a frame has. After `Timeline.rewind`, the ticks
+ * run again are new to it, as their events are. After a rewind with
+ * `{ again: true }`, as a rollback session makes, a press the last frame
+ * showed isn't shown again, and one that only the ticks run again have is
+ * shown once.
  *
  * **Gotchas**
  *
@@ -679,43 +681,94 @@ export const Gamepad = (
 ): Effect.Effect<GamepadView, never, Gamepads> =>
   (padViews[index] ??= Effect.map(Gamepads, (pads) => pads(index)));
 
+/** Which of a button's marks: the tick it last went down in, or up in. */
+type Went = 1 | 2;
+
+/**
+ * The keyboard, the pointer and the gamepads as the world holds them, where
+ * `went` says whether a button went down or up in the reader's moment.
+ */
+const devicesIn = (
+  held: { readonly buttons: Buttons; readonly axes: Axes },
+  went: (code: string, which: Went) => boolean
+): Context.Context<Keyboard | Pointer | Gamepads> => {
+  const down = (code: string): boolean => held.buttons[code]?.[0] === 1;
+  const pressed = (code: string): boolean => went(code, 1);
+  const released = (code: string): boolean => went(code, 2);
+  const pads: GamepadView[] = [];
+  return Context.make(Keyboard, { down, pressed, released }).pipe(
+    Context.add(Pointer, {
+      get x() {
+        return held.axes[pointerX] ?? 0;
+      },
+      get y() {
+        return held.axes[pointerY] ?? 0;
+      },
+      down: (button = 0) => down(pointerButton(button)),
+      pressed: (button = 0) => pressed(pointerButton(button)),
+      released: (button = 0) => released(pointerButton(button)),
+    }),
+    Context.add(
+      Gamepads,
+      (index) =>
+        (pads[index] ??= {
+          axis: (axis) => held.axes[padAxis(index, axis)] ?? 0,
+          down: (button) => down(padButton(index, button)),
+          pressed: (button) => pressed(padButton(index, button)),
+          released: (button) => released(padButton(index, button)),
+        })
+    )
+  );
+};
+
+/**
+ * The devices as the frame stage reads them: what went down or up in a tick
+ * no frame has drawn, and no tick to come, since an action dispatched since
+ * the last tick is the next tick's. A tick that a rewind with `again` ran
+ * again was drawn, and a press of it that the last frame saw is not shown
+ * twice.
+ */
+const drawnFrom = (
+  held: { readonly buttons: Buttons; readonly axes: Axes },
+  time: Readonly<TimeState>,
+  undrawn: Readonly<Undrawn>
+): Context.Context<Keyboard | Pointer | Gamepads> => {
+  // The buttons as the last frame that read them saw them, and as this
+  // frame sees them: the world's record, which a change replaces whole.
+  let frames = undrawn.frames - 1;
+  let seen = held.buttons;
+  let before = seen;
+  return devicesIn(held, (code, which) => {
+    if (frames !== undrawn.frames) {
+      frames = undrawn.frames;
+      before = seen;
+      seen = held.buttons;
+    }
+    const tick = held.buttons[code]?.[which] ?? NEVER;
+    return (
+      undrawn.since < tick &&
+      tick <= time.tick &&
+      !(tick <= undrawn.drawn && (before[code]?.[which] ?? NEVER) === tick)
+    );
+  });
+};
+
 const views = Layer.effectContext(
   Effect.gen(function* () {
     const world = whole(yield* World);
     const time = yield* Time;
     const held = world.singleton(Held);
-    const down = (code: string): boolean => held.buttons[code]?.[0] === 1;
     // The tick whoever asks belongs to. An action's handler runs before its
     // tick is counted, in a transaction of the world, which is how it is
     // known here: it is told what that tick's systems will be told.
     const now = (): number => time.tick + (world._recording ? 1 : 0);
-    const pressed = (code: string): boolean =>
-      held.buttons[code]?.[1] === now();
-    const released = (code: string): boolean =>
-      held.buttons[code]?.[2] === now();
-    const pads: GamepadView[] = [];
-    return Context.make(Keyboard, { down, pressed, released }).pipe(
-      Context.add(Pointer, {
-        get x() {
-          return held.axes[pointerX] ?? 0;
-        },
-        get y() {
-          return held.axes[pointerY] ?? 0;
-        },
-        down: (button = 0) => down(pointerButton(button)),
-        pressed: (button = 0) => pressed(pointerButton(button)),
-        released: (button = 0) => released(pointerButton(button)),
-      }),
-      Context.add(
-        Gamepads,
-        (index) =>
-          (pads[index] ??= {
-            axis: (axis) => held.axes[padAxis(index, axis)] ?? 0,
-            down: (button) => down(padButton(index, button)),
-            pressed: (button) => pressed(padButton(index, button)),
-            released: (button) => released(padButton(index, button)),
-          })
-      )
+    return devicesIn(
+      held,
+      (code, which) => (held.buttons[code]?.[which] ?? NEVER) === now()
+    ).pipe(
+      Context.add(Views, {
+        frame: (undrawn) => drawnFrom(held, time, undrawn),
+      })
     );
   })
 );

@@ -31,6 +31,7 @@ import type { TimeState } from "../Services.ts";
 import { EventBus } from "./eventBus.ts";
 import { reading } from "./handed.ts";
 import * as Inbox from "./inbox.ts";
+import { Undrawn } from "./input.ts";
 import { Intake } from "./intake.ts";
 import { Log } from "./log.ts";
 import * as Loop from "./loop.ts";
@@ -295,6 +296,8 @@ const assemble = <
     const schedule = Schedule.make(allSystems, spans.enabled);
     // What the frame and input stages keep, let go of with the app.
     const locals = new Stage.LocalStore();
+    // Which ticks the frame stage has drawn, which a rewind moves back.
+    const undrawn = new Undrawn(time.tick);
     yield* Scope.addFinalizer(
       scope,
       Effect.sync(() => locals.release())
@@ -325,6 +328,7 @@ const assemble = <
       actions,
       seed: seed ?? 0,
       locals,
+      undrawn,
       verifyFrames: start.verifyFrames === true,
     });
     // What a run ends with is what the game's systems fail with: the loop
@@ -353,6 +357,7 @@ const assemble = <
       dispatcher,
       log,
       after,
+      undrawn,
       save: () =>
         Effect.suspend(() => {
           runner.whileIdle(
@@ -386,6 +391,7 @@ const assemble = <
           world.restore(loaded.value.world);
           prepare(world, schedule.hooked, true);
           events.restarted(time.tick);
+          undrawn.restarted(time.tick);
           log.restart(loaded.value);
           made.set(loading, 0);
           made.set(loaded.value, 0);

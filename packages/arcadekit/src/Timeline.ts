@@ -34,7 +34,7 @@ import type { Since } from "./internal/log.ts";
 import type { Told } from "./internal/outbox.ts";
 import { moved, partsOf } from "./internal/parts.ts";
 import { taking } from "./internal/save.ts";
-import { READER } from "./internal/stage.ts";
+import { GameTime, READER } from "./internal/stage.ts";
 import * as Plugin from "./Plugin.ts";
 import * as Save from "./Save.ts";
 
@@ -179,7 +179,7 @@ export const rewind = (
 
 /** Puts a game back to a moment, between ticks, as `rewind` does. */
 const putBack = (app: Game, moment: Moment, again: boolean): void => {
-  const { commands, dispatcher, events, log, world } = partsOf(app);
+  const { commands, dispatcher, events, log, undrawn, world } = partsOf(app);
   if (!(moment instanceof Held) || moment.of !== world) {
     throw new Error(
       "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
@@ -198,6 +198,7 @@ const putBack = (app: Game, moment: Moment, again: boolean): void => {
     again && !moment.stages ? (reader) => reader.startsWith(READER) : undefined
   );
   events.rewound(moment.told, again);
+  undrawn.rewound(world.singleton(GameTime).tick, again);
   commands.apply();
 };
 

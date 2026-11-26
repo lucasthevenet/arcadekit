@@ -30,9 +30,11 @@ import {
   State,
   System,
   Time,
+  Timeline,
   World,
 } from "../src/index.ts";
 import type { Rng } from "../src/index.ts";
+import { Session } from "../src/net/index.ts";
 import { thrown, unwrap } from "./checks.ts";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
@@ -1499,31 +1501,38 @@ describe("the picture of the devices in the world", () => {
   );
 
   it.effect(
-    "forgets a button that went up once the tick it went up in is over",
+    "keeps the ticks a button last went down and up in, after it went up, and changes them only when it goes down again",
     () =>
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Input.plugin] }));
-        const never = yield* App.make(App.define({ plugins: [Input.plugin] }));
+        const pressedLater = yield* App.make(
+          App.define({ plugins: [Input.plugin] })
+        );
         yield* app.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
-        yield* never.dispatch(Input.Report, { down: ["KeyB"] });
+        yield* pressedLater.dispatch(Input.Report, { down: ["KeyB"] });
         yield* app.tick(1);
-        yield* never.tick(1);
+        yield* pressedLater.tick(1);
         yield* app.dispatch(Input.Report, { up: ["KeyA"] });
+        yield* pressedLater.dispatch(Input.Report, { tapped: ["KeyA"] });
         yield* app.tick(1);
-        yield* never.tick(1);
-        // Still remembered: it went up in the tick that just ran.
-        expect(yield* hashOf(app)).not.toBe(yield* hashOf(never));
-        // The next report, of anything, drops it: even one that says it
-        // went up, which it did long ago.
+        yield* pressedLater.tick(1);
+        // Up in both, but it went down in another tick: kept, so a frame
+        // drawn after several ticks still reads it.
+        yield* app.tick(1);
+        yield* pressedLater.tick(1);
+        expect(yield* hashOf(app)).not.toBe(yield* hashOf(pressedLater));
+        // A report of anything else, or that it went up, which it did long
+        // ago, writes nothing of it.
+        const before = yield* hashOf(app);
         const late = yield* Effect.exit(
-          app.dispatch(Input.Report, {
-            up: ["KeyA"],
-            axes: { PointerX: 4 },
-          })
+          app.dispatch(Input.Report, { up: ["KeyA"] })
         );
         expect(Exit.isSuccess(late)).toBe(true);
-        yield* never.dispatch(Input.Report, { axes: { PointerX: 4 } });
-        expect(yield* hashOf(app)).toBe(yield* hashOf(never));
+        expect(yield* hashOf(app)).toBe(before);
+        // Pressed and let go again in the same tick as the other: the same.
+        yield* app.dispatch(Input.Report, { tapped: ["KeyA"] });
+        yield* pressedLater.dispatch(Input.Report, { tapped: ["KeyA"] });
+        expect(yield* hashOf(app)).toBe(yield* hashOf(pressedLater));
       })
   );
 
@@ -1851,6 +1860,257 @@ describe("the picture of the devices in the world", () => {
           ).toBe(true);
           expect(yield* hashOf(app)).toBe(held);
         }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
+    "is seen by what draws the game once for each change, however many frames a tick has or ticks a frame has",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          const seen: string[] = [];
+          const Flash = System.frame("Flash", function* () {
+            const keys = yield* Input.Keyboard;
+            const pointer = yield* Input.Pointer;
+            const pad = yield* Input.Gamepad();
+            const { count } = yield* Frame;
+            const changes: readonly (readonly [string, boolean, boolean])[] = [
+              ["Space", keys.pressed("Space"), keys.released("Space")],
+              ["KeyA", keys.pressed("KeyA"), keys.released("KeyA")],
+              ["pointer", pointer.pressed(), pointer.released()],
+              ["pad", pad.pressed(0), pad.released(0)],
+            ];
+            for (const [name, pressed, released] of changes) {
+              if (pressed) {
+                seen.push(`${count} ${name} pressed`);
+              }
+              if (released) {
+                seen.push(`${count} ${name} released`);
+              }
+            }
+          });
+          const app = yield* App.make(
+            App.define({ plugins: [Input.plugin], systems: [Flash] })
+          );
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          // Three frames of one tick: the first sees the press, and no other.
+          source.press("Space");
+          yield* step();
+          yield* app.frame(0.2);
+          yield* app.frame(0.6);
+          yield* app.frame(0.9);
+          expect(seen).toEqual(["1 Space pressed"]);
+          // One frame of two ticks: a press in the first is seen after the
+          // second.
+          seen.length = 0;
+          source.press(Input.pointerButton());
+          yield* step();
+          yield* step();
+          yield* app.frame();
+          expect(seen).toEqual(["4 pointer pressed"]);
+          // Down in one tick, up in the next, and something else in a third:
+          // the one frame after them sees each change.
+          seen.length = 0;
+          source.press("KeyA");
+          yield* step();
+          source.release("KeyA");
+          yield* step();
+          source.press(Input.padButton(0, 0));
+          yield* step();
+          yield* app.frame();
+          yield* app.frame();
+          expect(seen).toEqual([
+            "5 KeyA pressed",
+            "5 KeyA released",
+            "5 pad pressed",
+          ]);
+          seen.length = 0;
+          source.release("Space");
+          yield* step();
+          yield* app.frame();
+          yield* app.frame();
+          expect(seen).toEqual(["7 Space released"]);
+          // Through a driver, with frames shorter than a tick, then longer.
+          const driven = Driver.fixedStep(app, { hz: 10 });
+          for (const frame of [0.04, 0.25]) {
+            seen.length = 0;
+            source.tap("KeyA");
+            for (let i = 0; i < 5; i++) {
+              yield* driven(frame);
+            }
+            expect(
+              seen.map((line) => line.replace(/^\d+ /u, "")),
+              `frames of ${frame} s`
+            ).toEqual(["KeyA pressed", "KeyA released"]);
+          }
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
+    "is new to what draws the game after a rewind, as the events of the ticks run again are",
+    () =>
+      Effect.gen(function* () {
+        const seen: number[] = [];
+        const Flash = System.frame("Flash", function* () {
+          if ((yield* Input.Keyboard).pressed("KeyA")) {
+            seen.push((yield* Frame).count);
+          }
+        });
+        const app = yield* App.make(
+          App.define({ plugins: [Input.plugin], systems: [Flash] })
+        );
+        const moment = yield* Timeline.capture(app);
+        yield* app.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.frame();
+        expect(seen).toEqual([1]);
+        yield* Timeline.rewind(app, moment);
+        yield* app.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* app.tick(1);
+        yield* app.frame();
+        expect(seen).toEqual([1, 3]);
+      })
+  );
+
+  it.effect(
+    "is shown once by what draws the game when a rollback runs again the ticks it drew, and a press only the ticks run again have is shown once too",
+    () =>
+      Effect.gen(function* () {
+        const seen: string[] = [];
+        const Flash = System.frame("Flash", function* () {
+          const keys = yield* Input.Keyboard;
+          const { count } = yield* Frame;
+          for (const code of ["KeyA", "KeyB"] as const) {
+            if (keys.pressed(code)) {
+              seen.push(`${count} ${code}`);
+            }
+          }
+        });
+        const app = yield* App.make(
+          App.define({ plugins: [Input.plugin], systems: [Flash] })
+        );
+        // A game that runs ahead, as a rollback session does: it draws what
+        // it predicted, goes back past what it drew, and runs those ticks
+        // again with what it now knows.
+        const first = yield* Timeline.capture(app);
+        yield* app.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
+        expect(seen).toEqual(["1 KeyA"]);
+        // The prediction was right: the press it drew is run again.
+        yield* Timeline.rewind(app, first, { again: true });
+        yield* app.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.frame();
+        expect(seen).toEqual(["1 KeyA"]);
+        // It was wrong: a press it missed comes in a tick it drew.
+        const second = yield* Timeline.capture(app);
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* Timeline.rewind(app, second, { again: true });
+        yield* app.dispatch(Input.Report, { down: ["KeyB"] });
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.frame();
+        expect(seen).toEqual(["1 KeyA", "5 KeyB"]);
+      })
+  );
+
+  it.effect(
+    "is not shown by what draws the game for a press of a save loaded in place: that game's past is no frame's",
+    () =>
+      Effect.gen(function* () {
+        const seen: number[] = [];
+        const Flash = System.frame("Flash", function* () {
+          if ((yield* Input.Keyboard).pressed("KeyA")) {
+            seen.push((yield* Frame).count);
+          }
+        });
+        const Game = App.define({ plugins: [Input.plugin], systems: [Flash] });
+        const played = yield* App.make(Game);
+        yield* played.tick(1);
+        yield* played.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* played.tick(1);
+        const save = yield* Save.make(played);
+        // Another app, which has drawn nothing past its first tick, loads it.
+        const app = yield* App.make(Game);
+        yield* app.frame();
+        yield* Save.load(app, save);
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
+        expect(seen).toEqual([]);
+        // What it does from there is shown as ever.
+        yield* app.dispatch(Input.Report, { up: ["KeyA"] });
+        yield* app.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* app.tick(1);
+        yield* app.frame();
+        expect(seen).toEqual([4]);
+      })
+  );
+
+  it.effect(
+    "is shown once by what draws the game in a session that rolls back past what it drew",
+    () =>
+      Effect.gen(function* () {
+        const seen: string[] = [];
+        const Flash = System.frame("Flash", function* () {
+          const keys = yield* Input.Keyboard;
+          for (const code of ["Space", "KeyB"] as const) {
+            if (keys.pressed(code)) {
+              seen.push(code);
+            }
+          }
+        });
+        const source = Input.makeManualSource();
+        const ada = yield* Session.make(
+          App.define({ plugins: [Input.plugin], systems: [Flash] }),
+          { me: "ada", others: ["grace"], hz: 60, ahead: 8 }
+        ).pipe(withSource(source));
+        const step = Effect.fnUntraced(function* () {
+          expect(yield* ada.tick()).toBe(true);
+          yield* ada.frame(0);
+        });
+        yield* step();
+        source.press("Space");
+        yield* step();
+        yield* step();
+        expect(seen).toEqual(["Space"]);
+        // Grace moved the pointer on the first tick: ada goes back past the
+        // frames that showed the space bar, and runs its press again.
+        ada.receive({
+          from: "grace",
+          tick: 0,
+          actions: [
+            { name: Input.Report.name, payload: { axes: { PointerX: 5 } } },
+          ],
+        });
+        yield* step();
+        expect(ada.stats.rewinds).toBe(1);
+        expect(seen).toEqual(["Space"]);
+        // And she pressed B on the second, which ada had drawn without it.
+        ada.receive({
+          from: "grace",
+          tick: 1,
+          actions: [{ name: Input.Report.name, payload: { down: ["KeyB"] } }],
+        });
+        yield* step();
+        yield* step();
+        expect(ada.stats.rewinds).toBe(2);
+        expect(seen).toEqual(["Space", "KeyB"]);
       })
   );
 });

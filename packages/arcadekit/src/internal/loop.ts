@@ -23,6 +23,7 @@ import type { FrameState, TimeState } from "../Services.ts";
 import * as State from "../State.ts";
 import type { EventBus } from "./eventBus.ts";
 import type { Inbox } from "./inbox.ts";
+import type { Undrawn } from "./input.ts";
 import { Intake } from "./intake.ts";
 import type { Log } from "./log.ts";
 import type { Runner } from "./runner.ts";
@@ -137,6 +138,8 @@ export interface Parts {
   readonly seed: number;
   /** What the app's systems keep between frames. */
   readonly locals: Stage.LocalStore;
+  /** The ticks no frame has drawn yet, which a rewind moves back. */
+  readonly undrawn: Undrawn;
   /** Whether the stages between ticks are checked to leave the world as it was. */
   readonly verifyFrames: boolean;
 }
@@ -319,17 +322,21 @@ export const make = (parts: Parts): Loop => {
   const runTick = Effect.runForkWith(context);
 
   // The stages between ticks. The input stage is told what the devices say:
-  // one picture of them, taken when the stage begins.
-  const frameContext = Stage.frame(context, {
+  // one picture of them, taken when the stage begins. The frame stage is
+  // told which ticks it has not drawn: those since the tick the last frame
+  // was drawn after, or since the tick a rewind went back to.
+  const shared = Stage.between(context, {
     world,
     time,
-    frame: drawing,
     events,
     actions: parts.actions,
     seed: parts.seed,
     locals: parts.locals,
   });
-  const runFrame = Effect.runForkWith(frameContext);
+  const { undrawn } = parts;
+  const runFrame = Effect.runForkWith(
+    Stage.frame(shared, { frame: drawing, undrawn })
+  );
   const devices: {
     -readonly [K in keyof Input.Sample]: Input.Sample[K];
   } = {
@@ -339,7 +346,7 @@ export const make = (parts: Parts): Loop => {
     axes: new Map(),
     moved: [],
   };
-  const runInput = Effect.runForkWith(Stage.input(frameContext, devices));
+  const runInput = Effect.runForkWith(Stage.input(shared, devices));
   const drawn = Effect.gen(() => takeTurns(schedule.frame, "frame", false));
   const heard = Effect.gen(() => takeTurns(schedule.input, "input", false));
   const drawnTraced = trace
@@ -408,7 +415,11 @@ export const make = (parts: Parts): Loop => {
     drawing.alpha = alpha;
     drawing.delta = delta;
     drawing.count++;
-    return between("frame");
+    try {
+      return between("frame");
+    } finally {
+      undrawn.framed(time.tick);
+    }
   };
 
   const runInputStage = (): Exit.Exit<void, unknown> => {
@@ -436,6 +447,11 @@ export const make = (parts: Parts): Loop => {
       const drained = inbox.drain();
 
       log.ticking(delta);
+      // The world was put back past what was drawn by something that did
+      // not say so: what is run again is new to the frame stage.
+      if (time.tick < undrawn.since) {
+        undrawn.rewound(time.tick, false);
+      }
       time.delta = delta;
       time.elapsed += delta;
       time.tick++;

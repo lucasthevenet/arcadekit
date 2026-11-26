@@ -6,6 +6,7 @@ import type { World } from "../ecs/world.ts";
 import type { Recording } from "../Replay.ts";
 import type { LoadRefused, Refused, Save } from "../Save.ts";
 import type { EventBus } from "./eventBus.ts";
+import type { Undrawn } from "./input.ts";
 import type { Log } from "./log.ts";
 import type { TickDispatcher } from "./tickScheduler.ts";
 
@@ -37,6 +38,8 @@ export interface Parts {
   readonly record: (since: Save | undefined) => Effect.Effect<Recording>;
   /** Records the world's hash in the log now: `Replay.hashCheck`. */
   readonly hashCheck: () => Effect.Effect<number>;
+  /** Which ticks the frame stage has drawn, which a rewind or a load tells. */
+  readonly undrawn: Undrawn;
 }
 
 /**
